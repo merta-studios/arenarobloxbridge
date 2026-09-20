@@ -1,0 +1,173 @@
+##########################################################################
+#                                                                      #
+#   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
+#   (Stand: Version 3.6  -  20.09.2026)                                #
+#                                                                      #
+##########################################################################
+
+WOFUER IST DIESE DATEI?
+=======================
+Eine neue KI-Session (neuer Chat) hat KEIN Gedaechtnis an fruehere
+Chats und auch nicht automatisch den alten Workspace. Wenn du daher
+spaeter in einem NEUEN Chat mit einer KI an diesem Projekt weiter-
+arbeiten willst: Haenge die ArenaBridge.zip an - oder mindestens diese
+Datei hier - an deine erste Nachricht an. Damit weiss die KI sofort,
+wie das Projekt aufgebaut ist und worauf sie achten muss.
+
+Diese Datei ist NICHT fuer das GitHub-Repository gedacht (nur fuer
+dich und deine KI-Sessions).
+
+
+1) ARCHITEKTUR (DAS WICHTIGSTE)
+===============================
+- ArenaBridge.exe ist NUR ein Starter/Updater (mit ps2exe kompiliert).
+  Sie enthaelt NICHT das Programm selbst!
+- Das komplette Programm liegt als ArenaBridge.ps1 in einem
+  OEFFENTLICHEN GitHub-Repository (Quelle: Ordner GitHub-Repository\).
+- Ablauf bei jedem EXE-Start:
+    1. EXE laedt version.json aus dem GitHub-Repo
+       (raw.githubusercontent.com, Branch-Kette: konfigurierter
+       Branch -> main -> master)
+    2. Vergleicht die Online-Version mit der lokal gespeicherten
+       Version (Ordner: %LOCALAPPDATA%\ArenaRobloxBridge\app)
+    3. Neuer Stand online -> ArenaBridge.ps1 wird heruntergeladen und
+       atomar getauscht (ueber .new-Datei, laufende Alt-Prozesse
+       werden vorher beendet)
+    4. EXE schreibt update-status.json in den App-Ordner und startet:
+       powershell.exe -File ArenaBridge.ps1 -UpdateStatus <STATUS>
+
+STATUS-PARAMETER (6 Stueck):
+    update-erfolgreich    -> Update wurde installiert
+    erster-start          -> Programm zum ersten Mal geladen
+    kein-update           -> Version war schon aktuell
+    keine-verbindung      -> offline, altes Programm gestartet
+    update-fehler         -> Download fehlgeschlagen, altes Programm
+    update-suche-fehler   -> version.json nicht erreichbar/lesbar
+
+Reaktion des Programms (ArenaBridge.ps1, ab v3.6):
+    - update-erfolgreich / erster-start: ZUERST Hinweisfenster mit
+      den Neuigkeiten (aus version.json, Feld "notes") + OK-Button,
+      DANACH erst der normale Start (Splash + Hauptfenster).
+    - Fehler-Status (keine-verbindung / update-fehler /
+      update-suche-fehler): rote "1" am Einstellungs-Button; in den
+      Einstellungen steht unter "UPDATES - PROBLEM" der konkrete
+      Fehler mit Uhrzeit des letzten Checks.
+    - Bei Erfolg/kein-update: Versionszeile in den Einstellungen
+      zeigt "aktuell".
+
+
+2) DATEIEN IN DIESER ZIP
+========================
+ArenaBridge\
+ |- START-HIER.txt          Gesamtanleitung fuer den Nutzer
+ |                          (Schritte 1-4, Update-Verteilung, SmartScreen)
+ |- KI-UEBERGABE.txt        diese Datei
+ |- EXE-Builder\
+ |   |- Build-Exe.cmd       selbstextrahierend (205 KB): erzeugt
+ |   |                      make-updater.ps1 aus eingebettetem Base64
+ |   |                      und ruft es dann auf.
+ |   |                      WICHTIG: strikt ASCII + CRLF! Im
+ |   |                      Extraktions-Command KEINE Zeichen \ % ! "
+ |   |                      erlauben! Base64-Zeilen a 120 Zeichen,
+ |   |                      Marker #==BUILD-SCRIPT-START== und
+ |   |                      #==BUILD-SCRIPT-END== (je genau 1x).
+ |   |- REPOSITORY-LINK.txt hier traegt der Nutzer NACH dem
+ |   |                      Veroeffentlichen seinen GitHub-Link ein
+ |   |                      (Platzhalter-Zeile ersetzen; Parser
+ |   |                      akzeptiert github.com/OWNER/REPO[.git]
+ |   |                      [/tree/BRANCH])
+ |   |- make-updater.ps1    liest den Link, extrahiert icon.ico +
+ |                          Launcher-Vorlage aus eigenen Base64-
+ |                          Bloecken, besorgt ps2exe (Modul ->
+ |                          Install-Module -> GitHub-Download mit
+ |                          14-Tage-Cache), kompiliert
+ |                          dist\ArenaBridge.exe (Version 3.6.0.0)
+ |- GitHub-Repository\      KOMPLETT ins GitHub-Repo hochladen:
+     |- ArenaBridge.ps1    das Programm (v3.6, ~595 KB, UTF-8 MIT BOM)
+     |- version.json       {"version":"3.6","notes":[...Neuigkeiten...]}
+     |- README.md          Repo-Doku + Update-Anleitung + Versionsverlauf
+
+
+3) SO VERTEILST DU PROGRAMM-UPDATES (z. B. v3.7)  -  WICHTIG!
+==============================================================
+Die EXE muss dafuer NICHT neu gebaut oder neu verschickt werden!
+Der Starter zieht sich jede Aenderung automatisch aus dem Repository.
+Es reicht:
+
+    1. ArenaBridge.ps1 aendern
+    2. Version ueberall hochziehen - diese Stellen ALLE anfassen:
+       - Changelog-Kommentar ganz oben in ArenaBridge.ps1 fortfuehren
+       - DocsVersion
+       - local ARENA_VERSION
+       - version = '3.x'
+       - bridgeVersion  (kommt 3x vor!)
+       - serverVersion
+       - Plugin-Kommentar "(Version ...)"
+       - Versionszeile/Fusszeile in den Einstellungen
+       - Fallback-Versionsliteral im Update-Hinweisfenster
+         (Show-UpdateNotice)
+       - version.json: "version" erhoehen + "notes" mit den
+         Neuigkeiten des Updates (erscheint im Hinweisfenster)
+       - (nur falls EXE neu gebaut wird: ps2exe-Versionsangabe in
+         make-updater.ps1, z. B. 3.7.0.0)
+    3. Beide Dateien (ArenaBridge.ps1 + version.json) ins Repo
+       pushen, ins ROOT-Verzeichnis (nicht in Unterordner!)
+    4. Fertig - beim naechsten Start ihrer EXE bekommen alle Nutzer
+       das Update automatisch + das Hinweisfenster mit den
+       Neuigkeiten.
+
+Nur wenn sich die STARTER-LOGIK aendert (nicht das Programm selbst),
+muss die EXE neu gebaut und neu an alle verteilt werden.
+
+
+4) FESTE REGELN DES NUTZERS (NICHT ANFASSEN!)
+=============================================
+- KEINE Toast-/Popup-Meldungen unten rechts! Show-Toast und
+  Add-PendingToast sind absichtlich stumme No-op-Stummel fuer alte
+  Aufrufstellen. NICHT wiederbeleben.
+- "..."-Auswahlmenue: erneuter Klick auf den Menue-Button schliesst
+  das Menue (echtes Toggle). Klick auf "Nur Lesezugriff" laesst das
+  Menue OFFEN (schliesst es NICHT).
+- Bedienung und Aussehen der Spieleliste NICHT veraendern.
+- ZIP-Struktur: genau EIN Ordner (ArenaBridge\) mit ZWEI Unterordnern
+  (EXE-Builder\, GitHub-Repository\) plus TXT-Dateien.
+- REPOSITORY-LINK.txt-Mechanismus so lassen (auffaellige TXT, Nutzer
+  traegt den Link selbst ein).
+- Changelog-Kommentar oben in ArenaBridge.ps1 bei jeder Version
+  fortfuehren (... -> 3.6 -> 3.7 -> ...).
+
+
+5) TECHNISCHE STOLPERSTEINE FUER DIE KI
+=======================================
+- ArenaBridge.ps1 und make-updater.ps1 sind UTF-8 MIT BOM - BOM beim
+  Speichern erhalten (PowerShell 5.1 braucht ihn fuer die Umlaute).
+- Base64-Bloecke in make-updater.ps1: Marker #==ICON-START== /
+  #==ICON-END== und #==LAUNCHER-START== / #==LAUNCHER-END==, Zeilen
+  a 110 Zeichen mit #-Praefix. Nach JEDER Aenderung an
+  make-updater.ps1 muss Build-Exe.cmd neu generiert werden (Base64
+  neu einbetten) und per Rueck-Dekodierung validiert werden
+  (byte-identisch!).
+- Launcher-Vorlage mit Platzhaltern __REPO_OWNER__ / __REPO_NAME__ /
+  __REPO_BRANCH__.
+- Build-Exe.cmd-Generator: siehe Regeln in Abschnitt 2.
+- Groessere Code-Aenderungen lieber per Python-String-Replacement
+  machen und Ersetzungen danach per grep gegenpruefen (direkte
+  Editier-Werkzeuge waren unzuverlaessig).
+- Tests mit PowerShell-Mocks: Mock-Status als $global:-Variablen
+  anlegen (Dynamic Scoping!), Tests als eigene .ps1-Datei schreiben
+  (nicht inline quoten), $env:TEMP setzen, Szenario-Verzeichnisse
+  zwischen Laeufen leeren (sonst False Negatives).
+
+
+6) KURZER VERSIONSSTAND
+=======================
+- v3.3: Basis-Release (bestaetigt: "danke alles klappt")
+- v3.4: Feature-Release
+- v3.5: Port-/Splash-Bugfixes (Geisterprozesse, Free-Port-Diagnose,
+  Splash-blocked-Handling)
+- v3.6: Update-System ueber GitHub (aktueller Stand): Starter-EXE,
+  Status-Parameter, Update-Hinweisfenster, rote "1" am
+  Einstellungs-Button bei Fehlern, Toasts entfernt, Menue-Toggle
+
+Der vollstaendige Versionsverlauf steht als Kommentar ganz oben in
+ArenaBridge.ps1 (bis zur aktuellen Version fortfuehren!).
