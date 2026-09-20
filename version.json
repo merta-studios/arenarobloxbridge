@@ -1,0 +1,4 @@
+{
+  "version": "3.6",
+  "notes": "• Automatische Updates über GitHub\n• Neues Update-Fenster: zeigt nach jedem Update, was neu ist (mit OK-Button)\n• Willkommens-Fenster beim ersten Start\n• Rote Benachrichtigung (1) am Einstellungs-Button bei Update-Problemen\n• Popup-Nachrichten unten rechts entfernt\n• Auswahlmenü „…“: erneuter Klick schließt es wieder, „Nur Lesezugriff“ lässt es offen"
+}
