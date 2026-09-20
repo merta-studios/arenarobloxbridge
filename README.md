@@ -34,6 +34,14 @@ heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestarte
 
 ## Versionsverlauf
 
+### 3.7
+- Neue Anthrazit-/Grau-/Pink-Oberfläche mit stärkeren Kontrasten
+- Update-/Willkommensfenster bleibt ohne Zeitlimit offen und startet das
+  eigentliche Programm erst nach einem bewussten Klick auf OK
+- Aktiver Play-/Run-Test blockiert dauerhafte Bearbeitungen schon in der
+  Bridge; Arena erhält eine kritische Stop-Anweisung und bittet den Nutzer,
+  den Playtest selbst zu beenden
+
 ### 3.6
 - Automatische Updates über GitHub (Starter prüft bei jedem Start)
 - Update-Fenster mit Neuigkeiten nach jedem Update, Willkommens-Fenster beim

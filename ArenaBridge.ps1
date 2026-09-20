@@ -1,5 +1,16 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 3.6
+# Arena Roblox Bridge  -  Version 3.7
+#
+# NEU IN DIESER VERSION (3.7) - PLAYTEST-SCHUTZ + GRAU/PINK-DESIGN:
+#   1.  UPDATE-FENSTER: Es bleibt garantiert offen, bis der Nutzer bewusst
+#       auf OK klickt. Erst danach werden Studio, Plugin, Server und Tunnel
+#       gestartet. Weder Timer noch Fenster-Schliessen koennen es umgehen.
+#   2.  PLAYTEST-SCHUTZ: Dauerhafte Bearbeitungen werden bereits in der
+#       Bridge abgefangen, solange Studio in Play/Run ist. Arena erhaelt eine
+#       unuebersehbare STOP_CURRENT_RESPONSE-Anweisung und soll den Nutzer
+#       bitten, den Playtest selbst zu beenden, bevor die Arbeit weitergeht.
+#   3.  DESIGN: Die komplette Oberflaeche hat eine neue, kontrastreiche
+#       Anthrazit-/Grau-/Pink-Optik mit klareren Flaechen und Akzenten.
 #
 # NEU IN DIESER VERSION (3.6) - UPDATE-SYSTEM ÜBER GITHUB + FEINSCHLIFF:
 #   1.  UPDATE-SYSTEM: Das Programm wird von einem kleinen Starter (der
@@ -224,7 +235,7 @@
 # ============================================================================
 
 # ----------------------------------------------------------------------------
-# START-PARAMETER (Version 3.6)
+# START-PARAMETER (Version 3.7)
 # Der Starter (ArenaBridge.exe) ruft dieses Skript immer mit einem der
 # folgenden Status-Parameter auf (weitere Details stehen in der Datei
 # update-status.json neben diesem Skript):
@@ -409,7 +420,7 @@ New-Item -ItemType Directory -Path $script:ShotFolder -Force | Out-Null
 New-Item -ItemType Directory -Path $script:BinFolder -Force | Out-Null
 
 # ----------------------------------------------------------------------------
-# UPDATE-STATUS VERARBEITEN (Version 3.6)
+# UPDATE-STATUS VERARBEITEN (Version 3.7)
 # Der Starter schreibt neben das Skript eine Datei update-status.json mit den
 # Details (Version, Neuigkeiten, Fehlermeldung). Der Status-Parameter
 # entscheidet, was die Oberflaeche zeigt.
@@ -483,7 +494,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '3.6'
+    DocsVersion     = '3.7'
 })
 
 function Write-RuntimeLog {
@@ -578,7 +589,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 3.6)
+  Arena Studio Bridge - Studio Plugin  (Version 3.7)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -643,7 +654,7 @@ local StudioService = nil
 pcall(function() StudioService = game:GetService("StudioService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "3.6"
+local ARENA_VERSION  = "3.7"
 local POLL_WAIT      = 12      -- Sekunden Long-Poll (Befehle kommen sofort an)
 local HEARTBEAT_EVERY = 5      -- Sekunden
 local CHUNK_SIZE     = 48000   -- Bytes je Teilstueck einer Antwort
@@ -659,6 +670,7 @@ local accessMode     = "readwrite"
 local lastHeartbeat  = 0
 local connected      = false
 local defaultContext = "server"   -- fuer Laufzeit-Befehle im Play-Modus
+local userPlaytestActive = false       -- vom Nutzer gestarteter/aktiv gespielter Test
 
 local capabilities = {
     virtualInput   = (VirtualInputManager ~= nil),
@@ -681,7 +693,7 @@ widget.Title = "Arena Bridge"
 
 local frame = Instance.new("Frame")
 frame.Size = UDim2.fromScale(1, 1)
-frame.BackgroundColor3 = Color3.fromRGB(8, 14, 30)
+frame.BackgroundColor3 = Color3.fromRGB(20, 17, 20)
 frame.BorderSizePixel = 0
 frame.Parent = widget
 
@@ -691,7 +703,7 @@ title.Position = UDim2.fromOffset(18, 16)
 title.Size = UDim2.new(1, -36, 0, 34)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 18
-title.TextColor3 = Color3.fromRGB(218, 232, 255)
+title.TextColor3 = Color3.fromRGB(255, 240, 248)
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.Text = "Arena Bridge ist aktiv"
 title.Parent = frame
@@ -703,7 +715,7 @@ body.Size = UDim2.new(1, -36, 1, -74)
 body.Font = Enum.Font.Gotham
 body.TextSize = 14
 body.TextWrapped = true
-body.TextColor3 = Color3.fromRGB(141, 165, 205)
+body.TextColor3 = Color3.fromRGB(180, 163, 173)
 body.TextXAlignment = Enum.TextXAlignment.Left
 body.TextYAlignment = Enum.TextYAlignment.Top
 body.Text = "Dieses Plugin verbindet das aktuell geöffnete Place automatisch mit dem Programm Arena Roblox Bridge. Dieses Fenster kann jederzeit geschlossen werden - die Verbindung bleibt dabei aktiv."
@@ -777,6 +789,7 @@ local function playState()
         isServer   = RunService:IsServer(),
         isClient   = RunService:IsClient(),
         playerCount = #Players:GetPlayers(),
+        userPlaytestActive = userPlaytestActive,
     }
 end
 
@@ -2141,6 +2154,10 @@ local function ensureRuntimeHelpers()
             for _, entry in ipairs(batch) do
                 local kind = tostring(entry and entry.kind or "")
                 if kind ~= "" then
+                    -- Kamera-/GUI-Aktivitaet beweist, dass der Nutzer den laufenden
+                    -- Test gerade selbst bedient. Ab jetzt haben seine Aktionen
+                    -- Vorrang und dauerhafte KI-Bearbeitungen werden blockiert.
+                    userPlaytestActive = true
                     addNotice(kind,
                         "The USER did something in the game: " .. kind .. ". This is the user playing, NOT a bug in your scripts - do not change anything because of it.",
                         entry.data)
@@ -6264,11 +6281,19 @@ executeTool = function(tool, args, insideBatch)
 
     local warnings = nil
     if RunService:IsRunning() and PERSISTENT_WRITE_TOOLS[tool] then
-        if args.allowInPlayMode ~= true then
+        if userPlaytestActive then
+            return failCode("USER_PLAYTEST_ACTIVE",
+                "IMPORTANT: The user is currently in Roblox Studio " .. currentMode() .. " mode. STOP your current response and do not edit anything: test-mode changes would be temporary and could disrupt the user while they are playing.", {
+                assistantAction = "STOP_CURRENT_RESPONSE",
+                howToFix = "Tell the user that you can see their playtest is active and politely ask them to leave/stop the playtest in Roblox Studio. Wait for the user to confirm they are back in Edit mode before continuing. Do NOT call play_stop on the user's behalf.",
+                userMessage = "Ich sehe, dass du Roblox Studio gerade im Playtest benutzt. Bitte beende den Playtest, damit ich sicher weiterarbeiten kann.",
+                state = playState(),
+            })
+        elseif args.allowInPlayMode ~= true then
             return failCode("PLAY_MODE_ACTIVE",
                 "Studio is currently in " .. currentMode() .. " mode. '" .. tostring(tool)
                 .. "' would change the place, but every change made during a test is thrown away when the test stops.", {
-                howToFix = "Call play_stop first, do the real work, then play_start again. If you only want a throw-away change for this test run, repeat the call with allowInPlayMode=true.",
+                howToFix = "Call play_stop first, do the real work, then play_start again. If you only want a throw-away change for this assistant-owned test run, repeat the call with allowInPlayMode=true.",
                 state = playState(),
             })
         end
@@ -6459,6 +6484,7 @@ task.spawn(function()
             local byAi = (os.time() - (aiPlayIntent.at or 0)) <= 20
             local who = byAi and "assistant" or "user"
             if nowRunning then
+                userPlaytestActive = not byAi
                 addNotice("play_started",
                     "The " .. nowMode .. " test was started by the " .. who .. ". Studio is running now: changes to the place are temporary until it is stopped.",
                     { mode = nowMode, startedBy = who })
@@ -6467,6 +6493,7 @@ task.spawn(function()
                     ensureRuntimeHelpers()
                 end)
             else
+                userPlaytestActive = false
                 addNotice("play_stopped",
                     "The test was stopped by the " .. who .. ". Studio is back in edit mode - this is NOT a crash and nothing went wrong. Everything that happened during the test is gone; permanent edits are allowed again.",
                     { mode = nowMode, stoppedBy = who })
@@ -6487,6 +6514,7 @@ task.spawn(function()
                 if lastCharPos then
                     local dist = (root.Position - lastCharPos).Magnitude
                     if dist > 1.5 and os.clock() - lastCharReport > 5 and os.clock() > aiMoveUntil then
+                        userPlaytestActive = true
                         addNotice("user_moving_character",
                             "The USER is moving their avatar right now - this is the user playing, NOT your script. Do not hunt for movement bugs in your own code because of this.",
                             { movedStuds = math.floor(dist * 10) / 10 })
@@ -7061,6 +7089,7 @@ $script:BridgeHandlerScript = {
                 mode    = [string]$body.state.mode
                 context = [string]$body.state.context
                 players = $body.state.playerCount
+                userPlaytestActive = [bool]$body.state.userPlaytestActive
             }
         }
         return $state
@@ -8566,6 +8595,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 'NO STRING SURGERY: the bridge never modifies your source text (no trimming, no "return M" removal, no %-reformatting). A ModuleScript simply ends with "return M". If you need to change text, use patch_script ops - never .replace() across languages.',
                 'PLAY MODES (know the difference or tests fail): edit = permanent building; run = simulation only (server scripts + physics, NO player, NO client, NO GUI - by design); play = full game with test player, character, GUI and client agent. For anything with a character or GUI: play_start mode="play". "No player" errors in run mode are NOT bugs.',
                 'THE USER IS THERE TOO: the user can press Play/Stop and PLAY in the game at any moment (moving the camera, walking the avatar, clicking the GUI). You will see it in _bridge.events / notices (user_rotating_camera, user_moving_character, user_clicked_gui, play_started with startedBy="user"). That is normal: nothing crashed and it is NOT a bug in your scripts - do not go searching for errors because of it.',
+                'USER PLAYTEST HAS PRIORITY: if Studio is in Play/Run and you are about to make persistent edits, STOP_CURRENT_RESPONSE. Tell the user you can see the active playtest, politely ask them to leave it, and wait for confirmation that Studio is back in Edit mode. Never stop a user-owned playtest yourself.',
                 'PERSISTENT LUA: run_lua runs in a persistent environment. Helpers you define (without "local") survive to the next call - see lua_state. You never have to re-paste helper code.',
                 'TIMEOUTS NEVER KILL WORK: a timed-out call is still running in Studio. The next call automatically waits for it (Studio executes strictly one command at a time), and the late result arrives in _bridge.lateResults. For long work use asJob=true / start_job and poll job_status / job_result.',
                 'HEIGHTS BY RAYCAST ONLY: use ground_height / raycast / measure_height. NEVER compute world Y from voxel indices or formulas - it is wrong by design in this place.',
@@ -8711,7 +8741,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         $guides = Get-BridgeGuides
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '3.6'
+            version = '3.7'
             docsVersion = [string]$Shared.DocsVersion
             role = 'You are connected to exactly ONE live Roblox Studio place through a local plugin. Every token belongs to one Studio window only - if several windows are open, each one has its own token and you can never touch the wrong place. Send every request as POST /api/tool with JSON body { "token": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -8793,13 +8823,23 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         $entry = Get-SessionEntry $sessionId
         $events = Take-Events $sessionId 12
         $envelope = @{
-            bridgeVersion = '3.6'
+            bridgeVersion = '3.7'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
             serverTime    = (Get-Date).ToString('u')
             docsVersion   = [string]$Shared.DocsVersion
             docs          = 'Full tool documentation (parameters, types, defaults, returns, examples, error codes): GET /api/docs, or ?tool=<name>, or ?category=<name>. It was also delivered automatically with the first tool call of this session (_sessionStart).'
+        }
+        if ($entry -and $entry.state -and [bool]$entry.state.running -and [bool]$entry.state.userPlaytestActive) {
+            $envelope.playtestWarning = @{
+                severity = 'critical'
+                code = 'USER_PLAYTEST_ACTIVE'
+                assistantAction = 'STOP_CURRENT_RESPONSE'
+                message = 'Roblox Studio is in Play/Run mode. If the user started or is using this playtest, stop your current response, do not edit, and ask the user to leave the playtest before you continue.'
+                userRequest = 'Tell the user you can see the active playtest and politely ask them to stop it in Roblox Studio. Wait for confirmation; do not stop their test yourself.'
+            }
+            $envelope.attention = 'CRITICAL PLAYTEST NOTICE: STOP_CURRENT_RESPONSE. The user may be playing right now. Do not make persistent edits; ask them to leave the Roblox Studio playtest first.'
         }
         # In Studio läuft noch etwas (z.B. nach einem Timeout). Studio arbeitet
         # Befehle strikt nacheinander ab - der nächste Call wartet automatisch.
@@ -8906,7 +8946,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '3.6'
+                        bridgeVersion = '3.7'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -8960,7 +9000,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '3.6'
+                        serverVersion = '3.7'
                         docsVersion = [string]$Shared.DocsVersion
                     }
                 }
@@ -9125,7 +9165,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             if ($path -eq '/api/status') {
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '3.6'
+                    bridgeVersion = '3.7'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -9267,6 +9307,27 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                     'play_start','play_stop','play_pause','play_resume','send_input','gui_click','gui_set_text','move_character',
                     'teleport_character','respawn_character','undo','redo','clear_output','fill_region','probe_world','start_job',
                     'cancel_job','clear_lua_state','set_camera')
+                $persistentEditTools = @('set_property','set_properties','bulk_set_properties','set_attribute','create_instance','bulk_create',
+                    'clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','set_script_source','patch_script',
+                    'insert_script','bulk_insert_scripts','run_lua','batch','parallel','union','subtract','negate','intersect','separate',
+                    'insert_asset','apply_asset','group_instances','ungroup','add_tag','remove_tag','place_on','align','stack','grid_arrange',
+                    'distribute','snap_to_ground','look_at','rotate_around','move_relative','resize_part','fit_between','point_at','fill_region')
+                if ($sessionEntry -and $sessionEntry.state -and [bool]$sessionEntry.state.running -and [bool]$sessionEntry.state.userPlaytestActive -and $persistentEditTools -contains $tool) {
+                    $blocked = @{
+                        ok = $false
+                        code = 'USER_PLAYTEST_ACTIVE'
+                        severity = 'critical'
+                        assistantAction = 'STOP_CURRENT_RESPONSE'
+                        error = "IMPORTANT: Roblox Studio is currently in $([string]$sessionEntry.state.mode) mode. The requested edit '$tool' was NOT sent to Studio."
+                        why = 'The user is playing/testing the game. Editing now would interrupt them and persistent changes would be discarded when the test ends.'
+                        requiredResponse = 'Stop your current response now. Tell the user you can see that Roblox Studio is in a playtest and politely ask them to leave/stop the playtest. Wait until they confirm Edit mode before continuing. Do not call play_stop for them.'
+                        suggestedUserMessage = 'Ich sehe, dass du Roblox Studio gerade im Playtest benutzt. Bitte beende den Playtest, damit ich sicher weiterarbeiten kann.'
+                    }
+                    $blocked._bridge = (New-Envelope $sessionId)
+                    Send-Json $context 200 $blocked
+                    continue
+                }
+
                 if ($accessMode -eq 'readonly' -and $writeTools -contains $tool) {
                     Send-Json $context 200 @{
                         ok = $false
@@ -9771,8 +9832,8 @@ function Set-Dot {
 $script:ColorGreen  = '#22C55E'
 $script:ColorAmber  = '#F5A524'
 $script:ColorRed    = '#F2565B'
-$script:ColorBlue   = '#2F7DFF'
-$script:ColorGray   = '#5A6E90'
+$script:ColorBlue   = '#FF4FA3'
+$script:ColorGray   = '#746A70'
 
 
 # ----------------------------------------------------------------------------
@@ -9791,38 +9852,38 @@ $xaml = @'
         WindowStartupLocation="CenterScreen"
         FontFamily="Segoe UI">
     <Window.Resources>
-        <SolidColorBrush x:Key="TextMain" Color="#E6F0FF"/>
-        <SolidColorBrush x:Key="TextSoft" Color="#C3D5F0"/>
-        <SolidColorBrush x:Key="TextMuted" Color="#8FA6CA"/>
-        <SolidColorBrush x:Key="TextFaint" Color="#6F87AE"/>
-        <SolidColorBrush x:Key="Line" Color="#1B3259"/>
+        <SolidColorBrush x:Key="TextMain" Color="#F7F1F5"/>
+        <SolidColorBrush x:Key="TextSoft" Color="#D8CDD4"/>
+        <SolidColorBrush x:Key="TextMuted" Color="#A99DA5"/>
+        <SolidColorBrush x:Key="TextFaint" Color="#80767D"/>
+        <SolidColorBrush x:Key="Line" Color="#443740"/>
 
         <LinearGradientBrush x:Key="AppBg" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#0D1B31" Offset="0"/>
-            <GradientStop Color="#070D19" Offset="1"/>
+            <GradientStop Color="#171417" Offset="0"/>
+            <GradientStop Color="#0D0B0D" Offset="1"/>
         </LinearGradientBrush>
         <LinearGradientBrush x:Key="TitleBg" StartPoint="0,0" EndPoint="1,0">
-            <GradientStop Color="#0D1C38" Offset="0"/>
-            <GradientStop Color="#081124" Offset="1"/>
+            <GradientStop Color="#21191F" Offset="0"/>
+            <GradientStop Color="#120F12" Offset="1"/>
         </LinearGradientBrush>
         <LinearGradientBrush x:Key="LogoBrush" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#3B86FF" Offset="0"/>
-            <GradientStop Color="#8A5CFF" Offset="1"/>
+            <GradientStop Color="#FF4FA3" Offset="0"/>
+            <GradientStop Color="#C42D79" Offset="1"/>
         </LinearGradientBrush>
         <LinearGradientBrush x:Key="SweepBrush" StartPoint="0,0" EndPoint="1,0">
             <GradientStop Color="#00000000" Offset="0"/>
-            <GradientStop Color="#4DA3FF" Offset="0.5"/>
+            <GradientStop Color="#FF70B5" Offset="0.5"/>
             <GradientStop Color="#00000000" Offset="1"/>
         </LinearGradientBrush>
         <LinearGradientBrush x:Key="BtnBg" StartPoint="0,0" EndPoint="0,1">
-            <GradientStop Color="#24539F" Offset="0"/>
-            <GradientStop Color="#183C79" Offset="1"/>
+            <GradientStop Color="#B82970" Offset="0"/>
+            <GradientStop Color="#7D1D4D" Offset="1"/>
         </LinearGradientBrush>
 
         <Style TargetType="Button">
-            <Setter Property="Foreground" Value="#EAF2FF"/>
+            <Setter Property="Foreground" Value="#FFF7FB"/>
             <Setter Property="Background" Value="{StaticResource BtnBg}"/>
-            <Setter Property="BorderBrush" Value="#2F7DFF"/>
+            <Setter Property="BorderBrush" Value="#FF4FA3"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="14,9"/>
             <Setter Property="FontSize" Value="12.5"/>
@@ -9839,11 +9900,11 @@ $xaml = @'
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#2A66C6"/>
-                                <Setter TargetName="bd" Property="BorderBrush" Value="#7DB3FF"/>
+                                <Setter TargetName="bd" Property="Background" Value="#D93E88"/>
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#FF9DCC"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#132F68"/>
+                                <Setter TargetName="bd" Property="Background" Value="#741A47"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="bd" Property="Opacity" Value="0.45"/>
@@ -9855,9 +9916,9 @@ $xaml = @'
         </Style>
 
         <Style x:Key="TitleButtonStyle" TargetType="Button">
-            <Setter Property="Foreground" Value="#A9C0E4"/>
-            <Setter Property="Background" Value="#0F1D38"/>
-            <Setter Property="BorderBrush" Value="#1E3A68"/>
+            <Setter Property="Foreground" Value="#C8BBC3"/>
+            <Setter Property="Background" Value="#292329"/>
+            <Setter Property="BorderBrush" Value="#4C3A45"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="0"/>
             <Setter Property="Cursor" Value="Hand"/>
@@ -9872,12 +9933,12 @@ $xaml = @'
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#1A3160"/>
-                                <Setter TargetName="bd" Property="BorderBrush" Value="#3E7AE0"/>
+                                <Setter TargetName="bd" Property="Background" Value="#3A2C35"/>
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#DA4B91"/>
                                 <Setter Property="Foreground" Value="#FFFFFF"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#0E2348"/>
+                                <Setter TargetName="bd" Property="Background" Value="#241B21"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -9917,21 +9978,21 @@ $xaml = @'
         </Style>
 
         <Style x:Key="StatCardStyle" TargetType="Border">
-            <Setter Property="Background" Value="#0E1B33"/>
-            <Setter Property="BorderBrush" Value="#1B3259"/>
+            <Setter Property="Background" Value="#211C20"/>
+            <Setter Property="BorderBrush" Value="#443740"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="CornerRadius" Value="11"/>
             <Setter Property="Padding" Value="15,13"/>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#132A4E"/>
-                    <Setter Property="BorderBrush" Value="#2A4B8D"/>
+                    <Setter Property="Background" Value="#30262C"/>
+                    <Setter Property="BorderBrush" Value="#6B485B"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
 
         <Style TargetType="CheckBox">
-            <Setter Property="Foreground" Value="#E6F0FF"/>
+            <Setter Property="Foreground" Value="#F7F1F5"/>
             <Setter Property="FontSize" Value="13"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
@@ -9943,7 +10004,7 @@ $xaml = @'
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <Border x:Name="box" Width="20" Height="20" CornerRadius="6"
-                                    Background="#0C1A33" BorderBrush="#2A4B8D" BorderThickness="1">
+                                    Background="#181417" BorderBrush="#6B485B" BorderThickness="1">
                                 <Path x:Name="tick"
                                       Data="M 4,10.4 L 8,14.4 L 16,5.2"
                                       Stroke="#FFFFFF" StrokeThickness="2.2"
@@ -9955,8 +10016,8 @@ $xaml = @'
                         </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="box" Property="Background" Value="#2F7DFF"/>
-                                <Setter TargetName="box" Property="BorderBrush" Value="#63A4FF"/>
+                                <Setter TargetName="box" Property="Background" Value="#FF4FA3"/>
+                                <Setter TargetName="box" Property="BorderBrush" Value="#FF70B5"/>
                                 <Setter TargetName="tick" Property="Visibility" Value="Visible"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -9990,7 +10051,7 @@ $xaml = @'
                                     <Thumb Focusable="False" IsTabStop="False">
                                         <Thumb.Template>
                                             <ControlTemplate TargetType="Thumb">
-                                                <Border CornerRadius="4" Background="#2A4B8D" Margin="1,0,1,0"/>
+                                                <Border CornerRadius="4" Background="#6B485B" Margin="1,0,1,0"/>
                                             </ControlTemplate>
                                         </Thumb.Template>
                                     </Thumb>
@@ -10012,14 +10073,14 @@ $xaml = @'
         </Style>
     </Window.Resources>
 
-    <Border CornerRadius="22" Background="{StaticResource AppBg}" BorderBrush="#22406F" BorderThickness="1" ClipToBounds="True">
+    <Border CornerRadius="22" Background="{StaticResource AppBg}" BorderBrush="#684154" BorderThickness="1" ClipToBounds="True">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="72"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <Border x:Name="TitleBar" Grid.Row="0" Background="{StaticResource TitleBg}" BorderBrush="#16294A" BorderThickness="0,0,0,1" CornerRadius="21,21,0,0" ClipToBounds="True">
+            <Border x:Name="TitleBar" Grid.Row="0" Background="{StaticResource TitleBg}" BorderBrush="#3B3036" BorderThickness="0,0,0,1" CornerRadius="21,21,0,0" ClipToBounds="True">
                 <Grid Margin="24,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
@@ -10029,13 +10090,13 @@ $xaml = @'
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <Grid Width="38" Height="38" Margin="0,0,13,0">
                             <Border Width="38" Height="38" CornerRadius="12" Background="{StaticResource LogoBrush}"/>
-                            <Ellipse Width="7" Height="7" Fill="#EAF2FF" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="6,0,0,0"/>
-                            <Ellipse Width="7" Height="7" Fill="#EAF2FF" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <Rectangle Height="2.6" Fill="#C7DBFF" Margin="13,0,13,0" RadiusX="1.3" RadiusY="1.3"/>
-                            <Ellipse x:Name="PulseDot" Width="9" Height="9" Fill="#6FC0FF"
+                            <Ellipse Width="7" Height="7" Fill="#FFF7FB" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                            <Ellipse Width="7" Height="7" Fill="#FFF7FB" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <Rectangle Height="2.6" Fill="#F5D9E8" Margin="13,0,13,0" RadiusX="1.3" RadiusY="1.3"/>
+                            <Ellipse x:Name="PulseDot" Width="9" Height="9" Fill="#FF85BE"
                                      HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-1,-1">
                                 <Ellipse.Effect>
-                                    <DropShadowEffect Color="#4DA3FF" BlurRadius="10" ShadowDepth="0" Opacity="0.9"/>
+                                    <DropShadowEffect Color="#FF70B5" BlurRadius="10" ShadowDepth="0" Opacity="0.9"/>
                                 </Ellipse.Effect>
                             </Ellipse>
                         </Grid>
@@ -10046,7 +10107,7 @@ $xaml = @'
                     </StackPanel>
 
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Border x:Name="LiveBadge" CornerRadius="11" Background="#12233F" BorderBrush="#2A4B8D" BorderThickness="1" Padding="12,6" Margin="0,0,12,0" VerticalAlignment="Center">
+                        <Border x:Name="LiveBadge" CornerRadius="11" Background="#12233F" BorderBrush="#6B485B" BorderThickness="1" Padding="12,6" Margin="0,0,12,0" VerticalAlignment="Center">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <Ellipse x:Name="LiveDot" Width="8" Height="8" Fill="#F5A524" Margin="0,0,8,0" VerticalAlignment="Center"/>
                                 <TextBlock x:Name="LiveText" Text="Startet" Foreground="{StaticResource TextSoft}" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
@@ -10054,9 +10115,9 @@ $xaml = @'
                         </Border>
                         <Grid Width="40" Height="36" Margin="0,0,8,0">
                             <Button x:Name="SettingsButton" Style="{StaticResource TitleButtonStyle}" Width="40" Height="36" FontFamily="Segoe MDL2 Assets" FontSize="15" Content="&#xE713;"/>
-                            <!-- Rote "1" fuer Update-Fehler (Version 3.6) -->
+                            <!-- Rote "1" fuer Update-Fehler (Version 3.7) -->
                             <Border x:Name="UpdateBadge" Width="16" Height="16" CornerRadius="8"
-                                    Background="#F2565B" BorderBrush="#0D1B31" BorderThickness="2"
+                                    Background="#F2565B" BorderBrush="#171417" BorderThickness="2"
                                     HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-4,-4,0"
                                     Visibility="Collapsed" Panel.ZIndex="90" IsHitTestVisible="False"
                                     ToolTip="Update-Problem - klicke auf die Einstellungen für Details">
@@ -10098,12 +10159,12 @@ $xaml = @'
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
 
-                        <Border Grid.Row="0" Background="#0D1A2E" BorderBrush="#16294A" BorderThickness="0,0,0,1" Padding="18,12">
+                        <Border Grid.Row="0" Background="#0D1A2E" BorderBrush="#3B3036" BorderThickness="0,0,0,1" Padding="18,12">
                             <Grid>
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                     <TextBlock Text="Verbundene Places" Foreground="{StaticResource TextMain}" FontSize="13.5" FontWeight="SemiBold"/>
                                     <Border x:Name="PlacesCountBadge" CornerRadius="8" Background="#12305C" Padding="9,3" Margin="10,0,0,0" VerticalAlignment="Center">
-                                        <TextBlock x:Name="PlacesCountText" Text="0" Foreground="#8FC2FF" FontSize="11" FontWeight="Bold"/>
+                                        <TextBlock x:Name="PlacesCountText" Text="0" Foreground="#FF9DCC" FontSize="11" FontWeight="Bold"/>
                                     </Border>
                                 </StackPanel>
                                 <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center" Text="Automatisch verbunden" Foreground="{StaticResource TextFaint}" FontSize="11"/>
@@ -10112,11 +10173,11 @@ $xaml = @'
 
                         <Grid Grid.Row="1">
                             <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Width="430">
-                                <Border Width="76" Height="76" CornerRadius="22" Background="#0E1E3A" BorderBrush="#1E3A68" BorderThickness="1" HorizontalAlignment="Center">
+                                <Border Width="76" Height="76" CornerRadius="22" Background="#211A1E" BorderBrush="#4C3A45" BorderThickness="1" HorizontalAlignment="Center">
                                     <Grid>
-                                        <Ellipse Width="10" Height="10" Fill="#3B86FF" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="15,0,0,0"/>
-                                        <Ellipse Width="10" Height="10" Fill="#8A5CFF" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,15,0"/>
-                                        <Rectangle Height="3" Fill="#5C7BFF" Margin="30,0,30,0" RadiusX="1.5" RadiusY="1.5"/>
+                                        <Ellipse Width="10" Height="10" Fill="#FF4FA3" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="15,0,0,0"/>
+                                        <Ellipse Width="10" Height="10" Fill="#C42D79" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,15,0"/>
+                                        <Rectangle Height="3" Fill="#D94B8E" Margin="30,0,30,0" RadiusX="1.5" RadiusY="1.5"/>
                                     </Grid>
                                 </Border>
                                 <TextBlock x:Name="EmptyTitle" Text="Öffne ein Place in Roblox Studio" Foreground="{StaticResource TextMain}" FontSize="21" FontWeight="Bold" TextAlignment="Center" Margin="0,22,0,0"/>
@@ -10134,12 +10195,12 @@ $xaml = @'
                 <!-- Ersetzt die drei frueheren Status-Kaerten. Die Spieleliste  -->
                 <!-- dahinter erscheint erst, wenn alles bereit ist.             -->
                 <!-- ============================================================ -->
-                <Border x:Name="SplashScreen" Panel.ZIndex="70" Background="#0A1424" CornerRadius="14" ClipToBounds="True">
+                <Border x:Name="SplashScreen" Panel.ZIndex="70" Background="#141114" CornerRadius="14" ClipToBounds="True">
                     <Grid>
                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="400" Margin="0,-10,0,0">
                             <Grid Width="86" Height="86" Margin="0,0,0,24" HorizontalAlignment="Center">
-                                <Ellipse Stroke="#152A4E" StrokeThickness="6"/>
-                                <Ellipse x:Name="SplashSpinnerArc" Stroke="#3B86FF" StrokeThickness="6" StrokeDashArray="44 158" StrokeDashCap="Round" RenderTransformOrigin="0.5,0.5">
+                                <Ellipse Stroke="#4A3541" StrokeThickness="6"/>
+                                <Ellipse x:Name="SplashSpinnerArc" Stroke="#FF4FA3" StrokeThickness="6" StrokeDashArray="44 158" StrokeDashCap="Round" RenderTransformOrigin="0.5,0.5">
                                     <Ellipse.RenderTransform>
                                         <RotateTransform Angle="0"/>
                                     </Ellipse.RenderTransform>
@@ -10156,14 +10217,14 @@ $xaml = @'
                                     </Ellipse.Triggers>
                                 </Ellipse>
                                 <Grid Width="32" Height="30" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                    <Ellipse Width="7" Height="7" Fill="#4DA3FF" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="1,0,0,0"/>
-                                    <Ellipse Width="7" Height="7" Fill="#B08AFF" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,1,0"/>
-                                    <Rectangle Height="2.6" Fill="#7FA8FF" Margin="11,0,11,0" RadiusX="1.3" RadiusY="1.3"/>
+                                    <Ellipse Width="7" Height="7" Fill="#FF70B5" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="1,0,0,0"/>
+                                    <Ellipse Width="7" Height="7" Fill="#FF91C7" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,1,0"/>
+                                    <Rectangle Height="2.6" Fill="#E65A9C" Margin="11,0,11,0" RadiusX="1.3" RadiusY="1.3"/>
                                 </Grid>
                             </Grid>
                             <TextBlock x:Name="SplashHeadline" Text="Arena Roblox Bridge startet …" Foreground="{StaticResource TextMain}" FontSize="19" FontWeight="Bold" TextAlignment="Center"/>
                             <TextBlock x:Name="SplashSub" Text="Alles wird automatisch vorbereitet - du musst nichts tun." Foreground="{StaticResource TextMuted}" FontSize="12.5" TextAlignment="Center" TextWrapping="Wrap" Margin="0,9,0,24"/>
-                            <Border CornerRadius="13" Background="#0E1B33" BorderBrush="#1B3259" BorderThickness="1" Padding="18,14">
+                            <Border CornerRadius="13" Background="#211C20" BorderBrush="#443740" BorderThickness="1" Padding="18,14">
                                 <StackPanel>
                                     <Grid>
                                         <Grid.ColumnDefinitions>
@@ -10171,31 +10232,31 @@ $xaml = @'
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <Ellipse x:Name="SplashStudioDot" Grid.Column="0" Width="9" Height="9" Fill="#5A6E90" Margin="0,0,12,0" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="1" Text="Roblox Studio" Foreground="#C3D5F0" FontSize="13.5" VerticalAlignment="Center"/>
-                                        <TextBlock x:Name="SplashStudioState" Grid.Column="2" Text="Wird geprüft …" Foreground="#8FA6CA" FontSize="12" VerticalAlignment="Center"/>
+                                        <Ellipse x:Name="SplashStudioDot" Grid.Column="0" Width="9" Height="9" Fill="#746A70" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="Roblox Studio" Foreground="#D8CDD4" FontSize="13.5" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="SplashStudioState" Grid.Column="2" Text="Wird geprüft …" Foreground="#A99DA5" FontSize="12" VerticalAlignment="Center"/>
                                     </Grid>
-                                    <Border Height="1" Background="#16294A" Margin="0,11,0,11"/>
+                                    <Border Height="1" Background="#3B3036" Margin="0,11,0,11"/>
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <Ellipse x:Name="SplashPluginDot" Grid.Column="0" Width="9" Height="9" Fill="#5A6E90" Margin="0,0,12,0" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="1" Text="Studio-Plugin" Foreground="#C3D5F0" FontSize="13.5" VerticalAlignment="Center"/>
-                                        <TextBlock x:Name="SplashPluginState" Grid.Column="2" Text="Wartet …" Foreground="#8FA6CA" FontSize="12" VerticalAlignment="Center"/>
+                                        <Ellipse x:Name="SplashPluginDot" Grid.Column="0" Width="9" Height="9" Fill="#746A70" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="Studio-Plugin" Foreground="#D8CDD4" FontSize="13.5" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="SplashPluginState" Grid.Column="2" Text="Wartet …" Foreground="#A99DA5" FontSize="12" VerticalAlignment="Center"/>
                                     </Grid>
-                                    <Border Height="1" Background="#16294A" Margin="0,11,0,11"/>
+                                    <Border Height="1" Background="#3B3036" Margin="0,11,0,11"/>
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <Ellipse x:Name="SplashTunnelDot" Grid.Column="0" Width="9" Height="9" Fill="#5A6E90" Margin="0,0,12,0" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="1" Text="Cloudflare-Tunnel" Foreground="#C3D5F0" FontSize="13.5" VerticalAlignment="Center"/>
-                                        <TextBlock x:Name="SplashTunnelState" Grid.Column="2" Text="Wartet …" Foreground="#8FA6CA" FontSize="12" VerticalAlignment="Center"/>
+                                        <Ellipse x:Name="SplashTunnelDot" Grid.Column="0" Width="9" Height="9" Fill="#746A70" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="Cloudflare-Tunnel" Foreground="#D8CDD4" FontSize="13.5" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="SplashTunnelState" Grid.Column="2" Text="Wartet …" Foreground="#A99DA5" FontSize="12" VerticalAlignment="Center"/>
                                     </Grid>
                                 </StackPanel>
                             </Border>
@@ -10207,7 +10268,7 @@ $xaml = @'
 
             <Border x:Name="SettingsPanel" Grid.Row="1" Visibility="Collapsed" Panel.ZIndex="60"
                     HorizontalAlignment="Right" VerticalAlignment="Top" Width="300"
-                    CornerRadius="14" Background="#101C33" BorderBrush="#2F7DFF" BorderThickness="1"
+                    CornerRadius="14" Background="#211A1F" BorderBrush="#FF4FA3" BorderThickness="1"
                     Padding="18" Margin="0,6,54,0">
                 <Border.Effect>
                     <DropShadowEffect Color="#000000" Opacity="0.55" BlurRadius="22" ShadowDepth="0"/>
@@ -10220,9 +10281,9 @@ $xaml = @'
                     <TextBlock Text="Startet Arena Roblox Bridge automatisch mit Windows und verbindet Places im Hintergrund." Foreground="{StaticResource TextFaint}" FontSize="11" TextWrapping="Wrap" Margin="31,7,0,0"/>
                     <Border Height="1" Background="{StaticResource Line}" Margin="0,16,0,13"/>
                     <TextBlock x:Name="UpdateInfoTitle" Text="UPDATES" Foreground="{StaticResource TextMuted}" FontSize="10.5" FontWeight="Bold"/>
-                    <TextBlock x:Name="UpdateInfoText" Text="Version 3.6" Foreground="{StaticResource TextFaint}" FontSize="11" TextWrapping="Wrap" Margin="0,7,0,0"/>
+                    <TextBlock x:Name="UpdateInfoText" Text="Version 3.7" Foreground="{StaticResource TextFaint}" FontSize="11" TextWrapping="Wrap" Margin="0,7,0,0"/>
                     <Border Height="1" Background="{StaticResource Line}" Margin="0,14,0,13"/>
-                    <TextBlock Text="Arena Roblox Bridge - Version 3.6" Foreground="{StaticResource TextFaint}" FontSize="11"/>
+                    <TextBlock Text="Arena Roblox Bridge - Version 3.7" Foreground="{StaticResource TextFaint}" FontSize="11"/>
                 </StackPanel>
             </Border>
         </Grid>
@@ -10304,7 +10365,7 @@ function Remove-Toast {
 }
 
 function Show-Toast {
-    # Version 3.6: Popup-Nachrichten unten rechts sind ENTFERNT.
+    # Version 3.7: Popup-Nachrichten unten rechts sind ENTFERNT.
     # Die Funktion bleibt als leerer Stummel erhalten, damit alle alten
     # Aufrufstellen weiterlaufen, ohne etwas anzuzeigen.
     param(
@@ -10320,7 +10381,7 @@ function Show-Toast {
             'Success' { $accent = '#22C55E'; $edge = '#1F6B45' }
             'Warn'    { $accent = '#F5A524'; $edge = '#7A5A16' }
             'Error'   { $accent = '#F2565B'; $edge = '#7F244D' }
-            default   { $accent = '#2F7DFF'; $edge = '#2A4B8D' }
+            default   { $accent = '#FF4FA3'; $edge = '#6B485B' }
         }
 
         while ($script:ToastHost.Children.Count -ge $script:ToastMax) {
@@ -10364,7 +10425,7 @@ function Show-Toast {
 
         $text = [System.Windows.Controls.TextBlock]::new()
         $text.Text = $Message
-        $text.Foreground = Get-Brush '#DCE7FA'
+        $text.Foreground = Get-Brush '#EEE5EA'
         $text.FontSize = 12.5
         $text.TextWrapping = 'Wrap'
         $text.Width = 286
@@ -10379,7 +10440,7 @@ function Show-Toast {
         $track.Height = 3
         $track.Width = 296
         $track.CornerRadius = [System.Windows.CornerRadius]::new(1.5)
-        $track.Background = Get-Brush '#16294A'
+        $track.Background = Get-Brush '#3B3036'
         $track.HorizontalAlignment = 'Left'
         $track.Margin = [System.Windows.Thickness]::new(0, 11, 0, 0)
         [System.Windows.Controls.Grid]::SetRow($track, 1)
@@ -10428,7 +10489,7 @@ function Show-Toast {
 $script:PendingToasts = New-Object System.Collections.Generic.List[object]
 
 function Add-PendingToast {
-    # Version 3.6: Popup-Nachrichten sind entfernt - Stummel ohne Funktion.
+    # Version 3.7: Popup-Nachrichten sind entfernt - Stummel ohne Funktion.
     param([string]$Message, [string]$Kind = 'Info', [double]$Seconds = 5)
     # (bewusst leer)
 }
@@ -10440,12 +10501,12 @@ function Set-MenuChecked {
     param($Item, [bool]$Checked)
     if (-not $Item.Checkable) { return }
     if ($Checked) {
-        $Item.Box.Background = Get-Brush '#2F7DFF'
-        $Item.Box.BorderBrush = Get-Brush '#7DB3FF'
+        $Item.Box.Background = Get-Brush '#FF4FA3'
+        $Item.Box.BorderBrush = Get-Brush '#FF9DCC'
         $Item.Tick.Visibility = 'Visible'
     } else {
-        $Item.Box.Background = Get-Brush '#0C1A33'
-        $Item.Box.BorderBrush = Get-Brush '#2A4B8D'
+        $Item.Box.Background = Get-Brush '#181417'
+        $Item.Box.BorderBrush = Get-Brush '#6B485B'
         $Item.Tick.Visibility = 'Collapsed'
     }
 }
@@ -10455,7 +10516,7 @@ function New-MenuRow {
         [string]$Glyph,
         [string]$Title,
         [string]$Subtitle,
-        [string]$Accent = '#7FB3FF',
+        [string]$Accent = '#FF8EC4',
         [bool]$Checkable = $false,
         [bool]$Checked = $false
     )
@@ -10486,8 +10547,8 @@ function New-MenuRow {
     $iconBox.Width = 32
     $iconBox.Height = 32
     $iconBox.CornerRadius = [System.Windows.CornerRadius]::new(9)
-    $iconBox.Background = Get-Brush '#12294C'
-    $iconBox.BorderBrush = Get-Brush '#1E3A68'
+    $iconBox.Background = Get-Brush '#2B2026'
+    $iconBox.BorderBrush = Get-Brush '#4C3A45'
     $iconBox.BorderThickness = [System.Windows.Thickness]::new(1)
     $iconText = [System.Windows.Controls.TextBlock]::new()
     $iconText.Text = $Glyph
@@ -10503,12 +10564,12 @@ function New-MenuRow {
     $texts.Margin = [System.Windows.Thickness]::new(11, 0, 8, 0)
     $titleBlock = [System.Windows.Controls.TextBlock]::new()
     $titleBlock.Text = $Title
-    $titleBlock.Foreground = Get-Brush '#E6F0FF'
+    $titleBlock.Foreground = Get-Brush '#F7F1F5'
     $titleBlock.FontSize = 13
     $titleBlock.FontWeight = 'SemiBold'
     $subBlock = [System.Windows.Controls.TextBlock]::new()
     $subBlock.Text = $Subtitle
-    $subBlock.Foreground = Get-Brush '#8FA6CA'
+    $subBlock.Foreground = Get-Brush '#A99DA5'
     $subBlock.FontSize = 11
     $subBlock.Margin = [System.Windows.Thickness]::new(0, 3, 0, 0)
     $texts.Children.Add($titleBlock) | Out-Null
@@ -10537,7 +10598,7 @@ function New-MenuRow {
     }
 
     $root.Child = $grid
-    $root.Add_MouseEnter({ param($s, $e) $s.Background = Get-Brush '#17315C' })
+    $root.Add_MouseEnter({ param($s, $e) $s.Background = Get-Brush '#38262F' })
     $root.Add_MouseLeave({ param($s, $e) $s.Background = [System.Windows.Media.Brushes]::Transparent })
 
     $item | Add-Member -MemberType NoteProperty -Name 'Root' -Value $root -Force
@@ -10547,7 +10608,7 @@ function New-MenuRow {
 function New-Separator {
     $sep = [System.Windows.Controls.Border]::new()
     $sep.Height = 1
-    $sep.Background = Get-Brush '#1B3259'
+    $sep.Background = Get-Brush '#443740'
     $sep.Margin = [System.Windows.Thickness]::new(9, 5, 9, 5)
     return $sep
 }
@@ -10688,8 +10749,8 @@ function New-Row {
 
     $border = [System.Windows.Controls.Border]::new()
     $border.CornerRadius = [System.Windows.CornerRadius]::new(12)
-    $border.Background = Get-Brush '#0E1E3A'
-    $border.BorderBrush = Get-Brush '#1E3A68'
+    $border.Background = Get-Brush '#211A1E'
+    $border.BorderBrush = Get-Brush '#4C3A45'
     $border.BorderThickness = [System.Windows.Thickness]::new(1)
     $border.Padding = [System.Windows.Thickness]::new(15, 0, 15, 0)
     $border.Margin = [System.Windows.Thickness]::new(0, 0, 0, 10)
@@ -10697,13 +10758,13 @@ function New-Row {
     $border.Tag = $sessionId
     $border.Add_MouseEnter({
         param($s, $e)
-        $s.Background = Get-Brush '#13294C'
-        $s.BorderBrush = Get-Brush '#2F7DFF'
+        $s.Background = Get-Brush '#2E2228'
+        $s.BorderBrush = Get-Brush '#FF4FA3'
     })
     $border.Add_MouseLeave({
         param($s, $e)
-        $s.Background = Get-Brush '#0E1E3A'
-        $s.BorderBrush = Get-Brush '#1E3A68'
+        $s.Background = Get-Brush '#211A1E'
+        $s.BorderBrush = Get-Brush '#4C3A45'
     })
 
     $grid = [System.Windows.Controls.Grid]::new()
@@ -10729,7 +10790,7 @@ function New-Row {
     [System.Windows.Controls.Grid]::SetColumn($dot, 0)
     $title = [System.Windows.Controls.TextBlock]::new()
     $title.Text = Get-PlaceName $Studio $WindowNames
-    $title.Foreground = Get-Brush '#E6F0FF'
+    $title.Foreground = Get-Brush '#F7F1F5'
     $title.FontSize = 16
     $title.FontWeight = 'SemiBold'
     $title.VerticalAlignment = 'Center'
@@ -10748,7 +10809,7 @@ function New-Row {
     $copyGlyph.Text = [char]0xE8C8
     $copyGlyph.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe MDL2 Assets')
     $copyGlyph.FontSize = 13
-    $copyGlyph.Foreground = Get-Brush '#D7E6FF'
+    $copyGlyph.Foreground = Get-Brush '#F1DFE8'
     $copyGlyph.VerticalAlignment = 'Center'
     $copyGlyph.Margin = [System.Windows.Thickness]::new(0, 0, 8, 0)
     $copyLabel = [System.Windows.Controls.TextBlock]::new()
@@ -10794,7 +10855,7 @@ function New-Row {
     $popup.Placement = [System.Windows.Controls.Primitives.PlacementMode]::Bottom
     $popup.AllowsTransparency = $true
     $popup.PopupAnimation = [System.Windows.Controls.Primitives.PopupAnimation]::Fade
-    # Version 3.6: StaysOpen=$true - das Menue schliesst nur noch gezielt:
+    # Version 3.7: StaysOpen=$true - das Menue schliesst nur noch gezielt:
     # Klick auf "..." schaltet es um, Klick ausserhalb schliesst es (siehe
     # PreviewMouseDown des Fensters). So ist ein echtes Umschalten moeglich.
     $popup.StaysOpen = $true
@@ -10804,8 +10865,8 @@ function New-Row {
     $menuShell = [System.Windows.Controls.Border]::new()
     $menuShell.Width = 272
     $menuShell.CornerRadius = [System.Windows.CornerRadius]::new(15)
-    $menuShell.Background = Get-Brush '#101C33'
-    $menuShell.BorderBrush = Get-Brush '#2A4B8D'
+    $menuShell.Background = Get-Brush '#211A1F'
+    $menuShell.BorderBrush = Get-Brush '#6B485B'
     $menuShell.BorderThickness = [System.Windows.Thickness]::new(1)
     $menuShell.Padding = [System.Windows.Thickness]::new(7)
     $menuShell.Margin = [System.Windows.Thickness]::new(0, 0, 14, 14)
@@ -10814,16 +10875,16 @@ function New-Row {
     $menuStack = [System.Windows.Controls.StackPanel]::new()
     $menuHeader = [System.Windows.Controls.TextBlock]::new()
     $menuHeader.Text = 'OPTIONEN'
-    $menuHeader.Foreground = Get-Brush '#6F87AE'
+    $menuHeader.Foreground = Get-Brush '#80767D'
     $menuHeader.FontSize = 10.5
     $menuHeader.FontWeight = 'Bold'
     $menuHeader.Margin = [System.Windows.Thickness]::new(9, 7, 9, 5)
     $menuStack.Children.Add($menuHeader) | Out-Null
     $menuStack.Children.Add((New-Separator)) | Out-Null
 
-    $copyItem = New-MenuRow -Glyph ([char]0xE8C8) -Title 'Prompt kopieren' -Subtitle 'URL und Token für Arena' -Accent '#7FB3FF'
-    $resetItem = New-MenuRow -Glyph ([char]0xE72C) -Title 'Token zurücksetzen' -Subtitle 'Neuen Zugang für dieses Place' -Accent '#8FFFC7'
-    $toggleItem = New-MenuRow -Glyph ([char]0xE72E) -Title 'Nur Lesezugriff' -Subtitle 'Inaktiv - Änderungen sind erlaubt' -Accent '#FFD48A' -Checkable $true -Checked $false
+    $copyItem = New-MenuRow -Glyph ([char]0xE8C8) -Title 'Prompt kopieren' -Subtitle 'URL und Token für Arena' -Accent '#FF8EC4'
+    $resetItem = New-MenuRow -Glyph ([char]0xE72C) -Title 'Token zurücksetzen' -Subtitle 'Neuen Zugang für dieses Place' -Accent '#F0A3CA'
+    $toggleItem = New-MenuRow -Glyph ([char]0xE72E) -Title 'Nur Lesezugriff' -Subtitle 'Inaktiv - Änderungen sind erlaubt' -Accent '#FFB4D5' -Checkable $true -Checked $false
 
     # Alle Daten haengen am Element selbst (Tag). Lokale Variablen einer
     # Funktion sind in Event-Handlern nicht verfuegbar.
@@ -10852,7 +10913,7 @@ function New-Row {
     $toggleItem.Root.Add_MouseLeftButtonUp({
         param($s, $e)
         $info = $s.Tag
-        # Version 3.6: Das Menue bleibt bei "Nur Lesezugriff" OFFEN, damit
+        # Version 3.7: Das Menue bleibt bei "Nur Lesezugriff" OFFEN, damit
         # weitere Optionen direkt danach eingestellt werden koennen.
         $targetRow = $info.Row
         $newMode = if ($targetRow.Mode -eq 'readonly') { 'readwrite' } else { 'readonly' }
@@ -10870,7 +10931,7 @@ function New-Row {
     $popup.Child = $menuShell
     $grid.Children.Add($popup) | Out-Null
 
-    # Version 3.6: Klick auf "..." schaltet das Menue um (offen -> zu, zu -> offen).
+    # Version 3.7: Klick auf "..." schaltet das Menue um (offen -> zu, zu -> offen).
     $menuButton.Tag = [pscustomobject]@{ Popup = $popup }
     $menuButton.Add_Click({
         param($s, $e)
@@ -11280,7 +11341,7 @@ $SettingsButton.Add_Click({
 $window.Add_PreviewMouseDown({
     param($s, $e)
     try {
-        # Version 3.6: Klick ausserhalb schliesst offene Auswahlmenues der
+        # Version 3.7: Klick ausserhalb schliesst offene Auswahlmenues der
         # Places. Klicks INS Menue oder auf den "..."-Button zaehlen nicht
         # als "ausserhalb" (das Umschalten uebernimmt der Klick-Handler).
         $insideMenu = $false
@@ -11347,14 +11408,14 @@ $window.Add_Loaded({
 })
 
 # ----------------------------------------------------------------------------
-# UPDATE-HINWEIS (Version 3.6)
+# UPDATE-HINWEIS (Version 3.7)
 # Bei 'update-erfolgreich' und 'erster-start' zeigt das Programm ZUERST
 # dieses Fenster (was ist neu + OK-Button). Erst danach erscheinen das
 # Hauptfenster und der Startbildschirm.
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '3.6'
+    $versionText = '3.7'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -11378,7 +11439,7 @@ function Show-UpdateNotice {
         Width="520" Height="440" MinWidth="520" MinHeight="440" MaxWidth="520" MaxHeight="440"
         ResizeMode="NoResize" WindowStyle="None" AllowsTransparency="True"
         Background="Transparent" WindowStartupLocation="CenterScreen" FontFamily="Segoe UI">
-    <Border CornerRadius="20" Background="#0B1526" BorderBrush="#22406F" BorderThickness="1" Padding="30,26" ClipToBounds="True">
+    <Border CornerRadius="20" Background="#171316" BorderBrush="#684154" BorderThickness="1" Padding="30,26" ClipToBounds="True">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
@@ -11391,24 +11452,24 @@ function Show-UpdateNotice {
                     <Border Width="44" Height="44" CornerRadius="13">
                         <Border.Background>
                             <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                <GradientStop Color="#3B86FF" Offset="0"/>
-                                <GradientStop Color="#8A5CFF" Offset="1"/>
+                                <GradientStop Color="#FF4FA3" Offset="0"/>
+                                <GradientStop Color="#C42D79" Offset="1"/>
                             </LinearGradientBrush>
                         </Border.Background>
                     </Border>
-                    <Ellipse Width="8" Height="8" Fill="#EAF2FF" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="7,0,0,0"/>
-                    <Ellipse Width="8" Height="8" Fill="#EAF2FF" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,7,0"/>
-                    <Rectangle Height="3" Fill="#C7DBFF" Margin="15,0,15,0" RadiusX="1.5" RadiusY="1.5"/>
+                    <Ellipse Width="8" Height="8" Fill="#FFF7FB" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="7,0,0,0"/>
+                    <Ellipse Width="8" Height="8" Fill="#FFF7FB" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,7,0"/>
+                    <Rectangle Height="3" Fill="#F5D9E8" Margin="15,0,15,0" RadiusX="1.5" RadiusY="1.5"/>
                 </Grid>
                 <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="ARENA ROLOX BRIDGE" Foreground="#6F87AE" FontSize="10.5" FontWeight="Bold"/>
-                    <TextBlock x:Name="NoticeTitle" Foreground="#E6F0FF" FontSize="19" FontWeight="Bold" Margin="0,3,0,0"/>
+                    <TextBlock Text="ARENA ROBLOX BRIDGE" Foreground="#80767D" FontSize="10.5" FontWeight="Bold"/>
+                    <TextBlock x:Name="NoticeTitle" Foreground="#F7F1F5" FontSize="19" FontWeight="Bold" Margin="0,3,0,0"/>
                 </StackPanel>
             </StackPanel>
-            <TextBlock Grid.Row="1" x:Name="NoticeSub" Foreground="#8FA6CA" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,16"/>
-            <Border Grid.Row="2" CornerRadius="12" Background="#0E1B33" BorderBrush="#1B3259" BorderThickness="1" Padding="16">
+            <TextBlock Grid.Row="1" x:Name="NoticeSub" Foreground="#A99DA5" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,16"/>
+            <Border Grid.Row="2" CornerRadius="12" Background="#211C20" BorderBrush="#443740" BorderThickness="1" Padding="16">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <TextBlock x:Name="NoticeNotes" Foreground="#C3D5F0" FontSize="12.5" TextWrapping="Wrap" LineHeight="21"/>
+                    <TextBlock x:Name="NoticeNotes" Foreground="#D8CDD4" FontSize="12.5" TextWrapping="Wrap" LineHeight="21"/>
                 </ScrollViewer>
             </Border>
             <Button Grid.Row="3" x:Name="NoticeOk" Content="OK" Width="150" Height="40"
@@ -11418,22 +11479,22 @@ function Show-UpdateNotice {
                         <Border x:Name="bd" CornerRadius="11">
                             <Border.Background>
                                 <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                                    <GradientStop Color="#24539F" Offset="0"/>
-                                    <GradientStop Color="#183C79" Offset="1"/>
+                                    <GradientStop Color="#B82970" Offset="0"/>
+                                    <GradientStop Color="#7D1D4D" Offset="1"/>
                                 </LinearGradientBrush>
                             </Border.Background>
-                            <Border.BorderBrush>#2F7DFF</Border.BorderBrush>
+                            <Border.BorderBrush>#FF4FA3</Border.BorderBrush>
                             <Border.BorderThickness>1</Border.BorderThickness>
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="14,0"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#2A66C6"/>
+                                <Setter TargetName="bd" Property="Background" Value="#D93E88"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Button.Template>
-                <Button.Foreground>#EAF2FF</Button.Foreground>
+                <Button.Foreground>#FFF7FB</Button.Foreground>
                 <Button.FontWeight>SemiBold</Button.FontWeight>
                 <Button.FontSize>13.5</Button.FontSize>
             </Button>
@@ -11448,13 +11509,24 @@ function Show-UpdateNotice {
     $noticeNotesEl = $noticeWindow.FindName('NoticeNotes')
     $noticeOkEl = $noticeWindow.FindName('NoticeOk')
     $noticeTitleEl.Text = $titleText
-    $noticeSubEl.Text = $subText
+    $noticeSubEl.Text = $subText + ' Das Programm startet erst, wenn du OK drückst.'
     $noticeNotesEl.Text = $notesText
-    $noticeOkEl.Add_Click({ param($s, $e) $s.GetType() | Out-Null; $noticeWindow.Close() })
+    $script:UpdateNoticeAccepted = $false
+    $noticeWindow.Add_Closing({
+        param($sender, $eventArgs)
+        if (-not $script:UpdateNoticeAccepted) { $eventArgs.Cancel = $true }
+    })
+    $noticeOkEl.Add_Click({
+        param($s, $e)
+        $script:UpdateNoticeAccepted = $true
+        $noticeWindow.DialogResult = $true
+    })
+    $noticeOkEl.Focus() | Out-Null
     [void]$noticeWindow.ShowDialog()
+    $script:UpdateNoticeAccepted = $false
 }
 
-# Version 3.6: Rote "1" am Einstellungs-Button + Text in den Einstellungen
+# Version 3.7: Rote "1" am Einstellungs-Button + Text in den Einstellungen
 if (Test-UpdateError) {
     try { $UpdateBadge.Visibility = 'Visible' } catch {}
     try {
@@ -11469,7 +11541,7 @@ if (Test-UpdateError) {
     } catch {}
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
     try {
-        $verText = '3.6'
+        $verText = '3.7'
         if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
         $UpdateInfoText.Text = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
     } catch {}
@@ -11481,6 +11553,12 @@ if (Test-UpdateError) {
 if (-not $script:EncodingOk) {
     Add-PendingToast 'Achtung: Die Skriptdatei ist nicht als "UTF-8 mit BOM" gespeichert. Umlaute koennen falsch aussehen.' 'Warn' 9
     Write-RuntimeLog 'ACHTUNG: Skriptdatei ist falsch codiert - Umlaute werden ggf. falsch angezeigt.'
+}
+
+# Update/Willkommen blockiert bewusst den eigentlichen Programmstart. Es gibt
+# keinen Timer: Studio-Suche, Plugin, Server und Tunnel beginnen erst nach OK.
+if ($UpdateStatus -eq 'update-erfolgreich' -or $UpdateStatus -eq 'erster-start') {
+    try { Show-UpdateNotice } catch { Write-RuntimeLog "Update-Hinweis konnte nicht angezeigt werden: $($_.Exception.Message)" }
 }
 
 $script:RobloxStudioPath = Find-RobloxStudio
@@ -11552,12 +11630,6 @@ $window.Add_Closed({
     # wieder frei. Offene Hintergrund-Runspaces sterben mit dem Prozess.
     [System.Environment]::Exit(0)
 })
-
-# Version 3.6: Bei neuem Update / erstem Start ZUERST den Hinweis zeigen
-# (mit OK-Button), danach erst Hauptfenster mit Startbildschirm oeffnen.
-if ($UpdateStatus -eq 'update-erfolgreich' -or $UpdateStatus -eq 'erster-start') {
-    try { Show-UpdateNotice } catch { Write-RuntimeLog "Update-Hinweis konnte nicht angezeigt werden: $($_.Exception.Message)" }
-}
 
 Write-RuntimeLog 'Fenster wird geöffnet.'
 [void]$window.ShowDialog()
