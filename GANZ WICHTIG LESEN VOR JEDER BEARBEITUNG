@@ -1,7 +1,7 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 3.6  -  20.09.2026)                                #
+#   (Stand: Version 3.7  -  20.09.2026)                                #
 #                                                                      #
 ##########################################################################
 
@@ -44,10 +44,11 @@ STATUS-PARAMETER (6 Stueck):
     update-fehler         -> Download fehlgeschlagen, altes Programm
     update-suche-fehler   -> version.json nicht erreichbar/lesbar
 
-Reaktion des Programms (ArenaBridge.ps1, ab v3.6):
+Reaktion des Programms (ArenaBridge.ps1, ab v3.7):
     - update-erfolgreich / erster-start: ZUERST Hinweisfenster mit
-      den Neuigkeiten (aus version.json, Feld "notes") + OK-Button,
-      DANACH erst der normale Start (Splash + Hauptfenster).
+      den Neuigkeiten (aus version.json, Feld "notes") + OK-Button.
+      Das Fenster wartet ohne Zeitlimit und ist nur per OK schliessbar.
+      DANACH erst startet das Programm (Studio/Plugin/Server/Tunnel, Splash).
     - Fehler-Status (keine-verbindung / update-fehler /
       update-suche-fehler): rote "1" am Einstellungs-Button; in den
       Einstellungen steht unter "UPDATES - PROBLEM" der konkrete
@@ -83,8 +84,8 @@ ArenaBridge\
  |                          14-Tage-Cache), kompiliert
  |                          dist\ArenaBridge.exe (Version 3.6.0.0)
  |- GitHub-Repository\      KOMPLETT ins GitHub-Repo hochladen:
-     |- ArenaBridge.ps1    das Programm (v3.6, ~595 KB, UTF-8 MIT BOM)
-     |- version.json       {"version":"3.6","notes":[...Neuigkeiten...]}
+     |- ArenaBridge.ps1    das Programm (v3.7, UTF-8 MIT BOM)
+     |- version.json       {"version":"3.7","notes":[...Neuigkeiten...]}
      |- README.md          Repo-Doku + Update-Anleitung + Versionsverlauf
 
 
@@ -128,7 +129,8 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 - "..."-Auswahlmenue: erneuter Klick auf den Menue-Button schliesst
   das Menue (echtes Toggle). Klick auf "Nur Lesezugriff" laesst das
   Menue OFFEN (schliesst es NICHT).
-- Bedienung und Aussehen der Spieleliste NICHT veraendern.
+- Bedienung der Spieleliste NICHT veraendern. Seit v3.7 gilt fuer das gesamte
+  Programm einschliesslich Liste das Anthrazit-/Grau-/Pink-Farbschema.
 - ZIP-Struktur: genau EIN Ordner (ArenaBridge\) mit ZWEI Unterordnern
   (EXE-Builder\, GitHub-Repository\) plus TXT-Dateien.
 - REPOSITORY-LINK.txt-Mechanismus so lassen (auffaellige TXT, Nutzer
@@ -165,9 +167,10 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 - v3.4: Feature-Release
 - v3.5: Port-/Splash-Bugfixes (Geisterprozesse, Free-Port-Diagnose,
   Splash-blocked-Handling)
-- v3.6: Update-System ueber GitHub (aktueller Stand): Starter-EXE,
-  Status-Parameter, Update-Hinweisfenster, rote "1" am
-  Einstellungs-Button bei Fehlern, Toasts entfernt, Menue-Toggle
+- v3.6: Update-System ueber GitHub: Starter-EXE, Status-Parameter,
+  Update-Hinweisfenster, rote "1", Toasts entfernt, Menue-Toggle
+- v3.7: Grau-/Pink-Design, Update-Fenster wartet zwingend auf OK;
+  Playtest-Schutz fordert Arena zum Antwort-Stopp und zur Nutzer-Bitte auf
 
 Der vollstaendige Versionsverlauf steht als Kommentar ganz oben in
 ArenaBridge.ps1 (bis zur aktuellen Version fortfuehren!).

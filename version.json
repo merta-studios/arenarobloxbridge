@@ -1,4 +1,4 @@
 {
-  "version": "3.6",
-  "notes": "• Automatische Updates über GitHub\n• Neues Update-Fenster: zeigt nach jedem Update, was neu ist (mit OK-Button)\n• Willkommens-Fenster beim ersten Start\n• Rote Benachrichtigung (1) am Einstellungs-Button bei Update-Problemen\n• Popup-Nachrichten unten rechts entfernt\n• Auswahlmenü „…“: erneuter Klick schließt es wieder, „Nur Lesezugriff“ lässt es offen"
+  "version": "3.7",
+  "notes": "• Neues Anthrazit-/Grau-/Pink-Design mit klareren Flächen und kräftigen Akzenten\n• Das Update-Fenster wartet jetzt garantiert auf deinen Klick auf OK\n• Erst nach OK startet die Bridge Studio-Suche, Plugin, Server und Tunnel\n• Aktiver Roblox-Playtest schützt vor Bearbeitungen: Arena wird deutlich zum Stoppen der Antwort aufgefordert\n• Arena soll dich bitten, den Playtest selbst zu beenden, und erst danach weiterarbeiten"
 }
