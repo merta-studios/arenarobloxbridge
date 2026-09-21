@@ -20,8 +20,8 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test-v396_structure.py` | Python-Strukturtest für 3.9.6 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
-| `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 3.9.6 (optional; wird NICHT vom Starter geladen) |
+| `test_v397_structure.py` | Python-Strukturtest für 3.9.7 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 3.9.7 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
 
@@ -35,6 +35,62 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+> ⚠️ **Nach JEDEM Programm-Update Roblox Studio einmal neu starten**, damit
+> das neue Studio-Plugin geladen wird. Die Bridge erkennt veraltete Plugins
+> selbst (`pluginVersion` ≠ Programmversion) und meldet es in der
+> Programm-Oberfläche sowie über `/api/status` als `versionMismatch`.
+
+### 3.9.7
+- **Der Playtest-Reporter kommt jetzt garantiert IN der Test-Session an**
+  (Live-Befund B1 aus 3.9.6: `reporterActive:false`, null `#ARENA#`-Zeilen –
+  die Archivable-false-Injektion plus Sofort-Löschung im Edit-DataModel war
+  ein Lösch-Race, der Reporter existierte in der Session nie). Ab jetzt wird
+  als **normales, klon-sicheres Script** injiziert (`reporterVariant=2`,
+  Standard); die Edit-Kopien werden erst gelöscht, **nachdem**
+  `editModeActive=false` den Snapshot bewiesen hat (+1,5 s), plus
+  Sicherheits-Sweeps bei `play_stop` und Plugin-Unload – im gespeicherten
+  Place landet weiterhin nichts. Variante 1 (Archivable=false-Probe) bleibt
+  per `play_start { reporterVariant=1 }` zum empirischen Gegentest erhalten.
+- **Injektions-Beweis in Echtzeit.** Der Server-Reporter druckt sofort
+  `#ARENA# hello`, der Client-Reporter ebenfalls. `startDiagnostics` enthält
+  jetzt `reporterInjected` und `reporterSeenInOutput`; `play_status` zeigt
+  die Reporter-Frische (`reporterLastKind`, `reporterLastAgeSeconds`,
+  `arenaLineCount`, `reporterVariantUsed`).
+- **Stop-Leiter statt Sackgasse** (Live-Befund B2: Sessions aus
+  `ExecutePlayModeAsync` ließen sich aus dem Edit-DataModel weder per
+  `RunService:Stop()` noch per Shift+F5/VirtualInputManager beenden;
+  `StudioTestService:EndTest` funktioniert nur im Session-Server-DataModel).
+  `play_stop` versucht jetzt geordnet: **(1)** `end_test`-Befehl an den
+  Reporter über den Befehlskanal (s. u.), der die Session selbst per
+  `EndTest("stopped_by_arena_bridge")` beendet; **(2)** Fallback
+  `RunService:Stop()` aus dem Edit-DataModel; **(3)** sauberer Fehler
+  **`PLAY_STOP_NEEDS_USER`** mit deutscher `userMessage` („Bitte in Studio
+  Stop drücken (Shift+F5)“) statt Endlosschleife. Nach jedem erfolgreichen
+  Stop wird zombie-frei aufgeräumt – ein sofortiger zweiter `play_start`
+  klappt wieder.
+- **Befehlskanal in die Session – ohne irgendwelche Einstellungen.**
+  Priorität: (1) optionaler HTTP-Agent (nur bei `HttpEnabled=true`);
+  (2) **SharedTableService** als Cross-DM-Speicher zwischen Edit-Plugin und
+  Session-Reporter (volle Argumente + echte Antworten; `session_diag`
+  prüft per Live-Echo-Probe, ob die Tabelle wirklich über beide DataModels
+  reicht); (3) **VirtualInputManager-Kombos** Strg+Alt+Umschalt+E/R/P auf dem
+  Client-Reporter (antwortfrei, für `end_test`/Respawn/Zustand); (4)
+  `GetTestArgs` beim (Neu-)Start (`arenaSpawn`). `teleport_character`,
+  `respawn_character` und `set_camera` nutzen zur Laufzeit denselben Kanal;
+  `move_character`/`gui_click` bleiben echte VIM-Eingaben aus dem Edit-DM.
+- **Neues Diagnose-Werkzeug `session_diag`** (read-only): Reporter-Status
+  (aktiv, letzte `#ARENA#`-Zeile + Alter, Injektions-Variante in der
+  Session), Kanal-Status inkl. SharedTable-Cross-DM-Live-Probe mit Echo,
+  Output-Cursor und Fehler-/Warnungszähler. Bei jedem Playtest-Problem zuerst
+  `session_diag` und danach `get_output` mit Filter `ARENA` lesen.
+- **Alle Play-Werkzeug-Guards kennen jetzt den Sessions-Zustand** (B3/B4):
+  gültig bei `editModeActive=false` **oder** `IsRunning()`. Aktive Session
+  ohne Reporter beantworten sie mit **`REPORTER_NOT_CONNECTED`** samt
+  `sessionDiag`-Daten statt des falschen „No test running“. Auch dauerhafte
+  Bearbeitungen werden jetzt bei getrennter Session korrekt blockiert.
+- **UTF-8-GET-Dekodierung verifiziert** (Umlaute/Pfeile per GET bleiben
+  korrekt, explizite UTF-8-Dekodierung der Roh-Query).
 
 ### 3.9.6
 - **Playtest ohne Konfiguration – auch bei `HttpEnabled=false`.** Vor jedem

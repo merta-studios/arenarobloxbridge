@@ -1,10 +1,10 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge 3.9.6 - Logik-Tests (Mock, ohne Studio / ohne UI)
+# Arena Roblox Bridge 3.9.7 - Logik-Tests (Mock, ohne Studio / ohne UI)
 # ----------------------------------------------------------------------------
 # Ausfuehren auf dem PC (Windows PowerShell 5.1):
 #   powershell.exe -NoProfile -ExecutionPolicy Bypass -File test-v39.ps1
 #
-# Die Tests pruefen die aktuelle 3.9.6-Logik OHNE Roblox Studio:
+# Die Tests pruefen die aktuelle 3.9.7-Logik OHNE Roblox Studio:
 #   1. Syntax der kompletten ArenaBridge.ps1 (echter PowerShell-Parser)
 #   2. UTF-8-BOM
 #   3. Einstellungen: laden/speichern (settings.json Round-Trip)
@@ -16,8 +16,8 @@
 #   5. Selbst-Test-Sperre (New-SelfTestBlockedResult)
 #   6. report_done: aus/ohne Nachricht/erfolgreich (Mock-Warteschlange)
 #   7. XAML der drei Fenster ist wohlgeformtes XML
-#   8. Versions-Konsistenz (3.9.6 ueberall)
-#   9. GET-API, Kopier-Bestaetigung und Autostart-Selbst-Update (3.9.6)
+#   8. Versions-Konsistenz (3.9.7 ueberall)
+#   9. GET-API, Kopier-Bestaetigung und Autostart-Selbst-Update (3.9.7)
 # ============================================================================
 
 $ErrorActionPreference = 'Stop'
@@ -38,7 +38,7 @@ function Assert([bool]$Condition, [string]$Name, [string]$Detail) {
     if ($Condition) { Pass $Name } else { Fail $Name $Detail }
 }
 
-Write-Host '=== Arena Bridge 3.9.6 Logik-Tests ===' -ForegroundColor Cyan
+Write-Host '=== Arena Bridge 3.9.7 Logik-Tests ===' -ForegroundColor Cyan
 
 # ----------------------------------------------------------------------------
 # 1) Syntax der kompletten Datei mit dem echten Parser pruefen
@@ -248,29 +248,29 @@ Assert ($null -ne $settingsXaml -and $settingsXaml.Groups[1].Value -like '*Arena
 # ----------------------------------------------------------------------------
 # 8) Versions-Konsistenz
 # ----------------------------------------------------------------------------
-Write-Host '`n8) Version 3.9.6 ueberall' -ForegroundColor Yellow
-Assert ($text.Contains("# Arena Roblox Bridge  -  Version 3.9.6")) 'Changelog-Kopf'
-Assert ($text.Contains("DocsVersion     = '3.9.6'")) 'DocsVersion'
-Assert ($text.Contains('local ARENA_VERSION  = "3.9.6"')) 'ARENA_VERSION (Plugin)'
-Assert ($text.Contains('Arena Studio Bridge - Studio Plugin  (Version 3.9.6)')) 'Plugin-Kommentar'
-Assert ($text.Contains("version = '3.9.6'")) 'Manifest-Version'
-Assert ($text.Contains("serverVersion = '3.9.6'")) 'serverVersion'
-Assert ($text.Contains('$versionText = ' + "'3.9.6'")) 'Show-UpdateNotice-Fallback'
-Assert ($text.Contains('Text="Arena Roblox Bridge - Version 3.9.6"')) 'Einstellungs-Fusszeile'
+Write-Host '`n8) Version 3.9.7 ueberall' -ForegroundColor Yellow
+Assert ($text.Contains("# Arena Roblox Bridge  -  Version 3.9.7")) 'Changelog-Kopf'
+Assert ($text.Contains("DocsVersion     = '3.9.7'")) 'DocsVersion'
+Assert ($text.Contains('local ARENA_VERSION  = "3.9.7"')) 'ARENA_VERSION (Plugin)'
+Assert ($text.Contains('Arena Studio Bridge - Studio Plugin  (Version 3.9.7)')) 'Plugin-Kommentar'
+Assert ($text.Contains("version = '3.9.7'")) 'Manifest-Version'
+Assert ($text.Contains("serverVersion = '3.9.7'")) 'serverVersion'
+Assert ($text.Contains('$versionText = ' + "'3.9.7'")) 'Show-UpdateNotice-Fallback'
+Assert ($text.Contains('Text="Arena Roblox Bridge - Version 3.9.7"')) 'Einstellungs-Fusszeile'
 $bridgeVersions = [regex]::Matches($text, "bridgeVersion = '(\d+\.\d+\.\d+)'")
-Assert ($bridgeVersions.Count -eq 3 -and @($bridgeVersions | Where-Object { $_.Groups[1].Value -ne '3.9.6' }).Count -eq 0) 'bridgeVersion (3x)'
+Assert ($bridgeVersions.Count -eq 3 -and @($bridgeVersions | Where-Object { $_.Groups[1].Value -ne '3.9.7' }).Count -eq 0) 'bridgeVersion (3x)'
 $versionJson = Get-Content (Join-Path $root 'version.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-Assert ($versionJson.version -eq '3.9.6') 'version.json'
+Assert ($versionJson.version -eq '3.9.7') 'version.json'
 Assert ($versionJson.notes.Length -gt 50) 'version.json hat Neuigkeiten-Text'
 
 # ----------------------------------------------------------------------------
-# 9) Neue 3.9.6-Features
+# 9) Neue 3.9.7-Features
 # ----------------------------------------------------------------------------
 Write-Host '`n9) GET-API, Kopier-Bestaetigung, Autostart-Update' -ForegroundColor Yellow
 
 # --- GET-API --------------------------------------------------------------
-Assert ($text.Contains('GET-Vollsteuerung (Version 3.9.6)')) 'GET-Koerperaufbau im Router vorhanden'
-$getBlockStart = $text.IndexOf('GET-Vollsteuerung (Version 3.9.6)')
+Assert ($text.Contains('GET-Vollsteuerung (Version 3.9.7)')) 'GET-Koerperaufbau im Router vorhanden'
+$getBlockStart = $text.IndexOf('GET-Vollsteuerung (Version 3.9.7)')
 $tokenCheck    = $text.IndexOf('$token = Get-Token $context.Request $body')
 Assert ($getBlockStart -gt 0 -and $tokenCheck -gt $getBlockStart) 'GET-Koerper wird VOR der Token-Pruefung gebaut (gleicher Codepfad)'
 foreach ($field in @('tool', 'uploadId', 'chunkIndex', 'chunkCount', 'timeoutSeconds')) {

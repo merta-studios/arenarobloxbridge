@@ -1,7 +1,7 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 3.9.6  -  21.09.2026)                                #
+#   (Stand: Version 3.9.7  -  21.09.2026)                                #
 #                                                                      #
 ##########################################################################
 
@@ -206,6 +206,18 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
   den Test gestartet hat (Nutzer-Playtests kommen zuverlaessig an,
   auch nach Plugin-Neuladen), neuer Modus play_here, Nutzer-Aktivitaet
   im Editor wird als user_active gemeldet
+- v3.9.6: Playtest ohne HTTP: getrennte DataModels via EditModeActive true->
+  false als Start-Orakel, #ARENA#-LogStream-Reporter, VIM Tasten/Maus,
+  edit RunService:Stop() als Standard-Stop, Reparaturen (UTC-Pending,
+  LateResults, UTF-8-GET, Retry-Dedupe, Plugin/Bridge-Versionswarnung).
+- v3.9.7: LETZTE PLAYTEST-KLEMMEN GEFIXT (Live-Befunde B1-B6 aus 3.9.6):
+  Reporter-Injektion repariert (normale klon-sichere Scripts, Loeschung der
+  Edit-Kopien erst nach editModeActive=false + Sweeps), sofortige #ARENA#
+  hello-Zeile als Injektionsbeweis, Stop-Leiter (Reporter-EndTest ueber
+  Befehlskanal > edit RunService:Stop() > PLAY_STOP_NEEDS_USER), Befehlskanal
+  ohne HTTP (http-Agent > SharedTableService > VIM-Kombos > GetTestArgs),
+  neues Werkzeug session_diag, alle Play-Guards session-bewusst
+  (REPORTER_NOT_CONNECTED statt falschem "No test running").
 - v3.9: KOMPLETTE STEUERUNG PER HTTP GET (wichtigstes Feature): jeder
   Endpunkt nimmt jetzt auch GET an und laeuft ueber DENSELBEN
   Programmpfad wie POST (GET /api/tool?token=&tool=&args=<URL-JSON>
@@ -226,121 +238,157 @@ Der vollstaendige Versionsverlauf steht als Kommentar ganz oben in
 ArenaBridge.ps1 (bis zur aktuellen Version fortfuehren!).
 
 
-7) LIVE-BEWEISLAGE UND PLAYTEST-ARCHITEKTUR 3.9.6
-====================================================
+7) LIVE-BEWEISLAGE 3.9.6 UND PLAYTEST-ARCHITEKTUR 3.9.7
+=========================================================
 DIESE ERKENNTNISSE SIND LIVE GEPRUEFT. NICHT WIEDER AUF DIE ALTE
 IsRunning-/Players-HEURISTIK ZURUECKBAUEN.
 
-B1. MODERNE STUDIO-DATAMODELS
------------------------------
-- Ein Playtest kann in einem SEPARATEN DataModel laufen. Das Plugin bleibt im
-  Edit-DataModel: `RunService:IsRunning()` ist dort false und `Players` leer,
-  obwohl ExecutePlayModeAsync die Session bereits gestartet hat.
-- Der fruehere Fehler PLAY_START_UNAVAILABLE nach ca. 10 Sekunden war deshalb
-  eine FALSCHE Erfolgserkennung. Ein anschliessendes ExecutePlayModeAsync
-  antwortete live mit „Failed to start the test because a previous one is
-  still in progress.“ Das beweist: die Session lief bereits.
+BEFUNDE AUS DEM LIVE-TEST GEGEN 3.9.6 (Place1, frisches Studio,
+httpEnabled=false, agentMode logStream, Session lief: editModeActive=false,
+mode=play, context=session):
+----------------------------------------------------------------------------
+B1. Der Reporter kam NIE in der Session an: sessionPlayers:0,
+    reporterActive:false, null #ARENA#-Zeilen im Output, auch im Edit-DM
+    keine Arena-Suche-Treffer. Ursache: Injektion mit Archivable=false UND
+    Sofort-Loeschung im Edit-DM (Loesch-Race) - der Reporter wurde schon
+    entfernt, bevor Studio den Place in die Session klonte (bzw.
+    Archivable=false verbietet das Klonen ohnehin).
+B2. Ohne Reporter kein Remote-Stop: play_stop = PLAY_STOP_FAILED
+    ("Studio still reports an active test after RunService:Stop()",
+    usedPath editRunServiceStop). HARTE ERKENNTNIS: Sessions, die per
+    ExecutePlayModeAsync gestartet wurden, lassen sich aus dem Edit-DM NICHT
+    per RunService:Stop() beenden (bei F5-gestarteten Sessions ging das!).
+    Shift+F5 per VirtualInputManager erreichte die Session nie. EndTest
+    funktioniert NUR aus dem Server-DataModel der Session -> der Reporter
+    IST der Stopp-Weg.
+B3. Waehrend der Session kamen im Edit-DM GAR KEINE neuen Output-Zeilen an
+    (Cursor blieb stehen) - ob LogService im Edit-DM Session-Zeilen liefert,
+    war damit unbewiesen; in 3.9.7 liefert session_diag den Beweis.
+B4. character_state antwortete trotz laufender Session "No test running" -
+    der Guard pruefte RunService:IsRunning() im Edit-DM. In 3.9.7 pruefen
+    ALLE Play-Guards das Sessions-Orakel.
+B5. UTF-8-GET war diesmal nicht getestet; 3.9.5 zeigte "->" als kaputtes
+    Latin-1. Der Fix aus 3.9.6 (explizite UTF-8-Dekodierung der Roh-Query)
+    ist im Code verifiziert (UrlDecode(..., UTF8) ueber
+    Request.Url.Query), Live-Abnahme per report_done mit Umlauten steht in
+    der Checkliste unten.
+B6. Es liefen zeitweise 2 Places in 2 Studio-Fenstern - Verhalten ok
+    (Parallelbetrieb), nur zur Info.
 
-B2. EINZIGES SESSION-ORAKEL IM EDIT-DATAMODEL
----------------------------------------------
-- `StudioTestService.EditModeActive=true` bedeutet: kein Test aktiv.
-- `StudioTestService.EditModeActive=false` bedeutet: Test-Session aktiv – auch
-  wenn `IsRunning()` false bleibt und Players leer ist.
-- play_start 3.9.6 startet ExecutePlayModeAsync/ExecuteRunModeAsync weiter in
-  `task.spawn`. ERFOLG ist AUSSCHLIESSLICH der Wechsel true -> false innerhalb
-  von 20 Sekunden. Niemals wieder auf IsRunning warten.
-- Ein Service-Fehler „previous one is still in progress“ bei false ist KEIN
-  Fehler: bestehende Session verwenden und Status melden.
-- `PLAY_SERVICE_STUCK` ist streng eingegrenzt: Execute-Fehler (nicht der
-  bekannte „previous“-Fall), EditModeActive=false, IsRunning=false, danach
-  `RunService:Stop()` und 3 Sekunden kein true. Nur dann „Studio neu starten“.
+WAS 3.9.7 GEBAUT HAT (A-F):
+----------------------------------------------------------------------------
+A. REPORTER-REPARATUR. Zwei Varianten per Diagnose-Schalter:
+   - reporterVariant=2 (STANDARD): NORMALE klon-sichere Scripts
+     (Archivable bleibt Standard/true) - sie liegen beim Snapshot sicher in
+     der Session. Die Edit-Kopien werden erst geloescht, NACHDEM
+     editModeActive=false die Session bewiesen hat (+1,5s Marge), plus
+     Sicherheits-Sweeps in play_stop und plugin.Unloading, damit der Place
+     nie mit Helferskripten gespeichert wird.
+   - reporterVariant=1: die 3.9.6-Variante (Archivable=false) als
+     Diagnose-Sonde zum empirischen Gegentest
+     (play_start { reporterVariant=1 }).
+   Der Reporter druckt sofort "#ARENA# hello" (Server UND Client) und
+   danach Snapshots (0,5s am Anfang, dann 2s): players, Charakter-Position/
+   Gesundheit, GUI-Baum mit Screen-Positionen. startDiagnostics enthaelt
+   reporterInjected + reporterSeenInOutput; session_diag enthaelt
+   reporterAktiv, letzte #ARENA#-Zeile + Alter, sessionPlayers und die
+   genutzte Injektions-Variante (variantInjected vs. variantInSession -
+   letztere meldet der hello der Session selbst).
+B. STOP-PFAD (Leiter, kein Endlos-Probieren): (1) Reporter aktiv ->
+   end_test-Befehl ueber den Befehlskanal; der Reporter ruft
+   StudioTestService:EndTest("stopped_by_arena_bridge") IM Session-Server-DM
+   auf; (2) Fallback RunService:Stop() + editModeActive-Kontrolle;
+   (3) sonst sauberer Fehler PLAY_STOP_NEEDS_USER mit deutscher userMessage
+   ("Bitte in Studio Stop druecken (Shift+F5)"). Nach Erfolg:
+   editModeActive==true, play_stopped-Event (Server-Zustandswatcher), RunOwner-
+   Aufraeumung (Server), Sweeps - ein SOFORTIGER zweiter play_start klappt.
+C. BEFEHLSKANAL INS SESSION-DM OHNE HTTP (Prioritaet):
+   (1) HttpEnabled=true: bisheriger HTTP-Agent (Schnellpfad).
+   (2) SharedTableService als Cross-DM-Kanal: IMPLEMENTIERT in Plugin
+       (Schreiben st.command / Lesen st.lastResult, Client-Slot
+       st.clientCommand/st.clientResult) und im Reporter (Polling + Echo-
+       Probe). session_diag > sharedTableProbe.crossDm entscheidet LIVE, ob
+       die Tabelle zwischen Edit- und Session-DataModel geteilt ist - bei
+       false dokumentieren und auf (3)/(4) zurueckfallen. [LIVE-NACHWEIS
+       STEHT NOCH AUS - nach dem naechsten Playtest hier festhalten.]
+   (3) VirtualInputManager-Tastenprotokoll: Plugin sendet unsichtbare
+       Kombos Strg+Alt+Umschalt+E (end_test) / R (respawn_character) / P
+       (character_state-Zustand). Der CLIENT-Reporter hoert per
+       UserInputService und leitet per RemoteEvent ArenaSessionCmd an den
+       Server-Reporter weiter. Lebend-Nachweis: session_diag >
+       channels.vimCommandsSeen / vimCommandsSeen steigt nach einer Probe.
+       [LIVE-NACHWEIS STEHT NOCH AUS.]
+   (4) Notfall: Neustart mit GetTestArgs (arenaSpawn=..., mode=...,
+       reporterVariant=...) - der Reporter liest StudioTestService:GetTestArgs.
+   Genutzt wird, was funktioniert, fuer end_test, teleport_character,
+   respawn_character, character_state und set_camera (Client-Kanal).
+   move_character und gui_click bleiben direkte VIM-Eingaben aus dem Edit-DM.
+D. ALLE PLAY-TOOL-GUARDS nutzen testSessionActive()
+   (editModeActive=false ODER IsRunning()). Ohne Reporter-Snapshot bei
+   aktiver Session: REPORTER_NOT_CONNECTED mit sessionDiag statt "No test
+   running". play_status zeigt sessionPlayers, reporterActive, agentMode,
+   httpEnabled und Reporter-Frische (reporterLastKind/-AgeSeconds).
+E. UTF-8-GET: Fix aus 3.9.6 ist im Code verifiziert (Roh-Query wird selbst
+   mit [System.Web.HttpUtility]::UrlDecode(..., UTF8) dekodiert). Live-
+   Abnahme: report_done mit Umlauten per GET -> korrekt in den Events.
+F. Doku/Manifest/Guides beschreiben die neue Session-DM-Architektur,
+   die Kanal-Prioritaet, die Stop-Wege und PLAY_STOP_NEEDS_USER.
 
-B3. STOP LIVE BESTAETIGT
-------------------------
-- `RunService:Stop()` aus dem Edit-DataModel beendet auch die getrennte
-  Session. Nachher wird EditModeActive wieder true.
-- Das ist der STANDARDWEG von play_stop in 3.9.6. Kein HTTP-Agent, keine
-  Shift+F5-Rateversuche und keine Studio-Einstellung sind dafuer notwendig.
-- Ein vom Nutzer gestarteter Test wird mit demselben Weg beendet; die
-  Server-Events behalten startedBy=user/assistant bei.
-
-B4. HTTP IST OPTIONAL, NIE VORAUSSETZUNG
-----------------------------------------
-- Im Session-Script scheitert HttpService bei HttpEnabled=false (LocalUser
-  capability; RequestAsync scheitert ebenfalls). Plugin-HTTP im Edit-Plugin
-  blieb dagegen stets funktionsfaehig.
-- Daher ist der HTTP-Session-Agent nur ein BONUS/Schnellpfad, wenn
-  `HttpEnabled=true`. Bei false darf weder KI noch Nutzer gebeten werden,
-  „Allow HTTP Requests“ zu aktivieren. Alles Wesentliche muss trotzdem gehen.
-
-B5. LOGSERVICE-FALLBACK (IMMER AKTIV)
--------------------------------------
-- LogService im Edit-DataModel sieht die Output-Zeilen der Session, inklusive
-  `source:"server"`. 3.9.6 injiziert vor Execute einen temporaeren
-  `ArenaSessionReporter` in ServerScriptService und einen
-  `ArenaSessionClientReporter` in StarterPlayerScripts.
-- Beide haben `Archivable=false`, werden in den Test-Snapshot kopiert und
-  werden direkt nach dem Start aus dem Edit-DataModel geloescht. Das Place
-  bleibt unveraendert und wird nicht mit Helferskripten gespeichert.
-- Der Server-Reporter druckt anfangs alle 0.5s, danach alle 2s:
-  `#ARENA# {kind:"session", players, character(s), position, health, states}`.
-  Der Client-Reporter druckt GUI-Baum, Sichtbarkeit, Bildschirmkoordinaten,
-  Groesse, centerX/centerY und clickable-Ziele.
-- Das Edit-Plugin parst diese Zeilen, behaelt den letzten Snapshot und liefert
-  ihn ueber play_status/character_state mit `agentMode:"logStream"` und echter
-  `sessionPlayers`-Zahl. `get_output` muss die #ARENA#-Zeilen weiterhin zeigen.
-
-B6. STEUERUNG OHNE HTTP
------------------------
-- VirtualInputManager funktioniert im Plugin (SendKeyEvent und
-  MouseButtonEvent erreichen die Session). `move_character` nutzt deshalb
-  W/A/S/D (+ Shift, duration) als echte Eingaben, nie MoveTo im getrennten DM.
-- `gui_click` nimmt das Ziel aus dem Client-Reporter-Snapshot und sendet echte
-  Maus-Ereignisse an dessen Bildschirmkoordinaten.
-- `teleport_character` zur Laufzeit ist absichtlich deaktiviert. Fuer Start/
-  Play Here sendet play_start `arenaSpawn={x,y,z}` in ExecutePlayModeAsync;
-  der Reporter liest `StudioTestService:GetTestArgs()` und teleportiert den
-  Charakter vor dem Test-Workflow.
-
-B7. NEBENFEHLER AUS 3.9.5, IN 3.9.6 REPARIERT
-----------------------------------------------
-- PendingCommands nutzen echte Unix-Sekunden. Alte/defekte Eintraege werden
-  entfernt; keine seconds:-14381-Zombies mehr.
-- Ergebnisse nach HTTP-Timeout werden in einer eigenen LateResults-Queue
-  gespeichert und bei get_pending sowie dem naechsten Envelope zugestellt.
-- GET-Parameter werden explizit mit
-  `[System.Web.HttpUtility]::UrlDecode(..., UTF8)` dekodiert; Pfeile und
-  Umlaute bleiben korrekt.
-- Gleiche `play_start`/`play_stop`-Retrie-Aufrufe innerhalb drei Sekunden
-  werden serverseitig dedupliziert.
-- Plugin-Version ungleich Bridge-Version setzt `versionMismatch`, zeigt in der
-  UI „Studio neu starten (Plugin veraltet)“, erscheint in /api/status und als
-  KI-Envelope: `plugin outdated - Tests warten`.
+WICHTIG NACH DEM UPDATE: Roblox Studio EINMAL NEU STARTEN, damit das neue
+Plugin laedt. Die Bridge zeigt ein veraltetes Plugin als versionMismatch
+(UI-Hinweis + /api/status + KI-Envelope "plugin outdated - Tests warten").
 
 PFLICHT-DIAGNOSE BEI JEDER AENDERUNG
 ------------------------------------
-- `startDiagnostics` in play_start UND play_stop muss enthalten:
+- startDiagnostics in play_start UND play_stop enthaelt:
   editModeActiveBefore/After, serviceError wortgetreu, usedPath,
-  sessionPlayers, reporterActive, agentMode (`http`/`logStream`) und
-  httpEnabled.
-- Bei einem Live-Fehler zuerst play_status, startDiagnostics und
-  `get_output` nach `#ARENA#` lesen. NIE anhand von RunService/Players im
-  Edit-DataModel raten.
-- Live-Abnahme (nach Token/Tunnel vom Nutzer, GET-only): status + play_status
-  ohne Zombies; play_start mit Snapshot/Player/Position; character_state;
-  move_character per Tasten mit Positionsaenderung; play_stop ->
-  EditModeActive=true und sofortiger zweiter Start; Nutzer-Play starten,
-  startedBy=user sehen und durch KI stoppen; kompletten Ablauf danach mit
-  HttpEnabled=false unveraendert wiederholen.
+  sessionPlayers, reporterActive, reporterSeenInOutput, reporterInjected,
+  reporterVariantUsed, channelAttempts (beim Stop), agentMode und httpEnabled.
+- Bei einem Live-Fehler ZUERST session_diag und danach get_output filter
+  "ARENA" lesen. NIE anhand von RunService/Players im Edit-DataModel raten.
+- session_diag-Felder: reporter { active, seenInOutput, arenaLineCount,
+  lastKind, lastAgeSeconds, variantInjected, variantInSession },
+  channels { httpConnected, sharedTableAvailable, sharedTableCrossDm,
+  vimAvailable, vimCommandsSeen }, Output-Cursor + Zaehler, kompletter
+  play_status. skipProbe=true ueberspringt die 2.5s-SharedTable-Sonde.
 
-TEST- UND DATEI-REGELN FUER 3.9.6
+LIVE-ABNAHME NACH DEM UPDATE (GET-only ueber Tunnel; Token kommt vom
+Nutzer; Web-Abruf-Retry-Dedup einkalkulieren - Server dedupliziert gleiche
+play_start/play_stop innerhalb 3s bereits):
+ 1. /api/status + play_status: alles 3.9.7, editModeActive:true, kein
+    Zombie, kein versionMismatch (sonst: Studio neu starten!).
+ 2. play_start mode=play => ok:true UND
+    startDiagnostics.reporterSeenInOutput=true, sessionPlayers>=1 MIT
+    Charakter-Position im Snapshot.
+ 3. character_state => echte Position/Gesundheit aus der Session.
+ 4. move_character => Position aendert sich messbar (vorher/nachher lesen).
+ 5. play_stop => ok:true (bevorzugt stopMethod reporterEndTest),
+    editModeActive:true, play_stopped-Event.
+ 6. SOFORT play_start erneut => klappt wieder (Zombie-Freiheit).
+ 7. Nutzer startet selbst Play in Studio => play_started startedBy=user;
+    KI-Stop (play_stop) funktioniert danach.
+ 8. report_done mit Umlauten per GET => korrekt dekodiert in den Events.
+ 9. Alles in einem zweiten Studio-Fenster / anderem Place wiederholen
+    (Parallelbetrieb). Bei Problemen: session_diag + #ARENA#-Zeilen lesen,
+    NICHT raten. Ergebnisse der Kanal-Sonden (crossDm/vim) hier im Abschnitt
+    C dokumentieren!
+
+TEST- UND DATEI-REGELN FUER 3.9.7
 ---------------------------------
 - In dieser Sandbox KEIN pwsh/PowerShell fuer Tests benutzen. Stattdessen
-  `python test_v396_structure.py`: Versions-/Strukturpruefung, Lua mit
-  `luaparser`, XAML als XML. Python muss luaparser installiert haben.
-- ArenaBridge.ps1 bleibt UTF-8 MIT BOM. Nach jeder Version alle in Abschnitt 3
-  genannten Literale pruefen: DocsVersion, ARENA_VERSION, Manifest,
-  bridgeVersion, serverVersion, Plugin-Kommentar, Update-Fallback und
-  Einstellungsfusszeile.
-- Commit und Push nur auf der Arena-Session-Branch; keine grosse Testartefakte
-  oder virtuelle Umgebungen einchecken.
+  `python test_v397_structure.py`: Versions-/Strukturpruefung, Lua mit
+  `luaparser` (Plugin UND alle eingebetteten Reporter-/Agent-Sources), XAML
+  als XML. Python muss luaparser installiert haben (requirements-test.txt).
+- ArenaBridge.ps1 bleibt UTF-8 MIT BOM. Nach jeder Version alle in Abschnitt
+  3 genannten Literale pruefen: DocsVersion, ARENA_VERSION, Manifest,
+  bridgeVersion (3x), serverVersion, Plugin-Kommentar, Update-Fallback,
+  Einstellungsfusszeile. Der Strukturtest assertet sie plus die 3.9.7-
+  Marker (PLAY_STOP_NEEDS_USER, REPORTER_NOT_CONNECTED, session_diag,
+  SharedTableService, stop-Leiter, Forward-Deklarationen-Stolperstein).
+- LUA-STOLPERSTEIN: in Lua sind `local function`-Definitionen erst AB ihrer
+  Zeile sichtbar. Wer einen Helfer vor seiner Definition aufruft, bekommt
+  global nil. Deshalb Deklaration-Reihenfolge pruefen; echte
+  Vorwaertsnutzung per Forward-Deklaration loesen (siehe
+  writeClientCommand/readClientResult, die logStreamClientAction nutzt).
+- Commit und Push nur auf der Arena-Session-Branch; keine grossen
+  Testartefakte oder virtuelle Umgebungen einchecken.
