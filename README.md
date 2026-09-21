@@ -20,7 +20,7 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test-v38.ps1` | Logik-Tests der 3.8-Features (optional, lokal ausführen; wird NICHT vom Starter geladen) |
+| `test-v39.ps1` | Logik-Tests der 3.9-Features (optional, lokal ausführen; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
 
@@ -34,6 +34,34 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+### 3.9
+- **Komplette Steuerung per HTTP GET (wichtigste Neuerung).** Die Bridge lässt
+  sich jetzt vollständig über ganz normale GET-Anfragen bedienen – exakt
+  gleichwertig zu POST. Hintergrund: Manche KI-Umgebungen dürfen keine direkte
+  Verbindung zu `trycloudflare.com` aufbauen und erreichen den Tunnel nur über
+  ihren Web-Abruf-Dienst, der ausschließlich GET ohne Datenkörper kann. Neu:
+  - `GET /api/tool?token=…&tool=NAME&args=<URL-kodiertes JSON>&timeoutSeconds=N`
+  - `GET /api/tools/parallel?token=…&calls=<URL-kodiertes JSON-Array>`
+  - `GET /api/upload?token=…&uploadId=…&chunkIndex=N&chunkCount=M&text=<URL-kodiert>`
+
+  Der Server baut aus den Abfrage-Parametern denselben Körper, den ein POST
+  geschickt hätte, und schickt ihn durch **denselben Programmpfad**. Dadurch
+  sind `_bridge`-Umschlag, `_sessionStart`, Stückelung/Blobs, die
+  `SELF_TEST_DISABLED`-Sperre, Play-Absichten und `report_done` identisch.
+  Dokumentation, Manifest (Endpunkt-Liste) und die Sitzungsstart-Hinweise sagen
+  Arena ausdrücklich, dass sie **ausschließlich über GET** arbeiten kann
+- **Kopier-Bestätigung**: Nach „Prompt kopieren“ im „…“-Menü erscheint ein
+  dezenter Hinweis im Fenster („Prompt wurde in die Zwischenablage kopiert“),
+  der nach wenigen Sekunden von allein ausblendet – kein Popup
+- **Autostart sucht selbst nach Updates**: Ist „Beim PC-Start automatisch
+  öffnen“ aktiv, startet Windows das Skript ohne den Starter. Die Bridge prüft
+  deshalb jetzt selbst: `version.json` von GitHub laden (Branch-Kette
+  konfiguriert → `main` → `master`), bei neuerer Version `ArenaBridge.ps1`
+  herunterladen, sauber austauschen (`.new`-Datei, alte Instanzen beenden),
+  neu starten und das Update-Hinweisfenster zeigen. Netzprobleme blockieren den
+  Start **nie** – kurze Zeitlimits, im Zweifel still weiter mit der lokalen
+  Fassung
 
 ### 3.8
 - Große eigenes Einstellungsfenster: alle An/Aus-Optionen sind jetzt echte

@@ -1,7 +1,41 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 3.8
+# Arena Roblox Bridge  -  Version 3.9
 #
-# NEU IN DIESER VERSION (3.8) - PLAYTESTS ZUVERLAESSIG + EINSTELLUNGEN:
+# NEU IN DIESER VERSION (3.9) - KOMPLETTE STEUERUNG PER HTTP GET:
+#   1.  GET-API (das Wichtigste): Die Bridge laesst sich jetzt VOLLSTAENDIG
+#       ueber ganz normale GET-Anfragen bedienen - genau gleichwertig zu
+#       POST. Hintergrund: Manche KI-Umgebungen duerfen keine direkte
+#       Verbindung zu trycloudflare.com aufbauen und erreichen den Tunnel
+#       nur ueber ihren Web-Abruf-Dienst - und der kann ausschliesslich GET
+#       ohne Datenkoerper. Neu moeglich ist deshalb:
+#         GET /api/tool?token=...&tool=NAME&args=<URL-kodiertes JSON>
+#                                          &timeoutSeconds=N
+#         GET /api/tools/parallel?token=...&calls=<URL-kodiertes JSON>
+#         GET /api/upload?token=...&uploadId=...&chunkIndex=N
+#                                  &chunkCount=M&text=<URL-kodiert>
+#       Technisch baut der Server aus den Abfrage-Parametern denselben
+#       Koerper zusammen, den ein POST geschickt haette, und schickt ihn
+#       durch EXAKT denselben Programmpfad. Damit gibt es keinerlei
+#       Unterschied: _bridge-Umschlag, _sessionStart, Stueckelung/Blobs,
+#       die SELF_TEST_DISABLED-Sperre, Play-Absichten und report_done
+#       verhalten sich identisch. Dokumentation, Manifest (Endpunkt-Liste)
+#       und die Sitzungsstart-Hinweise sagen der KI ausdruecklich, dass sie
+#       AUSSCHLIESSLICH ueber GET arbeiten kann.
+#   2.  KOPIER-BESTAETIGUNG: Nach "Prompt kopieren" im "..."-Menue der
+#       Spieleliste erscheint jetzt ein dezenter Hinweis im Fenster
+#       ("Prompt wurde in die Zwischenablage kopiert"), der nach wenigen
+#       Sekunden von allein ausblendet. Kein Popup, keine Sprechblase.
+#   3.  AUTOSTART SUCHT SELBST NACH UPDATES: Ist "Beim PC-Start automatisch
+#       oeffnen" aktiv, startet Windows das Skript direkt - ohne den
+#       Starter, der sonst die Updates holt. Deshalb prueft die Bridge in
+#       diesem Fall selbst: version.json von GitHub laden (Branch-Kette
+#       konfiguriert -> main -> master), bei neuerer Version ArenaBridge.ps1
+#       herunterladen, sauber austauschen (.new-Datei, alte Instanzen
+#       beenden), neu starten und das Update-Hinweisfenster zeigen.
+#       Netzprobleme blockieren den Start NIE: kurze Zeitlimits, im
+#       Zweifel still mit der lokalen Fassung weiter.
+#
+# NEU IN VERSION 3.8 - PLAYTESTS ZUVERLAESSIG + EINSTELLUNGEN:
 #   1.  GROSSES EINSTELLUNGSFENSTER: Die Einstellungen sind ein eigenes,
 #       deutlich groesseres Fenster geworden (vorher: kleines 300-px-Panel).
 #       Alle An/Aus-Optionen sind echte SCHALTER mit ROT (aus) und GRUEN (an)
@@ -463,6 +497,22 @@ $script:SplashTunnelPulse = $false
 $script:StartupBlocked = $false
 $script:SplashTerminalAt = $null
 
+# ----------------------------------------------------------------------------
+# SELBST-AKTUALISIERUNG BEIM AUTOSTART (Version 3.9)
+# Wird die Bridge ueber den Windows-Autostart geoeffnet, laeuft der
+# Starter (Arena Roblox Bridge.cmd) NICHT mit - dann gibt es auch keinen
+# -UpdateStatus-Parameter. Damit der Nutzer trotzdem nie auf einer alten
+# Fassung sitzen bleibt, prueft das Programm in diesem Fall SELBST, ob es
+# im GitHub-Repository etwas Neueres gibt.
+# ----------------------------------------------------------------------------
+$script:RepoOwner = 'merta-studios'
+$script:RepoName = 'arenarobloxbridge'
+# Branch-Kette: Zuerst der in REPOSITORY-LINK.txt / update-config.json
+# hinterlegte Branch, danach die ueblichen Standardnamen.
+$script:RepoBranch = ''
+$script:RepoBranchFallbacks = @('main', 'master')
+$script:SelfUpdateTimeout = 12
+
 New-Item -ItemType Directory -Path $script:AppDataRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $script:ShotFolder -Force | Out-Null
 New-Item -ItemType Directory -Path $script:BinFolder -Force | Out-Null
@@ -499,6 +549,177 @@ function Get-UpdateStatusText {
 function Test-UpdateError {
     # Wahr, wenn der Starter einen Fehler melden wollte (rote "1" am Zahnrad)
     return (@('keine-verbindung', 'update-fehler', 'update-suche-fehler') -contains $UpdateStatus)
+}
+
+# ----------------------------------------------------------------------------
+# SELBST-AKTUALISIERUNG BEIM AUTOSTART (Version 3.9)
+# ----------------------------------------------------------------------------
+# Wird die Bridge ueber den Windows-Autostart gestartet, laeuft der Starter
+# (Arena Roblox Bridge.cmd) nicht mit - das Programm bekommt dann KEINEN
+# -UpdateStatus. Genau dann uebernimmt es die Update-Suche selbst:
+#   1) version.json von raw.githubusercontent.com laden (Branch-Kette)
+#   2) Ist die Version dort neuer, ArenaBridge.ps1 herunterladen
+#   3) Datei sauber austauschen (erst .new schreiben, dann umbenennen)
+#   4) Alte Instanzen beenden und neu starten (-UpdateStatus update-erfolgreich)
+# WICHTIG: Kein Netz, langsames Netz, GitHub down, kaputtes JSON - nichts
+# davon darf den Start blockieren. Jeder Schritt hat ein kurzes Zeitlimit und
+# faellt im Zweifel stillschweigend auf die lokal vorhandene Fassung zurueck.
+# ----------------------------------------------------------------------------
+
+function Get-LocalBridgeVersion {
+    # Liest die Version aus dem Changelog-Kopf der eigenen Datei.
+    try {
+        if ($script:ScriptPath -and (Test-Path -LiteralPath $script:ScriptPath)) {
+            $head = Get-Content -LiteralPath $script:ScriptPath -TotalCount 5 -Encoding UTF8
+            foreach ($line in $head) {
+                $m = [regex]::Match([string]$line, 'Version\s+([0-9]+(?:\.[0-9]+)+)')
+                if ($m.Success) { return $m.Groups[1].Value }
+            }
+        }
+    } catch {}
+    return [string]$script:Shared.DocsVersion
+}
+
+function Get-UpdateBranchChain {
+    # Reihenfolge: konfigurierter Branch zuerst, dann main, dann master.
+    $chain = New-Object System.Collections.Generic.List[string]
+    $configured = ''
+    try {
+        # Optional: update-config.json neben dem Skript ({ "branch": "..." })
+        $cfgFile = Join-Path $script:AppFolder 'update-config.json'
+        if (Test-Path -LiteralPath $cfgFile) {
+            $cfg = Get-Content -LiteralPath $cfgFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($cfg -and $cfg.branch) { $configured = [string]$cfg.branch }
+        }
+    } catch {}
+    if ([string]::IsNullOrWhiteSpace($configured)) { $configured = [string]$script:RepoBranch }
+    if (-not [string]::IsNullOrWhiteSpace($configured)) { [void]$chain.Add($configured.Trim()) }
+    foreach ($fallback in $script:RepoBranchFallbacks) {
+        if ($chain -notcontains $fallback) { [void]$chain.Add($fallback) }
+    }
+    return , @($chain)
+}
+
+function Compare-BridgeVersion {
+    # Gibt 1 zurueck, wenn $Remote neuer ist als $Local (sonst 0 / -1).
+    param([string]$Remote, [string]$Local)
+    try {
+        $r = [version]([string]$Remote).Trim()
+        $l = [version]([string]$Local).Trim()
+        if ($r -gt $l) { return 1 }
+        if ($r -lt $l) { return -1 }
+        return 0
+    } catch { return 0 }
+}
+
+function Get-RawGitHubText {
+    param([string]$Branch, [string]$File)
+    $url = "https://raw.githubusercontent.com/$($script:RepoOwner)/$($script:RepoName)/$Branch/$File"
+    try {
+        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec $script:SelfUpdateTimeout -ErrorAction Stop
+        if ([int]$response.StatusCode -ne 200) { return $null }
+        # Immer als UTF-8 lesen, sonst werden Umlaute zerstoert.
+        return [System.Text.Encoding]::UTF8.GetString($response.Content)
+    } catch {
+        return $null
+    }
+}
+
+function Invoke-AutostartSelfUpdate {
+    # Rueckgabe: $true, wenn ein Update installiert wurde und dieser Prozess
+    # sich gleich beendet (der Neustart laeuft dann schon).
+    if ($script:IsExeMode) { return $false }           # EXE aktualisiert der Starter
+    if (-not $script:ScriptPath) { return $false }
+    if (-not (Test-Path -LiteralPath $script:ScriptPath)) { return $false }
+
+    $localVersion = Get-LocalBridgeVersion
+    Write-RuntimeLog "Autostart-Update: Suche nach einer neueren Fassung (lokal $localVersion) ..."
+
+    foreach ($branch in (Get-UpdateBranchChain)) {
+        $versionText = Get-RawGitHubText -Branch $branch -File 'version.json'
+        if (-not $versionText) {
+            Write-RuntimeLog "Autostart-Update: Branch '$branch' nicht erreichbar - naechster Versuch."
+            continue
+        }
+
+        $remoteVersion = ''
+        $remoteNotes = ''
+        try {
+            $info = $versionText | ConvertFrom-Json
+            $remoteVersion = [string]$info.version
+            if ($info.PSObject.Properties['notes']) { $remoteNotes = [string]$info.notes }
+        } catch {
+            Write-RuntimeLog "Autostart-Update: version.json auf Branch '$branch' ist unlesbar."
+            continue
+        }
+        if ([string]::IsNullOrWhiteSpace($remoteVersion)) { continue }
+
+        if ((Compare-BridgeVersion -Remote $remoteVersion -Local $localVersion) -ne 1) {
+            Write-RuntimeLog "Autostart-Update: Version $remoteVersion online, $localVersion lokal - kein Update noetig."
+            return $false
+        }
+
+        Write-RuntimeLog "Autostart-Update: Neue Version $remoteVersion gefunden - wird geladen ..."
+        $newScript = Get-RawGitHubText -Branch $branch -File 'ArenaBridge.ps1'
+        if ([string]::IsNullOrWhiteSpace($newScript) -or $newScript.Length -lt 50000) {
+            Write-RuntimeLog 'Autostart-Update: Download unvollstaendig - es bleibt bei der lokalen Fassung.'
+            return $false
+        }
+
+        try {
+            # 1) Erst in eine .new-Datei schreiben (UTF-8 MIT BOM, sonst
+            #    liest PowerShell 5.1 die Umlaute als ANSI).
+            $newPath = $script:ScriptPath + '.new'
+            $utf8Bom = New-Object System.Text.UTF8Encoding($true)
+            [System.IO.File]::WriteAllText($newPath, $newScript, $utf8Bom)
+
+            # 2) Details fuer das Hinweisfenster hinterlegen.
+            try {
+                $statusFile = Join-Path $script:AppFolder 'update-status.json'
+                $payload = @{ version = $remoteVersion; notes = $remoteNotes; error = $null } | ConvertTo-Json -Depth 5
+                [System.IO.File]::WriteAllText($statusFile, $payload, $utf8Bom)
+            } catch {}
+
+            # 3) Austauschen: alte Datei als .old sichern, dann umbenennen.
+            $oldPath = $script:ScriptPath + '.old'
+            if (Test-Path -LiteralPath $oldPath) { Remove-Item -LiteralPath $oldPath -Force -ErrorAction SilentlyContinue }
+            Move-Item -LiteralPath $script:ScriptPath -Destination $oldPath -Force
+            try {
+                Move-Item -LiteralPath $newPath -Destination $script:ScriptPath -Force
+            } catch {
+                # Umbenennen fehlgeschlagen: alten Stand zurueckholen.
+                Move-Item -LiteralPath $oldPath -Destination $script:ScriptPath -Force
+                throw
+            }
+            Remove-Item -LiteralPath $oldPath -Force -ErrorAction SilentlyContinue
+
+            # 4) Andere Bridge-Instanzen beenden (wie der Starter es tut).
+            try {
+                foreach ($ghostPid in (Get-BridgeGhostProcesses)) {
+                    [void](Stop-ProcessSafe -TargetPid $ghostPid -Reason 'Autostart-Update: alte Instanz')
+                }
+            } catch {}
+
+            # 5) Neu starten - mit Update-Hinweis.
+            $psExe = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+            if (-not (Test-Path -LiteralPath $psExe)) { $psExe = 'powershell.exe' }
+            Start-Process -FilePath $psExe -ArgumentList @(
+                '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                '-WindowStyle', 'Hidden',
+                '-File', $script:ScriptPath,
+                '-UpdateStatus', 'update-erfolgreich'
+            ) -WorkingDirectory $script:AppFolder | Out-Null
+
+            Write-RuntimeLog "Autostart-Update: Version $remoteVersion installiert - Neustart laeuft."
+            return $true
+        } catch {
+            Write-RuntimeLog "Autostart-Update fehlgeschlagen: $($_.Exception.Message) - es wird die lokale Fassung gestartet."
+            return $false
+        }
+    }
+
+    Write-RuntimeLog 'Autostart-Update: Kein Branch erreichbar - es wird die lokale Fassung gestartet.'
+    return $false
 }
 
 # ----------------------------------------------------------------------------
@@ -590,7 +811,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '3.8'
+    DocsVersion     = '3.9'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -712,7 +933,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 3.8)
+  Arena Studio Bridge - Studio Plugin  (Version 3.9)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -782,7 +1003,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "3.8"
+local ARENA_VERSION  = "3.9"
 local POLL_WAIT      = 12      -- Sekunden Long-Poll (Befehle kommen sofort an)
 local HEARTBEAT_EVERY = 5      -- Sekunden
 local CHUNK_SIZE     = 48000   -- Bytes je Teilstueck einer Antwort
@@ -9079,6 +9300,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
     function Get-BridgeGuides {
         return @{
             importantRules = @(
+                'GET WORKS FOR EVERYTHING (3.9): if your environment can only fetch URLs (plain HTTP GET, no POST body), you can still do ABSOLUTELY EVERYTHING. Every endpoint accepts GET on exactly the same code path as POST: GET /api/tool?token=<token>&tool=<name>&args=<URL-encoded JSON>&timeoutSeconds=<n>, GET /api/tools/parallel?token=<token>&calls=<URL-encoded JSON array>, GET /api/upload?token=<token>&uploadId=<id>&chunkIndex=<n>&chunkCount=<m>&text=<URL-encoded text>, GET /api/status, GET /api/events?token=..., GET /api/blob?token=...&id=...&index=... . You get the same _bridge envelope, the same _sessionStart documentation, the same chunking/blobs and the same gates (SELF_TEST_DISABLED, read-only, playtest) - nothing is limited. Rule of thumb: a JSON body field becomes a query parameter, and object fields (args, calls) are passed as URL-encoded JSON.',
                 'IDS FIRST: every object has an id like "#42". Names are NOT unique - 55 parts can all be called "Part". Every read tool returns the id; always pass ids back in "ref"/"refs". A path like game.Workspace.Part[3] also works, but ids are safer.',
                 'SELECTORS: most "refs" arguments also accept a selector table: { tag = "Door" }, { className = "Part", rootRef = "#50" }, { query = "crate" }. Use selectors instead of long id lists.',
                 'SCRIPTS: never rewrite an 800 line script to change one line. Read with get_script (line numbers + hash), then patch_script (replace / replaceAll / insertAfter / replaceFunction / replaceLines ...). Check the result with compile_check BEFORE running it. set_script_source (full replace) still exists for new or tiny files. Pass expectHash to be safe.',
@@ -9263,7 +9485,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '3.8'
+            version = '3.9'
             docsVersion = [string]$Shared.DocsVersion
             role = 'You are connected to exactly ONE live Roblox Studio place through a local plugin. Every token belongs to one Studio window only - if several windows are open, each one has its own token and you can never touch the wrong place. Send every request as POST /api/tool with JSON body { "token": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -9276,11 +9498,15 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 docs        = 'GET /api/docs  (no param = everything; ?tool=<name>; ?category=<name>; ?full=true)'
                 place       = 'GET /api/place'
                 callTool    = 'POST /api/tool  { token, tool, args }  (args.asJob=true = run in background, get jobId)'
+                callToolGet = 'GET /api/tool?token=<token>&tool=<name>&args=<URL-encoded JSON>&timeoutSeconds=<n>  - IDENTICAL to POST /api/tool (same code path, same envelope, same _sessionStart, same chunking/blobs). Use this if your environment can only do GET requests.'
                 callMany    = 'POST /api/tools/parallel  { token, calls: [ { tool, args } ] }  - runs several tools at the same time'
+                callManyGet = 'GET /api/tools/parallel?token=<token>&calls=<URL-encoded JSON array>  - same as the POST version'
                 events      = 'GET /api/events?token=...  - what the user did (started/stopped a playtest, plays in the game, ...)'
                 blob        = 'GET /api/blob?token=...&id=<blobId>&index=<n>  - fetch one chunk of a huge answer'
                 upload      = 'POST /api/upload  { token, text, uploadId?, chunkIndex?, chunkCount? }  - send a huge script in pieces, then use args.sourceRef = uploadId'
+                uploadGet   = 'GET /api/upload?token=<token>&uploadId=<id>&chunkIndex=<n>&chunkCount=<m>&text=<URL-encoded text>  - same as the POST version'
                 status      = 'GET /api/status'
+                getOnlyNote = 'EVERY endpoint above also works with a plain HTTP GET (Version 3.9). Method GET and method POST run through exactly the same code - nothing is missing, nothing behaves differently. Rule: what would be a JSON body field becomes a query parameter; the object fields args / calls / extra are passed as URL-encoded JSON. So an AI that can only fetch URLs can do absolutely everything.'
             }
             toolCount = $docs.Count
             toolsIndex = $toolIndex
@@ -9355,7 +9581,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '3.8'
+            bridgeVersion = '3.9'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -9578,7 +9804,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '3.8'
+                        bridgeVersion = '3.9'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -9619,6 +9845,69 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 $body = Read-Body $context.Request
             }
 
+            # ---------------- GET-Vollsteuerung (Version 3.9) --------------
+            # Manche KI-Umgebungen duerfen NUR per HTTP GET nach draussen
+            # (der Web-Abruf-Dienst schickt keine POST-Koerper). Damit die KI
+            # die Bridge trotzdem komplett bedienen kann, bauen wir hier aus
+            # den Abfrage-Parametern (?tool=...&args=...) genau denselben
+            # Koerper zusammen, den ein POST geschickt haette. Ab dieser
+            # Zeile ist der restliche Code voellig gleich - GET und POST
+            # laufen also durch DIESELBE Verarbeitung.
+            $getParamError = $null
+            if ($null -eq $body -and $context.Request.HttpMethod -eq 'GET') {
+                $q = $context.Request.QueryString
+                $qNames = @()
+                try { $qNames = @($q.AllKeys | Where-Object { $_ }) } catch {}
+                if ($qNames.Count -gt 0) {
+                    $getBody = New-Object psobject
+                    # Text-Felder einfach uebernehmen (HttpListener dekodiert
+                    # die URL-Kodierung bereits).
+                    foreach ($plain in @('token','tool','uploadId','text','sessionId','id','category','message','status')) {
+                        $raw = $q[$plain]
+                        if ($null -ne $raw) {
+                            $getBody | Add-Member -MemberType NoteProperty -Name $plain -Value ([string]$raw) -Force
+                        }
+                    }
+                    # Zahlen-Felder sauber in Zahlen wandeln.
+                    foreach ($num in @('timeoutSeconds','chunkIndex','chunkCount','limit')) {
+                        $raw = $q[$num]
+                        if (-not [string]::IsNullOrWhiteSpace([string]$raw)) {
+                            $parsed = 0
+                            if ([int]::TryParse(([string]$raw).Trim(), [ref]$parsed)) {
+                                $getBody | Add-Member -MemberType NoteProperty -Name $num -Value $parsed -Force
+                            }
+                        }
+                    }
+                    # JSON-Felder: als URL-kodiertes JSON uebergeben.
+                    foreach ($jsonField in @('args','calls','extra')) {
+                        $raw = $q[$jsonField]
+                        if (-not [string]::IsNullOrWhiteSpace([string]$raw)) {
+                            try {
+                                $getBody | Add-Member -MemberType NoteProperty -Name $jsonField -Value (ConvertFrom-Json ([string]$raw)) -Force
+                            } catch {
+                                if (-not $getParamError) {
+                                    $getParamError = @{
+                                        ok = $false
+                                        error = ("Der Parameter '" + $jsonField + "' ist kein gueltiges JSON: " + $_.Exception.Message)
+                                        hint = ("Send " + $jsonField + " as URL-encoded JSON, e.g. ?" + $jsonField + "=%7B%22key%22%3A%22value%22%7D")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    # Ein Werkzeug ohne Argumente ist erlaubt - dann ein
+                    # leeres Objekt, damit der spaetere Code nicht stolpert.
+                    if ($getBody.PSObject.Properties['tool'] -and -not $getBody.PSObject.Properties['args']) {
+                        $getBody | Add-Member -MemberType NoteProperty -Name 'args' -Value (New-Object psobject) -Force
+                    }
+                    $body = $getBody
+                }
+            }
+            if ($getParamError) {
+                Send-Json $context 400 $getParamError
+                continue
+            }
+
             # ---------------- Manifest -------------------------------------
             if ($path -eq '/' -or $path -eq '/api/manifest' -or $path -eq '/api/tools') {
                 Send-Json $context 200 (Get-Manifest)
@@ -9636,7 +9925,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '3.8'
+                        serverVersion = '3.9'
                         docsVersion = [string]$Shared.DocsVersion
                     }
                 }
@@ -9818,7 +10107,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '3.8'
+                    bridgeVersion = '3.9'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -10907,6 +11196,24 @@ $xaml = @'
                 </Border>
 
                 <!-- ============================================================ -->
+                <!-- KOPIER-BESTAETIGUNG (Version 3.9)                            -->
+                <!-- Kein Popup, keine Windows-Sprechblase: nur ein kleiner       -->
+                <!-- Hinweis unten im Fenster, der nach ein paar Sekunden von     -->
+                <!-- allein ausblendet.                                           -->
+                <!-- ============================================================ -->
+                <Border x:Name="CopyConfirm" Panel.ZIndex="60" Visibility="Collapsed" Opacity="0"
+                        HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,14"
+                        Background="#1C2A3D" BorderBrush="#FF4FA3" BorderThickness="1" CornerRadius="10"
+                        Padding="16,10,18,10">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#x2713;" Foreground="#FF4FA3" FontSize="15" FontWeight="Bold"
+                                   VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <TextBlock x:Name="CopyConfirmText" Text="Prompt wurde in die Zwischenablage kopiert"
+                                   Foreground="#E8EDF5" FontSize="13" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- ============================================================ -->
                 <!-- STARTBILDSCHIRM (Version 3.4): Ladekreisel mit Fortschritt.  -->
                 <!-- Ersetzt die drei frueheren Status-Kaerten. Die Spieleliste  -->
                 <!-- dahinter erscheint erst, wenn alles bereit ist.             -->
@@ -11001,6 +11308,8 @@ $window.Dispatcher.add_UnhandledException({
 $TitleBar        = $window.FindName('TitleBar')
 $SubtitleText    = $window.FindName('SubtitleText')
 $SplashScreen    = $window.FindName('SplashScreen')
+$CopyConfirm     = $window.FindName('CopyConfirm')
+$CopyConfirmText = $window.FindName('CopyConfirmText')
 $SplashHeadline  = $window.FindName('SplashHeadline')
 $SplashSub       = $window.FindName('SplashSub')
 $SplashStudioDot    = $window.FindName('SplashStudioDot')
@@ -11392,18 +11701,19 @@ function Copy-Prompt {
     param([string]$SessionId)
     $token = $null
     if (-not $script:Shared.SessionTokens.TryGetValue($SessionId, [ref]$token)) {
-        Show-Toast -Message 'Token konnte nicht gelesen werden.' -Kind 'Error' -Seconds 5
+        Show-CopyConfirm -Message 'Token konnte nicht gelesen werden.' -Seconds 5
         return
     }
     if ([string]::IsNullOrWhiteSpace($script:TunnelUrl)) {
-        Show-Toast -Message 'Der Cloudflare-Tunnel ist noch nicht bereit.' -Kind 'Warn' -Seconds 5
+        Show-CopyConfirm -Message 'Der Cloudflare-Tunnel ist noch nicht bereit.' -Seconds 5
         return
     }
     try {
         [System.Windows.Clipboard]::SetText("URL=$script:TunnelUrl`r`nTOKEN=$token")
-        Show-Toast -Message 'Prompt in die Zwischenablage kopiert.' -Kind 'Success'
+        # Version 3.9: sichtbare Rueckmeldung im Fenster (blendet von allein aus)
+        Show-CopyConfirm -Message 'Prompt wurde in die Zwischenablage kopiert' -Seconds 3
     } catch {
-        Show-Toast -Message "Zwischenablage blockiert: $($_.Exception.Message)" -Kind 'Error' -Seconds 6
+        Show-CopyConfirm -Message "Zwischenablage blockiert: $($_.Exception.Message)" -Seconds 6
     }
 }
 
@@ -11670,6 +11980,67 @@ function Set-LiveBadge {
         $LiveBadge.Tag = $Bg
         $LiveBadge.Background = Get-Brush $Bg
         $LiveBadge.BorderBrush = Get-Brush $Border
+    }
+}
+
+# ----------------------------------------------------------------------------
+# KOPIER-BESTAETIGUNG (Version 3.9)
+# Der Nutzer soll sehen, dass der Prompt wirklich in der Zwischenablage liegt.
+# Bewusst KEINE Windows-Sprechblase und KEIN Popup unten rechts, sondern ein
+# dezenter Hinweis IM Fenster, der nach wenigen Sekunden von allein ausblendet.
+# ----------------------------------------------------------------------------
+$script:CopyConfirmTimer = $null
+
+function Show-CopyConfirm {
+    param(
+        [string]$Message = 'Prompt wurde in die Zwischenablage kopiert',
+        [double]$Seconds = 3.0
+    )
+    if ($null -eq $CopyConfirm) { return }
+    try {
+        if ($null -ne $CopyConfirmText) { $CopyConfirmText.Text = $Message }
+
+        # Ein evtl. noch laufender Ausblend-Zaehler wird zurueckgesetzt,
+        # damit mehrmaliges Kopieren den Hinweis frisch anzeigt.
+        if ($null -ne $script:CopyConfirmTimer) {
+            try { $script:CopyConfirmTimer.Stop() } catch {}
+            $script:CopyConfirmTimer = $null
+        }
+
+        $CopyConfirm.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $null)
+        $CopyConfirm.Opacity = 0
+        $CopyConfirm.Visibility = 'Visible'
+        $fadeIn = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 1, [System.TimeSpan]::FromMilliseconds(180))
+        $CopyConfirm.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fadeIn)
+
+        $timer = [System.Windows.Threading.DispatcherTimer]::new()
+        $timer.Interval = [System.TimeSpan]::FromSeconds($Seconds)
+        $timer.Tag = $CopyConfirm
+        $timer.Add_Tick({
+            param($s, $e)
+            $s.Stop()
+            $panel = $s.Tag
+            try {
+                $fadeOut = [System.Windows.Media.Animation.DoubleAnimation]::new(1, 0, [System.TimeSpan]::FromMilliseconds(520))
+                $panel.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fadeOut)
+                $hideTimer = [System.Windows.Threading.DispatcherTimer]::new()
+                $hideTimer.Interval = [System.TimeSpan]::FromMilliseconds(560)
+                $hideTimer.Tag = $panel
+                $hideTimer.Add_Tick({
+                    param($s2, $e2)
+                    $s2.Stop()
+                    try { $s2.Tag.Visibility = 'Collapsed' } catch {}
+                })
+                $hideTimer.Start()
+            } catch {
+                try { $panel.Visibility = 'Collapsed' } catch {}
+            }
+        })
+        $script:CopyConfirmTimer = $timer
+        $timer.Start()
+    } catch {
+        # Der Hinweis ist reine Bequemlichkeit - er darf nie etwas kaputtmachen.
+        try { $CopyConfirm.Visibility = 'Collapsed' } catch {}
     }
 }
 
@@ -12078,7 +12449,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '3.8'
+    $versionText = '3.9'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -12403,7 +12774,7 @@ function Open-SettingsWindow {
                     <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                     <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                    <TextBlock Text="Arena Roblox Bridge - Version 3.8" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                    <TextBlock Text="Arena Roblox Bridge - Version 3.9" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                 </StackPanel>
             </ScrollViewer>
@@ -12435,7 +12806,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 3.8 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 3.9 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     if ($script:LastArenaMessage) {
@@ -12490,7 +12861,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 3.8 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 3.9 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#A99DA5'
 }
 if (Test-UpdateError) {
@@ -12503,7 +12874,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#F0A7B4'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '3.8'
+    $verText = '3.9'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
@@ -12514,6 +12885,27 @@ if (Test-UpdateError) {
 if (-not $script:EncodingOk) {
     Add-PendingToast 'Achtung: Die Skriptdatei ist nicht als "UTF-8 mit BOM" gespeichert. Umlaute koennen falsch aussehen.' 'Warn' 9
     Write-RuntimeLog 'ACHTUNG: Skriptdatei ist falsch codiert - Umlaute werden ggf. falsch angezeigt.'
+}
+
+# ----------------------------------------------------------------------------
+# AUTOSTART: SELBST NACH UPDATES SUCHEN (Version 3.9)
+# Ohne -UpdateStatus wurde das Programm NICHT vom Starter geoeffnet - das ist
+# genau der Windows-Autostart ("Beim PC-Start automatisch oeffnen"). Dann
+# uebernimmt die Bridge die Update-Suche selbst. Alles ist abgesichert: ein
+# Netzproblem darf den Start niemals verhindern.
+# ----------------------------------------------------------------------------
+if ([string]::IsNullOrWhiteSpace($UpdateStatus)) {
+    $selfUpdated = $false
+    try {
+        $selfUpdated = Invoke-AutostartSelfUpdate
+    } catch {
+        $selfUpdated = $false
+        try { Write-RuntimeLog "Autostart-Update uebersprungen: $($_.Exception.Message)" } catch {}
+    }
+    if ($selfUpdated) {
+        # Die neue Fassung laeuft bereits - dieser Prozess wird beendet.
+        exit 0
+    }
 }
 
 # Update/Willkommen blockiert bewusst den eigentlichen Programmstart. Es gibt

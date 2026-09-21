@@ -1,7 +1,7 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 3.8  -  21.09.2026)                                #
+#   (Stand: Version 3.9  -  21.09.2026)                                #
 #                                                                      #
 ##########################################################################
 
@@ -206,6 +206,21 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
   den Test gestartet hat (Nutzer-Playtests kommen zuverlaessig an,
   auch nach Plugin-Neuladen), neuer Modus play_here, Nutzer-Aktivitaet
   im Editor wird als user_active gemeldet
+- v3.9: KOMPLETTE STEUERUNG PER HTTP GET (wichtigstes Feature): jeder
+  Endpunkt nimmt jetzt auch GET an und laeuft ueber DENSELBEN
+  Programmpfad wie POST (GET /api/tool?token=&tool=&args=<URL-JSON>
+  &timeoutSeconds=, GET /api/tools/parallel?calls=<URL-JSON>,
+  GET /api/upload?uploadId=&chunkIndex=&chunkCount=&text=). Grund:
+  manche KI-Umgebungen erreichen trycloudflare.com nur ueber ihren
+  Web-Abruf-Dienst (nur GET, kein POST-Koerper). _bridge, _sessionStart,
+  Stueckelung/Blobs, SELF_TEST_DISABLED, Play-Absichten und report_done
+  verhalten sich identisch; Doku/Manifest/Guides sagen der KI, dass sie
+  ausschliesslich ueber GET arbeiten kann. Ausserdem: Kopier-
+  Bestaetigung im Fenster nach "Prompt kopieren" (blendet nach ein paar
+  Sekunden aus, KEIN Popup), und der Autostart sucht selbst nach
+  Updates (version.json von GitHub, Branch-Kette, .new-Tausch, alte
+  Prozesse beenden, Neustart mit -UpdateStatus update-erfolgreich) -
+  Netzfehler blockieren den Start nie.
 
 Der vollstaendige Versionsverlauf steht als Kommentar ganz oben in
 ArenaBridge.ps1 (bis zur aktuellen Version fortfuehren!).
