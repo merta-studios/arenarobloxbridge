@@ -1,10 +1,10 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge 3.8 - Logik-Tests (Mock, ohne Studio / ohne UI)
+# Arena Roblox Bridge 3.9 - Logik-Tests (Mock, ohne Studio / ohne UI)
 # ----------------------------------------------------------------------------
 # Ausfuehren auf dem PC (Windows PowerShell 5.1):
-#   powershell.exe -NoProfile -ExecutionPolicy Bypass -File test-v38.ps1
+#   powershell.exe -NoProfile -ExecutionPolicy Bypass -File test-v39.ps1
 #
-# Die Tests pruefen die neue 3.8-Logik OHNE Roblox Studio:
+# Die Tests pruefen die neue 3.9-Logik OHNE Roblox Studio:
 #   1. Syntax der kompletten ArenaBridge.ps1 (echter PowerShell-Parser)
 #   2. UTF-8-BOM
 #   3. Einstellungen: laden/speichern (settings.json Round-Trip)
@@ -16,7 +16,8 @@
 #   5. Selbst-Test-Sperre (New-SelfTestBlockedResult)
 #   6. report_done: aus/ohne Nachricht/erfolgreich (Mock-Warteschlange)
 #   7. XAML der drei Fenster ist wohlgeformtes XML
-#   8. Versions-Konsistenz (3.8 ueberall)
+#   8. Versions-Konsistenz (3.9 ueberall)
+#   9. GET-API, Kopier-Bestaetigung und Autostart-Selbst-Update (3.9)
 # ============================================================================
 
 $ErrorActionPreference = 'Stop'
@@ -37,7 +38,7 @@ function Assert([bool]$Condition, [string]$Name, [string]$Detail) {
     if ($Condition) { Pass $Name } else { Fail $Name $Detail }
 }
 
-Write-Host '=== Arena Bridge 3.8 Logik-Tests ===' -ForegroundColor Cyan
+Write-Host '=== Arena Bridge 3.9 Logik-Tests ===' -ForegroundColor Cyan
 
 # ----------------------------------------------------------------------------
 # 1) Syntax der kompletten Datei mit dem echten Parser pruefen
@@ -247,20 +248,72 @@ Assert ($null -ne $settingsXaml -and $settingsXaml.Groups[1].Value -like '*Arena
 # ----------------------------------------------------------------------------
 # 8) Versions-Konsistenz
 # ----------------------------------------------------------------------------
-Write-Host '`n8) Version 3.8 ueberall' -ForegroundColor Yellow
-Assert ($text.Contains("# Arena Roblox Bridge  -  Version 3.8")) 'Changelog-Kopf'
-Assert ($text.Contains("DocsVersion     = '3.8'")) 'DocsVersion'
-Assert ($text.Contains('local ARENA_VERSION  = "3.8"')) 'ARENA_VERSION (Plugin)'
-Assert ($text.Contains('Arena Studio Bridge - Studio Plugin  (Version 3.8)')) 'Plugin-Kommentar'
-Assert ($text.Contains("version = '3.8'")) 'Manifest-Version'
-Assert ($text.Contains("serverVersion = '3.8'")) 'serverVersion'
-Assert ($text.Contains('$versionText = ' + "'3.8'")) 'Show-UpdateNotice-Fallback'
-Assert ($text.Contains('Text="Arena Roblox Bridge - Version 3.8"')) 'Einstellungs-Fusszeile'
+Write-Host '`n8) Version 3.9 ueberall' -ForegroundColor Yellow
+Assert ($text.Contains("# Arena Roblox Bridge  -  Version 3.9")) 'Changelog-Kopf'
+Assert ($text.Contains("DocsVersion     = '3.9'")) 'DocsVersion'
+Assert ($text.Contains('local ARENA_VERSION  = "3.9"')) 'ARENA_VERSION (Plugin)'
+Assert ($text.Contains('Arena Studio Bridge - Studio Plugin  (Version 3.9)')) 'Plugin-Kommentar'
+Assert ($text.Contains("version = '3.9'")) 'Manifest-Version'
+Assert ($text.Contains("serverVersion = '3.9'")) 'serverVersion'
+Assert ($text.Contains('$versionText = ' + "'3.9'")) 'Show-UpdateNotice-Fallback'
+Assert ($text.Contains('Text="Arena Roblox Bridge - Version 3.9"')) 'Einstellungs-Fusszeile'
 $bridgeVersions = [regex]::Matches($text, "bridgeVersion = '(\d+\.\d+)'")
-Assert ($bridgeVersions.Count -eq 3 -and @($bridgeVersions | Where-Object { $_.Groups[1].Value -ne '3.8' }).Count -eq 0) 'bridgeVersion (3x)'
+Assert ($bridgeVersions.Count -eq 3 -and @($bridgeVersions | Where-Object { $_.Groups[1].Value -ne '3.9' }).Count -eq 0) 'bridgeVersion (3x)'
 $versionJson = Get-Content (Join-Path $root 'version.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-Assert ($versionJson.version -eq '3.8') 'version.json'
+Assert ($versionJson.version -eq '3.9') 'version.json'
 Assert ($versionJson.notes.Length -gt 50) 'version.json hat Neuigkeiten-Text'
+
+# ----------------------------------------------------------------------------
+# 9) Neue 3.9-Features
+# ----------------------------------------------------------------------------
+Write-Host '`n9) GET-API, Kopier-Bestaetigung, Autostart-Update' -ForegroundColor Yellow
+
+# --- GET-API --------------------------------------------------------------
+Assert ($text.Contains('GET-Vollsteuerung (Version 3.9)')) 'GET-Koerperaufbau im Router vorhanden'
+$getBlockStart = $text.IndexOf('GET-Vollsteuerung (Version 3.9)')
+$tokenCheck    = $text.IndexOf('$token = Get-Token $context.Request $body')
+Assert ($getBlockStart -gt 0 -and $tokenCheck -gt $getBlockStart) 'GET-Koerper wird VOR der Token-Pruefung gebaut (gleicher Codepfad)'
+foreach ($field in @('tool', 'uploadId', 'chunkIndex', 'chunkCount', 'timeoutSeconds')) {
+    Assert ($text -match ("'" + [regex]::Escape($field) + "'")) ('GET-Parameter ' + $field + ' wird gelesen')
+}
+Assert ($text.Contains('foreach ($jsonField in @(''args'',''calls'',''extra''))')) 'args/calls/extra werden als JSON geparst'
+Assert ($text.Contains('$getParamError')) 'Ungueltiges JSON liefert eine saubere 400-Antwort'
+Assert ($text.Contains('callToolGet')) 'Manifest listet GET /api/tool'
+Assert ($text.Contains('callManyGet')) 'Manifest listet GET /api/tools/parallel'
+Assert ($text.Contains('uploadGet')) 'Manifest listet GET /api/upload'
+Assert ($text.Contains('getOnlyNote')) 'Manifest erklaert die GET-Vollsteuerung'
+Assert ($text.Contains('GET WORKS FOR EVERYTHING')) 'Sitzungsstart-Regeln erklaeren die GET-Nutzung'
+
+# --- Kopier-Bestaetigung ---------------------------------------------------
+Assert ($text.Contains('x:Name="CopyConfirm"')) 'Kopier-Hinweis ist im Haupt-XAML'
+Assert ($text.Contains('$CopyConfirm     = $window.FindName(''CopyConfirm'')')) 'Kopier-Hinweis wird aus dem XAML geholt'
+Assert ($text.Contains('function Show-CopyConfirm')) 'Show-CopyConfirm existiert'
+Assert ($text.Contains('Prompt wurde in die Zwischenablage kopiert')) 'Bestaetigungstext vorhanden'
+$copyStart = $text.IndexOf('function Copy-Prompt')
+$copyEnd   = $text.IndexOf('function Set-RowMode', $copyStart)
+$copyBody  = $text.Substring($copyStart, $copyEnd - $copyStart)
+Assert ($copyBody.Contains('Show-CopyConfirm')) 'Copy-Prompt zeigt die Bestaetigung'
+Assert (-not $copyBody.Contains('Show-Toast')) 'Copy-Prompt nutzt keine Toasts mehr'
+
+# --- Autostart-Selbst-Update ----------------------------------------------
+Assert ($text.Contains('function Invoke-AutostartSelfUpdate')) 'Autostart-Update-Funktion existiert'
+Assert ($text.Contains('$script:RepoOwner = ''merta-studios''')) 'Repo-Besitzer ist hinterlegt'
+Assert ($text.Contains('$script:RepoName = ''arenarobloxbridge''')) 'Repo-Name ist hinterlegt'
+Assert ($text.Contains('$script:RepoBranchFallbacks = @(''main'', ''master'')')) 'Branch-Kette main -> master'
+Assert ($text.Contains('function Get-UpdateBranchChain')) 'Branch-Kette wird aufgebaut'
+Assert ($text.Contains('raw.githubusercontent.com/$($script:RepoOwner)')) 'version.json kommt von raw.githubusercontent.com'
+Assert ($text.Contains('-TimeoutSec $script:SelfUpdateTimeout')) 'Download hat ein Zeitlimit'
+Assert ($text.Contains('if ([string]::IsNullOrWhiteSpace($UpdateStatus)) {')) 'Update-Suche laeuft nur ohne -UpdateStatus (Autostart)'
+Assert ($text.Contains("'-UpdateStatus', 'update-erfolgreich'")) 'Neustart meldet update-erfolgreich'
+Assert ($text.Contains('$newPath = $script:ScriptPath + ''.new''')) 'Tausch laeuft ueber eine .new-Datei'
+Assert ($text.Contains('Get-BridgeGhostProcesses')) 'Alte Instanzen werden beendet'
+# Kein Netz darf den Start blockieren: der Aufruf steckt in try/catch
+$callIdx = $text.IndexOf('$selfUpdated = Invoke-AutostartSelfUpdate')
+$before   = $text.Substring([Math]::Max(0, $callIdx - 200), [Math]::Min(200, $callIdx))
+Assert ($before.Contains('try {')) 'Update-Suche ist gegen Fehler abgesichert'
+
+# --- Der Toast-Verzicht gilt weiterhin -------------------------------------
+Assert (-not $text.Contains('New-ToastWindow')) 'Keine Toast-Fenster wiederbelebt'
 
 # ----------------------------------------------------------------------------
 # Ergebnis
