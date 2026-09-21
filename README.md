@@ -35,6 +35,22 @@ heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestarte
 
 ## Versionsverlauf
 
+### 3.9.5
+- **Playtests in getrennten Studio-DataModels repariert.** Moderne Roblox-
+  Studio-Versionen lassen Plugins im Edit-DataModel weiterlaufen, während der
+  Test in einem separaten DataModel startet. Ein nur für den Test erzeugter
+  **Session-Agent** meldet deshalb Player, Charakter, GUI/Client-Aktionen,
+  Output und `EndTest` über den lokalen Bridge-Port. Er wird im Edit-DataModel
+  sofort wieder entfernt und wird nie in den Place gespeichert.
+- **Kein Start-Hämmern mehr:** Vor `play_start` erkennt die Bridge den belegten
+  StudioTestService-Zombie (`EditModeActive=false`, aber kein RunService-Test),
+  versucht genau einmal die Wiederherstellung und antwortet danach klar mit
+  `PLAY_SERVICE_STUCK` und einer deutschen Neustart-Anweisung.
+- Service-Start und F5/F8 sind strikt getrennt. `play_status` enthält
+  `agentConnected` und den echten `playerCount`; `play_start`/`play_stop`
+  enthalten nachvollziehbare `startDiagnostics`.
+
+
 ### 3.9
 - **Komplette Steuerung per HTTP GET (wichtigste Neuerung).** Die Bridge lässt
   sich jetzt vollständig über ganz normale GET-Anfragen bedienen – exakt

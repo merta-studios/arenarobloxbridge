@@ -1,7 +1,7 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 3.9  -  21.09.2026)                                #
+#   (Stand: Version 3.9.5  -  21.09.2026)                                #
 #                                                                      #
 ##########################################################################
 
@@ -224,3 +224,31 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 Der vollstaendige Versionsverlauf steht als Kommentar ganz oben in
 ArenaBridge.ps1 (bis zur aktuellen Version fortfuehren!).
+
+
+4) LIVE-FINDINGS UND PLAYTEST-ARCHITEKTUR 3.9.5
+================================================
+- In aktuellem Roblox Studio bleibt das Plugin beim Playtest im EDIT-DataModel.
+  `RunService:IsRunning()` und `Players:GetPlayers()` dort beweisen deshalb
+  NICHT, dass kein Test bzw. kein Charakter existiert. Der Test läuft separat.
+- Vor JEDEM `play_start`: Ist `StudioTestService.EditModeActive=false`, obwohl
+  der lokale RunService nicht läuft, ist dies der Zombie-Zustand. Genau EIN
+  `RunService:Stop()`-Wiederherstellungsversuch + 2 Sekunden warten, danach
+  `PLAY_SERVICE_STUCK` mit deutscher Aufforderung zum Studio-Neustart. Niemals
+  F5/F8 blind senden und niemals einen Service-Start mit Shortcuts mischen.
+- Beim sicheren StudioTestService-Playstart legt das Edit-Plugin kurz einen
+  Script-`Session-Agent` in `ServerScriptService`, startet den Service und
+  löscht das Script im Edit-DataModel sofort. Der Play-Snapshot besitzt seine
+  Kopie, das Place wird nicht verändert/gespeichert. Der Agent spricht nur
+  `http://127.0.0.1:17681/plugin/session` mit einem pro Test erzeugten Key.
+  Er meldet Player/Charakter/Output, führt MoveTo/GUI-Client-Aktionen aus und
+  ruft `EndTest` IN der Server-DataModel auf. Ohne HTTP Requests ist die klare
+  Nutzerhilfe: Game Settings > Security > Allow HTTP Requests aktivieren.
+- `play_status.agentConnected` und `.playerCount` stammen aus dieser Session;
+  `play_start` und `play_stop` haben `startDiagnostics` (EditMode vorher/nachher,
+  Service-Fehler, Pfad, Agent-Antwort). Bei einem Fehlschlag zuerst diese Daten
+  lesen, nie raten. Nutzer-Tests können als zweites Plugin-Place erscheinen;
+  zum Stoppen versucht die Bridge dessen laufende Plugin-Sitzung.
+- Beobachtete Nebenbefunde nur dokumentieren, NIE verändern: ein installiertes
+  `robloxstudio-mcp`-Plugin kann kollidieren; defekte Dritt-Skripte
+  `user_Script.rbxmx` und `user_exporter.rbxmx` erscheinen ggf. in recentErrors.
