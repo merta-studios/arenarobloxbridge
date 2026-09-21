@@ -1,5 +1,53 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 3.7
+# Arena Roblox Bridge  -  Version 3.8
+#
+# NEU IN DIESER VERSION (3.8) - PLAYTESTS ZUVERLAESSIG + EINSTELLUNGEN:
+#   1.  GROSSES EINSTELLUNGSFENSTER: Die Einstellungen sind ein eigenes,
+#       deutlich groesseres Fenster geworden (vorher: kleines 300-px-Panel).
+#       Alle An/Aus-Optionen sind echte SCHALTER mit ROT (aus) und GRUEN (an)
+#       statt Haekchen-Kaestchen. Und ALLE Einstellungen werden dauerhaft in
+#       settings.json gespeichert - Autostart, Selbst-Tests, Fertig-Meldung
+#       und auch die Zugriffsart ("Nur Lesezugriff") je Place. Nichts muss
+#       nach einem Neustart neu eingestellt werden.
+#   2.  NEU: "ARENA DARF SICH SELBST TESTEN" (Standard: AN). Ist der Schalter
+#       AUS, sind Run, Play und Play Here fuer die KI gesperrt - nur die
+#       Editor-Simulationen (compile_check / run_lua) bleiben. Die KI wird in
+#       Dokumentation, Manifest, Sitzungsstart und in JEDER Antwort darueber
+#       informiert, dass der Nutzer das bewusst ausgeschaltet hat
+#       (Fehlercode SELF_TEST_DISABLED) - sie haelt die Bridge nicht kaputt.
+#   3.  NEU: "BENACHRICHTIGUNG, WENN ARENA FERTIG IST" (Standard: AUS). Ist
+#       der Schalter AN, wird die KI in jeder Antwort deutlich angewiesen, am
+#       ENDE ihrer Arbeit den neuen Befehl report_done { message } zu rufen -
+#       dann kommt eine Windows-Benachrichtigung mit Arenas deutscher
+#       Meldung auf den PC (z. B. "Ich bin fertig" oder "5 Aenderungen und
+#       Fehler behoben - fertig"). Die KI darf ihn NUR rufen, wenn sie
+#       danach wirklich nichts mehr aendert und ihre Antwort sofort beendet.
+#   4.  PLAYTESTS VIEL ZUVERLAESSIGER (das Wichtigste):
+#       - Start/Stop laeuft bevorzugt ueber den offiziellen StudioTestService
+#         (neue Studio-API seit Ende 2025) - kein Tastenkuerzel-Gezaehle.
+#         Der alte fehlerhafte Run-Fallback ("es spawnt nie ein Charakter",
+#         weil heimlich der player-lose Run-Modus startete) ist ENTFERNT:
+#         Kann kein echtes Play gestartet werden, sagt die Bridge es klar
+#         (PLAY_START_UNAVAILABLE) und bittet darum, dass der Nutzer Play
+#         drueckt - statt endlos gegen eine Wand zu laufen.
+#       - STOP ist gestaffelt robuster: StudioTestService:EndTest, dann
+#         Shift+F5 (dreimal versucht), erst zuletzt RunService:Stop().
+#       - WER einen Test gestartet hat, verfolgt jetzt der SERVER selbst
+#         (play_start/play_stop laufen immer ueber ihn) - das ueberlebt auch
+#         ein Neu-Laden des Plugins im Testmodus. Startet oder stoppt der
+#         NUTZER einen Playtest, erfaehrt die KI das zuverlaessig (Ereignis
+#         play_started/play_stopped mit startedBy) UND sieht bei JEDEM
+#         Aufruf (auch beim Lesen!), dass ein Test laeuft. Ihre Optionen:
+#         den Test selbst beenden (play_stop, erlaubt) oder die Antwort
+#         beenden und den Nutzer bitten, sie in Ruhe arbeiten zu lassen.
+#       - NEU: Modus "play_here" - Play Here (Charakter spawnt an der Edit-
+#         Kamera) wird als eigener Modus ERKANNT (auch wenn der Nutzer ihn
+#         startet) und kann von der KI gestartet werden. Run / Play /
+#         Play Here / Editor-Simulation sind in der Doku sauber getrennt.
+#       - Arbeitet der NUTZER selbst im Studio (Auswahl anklicken, Kamera
+#         bewegen), bekommt die KI jetzt user_active-Ereignisse und einen
+#         userWorking-Hinweis in jeder Antwort - keine ueberraschenden
+#         Fremd-Aenderungen mehr.
 #
 # NEU IN DIESER VERSION (3.7) - PLAYTEST-SCHUTZ + GRAU/PINK-DESIGN:
 #   1.  UPDATE-FENSTER: Es bleibt garantiert offen, bis der Nutzer bewusst
@@ -454,6 +502,54 @@ function Test-UpdateError {
 }
 
 # ----------------------------------------------------------------------------
+# EINSTELLUNGEN DAUERHAFT SPEICHERN (Version 3.8)
+# Alle Einstellungen (Autostart, Selbst-Tests der KI, Fertig-Meldung,
+# Zugriffsart je Place) liegen in %LOCALAPPDATA%\ArenaRobloxBridge\settings.json
+# und bleiben ueber Neustarts erhalten - nichts muss neu eingestellt werden.
+# ----------------------------------------------------------------------------
+$script:SettingsFile = Join-Path $script:AppDataRoot 'settings.json'
+
+function Get-BridgeSettingsFile {
+    $settings = @{
+        autoStart       = $false
+        selfTestAllowed = $true     # Arena darf eigene Tests starten (Standard: an)
+        notifyOnDone    = $false    # Fertig-Meldung als Windows-Notification (Standard: aus)
+        accessModes     = @{}       # placeId (oder "name:<Name>") -> readonly/readwrite
+    }
+    try {
+        if (Test-Path -LiteralPath $script:SettingsFile) {
+            $loaded = Get-Content -LiteralPath $script:SettingsFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($loaded.PSObject.Properties.Name -contains 'autoStart') { $settings.autoStart = [bool]$loaded.autoStart }
+            if ($loaded.PSObject.Properties.Name -contains 'selfTestAllowed') { $settings.selfTestAllowed = [bool]$loaded.selfTestAllowed }
+            if ($loaded.PSObject.Properties.Name -contains 'notifyOnDone') { $settings.notifyOnDone = [bool]$loaded.notifyOnDone }
+            if ($loaded.accessModes) {
+                foreach ($prop in $loaded.accessModes.PSObject.Properties) {
+                    $settings.accessModes[[string]$prop.Name] = [string]$prop.Value
+                }
+            }
+        }
+    } catch {}
+    return $settings
+}
+
+function Save-BridgeSettingsFile {
+    try {
+        $out = @{
+            autoStart       = [bool]$script:SettingsCache.autoStart
+            selfTestAllowed = [bool]$script:SettingsCache.selfTestAllowed
+            notifyOnDone    = [bool]$script:SettingsCache.notifyOnDone
+            accessModes     = $script:SettingsCache.accessModes
+        }
+        $json = $out | ConvertTo-Json -Depth 6
+        [System.IO.File]::WriteAllText($script:SettingsFile, $json, [System.Text.UTF8Encoding]::new($true))
+    } catch {
+        try { Write-RuntimeLog "Einstellungen konnten nicht gespeichert werden: $($_.Exception.Message)" } catch {}
+    }
+}
+
+$script:SettingsCache = Get-BridgeSettingsFile
+
+# ----------------------------------------------------------------------------
 # GEMEINSAMER ZUSTAND
 # Alle Threads (HTTP-Server, Oberfläche) arbeiten auf diesen Sammlungen.
 # Sie stecken in EINER Tabelle, damit der Server nur ein Argument braucht.
@@ -494,8 +590,35 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '3.7'
+    DocsVersion     = '3.8'
+    # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
+    BridgeSettings  = [hashtable]::Synchronized(@{
+        selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
+        notifyOnDone    = $false    # report_done -> Windows-Benachrichtigung
+        accessModes     = [hashtable]::Synchronized(@{})   # placeKey -> Zugriffsart
+    })
+    # report_done-Meldungen: der Server legt sie ab, die Oberflaeche zeigt sie an
+    NotifyQueue     = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+    # sessionId -> @{ action='start'/'stop'; at=<unix> } - Play-Absicht der KI
+    AiPlayIntents   = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
+    # sessionId -> @{ kind='play_started'/'play_stopped'; at=<unix> } - Dedupe
+    LastPlayEvents  = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
+    # sessionId -> 'assistant'/'user' - wer hat den LAUFENDEN Test gestartet
+    RunOwners       = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    # sessionId -> unix-Zeit der letzten Nutzer-Aktivitaet im Studio
+    UserActiveAt    = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
 })
+
+# Gespeicherte Einstellungen in den gemeinsamen Zustand uebernehmen (3.8)
+try {
+    if ($script:SettingsCache.selfTestAllowed -is [bool]) { $script:Shared.BridgeSettings.selfTestAllowed = [bool]$script:SettingsCache.selfTestAllowed }
+    if ($script:SettingsCache.notifyOnDone -is [bool]) { $script:Shared.BridgeSettings.notifyOnDone = [bool]$script:SettingsCache.notifyOnDone }
+    if ($script:SettingsCache.accessModes) {
+        foreach ($modeKey in @($script:SettingsCache.accessModes.Keys)) {
+            $script:Shared.BridgeSettings.accessModes[[string]$modeKey] = [string]$script:SettingsCache.accessModes[$modeKey]
+        }
+    }
+} catch {}
 
 function Write-RuntimeLog {
     param([string]$Message)
@@ -589,7 +712,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 3.7)
+  Arena Studio Bridge - Studio Plugin  (Version 3.8)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -652,9 +775,14 @@ local VirtualInputManager = nil
 pcall(function() VirtualInputManager = game:GetService("VirtualInputManager") end)
 local StudioService = nil
 pcall(function() StudioService = game:GetService("StudioService") end)
+-- Version 3.8: StudioTestService (offizielle API seit Studio Ende 2025).
+-- Damit startet ein Plugin den RICHTIGEN Testmodus (Play mit Charakter bzw.
+-- Run als reine Simulation), ohne Tastenkuerzel schicken zu muessen.
+local StudioTestService = nil
+pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "3.7"
+local ARENA_VERSION  = "3.8"
 local POLL_WAIT      = 12      -- Sekunden Long-Poll (Befehle kommen sofort an)
 local HEARTBEAT_EVERY = 5      -- Sekunden
 local CHUNK_SIZE     = 48000   -- Bytes je Teilstueck einer Antwort
@@ -671,6 +799,13 @@ local lastHeartbeat  = 0
 local connected      = false
 local defaultContext = "server"   -- fuer Laufzeit-Befehle im Play-Modus
 local userPlaytestActive = false       -- vom Nutzer gestarteter/aktiv gespielter Test
+-- Version 3.8: Zuverlaessige Play-Erkennung + Nutzer-Aktivitaet im Editor
+local bridgeCommandActive = false      -- laeuft gerade ein Bridge-Befehl? (unterdrueckt Nutzer-Meldungen)
+local lastEditCamCFrame = nil          -- Kamera-Position im Edit-Modus (Play-Here-Erkennung + Start)
+local lastEditCamPos = nil             -- zur Bewegungserkennung (Nutzer navigiert im Editor)
+local lastPlayHereDetected = false     -- aktueller Test ist ein "Play Here" (Charakter an der Edit-Kamera)
+local playHereCheckUntil = 0           -- bis wann nach Teststart nach Play Here gesucht wird
+local lastUserActiveNotice = 0         -- os.clock() der letzten Nutzer-Aktivitaets-Meldung
 
 local capabilities = {
     virtualInput   = (VirtualInputManager ~= nil),
@@ -678,6 +813,7 @@ local capabilities = {
     insertService  = (InsertService ~= nil),
     solidModeling  = true,
     clientAgent    = false,
+    studioTest     = (StudioTestService ~= nil),
 }
 
 -- ---------------------------------------------------------------------------
@@ -777,10 +913,21 @@ local function currentMode()
     if isRunMode then
         return "run"
     end
+    -- "Play Here" erkennen: der Charakter ist (fast) genau dort gespawnt, wo
+    -- die Kamera im EDITOR stand, als Play gedrueckt wurde (Studio-Test-Tab:
+    -- "Play Here"). Normales Play spawnt am SpawnLocation. Heuristik - wird
+    -- im playState als solche gekennzeichnet.
+    if lastPlayHereDetected then
+        return "play_here"
+    end
     return "play"
 end
 
 local function playState()
+    local editModeActive = nil
+    if StudioTestService ~= nil then
+        pcall(function() editModeActive = StudioTestService.EditModeActive end)
+    end
     return {
         running    = RunService:IsRunning(),
         mode       = currentMode(),
@@ -790,6 +937,9 @@ local function playState()
         isClient   = RunService:IsClient(),
         playerCount = #Players:GetPlayers(),
         userPlaytestActive = userPlaytestActive,
+        -- true = Studio ist im Edit-Modus und es laeuft KEINE Test-Session
+        -- (offizielle Anzeige des StudioTestService, sehr zuverlaessig)
+        editModeActive = editModeActive,
     }
 end
 
@@ -2307,49 +2457,116 @@ local aiMoveUntil = 0
 
 local function startPlay(mode)
     mode = string.lower(tostring(mode or "play"))
+    if mode ~= "play" and mode ~= "run" and mode ~= "play_here" then
+        mode = "play"
+    end
     if RunService:IsRunning() then
         return { ok = true, alreadyRunning = true, state = playState() }
     end
-    aiPlayIntent = { action = "start", at = os.time() }
+    aiPlayIntent = { action = "start", at = os.time(), mode = mode }
 
     local warnings = {}
-    local usedShortcut = false
-    if VirtualInputManager ~= nil then
-        local key = "F5"
-        if mode == "run" then key = "F8" end
-        local okKey = sendKey(key, 0.06, {})
-        usedShortcut = okKey == true
-    end
+    local usedMethod = nil
 
-    if not usedShortcut then
-        table.insert(warnings, "VirtualInputManager was not available, so the Studio shortcut could not be used. Falling back to RunService:Run() - this starts a RUN simulation inside the edit place, and stopping it will NOT restore the place automatically.")
-        local okRun = pcall(function() RunService:Run() end)
-        if not okRun then
-            return { ok = false, code = "PLAY_FALLBACK_RUN", error = "Could not start the test. Ask the user to press Play in Studio." }
+    -- 1) Bevorzugt (Version 3.8): der offizielle StudioTestService.
+    --    ExecutePlayModeAsync startet eine ECHTE Play-Session mit Player und
+    --    Charakter, ExecuteRunModeAsync eine reine Run-Simulation. Kein
+    --    Tastenkuerzel, kein Riskieren - und kein kaputter Run-Fallback mehr,
+    --    bei dem frueher "kein Charakter spawnte", weil heimlich der Run-
+    --    Modus ohne Player startete.
+    if StudioTestService ~= nil then
+        local canStart = false
+        pcall(function() canStart = (StudioTestService.EditModeActive == true) end)
+        if canStart then
+            usedMethod = "studioTestService"
+            task.spawn(function()
+                local okStart, errStart = pcall(function()
+                    if mode == "run" then
+                        return StudioTestService:ExecuteRunModeAsync({ startedBy = "arena-bridge", mode = mode })
+                    end
+                    return StudioTestService:ExecutePlayModeAsync({ startedBy = "arena-bridge", mode = mode })
+                end)
+                if not okStart then
+                    table.insert(warnings, "StudioTestService could not start the test: " .. tostring(errStart))
+                end
+            end)
+            local reachedService = waitForState(true, 15)
+            if (not reachedService) and RunService:IsRunning() ~= true then
+                usedMethod = nil
+            end
         end
     end
 
-    local reached = waitForState(true, 15)
-    if not reached then
-        return {
-            ok = false,
-            code = "PLAY_FALLBACK_RUN",
-            error = "Studio did not enter play mode within 15 seconds. Possible reasons: the Studio window is not focused, or a dialog is open.",
-            state = playState(),
-            warnings = warnings,
-        }
-    end
-    task.wait(0.6)
-    ensureRuntimeHelpers()
-    local result = { ok = true, state = playState(), warnings = warnings, note = "Test is running. Persistent edits are blocked until you call play_stop." }
-    if not usedShortcut then
-        result.code = "PLAY_FALLBACK_RUN"
-        table.insert(warnings, "The real Play shortcut could not be pressed, so Run mode started instead (no player). Retry with the Studio window focused to get a real player.")
+    -- 2) Fallback: echtes Studio-Tastenkuerzel (F5 = Play, F8 = Run),
+    --    mehrfach versuchen - Studio reagiert nicht immer auf den ersten Druck.
+    if usedMethod == nil and VirtualInputManager ~= nil then
+        local key = "F5"
+        if mode == "run" then key = "F8" end
+        for _attempt = 1, 3 do
+            if RunService:IsRunning() then break end
+            local okKey = sendKey(key, 0.06, {})
+            if okKey then usedMethod = "studioShortcut" end
+            local waited = 0
+            while waited < 3 and not RunService:IsRunning() do
+                task.wait(0.15)
+                waited = waited + 0.15
+            end
+        end
+        if not RunService:IsRunning() then
+            usedMethod = nil
+        end
     end
 
+    -- 3) Letzter Ausweg NUR fuer Run: RunService:Run() ist aequivalent zu F8
+    --    (Simulation ohne Player). Fuer Play/Play Here gibt es KEINEN stillen
+    --    Run-Fallback mehr - der war die Ursache fuer "kein Charakter spawnt".
+    if usedMethod == nil then
+        if mode == "run" then
+            local okRun = pcall(function() RunService:Run() end)
+            if okRun and waitForState(true, 8) then
+                usedMethod = "runServiceApi"
+            end
+        else
+            return {
+                ok = false,
+                code = "PLAY_START_UNAVAILABLE",
+                error = "Could not start a real Play test in this Studio version (no character would spawn).",
+                reason = "This Studio provides neither StudioTestService nor a usable Play shortcut for plugins.",
+                howToFix = "Tell the user to press Play (F5) in Roblox Studio themselves - then continue testing with the character/GUI tools while the test runs.",
+                userMessage = "Ich kann den Play-Test in dieser Studio-Version nicht selbst starten. Bitte druecke in Roblox Studio selbst auf Play (F5) - danach teste ich sofort weiter.",
+                state = playState(),
+                warnings = warnings,
+            }
+        end
+    end
+
+    if not RunService:IsRunning() then
+        return {
+            ok = false,
+            code = "PLAY_START_FAILED",
+            error = "Studio did not enter the test mode in time.",
+            state = playState(),
+            warnings = warnings,
+            howToFix = "Retry once, then ask the user to press Play (F5) / Run (F8) in Roblox Studio themselves.",
+        }
+    end
+
+    task.wait(0.6)
+    ensureRuntimeHelpers()
+    local result = {
+        ok = true,
+        state = playState(),
+        warnings = warnings,
+        startedBy = "assistant",
+        startMethod = usedMethod,
+        requestedMode = mode,
+        note = "Test is running. Persistent edits are blocked until you call play_stop.",
+    }
+
     local actualMode = currentMode()
-    if mode == "play" and actualMode == "play" then
-        -- ECHTER Play-Modus: warten bis Player + Charakter + Client-Agent da sind.
+    if actualMode ~= "run" then
+        -- ECHTER Play-Modus (play oder play_here): warten bis Player +
+        -- Charakter + Client-Agent da sind.
         local player = nil
         local character = nil
         local humanoid = nil
@@ -2390,14 +2607,31 @@ local function startPlay(mode)
             result.clientAgent = false
             table.insert(warnings, "The character exists but the client agent did not answer yet - gui_* / set_camera tools may need a retry after a few seconds.")
         end
+        -- PLAY HERE (Version 3.8): Charakter dorthin setzen, wo die EDIT-
+        -- Kamera steht - genau wie der "Play Here"-Knopf im Studio-Test-Tab.
+        if mode == "play_here" then
+            if lastEditCamCFrame ~= nil then
+                local camPos = lastEditCamCFrame.Position
+                local lookDir = lastEditCamCFrame.LookVector
+                pcall(function()
+                    local targetPos = camPos + Vector3.new(0, 3, 0)
+                    root.CFrame = CFrame.lookAt(targetPos, targetPos + Vector3.new(lookDir.X, 0, lookDir.Z))
+                end)
+                lastPlayHereDetected = true
+                result.note = result.note .. " The character was placed where the EDIT camera was (Play Here)."
+            else
+                table.insert(warnings, "No edit camera position was recorded - the character spawned normally (Play Here could not be imitated).")
+            end
+        end
     else
         result.modeInfo = {
+            kind = "run",
             hasPlayer = false,
             hasCharacter = false,
             hasClient = false,
             hasGui = false,
-            meaning = "Run mode is a physics + server-script simulation ONLY. There is NO player, NO character, NO client and NO GUI - by design, not a bug.",
-            usePlayFor = "For a real player, character, GUI clicks and client output: play_start { mode = 'play' }.",
+            meaning = "Run mode is the physics + server-script simulation IN THE EDITOR (like F8). There is NO player, NO character, NO client and NO GUI - by design, not a bug.",
+            usePlayFor = "For a real player, character, GUI clicks and client output: play_start { mode = 'play' } (or 'play_here' to start at the edit camera).",
         }
     end
     return result
@@ -2410,20 +2644,65 @@ local function stopPlay()
     aiPlayIntent = { action = "stop", at = os.time() }
 
     local warnings = {}
-    local usedShortcut = false
-    if VirtualInputManager ~= nil then
-        usedShortcut = sendKey("F5", 0.06, { "LeftShift" }) == true
+    local usedMethod = nil
+
+    -- 1) Bevorzugt (Version 3.8): StudioTestService:EndTest - beendet die
+    --    laufende Session sauber (auch eine vom Nutzer gestartete), funktioniert
+    --    aber nur aus dem Server-DataModel des laufenden Tests heraus.
+    if StudioTestService ~= nil then
+        local inServerOfTest = false
+        pcall(function()
+            inServerOfTest = RunService:IsRunning() and RunService:IsServer() and not RunService:IsEdit()
+        end)
+        if inServerOfTest then
+            local okEnd = pcall(function() StudioTestService:EndTest("stopped_by_arena_bridge") end)
+            if okEnd then
+                usedMethod = "studioTestService"
+                local waited = 0
+                while waited < 6 and RunService:IsRunning() do
+                    task.wait(0.2)
+                    waited = waited + 0.2
+                end
+            end
+        end
     end
-    if not usedShortcut then
-        table.insert(warnings, "Studio shortcut not available; used RunService:Stop(). Changes made during the test may remain in the place - check the place before saving.")
+
+    -- 2) Echtes Studio-Stop-Tastenkuerzel (Shift+F5) - stellt den Place-Zustand
+    --    von vorher wieder her. Mehrfach versuchen.
+    if RunService:IsRunning() and VirtualInputManager ~= nil then
+        for _attempt = 1, 3 do
+            if not RunService:IsRunning() then break end
+            local okKey = sendKey("F5", 0.06, { "LeftShift" })
+            if okKey and usedMethod == nil then usedMethod = "studioShortcut" end
+            local waited = 0
+            while waited < 3 and RunService:IsRunning() do
+                task.wait(0.15)
+                waited = waited + 0.15
+            end
+        end
+    end
+
+    -- 3) Letzter Ausweg: RunService:Stop() (Place wird evtl. nicht vollstaendig
+    --    zurueckgesetzt - Warnung mitgeben).
+    if RunService:IsRunning() then
+        table.insert(warnings, "The clean Studio stop could not be triggered; RunService:Stop() was used. Changes made during the test may remain in the place - check the place before saving.")
         pcall(function() RunService:Stop() end)
+        if usedMethod == nil then usedMethod = "runServiceApi" end
     end
+
     local reached = waitForState(false, 15)
     cleanupRuntimeHelpers()
     if not reached then
-        return { ok = false, error = "Studio is still running after 15 seconds.", state = playState(), warnings = warnings }
+        return { ok = false, code = "PLAY_STOP_FAILED", error = "Studio is still running after 15 seconds.", state = playState(), warnings = warnings }
     end
-    return { ok = true, state = playState(), warnings = warnings, note = "Test stopped. The place is back in edit mode - persistent edits are allowed again." }
+    return {
+        ok = true,
+        state = playState(),
+        warnings = warnings,
+        stoppedBy = "assistant",
+        stopMethod = usedMethod,
+        note = "Test stopped. The place is back in edit mode - persistent edits are allowed again. Everything from the test is discarded.",
+    }
 end
 
 -- ---------------------------------------------------------------------------
@@ -3009,6 +3288,13 @@ end
 
 -- ------------------------- Informationen -----------------------------------
 tools.get_place_info = function()
+    local state = playState()
+    state.modeInfo = {
+        edit      = "permanent building (also: editor simulations like compile_check/run_lua)",
+        run       = "physics + server-script simulation in the editor - NO player/character/client/GUI",
+        play      = "full game: test player with character, GUI and client agent",
+        play_here = "like play, but the character starts at the old EDIT camera position",
+    }
     return ok({
         name       = game.Name,
         placeId    = game.PlaceId,
@@ -3016,7 +3302,7 @@ tools.get_place_info = function()
         creatorId  = game.CreatorId,
         rootPath   = "game",
         pluginVersion = ARENA_VERSION,
-        state      = playState(),
+        state      = state,
         capabilities = capabilities,
     })
 end
@@ -5485,9 +5771,15 @@ tools.play_status = function()
     local state = playState()
     state.capabilities = capabilities
     state.defaultContext = defaultContext
+    state.modeInfo = {
+        edit      = "PERMANENT building. Editor simulations (compile_check, run_lua) also run here - no test session needed.",
+        run       = "Physics + server-script simulation in the editor (F8). NO player, NO character, NO client, NO GUI - by design.",
+        play      = "Full game: one test player with character, GUI and client agent (F5).",
+        play_here = "Like play, but the character starts where the EDIT camera was (Studio's 'Play Here'). Detected as 'play_here' when the character spawns near the old edit camera position.",
+    }
     state.advice = state.running
-        and "A test is running. Persistent edits are blocked (pass allowInPlayMode=true only for throw-away test changes). Call play_stop before real building."
-        or "Edit mode - all changes are permanent and will be saved."
+        and ("A " .. tostring(state.mode) .. " test is running. Persistent edits are blocked (pass allowInPlayMode=true only for throw-away test changes). Call play_stop before real building. If the USER started/plays this test, stop or ask first - see _bridge.playtest.")
+        or "Edit mode - all changes are permanent and will be saved. Editor simulations (compile_check / run_lua) need no test session."
     return ok(state)
 end
 
@@ -5496,7 +5788,13 @@ tools.play_start = function(args)
     if result.ok then
         return ok(result, result.warnings)
     end
-    return fail(result.error, { state = result.state, warnings = result.warnings })
+    local extra = { state = result.state, warnings = result.warnings }
+    if result.howToFix then extra.howToFix = result.howToFix end
+    if result.userMessage then extra.userMessage = result.userMessage end
+    if result.reason then extra.reason = result.reason end
+    if result.recentErrors then extra.recentErrors = result.recentErrors end
+    if result.advice then extra.advice = result.advice end
+    return failCode(result.code or "PLAY_START_FAILED", result.error, extra)
 end
 
 tools.play_stop = function()
@@ -6285,8 +6583,8 @@ executeTool = function(tool, args, insideBatch)
             return failCode("USER_PLAYTEST_ACTIVE",
                 "IMPORTANT: The user is currently in Roblox Studio " .. currentMode() .. " mode. STOP your current response and do not edit anything: test-mode changes would be temporary and could disrupt the user while they are playing.", {
                 assistantAction = "STOP_CURRENT_RESPONSE",
-                howToFix = "Tell the user that you can see their playtest is active and politely ask them to leave/stop the playtest in Roblox Studio. Wait for the user to confirm they are back in Edit mode before continuing. Do NOT call play_stop on the user's behalf.",
-                userMessage = "Ich sehe, dass du Roblox Studio gerade im Playtest benutzt. Bitte beende den Playtest, damit ich sicher weiterarbeiten kann.",
+                howToFix = "You have TWO options: (a) call play_stop yourself - that is allowed and also ends user-started tests - then continue your work in edit mode, or (b) if the user is actively playing right now (see user_moving_character / user_active events), end your response and tell the user you cannot work safely in parallel - ask them to let you work in peace and to message you when Studio is free again.",
+                userMessage = "Ich sehe, dass du Roblox Studio gerade im Playtest benutzt. Parallel kann ich nicht sicher arbeiten. Ich beende den Test jetzt ODER du meldest dich, wenn ich in Ruhe weiterarbeiten soll.",
                 state = playState(),
             })
         elseif args.allowInPlayMode ~= true then
@@ -6376,6 +6674,9 @@ local function handleCommand(command)
     local startedAt = os.clock()
     local result
     local args = command.args or {}
+    -- Version 3.8: Waehrend eines Bridge-Befehls keine "user_active"-Meldungen
+    -- (unsere eigenen Tools aendern z.B. die Auswahl - das ist nicht der Nutzer).
+    bridgeCommandActive = true
     if args.asJob == true and command.tool ~= "start_job" then
         -- Langer Lauf: geht in den Hintergrund, der Befehl selbst antwortet sofort.
         local okJob, jobId = pcall(newJob, command.tool, function(job)
@@ -6405,6 +6706,7 @@ local function handleCommand(command)
     if type(result) == "table" then
         result.durationSeconds = math.floor((os.clock() - startedAt) * 1000) / 1000
     end
+    bridgeCommandActive = false
     postResult(command.id, result)
 end
 
@@ -6424,6 +6726,9 @@ local function pumpCommandQueue()
         while #commandQueue > 0 do
             local nextCommand = table.remove(commandQueue, 1)
             local okRun, err = pcall(handleCommand, nextCommand)
+            -- Sicherheitsnetz (Version 3.8): Auch wenn ein Befehl crasht, darf
+            -- die Nutzer-Aktivitaets-Erkennung nicht dauerhaft stumm bleiben.
+            bridgeCommandActive = false
             if not okRun then
                 postResult(nextCommand and nextCommand.id, failCode("RUNTIME_ERROR", "Command crashed: " .. tostring(err)))
             end
@@ -6480,11 +6785,35 @@ task.spawn(function()
         task.wait(0.4)
         local nowRunning = RunService:IsRunning()
         local nowMode = currentMode()
-        if nowRunning ~= lastRunning or nowMode ~= lastMode then
+
+        -- Version 3.8: Im Edit-Modus die Kamera-Position merken. Zwei Gruende:
+        --  a) "Play Here"-Erkennung (Charakter spawnt an der alten Kamera)
+        --  b) Der Nutzer bewegt sich gerade selbst im Editor (= Nutzer aktiv).
+        if not nowRunning then
+            lastPlayHereDetected = false
+            local cam = Workspace.CurrentCamera
+            if cam ~= nil then
+                lastEditCamCFrame = cam.CFrame
+                local camPos = cam.CFrame.Position
+                if lastEditCamPos ~= nil and os.clock() - lastUserActiveNotice >= 25 and bridgeCommandActive == false then
+                    local moved = (camPos - lastEditCamPos).Magnitude
+                    if moved > 6 then
+                        lastUserActiveNotice = os.clock()
+                        addNotice("user_active",
+                            "The USER is currently moving around in Roblox Studio themselves (edit camera moved). This is NOT you and NOT a bug. Expect changes you did not make - re-read objects before overwriting them and coordinate in chat.",
+                            { kind = "camera", movedStuds = math.floor(moved * 10) / 10 })
+                    end
+                end
+                lastEditCamPos = camPos
+            end
+        end
+
+        if nowRunning ~= lastRunning then
             local byAi = (os.time() - (aiPlayIntent.at or 0)) <= 20
             local who = byAi and "assistant" or "user"
             if nowRunning then
                 userPlaytestActive = not byAi
+                playHereCheckUntil = os.clock() + 10
                 addNotice("play_started",
                     "The " .. nowMode .. " test was started by the " .. who .. ". Studio is running now: changes to the place are temporary until it is stopped.",
                     { mode = nowMode, startedBy = who })
@@ -6494,6 +6823,8 @@ task.spawn(function()
                 end)
             else
                 userPlaytestActive = false
+                lastPlayHereDetected = false
+                playHereCheckUntil = 0
                 addNotice("play_stopped",
                     "The test was stopped by the " .. who .. ". Studio is back in edit mode - this is NOT a crash and nothing went wrong. Everything that happened during the test is gone; permanent edits are allowed again.",
                     { mode = nowMode, stoppedBy = who })
@@ -6503,10 +6834,33 @@ task.spawn(function()
             lastRunning = nowRunning
             lastMode = nowMode
             lastCharPos = nil
+        elseif nowMode ~= lastMode then
+            -- Nur ein Modus-Wechsel WAHREND des Tests (z. B. play -> play_here,
+            -- sobald die Erkennung angesprungen ist): kein zweiter Start-
+            -- Hinweis noetig, der laufende Test bleibt derselbe.
+            lastMode = nowMode
+        end
+
+        -- Version 3.8: Kurz nach einem Play-Start pruefen, ob der Charakter
+        -- dort spawnt, wo die Edit-Kamera stand -> "Play Here".
+        if nowRunning and (nowMode == "play" or nowMode == "play_here") and os.clock() < playHereCheckUntil then
+            local player = Players:GetPlayers()[1]
+            local character = player and player.Character
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            if root ~= nil then
+                if lastEditCamCFrame ~= nil then
+                    local delta = root.Position - lastEditCamCFrame.Position
+                    local flat = math.sqrt(delta.X * delta.X + delta.Z * delta.Z)
+                    if flat < 12 and math.abs(delta.Y) < 40 then
+                        lastPlayHereDetected = true
+                    end
+                end
+                playHereCheckUntil = 0
+            end
         end
 
         -- Benutzer bewegt seinen Avatar waehrend des Playtests?
-        if nowRunning and nowMode == "play" then
+        if nowRunning and (nowMode == "play" or nowMode == "play_here") then
             local player = Players:GetPlayers()[1]
             local character = player and player.Character
             local root = character and character:FindFirstChild("HumanoidRootPart")
@@ -6529,6 +6883,23 @@ task.spawn(function()
             lastCharPos = nil
         end
     end
+end)
+
+-- Version 3.8: Der Nutzer klickt etwas im Studio an (Auswahl geaendert)?
+-- Im Edit-Modus ist das ein sicheres Zeichen, dass der Nutzer SELBST gerade
+-- am Place arbeitet - die KI soll das wissen, statt unsanft uebereinander
+-- zu arbeiten. Eigene Bridge-Befehle (select_instance usw.) zaehlen nicht.
+Selection.SelectionChanged:Connect(function()
+    if running ~= true then return end
+    if RunService:IsRunning() then return end
+    if bridgeCommandActive then return end
+    if os.clock() - lastUserActiveNotice < 20 then return end
+    lastUserActiveNotice = os.clock()
+    task.spawn(function()
+        addNotice("user_active",
+            "The USER is actively working in Roblox Studio right now (they changed the selection). This is NOT you and NOT a bug. Expect changes you did not make - re-read objects before overwriting and coordinate in chat.",
+            { kind = "selection" })
+    end)
 end)
 
 -- Heartbeat: haelt die Anzeige im Programm aktuell (kleine Pakete)
@@ -6995,6 +7366,107 @@ $script:BridgeHandlerScript = {
     }
 
     # ------------------------------------------------------------------
+    # PLAY-TESTS ZUVERLAESSIG VERFOLGEN (Version 3.8)
+    # ------------------------------------------------------------------
+    function Get-SavedAccessMode([string]$placeId, [string]$placeName) {
+        try {
+            $modes = $Shared.BridgeSettings.accessModes
+            if ($modes.Count -gt 0) {
+                if (-not [string]::IsNullOrWhiteSpace($placeId) -and $placeId -ne '0') {
+                    $saved = $null
+                    if ($modes.TryGetValue([string]$placeId, [ref]$saved)) { return [string]$saved }
+                }
+                if (-not [string]::IsNullOrWhiteSpace($placeName)) {
+                    $saved = $null
+                    if ($modes.TryGetValue(('name:' + $placeName), [ref]$saved)) { return [string]$saved }
+                }
+            }
+        } catch {}
+        return $null
+    }
+
+    function Test-AiPlayActive($sessionId, [string]$action) {
+        # Wahr, wenn die KI vor kurzem genau diese Play-Aktion ausgeloesst hat.
+        $intent = $null
+        if (-not $Shared.AiPlayIntents.TryGetValue([string]$sessionId, [ref]$intent)) { return $false }
+        if ([string]$intent.action -ne $action) { return $false }
+        return (((Get-UnixSeconds) - [int64]$intent.at) -le 45)
+    }
+
+    function Test-RecentPlayEvent($sessionId, [string]$kind, [long]$now) {
+        $last = $null
+        if (-not $Shared.LastPlayEvents.TryGetValue([string]$sessionId, [ref]$last)) { return $false }
+        return ([string]$last.kind -eq $kind -and ($now - [int64]$last.at) -lt 8)
+    }
+
+    function Update-PlayStateTracking {
+        # Erkennt Play-Start/Stop ZUVERLAESSIG - auch wenn das Plugin beim
+        # Wechsel neu geladen wurde (die neue Plugin-Instanz sieht den Wechsel
+        # dann selbst nie). Wer den Test gestartet hat, weiss der SERVER:
+        # play_start / play_stop der KI laufen IMMER ueber ihn
+        # ($Shared.AiPlayIntents) - das ueberlebt jeden Plugin-Neustart.
+        param($sessionId, $oldState, $newState)
+        if (-not $newState) { return $newState }
+        $sid = [string]$sessionId
+        $now = Get-UnixSeconds
+        $wasRunning = $false
+        if ($oldState) { $wasRunning = [bool]$oldState.running }
+        $nowRunning = [bool]$newState.running
+        if ($wasRunning -ne $nowRunning) {
+            if ($nowRunning) {
+                $byAi = Test-AiPlayActive $sid 'start'
+                $who = 'user'
+                if ($byAi) { $who = 'assistant' }
+                $Shared.RunOwners[$sid] = $who
+                $newState.userPlaytestActive = (-not $byAi)
+                if (-not (Test-RecentPlayEvent $sid 'play_started' $now)) {
+                    $Shared.LastPlayEvents[$sid] = @{ kind = 'play_started'; at = $now }
+                    Add-BridgeEvent $sid 'play_started' ("Studio switched into " + [string]$newState.mode + " mode (started by: " + $who + "). Changes during the test are temporary.") @{ mode = [string]$newState.mode; startedBy = $who; detectedBy = 'server' }
+                }
+            } else {
+                $byAi = Test-AiPlayActive $sid 'stop'
+                $who = 'user'
+                if ($byAi) { $who = 'assistant' }
+                $removedOwner = $null
+                [void]$Shared.RunOwners.TryRemove($sid, [ref]$removedOwner)
+                $newState.userPlaytestActive = $false
+                if (-not (Test-RecentPlayEvent $sid 'play_stopped' $now)) {
+                    $Shared.LastPlayEvents[$sid] = @{ kind = 'play_stopped'; at = $now }
+                    Add-BridgeEvent $sid 'play_stopped' ("Studio returned to edit mode (stopped by: " + $who + "). Everything from the test is discarded - this is normal, not a crash.") @{ stoppedBy = $who; detectedBy = 'server' }
+                }
+            }
+        } elseif ($nowRunning) {
+            $owner = $null
+            if (-not $Shared.RunOwners.TryGetValue($sid, [ref]$owner)) {
+                # Kein Wechsel beobachtet (z. B. Plugin-Neuladen waehrend des
+                # Tests): Ein unbekannter Starter gilt sicherheitshalber als
+                # NUTZER-Test - die KI baut dann nicht einfach weiter.
+                $Shared.RunOwners[$sid] = 'user'
+                $owner = 'user'
+            }
+            if ([string]$owner -eq 'user') {
+                $newState.userPlaytestActive = $true
+            }
+        }
+        return $newState
+    }
+
+    function New-SelfTestBlockedResult([string]$tool) {
+        # Version 3.8: Antwort, wenn die KI ein Play-Werkzeug ruft, obwohl der
+        # Nutzer "Arena darf sich selbst testen" AUSgeschaltet hat.
+        return @{
+            ok = $false
+            code = 'SELF_TEST_DISABLED'
+            severity = 'notice'
+            error = "The tool '$tool' is not available: the user DISABLED AI self-testing in the Arena Roblox Bridge settings ('Arena darf sich selbst testen' is OFF)."
+            why = 'This is a deliberate user decision - the bridge is NOT broken and nothing failed. Real game tests (Run, Play, Play Here) are turned off for you.'
+            whatStillWorks = 'Editor simulations still work: compile_check (syntax), run_lua (pure Lua logic in the edit place), get_output / get_errors and all reading/building tools. Real physics/character/GUI testing must be done by the USER.'
+            howToFix = 'Do not retry this tool. Continue with editor simulations and ask the user to test the game themselves (they know that self-testing is off).'
+            userHint = 'Ich darf gerade nicht selbst testen (Selbst-Test ist in der Bridge deaktiviert). Bitte teste du das Spiel in Studio - ich pruefe derweil alles im Editor.'
+        }
+    }
+
+    # ------------------------------------------------------------------
     # LAUFENDE BEFEHLE: Ein Timeout tötet keinen Befehl im Studio.
     # Der Befehl läuft zu Ende, das Ergebnis kommt später an. Diese
     # Funktionen merken pro Sitzung, was gerade in Studio läuft, und
@@ -7167,6 +7639,15 @@ $script:BridgeHandlerScript = {
                 $mode = 'readwrite'
                 $Shared.AccessModes[$sessionId] = $mode
             }
+            # Version 3.8: Gespeicherte Zugriffsart dieses Place anwenden
+            $savedAccess = Get-SavedAccessMode $placeId $placeName
+            if ($savedAccess) {
+                $mode = $savedAccess
+                $Shared.AccessModes[$sessionId] = $mode
+            }
+            # Version 3.8: Play-Wechsel erkennen - auch wenn das Plugin beim
+            # Start/Stop des Tests neu geladen wurde und neu registriert.
+            $registerState = Update-PlayStateTracking $sessionId $reusable.state (Get-StateObject $body)
             $entry = @{
                 sessionId     = $sessionId
                 instanceGuid  = $guid
@@ -7177,7 +7658,7 @@ $script:BridgeHandlerScript = {
                 accessMode    = $mode
                 lastSeen      = $now
                 connectedAt   = $reusable.connectedAt
-                state         = (Get-StateObject $body)
+                state         = $registerState
                 pluginVersion = [string]$body.pluginVersion
                 capabilities  = $body.capabilities
                 reconnects    = ([int]$reusable.reconnects + 1)
@@ -7195,7 +7676,14 @@ $script:BridgeHandlerScript = {
         $token = New-BridgeToken
         $Shared.SessionTokens[$sessionId] = $token
         $Shared.TokenSessions[$token] = $sessionId
-        $Shared.AccessModes[$sessionId] = 'readwrite'
+        # Version 3.8: Gespeicherte Zugriffsart dieses Place anwenden
+        $startAccess = Get-SavedAccessMode $placeId $placeName
+        $startMode = 'readwrite'
+        if ($startAccess) { $startMode = $startAccess }
+        $Shared.AccessModes[$sessionId] = $startMode
+        # Lief schon ein Test, als die Bridge das Fenster zum ersten Mal sah?
+        # Dann gilt er sicherheitshalber als Nutzer-Test.
+        $freshState = Update-PlayStateTracking $sessionId $null (Get-StateObject $body)
         $entry = @{
             sessionId     = $sessionId
             instanceGuid  = $guid
@@ -7203,10 +7691,10 @@ $script:BridgeHandlerScript = {
             placeId       = $placeId
             gameId        = [string]$body.gameId
             token         = $token
-            accessMode    = 'readwrite'
+            accessMode    = $startMode
             lastSeen      = $now
             connectedAt   = $now
-            state         = (Get-StateObject $body)
+            state         = $freshState
             pluginVersion = [string]$body.pluginVersion
             capabilities  = $body.capabilities
             reconnects    = 0
@@ -7243,9 +7731,12 @@ $script:BridgeHandlerScript = {
         }
 
         $oldState = $entry.state
-        $newState = Get-StateObject $body
         $newName = [string]$body.placeName
         if ([string]::IsNullOrWhiteSpace($newName)) { $newName = [string]$entry.placeName }
+        # Version 3.8: Play-Start/Stop ZUVERLAESSIG erkennen - inklusive
+        # startedBy (der Server weiß es selbst, siehe AiPlayIntents) und
+        # Nutzer-Test-Erkennung nach Plugin-Neuladern.
+        $newState = Update-PlayStateTracking $sessionId $oldState (Get-StateObject $body)
 
         $updated = @{
             sessionId     = $sessionId
@@ -7266,13 +7757,6 @@ $script:BridgeHandlerScript = {
         Save-SessionEntry $updated
         $Shared.Presence[$sessionId] = $now
 
-        if ($oldState -and ([bool]$oldState.running -ne [bool]$newState.running)) {
-            if ($newState.running) {
-                Add-BridgeEvent $sessionId 'play_started' "Studio switched into $($newState.mode) mode." $newState
-            } else {
-                Add-BridgeEvent $sessionId 'play_stopped' 'Studio returned to edit mode.' $newState
-            }
-        }
         return $updated
     }
 
@@ -7892,7 +8376,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         $t.Add(@{ name = 'get_place_info'; category = 'info'; summary = 'Place, Play-Zustand, Faehigkeiten.';
             description = 'Was fuer ein Place ist verbunden, welche Id hat er, laeuft gerade ein Test (edit/run/play), welche Faehigkeiten hat das Plugin. Immer der erste sinnvolle Call.';
             params = @{};
-            returns = '{ name, placeId, gameId, creatorId, state: { running, mode, context, playerCount }, capabilities, pluginVersion }';
+            returns = '{ name, placeId, gameId, creatorId, state: { running, mode (edit|run|play|play_here), context, playerCount, editModeActive, modeInfo }, capabilities, pluginVersion }';
             example = @{};
             errors = @('REF_NOT_FOUND: kein Studio-Fenster verbunden (Token ungültig oder Place geschlossen).') })
         $t.Add(@{ name = 'get_tree'; category = 'info'; summary = 'Instanz-Baum mit Ids.';
@@ -8366,24 +8850,30 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             errors = @() })
 
         # ---------------- PLAY / TEST ----------------
-        $t.Add(@{ name = 'play_status'; category = 'play'; summary = 'Läuft ein Test? Welcher? Ist ein Player da?';
-            description = 'laufender Zustand: edit / run / play, Kontext, Player-Zahl, Player- + Charakter-Details, Client-Agent-Status, was grade vom BENUTZER passiert (Kamera, Avatar, GUI).';
+        $t.Add(@{ name = 'play_status'; category = 'play'; summary = 'Läuft ein Test? Welcher Modus (edit/run/play/play_here)? Ist ein Player da?';
+            description = 'laufender Zustand mit allen vier Modi sauber getrennt: edit = dauerhaftes Bauen; run = Physik-/Script-Simulation im Editor (KEIN Player/Charakter/Client/GUI); play = echtes Spiel mit Test-Player; play_here = play, aber der Charakter startet an der alten Edit-Kamera-Position. Dazu: Kontext, Player-Zahl, modeInfo mit der Bedeutung jedes Modus, editModeActive (offizielle Studio-Anzeige, ob eine Test-Session läuft) und was gerade vom BENUTZER passiert (Kamera, Avatar, GUI).';
             params = @{};
-            returns = '{ running, mode, context, playerCount, modeInfo: { kind, hasPlayer, hasClient, explanation }, player: { name, character, clientAgent }, recentUserEvents }';
+            returns = '{ running, mode (edit|run|play|play_here), context, playerCount, editModeActive, modeInfo, userPlaytestActive, recentUserEvents }';
             example = @{};
             errors = @() })
-        $t.Add(@{ name = 'play_start'; category = 'play'; summary = 'Test starten: mode="play" (echt, mit Player) oder "run" (nur Simulation).';
-            description = 'WICHTIG VERSTEHEN: mode="play" = echtes Spiel: ein Test-Player mit Charakter, GUI und Client-Agent (dieser Call wartet, bis alles da ist - sonst PLAY_NO_PLAYER mit Diagnose). mode="run" = NUR Server-Skripte + Physik, KEIN Player, KEIN Charakter, KEIN Client, KEINE GUI - das ist NICHT kaputt, sondern genau so definiert; fuer Charakter/GUI-Tests IMMER "play" nehmen. Der Benutzer kann jederzeit selbst Play/Stop druocken - das kommt als Ereignis (play_started/play_stopped, startedBy="user").';
-            params = @{ mode = @{ type = "'play'|'run'"; required = $false; default = "'play'"; description = '' } };
-            returns = '{ state: { running, mode, context, playerCount }, modeInfo: { kind, hasPlayer, hasClient, explanation }, player? { name, character, clientAgent }, warnings }';
+        $t.Add(@{ name = 'play_start'; category = 'play'; summary = 'Test starten: mode="play" (echt, mit Player), "play_here" (play an der Edit-Kamera) oder "run" (Physik-/Script-Simulation im Editor).';
+            description = 'DIE VIER MODI SAUBER UNTERSCHEIDEN: edit = dauerhaftes Bauen, kein Test. run = Physik-/Script-Simulation IM EDITOR (wie F8): Server-Skripte + Physik laufen, aber KEIN Player, KEIN Charakter, KEIN Client, KEINE GUI - das ist nicht kaputt, sondern genau so definiert. play = echtes Spiel (wie F5): ein Test-Player mit Charakter, GUI und Client-Agent - dieser Call wartet, bis alles da ist, sonst PLAY_NO_PLAYER mit Diagnose (recentErrors). play_here = wie play, aber der Charakter startet dort, wo die EDIT-Kamera steht (wie "Play Here" im Studio-Test-Tab) - ideal, um etwas an einer bestimmten Stelle zu testen. Seit Version 3.8 startet die Bridge bevorzugt ueber den offiziellen StudioTestService - zuverlaessig und ohne kaputten Run-Fallback (frueher startete heimlich der Run-Modus und es spawnte nie ein Charakter). WICHTIG: Hat der Nutzer "Arena darf sich selbst testen" AUSgeschaltet, antworten alle play-Werkzeuge mit SELF_TEST_DISABLED - das ist Absicht und kein Fehler (die Bridge ist nicht kaputt); dann Editor-Simulation nutzen (compile_check / run_lua) und den Nutzer selbst testen lassen. Der Benutzer kann jederzeit selbst Play/Stop druecken - das kommt als Ereignis (play_started / play_stopped mit startedBy).';
+            params = @{ mode = @{ type = "'play'|'play_here'|'run'"; required = $false; default = "'play'"; description = 'play = echt mit Charakter; play_here = play an der Edit-Kamera-Position; run = nur Physik/Server-Skripte ohne Player.' } };
+            returns = '{ state: { running, mode, context, playerCount }, requestedMode, startMethod, player? { name, character, clientAgent }, modeInfo (bei run), warnings }';
             example = @{ mode = 'play' };
-            errors = @('PLAY_NO_PLAYER: Play-Modus aktiv, aber nach 20s kein Charakter (recentErrors mitgeliefert).', 'STUDIO_TIMEOUT: Studio hat nicht geantwortet (Fenster nicht fokussiert? Dialog offen?).', 'PLAY_FALLBACK_RUN (Warning): Shortcut nicht moeglich, Run-Modus statt Play.') })
-        $t.Add(@{ name = 'play_stop'; category = 'play'; summary = 'Test stoppen (platz wird wiederhergestellt).';
-            description = 'Stoppt ueber den echten Stopp-Knopf, damit der Place-Zustand von vorher zurueckkommt. Alle Aenderungen aus dem Test sind danach weg.';
+            errors = @('PLAY_NO_PLAYER: Play-Modus aktiv, aber nach 20s kein Charakter (recentErrors mitgeliefert).', 'PLAY_START_UNAVAILABLE: Diese Studio-Version kann keinen echten Play-Test aus einem Plugin starten - Nutzer bitten, selbst Play (F5) zu druecken, dann mit den Charakter-Werkzeugen weiter testen.', 'PLAY_START_FAILED: Studio ist rechtzeitig nicht in den Testmodus gewechselt (einmal wiederholen, dann den Nutzer bitten).', 'STUDIO_TIMEOUT: Studio hat nicht geantwortet (Fenster nicht fokussiert? Dialog offen?).', 'SELF_TEST_DISABLED: Der Nutzer hat die Selbst-Tests deaktiviert - kein Fehler, bewusste Entscheidung.') })
+        $t.Add(@{ name = 'play_stop'; category = 'play'; summary = 'Test zuverlaessig stoppen (Place wird wiederhergestellt).';
+            description = 'Stoppt den laufenden Test - seit Version 3.8 gestaffelt und deutlich robuster: zuerst StudioTestService:EndTest (offizielle API), dann das echte Stop-Tastenkuerzel Shift+F5 (mehrfach versucht), erst zuletzt RunService:Stop() als Notfall (mit Warnung). Beendet auch einen vom NUTZER gestarteten Test - das ist erlaubt und gewuenscht: entweder den Test stoppen und in Ruhe weiterarbeiten ODER die Antwort beenden und den Nutzer bitten, dich arbeiten zu lassen. Alle Aenderungen aus dem Test sind danach weg.';
             params = @{};
-            returns = '{ state, warnings }';
+            returns = '{ state, stopMethod, warnings, note }';
             example = @{};
-            errors = @('STUDIO_TIMEOUT: Studio stoppt nicht innerhalb 15s.') })
+            errors = @('PLAY_STOP_FAILED: Studio laeuft nach allen Stop-Versuchen noch - Nutzer bitten, Shift+F5 zu druecken.') })
+        $t.Add(@{ name = 'report_done'; category = 'session'; summary = 'Dem Nutzer melden: Ich bin fertig (Windows-Benachrichtigung auf seinem PC).';
+            description = 'NUR rufen, wenn ALLE Aenderungen abgeschlossen sind und die Antwort DIREKT danach endet: der Nutzer bekommt dann eine Windows-Benachrichtigung mit der message auf seinen PC. Nur aktiv, wenn der Nutzer "Benachrichtigung wenn Arena fertig" EINGESCHALTET hat (zu sehen an _bridge.notifyWhenDone bzw. _bridge.bridgeSettings.notifyOnDone). message ist ein kurzer deutscher Satz fuer den Nutzer, z.B. "Ich bin fertig" oder "5 Aenderungen und Fehler behoben - fertig". Strikte Regel: nach diesem Call KEINE Werkzeuge mehr, KEINE Aenderungen mehr - die Antwort sofort beenden. Nie mitten in der Arbeit rufen.';
+            params = @{ message = @{ type = 'string'; required = $true; default = '-'; description = 'Kurzer deutscher Fertig-Text fuer den Nutzer (max. 400 Zeichen).' } };
+            returns = '{ delivered, message, note }';
+            example = @{ message = 'Ich bin fertig - 5 Aenderungen und Fehler behoben.' };
+            errors = @('NOTIFICATIONS_DISABLED: Der Nutzer hat die Fertig-Meldung ausgeschaltet - Antwort normal beenden und report_done nicht erneut rufen.', 'BAD_ARGS: message fehlt.') })
         $t.Add(@{ name = 'play_pause'; category = 'play'; summary = 'Simulation pausieren.';
             description = 'Bleibt stehen, aber laeuft weiter (State bleibt erhalten). Im Run-Modus nur Physik, im Play-Modus auch der Charakter.';
             params = @{};
@@ -8593,9 +9083,12 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 'SELECTORS: most "refs" arguments also accept a selector table: { tag = "Door" }, { className = "Part", rootRef = "#50" }, { query = "crate" }. Use selectors instead of long id lists.',
                 'SCRIPTS: never rewrite an 800 line script to change one line. Read with get_script (line numbers + hash), then patch_script (replace / replaceAll / insertAfter / replaceFunction / replaceLines ...). Check the result with compile_check BEFORE running it. set_script_source (full replace) still exists for new or tiny files. Pass expectHash to be safe.',
                 'NO STRING SURGERY: the bridge never modifies your source text (no trimming, no "return M" removal, no %-reformatting). A ModuleScript simply ends with "return M". If you need to change text, use patch_script ops - never .replace() across languages.',
-                'PLAY MODES (know the difference or tests fail): edit = permanent building; run = simulation only (server scripts + physics, NO player, NO client, NO GUI - by design); play = full game with test player, character, GUI and client agent. For anything with a character or GUI: play_start mode="play". "No player" errors in run mode are NOT bugs.',
+                'PLAY MODES - KNOW ALL FOUR (or tests fail): edit = permanent building (also where the editor simulations compile_check / run_lua run - no test session needed); run = physics + server-script simulation IN THE EDITOR (Studio "Run", F8): NO player, NO character, NO client, NO GUI - by design, not a bug; play = full game with a test player, character, GUI and client agent (Studio "Play", F5); play_here = like play, but the character starts where the EDIT camera was (Studio "Play Here"). For anything with a character or GUI: play_start mode="play" or mode="play_here". "No player" answers in run mode are NOT bugs.',
                 'THE USER IS THERE TOO: the user can press Play/Stop and PLAY in the game at any moment (moving the camera, walking the avatar, clicking the GUI). You will see it in _bridge.events / notices (user_rotating_camera, user_moving_character, user_clicked_gui, play_started with startedBy="user"). That is normal: nothing crashed and it is NOT a bug in your scripts - do not go searching for errors because of it.',
-                'USER PLAYTEST HAS PRIORITY: if Studio is in Play/Run and you are about to make persistent edits, STOP_CURRENT_RESPONSE. Tell the user you can see the active playtest, politely ask them to leave it, and wait for confirmation that Studio is back in Edit mode. Never stop a user-owned playtest yourself.',
+                'USER PLAYTEST HAS PRIORITY: if _bridge.playtest / playtestWarning shows a USER playtest, you have two allowed options: (a) call play_stop yourself - it also ends user-started tests - then continue your work in edit mode; or (b) if the user is actively playing right now, end your response and tell them you cannot work safely in parallel - ask them to let you work in peace and to message you when Studio is free. Never make persistent edits while a test runs.',
+                'SELF-TEST SWITCH (3.8): the user can turn AI self-testing OFF in the bridge program ("Arena darf sich selbst testen"). Then every play tool answers SELF_TEST_DISABLED - that is a deliberate user decision, NOT a broken bridge. Use editor simulations (compile_check, run_lua in edit mode) instead and let the user run the game tests. Check _bridge.bridgeSettings.selfTestAllowed.',
+                'FINISH NOTIFICATION (3.8): if _bridge.notifyWhenDone is present, call report_done { message } as your VERY LAST tool call once everything is done - a Windows notification with your German message goes to the user (e.g. "Ich bin fertig"). Only when truly done: no further calls or changes after it, end your answer immediately. If notifications are off you get NOTIFICATIONS_DISABLED - finish normally.',
+                'THE USER EDITS TOO: user_active events / _bridge.userWorking mean the user is working in Studio right now (selection, camera, playtest). Re-read before overwriting, never undo their changes, and coordinate in chat.',
                 'PERSISTENT LUA: run_lua runs in a persistent environment. Helpers you define (without "local") survive to the next call - see lua_state. You never have to re-paste helper code.',
                 'TIMEOUTS NEVER KILL WORK: a timed-out call is still running in Studio. The next call automatically waits for it (Studio executes strictly one command at a time), and the late result arrives in _bridge.lateResults. For long work use asJob=true / start_job and poll job_status / job_result.',
                 'HEIGHTS BY RAYCAST ONLY: use ground_height / raycast / measure_height. NEVER compute world Y from voxel indices or formulas - it is wrong by design in this place.',
@@ -8617,10 +9110,17 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 'WORKFLOW: coordinate_guide (once) -> describe_orientation (where do the faces point now?) -> point_at or rotate_around (with the measured axis) -> describe_orientation again to verify.'
             )
             playModes = @{
-                edit = 'No test: everything you build is PERMANENT. This is where building and script editing happens.'
-                run = 'Simulation only: server scripts + physics run, but there is NO player, NO character, NO client and NO GUI. Use it for physics/server-logic tests. A tool answering "No player" in run mode is working as designed - switch to play for characters/GUI.'
-                play = 'Full game: one test player with character, PlayerGui and a client agent (installed automatically). play_start mode="play" WAITS until the character exists and reports PLAY_NO_PLAYER with recent errors otherwise. The USER can play in the same game at the same time - you get events (user_rotating_camera, user_moving_character, user_clicked_gui) and must not read those as script bugs.'
+                edit = 'No test: everything you build is PERMANENT. This is where building and script editing happens. Editor simulations (compile_check for syntax, run_lua for pure logic) also run here - they need NO test session and stay available even when self-testing is disabled.'
+                run = 'Physics + server-script simulation IN THE EDITOR (Studio "Run", F8): the place runs as a server simulation. There is NO player, NO character, NO client and NO GUI. Use it for physics/server-logic tests. A tool answering "No player" in run mode is working as designed - switch to play for characters/GUI.'
+                play = 'Full game (Studio "Play", F5): one test player with character, PlayerGui and a client agent (installed automatically). play_start mode="play" WAITS until the character exists and reports PLAY_NO_PLAYER with recent errors otherwise. The USER can play in the same game at the same time - you get events (user_rotating_camera, user_moving_character, user_clicked_gui) and must not read those as script bugs.'
+                play_here = 'Studio "Play Here": like play, but the character starts at the position of the EDIT camera (where the user was looking). play_start mode="play_here" starts a real play session and places the character there. If the USER starts Play Here from the Test tab, the bridge reports mode "play_here" (heuristic: the character spawned near the old edit camera position).'
             }
+            userPresence = @(
+                'The user is a second person in Studio: they click around, move the camera, edit objects, start/stop playtests and play the game at any time.'
+                'You see their actions as events/notices: user_active (selection/camera in edit mode), user_rotating_camera, user_moving_character, user_clicked_gui (during a playtest), play_started / play_stopped with startedBy="user".'
+                'While _bridge.playtest / playtestWarning shows a USER playtest: either call play_stop (allowed - it also ends user tests) and continue in edit mode, or end your response and ask the user to let you work in peace.'
+                'While _bridge.userWorking shows recent user activity in edit mode: re-read before overwriting, never undo their changes, and coordinate in chat.'
+            )
             jobsGuide = @(
                 'Any tool call can run in the background: pass asJob=true in args (or use start_job with source or tool+args). You get a jobId immediately - no 60-second wall.'
                 'An HTTP timeout NEVER kills the work: the command keeps running in Studio, the result arrives later in _bridge.lateResults, and every following call automatically waits for the running command to finish (you can never measure against a still-running script).'
@@ -8637,6 +9137,11 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 PLAY_NOT_RUNNING = 'A playtest tool was called while nothing is running.'
                 PLAY_NO_PLAYER = 'Play mode started but no character appeared within 20s (recentErrors included for diagnosis).'
                 PLAY_FALLBACK_RUN = 'The Studio Play shortcut could not be pressed, so Run mode started instead (no player) - try again with the Studio window focused.'
+                PLAY_START_UNAVAILABLE = 'This Studio version cannot start a real Play test from a plugin (no character would ever spawn). Ask the user to press Play (F5) in Studio themselves, then continue with the character tools.'
+                PLAY_START_FAILED = 'Studio did not enter the test mode in time. Retry once, then ask the user to press Play/Run.'
+                PLAY_STOP_FAILED = 'Studio kept running after every stop attempt. Ask the user to press Shift+F5 (stop).'
+                SELF_TEST_DISABLED = 'The user turned OFF "Arena darf sich selbst testen" in the bridge program. Run/Play/Play Here and all playtest tools are blocked ON PURPOSE - the bridge is NOT broken. Editor simulations (compile_check, run_lua) still work; the user runs the game tests.'
+                NOTIFICATIONS_DISABLED = 'report_done is inactive: the user has not enabled finish notifications. Finish your answer normally and do not call report_done again.'
                 REF_NOT_FOUND = 'An id/path/selector could not be resolved (object deleted, or the plugin reloaded - get fresh ids with search/get_tree).'
                 BAD_ARGS = 'Arguments missing or invalid (the message says what exactly).'
                 REGION_LIMIT = 'A region/box was too large - the message contains the measured limit; split the region up. Only the failing slice is reported, the rest continues.'
@@ -8659,7 +9164,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             workflows = @{
                 buildSomething = @('play_status (must be edit mode)', 'describe_scene / search for context', 'create_instance or bulk_create (template+grid)', 'place_on / stack / snap_to_ground / grid_arrange instead of maths', 'select_instance so the user sees it')
                 editAScript = @('search className=Script', 'get_script (note the hash)', 'patch_script with a unique snippet', 'compile_check the result', 'set/patch with expectHash', 'play_start mode=play', 'wait_for_output / get_errors', 'play_stop')
-                testAGame = @('play_start mode=play (it waits for the character)', 'character_state / move_character / set_camera', 'gui_dump -> gui_check -> gui_click with expect', 'get_output since=<cursor> / get_errors', 'play_stop')
+                testAGame = @('play_status first (check _bridge.playtest - never build while a test runs)', 'play_start mode=play (waits for the character) or mode=play_here (start at the edit camera)', 'character_state / move_character / set_camera', 'gui_dump -> gui_check -> gui_click with expect', 'get_output since=<cursor> / get_errors', 'play_stop, then verify the result in edit mode')
                 manyObjects = @('clone_instance count=60 offset={x:8} nameTemplate="Crate{n}"', 'or bulk_create with template+grid', 'or batch (parallel=true only for independent calls)')
                 longBuild = @('fill_region with asJob=true (or start_job)', 'job_status (progress + partsPerSecond)', 'job_result when done (geometry.ready included)', 'verify_measurable on a sample if in doubt')
                 rotationCorrect = @('coordinate_guide (once per session)', 'describe_orientation on the part', 'point_at (axis="top" for cylinder length) or rotate_around with measured axes', 'describe_orientation again to verify')
@@ -8725,6 +9230,19 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         }
         $guides = Get-BridgeGuides
         foreach ($key in $guides.Keys) { $out[[string]$key] = $guides[$key] }
+        # Version 3.8: Bridge-Einstellungen prominent unterbringen
+        $startSelfTest = $true
+        $startNotify = $false
+        try { $startSelfTest = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
+        try { $startNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
+        $out.selfTestAllowed = $startSelfTest
+        $out.notifyWhenDone = $startNotify
+        if (-not $startSelfTest) {
+            $out.selfTestNotice = 'IMPORTANT: the user DISABLED AI self-testing in the Arena Roblox Bridge program ("Arena darf sich selbst testen" = OFF). Every play tool (play_start / play_stop / ...) will answer SELF_TEST_DISABLED ON PURPOSE - the bridge is NOT broken. Use the editor simulations (compile_check, run_lua in edit mode) and ask the user to run the game tests themselves.'
+        }
+        if ($startNotify) {
+            $out.finishNotification = 'FINISH NOTIFICATION IS ON: when ALL your changes are complete and you are about to end your answer, call report_done { message } as your VERY LAST tool call - the user receives a Windows notification with your German message (e.g. "Ich bin fertig" or "5 Aenderungen und Fehler behoben - fertig"). After that call: no more tools, no more changes - end your answer immediately.'
+        }
         $out.tools = (Get-ToolDocs)
         return $out
     }
@@ -8739,9 +9257,13 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             $toolIndex.Add(@{ name = $d.name; category = $d.category; description = $d.summary })
         }
         $guides = Get-BridgeGuides
+        $manifestSelfTest = $true
+        $manifestNotify = $false
+        try { $manifestSelfTest = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
+        try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '3.7'
+            version = '3.8'
             docsVersion = [string]$Shared.DocsVersion
             role = 'You are connected to exactly ONE live Roblox Studio place through a local plugin. Every token belongs to one Studio window only - if several windows are open, each one has its own token and you can never touch the wrong place. Send every request as POST /api/tool with JSON body { "token": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -8763,6 +9285,11 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             toolCount = $docs.Count
             toolsIndex = $toolIndex
             tools = $docs
+            settings = @{
+                selfTestAllowed = $manifestSelfTest
+                notifyOnDone = $manifestNotify
+                settingsNote = 'selfTestAllowed=false: the user disabled AI self-testing - play tools answer SELF_TEST_DISABLED by design (the bridge is NOT broken; use editor simulations and let the user test). notifyOnDone=true: call report_done { message } as your very last action when everything is done.'
+            }
         }
         foreach ($key in $guides.Keys) { $manifest[[string]$key] = $guides[$key] }
         return $manifest
@@ -8822,24 +9349,86 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
     function New-Envelope($sessionId) {
         $entry = Get-SessionEntry $sessionId
         $events = Take-Events $sessionId 12
+        # Version 3.8: Bridge-Einstellungen (Selbst-Tests / Fertig-Meldung)
+        $selfTestAllowed = $true
+        $notifyOnDone = $false
+        try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
+        try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '3.7'
+            bridgeVersion = '3.8'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
             serverTime    = (Get-Date).ToString('u')
             docsVersion   = [string]$Shared.DocsVersion
+            bridgeSettings = @{
+                selfTestAllowed = $selfTestAllowed
+                notifyOnDone    = $notifyOnDone
+            }
             docs          = 'Full tool documentation (parameters, types, defaults, returns, examples, error codes): GET /api/docs, or ?tool=<name>, or ?category=<name>. It was also delivered automatically with the first tool call of this session (_sessionStart).'
         }
-        if ($entry -and $entry.state -and [bool]$entry.state.running -and [bool]$entry.state.userPlaytestActive) {
-            $envelope.playtestWarning = @{
-                severity = 'critical'
-                code = 'USER_PLAYTEST_ACTIVE'
-                assistantAction = 'STOP_CURRENT_RESPONSE'
-                message = 'Roblox Studio is in Play/Run mode. If the user started or is using this playtest, stop your current response, do not edit, and ask the user to leave the playtest before you continue.'
-                userRequest = 'Tell the user you can see the active playtest and politely ask them to stop it in Roblox Studio. Wait for confirmation; do not stop their test yourself.'
+        # Version 3.8: Hat der Nutzer die Selbst-Tests AUSgeschaltet, steht das
+        # hier deutlich dabei - die KI soll wissen, dass das Absicht ist und
+        # die Bridge NICHT kaputt ist.
+        if (-not $selfTestAllowed) {
+            $envelope.selfTestDisabled = @{
+                code = 'SELF_TEST_DISABLED'
+                message = 'The user turned OFF AI self-testing in the Arena Roblox Bridge program (setting "Arena darf sich selbst testen" = OFF). Run, Play and Play Here are unavailable for you ON PURPOSE.'
+                whatThisMeans = 'This is NOT a bug and the bridge is NOT broken. The user wants to run game tests themselves.'
+                whatStillWorks = 'Editor simulations still work: compile_check (syntax), run_lua (pure Lua logic in the edit place), get_output / get_errors, and all reading/building tools.'
             }
-            $envelope.attention = 'CRITICAL PLAYTEST NOTICE: STOP_CURRENT_RESPONSE. The user may be playing right now. Do not make persistent edits; ask them to leave the Roblox Studio playtest first.'
+            $envelope.attention = 'SELF-TESTING IS DISABLED BY THE USER: play tools answer SELF_TEST_DISABLED by design - do not retry them and do not think the bridge is broken. Use editor simulations (compile_check / run_lua) and let the user test the game.'
+        }
+        # Version 3.8: Fertig-Meldung aktiv? In JEDER Antwort deutlich daran
+        # erinnern, report_done als ALLERLETZTE Aktion zu rufen.
+        if ($notifyOnDone) {
+            $envelope.notifyWhenDone = @{
+                code = 'REPORT_DONE_EXPECTED'
+                instruction = 'FINISH NOTIFICATION IS ON: when ALL your changes are complete and you are about to end your answer, call report_done { message } as your VERY LAST tool call.'
+                messageRule = 'message = short German text for the user, e.g. "Ich bin fertig" or "5 Aenderungen und Fehler behoben - fertig".'
+                strictRule = 'Call it ONLY when you are truly done: no further tool calls and no further changes afterwards - end your answer right after it. Never call it mid-work.'
+            }
+            $notifyNote = 'FINISH NOTIFICATION: when everything is done, call report_done { message } as your LAST action, then end your answer.'
+            if ($envelope.attention) { $envelope.attention = $envelope.attention + ' ' + $notifyNote } else { $envelope.attention = $notifyNote }
+        }
+        # Version 3.8: Laufender Test - IMMER sichtbar machen (bei jedem Call,
+        # auch beim Lesen), nicht nur wenn der Nutzer ihn gestartet hat.
+        if ($entry -and $entry.state -and [bool]$entry.state.running) {
+            $testMode = [string]$entry.state.mode
+            if ([bool]$entry.state.userPlaytestActive) {
+                $envelope.playtestWarning = @{
+                    severity = 'critical'
+                    code = 'USER_PLAYTEST_ACTIVE'
+                    assistantAction = 'STOP_OR_YIELD'
+                    mode = $testMode
+                    message = "Roblox Studio is in $testMode mode and the user started (or is using) this playtest. Do not make persistent edits."
+                    options = @(
+                        'Call play_stop yourself - that is allowed and also ends user-started tests - then continue your work in edit mode.'
+                        'If the user is actively playing right now (user_moving_character / user_active events), end your response instead and tell them you cannot work safely in parallel - ask them to let you work in peace.'
+                    )
+                    userRequest = 'Tell the user you can see the active playtest. Either you stop it (play_stop) or they let you work in peace and message you when Studio is free.'
+                }
+                $envelope.playtest = $envelope.playtestWarning
+                $critNote = 'CRITICAL PLAYTEST NOTICE: the user is testing/playing right now. Either call play_stop (allowed) and continue in edit mode, or end your response and ask the user to let you work in peace. Do not make persistent edits while the test runs.'
+                if ($envelope.attention) { $envelope.attention = $envelope.attention + ' ' + $critNote } else { $envelope.attention = $critNote }
+            } else {
+                $envelope.playtest = @{
+                    mode = $testMode
+                    startedBy = 'assistant (you)'
+                    message = "Your own $testMode test is running. Persistent edits stay blocked until play_stop. Use the character / GUI / output tools for testing now, then play_stop before building again."
+                }
+            }
+        }
+        # Version 3.8: Arbeitet der Nutzer gerade selbst im Editor?
+        $activeAt = [long]0
+        if ($Shared.UserActiveAt.TryGetValue([string]$sessionId, [ref]$activeAt)) {
+            $ageActive = (Get-UnixSeconds) - $activeAt
+            if ($ageActive -ge 0 -and $ageActive -le 180) {
+                $envelope.userWorking = @{
+                    lastActivitySecondsAgo = $ageActive
+                    message = 'The user is working in Roblox Studio themselves right now (selection/camera activity in the editor). Expect changes you did not make: re-read before overwriting, never undo their changes, coordinate in chat.'
+                }
+            }
         }
         # In Studio läuft noch etwas (z.B. nach einem Timeout). Studio arbeitet
         # Befehle strikt nacheinander ab - der nächste Call wartet automatisch.
@@ -8928,6 +9517,45 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                     }
                 }
             }
+            'report_done' {
+                # Version 3.8: Arena meldet "fertig" - der Nutzer bekommt eine
+                # Windows-Benachrichtigung (nur wenn er das aktiviert hat).
+                $notifyOn = $false
+                try { $notifyOn = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
+                if (-not $notifyOn) {
+                    return @{
+                        ok = $false
+                        code = 'NOTIFICATIONS_DISABLED'
+                        error = 'report_done is not active: the user has NOT enabled finish notifications in the Arena Roblox Bridge settings.'
+                        hint = 'Nothing is wrong - simply finish your answer normally. Do not call report_done again in this session.'
+                    }
+                }
+                $doneMessage = ''
+                if ($toolArgs -and $toolArgs.message) { $doneMessage = [string]$toolArgs.message }
+                $doneMessage = $doneMessage.Trim()
+                if ([string]::IsNullOrWhiteSpace($doneMessage)) {
+                    return @{ ok = $false; code = 'BAD_ARGS'; error = 'message is required: short German text the user will read, e.g. "Ich bin fertig" or "5 Aenderungen und Fehler behoben - fertig".' }
+                }
+                if ($doneMessage.Length -gt 400) { $doneMessage = $doneMessage.Substring(0, 400) }
+                $doneEntry = Get-SessionEntry $sessionId
+                $donePlace = 'Place'
+                if ($doneEntry) { $donePlace = [string]$doneEntry.placeName }
+                $donePayload = @{
+                    place = $donePlace
+                    message = $doneMessage
+                    time = (Get-Date).ToString('u')
+                }
+                $Shared.NotifyQueue.Enqueue((To-Json $donePayload 8))
+                Add-BridgeEvent $sessionId 'arena_done' ("The assistant reported it is done: " + $doneMessage) @{ place = $donePlace }
+                return @{
+                    ok = $true
+                    result = @{
+                        delivered = $true
+                        message = $doneMessage
+                        note = 'The user is being notified on their PC right now. This was your LAST action: make no further changes and no further tool calls - end your response now with your final summary.'
+                    }
+                }
+            }
             'get_events' {
                 $events = Take-Events $sessionId 40
                 return @{ ok = $true; result = @{ events = $events; count = $events.Count } }
@@ -8937,6 +9565,10 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 $queue = Ensure-Queue $sessionId
                 $pending = Get-PendingCommands $sessionId
                 $assetCacheEntries = 0
+                $bsSelfTest = $true
+                $bsNotify = $false
+                try { $bsSelfTest = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
+                try { $bsNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 try {
                     if (Test-Path -LiteralPath [string]$Shared.AssetCachePath) {
                         $cache = Get-Content -LiteralPath [string]$Shared.AssetCachePath -Raw | ConvertFrom-Json
@@ -8946,7 +9578,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '3.7'
+                        bridgeVersion = '3.8'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -8958,6 +9590,10 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         connectedPlaces = $Shared.Sessions.Count
                         storedBlobs = $Shared.Blobs.Count
                         assetCacheEntries = $assetCacheEntries
+                        settings = @{
+                            selfTestAllowed = $bsSelfTest
+                            notifyOnDone = $bsNotify
+                        }
                         docs = 'GET /api/docs for the complete tool documentation (or ?tool= / ?category=).'
                         note = 'Each Studio window has its own token. This token only ever reaches the place shown above.'
                     }
@@ -9000,7 +9636,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '3.7'
+                        serverVersion = '3.8'
                         docsVersion = [string]$Shared.DocsVersion
                     }
                 }
@@ -9107,12 +9743,25 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
 
             if ($path -eq '/plugin/event') {
                 if ($body -and $body.sessionId -and $body.event) {
-                    Add-BridgeEvent ([string]$body.sessionId) ([string]$body.event.kind) ([string]$body.event.message) $body.event.data
+                    $eventKind = [string]$body.event.kind
                     $entry = Get-SessionEntry ([string]$body.sessionId)
                     if ($entry) {
-                        $entry.state = (Get-StateObject $body)
+                        # Version 3.8: Nutzer-Aktivitaet vermerken (Edition im
+                        # Studio, Kamera, Avatar, GUI) - fuer userWorking-Hinweis.
+                        if ($eventKind -eq 'user_active' -or $eventKind -eq 'user_moving_character' -or $eventKind -eq 'user_rotating_camera' -or $eventKind -eq 'user_clicked_gui') {
+                            $Shared.UserActiveAt[[string]$body.sessionId] = (Get-UnixSeconds)
+                        }
+                        # Version 3.8: Play-Wechsel laufen immer durch die
+                        # zentrale Verfolgung (klassifiziert startedBy zuver-
+                        # laessig auf dem Server, dedupliziert Doppelte).
+                        $entry.state = Update-PlayStateTracking ([string]$body.sessionId) $entry.state (Get-StateObject $body)
                         $entry.lastSeen = (Get-UnixSeconds)
                         Save-SessionEntry $entry
+                        if ($eventKind -ne 'play_started' -and $eventKind -ne 'play_stopped') {
+                            Add-BridgeEvent ([string]$body.sessionId) $eventKind ([string]$body.event.message) $body.event.data
+                        }
+                    } else {
+                        Add-BridgeEvent ([string]$body.sessionId) $eventKind ([string]$body.event.message) $body.event.data
                     }
                 }
                 Send-Json $context 200 @{ ok = $true }
@@ -9163,13 +9812,21 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             }
 
             if ($path -eq '/api/status') {
+                $statusSelfTest = $true
+                $statusNotify = $false
+                try { $statusSelfTest = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
+                try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '3.7'
+                    bridgeVersion = '3.8'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
                     accessMode = $accessMode
+                    settings = @{
+                        selfTestAllowed = $statusSelfTest
+                        notifyOnDone = $statusNotify
+                    }
                 }
                 continue
             }
@@ -9209,6 +9866,30 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 if (-not $body -or -not $body.calls) {
                     Send-Json $context 400 @{ ok = $false; error = 'calls fehlt: { "calls": [ { "tool": "...", "args": {} } ] }' }
                     continue
+                }
+                # Version 3.8: Selbst-Tests deaktiviert? Play-Werkzeuge sperren.
+                $selfTestOkPar = $true
+                try { $selfTestOkPar = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
+                if (-not $selfTestOkPar) {
+                    $blockedTool = $null
+                    foreach ($call in @($body.calls)) {
+                        if (@('play_start','play_stop','play_pause','play_resume','send_input','gui_click','gui_set_text','move_character','teleport_character','respawn_character','set_camera') -contains [string]$call.tool) {
+                            $blockedTool = [string]$call.tool
+                            break
+                        }
+                    }
+                    if ($blockedTool) {
+                        $blockedPar = New-SelfTestBlockedResult $blockedTool
+                        $blockedPar._bridge = (New-Envelope $sessionId)
+                        Send-Json $context 200 $blockedPar
+                        continue
+                    }
+                }
+                foreach ($call in @($body.calls)) {
+                    $callTool = [string]$call.tool
+                    if ($callTool -eq 'play_start' -or $callTool -eq 'play_stop') {
+                        $Shared.AiPlayIntents[$sessionId] = @{ action = ($callTool -replace '^play_', ''); at = (Get-UnixSeconds) }
+                    }
                 }
                 $timeout = 90
                 if ($body.timeoutSeconds) { $timeout = [Math]::Min([int]$body.timeoutSeconds, 180) }
@@ -9320,11 +10001,24 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         assistantAction = 'STOP_CURRENT_RESPONSE'
                         error = "IMPORTANT: Roblox Studio is currently in $([string]$sessionEntry.state.mode) mode. The requested edit '$tool' was NOT sent to Studio."
                         why = 'The user is playing/testing the game. Editing now would interrupt them and persistent changes would be discarded when the test ends.'
-                        requiredResponse = 'Stop your current response now. Tell the user you can see that Roblox Studio is in a playtest and politely ask them to leave/stop the playtest. Wait until they confirm Edit mode before continuing. Do not call play_stop for them.'
-                        suggestedUserMessage = 'Ich sehe, dass du Roblox Studio gerade im Playtest benutzt. Bitte beende den Playtest, damit ich sicher weiterarbeiten kann.'
+                        requiredResponse = 'You have TWO options: (a) call play_stop yourself - that is allowed and also ends user-started tests - then continue your work in edit mode; or (b) if the user is actively playing right now, end your response and tell them you cannot work safely in parallel - ask them to let you work in peace and to message you when Studio is free. Never make persistent edits while the test runs.'
+                        suggestedUserMessage = 'Ich sehe, dass du Roblox Studio gerade im Playtest benutzt. Parallel kann ich nicht sicher arbeiten: Ich beende den Test jetzt ODER du meldest dich, wenn ich in Ruhe weiterarbeiten soll.'
                     }
                     $blocked._bridge = (New-Envelope $sessionId)
                     Send-Json $context 200 $blocked
+                    continue
+                }
+
+                # Version 3.8: Selbst-Tests vom Nutzer deaktiviert? Dann sind
+                # Run / Play / Play Here und die komplette Test-Steuerung fuer
+                # die KI gesperrt - nur die Editor-Simulation bleibt. Das ist
+                # KEIN Fehler, die KI wird deutlich darueber informiert.
+                $selfTestOk = $true
+                try { $selfTestOk = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
+                if (-not $selfTestOk -and @('play_start','play_stop','play_pause','play_resume','send_input','gui_click','gui_set_text','move_character','teleport_character','respawn_character','set_camera') -contains $tool) {
+                    $blockedSelfTest = New-SelfTestBlockedResult $tool
+                    $blockedSelfTest._bridge = (New-Envelope $sessionId)
+                    Send-Json $context 200 $blockedSelfTest
                     continue
                 }
 
@@ -9348,6 +10042,13 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
 
                 # Langer Lauf? Als Job in den Hintergrund - läuft sicher über 60 s hinaus.
                 $isJobCall = ($toolArgs.asJob -eq $true) -or ($tool -eq 'start_job')
+
+                # Version 3.8: Play-Absicht der KI vermerken - der SERVER weiss
+                # dann zuverlaessig, wer einen Test gestartet/gestoppt hat
+                # (das ueberlebt auch ein Neu-Laden des Plugins im Testmodus).
+                if ($tool -eq 'play_start' -or $tool -eq 'play_stop') {
+                    $Shared.AiPlayIntents[$sessionId] = @{ action = ($tool -replace '^play_', ''); at = (Get-UnixSeconds) }
+                }
 
                 $resultJson = Invoke-PluginTool $sessionId $tool $toolArgs $timeout
                 if ($null -eq $resultJson) {
@@ -9772,6 +10473,21 @@ function Reset-SessionToken {
 function Set-SessionMode {
     param([string]$SessionId, [string]$Mode)
     $script:Shared.AccessModes[$SessionId] = $Mode
+    # Version 3.8: Die Zugriffsart ("Nur Lesezugriff" je Place) dauerhaft
+    # speichern - sie ueberlebt Programm-Neustarts.
+    try {
+        $entryJson = $null
+        if ($script:Shared.Sessions.TryGetValue($SessionId, [ref]$entryJson)) {
+            $entry = $entryJson | ConvertFrom-Json
+            $modeKey = [string]$entry.placeId
+            if ([string]::IsNullOrWhiteSpace($modeKey) -or $modeKey -eq '0') { $modeKey = 'name:' + [string]$entry.placeName }
+            if (-not [string]::IsNullOrWhiteSpace($modeKey)) {
+                $script:Shared.BridgeSettings.accessModes[$modeKey] = $Mode
+                $script:SettingsCache.accessModes[$modeKey] = $Mode
+                Save-BridgeSettingsFile
+            }
+        }
+    } catch {}
 }
 
 # ----------------------------------------------------------------------------
@@ -10266,26 +10982,6 @@ $xaml = @'
 
             </Grid>
 
-            <Border x:Name="SettingsPanel" Grid.Row="1" Visibility="Collapsed" Panel.ZIndex="60"
-                    HorizontalAlignment="Right" VerticalAlignment="Top" Width="300"
-                    CornerRadius="14" Background="#211A1F" BorderBrush="#FF4FA3" BorderThickness="1"
-                    Padding="18" Margin="0,6,54,0">
-                <Border.Effect>
-                    <DropShadowEffect Color="#000000" Opacity="0.55" BlurRadius="22" ShadowDepth="0"/>
-                </Border.Effect>
-                <StackPanel>
-                    <TextBlock Text="Einstellungen" Foreground="{StaticResource TextMain}" FontSize="16" FontWeight="Bold"/>
-                    <TextBlock Text="Programmoptionen für diese Bridge" Foreground="{StaticResource TextMuted}" FontSize="11.5" Margin="0,4,0,0"/>
-                    <Border Height="1" Background="{StaticResource Line}" Margin="0,15,0,15"/>
-                    <CheckBox x:Name="StartupCheckBox" Content="Beim PC-Start automatisch öffnen"/>
-                    <TextBlock Text="Startet Arena Roblox Bridge automatisch mit Windows und verbindet Places im Hintergrund." Foreground="{StaticResource TextFaint}" FontSize="11" TextWrapping="Wrap" Margin="31,7,0,0"/>
-                    <Border Height="1" Background="{StaticResource Line}" Margin="0,16,0,13"/>
-                    <TextBlock x:Name="UpdateInfoTitle" Text="UPDATES" Foreground="{StaticResource TextMuted}" FontSize="10.5" FontWeight="Bold"/>
-                    <TextBlock x:Name="UpdateInfoText" Text="Version 3.7" Foreground="{StaticResource TextFaint}" FontSize="11" TextWrapping="Wrap" Margin="0,7,0,0"/>
-                    <Border Height="1" Background="{StaticResource Line}" Margin="0,14,0,13"/>
-                    <TextBlock Text="Arena Roblox Bridge - Version 3.7" Foreground="{StaticResource TextFaint}" FontSize="11"/>
-                </StackPanel>
-            </Border>
         </Grid>
     </Border>
 </Window>
@@ -10321,12 +11017,8 @@ $PlacesCountText = $window.FindName('PlacesCountText')
 $LiveBadge       = $window.FindName('LiveBadge')
 $LiveDot         = $window.FindName('LiveDot')
 $LiveText        = $window.FindName('LiveText')
-$SettingsPanel   = $window.FindName('SettingsPanel')
-$StartupCheckBox = $window.FindName('StartupCheckBox')
 $SettingsButton  = $window.FindName('SettingsButton')
 $UpdateBadge     = $window.FindName('UpdateBadge')
-$UpdateInfoTitle = $window.FindName('UpdateInfoTitle')
-$UpdateInfoText  = $window.FindName('UpdateInfoText')
 $MinimizeButton  = $window.FindName('MinimizeButton')
 $CloseButton     = $window.FindName('CloseButton')
 $PulseDot        = $window.FindName('PulseDot')
@@ -11334,8 +12026,9 @@ $TitleBar.Add_MouseLeftButtonDown({
 })
 $CloseButton.Add_Click({ $window.Close() })
 $MinimizeButton.Add_Click({ $window.WindowState = 'Minimized' })
+# Version 3.8: Die Einstellungen sind ein eigenes, grosses Fenster geworden.
 $SettingsButton.Add_Click({
-    $SettingsPanel.Visibility = if ($SettingsPanel.Visibility -eq 'Visible') { 'Collapsed' } else { 'Visible' }
+    try { Open-SettingsWindow } catch { Write-RuntimeLog "Einstellungsfenster konnte nicht geoeffnet werden: $($_.Exception.Message)" }
 })
 
 $window.Add_PreviewMouseDown({
@@ -11359,36 +12052,6 @@ $window.Add_PreviewMouseDown({
             }
         }
     } catch {}
-    try {
-        if ($SettingsPanel.Visibility -ne 'Visible') { return }
-        $node = $e.OriginalSource
-        while ($null -ne $node) {
-            if ($node -eq $SettingsPanel -or $node -eq $SettingsButton) { return }
-            if ($node -is [System.Windows.Media.Visual]) {
-                $node = [System.Windows.Media.VisualTreeHelper]::GetParent($node)
-            } elseif ($node -is [System.Windows.Media.Visual3D]) {
-                $node = [System.Windows.Media.VisualTreeHelper]::GetParent($node)
-            } else {
-                break
-            }
-        }
-        $SettingsPanel.Visibility = 'Collapsed'
-    } catch {}
-})
-
-$StartupCheckBox.IsChecked = Get-StartupEnabled
-$StartupCheckBox.Add_Click({
-    try {
-        Set-StartupEnabled ([bool]$StartupCheckBox.IsChecked)
-        if ($StartupCheckBox.IsChecked) {
-            Show-Toast -Message 'Autostart ist aktiviert.' -Kind 'Success'
-        } else {
-            Show-Toast -Message 'Autostart ist deaktiviert.' -Kind 'Info'
-        }
-    } catch {
-        Show-Toast -Message "Der Autostart konnte nicht geändert werden: $($_.Exception.Message)" -Kind 'Error' -Seconds 6
-        $StartupCheckBox.IsChecked = Get-StartupEnabled
-    }
 })
 
 $window.Add_Loaded({
@@ -11415,7 +12078,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '3.7'
+    $versionText = '3.8'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -11526,25 +12189,323 @@ function Show-UpdateNotice {
     $script:UpdateNoticeAccepted = $false
 }
 
-# Version 3.7: Rote "1" am Einstellungs-Button + Text in den Einstellungen
+
+# ----------------------------------------------------------------------------
+# EINSTELLUNGSFENSTER (Version 3.8)
+# Die Einstellungen sind ein eigenes, deutlich groesseres Fenster geworden
+# (vorher: kleines 300-px-Panel). Alle an/aus-Einstellungen sind jetzt echte
+# Schalter mit ROT (aus) und GRUEN (an) statt Haekchen-Kaestchen, und jeder
+# Schalter wird sofort dauerhaft in settings.json gespeichert.
+# ----------------------------------------------------------------------------
+function ConvertTo-XmlSafeText {
+    param([string]$Text)
+    if ($null -eq $Text) { return '' }
+    return ([string]$Text).Replace('&', '&amp;').Replace('<', '&lt;').Replace('>', '&gt;')
+}
+
+function Show-ArenaDoneNotification {
+    # Version 3.8: Windows-Benachrichtigung "Arena ist fertig" - ausschliesslich
+    # fuer die report_done-Meldung der KI (der Nutzer hat diese Benachrichtigung
+    # dafuer explizit in den Einstellungen aktiviert; sie ist standardmaessig
+    # AUS). Die alten stummen Toast-Stummel bleiben unangetastet.
+    param([string]$Place, [string]$Message)
+    $title = 'Arena Roblox Bridge'
+    if (-not [string]::IsNullOrWhiteSpace($Place)) { $title = "Arena ist fertig - $Place" }
+    $text = $Message
+    if ([string]::IsNullOrWhiteSpace($text)) { $text = 'Ich bin fertig.' }
+    $shown = $false
+    # 1) Moderner Windows-Toast (WinRT) - erscheint wie eine echte App-Meldung.
+    try {
+        [void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
+        [void][Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime]
+        $appId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
+        $toastXml = '<toast duration="long"><visual><binding template="ToastGeneric"><text>' + (ConvertTo-XmlSafeText $title) + '</text><text>' + (ConvertTo-XmlSafeText $text) + '</text></binding></visual><audio src="ms-winsoundevent:Notification.Default"/></toast>'
+        $xmlDoc = New-Object Windows.Data.Xml.Dom.XmlDocument
+        $xmlDoc.LoadXml($toastXml)
+        $toast = New-Object Windows.UI.Notifications.ToastNotification $xmlDoc
+        [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId).Show($toast)
+        $shown = $true
+    } catch {
+        Write-RuntimeLog "Windows-Toast fehlgeschlagen: $($_.Exception.Message)"
+    }
+    # 2) Fallback: klassischer Balloon-Hinweis ueber ein Tray-Symbol.
+    if (-not $shown) {
+        try {
+            Add-Type -AssemblyName System.Windows.Forms
+            $ni = New-Object System.Windows.Forms.NotifyIcon
+            $ni.Icon = [System.Drawing.SystemIcons]::Information
+            $ni.Visible = $true
+            $ni.BalloonTipTitle = $title
+            $ni.BalloonTipText = $text
+            $ni.ShowBalloonTip(12000)
+            if (-not $script:NotifyIcons) { $script:NotifyIcons = New-Object System.Collections.Generic.List[object] }
+            $script:NotifyIcons.Add($ni)
+            $niTimer = [System.Windows.Threading.DispatcherTimer]::new()
+            $niTimer.Interval = [TimeSpan]::FromSeconds(25)
+            $niTimer.Tag = $ni
+            $niTimer.Add_Tick({
+                param($s, $e)
+                $s.Stop()
+                try { $s.Tag.Visible = $false; $s.Tag.Dispose() } catch {}
+            })
+            $niTimer.Start()
+            $shown = $true
+        } catch {
+            Write-RuntimeLog "Balloon-Hinweis fehlgeschlagen: $($_.Exception.Message)"
+        }
+    }
+    # 3) Letzter Fallback: Hauptfenster holen und aktivieren.
+    if (-not $shown) {
+        try {
+            $window.Activate()
+            [void]$window.Focus()
+        } catch {}
+    }
+    Write-RuntimeLog "Arena-Fertig-Meldung angezeigt: $text"
+}
+
+function Open-SettingsWindow {
+    $autoStartNow = Get-StartupEnabled
+    $selfTestNow = $true
+    $notifyNow = $false
+    try { $selfTestNow = [bool]$script:Shared.BridgeSettings.selfTestAllowed } catch {}
+    try { $notifyNow = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch {}
+
+    $settingsXaml = @'
+<?xml version="1.0" encoding="utf-8"?>
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Arena Roblox Bridge - Einstellungen"
+        Width="680" Height="660" MinWidth="680" MinHeight="660" MaxWidth="680" MaxHeight="660"
+        ResizeMode="NoResize" WindowStyle="None" AllowsTransparency="True"
+        Background="Transparent" WindowStartupLocation="CenterOwner" FontFamily="Segoe UI">
+    <Window.Resources>
+        <SolidColorBrush x:Key="SwTextMain" Color="#F7F1F5"/>
+        <SolidColorBrush x:Key="SwTextMuted" Color="#A99DA5"/>
+        <SolidColorBrush x:Key="SwTextFaint" Color="#80767D"/>
+        <SolidColorBrush x:Key="SwLine" Color="#3B3036"/>
+        <Style x:Key="ArenaSwitch" TargetType="CheckBox">
+            <Setter Property="Foreground" Value="#F7F1F5"/>
+            <Setter Property="FontSize" Value="13.5"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid Width="48" Height="26" VerticalAlignment="Center">
+                                <Border x:Name="track" Width="48" Height="26" CornerRadius="13"
+                                        Background="#6B2231" BorderBrush="#A63A50" BorderThickness="1"/>
+                                <Ellipse x:Name="thumb" Width="20" Height="20" Fill="#F2E9EE"
+                                         HorizontalAlignment="Left" Margin="3,0,0,0" VerticalAlignment="Center"/>
+                                <TextBlock x:Name="stateText" Text="AUS" Foreground="#FFD6DD" FontSize="8.5"
+                                           FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Margin="13,0,0,0"/>
+                            </Grid>
+                            <ContentPresenter Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="track" Property="Background" Value="#1E6B3A"/>
+                                <Setter TargetName="track" Property="BorderBrush" Value="#35A05C"/>
+                                <Setter TargetName="thumb" Property="HorizontalAlignment" Value="Right"/>
+                                <Setter TargetName="thumb" Property="Margin" Value="0,0,3,0"/>
+                                <Setter TargetName="stateText" Property="Text" Value="AN"/>
+                                <Setter TargetName="stateText" Property="Foreground" Value="#D6F5E1"/>
+                                <Setter TargetName="stateText" Property="Margin" Value="0,0,13,0"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="thumb" Property="Fill" Value="#FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+    <Border CornerRadius="18" Background="#16121A" BorderBrush="#4C3A45" BorderThickness="1" Padding="26,20,26,18">
+        <Border.Effect>
+            <DropShadowEffect Color="#000000" Opacity="0.5" BlurRadius="24" ShadowDepth="0"/>
+        </Border.Effect>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Titelzeile (verschiebbar) -->
+            <Grid x:Name="TitleBar" Grid.Row="0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="Einstellungen" Foreground="{StaticResource SwTextMain}" FontSize="18" FontWeight="Bold"/>
+                    <TextBlock Text="Alle Einstellungen werden automatisch gespeichert und gelten auch nach einem Neustart." Foreground="{StaticResource SwTextMuted}" FontSize="11.5" Margin="0,3,0,0"/>
+                </StackPanel>
+                <Button x:Name="CloseButton" Grid.Column="1" Width="38" Height="32" Cursor="Hand" Content="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="12">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="bd" CornerRadius="10" Background="#2A1220" BorderBrush="#7F244D" BorderThickness="1">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="bd" Property="Background" Value="#E0365A"/>
+                                    <Setter TargetName="bd" Property="BorderBrush" Value="#FF7A94"/>
+                                    <Setter Property="Foreground" Value="#FFFFFF"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Button.Foreground>#F0A7B4</Button.Foreground>
+                </Button>
+            </Grid>
+
+            <!-- Inhalt -->
+            <ScrollViewer Grid.Row="1" Margin="0,16,0,0" VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="0,0,8,0">
+
+                    <TextBlock Text="PROGRAMM" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,2,0,8"/>
+                    <Border Background="#211A1E" BorderBrush="#4C3A45" BorderThickness="1" CornerRadius="12" Padding="16,13">
+                        <StackPanel>
+                            <CheckBox x:Name="StartupSwitch" Style="{StaticResource ArenaSwitch}" Content="Beim PC-Start automatisch öffnen"/>
+                            <TextBlock Text="Startet Arena Roblox Bridge automatisch mit Windows und verbindet Places im Hintergrund." Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap" Margin="60,9,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Text="ARENA (KI-TESTS)" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
+                    <Border Background="#211A1E" BorderBrush="#4C3A45" BorderThickness="1" CornerRadius="12" Padding="16,13">
+                        <StackPanel>
+                            <CheckBox x:Name="SelfTestSwitch" Style="{StaticResource ArenaSwitch}" Content="Arena darf sich selbst testen"/>
+                            <TextBlock Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap" Margin="60,9,0,0"><Run Text="AN (Standard): Arena darf in Roblox Studio eigene Tests starten und beenden - Run (Physik-/Script-Simulation im Editor), Play (echtes Spiel mit Charakter) und Play Here (Play an der Kamera-Position)."/><LineBreak/><Run Text="AUS: Run, Play und Play Here sind für Arena gesperrt - nur die Simulationen im Editor (Syntax-Check, Lua testen) bleiben. Arena wird darüber informiert und weiß, dass das von dir gewollt ist - es hält die Bridge nicht für kaputt."/></TextBlock>
+                        </StackPanel>
+                    </Border>
+                    <Border Background="#211A1E" BorderBrush="#4C3A45" BorderThickness="1" CornerRadius="12" Padding="16,13" Margin="0,10,0,0">
+                        <StackPanel>
+                            <CheckBox x:Name="NotifySwitch" Style="{StaticResource ArenaSwitch}" Content="Benachrichtigung, wenn Arena fertig ist"/>
+                            <TextBlock Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap" Margin="60,9,0,0"><Run Text="AN: Arena wird angewiesen, am Ende seiner Arbeit den Befehl report_done zu senden. Du bekommst dann eine Windows-Benachrichtigung mit Arenas Meldung auf den PC (z. B. «Ich bin fertig» oder «5 Änderungen und Fehler behoben - fertig»)."/><LineBreak/><Run Text="AUS (Standard): keine Benachrichtigung - Arena beendet seine Arbeit einfach."/></TextBlock>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock x:Name="LastMessageTitle" Text="LETZTE ARENA-MELDUNG" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8" Visibility="Collapsed"/>
+                    <Border x:Name="LastMessageCard" Background="#1E1720" BorderBrush="#6B485B" BorderThickness="1" CornerRadius="12" Padding="16,13" Visibility="Collapsed">
+                        <StackPanel>
+                            <TextBlock x:Name="LastMessageText" Foreground="#F7F1F5" FontSize="13" TextWrapping="Wrap"/>
+                            <TextBlock x:Name="LastMessageMeta" Foreground="{StaticResource SwTextFaint}" FontSize="10.5" Margin="0,7,0,0"/>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Text="UPDATES" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
+                    <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
+
+                    <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
+                    <TextBlock Text="Arena Roblox Bridge - Version 3.8" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Border>
+</Window>
+'@
+    $settingsReader = [System.Xml.XmlNodeReader]::new([xml]$settingsXaml)
+    $settingsWindow = [Windows.Markup.XamlReader]::Load($settingsReader)
+
+    try { $settingsWindow.Owner = $window } catch {}
+
+    $swTitleBar      = $settingsWindow.FindName('TitleBar')
+    $swClose         = $settingsWindow.FindName('CloseButton')
+    $startupSwitch   = $settingsWindow.FindName('StartupSwitch')
+    $selfTestSwitch  = $settingsWindow.FindName('SelfTestSwitch')
+    $notifySwitch    = $settingsWindow.FindName('NotifySwitch')
+    $lastTitle       = $settingsWindow.FindName('LastMessageTitle')
+    $lastCard        = $settingsWindow.FindName('LastMessageCard')
+    $lastText        = $settingsWindow.FindName('LastMessageText')
+    $lastMeta        = $settingsWindow.FindName('LastMessageMeta')
+    $updateText      = $settingsWindow.FindName('UpdateInfoText')
+
+    $startupSwitch.IsChecked = $autoStartNow
+    $selfTestSwitch.IsChecked = $selfTestNow
+    $notifySwitch.IsChecked = $notifyNow
+
+    if ($script:UpdateInfoState) {
+        $updateText.Text = [string]$script:UpdateInfoState.Body
+        $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
+    } else {
+        $updateText.Text = 'Version 3.8 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    }
+
+    if ($script:LastArenaMessage) {
+        $lastTitle.Visibility = 'Visible'
+        $lastCard.Visibility = 'Visible'
+        $lastText.Text = [string]$script:LastArenaMessage.message
+        $lastMeta.Text = ([string]$script:LastArenaMessage.place) + ' · ' + ([string]$script:LastArenaMessage.time)
+    }
+
+    $swTitleBar.Add_MouseLeftButtonDown({
+        if ($_.ButtonState -eq [System.Windows.Input.MouseButtonState]::Pressed) {
+            try { $settingsWindow.DragMove() } catch {}
+        }
+    })
+    $swClose.Add_Click({ try { $settingsWindow.Close() } catch {} })
+
+    $startupSwitch.Add_Click({
+        param($s, $e)
+        try {
+            Set-StartupEnabled ([bool]$s.IsChecked)
+            $script:SettingsCache.autoStart = [bool]$s.IsChecked
+            Save-BridgeSettingsFile
+        } catch {
+            Write-RuntimeLog "Der Autostart konnte nicht geaendert werden: $($_.Exception.Message)"
+            $s.IsChecked = Get-StartupEnabled
+        }
+    })
+    $selfTestSwitch.Add_Click({
+        param($s, $e)
+        $script:Shared.BridgeSettings.selfTestAllowed = [bool]$s.IsChecked
+        $script:SettingsCache.selfTestAllowed = [bool]$s.IsChecked
+        Save-BridgeSettingsFile
+        $stateText = 'deaktiviert'
+        if ($s.IsChecked) { $stateText = 'aktiviert' }
+        Write-RuntimeLog "Selbst-Tests der KI (Run/Play/Play Here) $stateText."
+    })
+    $notifySwitch.Add_Click({
+        param($s, $e)
+        $script:Shared.BridgeSettings.notifyOnDone = [bool]$s.IsChecked
+        $script:SettingsCache.notifyOnDone = [bool]$s.IsChecked
+        Save-BridgeSettingsFile
+        $stateText = 'deaktiviert'
+        if ($s.IsChecked) { $stateText = 'aktiviert' }
+        Write-RuntimeLog "Fertig-Benachrichtigung (report_done) $stateText."
+    })
+
+    [void]$settingsWindow.ShowDialog()
+}
+
+# Version 3.8: Die Update-Infos stehen jetzt im grossen Einstellungsfenster.
+# Der Zustand wird hier vorbereitet (rote "1" bleibt am Zahnrad) und beim
+# Oeffnen der Einstellungen angezeigt.
+$script:UpdateInfoState = @{
+    IsError  = $false
+    Body     = 'Version 3.8 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    BodyHex  = '#A99DA5'
+}
 if (Test-UpdateError) {
     try { $UpdateBadge.Visibility = 'Visible' } catch {}
-    try {
-        $UpdateInfoTitle.Text = 'UPDATES - PROBLEM'
-        $UpdateInfoTitle.Foreground = Get-Brush '#F2565B'
-        $updateErrorText = Get-UpdateStatusText
-        if ($script:UpdateDetails -and $script:UpdateDetails.error) {
-            $updateErrorText = $updateErrorText + ': ' + [string]$script:UpdateDetails.error
-        }
-        $UpdateInfoText.Text = $updateErrorText
-        $UpdateInfoText.Foreground = Get-Brush '#F0A7B4'
-    } catch {}
+    $updateErrorText = Get-UpdateStatusText
+    if ($script:UpdateDetails -and $script:UpdateDetails.error) {
+        $updateErrorText = $updateErrorText + ': ' + [string]$script:UpdateDetails.error
+    }
+    $script:UpdateInfoState.IsError = $true
+    $script:UpdateInfoState.Body = $updateErrorText
+    $script:UpdateInfoState.BodyHex = '#F0A7B4'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    try {
-        $verText = '3.7'
-        if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
-        $UpdateInfoText.Text = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
-    } catch {}
+    $verText = '3.8'
+    if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
+    $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
 
 # ----------------------------------------------------------------------------
@@ -11609,10 +12570,39 @@ $timer.Add_Tick({
     }
 })
 $timer.Start()
+
+# Version 3.8: report_done-Meldungen der KI abholen und als Windows-
+# Benachrichtigung anzeigen. Der Server legt sie nur in die Warteschlange,
+# wenn der Nutzer die Fertig-Meldung aktiviert hat.
+$script:LastArenaMessage = $null
+$notifyTimer = [System.Windows.Threading.DispatcherTimer]::new()
+$notifyTimer.Interval = [TimeSpan]::FromMilliseconds(800)
+$notifyTimer.Add_Tick({
+    try {
+        while ($true) {
+            $item = $null
+            if (-not $script:Shared.NotifyQueue.TryDequeue([ref]$item)) { break }
+            try {
+                $payload = $item | ConvertFrom-Json
+                $script:LastArenaMessage = @{
+                    message = [string]$payload.message
+                    place   = [string]$payload.place
+                    time    = [string]$payload.time
+                }
+                Show-ArenaDoneNotification -Place ([string]$payload.place) -Message ([string]$payload.message)
+            } catch {
+                Write-RuntimeLog "Fertig-Meldung konnte nicht angezeigt werden: $($_.Exception.Message)"
+            }
+        }
+    } catch {}
+})
+$notifyTimer.Start()
+
 Refresh-Ui
 
 $window.Add_Closed({
     try { $timer.Stop() } catch {}
+    try { $notifyTimer.Stop() } catch {}
     foreach ($row in @($script:UiRows.Values)) {
         try { $row.Popup.IsOpen = $false } catch {}
     }

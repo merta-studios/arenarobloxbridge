@@ -20,6 +20,7 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
+| `test-v38.ps1` | Logik-Tests der 3.8-Features (optional, lokal ausführen; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
 
@@ -33,6 +34,34 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+### 3.8
+- Große eigenes Einstellungsfenster: alle An/Aus-Optionen sind jetzt echte
+  Schalter mit **rot = aus** und **grün = an** statt Kontrollkästchen
+- **Alle Einstellungen werden dauerhaft gespeichert** (settings.json):
+  Autostart, Selbst-Tests, Fertig-Meldung und auch „Nur Lesezugriff“ je Place
+- Neue Einstellung **„Arena darf sich selbst testen“** (Standard: an). Aus:
+  Run, Play und Play Here sind für Arena gesperrt – nur die Editor-
+  Simulationen bleiben. Arena wird in Doku/Manifest/jeder Antwort informiert,
+  dass der Nutzer das bewusst ausgeschaltet hat (SELF_TEST_DISABLED) – es
+  hält die Bridge nicht für kaputt
+- Neue Einstellung **„Benachrichtigung, wenn Arena fertig ist“** (Standard:
+  aus). An: Arena ruft am Ende seiner Arbeit den neuen Befehl `report_done`
+  mit einer eigenen deutschen Meldung – der Nutzer bekommt eine echte
+  Windows-Benachrichtigung (z. B. „Ich bin fertig“)
+- Playtests deutlich zuverlässiger: Start/Stop über den offiziellen
+  StudioTestService (neue Studio-API), gestaffelte Stop-Versuche, und der
+  alte fehlerhafte Run-Fallback („kein Charakter spawnt“) ist entfernt
+- Der Server verfolgt selbst, wer einen Test gestartet hat – merkt sich also
+  auch zuverlässig, wenn der **Nutzer** einen Playtest startet/stoppt (selbst
+  wenn das Plugin währenddessen neu lädt). Arena sieht bei jedem Aufruf,
+  dass ein Test läuft, und kann ihn beenden (play_stop) oder seine Antwort
+  beenden und um Ruhe bitten
+- Neuer Modus **play_here** (Play Here = Charakter spawnt an der Edit-
+  Kamera): wird erkannt und kann von Arena gestartet werden; Run / Play /
+  Play Here / Editor-Simulation sind klar in der Doku getrennt
+- Nutzer-Aktivität im Studio (Auswahl, Kamera) erreicht Arena als
+  user_active-Ereignisse + userWorking-Hinweis
 
 ### 3.7
 - Neue Anthrazit-/Grau-/Pink-Oberfläche mit stärkeren Kontrasten

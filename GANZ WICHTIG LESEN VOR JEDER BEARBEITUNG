@@ -1,7 +1,7 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 3.7  -  20.09.2026)                                #
+#   (Stand: Version 3.8  -  21.09.2026)                                #
 #                                                                      #
 ##########################################################################
 
@@ -126,21 +126,45 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 - KEINE Toast-/Popup-Meldungen unten rechts! Show-Toast und
   Add-PendingToast sind absichtlich stumme No-op-Stummel fuer alte
   Aufrufstellen. NICHT wiederbeleben.
+  EINZIGE Ausnahme (seit v3.8, vom Nutzer ausdruecklich gewuenscht):
+  Show-ArenaDoneNotification - die Windows-Benachrichtigung fuer den
+  report_done-Befehl der KI ("Arena ist fertig"). Sie ist an die
+  Einstellung "Benachrichtigung, wenn Arena fertig ist" gebunden
+  (Standard: AUS) und darf fuer nichts anderes verwendet werden.
 - "..."-Auswahlmenue: erneuter Klick auf den Menue-Button schliesst
   das Menue (echtes Toggle). Klick auf "Nur Lesezugriff" laesst das
   Menue OFFEN (schliesst es NICHT).
 - Bedienung der Spieleliste NICHT veraendern. Seit v3.7 gilt fuer das gesamte
   Programm einschliesslich Liste das Anthrazit-/Grau-/Pink-Farbschema.
+  Seit v3.8 sind die Einstellungen ein GROSSES eigenes Fenster mit
+  AN/AUS-Schaltern (rot/gruen statt Kaestchen) - das Design behalten.
 - ZIP-Struktur: genau EIN Ordner (ArenaBridge\) mit ZWEI Unterordnern
   (EXE-Builder\, GitHub-Repository\) plus TXT-Dateien.
 - REPOSITORY-LINK.txt-Mechanismus so lassen (auffaellige TXT, Nutzer
   traegt den Link selbst ein).
 - Changelog-Kommentar oben in ArenaBridge.ps1 bei jeder Version
-  fortfuehren (... -> 3.6 -> 3.7 -> ...).
+  fortfuehren (... -> 3.7 -> 3.8 -> ...).
+- Seit v3.8: Alle Einstellungen liegen dauerhaft in
+  %LOCALAPPDATA%\ArenaRobloxBridge\settings.json (autoStart,
+  selfTestAllowed, notifyOnDone, accessModes je Place). Eine Aenderung
+  muss IMMER beides aktualisieren: $script:SettingsCache (UI) UND
+  $script:Shared.BridgeSettings (Server-Threads), plus
+  Save-BridgeSettingsFile.
 
 
 5) TECHNISCHE STOLPERSTEINE FUER DIE KI
 =======================================
+- StudioTestService (offizielle API seit Studio Ende 2025): Plugins
+  koennen damit Play- und Run-Tests STARTEN (ExecutePlayModeAsync /
+  ExecuteRunModeAsync - beide yielden bis zum Testende, also in
+  task.spawn packen) und aus dem Server-DataModel eines laufenden
+  Tests BEENDEN (EndTest). EditModeActive=true heisst "kein Test
+  laeuft". Die Bridge nutzt das seit v3.8 als bevorzugten Weg; aeltere
+  Studio-Versionen ohne den Service fallen auf Tastenkuerzel (F5/F8,
+  Shift+F5) zurueck. "Play Here" hat KEINEN API-Aufruf - die Bridge
+  loest das, indem sie nach dem Play-Start den Charakter an die zuvor
+  gemerkte Edit-Kamera-Position setzt; erkannt wird es heuristisch
+  (Charakter spawnt nahe der alten Edit-Kamera).
 - ArenaBridge.ps1 und make-updater.ps1 sind UTF-8 MIT BOM - BOM beim
   Speichern erhalten (PowerShell 5.1 braucht ihn fuer die Umlaute).
 - Base64-Bloecke in make-updater.ps1: Marker #==ICON-START== /
@@ -171,6 +195,17 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
   Update-Hinweisfenster, rote "1", Toasts entfernt, Menue-Toggle
 - v3.7: Grau-/Pink-Design, Update-Fenster wartet zwingend auf OK;
   Playtest-Schutz fordert Arena zum Antwort-Stopp und zur Nutzer-Bitte auf
+- v3.8: Grosse Einstellungen mit rot/gruen-Schaltern + dauerhafte
+  Speicherung (settings.json); neue Schalter "Arena darf sich selbst
+  testen" (Standard an; aus = Run/Play/Play Here gesperrt als
+  SELF_TEST_DISABLED, Arena wird informiert) und "Benachrichtigung
+  wenn Arena fertig" (Standard aus; neuer Befehl report_done ->
+  Windows-Meldung mit Arenas Text); Playtests stark verbessert:
+  StudioTestService zum Start/Stop, kein Run-Fallback mehr bei Play
+  (=> "kein Charakter spawnt" behoben), der SERVER verfolgt selbst, wer
+  den Test gestartet hat (Nutzer-Playtests kommen zuverlaessig an,
+  auch nach Plugin-Neuladen), neuer Modus play_here, Nutzer-Aktivitaet
+  im Editor wird als user_active gemeldet
 
 Der vollstaendige Versionsverlauf steht als Kommentar ganz oben in
 ArenaBridge.ps1 (bis zur aktuellen Version fortfuehren!).
