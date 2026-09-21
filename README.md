@@ -20,7 +20,8 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test-v39.ps1` | Logik-Tests der 3.9-Features (optional, lokal ausführen; wird NICHT vom Starter geladen) |
+| `test-v396_structure.py` | Python-Strukturtest für 3.9.6 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 3.9.6 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
 
@@ -35,20 +36,47 @@ heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestarte
 
 ## Versionsverlauf
 
-### 3.9.5
-- **Playtests in getrennten Studio-DataModels repariert.** Moderne Roblox-
-  Studio-Versionen lassen Plugins im Edit-DataModel weiterlaufen, während der
-  Test in einem separaten DataModel startet. Ein nur für den Test erzeugter
-  **Session-Agent** meldet deshalb Player, Charakter, GUI/Client-Aktionen,
-  Output und `EndTest` über den lokalen Bridge-Port. Er wird im Edit-DataModel
-  sofort wieder entfernt und wird nie in den Place gespeichert.
-- **Kein Start-Hämmern mehr:** Vor `play_start` erkennt die Bridge den belegten
-  StudioTestService-Zombie (`EditModeActive=false`, aber kein RunService-Test),
-  versucht genau einmal die Wiederherstellung und antwortet danach klar mit
-  `PLAY_SERVICE_STUCK` und einer deutschen Neustart-Anweisung.
-- Service-Start und F5/F8 sind strikt getrennt. `play_status` enthält
-  `agentConnected` und den echten `playerCount`; `play_start`/`play_stop`
-  enthalten nachvollziehbare `startDiagnostics`.
+### 3.9.6
+- **Playtest ohne Konfiguration – auch bei `HttpEnabled=false`.** Vor jedem
+  `play_start` injiziert das Plugin einen temporären Server-Reporter in
+  `ServerScriptService` sowie einen Client-Reporter in
+  `StarterPlayerScripts`. Beide werden in den Test-Snapshot übernommen,
+  sofort wieder aus dem Edit-DataModel entfernt und speichern somit nichts im
+  Place. Sie drucken strukturierte `#ARENA#`-JSON-Zeilen über `LogService`:
+  echte Spielerzahl, Charakterposition, Gesundheit, Humanoid-Zustand sowie
+  GUI-Baum, Bildschirmkoordinaten und Klickziele. Das Edit-Plugin empfängt
+  diese Zeilen auch dann, wenn die Test-Session keinerlei HTTP-Fähigkeit hat.
+- **Getrennte DataModels richtig erkannt.** In aktuellem Studio bleiben
+  `RunService:IsRunning()` und `Players` im Edit-DataModel leer, obwohl eine
+  Session läuft. Der einzige Start-/Lauf-Orakel ist deshalb
+  `StudioTestService.EditModeActive`: `true → false` innerhalb von 20 Sekunden
+  ist Erfolg. Der Service-Fehler „previous one is still in progress“ bedeutet
+  bei `EditModeActive=false`, dass eine vorhandene Session weiterverwendet
+  wird – nicht, dass der Start fehlgeschlagen ist.
+- **Steuerung ohne HTTP.** `character_state` und `play_status` verwenden den
+  letzten LogStream-Snapshot (`agentMode: "logStream"`, echte
+  `sessionPlayers`). `move_character` sendet echte W/A/S/D-/Shift-Tasten über
+  `VirtualInputManager`, `gui_click` echte Mausereignisse an die vom
+  Client-Reporter gemeldeten Koordinaten. Teleportieren erfolgt nur vor dem
+  Spawn über `play_start { arenaSpawn={x,y,z} }` und `GetTestArgs`; das ersetzt
+  den alten Laufzeit-Teleport/Play-Here-Sonderweg.
+- **Stop ist kein HTTP-Sonderfall mehr.** `play_stop` ruft standardmäßig
+  `RunService:Stop()` aus dem Edit-DataModel auf und wartet auf
+  `EditModeActive=true`. Das beendet auch vom Nutzer gestartete getrennte
+  Sessions. `PLAY_SERVICE_STUCK` entsteht nur nach einem echten
+  Service-Fehler, `EditModeActive=false`, `IsRunning=false` und einem
+  erfolglosen Stop-/3-Sekunden-Wiederherstellungsversuch.
+- **Belegbare Diagnose und Protokollreparaturen.** `startDiagnostics` bei
+  Start/Stop enthält `editModeActiveBefore/After`, den wörtlichen
+  Service-Fehler, Pfad, `sessionPlayers`, `reporterActive`, `agentMode` und
+  `httpEnabled`. Pending-Befehle nutzen Unix-Zeitstempel, verspätete Ergebnisse
+  werden zuverlässig zugestellt, GET-Parameter werden explizit als UTF-8
+  dekodiert und gleiche Play-Start/Stop-Retries innerhalb von drei Sekunden
+  werden dedupliziert.
+- **Versionsschutz.** Bei Plugin-/Bridge-Mismatch zeigt die UI „Studio neu
+  starten“, `/api/status` meldet die Abweichung, und der KI-Umschlag enthält
+  `plugin outdated - Tests warten`. HTTP bleibt bei aktiviertem HttpEnabled als
+  schneller Zusatzpfad erhalten, ist aber niemals eine Voraussetzung.
 
 
 ### 3.9

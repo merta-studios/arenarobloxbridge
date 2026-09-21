@@ -1,17 +1,21 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 3.9.5
+# Arena Roblox Bridge  -  Version 3.9.6
 #
-# NEU IN DIESER VERSION (3.9.5) - PLAYTESTS IN GETRENNTEN DATAMODELS:
-#   * StudioTestService wird vor jedem Start auf den Zombie-Zustand geprueft.
-#     EditModeActive=false bei IsRunning=false bekommt genau einen Stop-/Warte-
-#     Versuch und dann PLAY_SERVICE_STUCK mit klarer Neustart-Anweisung.
-#   * Der Service-Start und F5/F8 sind strikt getrennte Pfade. Ein gestarteter
-#     Service-Versuch wird nie parallel mit Tastenkurzeln "nachgeholfen".
-#   * Ein temporaerer Session-Agent wird in den Play-Snapshot kopiert und im
-#     Edit-DataModel sofort geloescht. Er meldet den echten Player/Charakter,
-#     Output und EndTest ueber den lokalen Bridge-Port; nichts wird gespeichert.
-#   * play_status liefert agentConnected und playerCount aus der echten Session;
-#     play_start/play_stop enthalten startDiagnostics fuer belegbare Fehler.
+# NEU IN DIESER VERSION (3.9.6) - PLAYTEST OHNE HTTP-SETTINGS:
+#   * Moderne Studio-Playtests laufen in einem separaten DataModel. Das Edit-
+#     Plugin erkennt ihren Erfolg deshalb ausschliesslich daran, dass
+#     StudioTestService.EditModeActive von true auf false wechselt - NICHT an
+#     RunService:IsRunning() oder Players im Edit-DataModel.
+#   * Vor jedem Service-Start werden temporaere Server- und Client-Reporter in
+#     den Test-Snapshot injiziert. Sie drucken #ARENA#-JSON nach LogService;
+#     Player, Charakter, Gesundheit und GUI bleiben somit auch bei
+#     HttpEnabled=false sichtbar. Die Edit-Kopien werden sofort entfernt.
+#   * HTTP bleibt ein schneller Zusatzpfad, ist aber niemals Voraussetzung.
+#     Steuerung ohne HTTP erfolgt per VirtualInputManager (W/A/S/D/Maus) und
+#     Stop standardmaessig per RunService:Stop() aus dem Edit-DataModel.
+#   * startDiagnostics dokumentiert den kompletten Entscheidungsweg.
+#   * Pending-/Late-Result-Zeitstempel, UTF-8-GET-Dekodierung, Retry-Dedupe
+#     und Plugin/Bridge-Versionserkennung sind repariert.
 #
 # NEU IN VERSION 3.9 - KOMPLETTE STEUERUNG PER HTTP GET:
 #   1.  GET-API (das Wichtigste): Die Bridge laesst sich jetzt VOLLSTAENDIG
@@ -510,7 +514,7 @@ $script:StartupBlocked = $false
 $script:SplashTerminalAt = $null
 
 # ----------------------------------------------------------------------------
-# SELBST-AKTUALISIERUNG BEIM AUTOSTART (Version 3.9.5)
+# SELBST-AKTUALISIERUNG BEIM AUTOSTART (Version 3.9.6)
 # Wird die Bridge ueber den Windows-Autostart geoeffnet, laeuft der
 # Starter (Arena Roblox Bridge.cmd) NICHT mit - dann gibt es auch keinen
 # -UpdateStatus-Parameter. Damit der Nutzer trotzdem nie auf einer alten
@@ -564,7 +568,7 @@ function Test-UpdateError {
 }
 
 # ----------------------------------------------------------------------------
-# SELBST-AKTUALISIERUNG BEIM AUTOSTART (Version 3.9.5)
+# SELBST-AKTUALISIERUNG BEIM AUTOSTART (Version 3.9.6)
 # ----------------------------------------------------------------------------
 # Wird die Bridge ueber den Windows-Autostart gestartet, laeuft der Starter
 # (Arena Roblox Bridge.cmd) nicht mit - das Programm bekommt dann KEINEN
@@ -816,6 +820,11 @@ $script:Shared = [hashtable]::Synchronized(@{
     Counters        = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
     # sessionId -> Befehle, die im Studio noch laufen (Timeout überlebt)
     PendingCommands = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
+    # sessionId -> completed results whose HTTP caller had already timed out.
+    LateResults     = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
+    # sessionId -> { tool -> @{ fingerprint, at, resultJson } }; retries of
+    # play_start/play_stop within 3s reuse the original result.
+    PlayRetryDedupe = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
     # sessionId -> true, wenn die Start-Doku bereits an die KI ging
     DocsSent        = [System.Collections.Concurrent.ConcurrentDictionary[string,bool]]::new()
     # Pfad des lokalen Asset-Caches (Suche/Details, damit pro Session nichts neu geladen wird)
@@ -823,7 +832,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '3.9.5'
+    DocsVersion     = '3.9.6'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -840,7 +849,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     RunOwners       = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     # sessionId -> unix-Zeit der letzten Nutzer-Aktivitaet im Studio
     UserActiveAt    = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
-    # 3.9.5 Session-Agent: short-lived authenticated local channel from the
+    # 3.9.6 Session-Agent: short-lived authenticated local channel from the
     # isolated Play DataModel back to its edit-plugin session.
     AgentKeys       = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     AgentQueues     = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
@@ -952,7 +961,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 3.9.5)
+  Arena Studio Bridge - Studio Plugin  (Version 3.9.6)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1023,7 +1032,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "3.9.5"
+local ARENA_VERSION  = "3.9.6"
 local POLL_WAIT      = 12      -- Sekunden Long-Poll (Befehle kommen sofort an)
 local HEARTBEAT_EVERY = 5      -- Sekunden
 local CHUNK_SIZE     = 48000   -- Bytes je Teilstueck einer Antwort
@@ -1049,7 +1058,29 @@ local playHereCheckUntil = 0           -- bis wann nach Teststart nach Play Here
 local lastUserActiveNotice = 0         -- os.clock() der letzten Nutzer-Aktivitaets-Meldung
 -- Der Plugin-Code bleibt in aktuellen Studio-Versionen im Edit-DataModel.
 -- Der Session-Agent unten ist deshalb die verbindliche Sicht auf den echten Test.
-local sessionAgent = { key = nil, connected = false, playerCount = 0, mode = "play", lastAnswer = 0 }
+-- 3.9.6: The reporter is the always-on, HTTP-independent truth from the
+-- isolated session DataModel. `connected` means *either* reporter or HTTP
+-- agent is alive; `httpConnected` only means the optional fast path answered.
+local sessionAgent = {
+    key = nil, connected = false, httpConnected = false,
+    reporterActive = false, playerCount = 0, mode = "play", lastAnswer = 0,
+    agentMode = "logStream", snapshot = nil, guiSnapshot = nil,
+    httpEnabled = nil, reporterAt = 0,
+}
+
+local function readHttpEnabled()
+    local enabled = false
+    pcall(function() enabled = HttpService.HttpEnabled == true end)
+    return enabled
+end
+
+local function sessionReporterUsable()
+    return sessionAgent ~= nil and sessionAgent.reporterActive == true
+end
+
+local function currentSessionSnapshot()
+    return sessionAgent and sessionAgent.snapshot or nil
+end
 
 local capabilities = {
     virtualInput   = (VirtualInputManager ~= nil),
@@ -1172,21 +1203,33 @@ local function playState()
     if StudioTestService ~= nil then
         pcall(function() editModeActive = StudioTestService.EditModeActive end)
     end
-    -- Modern Studio isolates Play in another DataModel. In that case this
-    -- plugin correctly remains "edit"; do not mistake that for no test.
-    local agentRunning = sessionAgent and sessionAgent.connected == true
+    -- B1/B2: IsRunning and Players in the edit DataModel are intentionally
+    -- ignored as a session oracle. EditModeActive=false is the Studio-owned
+    -- signal that the separate test DataModel exists.
+    local separateSession = (StudioTestService ~= nil and editModeActive == false)
+    local snapshot = currentSessionSnapshot()
+    local reporterRunning = sessionReporterUsable() and separateSession
+    local active = RunService:IsRunning() or separateSession or reporterRunning
+    local players = #Players:GetPlayers()
+    if snapshot and snapshot.players ~= nil then players = tonumber(snapshot.players) or players end
+    if snapshot and snapshot.playerCount ~= nil then players = tonumber(snapshot.playerCount) or players end
     return {
-        running    = RunService:IsRunning() or agentRunning,
-        mode       = agentRunning and (sessionAgent.mode or "play") or currentMode(),
-        context    = agentRunning and "session" or currentContext(),
-        isEdit     = agentRunning and false or RunService:IsEdit(),
-        isServer   = agentRunning and true or RunService:IsServer(),
-        isClient   = agentRunning and false or RunService:IsClient(),
-        playerCount = agentRunning and (sessionAgent.playerCount or 0) or #Players:GetPlayers(),
-        agentConnected = agentRunning,
+        running    = active,
+        mode       = (separateSession or reporterRunning) and (sessionAgent.mode or "play") or currentMode(),
+        context    = (separateSession or reporterRunning) and "session" or currentContext(),
+        isEdit     = active and false or RunService:IsEdit(),
+        isServer   = (separateSession or reporterRunning) and true or RunService:IsServer(),
+        isClient   = (separateSession or reporterRunning) and false or RunService:IsClient(),
+        playerCount = players,
+        sessionPlayers = players,
+        agentConnected = sessionAgent and sessionAgent.connected == true,
+        reporterActive = sessionReporterUsable(),
+        agentMode = (sessionAgent and sessionAgent.agentMode) or "logStream",
+        httpEnabled = readHttpEnabled(),
         userPlaytestActive = userPlaytestActive,
-        -- true = Studio ist im Edit-Modus und es laeuft KEINE Test-Session
+        -- true = Studio is in edit mode and there is NO test session.
         editModeActive = editModeActive,
+        sessionSnapshot = snapshot,
     }
 end
 
@@ -1260,7 +1303,38 @@ pcall(function()
     end
 end)
 
+local function captureSessionReporter(message)
+    -- The test session prints this through LogService. This connection exists
+    -- in the edit DataModel too, which is why it works without HttpEnabled.
+    local prefix = "#ARENA# "
+    local text = tostring(message or "")
+    if string.sub(text, 1, #prefix) ~= prefix then return false end
+    local decodedOk, report = pcall(function()
+        return HttpService:JSONDecode(string.sub(text, #prefix + 1))
+    end)
+    if not decodedOk or type(report) ~= "table" then return false end
+    if report.kind == "session" then
+        sessionAgent.snapshot = report
+        sessionAgent.playerCount = tonumber(report.players or report.playerCount) or 0
+        sessionAgent.mode = report.mode or sessionAgent.mode or "play"
+        sessionAgent.reporterActive = true
+        sessionAgent.connected = true
+        sessionAgent.reporterAt = os.clock()
+        if not sessionAgent.httpConnected then sessionAgent.agentMode = "logStream" end
+    elseif report.kind == "gui" then
+        sessionAgent.guiSnapshot = report
+        sessionAgent.reporterActive = true
+        sessionAgent.connected = true
+        sessionAgent.reporterAt = os.clock()
+        if not sessionAgent.httpConnected then sessionAgent.agentMode = "logStream" end
+    end
+    return true
+end
+
 LogService.MessageOut:Connect(function(message, messageType)
+    captureSessionReporter(message)
+    -- Keep #ARENA# lines in get_output. They are the first diagnostic source
+    -- if a user reports a Play problem.
     pushOutput(message, shortType(messageType), currentContext())
 end)
 
@@ -2473,7 +2547,7 @@ end
 ]==]
 
 -- ---------------------------------------------------------------------------
--- SESSION-AGENT (3.9.5)
+-- SESSION-AGENT (3.9.6)
 -- Studio Play runs in a separate DataModel on current Studio versions. The
 -- plugin therefore cannot see Players there. A temporary Script is copied into
 -- the test snapshot, reports to the local bridge and is destroyed in edit mode
@@ -2546,7 +2620,7 @@ local function jsonRequest(payload)
     return HttpService:RequestAsync({Url=BASE_URL.."/plugin/session", Method="POST", Headers={["Content-Type"]="application/json"}, Body=HttpService:JSONEncode(payload)})
   end)
   if not ok or not response or not response.Success then
-    if not warnedHttp then warnedHttp=true; warn("Arena Session-Agent kann die lokale Bridge nicht erreichen. Aktiviere Game Settings > Security > Allow HTTP Requests.") end
+    if not warnedHttp then warnedHttp=true; warn("Arena optional HTTP-Agent ist nicht erreichbar; LogStream-Reporter bleibt aktiv.") end
     return nil
   end
   local decodedOk, decoded = pcall(function() return HttpService:JSONDecode(response.Body) end)
@@ -2602,16 +2676,143 @@ while RunService:IsRunning() do
 end
 ]==]
 
+-- ---------------------------------------------------------------------------
+-- SESSION REPORTER (3.9.6, no HTTP required)
+-- This source deliberately contains no RequestAsync. Studio's output bridge
+-- reaches the edit plugin even when a place forbids HTTP requests.
+-- ---------------------------------------------------------------------------
+local SESSION_CLIENT_REPORTER_SOURCE = [==[
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local player = Players.LocalPlayer
+local function itemPath(inst)
+  local ok, value = pcall(function() return inst:GetFullName() end)
+  return ok and value or inst.Name
+end
+local function guiItems(limit)
+  local out = {}
+  local gui = player and player:FindFirstChildOfClass("PlayerGui")
+  if not gui then return out end
+  for _, inst in ipairs(gui:GetDescendants()) do
+    if #out >= (limit or 300) then break end
+    if inst:IsA("GuiObject") then
+      local text = nil
+      pcall(function() text = inst.Text end)
+      table.insert(out, {
+        name=inst.Name, className=inst.ClassName, path=itemPath(inst), text=text,
+        visible=inst.Visible, clickable=inst:IsA("GuiButton"),
+        x=inst.AbsolutePosition.X, y=inst.AbsolutePosition.Y,
+        width=inst.AbsoluteSize.X, height=inst.AbsoluteSize.Y,
+        centerX=inst.AbsolutePosition.X + inst.AbsoluteSize.X / 2,
+        centerY=inst.AbsolutePosition.Y + inst.AbsoluteSize.Y / 2,
+      })
+    end
+  end
+  return out
+end
+local count = 0
+while RunService:IsRunning() do
+  count = count + 1
+  local camera = workspace.CurrentCamera
+  local viewport = camera and camera.ViewportSize or nil
+  local report = {kind="gui", player=player and player.Name or nil, items=guiItems(350),
+    viewport=viewport and {x=viewport.X,y=viewport.Y} or nil}
+  pcall(function() print("#ARENA# " .. HttpService:JSONEncode(report)) end)
+  task.wait(count <= 6 and 0.5 or 2)
+end
+]==]
+
+local SESSION_REPORTER_SOURCE = [==[
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local StudioTestService = nil
+pcall(function() StudioTestService = game:GetService("StudioTestService") end)
+local function vec(v) return v and {x=v.X,y=v.Y,z=v.Z} or nil end
+local function characterState(player)
+  local c = player and player.Character
+  local h = c and c:FindFirstChildOfClass("Humanoid")
+  local root = c and c:FindFirstChild("HumanoidRootPart")
+  return {player=player and player.Name or nil, hasCharacter=c~=nil,
+    position=vec(root and root.Position), health=h and h.Health or nil,
+    maxHealth=h and h.MaxHealth or nil, walkSpeed=h and h.WalkSpeed or nil,
+    state=h and tostring(h:GetState()) or nil}
+end
+local testArgs = {}
+if StudioTestService then pcall(function() testArgs = StudioTestService:GetTestArgs() or {} end) end
+local function applyArenaSpawn(player)
+  local spawn = testArgs and testArgs.arenaSpawn
+  if type(spawn) ~= "table" then return end
+  task.spawn(function()
+    local character = player.Character or player.CharacterAdded:Wait()
+    local root = character and character:WaitForChild("HumanoidRootPart", 10)
+    if root then pcall(function() character:PivotTo(CFrame.new(tonumber(spawn.x) or 0, tonumber(spawn.y) or 0, tonumber(spawn.z) or 0)) end) end
+  end)
+end
+for _, player in ipairs(Players:GetPlayers()) do applyArenaSpawn(player) end
+Players.PlayerAdded:Connect(applyArenaSpawn)
+local count = 0
+while RunService:IsRunning() do
+  count = count + 1
+  local all = Players:GetPlayers()
+  local chars = {}
+  for _, player in ipairs(all) do table.insert(chars, characterState(player)) end
+  local report = {kind="session", mode=(testArgs and testArgs.mode) or "play", players=#all, playerCount=#all,
+    characters=chars, character=chars[1], states={running=true, server=RunService:IsServer()}}
+  pcall(function() print("#ARENA# " .. HttpService:JSONEncode(report)) end)
+  task.wait(count <= 6 and 0.5 or 2)
+end
+]==]
+
+local function installSessionReporters()
+    local created = {}
+    local server = Instance.new("Script")
+    server.Name = "ArenaSessionReporter"
+    server.Archivable = false
+    server.Source = SESSION_REPORTER_SOURCE
+    server.Parent = ServerScriptService
+    table.insert(created, server)
+
+    local starterPlayer = nil
+    pcall(function() starterPlayer = game:GetService("StarterPlayer") end)
+    local starterScripts = starterPlayer and starterPlayer:FindFirstChild("StarterPlayerScripts")
+    if starterScripts then
+        local client = Instance.new("LocalScript")
+        client.Name = "ArenaSessionClientReporter"
+        client.Archivable = false
+        client.Source = SESSION_CLIENT_REPORTER_SOURCE
+        client.Parent = starterScripts
+        table.insert(created, client)
+    end
+    return created
+end
+
+local function removeTransientReporters(created)
+    for _, inst in ipairs(created or {}) do pcall(function() inst:Destroy() end) end
+end
+
+local function sessionDiagnostics(diag)
+    local snap = currentSessionSnapshot()
+    diag.sessionPlayers = tonumber((snap and (snap.players or snap.playerCount)) or sessionAgent.playerCount) or 0
+    diag.reporterActive = sessionReporterUsable()
+    diag.agentMode = (sessionAgent and sessionAgent.agentMode) or "logStream"
+    diag.httpEnabled = readHttpEnabled()
+    return diag
+end
+
 local function sessionAgentCall(action, args, timeout)
     if sessionAgent.key == nil or sessionId == nil then return nil, "Session-Agent ist nicht eingerichtet." end
     local commandId = HttpService:GenerateGUID(false)
     local queued = post("/plugin/session", { sessionId = sessionId, sessionKey = sessionAgent.key, action = "command", command = { id = commandId, action = action, args = args or {} } })
-    if queued == nil or queued.ok ~= true then return nil, "Session-Agent konnte keinen Befehl annehmen (HTTP Requests in Studio aktivieren)." end
+    if queued == nil or queued.ok ~= true then return nil, "Optional HTTP Session-Agent did not accept the command." end
     local waited, limit = 0, timeout or 8
     while waited < limit do
         local response = post("/plugin/session", { sessionId = sessionId, sessionKey = sessionAgent.key, action = "query", commandId = commandId })
         if response and response.result ~= nil then
             sessionAgent.connected = true
+            sessionAgent.httpConnected = true
+            sessionAgent.agentMode = "http"
             sessionAgent.lastAnswer = os.clock()
             if type(response.result) == "table" then
                 sessionAgent.playerCount = tonumber(response.result.playerCount) or sessionAgent.playerCount
@@ -2621,15 +2822,16 @@ local function sessionAgentCall(action, args, timeout)
         end
         task.wait(0.15); waited = waited + 0.15
     end
-    return nil, "Session-Agent antwortet nicht. Bitte in Game Settings > Security 'Allow HTTP Requests' aktivieren."
+    return nil, "Optional HTTP Session-Agent did not answer; LogStream reporter remains available."
 end
 
 local function installSessionAgent()
     if sessionId == nil then return nil, "Bridge-Sitzung ist noch nicht verbunden." end
     local key = HttpService:GenerateGUID(false)
-    sessionAgent = { key = key, connected = false, playerCount = 0, mode = "play", lastAnswer = 0 }
+    sessionAgent.key = key
+    sessionAgent.httpEnabled = true
     local script = Instance.new("Script")
-    script.Name = "Session-Agent"
+    script.Name = "ArenaOptionalHttpAgent"
     script.Archivable = false
     script.Source = SESSION_AGENT_SOURCE:gsub("__SESSION_ID__", sessionId):gsub("__SESSION_KEY__", key)
     script.Parent = ServerScriptService
@@ -2753,8 +2955,30 @@ Players.PlayerAdded:Connect(function(player)
     end
 end)
 
+local function logStreamClientAction(action, args)
+    local report = sessionAgent and sessionAgent.guiSnapshot
+    local items = report and report.items or {}
+    if action == "gui_dump" then return { ok=true, items=items } end
+    if action == "gui_find" then
+        local wanted = string.lower(tostring((args or {}).query or ""))
+        for _, item in ipairs(items) do
+            local name = string.lower(tostring(item.name or ""))
+            local text = string.lower(tostring(item.text or ""))
+            local path = string.lower(tostring(item.path or ""))
+            if string.find(name,wanted,1,true) or string.find(text,wanted,1,true) or string.find(path,wanted,1,true) then
+                return {ok=true,item=item}
+            end
+        end
+        return {ok=false,error="GUI element not found in LogStream snapshot."}
+    end
+    return nil, "This client action requires the optional HTTP agent; gui_dump/gui_click remain available through LogStream."
+end
+
 local function callClient(action, args, timeout)
-    if not RunService:IsRunning() and sessionAgent and sessionAgent.connected then
+    if not RunService:IsRunning() and sessionReporterUsable() then
+        return logStreamClientAction(action, args)
+    end
+    if not RunService:IsRunning() and sessionAgent and sessionAgent.httpConnected then
         return sessionAgentCall("client_action", { action = action, args = args or {} }, timeout)
     end
     if not RunService:IsRunning() then
@@ -2832,7 +3056,7 @@ local function sendKey(name, duration, modifiers)
 end
 
 local function sendClick(x, y, button, holdSeconds)
-    if not RunService:IsRunning() and sessionAgent and sessionAgent.connected then
+    if not RunService:IsRunning() and (not sessionReporterUsable()) and sessionAgent and sessionAgent.httpConnected then
         local response, err = sessionAgentCall("gui_click", { x = x, y = y }, 8)
         return response ~= nil and response.ok == true, err or (response and response.error)
     end
@@ -2873,156 +3097,205 @@ end
 -- Benutzer-Erkennung nicht KI-Bewegung als Benutzer-Bewegung meldet).
 local aiMoveUntil = 0
 
-local function startPlay(mode)
+local function waitForEditMode(wanted, seconds)
+    local waited = 0
+    while waited < (seconds or 20) do
+        local value = nil
+        if StudioTestService ~= nil then pcall(function() value = StudioTestService.EditModeActive end) end
+        if value == wanted then return true, value end
+        task.wait(0.15)
+        waited = waited + 0.15
+    end
+    local value = nil
+    if StudioTestService ~= nil then pcall(function() value = StudioTestService.EditModeActive end) end
+    return value == wanted, value
+end
+
+local function startPlay(mode, startArgs)
     mode = string.lower(tostring(mode or "play"))
     if mode ~= "play" and mode ~= "run" and mode ~= "play_here" then mode = "play" end
-    local diagnostics = { usedPath = nil, editModeActiveBefore = nil, editModeActiveAfter = nil, serviceError = nil, sessionAgentAnswered = false }
+    startArgs = startArgs or {}
+    local diagnostics = {
+        usedPath = nil, editModeActiveBefore = nil, editModeActiveAfter = nil,
+        serviceError = nil, sessionAgentAnswered = false, sessionPlayers = 0,
+        reporterActive = false, agentMode = "logStream", httpEnabled = readHttpEnabled(),
+    }
     local editActive = nil
     if StudioTestService ~= nil then pcall(function() editActive = StudioTestService.EditModeActive end) end
     diagnostics.editModeActiveBefore = editActive
-    if RunService:IsRunning() or (sessionAgent and sessionAgent.connected) then
-        return { ok = true, alreadyRunning = true, state = playState(), startDiagnostics = diagnostics }
-    end
 
-    -- Zombie service guard: EditModeActive=false while this DataModel is not
-    -- running means StudioTestService is stuck. Recover exactly once; never
-    -- send F5 into this state.
-    if StudioTestService ~= nil and editActive == false and not RunService:IsRunning() then
-        pcall(function() RunService:Stop() end)
-        task.wait(2)
-        pcall(function() editActive = StudioTestService.EditModeActive end)
+    -- B2: false in the edit DataModel is a real running test, even if this
+    -- plugin's RunService and Players are empty. Never "repair" that session
+    -- before an Execute call has actually failed.
+    if RunService:IsRunning() or editActive == false then
+        diagnostics.usedPath = "existingSession"
         diagnostics.editModeActiveAfter = editActive
-        if editActive == false and not RunService:IsRunning() then
-            return { ok = false, code = "PLAY_SERVICE_STUCK", error = "StudioTestService reports EditModeActive=false although no test is running.", userMessage = "Studio-Testdienst steckt fest - bitte Roblox Studio einmal neu starten.", howToFix = "Restart Roblox Studio once. Do not retry Play or send keyboard shortcuts while StudioTestService is stuck.", state = playState(), startDiagnostics = diagnostics }
-        end
+        sessionDiagnostics(diagnostics)
+        return { ok = true, alreadyRunning = true, startedBy = userPlaytestActive and "user" or "existing", state = playState(), startDiagnostics = diagnostics, note = "A Studio test is already active (EditModeActive=false). Reusing it." }
     end
 
     aiPlayIntent = { action = "start", at = os.time(), mode = mode }
-    local warnings, usedMethod = {}, nil
-    if StudioTestService ~= nil and editActive == true then
-        -- SERVICE PATH ONLY. Do not combine an asynchronous service start with
-        -- F5/F8: that was the 3.9 jam.
-        diagnostics.usedPath = "studioTestService"
-        usedMethod = "studioTestService"
-        local transient = nil
-        if mode ~= "run" then transient = installSessionAgent() end
-        local serviceDone, serviceOk, serviceError = false, false, nil
-        task.spawn(function()
-            local okStart, errStart = pcall(function()
-                if mode == "run" then return StudioTestService:ExecuteRunModeAsync({ startedBy = "arena-bridge", mode = mode }) end
-                return StudioTestService:ExecutePlayModeAsync({ startedBy = "arena-bridge", mode = mode })
-            end)
-            -- Destroy only after the service invocation has captured the Play
-            -- snapshot: immediate in the edit DataModel, never saved, and no
-            -- race where the helper vanishes before the session receives it.
-            if transient then pcall(function() transient:Destroy() end) end
-            serviceOk, serviceError, serviceDone = okStart, (okStart and nil or tostring(errStart)), true
-        end)
-        local waited = 0
-        while waited < 30 do
-            if mode == "run" and RunService:IsRunning() then break end
-            if mode ~= "run" then
-                local ping = sessionAgentCall("ping", {}, 1)
-                if ping then diagnostics.sessionAgentAnswered = true; break end
-            end
-            if serviceDone and not serviceOk then break end
-            task.wait(0.35); waited = waited + 0.35
-        end
-        diagnostics.serviceError = serviceError
-        pcall(function() diagnostics.editModeActiveAfter = StudioTestService.EditModeActive end)
-        if mode == "run" and not RunService:IsRunning() then
-            return { ok=false, code="PLAY_START_FAILED", error=serviceError or "StudioTestService did not enter Run mode within 30 seconds.", userMessage="Der Studio-Test konnte nicht gestartet werden. Bitte die Studio-Ausgabe pruefen und Roblox Studio bei Bedarf neu starten.", state=playState(), startDiagnostics=diagnostics }
-        end
-        if mode ~= "run" and not diagnostics.sessionAgentAnswered then
-            local code = serviceError and "PLAY_SERVICE_ERROR" or "SESSION_AGENT_UNAVAILABLE"
-            return { ok=false, code=code, error=serviceError or "The Play session started, but its Session-Agent did not answer.", userMessage="Der Play-Test ist nicht mit der Bridge verbunden. Bitte in Roblox Studio unter Game Settings > Security 'Allow HTTP Requests' aktivieren und den Test erneut starten.", howToFix="Enable Allow HTTP Requests in Game Settings > Security. The agent must reach http://127.0.0.1:17681 from the Studio test session.", state=playState(), startDiagnostics=diagnostics }
-        end
-    else
-        -- Shortcut path is used only when StudioTestService is genuinely absent.
+    if StudioTestService == nil then
         diagnostics.usedPath = "studioShortcut"
-        if StudioTestService ~= nil then
-            return { ok=false, code="PLAY_START_UNAVAILABLE", error="StudioTestService is present but did not report a safe editable state.", userMessage="Roblox Studio ist nicht in einem sicheren Startzustand. Bitte den laufenden Test beenden oder Roblox Studio einmal neu starten.", state=playState(), startDiagnostics=diagnostics }
-        end
+        local used = nil
         if VirtualInputManager ~= nil then
-            local key = mode == "run" and "F8" or "F5"
-            local keyOk, keyError = sendKey(key, 0.06, {})
-            if keyOk and waitForState(true, 12) then usedMethod = "studioShortcut" else diagnostics.serviceError = keyError end
+            local keyOk, keyError = sendKey(mode == "run" and "F8" or "F5", 0.06, {})
+            if keyOk and waitForState(true, 12) then used = "studioShortcut" else diagnostics.serviceError = keyError end
         end
-        if usedMethod == nil and mode == "run" then
+        if not used and mode == "run" then
             local okRun = pcall(function() RunService:Run() end)
-            if okRun and waitForState(true, 8) then usedMethod = "runServiceApi" end
+            if okRun and waitForState(true, 8) then used = "runServiceApi" end
         end
-        if usedMethod == nil then
+        diagnostics.editModeActiveAfter = nil
+        sessionDiagnostics(diagnostics)
+        if not used then
             return { ok=false, code="PLAY_START_UNAVAILABLE", error="No safe Play start path is available.", userMessage="Ich kann den Play-Test hier nicht sicher starten. Bitte in Roblox Studio selbst Play (F5) druecken.", state=playState(), startDiagnostics=diagnostics }
         end
+        return { ok=true, state=playState(), startedBy="assistant", startMethod=used, requestedMode=mode, startDiagnostics=diagnostics }
     end
 
-    local result = { ok=true, state=playState(), warnings=warnings, startedBy="assistant", startMethod=usedMethod, requestedMode=mode, startDiagnostics=diagnostics, note="Test is running. Persistent edits are blocked until you call play_stop." }
-    if mode ~= "run" then
-        local info, err = sessionAgentCall("character_state", {}, 10)
-        if info and info.hasCharacter then
-            result.playerReady=true; result.character={name=info.player, health=info.health}; result.sessionAgent=true
-            sessionAgent.playerCount=info.playerCount or sessionAgent.playerCount
-            if mode == "play_here" and lastEditCamCFrame then
-                local pos=lastEditCamCFrame.Position + Vector3.new(0,3,0)
-                sessionAgentCall("teleport_character", {position={x=pos.X,y=pos.Y,z=pos.Z}}, 8)
-                lastPlayHereDetected=true
-            end
-        elseif RunService:IsRunning() then
-            -- Legacy in-process Studio remains supported.
-            ensureRuntimeHelpers()
-        else
-            return {ok=false,code="PLAY_NO_PLAYER",error=err or "No player character appeared in the Play session.",userMessage="Der Play-Test laeuft, aber kein Spieler-Charakter ist erschienen. Bitte die Studio-Ausgabe auf Spawn-Fehler pruefen.",state=playState(),startDiagnostics=diagnostics}
+    diagnostics.usedPath = "studioTestService"
+    -- The reporter exists for every start, regardless of HttpEnabled. It is
+    -- copied into the isolated session and deleted from the edit place as soon
+    -- as the service has entered test mode.
+    sessionAgent = {
+        key=nil, connected=false, httpConnected=false, reporterActive=false,
+        playerCount=0, mode=(mode == "run" and "run" or "play"), lastAnswer=0,
+        agentMode="logStream", snapshot=nil, guiSnapshot=nil,
+        httpEnabled=diagnostics.httpEnabled, reporterAt=0,
+    }
+    local transient = installSessionReporters()
+    local httpTransient = nil
+    if diagnostics.httpEnabled and mode ~= "run" then
+        httpTransient = installSessionAgent()
+        if httpTransient then table.insert(transient, httpTransient) end
+    end
+
+    local testArgs = { startedBy = "arena-bridge", mode = mode }
+    -- GetTestArgs in the reporter receives this exact value. It is the only
+    -- supported character teleport path: before the player spawns.
+    local spawn = startArgs.arenaSpawn or startArgs.spawn or startArgs.position
+    if mode == "play_here" and lastEditCamCFrame then
+        spawn = { x=lastEditCamCFrame.Position.X, y=lastEditCamCFrame.Position.Y + 3, z=lastEditCamCFrame.Position.Z }
+    end
+    if type(spawn) == "table" then
+        testArgs.arenaSpawn = { x=tonumber(spawn.x) or 0, y=tonumber(spawn.y) or 0, z=tonumber(spawn.z) or 0 }
+    end
+
+    local serviceDone, serviceOk, serviceError = false, false, nil
+    task.spawn(function()
+        local okStart, errStart = pcall(function()
+            if mode == "run" then return StudioTestService:ExecuteRunModeAsync(testArgs) end
+            return StudioTestService:ExecutePlayModeAsync(testArgs)
+        end)
+        serviceOk, serviceError, serviceDone = okStart, (okStart and nil or tostring(errStart)), true
+    end)
+
+    -- Execute*Async yields until the test ends. Destroy helpers when the
+    -- snapshot has been taken (EditModeActive=false), never at service return.
+    task.spawn(function()
+        -- Keep the temporary scripts until the same 20-second start window
+        -- observes the snapshot, rather than racing a slow Studio launch.
+        local entered = waitForEditMode(false, 20)
+        if entered then task.wait(0.1) end
+        removeTransientReporters(transient)
+    end)
+
+    local entered, after = waitForEditMode(false, 20)
+    diagnostics.editModeActiveAfter = after
+    -- An immediate "previous one is still in progress" error plus false is
+    -- success: Studio told us the existing separate session is already alive.
+    if serviceDone then diagnostics.serviceError = serviceError end
+    if not entered then
+        sessionDiagnostics(diagnostics)
+        return { ok=false, code="PLAY_START_FAILED", error=serviceError or "StudioTestService did not change EditModeActive to false within 20 seconds.", userMessage="Der Studio-Test hat nicht gestartet. Bitte die #ARENA#-Zeilen in get_output pruefen.", state=playState(), startDiagnostics=diagnostics }
+    end
+    local lowerServiceError = string.lower(tostring(serviceError or ""))
+    local previousAlreadyRunning = string.find(lowerServiceError, "previous one is still in progress", 1, true) ~= nil
+        or string.find(lowerServiceError, "already in progress", 1, true) ~= nil
+    if serviceDone and not serviceOk and editActive == true and after == false and not RunService:IsRunning() and not previousAlreadyRunning then
+        -- This is the sole PLAY_SERVICE_STUCK branch. A known "previous" error
+        -- is a healthy existing session and remains usable.
+        pcall(function() RunService:Stop() end)
+        local recovered, recoveredState = waitForEditMode(true, 3)
+        diagnostics.editModeActiveAfter = recoveredState
+        if not recovered then
+            sessionDiagnostics(diagnostics)
+            return {ok=false, code="PLAY_SERVICE_STUCK", error=serviceError, userMessage="Studio-Testdienst steckt fest - bitte Roblox Studio einmal neu starten.", howToFix="Restart Roblox Studio once. Do not retry Play while StudioTestService is stuck.", state=playState(), startDiagnostics=diagnostics}
         end
-    else
-        result.modeInfo={kind="run",hasPlayer=false,hasCharacter=false,hasClient=false,hasGui=false,meaning="Run mode has no player, character, client or GUI by design."}
+        sessionDiagnostics(diagnostics)
+        return {ok=false, code="PLAY_START_FAILED", error=serviceError, state=playState(), startDiagnostics=diagnostics}
+    end
+
+    -- Reporter output is optional for start success, but normally arrives in
+    -- the first half second. HTTP can enrich it only when explicitly enabled.
+    local waited = 0
+    while waited < 10 and mode ~= "run" and not sessionReporterUsable() do
+        if diagnostics.httpEnabled and sessionAgent.key then
+            local ping = sessionAgentCall("ping", {}, 0.4)
+            if ping then diagnostics.sessionAgentAnswered = true end
+        end
+        task.wait(0.2); waited = waited + 0.2
+    end
+    if diagnostics.httpEnabled and sessionAgent.key and not sessionAgent.httpConnected then
+        local ping = sessionAgentCall("ping", {}, 1)
+        if ping then diagnostics.sessionAgentAnswered = true end
+    end
+    sessionDiagnostics(diagnostics)
+
+    local result = {
+        ok=true, state=playState(), startedBy="assistant", startMethod="studioTestService",
+        requestedMode=mode, startDiagnostics=diagnostics,
+        note="Test is running. Persistent edits are blocked until you call play_stop.",
+    }
+    local snapshot = currentSessionSnapshot()
+    local character = snapshot and (snapshot.character or (snapshot.characters and snapshot.characters[1]))
+    if character and character.hasCharacter then
+        result.playerReady = true
+        result.character = { name=character.player, health=character.health, position=character.position }
     end
     return result
 end
 
 local function stopPlay()
-    local diagnostics = { usedPath = nil, editModeActiveBefore = nil, editModeActiveAfter = nil, serviceError = nil, sessionAgentAnswered = false }
+    local diagnostics = {
+        usedPath=nil, editModeActiveBefore=nil, editModeActiveAfter=nil,
+        serviceError=nil, sessionAgentAnswered=false, sessionPlayers=0,
+        reporterActive=sessionReporterUsable(), agentMode=(sessionAgent and sessionAgent.agentMode) or "logStream",
+        httpEnabled=readHttpEnabled(),
+    }
     if StudioTestService ~= nil then pcall(function() diagnostics.editModeActiveBefore = StudioTestService.EditModeActive end) end
-    aiPlayIntent = { action = "stop", at = os.time() }
-    if sessionAgent and sessionAgent.key then
-        local response, err = sessionAgentCall("end_test", {}, 8)
-        if response then
-            diagnostics.usedPath="sessionAgent"; diagnostics.sessionAgentAnswered=true
-            local waited=0
-            while waited<15 do
-                local active=false; if StudioTestService then pcall(function() active=(StudioTestService.EditModeActive==false) end) end
-                if not active then break end
-                task.wait(0.25); waited=waited+0.25
-            end
-            sessionAgent.connected=false; sessionAgent.key=nil
-            if StudioTestService then pcall(function() diagnostics.editModeActiveAfter=StudioTestService.EditModeActive end) end
-            return {ok=true,state=playState(),stoppedBy="assistant",stopMethod="sessionAgent",startDiagnostics=diagnostics,note="Test stopped from inside the session via Session-Agent."}
-        end
-        diagnostics.serviceError=err
+    aiPlayIntent = { action="stop", at=os.time() }
+
+    if diagnostics.editModeActiveBefore == true and not RunService:IsRunning() then
+        sessionDiagnostics(diagnostics)
+        return {ok=true, alreadyStopped=true, state=playState(), startDiagnostics=diagnostics}
     end
-    if not RunService:IsRunning() then
-        -- A user-started test can have its own plugin session in the separate
-        -- DataModel. Ask the bridge to stop that running sibling, never claim
-        -- success merely because this edit plugin itself is not running.
-        local sibling=post("/plugin/session",{sessionId=sessionId,action="stop_active_place"})
-        if sibling and sibling.ok then
-            diagnostics.usedPath="runningSessionPlugin"
-            return {ok=true,state=playState(),stoppedBy="assistant",stopMethod="runningSessionPlugin",startDiagnostics=diagnostics}
-        end
-        if StudioTestService and diagnostics.editModeActiveBefore==false then
-            return {ok=false,code="PLAY_STOP_UNAVAILABLE",error="A separate Play session is active but did not expose a controllable Session-Agent.",userMessage="Der vom Benutzer gestartete Play-Test ist aktiv, aber nicht mit der Bridge verbunden. Bitte den Test einmal selbst stoppen und erneut starten.",state=playState(),startDiagnostics=diagnostics}
-        end
-        return {ok=true,alreadyStopped=true,state=playState(),startDiagnostics=diagnostics}
+
+    -- B3: this works from the edit DataModel for a separate test. It is the
+    -- default stop path, so HTTP and any session script are never required.
+    diagnostics.usedPath = "editRunServiceStop"
+    local stopped, stopErr = pcall(function() RunService:Stop() end)
+    if not stopped then diagnostics.serviceError = tostring(stopErr) end
+    local reached, after = waitForEditMode(true, 15)
+    diagnostics.editModeActiveAfter = after
+    if not reached and RunService:IsRunning() then
+        local second, secondErr = pcall(function() RunService:Stop() end)
+        if not second then diagnostics.serviceError = tostring(secondErr) end
+        reached, after = waitForEditMode(true, 3)
+        diagnostics.editModeActiveAfter = after
     end
-    local warnings, usedMethod={},nil
-    if StudioTestService ~= nil and RunService:IsServer() and not RunService:IsEdit() then
-        local okEnd,err=pcall(function() StudioTestService:EndTest("stopped_by_arena_bridge") end); if okEnd then usedMethod="studioTestService" else diagnostics.serviceError=tostring(err) end
+    if reached or (StudioTestService == nil and not RunService:IsRunning()) then
+        -- Preserve the last real session facts in stop diagnostics before
+        -- clearing the transient snapshot for the now-edit state.
+        sessionDiagnostics(diagnostics)
+        sessionAgent.connected=false; sessionAgent.httpConnected=false; sessionAgent.reporterActive=false
+        sessionAgent.key=nil; sessionAgent.snapshot=nil; sessionAgent.guiSnapshot=nil
+        cleanupRuntimeHelpers()
+        return {ok=true, state=playState(), stoppedBy="assistant", stopMethod="editRunServiceStop", startDiagnostics=diagnostics, note="Test stopped from the Edit DataModel."}
     end
-    if RunService:IsRunning() then pcall(function() RunService:Stop() end); usedMethod=usedMethod or "runServiceApi" end
-    local reached=waitForState(false,15); cleanupRuntimeHelpers()
-    if StudioTestService then pcall(function() diagnostics.editModeActiveAfter=StudioTestService.EditModeActive end) end
-    if not reached then return {ok=false,code="PLAY_STOP_FAILED",error="Studio is still running after 15 seconds.",state=playState(),warnings=warnings,startDiagnostics=diagnostics} end
-    return {ok=true,state=playState(),warnings=warnings,stoppedBy="assistant",stopMethod=usedMethod,startDiagnostics=diagnostics,note="Test stopped."}
+    sessionDiagnostics(diagnostics)
+    return {ok=false, code="PLAY_STOP_FAILED", error="Studio still reports an active test after RunService:Stop().", userMessage="Der Test konnte nicht beendet werden. Bitte #ARENA#-Zeilen pruefen und Studio bei Bedarf neu starten.", state=playState(), startDiagnostics=diagnostics}
 end
 
 -- ---------------------------------------------------------------------------
@@ -6041,12 +6314,9 @@ end
 
 -- ------------------------- Ausgabefenster -----------------------------------
 tools.get_output = function(args)
-    if not RunService:IsRunning() and sessionAgent and sessionAgent.connected then
-        local remote, err = sessionAgentCall("output", {}, 8)
-        if remote == nil then return failCode("SESSION_AGENT_UNAVAILABLE", err) end
-        local lines = remote.lines or {}
-        return ok({ lines = lines, returned = #lines, matched = #lines, cursor = nil, source = "session-agent", hint = "These lines come from the real Play-session DataModel." })
-    end
+    -- LogService from the edit DataModel is the universal source. In
+    -- particular it retains #ARENA# reporter evidence even when optional HTTP
+    -- is enabled, so diagnosis never changes by configuration.
     return ok(readOutput(args))
 end
 
@@ -6061,15 +6331,6 @@ end
 
 tools.get_errors = function(args)
     args = args or {}
-    if not RunService:IsRunning() and sessionAgent and sessionAgent.connected then
-        local remote, err = sessionAgentCall("output", {}, 8)
-        if remote == nil then return failCode("SESSION_AGENT_UNAVAILABLE", err) end
-        local lines = {}
-        for _, line in ipairs(remote.lines or {}) do
-            if string.find(string.lower(tostring(line.type or "")), "error", 1, true) then table.insert(lines, line) end
-        end
-        return ok({ lines = lines, returned = #lines, source = "session-agent" })
-    end
     local snapshot = readOutput({
         since = args.since,
         limit = tonumber(args.limit) or 100,
@@ -6119,7 +6380,8 @@ tools.play_status = function()
 end
 
 tools.play_start = function(args)
-    local result = startPlay(args.mode or "play")
+    args = args or {}
+    local result = startPlay(args.mode or "play", args)
     if result.ok then
         return ok(result, result.warnings)
     end
@@ -6416,7 +6678,17 @@ tools.client_action = function(args)
 end
 
 tools.character_state = function()
-    if not RunService:IsRunning() and sessionAgent and sessionAgent.connected then
+    if not RunService:IsRunning() and sessionReporterUsable() then
+        local snapshot = currentSessionSnapshot() or {}
+        local character = snapshot.character or (snapshot.characters and snapshot.characters[1])
+        if not character then return failCode("NO_PLAYER", "The LogStream reporter has not seen a player character yet.") end
+        local response = {}
+        for key, value in pairs(character) do response[key] = value end
+        response.playerCount = tonumber(snapshot.players or snapshot.playerCount) or sessionAgent.playerCount or 0
+        response.agentMode = "logStream"
+        return ok(response)
+    end
+    if not RunService:IsRunning() and sessionAgent and sessionAgent.httpConnected then
         local response, err = sessionAgentCall("character_state", {}, 8)
         if response == nil then return failCode("NO_PLAYER", err) end
         return ok(response)
@@ -6428,116 +6700,37 @@ tools.character_state = function()
     if character == nil then return ok({ hasCharacter = false, player = player.Name }) end
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     local root = character:FindFirstChild("HumanoidRootPart")
-    return ok({
-        hasCharacter = true,
-        player = player.Name,
-        position = root and encodeValue(root.Position) or nil,
-        cframe = root and encodeValue(root.CFrame) or nil,
-        health = humanoid and humanoid.Health or nil,
-        maxHealth = humanoid and humanoid.MaxHealth or nil,
-        walkSpeed = humanoid and humanoid.WalkSpeed or nil,
-        jumpPower = humanoid and humanoid.JumpPower or nil,
-        state = humanoid and tostring(humanoid:GetState()) or nil,
-    })
+    return ok({ hasCharacter=true, player=player.Name, position=root and encodeValue(root.Position) or nil,
+        cframe=root and encodeValue(root.CFrame) or nil, health=humanoid and humanoid.Health or nil,
+        maxHealth=humanoid and humanoid.MaxHealth or nil, walkSpeed=humanoid and humanoid.WalkSpeed or nil,
+        jumpPower=humanoid and humanoid.JumpPower or nil, state=humanoid and tostring(humanoid:GetState()) or nil })
 end
 
 tools.move_character = function(args)
-    if not RunService:IsRunning() and sessionAgent and sessionAgent.connected then
-        aiMoveUntil = os.clock() + 5
-        local forwarded = args
-        if args.targetRef and decodeValue(args.position) == nil then
-            local inst = resolveRef(args.targetRef); local pivot = inst and getPivotOf(inst)
-            if pivot then forwarded = {}; for k,v in pairs(args) do forwarded[k]=v end; forwarded.position=encodeValue(pivot.Position) end
-        end
-        local response, err = sessionAgentCall("move_character", forwarded, tonumber(args.timeoutSeconds) or 12)
-        if response == nil then return failCode("NO_PLAYER", err) end
-        return response.ok == false and failCode("NO_PLAYER", response.error) or ok(response)
-    end
-    if not RunService:IsRunning() then return fail("No test running. Call play_start first.") end
-    local player = Players:GetPlayers()[1]
-    if player == nil then return fail("No player in this test session.") end
-    local character = player.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    if humanoid == nil then return fail("Character has no Humanoid yet.") end
-    aiMoveUntil = os.clock() + 5
-
-    local target = decodeValue(args.position)
-    if typeof(target) ~= "Vector3" and args.targetRef then
-        local inst = resolveRef(args.targetRef)
-        local pivot = inst and getPivotOf(inst)
-        if pivot then target = pivot.Position end
-    end
-
-    if typeof(target) == "Vector3" then
-        humanoid:MoveTo(target)
-        if args.waitForArrival ~= false then
-            local reached = false
-            local finished = false
-            humanoid.MoveToFinished:Once(function(value)
-                reached = value
-                finished = true
-            end)
-            local waited = 0
-            local limit = tonumber(args.timeoutSeconds) or 12
-            while not finished and waited < limit do
-                task.wait(0.1)
-                waited = waited + 0.1
-            end
-            local root = character:FindFirstChild("HumanoidRootPart")
-            return ok({
-                reached = reached,
-                position = root and encodeValue(root.Position) or nil,
-                distanceLeft = root and (target - root.Position).Magnitude or nil,
-            })
-        end
-        return ok({ moving = true })
-    end
-
-    -- Bewegung ueber Tasten (echte Eingabe), z.B. keys = "W"
+    args = args or {}
+    -- Cross-DataModel movement is real Studio input, never Humanoid:MoveTo.
+    -- VirtualInputManager is available to the edit plugin and reaches the test.
     local keys = args.keys or args.direction
-    if keys then
-        local duration = tonumber(args.duration) or 1
-        if type(keys) == "string" then keys = { keys } end
-        local pressed = {}
-        for _, key in ipairs(keys) do
-            local okKey, keyErr = sendKey(key, duration, args.shift and { "LeftShift" } or nil)
-            table.insert(pressed, { key = key, ok = okKey, error = keyErr })
-        end
-        local root = character:FindFirstChild("HumanoidRootPart")
-        return ok({ pressed = pressed, position = root and encodeValue(root.Position) or nil })
+    if type(keys) == "string" then keys = { keys } end
+    if type(keys) ~= "table" or #keys == 0 then
+        return failCode("INPUT_REQUIRED", "move_character across a separate Play DataModel requires keys/direction (W/A/S/D/Space) and optional duration/shift. Position teleporting is only supported at play_start via arenaSpawn.")
     end
-
-    return fail("Need position {x,y,z}, targetRef, or keys like ['W'].")
+    local duration = tonumber(args.duration) or 1
+    duration = math.max(0.03, math.min(duration, 12))
+    aiMoveUntil = os.clock() + duration + 4
+    local pressed = {}
+    for _, key in ipairs(keys) do
+        local okKey, keyErr = sendKey(key, duration, args.shift and { "LeftShift" } or nil)
+        table.insert(pressed, { key=key, ok=okKey, error=keyErr })
+    end
+    local snap = currentSessionSnapshot()
+    local character = snap and (snap.character or (snap.characters and snap.characters[1]))
+    return ok({ pressed=pressed, duration=duration, position=character and character.position or nil,
+        agentMode=(sessionReporterUsable() and "logStream" or "directInput"), note="Input was sent through VirtualInputManager; read character_state after movement for the updated LogStream position." })
 end
 
 tools.teleport_character = function(args)
-    if not RunService:IsRunning() and sessionAgent and sessionAgent.connected then
-        aiMoveUntil = os.clock() + 6
-        local forwarded = args or {}
-        if args.targetRef and decodeValue(args.position) == nil then
-            local inst = resolveRef(args.targetRef); local pivot = inst and getPivotOf(inst)
-            if pivot then forwarded = {}; for k,v in pairs(args) do forwarded[k]=v end; forwarded.position=encodeValue(pivot.Position + Vector3.new(0,5,0)) end
-        end
-        local response, err = sessionAgentCall("teleport_character", forwarded, 8)
-        if response == nil then return failCode("NO_PLAYER", err) end
-        return response.ok == false and failCode("NO_PLAYER", response.error) or ok(response)
-    end
-    if not RunService:IsRunning() then return fail("No test running.") end
-    local player = Players:GetPlayers()[1]
-    if player == nil then return fail("No player.") end
-    local character = player.Character
-    if character == nil then return fail("No character.") end
-    aiMoveUntil = os.clock() + 6
-    local target = decodeValue(args.position)
-    if typeof(target) ~= "Vector3" and args.targetRef then
-        local inst = resolveRef(args.targetRef)
-        local pivot = inst and getPivotOf(inst)
-        if pivot then target = pivot.Position + Vector3.new(0, 5, 0) end
-    end
-    if typeof(target) ~= "Vector3" then return fail("Need position or targetRef.") end
-    local okMove = pcall(function() character:PivotTo(CFrame.new(target)) end)
-    if not okMove then return fail("Teleport failed.") end
-    return ok({ position = encodeValue(target) })
+    return failCode("START_ONLY_TELEPORT", "Teleporting during a Play session is intentionally disabled. Start the test with play_start { mode='play', arenaSpawn={x,y,z} }; the Session Reporter reads GetTestArgs and places the character before testing begins.")
 end
 
 tools.respawn_character = function()
@@ -6766,7 +6959,7 @@ tools.send_input = function(args)
         return fail("Nothing to send. Use keys=['W'] or click={x=..,y=..}.")
     end
     if VirtualInputManager == nil then
-        return fail("VirtualInputManager is not available, so real input cannot be simulated. Use move_character with a position instead.")
+        return fail("VirtualInputManager is not available, so real input cannot be simulated in this Studio version.")
     end
     task.wait(tonumber(args.settleSeconds) or 0.2)
     return ok({ sent = results, output = readOutput({ limit = 25 }).lines })
@@ -7134,6 +7327,10 @@ local function handshake()
     if response and response.sessionId then
         sessionId = response.sessionId
         accessMode = response.accessMode or "readwrite"
+        if response.pluginOutdated then
+            title.Text = "Arena Bridge: Studio neu starten"
+            body.Text = "Plugin und Bridge haben unterschiedliche Versionen. Studio neu starten - Tests warten bis dahin."
+        end
         connected = true
         return true
     end
@@ -7859,55 +8056,76 @@ $script:BridgeHandlerScript = {
         return , $bag
     }
 
+    function Ensure-LateResults($sessionId) {
+        $queue = $null
+        if (-not $Shared.LateResults.TryGetValue([string]$sessionId, [ref]$queue)) {
+            $queue = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+            [void]$Shared.LateResults.TryAdd([string]$sessionId, $queue)
+            [void]$Shared.LateResults.TryGetValue([string]$sessionId, [ref]$queue)
+        }
+        return , $queue
+    }
+
     function Add-PendingCommand($sessionId, $commandId, $tool) {
         $bag = Ensure-PendingBag $sessionId
-        $bag[[string]$commandId] = (To-Json @{ tool = [string]$tool; startedAt = (Get-Date).ToString('u') } 5)
+        # Numeric UTC epoch avoids locale/clock parsing and negative zombie ages.
+        $bag[[string]$commandId] = (To-Json @{ tool=[string]$tool; startedAt=(Get-UnixSeconds) } 5)
     }
 
     function Remove-PendingCommand($sessionId, $commandId) {
         $bag = Ensure-PendingBag $sessionId
-        $null = $bag.TryRemove([string]$commandId, [ref]$null)
+        $removed = $null
+        [void]$bag.TryRemove([string]$commandId, [ref]$removed)
+        return $removed
+    }
+
+    function Get-PendingInfo($sessionId, $commandId) {
+        $bag = Ensure-PendingBag $sessionId
+        $raw = $null
+        if ($bag.TryGetValue([string]$commandId, [ref]$raw)) {
+            try { return ($raw | ConvertFrom-Json) } catch {}
+        }
+        return $null
     }
 
     function Get-PendingCommands($sessionId) {
         $bag = Ensure-PendingBag $sessionId
-        $now = [DateTime]::UtcNow
+        $now = Get-UnixSeconds
         $items = New-Object System.Collections.Generic.List[object]
         foreach ($pair in $bag.GetEnumerator()) {
             try {
                 $info = $pair.Value | ConvertFrom-Json
-                $started = [DateTime]::Parse([string]$info.startedAt)
-                $ageSeconds = [int]($now - $started).TotalSeconds
-                # Nach 15 Minuten gilt ein "laufender" Befehl als erledigt
-                # (Studio war weg oder hat ohne Ergebnis neu gestartet).
+                $started = [int64]$info.startedAt
+                $ageSeconds = [int][Math]::Max(0, $now - $started)
                 if ($ageSeconds -gt 900) {
-                    $null = $bag.TryRemove([string]$pair.Key, [ref]$null)
+                    $removed = $null; [void]$bag.TryRemove([string]$pair.Key, [ref]$removed)
                     continue
                 }
-                $items.Add(@{
-                    commandId = [string]$pair.Key
-                    tool      = [string]$info.tool
-                    seconds   = $ageSeconds
-                })
-            } catch {}
+                $items.Add(@{ commandId=[string]$pair.Key; tool=[string]$info.tool; seconds=$ageSeconds; startedAt=$started })
+            } catch {
+                # Legacy malformed values cannot poison all following calls.
+                $removed = $null; [void]$bag.TryRemove([string]$pair.Key, [ref]$removed)
+            }
         }
         return , $items
     }
 
-    # Ergebnisse, die nach einem Timeout erst jetzt eingetroffen sind.
+    function Queue-LateResult($sessionId, $commandId, [string]$json, $pendingInfo) {
+        $queue = Ensure-LateResults $sessionId
+        $result = $null
+        try { $result = $json | ConvertFrom-Json } catch { $result = @{ rawResult=$json } }
+        $age = 0
+        if ($pendingInfo -and $pendingInfo.startedAt) { $age = [int][Math]::Max(0, (Get-UnixSeconds) - [int64]$pendingInfo.startedAt) }
+        $queue.Enqueue((To-Json @{ tool=if($pendingInfo){[string]$pendingInfo.tool}else{$null}; commandId=[string]$commandId; seconds=$age; result=$result } 40))
+        while ($queue.Count -gt 60) { $discard=$null; [void]$queue.TryDequeue([ref]$discard) }
+    }
+
     function Take-LateResults($sessionId) {
+        $queue = Ensure-LateResults $sessionId
         $items = New-Object System.Collections.Generic.List[object]
-        foreach ($pending in (Get-PendingCommands $sessionId)) {
-            $json = $null
-            if ($Shared.CommandResults.TryRemove([string]$pending.commandId, [ref]$json)) {
-                Remove-PendingCommand $sessionId $pending.commandId
-                try {
-                    $parsed = $json | ConvertFrom-Json
-                    $items.Add(@{ tool = $pending.tool; commandId = $pending.commandId; seconds = $pending.seconds; result = $parsed })
-                } catch {
-                    $items.Add(@{ tool = $pending.tool; commandId = $pending.commandId; seconds = $pending.seconds; rawResult = $json })
-                }
-            }
+        $raw = $null
+        while ($items.Count -lt 30 -and $queue.TryDequeue([ref]$raw)) {
+            try { $items.Add(($raw | ConvertFrom-Json)) } catch {}
         }
         return , $items
     }
@@ -7938,6 +8156,11 @@ $script:BridgeHandlerScript = {
                 mode    = [string]$body.state.mode
                 context = [string]$body.state.context
                 playerCount = $body.state.playerCount
+                sessionPlayers = $body.state.sessionPlayers
+                reporterActive = [bool]$body.state.reporterActive
+                agentMode = [string]$body.state.agentMode
+                httpEnabled = [bool]$body.state.httpEnabled
+                editModeActive = $body.state.editModeActive
                 agentConnected = [bool]$body.state.agentConnected
                 userPlaytestActive = [bool]$body.state.userPlaytestActive
             }
@@ -8143,6 +8366,7 @@ $script:BridgeHandlerScript = {
             state         = $newState
             agentConnected = ($agentSeen -gt 0 -and ((Get-UnixSeconds) - $agentSeen) -le 4)
             pluginVersion = [string]$entry.pluginVersion
+            versionMismatch = ([string]$entry.pluginVersion -ne [string]$Shared.DocsVersion)
             capabilities  = $entry.capabilities
             reconnects    = $entry.reconnects
             orphan        = $false
@@ -8724,6 +8948,49 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
     # BEFEHL AN DAS STUDIO-PLUGIN SCHICKEN
     # Der wartende Long-Poll wird sofort geweckt -> keine Verzögerung.
     # ------------------------------------------------------------------
+    function Get-PlayRetryFingerprint([string]$tool, $toolArgs) {
+        return $tool + ':' + (To-Json $toolArgs 20)
+    }
+
+    function Get-DedupedPlayResult($sessionId, [string]$tool, $toolArgs) {
+        if ($tool -notin @('play_start','play_stop')) { return $null }
+        $key = [string]$sessionId + ':' + $tool
+        $raw = $null
+        if (-not $Shared.PlayRetryDedupe.TryGetValue($key, [ref]$raw)) { return $null }
+        try {
+            $item = $raw | ConvertFrom-Json
+            if ((Get-UnixSeconds) - [int64]$item.at -le 3 -and [string]$item.fingerprint -eq (Get-PlayRetryFingerprint $tool $toolArgs)) { return [string]$item.resultJson }
+        } catch {}
+        return $null
+    }
+
+    function Save-DedupedPlayResult($sessionId, [string]$tool, $toolArgs, [string]$resultJson) {
+        if ($tool -notin @('play_start','play_stop') -or [string]::IsNullOrWhiteSpace($resultJson)) { return }
+        $key = [string]$sessionId + ':' + $tool
+        $Shared.PlayRetryDedupe[$key] = (To-Json @{ at=(Get-UnixSeconds); fingerprint=(Get-PlayRetryFingerprint $tool $toolArgs); resultJson=$resultJson } 30)
+    }
+
+    function Reserve-PlayRetry($sessionId, [string]$tool, $toolArgs) {
+        if ($tool -notin @('play_start','play_stop')) { return $true }
+        $key = [string]$sessionId + ':' + $tool
+        $fingerprint = Get-PlayRetryFingerprint $tool $toolArgs
+        $now = Get-UnixSeconds
+        $existing = $null
+        if ($Shared.PlayRetryDedupe.TryGetValue($key, [ref]$existing)) {
+            try {
+                $entry = $existing | ConvertFrom-Json
+                if (($now - [int64]$entry.at) -le 3 -and [string]$entry.fingerprint -eq $fingerprint) { return $false }
+            } catch {}
+            $discard = $null
+            [void]$Shared.PlayRetryDedupe.TryRemove($key, [ref]$discard)
+        }
+        # Reserve before the command is enqueued. A simultaneous retry sees this
+        # small JSON answer and cannot start a second Play/Stop action.
+        $pendingJson = '{"ok":true,"deduplicated":true,"pending":true,"note":"Identical play retry is already executing; use get_pending/lateResults instead of retrying."}'
+        $reservation = (To-Json @{ at=$now; fingerprint=$fingerprint; resultJson=$pendingJson } 20)
+        return $Shared.PlayRetryDedupe.TryAdd($key, $reservation)
+    }
+
     function Invoke-PluginTool($sessionId, $tool, $toolArgs, [int]$timeoutSeconds) {
         $commandId = [guid]::NewGuid().ToString('N')
         $signal = New-Object System.Threading.ManualResetEventSlim($false)
@@ -8752,6 +9019,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $signal.Dispose() } catch {}
 
         if (-not $got) { return $null }
+        Remove-PendingCommand $sessionId $commandId | Out-Null
         return $resultJson
     }
 
@@ -9244,23 +9512,23 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
 
         # ---------------- PLAY / TEST ----------------
         $t.Add(@{ name = 'play_status'; category = 'play'; summary = 'Läuft ein Test? Welcher Modus (edit/run/play/play_here)? Ist ein Player da?';
-            description = 'Laufender Zustand mit edit/run/play/play_here. In modernen Studio-Versionen bleibt das Plugin im Edit-DataModel; agentConnected und playerCount stammen dann verbindlich aus dem Session-Agent der echten Play-Session. editModeActive zeigt den StudioTestService-Zustand.';
+            description = 'Laufender Zustand mit edit/run/play/play_here. Moderne Studio-Sessions laufen in einem getrennten DataModel: editModeActive=false ist das verbindliche Lauf-Orakel, NICHT RunService/Players im Edit-Plugin. Der immer aktive #ARENA# LogStream-Reporter liefert sessionPlayers, Charakter/Gesundheit und GUI auch bei httpEnabled=false; HTTP ist nur ein optionaler Schnellpfad.';
             params = @{};
-            returns = '{ running, mode, context, playerCount, agentConnected, editModeActive, modeInfo, userPlaytestActive }';
+            returns = '{ running, mode, context, playerCount, sessionPlayers, agentConnected, reporterActive, agentMode (http|logStream), httpEnabled, editModeActive, sessionSnapshot, modeInfo, userPlaytestActive }';
             example = @{};
             errors = @() })
         $t.Add(@{ name = 'play_start'; category = 'play'; summary = 'Test starten: mode="play" (echt, mit Player), "play_here" (play an der Edit-Kamera) oder "run" (Physik-/Script-Simulation im Editor).';
-            description = 'DIE VIER MODI SAUBER UNTERSCHEIDEN: edit = dauerhaftes Bauen, kein Test. run = Physik-/Script-Simulation IM EDITOR (wie F8): Server-Skripte + Physik laufen, aber KEIN Player, KEIN Charakter, KEIN Client, KEINE GUI - das ist nicht kaputt, sondern genau so definiert. play = echtes Spiel (wie F5): ein Test-Player mit Charakter, GUI und Client-Agent - dieser Call wartet, bis alles da ist, sonst PLAY_NO_PLAYER mit Diagnose (recentErrors). play_here = wie play, aber der Charakter startet dort, wo die EDIT-Kamera steht (wie "Play Here" im Studio-Test-Tab) - ideal, um etwas an einer bestimmten Stelle zu testen. Seit Version 3.8 startet die Bridge bevorzugt ueber den offiziellen StudioTestService - zuverlaessig und ohne kaputten Run-Fallback (frueher startete heimlich der Run-Modus und es spawnte nie ein Charakter). WICHTIG: Hat der Nutzer "Arena darf sich selbst testen" AUSgeschaltet, antworten alle play-Werkzeuge mit SELF_TEST_DISABLED - das ist Absicht und kein Fehler (die Bridge ist nicht kaputt); dann Editor-Simulation nutzen (compile_check / run_lua) und den Nutzer selbst testen lassen. Der Benutzer kann jederzeit selbst Play/Stop druecken - das kommt als Ereignis (play_started / play_stopped mit startedBy).';
-            params = @{ mode = @{ type = "'play'|'play_here'|'run'"; required = $false; default = "'play'"; description = 'play = echt mit Charakter; play_here = play an der Edit-Kamera-Position; run = nur Physik/Server-Skripte ohne Player.' } };
-            returns = '{ state: { running, mode, context, playerCount, agentConnected }, requestedMode, startMethod, startDiagnostics { editModeActiveBefore, editModeActiveAfter, serviceError, usedPath, sessionAgentAnswered }, warnings }';
+            description = 'Startet StudioTestService in task.spawn. ERFOLG ist ausschliesslich der Wechsel EditModeActive true->false innerhalb 20s; RunService:IsRunning und Players im Edit-DataModel werden absichtlich nicht abgefragt. Vorher werden temporaere ServerScriptService- und StarterPlayerScripts-Reporter in den Test-Snapshot injiziert und danach im Edit-DataModel geloescht. Sie drucken #ARENA# JSON zu LogService (Spieler, Charakter, Gesundheit, Zustaende, GUI-Klickziele) und funktionieren ohne jede Place-/Studio-Konfiguration mit httpEnabled=false. HTTP wird bei httpEnabled=true nur zusaetzlich benutzt. Ein Execute-Fehler "previous one is still in progress" bei EditModeActive=false bedeutet: bestehende Session nutzen, kein Fehler. arenaSpawn={x,y,z} ist der einzige Teleportweg: der Reporter liest StudioTestService:GetTestArgs vor dem Spawn; play_here setzt diesen Spawn automatisch aus der Edit-Kamera. Wiederholte gleiche play_start/play_stop innerhalb 3s werden dedupliziert.';
+            params = @{ mode = @{ type = "'play'|'play_here'|'run'"; required = $false; default = "'play'"; description = 'play = echt mit Charakter; play_here = Start an der Edit-Kamera; run = nur Physik/Server-Skripte ohne Player.' }; arenaSpawn = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Start-Teleport via GetTestArgs; funktioniert auch ohne HTTP.' } };
+            returns = '{ state, requestedMode, startMethod, startDiagnostics { editModeActiveBefore, editModeActiveAfter, serviceError, usedPath, sessionPlayers, reporterActive, agentMode, httpEnabled }, warnings }';
             example = @{ mode = 'play' };
-            errors = @('PLAY_SERVICE_STUCK: Studio-Testdienst steckt fest; Roblox Studio neu starten.', 'SESSION_AGENT_UNAVAILABLE: HTTP Requests in Game Settings > Security aktivieren.', 'PLAY_NO_PLAYER: Play-Modus aktiv, aber kein Charakter.', 'PLAY_START_UNAVAILABLE: Diese Studio-Version kann keinen echten Play-Test aus einem Plugin starten - Nutzer bitten, selbst Play (F5) zu druecken, dann mit den Charakter-Werkzeugen weiter testen.', 'PLAY_START_FAILED: Studio ist rechtzeitig nicht in den Testmodus gewechselt (einmal wiederholen, dann den Nutzer bitten).', 'STUDIO_TIMEOUT: Studio hat nicht geantwortet (Fenster nicht fokussiert? Dialog offen?).', 'SELF_TEST_DISABLED: Der Nutzer hat die Selbst-Tests deaktiviert - kein Fehler, bewusste Entscheidung.') })
+            errors = @('PLAY_SERVICE_STUCK: Studio-Testdienst steckt fest; Roblox Studio neu starten.', 'LOGSTREAM_REPORTER_UNAVAILABLE: #ARENA#-Reporter ist noch nicht sichtbar; get_output lesen und kurz warten.', 'PLAY_NO_PLAYER: Play-Modus aktiv, aber kein Charakter.', 'PLAY_START_UNAVAILABLE: Diese Studio-Version kann keinen echten Play-Test aus einem Plugin starten.', 'PLAY_START_FAILED: Studio ist rechtzeitig nicht in den Testmodus gewechselt (einmal wiederholen, dann den Nutzer bitten).', 'STUDIO_TIMEOUT: Studio hat nicht geantwortet (Fenster nicht fokussiert? Dialog offen?).', 'SELF_TEST_DISABLED: Der Nutzer hat die Selbst-Tests deaktiviert - kein Fehler, bewusste Entscheidung.') })
         $t.Add(@{ name = 'play_stop'; category = 'play'; summary = 'Test zuverlaessig stoppen (Place wird wiederhergestellt).';
-            description = 'Stoppt den laufenden Test - seit Version 3.8 gestaffelt und deutlich robuster: zuerst StudioTestService:EndTest (offizielle API), dann das echte Stop-Tastenkuerzel Shift+F5 (mehrfach versucht), erst zuletzt RunService:Stop() als Notfall (mit Warnung). Beendet auch einen vom NUTZER gestarteten Test - das ist erlaubt und gewuenscht: entweder den Test stoppen und in Ruhe weiterarbeiten ODER die Antwort beenden und den Nutzer bitten, dich arbeiten zu lassen. Alle Aenderungen aus dem Test sind danach weg.';
+            description = 'Stoppt standardmaessig mit RunService:Stop() AUS DEM Edit-DataModel; das beendet auch die in neuem Studio getrennte Session (kein HTTP, kein Tastenkurzeln, keine Nutzer-Einstellung erforderlich). Beendet ebenfalls einen vom Nutzer gestarteten Test. startDiagnostics zeigt EditModeActive vorher/nachher, Reporter, Playerzahl, Agentpfad und HTTP-Status.';
             params = @{};
-            returns = '{ state, stopMethod, warnings, note }';
+            returns = '{ state, stopMethod, startDiagnostics { editModeActiveBefore, editModeActiveAfter, serviceError, sessionPlayers, reporterActive, agentMode, httpEnabled }, note }';
             example = @{};
-            errors = @('PLAY_STOP_FAILED: Studio laeuft nach allen Stop-Versuchen noch - Nutzer bitten, Shift+F5 zu druecken.') })
+            errors = @('PLAY_STOP_FAILED: EditModeActive blieb nach edit RunService:Stop() false. startDiagnostics und #ARENA#-Zeilen lesen; nur bei echtem Stuck Studio neu starten.') })
         $t.Add(@{ name = 'report_done'; category = 'session'; summary = 'Dem Nutzer melden: Ich bin fertig (Windows-Benachrichtigung auf seinem PC).';
             description = 'NUR rufen, wenn ALLE Aenderungen abgeschlossen sind und die Antwort DIREKT danach endet: der Nutzer bekommt dann eine Windows-Benachrichtigung mit der message auf seinen PC. Nur aktiv, wenn der Nutzer "Benachrichtigung wenn Arena fertig" EINGESCHALTET hat (zu sehen an _bridge.notifyWhenDone bzw. _bridge.bridgeSettings.notifyOnDone). message ist ein kurzer deutscher Satz fuer den Nutzer, z.B. "Ich bin fertig" oder "5 Aenderungen und Fehler behoben - fertig". Strikte Regel: nach diesem Call KEINE Werkzeuge mehr, KEINE Aenderungen mehr - die Antwort sofort beenden. Nie mitten in der Arbeit rufen.';
             params = @{ message = @{ type = 'string'; required = $true; default = '-'; description = 'Kurzer deutscher Fertig-Text fuer den Nutzer (max. 400 Zeichen).' } };
@@ -9290,17 +9558,18 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             returns = '{ hasCharacter, player, position, cframe, health, maxHealth, walkSpeed, jumpPower, state }';
             example = @{};
             errors = @('PLAY_NOT_RUNNING', 'NO_PLAYER: mode="run" hat keinen Charakter - play_start mit mode="play".') })
-        $t.Add(@{ name = 'move_character'; category = 'play'; summary = 'Charakter gehen lassen (zum Punkt oder per Tasten).';
-            description = 'position/targetRef: Humanoid.MoveTo (mit warten). keys=["W"]: echte Tasten. ACHTUNG: Der Benutzer kann den Charakter SELBST gleichzeitig bewegen - das kommt als Ereignis user_moving_character.';
-            params = @{ position = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Ziel. (alternativ targetRef oder keys)' }; targetRef = @{ type = 'ref'; required = $false; default = 'null'; description = 'Objekt, zu dem gegangen wird.' }; keys = @{ type = 'string[]'; required = $false; default = 'null'; description = "z.B. ['W'] oder ['W','LeftShift']." }; duration = @{ type = 'number'; required = $false; default = '1'; description = 'Haltedauer der Tasten (s).' }; waitForArrival = @{ type = 'bool'; required = $false; default = 'true'; description = 'Bis zum Ziel warten.' }; timeoutSeconds = @{ type = 'number'; required = $false; default = '12'; description = '' } };
-            returns = '{ reached, position, distanceLeft } oder { pressed, position } oder { moving }';
-            example = @{ position = @{ x = 10; y = 5; z = 0 }; waitForArrival = $true };
-            errors = @('PLAY_NOT_RUNNING', 'NO_PLAYER', 'BAD_ARGS: position, targetRef oder keys angeben.') })
-        $t.Add(@{ name = 'teleport_character'; category = 'play'; summary = 'Charakter sofort setzen.';
-            params = @{ position = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Oder targetRef.' }; targetRef = @{ type = 'ref'; required = $false; default = 'null'; description = 'Setzt 5 Studs ueber das Objekt.' } };
-            returns = '{ position }';
-            example = @{ targetRef = '#42' };
-            errors = @('PLAY_NOT_RUNNING', 'NO_PLAYER', 'BAD_ARGS') })
+        $t.Add(@{ name = 'move_character'; category = 'play'; summary = 'Charakter per echter Studio-Tasten bewegen (HTTP-unabhaengig).';
+            description = 'NUR keys/direction (W/A/S/D/Space) mit duration und optional shift. Die Bridge sendet VirtualInputManager-Tasten aus dem Edit-Plugin direkt an die getrennte Session; kein Humanoid.MoveTo und kein HTTP. Danach character_state lesen, damit die #ARENA#-Position frisch ist.';
+            params = @{ keys = @{ type = 'string[]'; required = $true; default = '-'; description = "z.B. ['W'] oder ['A','W']; echte Tasten." }; duration = @{ type = 'number'; required = $false; default = '1'; description = 'Haltedauer in Sekunden.' }; shift = @{ type = 'bool'; required = $false; default = 'false'; description = 'Beim Gehen Shift gedrueckt halten.' } };
+            returns = '{ pressed, duration, position, agentMode }';
+            example = @{ keys = @('W'); duration = 1; shift = $false };
+            errors = @('INPUT_REQUIRED: keys/direction ist Pflicht.', 'NO_PLAYER') })
+        $t.Add(@{ name = 'teleport_character'; category = 'play'; summary = 'Start-Teleport-Hinweis (Laufzeit-Teleport absichtlich deaktiviert).';
+            description = 'Teleportieren ist nur beim Start erlaubt: play_start { mode="play", arenaSpawn={x,y,z} }. Der Session Reporter liest GetTestArgs und teleportiert den Charakter vor dem Test. Das ersetzt play_here/MoveTo ohne HTTP.';
+            params = @{};
+            returns = 'Immer START_ONLY_TELEPORT mit dem korrekten play_start-Aufruf.';
+            example = @{ };
+            errors = @('START_ONLY_TELEPORT') })
         $t.Add(@{ name = 'respawn_character'; category = 'play'; summary = 'Charakter neu laden.';
             description = 'Killt und neu-spawnt den Test-Player (nach Crashes oder festgefahrenem Avatar). Nur im Play-Modus.';
             params = @{};
@@ -9477,7 +9746,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 'SELECTORS: most "refs" arguments also accept a selector table: { tag = "Door" }, { className = "Part", rootRef = "#50" }, { query = "crate" }. Use selectors instead of long id lists.',
                 'SCRIPTS: never rewrite an 800 line script to change one line. Read with get_script (line numbers + hash), then patch_script (replace / replaceAll / insertAfter / replaceFunction / replaceLines ...). Check the result with compile_check BEFORE running it. set_script_source (full replace) still exists for new or tiny files. Pass expectHash to be safe.',
                 'NO STRING SURGERY: the bridge never modifies your source text (no trimming, no "return M" removal, no %-reformatting). A ModuleScript simply ends with "return M". If you need to change text, use patch_script ops - never .replace() across languages.',
-                'PLAY MODES - KNOW ALL FOUR (or tests fail): edit = permanent building (also where the editor simulations compile_check / run_lua run - no test session needed); run = physics + server-script simulation IN THE EDITOR (Studio "Run", F8): NO player, NO character, NO client, NO GUI - by design, not a bug; play = full game with a test player, character, GUI and client agent (Studio "Play", F5); play_here = like play, but the character starts where the EDIT camera was (Studio "Play Here"). For anything with a character or GUI: play_start mode="play" or mode="play_here". "No player" answers in run mode are NOT bugs.',
+                'PLAY 3.9.6: Modern Studio runs the test in a separate DataModel. editModeActive=false is the only start/running oracle; never infer failure from Edit-DataModel RunService or Players. Every AI play_start injects #ARENA# server/client LogStream reporters, so character_state, GUI snapshots, mouse clicks and VIM W/A/S/D work with HttpEnabled=false and zero settings. HTTP is only a bonus. Read startDiagnostics and #ARENA# get_output lines, never guess. Start teleport: play_start { arenaSpawn={x,y,z} }; stop: play_stop uses edit RunService:Stop().',
                 'THE USER IS THERE TOO: the user can press Play/Stop and PLAY in the game at any moment (moving the camera, walking the avatar, clicking the GUI). You will see it in _bridge.events / notices (user_rotating_camera, user_moving_character, user_clicked_gui, play_started with startedBy="user"). That is normal: nothing crashed and it is NOT a bug in your scripts - do not go searching for errors because of it.',
                 'USER PLAYTEST HAS PRIORITY: if _bridge.playtest / playtestWarning shows a USER playtest, you have two allowed options: (a) call play_stop yourself - it also ends user-started tests - then continue your work in edit mode; or (b) if the user is actively playing right now, end your response and tell them you cannot work safely in parallel - ask them to let you work in peace and to message you when Studio is free. Never make persistent edits while a test runs.',
                 'SELF-TEST SWITCH (3.8): the user can turn AI self-testing OFF in the bridge program ("Arena darf sich selbst testen"). Then every play tool answers SELF_TEST_DISABLED - that is a deliberate user decision, NOT a broken bridge. Use editor simulations (compile_check, run_lua in edit mode) instead and let the user run the game tests. Check _bridge.bridgeSettings.selfTestAllowed.',
@@ -9506,8 +9775,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             playModes = @{
                 edit = 'No test: everything you build is PERMANENT. This is where building and script editing happens. Editor simulations (compile_check for syntax, run_lua for pure logic) also run here - they need NO test session and stay available even when self-testing is disabled.'
                 run = 'Physics + server-script simulation IN THE EDITOR (Studio "Run", F8): the place runs as a server simulation. There is NO player, NO character, NO client and NO GUI. Use it for physics/server-logic tests. A tool answering "No player" in run mode is working as designed - switch to play for characters/GUI.'
-                play = 'Full game (Studio "Play", F5): one test player with character, PlayerGui and a client agent (installed automatically). play_start mode="play" WAITS until the character exists and reports PLAY_NO_PLAYER with recent errors otherwise. The USER can play in the same game at the same time - you get events (user_rotating_camera, user_moving_character, user_clicked_gui) and must not read those as script bugs.'
-                play_here = 'Studio "Play Here": like play, but the character starts at the position of the EDIT camera (where the user was looking). play_start mode="play_here" starts a real play session and places the character there. If the USER starts Play Here from the Test tab, the bridge reports mode "play_here" (heuristic: the character spawned near the old edit camera position).'
+                play = 'Full game (Studio "Play", F5): separate session DataModel. play_start succeeds on editModeActive true->false, then #ARENA# LogStream reports real players, character position/health and GUI without HTTP. Use move_character keys+duration (VirtualInputManager), gui_click coordinates and play_stop (edit RunService:Stop).'
+                play_here = 'Play at the editor camera. Internally this is a play_start arenaSpawn passed through GetTestArgs to the Session Reporter, not a post-start teleport. For an explicit spawn use play_start { arenaSpawn={x,y,z} }.'
             }
             userPresence = @(
                 'The user is a second person in Studio: they click around, move the camera, edit objects, start/stop playtests and play the game at any time.'
@@ -9529,11 +9798,13 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 RUNTIME_ERROR = 'Lua ran and failed (message + context).'
                 NO_PLAYER = 'No player/character - you are probably in run mode. Use play_start mode="play".'
                 PLAY_NOT_RUNNING = 'A playtest tool was called while nothing is running.'
-                PLAY_NO_PLAYER = 'Play mode started but no character appeared within 20s (recentErrors included for diagnosis).'
+                INPUT_REQUIRED = 'move_character in a separate session accepts real W/A/S/D/Space keys and duration, not MoveTo/position.'
+                START_ONLY_TELEPORT = 'Use play_start { arenaSpawn={x,y,z} }; runtime teleport is deliberately disabled.'
+                PLUGIN_OUTDATED = 'plugin outdated - Tests warten. Ask the user to restart Studio before play testing.'
                 PLAY_FALLBACK_RUN = 'The Studio Play shortcut could not be pressed, so Run mode started instead (no player) - try again with the Studio window focused.'
-                PLAY_START_UNAVAILABLE = 'This Studio version cannot start a real Play test from a plugin (no character would ever spawn). Ask the user to press Play (F5) in Studio themselves, then continue with the character tools.'
-                PLAY_START_FAILED = 'Studio did not enter the test mode in time. Retry once, then ask the user to press Play/Run.'
-                PLAY_STOP_FAILED = 'Studio kept running after every stop attempt. Ask the user to press Shift+F5 (stop).'
+                PLAY_START_UNAVAILABLE = 'This Studio version has no safe Play start API.'
+                PLAY_START_FAILED = 'Studio did not change editModeActive true->false within 20 seconds. Read startDiagnostics and #ARENA# output; do not guess.'
+                PLAY_STOP_FAILED = 'Studio still reports EditModeActive=false after edit RunService:Stop(). Read diagnostics/#ARENA# lines; restart Studio only if it is truly stuck.'
                 SELF_TEST_DISABLED = 'The user turned OFF "Arena darf sich selbst testen" in the bridge program. Run/Play/Play Here and all playtest tools are blocked ON PURPOSE - the bridge is NOT broken. Editor simulations (compile_check, run_lua) still work; the user runs the game tests.'
                 NOTIFICATIONS_DISABLED = 'report_done is inactive: the user has not enabled finish notifications. Finish your answer normally and do not call report_done again.'
                 REF_NOT_FOUND = 'An id/path/selector could not be resolved (object deleted, or the plugin reloaded - get fresh ids with search/get_tree).'
@@ -9657,7 +9928,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '3.9.5'
+            version = '3.9.6'
             docsVersion = [string]$Shared.DocsVersion
             role = 'You are connected to exactly ONE live Roblox Studio place through a local plugin. Every token belongs to one Studio window only - if several windows are open, each one has its own token and you can never touch the wrong place. Send every request as POST /api/tool with JSON body { "token": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -9701,13 +9972,23 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         $pending = New-Object System.Collections.Generic.List[object]
         $queue = Ensure-Queue $sessionId
         foreach ($call in $calls) {
-            $commandId = [guid]::NewGuid().ToString('N')
-            $signal = New-Object System.Threading.ManualResetEventSlim($false)
-            [void]$Shared.ResultSignals.TryAdd($commandId, $signal)
-            $command = @{ id = $commandId; tool = [string]$call.tool; args = $call.args }
-            $queue.Enqueue((To-Json $command 40))
-            Add-PendingCommand $sessionId $commandId ([string]$call.tool)
-            $pending.Add(@{ id = $commandId; tool = [string]$call.tool; signal = $signal; result = $null })
+            $callTool = [string]$call.tool
+            $cached = Get-DedupedPlayResult $sessionId $callTool $call.args
+            $reserved = $false
+            if ($null -eq $cached) { $reserved = Reserve-PlayRetry $sessionId $callTool $call.args }
+            if ($null -ne $cached -or -not $reserved) {
+                # Retried play command: never enqueue a second Studio action.
+                if ($null -eq $cached) { $cached = Get-DedupedPlayResult $sessionId $callTool $call.args }
+                $pending.Add(@{ id=$null; tool=$callTool; args=$call.args; signal=$null; result=$cached; deduplicated=$true })
+            } else {
+                $commandId = [guid]::NewGuid().ToString('N')
+                $signal = New-Object System.Threading.ManualResetEventSlim($false)
+                [void]$Shared.ResultSignals.TryAdd($commandId, $signal)
+                $command = @{ id=$commandId; tool=$callTool; args=$call.args }
+                $queue.Enqueue((To-Json $command 40))
+                Add-PendingCommand $sessionId $commandId $callTool
+                $pending.Add(@{ id=$commandId; tool=$callTool; args=$call.args; signal=$signal; result=$null; deduplicated=$false })
+            }
         }
         $wake = Ensure-Signal $sessionId
         [void]$wake.Set()
@@ -9717,10 +9998,12 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         while ($open -gt 0 -and [DateTime]::UtcNow -lt $deadline) {
             $open = 0
             foreach ($item in $pending) {
-                if ($item.result -eq $null) {
+                if ($item.result -eq $null -and $item.id) {
                     $resultJson = $null
                     if ($Shared.CommandResults.TryRemove($item.id, [ref]$resultJson)) {
                         $item.result = $resultJson
+                        Remove-PendingCommand $sessionId $item.id | Out-Null
+                        Save-DedupedPlayResult $sessionId $item.tool $item.args $resultJson
                     } else {
                         $open = $open + 1
                     }
@@ -9731,12 +10014,15 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
 
         $parts = New-Object System.Collections.Generic.List[string]
         foreach ($item in $pending) {
-            $removed = $null
-            [void]$Shared.ResultSignals.TryRemove($item.id, [ref]$removed)
-            [void]$Shared.ResultChunks.TryRemove($item.id, [ref]$removed)
-            try { $item.signal.Dispose() } catch {}
+            if ($item.id) {
+                $removed = $null
+                [void]$Shared.ResultSignals.TryRemove($item.id, [ref]$removed)
+                [void]$Shared.ResultChunks.TryRemove($item.id, [ref]$removed)
+                try { $item.signal.Dispose() } catch {}
+            }
             if ($item.result) {
-                $parts.Add('{"tool":' + (To-Json $item.tool 3) + ',"response":' + $item.result + '}')
+                $suffix = if ($item.deduplicated) { ',"deduplicated":true' } else { '' }
+                $parts.Add('{"tool":' + (To-Json $item.tool 3) + ',"response":' + $item.result + $suffix + '}')
             } else {
                 $parts.Add('{"tool":' + (To-Json $item.tool 3) + ',"response":{"ok":false,"code":"STUDIO_TIMEOUT","error":"Roblox Studio did not answer in time. The command may still be running in Studio - nothing is lost. The next call waits for it to finish."}}')
             }
@@ -9753,7 +10039,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '3.9.5'
+            bridgeVersion = '3.9.6'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -9764,6 +10050,16 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 notifyOnDone    = $notifyOnDone
             }
             docs          = 'Full tool documentation (parameters, types, defaults, returns, examples, error codes): GET /api/docs, or ?tool=<name>, or ?category=<name>. It was also delivered automatically with the first tool call of this session (_sessionStart).'
+        }
+        if ($entry -and [string]$entry.pluginVersion -ne [string]$Shared.DocsVersion) {
+            $envelope.pluginOutdated = @{
+                code = 'PLUGIN_OUTDATED'
+                pluginVersion = [string]$entry.pluginVersion
+                bridgeVersion = [string]$Shared.DocsVersion
+                message = 'plugin outdated - Tests warten. Tell the user to restart Roblox Studio; do not diagnose a Play failure until versions match.'
+                userHint = 'Studio neu starten: Das Studio-Plugin ist aelter als die Bridge. Playtests warten bis zum Neustart.'
+            }
+            if ($envelope.attention) { $envelope.attention += ' plugin outdated - Tests warten; Studio neu starten.' } else { $envelope.attention = 'plugin outdated - Tests warten; Studio neu starten.' }
         }
         # Version 3.8: Hat der Nutzer die Selbst-Tests AUSgeschaltet, steht das
         # hier deutlich dabei - die KI soll wissen, dass das Absicht ist und
@@ -9976,7 +10272,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '3.9.5'
+                        bridgeVersion = '3.9.6'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -10017,7 +10313,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 $body = Read-Body $context.Request
             }
 
-            # ---------------- GET-Vollsteuerung (Version 3.9) --------------
+            # ---------------- GET-Vollsteuerung (Version 3.9.6) --------------
             # Manche KI-Umgebungen duerfen NUR per HTTP GET nach draussen
             # (der Web-Abruf-Dienst schickt keine POST-Koerper). Damit die KI
             # die Bridge trotzdem komplett bedienen kann, bauen wir hier aus
@@ -10032,17 +10328,26 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $qNames = @($q.AllKeys | Where-Object { $_ }) } catch {}
                 if ($qNames.Count -gt 0) {
                     $getBody = New-Object psobject
-                    # Text-Felder einfach uebernehmen (HttpListener dekodiert
-                    # die URL-Kodierung bereits).
-                    foreach ($plain in @('token','tool','uploadId','text','sessionId','id','category','message','status')) {
-                        $raw = $q[$plain]
-                        if ($null -ne $raw) {
-                            $getBody | Add-Member -MemberType NoteProperty -Name $plain -Value ([string]$raw) -Force
+                    # Decode GET data ourselves as UTF-8. HttpListener's QueryString
+                    # can otherwise Latin-1-decode percent escapes (→ became â†').
+                    $rawQuery = [string]$context.Request.Url.Query
+                    function Get-Utf8QueryValue([string]$name) {
+                        foreach ($piece in ($rawQuery.TrimStart('?') -split '&')) {
+                            $split = $piece.IndexOf('=')
+                            $rawName = if ($split -ge 0) { $piece.Substring(0,$split) } else { $piece }
+                            $rawValue = if ($split -ge 0) { $piece.Substring($split+1) } else { '' }
+                            $decodedName = [System.Web.HttpUtility]::UrlDecode($rawName, [System.Text.Encoding]::UTF8)
+                            if ($decodedName -eq $name) { return [System.Web.HttpUtility]::UrlDecode($rawValue, [System.Text.Encoding]::UTF8) }
                         }
+                        return $null
+                    }
+                    foreach ($plain in @('token','tool','uploadId','text','sessionId','id','category','message','status')) {
+                        $raw = Get-Utf8QueryValue $plain
+                        if ($null -ne $raw) { $getBody | Add-Member -MemberType NoteProperty -Name $plain -Value ([string]$raw) -Force }
                     }
                     # Zahlen-Felder sauber in Zahlen wandeln.
                     foreach ($num in @('timeoutSeconds','chunkIndex','chunkCount','limit')) {
-                        $raw = $q[$num]
+                        $raw = Get-Utf8QueryValue $num
                         if (-not [string]::IsNullOrWhiteSpace([string]$raw)) {
                             $parsed = 0
                             if ([int]::TryParse(([string]$raw).Trim(), [ref]$parsed)) {
@@ -10052,7 +10357,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                     }
                     # JSON-Felder: als URL-kodiertes JSON uebergeben.
                     foreach ($jsonField in @('args','calls','extra')) {
-                        $raw = $q[$jsonField]
+                        $raw = Get-Utf8QueryValue $jsonField
                         if (-not [string]::IsNullOrWhiteSpace([string]$raw)) {
                             try {
                                 $getBody | Add-Member -MemberType NoteProperty -Name $jsonField -Value (ConvertFrom-Json ([string]$raw)) -Force
@@ -10164,13 +10469,19 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 if (-not $entry) {
                     Send-Json $context 400 @{ ok = $false; error = 'Ungültige Anmeldung.' }
                 } else {
-                    Send-Json $context 200 @{
+                    $pluginVersion = [string]$entry.pluginVersion
+                $outdated = ($pluginVersion -ne [string]$Shared.DocsVersion)
+                $entry | Add-Member -NotePropertyName 'versionMismatch' -NotePropertyValue $outdated -Force
+                Save-SessionEntry $entry
+                Send-Json $context 200 @{
                         ok = $true
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '3.9.5'
+                        serverVersion = '3.9.6'
                         docsVersion = [string]$Shared.DocsVersion
+                        pluginOutdated = $outdated
+                        restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
                     }
                 }
                 continue
@@ -10231,8 +10542,9 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             if ($path -eq '/plugin/result') {
                 if ($body -and $body.commandId) {
                     $commandId = [string]$body.commandId
-                    # Ergebnis ist da -> Befehl ist im Studio erledigt (Timeout überlebt).
-                    Remove-PendingCommand ([string]$body.sessionId) $commandId
+                    $sidForResult = [string]$body.sessionId
+                    $pendingInfo = Get-PendingInfo $sidForResult $commandId
+                    $completeJson = $null
                     if ($body.chunkCount) {
                         $bag = $null
                         if (-not $Shared.ResultChunks.TryGetValue($commandId, [ref]$bag)) {
@@ -10244,33 +10556,27 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         $expected = [int]$body.chunkCount
                         if ($bag.Count -ge $expected) {
                             $builder = New-Object System.Text.StringBuilder
-                            for ($i = 1; $i -le $expected; $i++) {
-                                $piece = $null
-                                if ($bag.TryGetValue($i, [ref]$piece)) {
-                                    [void]$builder.Append($piece)
-                                }
-                            }
-                            $Shared.CommandResults[$commandId] = $builder.ToString()
-                            $signal = $null
-                            if ($Shared.ResultSignals.TryGetValue($commandId, [ref]$signal)) {
-                                [void]$signal.Set()
-                            }
+                            for ($i=1; $i -le $expected; $i++) { $piece=$null; if ($bag.TryGetValue($i,[ref]$piece)) { [void]$builder.Append($piece) } }
+                            $completeJson = $builder.ToString()
                         }
-                    } elseif ($body.json) {
-                        $Shared.CommandResults[$commandId] = [string]$body.json
+                    } elseif ($body.json) { $completeJson = [string]$body.json }
+                    elseif ($body.result) { $completeJson = (To-Json $body.result 40) }
+                    if ($null -ne $completeJson) {
+                        $Shared.CommandResults[$commandId] = $completeJson
                         $signal = $null
                         if ($Shared.ResultSignals.TryGetValue($commandId, [ref]$signal)) {
                             [void]$signal.Set()
-                        }
-                    } elseif ($body.result) {
-                        $Shared.CommandResults[$commandId] = (To-Json $body.result 40)
-                        $signal = $null
-                        if ($Shared.ResultSignals.TryGetValue($commandId, [ref]$signal)) {
-                            [void]$signal.Set()
+                        } else {
+                            # The HTTP waiter already left: deliver exactly once
+                            # through get_pending / the next envelope.
+                            Queue-LateResult $sidForResult $commandId $completeJson $pendingInfo
+                            $discardResult = $null
+                            [void]$Shared.CommandResults.TryRemove($commandId, [ref]$discardResult)
+                            Remove-PendingCommand $sidForResult $commandId | Out-Null
                         }
                     }
                 }
-                Send-Json $context 200 @{ ok = $true }
+                Send-Json $context 200 @{ ok=$true }
                 continue
             }
 
@@ -10351,11 +10657,15 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '3.9.5'
+                    bridgeVersion = '3.9.6'
+                    serverVersion = '3.9.6'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
                     accessMode = $accessMode
+                    pluginVersion = if ($sessionEntry) { [string]$sessionEntry.pluginVersion } else { $null }
+                    pluginOutdated = if ($sessionEntry) { [bool]$sessionEntry.versionMismatch } else { $false }
+                    restartStudioHint = if ($sessionEntry -and [bool]$sessionEntry.versionMismatch) { 'Studio neu starten: Plugin-Version ist veraltet; Tests warten.' } else { $null }
                     settings = @{
                         selfTestAllowed = $statusSelfTest
                         notifyOnDone = $statusNotify
@@ -10583,7 +10893,12 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                     $Shared.AiPlayIntents[$sessionId] = @{ action = ($tool -replace '^play_', ''); at = (Get-UnixSeconds) }
                 }
 
-                $resultJson = Invoke-PluginTool $sessionId $tool $toolArgs $timeout
+                $resultJson = Get-DedupedPlayResult $sessionId $tool $toolArgs
+                $reservedPlay = $false
+                if ($null -eq $resultJson) { $reservedPlay = Reserve-PlayRetry $sessionId $tool $toolArgs }
+                if ($null -eq $resultJson -and $reservedPlay) { $resultJson = Invoke-PluginTool $sessionId $tool $toolArgs $timeout }
+                if ($null -eq $resultJson -and -not $reservedPlay) { $resultJson = Get-DedupedPlayResult $sessionId $tool $toolArgs }
+                if ($null -ne $resultJson) { Save-DedupedPlayResult $sessionId $tool $toolArgs $resultJson }
                 if ($null -eq $resultJson) {
                     $entryNow = Get-SessionEntry $sessionId
                     $stillRunning = Get-PendingCommands $sessionId
@@ -12203,7 +12518,9 @@ function New-Row {
 function Update-Row {
     param($Row, $Studio, $WindowNames)
 
-    Set-Text $Row.Title (Get-PlaceName $Studio $WindowNames)
+    $placeTitle = Get-PlaceName $Studio $WindowNames
+    if ($Studio.versionMismatch -eq $true) { $placeTitle += '  -  Studio neu starten (Plugin veraltet)' }
+    Set-Text $Row.Title $placeTitle
     $Row.Copy.IsEnabled = -not [string]::IsNullOrWhiteSpace($script:TunnelUrl)
 
     $mode = if ([string]$Studio.accessMode -eq 'readonly') { 'readonly' } else { 'readwrite' }
@@ -12693,7 +13010,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '3.9.5'
+    $versionText = '3.9.6'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -13018,7 +13335,7 @@ function Open-SettingsWindow {
                     <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                     <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                    <TextBlock Text="Arena Roblox Bridge - Version 3.9.5" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                    <TextBlock Text="Arena Roblox Bridge - Version 3.9.6" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                 </StackPanel>
             </ScrollViewer>
@@ -13050,7 +13367,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 3.9.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 3.9.6 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     if ($script:LastArenaMessage) {
@@ -13105,7 +13422,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 3.9.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 3.9.6 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#A99DA5'
 }
 if (Test-UpdateError) {
@@ -13118,7 +13435,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#F0A7B4'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '3.9.5'
+    $verText = '3.9.6'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
@@ -13132,7 +13449,7 @@ if (-not $script:EncodingOk) {
 }
 
 # ----------------------------------------------------------------------------
-# AUTOSTART: SELBST NACH UPDATES SUCHEN (Version 3.9.5)
+# AUTOSTART: SELBST NACH UPDATES SUCHEN (Version 3.9.6)
 # Ohne -UpdateStatus wurde das Programm NICHT vom Starter geoeffnet - das ist
 # genau der Windows-Autostart ("Beim PC-Start automatisch oeffnen"). Dann
 # uebernimmt die Bridge die Update-Suche selbst. Alles ist abgesichert: ein
