@@ -1195,6 +1195,32 @@ local function readHttpEnabled()
     return enabled
 end
 
+-- ---------------------------------------------------------------------------
+-- 4.0.1 LIVE-BEFUND (Ursache der doppelten Place-Zeile "Place1" + "Game"):
+-- Studio laedt DIESES Plugin ein ZWEITES Mal - naemlich im Server-DataModel
+-- der laufenden Test-Session. Diese zweite Instanz hat eine eigene
+-- instanceGuid und meldete sich als eigenstaendiges Place an (game.Name ist
+-- dort "Game"). Genau das erzeugte den zusaetzlichen Eintrag in der Liste.
+--
+-- Diese Instanz ist gleichzeitig die LOESUNG fuer den Stop: EndTest laesst
+-- sich ausschliesslich im Session-SERVER-DataModel aufrufen (live bewiesen:
+-- aus dem Edit-DataModel kommt "EndTest: can only be called from the server
+-- DataModel of a running Studio play session"). Die Session-Instanz meldet
+-- sich deshalb nicht mehr als Place an, sondern nur noch als Reporter der
+-- bestehenden Sitzung ueber /plugin/session.
+-- ---------------------------------------------------------------------------
+local isSessionDataModel = false
+do
+    local runningNow = false
+    pcall(function() runningNow = RunService:IsRunning() end)
+    local editActive = nil
+    if StudioTestService ~= nil then
+        pcall(function() editActive = StudioTestService.EditModeActive end)
+    end
+    -- Nur das echte Session-DataModel laeuft wirklich; das Edit-Plugin nicht.
+    isSessionDataModel = (runningNow == true)
+end
+
 -- 3.9.7 B4-FIX: SINGLE session oracle for every play tool guard. A modern
 -- test runs in a separate DataModel - editModeActive=false counts as active
 -- even though the edit plugin shows neither IsRunning() nor Players.
@@ -2986,6 +3012,40 @@ local function characterState(player)
 end
 local testArgs = {}
 if StudioTestService then pcall(function() testArgs = StudioTestService:GetTestArgs() or {} end) end
+
+-- 4.0.1 LIVE-BEWEIS: EndTest ist der EINZIGE Rueckkanal, der nachweislich vom
+-- Session-Server-DataModel in das Edit-DataModel zurueckkommt - sein Wert ist
+-- der Rueckgabewert von ExecutePlayModeAsync. arenaProbe=true laesst den
+-- Reporter genau das tun: er wartet auf Spieler + Charakter und beendet den
+-- Test dann selbst mit einem eindeutigen Lebensbeweis. Damit ist bewiesen,
+-- (a) dass das injizierte Script im Play-Snapshot gelandet ist und laeuft und
+-- (b) dass EndTest den Test automatisch beendet - ohne MessageOut, ohne
+-- SharedTable und ohne HttpEnabled.
+if testArgs and testArgs.arenaProbe == true and StudioTestService ~= nil then
+  task.spawn(function()
+    local deadline = os.clock() + 20
+    while os.clock() < deadline do
+      local player = Players:GetPlayers()[1]
+      local character = player and player.Character
+      local root = character and character:FindFirstChild("HumanoidRootPart")
+      local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+      if root ~= nil then
+        local proof = { proof = "ARENA_REPORTER_ALIVE", players = #Players:GetPlayers(),
+          player = player.Name, hasCharacter = true,
+          position = { x = root.Position.X, y = root.Position.Y, z = root.Position.Z },
+          health = humanoid and humanoid.Health or nil,
+          maxHealth = humanoid and humanoid.MaxHealth or nil }
+        local encoded = "ARENA_REPORTER_ALIVE"
+        pcall(function() encoded = HttpService:JSONEncode(proof) end)
+        pcall(function() StudioTestService:EndTest(encoded) end)
+        return
+      end
+      task.wait(0.25)
+    end
+    pcall(function() StudioTestService:EndTest("{\"proof\":\"ARENA_REPORTER_ALIVE\",\"players\":0}") end)
+  end)
+end
+
 local function applyArenaSpawn(player)
   local spawn = testArgs and testArgs.arenaSpawn
   if type(spawn) ~= "table" then return end
@@ -3600,6 +3660,14 @@ end
 -- Returns result, channel, attemptedChannels.
 local function sessionChannelCommand(action, args, timeout)
     local attempted = {}
+    -- 4.0.1 RANG 0: Plugin-Reporter im Test-DataModel. Er laeuft IMMER, wenn
+    -- Studio den Test gestartet hat, und darf als Plugin HTTP sprechen - also
+    -- vollkommen unabhaengig von HttpEnabled des Place.
+    if sessionAgent and sessionAgent.agentMode == "sessionPlugin" then
+        table.insert(attempted, "sessionPlugin")
+        local result = sessionAgentCall(action, args or {}, timeout or 8)
+        if result ~= nil then return result, "sessionPlugin", attempted end
+    end
     if sessionAgent and sessionAgent.httpConnected == true then
         table.insert(attempted, "http")
         local result = sessionAgentCall(action, args or {}, timeout or 8)
@@ -3744,6 +3812,68 @@ local function waitForEditMode(wanted, seconds)
     return value == wanted, value
 end
 
+-- 4.0.1: Zustand des Plugin-Reporters aus dem Test-DataModel abholen.
+-- Der Reporter schickt seinen Snapshot per /plugin/session heartbeat an die
+-- Bridge; hier fragt ihn das Edit-Plugin ab. Das funktioniert ohne
+-- HttpEnabled des Place, weil das Plugin selbst immer HTTP sprechen darf.
+function pollSessionPluginState()
+    if sessionId == nil then return nil end
+    local response = post("/plugin/session", { sessionId = sessionId,
+        sessionKey = sessionAgent.key, action = "reporter_state" })
+    if response == nil or response.state == nil then return nil end
+    local snap = response.state
+    local count = tonumber(snap.players or snap.playerCount) or 0
+    sessionAgent.snapshot = snap
+    sessionAgent.playerCount = count
+    sessionAgent.reporterActive = true
+    sessionAgent.connected = true
+    sessionAgent.httpConnected = true
+    sessionAgent.agentMode = "sessionPlugin"
+    sessionAgent.lastAnswer = os.clock()
+    sessionAgent.reporterAt = os.clock()
+    sessionAgent.arenaLineCount = (sessionAgent.arenaLineCount or 0) + 1
+    sessionAgent.lastArenaKind = "sessionPlugin"
+    return snap
+end
+
+-- 4.0.1: Der Rueckgabewert von ExecutePlayModeAsync ist der Wert, den der
+-- Reporter im Session-DataModel an StudioTestService:EndTest uebergeben hat.
+-- Er ist damit ein UNABHAENGIGER Lebensbeweis des injizierten Scripts, der
+-- weder von MessageOut noch von SharedTable abhaengt.
+function captureTestResult(value)
+    local text = tostring(value or "")
+    if text == "" then return false end
+    if string.find(text, "ARENA_REPORTER_ALIVE", 1, true) == nil then return false end
+    local decoded = nil
+    pcall(function() decoded = HttpService:JSONDecode(text) end)
+    sessionAgent.reporterProof = text
+    sessionAgent.reporterProofAt = os.clock()
+    if type(decoded) == "table" then
+        sessionAgent.reporterProofData = decoded
+        if decoded.position ~= nil then
+            sessionAgent.snapshot = {
+                kind = "session", mode = "play",
+                players = tonumber(decoded.players) or 1,
+                playerCount = tonumber(decoded.players) or 1,
+                character = { player = decoded.player, hasCharacter = true,
+                    position = decoded.position, health = decoded.health,
+                    maxHealth = decoded.maxHealth },
+            }
+            sessionAgent.snapshot.characters = { sessionAgent.snapshot.character }
+            sessionAgent.playerCount = tonumber(decoded.players) or 1
+            sessionAgent.reporterActive = true
+            sessionAgent.connected = true
+            sessionAgent.agentMode = "endTestProof"
+        end
+    end
+    sessionAgent.arenaLineCount = (sessionAgent.arenaLineCount or 0) + 1
+    sessionAgent.lastArenaKind = "endTestProof"
+    sessionAgent.lastArenaRaw = string.sub(text, 1, 500)
+    sessionAgent.reporterAt = os.clock()
+    pushOutput("#ARENA# " .. text, "Output", "endTestProof")
+    return true
+end
+
 local function startPlay(mode, startArgs)
     mode = string.lower(tostring(mode or "play"))
     if mode ~= "play" and mode ~= "run" and mode ~= "play_here" then mode = "play" end
@@ -3829,7 +3959,15 @@ local function startPlay(mode, startArgs)
         if httpTransient then table.insert(transient, httpTransient) end
     end
 
-    local testArgs = { startedBy = "arena-bridge", mode = mode, reporterVariant = variant }
+    -- 4.0.1: Schluessel fuer den Plugin-Reporter im Test-DataModel setzen.
+    -- Er liest ihn ueber plugin:GetSetting und meldet sich damit als Reporter
+    -- DIESER Sitzung an (statt als zweites Place).
+    local sessionKey = HttpService:GenerateGUID(false)
+    sessionAgent.key = sessionKey
+    pcall(function() plugin:SetSetting("arenaSessionKey", sessionKey) end)
+    pcall(function() plugin:SetSetting("arenaOwnerSession", sessionId) end)
+
+    local testArgs = { startedBy = "arena-bridge", mode = mode, reporterVariant = variant, arenaProbe = false }
     -- GetTestArgs in the reporter receives this exact value. It is the only
     -- supported character teleport path: before the player spawns.
     local spawn = startArgs.arenaSpawn or startArgs.spawn or startArgs.position
@@ -3840,12 +3978,30 @@ local function startPlay(mode, startArgs)
         testArgs.arenaSpawn = { x=tonumber(spawn.x) or 0, y=tonumber(spawn.y) or 0, z=tonumber(spawn.z) or 0 }
     end
 
+    -- 4.0.1: ChangeHistoryService-Wegpunkt + kurze Pause, damit der injizierte
+    -- Reporter garantiert Teil des Snapshots ist, den Studio fuer die Session
+    -- klont (live bewiesen: ohne Pause kann das Script fehlen).
+    if ChangeHistoryService ~= nil then
+        pcall(function() ChangeHistoryService:SetWaypoint("ArenaBridge reporter injected") end)
+    end
+    task.wait(0.35)
+
     local serviceDone, serviceOk, serviceError = false, false, nil
     task.spawn(function()
         local okStart, errStart = pcall(function()
             if mode == "run" then return StudioTestService:ExecuteRunModeAsync(testArgs) end
             return StudioTestService:ExecutePlayModeAsync(testArgs)
         end)
+        -- 4.0.1 LIVE-BEWEIS: Bei Erfolg ist errStart der RUECKGABEWERT des
+        -- Tests - also genau der Wert, den EndTest im Session-DataModel
+        -- uebergeben hat. Das ist der einzige nachweislich funktionierende
+        -- Rueckkanal aus der Session (MessageOut und SharedTable kamen im
+        -- Live-Test nie an).
+        if okStart then
+            sessionAgent.lastTestResult = tostring(errStart)
+            sessionAgent.lastTestResultAt = os.clock()
+            captureTestResult(errStart)
+        end
         serviceOk, serviceError, serviceDone = okStart, (okStart and nil or tostring(errStart)), true
     end)
 
@@ -3889,14 +4045,16 @@ local function startPlay(mode, startArgs)
     -- Reporter output is optional for start success, but normally arrives in
     -- the first half second (the 3.9.7 hello line). HTTP can enrich it only
     -- when explicitly enabled.
+    -- 4.0.1: Der Plugin-Reporter im Test-DataModel meldet seinen Zustand
+    -- ueber /plugin/session an die Bridge. Das Edit-Plugin fragt ihn hier ab -
+    -- unabhaengig von HttpEnabled der PLACE-Einstellung, denn das Plugin darf
+    -- immer mit dem lokalen Bridge-Server sprechen.
     local waited = 0
-    while waited < 10 and mode ~= "run" and not sessionPlayReady() do
+    while waited < 25 and mode ~= "run" and not sessionPlayReady() do
         if absorbSharedTableReports then pcall(absorbSharedTableReports) end
-        if diagnostics.httpEnabled and sessionAgent.key then
-            local ping = sessionAgentCall("ping", {}, 0.4)
-            if ping then diagnostics.sessionAgentAnswered = true end
-        end
-        task.wait(0.2); waited = waited + 0.2
+        local snap = pollSessionPluginState()
+        if snap ~= nil then diagnostics.sessionAgentAnswered = true end
+        task.wait(0.3); waited = waited + 0.3
     end
     if sessionReporterUsable() then diagnostics.reporterSeenInOutput = true end
     if mode ~= "run" and not sessionPlayReady() then
@@ -3970,6 +4128,11 @@ local function stopPlay()
     -- 3.9.7 B2-FIX RANG 1: EndTest works ONLY inside the session server
     -- DataModel. The session reporter executes it when a command reaches it
     -- (http agent / sharedTable / VIM combo, in that priority order).
+    -- 4.0.1 RANG 0: Der Plugin-Reporter im Test-DataModel ist der einzige
+    -- Ort, an dem EndTest erlaubt ist (live bewiesen). Erst kurz abfragen,
+    -- ob er lebt - dann den Befehl ueber genau diesen Kanal schicken.
+    pcall(pollSessionPluginState)
+
     if sessionReporterUsable() or (sessionAgent and sessionAgent.httpConnected) then
         -- (the gate is reporter evidence: only then is something alive inside
         -- the session that can execute our commands - no dead 15s waits)
@@ -8096,7 +8259,102 @@ local function statePayload()
         pluginVersion = ARENA_VERSION,
         outputCursor = outputSeq,
         errorCount   = errorCount,
+        -- 4.0.1: Die Instanz im Test-DataModel ist KEIN eigenes Place.
+        sessionDataModel = isSessionDataModel,
     }
+end
+
+-- ---------------------------------------------------------------------------
+-- 4.0.1 SESSION-REPORTER (Plugin-Instanz IM Test-DataModel)
+-- Diese Instanz registriert sich NICHT als Place. Sie meldet stattdessen
+-- Spieler/Charakter an die bestehende Sitzung und fuehrt Befehle aus, die
+-- ausschliesslich hier funktionieren - allen voran EndTest (automatischer
+-- Stop) und LeaveTest.
+-- ---------------------------------------------------------------------------
+local function runSessionReporterLoop()
+    local key = nil
+    pcall(function() key = plugin:GetSetting("arenaSessionKey") end)
+    local owner = nil
+    pcall(function() owner = plugin:GetSetting("arenaOwnerSession") end)
+    if type(owner) ~= "string" or owner == "" then return end
+    local function snapshot()
+        local players = Players:GetPlayers()
+        local list = {}
+        for _, player in ipairs(players) do
+            local character = player.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            table.insert(list, {
+                player = player.Name, hasCharacter = character ~= nil,
+                position = root and { x = root.Position.X, y = root.Position.Y, z = root.Position.Z } or nil,
+                health = humanoid and humanoid.Health or nil,
+                maxHealth = humanoid and humanoid.MaxHealth or nil,
+                walkSpeed = humanoid and humanoid.WalkSpeed or nil,
+                state = humanoid and tostring(humanoid:GetState()) or nil,
+            })
+        end
+        return {
+            kind = "session", mode = "play", players = #players, playerCount = #players,
+            characters = list, character = list[1], reporterAlive = true,
+            source = "sessionPlugin",
+        }
+    end
+    local function execute(command)
+        local action = tostring(command and command.action or "")
+        local args = type(command) == "table" and type(command.args) == "table" and command.args or {}
+        if action == "end_test" then
+            task.defer(function()
+                task.wait(0.1)
+                local stopped = false
+                if StudioTestService ~= nil then
+                    stopped = pcall(function() StudioTestService:EndTest("stopped_by_arena_bridge") end)
+                end
+                if not stopped then pcall(function() RunService:Stop() end) end
+            end)
+            return { ok = true, ending = true, via = "sessionPluginEndTest" }
+        end
+        if action == "character_state" then
+            local snap = snapshot()
+            local first = snap.character
+            if first == nil then return { ok = false, error = "No character in the session." } end
+            first.ok = true
+            first.playerCount = snap.players
+            return first
+        end
+        if action == "teleport_character" then
+            local player = Players:GetPlayers()[1]
+            local character = player and player.Character
+            local q = type(args.position) == "table" and args.position or nil
+            if character == nil or q == nil then return { ok = false, error = "No character or position." } end
+            local target = Vector3.new(tonumber(q.x) or 0, tonumber(q.y) or 0, tonumber(q.z) or 0)
+            pcall(function() character:PivotTo(CFrame.new(target)) end)
+            return { ok = true, position = { x = target.X, y = target.Y, z = target.Z } }
+        end
+        if action == "respawn_character" then
+            local player = Players:GetPlayers()[1]
+            if player == nil then return { ok = false, error = "No player." } end
+            task.spawn(function() pcall(function() player:LoadCharacter() end) end)
+            return { ok = true, respawned = true }
+        end
+        if action == "ping" then return { ok = true, pong = true, players = #Players:GetPlayers() } end
+        return { ok = false, error = "Unsupported session command: " .. action }
+    end
+    while running do
+        local response = post("/plugin/session", {
+            sessionId = owner, sessionKey = key, action = "heartbeat",
+            state = snapshot(),
+        })
+        if response ~= nil and type(response.commands) == "table" then
+            for _, command in ipairs(response.commands) do
+                local okRun, result = pcall(execute, command)
+                if not okRun then result = { ok = false, error = tostring(result) } end
+                post("/plugin/session", { sessionId = owner, sessionKey = key,
+                    action = "result", commandId = command and command.id, result = result })
+            end
+        end
+        if not RunService:IsRunning() then break end
+        task.wait(0.4)
+    end
 end
 
 local function handshake()
@@ -8106,6 +8364,10 @@ local function handshake()
     if response and response.sessionId then
         sessionId = response.sessionId
         accessMode = response.accessMode or "readwrite"
+        -- 4.0.1: plugin:SetSetting ueberlebt den DataModel-Wechsel (live
+        -- bewiesen). Die Plugin-Instanz im Test-DataModel liest hierueber,
+        -- zu welcher Sitzung sie als Reporter gehoert.
+        pcall(function() plugin:SetSetting("arenaOwnerSession", sessionId) end)
         if response.pluginOutdated then
             title.Text = "Arena Bridge: Studio neu starten"
             body.Text = "Plugin und Bridge haben unterschiedliche Versionen. Studio neu starten - Tests warten bis dahin."
@@ -8247,6 +8509,7 @@ end)
 
 -- Heartbeat: haelt die Anzeige im Programm aktuell (kleine Pakete)
 task.spawn(function()
+    if isSessionDataModel then return end
     while running do
         if testSessionActive() and absorbSharedTableReports then pcall(absorbSharedTableReports) end
         if sessionId ~= nil and os.clock() - lastHeartbeat > ARENA_CFG.HEARTBEAT_EVERY then
@@ -8265,7 +8528,15 @@ task.spawn(function()
 end)
 
 -- Long-Poll: Befehle kommen ohne Wartezeit an und erzeugen kaum Last.
+-- 4.0.1: Laeuft dieses Plugin im Test-DataModel, wird KEIN zweites Place
+-- angemeldet (das war die Ursache fuer den zusaetzlichen "Game"-Eintrag).
+-- Stattdessen arbeitet die Instanz als Session-Reporter der echten Sitzung.
 task.spawn(function()
+    if isSessionDataModel then
+        widget.Enabled = false
+        pcall(runSessionReporterLoop)
+        return
+    end
     local backoff = 0.5
     while running do
         if sessionId == nil then
@@ -8959,6 +9230,9 @@ $script:BridgeHandlerScript = {
     # ------------------------------------------------------------------
     function Register-Session($body) {
         if (-not $body) { return $null }
+        # 4.0.1: Die Plugin-Instanz im Test-DataModel ist KEIN eigenes Place.
+        # Sie erzeugte bisher den zusaetzlichen "Game"-Eintrag in der Liste.
+        if ($body.sessionDataModel -eq $true) { return $null }
         $guid    = [string]$body.instanceGuid
         $placeId = [string]$body.placeId
         $placeName = [string]$body.placeName
@@ -11207,8 +11481,28 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 }
                 $knownKey = $null
                 if (-not $sid -or -not $Shared.AgentKeys.TryGetValue($sid, [ref]$knownKey) -or [string]$knownKey -ne [string]$body.sessionKey) {
-                    if ($action -eq 'command' -and $sid -and $body.sessionKey) { $Shared.AgentKeys[$sid] = [string]$body.sessionKey; $knownKey = [string]$body.sessionKey }
+                    # 4.0.1: Der Session-Plugin-Reporter (Plugin-Instanz im
+                    # Test-DataModel) und das Edit-Plugin einigen sich ueber
+                    # plugin:SetSetting auf denselben Schluessel. Der erste
+                    # Kontakt darf ihn registrieren - danach gilt er strikt.
+                    if ($sid -and $body.sessionKey -and ($action -eq 'command' -or $action -eq 'heartbeat' -or $action -eq 'reporter_state')) {
+                        $Shared.AgentKeys[$sid] = [string]$body.sessionKey; $knownKey = [string]$body.sessionKey
+                    }
                     else { Send-Json $context 403 @{ ok=$false; error='Invalid Session-Agent key.' }; continue }
+                }
+                if ($action -eq 'reporter_state') {
+                    # Das Edit-Plugin fragt den Zustand des Session-Reporters ab.
+                    $stateJson = $null
+                    $seen = 0
+                    [void]$Shared.AgentLastSeen.TryGetValue($sid, [ref]$seen)
+                    $fresh = ((Get-UnixSeconds) - $seen) -le 6
+                    if ($fresh -and $Shared.AgentStates.TryGetValue($sid, [ref]$stateJson)) {
+                        try { Send-Json $context 200 @{ ok=$true; state=($stateJson | ConvertFrom-Json); age=((Get-UnixSeconds) - $seen) } }
+                        catch { Send-Json $context 200 @{ ok=$true } }
+                    } else {
+                        Send-Json $context 200 @{ ok=$true; state=$null }
+                    }
+                    continue
                 }
                 if ($action -eq 'command') {
                     if (-not $body.command -or -not $body.command.id) { Send-Json $context 400 @{ok=$false;error='Missing Session-Agent command.'}; continue }
@@ -12092,7 +12386,39 @@ function Get-ActiveStudios {
             }
         } catch {}
     }
-    $items | Sort-Object placeName, sessionId
+    # ------------------------------------------------------------------
+    # 4.0.1 DEDUPLIZIERUNG (Live-Befund: waehrend eines Playtests erschienen
+    # "Place1" UND "Game"). Ein physischer Studio-Platz darf genau EINE
+    # sichtbare Zeile haben. Zwei wirklich getrennt geoeffnete Fenster
+    # bleiben getrennt, weil sie unterschiedliche instanceGuids haben und
+    # beide dauerhaft heartbeaten.
+    #
+    # Zusammengefasst wird nur, was nachweislich dieselbe physische
+    # Verbindung ist:
+    #   a) gleiche instanceGuid (identisches Plugin), oder
+    #   b) eine Test-/Play-Session desselben Place, die parallel zu einer
+    #      Edit-Sitzung desselben Place laeuft (Studio klont das Place fuer
+    #      den Test und nennt es dann haeufig "Game").
+    # Sichtbar bleibt die aeltere, echte Sitzung (connectedAt).
+    # ------------------------------------------------------------------
+    $deduped = New-Object System.Collections.Generic.List[object]
+    foreach ($item in $items) {
+        $hide = $false
+        foreach ($other in $items) {
+            if ([string]$other.sessionId -eq [string]$item.sessionId) { continue }
+            # Nur die AELTERE Sitzung darf eine juengere verdecken.
+            if ([int64]$other.connectedAt -ge [int64]$item.connectedAt) { continue }
+            $sameGuid = ((-not [string]::IsNullOrWhiteSpace([string]$item.instanceGuid)) -and
+                         ([string]$other.instanceGuid -eq [string]$item.instanceGuid))
+            $samePlaceId = ([string]$other.placeId -eq [string]$item.placeId)
+            $itemRunning = $false
+            try { $itemRunning = [bool]$item.state.running } catch {}
+            if ($sameGuid -or ($samePlaceId -and $itemRunning)) { $hide = $true; break }
+        }
+        if (-not $hide) { $deduped.Add($item) }
+    }
+
+    $deduped | Sort-Object placeName, sessionId
 }
 
 function Reset-SessionToken {
