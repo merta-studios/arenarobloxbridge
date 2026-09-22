@@ -1,7 +1,26 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 3.9.8
+# Arena Roblox Bridge  -  Version 3.9.9
 #
-# NEU IN DIESER VERSION (3.9.8) - AUTOSTART-SELBST-UPDATE REPARIERT:
+# NEU IN DIESER VERSION (3.9.9) - SPIELELISTE WAR LEER (KRITISCHER FIX):
+#   * Das Studio-Plugin kompilierte seit 3.9.7/3.9.8 GAR NICHT MEHR und
+#     verband sich daher nie - die Spieleliste im Programm blieb dauerhaft
+#     leer, egal wie oft man das Programm oder Roblox Studio neu startete.
+#     Ursache: Luau erlaubt maximal 200 lokale Variablen pro Funktions-Scope.
+#     Der Haupt-Chunk des Plugins war durch die 3.9.7/3.9.8-Erweiterungen
+#     (SharedTable-/VIM-Kanal, Session-Diagnose, Reporter) auf 202 gewachsen.
+#     Studio brach den Start des Plugins mit dem Fehler ab:
+#       "Out of local registers when trying to allocate statePayload:
+#        exceeded limit 200".
+#   * Fix: mehrere Konstanten (POLL_WAIT, HEARTBEAT_EVERY, CHUNK_SIZE,
+#     MAX_OUTPUT, die UNION_*-Limits und MAX_JOBS) sind jetzt Felder EINER
+#     Tabelle ARENA_CFG. Tabellenfelder zaehlen nicht gegen das 200er-Limit;
+#     der Haupt-Chunk liegt damit wieder bei 194 Locals (sicherer Puffer).
+#     Funktional aendert sich nichts - dieselben Werte, nur anders gebuendelt.
+#   * HINWEIS: Nach diesem Update Roblox Studio EINMAL neu starten, damit das
+#     reparierte Plugin geladen wird - danach erscheinen die Places wieder
+#     automatisch in der Liste.
+#
+# NEU IN VERSION 3.9.8 - AUTOSTART-SELBST-UPDATE REPARIERT:
 #   * Der Selbst-Update-Pfad (Programmstart ohne Starter, z. B. nach einem
 #     PC-Neustart ueber "Beim PC-Start automatisch oeffnen") lud seit 3.9
 #     NIEMALS etwas herunter: raw.githubusercontent.com liefert Text mit
@@ -908,7 +927,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '3.9.8'
+    DocsVersion     = '3.9.9'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -1037,7 +1056,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 3.9.8)
+  Arena Studio Bridge - Studio Plugin  (Version 3.9.9)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1108,11 +1127,23 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "3.9.8"
-local POLL_WAIT      = 12      -- Sekunden Long-Poll (Befehle kommen sofort an)
-local HEARTBEAT_EVERY = 5      -- Sekunden
-local CHUNK_SIZE     = 48000   -- Bytes je Teilstueck einer Antwort
-local MAX_OUTPUT     = 6000    -- Zeilen im Ausgabespeicher
+local ARENA_VERSION  = "3.9.9"
+-- Version 3.9.9: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
+-- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
+-- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
+-- 200"), wodurch das Plugin gar nicht mehr kompilierte und sich nie verband
+-- (Spieleliste blieb leer). Tabellenfelder zaehlen NICHT als Locals.
+local ARENA_CFG = {
+    POLL_WAIT            = 12,     -- Sekunden Long-Poll (Befehle kommen sofort an)
+    HEARTBEAT_EVERY      = 5,      -- Sekunden
+    CHUNK_SIZE           = 48000,  -- Bytes je Teilstueck einer Antwort
+    MAX_OUTPUT           = 6000,   -- Zeilen im Ausgabespeicher
+    UNION_SOFT_LIMIT     = 8,
+    UNION_HARD_LIMIT     = 24,
+    UNION_TRIANGLE_WARN  = 4000,
+    UNION_TRIANGLE_REFUSE = 16000,
+    MAX_JOBS             = 16,
+}
 
 -- ---------------------------------------------------------------------------
 -- Grundzustand
@@ -1378,8 +1409,8 @@ local function pushOutput(message, messageType, source)
         warningCount = warningCount + 1
     end
     outputBuffer[outputSeq] = entry
-    if outputSeq - outputStart + 1 > MAX_OUTPUT then
-        local removeUntil = outputSeq - MAX_OUTPUT
+    if outputSeq - outputStart + 1 > ARENA_CFG.MAX_OUTPUT then
+        local removeUntil = outputSeq - ARENA_CFG.MAX_OUTPUT
         for i = outputStart, removeUntil do
             outputBuffer[i] = nil
         end
@@ -3879,9 +3910,6 @@ end
 -- ---------------------------------------------------------------------------
 -- UNIONS (Solid Modeling)
 -- ---------------------------------------------------------------------------
-local UNION_SOFT_LIMIT = 8
-local UNION_HARD_LIMIT = 24
-
 local function collisionFidelityFrom(name)
     local ok, value = pcall(function() return Enum.CollisionFidelity[name or "Default"] end)
     if ok and value then return value end
@@ -3893,9 +3921,6 @@ local function renderFidelityFrom(name)
     if ok and value then return value end
     return Enum.RenderFidelity.Automatic
 end
-
-local UNION_TRIANGLE_WARN = 4000
-local UNION_TRIANGLE_REFUSE = 16000
 
 local function estimateTriangles(parts)
     local total = 0
@@ -3949,7 +3974,7 @@ local function unionWarnings(parts, kind)
     local warnings = {
         "Solid modeling is one-way: after " .. kind .. " the individual parts are gone. You can no longer read or move them separately - use 'separate' to get them back (properties like colour per part may be lost).",
     }
-    if #parts > UNION_SOFT_LIMIT then
+    if #parts > ARENA_CFG.UNION_SOFT_LIMIT then
         table.insert(warnings, "You are combining " .. tostring(#parts) .. " parts. Large unions are hard to inspect and slow to render. Prefer several small unions grouped in a Model.")
     end
     local totalVolume = 0
@@ -3975,9 +4000,9 @@ local function precheckSolid(parts, minimum, args)
         end
     end
     local warnings = {}
-    if #parts > UNION_HARD_LIMIT and args.force ~= true then
+    if #parts > ARENA_CFG.UNION_HARD_LIMIT and args.force ~= true then
         return nil, "UNION_BUDGET",
-            "Refusing to combine " .. tostring(#parts) .. " parts at once (limit " .. tostring(UNION_HARD_LIMIT)
+            "Refusing to combine " .. tostring(#parts) .. " parts at once (limit " .. tostring(ARENA_CFG.UNION_HARD_LIMIT)
             .. "). Build in smaller groups so the result stays editable, or pass force=true if you really want this.",
             nil
     end
@@ -4025,14 +4050,14 @@ local function precheckSolid(parts, minimum, args)
 
     -- Dreiecks-Budget
     local triangles = estimateTriangles(parts)
-    if triangles > UNION_TRIANGLE_REFUSE and args.force ~= true then
+    if triangles > ARENA_CFG.UNION_TRIANGLE_REFUSE and args.force ~= true then
         return nil, "UNION_BUDGET",
-            "Estimated " .. tostring(triangles) .. " triangles - above the refusal limit of " .. tostring(UNION_TRIANGLE_REFUSE)
+            "Estimated " .. tostring(triangles) .. " triangles - above the refusal limit of " .. tostring(ARENA_CFG.UNION_TRIANGLE_REFUSE)
             .. " (the result would be slow to render and nearly impossible to edit). Build in smaller groups, or pass force=true.",
-            { estimatedTriangles = triangles, limit = UNION_TRIANGLE_REFUSE }
+            { estimatedTriangles = triangles, limit = ARENA_CFG.UNION_TRIANGLE_REFUSE }
     end
-    if triangles > UNION_TRIANGLE_WARN then
-        table.insert(warnings, "Estimated " .. tostring(triangles) .. " triangles (warning limit " .. tostring(UNION_TRIANGLE_WARN)
+    if triangles > ARENA_CFG.UNION_TRIANGLE_WARN then
+        table.insert(warnings, "Estimated " .. tostring(triangles) .. " triangles (warning limit " .. tostring(ARENA_CFG.UNION_TRIANGLE_WARN)
             .. ") - expect slow rendering. Fewer parts per union is much cheaper.")
     end
 
@@ -4057,7 +4082,6 @@ end
 -- ---------------------------------------------------------------------------
 local jobs = {}
 local jobSeq = 0
-local MAX_JOBS = 16
 
 local function jobSnapshot(job)
     return {
@@ -4108,7 +4132,7 @@ local function newJob(name, fn)
                 end
             end
         end
-        if oldest and jobsCount() > MAX_JOBS then
+        if oldest and jobsCount() > ARENA_CFG.MAX_JOBS then
             jobs[oldest] = nil
         else
             break
@@ -7845,15 +7869,15 @@ local function postResult(commandId, payload)
         json = HttpService:JSONEncode({ ok = false, error = "Result could not be encoded: " .. tostring(json) })
     end
 
-    if #json <= CHUNK_SIZE then
+    if #json <= ARENA_CFG.CHUNK_SIZE then
         post("/plugin/result", { sessionId = sessionId, commandId = commandId, json = json })
         return
     end
 
-    local total = math.ceil(#json / CHUNK_SIZE)
+    local total = math.ceil(#json / ARENA_CFG.CHUNK_SIZE)
     for index = 1, total do
-        local from = (index - 1) * CHUNK_SIZE + 1
-        local piece = string.sub(json, from, from + CHUNK_SIZE - 1)
+        local from = (index - 1) * ARENA_CFG.CHUNK_SIZE + 1
+        local piece = string.sub(json, from, from + ARENA_CFG.CHUNK_SIZE - 1)
         local attempt = 0
         local delivered = nil
         while attempt < 3 and delivered == nil do
@@ -8111,7 +8135,7 @@ end)
 -- Heartbeat: haelt die Anzeige im Programm aktuell (kleine Pakete)
 task.spawn(function()
     while running do
-        if sessionId ~= nil and os.clock() - lastHeartbeat > HEARTBEAT_EVERY then
+        if sessionId ~= nil and os.clock() - lastHeartbeat > ARENA_CFG.HEARTBEAT_EVERY then
             lastHeartbeat = os.clock()
             local response = post("/plugin/heartbeat", statePayload())
             if response then
@@ -8140,7 +8164,7 @@ task.spawn(function()
             end
         else
             local payload = statePayload()
-            payload.wait = POLL_WAIT
+            payload.wait = ARENA_CFG.POLL_WAIT
             local response = post("/plugin/poll", payload)
             if response == nil then
                 task.wait(0.5)
@@ -10580,7 +10604,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '3.9.8'
+            version = '3.9.9'
             docsVersion = [string]$Shared.DocsVersion
             role = 'You are connected to exactly ONE live Roblox Studio place through a local plugin. Every token belongs to one Studio window only - if several windows are open, each one has its own token and you can never touch the wrong place. Send every request as POST /api/tool with JSON body { "token": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -10691,7 +10715,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '3.9.8'
+            bridgeVersion = '3.9.9'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -10924,7 +10948,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '3.9.8'
+                        bridgeVersion = '3.9.9'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -11130,7 +11154,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '3.9.8'
+                        serverVersion = '3.9.9'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -11309,8 +11333,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '3.9.8'
-                    serverVersion = '3.9.8'
+                    bridgeVersion = '3.9.9'
+                    serverVersion = '3.9.9'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -13662,7 +13686,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '3.9.8'
+    $versionText = '3.9.9'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -13987,7 +14011,7 @@ function Open-SettingsWindow {
                     <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                     <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                    <TextBlock Text="Arena Roblox Bridge - Version 3.9.8" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                    <TextBlock Text="Arena Roblox Bridge - Version 3.9.9" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                 </StackPanel>
             </ScrollViewer>
@@ -14019,7 +14043,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 3.9.8 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 3.9.9 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     if ($script:LastArenaMessage) {
@@ -14074,7 +14098,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 3.9.8 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 3.9.9 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#A99DA5'
 }
 if (Test-UpdateError) {
@@ -14087,7 +14111,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#F0A7B4'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '3.9.8'
+    $verText = '3.9.9'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
