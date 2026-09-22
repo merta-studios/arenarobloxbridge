@@ -1,5 +1,27 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 4.0.1
+# Arena Roblox Bridge  -  Version 4.0.2
+#
+# NEU IN VERSION 4.0.2 - STOP-SCHLEIFE UEBERLEBT + MOVE OHNE VIRTUALINPUT:
+#   * BUG 1 (Stop kaputt): runSessionReporterLoop im Test-DataModel starb nach
+#     ~3 Heartbeats (arenaLineCount blieb bei 3 stehen, reporterLastAgeSeconds
+#     lief unbegrenzt hoch), weil ein einzelner Fehler die ganze Coroutine
+#     abbrach. Jetzt laeuft der KOMPLETTE Schleifenkoerper pro Durchlauf in
+#     einem eigenen pcall, Fehler werden NICHT mehr geschluckt sondern per
+#     post im naechsten Heartbeat an die Bridge gemeldet (sichtbar in
+#     session_diag.reporter.lastLoopError) und die Schleife laeuft weiter.
+#     plugin:GetSetting wird nur noch EINMAL vor der Schleife gelesen statt
+#     bei jedem Tick. Die Laufzeitbedingung ist jetzt RunService:IsRunning()
+#     statt der lokalen running-Variable, die diese abgetrennte Test-VM nie
+#     aendert. play_stop erreicht den Reporter dadurch wieder zuverlaessig.
+#   * BUG 2 (move_character gesperrt): VirtualInputManager:SendKeyEvent wirft
+#     aus dem Edit-Plugin gegen die getrennte Session jetzt "The current
+#     thread cannot call 'SendKeyEvent' (lacking capability RobloxScript)".
+#     move_character laeuft deshalb als Befehl UEBER den Session-Reporter
+#     (Humanoid:Move im Session-DataModel, wo volle Capability besteht);
+#     Position wird vorher UND nachher aus dem Reporter-Snapshot gelesen und
+#     beide werden als positionBefore/positionAfter zurueckgegeben. Laeuft
+#     der Test ausnahmsweise im selben DataModel (klassisches F5), bleibt der
+#     direkte VirtualInputManager-Pfad als Fallback erhalten.
 #
 # NEU IN VERSION 4.0.0 - PLAYTEST-RUECKKANAL + TECH-DARK-UI:
 #   * Der bisherige Kanal hiess faelschlich SharedTableService. Roblox stellt
@@ -939,7 +961,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '4.0.1'
+    DocsVersion     = '4.0.2'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -1068,7 +1090,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 4.0.1)
+  Arena Studio Bridge - Studio Plugin  (Version 4.0.2)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1139,7 +1161,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "4.0.1"
+local ARENA_VERSION  = "4.0.2"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -1186,7 +1208,7 @@ local sessionAgent = {
     key = nil, connected = false, httpConnected = false,
     reporterActive = false, playerCount = 0, mode = "play", lastAnswer = 0,
     agentMode = "logStream", snapshot = nil, guiSnapshot = nil,
-    httpEnabled = nil, reporterAt = 0,
+    httpEnabled = nil, reporterAt = 0, reporterLoopError = nil,
 }
 
 local function readHttpEnabled()
@@ -3750,6 +3772,9 @@ local function sessionDiagnosticsData(skipProbe)
         variantInjected = sessionAgent.reporterVariantUsed,
         variantInSession = sessionAgent.reporterVariantInSession,
         note = "2 (default, clone-safe normal script) is expected. 1 = Archivable=false probe that never entered the session in the 3.9.6 live test.",
+        -- 4.0.2: last error caught inside runSessionReporterLoop's per-iteration
+        -- pcall, if any. The loop keeps running regardless (see 4.0.2 notes).
+        lastLoopError = sessionAgent.reporterLoopError,
     }
     diag.state = playState()
     return diag
@@ -3833,6 +3858,9 @@ function pollSessionPluginState()
     sessionAgent.reporterAt = os.clock()
     sessionAgent.arenaLineCount = (sessionAgent.arenaLineCount or 0) + 1
     sessionAgent.lastArenaKind = "sessionPlugin"
+    -- 4.0.2 BUG-1-FIX: surface the reporter loop's own last error (if any)
+    -- so session_diag shows WHY it struggled instead of just going quiet.
+    sessionAgent.reporterLoopError = snap.reporterLoopError
     return snap
 end
 
@@ -7600,8 +7628,6 @@ end
 
 tools.move_character = function(args)
     args = args or {}
-    -- Cross-DataModel movement is real Studio input, never Humanoid:MoveTo.
-    -- VirtualInputManager is available to the edit plugin and reaches the test.
     local keys = args.keys or args.direction
     if type(keys) == "string" then keys = { keys } end
     if type(keys) ~= "table" or #keys == 0 then
@@ -7613,17 +7639,55 @@ tools.move_character = function(args)
     local duration = tonumber(args.duration) or 1
     duration = math.max(0.03, math.min(duration, 12))
     aiMoveUntil = os.clock() + duration + 4
-    local pressed = {}
-    for _, key in ipairs(keys) do
-        local okKey, keyErr = sendKey(key, duration, args.shift and { "LeftShift" } or nil)
-        table.insert(pressed, { key=key, ok=okKey, error=keyErr })
+
+    -- 4.0.2 BUG-2-FIX: VirtualInputManager:SendKeyEvent now throws "The
+    -- current thread cannot call 'SendKeyEvent' (lacking capability
+    -- RobloxScript)" from the edit plugin against the separate session
+    -- DataModel (live-observed). Key simulation from here is dead, so
+    -- movement is executed AS A COMMAND by the session reporter itself
+    -- (Humanoid:Move inside the session DataModel, where it has full
+    -- capability). RunService:IsRunning() true in THIS DataModel means the
+    -- classic same-process F5 case, where direct VirtualInputManager still
+    -- works and stays as a fallback.
+    if RunService:IsRunning() then
+        local pressed = {}
+        for _, key in ipairs(keys) do
+            local okKey, keyErr = sendKey(key, duration, args.shift and { "LeftShift" } or nil)
+            table.insert(pressed, { key=key, ok=okKey, error=keyErr })
+        end
+        task.wait(0.5)
+        if absorbSharedTableReports then pcall(absorbSharedTableReports) end
+        local snap = currentSessionSnapshot()
+        local character = snap and (snap.character or (snap.characters and snap.characters[1]))
+        return ok({ pressed=pressed, duration=duration, position=character and character.position or nil,
+            agentMode="directInput", note="Input was sent through VirtualInputManager (same-DataModel run); read character_state after movement for the updated position." })
     end
-    task.wait(0.5)
-    if absorbSharedTableReports then pcall(absorbSharedTableReports) end
-    local snap = currentSessionSnapshot()
-    local character = snap and (snap.character or (snap.characters and snap.characters[1]))
-    return ok({ pressed=pressed, duration=duration, position=character and character.position or nil,
-        agentMode=(sessionReporterUsable() and "logStream" or "directInput"), note="Input was sent through VirtualInputManager; read character_state after movement for the updated LogStream position." })
+
+    local beforeSnap = currentSessionSnapshot()
+    local beforeCharacter = beforeSnap and (beforeSnap.character or (beforeSnap.characters and beforeSnap.characters[1]))
+    local positionBefore = beforeCharacter and beforeCharacter.position or nil
+
+    local result, channel, attempted = sessionChannelCommand("move_character", { keys = keys, duration = duration }, duration + 8)
+    if result == nil then
+        return failCode("REPORTER_NOT_CONNECTED",
+            "No command channel into the session answered (tried: " .. table.concat(attempted or {}, ",") .. "). move_character needs the session reporter (sessionPlugin/http/sharedTable) because VirtualInputManager can no longer reach a separate Play DataModel.",
+            reporterNotConnectedExtra())
+    end
+    if result.ok == false then
+        return failCode("RUNTIME_ERROR", result.error or "Session reporter rejected move_character.")
+    end
+
+    -- Refresh the reporter snapshot so the returned "after" position is fresh.
+    pcall(pollSessionPluginState)
+    local afterSnap = currentSessionSnapshot()
+    local afterCharacter = afterSnap and (afterSnap.character or (afterSnap.characters and afterSnap.characters[1]))
+    local positionAfter = result.positionAfter or (afterCharacter and afterCharacter.position) or nil
+
+    return ok({ keys=keys, duration=duration, via=channel,
+        positionBefore = result.positionBefore or positionBefore,
+        positionAfter = positionAfter,
+        agentMode="sessionPlugin",
+        note="Executed as Humanoid:Move inside the session DataModel by the session reporter; positionBefore/positionAfter come from its own snapshot." })
 end
 
 tools.teleport_character = function(args)
@@ -8272,6 +8336,11 @@ end
 -- Stop) und LeaveTest.
 -- ---------------------------------------------------------------------------
 local function runSessionReporterLoop()
+    -- 4.0.2 BUG-1-FIX: plugin:GetSetting is read exactly ONCE, before the
+    -- loop starts. Reading it every iteration (or letting an unrelated
+    -- error abort the whole loop) was the reason the reporter died after
+    -- ~3 heartbeats in the live test (arenaLineCount stuck at 3,
+    -- reporterLastAgeSeconds growing forever afterwards).
     local key = nil
     pcall(function() key = plugin:GetSetting("arenaSessionKey") end)
     local owner = nil
@@ -8337,22 +8406,93 @@ local function runSessionReporterLoop()
             return { ok = true, respawned = true }
         end
         if action == "ping" then return { ok = true, pong = true, players = #Players:GetPlayers() } end
+        if action == "move_character" then
+            local player = Players:GetPlayers()[1]
+            local character = player and player.Character
+            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            if character == nil or humanoid == nil or root == nil then
+                return { ok = false, error = "No character to move in the session." }
+            end
+            -- 4.0.2 BUG-2-FIX: VirtualInputManager:SendKeyEvent now throws
+            -- "lacking capability RobloxScript" from the edit plugin, so key
+            -- simulation across the DataModel boundary is dead. Moving the
+            -- character INSIDE the session DataModel via Humanoid:Move/MoveTo
+            -- needs no VirtualInputManager and always has capability here.
+            local beforePos = { x = root.Position.X, y = root.Position.Y, z = root.Position.Z }
+            local keys = type(args.keys) == "table" and args.keys or {}
+            local duration = tonumber(args.duration) or 1
+            duration = math.max(0.05, math.min(duration, 12))
+            local dx, dz = 0, 0
+            for _, k in ipairs(keys) do
+                local up = string.upper(tostring(k))
+                if up == "W" or up == "UP" then dz = dz - 1
+                elseif up == "S" or up == "DOWN" then dz = dz + 1
+                elseif up == "A" or up == "LEFT" then dx = dx - 1
+                elseif up == "D" or up == "RIGHT" then dx = dx + 1 end
+            end
+            local moveOk = true
+            local moveErr = nil
+            if dx == 0 and dz == 0 then
+                moveOk, moveErr = pcall(function() humanoid.Jump = true end)
+            else
+                local camera = Workspace.CurrentCamera
+                local look = camera and camera.CFrame.LookVector or Vector3.new(0, 0, -1)
+                look = Vector3.new(look.X, 0, look.Z)
+                if look.Magnitude < 0.001 then look = Vector3.new(0, 0, -1) end
+                look = look.Unit
+                local right = Vector3.new(look.Z, 0, -look.X)
+                local direction = (look * -dz) + (right * dx)
+                if direction.Magnitude > 0.001 then
+                    direction = direction.Unit
+                    moveOk, moveErr = pcall(function() humanoid:Move(direction, false) end)
+                    task.wait(duration)
+                    pcall(function() humanoid:Move(Vector3.new(0, 0, 0), false) end)
+                end
+            end
+            if not moveOk then return { ok = false, error = tostring(moveErr) } end
+            local afterRoot = character and character:FindFirstChild("HumanoidRootPart")
+            local afterPos = afterRoot and { x = afterRoot.Position.X, y = afterRoot.Position.Y, z = afterRoot.Position.Z } or beforePos
+            return { ok = true, keys = keys, duration = duration, positionBefore = beforePos, positionAfter = afterPos, via = "sessionPluginMove" }
+        end
         return { ok = false, error = "Unsupported session command: " .. action }
     end
-    while running do
-        local response = post("/plugin/session", {
-            sessionId = owner, sessionKey = key, action = "heartbeat",
-            state = snapshot(),
-        })
-        if response ~= nil and type(response.commands) == "table" then
-            for _, command in ipairs(response.commands) do
-                local okRun, result = pcall(execute, command)
-                if not okRun then result = { ok = false, error = tostring(result) } end
-                post("/plugin/session", { sessionId = owner, sessionKey = key,
-                    action = "result", commandId = command and command.id, result = result })
+    -- 4.0.2 BUG-1-FIX: the ENTIRE loop body runs inside one pcall per
+    -- iteration. Any error (a bad command, a nil character during a respawn,
+    -- an HTTP hiccup, ...) used to unwind the whole task.spawn coroutine and
+    -- silently kill the reporter after only a few heartbeats (live-observed:
+    -- arenaLineCount stuck at 3). Now an error is recorded and reported back
+    -- to the bridge on the NEXT heartbeat (visible in session_diag), and the
+    -- loop keeps running. The loop is coupled to RunService:IsRunning(), not
+    -- to the edit-plugin's `running` flag, because this coroutine lives in a
+    -- separate Test-DataModel Lua VM that never sees `running` go false.
+    local lastReporterLoopError = nil
+    while RunService:IsRunning() do
+        local iterOk, iterErr = pcall(function()
+            local state = snapshot()
+            if lastReporterLoopError ~= nil then
+                state.reporterLoopError = lastReporterLoopError
             end
+            local response = post("/plugin/session", {
+                sessionId = owner, sessionKey = key, action = "heartbeat",
+                state = state,
+            })
+            if response ~= nil and type(response.commands) == "table" then
+                for _, command in ipairs(response.commands) do
+                    local okRun, result = pcall(execute, command)
+                    if not okRun then result = { ok = false, error = tostring(result) } end
+                    pcall(function()
+                        post("/plugin/session", { sessionId = owner, sessionKey = key,
+                            action = "result", commandId = command and command.id, result = result })
+                    end)
+                end
+            end
+        end)
+        if iterOk then
+            lastReporterLoopError = nil
+        else
+            lastReporterLoopError = tostring(iterErr)
         end
-        if not RunService:IsRunning() then break end
         task.wait(0.4)
     end
 end
@@ -10620,12 +10760,12 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             returns = '{ hasCharacter, player, position, cframe, health, maxHealth, walkSpeed, jumpPower, state }';
             example = @{};
             errors = @('PLAY_NOT_RUNNING', 'NO_PLAYER: mode="run" hat keinen Charakter - play_start mit mode="play".', 'REPORTER_NOT_CONNECTED: Session aktiv, aber Reporter noch nie im Output gesehen - sessionDiag liegt bei, session_diag + get_output filter="ARENA" lesen.') })
-        $t.Add(@{ name = 'move_character'; category = 'play'; summary = 'Charakter per echter Studio-Tasten bewegen (HTTP-unabhaengig).';
-            description = 'NUR keys/direction (W/A/S/D/Space) mit duration und optional shift. Die Bridge sendet VirtualInputManager-Tasten aus dem Edit-Plugin direkt an die getrennte Session; kein Humanoid.MoveTo und kein HTTP. Danach character_state lesen, damit die #ARENA#-Position frisch ist.';
-            params = @{ keys = @{ type = 'string[]'; required = $true; default = '-'; description = "z.B. ['W'] oder ['A','W']; echte Tasten." }; duration = @{ type = 'number'; required = $false; default = '1'; description = 'Haltedauer in Sekunden.' }; shift = @{ type = 'bool'; required = $false; default = 'false'; description = 'Beim Gehen Shift gedrueckt halten.' } };
-            returns = '{ pressed, duration, position, agentMode }';
-            example = @{ keys = @('W'); duration = 1; shift = $false };
-            errors = @('INPUT_REQUIRED: keys/direction ist Pflicht.', 'NO_PLAYER') })
+        $t.Add(@{ name = 'move_character'; category = 'play'; summary = 'Charakter bewegen (ueber den Session-Reporter im Test-DataModel).';
+            description = '4.0.2: VirtualInputManager:SendKeyEvent wirft aus dem Edit-Plugin gegen die getrennte Session-DataModel jetzt "lacking capability RobloxScript" - Tastensimulation ueber die DataModel-Grenze ist tot. move_character schickt keys/direction (W/A/S/D/Space) und duration deshalb als Befehl ueber den Session-Reporter-Kanal (sessionPlugin/http/sharedTable); der Reporter bewegt den Charakter IM Session-DataModel per Humanoid:Move und liefert positionBefore/positionAfter aus seinem eigenen Snapshot zurueck. Laeuft der Test ausnahmsweise im SELBEN DataModel (klassisches F5 ohne getrennte Session), wird weiterhin direkt per VirtualInputManager gesteuert.';
+            params = @{ keys = @{ type = 'string[]'; required = $true; default = '-'; description = "z.B. ['W'] oder ['A','W']; echte Tasten." }; duration = @{ type = 'number'; required = $false; default = '1'; description = 'Bewegungsdauer in Sekunden.' }; shift = @{ type = 'bool'; required = $false; default = 'false'; description = 'Nur im Same-DataModel-Fallback: beim Gehen Shift gedrueckt halten.' } };
+            returns = '{ keys, duration, via, positionBefore, positionAfter, agentMode }';
+            example = @{ keys = @('W'); duration = 1 };
+            errors = @('INPUT_REQUIRED: keys/direction ist Pflicht.', 'REPORTER_NOT_CONNECTED: kein Befehlskanal in die Session hat geantwortet.', 'RUNTIME_ERROR') })
         $t.Add(@{ name = 'teleport_character'; category = 'play'; summary = 'Charakter zur Laufzeit teleportieren (ueber den Befehlskanal in die Session).';
             description = '3.9.7: Der Befehl geht ueber den Cross-DM-Kanal (http-Agent, SharedTableRegistry, in dieser Reihenfolge) an den Session-Reporter, der den Charakter IM Session-DataModel per PivotTo setzt - funktioniert mit httpEnabled=false, solange ein Kanal antwortet. Ohne Kanal bleibt play_start { mode="play", arenaSpawn={x,y,z} } (GetTestArgs vor dem Spawn) der einzige Weg.';
             params = @{ position = @{ type = '{x,y,z}'; required = $true; default = '-'; description = 'Zielposition.' } };
@@ -10837,7 +10977,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             playModes = @{
                 edit = 'No test: everything you build is PERMANENT. This is where building and script editing happens. Editor simulations (compile_check for syntax, run_lua for pure logic) also run here - they need NO test session and stay available even when self-testing is disabled.'
                 run = 'Physics + server-script simulation IN THE EDITOR (Studio "Run", F8): the place runs as a server simulation. There is NO player, NO character, NO client and NO GUI. Use it for physics/server-logic tests. A tool answering "No player" in run mode is working as designed - switch to play for characters/GUI.'
-                play = 'Full game (Studio "Play", F5): separate session DataModel. play_start succeeds on editModeActive true->false, then #ARENA# LogStream reports real players, character position/health and GUI without HTTP. Use move_character keys+duration (VirtualInputManager), gui_click coordinates, teleport_character/respawn_character/set_camera over the command channel and play_stop (ladder: reporter EndTest over the channel, then edit RunService:Stop, else PLAY_STOP_NEEDS_USER = ask the user for Shift+F5).'
+                play = 'Full game (Studio "Play", F5): separate session DataModel. play_start succeeds on editModeActive true->false, then #ARENA# LogStream reports real players, character position/health and GUI without HTTP. Use move_character keys+duration (4.0.2: executed as Humanoid:Move INSIDE the session by the session reporter, since VirtualInputManager:SendKeyEvent now lacks capability across the DataModel boundary), gui_click coordinates, teleport_character/respawn_character/set_camera over the command channel and play_stop (ladder: reporter EndTest over the channel, then edit RunService:Stop, else PLAY_STOP_NEEDS_USER = ask the user for Shift+F5).'
                 play_here = 'Play at the editor camera. Internally this is a play_start arenaSpawn passed through GetTestArgs to the Session Reporter, not a post-start teleport. For an explicit spawn use play_start { arenaSpawn={x,y,z} }.'
             }
             userPresence = @(
@@ -10992,7 +11132,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '4.0.1'
+            version = '4.0.2'
             docsVersion = [string]$Shared.DocsVersion
             role = 'You are connected to exactly ONE live Roblox Studio place through a local plugin. Every token belongs to one Studio window only - if several windows are open, each one has its own token and you can never touch the wrong place. Send every request as POST /api/tool with JSON body { "token": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -11103,7 +11243,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '4.0.1'
+            bridgeVersion = '4.0.2'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -11336,7 +11476,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '4.0.1'
+                        bridgeVersion = '4.0.2'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -11562,7 +11702,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '4.0.1'
+                        serverVersion = '4.0.2'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -11741,8 +11881,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '4.0.1'
-                    serverVersion = '4.0.1'
+                    bridgeVersion = '4.0.2'
+                    serverVersion = '4.0.2'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -14132,7 +14272,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '4.0.1'
+    $versionText = '4.0.2'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -14453,7 +14593,7 @@ function Open-SettingsWindow {
                     <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                     <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                    <TextBlock Text="Arena Roblox Bridge - Version 4.0.1" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                    <TextBlock Text="Arena Roblox Bridge - Version 4.0.2" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                 </StackPanel>
             </ScrollViewer>
@@ -14485,7 +14625,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 4.0.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 4.0.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     if ($script:LastArenaMessage) {
@@ -14540,7 +14680,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 4.0.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 4.0.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -14553,7 +14693,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '4.0.1'
+    $verText = '4.0.2'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
