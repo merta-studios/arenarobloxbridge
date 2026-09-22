@@ -20,8 +20,8 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test_v397_structure.py` | Python-Strukturtest für 3.9.7 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
-| `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 3.9.7 (optional; wird NICHT vom Starter geladen) |
+| `test_v398_structure.py` | Python-Strukturtest für 3.9.8 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 3.9.8 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
 
@@ -40,6 +40,26 @@ heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestarte
 > das neue Studio-Plugin geladen wird. Die Bridge erkennt veraltete Plugins
 > selbst (`pluginVersion` ≠ Programmversion) und meldet es in der
 > Programm-Oberfläche sowie über `/api/status` als `versionMismatch`.
+
+### 3.9.8
+- **Kritischer Fix – das Autostart-Selbst-Update lud seit 3.9 nie etwas
+  herunter.** `Get-RawGitHubText` rief immer
+  `[System.Text.Encoding]::UTF8.GetString($response.Content)` auf – aber
+  `raw.githubusercontent.com` liefert `text/plain; charset=utf-8`, sodass
+  `Invoke-WebRequest` `.Content` bereits als String dekodiert. `GetString()`
+  akzeptiert nur Bytes, der Aufruf landete still im `catch` → Rückgabe
+  `$null` → „Branch nicht erreichbar“ → es startete immer die lokale
+  Fassung (nur im Runtime-Log sichtbar). `Get-RawGitHubText` verarbeitet
+  jetzt **beide Rückgabetypen** (Bytes und String) und entfernt ein
+  mitdekodiertes BOM-Zeichen (U+FEFF), bevor die Datei mit UTF-8-BOM neu
+  geschrieben wird – das verhindert ein doppeltes BOM am Dateianfang.
+- **Der Rest der Update-Kette war bereits korrekt und wurde verifiziert:**
+  Autostart-Registrierung (HKCU `Run`), Erkennung „Start ohne
+  `-UpdateStatus`“, TLS 1.2, Branch-Kette (`update-config.json` → `main` →
+  `master`), `[version]`-Vergleich, atomarer `.new`/`.old`-Tausch mit
+  Rück-Sicherung, Hinweisfenster mit den Neuigkeiten aus
+  `update-status.json` und kein Update-Loop (der neue Prozess bekommt
+  `-UpdateStatus update-erfolgreich`).
 
 ### 3.9.7
 - **Der Playtest-Reporter kommt jetzt garantiert IN der Test-Session an**

@@ -1,6 +1,23 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 3.9.7
+# Arena Roblox Bridge  -  Version 3.9.8
 #
+# NEU IN DIESER VERSION (3.9.8) - AUTOSTART-SELBST-UPDATE REPARIERT:
+#   * Der Selbst-Update-Pfad (Programmstart ohne Starter, z. B. nach einem
+#     PC-Neustart ueber "Beim PC-Start automatisch oeffnen") lud seit 3.9
+#     NIEMALS etwas herunter: raw.githubusercontent.com liefert Text mit
+#     utf-8-Charset, Invoke-WebRequest dekodiert .Content dann bereits als
+#     String, und UTF8.GetString() akzeptiert nur Bytes - der Aufruf warf
+#     still (catch), der Download galt als "nicht erreichbar" und es startete
+#     immer die lokale Fassung (nur im Runtime-Log erkennbar).
+#     Get-RawGitHubText vertraegt jetzt BEIDE Rueckgabetypen (Bytes und
+#     String) und entfernt ein mitdekodiertes BOM-Zeichen, bevor die Datei
+#     mit UTF-8-BOM neu geschrieben wird (verhindert doppeltes BOM).
+#   * Der Rest der Kette war bereits korrekt und bleibt es:
+#     Autostart-Registrierung (HKCU Run), Erkennung "Start ohne -UpdateStatus",
+#     TLS 1.2, Branch-Kette (update-config.json -> main -> master),
+#     [version]-Vergleich, atomarer .new/.old-Tausch mit Rueck-Sicherung,
+#     Hinweisfenster mit Neuigkeiten aus update-status.json, kein Update-Loop
+#     (der neue Prozess bekommt -UpdateStatus update-erfolgreich).
 # NEU IN DIESER VERSION (3.9.7) - DIE LETZTEN PLAYTEST-KLEMMER GEFIXT:
 #   * REPORTER KOMMT GARANTIERT IN DIE SESSION (Live-Befund B1 in 3.9.6: Null
 #     #ARENA#-Zeilen, Null Reporter, weil Archivable=false plus Loesch-Race die
@@ -555,7 +572,7 @@ $script:StartupBlocked = $false
 $script:SplashTerminalAt = $null
 
 # ----------------------------------------------------------------------------
-# SELBST-AKTUALISIERUNG BEIM AUTOSTART (Version 3.9.7)
+# SELBST-AKTUALISIERUNG BEIM AUTOSTART (Version 3.9.8)
 # Wird die Bridge ueber den Windows-Autostart geoeffnet, laeuft der
 # Starter (Arena Roblox Bridge.cmd) NICHT mit - dann gibt es auch keinen
 # -UpdateStatus-Parameter. Damit der Nutzer trotzdem nie auf einer alten
@@ -609,7 +626,7 @@ function Test-UpdateError {
 }
 
 # ----------------------------------------------------------------------------
-# SELBST-AKTUALISIERUNG BEIM AUTOSTART (Version 3.9.7)
+# SELBST-AKTUALISIERUNG BEIM AUTOSTART (Version 3.9.8)
 # ----------------------------------------------------------------------------
 # Wird die Bridge ueber den Windows-Autostart gestartet, laeuft der Starter
 # (Arena Roblox Bridge.cmd) nicht mit - das Programm bekommt dann KEINEN
@@ -672,14 +689,32 @@ function Compare-BridgeVersion {
 function Get-RawGitHubText {
     param([string]$Branch, [string]$File)
     $url = "https://raw.githubusercontent.com/$($script:RepoOwner)/$($script:RepoName)/$Branch/$File"
+    $text = $null
     try {
         $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec $script:SelfUpdateTimeout -ErrorAction Stop
-        if ([int]$response.StatusCode -ne 200) { return $null }
-        # Immer als UTF-8 lesen, sonst werden Umlaute zerstoert.
-        return [System.Text.Encoding]::UTF8.GetString($response.Content)
+        if ([int]$response.StatusCode -eq 200) {
+            $content = $response.Content
+            if ($content -is [byte[]]) {
+                # Binaer-Rueckgabe: selbst als UTF-8 dekodieren.
+                $text = [System.Text.Encoding]::UTF8.GetString($content)
+            } else {
+                # FIX 3.9.8: raw.githubusercontent.com liefert text/plain mit
+                # utf-8-Charset - Invoke-WebRequest hat .Content dann BEREITS
+                # als String dekodiert. Der fruehere UTF8.GetString()-Aufruf
+                # darauf warf (GetString nimmt nur Bytes), landete im catch
+                # und der Selbst-Update-Pfad lieferte seit 3.9 IMMER $null.
+                $text = [string]$content
+            }
+        }
     } catch {
         return $null
     }
+    if ($null -eq $text) { return $null }
+    # Mitdekodiertes BOM-Zeichen (U+FEFF) entfernen: WriteAllText schreibt
+    # ueber UTF8Encoding($true) selbst ein BOM - sonst stuende ein
+    # doppeltes BOM am Dateianfang von ArenaBridge.ps1.
+    if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) { $text = $text.Substring(1) }
+    return $text
 }
 
 function Invoke-AutostartSelfUpdate {
@@ -873,7 +908,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '3.9.7'
+    DocsVersion     = '3.9.8'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -890,7 +925,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     RunOwners       = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     # sessionId -> unix-Zeit der letzten Nutzer-Aktivitaet im Studio
     UserActiveAt    = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
-    # 3.9.7 Session-Agent: short-lived authenticated local channel from the
+    # 3.9.8 Session-Agent: short-lived authenticated local channel from the
     # isolated Play DataModel back to its edit-plugin session.
     AgentKeys       = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     AgentQueues     = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
@@ -1002,7 +1037,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 3.9.7)
+  Arena Studio Bridge - Studio Plugin  (Version 3.9.8)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1073,7 +1108,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "3.9.7"
+local ARENA_VERSION  = "3.9.8"
 local POLL_WAIT      = 12      -- Sekunden Long-Poll (Befehle kommen sofort an)
 local HEARTBEAT_EVERY = 5      -- Sekunden
 local CHUNK_SIZE     = 48000   -- Bytes je Teilstueck einer Antwort
@@ -10545,7 +10580,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '3.9.7'
+            version = '3.9.8'
             docsVersion = [string]$Shared.DocsVersion
             role = 'You are connected to exactly ONE live Roblox Studio place through a local plugin. Every token belongs to one Studio window only - if several windows are open, each one has its own token and you can never touch the wrong place. Send every request as POST /api/tool with JSON body { "token": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -10656,7 +10691,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '3.9.7'
+            bridgeVersion = '3.9.8'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -10889,7 +10924,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '3.9.7'
+                        bridgeVersion = '3.9.8'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -10930,7 +10965,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 $body = Read-Body $context.Request
             }
 
-            # ---------------- GET-Vollsteuerung (Version 3.9.7) --------------
+            # ---------------- GET-Vollsteuerung (Version 3.9.8) --------------
             # Manche KI-Umgebungen duerfen NUR per HTTP GET nach draussen
             # (der Web-Abruf-Dienst schickt keine POST-Koerper). Damit die KI
             # die Bridge trotzdem komplett bedienen kann, bauen wir hier aus
@@ -11095,7 +11130,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '3.9.7'
+                        serverVersion = '3.9.8'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -11274,8 +11309,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '3.9.7'
-                    serverVersion = '3.9.7'
+                    bridgeVersion = '3.9.8'
+                    serverVersion = '3.9.8'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -13627,7 +13662,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '3.9.7'
+    $versionText = '3.9.8'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -13952,7 +13987,7 @@ function Open-SettingsWindow {
                     <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                     <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                    <TextBlock Text="Arena Roblox Bridge - Version 3.9.7" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                    <TextBlock Text="Arena Roblox Bridge - Version 3.9.8" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                 </StackPanel>
             </ScrollViewer>
@@ -13984,7 +14019,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 3.9.7 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 3.9.8 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     if ($script:LastArenaMessage) {
@@ -14039,7 +14074,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 3.9.7 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 3.9.8 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#A99DA5'
 }
 if (Test-UpdateError) {
@@ -14052,7 +14087,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#F0A7B4'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '3.9.7'
+    $verText = '3.9.8'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
@@ -14066,7 +14101,7 @@ if (-not $script:EncodingOk) {
 }
 
 # ----------------------------------------------------------------------------
-# AUTOSTART: SELBST NACH UPDATES SUCHEN (Version 3.9.7)
+# AUTOSTART: SELBST NACH UPDATES SUCHEN (Version 3.9.8)
 # Ohne -UpdateStatus wurde das Programm NICHT vom Starter geoeffnet - das ist
 # genau der Windows-Autostart ("Beim PC-Start automatisch oeffnen"). Dann
 # uebernimmt die Bridge die Update-Suche selbst. Alles ist abgesichert: ein
