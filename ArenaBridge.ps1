@@ -1,5 +1,5 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 4.0.1
+# Arena Roblox Bridge  -  Version 4.0.2
 #
 # NEU IN VERSION 4.0.0 - PLAYTEST-RUECKKANAL + TECH-DARK-UI:
 #   * Der bisherige Kanal hiess faelschlich SharedTableService. Roblox stellt
@@ -939,7 +939,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '4.0.1'
+    DocsVersion     = '4.0.2'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -1068,7 +1068,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 4.0.1)
+  Arena Studio Bridge - Studio Plugin  (Version 4.0.2)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1139,7 +1139,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "4.0.1"
+local ARENA_VERSION  = "4.0.2"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -10992,7 +10992,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '4.0.1'
+            version = '4.0.2'
             docsVersion = [string]$Shared.DocsVersion
             role = 'You are connected to exactly ONE live Roblox Studio place through a local plugin. Every token belongs to one Studio window only - if several windows are open, each one has its own token and you can never touch the wrong place. Send every request as POST /api/tool with JSON body { "token": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -11103,7 +11103,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '4.0.1'
+            bridgeVersion = '4.0.2'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -11336,7 +11336,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '4.0.1'
+                        bridgeVersion = '4.0.2'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -11562,7 +11562,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '4.0.1'
+                        serverVersion = '4.0.2'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -11741,8 +11741,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '4.0.1'
-                    serverVersion = '4.0.1'
+                    bridgeVersion = '4.0.2'
+                    serverVersion = '4.0.2'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -14132,7 +14132,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '4.0.1'
+    $versionText = '4.0.2'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -14453,7 +14453,7 @@ function Open-SettingsWindow {
                     <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                     <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                    <TextBlock Text="Arena Roblox Bridge - Version 4.0.1" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                    <TextBlock Text="Arena Roblox Bridge - Version 4.0.2" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                 </StackPanel>
             </ScrollViewer>
@@ -14485,7 +14485,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 4.0.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 4.0.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     if ($script:LastArenaMessage) {
@@ -14540,7 +14540,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 4.0.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 4.0.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -14553,7 +14553,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '4.0.1'
+    $verText = '4.0.2'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 4.0.1.
+"""Offline structure check for Arena Roblox Bridge 4.0.2.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "4.0.1"
+VERSION = "4.0.2"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -93,7 +93,7 @@ def main() -> int:
     require(raw.startswith(b"\xef\xbb\xbf"), "ArenaBridge.ps1 must retain its UTF-8 BOM")
     source = raw.decode("utf-8-sig")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    require(version["version"] == VERSION, "version.json is not 4.0.1")
+    require(version["version"] == VERSION, "version.json is not 4.0.2")
     require("3.9.5" not in source, "stale 3.9.5 literal remains in ArenaBridge.ps1")
 
     # Stale FUNCTIONAL version literals (history comments may mention 3.9.8).
@@ -128,7 +128,8 @@ def main() -> int:
     for marker in stale_400_literals:
         require(marker not in source, f"stale 4.0.0 literal remains: {marker}")
 
-    required_markers = [
+    # Stale FUNCTIONAL 4.0.1 literals (history comments may mention 4.0.1).
+    stale_401_literals = [
         "DocsVersion     = '4.0.1'",
         'local ARENA_VERSION  = "4.0.1"',
         "bridgeVersion = '4.0.1'",
@@ -136,7 +137,22 @@ def main() -> int:
         "version = '4.0.1'",
         "$versionText = '4.0.1'",
         "$verText = '4.0.1'",
+        'Arena Studio Bridge - Studio Plugin  (Version 4.0.1)',
         'Text="Arena Roblox Bridge - Version 4.0.1"',
+        "# Arena Roblox Bridge  -  Version 4.0.1",
+    ]
+    for marker in stale_401_literals:
+        require(marker not in source, f"stale 4.0.1 literal remains: {marker}")
+
+    required_markers = [
+        "DocsVersion     = '4.0.2'",
+        'local ARENA_VERSION  = "4.0.2"',
+        "bridgeVersion = '4.0.2'",
+        "serverVersion = '4.0.2'",
+        "version = '4.0.2'",
+        "$versionText = '4.0.2'",
+        "$verText = '4.0.2'",
+        'Text="Arena Roblox Bridge - Version 4.0.2"',
         # 4.0.0: the config table that keeps the top-level local count in check.
         "local ARENA_CFG = {",
         "ARENA_CFG.POLL_WAIT",
@@ -242,7 +258,7 @@ def main() -> int:
         except ET.ParseError as exc:
             raise AssertionError(f"XAML block {index} is not XML: {exc}") from exc
 
-    print("OK: 4.0.1 structure, Lua and XAML validation passed")
+    print("OK: 4.0.2 structure, Lua and XAML validation passed")
     return 0
 
 
