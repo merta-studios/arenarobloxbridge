@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 3.9.8.
+"""Offline structure check for Arena Roblox Bridge 3.9.9.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,14 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "3.9.8"
+VERSION = "3.9.9"
+
+# Luau allows at most 200 local variables per function scope. The plugin's top
+# level is ONE such scope; exceeding it makes Studio refuse to compile the
+# plugin ("Out of local registers ... exceeded limit 200"), so it never
+# connects and the place list stays empty. 3.9.9 fixed a regression that had
+# pushed the count to 202. Keep a safety margin below the hard limit.
+LUAU_LOCAL_LIMIT = 200
 
 
 def require(condition: bool, message: str) -> None:
@@ -37,6 +44,45 @@ def plugin_source(source: str) -> str:
     return source[begin:end]
 
 
+def count_top_level_locals(lua: str) -> int:
+    """Count column-0 `local` declarations in the plugin's main chunk.
+
+    Embedded long-bracket strings ([==[ ... ]==], [=[ ... ]=]) are separate
+    Luau chunks, so their contents must not be counted against the top-level
+    scope. They are stripped (newlines preserved) before counting.
+    """
+    out: list[str] = []
+    i = 0
+    n = len(lua)
+    while i < n:
+        m = re.match(r"\[(=*)\[", lua[i:])
+        if m:
+            closer = "]" + m.group(1) + "]"
+            j = lua.find(closer, i + m.end())
+            if j == -1:
+                out.append(lua[i:])
+                break
+            chunk = lua[i : j + len(closer)]
+            out.append("\n" * chunk.count("\n"))
+            i = j + len(closer)
+        else:
+            out.append(lua[i])
+            i += 1
+    clean = "".join(out)
+
+    count = 0
+    for line in clean.splitlines():
+        if not line.startswith("local "):
+            continue
+        decl = line[len("local ") :]
+        if decl.startswith("function "):
+            count += 1
+        else:
+            lhs = decl.split("=")[0]
+            count += len([nm for nm in lhs.split(",") if nm.strip()])
+    return count
+
+
 def xaml_blocks(source: str) -> list[str]:
     # All UI XAML is an @' ... '@ here-string beginning with Window/XML.
     return re.findall(r"@'\n((?:<\?xml[^\n]*\n)?<Window[\s\S]*?\n</Window>)\n'@", source)
@@ -47,26 +93,11 @@ def main() -> int:
     require(raw.startswith(b"\xef\xbb\xbf"), "ArenaBridge.ps1 must retain its UTF-8 BOM")
     source = raw.decode("utf-8-sig")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    require(version["version"] == VERSION, "version.json is not 3.9.8")
+    require(version["version"] == VERSION, "version.json is not 3.9.9")
     require("3.9.5" not in source, "stale 3.9.5 literal remains in ArenaBridge.ps1")
 
-    # Stale FUNCTIONAL version literals (history comments may mention 3.9.7).
+    # Stale FUNCTIONAL version literals (history comments may mention 3.9.8).
     stale_literals = [
-        "DocsVersion     = '3.9.7'",
-        'local ARENA_VERSION  = "3.9.7"',
-        "bridgeVersion = '3.9.7'",
-        "serverVersion = '3.9.7'",
-        "version = '3.9.7'",
-        "$versionText = '3.9.7'",
-        "$verText = '3.9.7'",
-        'Arena Studio Bridge - Studio Plugin  (Version 3.9.7)',
-        'Text="Arena Roblox Bridge - Version 3.9.7"',
-        "# Arena Roblox Bridge  -  Version 3.9.7",
-    ]
-    for marker in stale_literals:
-        require(marker not in source, f"stale 3.9.7 literal remains: {marker}")
-
-    required_markers = [
         "DocsVersion     = '3.9.8'",
         'local ARENA_VERSION  = "3.9.8"',
         "bridgeVersion = '3.9.8'",
@@ -74,7 +105,26 @@ def main() -> int:
         "version = '3.9.8'",
         "$versionText = '3.9.8'",
         "$verText = '3.9.8'",
+        'Arena Studio Bridge - Studio Plugin  (Version 3.9.8)',
         'Text="Arena Roblox Bridge - Version 3.9.8"',
+        "# Arena Roblox Bridge  -  Version 3.9.8",
+    ]
+    for marker in stale_literals:
+        require(marker not in source, f"stale 3.9.8 literal remains: {marker}")
+
+    required_markers = [
+        "DocsVersion     = '3.9.9'",
+        'local ARENA_VERSION  = "3.9.9"',
+        "bridgeVersion = '3.9.9'",
+        "serverVersion = '3.9.9'",
+        "version = '3.9.9'",
+        "$versionText = '3.9.9'",
+        "$verText = '3.9.9'",
+        'Text="Arena Roblox Bridge - Version 3.9.9"',
+        # 3.9.9: the config table that keeps the top-level local count in check.
+        "local ARENA_CFG = {",
+        "ARENA_CFG.POLL_WAIT",
+        "ARENA_CFG.CHUNK_SIZE",
         "SESSION_REPORTER_SOURCE",
         "SESSION_CLIENT_REPORTER_SOURCE",
         '\"#ARENA# \"',
@@ -139,6 +189,19 @@ def main() -> int:
     lua = plugin_source(source)
     ast.parse(lua)
 
+    # 3.9.9 regression guard: the plugin's top-level chunk is ONE Luau scope.
+    # Count its column-0 `local` declarations (ignoring embedded long-bracket
+    # strings, which are separate chunks) and require it to stay under Luau's
+    # hard limit of 200 - otherwise Studio silently refuses to compile the
+    # plugin and the place list stays empty.
+    top_level_locals = count_top_level_locals(lua)
+    require(
+        top_level_locals < LUAU_LOCAL_LIMIT,
+        f"plugin top-level declares {top_level_locals} locals; Luau's hard "
+        f"limit is {LUAU_LOCAL_LIMIT} (the plugin would fail to compile and "
+        f"never connect). Bundle constants into a table like ARENA_CFG.",
+    )
+
     # The session helpers are Lua strings INSIDE the plugin: parse each of
     # them separately as well (a syntax error there would only fire live).
     embedded = re.findall(r"local (SESSION_AGENT_SOURCE|SESSION_CLIENT_REPORTER_SOURCE|SESSION_REPORTER_SOURCE|CLIENT_AGENT_SOURCE) = \[==\[(.+?)\]==\]", lua, re.S)
@@ -163,7 +226,7 @@ def main() -> int:
         except ET.ParseError as exc:
             raise AssertionError(f"XAML block {index} is not XML: {exc}") from exc
 
-    print("OK: 3.9.8 structure, Lua and XAML validation passed")
+    print("OK: 3.9.9 structure, Lua and XAML validation passed")
     return 0
 
 
