@@ -1,7 +1,7 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 3.9.7  -  21.09.2026)                                #
+#   (Stand: Version 3.9.8  -  22.09.2026)                                #
 #                                                                      #
 ##########################################################################
 
@@ -210,6 +210,12 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
   false als Start-Orakel, #ARENA#-LogStream-Reporter, VIM Tasten/Maus,
   edit RunService:Stop() als Standard-Stop, Reparaturen (UTC-Pending,
   LateResults, UTF-8-GET, Retry-Dedupe, Plugin/Bridge-Versionswarnung).
+- v3.9.8: AUTOSTART-SELBST-UPDATE REPARIERT: Get-RawGitHubText rief UTF8.GetString()
+  auf einem bereits als String dekodierten .Content auf (raw.githubusercontent
+  liefert text/plain;charset=utf-8) - der Selbst-Update lud seit 3.9 NIE etwas
+  (stiller catch -> $null -> "Branch nicht erreichbar" -> immer lokale Fassung,
+  nur im Runtime-Log sichtbar). Fix: beide Rueckgabetypen (byte[]/String)
+  verarbeiten + U+FEFF vor dem Neuschreiben mit UTF-8-BOM strippen.
 - v3.9.7: LETZTE PLAYTEST-KLEMMEN GEFIXT (Live-Befunde B1-B6 aus 3.9.6):
   Reporter-Injektion repariert (normale klon-sichere Scripts, Loeschung der
   Edit-Kopien erst nach editModeActive=false + Sweeps), sofortige #ARENA#
@@ -373,18 +379,34 @@ play_start/play_stop innerhalb 3s bereits):
     NICHT raten. Ergebnisse der Kanal-Sonden (crossDm/vim) hier im Abschnitt
     C dokumentieren!
 
-TEST- UND DATEI-REGELN FUER 3.9.7
+TEST- UND DATEI-REGELN FUER 3.9.8
 ---------------------------------
 - In dieser Sandbox KEIN pwsh/PowerShell fuer Tests benutzen. Stattdessen
-  `python test_v397_structure.py`: Versions-/Strukturpruefung, Lua mit
+  `python test_v398_structure.py`: Versions-/Strukturpruefung, Lua mit
   `luaparser` (Plugin UND alle eingebetteten Reporter-/Agent-Sources), XAML
   als XML. Python muss luaparser installiert haben (requirements-test.txt).
+  HINWEIS: pip --user-Installationen landen in ~/.local und ueberleben
+  Sandbox-Snapshots NICHT - in einer frischen Sandbox luaparser einfach
+  neu installieren.
 - ArenaBridge.ps1 bleibt UTF-8 MIT BOM. Nach jeder Version alle in Abschnitt
   3 genannten Literale pruefen: DocsVersion, ARENA_VERSION, Manifest,
   bridgeVersion (3x), serverVersion, Plugin-Kommentar, Update-Fallback,
   Einstellungsfusszeile. Der Strukturtest assertet sie plus die 3.9.7-
   Marker (PLAY_STOP_NEEDS_USER, REPORTER_NOT_CONNECTED, session_diag,
-  SharedTableService, stop-Leiter, Forward-Deklarationen-Stolperstein).
+  SharedTableService, stop-Leiter, Forward-Deklarationen-Stolperstein)
+  und die 3.9.8-Marker (Get-RawGitHubText, byte[]-Verzweigung,
+  U+FEFF-Strip).
+- LIVE-BEFUND 3.9.8 (Autostart-Selbst-Update war seit 3.9 tot):
+  Get-RawGitHubText rief UTF8.GetString() auf einem bereits als String
+  dekodierten .Content auf (raw.githubusercontent.com liefert
+  text/plain;charset=utf-8 - Invoke-WebRequest dekodiert selbst) - der
+  Aufruf warf still im catch, jeder Branch galt als "nicht erreichbar",
+  es startete IMMER die lokale Fassung (nur im Runtime-Log sichtbar).
+  Fix 3.9.8: beide Rueckgabetypen (byte[]/String) verarbeiten und U+FEFF
+  vor dem Neuschreiben mit UTF-8-BOM strippen (kein Doppel-BOM).
+  OFFEN/TODO: make-updater.ps1 der Starter-EXE spaeter auf dasselbe
+  Muster pruefen (UTF8.GetString auf .Content einer Invoke-WebRequest-
+  Antwort koennte denselben stillen Fehler haben).
 - LUA-STOLPERSTEIN: in Lua sind `local function`-Definitionen erst AB ihrer
   Zeile sichtbar. Wer einen Helfer vor seiner Definition aufruft, bekommt
   global nil. Deshalb Deklaration-Reihenfolge pruefen; echte

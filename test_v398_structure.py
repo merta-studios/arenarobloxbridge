@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 3.9.7.
+"""Offline structure check for Arena Roblox Bridge 3.9.8.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -7,7 +7,7 @@ markers are checked directly in the PowerShell source.
 
 Run:
     python -m pip install luaparser
-    python test_v397_structure.py
+    python test_v398_structure.py
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "3.9.7"
+VERSION = "3.9.8"
 
 
 def require(condition: bool, message: str) -> None:
@@ -47,26 +47,11 @@ def main() -> int:
     require(raw.startswith(b"\xef\xbb\xbf"), "ArenaBridge.ps1 must retain its UTF-8 BOM")
     source = raw.decode("utf-8-sig")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    require(version["version"] == VERSION, "version.json is not 3.9.7")
+    require(version["version"] == VERSION, "version.json is not 3.9.8")
     require("3.9.5" not in source, "stale 3.9.5 literal remains in ArenaBridge.ps1")
 
-    # Stale FUNCTIONAL version literals (history comments may mention 3.9.6).
+    # Stale FUNCTIONAL version literals (history comments may mention 3.9.7).
     stale_literals = [
-        "DocsVersion     = '3.9.6'",
-        'local ARENA_VERSION  = "3.9.6"',
-        "bridgeVersion = '3.9.6'",
-        "serverVersion = '3.9.6'",
-        "version = '3.9.6'",
-        "$versionText = '3.9.6'",
-        "$verText = '3.9.6'",
-        'Arena Studio Bridge - Studio Plugin  (Version 3.9.6)',
-        'Text="Arena Roblox Bridge - Version 3.9.6"',
-        "# Arena Roblox Bridge  -  Version 3.9.6",
-    ]
-    for marker in stale_literals:
-        require(marker not in source, f"stale 3.9.6 literal remains: {marker}")
-
-    required_markers = [
         "DocsVersion     = '3.9.7'",
         'local ARENA_VERSION  = "3.9.7"',
         "bridgeVersion = '3.9.7'",
@@ -74,7 +59,22 @@ def main() -> int:
         "version = '3.9.7'",
         "$versionText = '3.9.7'",
         "$verText = '3.9.7'",
+        'Arena Studio Bridge - Studio Plugin  (Version 3.9.7)',
         'Text="Arena Roblox Bridge - Version 3.9.7"',
+        "# Arena Roblox Bridge  -  Version 3.9.7",
+    ]
+    for marker in stale_literals:
+        require(marker not in source, f"stale 3.9.7 literal remains: {marker}")
+
+    required_markers = [
+        "DocsVersion     = '3.9.8'",
+        'local ARENA_VERSION  = "3.9.8"',
+        "bridgeVersion = '3.9.8'",
+        "serverVersion = '3.9.8'",
+        "version = '3.9.8'",
+        "$versionText = '3.9.8'",
+        "$verText = '3.9.8'",
+        'Text="Arena Roblox Bridge - Version 3.9.8"',
         "SESSION_REPORTER_SOURCE",
         "SESSION_CLIENT_REPORTER_SOURCE",
         '\"#ARENA# \"',
@@ -99,9 +99,12 @@ def main() -> int:
         "LateResults",
         "PlayRetryDedupe",
         "plugin outdated - Tests warten",
+        "Get-RawGitHubText",
+        "$content -is [byte[]]",
+        "[char]0xFEFF",
     ]
     for marker in required_markers:
-        require(marker in source, f"required 3.9.7 marker missing: {marker}")
+        require(marker in source, f"required 3.9.8 marker missing: {marker}")
 
     # A no-HTTP fallback must not return an instructions-to-enable-HTTP error.
     start_chunk = source[source.index("local function startPlay"):source.index("local function stopPlay")]
@@ -160,7 +163,7 @@ def main() -> int:
         except ET.ParseError as exc:
             raise AssertionError(f"XAML block {index} is not XML: {exc}") from exc
 
-    print("OK: 3.9.7 structure, Lua and XAML validation passed")
+    print("OK: 3.9.8 structure, Lua and XAML validation passed")
     return 0
 
 
