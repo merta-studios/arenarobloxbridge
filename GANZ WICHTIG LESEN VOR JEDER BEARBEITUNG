@@ -221,7 +221,7 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
   Edit-Kopien erst nach editModeActive=false + Sweeps), sofortige #ARENA#
   hello-Zeile als Injektionsbeweis, Stop-Leiter (Reporter-EndTest ueber
   Befehlskanal > edit RunService:Stop() > PLAY_STOP_NEEDS_USER), Befehlskanal
-  ohne HTTP (http-Agent > SharedTableService > VIM-Kombos > GetTestArgs),
+  ohne HTTP (http-Agent > SharedTableRegistry > VIM-Kombos > GetTestArgs),
   neues Werkzeug session_diag, alle Play-Guards session-bewusst
   (REPORTER_NOT_CONNECTED statt falschem "No test running").
 - v3.9: KOMPLETTE STEUERUNG PER HTTP GET (wichtigstes Feature): jeder
@@ -310,7 +310,7 @@ B. STOP-PFAD (Leiter, kein Endlos-Probieren): (1) Reporter aktiv ->
    Aufraeumung (Server), Sweeps - ein SOFORTIGER zweiter play_start klappt.
 C. BEFEHLSKANAL INS SESSION-DM OHNE HTTP (Prioritaet):
    (1) HttpEnabled=true: bisheriger HTTP-Agent (Schnellpfad).
-   (2) SharedTableService als Cross-DM-Kanal: IMPLEMENTIERT in Plugin
+   (2) SharedTableRegistry als Cross-DM-Kanal: IMPLEMENTIERT in Plugin
        (Schreiben st.command / Lesen st.lastResult, Client-Slot
        st.clientCommand/st.clientResult) und im Reporter (Polling + Echo-
        Probe). session_diag > sharedTableProbe.crossDm entscheidet LIVE, ob
@@ -393,7 +393,7 @@ TEST- UND DATEI-REGELN FUER 3.9.8
   bridgeVersion (3x), serverVersion, Plugin-Kommentar, Update-Fallback,
   Einstellungsfusszeile. Der Strukturtest assertet sie plus die 3.9.7-
   Marker (PLAY_STOP_NEEDS_USER, REPORTER_NOT_CONNECTED, session_diag,
-  SharedTableService, stop-Leiter, Forward-Deklarationen-Stolperstein)
+  SharedTableRegistry, stop-Leiter, Forward-Deklarationen-Stolperstein)
   und die 3.9.8-Marker (Get-RawGitHubText, byte[]-Verzweigung,
   U+FEFF-Strip).
 - LIVE-BEFUND 3.9.8 (Autostart-Selbst-Update war seit 3.9 tot):

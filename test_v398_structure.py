@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 3.9.9.
+"""Offline structure check for Arena Roblox Bridge 4.0.0.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,12 +19,12 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "3.9.9"
+VERSION = "4.0.0"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
 # plugin ("Out of local registers ... exceeded limit 200"), so it never
-# connects and the place list stays empty. 3.9.9 fixed a regression that had
+# connects and the place list stays empty. 4.0.0 fixed a regression that had
 # pushed the count to 202. Keep a safety margin below the hard limit.
 LUAU_LOCAL_LIMIT = 200
 
@@ -93,7 +93,7 @@ def main() -> int:
     require(raw.startswith(b"\xef\xbb\xbf"), "ArenaBridge.ps1 must retain its UTF-8 BOM")
     source = raw.decode("utf-8-sig")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    require(version["version"] == VERSION, "version.json is not 3.9.9")
+    require(version["version"] == VERSION, "version.json is not 4.0.0")
     require("3.9.5" not in source, "stale 3.9.5 literal remains in ArenaBridge.ps1")
 
     # Stale FUNCTIONAL version literals (history comments may mention 3.9.8).
@@ -113,15 +113,15 @@ def main() -> int:
         require(marker not in source, f"stale 3.9.8 literal remains: {marker}")
 
     required_markers = [
-        "DocsVersion     = '3.9.9'",
-        'local ARENA_VERSION  = "3.9.9"',
-        "bridgeVersion = '3.9.9'",
-        "serverVersion = '3.9.9'",
-        "version = '3.9.9'",
-        "$versionText = '3.9.9'",
-        "$verText = '3.9.9'",
-        'Text="Arena Roblox Bridge - Version 3.9.9"',
-        # 3.9.9: the config table that keeps the top-level local count in check.
+        "DocsVersion     = '4.0.0'",
+        'local ARENA_VERSION  = "4.0.0"',
+        "bridgeVersion = '4.0.0'",
+        "serverVersion = '4.0.0'",
+        "version = '4.0.0'",
+        "$versionText = '4.0.0'",
+        "$verText = '4.0.0'",
+        'Text="Arena Roblox Bridge - Version 4.0.0"',
+        # 4.0.0: the config table that keeps the top-level local count in check.
         "local ARENA_CFG = {",
         "ARENA_CFG.POLL_WAIT",
         "ARENA_CFG.CHUNK_SIZE",
@@ -136,7 +136,7 @@ def main() -> int:
         "PLAY_STOP_NEEDS_USER",
         "REPORTER_NOT_CONNECTED",
         "session_diag",
-        "SharedTableService",
+        "SharedTableRegistry",
         "sessionChannelCommand",
         "sessionDiagnosticsData",
         "reporterSeenInOutput",
@@ -189,7 +189,7 @@ def main() -> int:
     lua = plugin_source(source)
     ast.parse(lua)
 
-    # 3.9.9 regression guard: the plugin's top-level chunk is ONE Luau scope.
+    # 4.0.0 regression guard: the plugin's top-level chunk is ONE Luau scope.
     # Count its column-0 `local` declarations (ignoring embedded long-bracket
     # strings, which are separate chunks) and require it to stay under Luau's
     # hard limit of 200 - otherwise Studio silently refuses to compile the
@@ -226,7 +226,7 @@ def main() -> int:
         except ET.ParseError as exc:
             raise AssertionError(f"XAML block {index} is not XML: {exc}") from exc
 
-    print("OK: 3.9.9 structure, Lua and XAML validation passed")
+    print("OK: 4.0.0 structure, Lua and XAML validation passed")
     return 0
 
 
