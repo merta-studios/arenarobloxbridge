@@ -1,5 +1,46 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 3.9.6
+# Arena Roblox Bridge  -  Version 3.9.7
+#
+# NEU IN DIESER VERSION (3.9.7) - DIE LETZTEN PLAYTEST-KLEMMER GEFIXT:
+#   * REPORTER KOMMT GARANTIERT IN DIE SESSION (Live-Befund B1 in 3.9.6: Null
+#     #ARENA#-Zeilen, Null Reporter, weil Archivable=false plus Loesch-Race die
+#     Injektion verhinderten). Ab jetzt werden die Reporter als NORMALE,
+#     klon-sichere Scripts injiziert (reporterVariant=2 = Standard); die Edit-
+#     Kopien werden erst geloescht, NACHDEM editModeActive=false die Session
+#     bewiesen hat (+1,5s), zusaetzliche Sicherheits-Sweeps laufen bei
+#     play_stop und beim Plugin-Unload - der Place wird also weiterhin nie mit
+#     Helferskripten gespeichert. Variante 1 (Archivable=false) bleibt als
+#     Diagnose-Sonde erhalten (play_start { reporterVariant=1 }).
+#   * HELLO-ZEILE: Der Reporter druckt sofort "#ARENA# hello" (serverseitig
+#     und clientseitig). Damit beweist startDiagnostics.reporterSeenInOutput -
+#     und im neuen Werkzeug session_diag - unmittelbar, dass der Reporter in
+#     der Session lebt.
+#   * STOPP-LEITER (Live-Befund B2: Sessions aus ExecutePlayModeAsync liessen
+#     sich aus dem Edit-DM weder per RunService:Stop() noch per Shift+F5
+#     erreichen; EndTest geht NUR im Session-Server-DataModel): (1) Reporter-
+#     Befehl end_test ueber den Befehlskanal, der Reporter ruft
+#     StudioTestService:EndTest("stopped_by_arena_bridge") in der Session;
+#     (2) Fallback RunService:Stop(); (3) sauberer Fehler PLAY_STOP_NEEDS_USER
+#     mit deutscher userMessage an den Nutzer (Stop/Shift+F5 druecken) - KEIN
+#     Endlos-Probieren mehr. Nach Erfolg: Zombie-frei aufraeumen, ein
+#     sofortiger zweiter play_start klappt wieder.
+#   * BEFEHLSKANAL OHNE HTTP (Prioritaet): 1. optionaler http-Agent
+#     (HttpEnabled=true), 2. SharedTableService als Cross-DM-Speicher
+#     Edit<->Session (volle Argumente, Antworten inklusive),
+#     3. VirtualInputManager-Kombos (Strg+Alt+Umschalt+E/R/P, antwortfrei),
+#     4. GetTestArgs beim (Neu-)Start (arenaSpawn). teleport_character und
+#     respawn_character laufen zur Laufzeit ueber diesen Kanal, set_camera
+#     ebenfalls (Client-Kommando-Slot), move_character/gui_click weiter per
+#     direktem VirtualInputManager.
+#   * DIAGNOSE statt Raten (B3/B4): Neues Werkzeug session_diag - Reporter
+#     (aktiv, letzte #ARENA#-Zeile + Alter, Injektions-Variante in Session),
+#     Befehlskanaele inkl. SharedTable-Cross-DM-Live-Probe mit Echo, Output-
+#     Cursor/Zaehler. ALLE Play-Tool-Guards nutzen das einheitliche Session-
+#     Orakel (editModeActive=false ODER IsRunning) und antworten bei aktiver
+#     Session ohne Reporter mit REPORTER_NOT_CONNECTED samt sessionDiag -
+#     nicht mehr falsch mit "No test running".
+#   * HINWEIS: Nach diesem Update Roblox Studio einmal neu starten, damit das
+#     neue Plugin laedt - die Bridge setzt sonst versionMismatch und meldet es.
 #
 # NEU IN DIESER VERSION (3.9.6) - PLAYTEST OHNE HTTP-SETTINGS:
 #   * Moderne Studio-Playtests laufen in einem separaten DataModel. Das Edit-
@@ -514,7 +555,7 @@ $script:StartupBlocked = $false
 $script:SplashTerminalAt = $null
 
 # ----------------------------------------------------------------------------
-# SELBST-AKTUALISIERUNG BEIM AUTOSTART (Version 3.9.6)
+# SELBST-AKTUALISIERUNG BEIM AUTOSTART (Version 3.9.7)
 # Wird die Bridge ueber den Windows-Autostart geoeffnet, laeuft der
 # Starter (Arena Roblox Bridge.cmd) NICHT mit - dann gibt es auch keinen
 # -UpdateStatus-Parameter. Damit der Nutzer trotzdem nie auf einer alten
@@ -568,7 +609,7 @@ function Test-UpdateError {
 }
 
 # ----------------------------------------------------------------------------
-# SELBST-AKTUALISIERUNG BEIM AUTOSTART (Version 3.9.6)
+# SELBST-AKTUALISIERUNG BEIM AUTOSTART (Version 3.9.7)
 # ----------------------------------------------------------------------------
 # Wird die Bridge ueber den Windows-Autostart gestartet, laeuft der Starter
 # (Arena Roblox Bridge.cmd) nicht mit - das Programm bekommt dann KEINEN
@@ -832,7 +873,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '3.9.6'
+    DocsVersion     = '3.9.7'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -849,7 +890,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     RunOwners       = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     # sessionId -> unix-Zeit der letzten Nutzer-Aktivitaet im Studio
     UserActiveAt    = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
-    # 3.9.6 Session-Agent: short-lived authenticated local channel from the
+    # 3.9.7 Session-Agent: short-lived authenticated local channel from the
     # isolated Play DataModel back to its edit-plugin session.
     AgentKeys       = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     AgentQueues     = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
@@ -961,7 +1002,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 3.9.6)
+  Arena Studio Bridge - Studio Plugin  (Version 3.9.7)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1032,7 +1073,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "3.9.6"
+local ARENA_VERSION  = "3.9.7"
 local POLL_WAIT      = 12      -- Sekunden Long-Poll (Befehle kommen sofort an)
 local HEARTBEAT_EVERY = 5      -- Sekunden
 local CHUNK_SIZE     = 48000   -- Bytes je Teilstueck einer Antwort
@@ -1058,9 +1099,11 @@ local playHereCheckUntil = 0           -- bis wann nach Teststart nach Play Here
 local lastUserActiveNotice = 0         -- os.clock() der letzten Nutzer-Aktivitaets-Meldung
 -- Der Plugin-Code bleibt in aktuellen Studio-Versionen im Edit-DataModel.
 -- Der Session-Agent unten ist deshalb die verbindliche Sicht auf den echten Test.
--- 3.9.6: The reporter is the always-on, HTTP-independent truth from the
+-- 3.9.7: The reporter is the always-on, HTTP-independent truth from the
 -- isolated session DataModel. `connected` means *either* reporter or HTTP
 -- agent is alive; `httpConnected` only means the optional fast path answered.
+-- 3.9.7 NEW: reporter evidence (hello line) is counted (arenaLineCount) and
+-- the session accepts commands through HTTP / SharedTable / VIM channels.
 local sessionAgent = {
     key = nil, connected = false, httpConnected = false,
     reporterActive = false, playerCount = 0, mode = "play", lastAnswer = 0,
@@ -1072,6 +1115,19 @@ local function readHttpEnabled()
     local enabled = false
     pcall(function() enabled = HttpService.HttpEnabled == true end)
     return enabled
+end
+
+-- 3.9.7 B4-FIX: SINGLE session oracle for every play tool guard. A modern
+-- test runs in a separate DataModel - editModeActive=false counts as active
+-- even though the edit plugin shows neither IsRunning() nor Players.
+local function testSessionActive()
+    if RunService:IsRunning() then return true end
+    if StudioTestService ~= nil then
+        local editActive = nil
+        pcall(function() editActive = StudioTestService.EditModeActive end)
+        if editActive == false then return true end
+    end
+    return false
 end
 
 local function sessionReporterUsable()
@@ -1226,6 +1282,11 @@ local function playState()
         reporterActive = sessionReporterUsable(),
         agentMode = (sessionAgent and sessionAgent.agentMode) or "logStream",
         httpEnabled = readHttpEnabled(),
+        reporterLastKind = sessionAgent and sessionAgent.lastArenaKind or nil,
+        reporterLastAgeSeconds = (sessionAgent and sessionAgent.reporterAt and sessionAgent.reporterAt > 0)
+            and (math.floor((os.clock() - sessionAgent.reporterAt) * 10) / 10) or nil,
+        arenaLineCount = (sessionAgent and sessionAgent.arenaLineCount) or 0,
+        reporterVariantUsed = sessionAgent and sessionAgent.reporterVariantUsed or nil,
         userPlaytestActive = userPlaytestActive,
         -- true = Studio is in edit mode and there is NO test session.
         editModeActive = editModeActive,
@@ -1313,20 +1374,32 @@ local function captureSessionReporter(message)
         return HttpService:JSONDecode(string.sub(text, #prefix + 1))
     end)
     if not decodedOk or type(report) ~= "table" then return false end
+    -- 3.9.7: every #ARENA# line (incl. hello) is hard reporter evidence.
+    sessionAgent.arenaLineCount = (sessionAgent.arenaLineCount or 0) + 1
+    sessionAgent.lastArenaKind = tostring(report.kind)
+    sessionAgent.lastArenaRaw = string.sub(text, 1, 500)
+    sessionAgent.reporterAt = os.clock()
     if report.kind == "session" then
         sessionAgent.snapshot = report
         sessionAgent.playerCount = tonumber(report.players or report.playerCount) or 0
         sessionAgent.mode = report.mode or sessionAgent.mode or "play"
         sessionAgent.reporterActive = true
         sessionAgent.connected = true
-        sessionAgent.reporterAt = os.clock()
         if not sessionAgent.httpConnected then sessionAgent.agentMode = "logStream" end
     elseif report.kind == "gui" then
         sessionAgent.guiSnapshot = report
         sessionAgent.reporterActive = true
         sessionAgent.connected = true
-        sessionAgent.reporterAt = os.clock()
+        sessionAgent.vimCommandsSeen = tonumber(report.vimCommands) or sessionAgent.vimCommandsSeen or 0
         if not sessionAgent.httpConnected then sessionAgent.agentMode = "logStream" end
+    elseif report.kind == "hello" then
+        -- Proof that the injection survived into the session DataModel.
+        sessionAgent.reporterActive = true
+        sessionAgent.connected = true
+        if not sessionAgent.httpConnected then sessionAgent.agentMode = "logStream" end
+        if report.side == "server" and report.variant ~= nil then
+            sessionAgent.reporterVariantInSession = tonumber(report.variant) or sessionAgent.reporterVariantInSession
+        end
     end
     return true
 end
@@ -2547,7 +2620,7 @@ end
 ]==]
 
 -- ---------------------------------------------------------------------------
--- SESSION-AGENT (3.9.6)
+-- SESSION-AGENT (3.9.7)
 -- Studio Play runs in a separate DataModel on current Studio versions. The
 -- plugin therefore cannot see Players there. A temporary Script is copied into
 -- the test snapshot, reports to the local bridge and is destroyed in edit mode
@@ -2677,15 +2750,22 @@ end
 ]==]
 
 -- ---------------------------------------------------------------------------
--- SESSION REPORTER (3.9.6, no HTTP required)
+-- SESSION REPORTER (3.9.7, no HTTP required)
 -- This source deliberately contains no RequestAsync. Studio's output bridge
 -- reaches the edit plugin even when a place forbids HTTP requests.
+-- 3.9.7 NEW: it prints a "#ARENA# hello" line immediately (proof that the
+-- injection survived into the session) and it answers commands through the
+-- cross-DM channels (RemoteEvent fed by VIM key combos, SharedTableService).
 -- ---------------------------------------------------------------------------
 local SESSION_CLIENT_REPORTER_SOURCE = [==[
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
 local player = Players.LocalPlayer
+local SharedTableService = nil
+pcall(function() SharedTableService = game:GetService("SharedTableService") end)
 local function itemPath(inst)
   local ok, value = pcall(function() return inst:GetFullName() end)
   return ok and value or inst.Name
@@ -2711,13 +2791,75 @@ local function guiItems(limit)
   end
   return out
 end
+-- 3.9.7: hello proves immediately that the reporter survived into the session
+-- (the 3.9.6 failure was: zero #ARENA# lines, reporter never existed here).
+pcall(function() print("#ARENA# " .. HttpService:JSONEncode({ kind="hello", side="client", player=player and player.Name or nil })) end)
+
+-- 3.9.7 CHANNEL vim: invisible key combos sent by the edit plugin through
+-- VirtualInputManager reach this client and are forwarded to the server
+-- reporter, which runs EndTest / respawn / state inside the session DM.
+local vimCommands = 0
+local cmdRemote = ReplicatedStorage:WaitForChild("ArenaSessionCmd", 15)
+local function modsHeld()
+  return UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
+    and UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
+    and UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
+end
+UserInputService.InputBegan:Connect(function(input)
+  if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
+  if not modsHeld() then return end
+  local action = nil
+  if input.KeyCode == Enum.KeyCode.E then action = "end_test"
+  elseif input.KeyCode == Enum.KeyCode.R then action = "respawn_character"
+  elseif input.KeyCode == Enum.KeyCode.P then action = "character_state" end
+  if action == nil then return end
+  vimCommands = vimCommands + 1
+  if cmdRemote then pcall(function() cmdRemote:FireServer({ action = action, id = HttpService:GenerateGUID(false) }) end) end
+end)
+
+-- 3.9.7 CHANNEL sharedTable: full-args client commands (camera etc.). The
+-- edit plugin writes st.clientCommand; this reporter writes st.clientResult.
+local st = nil
+if SharedTableService then pcall(function() st = SharedTableService:GetSharedTable("arenaBridge") end) end
+local function runClientCommand(cmd)
+  local args = type(cmd.args) == "table" and cmd.args or {}
+  if cmd.action == "camera" then
+    local position = args.position
+    local camera = workspace.CurrentCamera
+    if camera == nil or position == nil then return { ok=false, error="No camera or position." } end
+    local origin = Vector3.new(tonumber(position.x) or 0, tonumber(position.y) or 0, tonumber(position.z) or 0)
+    local lookAt = type(args.lookAt) == "table" and args.lookAt or nil
+    if lookAt ~= nil then
+      camera.CFrame = CFrame.lookAt(origin, Vector3.new(tonumber(lookAt.x) or 0, tonumber(lookAt.y) or 0, tonumber(lookAt.z) or 0))
+    else
+      camera.CFrame = CFrame.new(origin)
+    end
+    return { ok=true, camera="moved" }
+  end
+  if cmd.action == "ping" then return { ok=true, vimCommands=vimCommands } end
+  return { ok=false, error="Unsupported client command: " .. tostring(cmd.action) }
+end
+
 local count = 0
 while RunService:IsRunning() do
   count = count + 1
+  if st ~= nil then pcall(function()
+    local raw = st.clientCommand
+    if type(raw) == "string" and raw ~= "" then
+      local okD, cmd = pcall(function() return HttpService:JSONDecode(raw) end)
+      if okD and type(cmd) == "table" and cmd.id ~= st.clientDone then
+        st.clientDone = cmd.id
+        st.clientCommand = ""
+        st.clientResult = HttpService:JSONEncode({ id = cmd.id, result = runClientCommand(cmd) })
+      else
+        st.clientCommand = ""
+      end
+    end
+  end) end
   local camera = workspace.CurrentCamera
   local viewport = camera and camera.ViewportSize or nil
   local report = {kind="gui", player=player and player.Name or nil, items=guiItems(350),
-    viewport=viewport and {x=viewport.X,y=viewport.Y} or nil}
+    viewport=viewport and {x=viewport.X,y=viewport.Y} or nil, vimCommands=vimCommands}
   pcall(function() print("#ARENA# " .. HttpService:JSONEncode(report)) end)
   task.wait(count <= 6 and 0.5 or 2)
 end
@@ -2727,8 +2869,11 @@ local SESSION_REPORTER_SOURCE = [==[
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
+local SharedTableService = nil
+pcall(function() SharedTableService = game:GetService("SharedTableService") end)
 local function vec(v) return v and {x=v.X,y=v.Y,z=v.Z} or nil end
 local function characterState(player)
   local c = player and player.Character
@@ -2752,9 +2897,94 @@ local function applyArenaSpawn(player)
 end
 for _, player in ipairs(Players:GetPlayers()) do applyArenaSpawn(player) end
 Players.PlayerAdded:Connect(applyArenaSpawn)
+
+-- 3.9.7 CHANNELS into the running session (B1/B2 of the 3.9.6 live test):
+--  A) RemoteEvent fed by the client reporter (virtual key combos)
+--  B) SharedTableService cross-DM memory written by the edit plugin
+-- Both run commands ONLY here, in the session server DataModel, which is the
+-- sole place where StudioTestService:EndTest works for service sessions.
+local cmdRemote = Instance.new("RemoteEvent")
+cmdRemote.Name = "ArenaSessionCmd"
+cmdRemote.Archivable = false
+cmdRemote.Parent = ReplicatedStorage
+
+local st = nil
+if SharedTableService then pcall(function() st = SharedTableService:GetSharedTable("arenaBridge") end) end
+
+local function executeCommand(cmd)
+  if type(cmd) ~= "table" then return { ok=false, error="Bad command." } end
+  local action = tostring(cmd.action or "")
+  local args = type(cmd.args) == "table" and cmd.args or {}
+  if action == "end_test" then
+    task.defer(function()
+      task.wait(0.15)
+      if StudioTestService ~= nil then
+        pcall(function() StudioTestService:EndTest("stopped_by_arena_bridge") end)
+      else
+        pcall(function() RunService:Stop() end)
+      end
+    end)
+    return { ok=true, ending=true, reason="stopped_by_arena_bridge" }
+  end
+  if action == "teleport_character" then
+    local targetPlayer = Players:GetPlayers()[1]
+    local character = targetPlayer and targetPlayer.Character
+    local q = type(args.position) == "table" and args.position or nil
+    if character == nil or q == nil then return { ok=false, error="No character or position." } end
+    local target = Vector3.new(tonumber(q.x) or 0, tonumber(q.y) or 0, tonumber(q.z) or 0)
+    pcall(function() character:PivotTo(CFrame.new(target)) end)
+    return { ok=true, position=vec(target) }
+  end
+  if action == "respawn_character" then
+    local targetPlayer = Players:GetPlayers()[1]
+    if targetPlayer == nil then return { ok=false, error="No player." } end
+    task.spawn(function() pcall(function() targetPlayer:LoadCharacter() end) end)
+    return { ok=true, respawned=true }
+  end
+  if action == "character_state" then
+    local state = characterState(Players:GetPlayers()[1])
+    state.ok = true
+    state.playerCount = #Players:GetPlayers()
+    return state
+  end
+  return { ok=false, error="Unsupported reporter command: " .. action }
+end
+
+local function acceptCommand(cmd)
+  local result = executeCommand(cmd)
+  if st ~= nil and type(cmd) == "table" and cmd.id ~= nil then
+    pcall(function() st.lastResult = HttpService:JSONEncode({ id = cmd.id, result = result }) end)
+  end
+  return result
+end
+
+cmdRemote.OnServerEvent:Connect(function(_, payload)
+  if type(payload) == "table" then acceptCommand(payload) end
+end)
+
+-- 3.9.7: hello proves instantly that the clone-safe injection worked.
+pcall(function() print("#ARENA# " .. HttpService:JSONEncode({ kind="hello", side="server", mode=(testArgs and testArgs.mode) or "play",
+  variant=tonumber(testArgs and testArgs.reporterVariant) or 2, sharedTable=(st ~= nil), studioTestService=(StudioTestService ~= nil) })) end)
+
 local count = 0
 while RunService:IsRunning() do
   count = count + 1
+  if st ~= nil then pcall(function()
+    -- probe echo: the edit plugin verifies live whether the table crosses the
+    -- DataModel boundary (session_diag > sharedTableProbe.crossDm).
+    if st.probe ~= nil and st.probeEcho ~= st.probe then st.probeEcho = st.probe end
+    local raw = st.command
+    if type(raw) == "string" and raw ~= "" then
+      local okD, cmd = pcall(function() return HttpService:JSONDecode(raw) end)
+      if okD and type(cmd) == "table" and cmd.id ~= st.commandDone then
+        st.commandDone = cmd.id
+        st.command = ""
+        acceptCommand(cmd)
+      else
+        st.command = ""
+      end
+    end
+  end) end
   local all = Players:GetPlayers()
   local chars = {}
   for _, player in ipairs(all) do table.insert(chars, characterState(player)) end
@@ -2764,12 +2994,24 @@ while RunService:IsRunning() do
   task.wait(count <= 6 and 0.5 or 2)
 end
 ]==]
+-- 3.9.7 B1-FIX (live proven): deletion race / Archivable=false kept the
+-- reporter OUT of the session in 3.9.6 (zero #ARENA# lines, sessionPlayers=0).
+-- Two injection variants exist so the behaviour can be tested empirically:
+--   variant 1 = Archivable=false helpers (the 3.9.6 behaviour - live finding:
+--               they seem NOT to be cloned into the test DataModel at all);
+--   variant 2 = DEFAULT, normal clone-safe scripts that ARE part of the test
+--               snapshot and are deleted from the EDIT place only AFTER
+--               editModeActive=false proved the snapshot already exists
+--               (plus safety sweeps at play_stop and at plugin unload, so
+--               nothing reporter-like can ever be saved/published).
+local REPORTER_NAMES = { server = "ArenaSessionReporter", client = "ArenaSessionClientReporter", httpAgent = "ArenaOptionalHttpAgent" }
 
-local function installSessionReporters()
+local function installSessionReporters(variant)
+    variant = (tonumber(variant) == 1) and 1 or 2
     local created = {}
     local server = Instance.new("Script")
-    server.Name = "ArenaSessionReporter"
-    server.Archivable = false
+    server.Name = REPORTER_NAMES.server
+    if variant == 1 then server.Archivable = false end
     server.Source = SESSION_REPORTER_SOURCE
     server.Parent = ServerScriptService
     table.insert(created, server)
@@ -2779,25 +3021,55 @@ local function installSessionReporters()
     local starterScripts = starterPlayer and starterPlayer:FindFirstChild("StarterPlayerScripts")
     if starterScripts then
         local client = Instance.new("LocalScript")
-        client.Name = "ArenaSessionClientReporter"
-        client.Archivable = false
+        client.Name = REPORTER_NAMES.client
+        if variant == 1 then client.Archivable = false end
         client.Source = SESSION_CLIENT_REPORTER_SOURCE
         client.Parent = starterScripts
         table.insert(created, client)
     end
-    return created
+    return created, variant
+end
+
+-- Belt-and-braces cleanup for variant 2 (and after crashes): helper scripts
+-- must never survive in the EDIT place, or they would be saved with it.
+local function sweepEditReporterCopies()
+    local removed = 0
+    pcall(function()
+        local direct = game:GetService("ServerScriptService"):FindFirstChild(REPORTER_NAMES.server)
+        if direct then pcall(function() direct:Destroy() end); removed = removed + 1 end
+        local httpCopy = game:GetService("ServerScriptService"):FindFirstChild(REPORTER_NAMES.httpAgent)
+        if httpCopy then pcall(function() httpCopy:Destroy() end); removed = removed + 1 end
+    end)
+    pcall(function()
+        local starterPlayer = game:GetService("StarterPlayer")
+        local starterScripts = starterPlayer and starterPlayer:FindFirstChild("StarterPlayerScripts")
+        local clientCopy = starterScripts and starterScripts:FindFirstChild(REPORTER_NAMES.client)
+        if clientCopy then pcall(function() clientCopy:Destroy() end); removed = removed + 1 end
+    end)
+    return removed
 end
 
 local function removeTransientReporters(created)
     for _, inst in ipairs(created or {}) do pcall(function() inst:Destroy() end) end
+    return sweepEditReporterCopies()
 end
 
 local function sessionDiagnostics(diag)
     local snap = currentSessionSnapshot()
     diag.sessionPlayers = tonumber((snap and (snap.players or snap.playerCount)) or sessionAgent.playerCount) or 0
     diag.reporterActive = sessionReporterUsable()
+    if (sessionAgent.arenaLineCount or 0) > 0 then
+        diag.reporterSeenInOutput = true
+    end
+    diag.arenaLineCount = sessionAgent.arenaLineCount or 0
     diag.agentMode = (sessionAgent and sessionAgent.agentMode) or "logStream"
     diag.httpEnabled = readHttpEnabled()
+    diag.lastArenaKind = sessionAgent.lastArenaKind
+    if sessionAgent.reporterAt and sessionAgent.reporterAt > 0 then
+        diag.lastArenaAgeSeconds = math.floor((os.clock() - sessionAgent.reporterAt) * 10) / 10
+    end
+    if sessionAgent.reporterInjected then diag.reporterInjected = true end
+    if sessionAgent.reporterVariantUsed then diag.reporterVariantUsed = sessionAgent.reporterVariantUsed end
     return diag
 end
 
@@ -2825,14 +3097,16 @@ local function sessionAgentCall(action, args, timeout)
     return nil, "Optional HTTP Session-Agent did not answer; LogStream reporter remains available."
 end
 
-local function installSessionAgent()
+local function installSessionAgent(variant)
     if sessionId == nil then return nil, "Bridge-Sitzung ist noch nicht verbunden." end
     local key = HttpService:GenerateGUID(false)
     sessionAgent.key = key
     sessionAgent.httpEnabled = true
     local script = Instance.new("Script")
     script.Name = "ArenaOptionalHttpAgent"
-    script.Archivable = false
+    -- Same clone policy as the reporters: variant 2 (default) must be part of
+    -- the session snapshot; variant 1 keeps the old Archivable=false probe.
+    if tonumber(variant) == 1 then script.Archivable = false end
     script.Source = SESSION_AGENT_SOURCE:gsub("__SESSION_ID__", sessionId):gsub("__SESSION_KEY__", key)
     script.Parent = ServerScriptService
     return script
@@ -2955,6 +3229,11 @@ Players.PlayerAdded:Connect(function(player)
     end
 end)
 
+-- 3.9.7: forward declarations - the cross-DM channel helpers are defined
+-- further below in the channel section but are already used right here.
+local writeClientCommand
+local readClientResult
+
 local function logStreamClientAction(action, args)
     local report = sessionAgent and sessionAgent.guiSnapshot
     local items = report and report.items or {}
@@ -2971,6 +3250,22 @@ local function logStreamClientAction(action, args)
         end
         return {ok=false,error="GUI element not found in LogStream snapshot."}
     end
+    if action == "camera" then
+        -- 3.9.7: full-args client commands travel through the cross-DM shared
+        -- table to the session client reporter (works with HttpEnabled=false).
+        local id, werr = writeClientCommand("camera", args or {})
+        if id == nil then
+            return nil, "Camera needs the cross-DM client channel (sharedTable), which is unavailable: " .. tostring(werr) .. " Check session_diag > channels."
+        end
+        local waited, limit = 0, 8
+        while waited < limit do
+            local res = readClientResult(id)
+            if res ~= nil then return res end
+            task.wait(0.2)
+            waited = waited + 0.2
+        end
+        return nil, "The client camera command was never answered (sharedTable cross-DM did not echo). See session_diag > sharedTableProbe."
+    end
     return nil, "This client action requires the optional HTTP agent; gui_dump/gui_click remain available through LogStream."
 end
 
@@ -2982,6 +3277,9 @@ local function callClient(action, args, timeout)
         return sessionAgentCall("client_action", { action = action, args = args or {} }, timeout)
     end
     if not RunService:IsRunning() then
+        if testSessionActive() then
+            return nil, "REPORTER_NOT_CONNECTED: a session is active (editModeActive=false) but the #ARENA# reporter has not delivered data. Call session_diag and read get_output filter='ARENA'."
+        end
         return nil, "Not in play mode. Start a test with play_start first."
     end
     ensureRuntimeHelpers()
@@ -3075,6 +3373,197 @@ local function sendClick(x, y, button, holdSeconds)
 end
 
 -- ---------------------------------------------------------------------------
+-- 3.9.7 BEFEHLSKANAL IN DIE SESSION (kein HTTP noetig - B2/B6 live test)
+-- Prioritaet: (1) optionaler HTTP-Agent, (2) SharedTableService als Cross-DM-
+-- Speicher Edit-Plugin <-> Session-Reporter, (3) unsichtbare VirtualInput-
+-- Manager-Tastenkombos (nur Befehle ohne Argumente), (4) GetTestArgs-Neustart
+-- als Notfall (arenaSpawn/arenaCommand gehoeren in den Start).
+-- ---------------------------------------------------------------------------
+local VIM_COMMAND_KEYS = {
+    end_test = "E",
+    respawn_character = "R",
+    character_state = "P",
+}
+
+local sharedTableServiceChecked = false
+local sharedTable = nil
+
+local function getSharedTable()
+    if sharedTableServiceChecked then return sharedTable end
+    sharedTableServiceChecked = true
+    pcall(function()
+        local service = game:GetService("SharedTableService")
+        if service ~= nil then
+            sharedTable = service:GetSharedTable("arenaBridge")
+        end
+    end)
+    capabilities.sharedTable = (sharedTable ~= nil)
+    return sharedTable
+end
+
+local function writeSessionCommand(action, args)
+    local st = getSharedTable()
+    if st == nil then return nil, "SharedTableService is not available in this Studio." end
+    local id = HttpService:GenerateGUID(false)
+    local okWrite, errWrite = pcall(function()
+        st.command = HttpService:JSONEncode({ id = id, action = action, args = args or {} })
+    end)
+    if not okWrite then return nil, "SharedTable write failed: " .. tostring(errWrite) end
+    return id
+end
+
+local function readSessionResult(id)
+    local st = getSharedTable()
+    if st == nil then return nil end
+    local raw = nil
+    pcall(function() raw = st.lastResult end)
+    if type(raw) ~= "string" or raw == "" then return nil end
+    local okDecode, decoded = pcall(function() return HttpService:JSONDecode(raw) end)
+    if not okDecode or type(decoded) ~= "table" or decoded.id ~= id then return nil end
+    return decoded.result
+end
+
+writeClientCommand = function(action, args)
+    local st = getSharedTable()
+    if st == nil then return nil, "SharedTableService is not available in this Studio." end
+    local id = HttpService:GenerateGUID(false)
+    local okWrite, errWrite = pcall(function()
+        st.clientCommand = HttpService:JSONEncode({ id = id, action = action, args = args or {} })
+    end)
+    if not okWrite then return nil, "SharedTable write failed: " .. tostring(errWrite) end
+    return id
+end
+
+readClientResult = function(id)
+    local st = getSharedTable()
+    if st == nil then return nil end
+    local raw = nil
+    pcall(function() raw = st.clientResult end)
+    if type(raw) ~= "string" or raw == "" then return nil end
+    local okDecode, decoded = pcall(function() return HttpService:JSONDecode(raw) end)
+    if not okDecode or type(decoded) ~= "table" or decoded.id ~= id then return nil end
+    return decoded.result
+end
+
+local function sendVimSessionCommand(action)
+    local key = VIM_COMMAND_KEYS[action]
+    if key == nil then return false, "This action has no VIM key combo." end
+    if VirtualInputManager == nil then return false, "VirtualInputManager is not available." end
+    return sendKey(key, 0.08, { "LeftControl", "LeftAlt", "LeftShift" })
+end
+
+-- ONE entry point for everything the session must do on its own side
+-- (end_test, teleport_character, respawn_character, character_state).
+-- Returns result, channel, attemptedChannels.
+local function sessionChannelCommand(action, args, timeout)
+    local attempted = {}
+    if sessionAgent and sessionAgent.httpConnected == true then
+        table.insert(attempted, "http")
+        local result = sessionAgentCall(action, args or {}, timeout or 8)
+        if result ~= nil then return result, "http", attempted end
+    end
+    if getSharedTable() ~= nil then
+        table.insert(attempted, "sharedTable")
+        local id = writeSessionCommand(action, args)
+        if id ~= nil then
+            local waited, limit = 0, timeout or 8
+            while waited < limit do
+                local result = readSessionResult(id)
+                if result ~= nil then return result, "sharedTable", attempted end
+                task.wait(0.2)
+                waited = waited + 0.2
+            end
+        end
+    end
+    if VIM_COMMAND_KEYS[action] ~= nil then
+        table.insert(attempted, "vim")
+        local sent = sendVimSessionCommand(action)
+        if sent then
+            return { ok = true, sent = true, awaitingConfirmation = true }, "vim", attempted
+        end
+    end
+    return nil, nil, attempted
+end
+
+-- Full diagnostic for the session_diag tool (and for REPORTER_NOT_CONNECTED
+-- errors). skipProbe=true leaves out the 2.5s SharedTable live probe.
+local function sessionDiagnosticsData(skipProbe)
+    local diag = {}
+    local editActive = nil
+    if StudioTestService ~= nil then pcall(function() editActive = StudioTestService.EditModeActive end) end
+    diag.editModeActive = editActive
+    diag.editPluginIsRunning = RunService:IsRunning()
+    diag.testSessionActive = testSessionActive()
+    sessionDiagnostics(diag)
+    diag.reporterInjected = sessionAgent.reporterInjected == true
+    diag.outputCursor = outputSeq
+    diag.outputErrorCount = errorCount
+    diag.outputWarningCount = warningCount
+    diag.lastArenaRaw = sessionAgent.lastArenaRaw
+    diag.vimCommandsSeen = sessionAgent.vimCommandsSeen or 0
+    local probe = nil
+    local st = getSharedTable()
+    if skipProbe ~= true then
+        probe = { available = (st ~= nil), crossDm = nil }
+        if st ~= nil then
+            local token = HttpService:GenerateGUID(false)
+            pcall(function() st.probe = token end)
+            local waited, echoed = 0, nil
+            while waited < 2.5 do
+                pcall(function() echoed = st.probeEcho end)
+                if echoed == token then break end
+                task.wait(0.25)
+                waited = waited + 0.25
+            end
+            pcall(function() echoed = st.probeEcho end)
+            probe.crossDm = (echoed == token)
+            if probe.crossDm ~= true then probe.note = "no echo from the session (reporter missing or table is per-DataModel)" end
+        end
+    end
+    diag.sharedTableProbe = probe
+    diag.channels = {
+        priority = { "http (optional fast path)", "sharedTable (cross-DM memory)", "vim (key combos, args-free)", "GetTestArgs at play_start (restart fallback)" },
+        httpConnected = (sessionAgent and sessionAgent.httpConnected == true),
+        sharedTableAvailable = (st ~= nil),
+        sharedTableCrossDm = (probe and probe.crossDm) or nil,
+        vimAvailable = (VirtualInputManager ~= nil),
+        vimCommandsSeen = sessionAgent.vimCommandsSeen or 0,
+    }
+    diag.reporter = {
+        active = sessionReporterUsable(),
+        seenInOutput = (sessionAgent.arenaLineCount or 0) > 0,
+        arenaLineCount = sessionAgent.arenaLineCount or 0,
+        lastKind = sessionAgent.lastArenaKind,
+        lastAgeSeconds = diag.lastArenaAgeSeconds,
+        variantInjected = sessionAgent.reporterVariantUsed,
+        variantInSession = sessionAgent.reporterVariantInSession,
+        note = "2 (default, clone-safe normal script) is expected. 1 = Archivable=false probe that never entered the session in the 3.9.6 live test.",
+    }
+    diag.state = playState()
+    return diag
+end
+
+-- Extra block attached to REPORTER_NOT_CONNECTED errors (B4 of 3.9.6 live).
+local function reporterNotConnectedExtra()
+    return {
+        sessionDiag = sessionDiagnosticsData(true),
+        hint = "A test session IS active, so the old 'No test running' guard was simply wrong. Call session_diag, then read get_output filter='ARENA'. If reporter.seenInOutput stays false, the reporter never entered the session: play_stop, then play_start again (reporterVariant=2 default is clone-safe; variant 1 is the broken Archivable=false probe).",
+    }
+end
+
+-- Guard for tools that need live session data (GUI/client/character).
+local function sessionLiveDataGuard()
+    if not RunService:IsRunning() and testSessionActive()
+        and not sessionReporterUsable()
+        and not (sessionAgent and sessionAgent.httpConnected) then
+        return failCode("REPORTER_NOT_CONNECTED",
+            "A test session is active (editModeActive=false), but its #ARENA# reporter has not delivered data yet, so live session access is unavailable right now.",
+            reporterNotConnectedExtra())
+    end
+    return nil
+end
+
+-- ---------------------------------------------------------------------------
 -- PLAY / RUN STEUERN
 -- Zum Starten und Stoppen werden die echten Studio-Tastenkuerzel benutzt.
 -- Grund: RunService:Stop() setzt den Place NICHT zurueck - Aenderungen aus
@@ -3119,6 +3608,7 @@ local function startPlay(mode, startArgs)
         usedPath = nil, editModeActiveBefore = nil, editModeActiveAfter = nil,
         serviceError = nil, sessionAgentAnswered = false, sessionPlayers = 0,
         reporterActive = false, agentMode = "logStream", httpEnabled = readHttpEnabled(),
+        reporterInjected = false, reporterSeenInOutput = false, reporterVariantUsed = nil,
     }
     local editActive = nil
     if StudioTestService ~= nil then pcall(function() editActive = StudioTestService.EditModeActive end) end
@@ -3155,23 +3645,34 @@ local function startPlay(mode, startArgs)
     end
 
     diagnostics.usedPath = "studioTestService"
-    -- The reporter exists for every start, regardless of HttpEnabled. It is
-    -- copied into the isolated session and deleted from the edit place as soon
-    -- as the service has entered test mode.
+    -- 3.9.7 B1-FIX: the reporter must physically exist in the injected
+    -- snapshot when Studio clones the place. 3.9.6's Archivable=false helpers
+    -- never made it (zero #ARENA# lines live). Variant 2 (default) therefore
+    -- injects NORMAL clone-safe scripts and deletes the EDIT copies only
+    -- after editModeActive=false proves the session already stands.
+    -- reporterVariant=1 stays available for empirical verification.
+    local variant = tonumber(startArgs.reporterVariant) or 2
+    if string.lower(tostring(startArgs.reporterVariant or "")) == "archivablefalse" then variant = 1 end
     sessionAgent = {
         key=nil, connected=false, httpConnected=false, reporterActive=false,
         playerCount=0, mode=(mode == "run" and "run" or "play"), lastAnswer=0,
         agentMode="logStream", snapshot=nil, guiSnapshot=nil,
         httpEnabled=diagnostics.httpEnabled, reporterAt=0,
+        reporterInjected=false, reporterVariantUsed=variant, reporterVariantInSession=nil,
+        arenaLineCount=0, lastArenaKind=nil, lastArenaRaw=nil, vimCommandsSeen=0,
     }
-    local transient = installSessionReporters()
+    local transient
+    transient, variant = installSessionReporters(variant)
+    sessionAgent.reporterInjected = true
+    diagnostics.reporterInjected = true
+    diagnostics.reporterVariantUsed = variant
     local httpTransient = nil
     if diagnostics.httpEnabled and mode ~= "run" then
-        httpTransient = installSessionAgent()
+        httpTransient = installSessionAgent(variant)
         if httpTransient then table.insert(transient, httpTransient) end
     end
 
-    local testArgs = { startedBy = "arena-bridge", mode = mode }
+    local testArgs = { startedBy = "arena-bridge", mode = mode, reporterVariant = variant }
     -- GetTestArgs in the reporter receives this exact value. It is the only
     -- supported character teleport path: before the player spawns.
     local spawn = startArgs.arenaSpawn or startArgs.spawn or startArgs.position
@@ -3193,11 +3694,12 @@ local function startPlay(mode, startArgs)
 
     -- Execute*Async yields until the test ends. Destroy helpers when the
     -- snapshot has been taken (EditModeActive=false), never at service return.
+    -- 3.9.7: edit copies are removed ONLY after the session provably stands,
+    -- plus a 1.5s safety margin, because deleting first was the 3.9.6 race.
+    -- Additional sweeps happen in play_stop and at plugin unload.
     task.spawn(function()
-        -- Keep the temporary scripts until the same 20-second start window
-        -- observes the snapshot, rather than racing a slow Studio launch.
         local entered = waitForEditMode(false, 20)
-        if entered then task.wait(0.1) end
+        if entered then task.wait(1.5) end
         removeTransientReporters(transient)
     end)
 
@@ -3228,7 +3730,8 @@ local function startPlay(mode, startArgs)
     end
 
     -- Reporter output is optional for start success, but normally arrives in
-    -- the first half second. HTTP can enrich it only when explicitly enabled.
+    -- the first half second (the 3.9.7 hello line). HTTP can enrich it only
+    -- when explicitly enabled.
     local waited = 0
     while waited < 10 and mode ~= "run" and not sessionReporterUsable() do
         if diagnostics.httpEnabled and sessionAgent.key then
@@ -3237,6 +3740,7 @@ local function startPlay(mode, startArgs)
         end
         task.wait(0.2); waited = waited + 0.2
     end
+    if sessionReporterUsable() then diagnostics.reporterSeenInOutput = true end
     if diagnostics.httpEnabled and sessionAgent.key and not sessionAgent.httpConnected then
         local ping = sessionAgentCall("ping", {}, 1)
         if ping then diagnostics.sessionAgentAnswered = true end
@@ -3257,12 +3761,27 @@ local function startPlay(mode, startArgs)
     return result
 end
 
+-- Success tail shared by every stop path: prove edit mode, clean all
+-- session/run state, sweep leftover edit copies (zombie-freedom = an
+-- immediate second play_start must work again).
+local function finishStopSuccess(diagnostics, usedPath, stopMethod, note)
+    sessionDiagnostics(diagnostics)
+    sessionAgent.connected=false; sessionAgent.httpConnected=false; sessionAgent.reporterActive=false
+    sessionAgent.key=nil; sessionAgent.snapshot=nil; sessionAgent.guiSnapshot=nil
+    sessionAgent.arenaLineCount=0; sessionAgent.lastArenaKind=nil; sessionAgent.lastArenaRaw=nil
+    sessionAgent.vimCommandsSeen=0
+    cleanupRuntimeHelpers()
+    sweepEditReporterCopies()
+    return {ok=true, state=playState(), stoppedBy="assistant", stopMethod=stopMethod,
+        startDiagnostics=diagnostics, note=note or ("Test stopped via " .. tostring(stopMethod) .. ".")}
+end
+
 local function stopPlay()
     local diagnostics = {
         usedPath=nil, editModeActiveBefore=nil, editModeActiveAfter=nil,
         serviceError=nil, sessionAgentAnswered=false, sessionPlayers=0,
         reporterActive=sessionReporterUsable(), agentMode=(sessionAgent and sessionAgent.agentMode) or "logStream",
-        httpEnabled=readHttpEnabled(),
+        httpEnabled=readHttpEnabled(), reporterSeenInOutput=false, channelAttempts=nil,
     }
     if StudioTestService ~= nil then pcall(function() diagnostics.editModeActiveBefore = StudioTestService.EditModeActive end) end
     aiPlayIntent = { action="stop", at=os.time() }
@@ -3272,12 +3791,31 @@ local function stopPlay()
         return {ok=true, alreadyStopped=true, state=playState(), startDiagnostics=diagnostics}
     end
 
-    -- B3: this works from the edit DataModel for a separate test. It is the
-    -- default stop path, so HTTP and any session script are never required.
+    -- 3.9.7 B2-FIX RANG 1: EndTest works ONLY inside the session server
+    -- DataModel. The session reporter executes it when a command reaches it
+    -- (http agent / sharedTable / VIM combo, in that priority order).
+    if sessionReporterUsable() or (sessionAgent and sessionAgent.httpConnected) then
+        -- (the gate is reporter evidence: only then is something alive inside
+        -- the session that can execute our commands - no dead 15s waits)
+        local channelResult, channel, attempted = sessionChannelCommand("end_test", {}, 6)
+        diagnostics.channelAttempts = attempted
+        if channelResult ~= nil then
+            local reachedChannel, afterChannel = waitForEditMode(true, 8)
+            diagnostics.editModeActiveAfter = afterChannel
+            if reachedChannel then
+                diagnostics.usedPath = "sessionEndTest:" .. tostring(channel)
+                return finishStopSuccess(diagnostics, diagnostics.usedPath, "reporterEndTest",
+                    "Test stopped by the session reporter via " .. tostring(channel) .. " (StudioTestService:EndTest inside the session, reason stopped_by_arena_bridge).")
+            end
+        end
+    end
+
+    -- RANG 2 Fallback: RunService:Stop() from the edit DataModel. Proven for
+    -- classic F5 sessions; ExecutePlayModeAsync sessions may ignore it (B2).
     diagnostics.usedPath = "editRunServiceStop"
     local stopped, stopErr = pcall(function() RunService:Stop() end)
     if not stopped then diagnostics.serviceError = tostring(stopErr) end
-    local reached, after = waitForEditMode(true, 15)
+    local reached, after = waitForEditMode(true, 12)
     diagnostics.editModeActiveAfter = after
     if not reached and RunService:IsRunning() then
         local second, secondErr = pcall(function() RunService:Stop() end)
@@ -3286,16 +3824,21 @@ local function stopPlay()
         diagnostics.editModeActiveAfter = after
     end
     if reached or (StudioTestService == nil and not RunService:IsRunning()) then
-        -- Preserve the last real session facts in stop diagnostics before
-        -- clearing the transient snapshot for the now-edit state.
-        sessionDiagnostics(diagnostics)
-        sessionAgent.connected=false; sessionAgent.httpConnected=false; sessionAgent.reporterActive=false
-        sessionAgent.key=nil; sessionAgent.snapshot=nil; sessionAgent.guiSnapshot=nil
-        cleanupRuntimeHelpers()
-        return {ok=true, state=playState(), stoppedBy="assistant", stopMethod="editRunServiceStop", startDiagnostics=diagnostics, note="Test stopped from the Edit DataModel."}
+        return finishStopSuccess(diagnostics, "editRunServiceStop", "editRunServiceStop",
+            "Test stopped from the Edit DataModel (RunService:Stop).")
     end
+
+    -- RANG 3: NO endless retry loop. One clean pass, then a precise handover
+    -- to the human (PLAY_STOP_NEEDS_USER) with the evidence attached.
     sessionDiagnostics(diagnostics)
-    return {ok=false, code="PLAY_STOP_FAILED", error="Studio still reports an active test after RunService:Stop().", userMessage="Der Test konnte nicht beendet werden. Bitte #ARENA#-Zeilen pruefen und Studio bei Bedarf neu starten.", state=playState(), startDiagnostics=diagnostics}
+    return {ok=false, code="PLAY_STOP_NEEDS_USER",
+        error="The test could not be stopped automatically: the session reporter "
+            .. (sessionReporterUsable() and "did not confirm EndTest" or "is not connected")
+            .. " and RunService:Stop() from the edit DataModel was ignored.",
+        userMessage="Bitte druecke in Roblox Studio selbst auf Stop (Shift+F5) - der laufende Test konnte von der Bridge nicht automatisch beendet werden.",
+        howToFix="Press Stop (Shift+F5) in Roblox Studio yourself, then verify with session_diag that editModeActive=true. Do NOT call play_stop in a retry loop. session_diag > channels shows which command path into the session was available and why none landed.",
+        sessionDiag=sessionDiagnosticsData(true),
+        state=playState(), startDiagnostics=diagnostics}
 end
 
 -- ---------------------------------------------------------------------------
@@ -6399,7 +6942,16 @@ tools.play_stop = function()
     if result.ok then
         return ok(result, result.warnings)
     end
-    return failCode(result.code or "PLAY_STOP_FAILED", result.error, { state = result.state, warnings = result.warnings, startDiagnostics = result.startDiagnostics, userMessage = result.userMessage })
+    local extra = { state = result.state, warnings = result.warnings, startDiagnostics = result.startDiagnostics, userMessage = result.userMessage }
+    if result.howToFix then extra.howToFix = result.howToFix end
+    if result.sessionDiag then extra.sessionDiag = result.sessionDiag end
+    return failCode(result.code or "PLAY_STOP_FAILED", result.error, extra)
+end
+
+-- 3.9.7: live truth about session, reporter and command channels.
+-- READ-ONLY tool - call it any time instead of guessing.
+tools.session_diag = function(args)
+    return ok(sessionDiagnosticsData(args and args.skipProbe == true))
 end
 
 tools.play_pause = function()
@@ -6667,6 +7219,8 @@ tools.cancel_job = function(args)
 end
 
 tools.client_action = function(args)
+    local guard = sessionLiveDataGuard()
+    if guard ~= nil then return guard end
     local response, err = callClient(args.action, args.args or args, tonumber(args.timeoutSeconds) or 8)
     if response == nil then
         return failCode("NO_PLAYER", err)
@@ -6693,6 +7247,11 @@ tools.character_state = function()
         if response == nil then return failCode("NO_PLAYER", err) end
         return ok(response)
     end
+    if not RunService:IsRunning() and testSessionActive() then
+        return failCode("REPORTER_NOT_CONNECTED",
+            "A test session IS active (editModeActive=false) - only the #ARENA# reporter has not been seen, so there is no live character snapshot yet.",
+            reporterNotConnectedExtra())
+    end
     if not RunService:IsRunning() then return fail("No test running. Call play_start first.") end
     local player = Players:GetPlayers()[1]
     if player == nil then return fail("No player. Run mode has no character - use play_start with mode 'play'.") end
@@ -6715,6 +7274,9 @@ tools.move_character = function(args)
     if type(keys) ~= "table" or #keys == 0 then
         return failCode("INPUT_REQUIRED", "move_character across a separate Play DataModel requires keys/direction (W/A/S/D/Space) and optional duration/shift. Position teleporting is only supported at play_start via arenaSpawn.")
     end
+    if not testSessionActive() then
+        return fail("No test running. Call play_start first.")
+    end
     local duration = tonumber(args.duration) or 1
     duration = math.max(0.03, math.min(duration, 12))
     aiMoveUntil = os.clock() + duration + 4
@@ -6730,14 +7292,44 @@ tools.move_character = function(args)
 end
 
 tools.teleport_character = function(args)
-    return failCode("START_ONLY_TELEPORT", "Teleporting during a Play session is intentionally disabled. Start the test with play_start { mode='play', arenaSpawn={x,y,z} }; the Session Reporter reads GetTestArgs and places the character before testing begins.")
+    args = args or {}
+    if not testSessionActive() then
+        return failCode("START_ONLY_TELEPORT", "No test is running. Start the test with play_start { mode='play', arenaSpawn={x,y,z} }; the Session Reporter reads GetTestArgs and places the character before testing begins.")
+    end
+    -- 3.9.7: with a working command channel the session reporter teleports
+    -- the character INSIDE the session DataModel (blocked only if no channel).
+    local q = args.position or args.arenaSpawn or args.spawn
+    if type(q) ~= "table" then
+        return failCode("BAD_ARGS", "teleport_character needs position={x,y,z}. It is delivered to the session reporter through the cross-DM command channel (sharedTable or the optional HTTP agent).")
+    end
+    local target = { x = tonumber(q.x) or 0, y = tonumber(q.y) or 0, z = tonumber(q.z) or 0 }
+    local result, channel, attempted = sessionChannelCommand("teleport_character", { position = target }, 8)
+    if result == nil then
+        return failCode("REPORTER_NOT_CONNECTED",
+            "No command channel into the session answered (tried: " .. table.concat(attempted or {}, ",") .. "). Without a channel, teleport only works at play_start via arenaSpawn={x,y,z}.",
+            reporterNotConnectedExtra())
+    end
+    if result.ok == false then
+        return failCode("NO_PLAYER", result.error or "Session reporter rejected the teleport.")
+    end
+    return ok({ teleported = true, via = channel, position = result.position or target })
 end
 
 tools.respawn_character = function()
-    if not RunService:IsRunning() and sessionAgent and sessionAgent.connected then
-        local response, err = sessionAgentCall("respawn_character", {}, 8)
-        if response == nil then return failCode("NO_PLAYER", err) end
-        return response.ok == false and failCode("NO_PLAYER", response.error) or ok(response)
+    if not RunService:IsRunning() and testSessionActive() then
+        -- 3.9.7: the session reporter respawns the player from inside the
+        -- session DataModel (http / sharedTable / VIM channels in order).
+        local result, channel, attempted = sessionChannelCommand("respawn_character", {}, 8)
+        if result == nil then
+            return failCode("REPORTER_NOT_CONNECTED",
+                "No command channel into the session answered (tried: " .. table.concat(attempted or {}, ",") .. ").",
+                reporterNotConnectedExtra())
+        end
+        if result.ok == false then
+            return failCode("NO_PLAYER", result.error or "Respawn failed inside the session.")
+        end
+        if channel == "vim" then task.wait(0.8) end
+        return ok({ respawned = true, via = channel })
     end
     if not RunService:IsRunning() then return fail("No test running.") end
     local player = Players:GetPlayers()[1]
@@ -6765,6 +7357,8 @@ local function guiFindInItems(items, query)
 end
 
 tools.gui_dump = function(args)
+    local guard = sessionLiveDataGuard()
+    if guard ~= nil then return guard end
     local response, err = callClient("gui_dump", { limit = tonumber(args.limit) or 200 }, 8)
     if response == null then return failCode("NO_PLAYER", err) end
     return ok(response)
@@ -6776,6 +7370,8 @@ tools.gui_check = function(args)
     if #checks == 0 then
         return failCode("BAD_ARGS", "checks must be a list, e.g. { { query = 'Start', expectVisible = true }, { query = 'Score', expectText = '10' } }.")
     end
+    local guard = sessionLiveDataGuard()
+    if guard ~= nil then return guard end
     local response, err = callClient("gui_dump", { limit = tonumber(args.limit) or 400 }, 8)
     if response == nil then return failCode("NO_PLAYER", err) end
     local items = response.items or {}
@@ -6829,6 +7425,8 @@ tools.gui_check = function(args)
 end
 
 tools.gui_click = function(args)
+    local guard = sessionLiveDataGuard()
+    if guard ~= nil then return guard end
     local query = args.query or args.text or args.name
     if query == nil then return failCode("BAD_ARGS", "Need query/text/name of the GUI element.") end
     local response, err = callClient("gui_find", { query = query }, 8)
@@ -6917,22 +7515,29 @@ tools.set_camera = function(args)
         local cf = target and getPivotOf(target)
         if cf then lookAt = cf.Position end
     end
+    local guard = sessionLiveDataGuard()
+    if guard ~= nil then return guard end
     local position = decodeValue(args.position)
     if typeof(position) ~= "Vector3" then
         return failCode("BAD_ARGS", "position must be {x,y,z} (and optionally lookAt {x,y,z} or targetRef).")
     end
-    local response, err = callClient("camera", { position = position, lookAt = lookAt }, 8)
+    local response, err = callClient("camera", { position = encodeValue(position), lookAt = lookAt and encodeValue(lookAt) or nil }, 8)
     if response == nil then return failCode("NO_PLAYER", err) end
     return ok({ camera = "moved (client agent marks this as AI-driven for 4 seconds, so user-action events stay clean)" })
 end
 
 tools.gui_set_text = function(args)
+    local guard = sessionLiveDataGuard()
+    if guard ~= nil then return guard end
     local response, err = callClient("set_text", { query = args.query or args.name, text = args.text }, 8)
     if response == nil then return fail(err) end
     return ok(response)
 end
 
 tools.send_input = function(args)
+    if not testSessionActive() then
+        return fail("No test running. Call play_start first.")
+    end
     local results = {}
     if args.keys then
         local keys = args.keys
@@ -7138,7 +7743,9 @@ executeTool = function(tool, args, insideBatch)
     end
 
     local warnings = nil
-    if RunService:IsRunning() and PERSISTENT_WRITE_TOOLS[tool] then
+    -- 3.9.7: the persistent-edit block uses the same session oracle as every
+    -- play tool (editModeActive=false IS a running test, B4 of the live test).
+    if testSessionActive() and PERSISTENT_WRITE_TOOLS[tool] then
         if userPlaytestActive then
             return failCode("USER_PLAYTEST_ACTIVE",
                 "IMPORTANT: The user is currently in Roblox Studio " .. currentMode() .. " mode. STOP your current response and do not edit anything: test-mode changes would be temporary and could disrupt the user while they are playing.", {
@@ -7526,6 +8133,8 @@ end)
 plugin.Unloading:Connect(function()
     running = false
     pcall(cleanupRuntimeHelpers)
+    -- 3.9.7 safety: never leave reporter edit copies in the place.
+    pcall(sweepEditReporterCopies)
     if sessionId then
         post("/plugin/disconnect", { sessionId = sessionId, reason = "unloading" })
     end
@@ -9512,23 +10121,29 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
 
         # ---------------- PLAY / TEST ----------------
         $t.Add(@{ name = 'play_status'; category = 'play'; summary = 'Läuft ein Test? Welcher Modus (edit/run/play/play_here)? Ist ein Player da?';
-            description = 'Laufender Zustand mit edit/run/play/play_here. Moderne Studio-Sessions laufen in einem getrennten DataModel: editModeActive=false ist das verbindliche Lauf-Orakel, NICHT RunService/Players im Edit-Plugin. Der immer aktive #ARENA# LogStream-Reporter liefert sessionPlayers, Charakter/Gesundheit und GUI auch bei httpEnabled=false; HTTP ist nur ein optionaler Schnellpfad.';
+            description = 'Laufender Zustand mit edit/run/play/play_here. Moderne Studio-Sessions laufen in einem getrennten DataModel: editModeActive=false ist das verbindliche Lauf-Orakel, NICHT RunService/Players im Edit-Plugin. Der #ARENA# LogStream-Reporter (3.9.7: als normales, klon-sicheres Script injiziert + sofortige hello-Zeile als Injektions-Beweis) liefert sessionPlayers, Charakter/Gesundheit und GUI auch bei httpEnabled=false; HTTP ist nur ein optionaler Schnellpfad. reporterLastKind/reporterLastAgeSeconds/arenaLineCount zeigen die Reporter-Frische; Details liefert das neue Werkzeug session_diag.';
             params = @{};
-            returns = '{ running, mode, context, playerCount, sessionPlayers, agentConnected, reporterActive, agentMode (http|logStream), httpEnabled, editModeActive, sessionSnapshot, modeInfo, userPlaytestActive }';
+            returns = '{ running, mode, context, playerCount, sessionPlayers, agentConnected, reporterActive, reporterLastKind, reporterLastAgeSeconds, arenaLineCount, reporterVariantUsed, agentMode (http|logStream), httpEnabled, editModeActive, sessionSnapshot, modeInfo, userPlaytestActive }';
             example = @{};
             errors = @() })
         $t.Add(@{ name = 'play_start'; category = 'play'; summary = 'Test starten: mode="play" (echt, mit Player), "play_here" (play an der Edit-Kamera) oder "run" (Physik-/Script-Simulation im Editor).';
-            description = 'Startet StudioTestService in task.spawn. ERFOLG ist ausschliesslich der Wechsel EditModeActive true->false innerhalb 20s; RunService:IsRunning und Players im Edit-DataModel werden absichtlich nicht abgefragt. Vorher werden temporaere ServerScriptService- und StarterPlayerScripts-Reporter in den Test-Snapshot injiziert und danach im Edit-DataModel geloescht. Sie drucken #ARENA# JSON zu LogService (Spieler, Charakter, Gesundheit, Zustaende, GUI-Klickziele) und funktionieren ohne jede Place-/Studio-Konfiguration mit httpEnabled=false. HTTP wird bei httpEnabled=true nur zusaetzlich benutzt. Ein Execute-Fehler "previous one is still in progress" bei EditModeActive=false bedeutet: bestehende Session nutzen, kein Fehler. arenaSpawn={x,y,z} ist der einzige Teleportweg: der Reporter liest StudioTestService:GetTestArgs vor dem Spawn; play_here setzt diesen Spawn automatisch aus der Edit-Kamera. Wiederholte gleiche play_start/play_stop innerhalb 3s werden dedupliziert.';
-            params = @{ mode = @{ type = "'play'|'play_here'|'run'"; required = $false; default = "'play'"; description = 'play = echt mit Charakter; play_here = Start an der Edit-Kamera; run = nur Physik/Server-Skripte ohne Player.' }; arenaSpawn = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Start-Teleport via GetTestArgs; funktioniert auch ohne HTTP.' } };
-            returns = '{ state, requestedMode, startMethod, startDiagnostics { editModeActiveBefore, editModeActiveAfter, serviceError, usedPath, sessionPlayers, reporterActive, agentMode, httpEnabled }, warnings }';
+            description = 'Startet StudioTestService in task.spawn. ERFOLG ist ausschliesslich der Wechsel EditModeActive true->false innerhalb 20s; RunService:IsRunning und Players im Edit-DataModel werden absichtlich nicht abgefragt. Vorher werden Server- und Client-Reporter injiziert - 3.9.7 als NORMALE klon-sichere Scripts (reporterVariant=2, Standard), damit sie garantiert im Session-Snapshot landen; die Edit-Kopien werden erst NACH editModeActive=false plus Sicherheits-Sweeps geloescht (3.9.6 hatte den Loesch-Race: Null #ARENA#-Zeilen, weil der Reporter nie in der Session ankam). Der Server-Reporter druckt sofort eine #ARENA# hello-Zeile und danach Snapshots (Spieler, Charakter, Gesundheit; 0.5s/2s), der Client-Reporter den GUI-Baum mit Bildschirmkoordinaten. Ein Execute-Fehler "previous one is still in progress" bei EditModeActive=false bedeutet: bestehende Session nutzen, kein Fehler. arenaSpawn={x,y,z} via GetTestArgs ersetzt jeglichen Laufzeit-Teleport als Start; play_here setzt den Spawn automatisch aus der Edit-Kamera. Wiederholte gleiche play_start/play_stop innerhalb 3s werden dedupliziert.';
+            params = @{ mode = @{ type = "'play'|'play_here'|'run'"; required = $false; default = "'play'"; description = 'play = echt mit Charakter; play_here = Start an der Edit-Kamera; run = nur Physik/Server-Skripte ohne Player.' }; arenaSpawn = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Start-Teleport via GetTestArgs; funktioniert auch ohne HTTP.' }; reporterVariant = @{ type = 'int'; required = $false; default = '2'; description = '2 = normal/klon-sicher (Standard); 1 = Archivable=false-Diagnose-Sonde (3.9.6-Verhalten, kam nie in der Session an).' } };
+            returns = '{ state, requestedMode, startMethod, startDiagnostics { editModeActiveBefore, editModeActiveAfter, serviceError, usedPath, sessionPlayers, reporterActive, reporterInjected, reporterSeenInOutput, reporterVariantUsed, agentMode, httpEnabled }, warnings }';
             example = @{ mode = 'play' };
             errors = @('PLAY_SERVICE_STUCK: Studio-Testdienst steckt fest; Roblox Studio neu starten.', 'LOGSTREAM_REPORTER_UNAVAILABLE: #ARENA#-Reporter ist noch nicht sichtbar; get_output lesen und kurz warten.', 'PLAY_NO_PLAYER: Play-Modus aktiv, aber kein Charakter.', 'PLAY_START_UNAVAILABLE: Diese Studio-Version kann keinen echten Play-Test aus einem Plugin starten.', 'PLAY_START_FAILED: Studio ist rechtzeitig nicht in den Testmodus gewechselt (einmal wiederholen, dann den Nutzer bitten).', 'STUDIO_TIMEOUT: Studio hat nicht geantwortet (Fenster nicht fokussiert? Dialog offen?).', 'SELF_TEST_DISABLED: Der Nutzer hat die Selbst-Tests deaktiviert - kein Fehler, bewusste Entscheidung.') })
         $t.Add(@{ name = 'play_stop'; category = 'play'; summary = 'Test zuverlaessig stoppen (Place wird wiederhergestellt).';
-            description = 'Stoppt standardmaessig mit RunService:Stop() AUS DEM Edit-DataModel; das beendet auch die in neuem Studio getrennte Session (kein HTTP, kein Tastenkurzeln, keine Nutzer-Einstellung erforderlich). Beendet ebenfalls einen vom Nutzer gestarteten Test. startDiagnostics zeigt EditModeActive vorher/nachher, Reporter, Playerzahl, Agentpfad und HTTP-Status.';
+            description = 'Gestaffelter Stop (3.9.7): (1) Reporter-Befehl end_test an den Session-Reporter ueber den Befehlskanal - Prioritaet http-Agent (nur bei HttpEnabled=true), dann SharedTableService (Cross-DM-Speicher), dann VirtualInputManager-Kombo Strg+Alt+Umschalt+E; der Reporter ruft StudioTestService:EndTest(stopped_by_arena_bridge) IM Session-Server-DataModel, dem einzigen Ort, an dem ExecutePlayModeAsync-Sessions zuverlaessig enden. (2) Fallback RunService:Stop() aus dem Edit-DataModel. (3) Wenn beides scheitert: sauberer Fehler PLAY_STOP_NEEDS_USER - der Nutzer soll selbst Stop (Shift+F5) druecken; NICHT in einer Schleife wiederholen. Danach muss editModeActive=true sein und ein sofortiger zweiter play_start muss wieder klappen (Zombie-Frei). startDiagnostics zeigt EditModeActive vorher/nachher, channelAttempts, Reporter, Playerzahl, Agentpfad und HTTP-Status.';
             params = @{};
-            returns = '{ state, stopMethod, startDiagnostics { editModeActiveBefore, editModeActiveAfter, serviceError, sessionPlayers, reporterActive, agentMode, httpEnabled }, note }';
+            returns = '{ state, stopMethod (reporterEndTest | editRunServiceStop), startDiagnostics { editModeActiveBefore, editModeActiveAfter, serviceError, channelAttempts, sessionPlayers, reporterActive, reporterSeenInOutput, agentMode, httpEnabled }, note }';
             example = @{};
-            errors = @('PLAY_STOP_FAILED: EditModeActive blieb nach edit RunService:Stop() false. startDiagnostics und #ARENA#-Zeilen lesen; nur bei echtem Stuck Studio neu starten.') })
+            errors = @('PLAY_STOP_NEEDS_USER: Weder Reporter-Kanal noch RunService:Stop() haben gegriffen - Nutzer bitten, selbst Stop (Shift+F5) zu druecken (userMessage liegt bei). session_diag > channels zeigt, welcher Befehlsweg verfuegbar war. Nicht in einer Schleife wiederholen.') })
+        $t.Add(@{ name = 'session_diag'; category = 'play'; summary = 'Live-Diagnose: Reporter, Befehlskanaele, Output-Cursor (read-only, jederzeit aufrufbar).';
+            description = 'Liefert die komplette Session-Wahrheit ohne Raten: editModeActive/IsRunning/testSessionActive, reporter { active, seenInOutput, arenaLineCount, lastKind, lastAgeSeconds, variantInjected (2=klon-sicher, 1=Archivable=false-Sonde), variantInSession }, channels { httpConnected, sharedTableAvailable, sharedTableCrossDm (Live-Probe mit Echo), vimAvailable, vimCommandsSeen }, Output-Cursor und Fehler-/Warnungszaehler plus den kompletten play_status. Bei JEDEM Playtest-Problem ZUERST session_diag lesen und dann get_output filter="ARENA". skipProbe=true laesst die 2.5s-SharedTable-Sonde weg.';
+            params = @{ skipProbe = @{ type = 'bool'; required = $false; default = 'false'; description = 'true = keine SharedTable-Live-Sonde (schnellere Antwort).' } };
+            returns = '{ editModeActive, editPluginIsRunning, testSessionActive, sessionPlayers, reporterActive, reporterSeenInOutput, arenaLineCount, lastArenaKind, lastArenaAgeSeconds, reporter, channels, sharedTableProbe, outputCursor, outputErrorCount, outputWarningCount, lastArenaRaw, vimCommandsSeen, state }';
+            example = @{};
+            errors = @() })
         $t.Add(@{ name = 'report_done'; category = 'session'; summary = 'Dem Nutzer melden: Ich bin fertig (Windows-Benachrichtigung auf seinem PC).';
             description = 'NUR rufen, wenn ALLE Aenderungen abgeschlossen sind und die Antwort DIREKT danach endet: der Nutzer bekommt dann eine Windows-Benachrichtigung mit der message auf seinen PC. Nur aktiv, wenn der Nutzer "Benachrichtigung wenn Arena fertig" EINGESCHALTET hat (zu sehen an _bridge.notifyWhenDone bzw. _bridge.bridgeSettings.notifyOnDone). message ist ein kurzer deutscher Satz fuer den Nutzer, z.B. "Ich bin fertig" oder "5 Aenderungen und Fehler behoben - fertig". Strikte Regel: nach diesem Call KEINE Werkzeuge mehr, KEINE Aenderungen mehr - die Antwort sofort beenden. Nie mitten in der Arbeit rufen.';
             params = @{ message = @{ type = 'string'; required = $true; default = '-'; description = 'Kurzer deutscher Fertig-Text fuer den Nutzer (max. 400 Zeichen).' } };
@@ -9557,25 +10172,25 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             params = @{};
             returns = '{ hasCharacter, player, position, cframe, health, maxHealth, walkSpeed, jumpPower, state }';
             example = @{};
-            errors = @('PLAY_NOT_RUNNING', 'NO_PLAYER: mode="run" hat keinen Charakter - play_start mit mode="play".') })
+            errors = @('PLAY_NOT_RUNNING', 'NO_PLAYER: mode="run" hat keinen Charakter - play_start mit mode="play".', 'REPORTER_NOT_CONNECTED: Session aktiv, aber Reporter noch nie im Output gesehen - sessionDiag liegt bei, session_diag + get_output filter="ARENA" lesen.') })
         $t.Add(@{ name = 'move_character'; category = 'play'; summary = 'Charakter per echter Studio-Tasten bewegen (HTTP-unabhaengig).';
             description = 'NUR keys/direction (W/A/S/D/Space) mit duration und optional shift. Die Bridge sendet VirtualInputManager-Tasten aus dem Edit-Plugin direkt an die getrennte Session; kein Humanoid.MoveTo und kein HTTP. Danach character_state lesen, damit die #ARENA#-Position frisch ist.';
             params = @{ keys = @{ type = 'string[]'; required = $true; default = '-'; description = "z.B. ['W'] oder ['A','W']; echte Tasten." }; duration = @{ type = 'number'; required = $false; default = '1'; description = 'Haltedauer in Sekunden.' }; shift = @{ type = 'bool'; required = $false; default = 'false'; description = 'Beim Gehen Shift gedrueckt halten.' } };
             returns = '{ pressed, duration, position, agentMode }';
             example = @{ keys = @('W'); duration = 1; shift = $false };
             errors = @('INPUT_REQUIRED: keys/direction ist Pflicht.', 'NO_PLAYER') })
-        $t.Add(@{ name = 'teleport_character'; category = 'play'; summary = 'Start-Teleport-Hinweis (Laufzeit-Teleport absichtlich deaktiviert).';
-            description = 'Teleportieren ist nur beim Start erlaubt: play_start { mode="play", arenaSpawn={x,y,z} }. Der Session Reporter liest GetTestArgs und teleportiert den Charakter vor dem Test. Das ersetzt play_here/MoveTo ohne HTTP.';
-            params = @{};
-            returns = 'Immer START_ONLY_TELEPORT mit dem korrekten play_start-Aufruf.';
-            example = @{ };
-            errors = @('START_ONLY_TELEPORT') })
+        $t.Add(@{ name = 'teleport_character'; category = 'play'; summary = 'Charakter zur Laufzeit teleportieren (ueber den Befehlskanal in die Session).';
+            description = '3.9.7: Der Befehl geht ueber den Cross-DM-Kanal (http-Agent, SharedTableService, in dieser Reihenfolge) an den Session-Reporter, der den Charakter IM Session-DataModel per PivotTo setzt - funktioniert mit httpEnabled=false, solange ein Kanal antwortet. Ohne Kanal bleibt play_start { mode="play", arenaSpawn={x,y,z} } (GetTestArgs vor dem Spawn) der einzige Weg.';
+            params = @{ position = @{ type = '{x,y,z}'; required = $true; default = '-'; description = 'Zielposition.' } };
+            returns = '{ teleported, via (http|sharedTable), position }';
+            example = @{ position = @{ x = 0; y = 10; z = 0 } };
+            errors = @('START_ONLY_TELEPORT: Kein Test aktiv - play_start mit arenaSpawn nutzen.', 'BAD_ARGS: position fehlt.', 'REPORTER_NOT_CONNECTED: Kein Befehlskanal antwortete.', 'NO_PLAYER: Kein Charakter in der Session.') })
         $t.Add(@{ name = 'respawn_character'; category = 'play'; summary = 'Charakter neu laden.';
-            description = 'Killt und neu-spawnt den Test-Player (nach Crashes oder festgefahrenem Avatar). Nur im Play-Modus.';
+            description = 'Killt und neu-spawnt den Test-Player (nach Crashes oder festgefahrenem Avatar). Nur im Play-Modus. 3.9.7: bei getrennter Session geht der Befehl ueber den Befehlskanal an den Session-Reporter (http, SharedTable, VIM-Kombo Strg+Alt+Umschalt+R).';
             params = @{};
             example = @{};
-            returns = '{ respawned }';
-            errors = @('PLAY_NOT_RUNNING', 'NO_PLAYER') })
+            returns = '{ respawned, via (http|sharedTable|vim|direct) }';
+            errors = @('PLAY_NOT_RUNNING', 'NO_PLAYER', 'REPORTER_NOT_CONNECTED: kein Befehlskanal antwortete - session_diag lesen.') })
         $t.Add(@{ name = 'wait'; category = 'play'; summary = 'Im Place warten + Output mitlesen.';
             params = @{ seconds = @{ type = 'number'; required = $false; default = '1'; description = 'max 60.' } };
             returns = '{ waited, output: [...] }';
@@ -9746,7 +10361,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 'SELECTORS: most "refs" arguments also accept a selector table: { tag = "Door" }, { className = "Part", rootRef = "#50" }, { query = "crate" }. Use selectors instead of long id lists.',
                 'SCRIPTS: never rewrite an 800 line script to change one line. Read with get_script (line numbers + hash), then patch_script (replace / replaceAll / insertAfter / replaceFunction / replaceLines ...). Check the result with compile_check BEFORE running it. set_script_source (full replace) still exists for new or tiny files. Pass expectHash to be safe.',
                 'NO STRING SURGERY: the bridge never modifies your source text (no trimming, no "return M" removal, no %-reformatting). A ModuleScript simply ends with "return M". If you need to change text, use patch_script ops - never .replace() across languages.',
-                'PLAY 3.9.6: Modern Studio runs the test in a separate DataModel. editModeActive=false is the only start/running oracle; never infer failure from Edit-DataModel RunService or Players. Every AI play_start injects #ARENA# server/client LogStream reporters, so character_state, GUI snapshots, mouse clicks and VIM W/A/S/D work with HttpEnabled=false and zero settings. HTTP is only a bonus. Read startDiagnostics and #ARENA# get_output lines, never guess. Start teleport: play_start { arenaSpawn={x,y,z} }; stop: play_stop uses edit RunService:Stop().',
+                'PLAY 3.9.7: Modern Studio runs the test in a separate DataModel. editModeActive=false is the only start/running oracle; never infer failure from Edit-DataModel RunService or Players. Every AI play_start injects #ARENA# server/client LogStream reporters as NORMAL clone-safe scripts (reporterVariant=2) and the server reporter prints a #ARENA# hello line instantly, so character_state, GUI snapshots, mouse clicks and VIM W/A/S/D work with HttpEnabled=false and zero settings; HTTP is only a bonus. If startDiagnostics.reporterSeenInOutput stays false, call session_diag and read get_output filter ARENA instead of guessing. play_stop ladder: (1) reporter end_test via the cross-DM channel (http agent > SharedTableService > VIM combo Ctrl+Alt+Shift+E) - the reporter ends the test INSIDE the session via StudioTestService:EndTest(stopped_by_arena_bridge), the only reliable stop for service-started sessions; (2) edit RunService:Stop() fallback; (3) clean PLAY_STOP_NEEDS_USER - ask the user to press Stop (Shift+F5), never retry in a loop. After any bridge update RESTART STUDIO once so the new plugin loads; a versionMismatch in /api/status tells you when you forgot. Start teleport: play_start { arenaSpawn={x,y,z} }; runtime teleport/respawn travel the same command channel when one is live.',
                 'THE USER IS THERE TOO: the user can press Play/Stop and PLAY in the game at any moment (moving the camera, walking the avatar, clicking the GUI). You will see it in _bridge.events / notices (user_rotating_camera, user_moving_character, user_clicked_gui, play_started with startedBy="user"). That is normal: nothing crashed and it is NOT a bug in your scripts - do not go searching for errors because of it.',
                 'USER PLAYTEST HAS PRIORITY: if _bridge.playtest / playtestWarning shows a USER playtest, you have two allowed options: (a) call play_stop yourself - it also ends user-started tests - then continue your work in edit mode; or (b) if the user is actively playing right now, end your response and tell them you cannot work safely in parallel - ask them to let you work in peace and to message you when Studio is free. Never make persistent edits while a test runs.',
                 'SELF-TEST SWITCH (3.8): the user can turn AI self-testing OFF in the bridge program ("Arena darf sich selbst testen"). Then every play tool answers SELF_TEST_DISABLED - that is a deliberate user decision, NOT a broken bridge. Use editor simulations (compile_check, run_lua in edit mode) instead and let the user run the game tests. Check _bridge.bridgeSettings.selfTestAllowed.',
@@ -9775,7 +10390,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             playModes = @{
                 edit = 'No test: everything you build is PERMANENT. This is where building and script editing happens. Editor simulations (compile_check for syntax, run_lua for pure logic) also run here - they need NO test session and stay available even when self-testing is disabled.'
                 run = 'Physics + server-script simulation IN THE EDITOR (Studio "Run", F8): the place runs as a server simulation. There is NO player, NO character, NO client and NO GUI. Use it for physics/server-logic tests. A tool answering "No player" in run mode is working as designed - switch to play for characters/GUI.'
-                play = 'Full game (Studio "Play", F5): separate session DataModel. play_start succeeds on editModeActive true->false, then #ARENA# LogStream reports real players, character position/health and GUI without HTTP. Use move_character keys+duration (VirtualInputManager), gui_click coordinates and play_stop (edit RunService:Stop).'
+                play = 'Full game (Studio "Play", F5): separate session DataModel. play_start succeeds on editModeActive true->false, then #ARENA# LogStream reports real players, character position/health and GUI without HTTP. Use move_character keys+duration (VirtualInputManager), gui_click coordinates, teleport_character/respawn_character/set_camera over the command channel and play_stop (ladder: reporter EndTest over the channel, then edit RunService:Stop, else PLAY_STOP_NEEDS_USER = ask the user for Shift+F5).'
                 play_here = 'Play at the editor camera. Internally this is a play_start arenaSpawn passed through GetTestArgs to the Session Reporter, not a post-start teleport. For an explicit spawn use play_start { arenaSpawn={x,y,z} }.'
             }
             userPresence = @(
@@ -9799,7 +10414,9 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 NO_PLAYER = 'No player/character - you are probably in run mode. Use play_start mode="play".'
                 PLAY_NOT_RUNNING = 'A playtest tool was called while nothing is running.'
                 INPUT_REQUIRED = 'move_character in a separate session accepts real W/A/S/D/Space keys and duration, not MoveTo/position.'
-                START_ONLY_TELEPORT = 'Use play_start { arenaSpawn={x,y,z} }; runtime teleport is deliberately disabled.'
+                START_ONLY_TELEPORT = 'No test running - play_start { arenaSpawn={x,y,z} } places the character before the test starts. During a session teleport_character travels the cross-DM command channel (sharedTable/http agent).'
+                REPORTER_NOT_CONNECTED = 'A session IS active but its #ARENA# reporter was never seen - the old No test running answer was simply wrong. The error carries sessionDiag; read it, call session_diag, then get_output filter ARENA. Fix: play_stop, then play_start again (reporterVariant=2 default); repeated failures mean the place or Studio blocks script injection - tell the user.'
+                PLAY_STOP_NEEDS_USER = 'Stop ladder exhausted: no reporter channel landed and edit RunService:Stop() was ignored. Do NOT retry play_stop in a loop - use the included German userMessage and ask the user to press Stop (Shift+F5) in Studio, then confirm editModeActive=true with session_diag.'
                 PLUGIN_OUTDATED = 'plugin outdated - Tests warten. Ask the user to restart Studio before play testing.'
                 PLAY_FALLBACK_RUN = 'The Studio Play shortcut could not be pressed, so Run mode started instead (no player) - try again with the Studio window focused.'
                 PLAY_START_UNAVAILABLE = 'This Studio version has no safe Play start API.'
@@ -9829,7 +10446,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             workflows = @{
                 buildSomething = @('play_status (must be edit mode)', 'describe_scene / search for context', 'create_instance or bulk_create (template+grid)', 'place_on / stack / snap_to_ground / grid_arrange instead of maths', 'select_instance so the user sees it')
                 editAScript = @('search className=Script', 'get_script (note the hash)', 'patch_script with a unique snippet', 'compile_check the result', 'set/patch with expectHash', 'play_start mode=play', 'wait_for_output / get_errors', 'play_stop')
-                testAGame = @('play_status first (check _bridge.playtest - never build while a test runs)', 'play_start mode=play (waits for the character) or mode=play_here (start at the edit camera)', 'character_state / move_character / set_camera', 'gui_dump -> gui_check -> gui_click with expect', 'get_output since=<cursor> / get_errors', 'play_stop, then verify the result in edit mode')
+                testAGame = @('play_status first (check _bridge.playtest - never build while a test runs)', 'play_start mode=play (waits for the character) or mode=play_here (start at the edit camera) - startDiagnostics.reporterSeenInOutput must be true', 'session_diag when anything looks odd (reporter, channels, output cursor)', 'character_state / move_character / set_camera', 'gui_dump -> gui_check -> gui_click with expect', 'get_output since=<cursor> / get_errors', 'play_stop (reporterEndTest preferred), then verify the result in edit mode')
                 manyObjects = @('clone_instance count=60 offset={x:8} nameTemplate="Crate{n}"', 'or bulk_create with template+grid', 'or batch (parallel=true only for independent calls)')
                 longBuild = @('fill_region with asJob=true (or start_job)', 'job_status (progress + partsPerSecond)', 'job_result when done (geometry.ready included)', 'verify_measurable on a sample if in doubt')
                 rotationCorrect = @('coordinate_guide (once per session)', 'describe_orientation on the part', 'point_at (axis="top" for cylinder length) or rotate_around with measured axes', 'describe_orientation again to verify')
@@ -9928,7 +10545,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '3.9.6'
+            version = '3.9.7'
             docsVersion = [string]$Shared.DocsVersion
             role = 'You are connected to exactly ONE live Roblox Studio place through a local plugin. Every token belongs to one Studio window only - if several windows are open, each one has its own token and you can never touch the wrong place. Send every request as POST /api/tool with JSON body { "token": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -10039,7 +10656,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '3.9.6'
+            bridgeVersion = '3.9.7'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -10272,7 +10889,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '3.9.6'
+                        bridgeVersion = '3.9.7'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -10313,7 +10930,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 $body = Read-Body $context.Request
             }
 
-            # ---------------- GET-Vollsteuerung (Version 3.9.6) --------------
+            # ---------------- GET-Vollsteuerung (Version 3.9.7) --------------
             # Manche KI-Umgebungen duerfen NUR per HTTP GET nach draussen
             # (der Web-Abruf-Dienst schickt keine POST-Koerper). Damit die KI
             # die Bridge trotzdem komplett bedienen kann, bauen wir hier aus
@@ -10478,7 +11095,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '3.9.6'
+                        serverVersion = '3.9.7'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -10657,8 +11274,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '3.9.6'
-                    serverVersion = '3.9.6'
+                    bridgeVersion = '3.9.7'
+                    serverVersion = '3.9.7'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -13010,7 +13627,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '3.9.6'
+    $versionText = '3.9.7'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -13335,7 +13952,7 @@ function Open-SettingsWindow {
                     <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                     <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                    <TextBlock Text="Arena Roblox Bridge - Version 3.9.6" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                    <TextBlock Text="Arena Roblox Bridge - Version 3.9.7" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                 </StackPanel>
             </ScrollViewer>
@@ -13367,7 +13984,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 3.9.6 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 3.9.7 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     if ($script:LastArenaMessage) {
@@ -13422,7 +14039,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 3.9.6 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 3.9.7 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#A99DA5'
 }
 if (Test-UpdateError) {
@@ -13435,7 +14052,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#F0A7B4'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '3.9.6'
+    $verText = '3.9.7'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
@@ -13449,7 +14066,7 @@ if (-not $script:EncodingOk) {
 }
 
 # ----------------------------------------------------------------------------
-# AUTOSTART: SELBST NACH UPDATES SUCHEN (Version 3.9.6)
+# AUTOSTART: SELBST NACH UPDATES SUCHEN (Version 3.9.7)
 # Ohne -UpdateStatus wurde das Programm NICHT vom Starter geoeffnet - das ist
 # genau der Windows-Autostart ("Beim PC-Start automatisch oeffnen"). Dann
 # uebernimmt die Bridge die Update-Suche selbst. Alles ist abgesichert: ein

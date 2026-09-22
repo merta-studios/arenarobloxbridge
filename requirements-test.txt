@@ -1,2 +1,2 @@
-# Offline structure test dependency (test_v396_structure.py)
+# Offline structure test dependency (test_v397_structure.py)
 luaparser>=4.0,<5
