@@ -1,5 +1,42 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 4.0.2
+# Arena Roblox Bridge  -  Version 4.0.3
+#
+# NEU IN VERSION 4.0.3 - REPORTER-SCHLEIFE LIEF NUR 1x DURCH (LIVE GEMESSEN):
+#   * LIVE-BEFUND 4.0.2: play_start ok:true mit sessionPlayers:1, echter
+#     Position und connectedPlaces:1 - ABER runSessionReporterLoop sendete
+#     genau EINEN Heartbeat (arenaLineCount blieb konstant 1,
+#     reporterLastAgeSeconds wuchs 53 -> 97 -> 142). Folge:
+#     REPORTER_NOT_CONNECTED bei move_character und play_stop ("tried:
+#     sessionPlugin,http,sharedTable").
+#   * FIX: Die Schleife laeuft jetzt als while true und koppelt
+#     RunService:IsRunning() nur noch als AUSSTIEGS-Orakel MIT Toleranz
+#     (erst ~6 durchgehende Sekunden "nicht laufend" beenden sie), gepcallt
+#     pro Durchlauf - und ein SUPERVISOR im Aufrufer startet sie sofort neu.
+#     Kein einzelner Fehler, kein falscher IsRunning-Wert und kein werfender
+#     Aufruf kann den Reporter damit noch still beenden; nur der Abbau des
+#     Session-DataModel (Test-Ende) stoppt alles.
+#   * JEDER Heartbeat traegt reporterLoopCount (Schleifenzaehler),
+#     reporterPostFailCount (post() lieferte still nil) und reporterLoopError
+#     (letzter Fehlertext) - session_diag zeigt unter reporter.loopCount /
+#     postFailCount / lastLoopError live, wie oft die Schleife lief. Der
+#     Zaehler wird zusaetzlich in die SharedTable gespiegelt
+#     (st.pluginReporterLoopCount), damit die Schleife auch dann sichtbar
+#     bleibt, wenn HTTP aus der Session heraus versagt.
+#   * Ursachen-Abdeckung: (a) die Schleife haengt nie mehr an der lokalen
+#     running-Variable; (b) post()/Snapshot/Befehle laufen komplett im
+#     pcall, Fehler werden weitergemeldet statt zu beenden; (c)
+#     plugin:GetSetting wird IN der Schleife gelesen, bis beide Settings da
+#     sind (kein stilles return mehr vorher); (d) die Session-Erkennung am
+#     Schleifenstart prueft zusaetzlich RunService:IsEdit(), weil
+#     isSessionDataModel beim Plugin-Load (IsRunning) zu frueh ausgewertet
+#     werden kann, wenn Studio das Session-DataModel noch aufbaut.
+#   * Das Edit-Plugin pollt den Reporter-Zustand waehrend eines laufenden
+#     Tests jetzt alle ~2s: arenaLineCount zaehlt im Live-Test sichtbar hoch
+#     (4.0.2 fror nach dem ersten play_start-Poll bei 1 ein) und der
+#     Snapshot (Position/Gesundheit) bleibt frisch.
+#   * Session-Befehle (move_character, end_test, ...) laufen im eigenen
+#     Thread: Auch waehrend einer Bewegung (duration bis 12s) bleiben die
+#     Heartbeats aktiv.
 #
 # NEU IN VERSION 4.0.2 - STOP-SCHLEIFE UEBERLEBT + MOVE OHNE VIRTUALINPUT:
 #   * BUG 1 (Stop kaputt): runSessionReporterLoop im Test-DataModel starb nach
@@ -961,7 +998,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '4.0.2'
+    DocsVersion     = '4.0.3'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -1090,7 +1127,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 4.0.2)
+  Arena Studio Bridge - Studio Plugin  (Version 4.0.3)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1161,7 +1198,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "4.0.2"
+local ARENA_VERSION  = "4.0.3"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -1209,6 +1246,8 @@ local sessionAgent = {
     reporterActive = false, playerCount = 0, mode = "play", lastAnswer = 0,
     agentMode = "logStream", snapshot = nil, guiSnapshot = nil,
     httpEnabled = nil, reporterAt = 0, reporterLoopError = nil,
+    -- 4.0.3: Lebensbeweise der Session-Reporter-Schleife (session_diag).
+    reporterLoopCount = 0, reporterPostFailCount = 0, reporterLoopCountMirrored = nil,
 }
 
 local function readHttpEnabled()
@@ -1425,6 +1464,9 @@ local function playState()
         reporterLastAgeSeconds = (sessionAgent and sessionAgent.reporterAt and sessionAgent.reporterAt > 0)
             and (math.floor((os.clock() - sessionAgent.reporterAt) * 10) / 10) or nil,
         arenaLineCount = (sessionAgent and sessionAgent.arenaLineCount) or 0,
+        -- 4.0.3: wie oft die Session-Reporter-Schleife laut letztem
+        -- Heartbeat lief (steigt ~alle 0,4s, solange sie gesund ist).
+        reporterLoopCount = (sessionAgent and sessionAgent.reporterLoopCount) or nil,
         reporterVariantUsed = sessionAgent and sessionAgent.reporterVariantUsed or nil,
         userPlaytestActive = userPlaytestActive,
         -- true = Studio is in edit mode and there is NO test session.
@@ -3258,6 +3300,10 @@ local function sessionDiagnostics(diag)
         diag.reporterSeenInOutput = true
     end
     diag.arenaLineCount = sessionAgent.arenaLineCount or 0
+    -- 4.0.3: Schleifenzaehler des Session-Reporters in jede play_start-/
+    -- play_stop-Diagnose uebernehmen (Beweis, wie oft die Schleife lief).
+    if sessionAgent.reporterLoopCount ~= nil then diag.reporterLoopCount = sessionAgent.reporterLoopCount end
+    if sessionAgent.reporterPostFailCount ~= nil then diag.reporterPostFailCount = sessionAgent.reporterPostFailCount end
     diag.agentMode = (sessionAgent and sessionAgent.agentMode) or "logStream"
     diag.httpEnabled = readHttpEnabled()
     diag.lastArenaKind = sessionAgent.lastArenaKind
@@ -3649,6 +3695,21 @@ absorbSharedTableReports = function()
     local st = getSharedTable()
     if st == nil then return false end
     local changed = false
+    -- 4.0.3: Der Session-Reporter spiegelt seinen Schleifenzaehler in die
+    -- SharedTable (st.pluginReporterLoopCount) - so bleibt sichtbar, dass
+    -- die Schleife laeuft, selbst wenn ihre HTTP-Heartbeats nie ankommen.
+    pcall(function()
+        local mirrored = tonumber(st.pluginReporterLoopCount)
+        if mirrored ~= nil and mirrored > (sessionAgent.reporterLoopCountMirrored or 0) then
+            sessionAgent.reporterLoopCountMirrored = mirrored
+            sessionAgent.reporterLoopMirroredAt = os.clock()
+        end
+        if type(st.pluginReporterLoopError) == "string" and st.pluginReporterLoopError ~= "" then
+            sessionAgent.reporterLoopErrorMirrored = st.pluginReporterLoopError
+        else
+            sessionAgent.reporterLoopErrorMirrored = nil
+        end
+    end)
     local raw = nil
     pcall(function() raw = st.report end)
     if type(raw) == "string" and raw ~= "" and raw ~= sessionAgent.lastSharedReport then
@@ -3775,6 +3836,15 @@ local function sessionDiagnosticsData(skipProbe)
         -- 4.0.2: last error caught inside runSessionReporterLoop's per-iteration
         -- pcall, if any. The loop keeps running regardless (see 4.0.2 notes).
         lastLoopError = sessionAgent.reporterLoopError,
+        -- 4.0.3: proof of life from the session reporter loop. loopCount
+        -- climbs by 1 per heartbeat while the loop is healthy (the 4.0.2
+        -- bug froze it after the first heartbeat); postFailCount climbs
+        -- when post() silently returns nil; loopCountViaSharedTable is the
+        -- SharedTable mirror that stays visible even without HTTP.
+        loopCount = sessionAgent.reporterLoopCount,
+        postFailCount = sessionAgent.reporterPostFailCount,
+        loopCountViaSharedTable = sessionAgent.reporterLoopCountMirrored,
+        loopErrorViaSharedTable = sessionAgent.reporterLoopErrorMirrored,
     }
     diag.state = playState()
     return diag
@@ -3861,6 +3931,14 @@ function pollSessionPluginState()
     -- 4.0.2 BUG-1-FIX: surface the reporter loop's own last error (if any)
     -- so session_diag shows WHY it struggled instead of just going quiet.
     sessionAgent.reporterLoopError = snap.reporterLoopError
+    -- 4.0.3: Schleifenzaehler des Reporters uebernehmen - session_diag
+    -- zeigt so live, wie oft runSessionReporterLoop bisher lief.
+    if tonumber(snap.reporterLoopCount) ~= nil then
+        sessionAgent.reporterLoopCount = tonumber(snap.reporterLoopCount)
+    end
+    if tonumber(snap.reporterPostFailCount) ~= nil then
+        sessionAgent.reporterPostFailCount = tonumber(snap.reporterPostFailCount)
+    end
     return snap
 end
 
@@ -3963,6 +4041,7 @@ local function startPlay(mode, startArgs)
         reporterInjected=false, reporterVariantUsed=variant, reporterVariantInSession=nil,
         arenaLineCount=0, lastArenaKind=nil, lastArenaRaw=nil,
         lastSharedReport=nil, lastSharedClientReport=nil, vimCommandsSeen=0,
+        reporterLoopCount=nil, reporterPostFailCount=nil, reporterLoopCountMirrored=nil,
     }
     -- SharedTableRegistry is process-global. Do not let the previous test's
     -- last snapshot make the next Play look healthy before its reporter starts.
@@ -8336,16 +8415,17 @@ end
 -- Stop) und LeaveTest.
 -- ---------------------------------------------------------------------------
 local function runSessionReporterLoop()
-    -- 4.0.2 BUG-1-FIX: plugin:GetSetting is read exactly ONCE, before the
-    -- loop starts. Reading it every iteration (or letting an unrelated
-    -- error abort the whole loop) was the reason the reporter died after
-    -- ~3 heartbeats in the live test (arenaLineCount stuck at 3,
-    -- reporterLastAgeSeconds growing forever afterwards).
+    -- 4.0.3: LIVE-BEFUND 4.0.2 - die Schleife sendete GENAU EINEN Heartbeat
+    -- (arenaLineCount blieb konstant 1, reporterLastAgeSeconds wuchs
+    -- 53 -> 97 -> 142), danach REPORTER_NOT_CONNECTED bei move_character
+    -- und play_stop ("tried: sessionPlugin,http,sharedTable"). Die Schleife
+    -- ist deshalb jetzt while true mit RunService:IsRunning() NUR als
+    -- Ausstiegs-Orakel (~6s Toleranz, gepcallt) plus Supervisor im
+    -- Aufrufer: KEIN einzelner Fehler, kein falscher IsRunning-Wert und kein
+    -- werfender Aufruf kann den Reporter noch still beenden. Nur der Abbau
+    -- des Session-DataModel (Test-Ende) stoppt ihn.
     local key = nil
-    pcall(function() key = plugin:GetSetting("arenaSessionKey") end)
     local owner = nil
-    pcall(function() owner = plugin:GetSetting("arenaOwnerSession") end)
-    if type(owner) ~= "string" or owner == "" then return end
     local function snapshot()
         local players = Players:GetPlayers()
         local list = {}
@@ -8457,41 +8537,96 @@ local function runSessionReporterLoop()
         end
         return { ok = false, error = "Unsupported session command: " .. action }
     end
-    -- 4.0.2 BUG-1-FIX: the ENTIRE loop body runs inside one pcall per
-    -- iteration. Any error (a bad command, a nil character during a respawn,
-    -- an HTTP hiccup, ...) used to unwind the whole task.spawn coroutine and
-    -- silently kill the reporter after only a few heartbeats (live-observed:
-    -- arenaLineCount stuck at 3). Now an error is recorded and reported back
-    -- to the bridge on the NEXT heartbeat (visible in session_diag), and the
-    -- loop keeps running. The loop is coupled to RunService:IsRunning(), not
-    -- to the edit-plugin's `running` flag, because this coroutine lives in a
-    -- separate Test-DataModel Lua VM that never sees `running` go false.
-    local lastReporterLoopError = nil
-    while RunService:IsRunning() do
+    -- 4.0.3: Zaehler als sessionAgent-Felder - sie ueberleben den
+    -- Supervised-Neustart (Aufrufer unten) und sind in JEDEM Heartbeat
+    -- sichtbar: session_diag zeigt unter reporter.loopCount, wie oft die
+    -- Schleife wirklich lief, und unter postFailCount, wie oft post()
+    -- still nil lieferte (das unsichtbare Symptom von 4.0.2: kein Lua-
+    -- Fehler, aber nichts kam an der Bridge an).
+    if type(sessionAgent.reporterLoopCount) ~= "number" then sessionAgent.reporterLoopCount = 0 end
+    if type(sessionAgent.reporterPostFailCount) ~= "number" then sessionAgent.reporterPostFailCount = 0 end
+    local notRunningStreak = 0
+    while true do
         local iterOk, iterErr = pcall(function()
+            -- 4.0.3 (Ursache c): plugin:GetSetting wird IN der Schleife
+            -- gelesen, bis beide Settings da sind. Laedt dieses Plugin, bevor
+            -- das Edit-Plugin sie geschrieben hat, wartet die Schleife -
+            -- statt still VOR der Schleife zurueckzukehren.
+            if type(owner) ~= "string" or owner == "" or type(key) ~= "string" or key == "" then
+                local newKey, newOwner = nil, nil
+                pcall(function() newKey = plugin:GetSetting("arenaSessionKey") end)
+                pcall(function() newOwner = plugin:GetSetting("arenaOwnerSession") end)
+                if type(newOwner) == "string" and newOwner ~= ""
+                    and type(newKey) == "string" and newKey ~= "" then
+                    owner, key = newOwner, newKey
+                end
+            end
+            sessionAgent.reporterLoopCount = sessionAgent.reporterLoopCount + 1
+            -- 4.0.3: Schleifenzaehler auch in die SharedTable spiegeln - bleibt
+            -- sichtbar, selbst wenn HTTP aus der Session heraus versagt.
+            pcall(function()
+                local registry = game:GetService("SharedTableRegistry")
+                local st = registry:GetSharedTable("arenaBridge")
+                if st ~= nil then
+                    st.pluginReporterLoopCount = sessionAgent.reporterLoopCount
+                    st.pluginReporterLoopError = sessionAgent.reporterLoopError
+                end
+            end)
+            if type(owner) ~= "string" or owner == "" then
+                -- Ohne Settings noch nichts postbar - aber der Zaehler oben
+                -- beweist ueber die SharedTable, dass die Schleife laeuft.
+                return
+            end
             local state = snapshot()
-            if lastReporterLoopError ~= nil then
-                state.reporterLoopError = lastReporterLoopError
+            -- 4.0.3: JEDER Heartbeat traegt Schleifenzaehler + letzten
+            -- Fehlertext - damit zeigt session_diag live, wie oft sie lief.
+            state.reporterLoopCount = sessionAgent.reporterLoopCount
+            state.reporterLoopAlive = true
+            state.reporterPostFailCount = sessionAgent.reporterPostFailCount
+            if sessionAgent.reporterLoopError ~= nil then
+                state.reporterLoopError = sessionAgent.reporterLoopError
             end
             local response = post("/plugin/session", {
                 sessionId = owner, sessionKey = key, action = "heartbeat",
                 state = state,
             })
-            if response ~= nil and type(response.commands) == "table" then
+            if response == nil then
+                -- post() wirft nie (interner pcall) - aber still nil liefern
+                -- (Netz, 403, leerer Body) ist ein eigener Fehler und wird
+                -- gezaehlt, statt unbemerkt weiterzulaufen.
+                sessionAgent.reporterPostFailCount = sessionAgent.reporterPostFailCount + 1
+            elseif type(response.commands) == "table" then
                 for _, command in ipairs(response.commands) do
-                    local okRun, result = pcall(execute, command)
-                    if not okRun then result = { ok = false, error = tostring(result) } end
-                    pcall(function()
-                        post("/plugin/session", { sessionId = owner, sessionKey = key,
-                            action = "result", commandId = command and command.id, result = result })
+                    -- 4.0.3: Befehle im eigenen Thread - move_character
+                    -- wartet bis zu 12s, die Heartbeats laufen weiter und
+                    -- der Reporter bleibt sichtbar frisch.
+                    task.spawn(function()
+                        local okRun, result = pcall(execute, command)
+                        if not okRun then result = { ok = false, error = tostring(result) } end
+                        pcall(function()
+                            post("/plugin/session", { sessionId = owner, sessionKey = key,
+                                action = "result", commandId = command and command.id, result = result })
+                        end)
                     end)
                 end
             end
         end)
         if iterOk then
-            lastReporterLoopError = nil
+            sessionAgent.reporterLoopError = nil
         else
-            lastReporterLoopError = tostring(iterErr)
+            sessionAgent.reporterLoopError = tostring(iterErr)
+        end
+        -- 4.0.3 (Ursache a/b): RunService:IsRunning() ist NUR noch das
+        -- Ausstiegs-Orakel - gepcallt und mit Toleranz: Ein einzelner
+        -- false-Wert (oder ein werfender Aufruf) beendet die Schleife nicht
+        -- mehr. Erst ~6 durchgehende Sekunden "nicht laufend" lassen sie
+        -- zurueckkehren, und der Supervisor unten startet sie sofort neu.
+        local runningOk, runningNow = pcall(function() return RunService:IsRunning() end)
+        if runningOk == true and runningNow == true then
+            notRunningStreak = 0
+        else
+            notRunningStreak = notRunningStreak + 1
+            if notRunningStreak >= 15 then return end
         end
         task.wait(0.4)
     end
@@ -8649,9 +8784,27 @@ end)
 
 -- Heartbeat: haelt die Anzeige im Programm aktuell (kleine Pakete)
 task.spawn(function()
-    if isSessionDataModel then return end
+    -- 4.0.3 (d): gleiche lazy Session-Erkennung wie im Long-Poll-Thread.
+    local sessionDm = isSessionDataModel
+    if sessionDm ~= true then
+        local isEdit = true
+        pcall(function() isEdit = RunService:IsEdit() end)
+        if isEdit == false then sessionDm = true end
+    end
+    if sessionDm then return end
+    local lastSessionPoll = 0
     while running do
         if testSessionActive() and absorbSharedTableReports then pcall(absorbSharedTableReports) end
+        -- 4.0.3: Zustand des Session-Plugin-Reporters regelmaessig abholen.
+        -- Haelt den Snapshot (Position/Gesundheit) waehrend des Tests frisch
+        -- UND laesst arenaLineCount sichtbar hochzaehlen, solange die
+        -- Reporter-Schleife laeuft (4.0.2-Befund: nach dem ersten Poll von
+        -- play_start fror der Zaehler bei 1 ein, weil niemand mehr pollte).
+        if testSessionActive() and sessionAgent ~= nil and sessionAgent.key ~= nil
+            and os.clock() - lastSessionPoll > 2 then
+            lastSessionPoll = os.clock()
+            pcall(pollSessionPluginState)
+        end
         if sessionId ~= nil and os.clock() - lastHeartbeat > ARENA_CFG.HEARTBEAT_EVERY then
             lastHeartbeat = os.clock()
             local response = post("/plugin/heartbeat", statePayload())
@@ -8672,9 +8825,28 @@ end)
 -- angemeldet (das war die Ursache fuer den zusaetzlichen "Game"-Eintrag).
 -- Stattdessen arbeitet die Instanz als Session-Reporter der echten Sitzung.
 task.spawn(function()
-    if isSessionDataModel then
+    -- 4.0.3 (Ursache d): Session-Erkennung wird HIER neu bewertet, nicht
+    -- nur beim Plugin-Load. isSessionDataModel wurde mit
+    -- RunService:IsRunning() beim Laden berechnet - zu frueh, wenn Studio
+    -- das Session-DataModel noch im Aufbau hatte. IsEdit() unterscheidet
+    -- Edit- und Session-DataModel zuverlaessig (im Edit-DataModel true) und
+    -- bleibt per pcall + Load-Wert abgesichert.
+    local sessionDm = isSessionDataModel
+    if sessionDm ~= true then
+        local isEdit = true
+        pcall(function() isEdit = RunService:IsEdit() end)
+        if isEdit == false then sessionDm = true end
+    end
+    if sessionDm then
         widget.Enabled = false
-        pcall(runSessionReporterLoop)
+        -- 4.0.3 SUPERVISOR: runSessionReporterLoop kehrt erst nach ~6s
+        -- durchgehendem "nicht laufend" zurueck und wird sofort neu
+        -- gestartet. Nur der Abbau des Session-DataModel beendet alles -
+        -- der Reporter kann nie wieder nach einem Heartbeat verschwinden.
+        while true do
+            pcall(runSessionReporterLoop)
+            task.wait(1)
+        end
         return
     end
     local backoff = 0.5
@@ -10710,7 +10882,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         $t.Add(@{ name = 'play_status'; category = 'play'; summary = 'Läuft ein Test? Welcher Modus (edit/run/play/play_here)? Ist ein Player da?';
             description = 'Laufender Zustand mit edit/run/play/play_here. Moderne Studio-Sessions laufen in einem getrennten DataModel: editModeActive=false ist das verbindliche Lauf-Orakel, NICHT RunService/Players im Edit-Plugin. Der #ARENA# LogStream-Reporter (3.9.7: als normales, klon-sicheres Script injiziert + sofortige hello-Zeile als Injektions-Beweis) liefert sessionPlayers, Charakter/Gesundheit und GUI auch bei httpEnabled=false; HTTP ist nur ein optionaler Schnellpfad. reporterLastKind/reporterLastAgeSeconds/arenaLineCount zeigen die Reporter-Frische; Details liefert das neue Werkzeug session_diag.';
             params = @{};
-            returns = '{ running, mode, context, playerCount, sessionPlayers, agentConnected, reporterActive, reporterLastKind, reporterLastAgeSeconds, arenaLineCount, reporterVariantUsed, agentMode (http|logStream), httpEnabled, editModeActive, sessionSnapshot, modeInfo, userPlaytestActive }';
+            returns = '{ running, mode, context, playerCount, sessionPlayers, agentConnected, reporterActive, reporterLastKind, reporterLastAgeSeconds, arenaLineCount, reporterLoopCount, reporterVariantUsed, agentMode (http|logStream), httpEnabled, editModeActive, sessionSnapshot, modeInfo, userPlaytestActive }';
             example = @{};
             errors = @() })
         $t.Add(@{ name = 'play_start'; category = 'play'; summary = 'Test starten: mode="play" (echt, mit Player), "play_here" (play an der Edit-Kamera) oder "run" (Physik-/Script-Simulation im Editor).';
@@ -10726,9 +10898,9 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             example = @{};
             errors = @('PLAY_STOP_NEEDS_USER: Weder Reporter-Kanal noch RunService:Stop() haben gegriffen - Nutzer bitten, selbst Stop (Shift+F5) zu druecken (userMessage liegt bei). session_diag > channels zeigt, welcher Befehlsweg verfuegbar war. Nicht in einer Schleife wiederholen.') })
         $t.Add(@{ name = 'session_diag'; category = 'play'; summary = 'Live-Diagnose: Reporter, Befehlskanaele, Output-Cursor (read-only, jederzeit aufrufbar).';
-            description = 'Liefert die komplette Session-Wahrheit ohne Raten: editModeActive/IsRunning/testSessionActive, reporter { active, seenInOutput, arenaLineCount, lastKind, lastAgeSeconds, variantInjected (2=klon-sicher, 1=Archivable=false-Sonde), variantInSession }, channels { httpConnected, sharedTableAvailable, sharedTableCrossDm (Live-Probe mit Echo), vimAvailable, vimCommandsSeen }, Output-Cursor und Fehler-/Warnungszaehler plus den kompletten play_status. Bei JEDEM Playtest-Problem ZUERST session_diag lesen und dann get_output filter="ARENA". skipProbe=true laesst die 2.5s-SharedTable-Sonde weg.';
+            description = 'Liefert die komplette Session-Wahrheit ohne Raten: editModeActive/IsRunning/testSessionActive, reporter { active, seenInOutput, arenaLineCount, lastKind, lastAgeSeconds, loopCount, postFailCount, lastLoopError (4.0.3: Schleifenzaehler/Post-Fehlerzaehler/letzter Fehler der Session-Reporter-Schleife - loopCount steigt, solange sie gesund laeuft), variantInjected (2=klon-sicher, 1=Archivable=false-Sonde), variantInSession }, channels { httpConnected, sharedTableAvailable, sharedTableCrossDm (Live-Probe mit Echo), vimAvailable, vimCommandsSeen }, Output-Cursor und Fehler-/Warnungszaehler plus den kompletten play_status. Bei JEDEM Playtest-Problem ZUERST session_diag lesen und dann get_output filter="ARENA". skipProbe=true laesst die 2.5s-SharedTable-Sonde weg.';
             params = @{ skipProbe = @{ type = 'bool'; required = $false; default = 'false'; description = 'true = keine SharedTable-Live-Sonde (schnellere Antwort).' } };
-            returns = '{ editModeActive, editPluginIsRunning, testSessionActive, sessionPlayers, reporterActive, reporterSeenInOutput, arenaLineCount, lastArenaKind, lastArenaAgeSeconds, reporter, channels, sharedTableProbe, outputCursor, outputErrorCount, outputWarningCount, lastArenaRaw, vimCommandsSeen, state }';
+            returns = '{ editModeActive, editPluginIsRunning, testSessionActive, sessionPlayers, reporterActive, reporterSeenInOutput, arenaLineCount, lastArenaKind, lastArenaAgeSeconds, reporterLoopCount, reporter, channels, sharedTableProbe, outputCursor, outputErrorCount, outputWarningCount, lastArenaRaw, vimCommandsSeen, state }';
             example = @{};
             errors = @() })
         $t.Add(@{ name = 'report_done'; category = 'session'; summary = 'Dem Nutzer melden: Ich bin fertig (Windows-Benachrichtigung auf seinem PC).';
@@ -11132,7 +11304,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '4.0.2'
+            version = '4.0.3'
             docsVersion = [string]$Shared.DocsVersion
             role = 'You are connected to exactly ONE live Roblox Studio place through a local plugin. Every token belongs to one Studio window only - if several windows are open, each one has its own token and you can never touch the wrong place. Send every request as POST /api/tool with JSON body { "token": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -11243,7 +11415,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '4.0.2'
+            bridgeVersion = '4.0.3'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -11476,7 +11648,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '4.0.2'
+                        bridgeVersion = '4.0.3'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -11702,7 +11874,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '4.0.2'
+                        serverVersion = '4.0.3'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -11881,8 +12053,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '4.0.2'
-                    serverVersion = '4.0.2'
+                    bridgeVersion = '4.0.3'
+                    serverVersion = '4.0.3'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -14272,7 +14444,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '4.0.2'
+    $versionText = '4.0.3'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -14593,7 +14765,7 @@ function Open-SettingsWindow {
                     <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                     <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                    <TextBlock Text="Arena Roblox Bridge - Version 4.0.2" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                    <TextBlock Text="Arena Roblox Bridge - Version 4.0.3" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                 </StackPanel>
             </ScrollViewer>
@@ -14625,7 +14797,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 4.0.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 4.0.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     if ($script:LastArenaMessage) {
@@ -14680,7 +14852,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 4.0.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 4.0.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -14693,7 +14865,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '4.0.2'
+    $verText = '4.0.3'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
