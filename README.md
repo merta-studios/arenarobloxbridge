@@ -36,6 +36,12 @@ heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestarte
 
 ## Versionsverlauf
 
+## 4.0.0
+- Playtest-Rückkanal repariert: Das Plugin verwendet jetzt Roblox `SharedTableRegistry` korrekt und liest Reporter-Snapshots direkt aus der isolierten Test-Session. Dadurch funktionieren Play, `character_state`, Bewegung und Stop auch bei `HttpEnabled=false`, ohne sich auf eine Cross-DataModel-`MessageOut`-Brücke zu verlassen.
+- `play_start` meldet erst Erfolg, wenn der Session-Reporter mit Spieler/Charakter erreichbar ist. `play_stop` nutzt bevorzugt `StudioTestService:EndTest` im Session-DataModel und räumt die temporären Reporter zombie-frei auf.
+- UI komplett auf Tech-Dark umgestellt: Deep Slate, Neon-Cyan, Indigo und subtile Glassmorphism-Flächen. Einstellungen sind kompakt und enthalten keine langen Switch-Beschreibungen mehr.
+
+
 > ⚠️ **Nach JEDEM Programm-Update Roblox Studio einmal neu starten**, damit
 > das neue Studio-Plugin geladen wird. Die Bridge erkennt veraltete Plugins
 > selbst (`pluginVersion` ≠ Programmversion) und meldet es in der
@@ -91,7 +97,7 @@ heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestarte
   klappt wieder.
 - **Befehlskanal in die Session – ohne irgendwelche Einstellungen.**
   Priorität: (1) optionaler HTTP-Agent (nur bei `HttpEnabled=true`);
-  (2) **SharedTableService** als Cross-DM-Speicher zwischen Edit-Plugin und
+  (2) **SharedTableRegistry** als Cross-DM-Speicher zwischen Edit-Plugin und
   Session-Reporter (volle Argumente + echte Antworten; `session_diag`
   prüft per Live-Echo-Probe, ob die Tabelle wirklich über beide DataModels
   reicht); (3) **VirtualInputManager-Kombos** Strg+Alt+Umschalt+E/R/P auf dem
