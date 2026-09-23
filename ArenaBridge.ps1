@@ -1,4 +1,21 @@
 ﻿# ============================================================================
+# Arena Roblox Bridge  -  Version 4.0.4
+#
+# LIVE-FEHLERANALYSE / BUGFIX:
+#   * Nach dem Stop blieb der alte Session-Reporter im Edit-Status sichtbar
+#     (reporterActive=true, sessionPlayers=1, alte Position), obwohl
+#     EditModeActive=true war. Play-Zustand, Guards und Diagnosen verwerfen
+#     Reporter-Snapshots jetzt strikt ausserhalb einer aktiven Session.
+#   * reporterSeenInOutput wurde faelschlich aus Polling-Zaehlern abgeleitet.
+#     Die Diagnose unterscheidet jetzt echte #ARENA#-LogService-Zeilen von
+#     dem funktionierenden Session-Plugin-Kanal.
+#   * Der injizierte SharedTable-Reporter hatte weiterhin eine fragile
+#     while-IsRunning-Schleife und konnte move_character nicht ausfuehren.
+#     Er laeuft jetzt fehlertolerant mit Ausstiegstoleranz/Supervision und
+#     unterstuetzt Bewegung im Session-DataModel als echten Fallback.
+#   * No-HTTP-Diagnose bleibt ehrlich: Cross-DM SharedTable wird als optional
+#     gemeldet; der nachgewiesene sessionPlugin-Kanal bleibt nutzbar.
+#
 # Arena Roblox Bridge  -  Version 4.0.3
 #
 # NEU IN VERSION 4.0.3 - REPORTER-SCHLEIFE LIEF NUR 1x DURCH (LIVE GEMESSEN):
@@ -998,7 +1015,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '4.0.3'
+    DocsVersion     = '4.0.4'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -1127,7 +1144,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 4.0.3)
+  Arena Studio Bridge - Studio Plugin  (Version 4.0.4)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1198,7 +1215,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "4.0.3"
+local ARENA_VERSION  = "4.0.4"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -1246,6 +1263,7 @@ local sessionAgent = {
     reporterActive = false, playerCount = 0, mode = "play", lastAnswer = 0,
     agentMode = "logStream", snapshot = nil, guiSnapshot = nil,
     httpEnabled = nil, reporterAt = 0, reporterLoopError = nil,
+    reporterSeenInOutput = false, reporterOutputLineCount = 0,
     -- 4.0.3: Lebensbeweise der Session-Reporter-Schleife (session_diag).
     reporterLoopCount = 0, reporterPostFailCount = 0, reporterLoopCountMirrored = nil,
 }
@@ -1286,7 +1304,9 @@ end
 -- test runs in a separate DataModel - editModeActive=false counts as active
 -- even though the edit plugin shows neither IsRunning() nor Players.
 local function testSessionActive()
-    if RunService:IsRunning() then return true end
+    local runningNow = false
+    pcall(function() runningNow = RunService:IsRunning() end)
+    if runningNow == true then return true end
     if StudioTestService ~= nil then
         local editActive = nil
         pcall(function() editActive = StudioTestService.EditModeActive end)
@@ -1296,7 +1316,11 @@ local function testSessionActive()
 end
 
 local function sessionReporterUsable()
+    -- Reporter data from the previous Play session must never make Edit mode
+    -- look like a live test. This was visible in the live 4.0.3 check:
+    -- editModeActive=true but reporterActive/sessionPlayers stayed populated.
     return sessionAgent ~= nil and sessionAgent.reporterActive == true
+        and testSessionActive()
 end
 
 -- A hello proves the script is alive; Play is only ready once a real player
@@ -1371,25 +1395,28 @@ end)
 -- HTTP
 -- ---------------------------------------------------------------------------
 local function post(path, payload)
-    local ok, response = pcall(function()
-        return HttpService:RequestAsync({
-            Url = BASE_URL .. path,
-            Method = "POST",
-            Headers = {
-                ["Content-Type"] = "application/json; charset=utf-8",
-                ["X-Arena-Plugin"] = ARENA_VERSION,
-            },
-            Body = HttpService:JSONEncode(payload),
-        })
-    end)
-    if not ok or not response or not response.Success or response.Body == "" then
-        return nil
-    end
-    local decodedOk, decoded = pcall(function()
-        return HttpService:JSONDecode(response.Body)
-    end)
-    if decodedOk then
-        return decoded
+    -- A transient empty/failed local response must not kill the session
+    -- reporter. The live 4.0.3 run showed postFailCount climbing although
+    -- the reporter itself was still alive. Retry once before reporting nil.
+    for attempt = 1, 2 do
+        local ok, response = pcall(function()
+            return HttpService:RequestAsync({
+                Url = BASE_URL .. path,
+                Method = "POST",
+                Headers = {
+                    ["Content-Type"] = "application/json; charset=utf-8",
+                    ["X-Arena-Plugin"] = ARENA_VERSION,
+                },
+                Body = HttpService:JSONEncode(payload),
+            })
+        end)
+        if ok and response and response.Success and response.Body ~= "" then
+            local decodedOk, decoded = pcall(function()
+                return HttpService:JSONDecode(response.Body)
+            end)
+            if decodedOk then return decoded end
+        end
+        if attempt == 1 then task.wait(0.08) end
     end
     return nil
 end
@@ -1441,12 +1468,13 @@ local function playState()
     -- ignored as a session oracle. EditModeActive=false is the Studio-owned
     -- signal that the separate test DataModel exists.
     local separateSession = (StudioTestService ~= nil and editModeActive == false)
-    local snapshot = currentSessionSnapshot()
-    local reporterRunning = sessionReporterUsable() and separateSession
-    local active = RunService:IsRunning() or separateSession or reporterRunning
-    local players = #Players:GetPlayers()
-    if snapshot and snapshot.players ~= nil then players = tonumber(snapshot.players) or players end
-    if snapshot and snapshot.playerCount ~= nil then players = tonumber(snapshot.playerCount) or players end
+    local active = RunService:IsRunning() or separateSession
+    local liveReporter = sessionReporterUsable() and active
+    local snapshot = liveReporter and currentSessionSnapshot() or nil
+    local reporterRunning = liveReporter and separateSession
+    local players = active and #Players:GetPlayers() or 0
+    if active and snapshot and snapshot.players ~= nil then players = tonumber(snapshot.players) or players end
+    if active and snapshot and snapshot.playerCount ~= nil then players = tonumber(snapshot.playerCount) or players end
     return {
         running    = active,
         mode       = (separateSession or reporterRunning) and (sessionAgent.mode or "play") or currentMode(),
@@ -1456,18 +1484,18 @@ local function playState()
         isClient   = (separateSession or reporterRunning) and false or RunService:IsClient(),
         playerCount = players,
         sessionPlayers = players,
-        agentConnected = sessionAgent and sessionAgent.connected == true,
-        reporterActive = sessionReporterUsable(),
-        agentMode = (sessionAgent and sessionAgent.agentMode) or "logStream",
+        agentConnected = active and sessionAgent and sessionAgent.connected == true,
+        reporterActive = liveReporter,
+        agentMode = active and ((sessionAgent and sessionAgent.agentMode) or "logStream") or nil,
         httpEnabled = readHttpEnabled(),
-        reporterLastKind = sessionAgent and sessionAgent.lastArenaKind or nil,
-        reporterLastAgeSeconds = (sessionAgent and sessionAgent.reporterAt and sessionAgent.reporterAt > 0)
+        reporterLastKind = liveReporter and sessionAgent.lastArenaKind or nil,
+        reporterLastAgeSeconds = liveReporter and sessionAgent.reporterAt and sessionAgent.reporterAt > 0
             and (math.floor((os.clock() - sessionAgent.reporterAt) * 10) / 10) or nil,
-        arenaLineCount = (sessionAgent and sessionAgent.arenaLineCount) or 0,
+        arenaLineCount = liveReporter and (sessionAgent.arenaLineCount or 0) or 0,
         -- 4.0.3: wie oft die Session-Reporter-Schleife laut letztem
         -- Heartbeat lief (steigt ~alle 0,4s, solange sie gesund ist).
-        reporterLoopCount = (sessionAgent and sessionAgent.reporterLoopCount) or nil,
-        reporterVariantUsed = sessionAgent and sessionAgent.reporterVariantUsed or nil,
+        reporterLoopCount = liveReporter and sessionAgent.reporterLoopCount or nil,
+        reporterVariantUsed = liveReporter and sessionAgent.reporterVariantUsed or nil,
         userPlaytestActive = userPlaytestActive,
         -- true = Studio is in edit mode and there is NO test session.
         editModeActive = editModeActive,
@@ -1545,7 +1573,7 @@ pcall(function()
     end
 end)
 
-local function captureSessionReporter(message)
+local function captureSessionReporter(message, fromOutput)
     -- The test session prints this through LogService. This connection exists
     -- in the edit DataModel too, which is why it works without HttpEnabled.
     local prefix = "#ARENA# "
@@ -1555,8 +1583,14 @@ local function captureSessionReporter(message)
         return HttpService:JSONDecode(string.sub(text, #prefix + 1))
     end)
     if not decodedOk or type(report) ~= "table" then return false end
-    -- 3.9.7: every #ARENA# line (incl. hello) is hard reporter evidence.
+    -- Every decoded report is reporter evidence. Only a real LogService
+    -- callback counts as output evidence; SharedTable/session-plugin polling
+    -- must not falsely claim that get_output contains #ARENA# lines.
     sessionAgent.arenaLineCount = (sessionAgent.arenaLineCount or 0) + 1
+    if fromOutput == true then
+        sessionAgent.reporterSeenInOutput = true
+        sessionAgent.reporterOutputLineCount = (sessionAgent.reporterOutputLineCount or 0) + 1
+    end
     sessionAgent.lastArenaKind = tostring(report.kind)
     sessionAgent.lastArenaRaw = string.sub(text, 1, 500)
     sessionAgent.reporterAt = os.clock()
@@ -1586,7 +1620,7 @@ local function captureSessionReporter(message)
 end
 
 LogService.MessageOut:Connect(function(message, messageType)
-    captureSessionReporter(message)
+    captureSessionReporter(message, true)
     -- Keep #ARENA# lines in get_output. They are the first diagnostic source
     -- if a user reports a Play problem.
     pushOutput(message, shortType(messageType), currentContext())
@@ -2923,9 +2957,24 @@ local function execute(cmd)
   if action=="output" then return {ok=true,lines=output} end
   return {ok=false,error="Unsupported Session-Agent action: "..tostring(action)}
 end
-while RunService:IsRunning() do
-  local response=jsonRequest({sessionId=SESSION_ID,sessionKey=SESSION_KEY,action="heartbeat",state={running=true,mode="play",playerCount=#Players:GetPlayers(),character=characterState(),output=output}})
-  if response and response.commands then for _,cmd in ipairs(response.commands) do local result=execute(cmd); jsonRequest({sessionId=SESSION_ID,sessionKey=SESSION_KEY,action="result",commandId=cmd.id,result=result}) end end
+local agentNotRunningStreak = 0
+while true do
+  local loopOk, loopError = pcall(function()
+    local response=jsonRequest({sessionId=SESSION_ID,sessionKey=SESSION_KEY,action="heartbeat",state={running=true,mode="play",playerCount=#Players:GetPlayers(),character=characterState(),output=output}})
+    if response and response.commands then
+      for _,cmd in ipairs(response.commands) do
+        task.spawn(function()
+          local result=execute(cmd)
+          jsonRequest({sessionId=SESSION_ID,sessionKey=SESSION_KEY,action="result",commandId=cmd.id,result=result})
+        end)
+      end
+    end
+  end)
+  local runningOk, runningNow = pcall(function() return RunService:IsRunning() end)
+  if runningOk and runningNow then agentNotRunningStreak=0 else
+    agentNotRunningStreak=agentNotRunningStreak+1
+    if agentNotRunningStreak >= 15 then break end
+  end
   task.wait(0.35)
 end
 ]==]
@@ -3030,7 +3079,8 @@ local function runClientCommand(cmd)
 end
 
 local count = 0
-while RunService:IsRunning() do
+local notRunningStreak = 0
+while true do
   count = count + 1
   if st ~= nil then pcall(function()
     local raw = st.clientCommand
@@ -3051,7 +3101,12 @@ while RunService:IsRunning() do
     viewport=viewport and {x=viewport.X,y=viewport.Y} or nil, vimCommands=vimCommands}
   publishClientReport(report)
   pcall(function() print("#ARENA# " .. HttpService:JSONEncode(report)) end)
-  task.wait(count <= 6 and 0.5 or 2)
+  local runningOk, runningNow = pcall(function() return RunService:IsRunning() end)
+  if runningOk and runningNow then notRunningStreak = 0 else
+    notRunningStreak = notRunningStreak + 1
+    if notRunningStreak >= 15 then break end
+  end
+  task.wait(count <= 6 and 0.5 or 1)
 end
 ]==]
 
@@ -3180,6 +3235,43 @@ local function executeCommand(cmd)
     state.playerCount = #Players:GetPlayers()
     return state
   end
+  if action == "move_character" then
+    local targetPlayer = Players:GetPlayers()[1]
+    local character = targetPlayer and targetPlayer.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    local root = character and character:FindFirstChild("HumanoidRootPart")
+    if character == nil or humanoid == nil or root == nil then
+      return { ok=false, error="No character to move in the session." }
+    end
+    local before = vec(root.Position)
+    local keys = type(args.keys) == "table" and args.keys or {}
+    if type(args.keys) == "string" then keys = { args.keys } end
+    local duration = math.max(0.05, math.min(tonumber(args.duration) or 1, 12))
+    local dx, dz = 0, 0
+    for _, key in ipairs(keys) do
+      local up = string.upper(tostring(key))
+      if up == "W" or up == "UP" then dz = dz - 1
+      elseif up == "S" or up == "DOWN" then dz = dz + 1
+      elseif up == "A" or up == "LEFT" then dx = dx - 1
+      elseif up == "D" or up == "RIGHT" then dx = dx + 1
+      elseif up == "SPACE" then pcall(function() humanoid.Jump = true end) end
+    end
+    if dx == 0 and dz == 0 then
+      return { ok=true, keys=keys, duration=0, positionBefore=before, positionAfter=before, via="sharedTableReporter" }
+    end
+    local look = Vector3.new(0, 0, -1)
+    local direction = Vector3.new(dx, 0, -dz)
+    if direction.Magnitude > 0 then direction = direction.Unit end
+    local okMove, errMove = pcall(function()
+      humanoid:Move(direction, false)
+      task.wait(duration)
+      humanoid:Move(Vector3.new(0, 0, 0), false)
+    end)
+    if not okMove then return { ok=false, error=tostring(errMove) } end
+    local afterRoot = character:FindFirstChild("HumanoidRootPart")
+    return { ok=true, keys=keys, duration=duration, positionBefore=before,
+      positionAfter=vec(afterRoot and afterRoot.Position), via="sharedTableReporter" }
+  end
   return { ok=false, error="Unsupported reporter command: " .. action }
 end
 
@@ -3204,32 +3296,49 @@ publishSessionReport(helloReport)
 pcall(function() print("#ARENA# " .. HttpService:JSONEncode(helloReport)) end)
 
 local count = 0
-while RunService:IsRunning() do
-  count = count + 1
-  if st ~= nil then pcall(function()
-    -- probe echo: the edit plugin verifies live whether the table crosses the
-    -- DataModel boundary (session_diag > sharedTableProbe.crossDm).
-    if st.probe ~= nil and st.probeEcho ~= st.probe then st.probeEcho = st.probe end
-    local raw = st.command
-    if type(raw) == "string" and raw ~= "" then
-      local okD, cmd = pcall(function() return HttpService:JSONDecode(raw) end)
-      if okD and type(cmd) == "table" and cmd.id ~= st.commandDone then
-        st.commandDone = cmd.id
-        st.command = ""
-        acceptCommand(cmd)
-      else
-        st.command = ""
-      end
+local notRunningStreak = 0
+while true do
+  local iterationOk, iterationError = pcall(function()
+    count = count + 1
+    if st ~= nil then
+      -- The registry may be unavailable or isolated per DataModel. Never let
+      -- one SharedTable error terminate the reporter loop.
+      pcall(function()
+        if st.probe ~= nil and st.probeEcho ~= st.probe then st.probeEcho = st.probe end
+        local raw = st.command
+        if type(raw) == "string" and raw ~= "" then
+          local okD, cmd = pcall(function() return HttpService:JSONDecode(raw) end)
+          if okD and type(cmd) == "table" and cmd.id ~= st.commandDone then
+            st.commandDone = cmd.id
+            st.command = ""
+            task.spawn(function() acceptCommand(cmd) end)
+          else
+            st.command = ""
+          end
+        end
+      end)
     end
-  end) end
-  local all = Players:GetPlayers()
-  local chars = {}
-  for _, player in ipairs(all) do table.insert(chars, characterState(player)) end
-  local report = {kind="session", mode=(testArgs and testArgs.mode) or "play", players=#all, playerCount=#all,
-    characters=chars, character=chars[1], states={running=true, server=RunService:IsServer()}}
-  publishSessionReport(report)
-  pcall(function() print("#ARENA# " .. HttpService:JSONEncode(report)) end)
-  task.wait(count <= 6 and 0.5 or 2)
+    local all = Players:GetPlayers()
+    local chars = {}
+    for _, player in ipairs(all) do table.insert(chars, characterState(player)) end
+    local report = {kind="session", mode=(testArgs and testArgs.mode) or "play", players=#all, playerCount=#all,
+      characters=chars, character=chars[1], reporterAlive=true, reporterLoopAlive=true,
+      reporterLoopCount=count, reporterLoopError=iterationError,
+      states={running=true, server=RunService:IsServer()}}
+    publishSessionReport(report)
+    pcall(function() print("#ARENA# " .. HttpService:JSONEncode(report)) end)
+  end)
+  if not iterationOk then
+    pcall(function() print("#ARENA# " .. HttpService:JSONEncode({kind="reporter_error", reporterLoopCount=count, error=tostring(iterationError)})) end)
+  end
+  local runningOk, runningNow = pcall(function() return RunService:IsRunning() end)
+  if runningOk and runningNow then
+    notRunningStreak = 0
+  else
+    notRunningStreak = notRunningStreak + 1
+    if notRunningStreak >= 15 then break end
+  end
+  task.wait(count <= 6 and 0.5 or 1)
 end
 ]==]
 -- 3.9.7 B1-FIX (live proven): deletion race / Archivable=false kept the
@@ -3293,21 +3402,20 @@ local function removeTransientReporters(created)
 end
 
 local function sessionDiagnostics(diag)
-    local snap = currentSessionSnapshot()
-    diag.sessionPlayers = tonumber((snap and (snap.players or snap.playerCount)) or sessionAgent.playerCount) or 0
-    diag.reporterActive = sessionReporterUsable()
-    if (sessionAgent.arenaLineCount or 0) > 0 then
-        diag.reporterSeenInOutput = true
-    end
-    diag.arenaLineCount = sessionAgent.arenaLineCount or 0
+    local active = testSessionActive()
+    local snap = active and currentSessionSnapshot() or nil
+    diag.sessionPlayers = active and (tonumber((snap and (snap.players or snap.playerCount)) or sessionAgent.playerCount) or 0) or 0
+    diag.reporterActive = active and sessionReporterUsable() or false
+    diag.reporterSeenInOutput = active and sessionAgent.reporterSeenInOutput == true or false
+    diag.arenaLineCount = active and (sessionAgent.arenaLineCount or 0) or 0
     -- 4.0.3: Schleifenzaehler des Session-Reporters in jede play_start-/
     -- play_stop-Diagnose uebernehmen (Beweis, wie oft die Schleife lief).
     if sessionAgent.reporterLoopCount ~= nil then diag.reporterLoopCount = sessionAgent.reporterLoopCount end
     if sessionAgent.reporterPostFailCount ~= nil then diag.reporterPostFailCount = sessionAgent.reporterPostFailCount end
-    diag.agentMode = (sessionAgent and sessionAgent.agentMode) or "logStream"
+    diag.agentMode = active and ((sessionAgent and sessionAgent.agentMode) or "logStream") or nil
     diag.httpEnabled = readHttpEnabled()
-    diag.lastArenaKind = sessionAgent.lastArenaKind
-    if sessionAgent.reporterAt and sessionAgent.reporterAt > 0 then
+    diag.lastArenaKind = active and sessionAgent.lastArenaKind or nil
+    if active and sessionAgent.reporterAt and sessionAgent.reporterAt > 0 then
         diag.lastArenaAgeSeconds = math.floor((os.clock() - sessionAgent.reporterAt) * 10) / 10
     end
     if sessionAgent.reporterInjected then diag.reporterInjected = true end
@@ -3375,6 +3483,31 @@ local function cleanupRuntimeHelpers()
     clientLink = nil
     clientLogLink = nil
     capabilities.clientAgent = false
+end
+
+-- Clear reporter state when Studio ends a session itself (Stop/Shift+F5).
+-- Without this, the next edit heartbeat could expose the old snapshot.
+local function clearSessionReporterState()
+    sessionAgent.connected = false
+    sessionAgent.httpConnected = false
+    sessionAgent.reporterActive = false
+    sessionAgent.key = nil
+    sessionAgent.snapshot = nil
+    sessionAgent.guiSnapshot = nil
+    sessionAgent.reporterAt = 0
+    sessionAgent.arenaLineCount = 0
+    sessionAgent.reporterSeenInOutput = false
+    sessionAgent.reporterOutputLineCount = 0
+    sessionAgent.lastArenaKind = nil
+    sessionAgent.lastArenaRaw = nil
+    sessionAgent.lastSharedReport = nil
+    sessionAgent.lastSharedClientReport = nil
+    sessionAgent.reporterVariantInSession = nil
+    sessionAgent.reporterInjected = false
+    sessionAgent.reporterVariantUsed = nil
+    sessionAgent.reporterLoopCount = nil
+    sessionAgent.reporterPostFailCount = nil
+    sessionAgent.reporterLoopError = nil
 end
 
 local function installClientAgent(player)
@@ -3714,7 +3847,7 @@ absorbSharedTableReports = function()
     pcall(function() raw = st.report end)
     if type(raw) == "string" and raw ~= "" and raw ~= sessionAgent.lastSharedReport then
         sessionAgent.lastSharedReport = raw
-        captureSessionReporter("#ARENA# " .. raw)
+        captureSessionReporter("#ARENA# " .. raw, false)
         if not sessionAgent.httpConnected then sessionAgent.agentMode = "sharedTable" end
         pushOutput("#ARENA# " .. raw, "Output", "sharedTable")
         changed = true
@@ -3723,7 +3856,7 @@ absorbSharedTableReports = function()
     pcall(function() clientRaw = st.clientReport end)
     if type(clientRaw) == "string" and clientRaw ~= "" and clientRaw ~= sessionAgent.lastSharedClientReport then
         sessionAgent.lastSharedClientReport = clientRaw
-        captureSessionReporter("#ARENA# " .. clientRaw)
+        captureSessionReporter("#ARENA# " .. clientRaw, false)
         if not sessionAgent.httpConnected then sessionAgent.agentMode = "sharedTable" end
         pushOutput("#ARENA# " .. clientRaw, "Output", "sharedTable")
         changed = true
@@ -3826,7 +3959,7 @@ local function sessionDiagnosticsData(skipProbe)
     }
     diag.reporter = {
         active = sessionReporterUsable(),
-        seenInOutput = (sessionAgent.arenaLineCount or 0) > 0,
+        seenInOutput = sessionAgent.reporterSeenInOutput == true,
         arenaLineCount = sessionAgent.arenaLineCount or 0,
         lastKind = sessionAgent.lastArenaKind,
         lastAgeSeconds = diag.lastArenaAgeSeconds,
@@ -4039,7 +4172,8 @@ local function startPlay(mode, startArgs)
         agentMode="logStream", snapshot=nil, guiSnapshot=nil,
         httpEnabled=diagnostics.httpEnabled, reporterAt=0,
         reporterInjected=false, reporterVariantUsed=variant, reporterVariantInSession=nil,
-        arenaLineCount=0, lastArenaKind=nil, lastArenaRaw=nil,
+        arenaLineCount=0, reporterSeenInOutput=false, reporterOutputLineCount=0,
+        lastArenaKind=nil, lastArenaRaw=nil,
         lastSharedReport=nil, lastSharedClientReport=nil, vimCommandsSeen=0,
         reporterLoopCount=nil, reporterPostFailCount=nil, reporterLoopCountMirrored=nil,
     }
@@ -4163,7 +4297,7 @@ local function startPlay(mode, startArgs)
         if snap ~= nil then diagnostics.sessionAgentAnswered = true end
         task.wait(0.3); waited = waited + 0.3
     end
-    if sessionReporterUsable() then diagnostics.reporterSeenInOutput = true end
+    diagnostics.reporterSeenInOutput = sessionAgent.reporterSeenInOutput == true
     if mode ~= "run" and not sessionPlayReady() then
         sessionDiagnosticsData(true)
         return { ok=false, code="REPORTER_NOT_CONNECTED",
@@ -4198,7 +4332,8 @@ local function finishStopSuccess(diagnostics, usedPath, stopMethod, note)
     sessionDiagnostics(diagnostics)
     sessionAgent.connected=false; sessionAgent.httpConnected=false; sessionAgent.reporterActive=false
     sessionAgent.key=nil; sessionAgent.snapshot=nil; sessionAgent.guiSnapshot=nil
-    sessionAgent.arenaLineCount=0; sessionAgent.lastArenaKind=nil; sessionAgent.lastArenaRaw=nil
+    sessionAgent.arenaLineCount=0; sessionAgent.reporterSeenInOutput=false; sessionAgent.reporterOutputLineCount=0
+    sessionAgent.lastArenaKind=nil; sessionAgent.lastArenaRaw=nil
     sessionAgent.lastSharedReport=nil; sessionAgent.lastSharedClientReport=nil
     sessionAgent.vimCommandsSeen=0
     cleanupRuntimeHelpers()
@@ -8793,14 +8928,20 @@ task.spawn(function()
     end
     if sessionDm then return end
     local lastSessionPoll = 0
+    local wasSessionActive = testSessionActive()
     while running do
-        if testSessionActive() and absorbSharedTableReports then pcall(absorbSharedTableReports) end
+        local sessionActiveNow = testSessionActive()
+        if wasSessionActive and not sessionActiveNow then
+            clearSessionReporterState()
+        end
+        wasSessionActive = sessionActiveNow
+        if sessionActiveNow and absorbSharedTableReports then pcall(absorbSharedTableReports) end
         -- 4.0.3: Zustand des Session-Plugin-Reporters regelmaessig abholen.
         -- Haelt den Snapshot (Position/Gesundheit) waehrend des Tests frisch
         -- UND laesst arenaLineCount sichtbar hochzaehlen, solange die
         -- Reporter-Schleife laeuft (4.0.2-Befund: nach dem ersten Poll von
         -- play_start fror der Zaehler bei 1 ein, weil niemand mehr pollte).
-        if testSessionActive() and sessionAgent ~= nil and sessionAgent.key ~= nil
+        if sessionActiveNow and sessionAgent ~= nil and sessionAgent.key ~= nil
             and os.clock() - lastSessionPoll > 2 then
             lastSessionPoll = os.clock()
             pcall(pollSessionPluginState)
@@ -11304,7 +11445,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '4.0.3'
+            version = '4.0.4'
             docsVersion = [string]$Shared.DocsVersion
             role = 'You are connected to exactly ONE live Roblox Studio place through a local plugin. Every token belongs to one Studio window only - if several windows are open, each one has its own token and you can never touch the wrong place. Send every request as POST /api/tool with JSON body { "token": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -11415,7 +11556,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '4.0.3'
+            bridgeVersion = '4.0.4'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -11648,7 +11789,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '4.0.3'
+                        bridgeVersion = '4.0.4'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -11874,7 +12015,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '4.0.3'
+                        serverVersion = '4.0.4'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -12053,8 +12194,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '4.0.3'
-                    serverVersion = '4.0.3'
+                    bridgeVersion = '4.0.4'
+                    serverVersion = '4.0.4'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -14444,7 +14585,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '4.0.3'
+    $versionText = '4.0.4'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -14765,7 +14906,7 @@ function Open-SettingsWindow {
                     <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                     <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                    <TextBlock Text="Arena Roblox Bridge - Version 4.0.3" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                    <TextBlock Text="Arena Roblox Bridge - Version 4.0.4" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                 </StackPanel>
             </ScrollViewer>
@@ -14797,7 +14938,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 4.0.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 4.0.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     if ($script:LastArenaMessage) {
@@ -14852,7 +14993,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 4.0.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 4.0.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -14865,7 +15006,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '4.0.3'
+    $verText = '4.0.4'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
