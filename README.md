@@ -20,8 +20,8 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test_v398_structure.py` | Python-Strukturtest für 4.0.4 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
-| `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 4.0.4 (optional; wird NICHT vom Starter geladen) |
+| `test_v398_structure.py` | Python-Strukturtest für 4.0.5 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 4.0.5 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
 
@@ -35,6 +35,37 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 4.0.5
+- **Playtest-Stop repariert (echte Ursache, live gemessen).** Ein gestarteter
+  Test liess sich nicht mehr automatisch beenden: `play_stop` und
+  `move_character` meldeten `REPORTER_NOT_CONNECTED`, obwohl der Testspieler
+  samt Charakter sichtbar war, und die Befehle stauten sich in Studio.
+- **Der Fehler lag im Bridge-Server, nicht in Roblox.** Verräterischer
+  Messwert: `reporterLoopCount` 501 bei `reporterPostFailCount` 500 – die
+  Reporter-Schleife lief also einwandfrei, aber nur der allererste Heartbeat
+  wurde je beantwortet. Grund: Der Heartbeat-Zustand kommt als
+  `PSCustomObject` aus `ConvertFrom-Json`; `Update-PlayStateTracking` wies
+  darauf `$newState.userPlaytestActive = …` zu. Auf einem `PSCustomObject`
+  wirft das, sobald die Eigenschaft noch nicht existiert – jeder weitere
+  Heartbeat endete im 500er-Handler. Dadurch enthielt die Antwort nie das
+  Feld `commands`, und der Session-Reporter bekam `end_test` schlicht nie zu
+  sehen.
+- **Vier Absicherungen:** (1) neuer Setter `Set-StateField` beherrscht
+  Hashtable *und* PSCustomObject; (2) der Heartbeat-Handler kapselt die
+  Zustands-Übernahme in `try/catch` – Befehle werden ab jetzt **immer**
+  zugestellt; (3) `sessionChannelCommand` nutzt den Session-Kanal, sobald ein
+  Sitzungsschlüssel existiert (ein veraltetes `agentMode` sperrte vorher den
+  einzigen funktionierenden Stop aus); (4) `play_stop` legt als letzte Stufe
+  `end_test` fire-and-forget in die Warteschlange – der Reporter muss den
+  Befehl nur noch abholen, nicht rechtzeitig beantworten.
+- Der Session-Reporter sendet in seinem Snapshot jetzt `running=true` /
+  `editModeActive=false` mit, damit der Server einen laufenden Test nicht aus
+  einem unvollständigen Heartbeat als beendet verbucht.
+- `PLAY_STOP_NEEDS_USER` („Bitte Shift+F5 drücken“) ist damit wieder der
+  echte Ausnahmefall statt der Normalzustand.
+- Nach diesem Update Roblox Studio einmal neu starten, damit das Plugin 4.0.5
+  geladen wird.
 
 ## 4.0.4
 - Live-Fehleranalyse: Nach dem Stop wurden alte Session-Reporter-Daten im Edit-Status weitergereicht. Aktive Sessions sind jetzt die Voraussetzung für Reporter-Snapshot, Spielerzahl und Agent-Status; EditModeActive=true zeigt wieder zuverlässig einen sauberen Edit-Zustand.

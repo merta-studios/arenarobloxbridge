@@ -1,9 +1,10 @@
 {
-  "version": "4.0.4",
+  "version": "4.0.5",
   "notes": [
-    "• Version 4.0.4: Live-Fehleranalyse behoben: Nach dem Stop wurden alte Session-Reporter-Daten im Edit-Status weiter angezeigt. Reporter-Snapshots, Spielerzahl und Agent-Zustand werden jetzt nur noch in einer wirklich aktiven Session ausgegeben.",
-    "• reporterSeenInOutput unterscheidet jetzt echte #ARENA#-LogService-Zeilen vom Session-Plugin-Kanal; die Diagnose behauptet nicht mehr fälschlich, der Output enthalte Reporter-Zeilen.",
-    "• Der injizierte No-HTTP-Reporter läuft fehlertolerant weiter, übersteht einzelne IsRunning-/SharedTable-Fehler und unterstützt move_character als Fallback im Session-DataModel.",
-    "• Wichtig: Nach dem Update Roblox Studio einmal neu starten, damit das Plugin 4.0.4 geladen wird."
+    "• Version 4.0.5: Playtest-Stop repariert. Der Test liess sich nicht mehr automatisch beenden (play_stop und move_character meldeten REPORTER_NOT_CONNECTED, obwohl der Spieler im Test sichtbar war).",
+    "• Ursache lag im Bridge-Server: Ab dem zweiten Heartbeat scheiterte die Zustands-Uebernahme des Session-Reporters intern. Dadurch enthielt die Antwort nie die Befehlsliste - der Reporter hat Stop-Befehle schlicht nie erhalten.",
+    "• Der Steuerkanal ist jetzt gegen solche Fehler abgesichert: Befehle werden immer zugestellt, auch wenn die Statistik einmal klemmt.",
+    "• play_stop hat zusaetzlich eine letzte Stufe: Der Stop-Befehl wird in die Warteschlange gelegt und vom Reporter selbst abgeholt. 'Bitte Shift+F5 druecken' ist damit wieder der seltene Ausnahmefall.",
+    "• Wichtig: Nach dem Update Roblox Studio einmal neu starten, damit das Plugin 4.0.5 geladen wird."
   ]
 }
