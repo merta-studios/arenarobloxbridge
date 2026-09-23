@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 4.0.3.
+"""Offline structure check for Arena Roblox Bridge 4.0.4.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "4.0.3"
+VERSION = "4.0.4"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -93,7 +93,7 @@ def main() -> int:
     require(raw.startswith(b"\xef\xbb\xbf"), "ArenaBridge.ps1 must retain its UTF-8 BOM")
     source = raw.decode("utf-8-sig")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    require(version["version"] == VERSION, "version.json is not 4.0.3")
+    require(version["version"] == VERSION, "version.json is not 4.0.4")
     require("3.9.5" not in source, "stale 3.9.5 literal remains in ArenaBridge.ps1")
 
     # Stale FUNCTIONAL version literals (history comments may mention 3.9.8).
@@ -161,14 +161,14 @@ def main() -> int:
         require(marker not in source, f"stale 4.0.2 literal remains: {marker}")
 
     required_markers = [
-        "DocsVersion     = '4.0.3'",
-        'local ARENA_VERSION  = "4.0.3"',
-        "bridgeVersion = '4.0.3'",
-        "serverVersion = '4.0.3'",
-        "version = '4.0.3'",
-        "$versionText = '4.0.3'",
-        "$verText = '4.0.3'",
-        'Text="Arena Roblox Bridge - Version 4.0.3"',
+        "DocsVersion     = '4.0.4'",
+        'local ARENA_VERSION  = "4.0.4"',
+        "bridgeVersion = '4.0.4'",
+        "serverVersion = '4.0.4'",
+        "version = '4.0.4'",
+        "$versionText = '4.0.4'",
+        "$verText = '4.0.4'",
+        'Text="Arena Roblox Bridge - Version 4.0.4"',
         # 4.0.0: the config table that keeps the top-level local count in check.
         "local ARENA_CFG = {",
         "ARENA_CFG.POLL_WAIT",
@@ -200,7 +200,7 @@ def main() -> int:
         "Get-RawGitHubText",
         "$content -is [byte[]]",
         "[char]0xFEFF",
-        # 4.0.3: the session reporter loop must be while-true + supervised,
+        # 4.0.4: the session reporter loop must be while-true + supervised,
         # carry its loop counter + post-fail counter in EVERY heartbeat, and
         # the edit plugin must poll the reporter state during a session so
         # arenaLineCount visibly counts up (4.0.2 live bug: exactly ONE
@@ -212,6 +212,13 @@ def main() -> int:
         "local lastSessionPoll = 0",
         "local sessionDm = isSessionDataModel",
         "loopCountViaSharedTable",
+        "reporterSeenInOutput = active and sessionAgent.reporterSeenInOutput == true or false",
+        "and testSessionActive()",
+        "reporterLoopAlive=true",
+        "agentNotRunningStreak",
+        "clearSessionReporterState",
+        "wasSessionActive and not sessionActiveNow",
+        "Retry once before reporting nil",
     ]
     for marker in required_markers:
         require(marker in source, f"required 3.9.8 marker missing: {marker}")
@@ -274,6 +281,11 @@ def main() -> int:
         except Exception as exc:
             raise AssertionError(f"embedded Lua source {name} does not parse: {exc}") from exc
     # CLIENT_SOURCE lives nested one level deeper inside SESSION_AGENT_SOURCE.
+    reporter_chunks = re.findall(r"local SESSION_REPORTER_SOURCE = \[==\[(.+?)\]==\]", lua, re.S)
+    require(len(reporter_chunks) == 1, "SESSION_REPORTER_SOURCE not found")
+    require("reporterLoopAlive=true" in reporter_chunks[0], "injected reporter does not publish loop liveness")
+    require('action == "move_character"' in reporter_chunks[0], "injected reporter lacks move_character fallback")
+
     nested = re.findall(r"local CLIENT_SOURCE = \[=\[(.+?)\]=\]", lua, re.S)
     require(len(nested) == 1, "nested CLIENT_SOURCE not found")
     ast.parse(nested[0])
@@ -286,7 +298,7 @@ def main() -> int:
         except ET.ParseError as exc:
             raise AssertionError(f"XAML block {index} is not XML: {exc}") from exc
 
-    print("OK: 4.0.3 structure, Lua and XAML validation passed")
+    print("OK: 4.0.4 structure, Lua and XAML validation passed")
     return 0
 
 

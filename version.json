@@ -1,10 +1,9 @@
 {
-  "version": "4.0.3",
+  "version": "4.0.4",
   "notes": [
-    "• Version 4.0.3: Die Session-Reporter-Schleife (runSessionReporterLoop) lief live genau EINEN Heartbeat (arenaLineCount blieb konstant 1, reporterLastAgeSeconds wuchs 53 -> 97 -> 142) - move_character und play_stop scheiterten danach mit REPORTER_NOT_CONNECTED ('tried: sessionPlugin,http,sharedTable'). Die Schleife laeuft jetzt als while true mit RunService:IsRunning() nur noch als Ausstiegs-Orakel (~6 Sekunden Toleranz, komplett gepcallt) plus Supervisor, der sie sofort neu startet: Kein einzelner Fehler, kein falscher IsRunning-Wert und kein werfender Aufruf kann den Reporter mehr still beenden",
-    "• JEDER Heartbeat traegt reporterLoopCount (Schleifenzaehler), reporterPostFailCount (post() lieferte still nil) und reporterLoopError (letzter Fehlertext) - session_diag zeigt unter reporter.loopCount/postFailCount/lastLoopError live, wie oft die Schleife lief. Der Zaehler wird zusaetzlich in die SharedTable gespiegelt (st.pluginReporterLoopCount) und bleibt damit auch sichtbar, wenn HTTP aus der Session heraus versagt",
-    "• Ursachen-Abdeckung: plugin:GetSetting wird IN der Schleife gelesen, bis beide Settings da sind (kein stilles return mehr vor der Schleife), und die Session-Erkennung am Schleifenstart prueft zusaetzlich RunService:IsEdit() (isSessionDataModel wurde beim Plugin-Load mit IsRunning zu frueh ausgewertet, wenn Studio das Session-DataModel noch aufbaut)",
-    "• Das Edit-Plugin pollt den Reporter-Zustand waehrend eines laufenden Tests jetzt alle ~2 Sekunden - arenaLineCount zaehlt im Live-Test sichtbar hoch (4.0.2 fror nach dem ersten play_start-Poll bei 1 ein) und der Snapshot mit Position/Gesundheit bleibt frisch. Session-Befehle wie move_character laufen im eigenen Thread, sodass die Heartbeats auch waehrend einer Bewegung weiterlaufen",
-    "• Wichtig: Nach dem Update Roblox Studio einmal neu starten, damit das Plugin 4.0.3 geladen wird"
+    "• Version 4.0.4: Live-Fehleranalyse behoben: Nach dem Stop wurden alte Session-Reporter-Daten im Edit-Status weiter angezeigt. Reporter-Snapshots, Spielerzahl und Agent-Zustand werden jetzt nur noch in einer wirklich aktiven Session ausgegeben.",
+    "• reporterSeenInOutput unterscheidet jetzt echte #ARENA#-LogService-Zeilen vom Session-Plugin-Kanal; die Diagnose behauptet nicht mehr fälschlich, der Output enthalte Reporter-Zeilen.",
+    "• Der injizierte No-HTTP-Reporter läuft fehlertolerant weiter, übersteht einzelne IsRunning-/SharedTable-Fehler und unterstützt move_character als Fallback im Session-DataModel.",
+    "• Wichtig: Nach dem Update Roblox Studio einmal neu starten, damit das Plugin 4.0.4 geladen wird."
   ]
 }
