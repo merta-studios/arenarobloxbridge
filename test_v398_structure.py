@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 4.0.4.
+"""Offline structure check for Arena Roblox Bridge 4.0.5.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "4.0.4"
+VERSION = "4.0.5"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -93,7 +93,7 @@ def main() -> int:
     require(raw.startswith(b"\xef\xbb\xbf"), "ArenaBridge.ps1 must retain its UTF-8 BOM")
     source = raw.decode("utf-8-sig")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    require(version["version"] == VERSION, "version.json is not 4.0.4")
+    require(version["version"] == VERSION, "version.json is not 4.0.5")
     require("3.9.5" not in source, "stale 3.9.5 literal remains in ArenaBridge.ps1")
 
     # Stale FUNCTIONAL version literals (history comments may mention 3.9.8).
@@ -160,7 +160,8 @@ def main() -> int:
     for marker in stale_402_literals:
         require(marker not in source, f"stale 4.0.2 literal remains: {marker}")
 
-    required_markers = [
+    # Stale FUNCTIONAL 4.0.4 literals (history comments may mention 4.0.4).
+    stale_404_literals = [
         "DocsVersion     = '4.0.4'",
         'local ARENA_VERSION  = "4.0.4"',
         "bridgeVersion = '4.0.4'",
@@ -168,7 +169,22 @@ def main() -> int:
         "version = '4.0.4'",
         "$versionText = '4.0.4'",
         "$verText = '4.0.4'",
+        'Arena Studio Bridge - Studio Plugin  (Version 4.0.4)',
         'Text="Arena Roblox Bridge - Version 4.0.4"',
+        "# Arena Roblox Bridge  -  Version 4.0.4",
+    ]
+    for marker in stale_404_literals:
+        require(marker not in source, f"stale 4.0.4 literal remains: {marker}")
+
+    required_markers = [
+        "DocsVersion     = '4.0.5'",
+        'local ARENA_VERSION  = "4.0.5"',
+        "bridgeVersion = '4.0.5'",
+        "serverVersion = '4.0.5'",
+        "version = '4.0.5'",
+        "$versionText = '4.0.5'",
+        "$verText = '4.0.5'",
+        'Text="Arena Roblox Bridge - Version 4.0.5"',
         # 4.0.0: the config table that keeps the top-level local count in check.
         "local ARENA_CFG = {",
         "ARENA_CFG.POLL_WAIT",
@@ -219,9 +235,19 @@ def main() -> int:
         "clearSessionReporterState",
         "wasSessionActive and not sessionActiveNow",
         "Retry once before reporting nil",
+        # 4.0.5 regression guards: the heartbeat handler must never let a
+        # state-tracking failure swallow the command queue (that live bug made
+        # play_stop/move_character impossible: loopCount 501 / postFail 500),
+        # and play_stop must keep its queued end_test last resort.
+        "function Set-StateField",
+        "Set-StateField $newState 'userPlaytestActive'",
+        "queuedEndTest",
+        "queuedSessionEndTest",
+        "or testSessionActive() or (sessionAgent and sessionAgent.httpConnected)",
+        "sessionAgent.key ~= nil",
     ]
     for marker in required_markers:
-        require(marker in source, f"required 3.9.8 marker missing: {marker}")
+        require(marker in source, f"required marker missing: {marker}")
 
     # A no-HTTP fallback must not return an instructions-to-enable-HTTP error.
     start_chunk = source[source.index("local function startPlay"):source.index("local function stopPlay")]
@@ -298,7 +324,7 @@ def main() -> int:
         except ET.ParseError as exc:
             raise AssertionError(f"XAML block {index} is not XML: {exc}") from exc
 
-    print("OK: 4.0.4 structure, Lua and XAML validation passed")
+    print("OK: 4.0.5 structure, Lua and XAML validation passed")
     return 0
 
 

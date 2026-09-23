@@ -1,7 +1,40 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 4.0.4
+# Arena Roblox Bridge  -  Version 4.0.5
 #
-# LIVE-FEHLERANALYSE / BUGFIX:
+# NEU IN VERSION 4.0.5 - PLAY_STOP HING FEST (LIVE GEMESSEN, ECHTE URSACHE):
+#   * LIVE-BEFUND: play_start lief sauber (Spieler + Charakter da), aber
+#     move_character und play_stop endeten in REPORTER_NOT_CONNECTED, die
+#     Befehle stauten sich in Studio (studioBusy) und der Playtest liess
+#     sich ueberhaupt nicht mehr automatisch beenden. Messwert, der alles
+#     verraet: reporterLoopCount 501 bei reporterPostFailCount 500 - also
+#     lief die Reporter-Schleife einwandfrei, aber NUR DER ALLERERSTE
+#     Heartbeat wurde je beantwortet.
+#   * ECHTE URSACHE (im SERVER, nicht in Roblox): Der Heartbeat-Zustand des
+#     Session-Reporters kommt als PSCustomObject aus ConvertFrom-Json. In
+#     Update-PlayStateTracking wurde darauf
+#     "$newState.userPlaytestActive = ..." zugewiesen. Auf einem
+#     PSCustomObject WIRFT das, wenn die Eigenschaft noch nicht existiert
+#     ("The property cannot be found on this object"). Der erste Heartbeat
+#     kam noch durch (Eigenschaft vorhanden), jeder weitere flog in den
+#     500er-Handler. Damit lieferte die Antwort NIE das Feld "commands" -
+#     der Reporter bekam end_test/move_character nie zu sehen, obwohl beide
+#     Seiten quicklebendig waren.
+#   * FIX 1: Neuer Setter Set-StateField beherrscht Hashtable UND
+#     PSCustomObject; alle userPlaytestActive-Zuweisungen laufen darueber.
+#   * FIX 2: Der Heartbeat-Handler kapselt die Zustands-Uebernahme in
+#     try/catch. Die Befehlsauslieferung passiert jetzt IMMER - ein Fehler
+#     in der Statistik darf den Steuerkanal nie wieder blockieren.
+#   * FIX 3: sessionChannelCommand nutzt den Session-Kanal, sobald ein
+#     Sitzungsschluessel existiert (vorher nur bei agentMode=="sessionPlugin"
+#     - ein veraltetes Feld sperrte den einzigen funktionierenden Stop aus).
+#   * FIX 4: Das Stop-Tor prueft testSessionActive() statt nur die
+#     Reporter-Frische, und vor dem Aufgeben legt play_stop end_test
+#     fire-and-forget in die Warteschlange: der Reporter muss den Befehl nur
+#     noch abholen, nicht rechtzeitig beantworten.
+#   * Ergebnis: play_stop beendet den Test wieder automatisch;
+#     PLAY_STOP_NEEDS_USER bleibt der echte Ausnahmefall.
+#
+# LIVE-FEHLERANALYSE / BUGFIX (4.0.4):
 #   * Nach dem Stop blieb der alte Session-Reporter im Edit-Status sichtbar
 #     (reporterActive=true, sessionPlayers=1, alte Position), obwohl
 #     EditModeActive=true war. Play-Zustand, Guards und Diagnosen verwerfen
@@ -1015,7 +1048,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '4.0.4'
+    DocsVersion     = '4.0.5'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -1144,7 +1177,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 4.0.4)
+  Arena Studio Bridge - Studio Plugin  (Version 4.0.5)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1215,7 +1248,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "4.0.4"
+local ARENA_VERSION  = "4.0.5"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -3879,10 +3912,16 @@ local function sessionChannelCommand(action, args, timeout)
     -- 4.0.1 RANG 0: Plugin-Reporter im Test-DataModel. Er laeuft IMMER, wenn
     -- Studio den Test gestartet hat, und darf als Plugin HTTP sprechen - also
     -- vollkommen unabhaengig von HttpEnabled des Place.
-    if sessionAgent and sessionAgent.agentMode == "sessionPlugin" then
-        table.insert(attempted, "sessionPlugin")
+    -- 4.0.5: Frueher war "agentMode == sessionPlugin" die Bedingung. Stand
+    -- dieses Feld (z.B. nach einem stillen Heartbeat-Ausfall) auf etwas
+    -- anderem, wurde der EINZIGE funktionierende Stop-Kanal uebersprungen und
+    -- play_stop endete in PLAY_STOP_NEEDS_USER. Es genuegt ein Sitzungs-
+    -- schluessel: der Aufruf ist ohnehin durch timeout begrenzt.
+    if sessionAgent and sessionAgent.key ~= nil then
+        local label = (sessionAgent.agentMode == "sessionPlugin") and "sessionPlugin" or "sessionAgent"
+        table.insert(attempted, label)
         local result = sessionAgentCall(action, args or {}, timeout or 8)
-        if result ~= nil then return result, "sessionPlugin", attempted end
+        if result ~= nil then return result, label, attempted end
     end
     if sessionAgent and sessionAgent.httpConnected == true then
         table.insert(attempted, "http")
@@ -4375,7 +4414,10 @@ local function stopPlay()
     -- ob er lebt - dann den Befehl ueber genau diesen Kanal schicken.
     pcall(pollSessionPluginState)
 
-    if sessionReporterUsable() or (sessionAgent and sessionAgent.httpConnected) then
+    -- 4.0.5: Das Tor haengt nicht mehr an der Reporter-Frische. Solange eine
+    -- Session laeuft, wird der end_test-Kanal IMMER versucht - ein veralteter
+    -- Frische-Wert darf den einzigen zuverlaessigen Stop nicht blockieren.
+    if sessionReporterUsable() or testSessionActive() or (sessionAgent and sessionAgent.httpConnected) then
         -- (the gate is reporter evidence: only then is something alive inside
         -- the session that can execute our commands - no dead 15s waits)
         local channelResult, channel, attempted = sessionChannelCommand("end_test", {}, 6)
@@ -4407,6 +4449,28 @@ local function stopPlay()
     if reached or (StudioTestService == nil and not RunService:IsRunning()) then
         return finishStopSuccess(diagnostics, "editRunServiceStop", "editRunServiceStop",
             "Test stopped from the Edit DataModel (RunService:Stop).")
+    end
+
+    -- 4.0.5 RANG 2.5: Letzter automatischer Versuch - end_test nur noch in die
+    -- Warteschlange legen und NICHT auf die Antwort warten. Der Reporter holt
+    -- sich Befehle bei jedem Heartbeat ab; er muss also nur noch abholen, nicht
+    -- rechtzeitig antworten. Genau dieser Fall (Reporter lebt, Antwortweg
+    -- klemmt) trieb play_stop vorher in PLAY_STOP_NEEDS_USER.
+    if sessionAgent and sessionAgent.key ~= nil and sessionId ~= nil then
+        local enqueued = pcall(function()
+            post("/plugin/session", { sessionId = sessionId, sessionKey = sessionAgent.key,
+                action = "command", command = { id = HttpService:GenerateGUID(false),
+                    action = "end_test", args = {} } })
+        end)
+        if enqueued then
+            diagnostics.queuedEndTest = true
+            local reachedQueued, afterQueued = waitForEditMode(true, 10)
+            diagnostics.editModeActiveAfter = afterQueued
+            if reachedQueued then
+                return finishStopSuccess(diagnostics, "queuedSessionEndTest", "reporterEndTest",
+                    "Test stopped by the session reporter (end_test picked up from the command queue).")
+            end
+        end
     end
 
     -- RANG 3: NO endless retry loop. One clean pass, then a precise handover
@@ -8578,9 +8642,14 @@ local function runSessionReporterLoop()
             })
         end
         return {
+            -- 4.0.5: running/editModeActive MUESSEN mit. Dieser Code existiert
+            -- nur im Test-DataModel, ist also per Definition "laufend". Ohne
+            -- die Felder las der Server aus jedem Heartbeat ein running=false
+            -- und haette den laufenden Test als beendet verbucht.
             kind = "session", mode = "play", players = #players, playerCount = #players,
             characters = list, character = list[1], reporterAlive = true,
-            source = "sessionPlugin",
+            source = "sessionPlugin", running = true, editModeActive = false,
+            context = "session",
         }
     end
     local function execute(command)
@@ -9479,6 +9548,21 @@ $script:BridgeHandlerScript = {
         return ([string]$last.kind -eq $kind -and ($now - [int64]$last.at) -lt 8)
     }
 
+    function Set-StateField($state, [string]$name, $value) {
+        # 4.0.5 LIVE-FIX (Kernursache des haengenden play_stop):
+        # $entry.state / Get-StateObject liefern eine Hashtable, der
+        # Session-Reporter-Heartbeat dagegen ein PSCustomObject aus
+        # ConvertFrom-Json. Bei einem PSCustomObject WIRFT die direkte
+        # Zuweisung auf eine noch nicht vorhandene Eigenschaft
+        # ("The property 'userPlaytestActive' cannot be found on this
+        # object"). Genau das passierte in JEDEM Heartbeat -> 500 ->
+        # der Reporter bekam nie seine Befehle. Dieser Setter beherrscht
+        # beide Typen.
+        if ($null -eq $state) { return }
+        if ($state -is [System.Collections.IDictionary]) { $state[$name] = $value; return }
+        $state | Add-Member -NotePropertyName $name -NotePropertyValue $value -Force
+    }
+
     function Update-PlayStateTracking {
         # Erkennt Play-Start/Stop ZUVERLAESSIG - auch wenn das Plugin beim
         # Wechsel neu geladen wurde (die neue Plugin-Instanz sieht den Wechsel
@@ -9498,7 +9582,7 @@ $script:BridgeHandlerScript = {
                 $who = 'user'
                 if ($byAi) { $who = 'assistant' }
                 $Shared.RunOwners[$sid] = $who
-                $newState.userPlaytestActive = (-not $byAi)
+                Set-StateField $newState 'userPlaytestActive' (-not $byAi)
                 if (-not (Test-RecentPlayEvent $sid 'play_started' $now)) {
                     $Shared.LastPlayEvents[$sid] = @{ kind = 'play_started'; at = $now }
                     Add-BridgeEvent $sid 'play_started' ("Studio switched into " + [string]$newState.mode + " mode (started by: " + $who + "). Changes during the test are temporary.") @{ mode = [string]$newState.mode; startedBy = $who; detectedBy = 'server' }
@@ -9509,7 +9593,7 @@ $script:BridgeHandlerScript = {
                 if ($byAi) { $who = 'assistant' }
                 $removedOwner = $null
                 [void]$Shared.RunOwners.TryRemove($sid, [ref]$removedOwner)
-                $newState.userPlaytestActive = $false
+                Set-StateField $newState 'userPlaytestActive' $false
                 if (-not (Test-RecentPlayEvent $sid 'play_stopped' $now)) {
                     $Shared.LastPlayEvents[$sid] = @{ kind = 'play_stopped'; at = $now }
                     Add-BridgeEvent $sid 'play_stopped' ("Studio returned to edit mode (stopped by: " + $who + "). Everything from the test is discarded - this is normal, not a crash.") @{ stoppedBy = $who; detectedBy = 'server' }
@@ -9525,7 +9609,7 @@ $script:BridgeHandlerScript = {
                 $owner = 'user'
             }
             if ([string]$owner -eq 'user') {
-                $newState.userPlaytestActive = $true
+                Set-StateField $newState 'userPlaytestActive' $true
             }
         }
         return $newState
@@ -11445,7 +11529,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '4.0.4'
+            version = '4.0.5'
             docsVersion = [string]$Shared.DocsVersion
             role = 'You are connected to exactly ONE live Roblox Studio place through a local plugin. Every token belongs to one Studio window only - if several windows are open, each one has its own token and you can never touch the wrong place. Send every request as POST /api/tool with JSON body { "token": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -11556,7 +11640,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '4.0.4'
+            bridgeVersion = '4.0.5'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -11789,7 +11873,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '4.0.4'
+                        bridgeVersion = '4.0.5'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -11972,18 +12056,29 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 if ($action -eq 'heartbeat') {
                     $now = Get-UnixSeconds
                     $Shared.AgentLastSeen[$sid] = $now
-                    if ($body.state) {
-                        $stateJson = To-Json $body.state 30
-                        $Shared.AgentStates[$sid] = $stateJson
-                        $entry = Get-SessionEntry $sid
-                        if ($entry) {
-                            $agentState = $body.state
-                            $agentState | Add-Member -NotePropertyName 'agentConnected' -NotePropertyValue $true -Force
-                            $entry.state = Update-PlayStateTracking $sid $entry.state $agentState
-                            $entry.lastSeen = $now
-                            $entry | Add-Member -NotePropertyName 'agentConnected' -NotePropertyValue $true -Force
-                            Save-SessionEntry $entry
+                    # 4.0.5: Die Zustands-Uebernahme darf den Heartbeat NIE
+                    # scheitern lassen. Vorher warf sie (PSCustomObject-
+                    # Zuweisung, s. Set-StateField) und der ganze Request
+                    # endete als 500 - der Reporter bekam dadurch NIE seine
+                    # Befehle aus der Warteschlange und play_stop/
+                    # move_character liefen in REPORTER_NOT_CONNECTED.
+                    # Die Befehlsauslieferung unten laeuft jetzt IMMER.
+                    try {
+                        if ($body.state) {
+                            $stateJson = To-Json $body.state 30
+                            $Shared.AgentStates[$sid] = $stateJson
+                            $entry = Get-SessionEntry $sid
+                            if ($entry) {
+                                $agentState = $body.state
+                                $agentState | Add-Member -NotePropertyName 'agentConnected' -NotePropertyValue $true -Force
+                                $entry.state = Update-PlayStateTracking $sid $entry.state $agentState
+                                $entry.lastSeen = $now
+                                $entry | Add-Member -NotePropertyName 'agentConnected' -NotePropertyValue $true -Force
+                                Save-SessionEntry $entry
+                            }
                         }
+                    } catch {
+                        Write-BridgeLog "Heartbeat-Zustand ignoriert (Befehle werden trotzdem zugestellt): $($_.Exception.Message)"
                     }
                     $queue = Ensure-AgentQueue $sid
                     $items = New-Object System.Collections.Generic.List[object]
@@ -12015,7 +12110,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '4.0.4'
+                        serverVersion = '4.0.5'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -12194,8 +12289,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '4.0.4'
-                    serverVersion = '4.0.4'
+                    bridgeVersion = '4.0.5'
+                    serverVersion = '4.0.5'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -14585,7 +14680,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '4.0.4'
+    $versionText = '4.0.5'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -14906,7 +15001,7 @@ function Open-SettingsWindow {
                     <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                     <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                    <TextBlock Text="Arena Roblox Bridge - Version 4.0.4" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                    <TextBlock Text="Arena Roblox Bridge - Version 4.0.5" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                 </StackPanel>
             </ScrollViewer>
@@ -14938,7 +15033,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 4.0.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 4.0.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     if ($script:LastArenaMessage) {
@@ -14993,7 +15088,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 4.0.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 4.0.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -15006,7 +15101,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '4.0.4'
+    $verText = '4.0.5'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
