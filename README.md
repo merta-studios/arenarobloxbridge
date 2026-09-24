@@ -20,8 +20,8 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test_v398_structure.py` | Python-Strukturtest für 5.0.0 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
-| `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.0.0 (optional; wird NICHT vom Starter geladen) |
+| `test_v398_structure.py` | Python-Strukturtest für 5.0.1 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.0.1 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
 
@@ -35,6 +35,11 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 5.0.1
+- **Spieleliste wird wieder angezeigt.** Die Anzahl der verbundenen Places oben stimmte, darunter blieb die Liste jedoch immer leer. Grund: `New-PlaceIconVisual` (und das Verlaufsfenster) legten ihr Panel in der Variablen `$host` ab – das ist in PowerShell die schreibgeschützte automatische Host-Variable. Die Zuweisung warf „Cannot overwrite variable Host because it is read-only or constant“, der Fehler wurde von `Sync-PlaceList` abgefangen und geloggt, und keine Zeile wurde je hinzugefügt. Die Panels heißen jetzt `$iconHost`, `$historyHost` bzw. der Parameter `$HostPanel`.
+- Dadurch öffnet auch der Arena-Verlauf (pro Place und „Alle Places“) wieder zuverlässig.
+- Nach dem Update Roblox Studio einmal neu starten, damit das Plugin **5.0.1** geladen wird.
 
 ## 5.0.0
 - **Playtest-Steuerung erneut gehärtet.** Vor jedem Test registriert das Edit-Plugin den frischen, kurzlebigen Sitzungsschlüssel bei der Bridge. Ein Schlüssel aus einem älteren Playtest kann `move_character` oder `play_stop` damit nicht mehr mit einer 403-Antwort blockieren.

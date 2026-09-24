@@ -1,11 +1,10 @@
 {
-  "version": "5.0.0",
+  "version": "5.0.1",
   "notes": [
-    "• Version 5.0.0: Move Character und Playtest stoppen wurden grundlegend robuster. Jeder neue Test registriert seinen frischen Session-Schlüssel vor dem Start; alte Schlüssel können den Bewegungs- oder Stop-Befehl nicht mehr blockieren.",
-    "• Die Session-Reporter halten die Bewegung jetzt über die gesamte gewünschte Dauer aktiv. play_stop wartet auf den bestätigten Rückweg in den Edit-Modus und versucht den Session-Stop-Kanal nochmals, bevor ein Fallback nötig wird.",
-    "• Bei mindestens zwei verbundenen Places erscheint „Alle Places“. Der gemeinsame Token bleibt bis zum Programm-/PC-Neustart unverändert und wird nur über „Token zurücksetzen“ manuell erneuert. Arena kann über GET /api/places gezielt zwischen den Places wechseln.",
-    "• Jeder Place zeigt jetzt ein großes abgerundetes Game-Icon mit Ladeanimation und Roblox-Studio-Fallback. Außerdem gibt es pro Place sowie für alle Places einen farbcodierten, scrollbaren Arena-Verlauf.",
-    "• Der Schalter „Nur Lesezugriff“ ist jetzt ein temporärer An/Aus-Schalter. Er wird nicht gespeichert und startet bei jeder neuen Place-Registrierung wieder aus.",
-    "• Wichtig: Nach dem Update Roblox Studio einmal neu starten, damit das Plugin 5.0.0 geladen wird."
+    "• Version 5.0.1: Die Spieleliste bleibt nicht mehr leer. Verbundene Places erscheinen wieder als Zeile mit Icon, Prompt-Kopierknopf und Menü – bisher stimmte nur die Anzahl oben, darunter blieb alles leer.",
+    "• Ursache war ein interner Namenskonflikt: Das Icon-Panel (und das Verlaufsfenster) nutzte die reservierte PowerShell-Variable $host, wodurch jede Zeile beim Erstellen abbrach. Die Panels heißen jetzt eindeutig.",
+    "• Auch der Arena-Verlauf öffnet dadurch wieder zuverlässig – pro Place und für „Alle Places“.",
+    "• Alles aus 5.0.0 bleibt erhalten (Playtest-Härtung, Alle-Places-Token, Place-Icons, temporärer Lesezugriff).",
+    "• Hinweis: Nach dem Update Roblox Studio einmal neu starten, damit das Plugin 5.0.1 geladen wird."
   ]
 }
