@@ -1,5 +1,14 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 5.0.0
+# Arena Roblox Bridge  -  Version 5.0.1
+#
+# HOTFIX VERSION 5.0.1:
+#   * Die Place-Liste blieb leer, obwohl die Anzahl oben stimmte. Ursache:
+#     New-PlaceIconVisual (und das Verlaufsfenster) benutzten die Variable
+#     $host - das ist in PowerShell die schreibgeschuetzte automatische
+#     Variable des Hosts. Jede Zuweisung warf "Cannot overwrite variable Host
+#     because it is read-only or constant", die Zeile wurde deshalb in
+#     Sync-PlaceList verschluckt und nie hinzugefuegt. Die Panels heissen
+#     jetzt $iconHost / $historyHost bzw. $HostPanel.
 #
 # MEGA-UPDATE VERSION 5.0.0:
 #   * Der Session-Befehlskanal registriert seinen frischen Schlüssel jetzt vor
@@ -1068,7 +1077,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '5.0.0'
+    DocsVersion     = '5.0.1'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -1205,7 +1214,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 5.0.0)
+  Arena Studio Bridge - Studio Plugin  (Version 5.0.1)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1276,7 +1285,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "5.0.0"
+local ARENA_VERSION  = "5.0.1"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -11740,7 +11749,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '5.0.0'
+            version = '5.0.1'
             docsVersion = [string]$Shared.DocsVersion
             role = 'A normal token controls exactly one live Roblox Studio place. The special aggregate token copied from Alle Places controls several places: call GET /api/places first and pass one exact targetPlace in every request; the bridge refuses to guess. This makes switching safe and explicit. Send every request as POST /api/tool with JSON body { "token": "...", "targetPlace": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -11855,7 +11864,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '5.0.0'
+            bridgeVersion = '5.0.1'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -12095,7 +12104,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '5.0.0'
+                        bridgeVersion = '5.0.1'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -12347,7 +12356,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '5.0.0'
+                        serverVersion = '5.0.1'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -12534,7 +12543,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='5.0.0'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='5.0.1'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -12563,8 +12572,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '5.0.0'
-                    serverVersion = '5.0.0'
+                    bridgeVersion = '5.0.1'
+                    serverVersion = '5.0.1'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -14262,7 +14271,7 @@ function New-PlaceIconVisual {
     $frame.BorderThickness = [System.Windows.Thickness]::new(1)
     $frame.Margin = [System.Windows.Thickness]::new(0, 0, 13, 0)
     $frame.ClipToBounds = $true
-    $host = [System.Windows.Controls.Grid]::new()
+    $iconHost = [System.Windows.Controls.Grid]::new()
     $image = [System.Windows.Controls.Image]::new()
     $image.Stretch = 'UniformToFill'
     $image.Clip = [System.Windows.Media.RectangleGeometry]::new([System.Windows.Rect]::new(0,0,46,46), 12, 12)
@@ -14286,8 +14295,8 @@ function New-PlaceIconVisual {
     $anim = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 360, [TimeSpan]::FromSeconds(0.9))
     $anim.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
     $spinTransform.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $anim)
-    $host.Children.Add($image) | Out-Null; $host.Children.Add($fallback) | Out-Null; $host.Children.Add($spinner) | Out-Null
-    $frame.Child = $host
+    $iconHost.Children.Add($image) | Out-Null; $iconHost.Children.Add($fallback) | Out-Null; $iconHost.Children.Add($spinner) | Out-Null
+    $frame.Child = $iconHost
     return [pscustomobject]@{ Frame=$frame; Image=$image; Spinner=$spinner; Fallback=$fallback }
 }
 
@@ -14388,7 +14397,7 @@ function Clear-ArenaHistory {
 }
 
 function Add-ArenaHistoryCard {
-    param($Host, $Entry, [bool]$AllPlaces)
+    param($HostPanel, $Entry, [bool]$AllPlaces)
     $kind = [string]$Entry.kind
     $colour = '#94A3B8'
     switch ($kind) {
@@ -14421,7 +14430,7 @@ function Add-ArenaHistoryCard {
     $timeSuffix = if ($when) { ' · ' + $when } else { '' }
     $meta.Text=$state + $timeSuffix
     $stack.Children.Add($main)|Out-Null;$stack.Children.Add($meta)|Out-Null
-    [System.Windows.Controls.Grid]::SetColumn($stack,1);$grid.Children.Add($stack)|Out-Null;$card.Child=$grid;$Host.Children.Add($card)|Out-Null
+    [System.Windows.Controls.Grid]::SetColumn($stack,1);$grid.Children.Add($stack)|Out-Null;$card.Child=$grid;$HostPanel.Children.Add($card)|Out-Null
 }
 
 function Update-ArenaHistoryWindow {
@@ -14455,9 +14464,9 @@ function Open-ArenaHistoryWindow {
     $trash=[System.Windows.Controls.Button]::new();$trash.Content=[char]0xE74D;$trash.FontFamily=[System.Windows.Media.FontFamily]::new('Segoe MDL2 Assets');$trash.FontSize=14;$trash.Width=38;$trash.Height=34;$trash.Margin=[System.Windows.Thickness]::new(0,0,8,0);$trash.ToolTip='Verlauf zurücksetzen';[System.Windows.Controls.Grid]::SetColumn($trash,1);$head.Children.Add($trash)|Out-Null
     $close=[System.Windows.Controls.Button]::new();$close.Content=[char]0xE8BB;$close.FontFamily=[System.Windows.Media.FontFamily]::new('Segoe MDL2 Assets');$close.FontSize=12;$close.Width=38;$close.Height=34;$close.ToolTip='Schließen';[System.Windows.Controls.Grid]::SetColumn($close,2);$head.Children.Add($close)|Out-Null
     [System.Windows.Controls.Grid]::SetRow($head,0);$grid.Children.Add($head)|Out-Null
-    $scroll=[System.Windows.Controls.ScrollViewer]::new();$scroll.Margin=[System.Windows.Thickness]::new(0,17,0,0);$scroll.VerticalScrollBarVisibility='Auto';$scroll.HorizontalScrollBarVisibility='Disabled';$host=[System.Windows.Controls.StackPanel]::new();$scroll.Content=$host;[System.Windows.Controls.Grid]::SetRow($scroll,1);$grid.Children.Add($scroll)|Out-Null
+    $scroll=[System.Windows.Controls.ScrollViewer]::new();$scroll.Margin=[System.Windows.Thickness]::new(0,17,0,0);$scroll.VerticalScrollBarVisibility='Auto';$scroll.HorizontalScrollBarVisibility='Disabled';$historyHost=[System.Windows.Controls.StackPanel]::new();$scroll.Content=$historyHost;[System.Windows.Controls.Grid]::SetRow($scroll,1);$grid.Children.Add($scroll)|Out-Null
     $shell.Child=$grid;$history.Content=$shell
-    $state=[pscustomobject]@{Window=$history;Scroll=$scroll;Host=$host;SessionId=$SessionId;AllPlaces=[string]::IsNullOrWhiteSpace($SessionId);FirstRender=$true;Timer=$null}
+    $state=[pscustomobject]@{Window=$history;Scroll=$scroll;Host=$historyHost;SessionId=$SessionId;AllPlaces=[string]::IsNullOrWhiteSpace($SessionId);FirstRender=$true;Timer=$null}
     $history.Tag=$state;$trash.Tag=$state;$close.Tag=$history
     $trash.Add_Click({param($sender,$e) Clear-ArenaHistory ([string]$sender.Tag.SessionId);$sender.Tag.FirstRender=$true;Update-ArenaHistoryWindow $sender.Tag})
     $close.Add_Click({param($sender,$e) $sender.Tag.Close()})
@@ -15364,7 +15373,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '5.0.0'
+    $versionText = '5.0.1'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -15685,7 +15694,7 @@ function Open-SettingsWindow {
                     <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                     <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                    <TextBlock Text="Arena Roblox Bridge - Version 5.0.0" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                    <TextBlock Text="Arena Roblox Bridge - Version 5.0.1" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                 </StackPanel>
             </ScrollViewer>
@@ -15717,7 +15726,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 5.0.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 5.0.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     if ($script:LastArenaMessage) {
@@ -15772,7 +15781,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 5.0.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 5.0.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -15785,7 +15794,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '5.0.0'
+    $verText = '5.0.1'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

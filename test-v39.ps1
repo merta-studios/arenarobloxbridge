@@ -1,10 +1,10 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge 5.0.0 - Logik-Tests (Mock, ohne Studio / ohne UI)
+# Arena Roblox Bridge 5.0.1 - Logik-Tests (Mock, ohne Studio / ohne UI)
 # ----------------------------------------------------------------------------
 # Ausfuehren auf dem PC (Windows PowerShell 5.1):
 #   powershell.exe -NoProfile -ExecutionPolicy Bypass -File test-v39.ps1
 #
-# Die Tests pruefen die aktuelle 5.0.0-Logik OHNE Roblox Studio:
+# Die Tests pruefen die aktuelle 5.0.1-Logik OHNE Roblox Studio:
 #   1. Syntax der kompletten ArenaBridge.ps1 (echter PowerShell-Parser)
 #   2. UTF-8-BOM
 #   3. Einstellungen: laden/speichern (settings.json Round-Trip)
@@ -16,7 +16,7 @@
 #   5. Selbst-Test-Sperre (New-SelfTestBlockedResult)
 #   6. report_done: aus/ohne Nachricht/erfolgreich (Mock-Warteschlange)
 #   7. XAML der drei Fenster ist wohlgeformtes XML
-#   8. Versions-Konsistenz (5.0.0 ueberall)
+#   8. Versions-Konsistenz (5.0.1 ueberall)
 #   9. GET-API, Kopier-Bestaetigung und Autostart-Selbst-Update (Version 5)
 # ============================================================================
 
@@ -38,7 +38,7 @@ function Assert([bool]$Condition, [string]$Name, [string]$Detail) {
     if ($Condition) { Pass $Name } else { Fail $Name $Detail }
 }
 
-Write-Host '=== Arena Bridge 5.0.0 Logik-Tests ===' -ForegroundColor Cyan
+Write-Host '=== Arena Bridge 5.0.1 Logik-Tests ===' -ForegroundColor Cyan
 
 # ----------------------------------------------------------------------------
 # 1) Syntax der kompletten Datei mit dem echten Parser pruefen
@@ -249,19 +249,19 @@ Assert ($null -ne $settingsXaml -and $settingsXaml.Groups[1].Value -like '*Arena
 # ----------------------------------------------------------------------------
 # 8) Versions-Konsistenz
 # ----------------------------------------------------------------------------
-Write-Host '`n8) Version 5.0.0 ueberall' -ForegroundColor Yellow
-Assert ($text.Contains("# Arena Roblox Bridge  -  Version 5.0.0")) 'Changelog-Kopf'
-Assert ($text.Contains("DocsVersion     = '5.0.0'")) 'DocsVersion'
-Assert ($text.Contains('local ARENA_VERSION  = "5.0.0"')) 'ARENA_VERSION (Plugin)'
-Assert ($text.Contains('Arena Studio Bridge - Studio Plugin  (Version 5.0.0)')) 'Plugin-Kommentar'
-Assert ($text.Contains("version = '5.0.0'")) 'Manifest-Version'
-Assert ($text.Contains("serverVersion = '5.0.0'")) 'serverVersion'
-Assert ($text.Contains('$versionText = ' + "'5.0.0'")) 'Show-UpdateNotice-Fallback'
-Assert ($text.Contains('Text="Arena Roblox Bridge - Version 5.0.0"')) 'Einstellungs-Fusszeile'
+Write-Host '`n8) Version 5.0.1 ueberall' -ForegroundColor Yellow
+Assert ($text.Contains("# Arena Roblox Bridge  -  Version 5.0.1")) 'Changelog-Kopf'
+Assert ($text.Contains("DocsVersion     = '5.0.1'")) 'DocsVersion'
+Assert ($text.Contains('local ARENA_VERSION  = "5.0.1"')) 'ARENA_VERSION (Plugin)'
+Assert ($text.Contains('Arena Studio Bridge - Studio Plugin  (Version 5.0.1)')) 'Plugin-Kommentar'
+Assert ($text.Contains("version = '5.0.1'")) 'Manifest-Version'
+Assert ($text.Contains("serverVersion = '5.0.1'")) 'serverVersion'
+Assert ($text.Contains('$versionText = ' + "'5.0.1'")) 'Show-UpdateNotice-Fallback'
+Assert ($text.Contains('Text="Arena Roblox Bridge - Version 5.0.1"')) 'Einstellungs-Fusszeile'
 $bridgeVersions = [regex]::Matches($text, "bridgeVersion = '(\d+\.\d+\.\d+)'")
-Assert ($bridgeVersions.Count -eq 3 -and @($bridgeVersions | Where-Object { $_.Groups[1].Value -ne '5.0.0' }).Count -eq 0) 'bridgeVersion (3x)'
+Assert ($bridgeVersions.Count -eq 3 -and @($bridgeVersions | Where-Object { $_.Groups[1].Value -ne '5.0.1' }).Count -eq 0) 'bridgeVersion (3x)'
 $versionJson = Get-Content (Join-Path $root 'version.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-Assert ($versionJson.version -eq '5.0.0') 'version.json'
+Assert ($versionJson.version -eq '5.0.1') 'version.json'
 Assert ($versionJson.notes.Length -gt 50) 'version.json hat Neuigkeiten-Text'
 
 # ----------------------------------------------------------------------------
