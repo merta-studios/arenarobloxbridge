@@ -20,8 +20,8 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test_v398_structure.py` | Python-Strukturtest für 5.0.1 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
-| `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.0.1 (optional; wird NICHT vom Starter geladen) |
+| `test_v398_structure.py` | Python-Strukturtest für 5.0.2 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.0.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
 
@@ -35,6 +35,13 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 5.0.2
+- **Diagnose statt Rätselraten: Die Place-Liste wird hart überwacht.** Der Bug aus 5.0.0/5.0.1 (Anzahl oben stimmte, darunter blieb die Liste leer) wird nicht mehr geraten, sondern gemessen: Jeder catch-Block der Place-Liste schreibt jetzt Exception-Typ, Meldung, Skriptzeile und Stacktrace in `runtime.log` – vorher stand dort nur die nackte Meldung, die Ursache war damit praktisch verschluckt.
+- **Nach jeder eingefügten Zeile misst das Programm den echten Fensterzustand** (Anzahl Kinder, Größe der Liste, Visibility/IsVisible/Höhe/Opacity der Zeile) und protokolliert ihn. Der Log trennt damit sauber die drei Fehlerbilder „Zeile nie gebaut“, „Zeile gebaut aber unsichtbar“ und „Layout ohne Platz“.
+- **Sicherheitsnetz:** Icon, Auswahlmenü, Arena-Verlauf und die Einblend-Animation einer Zeile sind einzeln in try/catch gekapselt. Schlägt eines davon fehl, erscheint die Zeile trotzdem mindestens mit Name und „Prompt kopieren“-Knopf. Schlägt die Animation fehl oder startet sie nie, wird die Zeile hart auf sichtbar gestellt (Watchdog nach 1,5 s).
+- Auch der Neu-Anordnungs-Block von `Sync-PlaceList` (`Children.Clear()` + neu anordnen) ist gekapselt und loggt Fehler – ein Fehler dort konnte die Liste zuvor spurlos leeren.
+- Nach dem Update Roblox Studio einmal neu starten, damit das Plugin **5.0.2** geladen wird.
 
 ## 5.0.1
 - **Spieleliste wird wieder angezeigt.** Die Anzahl der verbundenen Places oben stimmte, darunter blieb die Liste jedoch immer leer. Grund: `New-PlaceIconVisual` (und das Verlaufsfenster) legten ihr Panel in der Variablen `$host` ab – das ist in PowerShell die schreibgeschützte automatische Host-Variable. Die Zuweisung warf „Cannot overwrite variable Host because it is read-only or constant“, der Fehler wurde von `Sync-PlaceList` abgefangen und geloggt, und keine Zeile wurde je hinzugefügt. Die Panels heißen jetzt `$iconHost`, `$historyHost` bzw. der Parameter `$HostPanel`.

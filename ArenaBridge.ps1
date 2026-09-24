@@ -1,5 +1,30 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 5.0.1
+# Arena Roblox Bridge  -  Version 5.0.2
+#
+# DIAGNOSE- UND SICHERHEITSNETZ-VERSION 5.0.2:
+#   * Die Place-Liste blieb auch nach dem 5.0.1-Hotfix leer (Anzahl oben
+#     stimmte, EmptyState verschwand, aber es erschien nie eine Zeile).
+#     Statt weiter zu raten, misst 5.0.2 jetzt: Jeder catch-Block der
+#     Place-Liste schreibt Exception-Typ, Message, Skriptzeile und
+#     Stacktrace nach runtime.log (vorher stand dort nur die nackte
+#     .Message - der Fehler war damit praktisch verschluckt).
+#   * Nach jedem PlaceList.Children.Add wird einmal der echte Zustand des
+#     Baums gemessen und geloggt: Kinderzahl, PlaceList-Groesse,
+#     Visibility, IsVisible, ActualHeight und Opacity der Zeile. Der Log
+#     trennt damit sauber die drei Fehlerbilder "Zeile nie gebaut",
+#     "Zeile gebaut aber unsichtbar" und "Layout ohne Platz".
+#   * Sicherheitsnetz: Icon, Auswahlmenue und Arena-Verlauf sind in New-Row
+#     in eigene try/catch-Bloecke gekapselt. Schlaegt eines davon fehl,
+#     landet trotzdem immer eine minimal funktionsfaehige Zeile (Name +
+#     "Prompt kopieren"-Knopf) im Fenster.
+#   * Der Einblend-Fade (Opacity=0 -> Animation auf 1) ist gekapselt und
+#     hat einen Watchdog: Schlaegt BeginAnimation fehl oder startet die
+#     Animation nie, wird die Zeile hart auf sichtbar gestellt (vorher
+#     konnte eine Zeile mit Opacity=0 dauerhaft unsichtbar im Baum haengen,
+#     weil UiRows bereits gesetzt war und kein erneuter Fade-versuch lief).
+#   * Der Neu-Anordnungs-Block von Sync-PlaceList (Children.Clear + neu
+#     adden) ist gekapselt - ein Fehler dort konnte die Liste leeren,
+#     ohne irgendeine Spur im Log.
 #
 # HOTFIX VERSION 5.0.1:
 #   * Die Place-Liste blieb leer, obwohl die Anzahl oben stimmte. Ursache:
@@ -1077,7 +1102,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '5.0.1'
+    DocsVersion     = '5.0.2'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -1122,6 +1147,26 @@ function Write-RuntimeLog {
         $line = '{0:u} {1}' -f (Get-Date), $Message
         Add-Content -LiteralPath $script:RuntimeLog -Value $line -Encoding UTF8
     } catch {}
+}
+
+# ----------------------------------------------------------------------------
+# Version 5.0.2: Harte, sichtbare Fehlerausgabe fuer Oberflaechen-Fehler.
+# Bis 5.0.1 stand in runtime.log nur die nackte .Message eines Fehlers -
+# Exception-Typ, Skriptzeile und Stacktrace fehlten. Ein Fehler beim Bau
+# einer Place-Zeile war damit praktisch verschluckt und die Ursache nicht
+# mehr zurueckverfolgbar (Lehre aus 5.0.1: raten bringt nichts, messen).
+# ----------------------------------------------------------------------------
+function Write-UiErrorLog {
+    param([string]$Context, $ErrorRecord)
+    $typeName   = ''
+    $message    = ''
+    $lineNumber = ''
+    $trace      = ''
+    try { if ($ErrorRecord -and $ErrorRecord.Exception) { $typeName = [string]$ErrorRecord.Exception.GetType().FullName } } catch {}
+    try { if ($ErrorRecord -and $ErrorRecord.Exception) { $message = [string]$ErrorRecord.Exception.Message } } catch {}
+    try { if ($ErrorRecord -and $ErrorRecord.InvocationInfo) { $lineNumber = [string]$ErrorRecord.InvocationInfo.ScriptLineNumber } } catch {}
+    try { if ($ErrorRecord) { $trace = [string]$ErrorRecord.ScriptStackTrace } } catch {}
+    Write-RuntimeLog ('{0}: {1}: {2} | Skriptzeile: {3} | Stacktrace: {4}' -f $Context, $typeName, $message, $lineNumber, $trace)
 }
 
 $runModeText = if ($script:IsExeMode) { "EXE-Modus ($script:ExePath)" } else { "Skript-Modus ($script:ScriptPath)" }
@@ -1214,7 +1259,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 5.0.1)
+  Arena Studio Bridge - Studio Plugin  (Version 5.0.2)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1285,7 +1330,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "5.0.1"
+local ARENA_VERSION  = "5.0.2"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -11749,7 +11794,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '5.0.1'
+            version = '5.0.2'
             docsVersion = [string]$Shared.DocsVersion
             role = 'A normal token controls exactly one live Roblox Studio place. The special aggregate token copied from Alle Places controls several places: call GET /api/places first and pass one exact targetPlace in every request; the bridge refuses to guess. This makes switching safe and explicit. Send every request as POST /api/tool with JSON body { "token": "...", "targetPlace": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -11864,7 +11909,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '5.0.1'
+            bridgeVersion = '5.0.2'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -12104,7 +12149,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '5.0.1'
+                        bridgeVersion = '5.0.2'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -12356,7 +12401,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '5.0.1'
+                        serverVersion = '5.0.2'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -12543,7 +12588,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='5.0.1'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='5.0.2'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -12572,8 +12617,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '5.0.1'
-                    serverVersion = '5.0.1'
+                    bridgeVersion = '5.0.2'
+                    serverVersion = '5.0.2'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -14033,7 +14078,8 @@ function Add-PendingToast {
 # ----------------------------------------------------------------------------
 function Set-MenuChecked {
     param($Item, [bool]$Checked)
-    if (-not $Item.Checkable) { return }
+    # Version 5.0.2: $null-fest - ohne Auswahlmenue gibt es keinen Toggle.
+    if ($null -eq $Item -or -not $Item.Checkable) { return }
     # Version 5: this is deliberately a switch, never a checkbox. Read-only
     # is an immediate, temporary session state just like the settings switches.
     if ($Checked) {
@@ -14245,7 +14291,9 @@ function Get-PlaceIconKey {
 
 function Set-PlaceIconImage {
     param($Row, [string]$Path)
-    if ($null -eq $Row -or [string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) { return }
+    # Version 5.0.2: IconImage kann $null sein, wenn das Icon-Visual dem
+    # Sicherheitsnetz zum Opfer gefallen ist - dann nichts tun.
+    if ($null -eq $Row -or $null -eq $Row.IconImage -or [string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) { return }
     try {
         $bitmap = [System.Windows.Media.Imaging.BitmapImage]::new()
         $bitmap.BeginInit()
@@ -14594,8 +14642,19 @@ function New-Row {
     $namePanel.ColumnDefinitions.Add($iconCol2)
     $namePanel.ColumnDefinitions.Add($titleCol)
     # Version 5: a large, rounded square game icon replaces the old green dot.
-    $placeIcon = New-PlaceIconVisual
-    [System.Windows.Controls.Grid]::SetColumn($placeIcon.Frame, 0)
+    # Version 5.0.2 Sicherheitsnetz: Icon, Auswahlmenue und Verlauf sind
+    # bewusst in eigene try/catch-Bloecke gekapselt. Schlaegt eines davon
+    # fehl, landet trotzdem immer eine minimal funktionsfaehige Zeile (Name
+    # + "Prompt kopieren"-Knopf) im Fenster, statt die komplette Zeile zu
+    # verlieren - genau das hatte die Liste in 5.0.0/5.0.1 leer gemacht.
+    $placeIcon = $null
+    try {
+        $placeIcon = New-PlaceIconVisual
+        [System.Windows.Controls.Grid]::SetColumn($placeIcon.Frame, 0)
+    } catch {
+        $placeIcon = $null
+        Write-UiErrorLog 'Place-Zeile: Icon-Visual konnte nicht erstellt werden' $_
+    }
     $title = [System.Windows.Controls.TextBlock]::new()
     $title.Text = Get-PlaceName $Studio $WindowNames
     $title.Foreground = Get-Brush '#F8FAFC'
@@ -14605,15 +14664,17 @@ function New-Row {
     $title.Margin = [System.Windows.Thickness]::new(0, 0, 14, 0)
     $title.TextTrimming = 'CharacterEllipsis'
     [System.Windows.Controls.Grid]::SetColumn($title, 1)
-    $namePanel.Children.Add($placeIcon.Frame) | Out-Null
+    if ($placeIcon) { $namePanel.Children.Add($placeIcon.Frame) | Out-Null }
     $namePanel.Children.Add($title) | Out-Null
     [System.Windows.Controls.Grid]::SetColumn($namePanel, 0)
     $grid.Children.Add($namePanel) | Out-Null
     $row.Title = $title
-    $row.IconFrame = $placeIcon.Frame
-    $row.IconImage = $placeIcon.Image
-    $row.IconSpinner = $placeIcon.Spinner
-    $row.IconFallback = $placeIcon.Fallback
+    if ($placeIcon) {
+        $row.IconFrame = $placeIcon.Frame
+        $row.IconImage = $placeIcon.Image
+        $row.IconSpinner = $placeIcon.Spinner
+        $row.IconFallback = $placeIcon.Fallback
+    }
 
     $copyContent = [System.Windows.Controls.StackPanel]::new()
     $copyContent.Orientation = 'Horizontal'
@@ -14661,100 +14722,115 @@ function New-Row {
     $grid.Children.Add($menuButton) | Out-Null
     $row.Menu = $menuButton
 
-    # --- Auswahlmenue -------------------------------------------------------
-    $popup = [System.Windows.Controls.Primitives.Popup]::new()
-    $popup.PlacementTarget = $menuButton
-    $popup.Placement = [System.Windows.Controls.Primitives.PlacementMode]::Bottom
-    $popup.AllowsTransparency = $true
-    $popup.PopupAnimation = [System.Windows.Controls.Primitives.PopupAnimation]::Fade
-    # Version 3.7: StaysOpen=$true - das Menue schliesst nur noch gezielt:
-    # Klick auf "..." schaltet es um, Klick ausserhalb schliesst es (siehe
-    # PreviewMouseDown des Fensters). So ist ein echtes Umschalten moeglich.
-    $popup.StaysOpen = $true
-    $popup.HorizontalOffset = -232
-    $popup.VerticalOffset = 6
+    # Version 5.0.2 Sicherheitsnetz: Das komplette Auswahlmenue (Popup,
+    # Menueeintraege, Schatten-Effekt) ist gekapselt. Schlaegt es fehl,
+    # bleibt eine funktionierende Zeile ohne Aufklappmenue uebrig - der
+    # "..."-Knopf tut dann einfach nichts mehr ($popup bleibt $null,
+    # der Klick-Handler prueft das bereits).
+    $popup = $null
+    try {
+        # --- Auswahlmenue -------------------------------------------------------
+        $popup = [System.Windows.Controls.Primitives.Popup]::new()
+        $popup.PlacementTarget = $menuButton
+        $popup.Placement = [System.Windows.Controls.Primitives.PlacementMode]::Bottom
+        $popup.AllowsTransparency = $true
+        $popup.PopupAnimation = [System.Windows.Controls.Primitives.PopupAnimation]::Fade
+        # Version 3.7: StaysOpen=$true - das Menue schliesst nur noch gezielt:
+        # Klick auf "..." schaltet es um, Klick ausserhalb schliesst es (siehe
+        # PreviewMouseDown des Fensters). So ist ein echtes Umschalten moeglich.
+        $popup.StaysOpen = $true
+        $popup.HorizontalOffset = -232
+        $popup.VerticalOffset = 6
 
-    $menuShell = [System.Windows.Controls.Border]::new()
-    $menuShell.Width = 272
-    $menuShell.CornerRadius = [System.Windows.CornerRadius]::new(15)
-    $menuShell.Background = Get-Brush '#111827'
-    $menuShell.BorderBrush = Get-Brush '#334155'
-    $menuShell.BorderThickness = [System.Windows.Thickness]::new(1)
-    $menuShell.Padding = [System.Windows.Thickness]::new(7)
-    $menuShell.Margin = [System.Windows.Thickness]::new(0, 0, 14, 14)
-    $menuShell.Effect = New-Shadow -Blur 24 -Opacity 0.6
+        $menuShell = [System.Windows.Controls.Border]::new()
+        $menuShell.Width = 272
+        $menuShell.CornerRadius = [System.Windows.CornerRadius]::new(15)
+        $menuShell.Background = Get-Brush '#111827'
+        $menuShell.BorderBrush = Get-Brush '#334155'
+        $menuShell.BorderThickness = [System.Windows.Thickness]::new(1)
+        $menuShell.Padding = [System.Windows.Thickness]::new(7)
+        $menuShell.Margin = [System.Windows.Thickness]::new(0, 0, 14, 14)
+        $menuShell.Effect = New-Shadow -Blur 24 -Opacity 0.6
 
-    $menuStack = [System.Windows.Controls.StackPanel]::new()
-    $menuHeader = [System.Windows.Controls.TextBlock]::new()
-    $menuHeader.Text = 'OPTIONEN'
-    $menuHeader.Foreground = Get-Brush '#64748B'
-    $menuHeader.FontSize = 10.5
-    $menuHeader.FontWeight = 'Bold'
-    $menuHeader.Margin = [System.Windows.Thickness]::new(9, 7, 9, 5)
-    $menuStack.Children.Add($menuHeader) | Out-Null
-    $menuStack.Children.Add((New-Separator)) | Out-Null
+        $menuStack = [System.Windows.Controls.StackPanel]::new()
+        $menuHeader = [System.Windows.Controls.TextBlock]::new()
+        $menuHeader.Text = 'OPTIONEN'
+        $menuHeader.Foreground = Get-Brush '#64748B'
+        $menuHeader.FontSize = 10.5
+        $menuHeader.FontWeight = 'Bold'
+        $menuHeader.Margin = [System.Windows.Thickness]::new(9, 7, 9, 5)
+        $menuStack.Children.Add($menuHeader) | Out-Null
+        $menuStack.Children.Add((New-Separator)) | Out-Null
 
-    $copyItem = New-MenuRow -Glyph ([char]0xE8C8) -Title 'Prompt kopieren' -Subtitle 'URL und Token für Arena' -Accent '#818CF8'
-    $resetItem = New-MenuRow -Glyph ([char]0xE72C) -Title 'Token zurücksetzen' -Subtitle 'Neuen Zugang für dieses Place' -Accent '#A5B4FC'
-    $toggleItem = New-MenuRow -Glyph ([char]0xE72E) -Title 'Nur Lesezugriff' -Subtitle 'Inaktiv - Änderungen sind erlaubt' -Accent '#C4B5FD' -Checkable $true -Checked $false
-    $historyItem = New-MenuRow -Glyph ([char]0xE81C) -Title 'Arena-Verlauf anzeigen' -Subtitle 'Aktionen und Änderungen dieses Place' -Accent '#60A5FA'
+        $copyItem = New-MenuRow -Glyph ([char]0xE8C8) -Title 'Prompt kopieren' -Subtitle 'URL und Token für Arena' -Accent '#818CF8'
+        $resetItem = New-MenuRow -Glyph ([char]0xE72C) -Title 'Token zurücksetzen' -Subtitle 'Neuen Zugang für dieses Place' -Accent '#A5B4FC'
+        $toggleItem = New-MenuRow -Glyph ([char]0xE72E) -Title 'Nur Lesezugriff' -Subtitle 'Inaktiv - Änderungen sind erlaubt' -Accent '#C4B5FD' -Checkable $true -Checked $false
+        $historyItem = New-MenuRow -Glyph ([char]0xE81C) -Title 'Arena-Verlauf anzeigen' -Subtitle 'Aktionen und Änderungen dieses Place' -Accent '#60A5FA'
 
-    # Alle Daten haengen am Element selbst (Tag). Lokale Variablen einer
-    # Funktion sind in Event-Handlern nicht verfuegbar.
-    $itemTag = [pscustomobject]@{
-        Popup     = $popup
-        SessionId = $sessionId
-        Row       = $row
-    }
-    $copyItem.Root.Tag = $itemTag
-    $resetItem.Root.Tag = $itemTag
-    $toggleItem.Root.Tag = $itemTag
-    $historyItem.Root.Tag = $itemTag
-
-    $copyItem.Root.Add_MouseLeftButtonUp({
-        param($s, $e)
-        $info = $s.Tag
-        $info.Popup.IsOpen = $false
-        Copy-Prompt $info.SessionId
-    })
-    $resetItem.Root.Add_MouseLeftButtonUp({
-        param($s, $e)
-        $info = $s.Tag
-        $info.Popup.IsOpen = $false
-        Reset-SessionToken $info.SessionId
-        Show-Toast -Message 'Token wurde zurückgesetzt.' -Kind 'Success'
-    })
-    $historyItem.Root.Add_MouseLeftButtonUp({
-        param($s, $e)
-        $info = $s.Tag
-        $info.Popup.IsOpen = $false
-        if ([string]$info.SessionId -eq '__arena_all_places__') {
-            Open-ArenaHistoryWindow -SessionId '' -Title 'Arena-Verlauf · Alle Places'
-        } else {
-            Open-ArenaHistoryWindow -SessionId ([string]$info.SessionId) -Title 'Arena-Verlauf'
+        # Alle Daten haengen am Element selbst (Tag). Lokale Variablen einer
+        # Funktion sind in Event-Handlern nicht verfuegbar.
+        $itemTag = [pscustomobject]@{
+            Popup     = $popup
+            SessionId = $sessionId
+            Row       = $row
         }
-    })
-    $toggleItem.Root.Add_MouseLeftButtonUp({
-        param($s, $e)
-        $info = $s.Tag
-        # Version 3.7: Das Menue bleibt bei "Nur Lesezugriff" OFFEN, damit
-        # weitere Optionen direkt danach eingestellt werden koennen.
-        $targetRow = $info.Row
-        $newMode = if ($targetRow.Mode -eq 'readonly') { 'readwrite' } else { 'readonly' }
-        Set-SessionMode $info.SessionId $newMode
-        $targetRow.ModeUntil = [DateTime]::UtcNow.AddSeconds(3)
-        Set-RowMode $targetRow $newMode
-    })
+        $copyItem.Root.Tag = $itemTag
+        $resetItem.Root.Tag = $itemTag
+        $toggleItem.Root.Tag = $itemTag
+        $historyItem.Root.Tag = $itemTag
 
-    $menuStack.Children.Add($copyItem.Root) | Out-Null
-    $menuStack.Children.Add($resetItem.Root) | Out-Null
-    $menuStack.Children.Add($historyItem.Root) | Out-Null
-    $menuStack.Children.Add((New-Separator)) | Out-Null
-    $menuStack.Children.Add($toggleItem.Root) | Out-Null
+        $copyItem.Root.Add_MouseLeftButtonUp({
+            param($s, $e)
+            $info = $s.Tag
+            $info.Popup.IsOpen = $false
+            Copy-Prompt $info.SessionId
+        })
+        $resetItem.Root.Add_MouseLeftButtonUp({
+            param($s, $e)
+            $info = $s.Tag
+            $info.Popup.IsOpen = $false
+            Reset-SessionToken $info.SessionId
+            Show-Toast -Message 'Token wurde zurückgesetzt.' -Kind 'Success'
+        })
+        $historyItem.Root.Add_MouseLeftButtonUp({
+            param($s, $e)
+            $info = $s.Tag
+            try { $info.Popup.IsOpen = $false } catch {}
+            try {
+                if ([string]$info.SessionId -eq '__arena_all_places__') {
+                    Open-ArenaHistoryWindow -SessionId '' -Title 'Arena-Verlauf · Alle Places'
+                } else {
+                    Open-ArenaHistoryWindow -SessionId ([string]$info.SessionId) -Title 'Arena-Verlauf'
+                }
+            } catch {
+                Write-UiErrorLog 'Arena-Verlaufsfenster konnte nicht geoeffnet werden' $_
+            }
+        })
+        $toggleItem.Root.Add_MouseLeftButtonUp({
+            param($s, $e)
+            $info = $s.Tag
+            # Version 3.7: Das Menue bleibt bei "Nur Lesezugriff" OFFEN, damit
+            # weitere Optionen direkt danach eingestellt werden koennen.
+            $targetRow = $info.Row
+            $newMode = if ($targetRow.Mode -eq 'readonly') { 'readwrite' } else { 'readonly' }
+            Set-SessionMode $info.SessionId $newMode
+            $targetRow.ModeUntil = [DateTime]::UtcNow.AddSeconds(3)
+            Set-RowMode $targetRow $newMode
+        })
 
-    $menuShell.Child = $menuStack
-    $popup.Child = $menuShell
-    $grid.Children.Add($popup) | Out-Null
+        $menuStack.Children.Add($copyItem.Root) | Out-Null
+        $menuStack.Children.Add($resetItem.Root) | Out-Null
+        $menuStack.Children.Add($historyItem.Root) | Out-Null
+        $menuStack.Children.Add((New-Separator)) | Out-Null
+        $menuStack.Children.Add($toggleItem.Root) | Out-Null
+
+        $menuShell.Child = $menuStack
+        $popup.Child = $menuShell
+        $grid.Children.Add($popup) | Out-Null
+    } catch {
+        $popup = $null
+        Write-UiErrorLog 'Place-Zeile: Auswahlmenue/Popup konnte nicht erstellt werden' $_
+    }
 
     # Version 3.7: Klick auf "..." schaltet das Menue um (offen -> zu, zu -> offen).
     $menuButton.Tag = [pscustomobject]@{ Popup = $popup }
@@ -14773,9 +14849,9 @@ function New-Row {
     $border.Child = $grid
 
     $startMode = if ([string]$Studio.accessMode -eq 'readonly') { 'readonly' } else { 'readwrite' }
-    Set-RowMode $row $startMode -Silent
+    try { Set-RowMode $row $startMode -Silent } catch { Write-UiErrorLog 'Place-Zeile: Modus-Anzeige fehlgeschlagen' $_ }
     $row.ModeUntil = [DateTime]::MinValue
-    Start-PlaceIconLoad $Studio $row
+    try { Start-PlaceIconLoad $Studio $row } catch { Write-UiErrorLog 'Place-Zeile: Icon-Laden fehlgeschlagen' $_ }
 
     return $row
 }
@@ -15220,6 +15296,66 @@ function Refresh-Ui {
     Sync-PlaceList @(Get-ActiveStudios)
 }
 
+# ----------------------------------------------------------------------------
+# Version 5.0.2: Zeile sichtbar in die Place-Liste haengen (mit Sicherheitsnetz)
+# - Der Einblend-Fade ist gekapselt: Schlaegt BeginAnimation fehl, wird die
+#   Zeile hart auf sichtbar gestellt. Vorher stand sie mit Opacity=0
+#   dauerhaft unsichtbar im Baum, weil UiRows bereits gesetzt war und der
+#   naechste Refresh in den Update-Zweig lief (kein neuer Fade-Versuch).
+# - Ein Watchdog prueft nach 1,5 s, ob die Animation ueberhaupt angelaufen
+#   ist - bleibt sie beim Startwert 0 haengen, wird hart eingeblendet.
+# - Danach wird der echte Zustand einmal in runtime.log gemessen: Kinderzahl,
+#   Groesse von PlaceList, Visibility/IsVisible/Hoehe/Opacity der Zeile. Der
+#   Log trennt damit sauber "Zeile nie gebaut", "Zeile gebaut aber
+#   unsichtbar" und "Layout ohne Platz" - keine Diagnose mehr ins Blaue.
+# ----------------------------------------------------------------------------
+function Add-PlaceRowToPlaceList {
+    param($Row, [string]$SessionId, [string]$Label)
+
+    $PlaceList.Children.Add($Row.Root) | Out-Null
+
+    try {
+        $Row.Root.Opacity = 0
+        $fade = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 1, [System.TimeSpan]::FromMilliseconds(260))
+        $Row.Root.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fade)
+    } catch {
+        try { $Row.Root.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $null) } catch {}
+        try { $Row.Root.Opacity = 1 } catch {}
+        Write-UiErrorLog ($Label + ': Einblend-Animation fehlgeschlagen - Zeile wurde hart auf sichtbar gestellt') $_
+    }
+
+    # Watchdog: Startet die Animation nie (Clock ohne einen einzigen Tick),
+    # bleibt der animierte Wert beim From-Wert 0 haengen -> hart auf sichtbar.
+    try {
+        $fadeWatch = [System.Windows.Threading.DispatcherTimer]::new()
+        $fadeWatch.Interval = [System.TimeSpan]::FromMilliseconds(1500)
+        $fadeWatch.Tag = $Row.Root
+        $fadeWatch.Add_Tick({
+            param($s, $e)
+            $s.Stop()
+            $element = $s.Tag
+            try {
+                if ($element.Opacity -lt 0.05) {
+                    $element.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $null)
+                    $element.Opacity = 1
+                    Write-RuntimeLog 'Place-Zeile: Einblend-Animation kam nie an - Zeile wurde nachtraeglich hart auf sichtbar gestellt.'
+                }
+            } catch {}
+        })
+        $fadeWatch.Start()
+    } catch {}
+
+    # Diagnose: einmal pro neuer Zeile den echten Zustand messen und loggen.
+    # UpdateLayout() erzwingt den Layout-Durchlauf, sonst waeren die
+    # Actual-Werte zum Messzeitpunkt noch 0.
+    try {
+        $PlaceList.UpdateLayout()
+        Write-RuntimeLog ('{0} hinzugefuegt (sid={1}): PlaceList.Children={2}, PlaceList {3}x{4}px, Zeile: Visibility={5}, IsVisible={6}, ActualHeight={7}px, ActualWidth={8}px, Opacity={9}' -f $Label, $SessionId, $PlaceList.Children.Count, [int]$PlaceList.ActualWidth, [int]$PlaceList.ActualHeight, $Row.Root.Visibility, $Row.Root.IsVisible, [int]$Row.Root.ActualHeight, [int]$Row.Root.ActualWidth, [string]$Row.Root.Opacity)
+    } catch {
+        Write-UiErrorLog ($Label + ': Diagnose-Vermessung fehlgeschlagen') $_
+    }
+}
+
 # Baut die Liste nur um, wenn sich etwas geaendert hat -> kein Flackern.
 function Sync-PlaceList {
     param($Studios)
@@ -15237,8 +15373,14 @@ function Sync-PlaceList {
         $allSid = '__arena_all_places__'
         $desired.Add($allSid)
         if ($null -eq $script:AllPlacesRow) {
-            try { $script:AllPlacesRow = New-AllPlacesRow $Studios $windowNames; $script:UiRows[$allSid] = $script:AllPlacesRow } catch { Write-RuntimeLog "Alle-Places-Zeile konnte nicht erstellt werden: $($_.Exception.Message)" }
-        } else { try { Update-AllPlacesRow $script:AllPlacesRow $Studios } catch {} }
+            try {
+                $script:AllPlacesRow = New-AllPlacesRow $Studios $windowNames
+                $script:UiRows[$allSid] = $script:AllPlacesRow
+                Add-PlaceRowToPlaceList $script:AllPlacesRow $allSid 'Alle-Places-Zeile'
+            } catch {
+                Write-UiErrorLog 'Alle-Places-Zeile konnte nicht erstellt werden' $_
+            }
+        } else { try { Update-AllPlacesRow $script:AllPlacesRow $Studios } catch { Write-UiErrorLog 'Alle-Places-Zeile konnte nicht aktualisiert werden' $_ } }
     } elseif ($script:AllPlacesRow) {
         try { $script:AllPlacesRow.Popup.IsOpen = $false } catch {}
         $script:UiRows.Remove('__arena_all_places__')
@@ -15251,18 +15393,15 @@ function Sync-PlaceList {
 
         if ($script:UiRows.ContainsKey($sid)) {
             try { Update-Row $script:UiRows[$sid] $studio $windowNames } catch {
-                Write-RuntimeLog "Place-Zeile konnte nicht aktualisiert werden: $($_.Exception.Message)"
+                Write-UiErrorLog 'Place-Zeile konnte nicht aktualisiert werden' $_
             }
         } else {
             try {
                 $row = New-Row $studio $windowNames
                 $script:UiRows[$sid] = $row
-                $PlaceList.Children.Add($row.Root) | Out-Null
-                $row.Root.Opacity = 0
-                $fade = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 1, [System.TimeSpan]::FromMilliseconds(260))
-                $row.Root.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fade)
+                Add-PlaceRowToPlaceList $row $sid 'Place-Zeile'
             } catch {
-                Write-RuntimeLog "Place-Zeile konnte nicht erstellt werden: $($_.Exception.Message)"
+                Write-UiErrorLog 'Place-Zeile konnte nicht erstellt werden' $_
             }
         }
     }
@@ -15288,11 +15427,17 @@ function Sync-PlaceList {
         }
     }
     if ($reorder) {
-        $PlaceList.Children.Clear()
-        foreach ($sid in $desired) {
-            if ($script:UiRows.ContainsKey($sid)) {
-                $PlaceList.Children.Add($script:UiRows[$sid].Root) | Out-Null
+        # Version 5.0.2: gekapselt - ein Fehler zwischen Clear() und dem
+        # Neu-Anordnen liess die Liste leer, ohne eine Spur im Log.
+        try {
+            $PlaceList.Children.Clear()
+            foreach ($sid in $desired) {
+                if ($script:UiRows.ContainsKey($sid)) {
+                    $PlaceList.Children.Add($script:UiRows[$sid].Root) | Out-Null
+                }
             }
+        } catch {
+            Write-UiErrorLog 'Place-Liste konnte nicht neu angeordnet werden' $_
         }
     }
 
@@ -15373,7 +15518,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '5.0.1'
+    $versionText = '5.0.2'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -15694,7 +15839,7 @@ function Open-SettingsWindow {
                     <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                     <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                    <TextBlock Text="Arena Roblox Bridge - Version 5.0.1" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                    <TextBlock Text="Arena Roblox Bridge - Version 5.0.2" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                 </StackPanel>
             </ScrollViewer>
@@ -15726,7 +15871,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 5.0.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 5.0.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     if ($script:LastArenaMessage) {
@@ -15781,7 +15926,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 5.0.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 5.0.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -15794,7 +15939,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '5.0.1'
+    $verText = '5.0.2'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
