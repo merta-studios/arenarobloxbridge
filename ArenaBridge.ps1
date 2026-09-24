@@ -1,6 +1,22 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 4.0.5
+# Arena Roblox Bridge  -  Version 5.0.0
 #
+# MEGA-UPDATE VERSION 5.0.0:
+#   * Der Session-Befehlskanal registriert seinen frischen Schlüssel jetzt vor
+#     jedem Playtest. Damit kann ein Schlüssel aus einem älteren Test nicht
+#     mehr move_character oder play_stop blockieren. Die beiden Session-
+#     Reporter halten Humanoid:Move während der kompletten Dauer aktiv und
+#     EndTest wartet großzügig auf den bestätigten Rückweg nach Edit Mode.
+#   * Ab zwei verbundenen Studio-Fenstern gibt es den virtuellen Zugang
+#     "Alle Places". Sein Token bleibt während des gesamten Programmstarts
+#     stabil, auch wenn Places kommen, gehen oder die Sammelzeile ausgeblendet
+#     wird. Arena erhält eine Mehr-Place-Übersicht und wählt den Ziel-Place
+#     bewusst über targetPlace aus.
+#   * Die Places zeigen ihre abgerundeten Roblox-Spielicons (mit Studio-Fallback
+#     und Ladeanimation). Jeder Place und die Sammelansicht haben einen
+#     scrollbaren, farbcodierten Arena-Verlauf.
+#
+##
 # NEU IN VERSION 4.0.5 - PLAY_STOP HING FEST (LIVE GEMESSEN, ECHTE URSACHE):
 #   * LIVE-BEFUND: play_start lief sauber (Spieler + Charakter da), aber
 #     move_character und play_stop endeten in REPORTER_NOT_CONNECTED, die
@@ -163,7 +179,7 @@
 #     #ARENA#-Zeilen, Null Reporter, weil Archivable=false plus Loesch-Race die
 #     Injektion verhinderten). Ab jetzt werden die Reporter als NORMALE,
 #     klon-sichere Scripts injiziert (reporterVariant=2 = Standard); die Edit-
-#     Kopien werden erst geloescht, NACHDEM editModeActive=false die Session
+#     Kopien werden erst gelöscht, NACHDEM editModeActive=false die Session
 #     bewiesen hat (+1,5s), zusaetzliche Sicherheits-Sweeps laufen bei
 #     play_stop und beim Plugin-Unload - der Place wird also weiterhin nie mit
 #     Helferskripten gespeichert. Variante 1 (Archivable=false) bleibt als
@@ -696,6 +712,12 @@ $script:StartTime = Get-Date
 $script:TunnelLines = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
 $script:UiRows = @{}
 $script:PlaceNames = @{}
+# Version 5 UI state: Roblox game icons are downloaded outside the UI thread.
+$script:PlaceIconLoads = @{}
+$script:PlaceIconCache = @{}
+$script:AllPlacesRow = $null
+$script:IconFolder = Join-Path $script:AppDataRoot 'place-icons'
+try { New-Item -ItemType Directory -Path $script:IconFolder -Force | Out-Null } catch {}
 $script:RobloxStudioPath = $null
 $script:PluginInstalled = $false
 $script:LastTunnelMessage = ''
@@ -956,9 +978,10 @@ function Invoke-AutostartSelfUpdate {
 
 # ----------------------------------------------------------------------------
 # EINSTELLUNGEN DAUERHAFT SPEICHERN (Version 3.8)
-# Alle Einstellungen (Autostart, Selbst-Tests der KI, Fertig-Meldung,
-# Zugriffsart je Place) liegen in %LOCALAPPDATA%\ArenaRobloxBridge\settings.json
-# und bleiben ueber Neustarts erhalten - nichts muss neu eingestellt werden.
+# Dauerhafte Einstellungen (Autostart, Selbst-Tests der KI und Fertig-Meldung)
+# liegen in %LOCALAPPDATA%\ArenaRobloxBridge\settings.json. Der Zugriff je
+# Place wird absichtlich nicht gespeichert und beginnt bei jeder Anmeldung
+# wieder mit Lese- und Schreibzugriff.
 # ----------------------------------------------------------------------------
 $script:SettingsFile = Join-Path $script:AppDataRoot 'settings.json'
 
@@ -967,7 +990,8 @@ function Get-BridgeSettingsFile {
         autoStart       = $false
         selfTestAllowed = $true     # Arena darf eigene Tests starten (Standard: an)
         notifyOnDone    = $false    # Fertig-Meldung als Windows-Notification (Standard: aus)
-        accessModes     = @{}       # placeId (oder "name:<Name>") -> readonly/readwrite
+        # accessModes aus älteren Versionen werden absichtlich NICHT mehr geladen:
+        # Lesezugriff gilt nur für die aktuelle Verbindung und startet immer aus.
     }
     try {
         if (Test-Path -LiteralPath $script:SettingsFile) {
@@ -975,11 +999,8 @@ function Get-BridgeSettingsFile {
             if ($loaded.PSObject.Properties.Name -contains 'autoStart') { $settings.autoStart = [bool]$loaded.autoStart }
             if ($loaded.PSObject.Properties.Name -contains 'selfTestAllowed') { $settings.selfTestAllowed = [bool]$loaded.selfTestAllowed }
             if ($loaded.PSObject.Properties.Name -contains 'notifyOnDone') { $settings.notifyOnDone = [bool]$loaded.notifyOnDone }
-            if ($loaded.accessModes) {
-                foreach ($prop in $loaded.accessModes.PSObject.Properties) {
-                    $settings.accessModes[[string]$prop.Name] = [string]$prop.Value
-                }
-            }
+            # Legacy accessModes are deliberately ignored (Version 5): the
+            # per-place read-only switch is temporary and never survives a registration.
         }
     } catch {}
     return $settings
@@ -991,7 +1012,6 @@ function Save-BridgeSettingsFile {
             autoStart       = [bool]$script:SettingsCache.autoStart
             selfTestAllowed = [bool]$script:SettingsCache.selfTestAllowed
             notifyOnDone    = [bool]$script:SettingsCache.notifyOnDone
-            accessModes     = $script:SettingsCache.accessModes
         }
         $json = $out | ConvertTo-Json -Depth 6
         [System.IO.File]::WriteAllText($script:SettingsFile, $json, [System.Text.UTF8Encoding]::new($true))
@@ -1048,12 +1068,12 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '4.0.5'
+    DocsVersion     = '5.0.0'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
         notifyOnDone    = $false    # report_done -> Windows-Benachrichtigung
-        accessModes     = [hashtable]::Synchronized(@{})   # placeKey -> Zugriffsart
+        # Read-only is session-local only. It is intentionally not persisted.
     })
     # report_done-Meldungen: der Server legt sie ab, die Oberflaeche zeigt sie an
     NotifyQueue     = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
@@ -1072,17 +1092,19 @@ $script:Shared = [hashtable]::Synchronized(@{
     AgentResults    = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     AgentStates     = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     AgentLastSeen   = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
+    # Version 5: sessionId -> activityId -> JSON log entry. The UI reads this
+    # live collection; entries stay only for the running bridge process.
+    ActivityLogs       = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
+    ActivityCommandMap = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    # One aggregate token per program start, never derived from the place list.
+    MultiPlaceToken    = $null
 })
 
 # Gespeicherte Einstellungen in den gemeinsamen Zustand uebernehmen (3.8)
 try {
     if ($script:SettingsCache.selfTestAllowed -is [bool]) { $script:Shared.BridgeSettings.selfTestAllowed = [bool]$script:SettingsCache.selfTestAllowed }
     if ($script:SettingsCache.notifyOnDone -is [bool]) { $script:Shared.BridgeSettings.notifyOnDone = [bool]$script:SettingsCache.notifyOnDone }
-    if ($script:SettingsCache.accessModes) {
-        foreach ($modeKey in @($script:SettingsCache.accessModes.Keys)) {
-            $script:Shared.BridgeSettings.accessModes[[string]$modeKey] = [string]$script:SettingsCache.accessModes[$modeKey]
-        }
-    }
+    # Version 5: legacy per-place accessModes are ignored on purpose.
 } catch {}
 
 function Write-RuntimeLog {
@@ -1109,6 +1131,12 @@ function New-Token {
     [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
     [Convert]::ToBase64String($bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
 }
+
+# Version 5: this aggregate token deliberately exists independently of the
+# visible "Alle Places" row. It changes only on process restart or when the
+# user explicitly presses "Token zurücksetzen" in that row.
+$script:AllPlacesToken = New-Token
+$script:Shared.MultiPlaceToken = $script:AllPlacesToken
 
 # ----------------------------------------------------------------------------
 # Kaputte Umlaute reparieren (falls doch einmal ANSI-Text ankommt).
@@ -1177,7 +1205,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 4.0.5)
+  Arena Studio Bridge - Studio Plugin  (Version 5.0.0)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1248,7 +1276,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "4.0.5"
+local ARENA_VERSION  = "5.0.0"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -2978,7 +3006,17 @@ local function execute(cmd)
     local keys=args.keys or args.direction; if type(keys)=="string" then keys={keys} end
     if type(keys)=="table" then
       local d=Vector3.zero; for _,key in ipairs(keys) do local k=string.upper(tostring(key)); if k=="W" then d=d+Vector3.new(0,0,-1) elseif k=="S" then d=d+Vector3.new(0,0,1) elseif k=="A" then d=d+Vector3.new(-1,0,0) elseif k=="D" then d=d+Vector3.new(1,0,0) elseif k=="SPACE" then h.Jump=true end end
-      if d.Magnitude>0 then h:Move(d,true) end; return {ok=true,pressed=keys,position=vec(root and root.Position)}
+      if d.Magnitude>0 then
+        d=d.Unit
+        local duration=math.max(0.05,math.min(tonumber(args.duration) or 1,12))
+        local untilAt=os.clock()+duration
+        while os.clock()<untilAt and h.Parent and h.Health>0 do
+          h:Move(d,false)
+          RunService.Heartbeat:Wait()
+        end
+        h:Move(Vector3.zero,false)
+      end
+      return {ok=true,pressed=keys,position=vec(root and root.Position)}
     end
     return {ok=false,error="Need position or keys."}
   end
@@ -3296,8 +3334,14 @@ local function executeCommand(cmd)
     local direction = Vector3.new(dx, 0, -dz)
     if direction.Magnitude > 0 then direction = direction.Unit end
     local okMove, errMove = pcall(function()
-      humanoid:Move(direction, false)
-      task.wait(duration)
+      -- Humanoid:Move is frame-scoped in modern Studio. Keep feeding it for
+      -- the requested duration; one call followed by task.wait looked like a
+      -- successful move but often moved the avatar by zero studs.
+      local untilAt = os.clock() + duration
+      while os.clock() < untilAt and humanoid.Parent and humanoid.Health > 0 do
+        humanoid:Move(direction, false)
+        RunService.Heartbeat:Wait()
+      end
       humanoid:Move(Vector3.new(0, 0, 0), false)
     end)
     if not okMove then return { ok=false, error=tostring(errMove) } end
@@ -4246,6 +4290,12 @@ local function startPlay(mode, startArgs)
     sessionAgent.key = sessionKey
     pcall(function() plugin:SetSetting("arenaSessionKey", sessionKey) end)
     pcall(function() plugin:SetSetting("arenaOwnerSession", sessionId) end)
+    -- Version 5: every test receives a fresh ephemeral key. Register it with
+    -- the local bridge BEFORE the cloned session plugin/HTTP agent starts.
+    -- Without this, the key from a finished test could make all following
+    -- move_character/end_test heartbeats fail with 403.
+    local keyRegistration = post("/plugin/session", { sessionId = sessionId, sessionKey = sessionKey, action = "register" })
+    diagnostics.sessionKeyRegistered = keyRegistration and keyRegistration.ok == true or false
 
     local testArgs = { startedBy = "arena-bridge", mode = mode, reporterVariant = variant, arenaProbe = false }
     -- GetTestArgs in the reporter receives this exact value. It is the only
@@ -4423,8 +4473,15 @@ local function stopPlay()
         local channelResult, channel, attempted = sessionChannelCommand("end_test", {}, 6)
         diagnostics.channelAttempts = attempted
         if channelResult ~= nil then
-            local reachedChannel, afterChannel = waitForEditMode(true, 8)
+            local reachedChannel, afterChannel = waitForEditMode(true, 16)
             diagnostics.editModeActiveAfter = afterChannel
+            if (not reachedChannel) and channel == "sessionAgent" then
+                -- The reporter received the command but Studio can take a few
+                -- seconds to transition. Requeue once instead of falling back
+                -- immediately to an edit-DataModel stop that service sessions ignore.
+                local retryResult = sessionAgentCall("end_test", {}, 5)
+                if retryResult ~= nil then reachedChannel, afterChannel = waitForEditMode(true, 10); diagnostics.editModeActiveAfter = afterChannel end
+            end
             if reachedChannel then
                 diagnostics.usedPath = "sessionEndTest:" .. tostring(channel)
                 return finishStopSuccess(diagnostics, diagnostics.usedPath, "reporterEndTest",
@@ -7336,7 +7393,7 @@ tools.fill_region = function(args)
             end
 
             -- Tiefer als die Oberflaeche: [target, y1] muss frei sein.
-            -- Nur ArenaFill-Teile werden geloescht, und nur wenn sie komplett
+            -- Nur ArenaFill-Teile werden gelöscht, und nur wenn sie komplett
             -- im Bereich liegen. Fremde/teilverdeckende Teile bleiben unangetastet.
             local lo4 = Vector3.new(x - gridStep / 2, target, z - gridStep / 2)
             local hi4 = Vector3.new(x + gridStep / 2, y1 + 0.1, z + gridStep / 2)
@@ -8729,9 +8786,16 @@ local function runSessionReporterLoop()
                 local direction = (look * -dz) + (right * dx)
                 if direction.Magnitude > 0.001 then
                     direction = direction.Unit
-                    moveOk, moveErr = pcall(function() humanoid:Move(direction, false) end)
-                    task.wait(duration)
-                    pcall(function() humanoid:Move(Vector3.new(0, 0, 0), false) end)
+                    moveOk, moveErr = pcall(function()
+                        -- Keep Move alive for every physics frame. A single
+                        -- Humanoid:Move call is not a held W/A/S/D input.
+                        local untilAt = os.clock() + duration
+                        while os.clock() < untilAt and humanoid.Parent and humanoid.Health > 0 do
+                            humanoid:Move(direction, false)
+                            RunService.Heartbeat:Wait()
+                        end
+                        humanoid:Move(Vector3.new(0, 0, 0), false)
+                    end)
                 end
             end
             if not moveOk then return { ok = false, error = tostring(moveErr) } end
@@ -9440,11 +9504,171 @@ $script:BridgeHandlerScript = {
 
     function Get-SessionForToken($token) {
         if (-not $token) { return $null }
+        # Version 5: the stable aggregate token is intentionally independent
+        # from the currently visible number of places.
+        if ($Shared.MultiPlaceToken -and [string]$token -eq [string]$Shared.MultiPlaceToken) {
+            return '__arena_all_places__'
+        }
         $sessionId = $null
         if ($Shared.TokenSessions.TryGetValue($token, [ref]$sessionId)) {
             return $sessionId
         }
         return $null
+    }
+
+    function Get-ActiveMultiPlaces {
+        $now = Get-UnixSeconds
+        $places = New-Object System.Collections.Generic.List[object]
+        foreach ($pair in $Shared.Sessions.GetEnumerator()) {
+            try {
+                $entry = $pair.Value | ConvertFrom-Json
+                if ($entry -and ($now - [int64]$entry.lastSeen) -lt 90) {
+                    $places.Add(@{
+                        targetPlace = [string]$entry.sessionId
+                        placeName = [string]$entry.placeName
+                        placeId = [string]$entry.placeId
+                        gameId = [string]$entry.gameId
+                        accessMode = [string]$entry.accessMode
+                        studio = $entry.state
+                        pluginVersion = [string]$entry.pluginVersion
+                    })
+                }
+            } catch {}
+        }
+        return , @($places | Sort-Object -Property @('placeName','targetPlace'))
+    }
+
+    function Resolve-MultiPlaceTarget($body) {
+        $wanted = $null
+        try { if ($body -and $body.PSObject.Properties['targetPlace']) { $wanted = [string]$body.targetPlace } } catch {}
+        try { if ([string]::IsNullOrWhiteSpace($wanted) -and $body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) { $wanted = [string]$body.args.targetPlace } } catch {}
+        $places = Get-ActiveMultiPlaces
+        if ([string]::IsNullOrWhiteSpace($wanted)) {
+            return @{ ok=$false; code='MULTI_PLACE_SELECTION_REQUIRED'; places=$places; error='This token can access multiple Places. First call GET /api/places, then send targetPlace (the listed targetPlace value) with every tool request.' }
+        }
+        $matches = @($places | Where-Object {
+            [string]$_.targetPlace -eq $wanted -or [string]$_.placeId -eq $wanted -or [string]$_.placeName -ieq $wanted
+        })
+        if ($matches.Count -ne 1) {
+            return @{ ok=$false; code='MULTI_PLACE_TARGET_NOT_FOUND'; places=$places; error=("targetPlace '" + $wanted + "' is unknown or ambiguous. Use the exact targetPlace value from GET /api/places.") }
+        }
+        $entry = Get-SessionEntry ([string]$matches[0].targetPlace)
+        if (-not $entry) { return @{ ok=$false; code='MULTI_PLACE_TARGET_NOT_FOUND'; places=$places; error='The selected Place disconnected. Refresh GET /api/places and choose again.' } }
+        return @{ ok=$true; entry=$entry; places=$places }
+    }
+
+    function Get-ArenaActivityBag([string]$sessionId) {
+        $bag = $null
+        if (-not $Shared.ActivityLogs.TryGetValue($sessionId, [ref]$bag)) {
+            $bag = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+            [void]$Shared.ActivityLogs.TryAdd($sessionId, $bag)
+            [void]$Shared.ActivityLogs.TryGetValue($sessionId, [ref]$bag)
+        }
+        return $bag
+    }
+
+    function Get-ActivityArgument($args, [string[]]$names, [string]$fallback = '[Platzhalter]') {
+        if ($null -eq $args) { return $fallback }
+        foreach ($name in $names) {
+            try {
+                if ($args -is [System.Collections.IDictionary] -and $args.Contains($name) -and $null -ne $args[$name]) { return [string]$args[$name] }
+                if ($args.PSObject.Properties[$name] -and $null -ne $args.$name) { return [string]$args.$name }
+            } catch {}
+        }
+        return $fallback
+    }
+
+    function Get-SourceLineCount($args) {
+        $source = Get-ActivityArgument $args @('source','text') ''
+        if ([string]::IsNullOrEmpty($source)) { return '[Platzhalter]' }
+        return [string]([Math]::Max(1, (($source -split "`r?`n").Count)))
+    }
+
+    function Get-ArenaActivityText([string]$tool, $args, [string]$phase, $result) {
+        $ref = Get-ActivityArgument $args @('ref','rootRef','parentRef','targetRef','query')
+        $read = @('get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','select_instance','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','session_diag','play_status','get_output','get_errors','get_docs','get_events','get_notices','get_pending','get_chunk','find_in_script','get_script','coordinate_guide','describe_orientation','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','union_info','lua_state','job_status','job_result','list_jobs','search_assets','asset_details','validate_asset','catalog_status')
+        $writes = @('create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','set_script_source','patch_script','insert_script','bulk_insert_scripts','union','subtract','negate','intersect','separate','insert_asset','apply_asset','place_on','align','stack','grid_arrange','distribute','snap_to_ground','look_at','rotate_around','move_relative','resize_part','fit_between','point_at','fill_region','probe_world','undo','redo','play_start','play_stop','play_pause','play_resume','move_character','teleport_character','respawn_character','gui_click','gui_set_text','send_input','clear_output','clear_lua_state','cancel_job','start_job','set_camera')
+        if ($phase -eq 'running') {
+            if ($tool -eq 'run_lua') { return 'Arena führt gerade Lua-Code in der Konsole aus.' }
+            if ($read -contains $tool) { return 'Arena ruft gerade ' + $tool + ' ab.' }
+            if ($writes -contains $tool) { return 'Arena führt gerade ' + $tool + ' aus.' }
+            return 'Arena führt gerade „' + $tool + '“ aus.'
+        }
+        if ($tool -eq 'get_place_info') { return 'Hat Informationen über den Place abgerufen.' }
+        if ($tool -eq 'get_tree') { return 'Hat den Explorer im Place abgerufen.' }
+        if ($tool -eq 'search') { return 'Hat nach „' + (Get-ActivityArgument $args @('query','className','tag')) + '“ im Explorer gesucht.' }
+        if ($tool -eq 'get_instance') { return 'Hat sich die Instance „' + $ref + '“ angesehen.' }
+        if ($tool -eq 'get_children') { return 'Hat die Children von „' + $ref + '“ abgerufen.' }
+        if ($tool -eq 'get_properties') { return 'Hat die Properties der ausgewählten Instances abgerufen.' }
+        if ($tool -eq 'resolve_ref') { return 'Hat den genauen Ablageort von „' + $ref + '“ abgerufen.' }
+        if ($tool -eq 'get_selection') { return 'Hat sich die aktuell ausgewählte Instance angesehen.' }
+        if ($tool -eq 'select_instance') { return 'Hat die angegebenen Objekte ausgewählt.' }
+        if ($tool -eq 'describe_scene') { return 'Hat die Szene im Place beschrieben.' }
+        if ($tool -eq 'viewport_info') { return 'Hat Kamerarichtung und Kameraposition abgerufen.' }
+        if ($tool -eq 'get_bounds') { return 'Hat Größe und Begrenzungen der ausgewählten Objekte abgerufen.' }
+        if ($tool -eq 'scene_stats') { return 'Hat die Szenenstatistik und Performance-Hinweise abgerufen.' }
+        if ($tool -eq 'list_tools') { return 'Hat die verfügbaren Bridge-Werkzeuge abgerufen.' }
+        if ($tool -eq 'bridge_status') { return 'Hat den Status der Bridge abgerufen.' }
+        if ($tool -eq 'run_lua') { return 'Hat ' + (Get-SourceLineCount $args) + ' Zeilen in der Konsole ausgeführt.' }
+        if ($tool -eq 'patch_script') { return 'Hat das Skript „' + $ref + '“ bearbeitet. +[PLATZHALTER] hinzugefügte Zeilen -[PLATZHALTER] entfernte Zeilen' }
+        if ($tool -eq 'set_script_source') { return 'Hat das Skript „' + $ref + '“ ersetzt. +[' + (Get-SourceLineCount $args) + ' Zeilen] -[PLATZHALTER] vorherige Zeilen' }
+        if ($tool -eq 'insert_script') { return 'Hat das Skript „' + (Get-ActivityArgument $args @('name')) + '“ erstellt. +[' + (Get-SourceLineCount $args) + ' Zeilen] -[PLATZHALTER] keine vorherigen Zeilen' }
+        if ($tool -eq 'bulk_insert_scripts') { return 'Hat mehrere Skripte erstellt. +[PLATZHALTER] hinzugefügte Zeilen' }
+        if ($tool -eq 'delete_instance' -or $tool -eq 'bulk_delete') { return 'Hat „' + $ref + '“ gelöscht. -[PLATZHALTER] entfernte Instanzen bzw. Zeilen' }
+        if ($tool -eq 'clone_instance') { return 'Hat „' + $ref + '“ geklont. +[PLATZHALTER] erstellte Kopien' }
+        if ($tool -eq 'create_instance' -or $tool -eq 'bulk_create') { return 'Hat „' + (Get-ActivityArgument $args @('name','className')) + '“ erstellt. +[PLATZHALTER] neue Instanzen' }
+        if ($tool -eq 'play_stop') { return 'Hat den Playtest beendet.' }
+        if ($tool -eq 'play_start') { return 'Hat einen Playtest gestartet.' }
+        if ($tool -eq 'move_character') { return 'Hat den Charakter im Playtest bewegt.' }
+        if ($read -contains $tool) { return 'Hat „' + $tool + '“ abgerufen.' }
+        if ($writes -contains $tool) { return 'Hat „' + $tool + '“ ausgeführt und den Place geändert.' }
+        return 'Hat „' + $tool + '“ ausgeführt.'
+    }
+
+    function Get-ArenaActivityKind([string]$tool, [string]$phase, $result) {
+        if ($phase -eq 'running') { return 'running' }
+        if ($phase -eq 'failed') { return 'failed' }
+        if ($tool -eq 'run_lua') { return 'console' }
+        $read = @('get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','select_instance','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','session_diag','play_status','get_output','get_errors','get_docs','get_events','get_notices','get_pending','get_chunk','find_in_script','get_script','coordinate_guide','describe_orientation','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','union_info','lua_state','job_status','job_result','list_jobs','search_assets','asset_details','validate_asset','catalog_status')
+        if ($read -contains $tool) { return 'read' }
+        return 'write'
+    }
+
+    function New-ArenaActivity([string]$sessionId, [string]$tool, $args) {
+        $id = [guid]::NewGuid().ToString('N')
+        $entry = @{ id=$id; tool=$tool; phase='running'; kind='running'; text=(Get-ArenaActivityText $tool $args 'running' $null); startedAt=(Get-UnixSeconds); updatedAt=(Get-UnixSeconds) }
+        $bag = Get-ArenaActivityBag $sessionId
+        $bag[$id] = (To-Json $entry 12)
+        # Keep the in-memory per-process timeline compact.
+        if ($bag.Count -gt 400) {
+            $oldest = $null
+            foreach ($pair in $bag.GetEnumerator()) { try { $candidate=$pair.Value|ConvertFrom-Json; if (-not $oldest -or [int64]$candidate.startedAt -lt [int64]$oldest.startedAt) { $oldest=$candidate } } catch {} }
+            if ($oldest) { $discard=$null; [void]$bag.TryRemove([string]$oldest.id,[ref]$discard) }
+        }
+        return $id
+    }
+
+    function Complete-ArenaActivity([string]$sessionId, [string]$activityId, [string]$tool, $args, [string]$resultJson) {
+        if ([string]::IsNullOrWhiteSpace($activityId)) { return }
+        $result = $null
+        try { if ($resultJson) { $result = $resultJson | ConvertFrom-Json } } catch {}
+        $ok = $true
+        if ($result -and $result.PSObject.Properties['ok']) { $ok = ([bool]$result.ok) }
+        $phase = if ($ok) { 'completed' } else { 'failed' }
+        $text = Get-ArenaActivityText $tool $args $phase $result
+        if (-not $ok) {
+            $reason = ''
+            try { $reason = [string]$result.error } catch {}
+            if ([string]::IsNullOrWhiteSpace($reason)) { try { $reason = [string]$result.code } catch {} }
+            if (-not [string]::IsNullOrWhiteSpace($reason)) { $text = '⚠ ' + $text + ' Fehler: ' + $reason }
+            else { $text = '⚠ ' + $text + ' ist fehlgeschlagen.' }
+        }
+        $entry = @{ id=$activityId; tool=$tool; phase=$phase; kind=(Get-ArenaActivityKind $tool $phase $result); text=$text; updatedAt=(Get-UnixSeconds) }
+        $bag = Get-ArenaActivityBag $sessionId
+        $prior = $null
+        if ($bag.TryGetValue($activityId,[ref]$prior)) { try { $priorObj=$prior|ConvertFrom-Json; $entry.startedAt=[int64]$priorObj.startedAt } catch { $entry.startedAt=(Get-UnixSeconds) } }
+        else { $entry.startedAt=(Get-UnixSeconds) }
+        $bag[$activityId] = (To-Json $entry 12)
     }
 
     function Ensure-Queue($sessionId) {
@@ -9517,22 +9741,7 @@ $script:BridgeHandlerScript = {
     # ------------------------------------------------------------------
     # PLAY-TESTS ZUVERLAESSIG VERFOLGEN (Version 3.8)
     # ------------------------------------------------------------------
-    function Get-SavedAccessMode([string]$placeId, [string]$placeName) {
-        try {
-            $modes = $Shared.BridgeSettings.accessModes
-            if ($modes.Count -gt 0) {
-                if (-not [string]::IsNullOrWhiteSpace($placeId) -and $placeId -ne '0') {
-                    $saved = $null
-                    if ($modes.TryGetValue([string]$placeId, [ref]$saved)) { return [string]$saved }
-                }
-                if (-not [string]::IsNullOrWhiteSpace($placeName)) {
-                    $saved = $null
-                    if ($modes.TryGetValue(('name:' + $placeName), [ref]$saved)) { return [string]$saved }
-                }
-            }
-        } catch {}
-        return $null
-    }
+    # Version 5: per-place read-only is deliberately session-local.
 
     function Test-AiPlayActive($sessionId, [string]$action) {
         # Wahr, wenn die KI vor kurzem genau diese Play-Aktion ausgeloesst hat.
@@ -9833,12 +10042,10 @@ $script:BridgeHandlerScript = {
                 $mode = 'readwrite'
                 $Shared.AccessModes[$sessionId] = $mode
             }
-            # Version 3.8: Gespeicherte Zugriffsart dieses Place anwenden
-            $savedAccess = Get-SavedAccessMode $placeId $placeName
-            if ($savedAccess) {
-                $mode = $savedAccess
-                $Shared.AccessModes[$sessionId] = $mode
-            }
+            # Version 5: every fresh/re-registered Place starts with write
+            # access. Read-only is never restored from disk.
+            $mode = 'readwrite'
+            $Shared.AccessModes[$sessionId] = $mode
             # Version 3.8: Play-Wechsel erkennen - auch wenn das Plugin beim
             # Start/Stop des Tests neu geladen wurde und neu registriert.
             $registerState = Update-PlayStateTracking $sessionId $reusable.state (Get-StateObject $body)
@@ -9870,10 +10077,8 @@ $script:BridgeHandlerScript = {
         $token = New-BridgeToken
         $Shared.SessionTokens[$sessionId] = $token
         $Shared.TokenSessions[$token] = $sessionId
-        # Version 3.8: Gespeicherte Zugriffsart dieses Place anwenden
-        $startAccess = Get-SavedAccessMode $placeId $placeName
+        # Version 5: new registrations always start with full access.
         $startMode = 'readwrite'
-        if ($startAccess) { $startMode = $startAccess }
         $Shared.AccessModes[$sessionId] = $startMode
         # Lief schon ein Test, als die Bridge das Fenster zum ersten Mal sah?
         # Dann gilt er sicherheitshalber als Nutzer-Test.
@@ -10584,8 +10789,11 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         return $Shared.PlayRetryDedupe.TryAdd($key, $reservation)
     }
 
-    function Invoke-PluginTool($sessionId, $tool, $toolArgs, [int]$timeoutSeconds) {
+    function Invoke-PluginTool($sessionId, $tool, $toolArgs, [int]$timeoutSeconds, [string]$activityId = '') {
         $commandId = [guid]::NewGuid().ToString('N')
+        if (-not [string]::IsNullOrWhiteSpace($activityId)) {
+            $Shared.ActivityCommandMap[$commandId] = (To-Json @{ sessionId=$sessionId; activityId=$activityId; tool=$tool; args=$toolArgs } 20)
+        }
         $signal = New-Object System.Threading.ManualResetEventSlim($false)
         [void]$Shared.ResultSignals.TryAdd($commandId, $signal)
 
@@ -10650,7 +10858,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             params = @{ ref = @{ type = 'ref'; required = $true; default = '-'; description = 'Id (#42) oder Pfad.' }; includeSource = @{ type = 'bool'; required = $false; default = 'false'; description = 'Skriptquelle mitliefern.' }; includeAllProperties = @{ type = 'bool'; required = $false; default = 'false'; description = 'Hinweis auf exotische Eigenschaften.' } };
             returns = '{ id, name, className, path, parent, properties, attributes (in properties.Attributes), children, childCount }';
             example = @{ ref = '#42'; includeSource = $true };
-            errors = @('REF_NOT_FOUND: Id unbekannt (geloescht oder Plugin neu geladen) - neu suchen mit search/get_tree.') })
+            errors = @('REF_NOT_FOUND: Id unbekannt (gelöscht oder Plugin neu geladen) - neu suchen mit search/get_tree.') })
         $t.Add(@{ name = 'get_children'; category = 'info'; summary = 'Kinder paginieren.';
             params = @{ ref = @{ type = 'ref'; required = $false; default = "'game'"; description = 'Vater-Objekt.' }; offset = @{ type = 'int'; required = $false; default = '0'; description = 'Erstes Kind.' }; limit = @{ type = 'int'; required = $false; default = '500'; description = 'Seite-Groesse.' } };
             returns = '{ children: [ { id, name, className, path, childCount } ], total, offset, returned }';
@@ -11007,7 +11215,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             errors = @('BAD_ARGS: zu wenige Messpunkte gefunden (leerer Place?).') })
         $t.Add(@{ name = 'fill_region'; category = 'fill'; summary = 'Bereich fuellen - nach GEMESSENER Regel, in Chunks, resume-fähig.';
             description = 'Fuellt eine Box aus Gitterzellen (gridStep) mit Air oder einem Teil-Template. Zielhoehe: explizite Zahl, "rule" (Fuehlhoehe-Regel aus probe_world: frisch y1 wenn durch gridStep teilbar, sonst ceil(y1/gridStep)*gridStep+2; Wasser y1-2) oder "top" (bis max.Y). TIEFER ueberschreiben geht NICHT stillschweigend: wird erst mit Air geleert (clearBelowFirst, nur mit confirmClear=true, sonst Spalten = skippedNeedClear). Laeuft in kleinen Chunks mit Fortschritt; bei Abbruch: gleiches resumeToken zurueckgeben = WITTERMACHEN, nicht von vorn. Jeder Zellfehler betrifft nur diese Zelle (failedCells).';
-            params = @{ min = @{ type = '{x,y,z}'; required = $true; default = '-'; description = 'Untere Ecke der Box.' }; max = @{ type = '{x,y,z}'; required = $true; default = '-'; description = 'Obere Ecke.' }; with = @{ type = "'Air' | { className, properties, name }"; required = $false; default = "'Air'"; description = "'Air' loescht Zellen (Raum freimachen). Template legt Teile." }; gridStep = @{ type = 'number'; required = $false; default = 'worldProfile.gridStep'; description = 'Zellgroesse. Ohne probe_world wird NICHT geraten (Fehler WORLD_NOT_PROBED).' }; fillTo = @{ type = 'number | "rule" | "top"'; required = $false; default = "'rule'"; description = 'Zielhoehe der Saeule.' }; fillFrom = @{ type = 'number'; required = $false; default = 'min.Y'; description = 'Untergrenze des Fuellens.' }; clearBelowFirst = @{ type = 'bool'; required = $false; default = 'true'; description = 'Saeulen, die tiefer fuellen muessen, erst mit Air leeren.' }; confirmClear = @{ type = 'bool'; required = $false; default = 'false'; description = 'OHNE true werden Saeulen mit existing parts nur als skippedNeedClear gemeldet, nichts wird geloescht.' }; chunkBudget = @{ type = 'int'; required = $false; default = '200'; description = 'Zellen pro Chunk (konservativ; Job meldet partsPerSecond).' }; resumeToken = @{ type = 'table'; required = $false; default = 'null'; description = 'Aus dem letzten (abgebrochenen) Ergebnis - naemlicher Aufruf damit = weitermachen.' }; stopOnError = @{ type = 'bool'; required = $false; default = 'false'; description = 'Bei Zellfehler anhalten.' }; asJob = @{ type = 'bool'; required = $false; default = 'false'; description = 'EMPFOEHLEN bei > 150 Zellen: true.' } };
+            params = @{ min = @{ type = '{x,y,z}'; required = $true; default = '-'; description = 'Untere Ecke der Box.' }; max = @{ type = '{x,y,z}'; required = $true; default = '-'; description = 'Obere Ecke.' }; with = @{ type = "'Air' | { className, properties, name }"; required = $false; default = "'Air'"; description = "'Air' loescht Zellen (Raum freimachen). Template legt Teile." }; gridStep = @{ type = 'number'; required = $false; default = 'worldProfile.gridStep'; description = 'Zellgroesse. Ohne probe_world wird NICHT geraten (Fehler WORLD_NOT_PROBED).' }; fillTo = @{ type = 'number | "rule" | "top"'; required = $false; default = "'rule'"; description = 'Zielhoehe der Saeule.' }; fillFrom = @{ type = 'number'; required = $false; default = 'min.Y'; description = 'Untergrenze des Fuellens.' }; clearBelowFirst = @{ type = 'bool'; required = $false; default = 'true'; description = 'Saeulen, die tiefer fuellen muessen, erst mit Air leeren.' }; confirmClear = @{ type = 'bool'; required = $false; default = 'false'; description = 'OHNE true werden Saeulen mit existing parts nur als skippedNeedClear gemeldet, nichts wird gelöscht.' }; chunkBudget = @{ type = 'int'; required = $false; default = '200'; description = 'Zellen pro Chunk (konservativ; Job meldet partsPerSecond).' }; resumeToken = @{ type = 'table'; required = $false; default = 'null'; description = 'Aus dem letzten (abgebrochenen) Ergebnis - naemlicher Aufruf damit = weitermachen.' }; stopOnError = @{ type = 'bool'; required = $false; default = 'false'; description = 'Bei Zellfehler anhalten.' }; asJob = @{ type = 'bool'; required = $false; default = 'false'; description = 'EMPFOEHLEN bei > 150 Zellen: true.' } };
             returns = '{ created, cleared, skippedExisting, skippedNeedClear, failedCells: [ { x, y, z, error } ], totalColumns, chunks, partsPerSecond, geometry: { ready, frames }, resumeToken (null = fertig), usedProfile: { gridStep, fillRule } }';
             example = @{ min = @{ x = -20; y = -10; z = -20 }; max = @{ x = 20; y = 10; z = 20 }; with = @{ className = 'Part'; properties = @{ Anchored = $true }; name = 'Fill' }; fillTo = 'rule'; asJob = $true };
             errors = @('WORLD_NOT_PROBED: probe_world zuerst.', 'REGION_LIMIT: Box zu gross - kleiner aufteilen (empirische Obergrenze im Fehler).', 'BAD_ARGS: min/max fehlt.') })
@@ -11111,7 +11319,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             example = @{};
             errors = @() })
         $t.Add(@{ name = 'play_start'; category = 'play'; summary = 'Test starten: mode="play" (echt, mit Player), "play_here" (play an der Edit-Kamera) oder "run" (Physik-/Script-Simulation im Editor).';
-            description = 'Startet StudioTestService in task.spawn. ERFOLG ist ausschliesslich der Wechsel EditModeActive true->false innerhalb 20s; RunService:IsRunning und Players im Edit-DataModel werden absichtlich nicht abgefragt. Vorher werden Server- und Client-Reporter injiziert - 3.9.7 als NORMALE klon-sichere Scripts (reporterVariant=2, Standard), damit sie garantiert im Session-Snapshot landen; die Edit-Kopien werden erst NACH editModeActive=false plus Sicherheits-Sweeps geloescht (3.9.6 hatte den Loesch-Race: Null #ARENA#-Zeilen, weil der Reporter nie in der Session ankam). Der Server-Reporter druckt sofort eine #ARENA# hello-Zeile und danach Snapshots (Spieler, Charakter, Gesundheit; 0.5s/2s), der Client-Reporter den GUI-Baum mit Bildschirmkoordinaten. Ein Execute-Fehler "previous one is still in progress" bei EditModeActive=false bedeutet: bestehende Session nutzen, kein Fehler. arenaSpawn={x,y,z} via GetTestArgs ersetzt jeglichen Laufzeit-Teleport als Start; play_here setzt den Spawn automatisch aus der Edit-Kamera. Wiederholte gleiche play_start/play_stop innerhalb 3s werden dedupliziert.';
+            description = 'Startet StudioTestService in task.spawn. ERFOLG ist ausschliesslich der Wechsel EditModeActive true->false innerhalb 20s; RunService:IsRunning und Players im Edit-DataModel werden absichtlich nicht abgefragt. Vorher werden Server- und Client-Reporter injiziert - 3.9.7 als NORMALE klon-sichere Scripts (reporterVariant=2, Standard), damit sie garantiert im Session-Snapshot landen; die Edit-Kopien werden erst NACH editModeActive=false plus Sicherheits-Sweeps gelöscht (3.9.6 hatte den Loesch-Race: Null #ARENA#-Zeilen, weil der Reporter nie in der Session ankam). Der Server-Reporter druckt sofort eine #ARENA# hello-Zeile und danach Snapshots (Spieler, Charakter, Gesundheit; 0.5s/2s), der Client-Reporter den GUI-Baum mit Bildschirmkoordinaten. Ein Execute-Fehler "previous one is still in progress" bei EditModeActive=false bedeutet: bestehende Session nutzen, kein Fehler. arenaSpawn={x,y,z} via GetTestArgs ersetzt jeglichen Laufzeit-Teleport als Start; play_here setzt den Spawn automatisch aus der Edit-Kamera. Wiederholte gleiche play_start/play_stop innerhalb 3s werden dedupliziert.';
             params = @{ mode = @{ type = "'play'|'play_here'|'run'"; required = $false; default = "'play'"; description = 'play = echt mit Charakter; play_here = Start an der Edit-Kamera; run = nur Physik/Server-Skripte ohne Player.' }; arenaSpawn = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Start-Teleport via GetTestArgs; funktioniert auch ohne HTTP.' }; reporterVariant = @{ type = 'int'; required = $false; default = '2'; description = '2 = normal/klon-sicher (Standard); 1 = Archivable=false-Diagnose-Sonde (3.9.6-Verhalten, kam nie in der Session an).' } };
             returns = '{ state, requestedMode, startMethod, startDiagnostics { editModeActiveBefore, editModeActiveAfter, serviceError, usedPath, sessionPlayers, reporterActive, reporterInjected, reporterSeenInOutput, reporterVariantUsed, agentMode, httpEnabled }, warnings }';
             example = @{ mode = 'play' };
@@ -11341,6 +11549,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         return @{
             importantRules = @(
                 'GET WORKS FOR EVERYTHING (3.9): if your environment can only fetch URLs (plain HTTP GET, no POST body), you can still do ABSOLUTELY EVERYTHING. Every endpoint accepts GET on exactly the same code path as POST: GET /api/tool?token=<token>&tool=<name>&args=<URL-encoded JSON>&timeoutSeconds=<n>, GET /api/tools/parallel?token=<token>&calls=<URL-encoded JSON array>, GET /api/upload?token=<token>&uploadId=<id>&chunkIndex=<n>&chunkCount=<m>&text=<URL-encoded text>, GET /api/status, GET /api/events?token=..., GET /api/blob?token=...&id=...&index=... . You get the same _bridge envelope, the same _sessionStart documentation, the same chunking/blobs and the same gates (SELF_TEST_DISABLED, read-only, playtest) - nothing is limited. Rule of thumb: a JSON body field becomes a query parameter, and object fields (args, calls) are passed as URL-encoded JSON.',
+                'MULTIPLE PLACES (Version 5): the token copied from Alle Places is an aggregate token. First GET /api/places; it returns each connected place with an exact targetPlace. Send targetPlace at the top level (or in args) of EVERY /api/tool request. For /api/tools/parallel, targetPlace is top-level and applies to all calls in that request. The bridge refuses ambiguous/missing targets with MULTI_PLACE_SELECTION_REQUIRED, so you never edit the wrong game. Use one selected Place per request, switch explicitly whenever needed.',
                 'IDS FIRST: every object has an id like "#42". Names are NOT unique - 55 parts can all be called "Part". Every read tool returns the id; always pass ids back in "ref"/"refs". A path like game.Workspace.Part[3] also works, but ids are safer.',
                 'SELECTORS: most "refs" arguments also accept a selector table: { tag = "Door" }, { className = "Part", rootRef = "#50" }, { query = "crate" }. Use selectors instead of long id lists.',
                 'SCRIPTS: never rewrite an 800 line script to change one line. Read with get_script (line numbers + hash), then patch_script (replace / replaceAll / insertAfter / replaceFunction / replaceLines ...). Check the result with compile_check BEFORE running it. set_script_source (full replace) still exists for new or tiny files. Pass expectHash to be safe.',
@@ -11392,6 +11601,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             errorCodes = @{
                 STUDIO_TIMEOUT = 'HTTP call timed out, but the command is STILL RUNNING in Studio - nothing is lost. The next call waits for it automatically. Long work should use asJob=true.'
                 PLAY_MODE_ACTIVE = 'Building/editing is blocked while a test runs (changes are thrown away at stop). play_stop first, work, then play_start. allowInPlayMode=true for throw-away test changes.'
+                MULTI_PLACE_SELECTION_REQUIRED = 'This is an Alle-Places token. Call GET /api/places and repeat the request with one exact targetPlace.'
+                MULTI_PLACE_TARGET_NOT_FOUND = 'The aggregate target is disconnected, unknown or ambiguous. Refresh GET /api/places and choose one exact targetPlace.'
                 READONLY_TOKEN = 'This place is set to read-only in the bridge window. The user can switch it back.'
                 COMPILE_ERROR = 'Lua does not compile (line number included). Fix and check with compile_check before running.'
                 RUNTIME_ERROR = 'Lua ran and failed (message + context).'
@@ -11529,9 +11740,9 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '4.0.5'
+            version = '5.0.0'
             docsVersion = [string]$Shared.DocsVersion
-            role = 'You are connected to exactly ONE live Roblox Studio place through a local plugin. Every token belongs to one Studio window only - if several windows are open, each one has its own token and you can never touch the wrong place. Send every request as POST /api/tool with JSON body { "token": "...", "tool": "...", "args": { ... } }.'
+            role = 'A normal token controls exactly one live Roblox Studio place. The special aggregate token copied from Alle Places controls several places: call GET /api/places first and pass one exact targetPlace in every request; the bridge refuses to guess. This makes switching safe and explicit. Send every request as POST /api/tool with JSON body { "token": "...", "targetPlace": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
             authentication = @{
                 headers = @('Authorization: Bearer <token>', 'X-Arena-Token: <token>')
@@ -11545,6 +11756,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 callToolGet = 'GET /api/tool?token=<token>&tool=<name>&args=<URL-encoded JSON>&timeoutSeconds=<n>  - IDENTICAL to POST /api/tool (same code path, same envelope, same _sessionStart, same chunking/blobs). Use this if your environment can only do GET requests.'
                 callMany    = 'POST /api/tools/parallel  { token, calls: [ { tool, args } ] }  - runs several tools at the same time'
                 callManyGet = 'GET /api/tools/parallel?token=<token>&calls=<URL-encoded JSON array>  - same as the POST version'
+                places      = 'GET /api/places?token=... - list targetPlace values for an aggregate Alle-Places token';
                 events      = 'GET /api/events?token=...  - what the user did (started/stopped a playtest, plays in the game, ...)'
                 blob        = 'GET /api/blob?token=...&id=<blobId>&index=<n>  - fetch one chunk of a huge answer'
                 upload      = 'POST /api/upload  { token, text, uploadId?, chunkIndex?, chunkCount? }  - send a huge script in pieces, then use args.sourceRef = uploadId'
@@ -11574,18 +11786,21 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         $queue = Ensure-Queue $sessionId
         foreach ($call in $calls) {
             $callTool = [string]$call.tool
+            $activityId = New-ArenaActivity $sessionId $callTool $call.args
             $cached = Get-DedupedPlayResult $sessionId $callTool $call.args
             $reserved = $false
             if ($null -eq $cached) { $reserved = Reserve-PlayRetry $sessionId $callTool $call.args }
             if ($null -ne $cached -or -not $reserved) {
                 # Retried play command: never enqueue a second Studio action.
                 if ($null -eq $cached) { $cached = Get-DedupedPlayResult $sessionId $callTool $call.args }
-                $pending.Add(@{ id=$null; tool=$callTool; args=$call.args; signal=$null; result=$cached; deduplicated=$true })
+                if ($cached) { Complete-ArenaActivity $sessionId $activityId $callTool $call.args $cached }
+                $pending.Add(@{ id=$null; tool=$callTool; args=$call.args; signal=$null; result=$cached; deduplicated=$true; activityId=$activityId })
             } else {
                 $commandId = [guid]::NewGuid().ToString('N')
                 $signal = New-Object System.Threading.ManualResetEventSlim($false)
                 [void]$Shared.ResultSignals.TryAdd($commandId, $signal)
                 $command = @{ id=$commandId; tool=$callTool; args=$call.args }
+                $Shared.ActivityCommandMap[$commandId] = (To-Json @{ sessionId=$sessionId; activityId=$activityId; tool=$callTool; args=$call.args } 20)
                 $queue.Enqueue((To-Json $command 40))
                 Add-PendingCommand $sessionId $commandId $callTool
                 $pending.Add(@{ id=$commandId; tool=$callTool; args=$call.args; signal=$signal; result=$null; deduplicated=$false })
@@ -11640,7 +11855,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '4.0.5'
+            bridgeVersion = '5.0.0'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -11651,6 +11866,13 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 notifyOnDone    = $notifyOnDone
             }
             docs          = 'Full tool documentation (parameters, types, defaults, returns, examples, error codes): GET /api/docs, or ?tool=<name>, or ?category=<name>. It was also delivered automatically with the first tool call of this session (_sessionStart).'
+        }
+        if ($Shared.Sessions.Count -ge 2) {
+            $envelope.multiPlace = @{
+                available = $true
+                note = 'Several Places are connected. The All-Places token uses GET /api/places plus an explicit targetPlace per request; it never guesses which game to edit.'
+                endpoint = 'GET /api/places?token=<all-places-token>'
+            }
         }
         if ($entry -and [string]$entry.pluginVersion -ne [string]$Shared.DocsVersion) {
             $envelope.pluginOutdated = @{
@@ -11873,7 +12095,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '4.0.5'
+                        bridgeVersion = '5.0.0'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -11942,7 +12164,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         }
                         return $null
                     }
-                    foreach ($plain in @('token','tool','uploadId','text','sessionId','id','category','message','status')) {
+                    foreach ($plain in @('token','tool','uploadId','text','sessionId','id','category','message','status','targetPlace')) {
                         $raw = Get-Utf8QueryValue $plain
                         if ($null -ne $raw) { $getBody | Add-Member -MemberType NoteProperty -Name $plain -Value ([string]$raw) -Force }
                     }
@@ -11999,6 +12221,21 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 # token, only localhost HTTP access and this ephemeral key.
                 $sid = if ($body) { [string]$body.sessionId } else { '' }
                 $action = if ($body) { [string]$body.action } else { '' }
+                # Version 5: a new Studio test creates a fresh reporter key.
+                # The edit plugin registers it before ExecutePlayModeAsync,
+                # preventing a stale key from the preceding test from blocking
+                # move_character and end_test. The session id is unguessable
+                # and must already exist; this endpoint remains localhost-only.
+                if ($action -eq 'register') {
+                    $entryForKey = Get-SessionEntry $sid
+                    if ($entryForKey -and $body.sessionKey) {
+                        $Shared.AgentKeys[$sid] = [string]$body.sessionKey
+                        Send-Json $context 200 @{ ok=$true; registered=$true }
+                    } else {
+                        Send-Json $context 403 @{ ok=$false; error='Unknown session for Session-Agent key registration.' }
+                    }
+                    continue
+                }
                 if ($action -eq 'stop_active_place') {
                     $sourceEntry = Get-SessionEntry $sid
                     $stopped = $false
@@ -12110,7 +12347,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '4.0.5'
+                        serverVersion = '5.0.0'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -12194,6 +12431,13 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                     } elseif ($body.json) { $completeJson = [string]$body.json }
                     elseif ($body.result) { $completeJson = (To-Json $body.result 40) }
                     if ($null -ne $completeJson) {
+                        $activityMapJson = $null
+                        if ($Shared.ActivityCommandMap.TryRemove($commandId, [ref]$activityMapJson)) {
+                            try {
+                                $activityMap = $activityMapJson | ConvertFrom-Json
+                                Complete-ArenaActivity ([string]$activityMap.sessionId) ([string]$activityMap.activityId) ([string]$activityMap.tool) $activityMap.args $completeJson
+                            } catch {}
+                        }
                         $Shared.CommandResults[$commandId] = $completeJson
                         $signal = $null
                         if ($Shared.ResultSignals.TryGetValue($commandId, [ref]$signal)) {
@@ -12273,7 +12517,37 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 }
                 continue
             }
-            $sessionEntry = Get-SessionEntry $sessionId
+            # Version 5 aggregate access: one stable token may see many
+            # Studio windows, but never guesses a target. Arena must select a
+            # listed targetPlace explicitly before sending a mutating/read tool.
+            $usingAllPlacesToken = ($sessionId -eq '__arena_all_places__')
+            if ($usingAllPlacesToken) {
+                $allPlaces = Get-ActiveMultiPlaces
+                if ($path -eq '/api/places') {
+                    Send-Json $context 200 @{
+                        ok=$true; multiPlace=$true; places=$allPlaces; count=$allPlaces.Count
+                        instruction='Use one exact places[].targetPlace as targetPlace in every /api/tool or /api/tools/parallel request. Do not infer a target from a display name.'
+                    }
+                    continue
+                }
+                $hasRequestedTarget = $false
+                try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
+                if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
+                    Send-Json $context 200 @{
+                        ok=$true; multiPlace=$true; bridgeVersion='5.0.0'; docsVersion=[string]$Shared.DocsVersion
+                        connectedPlaces=$allPlaces; count=$allPlaces.Count
+                        instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
+                    }
+                    continue
+                }
+                if ($path -notin @('/api/docs')) {
+                    $targetResolution = Resolve-MultiPlaceTarget $body
+                    if (-not $targetResolution.ok) { Send-Json $context 409 $targetResolution; continue }
+                    $sessionEntry = $targetResolution.entry
+                    $sessionId = [string]$sessionEntry.sessionId
+                }
+            }
+            if (-not $sessionEntry) { $sessionEntry = Get-SessionEntry $sessionId }
             $accessMode = 'readwrite'
             [void]$Shared.AccessModes.TryGetValue($sessionId, [ref]$accessMode)
 
@@ -12289,8 +12563,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '4.0.5'
-                    serverVersion = '4.0.5'
+                    bridgeVersion = '5.0.0'
+                    serverVersion = '5.0.0'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -12399,6 +12673,11 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                     }
                 }
 
+                # Version 5: the visible Arena history starts as soon as the
+                # request reaches the bridge. A Studio timeout deliberately
+                # stays blue/running until its late result arrives.
+                $activityId = New-ArenaActivity $sessionId $tool $toolArgs
+
                 # ---------------- ASSET-VORPRUEFUNG ------------------------
                 # Die Id muss zum Typ passen, BEVOR Studio angefasst wird.
                 # (Vorher lief ein falsches rbxassetid erst als Laufzeitfehler auf.)
@@ -12418,6 +12697,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                     if ($expectType) {
                         $validation = Invoke-AssetValidation @{ assetId = [string]$toolArgs.assetId; expectType = $expectType }
                         if ($validation.ok -eq $false) {
+                            Complete-ArenaActivity $sessionId $activityId $tool $toolArgs (To-Json $validation 40)
                             $validation._bridge = (New-Envelope $sessionId)
                             Send-Json $context 200 $validation
                             continue
@@ -12430,6 +12710,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                                 actual = @{ typeId = $validation.typeId; typeName = $validation.typeName; usableAs = $validation.usableAs; assetName = [string]$validation.assetName }
                                 howToFix = "Run search_assets with type='$expectType' and apply a matching id from the result. If the catalog is unavailable, say so and build procedurally - never guess ids."
                             }
+                            Complete-ArenaActivity $sessionId $activityId $tool $toolArgs (To-Json $mismatch 40)
                             $mismatch._bridge = (New-Envelope $sessionId)
                             Send-Json $context 200 $mismatch
                             continue
@@ -12441,6 +12722,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                                 error = "Asset $($toolArgs.assetId) ('$($validation.assetName)') CONTAINS SCRIPTS. It was not inserted."
                                 howToFix = 'If you trust this asset, repeat the call with acceptScripts=true - and inspect the inserted content immediately afterwards (search for Script/LocalScript inside it and delete what you did not expect).'
                             }
+                            Complete-ArenaActivity $sessionId $activityId $tool $toolArgs (To-Json $hasScripts 40)
                             $hasScripts._bridge = (New-Envelope $sessionId)
                             Send-Json $context 200 $hasScripts
                             continue
@@ -12450,6 +12732,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
 
                 $serverResult = Invoke-ServerTool $sessionId $tool $toolArgs
                 if ($null -ne $serverResult) {
+                    Complete-ArenaActivity $sessionId $activityId $tool $toolArgs (To-Json $serverResult 40)
                     $serverResult['_bridge'] = (New-Envelope $sessionId)
                     Send-Json $context 200 $serverResult
                     continue
@@ -12479,6 +12762,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         requiredResponse = 'You have TWO options: (a) call play_stop yourself - that is allowed and also ends user-started tests - then continue your work in edit mode; or (b) if the user is actively playing right now, end your response and tell them you cannot work safely in parallel - ask them to let you work in peace and to message you when Studio is free. Never make persistent edits while the test runs.'
                         suggestedUserMessage = 'Ich sehe, dass du Roblox Studio gerade im Playtest benutzt. Parallel kann ich nicht sicher arbeiten: Ich beende den Test jetzt ODER du meldest dich, wenn ich in Ruhe weiterarbeiten soll.'
                     }
+                    Complete-ArenaActivity $sessionId $activityId $tool $toolArgs (To-Json $blocked 40)
                     $blocked._bridge = (New-Envelope $sessionId)
                     Send-Json $context 200 $blocked
                     continue
@@ -12492,12 +12776,15 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $selfTestOk = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
                 if (-not $selfTestOk -and @('play_start','play_stop','play_pause','play_resume','send_input','gui_click','gui_set_text','move_character','teleport_character','respawn_character','set_camera') -contains $tool) {
                     $blockedSelfTest = New-SelfTestBlockedResult $tool
+                    Complete-ArenaActivity $sessionId $activityId $tool $toolArgs (To-Json $blockedSelfTest 40)
                     $blockedSelfTest._bridge = (New-Envelope $sessionId)
                     Send-Json $context 200 $blockedSelfTest
                     continue
                 }
 
                 if ($accessMode -eq 'readonly' -and $writeTools -contains $tool) {
+                    $readOnlyResult = @{ ok=$false; code='READONLY_TOKEN'; error=("The tool '" + $tool + "' changes the place, but this token is set to read only.") }
+                    Complete-ArenaActivity $sessionId $activityId $tool $toolArgs (To-Json $readOnlyResult 12)
                     Send-Json $context 200 @{
                         ok = $false
                         code = 'READONLY_TOKEN'
@@ -12528,9 +12815,12 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 $resultJson = Get-DedupedPlayResult $sessionId $tool $toolArgs
                 $reservedPlay = $false
                 if ($null -eq $resultJson) { $reservedPlay = Reserve-PlayRetry $sessionId $tool $toolArgs }
-                if ($null -eq $resultJson -and $reservedPlay) { $resultJson = Invoke-PluginTool $sessionId $tool $toolArgs $timeout }
+                if ($null -eq $resultJson -and $reservedPlay) { $resultJson = Invoke-PluginTool $sessionId $tool $toolArgs $timeout $activityId }
                 if ($null -eq $resultJson -and -not $reservedPlay) { $resultJson = Get-DedupedPlayResult $sessionId $tool $toolArgs }
-                if ($null -ne $resultJson) { Save-DedupedPlayResult $sessionId $tool $toolArgs $resultJson }
+                if ($null -ne $resultJson) {
+                    Save-DedupedPlayResult $sessionId $tool $toolArgs $resultJson
+                    Complete-ArenaActivity $sessionId $activityId $tool $toolArgs $resultJson
+                }
                 if ($null -eq $resultJson) {
                     $entryNow = Get-SessionEntry $sessionId
                     $stillRunning = Get-PendingCommands $sessionId
@@ -12971,6 +13261,14 @@ function Get-ActiveStudios {
 
 function Reset-SessionToken {
     param([string]$SessionId)
+    if ($SessionId -eq '__arena_all_places__') {
+        # Version 5: only an explicit click changes the aggregate token.
+        $script:AllPlacesToken = New-Token
+        $script:Shared.MultiPlaceToken = $script:AllPlacesToken
+        Write-RuntimeLog 'Token für Alle Places wurde manuell zurückgesetzt.'
+        Show-CopyConfirm -Message 'Token für alle Places wurde zurückgesetzt.' -Seconds 4
+        return
+    }
     $old = $null
     if ($script:Shared.SessionTokens.TryRemove($SessionId, [ref]$old)) {
         $removed = $null
@@ -12984,22 +13282,25 @@ function Reset-SessionToken {
 
 function Set-SessionMode {
     param([string]$SessionId, [string]$Mode)
+    # Version 5: intentionally runtime-only. A newly registered Place must
+    # always start with full access, therefore nothing is written to settings.json.
+    if ($SessionId -eq '__arena_all_places__') { Set-AllSessionsMode $Mode; return }
     $script:Shared.AccessModes[$SessionId] = $Mode
-    # Version 3.8: Die Zugriffsart ("Nur Lesezugriff" je Place) dauerhaft
-    # speichern - sie ueberlebt Programm-Neustarts.
-    try {
-        $entryJson = $null
-        if ($script:Shared.Sessions.TryGetValue($SessionId, [ref]$entryJson)) {
-            $entry = $entryJson | ConvertFrom-Json
-            $modeKey = [string]$entry.placeId
-            if ([string]::IsNullOrWhiteSpace($modeKey) -or $modeKey -eq '0') { $modeKey = 'name:' + [string]$entry.placeName }
-            if (-not [string]::IsNullOrWhiteSpace($modeKey)) {
-                $script:Shared.BridgeSettings.accessModes[$modeKey] = $Mode
-                $script:SettingsCache.accessModes[$modeKey] = $Mode
-                Save-BridgeSettingsFile
+}
+
+function Set-AllSessionsMode {
+    param([string]$Mode)
+    # The aggregate switch affects only the Places connected right now. A Place
+    # that connects later always receives its registration default (read/write).
+    $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    foreach ($pair in $script:Shared.Sessions.GetEnumerator()) {
+        try {
+            $entry = $pair.Value | ConvertFrom-Json
+            if ($entry -and ($now - [int64]$entry.lastSeen) -lt 90) {
+                $script:Shared.AccessModes[[string]$pair.Key] = $Mode
             }
-        }
-    } catch {}
+        } catch {}
+    }
 }
 
 # ----------------------------------------------------------------------------
@@ -13724,14 +14025,16 @@ function Add-PendingToast {
 function Set-MenuChecked {
     param($Item, [bool]$Checked)
     if (-not $Item.Checkable) { return }
+    # Version 5: this is deliberately a switch, never a checkbox. Read-only
+    # is an immediate, temporary session state just like the settings switches.
     if ($Checked) {
-        $Item.Box.Background = Get-Brush '#6366F1'
-        $Item.Box.BorderBrush = Get-Brush '#A5B4FC'
-        $Item.Tick.Visibility = 'Visible'
+        $Item.Track.Background = Get-Brush '#1E6B3A'; $Item.Track.BorderBrush = Get-Brush '#35A05C'
+        $Item.Thumb.HorizontalAlignment = 'Right'; $Item.Thumb.Margin = [System.Windows.Thickness]::new(0,0,3,0)
+        $Item.State.Text = 'AN'; $Item.State.Foreground = Get-Brush '#D6F5E1'; $Item.State.Margin = [System.Windows.Thickness]::new(0,0,12,0)
     } else {
-        $Item.Box.Background = Get-Brush '#0B1220'
-        $Item.Box.BorderBrush = Get-Brush '#334155'
-        $Item.Tick.Visibility = 'Collapsed'
+        $Item.Track.Background = Get-Brush '#3A1820'; $Item.Track.BorderBrush = Get-Brush '#7F1D2D'
+        $Item.Thumb.HorizontalAlignment = 'Left'; $Item.Thumb.Margin = [System.Windows.Thickness]::new(3,0,0,0)
+        $Item.State.Text = 'AUS'; $Item.State.Foreground = Get-Brush '#FECACA'; $Item.State.Margin = [System.Windows.Thickness]::new(12,0,0,0)
     }
 }
 
@@ -13747,8 +14050,9 @@ function New-MenuRow {
 
     $item = [pscustomobject]@{
         Checkable = $Checkable
-        Box       = $null
-        Tick      = $null
+        Track     = $null
+        Thumb     = $null
+        State     = $null
         Title     = $null
         Sub       = $null
     }
@@ -13807,18 +14111,16 @@ function New-MenuRow {
     $grid.Children.Add($texts) | Out-Null
 
     if ($Checkable) {
-        $box = [System.Windows.Controls.Border]::new()
-        $box.Width = 20
-        $box.Height = 20
-        $box.CornerRadius = [System.Windows.CornerRadius]::new(6)
-        $tick = New-CheckPath
-        $box.Child = $tick
-        $box.VerticalAlignment = 'Center'
-        $item.Box = $box
-        $item.Tick = $tick
+        $switch = [System.Windows.Controls.Grid]::new()
+        $switch.Width = 46; $switch.Height = 24; $switch.VerticalAlignment = 'Center'
+        $track = [System.Windows.Controls.Border]::new(); $track.Width=46; $track.Height=24; $track.CornerRadius=[System.Windows.CornerRadius]::new(12); $track.BorderThickness=[System.Windows.Thickness]::new(1)
+        $thumb = [System.Windows.Shapes.Ellipse]::new(); $thumb.Width=18; $thumb.Height=18; $thumb.Fill=Get-Brush '#F8FAFC'; $thumb.VerticalAlignment='Center'
+        $state = [System.Windows.Controls.TextBlock]::new(); $state.FontSize=8.5; $state.FontWeight='Bold'; $state.HorizontalAlignment='Center'; $state.VerticalAlignment='Center'; $state.IsHitTestVisible=$false
+        $switch.Children.Add($track)|Out-Null;$switch.Children.Add($thumb)|Out-Null;$switch.Children.Add($state)|Out-Null
+        $item.Track=$track;$item.Thumb=$thumb;$item.State=$state
         Set-MenuChecked $item $Checked
-        [System.Windows.Controls.Grid]::SetColumn($box, 2)
-        $grid.Children.Add($box) | Out-Null
+        [System.Windows.Controls.Grid]::SetColumn($switch, 2)
+        $grid.Children.Add($switch) | Out-Null
     }
 
     $root.Child = $grid
@@ -13920,8 +14222,262 @@ function Get-PlaceName {
     return 'Unbenanntes Roblox Place'
 }
 
+# ----------------------------------------------------------------------------
+# VERSION 5: PLACE-ICONS UND ARENA-VERLAUF
+# ----------------------------------------------------------------------------
+function Get-PlaceIconKey {
+    param($Studio)
+    $gameId = [string]$Studio.gameId
+    $placeId = [string]$Studio.placeId
+    if (-not [string]::IsNullOrWhiteSpace($gameId) -and $gameId -ne '0') { return 'game_' + ($gameId -replace '[^0-9]', '') }
+    if (-not [string]::IsNullOrWhiteSpace($placeId) -and $placeId -ne '0') { return 'place_' + ($placeId -replace '[^0-9]', '') }
+    return 'studio_fallback'
+}
+
+function Set-PlaceIconImage {
+    param($Row, [string]$Path)
+    if ($null -eq $Row -or [string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) { return }
+    try {
+        $bitmap = [System.Windows.Media.Imaging.BitmapImage]::new()
+        $bitmap.BeginInit()
+        $bitmap.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+        $bitmap.UriSource = [uri]$Path
+        $bitmap.EndInit()
+        $bitmap.Freeze()
+        $Row.IconImage.Source = $bitmap
+        $Row.IconImage.Visibility = 'Visible'
+        $Row.IconSpinner.Visibility = 'Collapsed'
+        $Row.IconFallback.Visibility = 'Collapsed'
+    } catch {
+        try { $Row.IconSpinner.Visibility = 'Collapsed'; $Row.IconFallback.Visibility = 'Visible' } catch {}
+    }
+}
+
+function New-PlaceIconVisual {
+    $frame = [System.Windows.Controls.Border]::new()
+    $frame.Width = 46; $frame.Height = 46
+    $frame.CornerRadius = [System.Windows.CornerRadius]::new(13)
+    $frame.Background = Get-Brush '#FFFFFF'
+    $frame.BorderBrush = Get-Brush '#CBD5E1'
+    $frame.BorderThickness = [System.Windows.Thickness]::new(1)
+    $frame.Margin = [System.Windows.Thickness]::new(0, 0, 13, 0)
+    $frame.ClipToBounds = $true
+    $host = [System.Windows.Controls.Grid]::new()
+    $image = [System.Windows.Controls.Image]::new()
+    $image.Stretch = 'UniformToFill'
+    $image.Clip = [System.Windows.Media.RectangleGeometry]::new([System.Windows.Rect]::new(0,0,46,46), 12, 12)
+    $image.Visibility = 'Collapsed'
+    $fallback = [System.Windows.Controls.TextBlock]::new()
+    $fallback.Text = [char]0xE71C
+    $fallback.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe MDL2 Assets')
+    $fallback.FontSize = 20
+    $fallback.Foreground = Get-Brush '#475569'
+    $fallback.HorizontalAlignment = 'Center'; $fallback.VerticalAlignment = 'Center'
+    $fallback.Visibility = 'Collapsed'
+    $spinner = [System.Windows.Shapes.Ellipse]::new()
+    $spinner.Width = 24; $spinner.Height = 24
+    $spinner.Stroke = Get-Brush '#6366F1'; $spinner.StrokeThickness = 3
+    $spinner.StrokeDashArray = [System.Windows.Media.DoubleCollection]::new(@(4.0, 8.0))
+    $spinner.StrokeDashCap = 'Round'
+    $spinner.HorizontalAlignment = 'Center'; $spinner.VerticalAlignment = 'Center'
+    $spinner.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.5)
+    $spinTransform = [System.Windows.Media.RotateTransform]::new(0)
+    $spinner.RenderTransform = $spinTransform
+    $anim = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 360, [TimeSpan]::FromSeconds(0.9))
+    $anim.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+    $spinTransform.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $anim)
+    $host.Children.Add($image) | Out-Null; $host.Children.Add($fallback) | Out-Null; $host.Children.Add($spinner) | Out-Null
+    $frame.Child = $host
+    return [pscustomobject]@{ Frame=$frame; Image=$image; Spinner=$spinner; Fallback=$fallback }
+}
+
+function Start-PlaceIconLoad {
+    param($Studio, $Row)
+    if ($null -eq $Row) { return }
+    $key = Get-PlaceIconKey $Studio
+    $Row.IconKey = $key
+    if ($script:PlaceIconCache.ContainsKey($key) -and (Test-Path -LiteralPath $script:PlaceIconCache[$key])) {
+        Set-PlaceIconImage $Row $script:PlaceIconCache[$key]
+        return
+    }
+    $file = Join-Path $script:IconFolder ($key + '.png')
+    if (Test-Path -LiteralPath $file) {
+        $script:PlaceIconCache[$key] = $file
+        Set-PlaceIconImage $Row $file
+        return
+    }
+    if ($script:PlaceIconLoads.ContainsKey($key)) { return }
+    $gameId = [string]$Studio.gameId
+    $placeId = [string]$Studio.placeId
+    $worker = [PowerShell]::Create()
+    $code = @'
+param($gameId, $placeId, $destination)
+$studioLogo = 'https://static.wikia.nocookie.net/roblox/images/e/e1/Roblox_Studio_2025_Logo.png/revision/latest/thumbnail/width/360/height/360?cb=20250503032303'
+$imageUrl = $studioLogo
+try {
+    $id = if ($gameId -and $gameId -ne '0') { $gameId } else { '' }
+    if ($id -match '^\d+$') {
+        $meta = Invoke-RestMethod -Uri ('https://thumbnails.roblox.com/v1/games/icons?universeIds=' + $id + '&size=150x150&format=Png&isCircular=false') -TimeoutSec 12 -UseBasicParsing
+        if ($meta -and $meta.data -and $meta.data.Count -gt 0 -and $meta.data[0].imageUrl) { $imageUrl = [string]$meta.data[0].imageUrl }
+    }
+} catch {}
+try {
+    $client = New-Object System.Net.WebClient
+    $client.Headers['User-Agent'] = 'ArenaRobloxBridge/5'
+    $client.DownloadFile($imageUrl, $destination)
+    $client.Dispose()
+    if ((Test-Path -LiteralPath $destination) -and (Get-Item -LiteralPath $destination).Length -gt 100) { return @{ ok=$true; path=$destination } }
+} catch {}
+return @{ ok=$false; path=$null }
+'@
+    [void]$worker.AddScript($code).AddArgument($gameId).AddArgument($placeId).AddArgument($file)
+    $script:PlaceIconLoads[$key] = [pscustomobject]@{ Worker=$worker; Handle=$worker.BeginInvoke(); Key=$key; File=$file }
+}
+
+function Update-PlaceIconLoads {
+    foreach ($key in @($script:PlaceIconLoads.Keys)) {
+        $job = $script:PlaceIconLoads[$key]
+        if (-not $job.Handle.IsCompleted) { continue }
+        $path = $null
+        try {
+            $result = @($job.Worker.EndInvoke($job.Handle))[0]
+            if ($result -and $result.ok -eq $true) { $path = [string]$result.path }
+        } catch {}
+        try { $job.Worker.Dispose() } catch {}
+        $script:PlaceIconLoads.Remove($key)
+        if ($path -and (Test-Path -LiteralPath $path)) {
+            $script:PlaceIconCache[$key] = $path
+            foreach ($row in @($script:UiRows.Values)) { if ($row.IconKey -eq $key) { Set-PlaceIconImage $row $path } }
+            if ($script:AllPlacesRow) { Update-AllPlacesIcon $script:AllPlacesRow @(Get-ActiveStudios) }
+        } else {
+            foreach ($row in @($script:UiRows.Values)) {
+                if ($row.IconKey -eq $key) { try { $row.IconSpinner.Visibility='Collapsed'; $row.IconFallback.Visibility='Visible' } catch {} }
+            }
+        }
+    }
+}
+
+function Get-ArenaHistoryEntries {
+    param([string]$SessionId)
+    $entries = New-Object System.Collections.Generic.List[object]
+    $wanted = @()
+    if ([string]::IsNullOrWhiteSpace($SessionId)) { $wanted = @($script:Shared.ActivityLogs.Keys) } else { $wanted = @($SessionId) }
+    foreach ($sid in $wanted) {
+        $bag = $null
+        if (-not $script:Shared.ActivityLogs.TryGetValue([string]$sid, [ref]$bag)) { continue }
+        $place = 'Unbekannter Place'
+        try { $raw=$null; if ($script:Shared.Sessions.TryGetValue([string]$sid,[ref]$raw)) { $place=[string](($raw|ConvertFrom-Json).placeName) } } catch {}
+        foreach ($pair in $bag.GetEnumerator()) {
+            try {
+                $entry = $pair.Value | ConvertFrom-Json
+                $entry | Add-Member -NotePropertyName 'placeName' -NotePropertyValue $place -Force
+                $entries.Add($entry)
+            } catch {}
+        }
+    }
+    return , @($entries | Sort-Object @{Expression={ [int64]$_.startedAt }}, @{Expression={ [int64]$_.updatedAt }})
+}
+
+function Clear-ArenaHistory {
+    param([string]$SessionId)
+    $wanted = if ([string]::IsNullOrWhiteSpace($SessionId)) { @($script:Shared.ActivityLogs.Keys) } else { @($SessionId) }
+    foreach ($sid in $wanted) {
+        $bag=$null
+        if ($script:Shared.ActivityLogs.TryGetValue([string]$sid,[ref]$bag)) { try { $bag.Clear() } catch {} }
+    }
+}
+
+function Add-ArenaHistoryCard {
+    param($Host, $Entry, [bool]$AllPlaces)
+    $kind = [string]$Entry.kind
+    $colour = '#94A3B8'
+    switch ($kind) {
+        'running' { $colour='#3B82F6'; break }
+        'write'   { $colour='#22C55E'; break }
+        'console' { $colour='#FBBF24'; break }
+        'failed'  { $colour='#F87171'; break }
+    }
+    $card = [System.Windows.Controls.Border]::new()
+    $card.Background = Get-Brush '#111827'; $card.BorderBrush = Get-Brush '#334155'; $card.BorderThickness = [System.Windows.Thickness]::new(1)
+    $card.CornerRadius=[System.Windows.CornerRadius]::new(9); $card.Padding=[System.Windows.Thickness]::new(11,9,11,9); $card.Margin=[System.Windows.Thickness]::new(0,0,0,7)
+    $grid=[System.Windows.Controls.Grid]::new()
+    $c0=[System.Windows.Controls.ColumnDefinition]::new();$c0.Width=[System.Windows.GridLength]::new(5)
+    $c1=[System.Windows.Controls.ColumnDefinition]::new();$grid.ColumnDefinitions.Add($c0);$grid.ColumnDefinitions.Add($c1)
+    $line=[System.Windows.Controls.Border]::new();$line.Background=Get-Brush $colour;$line.CornerRadius=[System.Windows.CornerRadius]::new(3)
+    [System.Windows.Controls.Grid]::SetColumn($line,0);$grid.Children.Add($line)|Out-Null
+    $stack=[System.Windows.Controls.StackPanel]::new();$stack.Margin=[System.Windows.Thickness]::new(10,0,0,0)
+    $main=[System.Windows.Controls.TextBlock]::new();$main.Foreground=Get-Brush '#E2E8F0';$main.FontSize=12.5;$main.TextWrapping='Wrap'
+    $prefix=if($AllPlaces){ ([string]$Entry.placeName + ' · ') }else{''};$main.Text=$prefix + [string]$Entry.text
+    $meta=[System.Windows.Controls.TextBlock]::new();$meta.Foreground=Get-Brush '#64748B';$meta.FontSize=10.5;$meta.Margin=[System.Windows.Thickness]::new(0,4,0,0)
+    $when='';try{$when=[DateTimeOffset]::FromUnixTimeSeconds([int64]$Entry.updatedAt).LocalDateTime.ToString('HH:mm:ss')}catch{}
+    $state='Abgeschlossen'
+    switch ($kind) {
+        'running' { $state='Macht gerade'; break }
+        'read'    { $state='Abgerufen'; break }
+        'write'   { $state='Geändert'; break }
+        'console' { $state='Konsole'; break }
+        'failed'  { $state='Warnung'; break }
+    }
+    $timeSuffix = if ($when) { ' · ' + $when } else { '' }
+    $meta.Text=$state + $timeSuffix
+    $stack.Children.Add($main)|Out-Null;$stack.Children.Add($meta)|Out-Null
+    [System.Windows.Controls.Grid]::SetColumn($stack,1);$grid.Children.Add($stack)|Out-Null;$card.Child=$grid;$Host.Children.Add($card)|Out-Null
+}
+
+function Update-ArenaHistoryWindow {
+    param($State)
+    if ($null -eq $State -or $null -eq $State.Host) { return }
+    $scroll=$State.Scroll
+    $atBottom=([double]$scroll.VerticalOffset -ge ([double]$scroll.ScrollableHeight - 18)) -or $State.FirstRender
+    $oldOffset=[double]$scroll.VerticalOffset
+    $State.Host.Children.Clear()
+    $waitingText = if ([string]::IsNullOrWhiteSpace([string]$State.SessionId)) {
+        'Wartet darauf, dass Arena die Bridge mit einem der verbundenen Places benutzt.'
+    } else {
+        'Wartet darauf, dass Arena die Bridge mit diesem Place benutzt.'
+    }
+    $waiting=[pscustomobject]@{kind='read';text=$waitingText;updatedAt=0;placeName=''}
+    Add-ArenaHistoryCard $State.Host $waiting ([bool]$State.AllPlaces)
+    foreach ($entry in (Get-ArenaHistoryEntries ([string]$State.SessionId))) { Add-ArenaHistoryCard $State.Host $entry ([bool]$State.AllPlaces) }
+    if ($atBottom) { $scroll.ScrollToEnd() } else { $scroll.ScrollToVerticalOffset($oldOffset) }
+    $State.FirstRender=$false
+}
+
+function Open-ArenaHistoryWindow {
+    param([string]$SessionId, [string]$Title = 'Arena-Verlauf')
+    $history=[System.Windows.Window]::new();$history.Title=$Title;$history.Width=660;$history.Height=620;$history.MinWidth=660;$history.MinHeight=620;$history.MaxWidth=660;$history.MaxHeight=620
+    $history.WindowStartupLocation='CenterOwner';$history.WindowStyle='None';$history.AllowsTransparency=$true;$history.Background=[System.Windows.Media.Brushes]::Transparent;$history.FontFamily=[System.Windows.Media.FontFamily]::new('Segoe UI')
+    try{$history.Owner=$window}catch{}
+    $shell=[System.Windows.Controls.Border]::new();$shell.CornerRadius=[System.Windows.CornerRadius]::new(16);$shell.Background=Get-Brush '#0F172A';$shell.BorderBrush=Get-Brush '#334155';$shell.BorderThickness=[System.Windows.Thickness]::new(1);$shell.Padding=[System.Windows.Thickness]::new(20)
+    $grid=[System.Windows.Controls.Grid]::new();$r0=[System.Windows.Controls.RowDefinition]::new();$r0.Height=[System.Windows.GridLength]::Auto;$r1=[System.Windows.Controls.RowDefinition]::new();$grid.RowDefinitions.Add($r0);$grid.RowDefinitions.Add($r1)
+    $head=[System.Windows.Controls.Grid]::new();$hc0=[System.Windows.Controls.ColumnDefinition]::new();$hc1=[System.Windows.Controls.ColumnDefinition]::new();$hc1.Width=[System.Windows.GridLength]::Auto;$hc2=[System.Windows.Controls.ColumnDefinition]::new();$hc2.Width=[System.Windows.GridLength]::Auto;$head.ColumnDefinitions.Add($hc0);$head.ColumnDefinitions.Add($hc1);$head.ColumnDefinitions.Add($hc2)
+    $texts=[System.Windows.Controls.StackPanel]::new();$titleText=[System.Windows.Controls.TextBlock]::new();$titleText.Text=$Title;$titleText.Foreground=Get-Brush '#F8FAFC';$titleText.FontSize=18;$titleText.FontWeight='Bold';$sub=[System.Windows.Controls.TextBlock]::new();$sub.Text='Alle Aktionen von Arena in zeitlicher Reihenfolge';$sub.Foreground=Get-Brush '#94A3B8';$sub.FontSize=11.5;$sub.Margin=[System.Windows.Thickness]::new(0,4,0,0);$texts.Children.Add($titleText)|Out-Null;$texts.Children.Add($sub)|Out-Null;$head.Children.Add($texts)|Out-Null
+    $trash=[System.Windows.Controls.Button]::new();$trash.Content=[char]0xE74D;$trash.FontFamily=[System.Windows.Media.FontFamily]::new('Segoe MDL2 Assets');$trash.FontSize=14;$trash.Width=38;$trash.Height=34;$trash.Margin=[System.Windows.Thickness]::new(0,0,8,0);$trash.ToolTip='Verlauf zurücksetzen';[System.Windows.Controls.Grid]::SetColumn($trash,1);$head.Children.Add($trash)|Out-Null
+    $close=[System.Windows.Controls.Button]::new();$close.Content=[char]0xE8BB;$close.FontFamily=[System.Windows.Media.FontFamily]::new('Segoe MDL2 Assets');$close.FontSize=12;$close.Width=38;$close.Height=34;$close.ToolTip='Schließen';[System.Windows.Controls.Grid]::SetColumn($close,2);$head.Children.Add($close)|Out-Null
+    [System.Windows.Controls.Grid]::SetRow($head,0);$grid.Children.Add($head)|Out-Null
+    $scroll=[System.Windows.Controls.ScrollViewer]::new();$scroll.Margin=[System.Windows.Thickness]::new(0,17,0,0);$scroll.VerticalScrollBarVisibility='Auto';$scroll.HorizontalScrollBarVisibility='Disabled';$host=[System.Windows.Controls.StackPanel]::new();$scroll.Content=$host;[System.Windows.Controls.Grid]::SetRow($scroll,1);$grid.Children.Add($scroll)|Out-Null
+    $shell.Child=$grid;$history.Content=$shell
+    $state=[pscustomobject]@{Window=$history;Scroll=$scroll;Host=$host;SessionId=$SessionId;AllPlaces=[string]::IsNullOrWhiteSpace($SessionId);FirstRender=$true;Timer=$null}
+    $history.Tag=$state;$trash.Tag=$state;$close.Tag=$history
+    $trash.Add_Click({param($sender,$e) Clear-ArenaHistory ([string]$sender.Tag.SessionId);$sender.Tag.FirstRender=$true;Update-ArenaHistoryWindow $sender.Tag})
+    $close.Add_Click({param($sender,$e) $sender.Tag.Close()})
+    $history.Add_MouseLeftButtonDown({param($sender,$e) if($e.ChangedButton -eq [System.Windows.Input.MouseButton]::Left -and $e.OriginalSource -eq $sender.Content){try{$sender.DragMove()}catch{}}})
+    $timer=[System.Windows.Threading.DispatcherTimer]::new();$timer.Interval=[TimeSpan]::FromMilliseconds(650);$timer.Tag=$state;$timer.Add_Tick({param($sender,$e) Update-ArenaHistoryWindow $sender.Tag});$state.Timer=$timer
+    $history.Add_Loaded({param($sender,$e) Update-ArenaHistoryWindow $sender.Tag;$sender.Tag.Timer.Start()})
+    $history.Add_Closed({param($sender,$e) try{$sender.Tag.Timer.Stop()}catch{}})
+    [void]$history.ShowDialog()
+}
+
 function Copy-Prompt {
     param([string]$SessionId)
+    if ($SessionId -eq '__arena_all_places__') {
+        if ([string]::IsNullOrWhiteSpace($script:TunnelUrl)) { Show-CopyConfirm -Message 'Der Cloudflare-Tunnel ist noch nicht bereit.' -Seconds 5; return }
+        try {
+            [System.Windows.Clipboard]::SetText("URL=$script:TunnelUrl`r`nTOKEN=$script:AllPlacesToken`r`nMODE=ALLE_PLACES`r`nHINWEIS=GET /api/places aufrufen und bei jedem Tool targetPlace setzen")
+            Show-CopyConfirm -Message 'Prompt für alle Places wurde in die Zwischenablage kopiert' -Seconds 3
+        } catch { Show-CopyConfirm -Message "Zwischenablage blockiert: $($_.Exception.Message)" -Seconds 6 }
+        return
+    }
     $token = $null
     if (-not $script:Shared.SessionTokens.TryGetValue($SessionId, [ref]$token)) {
         Show-CopyConfirm -Message 'Token konnte nicht gelesen werden.' -Seconds 5
@@ -13948,6 +14504,19 @@ function Set-RowMode {
     Set-MenuChecked $Row.Toggle $readonly
     $subtitle = if ($readonly) { 'Aktiv - Änderungen sind gesperrt' } else { 'Inaktiv - Änderungen sind erlaubt' }
     Set-Text $Row.Toggle.Sub $subtitle
+    # The aggregate row also exposes this temporary switch directly on its
+    # right side, so its state mirrors the option menu without persistence.
+    if ($Row.AllAccessButton) {
+        if ($readonly) {
+            $Row.AllAccessTrack.Background=Get-Brush '#1E6B3A';$Row.AllAccessTrack.BorderBrush=Get-Brush '#35A05C'
+            $Row.AllAccessThumb.HorizontalAlignment='Right';$Row.AllAccessThumb.Margin=[System.Windows.Thickness]::new(0,0,3,0)
+            $Row.AllAccessState.Text='AN';$Row.AllAccessState.Foreground=Get-Brush '#D6F5E1'
+        } else {
+            $Row.AllAccessTrack.Background=Get-Brush '#3A1820';$Row.AllAccessTrack.BorderBrush=Get-Brush '#7F1D2D'
+            $Row.AllAccessThumb.HorizontalAlignment='Left';$Row.AllAccessThumb.Margin=[System.Windows.Thickness]::new(3,0,0,0)
+            $Row.AllAccessState.Text='AUS';$Row.AllAccessState.Foreground=Get-Brush '#FECACA'
+        }
+    }
 
     if (-not $Silent) {
         $message = if ($readonly) { 'Nur Lesezugriff ist aktiv.' } else { 'Lese- und Schreibzugriff ist aktiv.' }
@@ -13968,6 +14537,15 @@ function New-Row {
         Menu       = $null
         Popup      = $null
         Toggle     = $null
+        IconFrame  = $null
+        IconImage  = $null
+        IconSpinner = $null
+        IconFallback = $null
+        IconKey    = $null
+        AllAccessButton = $null
+        AllAccessTrack = $null
+        AllAccessThumb = $null
+        AllAccessState = $null
         Mode       = $null
         ModeUntil  = [DateTime]::MinValue
     }
@@ -14002,17 +14580,13 @@ function New-Row {
 
     $namePanel = [System.Windows.Controls.Grid]::new()
     $namePanel.VerticalAlignment = 'Center'
-    $dotCol2 = [System.Windows.Controls.ColumnDefinition]::new(); $dotCol2.Width = [System.Windows.GridLength]::Auto
+    $iconCol2 = [System.Windows.Controls.ColumnDefinition]::new(); $iconCol2.Width = [System.Windows.GridLength]::Auto
     $titleCol = [System.Windows.Controls.ColumnDefinition]::new()
-    $namePanel.ColumnDefinitions.Add($dotCol2)
+    $namePanel.ColumnDefinitions.Add($iconCol2)
     $namePanel.ColumnDefinitions.Add($titleCol)
-    $dot = [System.Windows.Shapes.Ellipse]::new()
-    $dot.Width = 9
-    $dot.Height = 9
-    $dot.Fill = Get-Brush '#22C55E'
-    $dot.Margin = [System.Windows.Thickness]::new(0, 0, 12, 0)
-    $dot.VerticalAlignment = 'Center'
-    [System.Windows.Controls.Grid]::SetColumn($dot, 0)
+    # Version 5: a large, rounded square game icon replaces the old green dot.
+    $placeIcon = New-PlaceIconVisual
+    [System.Windows.Controls.Grid]::SetColumn($placeIcon.Frame, 0)
     $title = [System.Windows.Controls.TextBlock]::new()
     $title.Text = Get-PlaceName $Studio $WindowNames
     $title.Foreground = Get-Brush '#F8FAFC'
@@ -14022,11 +14596,15 @@ function New-Row {
     $title.Margin = [System.Windows.Thickness]::new(0, 0, 14, 0)
     $title.TextTrimming = 'CharacterEllipsis'
     [System.Windows.Controls.Grid]::SetColumn($title, 1)
-    $namePanel.Children.Add($dot) | Out-Null
+    $namePanel.Children.Add($placeIcon.Frame) | Out-Null
     $namePanel.Children.Add($title) | Out-Null
     [System.Windows.Controls.Grid]::SetColumn($namePanel, 0)
     $grid.Children.Add($namePanel) | Out-Null
     $row.Title = $title
+    $row.IconFrame = $placeIcon.Frame
+    $row.IconImage = $placeIcon.Image
+    $row.IconSpinner = $placeIcon.Spinner
+    $row.IconFallback = $placeIcon.Fallback
 
     $copyContent = [System.Windows.Controls.StackPanel]::new()
     $copyContent.Orientation = 'Horizontal'
@@ -14110,6 +14688,7 @@ function New-Row {
     $copyItem = New-MenuRow -Glyph ([char]0xE8C8) -Title 'Prompt kopieren' -Subtitle 'URL und Token für Arena' -Accent '#818CF8'
     $resetItem = New-MenuRow -Glyph ([char]0xE72C) -Title 'Token zurücksetzen' -Subtitle 'Neuen Zugang für dieses Place' -Accent '#A5B4FC'
     $toggleItem = New-MenuRow -Glyph ([char]0xE72E) -Title 'Nur Lesezugriff' -Subtitle 'Inaktiv - Änderungen sind erlaubt' -Accent '#C4B5FD' -Checkable $true -Checked $false
+    $historyItem = New-MenuRow -Glyph ([char]0xE81C) -Title 'Arena-Verlauf anzeigen' -Subtitle 'Aktionen und Änderungen dieses Place' -Accent '#60A5FA'
 
     # Alle Daten haengen am Element selbst (Tag). Lokale Variablen einer
     # Funktion sind in Event-Handlern nicht verfuegbar.
@@ -14121,6 +14700,7 @@ function New-Row {
     $copyItem.Root.Tag = $itemTag
     $resetItem.Root.Tag = $itemTag
     $toggleItem.Root.Tag = $itemTag
+    $historyItem.Root.Tag = $itemTag
 
     $copyItem.Root.Add_MouseLeftButtonUp({
         param($s, $e)
@@ -14134,6 +14714,16 @@ function New-Row {
         $info.Popup.IsOpen = $false
         Reset-SessionToken $info.SessionId
         Show-Toast -Message 'Token wurde zurückgesetzt.' -Kind 'Success'
+    })
+    $historyItem.Root.Add_MouseLeftButtonUp({
+        param($s, $e)
+        $info = $s.Tag
+        $info.Popup.IsOpen = $false
+        if ([string]$info.SessionId -eq '__arena_all_places__') {
+            Open-ArenaHistoryWindow -SessionId '' -Title 'Arena-Verlauf · Alle Places'
+        } else {
+            Open-ArenaHistoryWindow -SessionId ([string]$info.SessionId) -Title 'Arena-Verlauf'
+        }
     })
     $toggleItem.Root.Add_MouseLeftButtonUp({
         param($s, $e)
@@ -14149,6 +14739,7 @@ function New-Row {
 
     $menuStack.Children.Add($copyItem.Root) | Out-Null
     $menuStack.Children.Add($resetItem.Root) | Out-Null
+    $menuStack.Children.Add($historyItem.Root) | Out-Null
     $menuStack.Children.Add((New-Separator)) | Out-Null
     $menuStack.Children.Add($toggleItem.Root) | Out-Null
 
@@ -14175,8 +14766,87 @@ function New-Row {
     $startMode = if ([string]$Studio.accessMode -eq 'readonly') { 'readonly' } else { 'readwrite' }
     Set-RowMode $row $startMode -Silent
     $row.ModeUntil = [DateTime]::MinValue
+    Start-PlaceIconLoad $Studio $row
 
     return $row
+}
+
+function Update-AllPlacesIcon {
+    param($Row, $Studios)
+    if ($null -eq $Row -or $null -eq $Row.IconFrame) { return }
+    try {
+        $mosaic = [System.Windows.Controls.Primitives.UniformGrid]::new()
+        $mosaic.Rows = 2; $mosaic.Columns = 2
+        $mosaic.Margin = [System.Windows.Thickness]::new(3)
+        $shown = @($Studios | Select-Object -First 4)
+        foreach ($studio in $shown) {
+            $tile = [System.Windows.Controls.Border]::new()
+            $tile.Margin = [System.Windows.Thickness]::new(1)
+            $tile.CornerRadius = [System.Windows.CornerRadius]::new(4)
+            $tile.Background = Get-Brush '#E2E8F0'
+            $key = Get-PlaceIconKey $studio
+            $path = if ($script:PlaceIconCache.ContainsKey($key)) { [string]$script:PlaceIconCache[$key] } else { $null }
+            if ($path -and (Test-Path -LiteralPath $path)) {
+                $image = [System.Windows.Controls.Image]::new(); $image.Stretch='UniformToFill'
+                try { $bitmap=[System.Windows.Media.Imaging.BitmapImage]::new([uri]$path);$image.Source=$bitmap;$tile.Child=$image } catch {}
+            }
+            if ($null -eq $tile.Child) {
+                $dot=[System.Windows.Shapes.Ellipse]::new();$dot.Width=8;$dot.Height=8;$dot.Fill=Get-Brush '#6366F1';$dot.HorizontalAlignment='Center';$dot.VerticalAlignment='Center';$tile.Child=$dot
+            }
+            $mosaic.Children.Add($tile)|Out-Null
+        }
+        while ($mosaic.Children.Count -lt 4) {
+            $empty=[System.Windows.Controls.Border]::new();$empty.Margin=[System.Windows.Thickness]::new(1);$empty.CornerRadius=[System.Windows.CornerRadius]::new(4);$empty.Background=Get-Brush '#E2E8F0';$mosaic.Children.Add($empty)|Out-Null
+        }
+        $Row.IconFrame.Child = $mosaic
+        $Row.IconSpinner.Visibility='Collapsed';$Row.IconImage.Visibility='Collapsed';$Row.IconFallback.Visibility='Collapsed'
+    } catch {}
+}
+
+function New-AllPlacesRow {
+    param($Studios, $WindowNames)
+    $virtualStudio = [pscustomobject]@{
+        sessionId='__arena_all_places__'; placeName='Alle Places'; placeId='all'; gameId='0'; accessMode='readwrite'; versionMismatch=$false
+    }
+    $row = New-Row $virtualStudio $WindowNames
+    $row.Root.Tag = '__arena_all_places__'
+    $row.Title.Text = 'Alle Places'
+    try { $row.Copy.ToolTip = 'Prompt für alle verbundenen Places kopieren' } catch {}
+    # Version 5: prompt, reset and read-only are directly available on the
+    # right side of the All-Places row (history stays in the ellipsis menu).
+    $row.Copy.MinWidth=128
+    $actions = $row.Root.Child
+    $extra1=[System.Windows.Controls.ColumnDefinition]::new();$extra1.Width=[System.Windows.GridLength]::Auto
+    $extra2=[System.Windows.Controls.ColumnDefinition]::new();$extra2.Width=[System.Windows.GridLength]::Auto
+    $actions.ColumnDefinitions.Add($extra1);$actions.ColumnDefinitions.Add($extra2)
+    [System.Windows.Controls.Grid]::SetColumn($row.Menu,4)
+    $reset=[System.Windows.Controls.Button]::new();$reset.Content='Token zurücksetzen';$reset.Width=132;$reset.Height=38;$reset.Margin=[System.Windows.Thickness]::new(0,0,8,0);$reset.Tag='__arena_all_places__';$reset.ToolTip='Gemeinsamen Token für alle Places zurücksetzen'
+    $reset.Add_Click({param($sender,$e) Reset-SessionToken ([string]$sender.Tag)})
+    [System.Windows.Controls.Grid]::SetColumn($reset,2);$actions.Children.Add($reset)|Out-Null
+    $access=[System.Windows.Controls.Button]::new();$access.Width=72;$access.Height=38;$access.Padding=[System.Windows.Thickness]::new(0);$access.Margin=[System.Windows.Thickness]::new(0,0,8,0);$access.ToolTip='Temporären Nur-Lesezugriff für alle aktuell verbundenen Places umschalten';$access.Tag=$row
+    $switch=[System.Windows.Controls.Grid]::new();$track=[System.Windows.Controls.Border]::new();$track.Width=52;$track.Height=25;$track.CornerRadius=[System.Windows.CornerRadius]::new(13);$track.BorderThickness=[System.Windows.Thickness]::new(1);$thumb=[System.Windows.Shapes.Ellipse]::new();$thumb.Width=19;$thumb.Height=19;$thumb.Fill=Get-Brush '#F8FAFC';$thumb.VerticalAlignment='Center';$state=[System.Windows.Controls.TextBlock]::new();$state.FontSize=8.5;$state.FontWeight='Bold';$state.HorizontalAlignment='Center';$state.VerticalAlignment='Center';$state.IsHitTestVisible=$false
+    $switch.Children.Add($track)|Out-Null;$switch.Children.Add($thumb)|Out-Null;$switch.Children.Add($state)|Out-Null;$access.Content=$switch
+    $row.AllAccessButton=$access;$row.AllAccessTrack=$track;$row.AllAccessThumb=$thumb;$row.AllAccessState=$state
+    $access.Add_Click({param($sender,$e) $target=$sender.Tag;$newMode=if($target.Mode -eq 'readonly'){'readwrite'}else{'readonly'};Set-SessionMode '__arena_all_places__' $newMode;$target.ModeUntil=[DateTime]::UtcNow.AddSeconds(3);Set-RowMode $target $newMode})
+    [System.Windows.Controls.Grid]::SetColumn($access,3);$actions.Children.Add($access)|Out-Null
+    # Paint the direct switch immediately; no wait for the next UI refresh.
+    Set-RowMode $row 'readwrite' -Silent
+    Update-AllPlacesIcon $row $Studios
+    # The aggregate mosaic is not a single game icon and must never be
+    # overwritten by the unpublished-Studio fallback loader.
+    $row.IconKey = '__all_places_mosaic__'
+    return $row
+}
+
+function Update-AllPlacesRow {
+    param($Row, $Studios)
+    Set-Text $Row.Title 'Alle Places'
+    $Row.Copy.IsEnabled = -not [string]::IsNullOrWhiteSpace($script:TunnelUrl)
+    Update-AllPlacesIcon $Row $Studios
+    # Checked only when every currently connected Place is temporarily readonly.
+    $allReadOnly = ($Studios.Count -gt 0)
+    foreach ($studio in $Studios) { if ([string]$studio.accessMode -ne 'readonly') { $allReadOnly = $false; break } }
+    if ($Row.Mode -ne $(if($allReadOnly){'readonly'}else{'readwrite'})) { Set-RowMode $Row $(if($allReadOnly){'readonly'}else{'readwrite'}) -Silent }
 }
 
 function Update-Row {
@@ -14186,6 +14856,8 @@ function Update-Row {
     if ($Studio.versionMismatch -eq $true) { $placeTitle += '  -  Studio neu starten (Plugin veraltet)' }
     Set-Text $Row.Title $placeTitle
     $Row.Copy.IsEnabled = -not [string]::IsNullOrWhiteSpace($script:TunnelUrl)
+    $currentIconKey = Get-PlaceIconKey $Studio
+    if ($Row.IconKey -ne $currentIconKey) { Start-PlaceIconLoad $Studio $Row }
 
     $mode = if ([string]$Studio.accessMode -eq 'readonly') { 'readonly' } else { 'readwrite' }
     # Kurz nach einem Klick hat der lokale Wert Vorrang (verhindert Flackern)
@@ -14535,6 +15207,7 @@ function Refresh-Ui {
         }
     }
 
+    Update-PlaceIconLoads
     Sync-PlaceList @(Get-ActiveStudios)
 }
 
@@ -14551,6 +15224,17 @@ function Sync-PlaceList {
     }
 
     $desired = New-Object System.Collections.Generic.List[string]
+    if ($Studios.Count -ge 2) {
+        $allSid = '__arena_all_places__'
+        $desired.Add($allSid)
+        if ($null -eq $script:AllPlacesRow) {
+            try { $script:AllPlacesRow = New-AllPlacesRow $Studios $windowNames; $script:UiRows[$allSid] = $script:AllPlacesRow } catch { Write-RuntimeLog "Alle-Places-Zeile konnte nicht erstellt werden: $($_.Exception.Message)" }
+        } else { try { Update-AllPlacesRow $script:AllPlacesRow $Studios } catch {} }
+    } elseif ($script:AllPlacesRow) {
+        try { $script:AllPlacesRow.Popup.IsOpen = $false } catch {}
+        $script:UiRows.Remove('__arena_all_places__')
+        $script:AllPlacesRow = $null
+    }
     foreach ($studio in $Studios) {
         $sid = [string]$studio.sessionId
         if ([string]::IsNullOrWhiteSpace($sid)) { continue }
@@ -14603,7 +15287,7 @@ function Sync-PlaceList {
         }
     }
 
-    $count = $desired.Count
+    $count = $Studios.Count
     Set-Text $PlacesCountText ([string]$count)
     if ($count -eq 0) {
         $EmptyState.Visibility = 'Visible'
@@ -14680,7 +15364,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '4.0.5'
+    $versionText = '5.0.0'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -15001,7 +15685,7 @@ function Open-SettingsWindow {
                     <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                     <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                    <TextBlock Text="Arena Roblox Bridge - Version 4.0.5" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                    <TextBlock Text="Arena Roblox Bridge - Version 5.0.0" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                 </StackPanel>
             </ScrollViewer>
@@ -15033,7 +15717,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 4.0.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 5.0.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     if ($script:LastArenaMessage) {
@@ -15088,7 +15772,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 4.0.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 5.0.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -15101,7 +15785,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '4.0.5'
+    $verText = '5.0.0'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

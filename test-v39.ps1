@@ -1,10 +1,10 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge 4.0.4 - Logik-Tests (Mock, ohne Studio / ohne UI)
+# Arena Roblox Bridge 5.0.0 - Logik-Tests (Mock, ohne Studio / ohne UI)
 # ----------------------------------------------------------------------------
 # Ausfuehren auf dem PC (Windows PowerShell 5.1):
 #   powershell.exe -NoProfile -ExecutionPolicy Bypass -File test-v39.ps1
 #
-# Die Tests pruefen die aktuelle 4.0.4-Logik OHNE Roblox Studio:
+# Die Tests pruefen die aktuelle 5.0.0-Logik OHNE Roblox Studio:
 #   1. Syntax der kompletten ArenaBridge.ps1 (echter PowerShell-Parser)
 #   2. UTF-8-BOM
 #   3. Einstellungen: laden/speichern (settings.json Round-Trip)
@@ -16,8 +16,8 @@
 #   5. Selbst-Test-Sperre (New-SelfTestBlockedResult)
 #   6. report_done: aus/ohne Nachricht/erfolgreich (Mock-Warteschlange)
 #   7. XAML der drei Fenster ist wohlgeformtes XML
-#   8. Versions-Konsistenz (4.0.4 ueberall)
-#   9. GET-API, Kopier-Bestaetigung und Autostart-Selbst-Update (4.0.4)
+#   8. Versions-Konsistenz (5.0.0 ueberall)
+#   9. GET-API, Kopier-Bestaetigung und Autostart-Selbst-Update (Version 5)
 # ============================================================================
 
 $ErrorActionPreference = 'Stop'
@@ -38,7 +38,7 @@ function Assert([bool]$Condition, [string]$Name, [string]$Detail) {
     if ($Condition) { Pass $Name } else { Fail $Name $Detail }
 }
 
-Write-Host '=== Arena Bridge 4.0.4 Logik-Tests ===' -ForegroundColor Cyan
+Write-Host '=== Arena Bridge 5.0.0 Logik-Tests ===' -ForegroundColor Cyan
 
 # ----------------------------------------------------------------------------
 # 1) Syntax der kompletten Datei mit dem echten Parser pruefen
@@ -75,14 +75,15 @@ if ($i0 -ge 0 -and $i1 -gt $i0) {
         # Round-Trip: Werte aendern, speichern, neu laden
         $script:SettingsCache.selfTestAllowed = $false
         $script:SettingsCache.notifyOnDone = $true
-        $script:SettingsCache.accessModes['123456'] = 'readonly'
         Save-BridgeSettingsFile
         Assert (Test-Path (Join-Path $tempDir 'settings.json')) 'settings.json wurde geschrieben'
+        $savedSettings = Get-Content (Join-Path $tempDir 'settings.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        Assert (-not ($savedSettings.PSObject.Properties.Name -contains 'accessModes')) 'Lesezugriff wird nicht gespeichert'
         $script:SettingsFile = Join-Path $tempDir 'settings.json'
         $reloaded = Get-BridgeSettingsFile
         Assert ($reloaded.selfTestAllowed -eq $false) 'selfTestAllowed=false ueberlebt Neustart'
         Assert ($reloaded.notifyOnDone -eq $true) 'notifyOnDone=true ueberlebt Neustart'
-        Assert ($reloaded.accessModes['123456'] -eq 'readonly') 'Zugriffsart je Place ueberlebt Neustart'
+        Assert (-not ($reloaded.PSObject.Properties.Name -contains 'accessModes')) 'Neu geladene Einstellungen enthalten keinen Lesezugriff'
         # Defaults bei leerer Datei
         Remove-Item (Join-Path $tempDir 'settings.json') -Force
         $defaults = Get-BridgeSettingsFile
@@ -96,7 +97,7 @@ if ($i0 -ge 0 -and $i1 -gt $i0) {
 # 4) Play-Verfolgung: Update-PlayStateTracking (extrahiert + gemockt)
 # ----------------------------------------------------------------------------
 Write-Host '`n4) Play-Test-Verfolgung (wer hat gestartet?)' -ForegroundColor Yellow
-$h0 = $text.IndexOf('function Get-SavedAccessMode')
+$h0 = $text.IndexOf('function Test-AiPlayActive')
 $h1 = $text.IndexOf('LAUFENDE BEFEHLE')
 Assert ($h0 -ge 0 -and $h1 -gt $h0) 'Server-Helfer im Skript gefunden' 'Marker fehlen'
 if ($h0 -ge 0 -and $h1 -gt $h0) {
@@ -109,7 +110,7 @@ if ($h0 -ge 0 -and $h1 -gt $h0) {
         LastPlayEvents = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
         RunOwners      = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
         UserActiveAt   = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
-        BridgeSettings = [hashtable]::Synchronized(@{ selfTestAllowed = $true; notifyOnDone = $false; accessModes = [hashtable]::Synchronized(@{}) })
+        BridgeSettings = [hashtable]::Synchronized(@{ selfTestAllowed = $true; notifyOnDone = $false })
     }
     Invoke-Expression $helperBlock
 
@@ -202,7 +203,7 @@ if ($r0 -ge 0 -and $r1 -gt $r0) {
     $caseBody = $caseBody.Substring(0, $caseBody.LastIndexOf('}'))
     function To-Json { param($Value, [int]$Depth) return ($Value | ConvertTo-Json -Depth $Depth -Compress) }
     $Shared = @{
-        BridgeSettings = [hashtable]::Synchronized(@{ selfTestAllowed = $true; notifyOnDone = $false; accessModes = [hashtable]::Synchronized(@{}) })
+        BridgeSettings = [hashtable]::Synchronized(@{ selfTestAllowed = $true; notifyOnDone = $false })
         NotifyQueue    = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
     }
     $sessionId = 'sess-done'
@@ -248,29 +249,29 @@ Assert ($null -ne $settingsXaml -and $settingsXaml.Groups[1].Value -like '*Arena
 # ----------------------------------------------------------------------------
 # 8) Versions-Konsistenz
 # ----------------------------------------------------------------------------
-Write-Host '`n8) Version 4.0.4 ueberall' -ForegroundColor Yellow
-Assert ($text.Contains("# Arena Roblox Bridge  -  Version 4.0.4")) 'Changelog-Kopf'
-Assert ($text.Contains("DocsVersion     = '4.0.4'")) 'DocsVersion'
-Assert ($text.Contains('local ARENA_VERSION  = "4.0.4"')) 'ARENA_VERSION (Plugin)'
-Assert ($text.Contains('Arena Studio Bridge - Studio Plugin  (Version 4.0.4)')) 'Plugin-Kommentar'
-Assert ($text.Contains("version = '4.0.4'")) 'Manifest-Version'
-Assert ($text.Contains("serverVersion = '4.0.4'")) 'serverVersion'
-Assert ($text.Contains('$versionText = ' + "'4.0.4'")) 'Show-UpdateNotice-Fallback'
-Assert ($text.Contains('Text="Arena Roblox Bridge - Version 4.0.4"')) 'Einstellungs-Fusszeile'
+Write-Host '`n8) Version 5.0.0 ueberall' -ForegroundColor Yellow
+Assert ($text.Contains("# Arena Roblox Bridge  -  Version 5.0.0")) 'Changelog-Kopf'
+Assert ($text.Contains("DocsVersion     = '5.0.0'")) 'DocsVersion'
+Assert ($text.Contains('local ARENA_VERSION  = "5.0.0"')) 'ARENA_VERSION (Plugin)'
+Assert ($text.Contains('Arena Studio Bridge - Studio Plugin  (Version 5.0.0)')) 'Plugin-Kommentar'
+Assert ($text.Contains("version = '5.0.0'")) 'Manifest-Version'
+Assert ($text.Contains("serverVersion = '5.0.0'")) 'serverVersion'
+Assert ($text.Contains('$versionText = ' + "'5.0.0'")) 'Show-UpdateNotice-Fallback'
+Assert ($text.Contains('Text="Arena Roblox Bridge - Version 5.0.0"')) 'Einstellungs-Fusszeile'
 $bridgeVersions = [regex]::Matches($text, "bridgeVersion = '(\d+\.\d+\.\d+)'")
-Assert ($bridgeVersions.Count -eq 3 -and @($bridgeVersions | Where-Object { $_.Groups[1].Value -ne '4.0.4' }).Count -eq 0) 'bridgeVersion (3x)'
+Assert ($bridgeVersions.Count -eq 3 -and @($bridgeVersions | Where-Object { $_.Groups[1].Value -ne '5.0.0' }).Count -eq 0) 'bridgeVersion (3x)'
 $versionJson = Get-Content (Join-Path $root 'version.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-Assert ($versionJson.version -eq '4.0.4') 'version.json'
+Assert ($versionJson.version -eq '5.0.0') 'version.json'
 Assert ($versionJson.notes.Length -gt 50) 'version.json hat Neuigkeiten-Text'
 
 # ----------------------------------------------------------------------------
-# 9) Neue 4.0.4-Features
+# 9) API-, Kopier- und Update-Regressionen
 # ----------------------------------------------------------------------------
 Write-Host '`n9) GET-API, Kopier-Bestaetigung, Autostart-Update' -ForegroundColor Yellow
 
 # --- GET-API --------------------------------------------------------------
-Assert ($text.Contains('GET-Vollsteuerung (Version 4.0.4)')) 'GET-Koerperaufbau im Router vorhanden'
-$getBlockStart = $text.IndexOf('GET-Vollsteuerung (Version 4.0.4)')
+Assert ($text.Contains('GET-Vollsteuerung')) 'GET-Koerperaufbau im Router vorhanden'
+$getBlockStart = $text.IndexOf('GET-Vollsteuerung')
 $tokenCheck    = $text.IndexOf('$token = Get-Token $context.Request $body')
 Assert ($getBlockStart -gt 0 -and $tokenCheck -gt $getBlockStart) 'GET-Koerper wird VOR der Token-Pruefung gebaut (gleicher Codepfad)'
 foreach ($field in @('tool', 'uploadId', 'chunkIndex', 'chunkCount', 'timeoutSeconds')) {
@@ -283,6 +284,10 @@ Assert ($text.Contains('callManyGet')) 'Manifest listet GET /api/tools/parallel'
 Assert ($text.Contains('uploadGet')) 'Manifest listet GET /api/upload'
 Assert ($text.Contains('getOnlyNote')) 'Manifest erklaert die GET-Vollsteuerung'
 Assert ($text.Contains('GET WORKS FOR EVERYTHING')) 'Sitzungsstart-Regeln erklaeren die GET-Nutzung'
+Assert ($text.Contains('MultiPlaceToken')) 'Alle-Places-Token ist im gemeinsamen Zustand'
+Assert ($text.Contains('MULTI_PLACE_SELECTION_REQUIRED')) 'Aggregate-Zugriff fordert eine explizite Place-Auswahl'
+Assert ($text.Contains('Open-ArenaHistoryWindow')) 'Arena-Verlauf ist vorhanden'
+Assert ($text.Contains('Start-PlaceIconLoad')) 'Place-Icon-Lader ist vorhanden'
 
 # --- Kopier-Bestaetigung ---------------------------------------------------
 Assert ($text.Contains('x:Name="CopyConfirm"')) 'Kopier-Hinweis ist im Haupt-XAML'
