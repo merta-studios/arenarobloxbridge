@@ -1,7 +1,7 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 3.9.8  -  22.09.2026)                                #
+#   (Stand: Version 5.0.0  -  24.09.2026)                                #
 #                                                                      #
 ##########################################################################
 
@@ -187,6 +187,7 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v5.0.0: Mega-Update: frische Session-Schlüssel werden vor jedem Play registriert (Stop/Move blockieren nicht mehr durch einen alten Schlüssel), Humanoid-Bewegung wird über die volle Dauer gehalten und der EndTest-Stop wartet robuster. Ab zwei Places erscheint "Alle Places" mit stabilem Token pro Programmstart, explizitem GET /api/places -> targetPlace-Wechsel für Arena, Icon-Mosaik und temporärem globalem Lesezugriff. Place-Icons laden mit Animation/Fallback; temporärer Lesezugriff wird nie gespeichert. Neuer scrollbarer, farbcodierter Arena-Verlauf je Place/gesamt.
 - v3.3: Basis-Release (bestaetigt: "danke alles klappt")
 - v3.4: Feature-Release
 - v3.5: Port-/Splash-Bugfixes (Geisterprozesse, Free-Port-Diagnose,

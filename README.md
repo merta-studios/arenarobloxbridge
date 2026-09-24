@@ -20,8 +20,8 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test_v398_structure.py` | Python-Strukturtest für 4.0.5 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
-| `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 4.0.5 (optional; wird NICHT vom Starter geladen) |
+| `test_v398_structure.py` | Python-Strukturtest für 5.0.0 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.0.0 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
 
@@ -35,6 +35,14 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 5.0.0
+- **Playtest-Steuerung erneut gehärtet.** Vor jedem Test registriert das Edit-Plugin den frischen, kurzlebigen Sitzungsschlüssel bei der Bridge. Ein Schlüssel aus einem älteren Playtest kann `move_character` oder `play_stop` damit nicht mehr mit einer 403-Antwort blockieren.
+- **Bewegung und Stop funktionieren über die komplette Sitzung.** Die Session-Reporter senden `Humanoid:Move` über jeden Heartbeat während der gewünschten Dauer statt nur für einen Frame. `play_stop` wartet länger auf `StudioTestService:EndTest` und legt einen erneuten Reporter-Versuch ein, bevor der sichere Edit-Fallback greift.
+- **„Alle Places“ ab zwei Verbindungen.** Der Sammel-Prompt besitzt einen pro Programmstart stabilen Token; Place-Zugänge kommen und gehen, ohne ihn zu ändern. Arena ruft `GET /api/places` auf und gibt anschließend für jeden Tool-Aufruf einen eindeutigen `targetPlace` an. Ohne Auswahl verweigert die Bridge die Aktion bewusst, statt ein falsches Spiel zu verändern.
+- **Place-Icons und Verlauf.** Die Liste lädt abgerundete Roblox-Game-Icons mit einer Halbkreis-Ladeanimation und einem Roblox-Studio-Fallback für unveröffentlichte Places. Im neuen Verlauf sieht man laufende Aktionen blau, fertige Abfragen grau, Änderungen grün, Konsolenläufe gelb und Fehler mit Warnung rot. Der Verlauf ist pro Place oder gesammelt einsehbar und temporär.
+- **Temporärer Lesezugriff.** „Nur Lesezugriff“ ist jetzt ein echter An/Aus-Schalter im Optionsmenü. Die Einstellung wird nicht gespeichert; jede Place-Registrierung beginnt wieder mit Lese- und Schreibzugriff.
+- Nach dem Update Roblox Studio einmal neu starten, damit das Plugin **5.0.0** geladen wird.
 
 ## 4.0.5
 - **Playtest-Stop repariert (echte Ursache, live gemessen).** Ein gestarteter

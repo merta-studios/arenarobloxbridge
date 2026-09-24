@@ -1,10 +1,11 @@
 {
-  "version": "4.0.5",
+  "version": "5.0.0",
   "notes": [
-    "• Version 4.0.5: Playtest-Stop repariert. Der Test liess sich nicht mehr automatisch beenden (play_stop und move_character meldeten REPORTER_NOT_CONNECTED, obwohl der Spieler im Test sichtbar war).",
-    "• Ursache lag im Bridge-Server: Ab dem zweiten Heartbeat scheiterte die Zustands-Uebernahme des Session-Reporters intern. Dadurch enthielt die Antwort nie die Befehlsliste - der Reporter hat Stop-Befehle schlicht nie erhalten.",
-    "• Der Steuerkanal ist jetzt gegen solche Fehler abgesichert: Befehle werden immer zugestellt, auch wenn die Statistik einmal klemmt.",
-    "• play_stop hat zusaetzlich eine letzte Stufe: Der Stop-Befehl wird in die Warteschlange gelegt und vom Reporter selbst abgeholt. 'Bitte Shift+F5 druecken' ist damit wieder der seltene Ausnahmefall.",
-    "• Wichtig: Nach dem Update Roblox Studio einmal neu starten, damit das Plugin 4.0.5 geladen wird."
+    "• Version 5.0.0: Move Character und Playtest stoppen wurden grundlegend robuster. Jeder neue Test registriert seinen frischen Session-Schlüssel vor dem Start; alte Schlüssel können den Bewegungs- oder Stop-Befehl nicht mehr blockieren.",
+    "• Die Session-Reporter halten die Bewegung jetzt über die gesamte gewünschte Dauer aktiv. play_stop wartet auf den bestätigten Rückweg in den Edit-Modus und versucht den Session-Stop-Kanal nochmals, bevor ein Fallback nötig wird.",
+    "• Bei mindestens zwei verbundenen Places erscheint „Alle Places“. Der gemeinsame Token bleibt bis zum Programm-/PC-Neustart unverändert und wird nur über „Token zurücksetzen“ manuell erneuert. Arena kann über GET /api/places gezielt zwischen den Places wechseln.",
+    "• Jeder Place zeigt jetzt ein großes abgerundetes Game-Icon mit Ladeanimation und Roblox-Studio-Fallback. Außerdem gibt es pro Place sowie für alle Places einen farbcodierten, scrollbaren Arena-Verlauf.",
+    "• Der Schalter „Nur Lesezugriff“ ist jetzt ein temporärer An/Aus-Schalter. Er wird nicht gespeichert und startet bei jeder neuen Place-Registrierung wieder aus.",
+    "• Wichtig: Nach dem Update Roblox Studio einmal neu starten, damit das Plugin 5.0.0 geladen wird."
   ]
 }
