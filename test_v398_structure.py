@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 5.0.2.
+"""Offline structure check for Arena Roblox Bridge 5.2.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "5.0.2"
+VERSION = "5.2"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -93,7 +93,7 @@ def main() -> int:
     require(raw.startswith(b"\xef\xbb\xbf"), "ArenaBridge.ps1 must retain its UTF-8 BOM")
     source = raw.decode("utf-8-sig")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    require(version["version"] == VERSION, "version.json is not 5.0.2")
+    require(version["version"] == VERSION, "version.json is not 5.2")
     require("3.9.5" not in source, "stale 3.9.5 literal remains in ArenaBridge.ps1")
 
     # Stale FUNCTIONAL version literals (history comments may mention 3.9.8).
@@ -192,7 +192,8 @@ def main() -> int:
     for marker in stale_501_literals:
         require(marker not in source, f"stale 5.0.1 literal remains: {marker}")
 
-    required_markers = [
+    # Stale FUNCTIONAL 5.0.2 literals (history comments may mention 5.0.2).
+    stale_502_literals = [
         "DocsVersion     = '5.0.2'",
         'local ARENA_VERSION  = "5.0.2"',
         "bridgeVersion = '5.0.2'",
@@ -200,7 +201,22 @@ def main() -> int:
         "version = '5.0.2'",
         "$versionText = '5.0.2'",
         "$verText = '5.0.2'",
+        'Arena Studio Bridge - Studio Plugin  (Version 5.0.2)',
         'Text="Arena Roblox Bridge - Version 5.0.2"',
+        "# Arena Roblox Bridge  -  Version 5.0.2",
+    ]
+    for marker in stale_502_literals:
+        require(marker not in source, f"stale 5.0.2 literal remains: {marker}")
+
+    required_markers = [
+        "DocsVersion     = '5.2'",
+        'local ARENA_VERSION  = "5.2"',
+        "bridgeVersion = '5.2'",
+        "serverVersion = '5.2'",
+        "version = '5.2'",
+        "$versionText = '5.2'",
+        "$verText = '5.2'",
+        'Text="Arena Roblox Bridge - Version 5.2"',
         # 4.0.0: the config table that keeps the top-level local count in check.
         "local ARENA_CFG = {",
         "ARENA_CFG.POLL_WAIT",
@@ -292,9 +308,44 @@ def main() -> int:
         "Place-Zeile: Icon-Visual konnte nicht erstellt werden",
         "Place-Zeile: Auswahlmenue/Popup konnte nicht erstellt werden",
         "Arena-Verlaufsfenster konnte nicht geoeffnet werden",
+        # Version 5.2 user-wish update: lean aggregate row, repaired game
+        # icons (dead fallback URL replaced, PNG-verified, retried, locally
+        # drawn last resort), styled+draggable history window with real
+        # numbers instead of [PLATZHALTER], no last-message settings card,
+        # short all-places prompt, and a much quicker ghost-free place list.
+        "$script:PlaceVisibleSeconds = 15",
+        "$script:PlaceOrphanGraceSeconds = 4",
+        "$script:PlaceCleanupSeconds = 120",
+        "function Remove-DeadSession",
+        "Remove-DeadSession $sessionId",
+        "function Test-PngFile",
+        "function New-LocalFallbackIcon",
+        "upload.wikimedia.org/wikipedia/commons/4/44/RobloxStudioLogo2025.png",
+        "$script:PlaceIconFails = @{}",
+        "$script:AllPlacesMosaicSignature = $null",
+        "function New-HistoryButton",
+        "$head.Add_MouseLeftButtonDown($dragHandler)",
+        "$shell.Add_MouseLeftButtonDown($dragHandler)",
+        "function Get-ActivityToolSets",
+        "previousLines = select(2, string.gsub(oldSource",
+        "function Get-ResultNumber",
     ]
     for marker in required_markers:
         require(marker in source, f"required marker missing: {marker}")
+
+    # Version 5.2 negative guards: the wish items must really be gone.
+    require("AllAccessButton" not in source,
+            "aggregate row still carries its direct read-only switch")
+    require("LastArenaMessage" not in source,
+            "last Arena message still lives in the settings window")
+    require("TOKEN=$script:AllPlacesToken`r`nMODE=ALLE_PLACES" not in source,
+            "all-places prompt still carries the MODE/HINWEIS lines")
+    require("+[PLATZHALTER]" not in source,
+            "a [PLATZHALTER] text survived in the activity log texts")
+    require("'[Platzhalter]'" not in source,
+            "a [Platzhalter] fallback survived in the activity helpers")
+    require("static.wikia.nocookie.net/roblox/images/e/e1" not in source,
+            "the dead wikia studio-logo URL is still in the icon worker")
 
     # A no-HTTP fallback must not return an instructions-to-enable-HTTP error.
     start_chunk = source[source.index("local function startPlay"):source.index("local function stopPlay")]
@@ -371,7 +422,7 @@ def main() -> int:
         except ET.ParseError as exc:
             raise AssertionError(f"XAML block {index} is not XML: {exc}") from exc
 
-    print("OK: 5.0.2 structure, Lua and XAML validation passed")
+    print("OK: 5.2 structure, Lua and XAML validation passed")
     return 0
 
 

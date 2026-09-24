@@ -20,8 +20,8 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test_v398_structure.py` | Python-Strukturtest für 5.0.2 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
-| `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.0.2 (optional; wird NICHT vom Starter geladen) |
+| `test_v398_structure.py` | Python-Strukturtest für 5.2 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
 
@@ -35,6 +35,15 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 5.2
+- **„Alle Places“ aufgeräumt.** Die Zeile zeigt jetzt wie alle anderen nur noch „Prompt kopieren“ und „…“. „Token zurücksetzen“ und der Sammelschalter „Nur Lesezugriff“ (wirkt auf alle verbundenen Places) bleiben im „…“-Menü erreichbar.
+- **Spiel-Icons repariert.** Die bisherige Adresse des Studio-Ersatzbildes war tot (HTTP-Fehler), Fehlversuche wurden nie wiederholt, und als „Icon“ gecachte Fehlerseiten vergifteten den Cache dauerhaft – deshalb blieben die Rahmen leer. Jetzt: PNG-Signaturprüfung für jeden Download, kaputte Cache-Reste werden verworfen, Fehlversuche wiederholen sich mit ansteigender Pause (45 s …), nach dem dritten Versuch wird ein Ersatz-Icon lokal gezeichnet, und jeder Ladevorgang samt Fehlergrund steht in `runtime.log`. Das „Alle Places“-Mosaik wird nur noch bei echten Änderungen neu gebaut.
+- **Arena-Verlauf überarbeitet.** Löschen- und Schließen-Knopf tragen das normale Titelleisten-Design (vorher ungestyltes Windows-Grau). Das Fenster lässt sich an Titelzeile und Hintergrund frei über den Bildschirm schieben; der Verlauf wird währenddessen nicht mehr neu aufgebaut und bei unverändertem Inhalt gar nicht mehr neu gerendert. Jede Aktionskarte ist deutlich flacher. Alle „[PLATZHALTER]“-Stellen zeigen jetzt echte Werte aus den Werkzeug-Ergebnissen (Zeilenzahlen, Kopien, Objekte), und jedes einzelne Werkzeug hat einen eigenen verständlichen deutschen Text. Dazu liefert das Plugin bei `set_script_source` jetzt auch `previousLines` mit.
+- **Einstellungen schlanker.** Der Abschnitt „Letzte Arena-Meldung“ ist entfernt; die Fertig-Benachrichtigung (wenn eingeschaltet) bleibt unverändert.
+- **„Alle Places“-Prompt kürzer.** Die Zeilen `MODE=ALLE_PLACES` und `HINWEIS=…` sind entfernt – die Mehr-Place-Anleitung bekommt Arena automatisch von der Bridge: Die erste Anfrage mit dem Sammel-Token beantwortet der Server direkt mit Place-Liste und Anleitung (`MULTI_PLACE_SELECTION_REQUIRED`).
+- **Place-Liste räumt schneller auf – ohne Geister.** Geschlossene Places verschwinden nach ca. 15 statt 25 Sekunden (sauber abgemeldete nach ca. 4). „Geister-Places“, die unendlich hängen blieben, sind ausgeschlossen: Die Sichtbarkeit hängt nur noch am Presence-Lebenszeichen des Edit-Plugins (vorher reichte ein verklemmter Session-Reporter, der `lastSeen` weiterfütterte). Nach 120 Sekunden ohne Lebenszeichen wird eine Sitzung samt Token und allem Nebenzustand restlos entfernt (vorher 600 s).
+- Nach dem Update Roblox Studio einmal neu starten, damit das Plugin **5.2** geladen wird.
 
 ## 5.0.2
 - **Diagnose statt Rätselraten: Die Place-Liste wird hart überwacht.** Der Bug aus 5.0.0/5.0.1 (Anzahl oben stimmte, darunter blieb die Liste leer) wird nicht mehr geraten, sondern gemessen: Jeder catch-Block der Place-Liste schreibt jetzt Exception-Typ, Meldung, Skriptzeile und Stacktrace in `runtime.log` – vorher stand dort nur die nackte Meldung, die Ursache war damit praktisch verschluckt.
