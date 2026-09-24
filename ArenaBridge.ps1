@@ -1,5 +1,52 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 5.0.2
+# Arena Roblox Bridge  -  Version 5.2
+#
+# BENUTZER-WUNSCH-UPDATE VERSION 5.2 (Feinschliff nach der 5.0-Serie):
+#   * ALLE-PLACES-ZEILE AUFGERAEUMT: Der Sammelzugang zeigt jetzt wie jede
+#     andere Zeile nur noch "Prompt kopieren" und "...". "Token zuruecksetzen"
+#     und "Nur Lesezugriff (wirkt auf alle verbundenen Places)" bleiben im
+#     "...-Menue vorhanden - die Zeile ist wieder schlank und einheitlich.
+#   * SPIEL-ICONS REPARIERT (blieben seit 5.0.0 aus): Der Ersatz fuer
+#     unveroeffentlichte Places (Roblox-Studio-Bild) kam von einer inzwischen
+#     TOTEN Adresse (static.wikia.nocookie.net liefert nur noch HTTP-Fehler)
+#     - und Fehlversuche wurden NIE wiederholt: Ein einziger misslungener
+#     Versuch je Zeile liess den Rahmen fuer immer grau. Lag einmal eine
+#     Fehlerseite (HTML statt Bild) als "Icon" im Cache, blieb sie dauerhaft
+#     liegen. Jetzt: Ersatz-Adresse funktionsfaehig (upload.wikimedia.org),
+#     jeder Download wird als PNG gepruft (keine HTML-Seiten mehr), kaputte
+#     Cache-Reste werden verworfen, Fehlschlaege werden gezaehlt und mit
+#     wachsender Verzoegerung automatisch wiederholt, und nach dem 3. Versuch
+#     wird ein Ersatz-Icon lokal gezeichnet - ein leerer Rahmen ist damit
+#     ausgeschlossen. Jeder Ladevorgang steht mit Grund in runtime.log. Das
+#     "Alle Places"-Mosaik wird nur noch bei echten Aenderungen neu gebaut
+#     (vorher: komplett bei jedem UI-Tick).
+
+#   * ARENA-VERLAUF UEBERARBEITET: Der Löschen- und der Schliessen-Knopf
+#     tragen jetzt das normale Titelleisten-Design des Programms (dunkel,
+#     abgerundet, Hover-Farbe wie "..." und "X" im Hauptfenster) statt
+#     Windows-Standardgrau. Das Fenster laesst sich an der Titelzeile UND
+#     am Hintergrund frei ueber den Bildschirm schieben (der Verlauf wird
+#     waehrend des Schiebens nicht mehr alle 650 ms umgebaut). Jede Aktion
+#     ist deutlich flacher. Und: alle "[PLATZHALTER]"-Stellen zeigen jetzt
+#     echte Werte (Zeilen-/Stueck-/Kopienzahlen aus den echten Tool-
+#     Ergebnissen); ZUSAETZLICH hat jetzt jedes einzelne Werkzeug einen
+#     eigenen verstaendlichen deutschen Text.
+#   * EINSTELLUNGEN: Der Block "LETZTE ARENA-MELDUNG" ist entfernt. Die
+#     Fertig-Benachrichtigung (report_done, wenn aktiviert) bleibt wie sie
+#     ist - nur die Dauer-Anzeige in den Einstellungen fliegt raus.
+#   * ALLE-PLACES-PROMPT VEREINFACHT: Die Zeilen "MODE=ALLE_PLACES" und
+#     "HINWEIS=..." sind entfernt. Diese Information bekommt Arena jetzt
+#     automatisch von der Bridge: Solange noch kein Ziel gewaehlt ist,
+#     antwortet der Server auf jede erste Anfrage mit der aktuellen
+#     places-Liste und der Anleitung (MULTI_PLACE_SELECTION_REQUIRED).
+#   * PLACE-LISTE RAEUMT SCHNELLER AUF UND LAESST KEINE GEISTER MEHR:
+#     Geschlossene Places verschwinden nach ~15 s statt 25 s (sauber
+#     abgemeldete sogar nach 4 s). Geister-Places konnten vorher UNENDLICH
+#     sichtbar bleiben, weil ein verklemmter Session-Reporter (Agent-
+#     Heartbeat) nur lastSeen im Sitzungseintrag weiterfuetterte - die
+#     Sichtbarkeit haengt jetzt strikt am Presence-Lebenszeichen des
+#     Edit-Plugins. Nach 120 s ohne Lebenszeichen (vorher 600 s) werden
+#     Sitzung, Token und jeglicher Nebenzustand restlos aufgeraeumt.
 #
 # DIAGNOSE- UND SICHERHEITSNETZ-VERSION 5.0.2:
 #   * Die Place-Liste blieb auch nach dem 5.0.1-Hotfix leer (Anzahl oben
@@ -749,6 +796,18 @@ $script:PlaceNames = @{}
 # Version 5 UI state: Roblox game icons are downloaded outside the UI thread.
 $script:PlaceIconLoads = @{}
 $script:PlaceIconCache = @{}
+# Version 5.2: Fehlversuche pro Icon (Zaehler + Zeitpunkt des naechsten
+# Versuchs); Signatur des zuletzt gebauten Alle-Places-Mosaiks.
+$script:PlaceIconFails = @{}
+$script:AllPlacesMosaicSignature = $null
+# Version 5.2: Sichtbarkeit/Aufraeumen der Place-Liste. Das Edit-Plugin
+# heartbeatet etwa alle 5 Sekunden - 15 s decken 3 verlorene Beats locker ab.
+# Ein sauber abgemeldetes Fenster (Studio/Place geschlossen) verschwindet nach
+# 4 s Gnadenfrist (fuer Plugin-Neuladevorgaenge). Nach 120 s ohne Lebenszeichen
+# wird die Sitzung samt Token und Nebenzustand restlos entsorgt (vorher 600 s).
+$script:PlaceVisibleSeconds = 15
+$script:PlaceOrphanGraceSeconds = 4
+$script:PlaceCleanupSeconds = 120
 $script:AllPlacesRow = $null
 $script:IconFolder = Join-Path $script:AppDataRoot 'place-icons'
 try { New-Item -ItemType Directory -Path $script:IconFolder -Force | Out-Null } catch {}
@@ -1102,7 +1161,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '5.0.2'
+    DocsVersion     = '5.2'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -1188,7 +1247,9 @@ function New-Token {
 
 # Version 5: this aggregate token deliberately exists independently of the
 # visible "Alle Places" row. It changes only on process restart or when the
-# user explicitly presses "Token zurücksetzen" in that row.
+# user explicitly clicks "Token zurücksetzen" in the "..." menu of that row
+# (Version 5.2: the button lives in the menu; the row itself matches all
+# other rows now).
 $script:AllPlacesToken = New-Token
 $script:Shared.MultiPlaceToken = $script:AllPlacesToken
 
@@ -1259,7 +1320,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 5.0.2)
+  Arena Studio Bridge - Studio Plugin  (Version 5.2)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1330,7 +1391,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "5.0.2"
+local ARENA_VERSION  = "5.2"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -6405,6 +6466,7 @@ tools.set_script_source = function(args)
         path = pathOf(inst),
         bytes = #newSource,
         lines = select(2, string.gsub(newSource, "\n", "\n")) + 1,
+        previousLines = select(2, string.gsub(oldSource, "\n", "\n")) + 1,
         previousBytes = #oldSource,
         hash = hashString(newSource),
     }, warnings)
@@ -9576,7 +9638,14 @@ $script:BridgeHandlerScript = {
         foreach ($pair in $Shared.Sessions.GetEnumerator()) {
             try {
                 $entry = $pair.Value | ConvertFrom-Json
-                if ($entry -and ($now - [int64]$entry.lastSeen) -lt 90) {
+                # Version 5.2: gleich wie die Oberflaeche - Lebenszeichen aus
+                # Presence (Edit-Plugin), orphans sofort ausblenden, Limit 30 s.
+                $aliveAt = [int64]$entry.lastSeen
+                $presence = [int64]0
+                $presenceKnown = $false
+                if ($Shared.Presence.TryGetValue([string]$entry.sessionId, [ref]$presence)) { $presenceKnown = $true; $aliveAt = $presence }
+                if ($entry.orphan -eq $true -and -not $presenceKnown) { continue }
+                if ($entry -and ($now - $aliveAt) -lt 30) {
                     $places.Add(@{
                         targetPlace = [string]$entry.sessionId
                         placeName = [string]$entry.placeName
@@ -9598,7 +9667,7 @@ $script:BridgeHandlerScript = {
         try { if ([string]::IsNullOrWhiteSpace($wanted) -and $body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) { $wanted = [string]$body.args.targetPlace } } catch {}
         $places = Get-ActiveMultiPlaces
         if ([string]::IsNullOrWhiteSpace($wanted)) {
-            return @{ ok=$false; code='MULTI_PLACE_SELECTION_REQUIRED'; places=$places; error='This token can access multiple Places. First call GET /api/places, then send targetPlace (the listed targetPlace value) with every tool request.' }
+            return @{ ok=$false; code='MULTI_PLACE_SELECTION_REQUIRED'; places=$places; error='This is the Alle-Places token of the bridge and no Place was chosen yet - completely normal for a first request (nothing is broken). Call GET /api/places, pick one places[].targetPlace and repeat this request with "targetPlace" set - do this for every /api/tool request afterwards.' }
         }
         $matches = @($places | Where-Object {
             [string]$_.targetPlace -eq $wanted -or [string]$_.placeId -eq $wanted -or [string]$_.placeName -ieq $wanted
@@ -9621,7 +9690,7 @@ $script:BridgeHandlerScript = {
         return $bag
     }
 
-    function Get-ActivityArgument($args, [string[]]$names, [string]$fallback = '[Platzhalter]') {
+    function Get-ActivityArgument($args, [string[]]$names, [string]$fallback = '') {
         if ($null -eq $args) { return $fallback }
         foreach ($name in $names) {
             try {
@@ -9634,48 +9703,241 @@ $script:BridgeHandlerScript = {
 
     function Get-SourceLineCount($args) {
         $source = Get-ActivityArgument $args @('source','text') ''
-        if ([string]::IsNullOrEmpty($source)) { return '[Platzhalter]' }
+        if ([string]::IsNullOrEmpty($source)) { return '?' }
         return [string]([Math]::Max(1, (($source -split "`r?`n").Count)))
     }
 
+    function Get-ResultField($result, [string[]]$names) {
+        if ($null -eq $result) { return $null }
+        foreach ($name in $names) {
+            try {
+                if ($result -is [System.Collections.IDictionary]) { if ($result.Contains($name) -and $null -ne $result[$name]) { return $result[$name] } }
+                elseif ($result.PSObject.Properties[$name] -and $null -ne $result.$name) { return $result.$name }
+            } catch {}
+        }
+        return $null
+    }
+
+    function Get-ResultNumber($result, [string[]]$names) {
+        $value = Get-ResultField $result $names
+        if ($null -eq $value) { return $null }
+        try { return [int64]$value } catch { return $null }
+    }
+
+    # Version 5.2: vollstaendige Werkzeuglisten (jedes vorhandene Werkzeug).
+    function Get-ActivityToolSets {
+        $read = @('get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','play_status','session_diag','character_state','gui_dump','gui_check','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait')
+        $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','play_start','play_stop','play_pause','play_resume','set_context','move_character','teleport_character','respawn_character','gui_click','gui_set_text','send_input','client_action','set_camera','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute')
+        return @{ read = $read; write = $write }
+    }
+
+    # Version 5.2: Jede abgeschlossene Aktion bekommt einen verstaendlichen
+    # deutschen Satz mit den ECHTEN Werten aus dem Werkzeug-Ergebnis.
+    # Kein [PLATZHALTER] mehr - schlaegt etwas fehl, steht die Ursache im Satz.
     function Get-ArenaActivityText([string]$tool, $args, [string]$phase, $result) {
-        $ref = Get-ActivityArgument $args @('ref','rootRef','parentRef','targetRef','query')
-        $read = @('get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','select_instance','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','session_diag','play_status','get_output','get_errors','get_docs','get_events','get_notices','get_pending','get_chunk','find_in_script','get_script','coordinate_guide','describe_orientation','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','union_info','lua_state','job_status','job_result','list_jobs','search_assets','asset_details','validate_asset','catalog_status')
-        $writes = @('create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','set_script_source','patch_script','insert_script','bulk_insert_scripts','union','subtract','negate','intersect','separate','insert_asset','apply_asset','place_on','align','stack','grid_arrange','distribute','snap_to_ground','look_at','rotate_around','move_relative','resize_part','fit_between','point_at','fill_region','probe_world','undo','redo','play_start','play_stop','play_pause','play_resume','move_character','teleport_character','respawn_character','gui_click','gui_set_text','send_input','clear_output','clear_lua_state','cancel_job','start_job','set_camera')
+        $ref = Get-ActivityArgument $args @('ref','rootRef','parentRef','targetRef','query') 'ein Objekt'
+        $sets = Get-ActivityToolSets
+        $read = $sets.read
+        $writes = $sets.write
         if ($phase -eq 'running') {
             if ($tool -eq 'run_lua') { return 'Arena führt gerade Lua-Code in der Konsole aus.' }
+            if ($tool -eq 'patch_script') { return 'Arena bearbeitet gerade das Skript „' + $ref + '“.' }
+            if ($tool -eq 'set_script_source') { return 'Arena ersetzt gerade das Skript „' + $ref + '“.' }
+            if ($tool -eq 'insert_script' -or $tool -eq 'bulk_insert_scripts') { return 'Arena erstellt gerade ein Skript.' }
+            if ($tool -eq 'fill_region' -or $tool -eq 'probe_world') { return 'Arena arbeitet gerade an „' + $tool + '“ (kann etwas dauern).' }
             if ($read -contains $tool) { return 'Arena ruft gerade ' + $tool + ' ab.' }
             if ($writes -contains $tool) { return 'Arena führt gerade ' + $tool + ' aus.' }
             return 'Arena führt gerade „' + $tool + '“ aus.'
         }
-        if ($tool -eq 'get_place_info') { return 'Hat Informationen über den Place abgerufen.' }
-        if ($tool -eq 'get_tree') { return 'Hat den Explorer im Place abgerufen.' }
-        if ($tool -eq 'search') { return 'Hat nach „' + (Get-ActivityArgument $args @('query','className','tag')) + '“ im Explorer gesucht.' }
+        # ---- Aktionen mit echten Zahlen aus dem Ergebnis -------------------
+        if ($tool -eq 'patch_script') {
+            $oldLines = Get-ResultNumber $result @('oldLines')
+            $newLines = Get-ResultNumber $result @('newLines')
+            if ($null -ne $oldLines -and $null -ne $newLines) {
+                $delta = $newLines - $oldLines
+                $deltaText = if ($delta -gt 0) { '+' + [string]$delta } elseif ($delta -lt 0) { [string]$delta } else { '±0' }
+                $opCount = $null
+                try { $ops = Get-ResultField $result @('operations'); if ($ops) { $opCount = @($ops).Count } } catch {}
+                $suffix = if ($null -ne $opCount) { $opCount } else { 1 }
+                return 'Hat das Skript „' + $ref + '“ bearbeitet: ' + [string]$oldLines + ' → ' + [string]$newLines + ' Zeilen (' + $deltaText + ' in ' + [string]$suffix + ' Änderung(en)).'
+            }
+            return 'Hat das Skript „' + $ref + '“ bearbeitet.'
+        }
+        if ($tool -eq 'set_script_source') {
+            $newLines = Get-ResultNumber $result @('lines')
+            $oldLines = Get-ResultNumber $result @('previousLines')
+            if ($null -ne $newLines -and $null -ne $oldLines) { return 'Hat das Skript „' + $ref + '“ ersetzt: +' + [string]$newLines + ' Zeilen (vorher -' + [string]$oldLines + ' Zeilen).' }
+            if ($null -ne $newLines) { return 'Hat das Skript „' + $ref + '“ ersetzt (' + [string]$newLines + ' Zeilen).' }
+            return 'Hat das Skript „' + $ref + '“ ersetzt (' + (Get-SourceLineCount $args) + ' Zeilen).'
+        }
+        if ($tool -eq 'insert_script') {
+            $scriptName = Get-ActivityArgument $args @('name') 'Skript'
+            $lines = Get-ResultNumber $result @('lines')
+            if ($null -ne $lines) { return 'Hat das Skript „' + $scriptName + '“ erstellt (' + [string]$lines + ' Zeilen).' }
+            return 'Hat das Skript „' + $scriptName + '“ erstellt (' + (Get-SourceLineCount $args) + ' Zeilen).'
+        }
+        if ($tool -eq 'bulk_insert_scripts') {
+            $createdCount = Get-ResultNumber $result @('count')
+            $totalLines = 0
+            $hasLines = $false
+            try {
+                $createdList = Get-ResultField $result @('created')
+                if ($createdList) {
+                    foreach ($entry in @($createdList)) {
+                        $lineCount = Get-ResultNumber $entry @('lines')
+                        if ($null -ne $lineCount) { $totalLines += $lineCount; $hasLines = $true }
+                    }
+                }
+            } catch {}
+            if ($null -ne $createdCount) {
+                if ($hasLines) { return 'Hat ' + [string]$createdCount + ' Skripte erstellt (insgesamt ' + [string]$totalLines + ' Zeilen).' }
+                return 'Hat ' + [string]$createdCount + ' Skripte erstellt.'
+            }
+            return 'Hat mehrere Skripte erstellt.'
+        }
+        if ($tool -eq 'delete_instance') { return 'Hat „' + $ref + '“ gelöscht.' }
+        if ($tool -eq 'bulk_delete') {
+            $deletedCount = Get-ResultNumber $result @('count')
+            if ($null -ne $deletedCount) { return 'Hat ' + [string]$deletedCount + ' Objekte gelöscht.' }
+            return 'Hat mehrere Objekte gelöscht.'
+        }
+        if ($tool -eq 'clone_instance') {
+            $copyCount = Get-ResultNumber $result @('count')
+            if ($null -eq $copyCount) { try { $copyCount = [int64](Get-ActivityArgument $args @('count') '1') } catch { $copyCount = 1 } }
+            if ([int64]$copyCount -gt 1) { return 'Hat „' + $ref + '“ geklont (' + [string]$copyCount + ' Kopien).' }
+            return 'Hat „' + $ref + '“ geklont.'
+        }
+        if ($tool -eq 'create_instance') {
+            $createdName = Get-ActivityArgument $args @('name','className') 'Objekt'
+            $itemCount = $null
+            try { $itemCount = [int64](Get-ActivityArgument $args @('count') '1') } catch { $itemCount = 1 }
+            $resultCount = Get-ResultNumber $result @('count')
+            if ($null -ne $resultCount) { $itemCount = $resultCount }
+            if ($null -ne $itemCount -and [int64]$itemCount -gt 1) { return 'Hat ' + [string]$itemCount + 'x „' + $createdName + '“ erstellt.' }
+            return 'Hat „' + $createdName + '“ erstellt.'
+        }
+        if ($tool -eq 'bulk_create') {
+            $bulkCount = Get-ResultNumber $result @('count')
+            if ($null -ne $bulkCount) { return 'Hat ' + [string]$bulkCount + ' Objekte erstellt.' }
+            return 'Hat mehrere Objekte erstellt.'
+        }
+        if ($tool -eq 'run_lua') { return 'Hat ' + (Get-SourceLineCount $args) + ' Zeilen in der Konsole ausgeführt.' }
+        if ($tool -eq 'rename_instance') { return 'Hat „' + $ref + '“ in „' + (Get-ActivityArgument $args @('name') '?') + '“ umbenannt.' }
+        if ($tool -eq 'group_instances') { return 'Hat Objekte in „' + (Get-ActivityArgument $args @('name') 'einer Gruppe') + '“ gruppiert.' }
+        if ($tool -eq 'batch' -or $tool -eq 'parallel') {
+            $callCount = $null
+            try { $calls = Get-ResultField $args @('commands'); if ($calls) { $callCount = @($calls).Count } } catch {}
+            if ($null -ne $callCount) { return 'Hat ' + [string]$callCount + ' Werkzeuge gebündelt ausgeführt.' }
+            return 'Hat mehrere Werkzeuge gebündelt ausgeführt.'
+        }
+        if ($tool -eq 'search') { return 'Hat nach „' + $ref + '“ im Explorer gesucht.' }
         if ($tool -eq 'get_instance') { return 'Hat sich die Instance „' + $ref + '“ angesehen.' }
         if ($tool -eq 'get_children') { return 'Hat die Children von „' + $ref + '“ abgerufen.' }
-        if ($tool -eq 'get_properties') { return 'Hat die Properties der ausgewählten Instances abgerufen.' }
         if ($tool -eq 'resolve_ref') { return 'Hat den genauen Ablageort von „' + $ref + '“ abgerufen.' }
-        if ($tool -eq 'get_selection') { return 'Hat sich die aktuell ausgewählte Instance angesehen.' }
-        if ($tool -eq 'select_instance') { return 'Hat die angegebenen Objekte ausgewählt.' }
-        if ($tool -eq 'describe_scene') { return 'Hat die Szene im Place beschrieben.' }
-        if ($tool -eq 'viewport_info') { return 'Hat Kamerarichtung und Kameraposition abgerufen.' }
-        if ($tool -eq 'get_bounds') { return 'Hat Größe und Begrenzungen der ausgewählten Objekte abgerufen.' }
-        if ($tool -eq 'scene_stats') { return 'Hat die Szenenstatistik und Performance-Hinweise abgerufen.' }
-        if ($tool -eq 'list_tools') { return 'Hat die verfügbaren Bridge-Werkzeuge abgerufen.' }
-        if ($tool -eq 'bridge_status') { return 'Hat den Status der Bridge abgerufen.' }
-        if ($tool -eq 'run_lua') { return 'Hat ' + (Get-SourceLineCount $args) + ' Zeilen in der Konsole ausgeführt.' }
-        if ($tool -eq 'patch_script') { return 'Hat das Skript „' + $ref + '“ bearbeitet. +[PLATZHALTER] hinzugefügte Zeilen -[PLATZHALTER] entfernte Zeilen' }
-        if ($tool -eq 'set_script_source') { return 'Hat das Skript „' + $ref + '“ ersetzt. +[' + (Get-SourceLineCount $args) + ' Zeilen] -[PLATZHALTER] vorherige Zeilen' }
-        if ($tool -eq 'insert_script') { return 'Hat das Skript „' + (Get-ActivityArgument $args @('name')) + '“ erstellt. +[' + (Get-SourceLineCount $args) + ' Zeilen] -[PLATZHALTER] keine vorherigen Zeilen' }
-        if ($tool -eq 'bulk_insert_scripts') { return 'Hat mehrere Skripte erstellt. +[PLATZHALTER] hinzugefügte Zeilen' }
-        if ($tool -eq 'delete_instance' -or $tool -eq 'bulk_delete') { return 'Hat „' + $ref + '“ gelöscht. -[PLATZHALTER] entfernte Instanzen bzw. Zeilen' }
-        if ($tool -eq 'clone_instance') { return 'Hat „' + $ref + '“ geklont. +[PLATZHALTER] erstellte Kopien' }
-        if ($tool -eq 'create_instance' -or $tool -eq 'bulk_create') { return 'Hat „' + (Get-ActivityArgument $args @('name','className')) + '“ erstellt. +[PLATZHALTER] neue Instanzen' }
-        if ($tool -eq 'play_stop') { return 'Hat den Playtest beendet.' }
+        if ($tool -eq 'get_script') { return 'Hat den Quelltext von „' + $ref + '“ gelesen.' }
+        if ($tool -eq 'find_in_script') { return 'Hat im Skript „' + $ref + '“ gesucht.' }
+        if ($tool -eq 'move_relative' -or $tool -eq 'move_instance') { return 'Hat „' + $ref + '“ verschoben.' }
+        if ($tool -eq 'resize_part') { return 'Hat die Größe von „' + $ref + '“ geändert.' }
+        if ($tool -eq 'snap_to_ground') { return 'Hat „' + $ref + '“ auf dem Boden abgesetzt.' }
+        if ($tool -eq 'point_at' -or $tool -eq 'look_at' -or $tool -eq 'align') { return 'Hat „' + $ref + '“ ausgerichtet.' }
+        if ($tool -eq 'rotate_around') { return 'Hat „' + $ref + '“ gedreht.' }
+        if ($tool -eq 'fit_between') { return 'Hat „' + $ref + '“ zwischen zwei Punkte gespannt.' }
+        if ($tool -eq 'place_on') { return 'Hat „' + $ref + '“ platziert.' }
         if ($tool -eq 'play_start') { return 'Hat einen Playtest gestartet.' }
+        if ($tool -eq 'play_stop') { return 'Hat den Playtest beendet.' }
         if ($tool -eq 'move_character') { return 'Hat den Charakter im Playtest bewegt.' }
+        # ---- Jeder verbleibende Werkzeugtyp bekommt einen eigenen Satz -----
+        $texts = @{
+            get_place_info = 'Hat Informationen über den Place abgerufen.'
+            get_tree = 'Hat den Explorer des Places abgerufen.'
+            get_properties = 'Hat die Properties der ausgewählten Instances abgerufen.'
+            get_selection = 'Hat sich die aktuell ausgewählte Instance angesehen.'
+            select_instance = 'Hat die angegebenen Objekte ausgewählt.'
+            describe_scene = 'Hat die Szene im Place beschrieben.'
+            viewport_info = 'Hat Kamerarichtung und Kameraposition abgerufen.'
+            get_bounds = 'Hat Größe und Begrenzungen der ausgewählten Objekte abgerufen.'
+            scene_stats = 'Hat die Szenenstatistik und Performance-Hinweise abgerufen.'
+            list_tools = 'Hat die verfügbaren Bridge-Werkzeuge abgerufen.'
+            bridge_status = 'Hat den Status der Bridge abgerufen.'
+            raycast = 'Hat einen Strahl geschossen (Raycast).'
+            raycast_many = 'Hat mehrere Strahlen geschossen.'
+            ground_height = 'Hat Bodenhöhen gemessen.'
+            measure = 'Hat eine Distanz gemessen.'
+            measure_height = 'Hat eine Höhe gemessen.'
+            parts_in_box = 'Hat Teile in einem Bereich gesucht.'
+            parts_in_sphere = 'Hat Teile in einem Umkreis gesucht.'
+            nearest_parts = 'Hat die nächsten Objekte gesucht.'
+            what_is_in_the_way = 'Hat geprüft, was zwischen zwei Punkten im Weg steht.'
+            overlap_check = 'Hat eine Kollision geprüft.'
+            verify_measurable = 'Hat gewartet, bis Objekte messbar waren.'
+            coordinate_guide = 'Hat das Koordinatensystem abgefragt.'
+            describe_orientation = 'Hat die Ausrichtung eines Objekts bestimmt.'
+            stack = 'Hat Objekte gestapelt.'
+            grid_arrange = 'Hat Objekte im Raster angeordnet.'
+            distribute = 'Hat Objekte gleichmäßig verteilt.'
+            ungroup = 'Hat eine Gruppe aufgelöst.'
+            set_property = 'Hat eine Eigenschaft geändert.'
+            set_properties = 'Hat Eigenschaften geändert.'
+            bulk_set_properties = 'Hat Eigenschaften an vielen Objekten geändert.'
+            set_attribute = 'Hat ein Attribut gesetzt.'
+            add_tag = 'Hat ein Tag hinzugefügt.'
+            remove_tag = 'Hat ein Tag entfernt.'
+            compile_check = 'Hat Lua-Code auf Syntaxfehler geprüft.'
+            lua_state = 'Hat den Lua-Status abgefragt.'
+            clear_lua_state = 'Hat den Lua-Status zurückgesetzt.'
+            probe_world = 'Hat die Welt vermessen (Raster-Probe).'
+            fill_region = 'Hat einen Bereich gefüllt.'
+            union = 'Hat Teile zu einem Teil verschmolzen.'
+            subtract = 'Hat eine Form aus einem Teil herausgestanzt.'
+            intersect = 'Hat nur den gemeinsamen Teil behalten.'
+            separate = 'Hat eine Union wieder zerlegt.'
+            union_info = 'Hat eine Union untersucht.'
+            search_assets = 'Hat im Katalog gesucht.'
+            asset_details = 'Hat Asset-Details abgerufen.'
+            validate_asset = 'Hat ein Asset geprüft.'
+            insert_asset = 'Hat ein Asset in den Place eingefügt.'
+            apply_asset = 'Hat ein Asset auf ein Objekt gelegt.'
+            catalog_status = 'Hat geprüft, ob der Katalog erreichbar ist.'
+            get_output = 'Hat die Ausgabe gelesen.'
+            wait_for_output = 'Hat auf eine Ausgabezeile gewartet.'
+            clear_output = 'Hat die Ausgabe geleert.'
+            get_errors = 'Hat die Fehlerzeilen gelesen.'
+            play_status = 'Hat den Teststatus abgefragt.'
+            session_diag = 'Hat eine Live-Diagnose gemacht.'
+            play_pause = 'Hat die Simulation pausiert.'
+            play_resume = 'Hat die Simulation fortgesetzt.'
+            set_context = 'Hat die Seite (Server/Client) gewechselt.'
+            character_state = 'Hat den Charakterstatus gelesen.'
+            teleport_character = 'Hat den Charakter teleportiert.'
+            respawn_character = 'Hat den Charakter neu laden lassen.'
+            wait = 'Hat im Place gewartet.'
+            gui_dump = 'Hat die GUI-Struktur eingelesen.'
+            gui_check = 'Hat die GUI geprüft.'
+            gui_click = 'Hat auf ein GUI-Element geklickt.'
+            gui_set_text = 'Hat Text in ein GUI-Feld geschrieben.'
+            send_input = 'Hat Tasten-/Maus-Eingaben gesendet.'
+            client_action = 'Hat eine Client-Aktion ausgeführt.'
+            set_camera = 'Hat die Kamera gesetzt.'
+            start_job = 'Hat einen Hintergrundjob gestartet.'
+            job_status = 'Hat den Status eines Jobs abgefragt.'
+            job_result = 'Hat das Ergebnis eines Jobs abgeholt.'
+            list_jobs = 'Hat die Jobs aufgelistet.'
+            cancel_job = 'Hat einen Job abgebrochen.'
+            get_pending = 'Hat offene Befehle abgefragt.'
+            undo = 'Hat die letzte Änderung rückgängig gemacht.'
+            redo = 'Hat eine Änderung wiederholt.'
+            set_waypoint = 'Hat einen Wiederherstellungspunkt gesetzt.'
+            get_notices = 'Hat die Hinweise abgefragt.'
+            get_events = 'Hat die Ereignisse abgefragt.'
+            get_chunk = 'Hat einen Ergebnis-Teil abgeholt.'
+            upload_text = 'Hat Text hochgeladen.'
+            get_docs = 'Hat die Dokumentation gelesen.'
+            capture_screenshot = 'Hat einen Screenshot gemacht.'
+            report_done = 'Hat fertig gemeldet.'
+        }
+        if ($texts.ContainsKey($tool)) { return [string]$texts[$tool] }
+        # Theoretisch unerreichbar - aber falls doch: nie mehr ein Platzhalter.
         if ($read -contains $tool) { return 'Hat „' + $tool + '“ abgerufen.' }
-        if ($writes -contains $tool) { return 'Hat „' + $tool + '“ ausgeführt und den Place geändert.' }
         return 'Hat „' + $tool + '“ ausgeführt.'
     }
 
@@ -9683,8 +9945,8 @@ $script:BridgeHandlerScript = {
         if ($phase -eq 'running') { return 'running' }
         if ($phase -eq 'failed') { return 'failed' }
         if ($tool -eq 'run_lua') { return 'console' }
-        $read = @('get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','select_instance','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','session_diag','play_status','get_output','get_errors','get_docs','get_events','get_notices','get_pending','get_chunk','find_in_script','get_script','coordinate_guide','describe_orientation','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','union_info','lua_state','job_status','job_result','list_jobs','search_assets','asset_details','validate_asset','catalog_status')
-        if ($read -contains $tool) { return 'read' }
+        $sets = Get-ActivityToolSets
+        if ($sets.read -contains $tool) { return 'read' }
         return 'write'
     }
 
@@ -11794,7 +12056,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '5.0.2'
+            version = '5.2'
             docsVersion = [string]$Shared.DocsVersion
             role = 'A normal token controls exactly one live Roblox Studio place. The special aggregate token copied from Alle Places controls several places: call GET /api/places first and pass one exact targetPlace in every request; the bridge refuses to guess. This makes switching safe and explicit. Send every request as POST /api/tool with JSON body { "token": "...", "targetPlace": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -11909,7 +12171,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '5.0.2'
+            bridgeVersion = '5.2'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -12149,7 +12411,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '5.0.2'
+                        bridgeVersion = '5.2'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -12401,7 +12663,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '5.0.2'
+                        serverVersion = '5.2'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -12588,7 +12850,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='5.0.2'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='5.2'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -12617,8 +12879,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '5.0.2'
-                    serverVersion = '5.0.2'
+                    bridgeVersion = '5.2'
+                    serverVersion = '5.2'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -13250,31 +13512,62 @@ function Set-StartupEnabled {
 # ----------------------------------------------------------------------------
 # SITZUNGEN (ein Studio-Fenster = eine Sitzung = ein Token)
 # ----------------------------------------------------------------------------
+# Version 5.2: verstorbene Sitzung restlos entsorgen (Token UND jeglicher
+# Nebenzustand). Frueher blieb fast alles davon bis zum Programmende liegen.
+function Remove-DeadSession {
+    param([string]$SessionId)
+    if ([string]::IsNullOrWhiteSpace($SessionId)) { return }
+    $placeName = ''
+    try {
+        $rawEntry = $null
+        if ($script:Shared.Sessions.TryGetValue($SessionId, [ref]$rawEntry)) { $placeName = [string](($rawEntry | ConvertFrom-Json).placeName) }
+    } catch {}
+    $removedJson = $null
+    [void]$script:Shared.Sessions.TryRemove($SessionId, [ref]$removedJson)
+    $token = $null
+    if ($script:Shared.SessionTokens.TryRemove($SessionId, [ref]$token)) {
+        $removedSession = $null
+        [void]$script:Shared.TokenSessions.TryRemove($token, [ref]$removedSession)
+    }
+    $junk = $null
+    foreach ($bagName in @('AccessModes','Pollers','Presence','PendingCommands','LateResults','PlayRetryDedupe','DocsSent','AiPlayIntents','LastPlayEvents','RunOwners','UserActiveAt','AgentKeys','AgentQueues','AgentResults','AgentStates','AgentLastSeen','CommandQueues','CommandSignals','ActivityLogs','ActivityCommandMap')) {
+        try { [void]$script:Shared.$bagName.TryRemove($SessionId, [ref]$junk) } catch {}
+    }
+    try { $script:PlaceNames.Remove($SessionId) } catch {}
+    Write-RuntimeLog ('Place-Sitzung ' + $SessionId + ' ("' + $placeName + '") nach ' + $script:PlaceCleanupSeconds + ' s ohne Lebenszeichen entfernt.')
+}
 function Get-ActiveStudios {
     $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
     $items = New-Object System.Collections.Generic.List[object]
     foreach ($pair in $script:Shared.Sessions.GetEnumerator()) {
         try {
             $item = $pair.Value | ConvertFrom-Json
-            $lastSeen = [int64]$item.lastSeen
-            $presence = [int64]0
-            if ($script:Shared.Presence.TryGetValue([string]$item.sessionId, [ref]$presence)) {
-                if ($presence -gt $lastSeen) { $lastSeen = $presence }
+            $sessionId = [string]$item.sessionId
+            # Version 5.2: Lebenszeichen PRIMAER aus Presence - Presence setzt
+            # ausschliesslich das Edit-Plugin (Heartbeat/Long-Poll). Frueher
+            # wurde das Maximum aus lastSeen UND Presence genommen; ein
+            # verklemmter Session-Reporter (Agent-Heartbeat) frischt aber NUR
+            # lastSeen weiter und hielt tote Places fuer immer sichtbar
+            # ("Geister-Place"). Jetzt: nach spaetestens ~15 s ist er weg.
+            $aliveAt = [int64]0
+            $presenceKnown = $false
+            if ($script:Shared.Presence.TryGetValue($sessionId, [ref]$aliveAt)) {
+                $presenceKnown = $true
+            } else {
+                $aliveAt = [int64]$item.lastSeen
             }
-            $age = $now - $lastSeen
-            if ($age -lt 25) {
+            $age = $now - [int64]$aliveAt
+            $limit = $script:PlaceVisibleSeconds
+            # Sauber abgemeldete Fenster: kurze Gnadenfrist (Plugin-Neuladen),
+            # danach sofort raus aus der Liste.
+            if ($item.orphan -eq $true -and -not $presenceKnown) { $limit = $script:PlaceOrphanGraceSeconds }
+            if ($age -lt $limit) {
                 # Sicherheitsnetz gegen kaputte Umlaute in der Anzeige
                 $item.placeName = Repair-Mojibake ([string]$item.placeName)
                 $items.Add($item)
-            } elseif ($age -gt 600) {
-                # Alte Sitzungen samt Token aufräumen
-                $removedJson = $null
-                [void]$script:Shared.Sessions.TryRemove([string]$item.sessionId, [ref]$removedJson)
-                $token = $null
-                if ($script:Shared.SessionTokens.TryRemove([string]$item.sessionId, [ref]$token)) {
-                    $removedSession = $null
-                    [void]$script:Shared.TokenSessions.TryRemove($token, [ref]$removedSession)
-                }
+            } elseif ($age -gt $script:PlaceCleanupSeconds) {
+                # Version 5.2: restlos aufraeumen (Token + jeglicher Nebenzustand).
+                Remove-DeadSession $sessionId
             }
         } catch {}
     }
@@ -13350,7 +13643,10 @@ function Set-AllSessionsMode {
     foreach ($pair in $script:Shared.Sessions.GetEnumerator()) {
         try {
             $entry = $pair.Value | ConvertFrom-Json
-            if ($entry -and ($now - [int64]$entry.lastSeen) -lt 90) {
+            # Version 5.2: nur wirklich lebende Fenster umschalten (Presence).
+            $aliveAt = [int64]0
+            if (-not $script:Shared.Presence.TryGetValue([string]$pair.Key, [ref]$aliveAt)) { $aliveAt = [int64]$entry.lastSeen }
+            if ($entry -and ($now - $aliveAt) -lt 30 -and $entry.orphan -ne $true) {
                 $script:Shared.AccessModes[[string]$pair.Key] = $Mode
             }
         } catch {}
@@ -14284,16 +14580,17 @@ function Get-PlaceIconKey {
     param($Studio)
     $gameId = [string]$Studio.gameId
     $placeId = [string]$Studio.placeId
-    if (-not [string]::IsNullOrWhiteSpace($gameId) -and $gameId -ne '0') { return 'game_' + ($gameId -replace '[^0-9]', '') }
-    if (-not [string]::IsNullOrWhiteSpace($placeId) -and $placeId -ne '0') { return 'place_' + ($placeId -replace '[^0-9]', '') }
+    $gameClean = ($gameId -replace '[^0-9]', '')
+    $placeClean = ($placeId -replace '[^0-9]', '')
+    if (-not [string]::IsNullOrWhiteSpace($gameClean) -and $gameClean -ne '0') { return 'game_' + $gameClean }
+    if (-not [string]::IsNullOrWhiteSpace($placeClean) -and $placeClean -ne '0') { return 'place_' + $placeClean }
+    # Unveroeffentlichte Place bekommen den Studio-Fallback-Icon.
     return 'studio_fallback'
 }
 
 function Set-PlaceIconImage {
     param($Row, [string]$Path)
-    # Version 5.0.2: IconImage kann $null sein, wenn das Icon-Visual dem
-    # Sicherheitsnetz zum Opfer gefallen ist - dann nichts tun.
-    if ($null -eq $Row -or $null -eq $Row.IconImage -or [string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) { return }
+    if ($null -eq $Row -or $null -eq $Row.IconImage -or [string]::IsNullOrWhiteSpace($Path)) { return }
     try {
         $bitmap = [System.Windows.Media.Imaging.BitmapImage]::new()
         $bitmap.BeginInit()
@@ -14307,7 +14604,64 @@ function Set-PlaceIconImage {
         $Row.IconFallback.Visibility = 'Collapsed'
     } catch {
         try { $Row.IconSpinner.Visibility = 'Collapsed'; $Row.IconFallback.Visibility = 'Visible' } catch {}
+        Write-UiErrorLog ('Place-Icon ' + $Path + ' konnte nicht angezeigt werden') $_
     }
+}
+
+# Version 5.2: Icon-Datei wirklich auf PNG-Signatur pruefen. Eine per
+# WebClient geladene HTML-Fehlerseite ist >100 Bytes gross und wurde frueher
+# als gueltiges Icon dauerhaft gecacht - danach blieb der Rahmen leer.
+function Test-PngFile {
+    param([string]$Path)
+    try {
+        if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
+        if (-not (Test-Path -LiteralPath $Path)) { return $false }
+        $item = Get-Item -LiteralPath $Path
+        if ($item.Length -lt 100) { return $false }
+        $stream = [System.IO.File]::OpenRead($Path)
+        $sig = New-Object byte[] 8
+        try { [void]$stream.Read($sig, 0, 8) } finally { $stream.Close() }
+        return ($sig[0] -eq 0x89 -and $sig[1] -eq 0x50 -and $sig[2] -eq 0x4E -and $sig[3] -eq 0x47)
+    } catch { return $false }
+}
+
+# Version 5.2: Ersatz-Icon wird bei dauerhaftem Netzversagen LOKAL gezeichnet
+# (dunkle Fliese mit Gamepad-Glyph). Damit ist ein dauerhaft leerer Rahmen
+# ausgeschlossen, selbst wenn API UND Ersatzquellen nicht erreichbar sind.
+function New-LocalFallbackIcon {
+    $path = Join-Path $script:IconFolder '__local_fallback.png'
+    if (Test-PngFile $path) { return $path }
+    try {
+        $size = 150
+        $visual = [System.Windows.Media.DrawingVisual]::new()
+        $dc = $visual.RenderOpen()
+        try {
+            $rect = [System.Windows.Rect]::new(0, 0, $size, $size)
+            $grad = [System.Windows.Media.LinearGradientBrush]::new()
+            $grad.StartPoint = [System.Windows.Point]::new(0, 0)
+            $grad.EndPoint = [System.Windows.Point]::new(1, 1)
+            [void]$grad.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#475569'), 0.0))
+            [void]$grad.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#1E293B'), 1.0))
+            $dc.DrawRoundedRectangle($grad, $null, $rect, 22, 22)
+            $formatted = [System.Windows.Media.FormattedText]::new([string][char]0xE7FC,
+                [System.Globalization.CultureInfo]::InvariantCulture,
+                [System.Windows.FlowDirection]::LeftToRight,
+                [System.Windows.Media.Typeface]::new('Segoe MDL2 Assets'), 68, [System.Windows.Media.Brushes]::White)
+            $x = ([double]$size - $formatted.Width) / 2
+            $y = ([double]$size - $formatted.Height) / 2
+            $dc.DrawText($formatted, [System.Windows.Point]::new($x, $y))
+        } finally { $dc.Close() }
+        $rtb = [System.Windows.Media.Imaging.RenderTargetBitmap]::new($size, $size, 96, 96, [System.Windows.Media.PixelFormats]::Pbgra32)
+        $rtb.Render($visual)
+        $encoder = [System.Windows.Media.Imaging.PngBitmapEncoder]::new()
+        [void]$encoder.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($rtb))
+        $fs = [System.IO.File]::Create($path)
+        try { $encoder.Save($fs) } finally { $fs.Close() }
+        if (Test-PngFile $path) { return $path }
+    } catch {
+        Write-UiErrorLog 'Lokales Ersatz-Icon konnte nicht gezeichnet werden' $_
+    }
+    return $null
 }
 
 function New-PlaceIconVisual {
@@ -14353,42 +14707,103 @@ function Start-PlaceIconLoad {
     if ($null -eq $Row) { return }
     $key = Get-PlaceIconKey $Studio
     $Row.IconKey = $key
-    if ($script:PlaceIconCache.ContainsKey($key) -and (Test-Path -LiteralPath $script:PlaceIconCache[$key])) {
+    if ($script:PlaceIconCache.ContainsKey($key) -and (Test-PngFile $script:PlaceIconCache[$key])) {
         Set-PlaceIconImage $Row $script:PlaceIconCache[$key]
         return
     }
     $file = Join-Path $script:IconFolder ($key + '.png')
     if (Test-Path -LiteralPath $file) {
-        $script:PlaceIconCache[$key] = $file
-        Set-PlaceIconImage $Row $file
-        return
+        if (Test-PngFile $file) {
+            $script:PlaceIconCache[$key] = $file
+            Set-PlaceIconImage $Row $file
+            return
+        }
+        # Version 5.2: kaputte Reste im Icon-Cache (z. B. HTML-Fehlerseiten aus
+        # aelteren Versionen oder die tote Wikia-Adresse) verwerfen.
+        try { Remove-Item -LiteralPath $file -Force } catch {}
     }
     if ($script:PlaceIconLoads.ContainsKey($key)) { return }
+    # Version 5.2: Fehlversuche werden gezaehlt und mit Verzoegerung wiederholt
+    # (PlaceIconFails). Ab dem 3. Versuch gibt es ein lokal gezeichnetes Bild.
+    if ($script:PlaceIconFails.ContainsKey($key)) {
+        $failInfo = $script:PlaceIconFails[$key]
+        if ([int]$failInfo.count -ge 3) { return }
+        if ([DateTime]::UtcNow -lt [DateTime]$failInfo.nextAt) { return }
+    }
     $gameId = [string]$Studio.gameId
     $placeId = [string]$Studio.placeId
+    Write-RuntimeLog ('Place-Icon wird geladen: ' + $key + ' (gameId=' + $gameId + ', placeId=' + $placeId + ')')
     $worker = [PowerShell]::Create()
     $code = @'
 param($gameId, $placeId, $destination)
-$studioLogo = 'https://static.wikia.nocookie.net/roblox/images/e/e1/Roblox_Studio_2025_Logo.png/revision/latest/thumbnail/width/360/height/360?cb=20250503032303'
-$imageUrl = $studioLogo
-try {
-    $id = if ($gameId -and $gameId -ne '0') { $gameId } else { '' }
-    if ($id -match '^\d+$') {
-        $meta = Invoke-RestMethod -Uri ('https://thumbnails.roblox.com/v1/games/icons?universeIds=' + $id + '&size=150x150&format=Png&isCircular=false') -TimeoutSec 12 -UseBasicParsing
-        if ($meta -and $meta.data -and $meta.data.Count -gt 0 -and $meta.data[0].imageUrl) { $imageUrl = [string]$meta.data[0].imageUrl }
+try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12 } catch {}
+$imageUrl = $null
+$errorText = ''
+$id = if ($gameId -and $gameId -ne '0') { ($gameId -replace '[^0-9]', '') } else { '' }
+if ($id -match '^\d+$') {
+    try {
+        $meta = Invoke-RestMethod -Uri ('https://thumbnails.roblox.com/v1/games/icons?universeIds=' + $id + '&size=150x150&format=Png&isCircular=false') -TimeoutSec 12 -UseBasicParsing -ErrorAction Stop
+        if ($meta -and $meta.data -and $meta.data.Count -gt 0) {
+            $candidate = [string]$meta.data[0].imageUrl
+            if (-not [string]::IsNullOrWhiteSpace($candidate)) { $imageUrl = $candidate }
+            else { $errorText = 'Roblox-API lieferte kein Bild (state=' + [string]$meta.data[0].state + ')' }
+        } else {
+            $errorText = 'Roblox-API lieferte keine Daten'
+        }
+    } catch {
+        $errorText = 'Roblox-Thumbnails-API nicht erreichbar: ' + [string]$_.Exception.Message
     }
-} catch {}
+}
+if ([string]::IsNullOrWhiteSpace($imageUrl)) {
+    # Version 5.2: Die alte Ersatzadresse (static.wikia.nocookie.net ...) ist
+    # TOT - dort gibt es diese Datei nie/mehr, deshalb blieb jedes Icon leer.
+    # Neues Ersatzbild: Roblox-Studio-Logo von Wikimedia Commons (225x225 PNG).
+    $imageUrl = 'https://upload.wikimedia.org/wikipedia/commons/4/44/RobloxStudioLogo2025.png'
+}
+$tmp = $destination + '.download'
 try {
     $client = New-Object System.Net.WebClient
-    $client.Headers['User-Agent'] = 'ArenaRobloxBridge/5'
-    $client.DownloadFile($imageUrl, $destination)
+    $client.Headers['User-Agent'] = 'ArenaRobloxBridge/5.2'
+    $downloadTask = $client.DownloadFileTaskAsync($imageUrl, $tmp)
+    if (-not $downloadTask.Wait(30000)) { throw 'Zeitueberschreitung beim Icon-Download (30 s).' }
     $client.Dispose()
-    if ((Test-Path -LiteralPath $destination) -and (Get-Item -LiteralPath $destination).Length -gt 100) { return @{ ok=$true; path=$destination } }
+} catch {
+    try { $client.Dispose() } catch {}
+    try { if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force } } catch {}
+    $reason = 'Icon-Download fehlgeschlagen (' + $imageUrl + '): ' + [string]$_.Exception.Message
+    if ($errorText) { $reason = $errorText + ' | ' + $reason }
+    return @{ ok=$false; path=$null; error=$reason }
+}
+# Nur echte PNG-Dateien akzeptieren (Signatur pruefen - keine HTML-Seiten).
+$sig = New-Object byte[] 8
+try {
+    $fs = [System.IO.File]::OpenRead($tmp)
+    try { [void]$fs.Read($sig, 0, 8) } finally { $fs.Close() }
 } catch {}
-return @{ ok=$false; path=$null }
+$isPng = ($sig[0] -eq 0x89 -and $sig[1] -eq 0x50 -and $sig[2] -eq 0x4E -and $sig[3] -eq 0x47)
+$length = 0
+try { $length = (Get-Item -LiteralPath $tmp).Length } catch {}
+if (-not $isPng -or $length -le 100) {
+    try { Remove-Item -LiteralPath $tmp -Force } catch {}
+    $reason = 'Icon-Datei war kein gueltiges PNG (Laenge ' + $length + ', von ' + $imageUrl + ')'
+    if ($errorText) { $reason = $errorText + ' | ' + $reason }
+    return @{ ok=$false; path=$null; error=$reason }
+}
+try {
+    Move-Item -LiteralPath $tmp -Destination $destination -Force
+} catch {
+    try { if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force } } catch {}
+    return @{ ok=$false; path=$null; error='Icon-Datei konnte nicht abgelegt werden: ' + [string]$_.Exception.Message }
+}
+return @{ ok=$true; path=$destination }
 '@
     [void]$worker.AddScript($code).AddArgument($gameId).AddArgument($placeId).AddArgument($file)
-    $script:PlaceIconLoads[$key] = [pscustomobject]@{ Worker=$worker; Handle=$worker.BeginInvoke(); Key=$key; File=$file }
+    try {
+        $script:PlaceIconLoads[$key] = [pscustomobject]@{ Worker=$worker; Handle=$worker.BeginInvoke(); Key=$key; File=$file }
+    } catch {
+        try { $worker.Dispose() } catch {}
+        Write-UiErrorLog ('Place-Icon-Ladevorgang ' + $key + ' konnte nicht gestartet werden') $_
+    }
 }
 
 function Update-PlaceIconLoads {
@@ -14396,20 +14811,48 @@ function Update-PlaceIconLoads {
         $job = $script:PlaceIconLoads[$key]
         if (-not $job.Handle.IsCompleted) { continue }
         $path = $null
+        $loadError = ''
         try {
             $result = @($job.Worker.EndInvoke($job.Handle))[0]
             if ($result -and $result.ok -eq $true) { $path = [string]$result.path }
-        } catch {}
+            elseif ($result -and $result.error) { $loadError = [string]$result.error }
+            else { $loadError = 'Icon-Worker endete ohne Ergebnis.' }
+        } catch {
+            $loadError = [string]$_.Exception.Message
+        }
         try { $job.Worker.Dispose() } catch {}
         $script:PlaceIconLoads.Remove($key)
-        if ($path -and (Test-Path -LiteralPath $path)) {
+        if ($path -and (Test-PngFile $path)) {
+            $script:PlaceIconFails.Remove($key)
             $script:PlaceIconCache[$key] = $path
+            Write-RuntimeLog ('Place-Icon geladen: ' + $key + ' -> ' + $path)
             foreach ($row in @($script:UiRows.Values)) { if ($row.IconKey -eq $key) { Set-PlaceIconImage $row $path } }
             if ($script:AllPlacesRow) { Update-AllPlacesIcon $script:AllPlacesRow @(Get-ActiveStudios) }
         } else {
-            foreach ($row in @($script:UiRows.Values)) {
-                if ($row.IconKey -eq $key) { try { $row.IconSpinner.Visibility='Collapsed'; $row.IconFallback.Visibility='Visible' } catch {} }
+            # Version 5.2: nicht sofort aufgeben - Versuche zaehlen und mit
+            # wachsender Verzoegerung wiederholen (45s, 90s, 135s, ...).
+            $count = 1
+            if ($script:PlaceIconFails.ContainsKey($key)) { $count = [int]$script:PlaceIconFails[$key].count + 1 }
+            $delaySeconds = [Math]::Min(300, 45 * $count)
+            $script:PlaceIconFails[$key] = @{ count = $count; nextAt = ([DateTime]::UtcNow.AddSeconds($delaySeconds)) }
+            Write-RuntimeLog ('Place-Icon NICHT geladen (' + $key + ', Versuch ' + $count + '): ' + $loadError + ' | Naechster Versuch in ' + $delaySeconds + ' s.')
+            $usedLocalFallback = $false
+            if ($count -ge 3) {
+                $fallbackPath = New-LocalFallbackIcon
+                if ($fallbackPath) {
+                    $usedLocalFallback = $true
+                    $script:PlaceIconCache[$key] = $fallbackPath
+                    Write-RuntimeLog ('Place-Icon ' + $key + ': lokal gezeichnetes Ersatz-Icon wird verwendet.')
+                    foreach ($row in @($script:UiRows.Values)) { if ($row.IconKey -eq $key) { Set-PlaceIconImage $row $fallbackPath } }
+                    if ($script:AllPlacesRow) { Update-AllPlacesIcon $script:AllPlacesRow @(Get-ActiveStudios) }
+                }
             }
+            if (-not $usedLocalFallback -and $count -ge 3) {
+                foreach ($row in @($script:UiRows.Values)) {
+                    if ($row.IconKey -eq $key) { try { $row.IconSpinner.Visibility='Collapsed'; $row.IconFallback.Visibility='Visible' } catch {} }
+                }
+            }
+            # Bei Versuch 1-2 bleibt der Drehindikator sichtbar (es folgt ein neuer Versuch).
         }
     }
 }
@@ -14454,26 +14897,33 @@ function Add-ArenaHistoryCard {
         'console' { $colour='#FBBF24'; break }
         'failed'  { $colour='#F87171'; break }
     }
+    # Version 5.2: deutlich flachere Karten, damit eine Aktion weniger Hoehe braucht.
     $card = [System.Windows.Controls.Border]::new()
     $card.Background = Get-Brush '#111827'; $card.BorderBrush = Get-Brush '#334155'; $card.BorderThickness = [System.Windows.Thickness]::new(1)
-    $card.CornerRadius=[System.Windows.CornerRadius]::new(9); $card.Padding=[System.Windows.Thickness]::new(11,9,11,9); $card.Margin=[System.Windows.Thickness]::new(0,0,0,7)
+    $card.CornerRadius=[System.Windows.CornerRadius]::new(8); $card.Padding=[System.Windows.Thickness]::new(9,5,9,5); $card.Margin=[System.Windows.Thickness]::new(0,0,0,5)
     $grid=[System.Windows.Controls.Grid]::new()
-    $c0=[System.Windows.Controls.ColumnDefinition]::new();$c0.Width=[System.Windows.GridLength]::new(5)
+    $c0=[System.Windows.Controls.ColumnDefinition]::new();$c0.Width=[System.Windows.GridLength]::new(4)
     $c1=[System.Windows.Controls.ColumnDefinition]::new();$grid.ColumnDefinitions.Add($c0);$grid.ColumnDefinitions.Add($c1)
-    $line=[System.Windows.Controls.Border]::new();$line.Background=Get-Brush $colour;$line.CornerRadius=[System.Windows.CornerRadius]::new(3)
+    $line=[System.Windows.Controls.Border]::new();$line.Background=Get-Brush $colour;$line.CornerRadius=[System.Windows.CornerRadius]::new(2)
     [System.Windows.Controls.Grid]::SetColumn($line,0);$grid.Children.Add($line)|Out-Null
-    $stack=[System.Windows.Controls.StackPanel]::new();$stack.Margin=[System.Windows.Thickness]::new(10,0,0,0)
-    $main=[System.Windows.Controls.TextBlock]::new();$main.Foreground=Get-Brush '#E2E8F0';$main.FontSize=12.5;$main.TextWrapping='Wrap'
+    $stack=[System.Windows.Controls.StackPanel]::new();$stack.Margin=[System.Windows.Thickness]::new(9,0,0,0)
+    $main=[System.Windows.Controls.TextBlock]::new();$main.Foreground=Get-Brush '#E2E8F0';$main.FontSize=11.5;$main.TextWrapping='Wrap'
     $prefix=if($AllPlaces){ ([string]$Entry.placeName + ' · ') }else{''};$main.Text=$prefix + [string]$Entry.text
-    $meta=[System.Windows.Controls.TextBlock]::new();$meta.Foreground=Get-Brush '#64748B';$meta.FontSize=10.5;$meta.Margin=[System.Windows.Thickness]::new(0,4,0,0)
+    $meta=[System.Windows.Controls.TextBlock]::new();$meta.Foreground=Get-Brush '#64748B';$meta.FontSize=10;$meta.Margin=[System.Windows.Thickness]::new(0,2,0,0)
     $when='';try{$when=[DateTimeOffset]::FromUnixTimeSeconds([int64]$Entry.updatedAt).LocalDateTime.ToString('HH:mm:ss')}catch{}
     $state='Abgeschlossen'
-    switch ($kind) {
-        'running' { $state='Macht gerade'; break }
-        'read'    { $state='Abgerufen'; break }
-        'write'   { $state='Geändert'; break }
-        'console' { $state='Konsole'; break }
-        'failed'  { $state='Warnung'; break }
+    if ([int64]$Entry.updatedAt -eq 0) {
+        # Version 5.2: die "Wartet ..."-Karte (Platzhalter, solange noch nichts
+        # passiert ist) traegt den eigenen Status "Wartet".
+        $state='Wartet'
+    } else {
+        switch ($kind) {
+            'running' { $state='Macht gerade'; break }
+            'read'    { $state='Abgerufen'; break }
+            'write'   { $state='Geändert'; break }
+            'console' { $state='Konsole'; break }
+            'failed'  { $state='Warnung'; break }
+        }
     }
     $timeSuffix = if ($when) { ' · ' + $when } else { '' }
     $meta.Text=$state + $timeSuffix
@@ -14484,6 +14934,18 @@ function Add-ArenaHistoryCard {
 function Update-ArenaHistoryWindow {
     param($State)
     if ($null -eq $State -or $null -eq $State.Host) { return }
+    # Version 5.2: Waehrend das Fenster mit der Maus verschoben wird (linke
+    # Taste gedrueckt), wird der Verlauf nicht neu aufgebaut - sonst wuerden
+    # die Karten genau waehrend des Ziehens aus dem Baum verschwinden.
+    try {
+        if ([System.Windows.Input.Mouse]::LeftButton -eq [System.Windows.Input.MouseButtonState]::Pressed -and $State.Window.IsActive) { return }
+    } catch {}
+    # Version 5.2: bei unveraendertem Inhalt gar nichts umbauen (kein Flackern).
+    $entries = @(Get-ArenaHistoryEntries ([string]$State.SessionId))
+    $contentSig = [string]$entries.Count
+    foreach ($sigEntry in $entries) { try { $contentSig += '.' + [string]$sigEntry.updatedAt + [string]$sigEntry.kind } catch {} }
+    if (-not $State.FirstRender -and $null -ne $State.Signature -and $State.Signature -eq $contentSig) { return }
+    $State.Signature = $contentSig
     $scroll=$State.Scroll
     $atBottom=([double]$scroll.VerticalOffset -ge ([double]$scroll.ScrollableHeight - 18)) -or $State.FirstRender
     $oldOffset=[double]$scroll.VerticalOffset
@@ -14495,11 +14957,68 @@ function Update-ArenaHistoryWindow {
     }
     $waiting=[pscustomobject]@{kind='read';text=$waitingText;updatedAt=0;placeName=''}
     Add-ArenaHistoryCard $State.Host $waiting ([bool]$State.AllPlaces)
-    foreach ($entry in (Get-ArenaHistoryEntries ([string]$State.SessionId))) { Add-ArenaHistoryCard $State.Host $entry ([bool]$State.AllPlaces) }
+    foreach ($entry in $entries) { Add-ArenaHistoryCard $State.Host $entry ([bool]$State.AllPlaces) }
     if ($atBottom) { $scroll.ScrollToEnd() } else { $scroll.ScrollToVerticalOffset($oldOffset) }
     $State.FirstRender=$false
 }
 
+# Version 5.2: Button im normalen Titelleisten-Design (programmatisch gebaut,
+# weil das Verlaufsfenster ohne XAML-Ressourcen auskommt). Sieht aus wie die
+# Knoepfe "..." / "X" im Hauptfenster: Dunkler Hintergrund, abgerundet,
+# Hover-Farbe; der Inhalt bleibt das uebergebene MDL2-Glyph.
+function New-HistoryButton {
+    param(
+        [string]$Glyph,
+        [double]$GlyphSize,
+        [string]$ToolTip,
+        [string]$HoverBg,
+        [string]$HoverBorder,
+        [string]$PressBg
+    )
+    $button = [System.Windows.Controls.Button]::new()
+    $button.Content = $Glyph
+    $button.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe MDL2 Assets')
+    $button.FontSize = $GlyphSize
+    $button.Width = 38; $button.Height = 34
+    $button.Cursor = [System.Windows.Input.Cursors]::Hand
+    $button.ToolTip = $ToolTip
+    $button.Foreground = Get-Brush '#CBD5E1'
+    $button.Background = Get-Brush '#111827'
+    $button.BorderBrush = Get-Brush '#475569'
+    $button.BorderThickness = [System.Windows.Thickness]::new(1)
+    $template = [System.Windows.Controls.ControlTemplate]::new([System.Windows.Controls.Button])
+    $bd = [System.Windows.FrameworkElementFactory]::new([System.Windows.Controls.Border])
+    $bd.Name = 'bd'
+    [void]$bd.SetValue([System.Windows.Controls.Border]::CornerRadiusProperty, [System.Windows.CornerRadius]::new(10))
+    $bgBind = [System.Windows.Data.Binding]::new('Background')
+    $bgBind.RelativeSource = [System.Windows.Data.RelativeSource]::TemplatedParent
+    $bd.SetBinding([System.Windows.Controls.Border]::BackgroundProperty, $bgBind)
+    $bbBind = [System.Windows.Data.Binding]::new('BorderBrush')
+    $bbBind.RelativeSource = [System.Windows.Data.RelativeSource]::TemplatedParent
+    $bd.SetBinding([System.Windows.Controls.Border]::BorderBrushProperty, $bbBind)
+    $btBind = [System.Windows.Data.Binding]::new('BorderThickness')
+    $btBind.RelativeSource = [System.Windows.Data.RelativeSource]::TemplatedParent
+    $bd.SetBinding([System.Windows.Controls.Border]::BorderThicknessProperty, $btBind)
+    $cp = [System.Windows.FrameworkElementFactory]::new([System.Windows.Controls.ContentPresenter])
+    [void]$cp.SetValue([System.Windows.FrameworkElement]::HorizontalAlignmentProperty, [System.Windows.HorizontalAlignment]::Center)
+    [void]$cp.SetValue([System.Windows.FrameworkElement]::VerticalAlignmentProperty, [System.Windows.VerticalAlignment]::Center)
+    [void]$bd.AppendChild($cp)
+    $template.VisualTree = $bd
+    $hover = [System.Windows.Trigger]::new()
+    $hover.Property = [System.Windows.UIElement]::IsMouseOverProperty
+    $hover.Value = $true
+    [void]$hover.Setters.Add([System.Windows.Setter]::new([System.Windows.Controls.Border]::BackgroundProperty, (Get-Brush $HoverBg), 'bd'))
+    [void]$hover.Setters.Add([System.Windows.Setter]::new([System.Windows.Controls.Border]::BorderBrushProperty, (Get-Brush $HoverBorder), 'bd'))
+    [void]$hover.Setters.Add([System.Windows.Setter]::new([System.Windows.Controls.Control]::ForegroundProperty, [System.Windows.Media.Brushes]::White))
+    [void]$template.Triggers.Add($hover)
+    $pressed = [System.Windows.Trigger]::new()
+    $pressed.Property = [System.Windows.Controls.Primitives.ButtonBase]::IsPressedProperty
+    $pressed.Value = $true
+    [void]$pressed.Setters.Add([System.Windows.Setter]::new([System.Windows.Controls.Border]::BackgroundProperty, (Get-Brush $PressBg), 'bd'))
+    [void]$template.Triggers.Add($pressed)
+    $button.Template = $template
+    return $button
+}
 function Open-ArenaHistoryWindow {
     param([string]$SessionId, [string]$Title = 'Arena-Verlauf')
     $history=[System.Windows.Window]::new();$history.Title=$Title;$history.Width=660;$history.Height=620;$history.MinWidth=660;$history.MinHeight=620;$history.MaxWidth=660;$history.MaxHeight=620
@@ -14508,17 +15027,35 @@ function Open-ArenaHistoryWindow {
     $shell=[System.Windows.Controls.Border]::new();$shell.CornerRadius=[System.Windows.CornerRadius]::new(16);$shell.Background=Get-Brush '#0F172A';$shell.BorderBrush=Get-Brush '#334155';$shell.BorderThickness=[System.Windows.Thickness]::new(1);$shell.Padding=[System.Windows.Thickness]::new(20)
     $grid=[System.Windows.Controls.Grid]::new();$r0=[System.Windows.Controls.RowDefinition]::new();$r0.Height=[System.Windows.GridLength]::Auto;$r1=[System.Windows.Controls.RowDefinition]::new();$grid.RowDefinitions.Add($r0);$grid.RowDefinitions.Add($r1)
     $head=[System.Windows.Controls.Grid]::new();$hc0=[System.Windows.Controls.ColumnDefinition]::new();$hc1=[System.Windows.Controls.ColumnDefinition]::new();$hc1.Width=[System.Windows.GridLength]::Auto;$hc2=[System.Windows.Controls.ColumnDefinition]::new();$hc2.Width=[System.Windows.GridLength]::Auto;$head.ColumnDefinitions.Add($hc0);$head.ColumnDefinitions.Add($hc1);$head.ColumnDefinitions.Add($hc2)
-    $texts=[System.Windows.Controls.StackPanel]::new();$titleText=[System.Windows.Controls.TextBlock]::new();$titleText.Text=$Title;$titleText.Foreground=Get-Brush '#F8FAFC';$titleText.FontSize=18;$titleText.FontWeight='Bold';$sub=[System.Windows.Controls.TextBlock]::new();$sub.Text='Alle Aktionen von Arena in zeitlicher Reihenfolge';$sub.Foreground=Get-Brush '#94A3B8';$sub.FontSize=11.5;$sub.Margin=[System.Windows.Thickness]::new(0,4,0,0);$texts.Children.Add($titleText)|Out-Null;$texts.Children.Add($sub)|Out-Null;$head.Children.Add($texts)|Out-Null
-    $trash=[System.Windows.Controls.Button]::new();$trash.Content=[char]0xE74D;$trash.FontFamily=[System.Windows.Media.FontFamily]::new('Segoe MDL2 Assets');$trash.FontSize=14;$trash.Width=38;$trash.Height=34;$trash.Margin=[System.Windows.Thickness]::new(0,0,8,0);$trash.ToolTip='Verlauf zurücksetzen';[System.Windows.Controls.Grid]::SetColumn($trash,1);$head.Children.Add($trash)|Out-Null
-    $close=[System.Windows.Controls.Button]::new();$close.Content=[char]0xE8BB;$close.FontFamily=[System.Windows.Media.FontFamily]::new('Segoe MDL2 Assets');$close.FontSize=12;$close.Width=38;$close.Height=34;$close.ToolTip='Schließen';[System.Windows.Controls.Grid]::SetColumn($close,2);$head.Children.Add($close)|Out-Null
+    $texts=[System.Windows.Controls.StackPanel]::new();$titleText=[System.Windows.Controls.TextBlock]::new();$titleText.Text=$Title;$titleText.Foreground=Get-Brush '#F8FAFC';$titleText.FontSize=18;$titleText.FontWeight='Bold';$sub=[System.Windows.Controls.TextBlock]::new();$sub.Text='Alle Aktionen von Arena in zeitlicher Reihenfolge - Fenster ist frei verschiebbar';$sub.Foreground=Get-Brush '#94A3B8';$sub.FontSize=11.5;$sub.Margin=[System.Windows.Thickness]::new(0,4,0,0);$texts.Children.Add($titleText)|Out-Null;$texts.Children.Add($sub)|Out-Null;$head.Children.Add($texts)|Out-Null
+    # Version 5.2: Die Knoepfe tragen das normale Titelleisten-Design des
+    # Programms (dunkel, abgerundet, Hover-Farbe; Schliessen-Knopf wird rot) -
+    # bis 5.0.2 waren es ungestylte Windows-Standardknoepfe.
+    $trash=New-HistoryButton -Glyph ([char]0xE74D) -GlyphSize 14 -ToolTip 'Verlauf zurücksetzen' -HoverBg '#1E293B' -HoverBorder '#818CF8' -PressBg '#162235'
+    $trash.Margin=[System.Windows.Thickness]::new(0,0,8,0);[System.Windows.Controls.Grid]::SetColumn($trash,1);$head.Children.Add($trash)|Out-Null
+    $close=New-HistoryButton -Glyph ([char]0xE8BB) -GlyphSize 12 -ToolTip 'Schließen' -HoverBg '#EF4444' -HoverBorder '#FCA5A5' -PressBg '#B91C1C'
+    [System.Windows.Controls.Grid]::SetColumn($close,2);$head.Children.Add($close)|Out-Null
     [System.Windows.Controls.Grid]::SetRow($head,0);$grid.Children.Add($head)|Out-Null
-    $scroll=[System.Windows.Controls.ScrollViewer]::new();$scroll.Margin=[System.Windows.Thickness]::new(0,17,0,0);$scroll.VerticalScrollBarVisibility='Auto';$scroll.HorizontalScrollBarVisibility='Disabled';$historyHost=[System.Windows.Controls.StackPanel]::new();$scroll.Content=$historyHost;[System.Windows.Controls.Grid]::SetRow($scroll,1);$grid.Children.Add($scroll)|Out-Null
+    $scroll=[System.Windows.Controls.ScrollViewer]::new();$scroll.Margin=[System.Windows.Thickness]::new(0,14,0,0);$scroll.VerticalScrollBarVisibility='Auto';$scroll.HorizontalScrollBarVisibility='Disabled';$historyHost=[System.Windows.Controls.StackPanel]::new();$scroll.Content=$historyHost;[System.Windows.Controls.Grid]::SetRow($scroll,1);$grid.Children.Add($scroll)|Out-Null
     $shell.Child=$grid;$history.Content=$shell
-    $state=[pscustomobject]@{Window=$history;Scroll=$scroll;Host=$historyHost;SessionId=$SessionId;AllPlaces=[string]::IsNullOrWhiteSpace($SessionId);FirstRender=$true;Timer=$null}
+    $state=[pscustomobject]@{Window=$history;Scroll=$scroll;Host=$historyHost;SessionId=$SessionId;AllPlaces=[string]::IsNullOrWhiteSpace($SessionId);FirstRender=$true;Signature=$null;Timer=$null}
     $history.Tag=$state;$trash.Tag=$state;$close.Tag=$history
-    $trash.Add_Click({param($sender,$e) Clear-ArenaHistory ([string]$sender.Tag.SessionId);$sender.Tag.FirstRender=$true;Update-ArenaHistoryWindow $sender.Tag})
+    $trash.Add_Click({param($sender,$e) Clear-ArenaHistory ([string]$sender.Tag.SessionId);$sender.Tag.FirstRender=$true;$sender.Tag.Signature=$null;Update-ArenaHistoryWindow $sender.Tag})
     $close.Add_Click({param($sender,$e) $sender.Tag.Close()})
-    $history.Add_MouseLeftButtonDown({param($sender,$e) if($e.ChangedButton -eq [System.Windows.Input.MouseButton]::Left -and $e.OriginalSource -eq $sender.Content){try{$sender.DragMove()}catch{}}})
+    # Version 5.2: Das Fenster laesst sich FREI ueber den Bildschirm schieben -
+    # an der Titelzeile UND am Hintergrund/Verlauf (Knoepfe und Scrollbalken
+    # behandeln ihren Klick selbst und loesen dadurch keinen Ziehmodus aus).
+    $dragHandler = {
+        param($sender, $e)
+        if ($e.ChangedButton -eq [System.Windows.Input.MouseButton]::Left) {
+            try {
+                $dragWindow = [System.Windows.Window]::GetWindow($sender)
+                if ($dragWindow) { $dragWindow.DragMove() }
+            } catch {}
+        }
+    }
+    $head.Add_MouseLeftButtonDown($dragHandler)
+    $shell.Add_MouseLeftButtonDown($dragHandler)
     $timer=[System.Windows.Threading.DispatcherTimer]::new();$timer.Interval=[TimeSpan]::FromMilliseconds(650);$timer.Tag=$state;$timer.Add_Tick({param($sender,$e) Update-ArenaHistoryWindow $sender.Tag});$state.Timer=$timer
     $history.Add_Loaded({param($sender,$e) Update-ArenaHistoryWindow $sender.Tag;$sender.Tag.Timer.Start()})
     $history.Add_Closed({param($sender,$e) try{$sender.Tag.Timer.Stop()}catch{}})
@@ -14530,8 +15067,11 @@ function Copy-Prompt {
     if ($SessionId -eq '__arena_all_places__') {
         if ([string]::IsNullOrWhiteSpace($script:TunnelUrl)) { Show-CopyConfirm -Message 'Der Cloudflare-Tunnel ist noch nicht bereit.' -Seconds 5; return }
         try {
-            [System.Windows.Clipboard]::SetText("URL=$script:TunnelUrl`r`nTOKEN=$script:AllPlacesToken`r`nMODE=ALLE_PLACES`r`nHINWEIS=GET /api/places aufrufen und bei jedem Tool targetPlace setzen")
-            Show-CopyConfirm -Message 'Prompt für alle Places wurde in die Zwischenablage kopiert' -Seconds 3
+            # Version 5.2: Nur URL + TOKEN. MODE/HINWEIS sind weg - der Server
+            # beantwortet Arenas erste Anfrage mit diesem Sammel-Token sowieso
+            # automatisch mit der aktuellen places-Liste und der Anleitung.
+            [System.Windows.Clipboard]::SetText("URL=$script:TunnelUrl`r`nTOKEN=$script:AllPlacesToken")
+            Show-CopyConfirm -Message 'Prompt für alle Places wurde in die Zwischenablage kopiert - Arena sieht die Place-Auswahl dann automatisch' -Seconds 4
         } catch { Show-CopyConfirm -Message "Zwischenablage blockiert: $($_.Exception.Message)" -Seconds 6 }
         return
     }
@@ -14561,19 +15101,6 @@ function Set-RowMode {
     Set-MenuChecked $Row.Toggle $readonly
     $subtitle = if ($readonly) { 'Aktiv - Änderungen sind gesperrt' } else { 'Inaktiv - Änderungen sind erlaubt' }
     Set-Text $Row.Toggle.Sub $subtitle
-    # The aggregate row also exposes this temporary switch directly on its
-    # right side, so its state mirrors the option menu without persistence.
-    if ($Row.AllAccessButton) {
-        if ($readonly) {
-            $Row.AllAccessTrack.Background=Get-Brush '#1E6B3A';$Row.AllAccessTrack.BorderBrush=Get-Brush '#35A05C'
-            $Row.AllAccessThumb.HorizontalAlignment='Right';$Row.AllAccessThumb.Margin=[System.Windows.Thickness]::new(0,0,3,0)
-            $Row.AllAccessState.Text='AN';$Row.AllAccessState.Foreground=Get-Brush '#D6F5E1'
-        } else {
-            $Row.AllAccessTrack.Background=Get-Brush '#3A1820';$Row.AllAccessTrack.BorderBrush=Get-Brush '#7F1D2D'
-            $Row.AllAccessThumb.HorizontalAlignment='Left';$Row.AllAccessThumb.Margin=[System.Windows.Thickness]::new(3,0,0,0)
-            $Row.AllAccessState.Text='AUS';$Row.AllAccessState.Foreground=Get-Brush '#FECACA'
-        }
-    }
 
     if (-not $Silent) {
         $message = if ($readonly) { 'Nur Lesezugriff ist aktiv.' } else { 'Lese- und Schreibzugriff ist aktiv.' }
@@ -14599,10 +15126,6 @@ function New-Row {
         IconSpinner = $null
         IconFallback = $null
         IconKey    = $null
-        AllAccessButton = $null
-        AllAccessTrack = $null
-        AllAccessThumb = $null
-        AllAccessState = $null
         Mode       = $null
         ModeUntil  = [DateTime]::MinValue
     }
@@ -14851,7 +15374,10 @@ function New-Row {
     $startMode = if ([string]$Studio.accessMode -eq 'readonly') { 'readonly' } else { 'readwrite' }
     try { Set-RowMode $row $startMode -Silent } catch { Write-UiErrorLog 'Place-Zeile: Modus-Anzeige fehlgeschlagen' $_ }
     $row.ModeUntil = [DateTime]::MinValue
-    try { Start-PlaceIconLoad $Studio $row } catch { Write-UiErrorLog 'Place-Zeile: Icon-Laden fehlgeschlagen' $_ }
+    # Version 5.2: Die virtuelle "Alle Places"-Zeile laedt KEIN eigenes Icon
+    # (ihr Mosaik kommt aus Update-AllPlacesIcon) - ein Worker fuer sie waere
+    # ein garantierter Fehlversuch (Spiel-Id '0').
+    try { if ($sessionId -ne '__arena_all_places__') { Start-PlaceIconLoad $Studio $row } } catch { Write-UiErrorLog 'Place-Zeile: Icon-Laden fehlgeschlagen' $_ }
 
     return $row
 }
@@ -14860,6 +15386,17 @@ function Update-AllPlacesIcon {
     param($Row, $Studios)
     if ($null -eq $Row -or $null -eq $Row.IconFrame) { return }
     try {
+        # Version 5.2: Mosaik nur neu bauen, wenn sich die Kacheln wirklich
+        # geaendert haben (bis 5.0.2 bei jedem UI-Tick komplett neu).
+        $signature = ''
+        foreach ($studio in @($Studios | Select-Object -First 4)) {
+            $sigKey = Get-PlaceIconKey $studio
+            $sigPath = ''
+            if ($script:PlaceIconCache.ContainsKey($sigKey)) { $sigPath = [string]$script:PlaceIconCache[$sigKey] }
+            $signature += $sigKey + '=' + $sigPath + ';'
+        }
+        if ($script:AllPlacesMosaicSignature -eq $signature) { return }
+        $script:AllPlacesMosaicSignature = $signature
         $mosaic = [System.Windows.Controls.Primitives.UniformGrid]::new()
         $mosaic.Rows = 2; $mosaic.Columns = 2
         $mosaic.Margin = [System.Windows.Thickness]::new(3)
@@ -14893,29 +15430,14 @@ function New-AllPlacesRow {
     $virtualStudio = [pscustomobject]@{
         sessionId='__arena_all_places__'; placeName='Alle Places'; placeId='all'; gameId='0'; accessMode='readwrite'; versionMismatch=$false
     }
+    # Version 5.2: Die Zeile sieht aus wie jede andere - nur "Prompt kopieren"
+    # und "...". "Token zuruecksetzen" und "Nur Lesezugriff" (wirkt auf alle
+    # verbundenen Places, siehe Set-AllSessionsMode) bleiben im "..."-Menue.
+    # Bis 5.0.2 lagen beide zusaetzlich als eigene Knoepfe direkt in der Zeile.
     $row = New-Row $virtualStudio $WindowNames
     $row.Root.Tag = '__arena_all_places__'
     $row.Title.Text = 'Alle Places'
     try { $row.Copy.ToolTip = 'Prompt für alle verbundenen Places kopieren' } catch {}
-    # Version 5: prompt, reset and read-only are directly available on the
-    # right side of the All-Places row (history stays in the ellipsis menu).
-    $row.Copy.MinWidth=128
-    $actions = $row.Root.Child
-    $extra1=[System.Windows.Controls.ColumnDefinition]::new();$extra1.Width=[System.Windows.GridLength]::Auto
-    $extra2=[System.Windows.Controls.ColumnDefinition]::new();$extra2.Width=[System.Windows.GridLength]::Auto
-    $actions.ColumnDefinitions.Add($extra1);$actions.ColumnDefinitions.Add($extra2)
-    [System.Windows.Controls.Grid]::SetColumn($row.Menu,4)
-    $reset=[System.Windows.Controls.Button]::new();$reset.Content='Token zurücksetzen';$reset.Width=132;$reset.Height=38;$reset.Margin=[System.Windows.Thickness]::new(0,0,8,0);$reset.Tag='__arena_all_places__';$reset.ToolTip='Gemeinsamen Token für alle Places zurücksetzen'
-    $reset.Add_Click({param($sender,$e) Reset-SessionToken ([string]$sender.Tag)})
-    [System.Windows.Controls.Grid]::SetColumn($reset,2);$actions.Children.Add($reset)|Out-Null
-    $access=[System.Windows.Controls.Button]::new();$access.Width=72;$access.Height=38;$access.Padding=[System.Windows.Thickness]::new(0);$access.Margin=[System.Windows.Thickness]::new(0,0,8,0);$access.ToolTip='Temporären Nur-Lesezugriff für alle aktuell verbundenen Places umschalten';$access.Tag=$row
-    $switch=[System.Windows.Controls.Grid]::new();$track=[System.Windows.Controls.Border]::new();$track.Width=52;$track.Height=25;$track.CornerRadius=[System.Windows.CornerRadius]::new(13);$track.BorderThickness=[System.Windows.Thickness]::new(1);$thumb=[System.Windows.Shapes.Ellipse]::new();$thumb.Width=19;$thumb.Height=19;$thumb.Fill=Get-Brush '#F8FAFC';$thumb.VerticalAlignment='Center';$state=[System.Windows.Controls.TextBlock]::new();$state.FontSize=8.5;$state.FontWeight='Bold';$state.HorizontalAlignment='Center';$state.VerticalAlignment='Center';$state.IsHitTestVisible=$false
-    $switch.Children.Add($track)|Out-Null;$switch.Children.Add($thumb)|Out-Null;$switch.Children.Add($state)|Out-Null;$access.Content=$switch
-    $row.AllAccessButton=$access;$row.AllAccessTrack=$track;$row.AllAccessThumb=$thumb;$row.AllAccessState=$state
-    $access.Add_Click({param($sender,$e) $target=$sender.Tag;$newMode=if($target.Mode -eq 'readonly'){'readwrite'}else{'readonly'};Set-SessionMode '__arena_all_places__' $newMode;$target.ModeUntil=[DateTime]::UtcNow.AddSeconds(3);Set-RowMode $target $newMode})
-    [System.Windows.Controls.Grid]::SetColumn($access,3);$actions.Children.Add($access)|Out-Null
-    # Paint the direct switch immediately; no wait for the next UI refresh.
-    Set-RowMode $row 'readwrite' -Silent
     Update-AllPlacesIcon $row $Studios
     # The aggregate mosaic is not a single game icon and must never be
     # overwritten by the unpublished-Studio fallback loader.
@@ -15518,7 +16040,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '5.0.2'
+    $versionText = '5.2'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -15827,19 +16349,11 @@ function Open-SettingsWindow {
                         </StackPanel>
                     </Border>
 
-                    <TextBlock x:Name="LastMessageTitle" Text="LETZTE ARENA-MELDUNG" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8" Visibility="Collapsed"/>
-                    <Border x:Name="LastMessageCard" Background="#111827" BorderBrush="#334155" BorderThickness="1" CornerRadius="12" Padding="16,13" Visibility="Collapsed">
-                        <StackPanel>
-                            <TextBlock x:Name="LastMessageText" Foreground="#F8FAFC" FontSize="13" TextWrapping="Wrap"/>
-                            <TextBlock x:Name="LastMessageMeta" Foreground="{StaticResource SwTextFaint}" FontSize="10.5" Margin="0,7,0,0"/>
-                        </StackPanel>
-                    </Border>
-
                     <TextBlock Text="UPDATES" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
                     <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                     <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                    <TextBlock Text="Arena Roblox Bridge - Version 5.0.2" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                    <TextBlock Text="Arena Roblox Bridge - Version 5.2" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                 </StackPanel>
             </ScrollViewer>
@@ -15857,10 +16371,6 @@ function Open-SettingsWindow {
     $startupSwitch   = $settingsWindow.FindName('StartupSwitch')
     $selfTestSwitch  = $settingsWindow.FindName('SelfTestSwitch')
     $notifySwitch    = $settingsWindow.FindName('NotifySwitch')
-    $lastTitle       = $settingsWindow.FindName('LastMessageTitle')
-    $lastCard        = $settingsWindow.FindName('LastMessageCard')
-    $lastText        = $settingsWindow.FindName('LastMessageText')
-    $lastMeta        = $settingsWindow.FindName('LastMessageMeta')
     $updateText      = $settingsWindow.FindName('UpdateInfoText')
 
     $startupSwitch.IsChecked = $autoStartNow
@@ -15871,14 +16381,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 5.0.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
-    }
-
-    if ($script:LastArenaMessage) {
-        $lastTitle.Visibility = 'Visible'
-        $lastCard.Visibility = 'Visible'
-        $lastText.Text = [string]$script:LastArenaMessage.message
-        $lastMeta.Text = ([string]$script:LastArenaMessage.place) + ' · ' + ([string]$script:LastArenaMessage.time)
+        $updateText.Text = 'Version 5.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -15926,7 +16429,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 5.0.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 5.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -15939,7 +16442,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '5.0.2'
+    $verText = '5.2'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
@@ -16031,7 +16534,6 @@ $timer.Start()
 # Version 3.8: report_done-Meldungen der KI abholen und als Windows-
 # Benachrichtigung anzeigen. Der Server legt sie nur in die Warteschlange,
 # wenn der Nutzer die Fertig-Meldung aktiviert hat.
-$script:LastArenaMessage = $null
 $notifyTimer = [System.Windows.Threading.DispatcherTimer]::new()
 $notifyTimer.Interval = [TimeSpan]::FromMilliseconds(800)
 $notifyTimer.Add_Tick({
@@ -16041,11 +16543,6 @@ $notifyTimer.Add_Tick({
             if (-not $script:Shared.NotifyQueue.TryDequeue([ref]$item)) { break }
             try {
                 $payload = $item | ConvertFrom-Json
-                $script:LastArenaMessage = @{
-                    message = [string]$payload.message
-                    place   = [string]$payload.place
-                    time    = [string]$payload.time
-                }
                 Show-ArenaDoneNotification -Place ([string]$payload.place) -Message ([string]$payload.message)
             } catch {
                 Write-RuntimeLog "Fertig-Meldung konnte nicht angezeigt werden: $($_.Exception.Message)"

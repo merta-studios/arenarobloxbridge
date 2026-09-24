@@ -1,10 +1,12 @@
 {
-  "version": "5.0.2",
+  "version": "5.2",
   "notes": [
-    "• Version 5.0.2 – Diagnose-Ausbau: Die Place-Liste blieb auch nach 5.0.1 leer (Anzahl oben stimmte, aber keine Zeile). Jeder Fehler beim Erstellen einer Zeile landet jetzt mit kompletter Ursache in runtime.log: Fehlertyp, Meldung, Skriptzeile und Stacktrace – vorher stand dort nur eine kurze Meldung, mit der sich die Ursache nicht finden ließ.",
-    "• Sicherheitsnetz: Selbst wenn Icon, Auswahlmenü, Arena-Verlauf oder Einblend-Animation einer Zeile fehlschlagen, erscheint die Zeile immer mindestens mit Name und „Prompt kopieren“-Knopf. Die Liste kann nicht mehr leer bleiben, ohne dass runtime.log den Grund enthält.",
-    "• Nach jeder hinzugefügten Zeile misst das Programm den echten Fensterzustand (Anzahl Kinder, Größe der Liste, Sichtbarkeit und Höhe der Zeile) und schreibt ihn in runtime.log.",
-    "• Alles aus 5.0.0/5.0.1 bleibt erhalten (Playtest-Härtung, Alle-Places-Token, Place-Icons, Arena-Verlauf, $host-Fix).",
-    "• Hinweis: Nach dem Update Roblox Studio einmal neu starten, damit das Plugin 5.0.2 geladen wird."
+    "• Version 5.2 – aufgeräumt: Die „Alle Places“-Zeile zeigt jetzt wie jede andere nur noch „Prompt kopieren“ und „…“. „Token zurücksetzen“ und der Nur-Lesezugriff-Schalter (für alle Places gleichzeitig) stehen beide im „…“-Menü.",
+    "• Spiel-Icons repariert: Die bisherige Ersatz-Adresse für das Studio-Bild war tot und Fehlversuche wurden nie wiederholt – darum blieben die Rahmen leer. Jetzt: geprüfte PNG-Dateien, kaputte Cache-Reste werden verworfen, Fehlversuche wiederholen sich automatisch, und wenn gar kein Ladevorgang gelingt, wird ein Ersatz-Icon lokal gezeichnet – ein leerer Rahmen ist ausgeschlossen. Jedes Laden steht außerdem mit Grund in runtime.log.",
+    "• Arena-Verlauf verbessert: Löschen- und Schließen-Knopf tragen jetzt das normale Programm-Design, das Fenster lässt sich an Titelzeile und Hintergrund frei über den Bildschirm schieben, jede Aktion ist flacher, und alle „[PLATZHALTER]“-Stellen zeigen jetzt echte Zahlen (Zeilen, Kopien, Objekte). Jedes Werkzeug hat einen eigenen verständlichen Text.",
+    "• Einstellungen schlanker: Der Abschnitt „Letzte Arena-Meldung“ ist entfernt. Die Fertig-Benachrichtigung von Arena (falls eingeschaltet) bleibt unverändert.",
+    "• „Alle Places“-Prompt kürzer: Die Zeilen „MODE=ALLE_PLACES“ und „HINWEIS=…“ sind weg. Arena bekommt die Place-Auswahl jetzt automatisch von der Bridge – die erste Anfrage beantwortet der Server direkt mit der aktuellen Liste und der Anleitung.",
+    "• Place-Liste räumt schneller auf: Geschlossene Places verschwinden nach ca. 15 statt 25 Sekunden (sauber geschlossene sogar nach ca. 4) – und „Geister-Places“, die vorher für immer hängen bleiben konnten, sind ausgeschlossen, weil die Sichtbarkeit nur noch am Lebenszeichen des Studio-Plugins hängt. Nach 120 Sekunden wird eine Sitzung samt Token und allem Zustand restlos entsorgt (vorher erst nach 600).",
+    "• Hinweis: Nach dem Update Roblox Studio einmal neu starten, damit das Plugin 5.2 geladen wird."
   ]
 }
