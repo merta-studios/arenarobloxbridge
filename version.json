@@ -1,10 +1,10 @@
 {
-  "version": "5.0.1",
+  "version": "5.0.2",
   "notes": [
-    "• Version 5.0.1: Die Spieleliste bleibt nicht mehr leer. Verbundene Places erscheinen wieder als Zeile mit Icon, Prompt-Kopierknopf und Menü – bisher stimmte nur die Anzahl oben, darunter blieb alles leer.",
-    "• Ursache war ein interner Namenskonflikt: Das Icon-Panel (und das Verlaufsfenster) nutzte die reservierte PowerShell-Variable $host, wodurch jede Zeile beim Erstellen abbrach. Die Panels heißen jetzt eindeutig.",
-    "• Auch der Arena-Verlauf öffnet dadurch wieder zuverlässig – pro Place und für „Alle Places“.",
-    "• Alles aus 5.0.0 bleibt erhalten (Playtest-Härtung, Alle-Places-Token, Place-Icons, temporärer Lesezugriff).",
-    "• Hinweis: Nach dem Update Roblox Studio einmal neu starten, damit das Plugin 5.0.1 geladen wird."
+    "• Version 5.0.2 – Diagnose-Ausbau: Die Place-Liste blieb auch nach 5.0.1 leer (Anzahl oben stimmte, aber keine Zeile). Jeder Fehler beim Erstellen einer Zeile landet jetzt mit kompletter Ursache in runtime.log: Fehlertyp, Meldung, Skriptzeile und Stacktrace – vorher stand dort nur eine kurze Meldung, mit der sich die Ursache nicht finden ließ.",
+    "• Sicherheitsnetz: Selbst wenn Icon, Auswahlmenü, Arena-Verlauf oder Einblend-Animation einer Zeile fehlschlagen, erscheint die Zeile immer mindestens mit Name und „Prompt kopieren“-Knopf. Die Liste kann nicht mehr leer bleiben, ohne dass runtime.log den Grund enthält.",
+    "• Nach jeder hinzugefügten Zeile misst das Programm den echten Fensterzustand (Anzahl Kinder, Größe der Liste, Sichtbarkeit und Höhe der Zeile) und schreibt ihn in runtime.log.",
+    "• Alles aus 5.0.0/5.0.1 bleibt erhalten (Playtest-Härtung, Alle-Places-Token, Place-Icons, Arena-Verlauf, $host-Fix).",
+    "• Hinweis: Nach dem Update Roblox Studio einmal neu starten, damit das Plugin 5.0.2 geladen wird."
   ]
 }

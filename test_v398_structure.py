@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 5.0.1.
+"""Offline structure check for Arena Roblox Bridge 5.0.2.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "5.0.1"
+VERSION = "5.0.2"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -93,7 +93,7 @@ def main() -> int:
     require(raw.startswith(b"\xef\xbb\xbf"), "ArenaBridge.ps1 must retain its UTF-8 BOM")
     source = raw.decode("utf-8-sig")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    require(version["version"] == VERSION, "version.json is not 5.0.1")
+    require(version["version"] == VERSION, "version.json is not 5.0.2")
     require("3.9.5" not in source, "stale 3.9.5 literal remains in ArenaBridge.ps1")
 
     # Stale FUNCTIONAL version literals (history comments may mention 3.9.8).
@@ -176,7 +176,8 @@ def main() -> int:
     for marker in stale_404_literals:
         require(marker not in source, f"stale 4.0.4 literal remains: {marker}")
 
-    required_markers = [
+    # Stale FUNCTIONAL 5.0.1 literals (history comments may mention 5.0.1).
+    stale_501_literals = [
         "DocsVersion     = '5.0.1'",
         'local ARENA_VERSION  = "5.0.1"',
         "bridgeVersion = '5.0.1'",
@@ -184,7 +185,22 @@ def main() -> int:
         "version = '5.0.1'",
         "$versionText = '5.0.1'",
         "$verText = '5.0.1'",
+        'Arena Studio Bridge - Studio Plugin  (Version 5.0.1)',
         'Text="Arena Roblox Bridge - Version 5.0.1"',
+        "# Arena Roblox Bridge  -  Version 5.0.1",
+    ]
+    for marker in stale_501_literals:
+        require(marker not in source, f"stale 5.0.1 literal remains: {marker}")
+
+    required_markers = [
+        "DocsVersion     = '5.0.2'",
+        'local ARENA_VERSION  = "5.0.2"',
+        "bridgeVersion = '5.0.2'",
+        "serverVersion = '5.0.2'",
+        "version = '5.0.2'",
+        "$versionText = '5.0.2'",
+        "$verText = '5.0.2'",
+        'Text="Arena Roblox Bridge - Version 5.0.2"',
         # 4.0.0: the config table that keeps the top-level local count in check.
         "local ARENA_CFG = {",
         "ARENA_CFG.POLL_WAIT",
@@ -257,6 +273,25 @@ def main() -> int:
         "Open-ArenaHistoryWindow",
         "Start-PlaceIconLoad",
         "Alle Places",
+        # 5.0.2: place-list hard diagnosis + safety net (live bug: count badge
+        # correct, EmptyState hidden, but no row ever rendered; 5.0.1's $host
+        # fix was correct but not sufficient - so errors must now be measured,
+        # not guessed: full type/line/stacktrace logging, post-add tree state,
+        # and every optional row feature individually guarded so a minimal row
+        # (name + copy button) always lands in the tree).
+        "function Write-UiErrorLog",
+        "InvocationInfo.ScriptLineNumber",
+        "$ErrorRecord.ScriptStackTrace",
+        "function Add-PlaceRowToPlaceList",
+        "Add-PlaceRowToPlaceList $row $sid 'Place-Zeile'",
+        "Add-PlaceRowToPlaceList $script:AllPlacesRow $allSid 'Alle-Places-Zeile'",
+        "hinzugefuegt (sid={1}): PlaceList.Children={2}",
+        "hart auf sichtbar gestellt",
+        "Einblend-Animation kam nie an",
+        "Place-Liste konnte nicht neu angeordnet werden",
+        "Place-Zeile: Icon-Visual konnte nicht erstellt werden",
+        "Place-Zeile: Auswahlmenue/Popup konnte nicht erstellt werden",
+        "Arena-Verlaufsfenster konnte nicht geoeffnet werden",
     ]
     for marker in required_markers:
         require(marker in source, f"required marker missing: {marker}")
@@ -336,7 +371,7 @@ def main() -> int:
         except ET.ParseError as exc:
             raise AssertionError(f"XAML block {index} is not XML: {exc}") from exc
 
-    print("OK: 5.0.1 structure, Lua and XAML validation passed")
+    print("OK: 5.0.2 structure, Lua and XAML validation passed")
     return 0
 
 
