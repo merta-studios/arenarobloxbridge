@@ -1,7 +1,7 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 5.0.1  -  24.09.2026)                                #
+#   (Stand: Version 5.3  -  24.09.2026)                                  #
 #                                                                      #
 ##########################################################################
 
@@ -187,6 +187,27 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v5.3: Die 5.2-Reparaturen liefen NIE an - deshalb hier der Merksatz:
+  1) ICONS: Ein Ladevorgang, der nur beim Erstellen einer Zeile angestossen
+     wird, kann sich NICHT wiederholen. Wiederholungen brauchen einen eigenen
+     Treiber im UI-Takt (Update-PlaceIconRetries). Ein Ersatzbild, das erst
+     "ab dem 3. Versuch" kommt, kommt nie, wenn es nie einen 2. Versuch gibt.
+     Das Ersatzbild wird jetzt LOKAL gezeichnet (kein Internet) und schon beim
+     1. Fehlschlag gezeigt. Der Icon-Worker benutzt nur noch .NET - ein frisch
+     erzeugter Runspace laedt Zusatzmodule (Invoke-RestMethod, Test-Path,
+     Move-Item) nicht zuverlaessig nach und liefert dann gar kein Ergebnis.
+     WPF-BitmapImage per UriSource cached nach Pfad und sperrt die Datei ->
+     immer ueber MemoryStream + IgnoreImageCache laden (New-IconBitmap).
+  2) VERLAUF: Haengt jetzt am stabilen Place-Schluessel (placeId, sonst
+     Place-Name), NICHT mehr an der sessionId - jedes Plugin-Neuladen erzeugt
+     eine neue sessionId. Remove-DeadSession darf ActivityLogs NICHT mehr
+     loeschen. Der Verlauf wird nach %LOCALAPPDATA%\ArenaRobloxBridge\history
+     gesichert und beim Start geladen.
+  3) POWERSHELL-FALLE: $args ist eine AUTOMATISCHE Variable. Ein Parameter
+     mit diesem Namen wird beim Betreten der Funktion wortlos mit der
+     (leeren) Liste der ungebundenen Argumente ueberschrieben - genau das
+     hat alle Verlaufstexte auf Platzhalter zurueckfallen lassen. Nie einen
+     Parameter $args nennen (jetzt: $ToolArgs). Der Strukturtest prueft das.
 - v5.0.0: Mega-Update: frische Session-Schlüssel werden vor jedem Play registriert (Stop/Move blockieren nicht mehr durch einen alten Schlüssel), Humanoid-Bewegung wird über die volle Dauer gehalten und der EndTest-Stop wartet robuster. Ab zwei Places erscheint "Alle Places" mit stabilem Token pro Programmstart, explizitem GET /api/places -> targetPlace-Wechsel für Arena, Icon-Mosaik und temporärem globalem Lesezugriff. Place-Icons laden mit Animation/Fallback; temporärer Lesezugriff wird nie gespeichert. Neuer scrollbarer, farbcodierter Arena-Verlauf je Place/gesamt.
 - v3.3: Basis-Release (bestaetigt: "danke alles klappt")
 - v3.4: Feature-Release

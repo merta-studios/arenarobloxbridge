@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 5.2.
+"""Offline structure check for Arena Roblox Bridge 5.3.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "5.2"
+VERSION = "5.3"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -93,7 +93,7 @@ def main() -> int:
     require(raw.startswith(b"\xef\xbb\xbf"), "ArenaBridge.ps1 must retain its UTF-8 BOM")
     source = raw.decode("utf-8-sig")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    require(version["version"] == VERSION, "version.json is not 5.2")
+    require(version["version"] == VERSION, "version.json is not 5.3")
     require("3.9.5" not in source, "stale 3.9.5 literal remains in ArenaBridge.ps1")
 
     # Stale FUNCTIONAL version literals (history comments may mention 3.9.8).
@@ -208,7 +208,8 @@ def main() -> int:
     for marker in stale_502_literals:
         require(marker not in source, f"stale 5.0.2 literal remains: {marker}")
 
-    required_markers = [
+    # Stale FUNCTIONAL 5.2 literals (history comments may mention 5.2).
+    stale_52_literals = [
         "DocsVersion     = '5.2'",
         'local ARENA_VERSION  = "5.2"',
         "bridgeVersion = '5.2'",
@@ -216,7 +217,22 @@ def main() -> int:
         "version = '5.2'",
         "$versionText = '5.2'",
         "$verText = '5.2'",
+        'Arena Studio Bridge - Studio Plugin  (Version 5.2)',
         'Text="Arena Roblox Bridge - Version 5.2"',
+        "# Arena Roblox Bridge  -  Version 5.2",
+    ]
+    for marker in stale_52_literals:
+        require(marker not in source, f"stale 5.2 literal remains: {marker}")
+
+    required_markers = [
+        "DocsVersion     = '5.3'",
+        'local ARENA_VERSION  = "5.3"',
+        "bridgeVersion = '5.3'",
+        "serverVersion = '5.3'",
+        "version = '5.3'",
+        "$versionText = '5.3'",
+        "$verText = '5.3'",
+        'Text="Arena Roblox Bridge - Version 5.3"',
         # 4.0.0: the config table that keeps the top-level local count in check.
         "local ARENA_CFG = {",
         "ARENA_CFG.POLL_WAIT",
@@ -320,7 +336,6 @@ def main() -> int:
         "Remove-DeadSession $sessionId",
         "function Test-PngFile",
         "function New-LocalFallbackIcon",
-        "upload.wikimedia.org/wikipedia/commons/4/44/RobloxStudioLogo2025.png",
         "$script:PlaceIconFails = @{}",
         "$script:AllPlacesMosaicSignature = $null",
         "function New-HistoryButton",
@@ -329,6 +344,31 @@ def main() -> int:
         "function Get-ActivityToolSets",
         "previousLines = select(2, string.gsub(oldSource",
         "function Get-ResultNumber",
+        # ---- Version 5.3 ------------------------------------------------
+        # Icons: the 5.2 retry logic could never run because nothing called
+        # Start-PlaceIconLoad again. 5.3 has a real retry driver, draws its
+        # fallback locally (no internet at all) and its worker uses .NET only.
+        "function Update-PlaceIconRetries",
+        "Update-PlaceIconRetries\n}",
+        "function Request-PlaceIcon",
+        "function Set-PlaceIconFallback",
+        "function New-IconBitmap",
+        "$script:PlaceIconKeyInfo = @{}",
+        "$script:PlaceIconFallbackKeys = @{}",
+        "$script:PlaceIconWorkerScript = @'",
+        "apis.roblox.com/universes/v1/places/",
+        "thumbnails.roblox.com/v1/places/gameicons?placeIds=",
+        "BitmapCreateOptions]::IgnoreImageCache",
+        # History: stable per-place key, survives session churn + restarts.
+        "function Get-ArenaActivityKeyFor",
+        "function Get-ArenaHistoryKeyFor",
+        "function Restore-ArenaHistory",
+        "function Save-ArenaHistory",
+        "ActivityPlaceKeys",
+        "ActivityPlaceNames",
+        "$script:HistoryFolder = Join-Path $script:AppDataRoot 'history'",
+        "Save-ArenaHistory -Force",
+        "Arena-Verlauf konnte nicht aufgebaut werden",
     ]
     for marker in required_markers:
         require(marker in source, f"required marker missing: {marker}")
@@ -346,6 +386,24 @@ def main() -> int:
             "a [Platzhalter] fallback survived in the activity helpers")
     require("static.wikia.nocookie.net/roblox/images/e/e1" not in source,
             "the dead wikia studio-logo URL is still in the icon worker")
+
+    # ---- Version 5.3 negative guards ------------------------------------
+    # $args is an AUTOMATIC PowerShell variable: a parameter with that name is
+    # silently overwritten with an empty list, which is exactly why every
+    # history text lost its real values up to 5.2.
+    require("($args," not in source and "($args)" not in source,
+            "an activity helper still declares a parameter named $args")
+    require("'ActivityLogs','ActivityCommandMap')" not in source,
+            "Remove-DeadSession still deletes the Arena history of a place")
+    # The icon worker must not depend on cmdlets from add-on modules.
+    worker_start = source.index("$script:PlaceIconWorkerScript = @'")
+    worker_end = source.index("\n'@", worker_start)
+    worker = source[worker_start:worker_end]
+    for forbidden in ("Invoke-RestMethod", "Invoke-WebRequest", "Test-Path", "Move-Item", "Remove-Item", "Get-Item"):
+        require(forbidden not in worker,
+                f"the icon worker still uses {forbidden} (an add-on module cmdlet)")
+    require("wikimedia" not in worker and "wikia" not in worker,
+            "the icon worker still downloads a fallback logo from the internet")
 
     # A no-HTTP fallback must not return an instructions-to-enable-HTTP error.
     start_chunk = source[source.index("local function startPlay"):source.index("local function stopPlay")]
@@ -422,7 +480,7 @@ def main() -> int:
         except ET.ParseError as exc:
             raise AssertionError(f"XAML block {index} is not XML: {exc}") from exc
 
-    print("OK: 5.2 structure, Lua and XAML validation passed")
+    print("OK: 5.3 structure, Lua and XAML validation passed")
     return 0
 
 

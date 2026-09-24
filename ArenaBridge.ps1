@@ -1,5 +1,62 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 5.2
+# Arena Roblox Bridge  -  Version 5.3
+#
+# FEHLERBEHEBUNGS-VERSION 5.3 (die 5.2-Reparaturen liefen nie an):
+#   * SPIEL-ICONS: JETZT WIRKLICH REPARIERT. 5.2 hat die Ursache verfehlt.
+#     Gemessen und behoben wurden drei echte Fehler:
+#     1) Die in 5.2 eingebaute WIEDERHOLUNG konnte NIE anlaufen:
+#        Start-PlaceIconLoad wurde ausschliesslich beim ERSTELLEN einer Zeile
+#        (und bei einem Icon-Wechsel) gerufen. Der Zaehler PlaceIconFails
+#        wurde zwar gefuellt, aber niemand hat ihn je wieder angesehen - ein
+#        einziger Fehlversuch (kurz kein Netz, Roblox langsam) liess den
+#        Rahmen also fuer immer leer, und weil das Ersatzbild erst ab dem 3.
+#        Versuch gezeichnet wurde, kam auch das nie. Jetzt gibt es
+#        Update-PlaceIconRetries: laeuft bei jedem Oberflaechen-Takt und
+#        startet faellige Versuche selbst.
+#     2) Ein Place OHNE Spiel-/Place-Id (nicht veroeffentlicht) hat bei Roblox
+#        kein Bild. 5.2 holte dafuer ein Studio-Logo aus dem Internet - ohne
+#        Netz/hinter Firewall oder Proxy blieb der Rahmen leer. Jetzt wird das
+#        Ersatzbild SOFORT lokal gezeichnet, ganz ohne Netzverbindung. Und bei
+#        jedem echten Fehlversuch erscheint es ab dem ERSTEN Fehlschlag
+#        (vorher erst ab dem dritten, der nie kam); im Hintergrund wird
+#        weiter nach dem echten Spielicon gesucht und es ersetzt das
+#        Ersatzbild, sobald es da ist. Ein leerer Rahmen ist ausgeschlossen.
+#     3) Der Ladevorgang lief in einem frisch erzeugten Runspace und benutzte
+#        dort Invoke-RestMethod / Test-Path / Move-Item. Laedt so ein Runspace
+#        die Zusatzmodule nicht nach, kommt NIE ein Ergebnis zurueck und der
+#        Rahmen dreht sich endlos. Der Ladevorgang benutzt jetzt nur noch
+#        .NET (WebClient + System.IO) und kennt drei Wege zum Bild:
+#        gameId -> Thumbnails-API, placeId -> Universe-Id -> Thumbnails-API,
+#        placeId -> Place-Gameicons-API.
+#     * Ausserdem: Bilder werden ueber einen Speicherstrom geladen (WPF hielt
+#       die Datei sonst offen und lieferte beim gleichen Pfad hartnaeckig das
+#       alte, gecachte Bild), und das Mosaik von "Alle Places" wird nach dem
+#       Neubau der Zeile wieder gezeichnet (die Signatur der alten Zeile hat
+#       es vorher blockiert - der Rahmen blieb leer).
+#   * ARENA-VERLAUF: JETZT WIRKLICH BENUTZBAR. Auch hier waren es drei Fehler:
+#     1) Der Verlauf hing an der SITZUNGS-Id. Jedes Neuladen des Plugins und
+#        jeder Studio-Neustart erzeugt eine neue Sitzung - das Verlaufsfenster
+#        war damit sofort wieder leer. Zusaetzlich loeschte das Aufraeumen
+#        toter Sitzungen (nach 120 s) den kompletten Verlauf mit. Der Verlauf
+#        haengt jetzt an einem stabilen PLACE-Schluessel (placeId, sonst
+#        Place-Name) und wird beim Aufraeumen NICHT mehr angefasst.
+#     2) Der Verlauf lebte nur im Arbeitsspeicher. Jetzt wird er je Place nach
+#        %LOCALAPPDATA%\ArenaRobloxBridge\history gesichert und beim naechsten
+#        Programmstart wieder geladen (400 Aktionen je Place, aelter als 30
+#        Tage wird verworfen).
+#     3) Die Texte zeigten weiter Platzhalter statt echter Werte: Die
+#        Hilfsfunktionen des Verlaufs hatten einen Parameter namens $args -
+#        das ist in PowerShell eine AUTOMATISCHE Variable und ueberschreibt
+#        den uebergebenen Wert wortlos mit einer leeren Liste. Jede Angabe aus
+#        den Werkzeug-Argumenten (Objektname, Skriptname, Zeilenzahl, Anzahl)
+#        ging damit verloren. Der Parameter heisst jetzt $ToolArgs.
+#     * Ausserdem: Der Aufbau des Fensters laeuft in einem Netz (ein Fehler
+#       hat vorher den Zeitgeber getoetet und den Verlauf eingefroren, ohne
+#       eine Spur im Log), die Aenderungs-Signatur erkennt jetzt auch
+#       Aktualisierungen innerhalb derselben Sekunde, und die "noch nichts
+#       passiert"-Karte verschwindet, sobald es echte Eintraege gibt.
+#   * Nach dem Update Roblox Studio einmal neu starten, damit das Plugin 5.3
+#     geladen wird.
 #
 # BENUTZER-WUNSCH-UPDATE VERSION 5.2 (Feinschliff nach der 5.0-Serie):
 #   * ALLE-PLACES-ZEILE AUFGERAEUMT: Der Sammelzugang zeigt jetzt wie jede
@@ -811,6 +868,19 @@ $script:PlaceCleanupSeconds = 120
 $script:AllPlacesRow = $null
 $script:IconFolder = Join-Path $script:AppDataRoot 'place-icons'
 try { New-Item -ItemType Directory -Path $script:IconFolder -Force | Out-Null } catch {}
+# Version 5.3: Der Arena-Verlauf wird je Place auf Platte gesichert und beim
+# naechsten Programmstart wieder geladen (vorher war er nach jedem Neustart und
+# sogar nach jedem Studio-Neuladen weg).
+$script:HistoryFolder = Join-Path $script:AppDataRoot 'history'
+try { New-Item -ItemType Directory -Path $script:HistoryFolder -Force | Out-Null } catch {}
+$script:HistorySaveAt = [DateTime]::MinValue
+# Version 5.3: Icon-Zustand. KeyInfo merkt sich gameId/placeId je Icon-Schluessel,
+# damit ein fehlgeschlagener Ladevorgang spaeter von selbst wiederholt werden
+# kann (bis 5.2 wurde Start-PlaceIconLoad nur beim Bauen einer Zeile gerufen -
+# die 5.2-Wiederholungslogik lief deshalb NIE an). FallbackKeys haelt fest,
+# welche Rahmen gerade nur das lokal gezeichnete Ersatzbild zeigen.
+$script:PlaceIconKeyInfo = @{}
+$script:PlaceIconFallbackKeys = @{}
 $script:RobloxStudioPath = $null
 $script:PluginInstalled = $false
 $script:LastTunnelMessage = ''
@@ -1161,7 +1231,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '5.2'
+    DocsVersion     = '5.3'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -1185,10 +1255,16 @@ $script:Shared = [hashtable]::Synchronized(@{
     AgentResults    = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     AgentStates     = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     AgentLastSeen   = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
-    # Version 5: sessionId -> activityId -> JSON log entry. The UI reads this
-    # live collection; entries stay only for the running bridge process.
+    # Version 5.3: placeKey -> activityId -> JSON log entry (bis 5.2 hing der
+    # Verlauf an der fluechtigen sessionId). Die Oberflaeche liest diese
+    # Sammlung live und sichert sie zusaetzlich nach %LOCALAPPDATA%\...\history.
     ActivityLogs       = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
     ActivityCommandMap = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    # Version 5.3: sessionId -> stabiler Place-Schluessel des Verlaufs und
+    # "seit wann geaendert" je Schluessel (fuer das Speichern auf Platte).
+    ActivityPlaceKeys  = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    ActivityPlaceNames = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    ActivityDirty      = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
     # One aggregate token per program start, never derived from the place list.
     MultiPlaceToken    = $null
 })
@@ -1320,7 +1396,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 5.2)
+  Arena Studio Bridge - Studio Plugin  (Version 5.3)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1391,7 +1467,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "5.2"
+local ARENA_VERSION  = "5.3"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -9680,29 +9756,64 @@ $script:BridgeHandlerScript = {
         return @{ ok=$true; entry=$entry; places=$places }
     }
 
+    # Version 5.3: Der Verlauf haengt NICHT mehr an der Sitzungs-Id, sondern an
+    # einem stabilen PLACE-Schluessel. Bis 5.2 bekam jedes Studio-Neuladen eine
+    # neue sessionId - der Verlauf war damit sofort wieder leer, und beim
+    # Aufraeumen einer toten Sitzung (nach 120 s) wurde er zusaetzlich geloescht.
+    # Die gleiche Regel steht in der Oberflaeche unter Get-ArenaHistoryKey.
+    function Get-ArenaActivityKeyFor([string]$placeId, [string]$placeName) {
+        $clean = ([string]$placeId -replace '[^0-9]', '')
+        if (-not [string]::IsNullOrWhiteSpace($clean) -and $clean -ne '0') { return 'place_' + $clean }
+        $name = ([string]$placeName).ToLowerInvariant() -replace '[^a-z0-9]+', '_'
+        $name = $name.Trim('_')
+        if ($name.Length -gt 60) { $name = $name.Substring(0, 60) }
+        if (-not [string]::IsNullOrWhiteSpace($name)) { return 'name_' + $name }
+        return 'unknown_place'
+    }
+
+    function Get-ArenaActivityKey([string]$sessionId) {
+        if ([string]::IsNullOrWhiteSpace($sessionId)) { return 'unknown_place' }
+        $known = $null
+        if ($Shared.ActivityPlaceKeys.TryGetValue($sessionId, [ref]$known) -and -not [string]::IsNullOrWhiteSpace([string]$known)) { return [string]$known }
+        # Nur ein wirklich aufgeloester Schluessel wird gemerkt - sonst wuerde
+        # sich ein Notbehelf ("session_...") dauerhaft festsetzen.
+        try {
+            $entry = Get-SessionEntry $sessionId
+            if ($entry) {
+                $key = Get-ArenaActivityKeyFor ([string]$entry.placeId) ([string]$entry.placeName)
+                if (-not [string]::IsNullOrWhiteSpace([string]$entry.placeName)) { $Shared.ActivityPlaceNames[$key] = [string]$entry.placeName }
+                $Shared.ActivityPlaceKeys[$sessionId] = $key
+                return $key
+            }
+        } catch {}
+        return ('session_' + $sessionId)
+    }
+
     function Get-ArenaActivityBag([string]$sessionId) {
+        $key = Get-ArenaActivityKey $sessionId
         $bag = $null
-        if (-not $Shared.ActivityLogs.TryGetValue($sessionId, [ref]$bag)) {
+        if (-not $Shared.ActivityLogs.TryGetValue($key, [ref]$bag)) {
             $bag = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
-            [void]$Shared.ActivityLogs.TryAdd($sessionId, $bag)
-            [void]$Shared.ActivityLogs.TryGetValue($sessionId, [ref]$bag)
+            [void]$Shared.ActivityLogs.TryAdd($key, $bag)
+            [void]$Shared.ActivityLogs.TryGetValue($key, [ref]$bag)
         }
+        $Shared.ActivityDirty[$key] = (Get-UnixSeconds)
         return $bag
     }
 
-    function Get-ActivityArgument($args, [string[]]$names, [string]$fallback = '') {
-        if ($null -eq $args) { return $fallback }
+    function Get-ActivityArgument($ToolArgs, [string[]]$names, [string]$fallback = '') {
+        if ($null -eq $ToolArgs) { return $fallback }
         foreach ($name in $names) {
             try {
-                if ($args -is [System.Collections.IDictionary] -and $args.Contains($name) -and $null -ne $args[$name]) { return [string]$args[$name] }
-                if ($args.PSObject.Properties[$name] -and $null -ne $args.$name) { return [string]$args.$name }
+                if ($ToolArgs -is [System.Collections.IDictionary] -and $ToolArgs.Contains($name) -and $null -ne $ToolArgs[$name]) { return [string]$ToolArgs[$name] }
+                if ($ToolArgs.PSObject.Properties[$name] -and $null -ne $ToolArgs.$name) { return [string]$ToolArgs.$name }
             } catch {}
         }
         return $fallback
     }
 
-    function Get-SourceLineCount($args) {
-        $source = Get-ActivityArgument $args @('source','text') ''
+    function Get-SourceLineCount($ToolArgs) {
+        $source = Get-ActivityArgument $ToolArgs @('source','text') ''
         if ([string]::IsNullOrEmpty($source)) { return '?' }
         return [string]([Math]::Max(1, (($source -split "`r?`n").Count)))
     }
@@ -9734,8 +9845,8 @@ $script:BridgeHandlerScript = {
     # Version 5.2: Jede abgeschlossene Aktion bekommt einen verstaendlichen
     # deutschen Satz mit den ECHTEN Werten aus dem Werkzeug-Ergebnis.
     # Kein [PLATZHALTER] mehr - schlaegt etwas fehl, steht die Ursache im Satz.
-    function Get-ArenaActivityText([string]$tool, $args, [string]$phase, $result) {
-        $ref = Get-ActivityArgument $args @('ref','rootRef','parentRef','targetRef','query') 'ein Objekt'
+    function Get-ArenaActivityText([string]$tool, $ToolArgs, [string]$phase, $result) {
+        $ref = Get-ActivityArgument $ToolArgs @('ref','rootRef','parentRef','targetRef','query') 'ein Objekt'
         $sets = Get-ActivityToolSets
         $read = $sets.read
         $writes = $sets.write
@@ -9768,13 +9879,13 @@ $script:BridgeHandlerScript = {
             $oldLines = Get-ResultNumber $result @('previousLines')
             if ($null -ne $newLines -and $null -ne $oldLines) { return 'Hat das Skript „' + $ref + '“ ersetzt: +' + [string]$newLines + ' Zeilen (vorher -' + [string]$oldLines + ' Zeilen).' }
             if ($null -ne $newLines) { return 'Hat das Skript „' + $ref + '“ ersetzt (' + [string]$newLines + ' Zeilen).' }
-            return 'Hat das Skript „' + $ref + '“ ersetzt (' + (Get-SourceLineCount $args) + ' Zeilen).'
+            return 'Hat das Skript „' + $ref + '“ ersetzt (' + (Get-SourceLineCount $ToolArgs) + ' Zeilen).'
         }
         if ($tool -eq 'insert_script') {
-            $scriptName = Get-ActivityArgument $args @('name') 'Skript'
+            $scriptName = Get-ActivityArgument $ToolArgs @('name') 'Skript'
             $lines = Get-ResultNumber $result @('lines')
             if ($null -ne $lines) { return 'Hat das Skript „' + $scriptName + '“ erstellt (' + [string]$lines + ' Zeilen).' }
-            return 'Hat das Skript „' + $scriptName + '“ erstellt (' + (Get-SourceLineCount $args) + ' Zeilen).'
+            return 'Hat das Skript „' + $scriptName + '“ erstellt (' + (Get-SourceLineCount $ToolArgs) + ' Zeilen).'
         }
         if ($tool -eq 'bulk_insert_scripts') {
             $createdCount = Get-ResultNumber $result @('count')
@@ -9803,14 +9914,14 @@ $script:BridgeHandlerScript = {
         }
         if ($tool -eq 'clone_instance') {
             $copyCount = Get-ResultNumber $result @('count')
-            if ($null -eq $copyCount) { try { $copyCount = [int64](Get-ActivityArgument $args @('count') '1') } catch { $copyCount = 1 } }
+            if ($null -eq $copyCount) { try { $copyCount = [int64](Get-ActivityArgument $ToolArgs @('count') '1') } catch { $copyCount = 1 } }
             if ([int64]$copyCount -gt 1) { return 'Hat „' + $ref + '“ geklont (' + [string]$copyCount + ' Kopien).' }
             return 'Hat „' + $ref + '“ geklont.'
         }
         if ($tool -eq 'create_instance') {
-            $createdName = Get-ActivityArgument $args @('name','className') 'Objekt'
+            $createdName = Get-ActivityArgument $ToolArgs @('name','className') 'Objekt'
             $itemCount = $null
-            try { $itemCount = [int64](Get-ActivityArgument $args @('count') '1') } catch { $itemCount = 1 }
+            try { $itemCount = [int64](Get-ActivityArgument $ToolArgs @('count') '1') } catch { $itemCount = 1 }
             $resultCount = Get-ResultNumber $result @('count')
             if ($null -ne $resultCount) { $itemCount = $resultCount }
             if ($null -ne $itemCount -and [int64]$itemCount -gt 1) { return 'Hat ' + [string]$itemCount + 'x „' + $createdName + '“ erstellt.' }
@@ -9821,12 +9932,12 @@ $script:BridgeHandlerScript = {
             if ($null -ne $bulkCount) { return 'Hat ' + [string]$bulkCount + ' Objekte erstellt.' }
             return 'Hat mehrere Objekte erstellt.'
         }
-        if ($tool -eq 'run_lua') { return 'Hat ' + (Get-SourceLineCount $args) + ' Zeilen in der Konsole ausgeführt.' }
-        if ($tool -eq 'rename_instance') { return 'Hat „' + $ref + '“ in „' + (Get-ActivityArgument $args @('name') '?') + '“ umbenannt.' }
-        if ($tool -eq 'group_instances') { return 'Hat Objekte in „' + (Get-ActivityArgument $args @('name') 'einer Gruppe') + '“ gruppiert.' }
+        if ($tool -eq 'run_lua') { return 'Hat ' + (Get-SourceLineCount $ToolArgs) + ' Zeilen in der Konsole ausgeführt.' }
+        if ($tool -eq 'rename_instance') { return 'Hat „' + $ref + '“ in „' + (Get-ActivityArgument $ToolArgs @('name') '?') + '“ umbenannt.' }
+        if ($tool -eq 'group_instances') { return 'Hat Objekte in „' + (Get-ActivityArgument $ToolArgs @('name') 'einer Gruppe') + '“ gruppiert.' }
         if ($tool -eq 'batch' -or $tool -eq 'parallel') {
             $callCount = $null
-            try { $calls = Get-ResultField $args @('commands'); if ($calls) { $callCount = @($calls).Count } } catch {}
+            try { $calls = Get-ResultField $ToolArgs @('commands'); if ($calls) { $callCount = @($calls).Count } } catch {}
             if ($null -ne $callCount) { return 'Hat ' + [string]$callCount + ' Werkzeuge gebündelt ausgeführt.' }
             return 'Hat mehrere Werkzeuge gebündelt ausgeführt.'
         }
@@ -9950,9 +10061,9 @@ $script:BridgeHandlerScript = {
         return 'write'
     }
 
-    function New-ArenaActivity([string]$sessionId, [string]$tool, $args) {
+    function New-ArenaActivity([string]$sessionId, [string]$tool, $ToolArgs) {
         $id = [guid]::NewGuid().ToString('N')
-        $entry = @{ id=$id; tool=$tool; phase='running'; kind='running'; text=(Get-ArenaActivityText $tool $args 'running' $null); startedAt=(Get-UnixSeconds); updatedAt=(Get-UnixSeconds) }
+        $entry = @{ id=$id; tool=$tool; phase='running'; kind='running'; text=(Get-ArenaActivityText $tool $ToolArgs 'running' $null); startedAt=(Get-UnixSeconds); updatedAt=(Get-UnixSeconds) }
         $bag = Get-ArenaActivityBag $sessionId
         $bag[$id] = (To-Json $entry 12)
         # Keep the in-memory per-process timeline compact.
@@ -9964,14 +10075,14 @@ $script:BridgeHandlerScript = {
         return $id
     }
 
-    function Complete-ArenaActivity([string]$sessionId, [string]$activityId, [string]$tool, $args, [string]$resultJson) {
+    function Complete-ArenaActivity([string]$sessionId, [string]$activityId, [string]$tool, $ToolArgs, [string]$resultJson) {
         if ([string]::IsNullOrWhiteSpace($activityId)) { return }
         $result = $null
         try { if ($resultJson) { $result = $resultJson | ConvertFrom-Json } } catch {}
         $ok = $true
         if ($result -and $result.PSObject.Properties['ok']) { $ok = ([bool]$result.ok) }
         $phase = if ($ok) { 'completed' } else { 'failed' }
-        $text = Get-ArenaActivityText $tool $args $phase $result
+        $text = Get-ArenaActivityText $tool $ToolArgs $phase $result
         if (-not $ok) {
             $reason = ''
             try { $reason = [string]$result.error } catch {}
@@ -12056,7 +12167,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '5.2'
+            version = '5.3'
             docsVersion = [string]$Shared.DocsVersion
             role = 'A normal token controls exactly one live Roblox Studio place. The special aggregate token copied from Alle Places controls several places: call GET /api/places first and pass one exact targetPlace in every request; the bridge refuses to guess. This makes switching safe and explicit. Send every request as POST /api/tool with JSON body { "token": "...", "targetPlace": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -12171,7 +12282,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '5.2'
+            bridgeVersion = '5.3'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -12411,7 +12522,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '5.2'
+                        bridgeVersion = '5.3'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -12663,7 +12774,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '5.2'
+                        serverVersion = '5.3'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -12850,7 +12961,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='5.2'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='5.3'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -12879,8 +12990,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '5.2'
-                    serverVersion = '5.2'
+                    bridgeVersion = '5.3'
+                    serverVersion = '5.3'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -13530,7 +13641,16 @@ function Remove-DeadSession {
         [void]$script:Shared.TokenSessions.TryRemove($token, [ref]$removedSession)
     }
     $junk = $null
-    foreach ($bagName in @('AccessModes','Pollers','Presence','PendingCommands','LateResults','PlayRetryDedupe','DocsSent','AiPlayIntents','LastPlayEvents','RunOwners','UserActiveAt','AgentKeys','AgentQueues','AgentResults','AgentStates','AgentLastSeen','CommandQueues','CommandSignals','ActivityLogs','ActivityCommandMap')) {
+    # Version 5.3: 'ActivityLogs' steht hier BEWUSST NICHT mehr drin. Bis 5.2
+    # wurde der komplette Arena-Verlauf eines Place mitgeloescht, sobald das
+    # Studio-Fenster 120 s kein Lebenszeichen mehr gab (Studio-Neustart,
+    # Plugin-Neuladen, kurze Aussetzer) - danach war das Verlaufsfenster leer.
+    # Der Verlauf haengt jetzt am stabilen Place-Schluessel und bleibt liegen.
+    # 'ActivityCommandMap' ist nach commandId geschluesselt (kein sessionId),
+    # und 'ActivityPlaceKeys' (sessionId -> Place-Schluessel) bleibt absichtlich
+    # stehen: Ein offenes Verlaufsfenster wuerde sonst genau in dem Moment leer
+    # werden, in dem sein Studio-Fenster verschwindet.
+    foreach ($bagName in @('AccessModes','Pollers','Presence','PendingCommands','LateResults','PlayRetryDedupe','DocsSent','AiPlayIntents','LastPlayEvents','RunOwners','UserActiveAt','AgentKeys','AgentQueues','AgentResults','AgentStates','AgentLastSeen','CommandQueues','CommandSignals')) {
         try { [void]$script:Shared.$bagName.TryRemove($SessionId, [ref]$junk) } catch {}
     }
     try { $script:PlaceNames.Remove($SessionId) } catch {}
@@ -14588,16 +14708,39 @@ function Get-PlaceIconKey {
     return 'studio_fallback'
 }
 
-function Set-PlaceIconImage {
-    param($Row, [string]$Path)
-    if ($null -eq $Row -or $null -eq $Row.IconImage -or [string]::IsNullOrWhiteSpace($Path)) { return }
+# Version 5.3: Bilder werden ueber einen Speicherstrom in WPF geladen. Mit
+# UriSource haelt WPF die Datei offen UND liefert beim gleichen Pfad das alte,
+# intern gecachte Bild aus - ein spaeter nachgeladenes echtes Spielicon war
+# deshalb nie zu sehen. Der Strom umgeht beides.
+function New-IconBitmap {
+    param([string]$Path)
     try {
+        if (-not (Test-PngFile $Path)) { return $null }
+        $bytes = [System.IO.File]::ReadAllBytes($Path)
+        $stream = [System.IO.MemoryStream]::new($bytes)
         $bitmap = [System.Windows.Media.Imaging.BitmapImage]::new()
         $bitmap.BeginInit()
         $bitmap.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
-        $bitmap.UriSource = [uri]$Path
+        $bitmap.CreateOptions = [System.Windows.Media.Imaging.BitmapCreateOptions]::IgnoreImageCache
+        $bitmap.StreamSource = $stream
         $bitmap.EndInit()
         $bitmap.Freeze()
+        return $bitmap
+    } catch {
+        Write-UiErrorLog ('Place-Icon ' + $Path + ' konnte nicht gelesen werden') $_
+        return $null
+    }
+}
+
+function Set-PlaceIconImage {
+    param($Row, [string]$Path)
+    if ($null -eq $Row -or $null -eq $Row.IconImage -or [string]::IsNullOrWhiteSpace($Path)) { return }
+    $bitmap = New-IconBitmap $Path
+    if ($null -eq $bitmap) {
+        try { $Row.IconSpinner.Visibility = 'Collapsed'; $Row.IconFallback.Visibility = 'Visible' } catch {}
+        return
+    }
+    try {
         $Row.IconImage.Source = $bitmap
         $Row.IconImage.Visibility = 'Visible'
         $Row.IconSpinner.Visibility = 'Collapsed'
@@ -14702,107 +14845,253 @@ function New-PlaceIconVisual {
     return [pscustomobject]@{ Frame=$frame; Image=$image; Spinner=$spinner; Fallback=$fallback }
 }
 
+# ----------------------------------------------------------------------------
+# Version 5.3: Icon-Ladevorgang (Arbeitsschritt ausserhalb der Oberflaeche)
+# ----------------------------------------------------------------------------
+# Bewusst OHNE Cmdlets aus Zusatzmodulen (kein Invoke-RestMethod, kein
+# Test-Path/Move-Item): Ein frisch erzeugter Runspace laedt Zusatzmodule nicht
+# immer zuverlaessig nach - schlug das fehl, kam nie ein Ergebnis zurueck und
+# der Rahmen drehte sich fuer immer. Es wird nur noch .NET benutzt.
+# Reihenfolge: gameId -> Thumbnails-API; sonst placeId -> Universe-Id ->
+# Thumbnails-API; sonst placeId -> Place-Gameicons-API.
+$script:PlaceIconWorkerScript = @'
+param($gameId, $placeId, $destination)
+$ErrorActionPreference = 'Stop'
+try {
+    [System.Net.ServicePointManager]::SecurityProtocol =
+        [System.Net.SecurityProtocolType]::Tls12 -bor [System.Net.SecurityProtocolType]::Tls11 -bor [System.Net.SecurityProtocolType]::Tls
+} catch {}
+try { [System.Net.ServicePointManager]::DefaultConnectionLimit = 12 } catch {}
+$notes = New-Object System.Collections.Generic.List[string]
+
+function New-IconClient {
+    $client = New-Object System.Net.WebClient
+    $client.Headers['User-Agent'] = 'ArenaRobloxBridge/5.3 (Roblox Studio Bridge)'
+    $client.Headers['Accept'] = '*/*'
+    try { $client.Proxy = [System.Net.WebRequest]::GetSystemWebProxy(); $client.Proxy.Credentials = [System.Net.CredentialCache]::DefaultCredentials } catch {}
+    return $client
+}
+
+function Get-IconText([string]$url) {
+    $client = New-IconClient
+    try {
+        $task = $client.DownloadStringTaskAsync($url)
+        if (-not $task.Wait(15000)) { throw ('Zeitueberschreitung (15 s) bei ' + $url) }
+        return $task.Result
+    } finally { try { $client.Dispose() } catch {} }
+}
+
+function Get-IconImageUrl([string]$json) {
+    $match = [regex]::Match($json, '"imageUrl"\s*:\s*"([^"]+)"')
+    if ($match.Success) { return ($match.Groups[1].Value -replace '\\/', '/') }
+    return ''
+}
+
+$gameClean  = ([string]$gameId  -replace '[^0-9]', '')
+$placeClean = ([string]$placeId -replace '[^0-9]', '')
+$universeId = ''
+if ($gameClean -and $gameClean -ne '0') { $universeId = $gameClean }
+
+if (-not $universeId -and $placeClean -and $placeClean -ne '0') {
+    try {
+        $answer = Get-IconText ('https://apis.roblox.com/universes/v1/places/' + $placeClean + '/universe')
+        $match = [regex]::Match($answer, '"universeId"\s*:\s*"?(\d+)"?')
+        if ($match.Success) { $universeId = $match.Groups[1].Value }
+        else { $notes.Add('Keine Universe-Id zu placeId ' + $placeClean) }
+    } catch {
+        $notes.Add('Universe-Abfrage fehlgeschlagen: ' + $_.Exception.Message)
+    }
+}
+
+$imageUrl = ''
+if ($universeId) {
+    try {
+        $answer = Get-IconText ('https://thumbnails.roblox.com/v1/games/icons?universeIds=' + $universeId + '&size=150x150&format=Png&isCircular=false')
+        $imageUrl = Get-IconImageUrl $answer
+        if (-not $imageUrl) { $notes.Add('Thumbnails-API ohne Bild fuer Universe ' + $universeId) }
+    } catch {
+        $notes.Add('Thumbnails-API nicht erreichbar: ' + $_.Exception.Message)
+    }
+}
+if (-not $imageUrl -and $placeClean -and $placeClean -ne '0') {
+    try {
+        $answer = Get-IconText ('https://thumbnails.roblox.com/v1/places/gameicons?placeIds=' + $placeClean + '&size=150x150&format=Png&isCircular=false')
+        $imageUrl = Get-IconImageUrl $answer
+        if (-not $imageUrl) { $notes.Add('Place-Gameicons-API ohne Bild fuer placeId ' + $placeClean) }
+    } catch {
+        $notes.Add('Place-Gameicons-API nicht erreichbar: ' + $_.Exception.Message)
+    }
+}
+
+if (-not $imageUrl) {
+    return @{ ok = $false; path = $null; error = ('Roblox lieferte keinen Bild-Link. ' + ($notes -join ' | ')) }
+}
+
+$tmp = [string]$destination + '.download'
+try {
+    $client = New-IconClient
+    try {
+        $task = $client.DownloadFileTaskAsync($imageUrl, $tmp)
+        if (-not $task.Wait(25000)) { throw ('Zeitueberschreitung (25 s) beim Bild-Download.') }
+    } finally { try { $client.Dispose() } catch {} }
+} catch {
+    try { if ([System.IO.File]::Exists($tmp)) { [System.IO.File]::Delete($tmp) } } catch {}
+    return @{ ok = $false; path = $null; error = ('Download fehlgeschlagen (' + $imageUrl + '): ' + $_.Exception.Message + ' | ' + ($notes -join ' | ')) }
+}
+
+$bytes = $null
+try { $bytes = [System.IO.File]::ReadAllBytes($tmp) } catch {}
+$isPng = ($null -ne $bytes -and $bytes.Length -gt 100 -and $bytes[0] -eq 0x89 -and $bytes[1] -eq 0x50 -and $bytes[2] -eq 0x4E -and $bytes[3] -eq 0x47)
+if (-not $isPng) {
+    $length = 0
+    if ($null -ne $bytes) { $length = $bytes.Length }
+    try { if ([System.IO.File]::Exists($tmp)) { [System.IO.File]::Delete($tmp) } } catch {}
+    return @{ ok = $false; path = $null; error = ('Geladene Datei war kein PNG (Laenge ' + $length + ', von ' + $imageUrl + ')') }
+}
+
+try {
+    if ([System.IO.File]::Exists($destination)) { [System.IO.File]::Delete($destination) }
+    [System.IO.File]::Move($tmp, $destination)
+} catch {
+    try { if ([System.IO.File]::Exists($tmp)) { [System.IO.File]::Delete($tmp) } } catch {}
+    return @{ ok = $false; path = $null; error = ('Icon-Datei konnte nicht abgelegt werden: ' + $_.Exception.Message) }
+}
+return @{ ok = $true; path = $destination; note = ($notes -join ' | ') }
+'@
+
+# Version 5.3: Das lokal gezeichnete Ersatzbild in alle betroffenen Zeilen
+# haengen. Gibt $true zurueck, wenn wirklich ein Bild gesetzt wurde.
+function Set-PlaceIconFallback {
+    param([string]$Key)
+    $path = New-LocalFallbackIcon
+    if (-not $path) {
+        foreach ($row in @($script:UiRows.Values)) {
+            if ($row.IconKey -eq $Key) { try { $row.IconSpinner.Visibility = 'Collapsed'; $row.IconFallback.Visibility = 'Visible' } catch {} }
+        }
+        return $false
+    }
+    $script:PlaceIconCache[$Key] = $path
+    $script:PlaceIconFallbackKeys[$Key] = $true
+    foreach ($row in @($script:UiRows.Values)) { if ($row.IconKey -eq $Key) { Set-PlaceIconImage $row $path } }
+    $script:AllPlacesMosaicSignature = $null
+    if ($script:AllPlacesRow) { Update-AllPlacesIcon $script:AllPlacesRow @(Get-ActiveStudios) }
+    return $true
+}
+
+# Version 5.3: Einen Ladeversuch fuer einen Icon-Schluessel anstossen. Diese
+# Funktion ist der EINZIGE Ort, der einen Worker startet - so kann sie sowohl
+# beim Bauen einer Zeile als auch spaeter von der Wiederholung gerufen werden.
+function Request-PlaceIcon {
+    param([string]$Key)
+    if ([string]::IsNullOrWhiteSpace($Key)) { return }
+    if ($script:PlaceIconLoads.ContainsKey($Key)) { return }
+
+    $gameId = ''
+    $placeId = ''
+    if ($script:PlaceIconKeyInfo.ContainsKey($Key)) {
+        $info = $script:PlaceIconKeyInfo[$Key]
+        $gameId = [string]$info.gameId
+        $placeId = [string]$info.placeId
+    }
+    $gameClean = ($gameId -replace '[^0-9]', '')
+    $placeClean = ($placeId -replace '[^0-9]', '')
+    $hasId = ((-not [string]::IsNullOrWhiteSpace($gameClean) -and $gameClean -ne '0') -or (-not [string]::IsNullOrWhiteSpace($placeClean) -and $placeClean -ne '0'))
+
+    if (-not $hasId) {
+        # Ein noch nicht veroeffentlichtes Place hat weder Spiel- noch Place-Id -
+        # bei Roblox gibt es dafuer KEIN Bild. Bis 5.2 wurde stattdessen ein
+        # Studio-Logo aus dem Internet geladen; scheiterte das (kein Netz,
+        # Firewall, Proxy, tote Adresse), blieb der Rahmen fuer immer leer.
+        # Jetzt wird das Ersatzbild sofort lokal gezeichnet - ganz ohne Netz.
+        if (-not $script:PlaceIconFallbackKeys.ContainsKey($Key)) {
+            if (Set-PlaceIconFallback $Key) {
+                Write-RuntimeLog ('Place-Icon ' + $Key + ': Place ist nicht veroeffentlicht (keine Spiel-/Place-Id) - Ersatzbild lokal gezeichnet.')
+            } else {
+                Write-RuntimeLog ('Place-Icon ' + $Key + ': Ersatzbild konnte nicht gezeichnet werden - es wird das Symbol im Rahmen gezeigt.')
+            }
+        }
+        return
+    }
+
+    if ($script:PlaceIconFails.ContainsKey($Key)) {
+        $failInfo = $script:PlaceIconFails[$Key]
+        if ([DateTime]::UtcNow -lt [DateTime]$failInfo.nextAt) { return }
+    }
+
+    $file = Join-Path $script:IconFolder ($Key + '.png')
+    Write-RuntimeLog ('Place-Icon wird geladen: ' + $Key + ' (gameId=' + $gameId + ', placeId=' + $placeId + ')')
+    $worker = [PowerShell]::Create()
+    [void]$worker.AddScript($script:PlaceIconWorkerScript).AddArgument($gameId).AddArgument($placeId).AddArgument($file)
+    try {
+        $script:PlaceIconLoads[$Key] = [pscustomobject]@{ Worker = $worker; Handle = $worker.BeginInvoke(); Key = $Key; File = $file }
+    } catch {
+        try { $worker.Dispose() } catch {}
+        Write-UiErrorLog ('Place-Icon-Ladevorgang ' + $Key + ' konnte nicht gestartet werden') $_
+    }
+}
+
 function Start-PlaceIconLoad {
     param($Studio, $Row)
     if ($null -eq $Row) { return }
     $key = Get-PlaceIconKey $Studio
     $Row.IconKey = $key
+    $script:PlaceIconKeyInfo[$key] = @{ gameId = [string]$Studio.gameId; placeId = [string]$Studio.placeId }
+
+    $shownFromCache = $false
     if ($script:PlaceIconCache.ContainsKey($key) -and (Test-PngFile $script:PlaceIconCache[$key])) {
         Set-PlaceIconImage $Row $script:PlaceIconCache[$key]
-        return
-    }
-    $file = Join-Path $script:IconFolder ($key + '.png')
-    if (Test-Path -LiteralPath $file) {
-        if (Test-PngFile $file) {
-            $script:PlaceIconCache[$key] = $file
-            Set-PlaceIconImage $Row $file
-            return
+        $shownFromCache = $true
+    } else {
+        # Der gemerkte Pfad taugt nicht mehr (Datei geloescht/kaputt) - Cache UND
+        # Ersatzbild-Merker verwerfen, sonst wuerde das Ersatzbild fuer ein
+        # unveroeffentlichtes Place kein zweites Mal gezeichnet.
+        $script:PlaceIconCache.Remove($key)
+        $script:PlaceIconFallbackKeys.Remove($key)
+        $file = Join-Path $script:IconFolder ($key + '.png')
+        if (Test-Path -LiteralPath $file) {
+            if (Test-PngFile $file) {
+                $script:PlaceIconCache[$key] = $file
+                $script:PlaceIconFallbackKeys.Remove($key)
+                Set-PlaceIconImage $Row $file
+                return
+            }
+            # Version 5.2: kaputte Reste im Icon-Cache (z. B. HTML-Fehlerseiten
+            # aus aelteren Versionen oder die tote Wikia-Adresse) verwerfen.
+            try { Remove-Item -LiteralPath $file -Force } catch {}
         }
-        # Version 5.2: kaputte Reste im Icon-Cache (z. B. HTML-Fehlerseiten aus
-        # aelteren Versionen oder die tote Wikia-Adresse) verwerfen.
-        try { Remove-Item -LiteralPath $file -Force } catch {}
     }
-    if ($script:PlaceIconLoads.ContainsKey($key)) { return }
-    # Version 5.2: Fehlversuche werden gezaehlt und mit Verzoegerung wiederholt
-    # (PlaceIconFails). Ab dem 3. Versuch gibt es ein lokal gezeichnetes Bild.
-    if ($script:PlaceIconFails.ContainsKey($key)) {
+    # Zeigt der Rahmen nur das lokale Ersatzbild, wird weiter nach dem echten
+    # Spielicon gesucht - sonst ist hier Schluss.
+    if ($shownFromCache -and -not $script:PlaceIconFallbackKeys.ContainsKey($key)) { return }
+    Request-PlaceIcon $key
+    # Beim ersten Aufruf steht diese Zeile noch NICHT in $script:UiRows (New-Row
+    # traegt sie erst danach ein). Ein soeben gezeichnetes Ersatzbild wird
+    # deshalb hier direkt gesetzt - sonst bliebe genau die neue Zeile leer.
+    if (-not $shownFromCache -and $script:PlaceIconCache.ContainsKey($key)) {
+        Set-PlaceIconImage $Row $script:PlaceIconCache[$key]
+    }
+}
+
+# Version 5.3: DAS war der eigentliche Grund fuer die leeren Rahmen. Die in 5.2
+# eingebaute Wiederholung konnte nie greifen, weil Start-PlaceIconLoad nur beim
+# ERSTELLEN einer Zeile gerufen wurde. Ein einziger Fehlversuch (kurz kein
+# Netz, Roblox-API langsam) liess den Rahmen damit fuer immer leer. Diese
+# Funktion laeuft bei jedem Oberflaechen-Takt und startet faellige Versuche.
+function Update-PlaceIconRetries {
+    if ($script:PlaceIconFails.Count -eq 0) { return }
+    $now = [DateTime]::UtcNow
+    foreach ($key in @($script:PlaceIconFails.Keys)) {
+        if ($script:PlaceIconLoads.ContainsKey($key)) { continue }
         $failInfo = $script:PlaceIconFails[$key]
-        if ([int]$failInfo.count -ge 3) { return }
-        if ([DateTime]::UtcNow -lt [DateTime]$failInfo.nextAt) { return }
-    }
-    $gameId = [string]$Studio.gameId
-    $placeId = [string]$Studio.placeId
-    Write-RuntimeLog ('Place-Icon wird geladen: ' + $key + ' (gameId=' + $gameId + ', placeId=' + $placeId + ')')
-    $worker = [PowerShell]::Create()
-    $code = @'
-param($gameId, $placeId, $destination)
-try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12 } catch {}
-$imageUrl = $null
-$errorText = ''
-$id = if ($gameId -and $gameId -ne '0') { ($gameId -replace '[^0-9]', '') } else { '' }
-if ($id -match '^\d+$') {
-    try {
-        $meta = Invoke-RestMethod -Uri ('https://thumbnails.roblox.com/v1/games/icons?universeIds=' + $id + '&size=150x150&format=Png&isCircular=false') -TimeoutSec 12 -UseBasicParsing -ErrorAction Stop
-        if ($meta -and $meta.data -and $meta.data.Count -gt 0) {
-            $candidate = [string]$meta.data[0].imageUrl
-            if (-not [string]::IsNullOrWhiteSpace($candidate)) { $imageUrl = $candidate }
-            else { $errorText = 'Roblox-API lieferte kein Bild (state=' + [string]$meta.data[0].state + ')' }
-        } else {
-            $errorText = 'Roblox-API lieferte keine Daten'
+        if ($now -lt [DateTime]$failInfo.nextAt) { continue }
+        if ($script:PlaceIconCache.ContainsKey($key) -and -not $script:PlaceIconFallbackKeys.ContainsKey($key)) {
+            $script:PlaceIconFails.Remove($key)
+            continue
         }
-    } catch {
-        $errorText = 'Roblox-Thumbnails-API nicht erreichbar: ' + [string]$_.Exception.Message
-    }
-}
-if ([string]::IsNullOrWhiteSpace($imageUrl)) {
-    # Version 5.2: Die alte Ersatzadresse (static.wikia.nocookie.net ...) ist
-    # TOT - dort gibt es diese Datei nie/mehr, deshalb blieb jedes Icon leer.
-    # Neues Ersatzbild: Roblox-Studio-Logo von Wikimedia Commons (225x225 PNG).
-    $imageUrl = 'https://upload.wikimedia.org/wikipedia/commons/4/44/RobloxStudioLogo2025.png'
-}
-$tmp = $destination + '.download'
-try {
-    $client = New-Object System.Net.WebClient
-    $client.Headers['User-Agent'] = 'ArenaRobloxBridge/5.2'
-    $downloadTask = $client.DownloadFileTaskAsync($imageUrl, $tmp)
-    if (-not $downloadTask.Wait(30000)) { throw 'Zeitueberschreitung beim Icon-Download (30 s).' }
-    $client.Dispose()
-} catch {
-    try { $client.Dispose() } catch {}
-    try { if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force } } catch {}
-    $reason = 'Icon-Download fehlgeschlagen (' + $imageUrl + '): ' + [string]$_.Exception.Message
-    if ($errorText) { $reason = $errorText + ' | ' + $reason }
-    return @{ ok=$false; path=$null; error=$reason }
-}
-# Nur echte PNG-Dateien akzeptieren (Signatur pruefen - keine HTML-Seiten).
-$sig = New-Object byte[] 8
-try {
-    $fs = [System.IO.File]::OpenRead($tmp)
-    try { [void]$fs.Read($sig, 0, 8) } finally { $fs.Close() }
-} catch {}
-$isPng = ($sig[0] -eq 0x89 -and $sig[1] -eq 0x50 -and $sig[2] -eq 0x4E -and $sig[3] -eq 0x47)
-$length = 0
-try { $length = (Get-Item -LiteralPath $tmp).Length } catch {}
-if (-not $isPng -or $length -le 100) {
-    try { Remove-Item -LiteralPath $tmp -Force } catch {}
-    $reason = 'Icon-Datei war kein gueltiges PNG (Laenge ' + $length + ', von ' + $imageUrl + ')'
-    if ($errorText) { $reason = $errorText + ' | ' + $reason }
-    return @{ ok=$false; path=$null; error=$reason }
-}
-try {
-    Move-Item -LiteralPath $tmp -Destination $destination -Force
-} catch {
-    try { if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force } } catch {}
-    return @{ ok=$false; path=$null; error='Icon-Datei konnte nicht abgelegt werden: ' + [string]$_.Exception.Message }
-}
-return @{ ok=$true; path=$destination }
-'@
-    [void]$worker.AddScript($code).AddArgument($gameId).AddArgument($placeId).AddArgument($file)
-    try {
-        $script:PlaceIconLoads[$key] = [pscustomobject]@{ Worker=$worker; Handle=$worker.BeginInvoke(); Key=$key; File=$file }
-    } catch {
-        try { $worker.Dispose() } catch {}
-        Write-UiErrorLog ('Place-Icon-Ladevorgang ' + $key + ' konnte nicht gestartet werden') $_
+        $stillVisible = $false
+        foreach ($row in @($script:UiRows.Values)) { if ($row.IconKey -eq $key) { $stillVisible = $true; break } }
+        if (-not $stillVisible) { continue }
+        Request-PlaceIcon $key
     }
 }
 
@@ -14824,49 +15113,92 @@ function Update-PlaceIconLoads {
         $script:PlaceIconLoads.Remove($key)
         if ($path -and (Test-PngFile $path)) {
             $script:PlaceIconFails.Remove($key)
+            $script:PlaceIconFallbackKeys.Remove($key)
             $script:PlaceIconCache[$key] = $path
             Write-RuntimeLog ('Place-Icon geladen: ' + $key + ' -> ' + $path)
             foreach ($row in @($script:UiRows.Values)) { if ($row.IconKey -eq $key) { Set-PlaceIconImage $row $path } }
+            $script:AllPlacesMosaicSignature = $null
             if ($script:AllPlacesRow) { Update-AllPlacesIcon $script:AllPlacesRow @(Get-ActiveStudios) }
         } else {
-            # Version 5.2: nicht sofort aufgeben - Versuche zaehlen und mit
-            # wachsender Verzoegerung wiederholen (45s, 90s, 135s, ...).
+            # Versuche zaehlen und mit wachsender Verzoegerung wiederholen
+            # (45 s, 90 s, 135 s ... hoechstens alle 5 Minuten).
             $count = 1
             if ($script:PlaceIconFails.ContainsKey($key)) { $count = [int]$script:PlaceIconFails[$key].count + 1 }
             $delaySeconds = [Math]::Min(300, 45 * $count)
             $script:PlaceIconFails[$key] = @{ count = $count; nextAt = ([DateTime]::UtcNow.AddSeconds($delaySeconds)) }
             Write-RuntimeLog ('Place-Icon NICHT geladen (' + $key + ', Versuch ' + $count + '): ' + $loadError + ' | Naechster Versuch in ' + $delaySeconds + ' s.')
-            $usedLocalFallback = $false
-            if ($count -ge 3) {
-                $fallbackPath = New-LocalFallbackIcon
-                if ($fallbackPath) {
-                    $usedLocalFallback = $true
-                    $script:PlaceIconCache[$key] = $fallbackPath
-                    Write-RuntimeLog ('Place-Icon ' + $key + ': lokal gezeichnetes Ersatz-Icon wird verwendet.')
-                    foreach ($row in @($script:UiRows.Values)) { if ($row.IconKey -eq $key) { Set-PlaceIconImage $row $fallbackPath } }
-                    if ($script:AllPlacesRow) { Update-AllPlacesIcon $script:AllPlacesRow @(Get-ActiveStudios) }
+            # Version 5.3: Das Ersatzbild kommt SOFORT nach dem ersten
+            # Fehlversuch (5.2 wartete auf den dritten, der nie kam). Im
+            # Hintergrund wird weiter nach dem echten Spielicon gesucht und es
+            # ersetzt das Ersatzbild, sobald es da ist.
+            if (-not $script:PlaceIconFallbackKeys.ContainsKey($key)) {
+                if (Set-PlaceIconFallback $key) {
+                    Write-RuntimeLog ('Place-Icon ' + $key + ': lokal gezeichnetes Ersatzbild wird angezeigt, im Hintergrund laeuft der naechste Versuch.')
                 }
             }
-            if (-not $usedLocalFallback -and $count -ge 3) {
-                foreach ($row in @($script:UiRows.Values)) {
-                    if ($row.IconKey -eq $key) { try { $row.IconSpinner.Visibility='Collapsed'; $row.IconFallback.Visibility='Visible' } catch {} }
-                }
-            }
-            # Bei Versuch 1-2 bleibt der Drehindikator sichtbar (es folgt ein neuer Versuch).
         }
     }
+    Update-PlaceIconRetries
+}
+
+# ----------------------------------------------------------------------------
+# Version 5.3: ARENA-VERLAUF - stabiler Schluessel, Platte, Namen
+# ----------------------------------------------------------------------------
+# Der Verlauf haengt jetzt am PLACE (placeId, sonst Place-Name), nicht mehr an
+# der Sitzungs-Id. Bis 5.2 bekam jedes Studio-Neuladen eine neue sessionId und
+# das Verlaufsfenster war sofort wieder leer; zusaetzlich loeschte das
+# Sitzungs-Aufraeumen (120 s) den kompletten Verlauf. Die Regel unten MUSS mit
+# Get-ArenaActivityKeyFor im Server-Handler uebereinstimmen.
+function Get-ArenaHistoryKeyFor {
+    param([string]$PlaceId, [string]$PlaceName)
+    $clean = ([string]$PlaceId -replace '[^0-9]', '')
+    if (-not [string]::IsNullOrWhiteSpace($clean) -and $clean -ne '0') { return 'place_' + $clean }
+    $name = ([string]$PlaceName).ToLowerInvariant() -replace '[^a-z0-9]+', '_'
+    $name = $name.Trim('_')
+    if ($name.Length -gt 60) { $name = $name.Substring(0, 60) }
+    if (-not [string]::IsNullOrWhiteSpace($name)) { return 'name_' + $name }
+    return 'unknown_place'
+}
+
+function Get-ArenaHistoryKey {
+    param([string]$SessionId)
+    if ([string]::IsNullOrWhiteSpace($SessionId)) { return $null }
+    $known = $null
+    if ($script:Shared.ActivityPlaceKeys.TryGetValue([string]$SessionId, [ref]$known) -and -not [string]::IsNullOrWhiteSpace([string]$known)) { return [string]$known }
+    try {
+        $raw = $null
+        if ($script:Shared.Sessions.TryGetValue([string]$SessionId, [ref]$raw)) {
+            $entry = $raw | ConvertFrom-Json
+            $key = Get-ArenaHistoryKeyFor ([string]$entry.placeId) ([string]$entry.placeName)
+            $script:Shared.ActivityPlaceKeys[[string]$SessionId] = $key
+            if (-not [string]::IsNullOrWhiteSpace([string]$entry.placeName)) { $script:Shared.ActivityPlaceNames[$key] = [string]$entry.placeName }
+            return $key
+        }
+    } catch { Write-UiErrorLog ('Verlauf: Place-Schluessel fuer ' + $SessionId + ' nicht ermittelbar') $_ }
+    return ('session_' + $SessionId)
+}
+
+function Get-ArenaHistoryPlaceName {
+    param([string]$HistoryKey)
+    $name = $null
+    if ($script:Shared.ActivityPlaceNames.TryGetValue([string]$HistoryKey, [ref]$name) -and -not [string]::IsNullOrWhiteSpace([string]$name)) { return [string]$name }
+    return 'Unbekannter Place'
 }
 
 function Get-ArenaHistoryEntries {
     param([string]$SessionId)
     $entries = New-Object System.Collections.Generic.List[object]
     $wanted = @()
-    if ([string]::IsNullOrWhiteSpace($SessionId)) { $wanted = @($script:Shared.ActivityLogs.Keys) } else { $wanted = @($SessionId) }
-    foreach ($sid in $wanted) {
+    if ([string]::IsNullOrWhiteSpace($SessionId)) {
+        $wanted = @($script:Shared.ActivityLogs.Keys)
+    } else {
+        $key = Get-ArenaHistoryKey $SessionId
+        if ($key) { $wanted = @($key) }
+    }
+    foreach ($historyKey in $wanted) {
         $bag = $null
-        if (-not $script:Shared.ActivityLogs.TryGetValue([string]$sid, [ref]$bag)) { continue }
-        $place = 'Unbekannter Place'
-        try { $raw=$null; if ($script:Shared.Sessions.TryGetValue([string]$sid,[ref]$raw)) { $place=[string](($raw|ConvertFrom-Json).placeName) } } catch {}
+        if (-not $script:Shared.ActivityLogs.TryGetValue([string]$historyKey, [ref]$bag)) { continue }
+        $place = Get-ArenaHistoryPlaceName ([string]$historyKey)
         foreach ($pair in $bag.GetEnumerator()) {
             try {
                 $entry = $pair.Value | ConvertFrom-Json
@@ -14875,16 +15207,96 @@ function Get-ArenaHistoryEntries {
             } catch {}
         }
     }
-    return , @($entries | Sort-Object @{Expression={ [int64]$_.startedAt }}, @{Expression={ [int64]$_.updatedAt }})
+    return , @($entries | Sort-Object @{Expression={ try { [int64]$_.startedAt } catch { [int64]0 } }}, @{Expression={ try { [int64]$_.updatedAt } catch { [int64]0 } }})
 }
 
 function Clear-ArenaHistory {
     param([string]$SessionId)
-    $wanted = if ([string]::IsNullOrWhiteSpace($SessionId)) { @($script:Shared.ActivityLogs.Keys) } else { @($SessionId) }
-    foreach ($sid in $wanted) {
-        $bag=$null
-        if ($script:Shared.ActivityLogs.TryGetValue([string]$sid,[ref]$bag)) { try { $bag.Clear() } catch {} }
+    $wanted = @()
+    if ([string]::IsNullOrWhiteSpace($SessionId)) {
+        $wanted = @($script:Shared.ActivityLogs.Keys)
+    } else {
+        $key = Get-ArenaHistoryKey $SessionId
+        if ($key) { $wanted = @($key) }
     }
+    foreach ($historyKey in $wanted) {
+        $bag = $null
+        if ($script:Shared.ActivityLogs.TryGetValue([string]$historyKey, [ref]$bag)) { try { $bag.Clear() } catch {} }
+        $script:Shared.ActivityDirty[[string]$historyKey] = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        try {
+            $file = Join-Path $script:HistoryFolder ([string]$historyKey + '.json')
+            if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file -Force }
+        } catch {}
+    }
+    Write-RuntimeLog ('Arena-Verlauf geloescht (' + (@($wanted).Count) + ' Place-Eintraege).')
+}
+
+# Version 5.3: Der Verlauf ueberlebt jetzt auch einen Neustart des Programms.
+# Gespeichert wird je Place eine kleine JSON-Datei in
+# %LOCALAPPDATA%\ArenaRobloxBridge\history\<placeKey>.json.
+function Restore-ArenaHistory {
+    $restored = 0
+    try {
+        if (-not (Test-Path -LiteralPath $script:HistoryFolder)) { return }
+        foreach ($file in @(Get-ChildItem -LiteralPath $script:HistoryFolder -Filter '*.json' -ErrorAction SilentlyContinue)) {
+            try {
+                if ($file.LastWriteTimeUtc -lt [DateTime]::UtcNow.AddDays(-30)) { Remove-Item -LiteralPath $file.FullName -Force; continue }
+                $data = Get-Content -LiteralPath $file.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+                if (-not $data) { continue }
+                $historyKey = [string]$file.BaseName
+                $bag = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+                foreach ($entry in @($data.entries)) {
+                    if ($null -eq $entry) { continue }
+                    $id = [string]$entry.id
+                    if ([string]::IsNullOrWhiteSpace($id)) { $id = [guid]::NewGuid().ToString('N') }
+                    # Ein beim Beenden haengengebliebener "laeuft gerade"-Eintrag
+                    # wuerde sonst fuer immer blau bleiben.
+                    if ([string]$entry.phase -eq 'running') {
+                        $entry | Add-Member -NotePropertyName 'phase' -NotePropertyValue 'completed' -Force
+                        $entry | Add-Member -NotePropertyName 'kind' -NotePropertyValue 'read' -Force
+                    }
+                    $bag[$id] = ($entry | ConvertTo-Json -Depth 12 -Compress)
+                }
+                if ($bag.Count -gt 0) {
+                    [void]$script:Shared.ActivityLogs.TryAdd($historyKey, $bag)
+                    if (-not [string]::IsNullOrWhiteSpace([string]$data.placeName)) { $script:Shared.ActivityPlaceNames[$historyKey] = [string]$data.placeName }
+                    $restored += $bag.Count
+                }
+            } catch { Write-UiErrorLog ('Verlauf-Datei ' + $file.Name + ' konnte nicht gelesen werden') $_ }
+        }
+    } catch { Write-UiErrorLog 'Verlauf konnte nicht geladen werden' $_ }
+    if ($restored -gt 0) { Write-RuntimeLog ('Arena-Verlauf geladen: ' + $restored + ' gespeicherte Aktionen.') }
+}
+
+$script:HistorySavedAt = @{}
+
+function Save-ArenaHistory {
+    param([switch]$Force)
+    try {
+        if (-not (Test-Path -LiteralPath $script:HistoryFolder)) { New-Item -ItemType Directory -Path $script:HistoryFolder -Force | Out-Null }
+        foreach ($historyKey in @($script:Shared.ActivityLogs.Keys)) {
+            $key = [string]$historyKey
+            if ([string]::IsNullOrWhiteSpace($key)) { continue }
+            $dirtyAt = [long]0
+            [void]$script:Shared.ActivityDirty.TryGetValue($key, [ref]$dirtyAt)
+            $savedAt = [long]0
+            if ($script:HistorySavedAt.ContainsKey($key)) { $savedAt = [long]$script:HistorySavedAt[$key] }
+            if (-not $Force -and $dirtyAt -le $savedAt) { continue }
+            $bag = $null
+            if (-not $script:Shared.ActivityLogs.TryGetValue($key, [ref]$bag)) { continue }
+            $list = New-Object System.Collections.Generic.List[object]
+            foreach ($pair in $bag.GetEnumerator()) { try { $list.Add(($pair.Value | ConvertFrom-Json)) } catch {} }
+            $sorted = @($list | Sort-Object @{Expression={ try { [int64]$_.startedAt } catch { [int64]0 } }} | Select-Object -Last 400)
+            $payload = @{ placeName = (Get-ArenaHistoryPlaceName $key); savedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds(); entries = $sorted }
+            $file = Join-Path $script:HistoryFolder ($key + '.json')
+            if ($sorted.Count -eq 0) {
+                if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file -Force }
+            } else {
+                Set-Content -LiteralPath $file -Value ($payload | ConvertTo-Json -Depth 12) -Encoding UTF8
+            }
+            $script:HistorySavedAt[$key] = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        }
+    } catch { Write-UiErrorLog 'Arena-Verlauf konnte nicht gespeichert werden' $_ }
 }
 
 function Add-ArenaHistoryCard {
@@ -14940,26 +15352,40 @@ function Update-ArenaHistoryWindow {
     try {
         if ([System.Windows.Input.Mouse]::LeftButton -eq [System.Windows.Input.MouseButtonState]::Pressed -and $State.Window.IsActive) { return }
     } catch {}
-    # Version 5.2: bei unveraendertem Inhalt gar nichts umbauen (kein Flackern).
-    $entries = @(Get-ArenaHistoryEntries ([string]$State.SessionId))
-    $contentSig = [string]$entries.Count
-    foreach ($sigEntry in $entries) { try { $contentSig += '.' + [string]$sigEntry.updatedAt + [string]$sigEntry.kind } catch {} }
-    if (-not $State.FirstRender -and $null -ne $State.Signature -and $State.Signature -eq $contentSig) { return }
-    $State.Signature = $contentSig
-    $scroll=$State.Scroll
-    $atBottom=([double]$scroll.VerticalOffset -ge ([double]$scroll.ScrollableHeight - 18)) -or $State.FirstRender
-    $oldOffset=[double]$scroll.VerticalOffset
-    $State.Host.Children.Clear()
-    $waitingText = if ([string]::IsNullOrWhiteSpace([string]$State.SessionId)) {
-        'Wartet darauf, dass Arena die Bridge mit einem der verbundenen Places benutzt.'
-    } else {
-        'Wartet darauf, dass Arena die Bridge mit diesem Place benutzt.'
+    # Version 5.3: Der komplette Aufbau liegt in einem Netz. Fliegt hier ein
+    # Fehler, stirbt sonst der Zeitgeber des Fensters und der Verlauf bleibt
+    # danach fuer immer stehen - ohne eine einzige Spur im Log.
+    try {
+        # Version 5.2: bei unveraendertem Inhalt gar nichts umbauen (kein Flackern).
+        $entries = @(Get-ArenaHistoryEntries ([string]$State.SessionId))
+        # Version 5.3: Die Signatur enthaelt jetzt auch Id, Zustand und Textlaenge.
+        # Vorher konnte eine Aktualisierung innerhalb derselben Sekunde (gleiche
+        # updatedAt, gleiche Art) unsichtbar bleiben.
+        $contentSig = [string]$entries.Count
+        foreach ($sigEntry in $entries) {
+            try { $contentSig += '.' + [string]$sigEntry.id + '|' + [string]$sigEntry.updatedAt + '|' + [string]$sigEntry.kind + '|' + [string]$sigEntry.phase + '|' + [string](([string]$sigEntry.text).Length) } catch {}
+        }
+        if (-not $State.FirstRender -and $null -ne $State.Signature -and $State.Signature -eq $contentSig) { return }
+        $State.Signature = $contentSig
+        $scroll=$State.Scroll
+        $atBottom=([double]$scroll.VerticalOffset -ge ([double]$scroll.ScrollableHeight - 18)) -or $State.FirstRender
+        $oldOffset=[double]$scroll.VerticalOffset
+        $State.Host.Children.Clear()
+        if ($entries.Count -eq 0) {
+            $waitingText = if ([string]::IsNullOrWhiteSpace([string]$State.SessionId)) {
+                'Noch nichts passiert. Sobald Arena die Bridge mit einem der verbundenen Places benutzt, steht hier jede Aktion.'
+            } else {
+                'Noch nichts passiert. Sobald Arena die Bridge mit diesem Place benutzt, steht hier jede Aktion.'
+            }
+            $waiting=[pscustomobject]@{kind='read';text=$waitingText;updatedAt=0;placeName=''}
+            Add-ArenaHistoryCard $State.Host $waiting ([bool]$State.AllPlaces)
+        }
+        foreach ($entry in $entries) { Add-ArenaHistoryCard $State.Host $entry ([bool]$State.AllPlaces) }
+        if ($atBottom) { $scroll.ScrollToEnd() } else { $scroll.ScrollToVerticalOffset($oldOffset) }
+        $State.FirstRender=$false
+    } catch {
+        Write-UiErrorLog 'Arena-Verlauf konnte nicht aufgebaut werden' $_
     }
-    $waiting=[pscustomobject]@{kind='read';text=$waitingText;updatedAt=0;placeName=''}
-    Add-ArenaHistoryCard $State.Host $waiting ([bool]$State.AllPlaces)
-    foreach ($entry in $entries) { Add-ArenaHistoryCard $State.Host $entry ([bool]$State.AllPlaces) }
-    if ($atBottom) { $scroll.ScrollToEnd() } else { $scroll.ScrollToVerticalOffset($oldOffset) }
-    $State.FirstRender=$false
 }
 
 # Version 5.2: Button im normalen Titelleisten-Design (programmatisch gebaut,
@@ -15408,9 +15834,12 @@ function Update-AllPlacesIcon {
             $tile.Background = Get-Brush '#E2E8F0'
             $key = Get-PlaceIconKey $studio
             $path = if ($script:PlaceIconCache.ContainsKey($key)) { [string]$script:PlaceIconCache[$key] } else { $null }
-            if ($path -and (Test-Path -LiteralPath $path)) {
-                $image = [System.Windows.Controls.Image]::new(); $image.Stretch='UniformToFill'
-                try { $bitmap=[System.Windows.Media.Imaging.BitmapImage]::new([uri]$path);$image.Source=$bitmap;$tile.Child=$image } catch {}
+            if ($path) {
+                $bitmap = New-IconBitmap $path
+                if ($bitmap) {
+                    $image = [System.Windows.Controls.Image]::new(); $image.Stretch='UniformToFill'
+                    $image.Source=$bitmap; $tile.Child=$image
+                }
             }
             if ($null -eq $tile.Child) {
                 $dot=[System.Windows.Shapes.Ellipse]::new();$dot.Width=8;$dot.Height=8;$dot.Fill=Get-Brush '#6366F1';$dot.HorizontalAlignment='Center';$dot.VerticalAlignment='Center';$tile.Child=$dot
@@ -15438,6 +15867,11 @@ function New-AllPlacesRow {
     $row.Root.Tag = '__arena_all_places__'
     $row.Title.Text = 'Alle Places'
     try { $row.Copy.ToolTip = 'Prompt für alle verbundenen Places kopieren' } catch {}
+    # Version 5.3: Die Mosaik-Signatur gehoert zu GENAU DIESER Zeile. Wurde die
+    # Zeile neu gebaut (z. B. weil kurz nur noch ein Place verbunden war),
+    # passte die alte Signatur weiter - das Mosaik wurde nie gezeichnet und der
+    # Rahmen von "Alle Places" blieb leer.
+    $script:AllPlacesMosaicSignature = $null
     Update-AllPlacesIcon $row $Studios
     # The aggregate mosaic is not a single game icon and must never be
     # overwritten by the unpublished-Studio fallback loader.
@@ -15816,6 +16250,13 @@ function Refresh-Ui {
 
     Update-PlaceIconLoads
     Sync-PlaceList @(Get-ActiveStudios)
+
+    # Version 5.3: Arena-Verlauf hoechstens alle 5 Sekunden auf Platte sichern
+    # (nur geaenderte Places werden wirklich geschrieben).
+    if (((Get-Date) - $script:HistorySaveAt).TotalSeconds -ge 5) {
+        $script:HistorySaveAt = Get-Date
+        Save-ArenaHistory
+    }
 }
 
 # ----------------------------------------------------------------------------
@@ -15907,6 +16348,7 @@ function Sync-PlaceList {
         try { $script:AllPlacesRow.Popup.IsOpen = $false } catch {}
         $script:UiRows.Remove('__arena_all_places__')
         $script:AllPlacesRow = $null
+        $script:AllPlacesMosaicSignature = $null
     }
     foreach ($studio in $Studios) {
         $sid = [string]$studio.sessionId
@@ -16040,7 +16482,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '5.2'
+    $versionText = '5.3'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -16353,7 +16795,7 @@ function Open-SettingsWindow {
                     <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                     <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                    <TextBlock Text="Arena Roblox Bridge - Version 5.2" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                    <TextBlock Text="Arena Roblox Bridge - Version 5.3" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                 </StackPanel>
             </ScrollViewer>
@@ -16381,7 +16823,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 5.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 5.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -16429,7 +16871,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 5.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 5.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -16442,7 +16884,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '5.2'
+    $verText = '5.3'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
@@ -16506,6 +16948,9 @@ if ($script:RobloxStudioPath) {
         try {
             $pluginPath = Install-RobloxPlugin
             Write-RuntimeLog "Studio Plugin installiert: $pluginPath"
+            # Version 5.3: gespeicherten Arena-Verlauf laden, BEVOR der Server
+            # laeuft - sonst koennte ein frueher Eintrag ueberschrieben werden.
+            Restore-ArenaHistory
             Start-BridgeServer -Port $script:Port
             Start-CloudflareTunnel
             Add-PendingToast 'Plugin installiert. Öffne nun ein Place in Roblox Studio - es erscheint automatisch hier.' 'Info' 6
@@ -16557,6 +17002,8 @@ Refresh-Ui
 $window.Add_Closed({
     try { $timer.Stop() } catch {}
     try { $notifyTimer.Stop() } catch {}
+    # Version 5.3: Arena-Verlauf noch sichern, bevor der Prozess hart endet.
+    try { Save-ArenaHistory -Force } catch {}
     foreach ($row in @($script:UiRows.Values)) {
         try { $row.Popup.IsOpen = $false } catch {}
     }
