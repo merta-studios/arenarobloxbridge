@@ -1,12 +1,10 @@
 {
-  "version": "5.2",
+  "version": "6.0",
   "notes": [
-    "• Version 5.2 – aufgeräumt: Die „Alle Places“-Zeile zeigt jetzt wie jede andere nur noch „Prompt kopieren“ und „…“. „Token zurücksetzen“ und der Nur-Lesezugriff-Schalter (für alle Places gleichzeitig) stehen beide im „…“-Menü.",
-    "• Spiel-Icons repariert: Die bisherige Ersatz-Adresse für das Studio-Bild war tot und Fehlversuche wurden nie wiederholt – darum blieben die Rahmen leer. Jetzt: geprüfte PNG-Dateien, kaputte Cache-Reste werden verworfen, Fehlversuche wiederholen sich automatisch, und wenn gar kein Ladevorgang gelingt, wird ein Ersatz-Icon lokal gezeichnet – ein leerer Rahmen ist ausgeschlossen. Jedes Laden steht außerdem mit Grund in runtime.log.",
-    "• Arena-Verlauf verbessert: Löschen- und Schließen-Knopf tragen jetzt das normale Programm-Design, das Fenster lässt sich an Titelzeile und Hintergrund frei über den Bildschirm schieben, jede Aktion ist flacher, und alle „[PLATZHALTER]“-Stellen zeigen jetzt echte Zahlen (Zeilen, Kopien, Objekte). Jedes Werkzeug hat einen eigenen verständlichen Text.",
-    "• Einstellungen schlanker: Der Abschnitt „Letzte Arena-Meldung“ ist entfernt. Die Fertig-Benachrichtigung von Arena (falls eingeschaltet) bleibt unverändert.",
-    "• „Alle Places“-Prompt kürzer: Die Zeilen „MODE=ALLE_PLACES“ und „HINWEIS=…“ sind weg. Arena bekommt die Place-Auswahl jetzt automatisch von der Bridge – die erste Anfrage beantwortet der Server direkt mit der aktuellen Liste und der Anleitung.",
-    "• Place-Liste räumt schneller auf: Geschlossene Places verschwinden nach ca. 15 statt 25 Sekunden (sauber geschlossene sogar nach ca. 4) – und „Geister-Places“, die vorher für immer hängen bleiben konnten, sind ausgeschlossen, weil die Sichtbarkeit nur noch am Lebenszeichen des Studio-Plugins hängt. Nach 120 Sekunden wird eine Sitzung samt Token und allem Zustand restlos entsorgt (vorher erst nach 600).",
-    "• Hinweis: Nach dem Update Roblox Studio einmal neu starten, damit das Plugin 5.2 geladen wird."
+    "• Komplett neues Design – „Liquid Glass“: Die ganze Oberfläche ist nach deinem Entwurf neu gestaltet: ein tiefblau-violettes Fenster mit lebendigen Farblichtern hinter durchscheinendem Glas. Die Place-Zeilen sind jetzt türkisfarbene Glaskarten, „Prompt kopieren“ und der Einstellungs-Knopf sind grüne Glas-Knöpfe, das „…“-Menü ist ein violettes Glas-Panel, und Minimieren/Schließen sind runde rote Glas-Knöpfe.",
+    "• Animationen überall: Die Farblichter im Hintergrund ziehen langsam umher, das Fenster wächst beim Öffnen sanft auf, Place-Zeilen blenden ein, heben sich beim Überfahren an und leuchten auf, das „…“-Menü gleitet sanft hoch, Knöpfe haben einen weichen Glas-Schein, der beim Überfahren aufleuchtet, und ziehen sich beim Klicken sanft zusammen. Spiel-Icons blenden weich ein, An/Aus-Schalter gleiten, die Kopier-Bestätigung gleitet nach oben und der Leerzustand schwebt leicht.",
+    "• Auch das Einstellungsfenster, der Update-Hinweis, der Arena-Verlauf und der Startbildschirm tragen das neue Glas-Design.",
+    "• Alles Funktionale bleibt genau wie vorher: gleiche Knöpfe, gleiches Verhalten, gleiche Einstellungen mit rot/grün-Schaltern, keine Popups unten rechts – nur Optik und Bewegung sind neu.",
+    "• Hinweis: Nach dem Update Roblox Studio einmal neu starten, damit das Plugin 6.0 geladen wird."
   ]
 }
