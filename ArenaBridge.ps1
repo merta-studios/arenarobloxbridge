@@ -1,5 +1,35 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 5.2
+# Arena Roblox Bridge  -  Version 6.0
+#
+# LIQUID-GLASS-REDESIGN VERSION 6.0 (komplettes neues Design + Animationen,
+# nach dem Nutzer-Entwurf grafik.png - System und Bedienung bleiben exakt
+# wie in 5.2, es aendert sich NUR die Optik und Bewegung):
+#   * NEUE OPTIK "LIQUID GLASS" (wie von Apple): tiefblau-violettes Fenster
+#     mit langsam driftenden Farblichtern (Aurora) hinter durchscheinendem
+#     Glas. Die Place-Zeilen sind Teal-Glaskarten, "Prompt kopieren" und
+#     der Einstellungs-Knopf sind gruene Glas-Knoepfe, das "..."-Menue ist
+#     ein violettes Glas-Panel, Minimieren/Schliessen sind runde Crimson-
+#     Knoepfe. Echte Rundungs-Beschneidung (RectangleGeometry), damit die
+#     Farblichter nie ueber die Fensterecken hinausragen.
+#   * ANIMATIONEN: Aurora-Lichter driften (X/Y, AutoReverse); das Fenster
+#     wächst beim Oeffnen sanft von 96,5 % auf; Place-Zeilen blenden ein
+#     (bewährter Fade + Watchdog aus 5.0.2 bleibt), heben sich beim Hover
+#     um 2 px an und leuchten auf; das "..."-Menue blendet ein und gleitet
+#     hoch; alle Knoepfe tragen einen weichen Glas-Schein, der beim Hover
+#     aufleuchtet, und ziehen sich beim Druecken sanft zusammen; Spiel-
+#     Icons blenden weich ein; die Kopier-Bestaetigung gleitet nach oben;
+#     An/Aus-Schalter (Einstellungen + Menue) gleiten weich; Verlaufs-
+#     Karten blenden ein; der Leerzustand schwebt leicht.
+#   * ALLE FUNKTIONEN UNVERAENDERT: gleiche Knöpfe, gleiches Verhalten -
+#     Menue-Toggle wie 3.7, "Nur Lesezugriff" laesst das Menue offen,
+#     Einstellungen bleiben rot/gruen-Schalter, KEINE Toasts/Popups unten
+#     rechts, Spieleliste-Bedienung identisch, alle x:Name-Verdrahtungen
+#     und Sicherheitsnetze (5.0.2) unangetastet.
+#   * Einstellungs-, Update-Hinweis- und Arena-Verlaufsfenster tragen das
+#     gleiche Glas-Design (Aurora, Glas-Karten, weiche Fenster-Einblendung);
+#     Startbildschirm wurde halbtransparent, damit die Aurora hindurch-
+#     scheint.
+#   * Server, Plugin, Tools und alle Protokolle sind NICHT angefasst.
 #
 # BENUTZER-WUNSCH-UPDATE VERSION 5.2 (Feinschliff nach der 5.0-Serie):
 #   * ALLE-PLACES-ZEILE AUFGERAEUMT: Der Sammelzugang zeigt jetzt wie jede
@@ -1161,7 +1191,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '5.2'
+    DocsVersion     = '6.0'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -1320,7 +1350,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 5.2)
+  Arena Studio Bridge - Studio Plugin  (Version 6.0)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1391,7 +1421,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "5.2"
+local ARENA_VERSION  = "6.0"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -12056,7 +12086,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '5.2'
+            version = '6.0'
             docsVersion = [string]$Shared.DocsVersion
             role = 'A normal token controls exactly one live Roblox Studio place. The special aggregate token copied from Alle Places controls several places: call GET /api/places first and pass one exact targetPlace in every request; the bridge refuses to guess. This makes switching safe and explicit. Send every request as POST /api/tool with JSON body { "token": "...", "targetPlace": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -12171,7 +12201,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '5.2'
+            bridgeVersion = '6.0'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -12411,7 +12441,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '5.2'
+                        bridgeVersion = '6.0'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -12663,7 +12693,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '5.2'
+                        serverVersion = '6.0'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -12850,7 +12880,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='5.2'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='6.0'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -12879,8 +12909,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '5.2'
-                    serverVersion = '5.2'
+                    bridgeVersion = '6.0'
+                    serverVersion = '6.0'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -13708,11 +13738,11 @@ function Set-Dot {
     }
 }
 
-$script:ColorGreen  = '#22C55E'
-$script:ColorAmber  = '#F59E0B'
-$script:ColorRed    = '#F87171'
-$script:ColorBlue   = '#6366F1'
-$script:ColorGray   = '#64748B'
+$script:ColorGreen  = '#3DDC84'
+$script:ColorAmber  = '#FFB020'
+$script:ColorRed    = '#FF5C77'
+$script:ColorBlue   = '#5B8CFF'
+$script:ColorGray   = '#8FA3CC'
 
 
 # ----------------------------------------------------------------------------
@@ -13731,38 +13761,60 @@ $xaml = @'
         WindowStartupLocation="CenterScreen"
         FontFamily="Segoe UI">
     <Window.Resources>
-        <SolidColorBrush x:Key="TextMain" Color="#F8FAFC"/>
-        <SolidColorBrush x:Key="TextSoft" Color="#CBD5E1"/>
-        <SolidColorBrush x:Key="TextMuted" Color="#94A3B8"/>
-        <SolidColorBrush x:Key="TextFaint" Color="#64748B"/>
-        <SolidColorBrush x:Key="Line" Color="#334155"/>
+        <!-- ============================================================ -->
+        <!-- VERSION 6.0  -  LIQUID GLASS DESIGN                          -->
+        <!-- Tiefblau-violetter Grund mit lebendigen Farblichtern         -->
+        <!-- (Aurora), Teal-Glaskarten fuer die Places, gruene Glas-      -->
+        <!-- Aktionsknoepfe, runde Fensterknoepfe in Crimson. Alle        -->
+        <!-- Hover-/Druck-Zustaende laufen weich ueber Storyboards.       -->
+        <!-- ============================================================ -->
+        <SolidColorBrush x:Key="TextMain" Color="#F4F8FF"/>
+        <SolidColorBrush x:Key="TextSoft" Color="#C9D6F2"/>
+        <SolidColorBrush x:Key="TextMuted" Color="#9AA9CE"/>
+        <SolidColorBrush x:Key="TextFaint" Color="#6E7FA8"/>
 
         <LinearGradientBrush x:Key="AppBg" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#0A0F1D" Offset="0"/>
-            <GradientStop Color="#080C16" Offset="1"/>
+            <GradientStop Color="#060A1A" Offset="0"/>
+            <GradientStop Color="#0A1128" Offset="0.55"/>
+            <GradientStop Color="#0C1533" Offset="1"/>
         </LinearGradientBrush>
-        <LinearGradientBrush x:Key="TitleBg" StartPoint="0,0" EndPoint="1,0">
-            <GradientStop Color="#111827" Offset="0"/>
-            <GradientStop Color="#0B1220" Offset="1"/>
+        <LinearGradientBrush x:Key="GlassFill" StartPoint="0,0" EndPoint="0.25,1">
+            <GradientStop Color="#99121C44" Offset="0"/>
+            <GradientStop Color="#5C0E1734" Offset="1"/>
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="TitleGlass" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#2BFFFFFF" Offset="0"/>
+            <GradientStop Color="#0DFFFFFF" Offset="1"/>
         </LinearGradientBrush>
         <LinearGradientBrush x:Key="LogoBrush" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#6366F1" Offset="0"/>
-            <GradientStop Color="#4F46E5" Offset="1"/>
+            <GradientStop Color="#8B6BFF" Offset="0"/>
+            <GradientStop Color="#00D0BE" Offset="1"/>
         </LinearGradientBrush>
         <LinearGradientBrush x:Key="SweepBrush" StartPoint="0,0" EndPoint="1,0">
-            <GradientStop Color="#00000000" Offset="0"/>
-            <GradientStop Color="#818CF8" Offset="0.5"/>
-            <GradientStop Color="#00000000" Offset="1"/>
+            <GradientStop Color="#0000E5D0" Offset="0"/>
+            <GradientStop Color="#B300E5D0" Offset="0.5"/>
+            <GradientStop Color="#0000E5D0" Offset="1"/>
         </LinearGradientBrush>
-        <LinearGradientBrush x:Key="BtnBg" StartPoint="0,0" EndPoint="0,1">
-            <GradientStop Color="#6366F1" Offset="0"/>
-            <GradientStop Color="#4338CA" Offset="1"/>
+        <LinearGradientBrush x:Key="GreenBtnBg" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#F238D16C" Offset="0"/>
+            <GradientStop Color="#E61FA34A" Offset="1"/>
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="NeutralBtnBg" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#47FFFFFF" Offset="0"/>
+            <GradientStop Color="#21FFFFFF" Offset="1"/>
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="CrimsonBtnBg" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#F2FF5C77" Offset="0"/>
+            <GradientStop Color="#E6E11D48" Offset="1"/>
         </LinearGradientBrush>
 
+        <!-- Glas-Knopf (implizit): Heller Schein oben, weicher Hover-Glanz, -->
+        <!-- Druck zieht den Knopf sanft zusammen. Hintergrund/Rand kommen    -->
+        <!-- per TemplateBinding vom einzelnen Knopf.                        -->
         <Style TargetType="Button">
             <Setter Property="Foreground" Value="#FFFFFF"/>
-            <Setter Property="Background" Value="{StaticResource BtnBg}"/>
-            <Setter Property="BorderBrush" Value="#6366F1"/>
+            <Setter Property="Background" Value="{StaticResource NeutralBtnBg}"/>
+            <Setter Property="BorderBrush" Value="#3DFFFFFF"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="14,9"/>
             <Setter Property="FontSize" Value="12.5"/>
@@ -13771,22 +13823,71 @@ $xaml = @'
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="bd" CornerRadius="9"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
-                        </Border>
+                        <Grid>
+                            <Border x:Name="bd" CornerRadius="12"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    RenderTransformOrigin="0.5,0.5">
+                                <Border.RenderTransform>
+                                    <ScaleTransform ScaleX="1" ScaleY="1"/>
+                                </Border.RenderTransform>
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
+                            </Border>
+                            <Border x:Name="sheen" CornerRadius="11,11,10,10" Margin="1,1,1,0" Height="18" VerticalAlignment="Top" IsHitTestVisible="False" Opacity="0.10">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Color="#59FFFFFF" Offset="0"/>
+                                        <GradientStop Color="#00FFFFFF" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                            </Border>
+                            <Border x:Name="press" CornerRadius="11" Margin="1" Background="#29000000" Opacity="0" IsHitTestVisible="False"/>
+                        </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#818CF8"/>
-                                <Setter TargetName="bd" Property="BorderBrush" Value="#A5B4FC"/>
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#6BFFFFFF"/>
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="sheen" Storyboard.TargetProperty="Opacity" To="0.38" Duration="0:0:0.13">
+                                                <DoubleAnimation.EasingFunction>
+                                                    <CubicEase EasingMode="EaseOut"/>
+                                                </DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="sheen" Storyboard.TargetProperty="Opacity" To="0.10" Duration="0:0:0.20"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#3730A3"/>
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="press" Storyboard.TargetProperty="Opacity" To="0.22" Duration="0:0:0.08"/>
+                                            <DoubleAnimation Storyboard.TargetName="bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="0.965" Duration="0:0:0.08"/>
+                                            <DoubleAnimation Storyboard.TargetName="bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="0.965" Duration="0:0:0.08"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="press" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.15"/>
+                                            <DoubleAnimation Storyboard.TargetName="bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1" Duration="0:0:0.15"/>
+                                            <DoubleAnimation Storyboard.TargetName="bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1" Duration="0:0:0.15"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="bd" Property="Opacity" Value="0.45"/>
+                                <Setter Property="Opacity" Value="0.45"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -13794,30 +13895,79 @@ $xaml = @'
             </Setter>
         </Style>
 
-        <Style x:Key="TitleButtonStyle" TargetType="Button">
-            <Setter Property="Foreground" Value="#94A3B8"/>
-            <Setter Property="Background" Value="#111827"/>
-            <Setter Property="BorderBrush" Value="#334155"/>
+        <!-- Runde Glas-Knoepfe (Minimieren/Schliessen), gleiche Gleit-Effekte -->
+        <Style x:Key="RoundGlassStyle" TargetType="Button">
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="Background" Value="{StaticResource NeutralBtnBg}"/>
+            <Setter Property="BorderBrush" Value="#3DFFFFFF"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="0"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="bd" CornerRadius="10"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
+                        <Grid>
+                            <Border x:Name="bd" CornerRadius="17"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    RenderTransformOrigin="0.5,0.5">
+                                <Border.RenderTransform>
+                                    <ScaleTransform ScaleX="1" ScaleY="1"/>
+                                </Border.RenderTransform>
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <Border x:Name="sheen" CornerRadius="16,16,14,14" Margin="1,1,1,0" Height="13" VerticalAlignment="Top" IsHitTestVisible="False" Opacity="0.12">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Color="#59FFFFFF" Offset="0"/>
+                                        <GradientStop Color="#00FFFFFF" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                            </Border>
+                            <Border x:Name="press" CornerRadius="16" Margin="1" Background="#29000000" Opacity="0" IsHitTestVisible="False"/>
+                        </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#1E293B"/>
-                                <Setter TargetName="bd" Property="BorderBrush" Value="#818CF8"/>
-                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#6BFFFFFF"/>
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="sheen" Storyboard.TargetProperty="Opacity" To="0.42" Duration="0:0:0.13">
+                                                <DoubleAnimation.EasingFunction>
+                                                    <CubicEase EasingMode="EaseOut"/>
+                                                </DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="sheen" Storyboard.TargetProperty="Opacity" To="0.12" Duration="0:0:0.20"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#162235"/>
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="press" Storyboard.TargetProperty="Opacity" To="0.24" Duration="0:0:0.08"/>
+                                            <DoubleAnimation Storyboard.TargetName="bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="0.94" Duration="0:0:0.08"/>
+                                            <DoubleAnimation Storyboard.TargetName="bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="0.94" Duration="0:0:0.08"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="press" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.15"/>
+                                            <DoubleAnimation Storyboard.TargetName="bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1" Duration="0:0:0.15"/>
+                                            <DoubleAnimation Storyboard.TargetName="bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1" Duration="0:0:0.15"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -13825,79 +13975,89 @@ $xaml = @'
             </Setter>
         </Style>
 
-        <Style x:Key="CloseButtonStyle" TargetType="Button">
-            <Setter Property="Foreground" Value="#CBD5E1"/>
-            <Setter Property="Background" Value="#111827"/>
-            <Setter Property="BorderBrush" Value="#475569"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="0"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="bd" CornerRadius="10"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#EF4444"/>
-                                <Setter TargetName="bd" Property="BorderBrush" Value="#FCA5A5"/>
-                                <Setter Property="Foreground" Value="#FFFFFF"/>
-                            </Trigger>
-                            <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#B91C1C"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <Style x:Key="StatCardStyle" TargetType="Border">
-            <Setter Property="Background" Value="#111827"/>
-            <Setter Property="BorderBrush" Value="#334155"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="CornerRadius" Value="11"/>
-            <Setter Property="Padding" Value="15,13"/>
+        <Style x:Key="CloseButtonStyle" TargetType="Button" BasedOn="{StaticResource RoundGlassStyle}">
+            <Setter Property="Background" Value="{StaticResource CrimsonBtnBg}"/>
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#1E293B"/>
-                    <Setter Property="BorderBrush" Value="#334155"/>
+                    <Setter Property="Background" Value="#F2FF7A8C"/>
+                    <Setter Property="Foreground" Value="#FFFFFF"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
 
-        <Style TargetType="CheckBox">
-            <Setter Property="Foreground" Value="#F8FAFC"/>
-            <Setter Property="FontSize" Value="13"/>
+        <Style x:Key="SettingsPillStyle" TargetType="Button">
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="Background" Value="{StaticResource GreenBtnBg}"/>
+            <Setter Property="BorderBrush" Value="#4DFFFFFF"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="0"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
-                    <ControlTemplate TargetType="CheckBox">
+                    <ControlTemplate TargetType="Button">
                         <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Border x:Name="box" Width="20" Height="20" CornerRadius="6"
-                                    Background="#0B1220" BorderBrush="#334155" BorderThickness="1">
-                                <Path x:Name="tick"
-                                      Data="M 4,10.4 L 8,14.4 L 16,5.2"
-                                      Stroke="#FFFFFF" StrokeThickness="2.2"
-                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                                      HorizontalAlignment="Center" VerticalAlignment="Center"
-                                      Visibility="Collapsed"/>
+                            <Border x:Name="bd" CornerRadius="18"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    RenderTransformOrigin="0.5,0.5">
+                                <Border.RenderTransform>
+                                    <ScaleTransform ScaleX="1" ScaleY="1"/>
+                                </Border.RenderTransform>
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
-                            <ContentPresenter Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                            <Border x:Name="sheen" CornerRadius="17,17,14,14" Margin="1,1,1,0" Height="15" VerticalAlignment="Top" IsHitTestVisible="False" Opacity="0.14">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Color="#59FFFFFF" Offset="0"/>
+                                        <GradientStop Color="#00FFFFFF" Offset="1"/>
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                            </Border>
+                            <Border x:Name="press" CornerRadius="17" Margin="1" Background="#29000000" Opacity="0" IsHitTestVisible="False"/>
                         </Grid>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="box" Property="Background" Value="#6366F1"/>
-                                <Setter TargetName="box" Property="BorderBrush" Value="#818CF8"/>
-                                <Setter TargetName="tick" Property="Visibility" Value="Visible"/>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#7FFFFFFF"/>
+                                <Setter Property="Background" Value="#F24AE07E"/>
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="sheen" Storyboard.TargetProperty="Opacity" To="0.40" Duration="0:0:0.13">
+                                                <DoubleAnimation.EasingFunction>
+                                                    <CubicEase EasingMode="EaseOut"/>
+                                                </DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="sheen" Storyboard.TargetProperty="Opacity" To="0.14" Duration="0:0:0.20"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="press" Storyboard.TargetProperty="Opacity" To="0.22" Duration="0:0:0.08"/>
+                                            <DoubleAnimation Storyboard.TargetName="bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="0.96" Duration="0:0:0.08"/>
+                                            <DoubleAnimation Storyboard.TargetName="bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="0.96" Duration="0:0:0.08"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="press" Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.15"/>
+                                            <DoubleAnimation Storyboard.TargetName="bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1" Duration="0:0:0.15"/>
+                                            <DoubleAnimation Storyboard.TargetName="bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1" Duration="0:0:0.15"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -13915,10 +14075,10 @@ $xaml = @'
                 <Setter.Value>
                     <ControlTemplate TargetType="ScrollBar">
                         <Grid Margin="2,3,2,3">
-                            <Border CornerRadius="5" Background="#0A1428"/>
+                            <Border CornerRadius="5" Background="#14FFFFFF"/>
                             <Track x:Name="PART_Track" IsDirectionReversed="True" Focusable="False">
                                 <Track.DecreaseRepeatButton>
-                                    <RepeatButton Command="ScrollBar.PageUpCommand" Focusable="False" IsTabStop="False">
+                                    <RepeatButton Command="ScrollBar.PageUpCommand">
                                         <RepeatButton.Template>
                                             <ControlTemplate TargetType="RepeatButton">
                                                 <Border Background="Transparent"/>
@@ -13926,17 +14086,8 @@ $xaml = @'
                                         </RepeatButton.Template>
                                     </RepeatButton>
                                 </Track.DecreaseRepeatButton>
-                                <Track.Thumb>
-                                    <Thumb Focusable="False" IsTabStop="False">
-                                        <Thumb.Template>
-                                            <ControlTemplate TargetType="Thumb">
-                                                <Border CornerRadius="4" Background="#334155" Margin="1,0,1,0"/>
-                                            </ControlTemplate>
-                                        </Thumb.Template>
-                                    </Thumb>
-                                </Track.Thumb>
                                 <Track.IncreaseRepeatButton>
-                                    <RepeatButton Command="ScrollBar.PageDownCommand" Focusable="False" IsTabStop="False">
+                                    <RepeatButton Command="ScrollBar.PageDownCommand">
                                         <RepeatButton.Template>
                                             <ControlTemplate TargetType="RepeatButton">
                                                 <Border Background="Transparent"/>
@@ -13944,6 +14095,23 @@ $xaml = @'
                                         </RepeatButton.Template>
                                     </RepeatButton>
                                 </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb>
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border x:Name="thumbBg" CornerRadius="4" Background="#38FFFFFF" Margin="1,0,1,0"/>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="thumbBg" Property="Background" Value="#5CFFFFFF"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsDragging" Value="True">
+                                                        <Setter TargetName="thumbBg" Property="Background" Value="#8CFFFFFF"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
                             </Track>
                         </Grid>
                     </ControlTemplate>
@@ -13952,30 +14120,181 @@ $xaml = @'
         </Style>
     </Window.Resources>
 
-    <Border CornerRadius="16" Background="{StaticResource AppBg}" BorderBrush="#334155" BorderThickness="1" ClipToBounds="True">
+    <!-- Glas-Schale des Fensters: abgerundet, mit echtem Rundungs-Beschchnitt -->
+    <!-- (ClipToBounds rundet nicht - die Aurora-Lichter duerfen niemals ueber -->
+    <!-- die Fensterkanten hinausragen).                                      -->
+    <Border x:Name="RootShell" CornerRadius="18" Background="{StaticResource AppBg}"
+            BorderBrush="#33FFFFFF" BorderThickness="1" ClipToBounds="True"
+            RenderTransformOrigin="0.5,0.5">
+        <Border.Clip>
+            <RectangleGeometry Rect="0,0,920,620" RadiusX="18" RadiusY="18"/>
+        </Border.Clip>
+        <Border.RenderTransform>
+            <ScaleTransform ScaleX="1" ScaleY="1"/>
+        </Border.RenderTransform>
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="72"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <Border x:Name="TitleBar" Grid.Row="0" Background="{StaticResource TitleBg}" BorderBrush="#1E293B" BorderThickness="0,0,0,1" CornerRadius="15,15,0,0" ClipToBounds="True">
+            <!-- ======================================================== -->
+            <!-- AURORA: langsam driftende Farblichter hinter dem Glas     -->
+            <!-- (Liquid Glass braucht ein lebendiges, farbiges Fundament) -->
+            <!-- ======================================================== -->
+            <Grid Grid.Row="0" Grid.RowSpan="2" IsHitTestVisible="False">
+                <Ellipse Width="560" Height="560" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-190,-230,0,0">
+                    <Ellipse.Fill>
+                        <RadialGradientBrush>
+                            <GradientStop Color="#547B5CFF" Offset="0"/>
+                            <GradientStop Color="#007B5CFF" Offset="1"/>
+                        </RadialGradientBrush>
+                    </Ellipse.Fill>
+                    <Ellipse.RenderTransform>
+                        <TranslateTransform X="0" Y="0"/>
+                    </Ellipse.RenderTransform>
+                    <Ellipse.Triggers>
+                        <EventTrigger RoutedEvent="Loaded">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="0" To="46" Duration="0:0:34" AutoReverse="True" RepeatBehavior="Forever"/>
+                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="30" Duration="0:0:27" AutoReverse="True" RepeatBehavior="Forever"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </Ellipse.Triggers>
+                </Ellipse>
+                <Ellipse Width="500" Height="500" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-180,-170,0">
+                    <Ellipse.Fill>
+                        <RadialGradientBrush>
+                            <GradientStop Color="#4D2E4FFF" Offset="0"/>
+                            <GradientStop Color="#002E4FFF" Offset="1"/>
+                        </RadialGradientBrush>
+                    </Ellipse.Fill>
+                    <Ellipse.RenderTransform>
+                        <TranslateTransform X="0" Y="0"/>
+                    </Ellipse.RenderTransform>
+                    <Ellipse.Triggers>
+                        <EventTrigger RoutedEvent="Loaded">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="0" To="-40" Duration="0:0:40" AutoReverse="True" RepeatBehavior="Forever"/>
+                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="26" Duration="0:0:31" AutoReverse="True" RepeatBehavior="Forever"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </Ellipse.Triggers>
+                </Ellipse>
+                <Ellipse Width="440" Height="440" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-150,-180">
+                    <Ellipse.Fill>
+                        <RadialGradientBrush>
+                            <GradientStop Color="#4000CFC0" Offset="0"/>
+                            <GradientStop Color="#0000CFC0" Offset="1"/>
+                        </RadialGradientBrush>
+                    </Ellipse.Fill>
+                    <Ellipse.RenderTransform>
+                        <TranslateTransform X="0" Y="0"/>
+                    </Ellipse.RenderTransform>
+                    <Ellipse.Triggers>
+                        <EventTrigger RoutedEvent="Loaded">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="0" To="-34" Duration="0:0:29" AutoReverse="True" RepeatBehavior="Forever"/>
+                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="-24" Duration="0:0:36" AutoReverse="True" RepeatBehavior="Forever"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </Ellipse.Triggers>
+                </Ellipse>
+                <Ellipse Width="320" Height="320" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-110,210,0,0">
+                    <Ellipse.Fill>
+                        <RadialGradientBrush>
+                            <GradientStop Color="#47C13FF0" Offset="0"/>
+                            <GradientStop Color="#00C13FF0" Offset="1"/>
+                        </RadialGradientBrush>
+                    </Ellipse.Fill>
+                    <Ellipse.RenderTransform>
+                        <TranslateTransform X="0" Y="0"/>
+                    </Ellipse.RenderTransform>
+                    <Ellipse.Triggers>
+                        <EventTrigger RoutedEvent="Loaded">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="0" To="38" Duration="0:0:37" AutoReverse="True" RepeatBehavior="Forever"/>
+                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="-26" Duration="0:0:24" AutoReverse="True" RepeatBehavior="Forever"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </Ellipse.Triggers>
+                </Ellipse>
+                <Ellipse Width="280" Height="280" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="90,0,0,-150">
+                    <Ellipse.Fill>
+                        <RadialGradientBrush>
+                            <GradientStop Color="#3D21C55D" Offset="0"/>
+                            <GradientStop Color="#0021C55D" Offset="1"/>
+                        </RadialGradientBrush>
+                    </Ellipse.Fill>
+                    <Ellipse.RenderTransform>
+                        <TranslateTransform X="0" Y="0"/>
+                    </Ellipse.RenderTransform>
+                    <Ellipse.Triggers>
+                        <EventTrigger RoutedEvent="Loaded">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="0" To="30" Duration="0:0:45" AutoReverse="True" RepeatBehavior="Forever"/>
+                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="-20" Duration="0:0:33" AutoReverse="True" RepeatBehavior="Forever"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </Ellipse.Triggers>
+                </Ellipse>
+                <Ellipse Width="240" Height="240" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="400,-140,0,0">
+                    <Ellipse.Fill>
+                        <RadialGradientBrush>
+                            <GradientStop Color="#29FF4D6D" Offset="0"/>
+                            <GradientStop Color="#00FF4D6D" Offset="1"/>
+                        </RadialGradientBrush>
+                    </Ellipse.Fill>
+                    <Ellipse.RenderTransform>
+                        <TranslateTransform X="0" Y="0"/>
+                    </Ellipse.RenderTransform>
+                    <Ellipse.Triggers>
+                        <EventTrigger RoutedEvent="Loaded">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="0" To="-26" Duration="0:0:26" AutoReverse="True" RepeatBehavior="Forever"/>
+                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="22" Duration="0:0:30" AutoReverse="True" RepeatBehavior="Forever"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </Ellipse.Triggers>
+                </Ellipse>
+                <!-- Sanfter Glas-Schein am oberen Fensterrand -->
+                <Border Height="120" VerticalAlignment="Top" IsHitTestVisible="False">
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                            <GradientStop Color="#0DFFFFFF" Offset="0"/>
+                            <GradientStop Color="#00FFFFFF" Offset="1"/>
+                        </LinearGradientBrush>
+                    </Border.Background>
+                </Border>
+            </Grid>
+
+            <!-- ======================== TITELLEISTE ======================== -->
+            <Border x:Name="TitleBar" Grid.Row="0" Background="{StaticResource TitleGlass}" BorderBrush="#1FFFFFFF" BorderThickness="0,0,0,1" CornerRadius="17,17,0,0" ClipToBounds="True">
                 <Grid Margin="24,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                         <Grid Width="38" Height="38" Margin="0,0,13,0">
-                            <Border Width="38" Height="38" CornerRadius="12" Background="{StaticResource LogoBrush}"/>
+                            <Border Width="38" Height="38" CornerRadius="13" Background="{StaticResource LogoBrush}" BorderBrush="#4DFFFFFF" BorderThickness="1"/>
                             <Ellipse Width="7" Height="7" Fill="#FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="6,0,0,0"/>
                             <Ellipse Width="7" Height="7" Fill="#FFFFFF" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <Rectangle Height="2.6" Fill="#CBD5E1" Margin="13,0,13,0" RadiusX="1.3" RadiusY="1.3"/>
-                            <Ellipse x:Name="PulseDot" Width="9" Height="9" Fill="#22D3EE"
-                                     HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-1,-1">
+                            <Ellipse x:Name="PulseDot" Width="9" Height="9" Fill="#2FE8D6" HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <Ellipse.Effect>
-                                    <DropShadowEffect Color="#818CF8" BlurRadius="10" ShadowDepth="0" Opacity="0.9"/>
+                                    <DropShadowEffect Color="#CC00E5D0" BlurRadius="12" ShadowDepth="0" Opacity="0.9"/>
                                 </Ellipse.Effect>
                             </Ellipse>
                         </Grid>
@@ -13984,19 +14303,18 @@ $xaml = @'
                             <TextBlock x:Name="SubtitleText" Text="Bereit für verbundene Places" Foreground="{StaticResource TextMuted}" FontSize="11.5" Margin="0,3,0,0"/>
                         </StackPanel>
                     </StackPanel>
-
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Border x:Name="LiveBadge" CornerRadius="11" Background="#102A2B" BorderBrush="#155E75" BorderThickness="1" Padding="11,6" Margin="0,0,12,0" VerticalAlignment="Center">
+                        <Border x:Name="LiveBadge" CornerRadius="11" Background="#331FA34A" BorderBrush="#662FCB6C" BorderThickness="1" Padding="11,6" Margin="0,0,12,0" VerticalAlignment="Center">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <Ellipse x:Name="LiveDot" Width="8" Height="8" Fill="#22C55E" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                <Ellipse x:Name="LiveDot" Width="8" Height="8" Fill="#3DDC84" Margin="0,0,8,0" VerticalAlignment="Center"/>
                                 <TextBlock x:Name="LiveText" Text="LIVE" Foreground="{StaticResource TextSoft}" FontSize="11.5" FontWeight="SemiBold" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Border>
-                        <Grid Width="40" Height="36" Margin="0,0,8,0">
-                            <Button x:Name="SettingsButton" Style="{StaticResource TitleButtonStyle}" Width="40" Height="36" FontFamily="Segoe MDL2 Assets" FontSize="15" Content="&#xE713;"/>
+                        <Grid Width="46" Height="36" Margin="0,0,10,0">
+                            <Button x:Name="SettingsButton" Style="{StaticResource SettingsPillStyle}" Width="46" Height="36" FontFamily="Segoe MDL2 Assets" FontSize="15" Content="&#xE713;"/>
                             <!-- Rote "1" fuer Update-Fehler (Version 3.7) -->
                             <Border x:Name="UpdateBadge" Width="16" Height="16" CornerRadius="8"
-                                    Background="#F87171" BorderBrush="#0A0F1D" BorderThickness="2"
+                                    Background="#FF4D6C" BorderBrush="#070B1E" BorderThickness="2"
                                     HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-4,-4,0"
                                     Visibility="Collapsed" Panel.ZIndex="90" IsHitTestVisible="False"
                                     ToolTip="Update-Problem - klicke auf die Einstellungen für Details">
@@ -14004,14 +14322,14 @@ $xaml = @'
                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                         </Grid>
-                        <Button x:Name="MinimizeButton" Style="{StaticResource TitleButtonStyle}" Width="40" Height="36" Margin="0,0,8,0" FontFamily="Segoe MDL2 Assets" FontSize="12" Content="&#xE921;"/>
-                        <Button x:Name="CloseButton" Style="{StaticResource CloseButtonStyle}" Width="40" Height="36" FontFamily="Segoe MDL2 Assets" FontSize="12" Content="&#xE8BB;"/>
+                        <Button x:Name="MinimizeButton" Style="{StaticResource RoundGlassStyle}" Width="34" Height="34" Margin="0,0,8,0" FontFamily="Segoe MDL2 Assets" FontSize="12" Content="&#xE921;"/>
+                        <Button x:Name="CloseButton" Style="{StaticResource CloseButtonStyle}" Width="34" Height="34" FontFamily="Segoe MDL2 Assets" FontSize="12" Content="&#xE8BB;"/>
                     </StackPanel>
 
                     <Border Grid.ColumnSpan="2" VerticalAlignment="Bottom" Height="2" Margin="-24,0,-24,0" ClipToBounds="True">
-                        <Rectangle x:Name="SweepRect" Width="260" Height="2" HorizontalAlignment="Left" Fill="{StaticResource SweepBrush}">
+                        <Rectangle x:Name="SweepRect" Width="300" Height="2" HorizontalAlignment="Left" Fill="{StaticResource SweepBrush}">
                             <Rectangle.RenderTransform>
-                                <TranslateTransform X="-320"/>
+                                <TranslateTransform X="-340"/>
                             </Rectangle.RenderTransform>
                             <Rectangle.Triggers>
                                 <EventTrigger RoutedEvent="Loaded">
@@ -14019,7 +14337,7 @@ $xaml = @'
                                         <Storyboard>
                                             <DoubleAnimation Storyboard.TargetName="SweepRect"
                                                              Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)"
-                                                             From="-320" To="1180" Duration="0:0:4" RepeatBehavior="Forever"/>
+                                                             From="-340" To="1240" Duration="0:0:4.2" RepeatBehavior="Forever"/>
                                         </Storyboard>
                                     </BeginStoryboard>
                                 </EventTrigger>
@@ -14029,21 +14347,22 @@ $xaml = @'
                 </Grid>
             </Border>
 
-            <Grid Grid.Row="1" Margin="26,20,26,22">
+            <!-- ========================= INHALT ========================= -->
+            <Grid Grid.Row="1" Margin="26,18,26,22">
 
-                <Border CornerRadius="14" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" ClipToBounds="True">
+                <Border CornerRadius="16" Background="{StaticResource GlassFill}" BorderBrush="#2EFFFFFF" BorderThickness="1" ClipToBounds="True">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
 
-                        <Border Grid.Row="0" Background="#162235" BorderBrush="#1E293B" BorderThickness="0,0,0,1" Padding="18,12">
+                        <Border Grid.Row="0" Background="#14FFFFFF" BorderBrush="#1FFFFFFF" BorderThickness="0,0,0,1" Padding="18,13">
                             <Grid>
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                     <TextBlock Text="Verbundene Places" Foreground="{StaticResource TextMain}" FontSize="13.5" FontWeight="SemiBold"/>
-                                    <Border x:Name="PlacesCountBadge" CornerRadius="8" Background="#1E3A5F" Padding="9,3" Margin="10,0,0,0" VerticalAlignment="Center">
-                                        <TextBlock x:Name="PlacesCountText" Text="0" Foreground="#A5B4FC" FontSize="11" FontWeight="Bold"/>
+                                    <Border x:Name="PlacesCountBadge" CornerRadius="9" Background="#3300D0BE" BorderBrush="#4D00E5D0" BorderThickness="1" Padding="9,3" Margin="10,0,0,0" VerticalAlignment="Center">
+                                        <TextBlock x:Name="PlacesCountText" Text="0" Foreground="#8FF5E9" FontSize="11" FontWeight="Bold"/>
                                     </Border>
                                 </StackPanel>
                                 <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center" Text="Automatisch verbunden" Foreground="{StaticResource TextFaint}" FontSize="11"/>
@@ -14052,11 +14371,37 @@ $xaml = @'
 
                         <Grid Grid.Row="1">
                             <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Width="430">
-                                <Border Width="76" Height="76" CornerRadius="22" Background="#111827" BorderBrush="#334155" BorderThickness="1" HorizontalAlignment="Center">
+                                <Border Width="76" Height="76" CornerRadius="22" HorizontalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                                    <Border.Background>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                            <GradientStop Color="#331B2C6E" Offset="0"/>
+                                            <GradientStop Color="#1A0E1F44" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Border.Background>
+                                    <Border.BorderBrush>
+                                        <SolidColorBrush Color="#40FFFFFF"/>
+                                    </Border.BorderBrush>
+                                    <Border.BorderThickness>1</Border.BorderThickness>
+                                    <Border.RenderTransform>
+                                        <TranslateTransform X="0" Y="0"/>
+                                    </Border.RenderTransform>
+                                    <Border.Triggers>
+                                        <EventTrigger RoutedEvent="Loaded">
+                                            <BeginStoryboard>
+                                                <Storyboard>
+                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="-7" Duration="0:0:3.2" AutoReverse="True" RepeatBehavior="Forever">
+                                                        <DoubleAnimation.EasingFunction>
+                                                            <SineEase EasingMode="EaseInOut"/>
+                                                        </DoubleAnimation.EasingFunction>
+                                                    </DoubleAnimation>
+                                                </Storyboard>
+                                            </BeginStoryboard>
+                                        </EventTrigger>
+                                    </Border.Triggers>
                                     <Grid>
-                                        <Ellipse Width="10" Height="10" Fill="#6366F1" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="15,0,0,0"/>
-                                        <Ellipse Width="10" Height="10" Fill="#4F46E5" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,15,0"/>
-                                        <Rectangle Height="3" Fill="#818CF8" Margin="30,0,30,0" RadiusX="1.5" RadiusY="1.5"/>
+                                        <Ellipse Width="10" Height="10" Fill="#8FF5E9" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="15,0,0,0"/>
+                                        <Ellipse Width="10" Height="10" Fill="#00E5D0" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,15,0"/>
+                                        <Rectangle Height="3" Fill="#8B6BFF" Margin="30,0,30,0" RadiusX="1.5" RadiusY="1.5"/>
                                     </Grid>
                                 </Border>
                                 <TextBlock x:Name="EmptyTitle" Text="Öffne ein Place in Roblox Studio" Foreground="{StaticResource TextMain}" FontSize="21" FontWeight="Bold" TextAlignment="Center" Margin="0,22,0,0"/>
@@ -14073,31 +14418,41 @@ $xaml = @'
                 <!-- KOPIER-BESTAETIGUNG (Version 3.9)                            -->
                 <!-- Kein Popup, keine Windows-Sprechblase: nur ein kleiner       -->
                 <!-- Hinweis unten im Fenster, der nach ein paar Sekunden von     -->
-                <!-- allein ausblendet.                                           -->
+                <!-- allein ausblendet (Version 6.0: als Glas-Pille mit sanftem   -->
+                <!-- Hochgleiten).                                                -->
                 <!-- ============================================================ -->
                 <Border x:Name="CopyConfirm" Panel.ZIndex="60" Visibility="Collapsed" Opacity="0"
                         HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,14"
-                        Background="#162235" BorderBrush="#6366F1" BorderThickness="1" CornerRadius="10"
+                        Background="#E61B2B52" BorderBrush="#6600D0BE" BorderThickness="1" CornerRadius="14"
                         Padding="16,10,18,10">
+                    <Border.RenderTransform>
+                        <TranslateTransform X="0" Y="10"/>
+                    </Border.RenderTransform>
+                    <Border.Effect>
+                        <DropShadowEffect Color="#6600A89C" BlurRadius="18" ShadowDepth="0" Opacity="0.55"/>
+                    </Border.Effect>
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="&#x2713;" Foreground="#6366F1" FontSize="15" FontWeight="Bold"
+                        <TextBlock Text="&#x2713;" Foreground="#5CFFEF" FontSize="15" FontWeight="Bold"
                                    VerticalAlignment="Center" Margin="0,0,10,0"/>
                         <TextBlock x:Name="CopyConfirmText" Text="Prompt wurde in die Zwischenablage kopiert"
-                                   Foreground="#E2E8F0" FontSize="13" VerticalAlignment="Center"/>
+                                   Foreground="#F0F6FF" FontSize="13" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Border>
 
                 <!-- ============================================================ -->
                 <!-- STARTBILDSCHIRM (Version 3.4): Ladekreisel mit Fortschritt.  -->
-                <!-- Ersetzt die drei frueheren Status-Kaerten. Die Spieleliste  -->
-                <!-- dahinter erscheint erst, wenn alles bereit ist.             -->
+                <!-- Version 6.0: halbtransparentes Glas - die Aurora-Lichter     -->
+                <!-- scheinen waehrend des Starts lebendig hindurch.              -->
                 <!-- ============================================================ -->
-                <Border x:Name="SplashScreen" Panel.ZIndex="70" Background="#0B1220" CornerRadius="14" ClipToBounds="True">
+                <Border x:Name="SplashScreen" Panel.ZIndex="70" Background="#EE0A1030" CornerRadius="16" ClipToBounds="True">
                     <Grid>
                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="400" Margin="0,-10,0,0">
                             <Grid Width="86" Height="86" Margin="0,0,0,24" HorizontalAlignment="Center">
-                                <Ellipse Stroke="#334155" StrokeThickness="6"/>
-                                <Ellipse x:Name="SplashSpinnerArc" Stroke="#6366F1" StrokeThickness="6" StrokeDashArray="44 158" StrokeDashCap="Round" RenderTransformOrigin="0.5,0.5">
+                                <Ellipse Stroke="#26FFFFFF" StrokeThickness="6"/>
+                                <Ellipse x:Name="SplashSpinnerArc" Stroke="#00E5D0" StrokeThickness="6" StrokeDashArray="44 158" StrokeDashCap="Round" RenderTransformOrigin="0.5,0.5">
+                                    <Ellipse.Effect>
+                                        <DropShadowEffect Color="#9900E5D0" BlurRadius="14" ShadowDepth="0" Opacity="0.85"/>
+                                    </Ellipse.Effect>
                                     <Ellipse.RenderTransform>
                                         <RotateTransform Angle="0"/>
                                     </Ellipse.RenderTransform>
@@ -14114,14 +14469,14 @@ $xaml = @'
                                     </Ellipse.Triggers>
                                 </Ellipse>
                                 <Grid Width="32" Height="30" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                    <Ellipse Width="7" Height="7" Fill="#818CF8" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="1,0,0,0"/>
-                                    <Ellipse Width="7" Height="7" Fill="#818CF8" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,1,0"/>
-                                    <Rectangle Height="2.6" Fill="#6366F1" Margin="11,0,11,0" RadiusX="1.3" RadiusY="1.3"/>
+                                    <Ellipse Width="7" Height="7" Fill="#AFF7EC" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="1,0,0,0"/>
+                                    <Ellipse Width="7" Height="7" Fill="#E8FBFF" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,1,0"/>
+                                    <Rectangle Height="2.6" Fill="#00E5D0" Margin="11,0,11,0" RadiusX="1.3" RadiusY="1.3"/>
                                 </Grid>
                             </Grid>
                             <TextBlock x:Name="SplashHeadline" Text="Arena Roblox Bridge startet …" Foreground="{StaticResource TextMain}" FontSize="19" FontWeight="Bold" TextAlignment="Center"/>
                             <TextBlock x:Name="SplashSub" Text="Alles wird automatisch vorbereitet - du musst nichts tun." Foreground="{StaticResource TextMuted}" FontSize="12.5" TextAlignment="Center" TextWrapping="Wrap" Margin="0,9,0,24"/>
-                            <Border CornerRadius="13" Background="#111827" BorderBrush="#334155" BorderThickness="1" Padding="18,14">
+                            <Border CornerRadius="13" Background="#33101838" BorderBrush="#26FFFFFF" BorderThickness="1" Padding="18,14">
                                 <StackPanel>
                                     <Grid>
                                         <Grid.ColumnDefinitions>
@@ -14129,40 +14484,38 @@ $xaml = @'
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <Ellipse x:Name="SplashStudioDot" Grid.Column="0" Width="9" Height="9" Fill="#64748B" Margin="0,0,12,0" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="1" Text="Roblox Studio" Foreground="#CBD5E1" FontSize="13.5" VerticalAlignment="Center"/>
-                                        <TextBlock x:Name="SplashStudioState" Grid.Column="2" Text="Wird geprüft …" Foreground="#94A3B8" FontSize="12" VerticalAlignment="Center"/>
+                                        <Ellipse x:Name="SplashStudioDot" Grid.Column="0" Width="9" Height="9" Fill="#8FA3CC" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="Roblox Studio" Foreground="#DCE6FF" FontSize="13.5" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="SplashStudioState" Grid.Column="2" Text="Wird geprüft …" Foreground="#9AA9CE" FontSize="12" VerticalAlignment="Center"/>
                                     </Grid>
-                                    <Border Height="1" Background="#1E293B" Margin="0,11,0,11"/>
+                                    <Border Height="1" Background="#1FFFFFFF" Margin="0,11,0,11"/>
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <Ellipse x:Name="SplashPluginDot" Grid.Column="0" Width="9" Height="9" Fill="#64748B" Margin="0,0,12,0" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="1" Text="Studio-Plugin" Foreground="#CBD5E1" FontSize="13.5" VerticalAlignment="Center"/>
-                                        <TextBlock x:Name="SplashPluginState" Grid.Column="2" Text="Wartet …" Foreground="#94A3B8" FontSize="12" VerticalAlignment="Center"/>
+                                        <Ellipse x:Name="SplashPluginDot" Grid.Column="0" Width="9" Height="9" Fill="#8FA3CC" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="Studio-Plugin" Foreground="#DCE6FF" FontSize="13.5" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="SplashPluginState" Grid.Column="2" Text="Wartet …" Foreground="#9AA9CE" FontSize="12" VerticalAlignment="Center"/>
                                     </Grid>
-                                    <Border Height="1" Background="#1E293B" Margin="0,11,0,11"/>
+                                    <Border Height="1" Background="#1FFFFFFF" Margin="0,11,0,11"/>
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <Ellipse x:Name="SplashTunnelDot" Grid.Column="0" Width="9" Height="9" Fill="#64748B" Margin="0,0,12,0" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="1" Text="Cloudflare-Tunnel" Foreground="#CBD5E1" FontSize="13.5" VerticalAlignment="Center"/>
-                                        <TextBlock x:Name="SplashTunnelState" Grid.Column="2" Text="Wartet …" Foreground="#94A3B8" FontSize="12" VerticalAlignment="Center"/>
+                                        <Ellipse x:Name="SplashTunnelDot" Grid.Column="0" Width="9" Height="9" Fill="#8FA3CC" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="Cloudflare-Tunnel" Foreground="#DCE6FF" FontSize="13.5" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="SplashTunnelState" Grid.Column="2" Text="Wartet …" Foreground="#9AA9CE" FontSize="12" VerticalAlignment="Center"/>
                                     </Grid>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
                     </Grid>
                 </Border>
-
             </Grid>
-
         </Grid>
     </Border>
 </Window>
@@ -14205,6 +14558,7 @@ $UpdateBadge     = $window.FindName('UpdateBadge')
 $MinimizeButton  = $window.FindName('MinimizeButton')
 $CloseButton     = $window.FindName('CloseButton')
 $PulseDot        = $window.FindName('PulseDot')
+$RootShell       = $window.FindName('RootShell')
 
 # ----------------------------------------------------------------------------
 # KLEINE MITTEILUNGEN (ersetzen die alte Fusszeile)
@@ -14379,14 +14733,26 @@ function Set-MenuChecked {
     # Version 5: this is deliberately a switch, never a checkbox. Read-only
     # is an immediate, temporary session state just like the settings switches.
     if ($Checked) {
-        $Item.Track.Background = Get-Brush '#1E6B3A'; $Item.Track.BorderBrush = Get-Brush '#35A05C'
-        $Item.Thumb.HorizontalAlignment = 'Right'; $Item.Thumb.Margin = [System.Windows.Thickness]::new(0,0,3,0)
-        $Item.State.Text = 'AN'; $Item.State.Foreground = Get-Brush '#D6F5E1'; $Item.State.Margin = [System.Windows.Thickness]::new(0,0,12,0)
+        $Item.Track.Background = Get-Brush '#CC1FA34A'; $Item.Track.BorderBrush = Get-Brush '#662FCB6C'
+        $Item.State.Text = 'AN'; $Item.State.Foreground = Get-Brush '#D9FFE9'; $Item.State.Margin = [System.Windows.Thickness]::new(0,0,12,0)
     } else {
-        $Item.Track.Background = Get-Brush '#3A1820'; $Item.Track.BorderBrush = Get-Brush '#7F1D2D'
-        $Item.Thumb.HorizontalAlignment = 'Left'; $Item.Thumb.Margin = [System.Windows.Thickness]::new(3,0,0,0)
-        $Item.State.Text = 'AUS'; $Item.State.Foreground = Get-Brush '#FECACA'; $Item.State.Margin = [System.Windows.Thickness]::new(12,0,0,0)
+        $Item.Track.Background = Get-Brush '#59E11D48'; $Item.Track.BorderBrush = Get-Brush '#73FF5C77'
+        $Item.State.Text = 'AUS'; $Item.State.Foreground = Get-Brush '#FFC7D3'; $Item.State.Margin = [System.Windows.Thickness]::new(12,0,0,0)
     }
+    # Version 6.0: Der Schalter-Daumen gleitet weich (TranslateTransform).
+    # Der Daumen bleibt layout-statisch (links, Rand 3) - die Bewegung ist
+    # reine Optik. Schlaegt die Animation fehl, bleibt alles voll bedienbar.
+    try {
+        if ($null -ne $Item.Thumb.RenderTransform -and $Item.Thumb.RenderTransform -is [System.Windows.Media.TranslateTransform]) {
+            $toX = 0.0
+            if ($Checked) { $toX = 22.0 }
+            $slide = [System.Windows.Media.Animation.DoubleAnimation]::new($toX, [System.TimeSpan]::FromMilliseconds(150))
+            $slideEase = [System.Windows.Media.Animation.CubicEase]::new()
+            $slideEase.EasingMode = [System.Windows.Media.Animation.EasingMode]::EaseOut
+            $slide.EasingFunction = $slideEase
+            $Item.Thumb.RenderTransform.BeginAnimation([System.Windows.Media.TranslateTransform]::XProperty, $slide)
+        }
+    } catch {}
 }
 
 function New-MenuRow {
@@ -14394,7 +14760,7 @@ function New-MenuRow {
         [string]$Glyph,
         [string]$Title,
         [string]$Subtitle,
-        [string]$Accent = '#818CF8',
+        [string]$Accent = '#5CFFEF',
         [bool]$Checkable = $false,
         [bool]$Checked = $false
     )
@@ -14414,8 +14780,18 @@ function New-MenuRow {
     $root.Padding = [System.Windows.Thickness]::new(9, 8, 9, 8)
     $root.Cursor = [System.Windows.Input.Cursors]::Hand
 
+    # Version 6.0: Der Hover-Zustand ist ein ueberlagertes Aufhell-Element,
+    # dessen Opacity weich animiert wird (kein hartes Umschalten der Farbe).
+    $layer = [System.Windows.Controls.Grid]::new()
+    $hoverBg = [System.Windows.Controls.Border]::new()
+    $hoverBg.CornerRadius = [System.Windows.CornerRadius]::new(10)
+    $hoverBg.Background = Get-Brush '#47FFFFFF'
+    $hoverBg.Opacity = 0
+    $hoverBg.IsHitTestVisible = $false
+    $null = $layer.Children.Add($hoverBg)
+
     $grid = [System.Windows.Controls.Grid]::new()
-    $c0 = [System.Windows.Controls.ColumnDefinition]::new(); $c0.Width = [System.Windows.GridLength]::new(32)
+    $c0 = [System.Windows.Controls.ColumnDefinition]::new(); $c0.Width = [System.Windows.GridLength]::new(34)
     $c1 = [System.Windows.Controls.ColumnDefinition]::new()
     $c2 = [System.Windows.Controls.ColumnDefinition]::new(); $c2.Width = [System.Windows.GridLength]::Auto
     $grid.ColumnDefinitions.Add($c0)
@@ -14423,11 +14799,11 @@ function New-MenuRow {
     $grid.ColumnDefinitions.Add($c2)
 
     $iconBox = [System.Windows.Controls.Border]::new()
-    $iconBox.Width = 32
-    $iconBox.Height = 32
-    $iconBox.CornerRadius = [System.Windows.CornerRadius]::new(9)
-    $iconBox.Background = Get-Brush '#1E293B'
-    $iconBox.BorderBrush = Get-Brush '#334155'
+    $iconBox.Width = 34
+    $iconBox.Height = 34
+    $iconBox.CornerRadius = [System.Windows.CornerRadius]::new(10)
+    $iconBox.Background = Get-Brush '#30FFFFFF'
+    $iconBox.BorderBrush = Get-Brush '#26FFFFFF'
     $iconBox.BorderThickness = [System.Windows.Thickness]::new(1)
     $iconText = [System.Windows.Controls.TextBlock]::new()
     $iconText.Text = $Glyph
@@ -14443,12 +14819,12 @@ function New-MenuRow {
     $texts.Margin = [System.Windows.Thickness]::new(11, 0, 8, 0)
     $titleBlock = [System.Windows.Controls.TextBlock]::new()
     $titleBlock.Text = $Title
-    $titleBlock.Foreground = Get-Brush '#F8FAFC'
+    $titleBlock.Foreground = Get-Brush '#FFFFFF'
     $titleBlock.FontSize = 13
     $titleBlock.FontWeight = 'SemiBold'
     $subBlock = [System.Windows.Controls.TextBlock]::new()
     $subBlock.Text = $Subtitle
-    $subBlock.Foreground = Get-Brush '#94A3B8'
+    $subBlock.Foreground = Get-Brush '#D9D2F5'
     $subBlock.FontSize = 11
     $subBlock.Margin = [System.Windows.Thickness]::new(0, 3, 0, 0)
     $texts.Children.Add($titleBlock) | Out-Null
@@ -14465,7 +14841,11 @@ function New-MenuRow {
         $switch = [System.Windows.Controls.Grid]::new()
         $switch.Width = 46; $switch.Height = 24; $switch.VerticalAlignment = 'Center'
         $track = [System.Windows.Controls.Border]::new(); $track.Width=46; $track.Height=24; $track.CornerRadius=[System.Windows.CornerRadius]::new(12); $track.BorderThickness=[System.Windows.Thickness]::new(1)
-        $thumb = [System.Windows.Shapes.Ellipse]::new(); $thumb.Width=18; $thumb.Height=18; $thumb.Fill=Get-Brush '#F8FAFC'; $thumb.VerticalAlignment='Center'
+        $thumb = [System.Windows.Shapes.Ellipse]::new(); $thumb.Width=18; $thumb.Height=18; $thumb.Fill=Get-Brush '#F2F7FF'; $thumb.VerticalAlignment='Center'
+        $thumb.HorizontalAlignment = 'Left'
+        $thumb.Margin = [System.Windows.Thickness]::new(3,0,0,0)
+        $thumb.RenderTransform = [System.Windows.Media.TranslateTransform]::new(0, 0)
+        try { $thumb.Effect = New-Shadow -Blur 6 -Opacity 0.45 } catch {}
         $state = [System.Windows.Controls.TextBlock]::new(); $state.FontSize=8.5; $state.FontWeight='Bold'; $state.HorizontalAlignment='Center'; $state.VerticalAlignment='Center'; $state.IsHitTestVisible=$false
         $switch.Children.Add($track)|Out-Null;$switch.Children.Add($thumb)|Out-Null;$switch.Children.Add($state)|Out-Null
         $item.Track=$track;$item.Thumb=$thumb;$item.State=$state
@@ -14474,9 +14854,24 @@ function New-MenuRow {
         $grid.Children.Add($switch) | Out-Null
     }
 
-    $root.Child = $grid
-    $root.Add_MouseEnter({ param($s, $e) $s.Background = Get-Brush '#26364A' })
-    $root.Add_MouseLeave({ param($s, $e) $s.Background = [System.Windows.Media.Brushes]::Transparent })
+    $null = $layer.Children.Add($grid)
+    $root.Child = $layer
+    $root.Add_MouseEnter({
+        param($s, $e)
+        try {
+            $hover = $s.Child.Children[0]
+            $show = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 1, [System.TimeSpan]::FromMilliseconds(120))
+            $hover.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $show)
+        } catch {}
+    })
+    $root.Add_MouseLeave({
+        param($s, $e)
+        try {
+            $hover = $s.Child.Children[0]
+            $hide = [System.Windows.Media.Animation.DoubleAnimation]::new(0, [System.TimeSpan]::FromMilliseconds(160))
+            $hover.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $hide)
+        } catch {}
+    })
 
     $item | Add-Member -MemberType NoteProperty -Name 'Root' -Value $root -Force
     return $item
@@ -14485,10 +14880,13 @@ function New-MenuRow {
 function New-Separator {
     $sep = [System.Windows.Controls.Border]::new()
     $sep.Height = 1
-    $sep.Background = Get-Brush '#334155'
+    $sep.Background = Get-Brush '#26FFFFFF'
     $sep.Margin = [System.Windows.Thickness]::new(9, 5, 9, 5)
     return $sep
 }
+
+
+
 
 
 # ----------------------------------------------------------------------------
@@ -14599,9 +14997,19 @@ function Set-PlaceIconImage {
         $bitmap.EndInit()
         $bitmap.Freeze()
         $Row.IconImage.Source = $bitmap
+        # Version 6.0: Das Icon blendet weich ein (Liquid-Glass-Detail).
+        # Bleibt die Animation aus irgendeinem Grund haengen, setzt der innere
+        # Fallback die Deckkraft hart auf 1 - unsichtbar bleibt es nie.
+        $Row.IconImage.Opacity = 0
         $Row.IconImage.Visibility = 'Visible'
         $Row.IconSpinner.Visibility = 'Collapsed'
         $Row.IconFallback.Visibility = 'Collapsed'
+        try {
+            $iconFade = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 1, [System.TimeSpan]::FromMilliseconds(260))
+            $Row.IconImage.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $iconFade)
+        } catch {
+            try { $Row.IconImage.Opacity = 1 } catch {}
+        }
     } catch {
         try { $Row.IconSpinner.Visibility = 'Collapsed'; $Row.IconFallback.Visibility = 'Visible' } catch {}
         Write-UiErrorLog ('Place-Icon ' + $Path + ' konnte nicht angezeigt werden') $_
@@ -14640,8 +15048,8 @@ function New-LocalFallbackIcon {
             $grad = [System.Windows.Media.LinearGradientBrush]::new()
             $grad.StartPoint = [System.Windows.Point]::new(0, 0)
             $grad.EndPoint = [System.Windows.Point]::new(1, 1)
-            [void]$grad.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#475569'), 0.0))
-            [void]$grad.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#1E293B'), 1.0))
+            [void]$grad.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#007A73'), 0.0))
+            [void]$grad.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#00544F'), 1.0))
             $dc.DrawRoundedRectangle($grad, $null, $rect, 22, 22)
             $formatted = [System.Windows.Media.FormattedText]::new([string][char]0xE7FC,
                 [System.Globalization.CultureInfo]::InvariantCulture,
@@ -14665,14 +15073,16 @@ function New-LocalFallbackIcon {
 }
 
 function New-PlaceIconVisual {
+    # Version 6.0: Glas-Rahmen mit weissem Rand und Teal-Ladekreis.
     $frame = [System.Windows.Controls.Border]::new()
     $frame.Width = 46; $frame.Height = 46
     $frame.CornerRadius = [System.Windows.CornerRadius]::new(13)
-    $frame.Background = Get-Brush '#FFFFFF'
-    $frame.BorderBrush = Get-Brush '#CBD5E1'
-    $frame.BorderThickness = [System.Windows.Thickness]::new(1)
+    $frame.Background = Get-Brush '#E6FFFFFF'
+    $frame.BorderBrush = Get-Brush '#59FFFFFF'
+    $frame.BorderThickness = [System.Windows.Thickness]::new(1.2)
     $frame.Margin = [System.Windows.Thickness]::new(0, 0, 13, 0)
     $frame.ClipToBounds = $true
+    try { $frame.Effect = New-Shadow -Blur 10 -Opacity 0.30 } catch {}
     $iconHost = [System.Windows.Controls.Grid]::new()
     $image = [System.Windows.Controls.Image]::new()
     $image.Stretch = 'UniformToFill'
@@ -14682,12 +15092,12 @@ function New-PlaceIconVisual {
     $fallback.Text = [char]0xE71C
     $fallback.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe MDL2 Assets')
     $fallback.FontSize = 20
-    $fallback.Foreground = Get-Brush '#475569'
+    $fallback.Foreground = Get-Brush '#5E7196'
     $fallback.HorizontalAlignment = 'Center'; $fallback.VerticalAlignment = 'Center'
     $fallback.Visibility = 'Collapsed'
     $spinner = [System.Windows.Shapes.Ellipse]::new()
     $spinner.Width = 24; $spinner.Height = 24
-    $spinner.Stroke = Get-Brush '#6366F1'; $spinner.StrokeThickness = 3
+    $spinner.Stroke = Get-Brush '#00E5D0'; $spinner.StrokeThickness = 3
     $spinner.StrokeDashArray = [System.Windows.Media.DoubleCollection]::new(@(4.0, 8.0))
     $spinner.StrokeDashCap = 'Round'
     $spinner.HorizontalAlignment = 'Center'; $spinner.VerticalAlignment = 'Center'
@@ -14763,7 +15173,7 @@ if ([string]::IsNullOrWhiteSpace($imageUrl)) {
 $tmp = $destination + '.download'
 try {
     $client = New-Object System.Net.WebClient
-    $client.Headers['User-Agent'] = 'ArenaRobloxBridge/5.2'
+    $client.Headers['User-Agent'] = 'ArenaRobloxBridge/6.0'
     $downloadTask = $client.DownloadFileTaskAsync($imageUrl, $tmp)
     if (-not $downloadTask.Wait(30000)) { throw 'Zeitueberschreitung beim Icon-Download (30 s).' }
     $client.Dispose()
@@ -14887,29 +15297,79 @@ function Clear-ArenaHistory {
     }
 }
 
+# Version 6.0: Aurora-Lichter fuer programmatisch gebaute Fenster (der
+# Verlaufs-Bildschirm kommt ohne XAML-Ressourcen aus). Jedes Licht ist eine
+# Ellipse mit radialem Farbverlauf, die langsam hin- und herdriftet. Die
+# Funktion ist bewusst defensiv gebaut: Schlaegt irgendetwas, liefert sie
+# ein leeres Grid zurueck - das Fenster bleibt voll bedienbar.
+function New-AuroraLayer {
+    param([double]$Width, [double]$Height)
+    $layer = [System.Windows.Controls.Grid]::new()
+    $layer.IsHitTestVisible = $false
+    try {
+        $specs = @(
+            @{ Size = [Math]::Min(520, $Width * 0.8); X = -170.0; Y = -190.0; Color = '#547B5CFF'; DX = 44.0; DY = 28.0; TX = 34; TY = 26 },
+            @{ Size = [Math]::Min(420, $Width * 0.65); X = ($Width * 0.62); Y = ($Height * 0.5); Color = '#4D2E4FFF'; DX = -38.0; DY = -24.0; TX = 40; TY = 31 },
+            @{ Size = [Math]::Min(330, $Width * 0.5); X = ($Width * 0.55); Y = -120.0; Color = '#4000CFC0'; DX = -30.0; DY = 22.0; TX = 28; TY = 36 }
+        )
+        foreach ($spec in $specs) {
+            $blob = [System.Windows.Shapes.Ellipse]::new()
+            $blob.Width = [double]$spec.Size
+            $blob.Height = [double]$spec.Size
+            $blob.HorizontalAlignment = 'Left'
+            $blob.VerticalAlignment = 'Top'
+            $blob.Margin = [System.Windows.Thickness]::new([double]$spec.X, [double]$spec.Y, 0, 0)
+            $radial = [System.Windows.Media.RadialGradientBrush]::new()
+            $radial.GradientOrigin = [System.Windows.Point]::new(0.5, 0.5)
+            $null = $radial.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString([string]$spec.Color), 0.0))
+            $transparent = [string]$spec.Color
+            # '#AARRGGBB' -> Alpha auf 00 setzen (randlos auslaufen)
+            $transparent = '#00' + $transparent.Substring(3)
+            $null = $radial.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString($transparent), 1.0))
+            try { $radial.Freeze() } catch {}
+            $blob.Fill = $radial
+            $drift = [System.Windows.Media.TranslateTransform]::new(0, 0)
+            $blob.RenderTransform = $drift
+            $animX = [System.Windows.Media.Animation.DoubleAnimation]::new(0, [double]$spec.DX, [System.TimeSpan]::FromSeconds([int]$spec.TX))
+            $animX.AutoReverse = $true
+            $animX.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+            $drift.BeginAnimation([System.Windows.Media.TranslateTransform]::XProperty, $animX)
+            $animY = [System.Windows.Media.Animation.DoubleAnimation]::new(0, [double]$spec.DY, [System.TimeSpan]::FromSeconds([int]$spec.TY))
+            $animY.AutoReverse = $true
+            $animY.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+            $drift.BeginAnimation([System.Windows.Media.TranslateTransform]::YProperty, $animY)
+            $null = $layer.Children.Add($blob)
+        }
+    } catch {}
+    return $layer
+}
+
 function Add-ArenaHistoryCard {
     param($HostPanel, $Entry, [bool]$AllPlaces)
     $kind = [string]$Entry.kind
-    $colour = '#94A3B8'
+    # Version 6.0: Kräftigere Akzentfarben für die Glas-Karten.
+    $colour = '#9AA9CE'
     switch ($kind) {
-        'running' { $colour='#3B82F6'; break }
-        'write'   { $colour='#22C55E'; break }
-        'console' { $colour='#FBBF24'; break }
-        'failed'  { $colour='#F87171'; break }
+        'running' { $colour='#38BDF8'; break }
+        'write'   { $colour='#34D167'; break }
+        'console' { $colour='#FFB020'; break }
+        'failed'  { $colour='#FF5C77'; break }
     }
     # Version 5.2: deutlich flachere Karten, damit eine Aktion weniger Hoehe braucht.
+    # Version 6.0: halbtransparente Glas-Karten, die neu hinzukommenden Karten
+    # blenden weich ein.
     $card = [System.Windows.Controls.Border]::new()
-    $card.Background = Get-Brush '#111827'; $card.BorderBrush = Get-Brush '#334155'; $card.BorderThickness = [System.Windows.Thickness]::new(1)
-    $card.CornerRadius=[System.Windows.CornerRadius]::new(8); $card.Padding=[System.Windows.Thickness]::new(9,5,9,5); $card.Margin=[System.Windows.Thickness]::new(0,0,0,5)
+    $card.Background = Get-Brush '#4D101A3C'; $card.BorderBrush = Get-Brush '#2EFFFFFF'; $card.BorderThickness = [System.Windows.Thickness]::new(1)
+    $card.CornerRadius=[System.Windows.CornerRadius]::new(10); $card.Padding=[System.Windows.Thickness]::new(9,5,9,5); $card.Margin=[System.Windows.Thickness]::new(0,0,0,6)
     $grid=[System.Windows.Controls.Grid]::new()
     $c0=[System.Windows.Controls.ColumnDefinition]::new();$c0.Width=[System.Windows.GridLength]::new(4)
     $c1=[System.Windows.Controls.ColumnDefinition]::new();$grid.ColumnDefinitions.Add($c0);$grid.ColumnDefinitions.Add($c1)
     $line=[System.Windows.Controls.Border]::new();$line.Background=Get-Brush $colour;$line.CornerRadius=[System.Windows.CornerRadius]::new(2)
     [System.Windows.Controls.Grid]::SetColumn($line,0);$grid.Children.Add($line)|Out-Null
     $stack=[System.Windows.Controls.StackPanel]::new();$stack.Margin=[System.Windows.Thickness]::new(9,0,0,0)
-    $main=[System.Windows.Controls.TextBlock]::new();$main.Foreground=Get-Brush '#E2E8F0';$main.FontSize=11.5;$main.TextWrapping='Wrap'
+    $main=[System.Windows.Controls.TextBlock]::new();$main.Foreground=Get-Brush '#EAF0FF';$main.FontSize=11.5;$main.TextWrapping='Wrap'
     $prefix=if($AllPlaces){ ([string]$Entry.placeName + ' · ') }else{''};$main.Text=$prefix + [string]$Entry.text
-    $meta=[System.Windows.Controls.TextBlock]::new();$meta.Foreground=Get-Brush '#64748B';$meta.FontSize=10;$meta.Margin=[System.Windows.Thickness]::new(0,2,0,0)
+    $meta=[System.Windows.Controls.TextBlock]::new();$meta.Foreground=Get-Brush '#8FA3CC';$meta.FontSize=10;$meta.Margin=[System.Windows.Thickness]::new(0,2,0,0)
     $when='';try{$when=[DateTimeOffset]::FromUnixTimeSeconds([int64]$Entry.updatedAt).LocalDateTime.ToString('HH:mm:ss')}catch{}
     $state='Abgeschlossen'
     if ([int64]$Entry.updatedAt -eq 0) {
@@ -14929,6 +15389,13 @@ function Add-ArenaHistoryCard {
     $meta.Text=$state + $timeSuffix
     $stack.Children.Add($main)|Out-Null;$stack.Children.Add($meta)|Out-Null
     [System.Windows.Controls.Grid]::SetColumn($stack,1);$grid.Children.Add($stack)|Out-Null;$card.Child=$grid;$HostPanel.Children.Add($card)|Out-Null
+    try {
+        $card.Opacity = 0
+        $cardFade = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 1, [System.TimeSpan]::FromMilliseconds(200))
+        $card.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $cardFade)
+    } catch {
+        try { $card.Opacity = 1 } catch {}
+    }
 }
 
 function Update-ArenaHistoryWindow {
@@ -14963,9 +15430,9 @@ function Update-ArenaHistoryWindow {
 }
 
 # Version 5.2: Button im normalen Titelleisten-Design (programmatisch gebaut,
-# weil das Verlaufsfenster ohne XAML-Ressourcen auskommt). Sieht aus wie die
-# Knoepfe "..." / "X" im Hauptfenster: Dunkler Hintergrund, abgerundet,
-# Hover-Farbe; der Inhalt bleibt das uebergebene MDL2-Glyph.
+# weil das Verlaufsfenster ohne XAML-Ressourcen auskommt).
+# Version 6.0: Glas-Knopf - halbtransparenter heller Grund, weisser Rand,
+# Hover-Farben kommen als Parameter (Crimson fuer Schliessen/Loeschen).
 function New-HistoryButton {
     param(
         [string]$Glyph,
@@ -14982,14 +15449,14 @@ function New-HistoryButton {
     $button.Width = 38; $button.Height = 34
     $button.Cursor = [System.Windows.Input.Cursors]::Hand
     $button.ToolTip = $ToolTip
-    $button.Foreground = Get-Brush '#CBD5E1'
-    $button.Background = Get-Brush '#111827'
-    $button.BorderBrush = Get-Brush '#475569'
+    $button.Foreground = Get-Brush '#E8EFFC'
+    $button.Background = Get-Brush '#33FFFFFF'
+    $button.BorderBrush = Get-Brush '#40FFFFFF'
     $button.BorderThickness = [System.Windows.Thickness]::new(1)
     $template = [System.Windows.Controls.ControlTemplate]::new([System.Windows.Controls.Button])
     $bd = [System.Windows.FrameworkElementFactory]::new([System.Windows.Controls.Border])
     $bd.Name = 'bd'
-    [void]$bd.SetValue([System.Windows.Controls.Border]::CornerRadiusProperty, [System.Windows.CornerRadius]::new(10))
+    [void]$bd.SetValue([System.Windows.Controls.Border]::CornerRadiusProperty, [System.Windows.CornerRadius]::new(12))
     $bgBind = [System.Windows.Data.Binding]::new('Background')
     $bgBind.RelativeSource = [System.Windows.Data.RelativeSource]::TemplatedParent
     $bd.SetBinding([System.Windows.Controls.Border]::BackgroundProperty, $bgBind)
@@ -15024,16 +15491,34 @@ function Open-ArenaHistoryWindow {
     $history=[System.Windows.Window]::new();$history.Title=$Title;$history.Width=660;$history.Height=620;$history.MinWidth=660;$history.MinHeight=620;$history.MaxWidth=660;$history.MaxHeight=620
     $history.WindowStartupLocation='CenterOwner';$history.WindowStyle='None';$history.AllowsTransparency=$true;$history.Background=[System.Windows.Media.Brushes]::Transparent;$history.FontFamily=[System.Windows.Media.FontFamily]::new('Segoe UI')
     try{$history.Owner=$window}catch{}
-    $shell=[System.Windows.Controls.Border]::new();$shell.CornerRadius=[System.Windows.CornerRadius]::new(16);$shell.Background=Get-Brush '#0F172A';$shell.BorderBrush=Get-Brush '#334155';$shell.BorderThickness=[System.Windows.Thickness]::new(1);$shell.Padding=[System.Windows.Thickness]::new(20)
+    # Version 6.0 (Liquid Glass): dunkle Glas-Schale auf navy-violettem
+    # Verlauf, Aurora-Lichter dahinter, echter Rundungs-Beschchnitt.
+    $shell=[System.Windows.Controls.Border]::new();$shell.CornerRadius=[System.Windows.CornerRadius]::new(18)
+    $shellBg=[System.Windows.Media.LinearGradientBrush]::new()
+    $shellBg.StartPoint=[System.Windows.Point]::new(0,0);$shellBg.EndPoint=[System.Windows.Point]::new(0.35,1)
+    $null=$shellBg.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#F50B1030'),0.0))
+    $null=$shellBg.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#F3080922'),1.0))
+    try { $shellBg.Freeze() } catch {}
+    $shell.Background=$shellBg
+    $shell.BorderBrush=Get-Brush '#33FFFFFF';$shell.BorderThickness=[System.Windows.Thickness]::new(1);$shell.Padding=[System.Windows.Thickness]::new(20)
+    try { $shell.Clip = [System.Windows.Media.RectangleGeometry]::new([System.Windows.Rect]::new(0,0,660,620), 18, 18) } catch {}
+    try { $shell.Effect = New-Shadow -Blur 28 -Opacity 0.45 } catch {}
     $grid=[System.Windows.Controls.Grid]::new();$r0=[System.Windows.Controls.RowDefinition]::new();$r0.Height=[System.Windows.GridLength]::Auto;$r1=[System.Windows.Controls.RowDefinition]::new();$grid.RowDefinitions.Add($r0);$grid.RowDefinitions.Add($r1)
+    try {
+        $aurora = New-AuroraLayer -Width 660 -Height 620
+        [System.Windows.Controls.Grid]::SetRow($aurora,0)
+        [System.Windows.Controls.Grid]::SetRowSpan($aurora,2)
+        $grid.Children.Add($aurora)|Out-Null
+    } catch {}
     $head=[System.Windows.Controls.Grid]::new();$hc0=[System.Windows.Controls.ColumnDefinition]::new();$hc1=[System.Windows.Controls.ColumnDefinition]::new();$hc1.Width=[System.Windows.GridLength]::Auto;$hc2=[System.Windows.Controls.ColumnDefinition]::new();$hc2.Width=[System.Windows.GridLength]::Auto;$head.ColumnDefinitions.Add($hc0);$head.ColumnDefinitions.Add($hc1);$head.ColumnDefinitions.Add($hc2)
-    $texts=[System.Windows.Controls.StackPanel]::new();$titleText=[System.Windows.Controls.TextBlock]::new();$titleText.Text=$Title;$titleText.Foreground=Get-Brush '#F8FAFC';$titleText.FontSize=18;$titleText.FontWeight='Bold';$sub=[System.Windows.Controls.TextBlock]::new();$sub.Text='Alle Aktionen von Arena in zeitlicher Reihenfolge - Fenster ist frei verschiebbar';$sub.Foreground=Get-Brush '#94A3B8';$sub.FontSize=11.5;$sub.Margin=[System.Windows.Thickness]::new(0,4,0,0);$texts.Children.Add($titleText)|Out-Null;$texts.Children.Add($sub)|Out-Null;$head.Children.Add($texts)|Out-Null
+    $texts=[System.Windows.Controls.StackPanel]::new();$titleText=[System.Windows.Controls.TextBlock]::new();$titleText.Text=$Title;$titleText.Foreground=Get-Brush '#F4F8FF';$titleText.FontSize=18;$titleText.FontWeight='Bold';$sub=[System.Windows.Controls.TextBlock]::new();$sub.Text='Alle Aktionen von Arena in zeitlicher Reihenfolge - Fenster ist frei verschiebbar';$sub.Foreground=Get-Brush '#9AA9CE';$sub.FontSize=11.5;$sub.Margin=[System.Windows.Thickness]::new(0,4,0,0);$texts.Children.Add($titleText)|Out-Null;$texts.Children.Add($sub)|Out-Null;$head.Children.Add($texts)|Out-Null
     # Version 5.2: Die Knoepfe tragen das normale Titelleisten-Design des
     # Programms (dunkel, abgerundet, Hover-Farbe; Schliessen-Knopf wird rot) -
     # bis 5.0.2 waren es ungestylte Windows-Standardknoepfe.
-    $trash=New-HistoryButton -Glyph ([char]0xE74D) -GlyphSize 14 -ToolTip 'Verlauf zurücksetzen' -HoverBg '#1E293B' -HoverBorder '#818CF8' -PressBg '#162235'
+    # Version 6.0: Glas-Knoepfe, Hover in Crimson.
+    $trash=New-HistoryButton -Glyph ([char]0xE74D) -GlyphSize 14 -ToolTip 'Verlauf zurücksetzen' -HoverBg '#59E11D48' -HoverBorder '#80FF5C77' -PressBg '#40B01226'
     $trash.Margin=[System.Windows.Thickness]::new(0,0,8,0);[System.Windows.Controls.Grid]::SetColumn($trash,1);$head.Children.Add($trash)|Out-Null
-    $close=New-HistoryButton -Glyph ([char]0xE8BB) -GlyphSize 12 -ToolTip 'Schließen' -HoverBg '#EF4444' -HoverBorder '#FCA5A5' -PressBg '#B91C1C'
+    $close=New-HistoryButton -Glyph ([char]0xE8BB) -GlyphSize 12 -ToolTip 'Schließen' -HoverBg '#66FF4D6D' -HoverBorder '#99FF4D6D' -PressBg '#40D91A47'
     [System.Windows.Controls.Grid]::SetColumn($close,2);$head.Children.Add($close)|Out-Null
     [System.Windows.Controls.Grid]::SetRow($head,0);$grid.Children.Add($head)|Out-Null
     $scroll=[System.Windows.Controls.ScrollViewer]::new();$scroll.Margin=[System.Windows.Thickness]::new(0,14,0,0);$scroll.VerticalScrollBarVisibility='Auto';$scroll.HorizontalScrollBarVisibility='Disabled';$historyHost=[System.Windows.Controls.StackPanel]::new();$scroll.Content=$historyHost;[System.Windows.Controls.Grid]::SetRow($scroll,1);$grid.Children.Add($scroll)|Out-Null
@@ -15056,6 +15541,17 @@ function Open-ArenaHistoryWindow {
     }
     $head.Add_MouseLeftButtonDown($dragHandler)
     $shell.Add_MouseLeftButtonDown($dragHandler)
+    # Version 6.0: Das Fenster blendet beim Oeffnen weich ein.
+    try {
+        $history.Opacity = 0
+        $history.Add_ContentRendered({
+            param($s, $e)
+            try {
+                $fade = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 1, [System.TimeSpan]::FromMilliseconds(220))
+                $s.BeginAnimation([System.Windows.Window]::OpacityProperty, $fade)
+            } catch { try { $s.Opacity = 1 } catch {} }
+        })
+    } catch {}
     $timer=[System.Windows.Threading.DispatcherTimer]::new();$timer.Interval=[TimeSpan]::FromMilliseconds(650);$timer.Tag=$state;$timer.Add_Tick({param($sender,$e) Update-ArenaHistoryWindow $sender.Tag});$state.Timer=$timer
     $history.Add_Loaded({param($sender,$e) Update-ArenaHistoryWindow $sender.Tag;$sender.Tag.Timer.Start()})
     $history.Add_Closed({param($sender,$e) try{$sender.Tag.Timer.Stop()}catch{}})
@@ -15130,24 +15626,76 @@ function New-Row {
         ModeUntil  = [DateTime]::MinValue
     }
 
+    # Version 6.0 (Liquid Glass): Die Place-Zeile ist eine Teal-Glaskarte.
+    # WICHTIG fuer Animationen: Hintergrund-/Randfarben kommen aus dem
+    # eingefrorenen Brush-Cache (Get-Brush) - deren Color kann in WPF nicht
+    # animiert werden. Deshalb liegt der Hover-Glanz als eigenes Ueberlagerungs-
+    # Element ueber der Karte, dessen Opacity weich ein-/ausblendet, und die
+    # Karte hebt sich beim Hover um 2 Pixel an (TranslateTransform).
     $border = [System.Windows.Controls.Border]::new()
-    $border.CornerRadius = [System.Windows.CornerRadius]::new(12)
-    $border.Background = Get-Brush '#111827'
-    $border.BorderBrush = Get-Brush '#334155'
+    $border.CornerRadius = [System.Windows.CornerRadius]::new(16)
+    $rowBg = [System.Windows.Media.LinearGradientBrush]::new()
+    $rowBg.StartPoint = [System.Windows.Point]::new(0, 0)
+    $rowBg.EndPoint = [System.Windows.Point]::new(0.4, 1)
+    $null = $rowBg.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#D900D5C4'), 0.0))
+    $null = $rowBg.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#B800A08D'), 1.0))
+    try { $rowBg.Freeze() } catch {}
+    $border.Background = $rowBg
+    $border.BorderBrush = Get-Brush '#47FFFFFF'
     $border.BorderThickness = [System.Windows.Thickness]::new(1)
-    $border.Padding = [System.Windows.Thickness]::new(15, 0, 15, 0)
-    $border.Margin = [System.Windows.Thickness]::new(0, 0, 0, 10)
-    $border.MinHeight = 62
+    $border.Padding = [System.Windows.Thickness]::new(16, 0, 16, 0)
+    $border.Margin = [System.Windows.Thickness]::new(0, 0, 0, 12)
+    $border.MinHeight = 64
     $border.Tag = $sessionId
+    $border.Effect = New-Shadow -Blur 18 -Opacity 0.20 -Color '#0080D6C4'
+    $border.RenderTransform = [System.Windows.Media.TranslateTransform]::new(0, 0)
+
+    # Ebenen-Grid: [0] = Hover-Glanz, [1] = Glas-Schein oben, [2] = Inhalt
+    $layer = [System.Windows.Controls.Grid]::new()
+    $hoverGlow = [System.Windows.Controls.Border]::new()
+    $hoverGlow.CornerRadius = [System.Windows.CornerRadius]::new(15)
+    $hoverGlow.Background = Get-Brush '#5900E5D0'
+    $hoverGlow.Opacity = 0
+    $hoverGlow.IsHitTestVisible = $false
+    $null = $layer.Children.Add($hoverGlow)
+    $sheen = [System.Windows.Controls.Border]::new()
+    $sheen.Height = 18
+    $sheen.CornerRadius = [System.Windows.CornerRadius]::new(15, 15, 0, 0)
+    $sheen.Margin = [System.Windows.Thickness]::new(1, 1, 1, 0)
+    $sheen.VerticalAlignment = 'Top'
+    $sheen.IsHitTestVisible = $false
+    $sheenBrush = [System.Windows.Media.LinearGradientBrush]::new()
+    $sheenBrush.StartPoint = [System.Windows.Point]::new(0, 0)
+    $sheenBrush.EndPoint = [System.Windows.Point]::new(0, 1)
+    $null = $sheenBrush.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#38FFFFFF'), 0.0))
+    $null = $sheenBrush.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#00FFFFFF'), 1.0))
+    try { $sheenBrush.Freeze() } catch {}
+    $sheen.Background = $sheenBrush
+    $null = $layer.Children.Add($sheen)
+
     $border.Add_MouseEnter({
         param($s, $e)
-        $s.Background = Get-Brush '#1E293B'
-        $s.BorderBrush = Get-Brush '#6366F1'
+        try {
+            $glow = $s.Child.Children[0]
+            $show = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 0.55, [System.TimeSpan]::FromMilliseconds(150))
+            $glow.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $show)
+        } catch {}
+        try {
+            $lift = [System.Windows.Media.Animation.DoubleAnimation]::new(-2, [System.TimeSpan]::FromMilliseconds(140))
+            $s.RenderTransform.BeginAnimation([System.Windows.Media.TranslateTransform]::YProperty, $lift)
+        } catch {}
     })
     $border.Add_MouseLeave({
         param($s, $e)
-        $s.Background = Get-Brush '#111827'
-        $s.BorderBrush = Get-Brush '#334155'
+        try {
+            $glow = $s.Child.Children[0]
+            $hide = [System.Windows.Media.Animation.DoubleAnimation]::new(0, [System.TimeSpan]::FromMilliseconds(200))
+            $glow.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $hide)
+        } catch {}
+        try {
+            $drop = [System.Windows.Media.Animation.DoubleAnimation]::new(0, [System.TimeSpan]::FromMilliseconds(140))
+            $s.RenderTransform.BeginAnimation([System.Windows.Media.TranslateTransform]::YProperty, $drop)
+        } catch {}
     })
 
     $grid = [System.Windows.Controls.Grid]::new()
@@ -15180,7 +15728,7 @@ function New-Row {
     }
     $title = [System.Windows.Controls.TextBlock]::new()
     $title.Text = Get-PlaceName $Studio $WindowNames
-    $title.Foreground = Get-Brush '#F8FAFC'
+    $title.Foreground = Get-Brush '#FFFFFF'
     $title.FontSize = 16
     $title.FontWeight = 'SemiBold'
     $title.VerticalAlignment = 'Center'
@@ -15199,25 +15747,39 @@ function New-Row {
         $row.IconFallback = $placeIcon.Fallback
     }
 
+    # Version 6.0: "Prompt kopieren" ist ein gruener Glas-Knopf wie im
+    # Entwurf (Liquid Glass). Farbe/Outline liegen direkt am Knopf, der
+    # globale Button-Style im Hauptfenster liefert Schein, Hover-Glanz und
+    # Druck-Animation ueber die Template-Bindings.
     $copyContent = [System.Windows.Controls.StackPanel]::new()
     $copyContent.Orientation = 'Horizontal'
     $copyGlyph = [System.Windows.Controls.TextBlock]::new()
     $copyGlyph.Text = [char]0xE8C8
     $copyGlyph.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe MDL2 Assets')
     $copyGlyph.FontSize = 13
-    $copyGlyph.Foreground = Get-Brush '#E2E8F0'
+    $copyGlyph.Foreground = Get-Brush '#FFFFFF'
     $copyGlyph.VerticalAlignment = 'Center'
     $copyGlyph.Margin = [System.Windows.Thickness]::new(0, 0, 8, 0)
     $copyLabel = [System.Windows.Controls.TextBlock]::new()
     $copyLabel.Text = 'Prompt kopieren'
+    $copyLabel.Foreground = Get-Brush '#FFFFFF'
     $copyLabel.VerticalAlignment = 'Center'
     $copyContent.Children.Add($copyGlyph) | Out-Null
     $copyContent.Children.Add($copyLabel) | Out-Null
 
     $copy = [System.Windows.Controls.Button]::new()
     $copy.Content = $copyContent
+    $greenBg = [System.Windows.Media.LinearGradientBrush]::new()
+    $greenBg.StartPoint = [System.Windows.Point]::new(0, 0)
+    $greenBg.EndPoint = [System.Windows.Point]::new(0, 1)
+    $null = $greenBg.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#F238D16C'), 0.0))
+    $null = $greenBg.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#E61FA34A'), 1.0))
+    try { $greenBg.Freeze() } catch {}
+    $copy.Background = $greenBg
+    $copy.BorderBrush = Get-Brush '#4DFFFFFF'
+    $copy.Foreground = Get-Brush '#FFFFFF'
     $copy.MinWidth = 150
-    $copy.Height = 38
+    $copy.Height = 40
     $copy.Margin = [System.Windows.Thickness]::new(16, 0, 8, 0)
     $copy.IsEnabled = -not [string]::IsNullOrWhiteSpace($script:TunnelUrl)
     $copy.Tag = $sessionId
@@ -15229,16 +15791,27 @@ function New-Row {
     $grid.Children.Add($copy) | Out-Null
     $row.Copy = $copy
 
+    # Version 6.0: Der "..."-Knopf ist ein neutraler Glas-Knopf.
     $menuButton = [System.Windows.Controls.Button]::new()
     $menuGlyph = [System.Windows.Controls.TextBlock]::new()
     $menuGlyph.Text = [char]0xE712
     $menuGlyph.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe MDL2 Assets')
     $menuGlyph.FontSize = 15
+    $menuGlyph.Foreground = Get-Brush '#FFFFFF'
     $menuGlyph.HorizontalAlignment = 'Center'
     $menuGlyph.VerticalAlignment = 'Center'
     $menuButton.Content = $menuGlyph
-    $menuButton.Width = 40
-    $menuButton.Height = 38
+    $menuBg = [System.Windows.Media.LinearGradientBrush]::new()
+    $menuBg.StartPoint = [System.Windows.Point]::new(0, 0)
+    $menuBg.EndPoint = [System.Windows.Point]::new(0, 1)
+    $null = $menuBg.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#5CFFFFFF'), 0.0))
+    $null = $menuBg.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#26FFFFFF'), 1.0))
+    try { $menuBg.Freeze() } catch {}
+    $menuButton.Background = $menuBg
+    $menuButton.BorderBrush = Get-Brush '#3DFFFFFF'
+    $menuButton.Foreground = Get-Brush '#FFFFFF'
+    $menuButton.Width = 42
+    $menuButton.Height = 40
     $menuButton.Padding = [System.Windows.Thickness]::new(0)
     $menuButton.ToolTip = 'Weitere Optionen'
     [System.Windows.Controls.Grid]::SetColumn($menuButton, 2)
@@ -15252,43 +15825,74 @@ function New-Row {
     # der Klick-Handler prueft das bereits).
     $popup = $null
     try {
-        # --- Auswahlmenue -------------------------------------------------------
+        # --- Auswahlmenue (Version 6.0: Violettes Glas-Panel) -------------
         $popup = [System.Windows.Controls.Primitives.Popup]::new()
         $popup.PlacementTarget = $menuButton
         $popup.Placement = [System.Windows.Controls.Primitives.PlacementMode]::Bottom
         $popup.AllowsTransparency = $true
-        $popup.PopupAnimation = [System.Windows.Controls.Primitives.PopupAnimation]::Fade
+        # Version 6.0: Eigenes Einblend-Tempo (Faden + Hochgleiten, siehe
+        # Add_Opened unten) statt PopupAnimation - beides zusammen wuerde
+        # sich in der Opacity gegenseitig ueberlagern.
+        $popup.PopupAnimation = [System.Windows.Controls.Primitives.PopupAnimation]::None
         # Version 3.7: StaysOpen=$true - das Menue schliesst nur noch gezielt:
         # Klick auf "..." schaltet es um, Klick ausserhalb schliesst es (siehe
         # PreviewMouseDown des Fensters). So ist ein echtes Umschalten moeglich.
         $popup.StaysOpen = $true
-        $popup.HorizontalOffset = -232
-        $popup.VerticalOffset = 6
+        $popup.HorizontalOffset = -256
+        $popup.VerticalOffset = 8
 
         $menuShell = [System.Windows.Controls.Border]::new()
-        $menuShell.Width = 272
-        $menuShell.CornerRadius = [System.Windows.CornerRadius]::new(15)
-        $menuShell.Background = Get-Brush '#111827'
-        $menuShell.BorderBrush = Get-Brush '#334155'
+        $menuShell.Width = 284
+        $menuShell.CornerRadius = [System.Windows.CornerRadius]::new(18)
+        $menuBgBrush = [System.Windows.Media.LinearGradientBrush]::new()
+        $menuBgBrush.StartPoint = [System.Windows.Point]::new(0, 0)
+        $menuBgBrush.EndPoint = [System.Windows.Point]::new(0.3, 1)
+        $null = $menuBgBrush.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#F06E50E8'), 0.0))
+        $null = $menuBgBrush.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#E05038D8'), 1.0))
+        try { $menuBgBrush.Freeze() } catch {}
+        $menuShell.Background = $menuBgBrush
+        $menuShell.BorderBrush = Get-Brush '#3DFFFFFF'
         $menuShell.BorderThickness = [System.Windows.Thickness]::new(1)
-        $menuShell.Padding = [System.Windows.Thickness]::new(7)
-        $menuShell.Margin = [System.Windows.Thickness]::new(0, 0, 14, 14)
-        $menuShell.Effect = New-Shadow -Blur 24 -Opacity 0.6
+        $menuShell.Padding = [System.Windows.Thickness]::new(8)
+        $menuShell.Margin = [System.Windows.Thickness]::new(0, 0, 14, 18)
+        $menuShell.Effect = New-Shadow -Blur 30 -Opacity 0.55
+        $menuShell.Opacity = 0
+        $menuShell.RenderTransform = [System.Windows.Media.TranslateTransform]::new(0, -10)
+        $menuShell.IsHitTestVisible = $true
+        # Version 6.0: Das Menue blendet beim Oeffnen weich ein und gleitet
+        # leicht nach oben (Liquid-Glass-Gefuehl). Reiner Opacity/Transform-
+        # Tanz, kein Layout-Eingriff - bei einem Fehler bleibt das Menue
+        # einfach ohne Animation voll funktionsfaehig.
+        $popup.Add_Opened({
+            param($s, $e)
+            try {
+                $shell = $s.Child
+                $fade = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 1, [System.TimeSpan]::FromMilliseconds(160))
+                $shell.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fade)
+                $rise = [System.Windows.Media.Animation.DoubleAnimation]::new(-10, 0, [System.TimeSpan]::FromMilliseconds(200))
+                $riseEase = [System.Windows.Media.Animation.CubicEase]::new()
+                $riseEase.EasingMode = [System.Windows.Media.Animation.EasingMode]::EaseOut
+                $rise.EasingFunction = $riseEase
+                $shell.RenderTransform.BeginAnimation([System.Windows.Media.TranslateTransform]::YProperty, $rise)
+            } catch {
+                try { $s.Child.Opacity = 1 } catch {}
+            }
+        })
 
         $menuStack = [System.Windows.Controls.StackPanel]::new()
         $menuHeader = [System.Windows.Controls.TextBlock]::new()
         $menuHeader.Text = 'OPTIONEN'
-        $menuHeader.Foreground = Get-Brush '#64748B'
+        $menuHeader.Foreground = Get-Brush '#E4DBFF'
         $menuHeader.FontSize = 10.5
         $menuHeader.FontWeight = 'Bold'
         $menuHeader.Margin = [System.Windows.Thickness]::new(9, 7, 9, 5)
         $menuStack.Children.Add($menuHeader) | Out-Null
         $menuStack.Children.Add((New-Separator)) | Out-Null
 
-        $copyItem = New-MenuRow -Glyph ([char]0xE8C8) -Title 'Prompt kopieren' -Subtitle 'URL und Token für Arena' -Accent '#818CF8'
-        $resetItem = New-MenuRow -Glyph ([char]0xE72C) -Title 'Token zurücksetzen' -Subtitle 'Neuen Zugang für dieses Place' -Accent '#A5B4FC'
-        $toggleItem = New-MenuRow -Glyph ([char]0xE72E) -Title 'Nur Lesezugriff' -Subtitle 'Inaktiv - Änderungen sind erlaubt' -Accent '#C4B5FD' -Checkable $true -Checked $false
-        $historyItem = New-MenuRow -Glyph ([char]0xE81C) -Title 'Arena-Verlauf anzeigen' -Subtitle 'Aktionen und Änderungen dieses Place' -Accent '#60A5FA'
+        $copyItem = New-MenuRow -Glyph ([char]0xE8C8) -Title 'Prompt kopieren' -Subtitle 'URL und Token für Arena' -Accent '#5CFFEF'
+        $resetItem = New-MenuRow -Glyph ([char]0xE72C) -Title 'Token zurücksetzen' -Subtitle 'Neuen Zugang für dieses Place' -Accent '#C9B7FF'
+        $toggleItem = New-MenuRow -Glyph ([char]0xE72E) -Title 'Nur Lesezugriff' -Subtitle 'Inaktiv - Änderungen sind erlaubt' -Accent '#FFC1CE' -Checkable $true -Checked $false
+        $historyItem = New-MenuRow -Glyph ([char]0xE81C) -Title 'Arena-Verlauf anzeigen' -Subtitle 'Aktionen und Änderungen dieses Place' -Accent '#9FDCFF'
 
         # Alle Daten haengen am Element selbst (Tag). Lokale Variablen einer
         # Funktion sind in Event-Handlern nicht verfuegbar.
@@ -15369,7 +15973,8 @@ function New-Row {
     $row.Toggle = $toggleItem
     $row.Popup = $popup
     $row.Root = $border
-    $border.Child = $grid
+    $null = $layer.Children.Add($grid)
+    $border.Child = $layer
 
     $startMode = if ([string]$Studio.accessMode -eq 'readonly') { 'readonly' } else { 'readwrite' }
     try { Set-RowMode $row $startMode -Silent } catch { Write-UiErrorLog 'Place-Zeile: Modus-Anzeige fehlgeschlagen' $_ }
@@ -15413,7 +16018,7 @@ function Update-AllPlacesIcon {
                 try { $bitmap=[System.Windows.Media.Imaging.BitmapImage]::new([uri]$path);$image.Source=$bitmap;$tile.Child=$image } catch {}
             }
             if ($null -eq $tile.Child) {
-                $dot=[System.Windows.Shapes.Ellipse]::new();$dot.Width=8;$dot.Height=8;$dot.Fill=Get-Brush '#6366F1';$dot.HorizontalAlignment='Center';$dot.VerticalAlignment='Center';$tile.Child=$dot
+                $dot=[System.Windows.Shapes.Ellipse]::new();$dot.Width=8;$dot.Height=8;$dot.Fill=Get-Brush '#00D0BE';$dot.HorizontalAlignment='Center';$dot.VerticalAlignment='Center';$tile.Child=$dot
             }
             $mosaic.Children.Add($tile)|Out-Null
         }
@@ -15514,8 +16119,16 @@ function Show-CopyConfirm {
         $CopyConfirm.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $null)
         $CopyConfirm.Opacity = 0
         $CopyConfirm.Visibility = 'Visible'
-        $fadeIn = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 1, [System.TimeSpan]::FromMilliseconds(180))
+        $fadeIn = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 1, [System.TimeSpan]::FromMilliseconds(220))
         $CopyConfirm.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fadeIn)
+        # Version 6.0: Die Glas-Pille gleitet zusaetzlich sanft nach oben.
+        try {
+            $rise = [System.Windows.Media.Animation.DoubleAnimation]::new(10, 0, [System.TimeSpan]::FromMilliseconds(260))
+            $riseEase = [System.Windows.Media.Animation.CubicEase]::new()
+            $riseEase.EasingMode = [System.Windows.Media.Animation.EasingMode]::EaseOut
+            $rise.EasingFunction = $riseEase
+            $CopyConfirm.RenderTransform.BeginAnimation([System.Windows.Media.TranslateTransform]::YProperty, $rise)
+        } catch {}
 
         $timer = [System.Windows.Threading.DispatcherTimer]::new()
         $timer.Interval = [System.TimeSpan]::FromSeconds($Seconds)
@@ -15706,7 +16319,7 @@ function Refresh-Ui {
 
     if (-not $script:RobloxStudioPath) {
         Set-Text $SubtitleText 'Bitte installiere Roblox Studio und öffne dieses Programm danach neu.'
-        Set-LiveBadge 'OFFLINE' $script:ColorRed '#2B1620' '#475569'
+        Set-LiveBadge 'OFFLINE' $script:ColorRed '#33E11D48' '#66FF5C77'
         Set-Text $EmptyTitle 'Roblox Studio wurde nicht gefunden'
         Set-Text $EmptyBody 'Installiere Roblox Studio, schließe dieses Fenster und öffne Arena Roblox Bridge danach erneut.'
         $EmptyState.Visibility = 'Visible'
@@ -15716,7 +16329,7 @@ function Refresh-Ui {
 
     if ($script:TunnelUrl) {
         Set-Text $SubtitleText 'Bereit für verbundene Places'
-        Set-LiveBadge 'LIVE' $script:ColorGreen '#0E2A1C' '#1F6B45'
+        Set-LiveBadge 'LIVE' $script:ColorGreen '#331FA34A' '#662FCB6C'
     } elseif ($script:TunnelInstalling) {
         # Cloudflared wird gerade automatisch heruntergeladen bzw. installiert.
         # Die Oberflaeche prueft den Fortschritt und startet den Tunnel
@@ -15756,11 +16369,11 @@ function Refresh-Ui {
             $installSeconds = 0
             if ($script:TunnelInstallStartedAt) { $installSeconds = [int](((Get-Date) - $script:TunnelInstallStartedAt).TotalSeconds) }
             Set-Text $SubtitleText "Cloudflared wird automatisch heruntergeladen (dauert je nach Verbindung 1-3 Minuten, seit $installSeconds Sekunden)"
-            Set-LiveBadge 'INSTALL' $script:ColorAmber '#2A200C' '#7A5A16'
+            Set-LiveBadge 'INSTALL' $script:ColorAmber '#33C77F14' '#66FFC95E'
         }
     } elseif ($script:TunnelInstallFailed) {
         Set-Text $SubtitleText 'Cloudflared konnte nicht automatisch installiert werden'
-        Set-LiveBadge 'FEHLER' $script:ColorRed '#2B1620' '#475569'
+        Set-LiveBadge 'FEHLER' $script:ColorRed '#33E11D48' '#66FF5C77'
         if (-not $script:TunnelInstallErrorNotified) {
             $script:TunnelInstallErrorNotified = $true
             $message = if ($script:TunnelInstallMessage) { $script:TunnelInstallMessage } else { 'Unbekannter Fehler.' }
@@ -15770,14 +16383,14 @@ function Refresh-Ui {
         }
     } elseif ($script:TunnelMissing) {
         Set-Text $SubtitleText 'Cloudflared fehlt: winget install --id Cloudflare.cloudflared -e'
-        Set-LiveBadge 'FEHLT' $script:ColorRed '#2B1620' '#475569'
+        Set-LiveBadge 'FEHLT' $script:ColorRed '#33E11D48' '#66FF5C77'
         if ($script:LastTunnelMessage -and -not $script:TunnelMissingNotified) {
             $script:TunnelMissingNotified = $true
             Show-Toast -Message $script:LastTunnelMessage -Kind 'Warn' -Seconds 7
         }
     } elseif ($script:TunnelFailed -or ($script:TunnelProcess -and $script:TunnelProcess.HasExited)) {
         Set-Text $SubtitleText 'Cloudflare-Tunnel konnte nicht gestartet werden'
-        Set-LiveBadge 'FEHLER' $script:ColorRed '#2B1620' '#475569'
+        Set-LiveBadge 'FEHLER' $script:ColorRed '#33E11D48' '#66FF5C77'
         if (-not $script:TunnelErrorNotified) {
             $script:TunnelErrorNotified = $true
             $message = if ($script:LastTunnelMessage) { $script:LastTunnelMessage } else { 'Cloudflared hat sich sofort wieder beendet.' }
@@ -15788,7 +16401,7 @@ function Refresh-Ui {
         $seconds = 0
         if ($script:TunnelStartedAt) { $seconds = [int](((Get-Date) - $script:TunnelStartedAt).TotalSeconds) }
         Set-Text $SubtitleText "Cloudflare-Tunnel wird aufgebaut (seit $seconds Sekunden)"
-        Set-LiveBadge 'VERBINDEN' $script:ColorAmber '#2A200C' '#7A5A16'
+        Set-LiveBadge 'VERBINDEN' $script:ColorAmber '#33C77F14' '#66FFC95E'
 
         if ($script:TunnelProcess -and -not $script:TunnelHttp2Tried -and $seconds -gt 20) {
             $script:TunnelHttp2Tried = $true
@@ -16015,6 +16628,19 @@ $window.Add_Loaded({
     $fade = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 1, [System.TimeSpan]::FromMilliseconds(380))
     $window.BeginAnimation([System.Windows.Window]::OpacityProperty, $fade)
 
+    # Version 6.0: Die Glas-Schale wächst beim Öffnen sanft auf 100 %
+    # (Liquid-Glass-Eröffnung). Reiner Transform-Tanz ohne Layout-Eingriff.
+    try {
+        $openEase = [System.Windows.Media.Animation.CubicEase]::new()
+        $openEase.EasingMode = [System.Windows.Media.Animation.EasingMode]::EaseOut
+        $scaleX = [System.Windows.Media.Animation.DoubleAnimation]::new(0.965, 1, [System.TimeSpan]::FromMilliseconds(300))
+        $scaleY = [System.Windows.Media.Animation.DoubleAnimation]::new(0.965, 1, [System.TimeSpan]::FromMilliseconds(300))
+        $scaleX.EasingFunction = $openEase
+        $scaleY.EasingFunction = $openEase
+        $RootShell.RenderTransform.BeginAnimation([System.Windows.Media.ScaleTransform]::ScaleXProperty, $scaleX)
+        $RootShell.RenderTransform.BeginAnimation([System.Windows.Media.ScaleTransform]::ScaleYProperty, $scaleY)
+    } catch {}
+
     $pulseGrow = [System.Windows.Media.Animation.DoubleAnimation]::new(0.35, 1.0, [System.TimeSpan]::FromMilliseconds(1000))
     $pulseGrow.AutoReverse = $true
     $pulseGrow.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
@@ -16040,7 +16666,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '5.2'
+    $versionText = '6.0'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -16064,71 +16690,191 @@ function Show-UpdateNotice {
         Width="520" Height="440" MinWidth="520" MinHeight="440" MaxWidth="520" MaxHeight="440"
         ResizeMode="NoResize" WindowStyle="None" AllowsTransparency="True"
         Background="Transparent" WindowStartupLocation="CenterScreen" FontFamily="Segoe UI">
-    <Border CornerRadius="20" Background="#0A0F1D" BorderBrush="#334155" BorderThickness="1" Padding="30,26" ClipToBounds="True">
+    <Border CornerRadius="22" BorderBrush="#33FFFFFF" BorderThickness="1" ClipToBounds="True">
+        <Border.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                <GradientStop Color="#060A1A" Offset="0"/>
+                <GradientStop Color="#0A1128" Offset="0.55"/>
+                <GradientStop Color="#0C1533" Offset="1"/>
+            </LinearGradientBrush>
+        </Border.Background>
+        <Border.Clip>
+            <RectangleGeometry Rect="0,0,520,440" RadiusX="22" RadiusY="22"/>
+        </Border.Clip>
         <Grid>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
-            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,16">
-                <Grid Width="44" Height="44" Margin="0,0,14,0">
-                    <Border Width="44" Height="44" CornerRadius="13">
-                        <Border.Background>
-                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                <GradientStop Color="#6366F1" Offset="0"/>
-                                <GradientStop Color="#4F46E5" Offset="1"/>
-                            </LinearGradientBrush>
-                        </Border.Background>
-                    </Border>
-                    <Ellipse Width="8" Height="8" Fill="#FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="7,0,0,0"/>
-                    <Ellipse Width="8" Height="8" Fill="#FFFFFF" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,7,0"/>
-                    <Rectangle Height="3" Fill="#CBD5E1" Margin="15,0,15,0" RadiusX="1.5" RadiusY="1.5"/>
-                </Grid>
-                <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="ARENA ROBLOX BRIDGE" Foreground="#64748B" FontSize="10.5" FontWeight="Bold"/>
-                    <TextBlock x:Name="NoticeTitle" Foreground="#F8FAFC" FontSize="19" FontWeight="Bold" Margin="0,3,0,0"/>
-                </StackPanel>
-            </StackPanel>
-            <TextBlock Grid.Row="1" x:Name="NoticeSub" Foreground="#94A3B8" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,16"/>
-            <Border Grid.Row="2" CornerRadius="12" Background="#111827" BorderBrush="#334155" BorderThickness="1" Padding="16">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <TextBlock x:Name="NoticeNotes" Foreground="#CBD5E1" FontSize="12.5" TextWrapping="Wrap" LineHeight="21"/>
-                </ScrollViewer>
-            </Border>
-            <Button Grid.Row="3" x:Name="NoticeOk" Content="OK" Width="150" Height="40"
-                    HorizontalAlignment="Center" Margin="0,20,0,2" Cursor="Hand">
-                <Button.Template>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="bd" CornerRadius="11">
+            <!-- Aurora-Lichter hinter dem Glas (Version 6.0 Liquid Glass) -->
+            <Grid IsHitTestVisible="False">
+                <Ellipse Width="420" Height="420" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-150,-170,0,0">
+                    <Ellipse.Fill>
+                        <RadialGradientBrush>
+                            <GradientStop Color="#547B5CFF" Offset="0"/>
+                            <GradientStop Color="#007B5CFF" Offset="1"/>
+                        </RadialGradientBrush>
+                    </Ellipse.Fill>
+                    <Ellipse.RenderTransform>
+                        <TranslateTransform X="0" Y="0"/>
+                    </Ellipse.RenderTransform>
+                    <Ellipse.Triggers>
+                        <EventTrigger RoutedEvent="Loaded">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="0" To="38" Duration="0:0:33" AutoReverse="True" RepeatBehavior="Forever"/>
+                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="24" Duration="0:0:26" AutoReverse="True" RepeatBehavior="Forever"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </Ellipse.Triggers>
+                </Ellipse>
+                <Ellipse Width="360" Height="360" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-120,-140">
+                    <Ellipse.Fill>
+                        <RadialGradientBrush>
+                            <GradientStop Color="#4000CFC0" Offset="0"/>
+                            <GradientStop Color="#0000CFC0" Offset="1"/>
+                        </RadialGradientBrush>
+                    </Ellipse.Fill>
+                    <Ellipse.RenderTransform>
+                        <TranslateTransform X="0" Y="0"/>
+                    </Ellipse.RenderTransform>
+                    <Ellipse.Triggers>
+                        <EventTrigger RoutedEvent="Loaded">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="0" To="-30" Duration="0:0:29" AutoReverse="True" RepeatBehavior="Forever"/>
+                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="-20" Duration="0:0:35" AutoReverse="True" RepeatBehavior="Forever"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </Ellipse.Triggers>
+                </Ellipse>
+            </Grid>
+
+            <Grid Margin="30,26">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,16">
+                    <Grid Width="44" Height="44" Margin="0,0,14,0">
+                        <Border Width="44" Height="44" CornerRadius="13" BorderBrush="#4DFFFFFF" BorderThickness="1">
                             <Border.Background>
-                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                                    <GradientStop Color="#6366F1" Offset="0"/>
-                                    <GradientStop Color="#4338CA" Offset="1"/>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                    <GradientStop Color="#8B6BFF" Offset="0"/>
+                                    <GradientStop Color="#00D0BE" Offset="1"/>
                                 </LinearGradientBrush>
                             </Border.Background>
-                            <Border.BorderBrush>#6366F1</Border.BorderBrush>
-                            <Border.BorderThickness>1</Border.BorderThickness>
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="14,0"/>
                         </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="bd" Property="Background" Value="#818CF8"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Button.Template>
-                <Button.Foreground>#FFFFFF</Button.Foreground>
-                <Button.FontWeight>SemiBold</Button.FontWeight>
-                <Button.FontSize>13.5</Button.FontSize>
-            </Button>
+                        <Ellipse Width="8" Height="8" Fill="#FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="7,0,0,0"/>
+                        <Ellipse Width="8" Height="8" Fill="#FFFFFF" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,7,0"/>
+                        <Rectangle Height="3" Fill="#0A1128" Margin="15,0,15,0" RadiusX="1.5" RadiusY="1.5"/>
+                    </Grid>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="ARENA ROBLOX BRIDGE" Foreground="#6E7FA8" FontSize="10.5" FontWeight="Bold"/>
+                        <TextBlock x:Name="NoticeTitle" Foreground="#F4F8FF" FontSize="19" FontWeight="Bold" Margin="0,3,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+                <TextBlock Grid.Row="1" x:Name="NoticeSub" Foreground="#9AA9CE" FontSize="13" TextWrapping="Wrap" Margin="0,0,0,16"/>
+                <Border Grid.Row="2" CornerRadius="14" Background="#33101838" BorderBrush="#26FFFFFF" BorderThickness="1" Padding="16">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <TextBlock x:Name="NoticeNotes" Foreground="#DCE6FF" FontSize="12.5" TextWrapping="Wrap" LineHeight="21"/>
+                    </ScrollViewer>
+                </Border>
+                <Button Grid.Row="3" x:Name="NoticeOk" Content="OK" Width="150" Height="42"
+                        HorizontalAlignment="Center" Margin="0,20,0,2" Cursor="Hand">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Grid>
+                                <Border x:Name="bd" CornerRadius="14">
+                                    <Border.Background>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                            <GradientStop Color="#F238D16C" Offset="0"/>
+                                            <GradientStop Color="#E61FA34A" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Border.Background>
+                                    <Border.BorderBrush>#4DFFFFFF</Border.BorderBrush>
+                                    <Border.BorderThickness>1</Border.BorderThickness>
+                                    <Border.RenderTransformOrigin>0.5,0.5</Border.RenderTransformOrigin>
+                                    <Border.RenderTransform>
+                                        <ScaleTransform ScaleX="1" ScaleY="1"/>
+                                    </Border.RenderTransform>
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="14,0"/>
+                                </Border>
+                                <Border x:Name="sheen" CornerRadius="13,13,10,10" Margin="1,1,1,0" Height="14" VerticalAlignment="Top" IsHitTestVisible="False" Opacity="0.14">
+                                    <Border.Background>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                            <GradientStop Color="#59FFFFFF" Offset="0"/>
+                                            <GradientStop Color="#00FFFFFF" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Border.Background>
+                                </Border>
+                            </Grid>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="bd" Property="Background" Value="#F24AE07E"/>
+                                    <Setter TargetName="bd" Property="BorderBrush" Value="#7FFFFFFF"/>
+                                    <Trigger.EnterActions>
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="sheen" Storyboard.TargetProperty="Opacity" To="0.40" Duration="0:0:0.13">
+                                                    <DoubleAnimation.EasingFunction>
+                                                        <CubicEase EasingMode="EaseOut"/>
+                                                    </DoubleAnimation.EasingFunction>
+                                                </DoubleAnimation>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </Trigger.EnterActions>
+                                    <Trigger.ExitActions>
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="sheen" Storyboard.TargetProperty="Opacity" To="0.14" Duration="0:0:0.20"/>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </Trigger.ExitActions>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Trigger.EnterActions>
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="0.96" Duration="0:0:0.08"/>
+                                                <DoubleAnimation Storyboard.TargetName="bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="0.96" Duration="0:0:0.08"/>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </Trigger.EnterActions>
+                                    <Trigger.ExitActions>
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleX)" To="1" Duration="0:0:0.15"/>
+                                                <DoubleAnimation Storyboard.TargetName="bd" Storyboard.TargetProperty="(UIElement.RenderTransform).(ScaleTransform.ScaleY)" To="1" Duration="0:0:0.15"/>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </Trigger.ExitActions>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Button.Foreground>#FFFFFF</Button.Foreground>
+                    <Button.FontWeight>SemiBold</Button.FontWeight>
+                    <Button.FontSize>13.5</Button.FontSize>
+                </Button>
+            </Grid>
         </Grid>
     </Border>
 </Window>
 '@
     $noticeReader = [System.Xml.XmlNodeReader]::new([xml]$noticeXaml)
     $noticeWindow = [Windows.Markup.XamlReader]::Load($noticeReader)
+    # Version 6.0: Das Hinweisfenster blendet weich ein (Liquid Glass).
+    try {
+        $noticeWindow.Opacity = 0
+        $noticeWindow.Add_ContentRendered({
+            param($s, $e)
+            try {
+                $fade = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 1, [TimeSpan]::FromMilliseconds(240))
+                $s.BeginAnimation([System.Windows.Window]::OpacityProperty, $fade)
+            } catch { try { $s.Opacity = 1 } catch {} }
+        })
+    } catch {}
     $noticeTitleEl = $noticeWindow.FindName('NoticeTitle')
     $noticeSubEl = $noticeWindow.FindName('NoticeSub')
     $noticeNotesEl = $noticeWindow.FindName('NoticeNotes')
@@ -16242,12 +16988,26 @@ function Open-SettingsWindow {
         ResizeMode="NoResize" WindowStyle="None" AllowsTransparency="True"
         Background="Transparent" WindowStartupLocation="CenterOwner" FontFamily="Segoe UI">
     <Window.Resources>
-        <SolidColorBrush x:Key="SwTextMain" Color="#F8FAFC"/>
-        <SolidColorBrush x:Key="SwTextMuted" Color="#94A3B8"/>
-        <SolidColorBrush x:Key="SwTextFaint" Color="#64748B"/>
-        <SolidColorBrush x:Key="SwLine" Color="#1E293B"/>
+        <!-- Version 6.0: Liquid Glass - gleiches Fundament wie das Hauptfenster -->
+        <SolidColorBrush x:Key="SwTextMain" Color="#F4F8FF"/>
+        <SolidColorBrush x:Key="SwTextMuted" Color="#9AA9CE"/>
+        <SolidColorBrush x:Key="SwTextFaint" Color="#6E7FA8"/>
+        <SolidColorBrush x:Key="SwLine" Color="#1FFFFFFF"/>
+        <LinearGradientBrush x:Key="SwAppBg" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#060A1A" Offset="0"/>
+            <GradientStop Color="#0A1128" Offset="0.55"/>
+            <GradientStop Color="#0C1533" Offset="1"/>
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="SwCardBg" StartPoint="0,0" EndPoint="0.25,1">
+            <GradientStop Color="#66101838" Offset="0"/>
+            <GradientStop Color="#3D0C1228" Offset="1"/>
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="SwCrimsonBtnBg" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#F2FF5C77" Offset="0"/>
+            <GradientStop Color="#E6E11D48" Offset="1"/>
+        </LinearGradientBrush>
         <Style x:Key="ArenaSwitch" TargetType="CheckBox">
-            <Setter Property="Foreground" Value="#F8FAFC"/>
+            <Setter Property="Foreground" Value="#F4F8FF"/>
             <Setter Property="FontSize" Value="13.5"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
@@ -16258,12 +17018,22 @@ function Open-SettingsWindow {
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
+                            <!-- Version 6.0: Der Schalter gleitet weich (TranslateTransform),
+                                 der Daumen bleibt Layout-statisch - Rot = aus, Gruen = an. -->
                             <Grid Width="48" Height="26" VerticalAlignment="Center">
                                 <Border x:Name="track" Width="48" Height="26" CornerRadius="13"
-                                        Background="#1E293B" BorderBrush="#475569" BorderThickness="1"/>
-                                <Ellipse x:Name="thumb" Width="20" Height="20" Fill="#E2E8F0"
-                                         HorizontalAlignment="Left" Margin="3,0,0,0" VerticalAlignment="Center"/>
-                                <TextBlock x:Name="stateText" Text="AUS" Foreground="#CBD5E1" FontSize="8.5"
+                                        Background="#59E11D48" BorderBrush="#73FF5C77" BorderThickness="1"/>
+                                <Ellipse x:Name="thumb" Width="20" Height="20" Fill="#F2F7FF"
+                                         HorizontalAlignment="Left" Margin="3,0,0,0" VerticalAlignment="Center"
+                                         RenderTransformOrigin="0.5,0.5">
+                                    <Ellipse.RenderTransform>
+                                        <TranslateTransform X="0"/>
+                                    </Ellipse.RenderTransform>
+                                    <Ellipse.Effect>
+                                        <DropShadowEffect Color="#000000" BlurRadius="6" ShadowDepth="1" Opacity="0.45"/>
+                                    </Ellipse.Effect>
+                                </Ellipse>
+                                <TextBlock x:Name="stateText" Text="AUS" Foreground="#FFC7D3" FontSize="8.5"
                                            FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"
                                            Margin="13,0,0,0"/>
                             </Grid>
@@ -16271,13 +17041,33 @@ function Open-SettingsWindow {
                         </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="track" Property="Background" Value="#1E6B3A"/>
-                                <Setter TargetName="track" Property="BorderBrush" Value="#35A05C"/>
-                                <Setter TargetName="thumb" Property="HorizontalAlignment" Value="Right"/>
-                                <Setter TargetName="thumb" Property="Margin" Value="0,0,3,0"/>
+                                <Setter TargetName="track" Property="Background" Value="#CC1FA34A"/>
+                                <Setter TargetName="track" Property="BorderBrush" Value="#662FCB6C"/>
                                 <Setter TargetName="stateText" Property="Text" Value="AN"/>
-                                <Setter TargetName="stateText" Property="Foreground" Value="#D6F5E1"/>
+                                <Setter TargetName="stateText" Property="Foreground" Value="#D9FFE9"/>
                                 <Setter TargetName="stateText" Property="Margin" Value="0,0,13,0"/>
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="thumb" Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" To="22" Duration="0:0:0.15">
+                                                <DoubleAnimation.EasingFunction>
+                                                    <CubicEase EasingMode="EaseOut"/>
+                                                </DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="thumb" Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" To="0" Duration="0:0:0.15">
+                                                <DoubleAnimation.EasingFunction>
+                                                    <CubicEase EasingMode="EaseOut"/>
+                                                </DoubleAnimation.EasingFunction>
+                                            </DoubleAnimation>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
                             </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="thumb" Property="Fill" Value="#FFFFFF"/>
@@ -16287,76 +17077,184 @@ function Open-SettingsWindow {
                 </Setter.Value>
             </Setter>
         </Style>
+        <Style TargetType="ScrollBar">
+            <Setter Property="Width" Value="10"/>
+            <Setter Property="MinWidth" Value="10"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Margin="2,3,2,3">
+                            <Border CornerRadius="5" Background="#14FFFFFF"/>
+                            <Track x:Name="PART_Track" IsDirectionReversed="True" Focusable="False">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageUpCommand">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Background="Transparent"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageDownCommand">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Background="Transparent"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb>
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border x:Name="thumbBg" CornerRadius="4" Background="#38FFFFFF" Margin="1,0,1,0"/>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="thumbBg" Property="Background" Value="#5CFFFFFF"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsDragging" Value="True">
+                                                        <Setter TargetName="thumbBg" Property="Background" Value="#8CFFFFFF"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
-    <Border CornerRadius="18" Background="#111827" BorderBrush="#334155" BorderThickness="1" Padding="26,20,26,18">
-        <Border.Effect>
-            <DropShadowEffect Color="#000000" Opacity="0.5" BlurRadius="24" ShadowDepth="0"/>
-        </Border.Effect>
+    <Border CornerRadius="20" Background="{StaticResource SwAppBg}" BorderBrush="#33FFFFFF" BorderThickness="1" ClipToBounds="True">
+        <Border.Clip>
+            <RectangleGeometry Rect="0,0,680,660" RadiusX="20" RadiusY="20"/>
+        </Border.Clip>
         <Grid>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
-
-            <!-- Titelzeile (verschiebbar) -->
-            <Grid x:Name="TitleBar" Grid.Row="0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <StackPanel>
-                    <TextBlock Text="Einstellungen" Foreground="{StaticResource SwTextMain}" FontSize="18" FontWeight="Bold"/>
-                </StackPanel>
-                <Button x:Name="CloseButton" Grid.Column="1" Width="38" Height="32" Cursor="Hand" Content="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="12">
-                    <Button.Template>
-                        <ControlTemplate TargetType="Button">
-                            <Border x:Name="bd" CornerRadius="10" Background="#111827" BorderBrush="#475569" BorderThickness="1">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="bd" Property="Background" Value="#EF4444"/>
-                                    <Setter TargetName="bd" Property="BorderBrush" Value="#FCA5A5"/>
-                                    <Setter Property="Foreground" Value="#FFFFFF"/>
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </Button.Template>
-                    <Button.Foreground>#CBD5E1</Button.Foreground>
-                </Button>
+            <!-- Aurora-Lichter hinter dem Glas -->
+            <Grid IsHitTestVisible="False">
+                <Ellipse Width="480" Height="480" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-170,-200,0,0">
+                    <Ellipse.Fill>
+                        <RadialGradientBrush>
+                            <GradientStop Color="#547B5CFF" Offset="0"/>
+                            <GradientStop Color="#007B5CFF" Offset="1"/>
+                        </RadialGradientBrush>
+                    </Ellipse.Fill>
+                    <Ellipse.RenderTransform>
+                        <TranslateTransform X="0" Y="0"/>
+                    </Ellipse.RenderTransform>
+                    <Ellipse.Triggers>
+                        <EventTrigger RoutedEvent="Loaded">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="0" To="42" Duration="0:0:36" AutoReverse="True" RepeatBehavior="Forever"/>
+                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="28" Duration="0:0:28" AutoReverse="True" RepeatBehavior="Forever"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </Ellipse.Triggers>
+                </Ellipse>
+                <Ellipse Width="420" Height="420" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-140,-160">
+                    <Ellipse.Fill>
+                        <RadialGradientBrush>
+                            <GradientStop Color="#4000CFC0" Offset="0"/>
+                            <GradientStop Color="#0000CFC0" Offset="1"/>
+                        </RadialGradientBrush>
+                    </Ellipse.Fill>
+                    <Ellipse.RenderTransform>
+                        <TranslateTransform X="0" Y="0"/>
+                    </Ellipse.RenderTransform>
+                    <Ellipse.Triggers>
+                        <EventTrigger RoutedEvent="Loaded">
+                            <BeginStoryboard>
+                                <Storyboard>
+                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="0" To="-32" Duration="0:0:31" AutoReverse="True" RepeatBehavior="Forever"/>
+                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="-22" Duration="0:0:38" AutoReverse="True" RepeatBehavior="Forever"/>
+                                </Storyboard>
+                            </BeginStoryboard>
+                        </EventTrigger>
+                    </Ellipse.Triggers>
+                </Ellipse>
             </Grid>
 
-            <!-- Inhalt -->
-            <ScrollViewer Grid.Row="1" Margin="0,16,0,0" VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="0,0,8,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
 
-                    <TextBlock Text="PROGRAMM" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,2,0,8"/>
-                    <Border Background="#111827" BorderBrush="#334155" BorderThickness="1" CornerRadius="12" Padding="16,12">
-                        <StackPanel>
-                            <CheckBox x:Name="StartupSwitch" Style="{StaticResource ArenaSwitch}" Content="Beim PC-Start automatisch öffnen"/>
-                        </StackPanel>
-                    </Border>
+                <!-- Titelzeile (verschiebbar) -->
+                <Grid x:Name="TitleBar" Grid.Row="0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="Einstellungen" Foreground="{StaticResource SwTextMain}" FontSize="18" FontWeight="Bold"/>
+                    </StackPanel>
+                    <Button x:Name="CloseButton" Grid.Column="1" Width="36" Height="36" Cursor="Hand" Content="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="12"
+                            Foreground="#FFFFFF" Background="{StaticResource SwCrimsonBtnBg}" BorderBrush="#4DFFFFFF" BorderThickness="1">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="bd" CornerRadius="18" Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                                        RenderTransformOrigin="0.5,0.5">
+                                    <Border.RenderTransform>
+                                        <ScaleTransform ScaleX="1" ScaleY="1"/>
+                                    </Border.RenderTransform>
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="bd" Property="Background" Value="#F2FF7A8C"/>
+                                        <Setter TargetName="bd" Property="BorderBrush" Value="#7FFFFFFF"/>
+                                    </Trigger>
+                                    <Trigger Property="IsPressed" Value="True">
+                                        <Setter TargetName="bd" Property="Background" Value="#D9C0103A"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </Grid>
 
-                    <TextBlock Text="ARENA (KI-TESTS)" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
-                    <Border Background="#111827" BorderBrush="#334155" BorderThickness="1" CornerRadius="12" Padding="16,12">
-                        <StackPanel>
-                            <CheckBox x:Name="SelfTestSwitch" Style="{StaticResource ArenaSwitch}" Content="Arena darf sich selbst testen"/>
-                        </StackPanel>
-                    </Border>
-                    <Border Background="#111827" BorderBrush="#334155" BorderThickness="1" CornerRadius="12" Padding="16,12" Margin="0,10,0,0">
-                        <StackPanel>
-                            <CheckBox x:Name="NotifySwitch" Style="{StaticResource ArenaSwitch}" Content="Benachrichtigung, wenn Arena fertig ist"/>
-                        </StackPanel>
-                    </Border>
+                <!-- Inhalt -->
+                <ScrollViewer Grid.Row="1" Margin="0,16,0,0" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="0,0,8,0">
 
-                    <TextBlock Text="UPDATES" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
-                    <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
+                        <TextBlock Text="PROGRAMM" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,2,0,8"/>
+                        <Border Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="14" Padding="16,12">
+                            <StackPanel>
+                                <CheckBox x:Name="StartupSwitch" Style="{StaticResource ArenaSwitch}" Content="Beim PC-Start automatisch öffnen"/>
+                            </StackPanel>
+                        </Border>
 
-                    <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                    <TextBlock Text="Arena Roblox Bridge - Version 5.2" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="ARENA (KI-TESTS)" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
+                        <Border Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="14" Padding="16,12">
+                            <StackPanel>
+                                <CheckBox x:Name="SelfTestSwitch" Style="{StaticResource ArenaSwitch}" Content="Arena darf sich selbst testen"/>
+                            </StackPanel>
+                        </Border>
+                        <Border Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="14" Padding="16,12" Margin="0,10,0,0">
+                            <StackPanel>
+                                <CheckBox x:Name="NotifySwitch" Style="{StaticResource ArenaSwitch}" Content="Benachrichtigung, wenn Arena fertig ist"/>
+                            </StackPanel>
+                        </Border>
 
-                </StackPanel>
-            </ScrollViewer>
+                        <TextBlock Text="UPDATES" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
+                        <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
+
+                        <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 6.0" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
         </Grid>
     </Border>
 </Window>
@@ -16365,6 +17263,17 @@ function Open-SettingsWindow {
     $settingsWindow = [Windows.Markup.XamlReader]::Load($settingsReader)
 
     try { $settingsWindow.Owner = $window } catch {}
+    # Version 6.0: Das Einstellungsfenster blendet weich ein (Liquid Glass).
+    try {
+        $settingsWindow.Opacity = 0
+        $settingsWindow.Add_ContentRendered({
+            param($s, $e)
+            try {
+                $fade = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 1, [TimeSpan]::FromMilliseconds(220))
+                $s.BeginAnimation([System.Windows.Window]::OpacityProperty, $fade)
+            } catch { try { $s.Opacity = 1 } catch {} }
+        })
+    } catch {}
 
     $swTitleBar      = $settingsWindow.FindName('TitleBar')
     $swClose         = $settingsWindow.FindName('CloseButton')
@@ -16381,7 +17290,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 5.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 6.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -16429,7 +17338,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 5.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 6.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -16442,7 +17351,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '5.2'
+    $verText = '6.0'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

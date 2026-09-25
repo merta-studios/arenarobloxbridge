@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 5.2.
+"""Offline structure check for Arena Roblox Bridge 6.0.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "5.2"
+VERSION = "6.0"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -95,6 +95,22 @@ def main() -> int:
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     require(version["version"] == VERSION, "version.json is not 5.2")
     require("3.9.5" not in source, "stale 3.9.5 literal remains in ArenaBridge.ps1")
+
+    # Stale FUNCTIONAL 5.2 literals (history comments may mention 5.2).
+    stale_52_literals = [
+        "DocsVersion     = '5.2'",
+        'local ARENA_VERSION  = "5.2"',
+        "bridgeVersion = '5.2'",
+        "serverVersion = '5.2'",
+        "version = '5.2'",
+        "$versionText = '5.2'",
+        "$verText = '5.2'",
+        'Arena Studio Bridge - Studio Plugin  (Version 5.2)',
+        'Text="Arena Roblox Bridge - Version 5.2"',
+        "# Arena Roblox Bridge  -  Version 5.2",
+    ]
+    for marker in stale_52_literals:
+        require(marker not in source, f"stale 5.2 literal remains: {marker}")
 
     # Stale FUNCTIONAL version literals (history comments may mention 3.9.8).
     stale_literals = [
@@ -209,14 +225,14 @@ def main() -> int:
         require(marker not in source, f"stale 5.0.2 literal remains: {marker}")
 
     required_markers = [
-        "DocsVersion     = '5.2'",
-        'local ARENA_VERSION  = "5.2"',
-        "bridgeVersion = '5.2'",
-        "serverVersion = '5.2'",
-        "version = '5.2'",
-        "$versionText = '5.2'",
-        "$verText = '5.2'",
-        'Text="Arena Roblox Bridge - Version 5.2"',
+        "DocsVersion     = '6.0'",
+        'local ARENA_VERSION  = "6.0"',
+        "bridgeVersion = '6.0'",
+        "serverVersion = '6.0'",
+        "version = '6.0'",
+        "$versionText = '6.0'",
+        "$verText = '6.0'",
+        'Text="Arena Roblox Bridge - Version 6.0"',
         # 4.0.0: the config table that keeps the top-level local count in check.
         "local ARENA_CFG = {",
         "ARENA_CFG.POLL_WAIT",
@@ -329,9 +345,39 @@ def main() -> int:
         "function Get-ActivityToolSets",
         "previousLines = select(2, string.gsub(oldSource",
         "function Get-ResultNumber",
+        # Version 6.0 (Liquid Glass redesign): the glass shell, the aurora
+        # layer behind it, the teal glass rows, the green glass action
+        # buttons and the animation patterns must stay present.
+        'x:Name="RootShell"',
+        "RoundGlassStyle",
+        "SettingsPillStyle",
+        "GlassFill",
+        "SweepBrush",
+        "function New-AuroraLayer",
+        "New-AuroraLayer -Width 660 -Height 620",
+        "$RootShell       = $window.FindName('RootShell')",
+        "$RootShell.RenderTransform.BeginAnimation",
+        "$popup.Add_Opened",
+        "PopupAnimation]::None",
+        "'#D900D5C4'",
+        "'#F238D16C'",
+        "'#47FFFFFF'",
+        "$rowBg.GradientStops.Add",
+        "$hoverGlow.Background = Get-Brush '#5900E5D0'",
+        "$Item.Thumb.RenderTransform.BeginAnimation",
+        "$copy.Background = $greenBg",
+        "RectangleGeometry Rect=\"0,0,920,620\"",
+        "Add_ContentRendered",
     ]
     for marker in required_markers:
         require(marker in source, f"required marker missing: {marker}")
+
+    # Version 6.0 negative guards: the pre-6.0 palette must really be gone
+    # from the redesigned surfaces (the tech-dark slate/indigo scheme).
+    require("Text=\"Arena Roblox Bridge - Version 5.2\"" not in source,
+            "settings window still shows the 5.2 footer")
+    require("$border.Background = Get-Brush '#111827'" not in source,
+            "place rows still use the old slate background")
 
     # Version 5.2 negative guards: the wish items must really be gone.
     require("AllAccessButton" not in source,
@@ -422,7 +468,7 @@ def main() -> int:
         except ET.ParseError as exc:
             raise AssertionError(f"XAML block {index} is not XML: {exc}") from exc
 
-    print("OK: 5.2 structure, Lua and XAML validation passed")
+    print("OK: 6.0 structure, Lua and XAML validation passed")
     return 0
 
 

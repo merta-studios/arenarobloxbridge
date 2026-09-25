@@ -20,7 +20,7 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test_v398_structure.py` | Python-Strukturtest für 5.2 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test_v398_structure.py` | Python-Strukturtest für 6.0 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -35,6 +35,34 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 6.0
+- **Komplett neues Design: „Liquid Glass“.** Die gesamte Oberfläche ist nach
+  dem Entwurf (grafik.png) neu gestaltet: ein tiefblau-violettes Fenster mit
+  langsam driftenden Farblichtern (Aurora) hinter durchscheinendem Glas.
+  Place-Zeilen sind Teal-Glaskarten, „Prompt kopieren“ und der
+  Einstellungs-Knopf sind grüne Glas-Knöpfe, das „…“-Menü ist ein violettes
+  Glas-Panel, Minimieren/Schließen sind runde Crimson-Knöpfe. Ein echter
+  Rundungs-Beschchnitt sorgt dafür, dass die Farblichter nie über die
+  Fensterecken hinausragen.
+- **Animationen überall.** Das Fenster wächst beim Öffnen sanft auf;
+  Place-Zeilen blenden ein (der bewährte Fade samt Watchdog aus 5.0.2 bleibt),
+  heben sich beim Hover um 2 Pixel an und leuchten auf; das „…“-Menü blendet
+  ein und gleitet hoch; alle Knöpfe tragen einen weichen Glas-Schein, der beim
+  Hover aufleuchtet, und ziehen sich beim Drücken sanft zusammen; Spiel-Icons
+  blenden weich ein; die Kopier-Bestätigung gleitet nach oben; An/Aus-Schalter
+  (Einstellungen und „…“-Menü) gleiten weich; Verlaufs-Karten blenden ein; der
+  Leerzustand schwebt leicht.
+- **Auch die weiteren Fenster im neuen Design:** Einstellungen, Update-Hinweis
+  und Arena-Verlauf tragen dasselbe Glas-Design mit Aurora-Lichtern und weicher
+  Fenster-Einblendung. Der Startbildschirm ist halbtransparent geworden, sodass
+  die Farblichter während des Starts hindurchscheinen.
+- **Nichts Funktionales hat sich geändert.** Gleiche Knöpfe, gleiches Verhalten
+  („…“-Toggle, „Nur Lesezugriff“ lässt das Menü offen, rot/grün-Schalter in den
+  Einstellungen, keine Popups unten rechts). Server, Plugin, Tools und alle
+  Protokolle sind nicht angefasst.
+- Nach dem Update Roblox Studio einmal neu starten, damit das Plugin **6.0**
+  geladen wird.
 
 ## 5.2
 - **„Alle Places“ aufgeräumt.** Die Zeile zeigt jetzt wie alle anderen nur noch „Prompt kopieren“ und „…“. „Token zurücksetzen“ und der Sammelschalter „Nur Lesezugriff“ (wirkt auf alle verbundenen Places) bleiben im „…“-Menü erreichbar.

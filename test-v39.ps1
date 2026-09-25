@@ -1,10 +1,10 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge 5.2 - Logik-Tests (Mock, ohne Studio / ohne UI)
+# Arena Roblox Bridge 6.0 - Logik-Tests (Mock, ohne Studio / ohne UI)
 # ----------------------------------------------------------------------------
 # Ausfuehren auf dem PC (Windows PowerShell 5.1):
 #   powershell.exe -NoProfile -ExecutionPolicy Bypass -File test-v39.ps1
 #
-# Die Tests pruefen die aktuelle 5.2-Logik OHNE Roblox Studio:
+# Die Tests pruefen die aktuelle 6.0-Logik OHNE Roblox Studio:
 #   1. Syntax der kompletten ArenaBridge.ps1 (echter PowerShell-Parser)
 #   2. UTF-8-BOM
 #   3. Einstellungen: laden/speichern (settings.json Round-Trip)
@@ -16,7 +16,7 @@
 #   5. Selbst-Test-Sperre (New-SelfTestBlockedResult)
 #   6. report_done: aus/ohne Nachricht/erfolgreich (Mock-Warteschlange)
 #   7. XAML der drei Fenster ist wohlgeformtes XML
-#   8. Versions-Konsistenz (5.2 ueberall)
+#   8. Versions-Konsistenz (6.0 ueberall)
 #   9. GET-API, Kopier-Bestaetigung und Autostart-Selbst-Update (Version 5)
 # ============================================================================
 
@@ -38,7 +38,7 @@ function Assert([bool]$Condition, [string]$Name, [string]$Detail) {
     if ($Condition) { Pass $Name } else { Fail $Name $Detail }
 }
 
-Write-Host '=== Arena Bridge 5.2 Logik-Tests ===' -ForegroundColor Cyan
+Write-Host '=== Arena Bridge 6.0 Logik-Tests ===' -ForegroundColor Cyan
 
 # ----------------------------------------------------------------------------
 # 1) Syntax der kompletten Datei mit dem echten Parser pruefen
@@ -249,20 +249,20 @@ Assert ($null -ne $settingsXaml -and $settingsXaml.Groups[1].Value -like '*Arena
 # ----------------------------------------------------------------------------
 # 8) Versions-Konsistenz
 # ----------------------------------------------------------------------------
-Write-Host '`n8) Version 5.2 ueberall' -ForegroundColor Yellow
-Assert ($text.Contains("# Arena Roblox Bridge  -  Version 5.2")) 'Changelog-Kopf'
-Assert ($text.Contains("DocsVersion     = '5.2'")) 'DocsVersion'
-Assert ($text.Contains('local ARENA_VERSION  = "5.2"')) 'ARENA_VERSION (Plugin)'
-Assert ($text.Contains('Arena Studio Bridge - Studio Plugin  (Version 5.2)')) 'Plugin-Kommentar'
-Assert ($text.Contains("version = '5.2'")) 'Manifest-Version'
-Assert ($text.Contains("serverVersion = '5.2'")) 'serverVersion'
-Assert ($text.Contains('$versionText = ' + "'5.2'")) 'Show-UpdateNotice-Fallback'
-Assert ($text.Contains('Text="Arena Roblox Bridge - Version 5.2"')) 'Einstellungs-Fusszeile'
-$bridgeVersions = [regex]::Matches($text, "bridgeVersion = '(\d+\.\d+\.\d+)'")
-Assert ($bridgeVersions.Count -eq 3 -and @($bridgeVersions | Where-Object { $_.Groups[1].Value -ne '5.2' }).Count -eq 0) 'bridgeVersion (3x)'
+Write-Host '`n8) Version 6.0 ueberall' -ForegroundColor Yellow
+Assert ($text.Contains("# Arena Roblox Bridge  -  Version 6.0")) 'Changelog-Kopf'
+Assert ($text.Contains("DocsVersion     = '6.0'")) 'DocsVersion'
+Assert ($text.Contains('local ARENA_VERSION  = "6.0"')) 'ARENA_VERSION (Plugin)'
+Assert ($text.Contains('Arena Studio Bridge - Studio Plugin  (Version 6.0)')) 'Plugin-Kommentar'
+Assert ($text.Contains("version = '6.0'")) 'Manifest-Version'
+Assert ($text.Contains("serverVersion = '6.0'")) 'serverVersion'
+Assert ($text.Contains('$versionText = ' + "'6.0'")) 'Show-UpdateNotice-Fallback'
+Assert ($text.Contains('Text="Arena Roblox Bridge - Version 6.0"')) 'Einstellungs-Fusszeile'
+$bridgeVersions = [regex]::Matches($text, "bridgeVersion = '(\d+(?:\.\d+)+)'")
+Assert ($bridgeVersions.Count -eq 3 -and @($bridgeVersions | Where-Object { $_.Groups[1].Value -ne '6.0' }).Count -eq 0) 'bridgeVersion (3x)'
 $versionJson = Get-Content (Join-Path $root 'version.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-Assert ($versionJson.version -eq '5.2') 'version.json'
-Assert ($versionJson.notes.Length -gt 50) 'version.json hat Neuigkeiten-Text'
+Assert ($versionJson.version -eq '6.0') 'version.json'
+Assert ((($versionJson.notes -join ' ').Length) -gt 50) 'version.json hat Neuigkeiten-Text'
 
 # ----------------------------------------------------------------------------
 # 9) API-, Kopier- und Update-Regressionen
