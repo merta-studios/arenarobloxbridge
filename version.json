@@ -1,6 +1,8 @@
 {
   "version": "6.0.2",
   "notes": [
+    "• Echte Roblox-Spiel-Icons werden wieder über die offizielle Thumbnail-API geladen; lokale oder unveröffentlichte Places nutzen weiterhin die Studio-Vorschau als Fallback.",
+    "• Toolbox-Suche liefert jetzt auch Modelle und Meshes ohne Sonderfreigabe; das Sicherheits-Gate beim Einfügen bleibt erhalten.",
     "• Spiel-Icon-System repariert: Wenn eine Aufnahme des Studio-Fensters nicht gelang (z. B. Studio minimiert oder das Fenster nicht eindeutig zuordbar), drehte sich der Ladekreis endlos und es erschien NIE ein Bild. Jetzt erscheint nach wenigen Sekunden das Platzhalter-Symbol, und sobald eine Aufnahme klappt, blendet die Live-Vorschau ein.",
     "• Jede fehlgeschlagene Aufnahme wird jetzt mit Grund in runtime.log protokolliert (z. B. „Studio-Fenster ist minimiert“) – ein leeres Vorschaubild ist damit endlich nachvollziehbar.",
     "• Zuordnung bei mehreren Studio-Fenstern robuster: Titel werden jetzt auch ohne exakte Übereinstimmung erkannt (Leerraum, Groß-/Kleinschreibung, angehängte Hinweise wie „Studio neu starten“).",

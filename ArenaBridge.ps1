@@ -10790,16 +10790,9 @@ $script:BridgeHandlerScript = {
                 $typeNote = "The catalog API has no '$type' search - I searched MESHPARTS instead (meshes with texture, insert with insert_asset). For a bare mesh use insert_asset too."
             }
         }
-        if (($type -eq 'model') -and ($toolArgs.allowModels -ne $true)) {
-            return @{
-                ok = $false
-                code = 'ASSET_BLOCKED'
-                error = 'Searching for free MODELS is disabled on purpose.'
-                why = 'Free models and free systems from the toolbox often contain hidden scripts, broken parts or huge unoptimised meshes. Build the object yourself with create_instance / clone_instance / unions - that stays clean and you can edit every part.'
-                allowedTypes = @('decal', 'image', 'audio', 'mesh', 'meshpart', 'video', 'animation')
-                override = 'If the user explicitly asked for a toolbox model, repeat the call with allowModels=true. The bridge blocks the insert while it contains scripts (ASSET_HAS_SCRIPTS) - pass acceptScripts=true to override and inspect the content immediately afterwards.'
-            }
-        }
+        # Toolbox-Modelle dürfen gesucht und als Metadaten abgerufen werden.
+        # Das Sicherheits-Gate bleibt beim tatsächlichen Einfügen: Scripts in
+        # einem Modell werden dort weiterhin erkannt und nicht blind platziert.
 
         $keyword = [string]$toolArgs.query
         if ([string]::IsNullOrWhiteSpace($keyword)) { $keyword = [string]$toolArgs.keyword }
@@ -15270,6 +15263,33 @@ function New-PlacePreviewVisual {
 function Start-PlacePreviewCapture {
     param($Studio, $Row)
     if ($null -eq $Row -or $null -eq $Row.IconFrame) { return }
+
+    # 6.0.2: zuerst das echte Roblox-Spiel-Icon laden. Die Live-Aufnahme
+    # bleibt nur der Fallback für lokale/unveröffentlichte Places. Wichtig:
+    # placeId ist auch dann vorhanden, wenn gameId noch 0 ist.
+    if (-not $Row.PreviewHasFrame -and -not $Row.IconIconAttempted) {
+        $Row | Add-Member -NotePropertyName IconIconAttempted -NotePropertyValue $true -Force
+        $iconId = [string]$Studio.placeId
+        if ([string]::IsNullOrWhiteSpace($iconId) -or $iconId -eq '0') { $iconId = [string]$Studio.gameId }
+        if ($iconId -match '^\d+$' -and $iconId -ne '0') {
+            try {
+                $url = "https://thumbnails.roblox.com/v1/games/icons?placeIds=$iconId&returnPolicy=PlaceHolder&size=150x150&format=Png&isCircular=false"
+                $response = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 8 -UseBasicParsing
+                $imageUrl = [string]$response.data[0].imageUrl
+                if (-not [string]::IsNullOrWhiteSpace($imageUrl)) {
+                    $bytes = (New-Object System.Net.WebClient).DownloadData($imageUrl)
+                    if ($bytes -and $bytes.Length -gt 100) {
+                        Set-PlacePreviewImage $Row $bytes
+                        $Row.IconFrame.ToolTip = 'Roblox-Spiel-Icon'
+                        try { Write-RuntimeLog "Spiel-Icon geladen (placeId $iconId)." } catch {}
+                        return
+                    }
+                }
+            } catch {
+                try { Write-RuntimeLog "Spiel-Icon nicht verfügbar (placeId $iconId): $($_.Exception.Message)" } catch {}
+            }
+        }
+    }
     $sessionId = [string]$Studio.sessionId
     # Die virtuelle "Alle Places"-Zeile bekommt (erstmal) bewusst keine
     # Vorschau - siehe New-AllPlacesRow (Frame dort dauerhaft ausgeblendet).
@@ -15785,6 +15805,7 @@ function New-Row {
         IconFallback = $null
         PreviewHandle   = $null
         PreviewHasFrame = $false
+        IconIconAttempted = $false
         PreviewFailCount = 0
         PreviewLoggedOnce = $false
         Mode       = $null
