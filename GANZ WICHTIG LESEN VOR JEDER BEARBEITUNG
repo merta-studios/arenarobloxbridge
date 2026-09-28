@@ -187,6 +187,45 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v6.0.2: ICON-/VORSCHAU-REPARATUR + UPDATE-SICHERHEITSNETZ. Live-Befund:
+  Beim Nutzer erschien "seit vielen Versionen nie ein Bild" in der Kachel.
+  Zwei Ursachen angegangen: (a) 6.0.1 blieb bei JEDEM gescheiterten Aufnahme-
+  versuch einfach stehen (endloser Ladekreis, kein Fallback, kein Log) -
+  jetzt: nach 3 Fehlversuchen Platzhalter-Symbol, weiterlaufende Aufnahmen,
+  jede fehlgeschlagene Aufnahme begruendet in runtime.log (gedrosselt,
+  $script:PlacePreviewFailLogAt), erste erfolgreiche Aufnahme je Sitzung
+  wird einmalig protokolliert ("Place-Vorschau (<sid>): Live-Vorschau aktiv
+  (WxH px)"). Zusaetzlich null-sicherer Handle (vorher warf $handle.ToInt64()
+  still im aufrufenden try/catch), tolerante Titel-Zuordnung (Trim, Gross-/
+  Klein, StartsWith, versionMismatch-Suffix entfernt), flaches object[] im
+  Fenster-Cache (bewaehrtes Get-StudioWindowName-Muster), Worker mit eigenem
+  ScreenHelper-Add-Type-Fallback. (b) UPDATE-SICHERHEITSNETZ: Startet der
+  Starter (EXE) mit einem Status, der kein frisches Update beweist
+  ('kein-update'/'keine-verbindung'/'update-fehler'/'update-suche-fehler'),
+  prueft das Programm SELBST kurz gegen version.json (Zeitlimit
+  $script:SelfUpdateVerifyTimeout = 6 s, nach erstem toten Branch Abbruch)
+  und zieht das Update notfalls direkt (Invoke-AutostartSelfUpdate
+  -VerifyMode, Neustart mit Hinweisfenster). Grund: ein defekter Starter
+  konnte vorher JEDE Repo-Version fuer immer beim Nutzer nicht ankommen
+  lassen - die plausibelste Erklaerung fuer "10 Prompts lang passiert
+  nichts". OFFEN/TODO bleibt: make-updater.ps1 der Starter-EXE auf den
+  3.9.8-Fehler pruefen (UTF8.GetString auf String-.Content) und ggf. neu
+  bauen/verteilen.
+  LIVE-ABNAHME 6.0.2: (1) Studio oeffnen -> innerhalb ~3 s muss eine echte
+  Vorschau erscheinen ODER (falls minimiert/fehlerhaft) nach ~3 Versuchen das
+  Platzhalter-Symbol; runtime.log zeigt "Live-Vorschau aktiv (WxH px)" bzw.
+  den Fehlergrund. (2) Studio minimieren -> Vorschau friert ein (keine
+  neuen Aufnahmen, kein schwarzes Bild). (3) Zwei Studio-Fenster -> beide
+  Zeilen zeigen JE ihr Fenster (Titel-Zuordnung auch mit angehaengtem
+  "Studio neu starten"-Hinweis testen). (4) Nach dem Update Studio einmal
+  neu starten (Plugin 6.0.2). (5) Starter mitabschalten: lokale Fassung
+  alt machen, EXE starten, die "kein-update"-Meldung ignorieren -> die
+  Bridge muss das Update selbst ziehen und mit Hinweisfenster neu starten.
+- v6.0.1: Spiel-Icons (thumbnails.roblox.com, an gameId gebunden - bei
+  unveroeffentlichten Places GameId=0, immer leer) ersetzt durch echte
+  Live-Fenster-Vorschau per GDI+ CopyFromScreen im Hintergrund-Runspace
+  ($script:PlacePreview*). "Alle Places" bewusst ohne Vorschau.
+- v6.0: Liquid-Glass-Redesign (Optik/Animationen nur).
 - v5.0.0: Mega-Update: frische Session-Schlüssel werden vor jedem Play registriert (Stop/Move blockieren nicht mehr durch einen alten Schlüssel), Humanoid-Bewegung wird über die volle Dauer gehalten und der EndTest-Stop wartet robuster. Ab zwei Places erscheint "Alle Places" mit stabilem Token pro Programmstart, explizitem GET /api/places -> targetPlace-Wechsel für Arena, Icon-Mosaik und temporärem globalem Lesezugriff. Place-Icons laden mit Animation/Fallback; temporärer Lesezugriff wird nie gespeichert. Neuer scrollbarer, farbcodierter Arena-Verlauf je Place/gesamt.
 - v3.3: Basis-Release (bestaetigt: "danke alles klappt")
 - v3.4: Feature-Release

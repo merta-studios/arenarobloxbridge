@@ -1,10 +1,10 @@
 {
-  "version": "6.0.1",
+  "version": "6.0.2",
   "notes": [
-    "• Spiel-Icons ersetzt durch eine Live-Vorschau: Statt eines von Roblox heruntergeladenen Spiel-Icons (das bei unveröffentlichten Places nie ein echtes Bild zeigen konnte) macht die Bridge jetzt direkt einen Live-Screenshot des jeweiligen Roblox-Studio-Fensters – ohne Internetverbindung zu Roblox und unabhängig davon, ob das Place veröffentlicht ist.",
-    "• Performance-optimiert: Die Vorschau wird im Hintergrund aufgenommen, höchstens alle paar Sekunden pro Place aktualisiert und sofort auf Kachelgröße verkleinert.",
-    "• Ist das Studio-Fenster minimiert, wird die Vorschau bewusst NICHT aktualisiert – das zuletzt gezeigte Bild bleibt einfach stehen.",
-    "• Die „Alle Places“-Sammelzeile zeigt (erstmal) bewusst kein Icon/keine Vorschau, da sie für mehrere Fenster gleichzeitig steht.",
-    "• Alles Weitere bleibt wie in 6.0: gleiches Liquid-Glass-Design, gleiche Bedienung, gleiche Einstellungen."
+    "• Spiel-Icon-System repariert: Wenn eine Aufnahme des Studio-Fensters nicht gelang (z. B. Studio minimiert oder das Fenster nicht eindeutig zuordbar), drehte sich der Ladekreis endlos und es erschien NIE ein Bild. Jetzt erscheint nach wenigen Sekunden das Platzhalter-Symbol, und sobald eine Aufnahme klappt, blendet die Live-Vorschau ein.",
+    "• Jede fehlgeschlagene Aufnahme wird jetzt mit Grund in runtime.log protokolliert (z. B. „Studio-Fenster ist minimiert“) – ein leeres Vorschaubild ist damit endlich nachvollziehbar.",
+    "• Zuordnung bei mehreren Studio-Fenstern robuster: Titel werden jetzt auch ohne exakte Übereinstimmung erkannt (Leerraum, Groß-/Kleinschreibung, angehängte Hinweise wie „Studio neu starten“).",
+    "• Update-Sicherheitsnetz: Falls der Starter (EXE) ein Update nicht korrekt installiert hat, prüft das Programm jetzt beim Start selbst kurz im Repository nach und zieht die neue Version bei Bedarf direkt – versprochene Reparaturen kommen damit auch dann an, wenn der Starter hakt.",
+    "• Alles Weitere bleibt wie in 6.0.1: gleiches Liquid-Glass-Design, gleiche Bedienung, gleiche Einstellungen."
   ]
 }
