@@ -1,5 +1,30 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 6.0
+# Arena Roblox Bridge  -  Version 6.0.1
+#
+# LIVE-VORSCHAU VERSION 6.0.1 (ersetzt die Spiel-Icons durch einen echten
+# Fenster-Screenshot - System und Bedienung bleiben sonst exakt wie in 6.0):
+#   * SPIEL-ICONS ENTFERNT, LIVE-FENSTER-VORSCHAU STATT DESSEN: Die Icons
+#     blieben trotz mehrerer Reparaturversuche (5.0.0/5.0.2/5.2) leer/generisch,
+#     weil game.GameId bei jedem unveroeffentlichten/nur lokal geoeffneten
+#     Place 0 ist (Roblox-Verhalten) UND weil das Plugin gameId erst nach
+#     einem echten Studio-Neustart ueberhaupt liefert. Kein Downloader-Fix
+#     konnte das beheben, weil beides ausserhalb der Bridge liegt. 6.0.1
+#     macht deshalb periodisch einen echten Screenshot des zugehoerigen
+#     Studio-Fensters (GDI+ CopyFromScreen, derselbe Arena.ScreenHelper-Typ
+#     wie beim vorhandenen Screenshot-Werkzeug) - keine Roblox-API, keine
+#     gameId, kein Plugin-Neustart noetig.
+#   * PERFORMANCE: Aufnahmen laufen in einem Hintergrund-Runspace (nie auf
+#     dem UI-Thread), sind pro Sitzung auf hoechstens eine alle ~2,5 s
+#     gedrosselt und werden sofort beim Aufnehmen auf Kachel-Groesse
+#     herunterskaliert (kein Festplatten-Cache mehr noetig). Ist das
+#     Studio-Fenster minimiert (IsIconic), wird bewusst NICHT aktualisiert -
+#     das zuletzt gezeigte Bild bleibt stehen.
+#   * "ALLE PLACES" OHNE VORSCHAU: Die Sammelzeile steht fuer mehrere Fenster
+#     gleichzeitig - ein einzelnes Fenster-Bild waere dort irrefuehrend, sie
+#     bleibt deshalb (erstmal) ganz ohne Icon/Vorschau.
+#   * Server, Plugin-Lua und alle Protokolle sind NICHT angefasst - nur die
+#     WPF-Oberflaeche der Bridge holt sich das Vorschaubild jetzt selbst vom
+#     Bildschirm statt von thumbnails.roblox.com.
 #
 # LIQUID-GLASS-REDESIGN VERSION 6.0 (komplettes neues Design + Animationen,
 # nach dem Nutzer-Entwurf grafik.png - System und Bedienung bleiben exakt
@@ -823,13 +848,17 @@ $script:StartTime = Get-Date
 $script:TunnelLines = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
 $script:UiRows = @{}
 $script:PlaceNames = @{}
-# Version 5 UI state: Roblox game icons are downloaded outside the UI thread.
-$script:PlaceIconLoads = @{}
-$script:PlaceIconCache = @{}
-# Version 5.2: Fehlversuche pro Icon (Zaehler + Zeitpunkt des naechsten
-# Versuchs); Signatur des zuletzt gebauten Alle-Places-Mosaiks.
-$script:PlaceIconFails = @{}
-$script:AllPlacesMosaicSignature = $null
+# Version 6.0.1: Statt heruntergeladener Roblox-Spiel-Icons (siehe Changelog
+# oben) macht die Bridge jetzt eine Live-Vorschau des jeweiligen Studio-
+# Fensters direkt vom Bildschirm - kein Netzwerk, keine gameId noetig.
+# Aufnahmen laufen ausserhalb des UI-Threads und werden pro Sitzung gedrosselt.
+$script:PlacePreviewJobs = @{}
+$script:PlacePreviewHandles = @{}
+$script:PlacePreviewLastCaptureAt = @{}
+$script:PlacePreviewIntervalSeconds = 2.5
+$script:PlacePreviewCaptureHeight = 88
+$script:PreviewWindowCache = @()
+$script:PreviewWindowCacheAt = [DateTime]::MinValue
 # Version 5.2: Sichtbarkeit/Aufraeumen der Place-Liste. Das Edit-Plugin
 # heartbeatet etwa alle 5 Sekunden - 15 s decken 3 verlorene Beats locker ab.
 # Ein sauber abgemeldetes Fenster (Studio/Place geschlossen) verschwindet nach
@@ -839,8 +868,6 @@ $script:PlaceVisibleSeconds = 15
 $script:PlaceOrphanGraceSeconds = 4
 $script:PlaceCleanupSeconds = 120
 $script:AllPlacesRow = $null
-$script:IconFolder = Join-Path $script:AppDataRoot 'place-icons'
-try { New-Item -ItemType Directory -Path $script:IconFolder -Force | Out-Null } catch {}
 $script:RobloxStudioPath = $null
 $script:PluginInstalled = $false
 $script:LastTunnelMessage = ''
@@ -1191,7 +1218,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '6.0'
+    DocsVersion     = '6.0.1'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -1350,7 +1377,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 6.0)
+  Arena Studio Bridge - Studio Plugin  (Version 6.0.1)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1421,7 +1448,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "6.0"
+local ARENA_VERSION  = "6.0.1"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -12086,7 +12113,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '6.0'
+            version = '6.0.1'
             docsVersion = [string]$Shared.DocsVersion
             role = 'A normal token controls exactly one live Roblox Studio place. The special aggregate token copied from Alle Places controls several places: call GET /api/places first and pass one exact targetPlace in every request; the bridge refuses to guess. This makes switching safe and explicit. Send every request as POST /api/tool with JSON body { "token": "...", "targetPlace": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -12201,7 +12228,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '6.0'
+            bridgeVersion = '6.0.1'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -12441,7 +12468,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '6.0'
+                        bridgeVersion = '6.0.1'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -12693,7 +12720,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '6.0'
+                        serverVersion = '6.0.1'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -12880,7 +12907,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='6.0'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='6.0.1'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -12909,8 +12936,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '6.0'
-                    serverVersion = '6.0'
+                    bridgeVersion = '6.0.1'
+                    serverVersion = '6.0.1'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -14972,126 +14999,146 @@ function Get-PlaceName {
 }
 
 # ----------------------------------------------------------------------------
-# VERSION 5: PLACE-ICONS UND ARENA-VERLAUF
+# VERSION 6.0.1: LIVE-VORSCHAU DES STUDIO-FENSTERS (ERSETZT DIE SPIEL-ICONS)
 # ----------------------------------------------------------------------------
-function Get-PlaceIconKey {
-    param($Studio)
-    $gameId = [string]$Studio.gameId
-    $placeId = [string]$Studio.placeId
-    $gameClean = ($gameId -replace '[^0-9]', '')
-    $placeClean = ($placeId -replace '[^0-9]', '')
-    if (-not [string]::IsNullOrWhiteSpace($gameClean) -and $gameClean -ne '0') { return 'game_' + $gameClean }
-    if (-not [string]::IsNullOrWhiteSpace($placeClean) -and $placeClean -ne '0') { return 'place_' + $placeClean }
-    # Unveroeffentlichte Place bekommen den Studio-Fallback-Icon.
-    return 'studio_fallback'
+# Bis 6.0 zeigte jede Zeile ein von thumbnails.roblox.com heruntergeladenes
+# Spiel-Icon. Das hing an zwei Dingen, die die Bridge nicht in der Hand hat:
+#   1) game.GameId ist bei jedem unveroeffentlichten/nur lokal geoeffneten
+#      Place 0 - es gibt schlicht keine Universe-Id, aus der ein echtes Icon
+#      geladen werden koennte (Roblox-Verhalten, kein Bug).
+#   2) Das Plugin liefert gameId erst, wenn Studio nach einem Bridge-Update
+#      WIRKLICH neu gestartet wurde (Plugins laden nur beim Studio-Start neu).
+# Beides machte die Icons in der Praxis dauerhaft leer/generisch, egal wie oft
+# der Downloader selbst repariert wurde (5.0.0/5.0.2/5.2).
+#
+# 6.0.1 ersetzt das Icon deshalb durch eine echte Live-Vorschau: Die Bridge
+# laeuft ohnehin auf demselben PC wie Studio und macht per GDI+ periodisch
+# einen Screenshot des zugehoerigen Studio-Fensters (kein Roblox-Netzwerk,
+# keine gameId, kein Plugin-Neustart noetig). Dafuer wird der bereits
+# vorhandene Arena.ScreenHelper-Typ wiederverwendet (siehe Screenshot-
+# Werkzeug weiter oben, das denselben GetWindowRect/CopyFromScreen-Weg geht).
+#
+# PERFORMANCE:
+#   - Aufnahmen laufen in einem Hintergrund-Runspace (wie zuvor die
+#     Icon-Downloads) - der UI-Thread wartet nie auf einen Screenshot.
+#   - Pro Sitzung wird hoechstens alle $script:PlacePreviewIntervalSeconds
+#     neu aufgenommen, nicht bei jedem UI-Tick (900 ms).
+#   - Ist das Studio-Fenster minimiert (IsIconic), wird NICHT aufgenommen -
+#     das zuletzt gezeigte Bild bleibt stehen, wie gewuenscht.
+#   - Es wird direkt beim Aufnehmen auf Kachel-Groesse herunterskaliert (nicht
+#     erst in voller Fenstergroesse gespeichert) - kleine PNG-Bytes im
+#     Arbeitsspeicher, kein Festplatten-Cache noetig.
+#   - Die "Alle Places"-Sammelzeile bekommt (erstmal) bewusst KEINE Vorschau
+#     (siehe New-AllPlacesRow) - sie steht fuer mehrere Fenster gleichzeitig.
+# ----------------------------------------------------------------------------
+
+function Get-StudioWindowInfos {
+    # Kurzer Cache (1.5 s): Fenster kommen/gehen selten, ein Neuenumerieren
+    # bei jedem 900-ms-Tick waere unnoetiger Overhead.
+    if (((Get-Date) - $script:PreviewWindowCacheAt).TotalSeconds -lt 1.5) {
+        return , $script:PreviewWindowCache
+    }
+    $infos = New-Object System.Collections.Generic.List[object]
+    try {
+        foreach ($processName in @('RobloxStudioBeta', 'RobloxStudio')) {
+            foreach ($proc in @(Get-Process -Name $processName -ErrorAction SilentlyContinue)) {
+                if ($proc.MainWindowHandle -eq [IntPtr]::Zero) { continue }
+                $title = [string]$proc.MainWindowTitle
+                $clean = ($title -replace '\s*[-–]\s*Roblox Studio\s*$', '').Trim()
+                $infos.Add([pscustomobject]@{ Handle = $proc.MainWindowHandle; Title = $clean })
+            }
+        }
+    } catch {}
+    $script:PreviewWindowCache = $infos
+    $script:PreviewWindowCacheAt = Get-Date
+    return , $infos
 }
 
-function Set-PlaceIconImage {
-    param($Row, [string]$Path)
-    if ($null -eq $Row -or $null -eq $Row.IconImage -or [string]::IsNullOrWhiteSpace($Path)) { return }
+function Resolve-PlacePreviewHandle {
+    param($Studio, $Row)
+    $sessionId = [string]$Studio.sessionId
+    $infos = @(Get-StudioWindowInfos)
+    if ($infos.Count -eq 0) { return [IntPtr]::Zero }
+    # Nur EIN Studio-Fenster offen: keine Titel-Rateaktion noetig.
+    if ($infos.Count -eq 1) { return $infos[0].Handle }
+    # Mehrere Fenster: demselben angezeigten Namen zuordnen, den Get-PlaceName
+    # fuer diese Zeile bereits gewaehlt hat (dieselbe Kandidatenliste, die die
+    # Namensanzeige seit Version 5 zur Unterscheidung mehrerer Fenster nutzt).
+    $wanted = [string]$Row.Title.Text
+    foreach ($info in $infos) {
+        if (-not [string]::IsNullOrWhiteSpace($info.Title) -and $info.Title -eq $wanted) {
+            return $info.Handle
+        }
+    }
+    # Titel gerade uneindeutig/leer: den zuletzt zugeordneten Handle behalten,
+    # solange das Fenster noch existiert (verhindert Flackern).
+    if ($script:PlacePreviewHandles.ContainsKey($sessionId)) {
+        $previous = [IntPtr]$script:PlacePreviewHandles[$sessionId]
+        foreach ($info in $infos) { if ($info.Handle -eq $previous) { return $previous } }
+    }
+    return [IntPtr]::Zero
+}
+
+function Set-PlacePreviewImage {
+    param($Row, [byte[]]$Bytes)
+    if ($null -eq $Row -or $null -eq $Row.IconImage -or -not $Bytes -or $Bytes.Length -eq 0) { return }
     try {
+        $stream = New-Object System.IO.MemoryStream (,$Bytes)
         $bitmap = [System.Windows.Media.Imaging.BitmapImage]::new()
         $bitmap.BeginInit()
         $bitmap.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
-        $bitmap.UriSource = [uri]$Path
+        $bitmap.StreamSource = $stream
         $bitmap.EndInit()
         $bitmap.Freeze()
+        $stream.Dispose()
         $Row.IconImage.Source = $bitmap
-        # Version 6.0: Das Icon blendet weich ein (Liquid-Glass-Detail).
-        # Bleibt die Animation aus irgendeinem Grund haengen, setzt der innere
-        # Fallback die Deckkraft hart auf 1 - unsichtbar bleibt es nie.
-        $Row.IconImage.Opacity = 0
-        $Row.IconImage.Visibility = 'Visible'
         $Row.IconSpinner.Visibility = 'Collapsed'
         $Row.IconFallback.Visibility = 'Collapsed'
-        try {
-            $iconFade = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 1, [System.TimeSpan]::FromMilliseconds(260))
-            $Row.IconImage.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $iconFade)
-        } catch {
-            try { $Row.IconImage.Opacity = 1 } catch {}
+        $Row.IconImage.Visibility = 'Visible'
+        if (-not $Row.PreviewHasFrame) {
+            # Erstes Bild dieser Zeile blendet weich ein (Liquid-Glass-Detail,
+            # wie zuvor bei den Spiel-Icons). Jede weitere Aktualisierung ist
+            # eine "laufende" Live-Vorschau und ersetzt die Quelle sofort ohne
+            # erneutes Einblenden - staendiges Aufblitzen waere stoerend.
+            $Row.PreviewHasFrame = $true
+            $Row.IconImage.Opacity = 0
+            try {
+                $fade = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 1, [System.TimeSpan]::FromMilliseconds(260))
+                $Row.IconImage.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fade)
+            } catch {
+                try { $Row.IconImage.Opacity = 1 } catch {}
+            }
+        } else {
+            $Row.IconImage.Opacity = 1
         }
     } catch {
-        try { $Row.IconSpinner.Visibility = 'Collapsed'; $Row.IconFallback.Visibility = 'Visible' } catch {}
-        Write-UiErrorLog ('Place-Icon ' + $Path + ' konnte nicht angezeigt werden') $_
+        Write-UiErrorLog 'Place-Vorschau konnte nicht angezeigt werden' $_
     }
 }
 
-# Version 5.2: Icon-Datei wirklich auf PNG-Signatur pruefen. Eine per
-# WebClient geladene HTML-Fehlerseite ist >100 Bytes gross und wurde frueher
-# als gueltiges Icon dauerhaft gecacht - danach blieb der Rahmen leer.
-function Test-PngFile {
-    param([string]$Path)
-    try {
-        if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
-        if (-not (Test-Path -LiteralPath $Path)) { return $false }
-        $item = Get-Item -LiteralPath $Path
-        if ($item.Length -lt 100) { return $false }
-        $stream = [System.IO.File]::OpenRead($Path)
-        $sig = New-Object byte[] 8
-        try { [void]$stream.Read($sig, 0, 8) } finally { $stream.Close() }
-        return ($sig[0] -eq 0x89 -and $sig[1] -eq 0x50 -and $sig[2] -eq 0x4E -and $sig[3] -eq 0x47)
-    } catch { return $false }
-}
-
-# Version 5.2: Ersatz-Icon wird bei dauerhaftem Netzversagen LOKAL gezeichnet
-# (dunkle Fliese mit Gamepad-Glyph). Damit ist ein dauerhaft leerer Rahmen
-# ausgeschlossen, selbst wenn API UND Ersatzquellen nicht erreichbar sind.
-function New-LocalFallbackIcon {
-    $path = Join-Path $script:IconFolder '__local_fallback.png'
-    if (Test-PngFile $path) { return $path }
-    try {
-        $size = 150
-        $visual = [System.Windows.Media.DrawingVisual]::new()
-        $dc = $visual.RenderOpen()
-        try {
-            $rect = [System.Windows.Rect]::new(0, 0, $size, $size)
-            $grad = [System.Windows.Media.LinearGradientBrush]::new()
-            $grad.StartPoint = [System.Windows.Point]::new(0, 0)
-            $grad.EndPoint = [System.Windows.Point]::new(1, 1)
-            [void]$grad.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#007A73'), 0.0))
-            [void]$grad.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString('#00544F'), 1.0))
-            $dc.DrawRoundedRectangle($grad, $null, $rect, 22, 22)
-            $formatted = [System.Windows.Media.FormattedText]::new([string][char]0xE7FC,
-                [System.Globalization.CultureInfo]::InvariantCulture,
-                [System.Windows.FlowDirection]::LeftToRight,
-                [System.Windows.Media.Typeface]::new('Segoe MDL2 Assets'), 68, [System.Windows.Media.Brushes]::White)
-            $x = ([double]$size - $formatted.Width) / 2
-            $y = ([double]$size - $formatted.Height) / 2
-            $dc.DrawText($formatted, [System.Windows.Point]::new($x, $y))
-        } finally { $dc.Close() }
-        $rtb = [System.Windows.Media.Imaging.RenderTargetBitmap]::new($size, $size, 96, 96, [System.Windows.Media.PixelFormats]::Pbgra32)
-        $rtb.Render($visual)
-        $encoder = [System.Windows.Media.Imaging.PngBitmapEncoder]::new()
-        [void]$encoder.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($rtb))
-        $fs = [System.IO.File]::Create($path)
-        try { $encoder.Save($fs) } finally { $fs.Close() }
-        if (Test-PngFile $path) { return $path }
-    } catch {
-        Write-UiErrorLog 'Lokales Ersatz-Icon konnte nicht gezeichnet werden' $_
-    }
-    return $null
-}
-
-function New-PlaceIconVisual {
-    # Version 6.0: Glas-Rahmen mit weissem Rand und Teal-Ladekreis.
+function New-PlacePreviewVisual {
+    # Version 6.0.1: Live-Fenster-Vorschau statt Spiel-Icon. Etwas breiter als
+    # das alte quadratische Icon (64x44 statt 46x46), damit ein Fenster-
+    # Screenshot nicht unnoetig stark beschnitten wirkt.
     $frame = [System.Windows.Controls.Border]::new()
-    $frame.Width = 46; $frame.Height = 46
-    $frame.CornerRadius = [System.Windows.CornerRadius]::new(13)
+    $frame.Width = 64; $frame.Height = 44
+    $frame.CornerRadius = [System.Windows.CornerRadius]::new(12)
     $frame.Background = Get-Brush '#E6FFFFFF'
     $frame.BorderBrush = Get-Brush '#59FFFFFF'
     $frame.BorderThickness = [System.Windows.Thickness]::new(1.2)
     $frame.Margin = [System.Windows.Thickness]::new(0, 0, 13, 0)
     $frame.ClipToBounds = $true
+    $frame.ToolTip = 'Live-Vorschau des Roblox-Studio-Fensters'
     try { $frame.Effect = New-Shadow -Blur 10 -Opacity 0.30 } catch {}
     $iconHost = [System.Windows.Controls.Grid]::new()
     $image = [System.Windows.Controls.Image]::new()
     $image.Stretch = 'UniformToFill'
-    $image.Clip = [System.Windows.Media.RectangleGeometry]::new([System.Windows.Rect]::new(0,0,46,46), 12, 12)
+    $image.Clip = [System.Windows.Media.RectangleGeometry]::new([System.Windows.Rect]::new(0,0,64,44), 11, 11)
     $image.Visibility = 'Collapsed'
     $fallback = [System.Windows.Controls.TextBlock]::new()
-    $fallback.Text = [char]0xE71C
+    $fallback.Text = [char]0xE7F4
     $fallback.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe MDL2 Assets')
-    $fallback.FontSize = 20
+    $fallback.FontSize = 18
     $fallback.Foreground = Get-Brush '#5E7196'
     $fallback.HorizontalAlignment = 'Center'; $fallback.VerticalAlignment = 'Center'
     $fallback.Visibility = 'Collapsed'
@@ -15112,157 +15159,105 @@ function New-PlaceIconVisual {
     return [pscustomobject]@{ Frame=$frame; Image=$image; Spinner=$spinner; Fallback=$fallback }
 }
 
-function Start-PlaceIconLoad {
+function Start-PlacePreviewCapture {
     param($Studio, $Row)
-    if ($null -eq $Row) { return }
-    $key = Get-PlaceIconKey $Studio
-    $Row.IconKey = $key
-    if ($script:PlaceIconCache.ContainsKey($key) -and (Test-PngFile $script:PlaceIconCache[$key])) {
-        Set-PlaceIconImage $Row $script:PlaceIconCache[$key]
+    if ($null -eq $Row -or $null -eq $Row.IconFrame) { return }
+    $sessionId = [string]$Studio.sessionId
+    # Die virtuelle "Alle Places"-Zeile bekommt (erstmal) bewusst keine
+    # Vorschau - siehe New-AllPlacesRow (Frame dort dauerhaft ausgeblendet).
+    if ($sessionId -eq '__arena_all_places__') { return }
+    # Performance-Bremse: Ist das Bridge-Fenster selbst minimiert, sieht
+    # ohnehin niemand die Vorschau - dann auch keine neuen Aufnahmen starten.
+    try { if ($window -and $window.WindowState -eq 'Minimized') { return } } catch {}
+
+    $handle = Resolve-PlacePreviewHandle $Studio $Row
+    $Row.PreviewHandle = $handle
+    if ($handle -eq [IntPtr]::Zero) {
+        [void]$script:PlacePreviewHandles.Remove($sessionId)
+        if (-not $Row.PreviewHasFrame) {
+            try { $Row.IconSpinner.Visibility = 'Collapsed'; $Row.IconFallback.Visibility = 'Visible' } catch {}
+        }
         return
     }
-    $file = Join-Path $script:IconFolder ($key + '.png')
-    if (Test-Path -LiteralPath $file) {
-        if (Test-PngFile $file) {
-            $script:PlaceIconCache[$key] = $file
-            Set-PlaceIconImage $Row $file
-            return
-        }
-        # Version 5.2: kaputte Reste im Icon-Cache (z. B. HTML-Fehlerseiten aus
-        # aelteren Versionen oder die tote Wikia-Adresse) verwerfen.
-        try { Remove-Item -LiteralPath $file -Force } catch {}
-    }
-    if ($script:PlaceIconLoads.ContainsKey($key)) { return }
-    # Version 5.2: Fehlversuche werden gezaehlt und mit Verzoegerung wiederholt
-    # (PlaceIconFails). Ab dem 3. Versuch gibt es ein lokal gezeichnetes Bild.
-    if ($script:PlaceIconFails.ContainsKey($key)) {
-        $failInfo = $script:PlaceIconFails[$key]
-        if ([int]$failInfo.count -ge 3) { return }
-        if ([DateTime]::UtcNow -lt [DateTime]$failInfo.nextAt) { return }
-    }
-    $gameId = [string]$Studio.gameId
-    $placeId = [string]$Studio.placeId
-    Write-RuntimeLog ('Place-Icon wird geladen: ' + $key + ' (gameId=' + $gameId + ', placeId=' + $placeId + ')')
+    $script:PlacePreviewHandles[$sessionId] = $handle
+
+    # Ein Capture je Sitzung reicht - laeuft schon eines, nicht erneut starten.
+    if ($script:PlacePreviewJobs.ContainsKey($sessionId)) { return }
+
+    $lastAt = [DateTime]::MinValue
+    if ($script:PlacePreviewLastCaptureAt.ContainsKey($sessionId)) { $lastAt = [DateTime]$script:PlacePreviewLastCaptureAt[$sessionId] }
+    if (((Get-Date) - $lastAt).TotalSeconds -lt $script:PlacePreviewIntervalSeconds) { return }
+    $script:PlacePreviewLastCaptureAt[$sessionId] = Get-Date
+
+    $handleValue = $handle.ToInt64()
+    $targetHeight = $script:PlacePreviewCaptureHeight
     $worker = [PowerShell]::Create()
     $code = @'
-param($gameId, $placeId, $destination)
-try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12 } catch {}
-$imageUrl = $null
-$errorText = ''
-$id = if ($gameId -and $gameId -ne '0') { ($gameId -replace '[^0-9]', '') } else { '' }
-if ($id -match '^\d+$') {
-    try {
-        $meta = Invoke-RestMethod -Uri ('https://thumbnails.roblox.com/v1/games/icons?universeIds=' + $id + '&size=150x150&format=Png&isCircular=false') -TimeoutSec 12 -UseBasicParsing -ErrorAction Stop
-        if ($meta -and $meta.data -and $meta.data.Count -gt 0) {
-            $candidate = [string]$meta.data[0].imageUrl
-            if (-not [string]::IsNullOrWhiteSpace($candidate)) { $imageUrl = $candidate }
-            else { $errorText = 'Roblox-API lieferte kein Bild (state=' + [string]$meta.data[0].state + ')' }
-        } else {
-            $errorText = 'Roblox-API lieferte keine Daten'
-        }
-    } catch {
-        $errorText = 'Roblox-Thumbnails-API nicht erreichbar: ' + [string]$_.Exception.Message
+param($handleValue, $targetHeight)
+try {
+    Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+    $hwnd = [IntPtr]$handleValue
+    # Minimiert -> bewusst NICHTS aufnehmen, das zuletzt gezeigte Bild bleibt
+    # stehen (Nutzerwunsch, statt eines schwarzen/leeren Screenshots).
+    if ([Arena.ScreenHelper]::IsIconic($hwnd)) { return @{ ok = $false; minimized = $true } }
+    $rect = New-Object Arena.RECT
+    if (-not [Arena.ScreenHelper]::GetWindowRect($hwnd, [ref]$rect)) {
+        return @{ ok = $false; error = 'GetWindowRect fehlgeschlagen' }
     }
-}
-if ([string]::IsNullOrWhiteSpace($imageUrl)) {
-    # Version 5.2: Die alte Ersatzadresse (static.wikia.nocookie.net ...) ist
-    # TOT - dort gibt es diese Datei nie/mehr, deshalb blieb jedes Icon leer.
-    # Neues Ersatzbild: Roblox-Studio-Logo von Wikimedia Commons (225x225 PNG).
-    $imageUrl = 'https://upload.wikimedia.org/wikipedia/commons/4/44/RobloxStudioLogo2025.png'
-}
-$tmp = $destination + '.download'
-try {
-    $client = New-Object System.Net.WebClient
-    $client.Headers['User-Agent'] = 'ArenaRobloxBridge/6.0'
-    $downloadTask = $client.DownloadFileTaskAsync($imageUrl, $tmp)
-    if (-not $downloadTask.Wait(30000)) { throw 'Zeitueberschreitung beim Icon-Download (30 s).' }
-    $client.Dispose()
-} catch {
-    try { $client.Dispose() } catch {}
-    try { if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force } } catch {}
-    $reason = 'Icon-Download fehlgeschlagen (' + $imageUrl + '): ' + [string]$_.Exception.Message
-    if ($errorText) { $reason = $errorText + ' | ' + $reason }
-    return @{ ok=$false; path=$null; error=$reason }
-}
-# Nur echte PNG-Dateien akzeptieren (Signatur pruefen - keine HTML-Seiten).
-$sig = New-Object byte[] 8
-try {
-    $fs = [System.IO.File]::OpenRead($tmp)
-    try { [void]$fs.Read($sig, 0, 8) } finally { $fs.Close() }
-} catch {}
-$isPng = ($sig[0] -eq 0x89 -and $sig[1] -eq 0x50 -and $sig[2] -eq 0x4E -and $sig[3] -eq 0x47)
-$length = 0
-try { $length = (Get-Item -LiteralPath $tmp).Length } catch {}
-if (-not $isPng -or $length -le 100) {
-    try { Remove-Item -LiteralPath $tmp -Force } catch {}
-    $reason = 'Icon-Datei war kein gueltiges PNG (Laenge ' + $length + ', von ' + $imageUrl + ')'
-    if ($errorText) { $reason = $errorText + ' | ' + $reason }
-    return @{ ok=$false; path=$null; error=$reason }
-}
-try {
-    Move-Item -LiteralPath $tmp -Destination $destination -Force
-} catch {
-    try { if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force } } catch {}
-    return @{ ok=$false; path=$null; error='Icon-Datei konnte nicht abgelegt werden: ' + [string]$_.Exception.Message }
-}
-return @{ ok=$true; path=$destination }
-'@
-    [void]$worker.AddScript($code).AddArgument($gameId).AddArgument($placeId).AddArgument($file)
+    $width = $rect.Right - $rect.Left
+    $height = $rect.Bottom - $rect.Top
+    if ($width -le 40 -or $height -le 40) { return @{ ok = $false; error = 'Fenstergroesse ungueltig' } }
+    $full = New-Object System.Drawing.Bitmap $width, $height
+    $g = [System.Drawing.Graphics]::FromImage($full)
+    try { $g.CopyFromScreen($rect.Left, $rect.Top, 0, 0, (New-Object System.Drawing.Size $width, $height)) }
+    finally { $g.Dispose() }
+    # Sofort auf Kachel-Groesse herunterskalieren (Performance!) - jedes
+    # zusaetzliche Pixel darueber hinaus kostet nur Zeit/Speicher, ohne in der
+    # kleinen Vorschau je sichtbar zu werden.
+    $scale = $targetHeight / [double]$height
+    $smallWidth = [Math]::Max(1, [int]($width * $scale))
+    $small = New-Object System.Drawing.Bitmap $smallWidth, $targetHeight
+    $g2 = [System.Drawing.Graphics]::FromImage($small)
     try {
-        $script:PlaceIconLoads[$key] = [pscustomobject]@{ Worker=$worker; Handle=$worker.BeginInvoke(); Key=$key; File=$file }
+        $g2.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBilinear
+        $g2.DrawImage($full, 0, 0, $smallWidth, $targetHeight)
+    } finally { $g2.Dispose() }
+    $full.Dispose()
+    $ms = New-Object System.IO.MemoryStream
+    $small.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
+    $small.Dispose()
+    $bytes = $ms.ToArray()
+    $ms.Dispose()
+    return @{ ok = $true; bytes = $bytes }
+} catch {
+    return @{ ok = $false; error = [string]$_.Exception.Message }
+}
+'@
+    [void]$worker.AddScript($code).AddArgument($handleValue).AddArgument($targetHeight)
+    try {
+        $script:PlacePreviewJobs[$sessionId] = [pscustomobject]@{ Worker = $worker; Handle = $worker.BeginInvoke(); SessionId = $sessionId }
     } catch {
         try { $worker.Dispose() } catch {}
-        Write-UiErrorLog ('Place-Icon-Ladevorgang ' + $key + ' konnte nicht gestartet werden') $_
+        Write-UiErrorLog ('Place-Vorschau-Aufnahme ' + $sessionId + ' konnte nicht gestartet werden') $_
     }
 }
 
-function Update-PlaceIconLoads {
-    foreach ($key in @($script:PlaceIconLoads.Keys)) {
-        $job = $script:PlaceIconLoads[$key]
+function Update-PlacePreviewCaptures {
+    foreach ($sessionId in @($script:PlacePreviewJobs.Keys)) {
+        $job = $script:PlacePreviewJobs[$sessionId]
         if (-not $job.Handle.IsCompleted) { continue }
-        $path = $null
-        $loadError = ''
+        $bytes = $null
         try {
             $result = @($job.Worker.EndInvoke($job.Handle))[0]
-            if ($result -and $result.ok -eq $true) { $path = [string]$result.path }
-            elseif ($result -and $result.error) { $loadError = [string]$result.error }
-            else { $loadError = 'Icon-Worker endete ohne Ergebnis.' }
-        } catch {
-            $loadError = [string]$_.Exception.Message
-        }
+            if ($result -and $result.ok -eq $true) { $bytes = [byte[]]$result.bytes }
+            # $result.minimized bzw. ein Fehlschlag: bewusst nichts tun - das
+            # zuletzt gezeigte Bild bleibt stehen, der naechste Tick versucht
+            # es (gedrosselt) automatisch erneut.
+        } catch {}
         try { $job.Worker.Dispose() } catch {}
-        $script:PlaceIconLoads.Remove($key)
-        if ($path -and (Test-PngFile $path)) {
-            $script:PlaceIconFails.Remove($key)
-            $script:PlaceIconCache[$key] = $path
-            Write-RuntimeLog ('Place-Icon geladen: ' + $key + ' -> ' + $path)
-            foreach ($row in @($script:UiRows.Values)) { if ($row.IconKey -eq $key) { Set-PlaceIconImage $row $path } }
-            if ($script:AllPlacesRow) { Update-AllPlacesIcon $script:AllPlacesRow @(Get-ActiveStudios) }
-        } else {
-            # Version 5.2: nicht sofort aufgeben - Versuche zaehlen und mit
-            # wachsender Verzoegerung wiederholen (45s, 90s, 135s, ...).
-            $count = 1
-            if ($script:PlaceIconFails.ContainsKey($key)) { $count = [int]$script:PlaceIconFails[$key].count + 1 }
-            $delaySeconds = [Math]::Min(300, 45 * $count)
-            $script:PlaceIconFails[$key] = @{ count = $count; nextAt = ([DateTime]::UtcNow.AddSeconds($delaySeconds)) }
-            Write-RuntimeLog ('Place-Icon NICHT geladen (' + $key + ', Versuch ' + $count + '): ' + $loadError + ' | Naechster Versuch in ' + $delaySeconds + ' s.')
-            $usedLocalFallback = $false
-            if ($count -ge 3) {
-                $fallbackPath = New-LocalFallbackIcon
-                if ($fallbackPath) {
-                    $usedLocalFallback = $true
-                    $script:PlaceIconCache[$key] = $fallbackPath
-                    Write-RuntimeLog ('Place-Icon ' + $key + ': lokal gezeichnetes Ersatz-Icon wird verwendet.')
-                    foreach ($row in @($script:UiRows.Values)) { if ($row.IconKey -eq $key) { Set-PlaceIconImage $row $fallbackPath } }
-                    if ($script:AllPlacesRow) { Update-AllPlacesIcon $script:AllPlacesRow @(Get-ActiveStudios) }
-                }
-            }
-            if (-not $usedLocalFallback -and $count -ge 3) {
-                foreach ($row in @($script:UiRows.Values)) {
-                    if ($row.IconKey -eq $key) { try { $row.IconSpinner.Visibility='Collapsed'; $row.IconFallback.Visibility='Visible' } catch {} }
-                }
-            }
-            # Bei Versuch 1-2 bleibt der Drehindikator sichtbar (es folgt ein neuer Versuch).
+        $script:PlacePreviewJobs.Remove($sessionId)
+        if ($bytes -and $script:UiRows.ContainsKey($sessionId)) {
+            Set-PlacePreviewImage $script:UiRows[$sessionId] $bytes
         }
     }
 }
@@ -15621,7 +15616,8 @@ function New-Row {
         IconImage  = $null
         IconSpinner = $null
         IconFallback = $null
-        IconKey    = $null
+        PreviewHandle   = $null
+        PreviewHasFrame = $false
         Mode       = $null
         ModeUntil  = [DateTime]::MinValue
     }
@@ -15712,19 +15708,20 @@ function New-Row {
     $titleCol = [System.Windows.Controls.ColumnDefinition]::new()
     $namePanel.ColumnDefinitions.Add($iconCol2)
     $namePanel.ColumnDefinitions.Add($titleCol)
-    # Version 5: a large, rounded square game icon replaces the old green dot.
     # Version 5.0.2 Sicherheitsnetz: Icon, Auswahlmenue und Verlauf sind
     # bewusst in eigene try/catch-Bloecke gekapselt. Schlaegt eines davon
     # fehl, landet trotzdem immer eine minimal funktionsfaehige Zeile (Name
     # + "Prompt kopieren"-Knopf) im Fenster, statt die komplette Zeile zu
     # verlieren - genau das hatte die Liste in 5.0.0/5.0.1 leer gemacht.
+    # Version 6.0.1: an dieser Stelle steht jetzt die Live-Fenster-Vorschau
+    # statt des heruntergeladenen Spiel-Icons (siehe Manifest/Changelog).
     $placeIcon = $null
     try {
-        $placeIcon = New-PlaceIconVisual
+        $placeIcon = New-PlacePreviewVisual
         [System.Windows.Controls.Grid]::SetColumn($placeIcon.Frame, 0)
     } catch {
         $placeIcon = $null
-        Write-UiErrorLog 'Place-Zeile: Icon-Visual konnte nicht erstellt werden' $_
+        Write-UiErrorLog 'Place-Zeile: Vorschau-Visual konnte nicht erstellt werden' $_
     }
     $title = [System.Windows.Controls.TextBlock]::new()
     $title.Text = Get-PlaceName $Studio $WindowNames
@@ -15979,55 +15976,12 @@ function New-Row {
     $startMode = if ([string]$Studio.accessMode -eq 'readonly') { 'readonly' } else { 'readwrite' }
     try { Set-RowMode $row $startMode -Silent } catch { Write-UiErrorLog 'Place-Zeile: Modus-Anzeige fehlgeschlagen' $_ }
     $row.ModeUntil = [DateTime]::MinValue
-    # Version 5.2: Die virtuelle "Alle Places"-Zeile laedt KEIN eigenes Icon
-    # (ihr Mosaik kommt aus Update-AllPlacesIcon) - ein Worker fuer sie waere
-    # ein garantierter Fehlversuch (Spiel-Id '0').
-    try { if ($sessionId -ne '__arena_all_places__') { Start-PlaceIconLoad $Studio $row } } catch { Write-UiErrorLog 'Place-Zeile: Icon-Laden fehlgeschlagen' $_ }
+    # Version 6.0.1: Live-Fenster-Vorschau statt Spiel-Icon-Download (siehe
+    # Start-PlacePreviewCapture - die virtuelle "Alle Places"-Zeile wird dort
+    # bewusst uebersprungen und in New-AllPlacesRow zusaetzlich ausgeblendet).
+    try { Start-PlacePreviewCapture $Studio $row } catch { Write-UiErrorLog 'Place-Zeile: Vorschau-Aufnahme fehlgeschlagen' $_ }
 
     return $row
-}
-
-function Update-AllPlacesIcon {
-    param($Row, $Studios)
-    if ($null -eq $Row -or $null -eq $Row.IconFrame) { return }
-    try {
-        # Version 5.2: Mosaik nur neu bauen, wenn sich die Kacheln wirklich
-        # geaendert haben (bis 5.0.2 bei jedem UI-Tick komplett neu).
-        $signature = ''
-        foreach ($studio in @($Studios | Select-Object -First 4)) {
-            $sigKey = Get-PlaceIconKey $studio
-            $sigPath = ''
-            if ($script:PlaceIconCache.ContainsKey($sigKey)) { $sigPath = [string]$script:PlaceIconCache[$sigKey] }
-            $signature += $sigKey + '=' + $sigPath + ';'
-        }
-        if ($script:AllPlacesMosaicSignature -eq $signature) { return }
-        $script:AllPlacesMosaicSignature = $signature
-        $mosaic = [System.Windows.Controls.Primitives.UniformGrid]::new()
-        $mosaic.Rows = 2; $mosaic.Columns = 2
-        $mosaic.Margin = [System.Windows.Thickness]::new(3)
-        $shown = @($Studios | Select-Object -First 4)
-        foreach ($studio in $shown) {
-            $tile = [System.Windows.Controls.Border]::new()
-            $tile.Margin = [System.Windows.Thickness]::new(1)
-            $tile.CornerRadius = [System.Windows.CornerRadius]::new(4)
-            $tile.Background = Get-Brush '#E2E8F0'
-            $key = Get-PlaceIconKey $studio
-            $path = if ($script:PlaceIconCache.ContainsKey($key)) { [string]$script:PlaceIconCache[$key] } else { $null }
-            if ($path -and (Test-Path -LiteralPath $path)) {
-                $image = [System.Windows.Controls.Image]::new(); $image.Stretch='UniformToFill'
-                try { $bitmap=[System.Windows.Media.Imaging.BitmapImage]::new([uri]$path);$image.Source=$bitmap;$tile.Child=$image } catch {}
-            }
-            if ($null -eq $tile.Child) {
-                $dot=[System.Windows.Shapes.Ellipse]::new();$dot.Width=8;$dot.Height=8;$dot.Fill=Get-Brush '#00D0BE';$dot.HorizontalAlignment='Center';$dot.VerticalAlignment='Center';$tile.Child=$dot
-            }
-            $mosaic.Children.Add($tile)|Out-Null
-        }
-        while ($mosaic.Children.Count -lt 4) {
-            $empty=[System.Windows.Controls.Border]::new();$empty.Margin=[System.Windows.Thickness]::new(1);$empty.CornerRadius=[System.Windows.CornerRadius]::new(4);$empty.Background=Get-Brush '#E2E8F0';$mosaic.Children.Add($empty)|Out-Null
-        }
-        $Row.IconFrame.Child = $mosaic
-        $Row.IconSpinner.Visibility='Collapsed';$Row.IconImage.Visibility='Collapsed';$Row.IconFallback.Visibility='Collapsed'
-    } catch {}
 }
 
 function New-AllPlacesRow {
@@ -16043,10 +15997,12 @@ function New-AllPlacesRow {
     $row.Root.Tag = '__arena_all_places__'
     $row.Title.Text = 'Alle Places'
     try { $row.Copy.ToolTip = 'Prompt für alle verbundenen Places kopieren' } catch {}
-    Update-AllPlacesIcon $row $Studios
-    # The aggregate mosaic is not a single game icon and must never be
-    # overwritten by the unpublished-Studio fallback loader.
-    $row.IconKey = '__all_places_mosaic__'
+    # Version 6.0.1: Die Sammelzeile bekommt (erstmal) bewusst KEINE Vorschau -
+    # sie steht fuer mehrere Studio-Fenster gleichzeitig, ein einzelnes
+    # Fenster-Bild waere hier irrefuehrend. Start-PlacePreviewCapture
+    # ueberspringt diese Session-Id ohnehin (siehe New-Row); das Frame wird
+    # zusaetzlich komplett ausgeblendet, damit kein Ladekreis ewig dreht.
+    try { if ($row.IconFrame) { $row.IconFrame.Visibility = 'Collapsed' } } catch {}
     return $row
 }
 
@@ -16054,7 +16010,6 @@ function Update-AllPlacesRow {
     param($Row, $Studios)
     Set-Text $Row.Title 'Alle Places'
     $Row.Copy.IsEnabled = -not [string]::IsNullOrWhiteSpace($script:TunnelUrl)
-    Update-AllPlacesIcon $Row $Studios
     # Checked only when every currently connected Place is temporarily readonly.
     $allReadOnly = ($Studios.Count -gt 0)
     foreach ($studio in $Studios) { if ([string]$studio.accessMode -ne 'readonly') { $allReadOnly = $false; break } }
@@ -16068,8 +16023,10 @@ function Update-Row {
     if ($Studio.versionMismatch -eq $true) { $placeTitle += '  -  Studio neu starten (Plugin veraltet)' }
     Set-Text $Row.Title $placeTitle
     $Row.Copy.IsEnabled = -not [string]::IsNullOrWhiteSpace($script:TunnelUrl)
-    $currentIconKey = Get-PlaceIconKey $Studio
-    if ($Row.IconKey -ne $currentIconKey) { Start-PlaceIconLoad $Studio $Row }
+    # Version 6.0.1: Start-PlacePreviewCapture ist selbst gedrosselt (siehe
+    # dort) - ein Aufruf pro Tick ist billig (nur Dictionary-Lookups, solange
+    # kein neuer Screenshot faellig ist).
+    try { Start-PlacePreviewCapture $Studio $Row } catch { Write-UiErrorLog 'Place-Zeile: Vorschau-Aufnahme fehlgeschlagen' $_ }
 
     $mode = if ([string]$Studio.accessMode -eq 'readonly') { 'readonly' } else { 'readwrite' }
     # Kurz nach einem Klick hat der lokale Wert Vorrang (verhindert Flackern)
@@ -16427,7 +16384,7 @@ function Refresh-Ui {
         }
     }
 
-    Update-PlaceIconLoads
+    Update-PlacePreviewCaptures
     Sync-PlaceList @(Get-ActiveStudios)
 }
 
@@ -16666,7 +16623,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '6.0'
+    $versionText = '6.0.1'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -17250,7 +17207,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 6.0" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 6.0.1" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -17290,7 +17247,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 6.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 6.0.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -17338,7 +17295,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 6.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 6.0.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -17351,7 +17308,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '6.0'
+    $verText = '6.0.1'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

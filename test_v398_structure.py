@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 6.0.
+"""Offline structure check for Arena Roblox Bridge 6.0.1.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "6.0"
+VERSION = "6.0.1"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -93,7 +93,7 @@ def main() -> int:
     require(raw.startswith(b"\xef\xbb\xbf"), "ArenaBridge.ps1 must retain its UTF-8 BOM")
     source = raw.decode("utf-8-sig")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    require(version["version"] == VERSION, "version.json is not 5.2")
+    require(version["version"] == VERSION, f"version.json is not {VERSION}")
     require("3.9.5" not in source, "stale 3.9.5 literal remains in ArenaBridge.ps1")
 
     # Stale FUNCTIONAL 5.2 literals (history comments may mention 5.2).
@@ -224,7 +224,10 @@ def main() -> int:
     for marker in stale_502_literals:
         require(marker not in source, f"stale 5.0.2 literal remains: {marker}")
 
-    required_markers = [
+    # Stale FUNCTIONAL 6.0 literals (history comments may mention 6.0; the
+    # Liquid-Glass design markers from 6.0 stay required below, only the
+    # exact version-number literals must have moved on to 6.0.1).
+    stale_60_literals = [
         "DocsVersion     = '6.0'",
         'local ARENA_VERSION  = "6.0"',
         "bridgeVersion = '6.0'",
@@ -232,7 +235,24 @@ def main() -> int:
         "version = '6.0'",
         "$versionText = '6.0'",
         "$verText = '6.0'",
+        'Arena Studio Bridge - Studio Plugin  (Version 6.0)',
         'Text="Arena Roblox Bridge - Version 6.0"',
+        # "6.0" is a string-prefix of "6.0.1", so the top banner line must be
+        # matched including its trailing newline to avoid a false positive.
+        "# Arena Roblox Bridge  -  Version 6.0\n",
+    ]
+    for marker in stale_60_literals:
+        require(marker not in source, f"stale 6.0 literal remains: {marker}")
+
+    required_markers = [
+        "DocsVersion     = '6.0.1'",
+        'local ARENA_VERSION  = "6.0.1"',
+        "bridgeVersion = '6.0.1'",
+        "serverVersion = '6.0.1'",
+        "version = '6.0.1'",
+        "$versionText = '6.0.1'",
+        "$verText = '6.0.1'",
+        'Text="Arena Roblox Bridge - Version 6.0.1"',
         # 4.0.0: the config table that keeps the top-level local count in check.
         "local ARENA_CFG = {",
         "ARENA_CFG.POLL_WAIT",
@@ -303,7 +323,6 @@ def main() -> int:
         "targetPlace",
         "ActivityLogs",
         "Open-ArenaHistoryWindow",
-        "Start-PlaceIconLoad",
         "Alle Places",
         # 5.0.2: place-list hard diagnosis + safety net (live bug: count badge
         # correct, EmptyState hidden, but no row ever rendered; 5.0.1's $host
@@ -321,7 +340,7 @@ def main() -> int:
         "hart auf sichtbar gestellt",
         "Einblend-Animation kam nie an",
         "Place-Liste konnte nicht neu angeordnet werden",
-        "Place-Zeile: Icon-Visual konnte nicht erstellt werden",
+        "Place-Zeile: Vorschau-Visual konnte nicht erstellt werden",
         "Place-Zeile: Auswahlmenue/Popup konnte nicht erstellt werden",
         "Arena-Verlaufsfenster konnte nicht geoeffnet werden",
         # Version 5.2 user-wish update: lean aggregate row, repaired game
@@ -334,11 +353,6 @@ def main() -> int:
         "$script:PlaceCleanupSeconds = 120",
         "function Remove-DeadSession",
         "Remove-DeadSession $sessionId",
-        "function Test-PngFile",
-        "function New-LocalFallbackIcon",
-        "upload.wikimedia.org/wikipedia/commons/4/44/RobloxStudioLogo2025.png",
-        "$script:PlaceIconFails = @{}",
-        "$script:AllPlacesMosaicSignature = $null",
         "function New-HistoryButton",
         "$head.Add_MouseLeftButtonDown($dragHandler)",
         "$shell.Add_MouseLeftButtonDown($dragHandler)",
@@ -368,6 +382,21 @@ def main() -> int:
         "$copy.Background = $greenBg",
         "RectangleGeometry Rect=\"0,0,920,620\"",
         "Add_ContentRendered",
+        # Version 6.0.1: the game-icon download is fully replaced by a live
+        # Studio-window preview (throttled, frozen while minimized, no
+        # preview at all for the aggregate "Alle Places" row).
+        "$script:PlacePreviewHandles = @{}",
+        "$script:PlacePreviewLastCaptureAt = @{}",
+        "$script:PlacePreviewIntervalSeconds = 2.5",
+        "$script:PlacePreviewCaptureHeight = 88",
+        "function Get-StudioWindowInfos",
+        "function Resolve-PlacePreviewHandle",
+        "function Set-PlacePreviewImage",
+        "function New-PlacePreviewVisual",
+        "function Start-PlacePreviewCapture",
+        "function Update-PlacePreviewCaptures",
+        "[Arena.ScreenHelper]::IsIconic($hwnd)",
+        "Place-Zeile: Vorschau-Aufnahme fehlgeschlagen",
     ]
     for marker in required_markers:
         require(marker in source, f"required marker missing: {marker}")
@@ -392,6 +421,30 @@ def main() -> int:
             "a [Platzhalter] fallback survived in the activity helpers")
     require("static.wikia.nocookie.net/roblox/images/e/e1" not in source,
             "the dead wikia studio-logo URL is still in the icon worker")
+
+    # Version 6.0.1 negative guards: the entire Roblox-icon download pipeline
+    # must be gone, replaced only by the live Studio-window preview (no mix
+    # of both approaches).
+    require("Start-PlaceIconLoad" not in source,
+            "the old icon download job launcher is still present")
+    require("Update-PlaceIconLoads" not in source,
+            "the old icon job poller is still present")
+    require("Get-PlaceIconKey" not in source,
+            "the old icon cache key helper is still present")
+    require("Update-AllPlacesIcon" not in source,
+            "the old aggregate-row icon mosaic builder is still present")
+    require("function Test-PngFile" not in source,
+            "the old PNG validity checker is still present")
+    require("function New-LocalFallbackIcon" not in source,
+            "the old locally-drawn fallback icon is still present")
+    require("upload.wikimedia.org/wikipedia/commons/4/44/RobloxStudioLogo2025.png" not in source,
+            "the old wikimedia fallback icon URL is still present")
+    require("$script:PlaceIconFails = @{}" not in source,
+            "the old icon-failure tracker is still present")
+    require("$script:AllPlacesMosaicSignature = $null" not in source,
+            "the old aggregate-row icon mosaic signature is still present")
+    require("$script:IconFolder" not in source,
+            "the old on-disk icon cache folder is still present")
 
     # A no-HTTP fallback must not return an instructions-to-enable-HTTP error.
     start_chunk = source[source.index("local function startPlay"):source.index("local function stopPlay")]
@@ -468,7 +521,7 @@ def main() -> int:
         except ET.ParseError as exc:
             raise AssertionError(f"XAML block {index} is not XML: {exc}") from exc
 
-    print("OK: 6.0 structure, Lua and XAML validation passed")
+    print("OK: 6.0.1 structure, Lua and XAML validation passed")
     return 0
 
 
