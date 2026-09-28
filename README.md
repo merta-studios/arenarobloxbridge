@@ -46,7 +46,7 @@ heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestarte
   Überladung gefunden werden: "1"` ab (Laufzeitzeile 16101). Der nachfolgende
   Selbsttest belegte die direkte Folge:
   `IMAGE_ASSIGN_SKIPPED ... grund=Zeile/IconImage fehlt`.
-- **Gezielte Korrektur in `New-PlacePreviewVisual`.** Der belegte
+- **Gezielte Änderung in `New-PlacePreviewVisual`.** Der belegte
   Ein-Argument-Aufruf
   `[System.Windows.Media.DoubleCollection]::new(@(4.0, 8.0))` wurde ersetzt:
   parameterlos konstruieren, `4.0` und `8.0` einzeln per `Add` eintragen, dann

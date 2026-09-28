@@ -1,7 +1,7 @@
 ﻿# ============================================================================
 # Arena Roblox Bridge  -  Version 6.0.6
 #
-# FENSTER-VORSCHAU: AUFBAU DES ANZEIGEELEMENTS KORRIGIERT
+# FENSTER-VORSCHAU: BELEGTEN KONSTRUKTORAUFRUF ERSETZT
 # (Harter Laufzeitbeleg aus der ausgelieferten 6.0.5-Fassung, nicht aus dem
 # Quelltext geraten: runtime.log weist Version 6.0.5 mit SHA-256
 # 7433925B060FDD21A699936B3B8267E899EF1BB80A1673119D1DDFFB9B20E588 und
@@ -15,7 +15,7 @@
 #     passenden DoubleCollection-Konstruktor. Dadurch wurde das komplette
 #     Vorschau-Visual verworfen, bevor Image, Spinner und Rahmen an die
 #     Place-Zeile gebunden werden konnten.
-#   * GEZIELTE KORREKTUR: parameterlosen DoubleCollection-Konstruktor nutzen,
+#   * GEZIELTE AENDERUNG: parameterlosen DoubleCollection-Konstruktor nutzen,
 #     die beiden double-Werte einzeln per Add eintragen und erst danach
 #     StrokeDashArray zuweisen. Kein UI-Umbau, keine Aenderung am Capture-Pfad.
 #   * REGRESSIONSSCHUTZ: Der Python-Strukturtest verbietet den belegten
