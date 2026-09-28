@@ -1,10 +1,10 @@
 {
-  "version": "6.0.3",
+  "version": "6.0.4",
   "notes": [
-    "• Fenster-Vorschauen funktionieren jetzt auch bei mehreren gleichzeitig geöffneten Roblox-Studio-Fenstern. Ein verschachteltes Fenster-Array hatte die Handle-Auflösung vorher komplett abgebrochen.",
-    "• Die Bridge rendert jedes zugeordnete Studio-Fenster jetzt direkt über PrintWindow – auch wenn die Bridge oder ein anderes Fenster davor liegt. CopyFromScreen bleibt als automatischer Fallback.",
-    "• Die blockierende Roblox-Thumbnail-Webabfrage wurde entfernt: Die Kachel zeigt sofort die gewünschte echte Studio-Fenster-Vorschau.",
-    "• Hängende Aufnahme-Worker werden nach 10 Sekunden automatisch beendet und neu versucht; fehlende Fenster werden mit klarem Grund in runtime.log protokolliert.",
-    "• Bedienung, Liquid-Glass-Design, Einstellungen und Bridge-Funktionen bleiben unverändert."
+    "• Ehrlicher Stand: Die Fenster-Vorschau zeigte auch nach 6.0.3 nichts, weil die echte Laufzeitursache bisher unbekannt war. Dieses Update rätselt nicht weiter: Jeder Aufnahmeversuch schreibt jetzt einen vollständigen, nachvollziehbaren Ablauf ins runtime.log – von der Fenstersuche über den Aufnahme-Worker bis zur sichtbaren Anzeige in der Kachel, mit Fehlergrund an jeder Station.",
+    "• Sichtbarer Selbsttest: Beim ersten geöffneten Place erscheint kurz ein unübersehbares pink-limettenfarbenes Testbild in der Kachel. Erscheint es nicht, liegt der Fehler am Programmfenster selbst. Erscheint es, aber danach kein echtes Studio-Bild, blockiert allein die Fensteraufnahme – und das Log nennt genau den blockierten Aufnahmeweg.",
+    "• Die Aufnahme läuft jetzt über einen kompilierten Helfer direkt im Hauptprozess: Die PNG-Bilddaten können an der PowerShell-Runspace-Grenze nicht mehr beschädigt werden. Für GPU-beschleunigte/verdeckte Fenster werden vier Aufnahmewege nacheinander getestet; jede Aufnahme liegt zusätzlich überprüfbar als PNG-Datei unter %LOCALAPPDATA%\\ArenaRobloxBridge\\preview-cache.",
+    "• Beim Start schreibt das Programm Version, genauen Dateipfad und SHA-256-Prüfsumme der wirklich laufenden Datei ins runtime.log – damit ist sofort sichtbar, ob die neue Version bei dir angekommen ist.",
+    "• Design, Bedienung, Einstellungen und alle übrigen Funktionen bleiben unverändert."
   ]
 }

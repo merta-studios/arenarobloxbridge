@@ -20,7 +20,7 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test_v398_structure.py` | Python-Strukturtest für 6.0.3 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test_v398_structure.py` | Python-Strukturtest für 6.0.4 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -35,6 +35,45 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 6.0.4
+- **Ende des Ratens: Laufzeit-Diagnose für die Fenster-Vorschau.** In den
+  Place-Zeilen erschien trotz 6.0.1–6.0.3 weiterhin kein Vorschaubild – ohne
+  dass ein einziger Aufnahmeversuch im Log belegt gewesen wäre. Jeder Versuch
+  trägt jetzt eine kompakte Ablauf-ID und protokolliert die Stationen
+  `CAPTURE_START` → `WINDOWS_ENUMERATED` → `HANDLE_RESOLVED` → `WORKER_STARTED`
+  → `WORKER_COMPLETED` → `RESULT_RECEIVED` → `PNG_DECODED` → `IMAGE_ASSIGNED`
+  → `IMAGE_VISIBLE` – jeweils mit Sitzung, Prozess-ID, Fensterhandle
+  (HWND), Fenstertitel, Datentyp, Byte-Anzahl, Bildgröße und Fehlertext.
+  Kein `catch`-Block im Vorschaupfad bleibt mehr still.
+- **Sichtbarer UI-Selbsttest.** Beim ersten Place wird ein im Speicher
+  gezeichnetes, unverwechselbar pink-limettenfarbenes Testbild durch exakt
+  denselben `Set-PlacePreviewImage`-Pfad in die Kachel geschickt
+  (`PREVIEW_UI_SELFTEST_OK`/`PREVIEW_UI_SELFTEST_FAILED` im Log). Erscheint
+  das Testbild nicht, liegt der Fehler in WPF/UI; erscheint es, aber kein
+  echtes Fensterbild, blockiert allein die Fensteraufnahme – und das Log
+  nennt den blockierten Weg.
+- **Robuste Bilddaten-Übergabe.** Die Aufnahme läuft über den kompilierten
+  C#-Helfer `Arena.PreviewCapture` direkt im Hauptprozess. Das Ergebnis ist
+  ein unveränderliches `byte[]` und durchquert keine PowerShell-Runspace-
+  Grenze mehr (bei Kompilier-Fehlern, z. B. Sprachmodus ConstrainedLanguage,
+  greift begründet geloggt der 6.0.3-Runspace-Fallback). Die UI-Zuweisung
+  läuft ausschließlich über den WPF-Dispatcher.
+- **Vier Aufnahmewege für GPU-/verdeckte Fenster.** `PrintWindow` mit
+  `PW_RENDERFULLCONTENT` → `PrintWindow` ohne Flag → `WindowDcBitBlt`
+  (DWM-Umleitfläche) → `CopyFromScreen` als letzter Fallback. Ein Weg gilt
+  nur als erfolgreich, wenn die Bitmap nicht schwarz/transparent ist – der
+  benutzte Weg und jeder Zwischenbefund stehen im Log. Jede Aufnahme liegt
+  zusätzlich atomar als `%LOCALAPPDATA%\ArenaRobloxBridge\preview-cache\
+  <sid>.png` vor (mit SHA-256-Kurzhash im Log, eindeutig prüfbar).
+- **Laufzeit-Identität.** Beim Start protokolliert das Programm Version,
+  absoluten Pfad und SHA-256 der wirklich laufenden Datei sowie den
+  PowerShell-Sprachmodus – der Beleg, ob der Starter tatsächlich 6.0.4
+  installiert hat oder weiter eine alte Kopie startet.
+- **Keine neuen Blocker.** Kein synchroner Netzwerkzugriff im UI-Thread,
+  kein `Worker.Stop`/`Dispose` auf dem UI-Thread (Task-Jobs werden bei
+  Zeitüberschreitung nur fallengelassen). Design, Bedienung, Einstellungen,
+  Server und Plugin-Protokolle bleiben unverändert.
 
 ## 6.0.3
 - **Mehrfenster-Vorschau wirklich repariert.** Die Fensterliste wurde durch ein

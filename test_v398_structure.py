@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 6.0.3.
+"""Offline structure check for Arena Roblox Bridge 6.0.4.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "6.0.3"
+VERSION = "6.0.4"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -264,15 +264,50 @@ def main() -> int:
     for marker in stale_601_literals:
         require(marker not in source, f"stale 6.0.1 literal remains: {marker}")
 
-    required_markers = [
+    # Stale FUNCTIONAL 6.0.2 literals (history comments may mention 6.0.2).
+    stale_602_literals = [
+        "DocsVersion     = '6.0.2'",
+        'local ARENA_VERSION  = "6.0.2"',
+        "bridgeVersion = '6.0.2'",
+        "serverVersion = '6.0.2'",
+        "version = '6.0.2'",
+        "$versionText = '6.0.2'",
+        "$verText = '6.0.2'",
+        'Arena Studio Bridge - Studio Plugin  (Version 6.0.2)',
+        'Text="Arena Roblox Bridge - Version 6.0.2"',
+        "Version 6.0.2 - aktuell. Beim naechsten Start",
+    ]
+    for marker in stale_602_literals:
+        require(marker not in source, f"stale 6.0.2 literal remains: {marker}")
+
+    # Stale FUNCTIONAL 6.0.3 literals (history comments may mention 6.0.3 -
+    # e.g. the changelog header and the ps-runspace-fallback notes - but every
+    # functional literal must have moved on to 6.0.4).
+    stale_603_literals = [
         "DocsVersion     = '6.0.3'",
         'local ARENA_VERSION  = "6.0.3"',
         "bridgeVersion = '6.0.3'",
+        "bridgeVersion='6.0.3'",
         "serverVersion = '6.0.3'",
         "version = '6.0.3'",
         "$versionText = '6.0.3'",
         "$verText = '6.0.3'",
+        'Arena Studio Bridge - Studio Plugin  (Version 6.0.3)',
         'Text="Arena Roblox Bridge - Version 6.0.3"',
+        "Version 6.0.3 - aktuell. Beim naechsten Start",
+    ]
+    for marker in stale_603_literals:
+        require(marker not in source, f"stale 6.0.3 literal remains: {marker}")
+
+    required_markers = [
+        "DocsVersion     = '6.0.4'",
+        'local ARENA_VERSION  = "6.0.4"',
+        "bridgeVersion = '6.0.4'",
+        "serverVersion = '6.0.4'",
+        "version = '6.0.4'",
+        "$versionText = '6.0.4'",
+        "$verText = '6.0.4'",
+        'Text="Arena Roblox Bridge - Version 6.0.4"',
         # 4.0.0: the config table that keeps the top-level local count in check.
         "local ARENA_CFG = {",
         "ARENA_CFG.POLL_WAIT",
@@ -449,6 +484,50 @@ def main() -> int:
         "Invoke-AutostartSelfUpdate -VerifyMode",
         "$starterProvesFreshInstall = ((@('update-erfolgreich', 'erster-start') -contains $UpdateStatus) -eq $true)",
         "param([string]$Branch, [string]$File, [int]$TimeoutSec = 0)",
+        # Version 6.0.4: Laufzeit-Diagnose + robuste Aufnahme fuer die
+        # Fenster-Vorschau (Ablauf-ID + neun Stationen, sichtbarer
+        # UI-Selbsttest, C#-Helfer im Hauptprozess, vier Aufnahmewege,
+        # atomare PNG-Ablage, Laufzeit-Identitaet mit SHA-256/Sprachmodus).
+        "function Write-PreviewTrace",
+        "function New-PreviewFlowId",
+        "function Clear-PreviewFlow",
+        "function Save-PreviewHandleMeta",
+        "PREVIEW [{0}] {1} sid={2} pid={3} hwnd={4}",
+        "'CAPTURE_START'",
+        "'WINDOWS_ENUMERATED'",
+        "'HANDLE_RESOLVED'",
+        "'WORKER_STARTED'",
+        "'WORKER_COMPLETED'",
+        "'RESULT_RECEIVED'",
+        "'PNG_DECODED'",
+        "'IMAGE_ASSIGNED'",
+        "'IMAGE_VISIBLE'",
+        "function Invoke-PlacePreviewUiSelfTest",
+        "function New-PlacePreviewSelfTestImage",
+        "PREVIEW_UI_SELFTEST_OK",
+        "PREVIEW_UI_SELFTEST_FAILED",
+        "Invoke-PlacePreviewUiSelfTest $Row $SessionId",
+        "namespace Arena {",
+        "public sealed class PreviewCaptureResult",
+        "public static Task<PreviewCaptureResult> CaptureAsync(long hwndValue, int targetHeight)",
+        "private const uint PW_RENDERFULLCONTENT = 2;",
+        "TryWindowDcBitBlt",
+        "TryCopyFromScreen",
+        "HasVisibleContent",
+        "true-aber-nichts-sichtbar",
+        "[Arena.PreviewCapture]::CaptureAsync($handleValue, [int]$targetHeight)",
+        "kind=csharp-helper",
+        "ps-runspace-fallback",
+        "Get-FileHash -Algorithm SHA256",
+        "Laufzeit-Identitaet: Bridge-Version=6.0.4",
+        "LanguageMode",
+        "$script:PreviewFlowContexts = @{}",
+        "$script:PreviewHandleInfos = @{}",
+        "$script:PreviewSelfTestDone = $false",
+        "Clear-PreviewFlow $flow",
+        "DispatcherPriority]::Render",
+        "GetNewClosure()",
+        "Move-Item -LiteralPath $script:RuntimeLog -Destination ($script:RuntimeLog + '.old') -Force",
     ]
     for marker in required_markers:
         require(marker in source, f"required marker missing: {marker}")
@@ -501,6 +580,27 @@ def main() -> int:
     # synchronous thumbnail request back onto the WPF dispatcher thread.
     require("thumbnails.roblox.com/v1/games/icons" not in source,
             "the blocking Roblox game-icon request is back in the window-preview path")
+    # 6.0.4: Der Primaerweg der Aufnahme ist der kompilierte C#-Helfer im
+    # Hauptprozess; der 6.0.3-Runspace-Worker darf nur noch als Fallback
+    # existieren, und jede Aufnahme schreibt die Stationen ins Log.
+    capture_fn = source[source.index("function Start-PlacePreviewCapture"):source.index("function Update-PlacePreviewCaptures")]
+    require("[Arena.PreviewCapture]::CaptureAsync($handleValue, [int]$targetHeight)" in capture_fn,
+            "primary C# capture path is missing from Start-PlacePreviewCapture")
+    require("kind=csharp-helper" in capture_fn and "kind=ps-runspace-fallback" in capture_fn,
+            "capture worker kinds (helper/fallback) are not both wired")
+    require("thumbnails.roblox.com" not in capture_fn,
+            "a synchronous Roblox thumbnail request crept back into the capture path")
+    update_fn = source[source.index("function Update-PlacePreviewCaptures"):source.index("function Get-ArenaHistoryEntries")]
+    require("$job.Task.Result" in update_fn,
+            "Update-PlacePreviewCaptures does not read the C# task result")
+    require("[System.IO.File]::WriteAllBytes($tmpPath, $bytes)" in update_fn
+            and "[System.IO.File]::Move($tmpPath, $pngPath)" in update_fn,
+            "atomic per-session PNG handover (tmp write + move) is missing")
+    assign_fn = source[source.index("function Set-PlacePreviewImage"):source.index("function New-PlacePreviewSelfTestImage")]
+    require("CheckAccess()" in assign_fn and "BeginInvoke(" in assign_fn,
+            "Set-PlacePreviewImage must route through the WPF dispatcher")
+    require("$Bytes[0] -eq 0x89" in assign_fn,
+            "PNG magic-byte verification is missing from the assign path")
     preview_fn = source[source.index("function Get-StudioWindowInfos"):source.index("function Resolve-PlacePreviewHandle")]
     require("return , $script:PreviewWindowCache" not in preview_fn,
             "window info cache is nested again by unary comma (breaks multiple Studio windows)")
@@ -583,7 +683,7 @@ def main() -> int:
         except ET.ParseError as exc:
             raise AssertionError(f"XAML block {index} is not XML: {exc}") from exc
 
-    print("OK: 6.0.3 structure, Lua and XAML validation passed")
+    print("OK: 6.0.4 structure, Lua and XAML validation passed")
     return 0
 
 

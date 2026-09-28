@@ -187,6 +187,57 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v6.0.4: VORSCHAU: ENDE DES RATENS - LAUFZEIT-DIAGNOSE + ROBUSTE AUFNAHME.
+  Lagearbeit 6.0.1-6.0.3: Die Kachel blieb beim Nutzer leer, ohne dass ein
+  einziger Aufnahmeversuch im runtime.log belegt war; alle bisherigen Fixes
+  waren Quellcode-Mutmassungen. 6.0.4 baut stattdessen Messpunkte und einen
+  Selbsttest direkt in den Pfad:
+  * ABLAUF-ID + 9 STATIONEN je Aufnahmeversuch in runtime.log:
+    CAPTURE_START -> WINDOWS_ENUMERATED -> HANDLE_RESOLVED -> WORKER_STARTED
+    -> WORKER_COMPLETED -> RESULT_RECEIVED -> PNG_DECODED -> IMAGE_ASSIGNED
+    -> IMAGE_VISIBLE, je Zeile mit sid/PID/HWND/Titel/Datentyp/Bytes/Groesse/
+    Fehler. Write-PreviewTrace + PreviewFlowContexts halten die Zeilenfelder.
+    Kein stiller catch mehr im Vorschaupfad.
+  * UI-SELBSTTEST: Invoke-PlacePreviewUiSelfTest zeichnet ein 64x44
+    Pink/Limette-Schachbrett im Speicher und schickt es ueber denselben
+    Set-PlacePreviewImage-Pfad. Log: PREVIEW_UI_SELFTEST_OK/FAILED. Testbild
+    unsichtbar => Fehler in WPF/UI. Testbild sichtbar, echtes Bild nicht =>
+    Fehler in der Fensteraufnahme (Stationen nennen den Weg).
+  * ROBUSTE UEBERGABE: Aufnahme durch kompilierten C#-Helfer
+    Arena.PreviewCapture IM HAUPTPROZESS (Add-Type, Task.Run - kein
+    Runspace-Grenzuebergang des byte[] mehr). UI-Zuweisung nur ueber den
+    WPF-Dispatcher (CheckAccess -> BeginInvoke). Zusaetzlich atomare PNG-
+    Ablage %LOCALAPPDATA%\ArenaRobloxBridge\preview-cache\<sid>.png mit
+    SHA-256-Kurzhash im Log. Scheitert das Kompilieren (LanguageMode!),
+    greift begruendet der 6.0.3-ps-runspace-fallback.
+  * 4 AUFNAHMEWEGE: PrintWindow(PW_RENDERFULLCONTENT) -> PrintWindow(0) ->
+    WindowDcBitBlt (DWM-Umleitflaeche) -> CopyFromScreen. Erfolg nur, wenn
+    die Bitmap nicht schwarz/transparent ist (Sichtbarkeitsprobe,
+    Zwischenbefunde im AttemptLog).
+  * LAUFZEIT-IDENTITAET beim Start: Bridge-Version, absoluter Dateipfad,
+    SHA-256 der laufenden Datei, PowerShell-Sprachmodus -> beweist, ob
+    6.0.4 wirklich laeuft oder eine alte Kopie.
+  * runtime.log-Groessenbremse: ueber 4 MB -> runtime.log.old.
+  KEIN synchroner Netzwerkzugriff im UI-Thread; kein Worker.Stop/Dispose im
+  UI-Thread (Task-Jobs werden nur fallengelassen). Strukturtest
+  test_v398_structure.py assertet alle 6.0.4-Marker.
+  LIVE-ABNAHME 6.0.4 (NUTZER-PC):
+  1. Update auf 6.0.4 starten, dann %LOCALAPPDATA%\ArenaRobloxBridge\
+     runtime.log oeffnen: Zeile "Laufzeit-Identitaet" muss Version=6.0.4
+     zeigen (SHA-256 mit dem im PR notierten Wert vergleichen!).
+  2. Ein Studio-Fenster/Place oeffnen: innerhalb weniger Sekunden muss das
+     PINKE SELBSTTESTBILD in der Kachel erscheinen; Log zeigt
+     PREVIEW_UI_SELFTEST_OK (sonst UI-Fehler - Stationszeilen senden!).
+  3. Danach muss pro Place spaetestens nach ~3-5 s die echte Fenster-Vorschau
+     folgen. Wenn nicht: runtime.log nach "PREVIEW [cap-" durchsuchen und die
+     letzte Station + error= lesen (z. B. RESULT_RECEIVED ok=False mit
+     attempts=[pwRenderFullContent=true-aber-nichts-sichtbar ...]).
+  4. preview-cache\<sid>.png oeffnen: zeigt die Datei ein schwarzes/
+     leeres Bild, liefert die GPU-Darstellung schlicht nichts -> naechster
+     Weg im AttemptLog massgeblich. Wird eine PNG-Datei erwartet, aber keine
+     geschrieben, PNG_STORE_FAILED-Zeile suchen.
+  5. Zwei Studio-Fenster parallel: beide Zeilen muessen jeweils ihr eigenes
+     Fenster zeigen (HANDLE_RESOLVED reason=titelExakt/titelTolerant pruefen).
 - v6.0.3: FENSTER-VORSCHAU ENDGUELTIG REPARIERT. Live-Ursache aus 6.0.2:
   Get-StudioWindowInfos (und derselbe Altfehler in Get-StudioWindowName) gab
   per `return , $cache` ein verschachteltes object[][] zurueck. Bei mehreren
