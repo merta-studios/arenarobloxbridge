@@ -1,4 +1,47 @@
 ﻿# ============================================================================
+# Arena Roblox Bridge  -  Version 6.0.5
+#
+# FENSTER-VORSCHAU: ZUGEWIESEN, ABER UNSICHTBAR - EINBLENDUNG REPARIERT
+# (Messbefund statt Vermutung. Zwei Beobachtungen vom Nutzer-PC engen die
+# Ursache zwingend ein: (1) Die Einstellungen zeigten "Version 6.0.4", es
+# lief also wirklich 6.0.4 - der Verdacht "Updater liefert nie aus" ist
+# damit widerlegt. (2) Die pinke Selbsttest-Kachel aus 6.0.4 erschien NIE.
+# Der Quelltext beweist: Ist ein Bild einmal zugewiesen, kann es nichts mehr
+# entfernen - PreviewHasFrame=$true sperrt das Platzhalter-Symbol
+# (Zeilen 15883 / 16195 der 6.0.4-Fassung) und niemand setzt IconImage.Source
+# je zurueck. Das Testbild haette also dauerhaft stehen bleiben MUESSEN. Es
+# war folglich nie sichtbar - der Fehler liegt in der Anzeige, nicht in der
+# Fensteraufnahme.):
+#   * URSACHE UND FIX: Set-PlacePreviewImage setzte beim ERSTEN Bild einer
+#     Zeile Opacity = 0 und ueberliess das Sichtbarwerden allein einer
+#     DoubleAnimation (0 -> 1). Laeuft diese Animation nicht an, bleibt die
+#     Kachel fuer immer unsichtbar, obwohl Quelle, Visibility und Layout
+#     stimmen. Genau dieser Ausfall ist in diesem Programm fuer die
+#     Place-Zeile bereits belegt - deshalb hat sie seit 5.0.2 einen
+#     Einblend-Waechter ("Einblend-Animation kam nie an"). Das Vorschaubild
+#     hatte keinen. 6.0.5: Grundwert ist sofort Opacity = 1, die Animation
+#     ist nur noch Deko (FillBehavior = Stop), und ein Waechter holt eine
+#     haengende Einblendung nach 400 ms hart zurueck (PREVIEW_OPACITY_RESCUE).
+#   * EHRLICHER SELBSTTEST: PREVIEW_UI_SELFTEST_OK wurde in 6.0.4 geschrieben,
+#     sobald das Zuweisen nicht geworfen hat - auch bei Deckkraft 0. Das
+#     Urteil faellt jetzt erst 1,5 s spaeter (Animation und Waechter sind
+#     durch) und nur, wenn das Bild WIRKLICH sichtbar ist: im Baum sichtbar,
+#     effektive Deckkraft ueber 0,05, Flaeche groesser 0, Bildquelle gesetzt.
+#     Sonst PREVIEW_UI_SELFTEST_FAILED mit konkretem Grund.
+#   * NEUE STATION PREVIEW_UI_VERIFY: misst nach 1,5 s Bild, Rahmen UND Zeile
+#     (Visibility/Opacity/ActualSize/Source) und rechnet die effektive
+#     Deckkraft der Kette aus. Fehlt diese Zeile im Protokoll voellig, laufen
+#     im Programm weder Dispatcher-Timer noch Animationen - auch das waere
+#     damit bewiesen statt geraten.
+#   * KURZBERICHT ZUM WEITERGEBEN: %LOCALAPPDATA%\ArenaRobloxBridge\
+#     preview-diagnose.txt fasst Laufzeit-Identitaet (Version/SHA-256),
+#     Aufnahme-Modus, Selbsttest-Urteil, PNG-Ablage und die letzten
+#     Vorschau-Stationen auf wenigen Zeilen zusammen - statt der grossen
+#     runtime.log genuegt kuenftig diese eine kleine Datei.
+#   * Aufnahmewege, Fensterzuordnung, Design, Bedienung, Einstellungen,
+#     Server und Plugin-Protokolle bleiben unveraendert. Keine Toast-/
+#     Popup-Meldungen.
+#
 # Arena Roblox Bridge  -  Version 6.0.4
 #
 # FENSTER-VORSCHAU: ENDE DES RATENS - EINDEUTIGE LAUFZEIT-DIAGNOSE + ROBUSTE
@@ -980,6 +1023,12 @@ $script:PlacePreviewFailLogAt = @{}
 # UI-Selbsttest fuer die Fenster-Vorschau. PreviewCaptureMode wird beim Start
 # vom Add-Type-Block unten gesetzt ('csharp' oder 'ps-fallback').
 $script:PreviewSelfTestDone = $false
+# Version 6.0.5: Kurzbericht-Puffer fuer preview-diagnose.txt (kleine Datei zum
+# Weitergeben - die grosse runtime.log muss dafuer nicht mehr verschickt werden).
+$script:PreviewDiagLines = New-Object System.Collections.Generic.List[string]
+$script:PreviewDiagIdentity = ''
+$script:PreviewSelfTestVerdict = ''
+$script:PreviewDiagLastWrite = [DateTime]::MinValue
 $script:PreviewFlowCounter = [long]0
 $script:PreviewFlowContexts = @{}
 $script:PreviewHandleInfos = @{}
@@ -1393,7 +1442,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '6.0.4'
+    DocsVersion     = '6.0.5'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -1482,7 +1531,11 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=6.0.4, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    $script:PreviewDiagIdentity = ("Bridge-Version=6.0.5, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=6.0.5, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    # Version 6.0.5: Hinweis auf den kleinen Kurzbericht - er enthaelt alles,
+    # was zur Beurteilung der Fenster-Vorschau noetig ist.
+    Write-RuntimeLog ("Vorschau-Kurzbericht: " + (Join-Path $script:AppDataRoot 'preview-diagnose.txt'))
 } catch {}
 
 try {
@@ -1573,7 +1626,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 6.0.4)
+  Arena Studio Bridge - Studio Plugin  (Version 6.0.5)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1644,7 +1697,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "6.0.4"
+local ARENA_VERSION  = "6.0.5"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -12576,7 +12629,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '6.0.4'
+            version = '6.0.5'
             docsVersion = [string]$Shared.DocsVersion
             role = 'A normal token controls exactly one live Roblox Studio place. The special aggregate token copied from Alle Places controls several places: call GET /api/places first and pass one exact targetPlace in every request; the bridge refuses to guess. This makes switching safe and explicit. Send every request as POST /api/tool with JSON body { "token": "...", "targetPlace": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -12691,7 +12744,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '6.0.4'
+            bridgeVersion = '6.0.5'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -12931,7 +12984,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '6.0.4'
+                        bridgeVersion = '6.0.5'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -13183,7 +13236,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '6.0.4'
+                        serverVersion = '6.0.5'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -13370,7 +13423,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='6.0.4'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='6.0.5'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -13399,8 +13452,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '6.0.4'
-                    serverVersion = '6.0.4'
+                    bridgeVersion = '6.0.5'
+                    serverVersion = '6.0.5'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -15523,6 +15576,181 @@ function Clear-PreviewFlow {
     try { [void]$script:PreviewFlowContexts.Remove([string]$FlowId) } catch {}
 }
 
+# --- Version 6.0.5: Kurzbericht + ehrliche Sichtbarkeitsmessung -------------
+function Add-PreviewDiagLine {
+    # Haelt die letzten Vorschau-Zeilen fuer preview-diagnose.txt vor.
+    param([string]$Line)
+    try {
+        if ($null -eq $script:PreviewDiagLines) { $script:PreviewDiagLines = New-Object System.Collections.Generic.List[string] }
+        $script:PreviewDiagLines.Add(('{0:HH:mm:ss} {1}' -f (Get-Date), $Line))
+        while ($script:PreviewDiagLines.Count -gt 60) { $script:PreviewDiagLines.RemoveAt(0) }
+    } catch {}
+}
+
+function Write-PreviewDiagnoseFile {
+    # Schreibt einen kleinen, vollstaendig weitergebbaren Kurzbericht:
+    # Laufzeit-Identitaet, Aufnahme-Modus, Selbsttest-Urteil, PNG-Ablage und
+    # die letzten Stationen. Ohne -Force hoechstens alle 10 Sekunden.
+    param([switch]$Force)
+    try {
+        $now = Get-Date
+        if (-not $Force -and ($now - $script:PreviewDiagLastWrite).TotalSeconds -lt 10) { return }
+        $script:PreviewDiagLastWrite = $now
+        $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
+        $sb = New-Object System.Text.StringBuilder
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 6.0.5)')
+        [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
+        [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
+        [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
+        [void]$sb.AppendLine(('Aufnahme-Modus: {0}{1}' -f [string]$script:PreviewCaptureMode, $(if ($script:PreviewCaptureModeReason) { ' - Grund: ' + [string]$script:PreviewCaptureModeReason } else { '' })))
+        [void]$sb.AppendLine(('UI-Selbsttest: {0}' -f $(if ($script:PreviewSelfTestVerdict) { [string]$script:PreviewSelfTestVerdict } else { '(noch kein Ergebnis)' })))
+        [void]$sb.AppendLine(('Vollstaendiges Protokoll: {0}' -f [string]$script:RuntimeLog))
+        $dir = Join-Path $script:AppDataRoot 'preview-cache'
+        [void]$sb.AppendLine(('PNG-Ablage: {0}' -f $dir))
+        try {
+            if (Test-Path -LiteralPath $dir) {
+                $files = @(Get-ChildItem -LiteralPath $dir -Filter '*.png' -ErrorAction SilentlyContinue)
+                if ($files.Count -eq 0) { [void]$sb.AppendLine('  (keine PNG-Datei vorhanden)') }
+                foreach ($f in $files) { [void]$sb.AppendLine(('  {0}  {1} Bytes  {2:yyyy-MM-dd HH:mm:ss}' -f $f.Name, $f.Length, $f.LastWriteTime)) }
+            } else {
+                [void]$sb.AppendLine('  (Ordner existiert nicht - es wurde noch keine Aufnahme gespeichert)')
+            }
+        } catch {}
+        [void]$sb.AppendLine('')
+        [void]$sb.AppendLine('Letzte Stationen der Fenster-Vorschau:')
+        if ($script:PreviewDiagLines -and $script:PreviewDiagLines.Count -gt 0) {
+            foreach ($diagLine in $script:PreviewDiagLines) { [void]$sb.AppendLine('  ' + [string]$diagLine) }
+        } else {
+            [void]$sb.AppendLine('  (noch keine Vorschau-Station protokolliert)')
+        }
+        [System.IO.File]::WriteAllText($path, $sb.ToString(), (New-Object System.Text.UTF8Encoding($true)))
+    } catch {}
+}
+
+function Get-PlacePreviewVisualState {
+    # Version 6.0.5: Misst die GANZE Sichtbarkeitskette der Kachel - Bild,
+    # Rahmen und Zeile. "Zugewiesen" ist nicht "sichtbar": Ein Bild mit
+    # Deckkraft 0 (haengende Einblend-Animation) meldet IsVisible=true und
+    # sah in 6.0.4 wie ein Erfolg aus.
+    param($Row)
+    $state = @{
+        isVisible = $false; visibility = '-'; opacity = '-'; actualW = 0; actualH = 0
+        source = '-'; spinner = '-'; fallback = '-'
+        frameVisibility = '-'; frameOpacity = '-'; frameActual = '0x0'
+        rowVisibility = '-'; rowOpacity = '-'
+        effOpacity = 0.0; inRows = $false; reallyVisible = $false; reason = ''
+    }
+    try {
+        $img = $null
+        try { $img = $Row.IconImage } catch {}
+        if ($null -eq $img) { $state.reason = 'IconImage fehlt'; return $state }
+        $imgOpacity = 1.0
+        try { $state.isVisible = [bool]$img.IsVisible } catch {}
+        try { $state.visibility = [string]$img.Visibility } catch {}
+        try { $imgOpacity = [double]$img.Opacity; $state.opacity = [string]$img.Opacity } catch {}
+        try { $state.actualW = [int]$img.ActualWidth; $state.actualH = [int]$img.ActualHeight } catch {}
+        try { if ($img.Source) { $state.source = ([int]$img.Source.PixelWidth).ToString() + 'x' + ([int]$img.Source.PixelHeight).ToString() } } catch {}
+        try { $state.spinner = [string]$Row.IconSpinner.Visibility } catch {}
+        try { $state.fallback = [string]$Row.IconFallback.Visibility } catch {}
+        $frameOpacity = 1.0
+        try {
+            if ($Row.IconFrame) {
+                $state.frameVisibility = [string]$Row.IconFrame.Visibility
+                $frameOpacity = [double]$Row.IconFrame.Opacity
+                $state.frameOpacity = [string]$Row.IconFrame.Opacity
+                $state.frameActual = ([int]$Row.IconFrame.ActualWidth).ToString() + 'x' + ([int]$Row.IconFrame.ActualHeight).ToString()
+            }
+        } catch {}
+        $rowOpacity = 1.0
+        try {
+            if ($Row.Root) {
+                $state.rowVisibility = [string]$Row.Root.Visibility
+                $rowOpacity = [double]$Row.Root.Opacity
+                $state.rowOpacity = [string]$Row.Root.Opacity
+            }
+        } catch {}
+        try { $state.inRows = $script:UiRows.ContainsKey([string]$Row.sessionId) } catch {}
+        try { $state.effOpacity = [math]::Round(($imgOpacity * $frameOpacity * $rowOpacity), 3) } catch {}
+        $grounds = New-Object System.Collections.Generic.List[string]
+        if (-not $state.isVisible) { $grounds.Add('nicht im sichtbaren Baum (IsVisible=false)') }
+        if ([double]$state.effOpacity -le 0.05) { $grounds.Add('effektive Deckkraft ' + [string]$state.effOpacity + ' (Bild=' + [string]$imgOpacity + ', Rahmen=' + [string]$frameOpacity + ', Zeile=' + [string]$rowOpacity + ')') }
+        if ([int]$state.actualW -le 0 -or [int]$state.actualH -le 0) { $grounds.Add('Flaeche 0x0 (kein Layout)') }
+        try { if ($null -eq $img.Source) { $grounds.Add('keine Bildquelle gesetzt') } } catch {}
+        if ($grounds.Count -eq 0) { $state.reallyVisible = $true } else { $state.reason = ($grounds -join '; ') }
+    } catch {
+        $state.reason = [string]$_.Exception.Message
+    }
+    return $state
+}
+
+function Format-PlacePreviewVisualState {
+    param($State)
+    return ('isVisible=' + [string]$State.isVisible + ' visibility=' + [string]$State.visibility +
+        ' opacity=' + [string]$State.opacity + ' eff=' + [string]$State.effOpacity +
+        ' actual=' + [string]$State.actualW + 'x' + [string]$State.actualH +
+        ' source=' + [string]$State.source + ' spinner=' + [string]$State.spinner +
+        ' fallback=' + [string]$State.fallback +
+        ' frame=' + [string]$State.frameVisibility + '/' + [string]$State.frameOpacity + '/' + [string]$State.frameActual +
+        ' row=' + [string]$State.rowVisibility + '/' + [string]$State.rowOpacity +
+        ' rowInUiRows=' + [string]$State.inRows +
+        ' grund=' + $(if ($State.reason) { [string]$State.reason } else { '-' }))
+}
+
+function Start-PlacePreviewVisibilityVerify {
+    # Version 6.0.5: Das Urteil ueber "sichtbar" faellt NICHT direkt nach der
+    # Zuweisung (da laeuft die Einblendung noch), sondern 1,5 s spaeter -
+    # Animation (260 ms) und Einblend-Waechter (400 ms) sind dann durch.
+    # Fehlt die Zeile PREVIEW_UI_VERIFY spaeter im Protokoll ganz, laufen in
+    # diesem Prozess keine Dispatcher-Timer - auch das ist dann bewiesen.
+    param($Row, [string]$FlowId, [bool]$IsSelfTest, [int]$DecodedW, [int]$DecodedH, [int]$ByteCount)
+    try {
+        if (-not $IsSelfTest) {
+            # Je Zeile nur einmal nachmessen (der Selbsttest misst immer).
+            $alreadyVerified = $false
+            try { $alreadyVerified = [bool]$Row.PreviewVerifyDone } catch {}
+            if ($alreadyVerified) { return }
+            try { $Row.PreviewVerifyDone = $true } catch {
+                try { $Row | Add-Member -NotePropertyName 'PreviewVerifyDone' -NotePropertyValue $true -Force } catch {}
+            }
+        }
+        $verifyTimer = [System.Windows.Threading.DispatcherTimer]::new()
+        $verifyTimer.Interval = [System.TimeSpan]::FromMilliseconds(1500)
+        $verifyTimer.Tag = [pscustomobject]@{ Row = $Row; Flow = [string]$FlowId; SelfTest = [bool]$IsSelfTest; W = [int]$DecodedW; H = [int]$DecodedH; Bytes = [int]$ByteCount }
+        $verifyTimer.Add_Tick({
+            param($s, $e)
+            $s.Stop()
+            try {
+                $info = $s.Tag
+                $state = Get-PlacePreviewVisualState $info.Row
+                $verifyLine = 'PREVIEW_UI_VERIFY sid=' + [string]$info.Row.sessionId + ' flow=' + [string]$info.Flow +
+                    ' sichtbar=' + [string]$state.reallyVisible + ' ' + (Format-PlacePreviewVisualState $state) +
+                    ' decoded=' + [string]$info.W + 'x' + [string]$info.H + ' bytes=' + [string]$info.Bytes
+                Write-RuntimeLog $verifyLine
+                Add-PreviewDiagLine $verifyLine
+                if ($info.SelfTest) {
+                    if ($state.reallyVisible) {
+                        $verdict = 'PREVIEW_UI_SELFTEST_OK sid=' + [string]$info.Row.sessionId + ' flow=' + [string]$info.Flow +
+                            ' decoded=' + [string]$info.W + 'x' + [string]$info.H + ' bytes=' + [string]$info.Bytes +
+                            ' eff=' + [string]$state.effOpacity + ' actual=' + [string]$state.actualW + 'x' + [string]$state.actualH
+                    } else {
+                        $verdict = 'PREVIEW_UI_SELFTEST_FAILED sid=' + [string]$info.Row.sessionId + ' flow=' + [string]$info.Flow +
+                            ' grund=' + [string]$state.reason + ' (' + (Format-PlacePreviewVisualState $state) + ')'
+                    }
+                    Write-RuntimeLog $verdict
+                    Add-PreviewDiagLine $verdict
+                    $script:PreviewSelfTestVerdict = $verdict
+                    Write-PreviewDiagnoseFile -Force
+                }
+            } catch {
+                try { Write-RuntimeLog ('PREVIEW_UI_VERIFY Messfehler: ' + [string]$_.Exception.Message) } catch {}
+            }
+        })
+        $verifyTimer.Start()
+    } catch {
+        try { Write-RuntimeLog ('PREVIEW_UI_VERIFY konnte nicht geplant werden: ' + [string]$_.Exception.Message) } catch {}
+    }
+}
+
 function Write-PreviewTrace {
     param([string]$FlowId, [string]$Station, [hashtable]$Set, [string]$Extra = '')
     if ([string]::IsNullOrWhiteSpace($FlowId)) { return }
@@ -15541,6 +15769,7 @@ function Write-PreviewTrace {
         $line = 'PREVIEW [{0}] {1} sid={2} pid={3} hwnd={4} title="{5}" type={6} bytes={7} size={8} error={9}' -f $FlowId, $Station, $ctx.sid, $ctx.pid, $ctx.hwnd, $title, $ctx.type, $ctx.bytes, $sizeText, $errText
         if (-not [string]::IsNullOrWhiteSpace($Extra)) { $line += ' ' + $Extra }
         Write-RuntimeLog $line
+        Add-PreviewDiagLine $line
     } catch {}
 }
 
@@ -15682,17 +15911,53 @@ function Set-PlacePreviewImage {
             $Row.IconSpinner.Visibility = 'Collapsed'
             $Row.IconFallback.Visibility = 'Collapsed'
             $Row.IconImage.Visibility = 'Visible'
+            # Version 6.0.5: Der Kachelrahmen muss sichtbar sein. Nur die
+            # virtuelle "Alle Places"-Zeile blendet ihn absichtlich aus - die
+            # bekommt hier ohnehin nie ein Bild.
+            try {
+                if ($Row.IconFrame -and ([string]$Row.sessionId) -ne '__arena_all_places__') { $Row.IconFrame.Visibility = 'Visible' }
+            } catch {}
             $fadeNote = 'refresh'
             if (-not $Row.PreviewHasFrame) {
-                # Erstes Bild dieser Zeile blendet weich ein (Liquid-Glass-
-                # Detail, wie zuvor). Jede weitere Aktualisierung ersetzt die
-                # Quelle sofort ohne erneutes Einblenden.
+                # URSACHE DER LEEREN KACHEL (bis 6.0.4) UND IHR FIX:
+                # Bis 6.0.4 stand hier Opacity = 0, und ob das Bild jemals
+                # sichtbar wurde, hing ALLEIN an der Einblend-Animation.
+                # Laeuft die nicht an, bleibt die Kachel dauerhaft leer,
+                # obwohl Bildquelle, Visibility und Layout korrekt sind - und
+                # das Protokoll meldete trotzdem Erfolg. Genau dieser Ausfall
+                # ist in diesem Programm fuer die Place-Zeile bereits belegt
+                # (5.0.2: "Einblend-Animation kam nie an", dort mit Waechter
+                # aufgefangen; das Vorschaubild hatte keinen).
+                # Jetzt gilt: sichtbar ZUERST (Opacity = 1), die Animation ist
+                # nur noch Deko (FillBehavior = Stop gibt danach den lokalen
+                # Wert 1 frei), und ein Waechter holt eine haengende
+                # Einblendung nach 400 ms hart zurueck.
                 $Row.PreviewHasFrame = $true
-                $Row.IconImage.Opacity = 0
+                $Row.IconImage.Opacity = 1
                 try {
                     $fade = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 1, [System.TimeSpan]::FromMilliseconds(260))
+                    $fade.FillBehavior = [System.Windows.Media.Animation.FillBehavior]::Stop
                     $Row.IconImage.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fade)
                     $fadeNote = 'fade-in'
+                    $fadeGuard = [System.Windows.Threading.DispatcherTimer]::new()
+                    $fadeGuard.Interval = [System.TimeSpan]::FromMilliseconds(400)
+                    $fadeGuard.Tag = [pscustomobject]@{ Image = $Row.IconImage; Sid = [string]$Row.sessionId; Flow = $flow }
+                    $fadeGuard.Add_Tick({
+                        param($s, $e)
+                        $s.Stop()
+                        try {
+                            $info = $s.Tag
+                            $img = $info.Image
+                            if ([double]$img.Opacity -lt 0.05) {
+                                $img.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $null)
+                                $img.Opacity = 1
+                                $rescueLine = 'PREVIEW_OPACITY_RESCUE sid=' + [string]$info.Sid + ' flow=' + [string]$info.Flow + ' grund=Einblend-Animation kam nie an - Vorschaubild hart auf sichtbar gestellt'
+                                Write-RuntimeLog $rescueLine
+                                Add-PreviewDiagLine $rescueLine
+                            }
+                        } catch {}
+                    })
+                    $fadeGuard.Start()
                 } catch {
                     try { $Row.IconImage.Opacity = 1 } catch {}
                     $fadeNote = 'fade-in-fallback'
@@ -15701,35 +15966,20 @@ function Set-PlacePreviewImage {
                 $Row.IconImage.Opacity = 1
             }
             Write-PreviewTrace $flow 'IMAGE_ASSIGNED' @{ sid = [string]$Row.sessionId; type = 'System.Windows.Media.Imaging.BitmapImage'; bytes = $Bytes.Length; w = $decodedW; h = $decodedH } ('mode=' + $fadeNote)
-            # Direkt nach dem Render-Durchlauf messen, ob das Bild WIRKLICH
-            # sichtbar ist (Clip, Layout, Z-Index, ueberlagernder Spinner).
+            # Direkt nach dem Render-Durchlauf die Fakten messen (Clip,
+            # Layout, Z-Index, ueberlagernder Spinner) - Version 6.0.5 faellt
+            # hier bewusst KEIN Urteil mehr: Die Einblendung laeuft in diesem
+            # Moment noch, eine Bewertung waere wertlos (genau daran hat sich
+            # 6.0.4 selbst getaeuscht). Das Urteil kommt aus
+            # Start-PlacePreviewVisibilityVerify nach 1,5 Sekunden.
             $measure = {
                 try {
-                    $img = $Row.IconImage
-                    $visRendered = $false
-                    $visProp = '-'
-                    $opac = '-'
-                    $aw = 0
-                    $ah = 0
-                    $srcSize = '-'
-                    $spinnerState = '-'
-                    $fallbackState = '-'
-                    try { $visRendered = [bool]$img.IsVisible } catch {}
-                    try { $visProp = [string]$img.Visibility } catch {}
-                    try { $opac = [string]$img.Opacity } catch {}
-                    try { $aw = [int]$img.ActualWidth; $ah = [int]$img.ActualHeight } catch {}
-                    try { if ($img.Source) { $srcSize = ([int]$img.Source.PixelWidth).ToString() + 'x' + ([int]$img.Source.PixelHeight).ToString() } } catch {}
-                    try { $spinnerState = [string]$Row.IconSpinner.Visibility } catch {}
-                    try { $fallbackState = [string]$Row.IconFallback.Visibility } catch {}
-                    $inRows = $false
-                    try { $inRows = $script:UiRows.ContainsKey([string]$Row.sessionId) } catch {}
-                    Write-PreviewTrace $flow 'IMAGE_VISIBLE' @{ sid = [string]$Row.sessionId; w = $decodedW; h = $decodedH } ('isVisible=' + $visRendered + ' visibility=' + $visProp + ' opacity=' + $opac + ' actual=' + $aw + 'x' + $ah + ' source=' + $srcSize + ' spinner=' + $spinnerState + ' fallback=' + $fallbackState + ' rowInUiRows=' + $inRows)
-                    if ($isSelfTest) {
-                        Write-RuntimeLog ('PREVIEW_UI_SELFTEST_OK sid=' + [string]$Row.sessionId + ' flow=' + $flow + ' decoded=' + $decodedW + 'x' + $decodedH + ' bytes=' + $Bytes.Length + ' isVisible=' + $visRendered + ' actual=' + $aw + 'x' + $ah)
-                    }
+                    $state = Get-PlacePreviewVisualState $Row
+                    Write-PreviewTrace $flow 'IMAGE_VISIBLE' @{ sid = [string]$Row.sessionId; w = $decodedW; h = $decodedH } (Format-PlacePreviewVisualState $state)
                 } catch {
                     Write-PreviewTrace $flow 'IMAGE_VISIBLE' @{ error = [string]$_.Exception.Message }
                 }
+                try { Start-PlacePreviewVisibilityVerify $Row $flow $isSelfTest $decodedW $decodedH $Bytes.Length } catch {}
                 Clear-PreviewFlow $flow
             }.GetNewClosure()
             try {
@@ -15738,13 +15988,18 @@ function Set-PlacePreviewImage {
                 # Das Messen ist nur Zusatzdiagnose - ein Fehler darf die
                 # Anzeige selbst nicht stoppen, muss aber sichtbar bleiben.
                 Write-PreviewTrace $flow 'IMAGE_VISIBLE' @{ error = [string]$_.Exception.Message } 'messdispatch=fehlgeschlagen'
+                try { Start-PlacePreviewVisibilityVerify $Row $flow $isSelfTest $decodedW $decodedH $Bytes.Length } catch {}
                 Clear-PreviewFlow $flow
             }
         } catch {
             Write-PreviewTrace $flow 'IMAGE_ASSIGN_FAILED' @{ sid = [string]$Row.sessionId; error = [string]$_.Exception.Message; bytes = $Bytes.Length; w = $decodedW; h = $decodedH }
             Write-UiErrorLog 'Place-Vorschau konnte nicht angezeigt werden' $_
             if ($isSelfTest) {
-                Write-RuntimeLog ('PREVIEW_UI_SELFTEST_FAILED sid=' + [string]$Row.sessionId + ' flow=' + $flow + ' error=' + [string]$_.Exception.Message)
+                $verdictFailed = 'PREVIEW_UI_SELFTEST_FAILED sid=' + [string]$Row.sessionId + ' flow=' + $flow + ' error=' + [string]$_.Exception.Message
+                Write-RuntimeLog $verdictFailed
+                Add-PreviewDiagLine $verdictFailed
+                $script:PreviewSelfTestVerdict = $verdictFailed
+                Write-PreviewDiagnoseFile -Force
             }
             Clear-PreviewFlow $flow
         }
@@ -15805,7 +16060,11 @@ function Invoke-PlacePreviewUiSelfTest {
         Set-PlacePreviewImage $Row $bytes $flow
     } catch {
         Write-PreviewTrace $flow 'RESULT_RECEIVED' @{ sid = [string]$SessionId; error = [string]$_.Exception.Message }
-        Write-RuntimeLog ('PREVIEW_UI_SELFTEST_FAILED sid=' + [string]$SessionId + ' error=' + [string]$_.Exception.Message)
+        $verdictEarly = 'PREVIEW_UI_SELFTEST_FAILED sid=' + [string]$SessionId + ' error=' + [string]$_.Exception.Message
+        Write-RuntimeLog $verdictEarly
+        Add-PreviewDiagLine $verdictEarly
+        $script:PreviewSelfTestVerdict = $verdictEarly
+        Write-PreviewDiagnoseFile -Force
         Clear-PreviewFlow $flow
     }
 }
@@ -16213,6 +16472,8 @@ function Update-PlacePreviewCaptures {
             Clear-PreviewFlow $flow
         }
     }
+    # Version 6.0.5: kleiner Kurzbericht zum Weitergeben (gedrosselt, 10 s).
+    Write-PreviewDiagnoseFile
 }
 
 function Get-ArenaHistoryEntries {
@@ -16571,6 +16832,7 @@ function New-Row {
         IconFallback = $null
         PreviewHandle   = $null
         PreviewHasFrame = $false
+        PreviewVerifyDone = $false
         IconIconAttempted = $false
         PreviewFailCount = 0
         PreviewLoggedOnce = $false
@@ -17595,7 +17857,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '6.0.4'
+    $versionText = '6.0.5'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -18179,7 +18441,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 6.0.4" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 6.0.5" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -18219,7 +18481,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 6.0.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 6.0.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -18267,7 +18529,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 6.0.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 6.0.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -18280,7 +18542,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '6.0.4'
+    $verText = '6.0.5'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

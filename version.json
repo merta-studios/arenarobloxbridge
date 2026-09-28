@@ -1,10 +1,10 @@
 {
-  "version": "6.0.4",
+  "version": "6.0.5",
   "notes": [
-    "• Ehrlicher Stand: Die Fenster-Vorschau zeigte auch nach 6.0.3 nichts, weil die echte Laufzeitursache bisher unbekannt war. Dieses Update rätselt nicht weiter: Jeder Aufnahmeversuch schreibt jetzt einen vollständigen, nachvollziehbaren Ablauf ins runtime.log – von der Fenstersuche über den Aufnahme-Worker bis zur sichtbaren Anzeige in der Kachel, mit Fehlergrund an jeder Station.",
-    "• Sichtbarer Selbsttest: Beim ersten geöffneten Place erscheint kurz ein unübersehbares pink-limettenfarbenes Testbild in der Kachel. Erscheint es nicht, liegt der Fehler am Programmfenster selbst. Erscheint es, aber danach kein echtes Studio-Bild, blockiert allein die Fensteraufnahme – und das Log nennt genau den blockierten Aufnahmeweg.",
-    "• Die Aufnahme läuft jetzt über einen kompilierten Helfer direkt im Hauptprozess: Die PNG-Bilddaten können an der PowerShell-Runspace-Grenze nicht mehr beschädigt werden. Für GPU-beschleunigte/verdeckte Fenster werden vier Aufnahmewege nacheinander getestet; jede Aufnahme liegt zusätzlich überprüfbar als PNG-Datei unter %LOCALAPPDATA%\\ArenaRobloxBridge\\preview-cache.",
-    "• Beim Start schreibt das Programm Version, genauen Dateipfad und SHA-256-Prüfsumme der wirklich laufenden Datei ins runtime.log – damit ist sofort sichtbar, ob die neue Version bei dir angekommen ist.",
-    "• Design, Bedienung, Einstellungen und alle übrigen Funktionen bleiben unverändert."
+    "• Gemessen statt geraten: Zwei Befunde von deinem PC haben die Ursache eingekreist. Die Einstellungen zeigten „Version 6.0.4“ – die neue Fassung kam also wirklich an. Trotzdem erschien die pinke Selbsttest-Kachel nie. Da ein einmal gesetztes Vorschaubild im Programm durch nichts mehr entfernt werden kann, hätte es dauerhaft stehen bleiben müssen: Es war nie sichtbar. Der Fehler lag damit nachweisbar in der Anzeige – nicht in der Fensteraufnahme.",
+    "• Behoben: Das erste Bild einer Zeile wurde bisher mit Deckkraft 0 eingesetzt und nur durch eine Einblend-Animation sichtbar gemacht. Läuft diese Animation nicht an, bleibt die Kachel für immer leer, obwohl Bild, Sichtbarkeit und Layout stimmen – genau dieser Ausfall ist im Programm für die Place-Zeile selbst schon belegt und wird dort seit Version 5.0.2 abgefangen. Das Vorschaubild ist jetzt sofort sichtbar; die Einblendung ist nur noch Verzierung und wird nach 400 ms notfalls hart korrigiert.",
+    "• Ehrliche Selbstprüfung: Der Vorschau-Selbsttest meldete bisher „OK“, sobald das Einsetzen des Bildes nicht abgestürzt war – auch bei unsichtbarer Kachel. Das Urteil fällt jetzt erst 1,5 Sekunden später und nur dann positiv, wenn das Bild wirklich sichtbar ist (Deckkraft, Fläche und Bildquelle werden zusammen mit Rahmen und Zeile geprüft).",
+    "• Neuer Kurzbericht: %LOCALAPPDATA%\\ArenaRobloxBridge\\preview-diagnose.txt fasst Version, Prüfsumme, Aufnahmeweg, Selbsttest-Ergebnis, gespeicherte Vorschaubilder und die letzten Schritte auf wenigen Zeilen zusammen. Diese kleine Datei genügt künftig zur Fehlersuche – das große Protokoll muss nicht mehr verschickt werden.",
+    "• Design, Bedienung, Einstellungen, Server, Plugin und alle übrigen Funktionen bleiben unverändert."
   ]
 }

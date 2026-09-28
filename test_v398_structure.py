@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 6.0.4.
+"""Offline structure check for Arena Roblox Bridge 6.0.5.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "6.0.4"
+VERSION = "6.0.5"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -299,15 +299,35 @@ def main() -> int:
     for marker in stale_603_literals:
         require(marker not in source, f"stale 6.0.3 literal remains: {marker}")
 
-    required_markers = [
+    # Stale FUNCTIONAL 6.0.4 literals (history comments may mention 6.0.4 -
+    # the changelog and the "was bis 6.0.4 falsch war" notes - but every
+    # functional literal must have moved on to 6.0.5).
+    stale_604_literals = [
         "DocsVersion     = '6.0.4'",
         'local ARENA_VERSION  = "6.0.4"',
         "bridgeVersion = '6.0.4'",
+        "bridgeVersion='6.0.4'",
         "serverVersion = '6.0.4'",
         "version = '6.0.4'",
         "$versionText = '6.0.4'",
         "$verText = '6.0.4'",
+        'Arena Studio Bridge - Studio Plugin  (Version 6.0.4)',
         'Text="Arena Roblox Bridge - Version 6.0.4"',
+        "Version 6.0.4 - aktuell. Beim naechsten Start",
+        "Laufzeit-Identitaet: Bridge-Version=6.0.4",
+    ]
+    for marker in stale_604_literals:
+        require(marker not in source, f"stale 6.0.4 literal remains: {marker}")
+
+    required_markers = [
+        "DocsVersion     = '6.0.5'",
+        'local ARENA_VERSION  = "6.0.5"',
+        "bridgeVersion = '6.0.5'",
+        "serverVersion = '6.0.5'",
+        "version = '6.0.5'",
+        "$versionText = '6.0.5'",
+        "$verText = '6.0.5'",
+        'Text="Arena Roblox Bridge - Version 6.0.5"',
         # 4.0.0: the config table that keeps the top-level local count in check.
         "local ARENA_CFG = {",
         "ARENA_CFG.POLL_WAIT",
@@ -519,7 +539,7 @@ def main() -> int:
         "kind=csharp-helper",
         "ps-runspace-fallback",
         "Get-FileHash -Algorithm SHA256",
-        "Laufzeit-Identitaet: Bridge-Version=6.0.4",
+        "Laufzeit-Identitaet: Bridge-Version=6.0.5",
         "LanguageMode",
         "$script:PreviewFlowContexts = @{}",
         "$script:PreviewHandleInfos = @{}",
@@ -528,6 +548,23 @@ def main() -> int:
         "DispatcherPriority]::Render",
         "GetNewClosure()",
         "Move-Item -LiteralPath $script:RuntimeLog -Destination ($script:RuntimeLog + '.old') -Force",
+        # Version 6.0.5: Die Sichtbarkeit der Kachel darf NIE mehr allein an
+        # der Einblend-Animation haengen; das Selbsttest-Urteil muss gemessen
+        # sein, und der kleine Kurzbericht muss existieren.
+        "function Get-PlacePreviewVisualState",
+        "function Format-PlacePreviewVisualState",
+        "function Start-PlacePreviewVisibilityVerify",
+        "function Write-PreviewDiagnoseFile",
+        "function Add-PreviewDiagLine",
+        "PREVIEW_UI_VERIFY sid=",
+        "PREVIEW_OPACITY_RESCUE sid=",
+        "preview-diagnose.txt",
+        "$fade.FillBehavior = [System.Windows.Media.Animation.FillBehavior]::Stop",
+        "$fadeGuard.Interval = [System.TimeSpan]::FromMilliseconds(400)",
+        "$verifyTimer.Interval = [System.TimeSpan]::FromMilliseconds(1500)",
+        "PreviewVerifyDone = $false",
+        "$script:PreviewSelfTestVerdict = ''",
+        "reallyVisible",
     ]
     for marker in required_markers:
         require(marker in source, f"required marker missing: {marker}")
@@ -601,6 +638,40 @@ def main() -> int:
             "Set-PlacePreviewImage must route through the WPF dispatcher")
     require("$Bytes[0] -eq 0x89" in assign_fn,
             "PNG magic-byte verification is missing from the assign path")
+    # 6.0.5 REGRESSION GUARD (this was the live defect): the first frame must
+    # never be handed to the UI with Opacity 0 and then depend on a fade-in
+    # animation to become visible. If that animation does not run - which is
+    # documented for this very program since 5.0.2 ("Einblend-Animation kam
+    # nie an") - the tile stays empty forever while the log claims success.
+    require("$Row.IconImage.Opacity = 0" not in assign_fn,
+            "the preview image is made invisible again (Opacity = 0) and only "
+            "an animation would bring it back - that was the 6.0.4 defect")
+    require("$Row.IconImage.Opacity = 1\n                try {" in assign_fn
+            or "$Row.IconImage.Opacity = 1" in assign_fn,
+            "the first preview frame must be visible without any animation")
+    require("FillBehavior]::Stop" in assign_fn,
+            "the decorative fade must release the local opacity value again")
+    require("PREVIEW_OPACITY_RESCUE" in assign_fn,
+            "the fade-in watchdog for the preview image is missing")
+    require("Start-PlacePreviewVisibilityVerify $Row $flow $isSelfTest" in assign_fn,
+            "the delayed visibility verification is not wired into the assign path")
+    # The self-test verdict must NOT be written straight after assignment any
+    # more (6.0.4 logged PREVIEW_UI_SELFTEST_OK even at opacity 0).
+    require("PREVIEW_UI_SELFTEST_OK" not in assign_fn,
+            "the self-test still reports success before visibility was measured")
+    verify_fn = source[source.index("function Start-PlacePreviewVisibilityVerify"):source.index("function Write-PreviewTrace")]
+    require("PREVIEW_UI_SELFTEST_OK" in verify_fn and "PREVIEW_UI_SELFTEST_FAILED" in verify_fn,
+            "the measured self-test verdict is missing from the verification step")
+    require("$state.reallyVisible" in verify_fn,
+            "the self-test verdict is not bound to the measured visibility")
+    state_fn = source[source.index("function Get-PlacePreviewVisualState"):source.index("function Format-PlacePreviewVisualState")]
+    for needle in ("effOpacity", "IsVisible", "ActualWidth", "$Row.IconFrame", "$Row.Root"):
+        require(needle in state_fn,
+                f"visibility measurement does not look at {needle}")
+    diag_fn = source[source.index("function Write-PreviewDiagnoseFile"):source.index("function Get-PlacePreviewVisualState")]
+    for needle in ("preview-diagnose.txt", "preview-cache", "$script:PreviewDiagIdentity",
+                   "$script:PreviewCaptureMode", "$script:PreviewSelfTestVerdict"):
+        require(needle in diag_fn, f"the short preview report does not contain {needle}")
     preview_fn = source[source.index("function Get-StudioWindowInfos"):source.index("function Resolve-PlacePreviewHandle")]
     require("return , $script:PreviewWindowCache" not in preview_fn,
             "window info cache is nested again by unary comma (breaks multiple Studio windows)")
@@ -683,7 +754,7 @@ def main() -> int:
         except ET.ParseError as exc:
             raise AssertionError(f"XAML block {index} is not XML: {exc}") from exc
 
-    print("OK: 6.0.4 structure, Lua and XAML validation passed")
+    print("OK: 6.0.5 structure, Lua and XAML validation passed")
     return 0
 
 

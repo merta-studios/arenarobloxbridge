@@ -20,7 +20,7 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test_v398_structure.py` | Python-Strukturtest für 6.0.4 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test_v398_structure.py` | Python-Strukturtest für 6.0.5 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -35,6 +35,43 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 6.0.5
+- **Fenster-Vorschau: zugewiesen, aber unsichtbar – Einblendung repariert.**
+  Zwei Messbefunde vom Nutzer-PC haben die Ursache eingekreist:
+  (1) Die Einstellungen zeigten „Version 6.0.4“, es lief also tatsächlich die
+  neue Fassung – der Verdacht „Updater liefert nie aus“ ist damit widerlegt.
+  (2) Die pinke Selbsttest-Kachel aus 6.0.4 erschien nie. Da ein einmal
+  gesetztes Vorschaubild im Programm durch nichts mehr entfernt werden kann
+  (`PreviewHasFrame = $true` sperrt das Platzhalter-Symbol, und
+  `IconImage.Source` wird nirgends zurückgesetzt), hätte das Testbild dauerhaft
+  stehen bleiben müssen. Es war also nie sichtbar – der Fehler lag im
+  Anzeigepfad, nicht in der Fensteraufnahme.
+- **Ursache und Fix (`Set-PlacePreviewImage`).** Das erste Bild einer Zeile
+  wurde mit `Opacity = 0` eingesetzt; sichtbar wurde es ausschließlich durch
+  eine `DoubleAnimation` (0 → 1). Läuft diese Animation nicht an, bleibt die
+  Kachel dauerhaft leer, obwohl Bildquelle, `Visibility` und Layout korrekt
+  sind. Genau dieser Ausfall ist in diesem Programm für die Place-Zeile selbst
+  belegt – sie hat deshalb seit 5.0.2 einen Einblend-Wächter
+  („Einblend-Animation kam nie an“); das Vorschaubild hatte keinen. Jetzt ist
+  der Grundwert sofort `Opacity = 1`, die Animation ist nur noch Verzierung
+  (`FillBehavior = Stop`), und ein Wächter korrigiert eine hängende
+  Einblendung nach 400 ms hart (`PREVIEW_OPACITY_RESCUE`).
+- **Ehrliches Selbsttest-Urteil.** `PREVIEW_UI_SELFTEST_OK` wurde bisher
+  geschrieben, sobald das Zuweisen nicht geworfen hat – auch bei Deckkraft 0.
+  Das Urteil fällt jetzt erst 1,5 s später und nur, wenn das Bild wirklich
+  sichtbar ist (im Baum sichtbar, effektive Deckkraft > 0,05, Fläche > 0,
+  Bildquelle gesetzt); sonst `PREVIEW_UI_SELFTEST_FAILED` mit konkretem Grund.
+- **Neue Station `PREVIEW_UI_VERIFY`.** Misst Bild, Rahmen und Zeile
+  (Visibility/Opacity/ActualSize/Source) und rechnet die effektive Deckkraft
+  der Kette aus. Fehlt die Zeile ganz, laufen im Prozess weder
+  Dispatcher-Timer noch Animationen – auch das wäre damit bewiesen.
+- **Kleiner Kurzbericht zum Weitergeben:**
+  `%LOCALAPPDATA%\ArenaRobloxBridge\preview-diagnose.txt` mit
+  Laufzeit-Identität (Version/SHA-256), Aufnahme-Modus, Selbsttest-Urteil,
+  Inhalt der PNG-Ablage und den letzten Vorschau-Stationen.
+- Aufnahmewege, Fensterzuordnung, Design, Bedienung, Einstellungen, Server und
+  Plugin-Protokolle bleiben unverändert. Keine Toast-/Popup-Meldungen.
 
 ## 6.0.4
 - **Ende des Ratens: Laufzeit-Diagnose für die Fenster-Vorschau.** In den
