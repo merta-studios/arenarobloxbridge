@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 6.0.5.
+"""Offline structure check for Arena Roblox Bridge 6.0.6.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "6.0.5"
+VERSION = "6.0.6"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -319,15 +319,36 @@ def main() -> int:
     for marker in stale_604_literals:
         require(marker not in source, f"stale 6.0.4 literal remains: {marker}")
 
-    required_markers = [
+    # Stale FUNCTIONAL 6.0.5 literals. The 6.0.5 changelog remains on
+    # purpose, but every value consumed at runtime must have moved to 6.0.6.
+    stale_605_literals = [
         "DocsVersion     = '6.0.5'",
         'local ARENA_VERSION  = "6.0.5"',
         "bridgeVersion = '6.0.5'",
+        "bridgeVersion='6.0.5'",
         "serverVersion = '6.0.5'",
         "version = '6.0.5'",
         "$versionText = '6.0.5'",
         "$verText = '6.0.5'",
+        'Arena Studio Bridge - Studio Plugin  (Version 6.0.5)',
         'Text="Arena Roblox Bridge - Version 6.0.5"',
+        "Version 6.0.5 - aktuell. Beim naechsten Start",
+        "Laufzeit-Identitaet: Bridge-Version=6.0.5",
+        "Kurzbericht Fenster-Vorschau (Version 6.0.5)",
+    ]
+    for marker in stale_605_literals:
+        require(marker not in source, f"stale functional 6.0.5 literal remains: {marker}")
+
+    required_markers = [
+        "DocsVersion     = '6.0.6'",
+        'local ARENA_VERSION  = "6.0.6"',
+        "bridgeVersion = '6.0.6'",
+        "serverVersion = '6.0.6'",
+        "version = '6.0.6'",
+        "$versionText = '6.0.6'",
+        "$verText = '6.0.6'",
+        'Arena Studio Bridge - Studio Plugin  (Version 6.0.6)',
+        'Text="Arena Roblox Bridge - Version 6.0.6"',
         # 4.0.0: the config table that keeps the top-level local count in check.
         "local ARENA_CFG = {",
         "ARENA_CFG.POLL_WAIT",
@@ -539,7 +560,7 @@ def main() -> int:
         "kind=csharp-helper",
         "ps-runspace-fallback",
         "Get-FileHash -Algorithm SHA256",
-        "Laufzeit-Identitaet: Bridge-Version=6.0.5",
+        "Laufzeit-Identitaet: Bridge-Version=6.0.6",
         "LanguageMode",
         "$script:PreviewFlowContexts = @{}",
         "$script:PreviewHandleInfos = @{}",
@@ -568,6 +589,29 @@ def main() -> int:
     ]
     for marker in required_markers:
         require(marker in source, f"required marker missing: {marker}")
+
+    # Every functional version location is intentional. Exact counts catch a
+    # forgotten endpoint, footer or fallback while allowing historical notes.
+    functional_version_counts = {
+        "DocsVersion     = '6.0.6'": 1,
+        'local ARENA_VERSION  = "6.0.6"': 1,
+        "version = '6.0.6'": 1,
+        "bridgeVersion = '6.0.6'": 3,
+        "bridgeVersion='6.0.6'": 1,
+        "serverVersion = '6.0.6'": 2,
+        "$versionText = '6.0.6'": 1,
+        "$verText = '6.0.6'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 6.0.6)": 1,
+        'Text="Arena Roblox Bridge - Version 6.0.6"': 1,
+        "Version 6.0.6 - aktuell. Beim naechsten Start": 2,
+        "Laufzeit-Identitaet: Bridge-Version=6.0.6": 1,
+        "Kurzbericht Fenster-Vorschau (Version 6.0.6)": 1,
+    }
+    for marker, expected_count in functional_version_counts.items():
+        actual_count = source.count(marker)
+        require(actual_count == expected_count,
+                f"functional version marker count for {marker!r}: "
+                f"expected {expected_count}, found {actual_count}")
 
     # Version 6.0 negative guards: the pre-6.0 palette must really be gone
     # from the redesigned surfaces (the tech-dark slate/indigo scheme).
@@ -633,6 +677,25 @@ def main() -> int:
     require("[System.IO.File]::WriteAllBytes($tmpPath, $bytes)" in update_fn
             and "[System.IO.File]::Move($tmpPath, $pngPath)" in update_fn,
             "atomic per-session PNG handover (tmp write + move) is missing")
+    # 6.0.6 REGRESSION GUARD (live 6.0.5 failure): Windows PowerShell 5.1
+    # could not bind object[] from @(4.0, 8.0) to a one-argument
+    # DoubleCollection constructor. New-PlacePreviewVisual then aborted, so
+    # the row had no IconImage and the self-test necessarily skipped assign.
+    visual_fn = source[source.index("function New-PlacePreviewVisual"):source.index("function Start-PlacePreviewCapture")]
+    require("DoubleCollection]::new(@(" not in visual_fn,
+            "the live-failing one-argument DoubleCollection constructor returned")
+    dash_steps = [
+        "$strokeDashArray = [System.Windows.Media.DoubleCollection]::new()",
+        "[void]$strokeDashArray.Add(4.0)",
+        "[void]$strokeDashArray.Add(8.0)",
+        "$spinner.StrokeDashArray = $strokeDashArray",
+    ]
+    for marker in dash_steps:
+        require(marker in visual_fn, f"safe StrokeDashArray step missing: {marker}")
+    dash_positions = [visual_fn.index(marker) for marker in dash_steps]
+    require(dash_positions == sorted(dash_positions) and len(set(dash_positions)) == len(dash_positions),
+            "safe StrokeDashArray steps are not in constructor/add/add/assign order")
+
     assign_fn = source[source.index("function Set-PlacePreviewImage"):source.index("function New-PlacePreviewSelfTestImage")]
     require("CheckAccess()" in assign_fn and "BeginInvoke(" in assign_fn,
             "Set-PlacePreviewImage must route through the WPF dispatcher")
@@ -754,7 +817,7 @@ def main() -> int:
         except ET.ParseError as exc:
             raise AssertionError(f"XAML block {index} is not XML: {exc}") from exc
 
-    print("OK: 6.0.5 structure, Lua and XAML validation passed")
+    print("OK: 6.0.6 structure, Lua and XAML validation passed")
     return 0
 
 

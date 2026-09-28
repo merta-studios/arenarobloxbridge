@@ -1,7 +1,7 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 6.0  -  25.09.2026)                                #
+#   (Stand: Version 6.0.6 - 28.09.2026)                                #
 #                                                                      #
 ##########################################################################
 
@@ -187,6 +187,20 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v6.0.6: FENSTER-VORSCHAU - UI-VISUAL BRACH VOR JEDER AUFNAHME AB.
+  HARTER LAUFZEITBELEG AUS 6.0.5: Identitaet 6.0.5 mit SHA-256
+  7433925B060FDD21A699936B3B8267E899EF1BB80A1673119D1DDFFB9B20E588,
+  FullLanguage und C#-Helfer waren korrekt. New-PlacePreviewVisual warf aber
+  an Laufzeitzeile 16101 `MethodException: Fuer "new" und die folgende
+  Argumenteanzahl kann keine Ueberladung gefunden werden: "1"`; direkt danach
+  `IMAGE_ASSIGN_SKIPPED ... grund=Zeile/IconImage fehlt`. Ursache war
+  `[System.Windows.Media.DoubleCollection]::new(@(4.0, 8.0))`: Windows
+  PowerShell 5.1 konnte das object[] nicht an den typisierten
+  Ein-Argument-Konstruktor binden. Gezielte Aenderung: parameterlos erzeugen,
+  beide double-Werte einzeln per Add eintragen, dann StrokeDashArray zuweisen.
+  Kein UI-Umbau, Capture-Pfad unveraendert. Strukturtest verbietet die
+  Regression. LIVE-ABNAHME 6.0.6 IST OFFEN: Erst Identitaet/Hash,
+  PREVIEW_UI_VERIFY + SELFTEST_OK und danach cap-N/PNG belegen Erfolg.
 - v6.0.5: VORSCHAU - "ZUGEWIESEN, ABER UNSICHTBAR" BEHOBEN. Messbefund statt
   Vermutung: (1) Die Einstellungen zeigten beim Nutzer "Version 6.0.4" -> es
   lief wirklich 6.0.4, der Updater-Verdacht ist widerlegt. (2) Die pinke
