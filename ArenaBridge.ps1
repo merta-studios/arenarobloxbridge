@@ -1,4 +1,52 @@
 ﻿# ============================================================================
+# Arena Roblox Bridge  -  Version 6.0.4
+#
+# FENSTER-VORSCHAU: ENDE DES RATENS - EINDEUTIGE LAUFZEIT-DIAGNOSE + ROBUSTE
+# AUFNAHME (Live-Befund: Auch mit 6.0.3 zeigte die Kachel beim Nutzer weiter
+# kein einziges Vorschaubild - und kein bisheriger Fix konnte die echte
+# Laufzeitursache belegen, weil der Aufnahme-Pfad bis jetzt praktisch blind
+# war):
+#   * ABLAUF-ID + STATIONEN-LOG: Jeder einzelne Aufnahmeversuch traegt jetzt
+#     eine kompakte Ablauf-ID (cap-N / selftest-N) und protokolliert die
+#     Stationen CAPTURE_START, WINDOWS_ENUMERATED, HANDLE_RESOLVED,
+#     WORKER_STARTED, WORKER_COMPLETED, RESULT_RECEIVED, PNG_DECODED,
+#     IMAGE_ASSIGNED und IMAGE_VISIBLE. Jede Zeile fuehrt Sitzung (sid),
+#     PID, HWND, Fenstertitel, Datentyp, Byte-Anzahl, Bildgroesse und
+#     Fehlertext mit. Kein catch-Block im Vorschaupfad bleibt mehr still.
+#   * LAUFZEIT-IDENTITAET: Beim Programmstart stehen jetzt die Bridge-Version,
+#     der absolute Pfad der wirklich laufenden Datei und ihr SHA-256-Hash
+#     sowie der PowerShell-Sprachmodus im runtime.log - damit ist sofort
+#     sichtbar, ob ueberhaupt 6.0.4 laeuft oder noch eine alte Kopie.
+#   * SICHTBARER UI-SELBSTTEST: Beim ersten Place wird ein im Speicher
+#     gezeichnetes, unverwechselbar pink/limettenfarbenes Testbild durch
+#     EXAKT denselben Set-PlacePreviewImage-Pfad in die Kachel geschickt.
+#     Ergebnis: PREVIEW_UI_SELFTEST_OK / PREVIEW_UI_SELFTEST_FAILED im Log.
+#     Erscheint das Testbild nicht, liegt der Fehler in WPF/UI. Erscheint
+#     es (und danach kein echtes Fensterbild), liegt der Fehler allein in
+#     der Fensteraufnahme - und das Stations-Log nennt den aufgetretenen.
+#   * ROBUSTE UEBERTRAGUNG: Die Aufnahme laeuft jetzt ueber einen einmal
+#     kompilierten C#-Helfer (Arena.PreviewCapture) direkt im Hauptprozess.
+#     Das Ergebnis ist ein unveraenderliches CLR-Objekt mit echtem byte[] -
+#     es durchquert KEINE PowerShell-Runspace-Grenze mehr, an der Bilddaten
+#     als PSObject/Object[] verpackt oder beschaedigt werden konnten. Die
+#     UI-Zuweisung laeuft ausschliesslich ueber den WPF-Dispatcher. Zusaetz-
+#     lich wird jede Aufnahme atomar als PNG unter
+#     %LOCALAPPDATA%\ArenaRobloxBridge\preview-cache\<sid>.png abgelegt und
+#     mit SHA-256-Kurzhash protokolliert (eindeutig pruefbare Uebergabe).
+#     Kann der C#-Helfer nicht kompiliert werden (z. B. Sprachmodus
+#     ConstrainedLanguage), faellt die Bridge begruendet im Log auf den
+#     bewaehrten 6.0.3-Hintergrund-Runspace zurueck.
+#   * VIER AUFNAHMEWEGE FUER GPU-/VERDECKTE FENSTER: 1. PrintWindow mit
+#     PW_RENDERFULLCONTENT, 2. PrintWindow ohne Flag, 3. WindowDcBitBlt ueber
+#     die DWM-Umleitflaeche, 4. CopyFromScreen als letzter Fallback. Ein Weg
+#     gilt nur als erfolgreich, wenn die Bitmap nicht komplett schwarz oder
+#     transparent ist - jeder Zwischenbefund (inkl. "PrintWindow meldet true,
+#     lieferte aber nichts Sichtbares") steht im AttemptLog des Ergebnisses.
+#   * KEINE NEUEN BLOCKER: Kein synchroner Netzwerkzugriff im UI-Thread,
+#     kein Worker.Stop/Dispose auf dem UI-Thread mehr (Task-Jobs werden bei
+#     Zeitueberschreitung nur fallengelassen). Design, Bedienung,
+#     Einstellungen, Server und Plugin-Protokolle bleiben unveraendert.
+#
 # Arena Roblox Bridge  -  Version 6.0.3
 #
 # FENSTER-VORSCHAU ENDGUELTIG REPARIERT (Live-Befund: Bei mehreren Studio-
@@ -927,6 +975,16 @@ $script:PreviewWindowCacheAt = [DateTime]::MinValue
 # Update-PlacePreviewCaptures): fehlgeschlagene Aufnahmen werden begruendet
 # in runtime.log protokolliert - hoechstens eine Zeile je Sitzung und 15 s.
 $script:PlacePreviewFailLogAt = @{}
+
+# Version 6.0.4: Stations-Diagnose (Ablauf-IDs + Kontext) und sichtbarer
+# UI-Selbsttest fuer die Fenster-Vorschau. PreviewCaptureMode wird beim Start
+# vom Add-Type-Block unten gesetzt ('csharp' oder 'ps-fallback').
+$script:PreviewSelfTestDone = $false
+$script:PreviewFlowCounter = [long]0
+$script:PreviewFlowContexts = @{}
+$script:PreviewHandleInfos = @{}
+$script:PreviewCaptureMode = 'ps-fallback'
+$script:PreviewCaptureModeReason = 'C#-Helfer noch nicht initialisiert'
 # Version 5.2: Sichtbarkeit/Aufraeumen der Place-Liste. Das Edit-Plugin
 # heartbeatet etwa alle 5 Sekunden - 15 s decken 3 verlorene Beats locker ab.
 # Ein sauber abgemeldetes Fenster (Studio/Place geschlossen) verschwindet nach
@@ -940,6 +998,18 @@ $script:RobloxStudioPath = $null
 $script:PluginInstalled = $false
 $script:LastTunnelMessage = ''
 $script:RuntimeLog = Join-Path $script:AppDataRoot 'runtime.log'
+
+# Version 6.0.4: Groessenbremse - das Vorschau-Stations-Log kann schneller
+# wachsen; ueber 8 MB wird die alte Datei als runtime.log.old zur Seite
+# gelegt, damit jede Bridge-Session mit einem lesbaren Log beginnt.
+# (8 MB entsprechen mehreren Stunden Vorschau-Stationszeilen.)
+try {
+    if (Test-Path -LiteralPath $script:RuntimeLog) {
+        if ((Get-Item -LiteralPath $script:RuntimeLog).Length -gt 8MB) {
+            Move-Item -LiteralPath $script:RuntimeLog -Destination ($script:RuntimeLog + '.old') -Force
+        }
+    }
+} catch {}
 $script:ShotFolder = Join-Path $script:AppDataRoot 'screenshots'
 $script:WindowNameCache = @()
 $script:WindowNameCacheAt = [DateTime]::MinValue
@@ -1323,7 +1393,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '6.0.3'
+    DocsVersion     = '6.0.4'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -1393,6 +1463,27 @@ function Write-UiErrorLog {
 $runModeText = if ($script:IsExeMode) { "EXE-Modus ($script:ExePath)" } else { "Skript-Modus ($script:ScriptPath)" }
 Write-RuntimeLog "=== Programmstart (PID $PID, PowerShell $($PSVersionTable.PSVersion), $runModeText) ==="
 Write-RuntimeLog "Codierung: Umlaute korrekt gelesen = $script:EncodingOk (Marker-Laenge $($script:EncodingMarker.Length))"
+
+# Version 6.0.4: Laufzeit-Identitaet. Beweist im Log, welche Datei WIRKLICH
+# laeuft (Version, absoluter Pfad, SHA-256) - damit ist sofort sichtbar, ob
+# der Starter tatsaechlich 6.0.4 installiert hat oder noch eine alte Kopie
+# startet. Der Sprachmodus steht dabei, weil Add-Type (C#-Helfer) unter
+# ConstrainedLanguage scheitert und dann der ps-fallback-Pfad greift.
+try {
+    $runFile = [string]$script:ScriptPath
+    if ([string]::IsNullOrWhiteSpace($runFile)) {
+        try { $runFile = [string][System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName } catch {}
+    }
+    $runHash = '-'
+    try {
+        if ($runFile -and (Test-Path -LiteralPath $runFile)) {
+            $runHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $runFile).Hash
+        }
+    } catch {}
+    $langMode = '-'
+    try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=6.0.4, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+} catch {}
 
 try {
     [System.AppDomain]::CurrentDomain.add_UnhandledException({
@@ -1482,7 +1573,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 6.0.3)
+  Arena Studio Bridge - Studio Plugin  (Version 6.0.4)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1553,7 +1644,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "6.0.3"
+local ARENA_VERSION  = "6.0.4"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -9669,6 +9760,279 @@ namespace Arena {
     Write-RuntimeLog "Screenshot-Hilfstyp konnte nicht geladen werden: $($_.Exception.Message)"
 }
 
+# ----------------------------------------------------------------------------
+# Version 6.0.4: Kompilierter Aufnahme-Helfer fuer die Fenster-Vorschau.
+# Laueft IM Hauptprozess: Das Ergebnis ist ein CLR-Objekt mit echtem,
+# unveraenderlichem byte[] und durchquert keine PowerShell-Runspace-Grenze
+# (dort konnten Bilddaten als PSObject/Object[] verpackt oder beschaedigt
+# werden). Scheitert bereits das Kompilieren (z. B. Sprachmodus
+# ConstrainedLanguage), steht der Grund im runtime.log und die Bridge faellt
+# auf den 6.0.3-Hintergrund-Runspace-Worker zurueck (ps-runspace-fallback).
+# Aufnahme-Leiter fuer GPU-/verdeckte Fenster: PrintWindow(PW_RENDERFULLCONTENT)
+# -> PrintWindow(0) -> WindowDcBitBlt (DWM-Umleitflaeche) -> CopyFromScreen.
+# ----------------------------------------------------------------------------
+$script:PreviewCaptureMode = 'ps-fallback'
+$script:PreviewCaptureModeReason = 'C#-Helfer noch nicht kompiliert'
+try {
+    if (-not ('Arena.PreviewCapture' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace Arena {
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PreviewWindowRect { public int Left; public int Top; public int Right; public int Bottom; }
+
+    public sealed class PreviewCaptureResult {
+        public bool Ok;
+        public bool Minimized;
+        public string Method = "";
+        public string Error = "";
+        public string AttemptLog = "";
+        public byte[] Png;
+        public int Width;
+        public int Height;
+        public long ElapsedMs;
+    }
+
+    public static class PreviewCapture {
+        private const uint PW_RENDERFULLCONTENT = 2;
+        private const int SRCCOPY = 0x00CC0020;
+
+        [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hWnd);
+        [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out PreviewWindowRect lpRect);
+        [DllImport("user32.dll")] private static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
+        [DllImport("user32.dll")] private static extern IntPtr GetWindowDC(IntPtr hWnd);
+        [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+        [DllImport("gdi32.dll")] private static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+        [DllImport("gdi32.dll")] private static extern IntPtr CreateCompatibleBitmap(IntPtr hdc, int nWidth, int nHeight);
+        [DllImport("gdi32.dll")] private static extern IntPtr SelectObject(IntPtr hdc, IntPtr hgdiobj);
+        [DllImport("gdi32.dll")] private static extern bool DeleteDC(IntPtr hdc);
+        [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr hObject);
+        [DllImport("gdi32.dll")] private static extern bool BitBlt(IntPtr hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, IntPtr hdcSrc, int nXSrc, int nYSrc, int dwRop);
+
+        public static Task<PreviewCaptureResult> CaptureAsync(long hwndValue, int targetHeight) {
+            return Task.Run<PreviewCaptureResult>(delegate { return Capture(hwndValue, targetHeight); });
+        }
+
+        public static PreviewCaptureResult Capture(long hwndValue, int targetHeight) {
+            PreviewCaptureResult result = new PreviewCaptureResult();
+            Stopwatch watch = Stopwatch.StartNew();
+            StringBuilder attempts = new StringBuilder();
+            IntPtr hwnd = new IntPtr(hwndValue);
+            try {
+                if (hwnd == IntPtr.Zero) { result.Error = "HWND ist 0"; return Finish(result, watch, attempts); }
+                if (IsIconic(hwnd)) { result.Minimized = true; return Finish(result, watch, attempts); }
+                PreviewWindowRect rect;
+                if (!GetWindowRect(hwnd, out rect)) { result.Error = "GetWindowRect fehlgeschlagen"; return Finish(result, watch, attempts); }
+                int width = rect.Right - rect.Left;
+                int height = rect.Bottom - rect.Top;
+                if (width <= 40 || height <= 40) { result.Error = "Fenstergroesse ungueltig (" + width + "x" + height + ")"; return Finish(result, watch, attempts); }
+
+                Bitmap captured = TryPrintWindow(hwnd, width, height, PW_RENDERFULLCONTENT, "pwRenderFullContent", attempts);
+                if (captured != null) { result.Method = "PrintWindow(PW_RENDERFULLCONTENT)"; }
+                if (captured == null) {
+                    captured = TryPrintWindow(hwnd, width, height, 0, "pwOhneFlag", attempts);
+                    if (captured != null) { result.Method = "PrintWindow"; }
+                }
+                if (captured == null) {
+                    captured = TryWindowDcBitBlt(hwnd, width, height, attempts);
+                    if (captured != null) { result.Method = "WindowDcBitBlt"; }
+                }
+                if (captured == null) {
+                    captured = TryCopyFromScreen(rect, width, height, attempts);
+                    if (captured != null) { result.Method = "CopyFromScreen"; }
+                }
+                if (captured == null) {
+                    result.Error = "alle vier Aufnahmewege ohne nutzbare Pixel (schwarz/transparent oder API-Fehler)";
+                    return Finish(result, watch, attempts);
+                }
+
+                int targetH = targetHeight > 16 ? targetHeight : 88;
+                double scale = (double)targetH / (double)height;
+                int smallWidth = Math.Max(1, (int)(width * scale));
+                using (Bitmap small = new Bitmap(smallWidth, targetH)) {
+                    using (Graphics g2 = Graphics.FromImage(small)) {
+                        g2.InterpolationMode = InterpolationMode.HighQualityBilinear;
+                        g2.DrawImage(captured, 0, 0, smallWidth, targetH);
+                    }
+                    captured.Dispose();
+                    using (MemoryStream ms = new MemoryStream()) {
+                        small.Save(ms, ImageFormat.Png);
+                        result.Png = ms.ToArray();
+                    }
+                }
+                if (result.Png == null || result.Png.Length < 100) {
+                    result.Error = "PNG-Kodierung fehlgeschlagen oder leer";
+                    result.Png = null;
+                    return Finish(result, watch, attempts);
+                }
+                result.Ok = true;
+                result.Width = smallWidth;
+                result.Height = targetH;
+                return Finish(result, watch, attempts);
+            } catch (Exception ex) {
+                result.Ok = false;
+                result.Error = ex.GetType().Name + ": " + ex.Message;
+                return Finish(result, watch, attempts);
+            }
+        }
+
+        private static PreviewCaptureResult Finish(PreviewCaptureResult result, Stopwatch watch, StringBuilder attempts) {
+            watch.Stop();
+            result.ElapsedMs = watch.ElapsedMilliseconds;
+            result.AttemptLog = attempts.ToString();
+            return result;
+        }
+
+        private static void DisposeQuiet(IDisposable value) {
+            try { if (value != null) { value.Dispose(); } } catch { }
+        }
+
+        // PrintWindow: true heisst bei GPU-Fenstern leider manchmal "fertig,
+        // aber komplett schwarz/transparent" - deshalb die Sichtbarkeitsprobe.
+        private static Bitmap TryPrintWindow(IntPtr hwnd, int width, int height, uint flags, string tag, StringBuilder attempts) {
+            Bitmap bmp = null;
+            try {
+                bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+                using (Graphics g = Graphics.FromImage(bmp)) {
+                    IntPtr hdc = g.GetHdc();
+                    bool printed = false;
+                    string innerError = "";
+                    try { printed = PrintWindow(hwnd, hdc, flags); }
+                    catch (Exception ex) { innerError = ex.Message; }
+                    finally { g.ReleaseHdc(hdc); }
+                    if (!printed) {
+                        attempts.Append(tag).Append("=api-false");
+                        if (innerError.Length > 0) { attempts.Append("(").Append(innerError).Append(")"); }
+                        attempts.Append(" ");
+                        DisposeQuiet(bmp);
+                        return null;
+                    }
+                }
+                string sample;
+                if (!HasVisibleContent(bmp, out sample)) {
+                    attempts.Append(tag).Append("=true-aber-nichts-sichtbar[").Append(sample).Append("] ");
+                    DisposeQuiet(bmp);
+                    return null;
+                }
+                attempts.Append(tag).Append("=ok ");
+                return bmp;
+            } catch (Exception ex) {
+                attempts.Append(tag).Append("=ex(").Append(ex.Message).Append(") ");
+                DisposeQuiet(bmp);
+                return null;
+            }
+        }
+
+        // DWM-/Windows-Capture-Alternative: BitBlt aus der Umleitflaeche des
+        // Fenster-DC. Funktioniert bei manchen GPU-Fenstern, bei denen
+        // PrintWindow nur Schwarz liefert.
+        private static Bitmap TryWindowDcBitBlt(IntPtr hwnd, int width, int height, StringBuilder attempts) {
+            IntPtr windowDc = IntPtr.Zero;
+            IntPtr memDc = IntPtr.Zero;
+            IntPtr hBmp = IntPtr.Zero;
+            Bitmap bmp = null;
+            try {
+                windowDc = GetWindowDC(hwnd);
+                if (windowDc == IntPtr.Zero) { attempts.Append("windowDcBitBlt=dc-null "); return null; }
+                memDc = CreateCompatibleDC(windowDc);
+                hBmp = CreateCompatibleBitmap(windowDc, width, height);
+                if (memDc == IntPtr.Zero || hBmp == IntPtr.Zero) {
+                    attempts.Append("windowDcBitBlt=ressource-fehlt ");
+                    return null;
+                }
+                IntPtr oldObj = SelectObject(memDc, hBmp);
+                bool blitted = BitBlt(memDc, 0, 0, width, height, windowDc, 0, 0, SRCCOPY);
+                if (oldObj != IntPtr.Zero) { SelectObject(memDc, oldObj); }
+                if (!blitted) { attempts.Append("windowDcBitBlt=api-false "); return null; }
+                bmp = Image.FromHbitmap(hBmp);
+                string sample;
+                if (!HasVisibleContent(bmp, out sample)) {
+                    attempts.Append("windowDcBitBlt=ok-aber-nichts-sichtbar[").Append(sample).Append("] ");
+                    DisposeQuiet(bmp);
+                    bmp = null;
+                    return null;
+                }
+                attempts.Append("windowDcBitBlt=ok ");
+                return bmp;
+            } catch (Exception ex) {
+                attempts.Append("windowDcBitBlt=ex(").Append(ex.Message).Append(") ");
+                DisposeQuiet(bmp);
+                return null;
+            } finally {
+                if (hBmp != IntPtr.Zero) { DeleteObject(hBmp); }
+                if (memDc != IntPtr.Zero) { DeleteDC(memDc); }
+                if (windowDc != IntPtr.Zero) { ReleaseDC(hwnd, windowDc); }
+            }
+        }
+
+        // Letzter Fallback: CopyFromScreen (fotografiert ggf. Ueberlagerungen mit).
+        private static Bitmap TryCopyFromScreen(PreviewWindowRect rect, int width, int height, StringBuilder attempts) {
+            Bitmap bmp = null;
+            try {
+                bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb);
+                using (Graphics g = Graphics.FromImage(bmp)) {
+                    g.CopyFromScreen(rect.Left, rect.Top, 0, 0, new Size(width, height));
+                }
+                string sample;
+                if (!HasVisibleContent(bmp, out sample)) {
+                    attempts.Append("copyFromScreen=nichts-sichtbar[").Append(sample).Append("] ");
+                    DisposeQuiet(bmp);
+                    return null;
+                }
+                attempts.Append("copyFromScreen=ok ");
+                return bmp;
+            } catch (Exception ex) {
+                attempts.Append("copyFromScreen=ex(").Append(ex.Message).Append(") ");
+                DisposeQuiet(bmp);
+                return null;
+            }
+        }
+
+        // Sichtbarkeitsprobe: mehrere Punkte ueber die Flaeche. Liefert die
+        // Messwerte mit, damit das Log zeigt, WARUM ein Weg verworfen wurde.
+        private static bool HasVisibleContent(Bitmap bmp, out string info) {
+            int maxAlpha = 0;
+            int maxLum = 0;
+            long lumSum = 0;
+            int samples = 0;
+            int steps = 6;
+            for (int ix = 0; ix < steps; ix++) {
+                int x = Math.Min(bmp.Width - 1, Math.Max(0, (int)(((double)ix + 0.5) * bmp.Width / steps)));
+                for (int iy = 0; iy < steps; iy++) {
+                    int y = Math.Min(bmp.Height - 1, Math.Max(0, (int)(((double)iy + 0.5) * bmp.Height / steps)));
+                    Color c = bmp.GetPixel(x, y);
+                    samples++;
+                    if (c.A > maxAlpha) { maxAlpha = c.A; }
+                    int lum = c.R + c.G + c.B;
+                    lumSum += lum;
+                    if (lum > maxLum) { maxLum = lum; }
+                }
+            }
+            info = "maxA=" + maxAlpha + ",maxLum=" + maxLum + ",avgLum=" + (lumSum / (long)Math.Max(1, samples));
+            return maxAlpha > 8 && maxLum > 24;
+        }
+    }
+}
+'@ -ReferencedAssemblies 'System.Drawing' -ErrorAction Stop
+    }
+    $script:PreviewCaptureMode = 'csharp'
+    $script:PreviewCaptureModeReason = ''
+    Write-RuntimeLog ("Vorschau-Aufnahme: kompilierter C#-Helfer geladen (PreviewCaptureMode=csharp). PNG-Ablage: " + (Join-Path $script:AppDataRoot 'preview-cache'))
+} catch {
+    $script:PreviewCaptureMode = 'ps-fallback'
+    $script:PreviewCaptureModeReason = [string]$_.Exception.Message
+    Write-RuntimeLog ("Vorschau-Aufnahme: C#-Helfer konnte NICHT kompiliert werden (PreviewCaptureMode=ps-fallback) - Grund: " + [string]$_.Exception.Message)
+}
+
 # ============================================================================
 # HTTP-SERVER
 # Eine Anfrage = ein Runspace aus einem Pool. Der Pool begrenzt die Last,
@@ -12212,7 +12576,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '6.0.3'
+            version = '6.0.4'
             docsVersion = [string]$Shared.DocsVersion
             role = 'A normal token controls exactly one live Roblox Studio place. The special aggregate token copied from Alle Places controls several places: call GET /api/places first and pass one exact targetPlace in every request; the bridge refuses to guess. This makes switching safe and explicit. Send every request as POST /api/tool with JSON body { "token": "...", "targetPlace": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -12327,7 +12691,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '6.0.3'
+            bridgeVersion = '6.0.4'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -12567,7 +12931,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '6.0.3'
+                        bridgeVersion = '6.0.4'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -12819,7 +13183,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '6.0.3'
+                        serverVersion = '6.0.4'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -13006,7 +13370,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='6.0.3'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='6.0.4'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -13035,8 +13399,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '6.0.3'
-                    serverVersion = '6.0.3'
+                    bridgeVersion = '6.0.4'
+                    serverVersion = '6.0.4'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -13695,11 +14059,16 @@ function Remove-DeadSession {
     try {
         if ($script:PlacePreviewJobs.ContainsKey($SessionId)) {
             $previewJob = $script:PlacePreviewJobs[$SessionId]
-            try { $previewJob.Worker.Stop() } catch {}
-            try { $previewJob.Worker.Dispose() } catch {}
+            # Nur der PS-Fallback-Worker laesst sich stoppen; ein C#-Task-Job
+            # wird schlicht fallengelassen (nichts blockiert den UI-Thread).
+            if ($previewJob.Worker) {
+                try { $previewJob.Worker.Stop() } catch {}
+                try { $previewJob.Worker.Dispose() } catch {}
+            }
             [void]$script:PlacePreviewJobs.Remove($SessionId)
         }
         [void]$script:PlacePreviewHandles.Remove($SessionId)
+        try { [void]$script:PreviewHandleInfos.Remove($SessionId) } catch {}
         [void]$script:PlacePreviewLastCaptureAt.Remove($SessionId)
         [void]$script:PlacePreviewFailLogAt.Remove($SessionId)
     } catch {}
@@ -15111,38 +15480,82 @@ function Get-PlaceName {
 }
 
 # ----------------------------------------------------------------------------
-# VERSION 6.0.1: LIVE-VORSCHAU DES STUDIO-FENSTERS (ERSETZT DIE SPIEL-ICONS)
+# FENSTER-VORSCHAU DER STUDIO-FENSTER (LIVE)  -  AUFNAHME + LAUFZEIT-DIAGNOSE
 # ----------------------------------------------------------------------------
-# Bis 6.0 zeigte jede Zeile ein von thumbnails.roblox.com heruntergeladenes
-# Spiel-Icon. Das hing an zwei Dingen, die die Bridge nicht in der Hand hat:
-#   1) game.GameId ist bei jedem unveroeffentlichten/nur lokal geoeffneten
-#      Place 0 - es gibt schlicht keine Universe-Id, aus der ein echtes Icon
-#      geladen werden koennte (Roblox-Verhalten, kein Bug).
-#   2) Das Plugin liefert gameId erst, wenn Studio nach einem Bridge-Update
-#      WIRKLICH neu gestartet wurde (Plugins laden nur beim Studio-Start neu).
-# Beides machte die Icons in der Praxis dauerhaft leer/generisch, egal wie oft
-# der Downloader selbst repariert wurde (5.0.0/5.0.2/5.2).
+# 6.0.1 ersetzte die nie ankommenden Roblox-Spiel-Icons durch eine echte
+# Live-Vorschau des zugehoerigen Studio-Fensters, 6.0.2 machte Fehler
+# sichtbar, 6.0.3 reparierte die Fensterlisten-Verschachtelung und nahm per
+# PrintWindow(PW_RENDERFULLCONTENT) auf. Beim Nutzer blieb die Kachel
+# trotzdem leer - alle bisherigen Fixes beruhten auf Quellcode-Mutmassungen,
+# ohne dass ein einziger Aufnahmeversuch im runtime.log belegt war.
 #
-# 6.0.1 ersetzt das Icon deshalb durch eine echte Live-Vorschau: Die Bridge
-# laeuft ohnehin auf demselben PC wie Studio und macht per GDI+ periodisch
-# einen Screenshot des zugehoerigen Studio-Fensters (kein Roblox-Netzwerk,
-# keine gameId, kein Plugin-Neustart noetig). Dafuer wird der bereits
-# vorhandene Arena.ScreenHelper-Typ wiederverwendet (siehe Screenshot-
-# Werkzeug weiter oben, das denselben GetWindowRect/CopyFromScreen-Weg geht).
+# 6.0.4 aendert das zweimal grundlegend:
 #
-# PERFORMANCE:
-#   - Aufnahmen laufen in einem Hintergrund-Runspace (wie zuvor die
-#     Icon-Downloads) - der UI-Thread wartet nie auf einen Screenshot.
-#   - Pro Sitzung wird hoechstens alle $script:PlacePreviewIntervalSeconds
-#     neu aufgenommen, nicht bei jedem UI-Tick (900 ms).
-#   - Ist das Studio-Fenster minimiert (IsIconic), wird NICHT aufgenommen -
-#     das zuletzt gezeigte Bild bleibt stehen, wie gewuenscht.
-#   - Es wird direkt beim Aufnehmen auf Kachel-Groesse herunterskaliert (nicht
-#     erst in voller Fenstergroesse gespeichert) - kleine PNG-Bytes im
-#     Arbeitsspeicher, kein Festplatten-Cache noetig.
-#   - Die "Alle Places"-Sammelzeile bekommt (erstmal) bewusst KEINE Vorschau
-#     (siehe New-AllPlacesRow) - sie steht fuer mehrere Fenster gleichzeitig.
+# 1) MESSEN STATT RATEN: Jeder Aufnahmeversuch traegt eine kompakte Ablauf-ID
+#    und protokolliert die Stationen CAPTURE_START -> WINDOWS_ENUMERATED ->
+#    HANDLE_RESOLVED -> WORKER_STARTED -> WORKER_COMPLETED -> RESULT_RECEIVED
+#    -> PNG_DECODED -> IMAGE_ASSIGNED -> IMAGE_VISIBLE. Jede Zeile fuehrt
+#    sid, PID, HWND, Fenstertitel, Datentyp, Byte-Anzahl, Bildgroesse und
+#    Fehlertext mit. Kein catch im Vorschaupfad bleibt mehr still.
+#
+# 2) ROBUSTE UEBERTRAGUNG: Die Aufnahme laeuft ueber den einmal kompilierten
+#    C#-Helfer Arena.PreviewCapture im Hauptprozess. Das Ergebnis ist ein
+#    CLR-Objekt mit echtem byte[] - es durchquert keine PowerShell-Runspace-
+#    Grenze mehr (scheitert schon das Kompilieren, wird der 6.0.3-Runspace-
+#    Worker begruendet als Fallback benutzt). Die UI-Zuweisung laeuft
+#    ausschliesslich ueber den WPF-Dispatcher, und zusaetzlich wird jede
+#    Aufnahme atomar als PNG-Datei pro Sitzung abgelegt (pruefbare Uebergabe).
+#
+# Fuer verdeckte/GPU-beschleunigte Studio-Fenster testet der Helfer der
+# Reihe nach: PrintWindow(PW_RENDERFULLCONTENT), PrintWindow(0),
+# WindowDcBitBlt (DWM-Umleitflaeche) und zuletzt CopyFromScreen. Ein Weg gilt
+# nur als erfolgreich, wenn die Bitmap nicht schwarz/transparent ist.
 # ----------------------------------------------------------------------------
+
+# --- Ablauf-ID + Stations-Log (jede Zeile komplett, kompakt) ----------------
+function New-PreviewFlowId {
+    $script:PreviewFlowCounter = [long]$script:PreviewFlowCounter + 1
+    return ('cap-{0}' -f [long]$script:PreviewFlowCounter)
+}
+
+function Clear-PreviewFlow {
+    param([string]$FlowId)
+    try { [void]$script:PreviewFlowContexts.Remove([string]$FlowId) } catch {}
+}
+
+function Write-PreviewTrace {
+    param([string]$FlowId, [string]$Station, [hashtable]$Set, [string]$Extra = '')
+    if ([string]::IsNullOrWhiteSpace($FlowId)) { return }
+    try {
+        if ($script:PreviewFlowContexts.Count -gt 512) { $script:PreviewFlowContexts.Clear() }
+        if (-not $script:PreviewFlowContexts.ContainsKey($FlowId)) {
+            $script:PreviewFlowContexts[$FlowId] = @{ sid = '-'; pid = '-'; hwnd = '-'; title = '-'; type = '-'; bytes = '-'; w = '-'; h = '-'; error = '-' }
+        }
+        $ctx = $script:PreviewFlowContexts[$FlowId]
+        if ($Set) { foreach ($key in $Set.Keys) { $ctx[$key] = [string]$Set[$key] } }
+        $title = [string]$ctx.title
+        if ($title.Length -gt 48) { $title = $title.Substring(0, 48) }
+        $errText = ([string]$ctx.error) -replace '[\r\n]+', ' | '
+        if ($errText.Length -gt 160) { $errText = $errText.Substring(0, 160) }
+        $sizeText = ([string]$ctx.w) + 'x' + ([string]$ctx.h)
+        $line = 'PREVIEW [{0}] {1} sid={2} pid={3} hwnd={4} title="{5}" type={6} bytes={7} size={8} error={9}' -f $FlowId, $Station, $ctx.sid, $ctx.pid, $ctx.hwnd, $title, $ctx.type, $ctx.bytes, $sizeText, $errText
+        if (-not [string]::IsNullOrWhiteSpace($Extra)) { $line += ' ' + $Extra }
+        Write-RuntimeLog $line
+    } catch {}
+}
+
+function Save-PreviewHandleMeta {
+    param([string]$SessionId, $Info, [string]$Reason, [string]$RowTitle = '')
+    try {
+        $procId = $null
+        $titleValue = ''
+        if ($null -ne $Info) {
+            try { $procId = [int]$Info.ProcessId } catch { $procId = $null }
+            try { $titleValue = [string]$Info.Title } catch { $titleValue = '' }
+        }
+        $script:PreviewHandleInfos[[string]$SessionId] = [pscustomobject]@{ ProcessId = $procId; Title = $titleValue; Reason = $Reason; RowTitle = $RowTitle; At = (Get-Date) }
+    } catch {}
+}
 
 function Get-StudioWindowInfos {
     # Kurzer Cache (1.5 s): Fenster kommen/gehen selten, ein Neuenumerieren
@@ -15177,21 +15590,29 @@ function Get-StudioWindowInfos {
 function Resolve-PlacePreviewHandle {
     param($Studio, $Row)
     $sessionId = [string]$Studio.sessionId
+    $rowTitle = ''
+    try { $rowTitle = ([string]$Row.Title.Text).Trim() } catch { $rowTitle = '' }
     $infos = @(Get-StudioWindowInfos)
-    if ($infos.Count -eq 0) { return [IntPtr]::Zero }
+    if ($infos.Count -eq 0) {
+        Save-PreviewHandleMeta $sessionId $null 'keineStudioFensterGefunden' $rowTitle
+        return [IntPtr]::Zero
+    }
     # Nur EIN Studio-Fenster offen: keine Titel-Rateaktion noetig.
-    if ($infos.Count -eq 1) { return [IntPtr]$infos[0].Handle }
+    if ($infos.Count -eq 1) {
+        Save-PreviewHandleMeta $sessionId $infos[0] 'einzelnesFenster' $rowTitle
+        return [IntPtr]$infos[0].Handle
+    }
     # Mehrere Fenster: demselben angezeigten Namen zuordnen, den Get-PlaceName
     # fuer diese Zeile bereits gewaehlt hat (dieselbe Kandidatenliste, die die
     # Namensanzeige seit Version 5 zur Unterscheidung mehrerer Fenster nutzt).
     # Version 6.0.2: robust gegen Leerraum an den Enden, Gross-/Klein-
     # schreibung und angehaengte Zusaetze (z. B. den versionMismatch-Hinweis
-    # "Studio neu starten (Plugin veraltet)"). Vorher brach jede Abweichung
-    # die Zuordnung, und die Zeile blieb ohne Vorschaubild.
-    $wanted = ([string]$Row.Title.Text).Trim()
+    # "Studio neu starten (Plugin veraltet)").
+    $wanted = $rowTitle
     foreach ($info in $infos) {
         $infoTitle = ([string]$info.Title).Trim()
         if (-not [string]::IsNullOrWhiteSpace($infoTitle) -and $infoTitle -eq $wanted) {
+            Save-PreviewHandleMeta $sessionId $info 'titelExakt' $rowTitle
             return [IntPtr]$info.Handle
         }
     }
@@ -15203,6 +15624,7 @@ function Resolve-PlacePreviewHandle {
             if ([string]::IsNullOrWhiteSpace($infoTitle)) { continue }
             if ($infoTitle.StartsWith($comparable, [System.StringComparison]::OrdinalIgnoreCase) -or
                 $comparable.StartsWith($infoTitle, [System.StringComparison]::OrdinalIgnoreCase)) {
+                Save-PreviewHandleMeta $sessionId $info 'titelTolerant' $rowTitle
                 return [IntPtr]$info.Handle
             }
         }
@@ -15213,46 +15635,178 @@ function Resolve-PlacePreviewHandle {
         $previousRaw = $script:PlacePreviewHandles[$sessionId]
         if ($null -ne $previousRaw) {
             $previous = [IntPtr]$previousRaw
-            foreach ($info in $infos) { if ([IntPtr]$info.Handle -eq $previous) { return $previous } }
+            foreach ($info in $infos) {
+                if ([IntPtr]$info.Handle -eq $previous) {
+                    Save-PreviewHandleMeta $sessionId $info 'letzterHandle' $rowTitle
+                    return $previous
+                }
+            }
         }
     }
+    Save-PreviewHandleMeta $sessionId $null 'keinTrefferBeiMehrerenFenstern' $rowTitle
     return [IntPtr]::Zero
 }
 
 function Set-PlacePreviewImage {
-    param($Row, [byte[]]$Bytes)
-    if ($null -eq $Row -or $null -eq $Row.IconImage -or -not $Bytes -or $Bytes.Length -eq 0) { return }
-    try {
-        $stream = New-Object System.IO.MemoryStream (,$Bytes)
-        $bitmap = [System.Windows.Media.Imaging.BitmapImage]::new()
-        $bitmap.BeginInit()
-        $bitmap.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
-        $bitmap.StreamSource = $stream
-        $bitmap.EndInit()
-        $bitmap.Freeze()
-        $stream.Dispose()
-        $Row.IconImage.Source = $bitmap
-        $Row.IconSpinner.Visibility = 'Collapsed'
-        $Row.IconFallback.Visibility = 'Collapsed'
-        $Row.IconImage.Visibility = 'Visible'
-        if (-not $Row.PreviewHasFrame) {
-            # Erstes Bild dieser Zeile blendet weich ein (Liquid-Glass-Detail,
-            # wie zuvor bei den Spiel-Icons). Jede weitere Aktualisierung ist
-            # eine "laufende" Live-Vorschau und ersetzt die Quelle sofort ohne
-            # erneutes Einblenden - staendiges Aufblitzen waere stoerend.
-            $Row.PreviewHasFrame = $true
-            $Row.IconImage.Opacity = 0
-            try {
-                $fade = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 1, [System.TimeSpan]::FromMilliseconds(260))
-                $Row.IconImage.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fade)
-            } catch {
-                try { $Row.IconImage.Opacity = 1 } catch {}
+    param($Row, [byte[]]$Bytes, [string]$FlowId)
+    $flow = [string]$FlowId
+    if ([string]::IsNullOrWhiteSpace($flow)) { $flow = 'ui-direct' }
+    if ($null -eq $Row -or $null -eq $Row.IconImage) {
+        Write-PreviewTrace $flow 'IMAGE_ASSIGN_SKIPPED' $null 'grund=Zeile/IconImage fehlt'
+        Clear-PreviewFlow $flow
+        return
+    }
+    if (-not $Bytes -or $Bytes.Length -eq 0) {
+        Write-PreviewTrace $flow 'IMAGE_ASSIGN_SKIPPED' @{ sid = [string]$Row.sessionId; bytes = 0 } 'grund=leere Bytes'
+        Clear-PreviewFlow $flow
+        return
+    }
+    $isSelfTest = $flow.StartsWith('selftest')
+    $apply = {
+        $decodedW = 0
+        $decodedH = 0
+        try {
+            $magicOk = ($Bytes.Length -ge 8 -and $Bytes[0] -eq 0x89 -and $Bytes[1] -eq 0x50 -and $Bytes[2] -eq 0x4E -and $Bytes[3] -eq 0x47)
+            $stream = New-Object System.IO.MemoryStream (,$Bytes)
+            $bitmap = [System.Windows.Media.Imaging.BitmapImage]::new()
+            $bitmap.BeginInit()
+            $bitmap.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+            $bitmap.StreamSource = $stream
+            $bitmap.EndInit()
+            $bitmap.Freeze()
+            $stream.Dispose()
+            $decodedW = [int]$bitmap.PixelWidth
+            $decodedH = [int]$bitmap.PixelHeight
+            Write-PreviewTrace $flow 'PNG_DECODED' @{ sid = [string]$Row.sessionId; type = [string]$bitmap.GetType().FullName; bytes = $Bytes.Length; w = $decodedW; h = $decodedH } ('pngMagic=' + $(if ($magicOk) { 'ok' } else { 'FEHLER' }) + ' format=' + [string]$bitmap.Format)
+            $Row.IconImage.Source = $bitmap
+            $Row.IconSpinner.Visibility = 'Collapsed'
+            $Row.IconFallback.Visibility = 'Collapsed'
+            $Row.IconImage.Visibility = 'Visible'
+            $fadeNote = 'refresh'
+            if (-not $Row.PreviewHasFrame) {
+                # Erstes Bild dieser Zeile blendet weich ein (Liquid-Glass-
+                # Detail, wie zuvor). Jede weitere Aktualisierung ersetzt die
+                # Quelle sofort ohne erneutes Einblenden.
+                $Row.PreviewHasFrame = $true
+                $Row.IconImage.Opacity = 0
+                try {
+                    $fade = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 1, [System.TimeSpan]::FromMilliseconds(260))
+                    $Row.IconImage.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fade)
+                    $fadeNote = 'fade-in'
+                } catch {
+                    try { $Row.IconImage.Opacity = 1 } catch {}
+                    $fadeNote = 'fade-in-fallback'
+                }
+            } else {
+                $Row.IconImage.Opacity = 1
             }
+            Write-PreviewTrace $flow 'IMAGE_ASSIGNED' @{ sid = [string]$Row.sessionId; type = 'System.Windows.Media.Imaging.BitmapImage'; bytes = $Bytes.Length; w = $decodedW; h = $decodedH } ('mode=' + $fadeNote)
+            # Direkt nach dem Render-Durchlauf messen, ob das Bild WIRKLICH
+            # sichtbar ist (Clip, Layout, Z-Index, ueberlagernder Spinner).
+            $measure = {
+                try {
+                    $img = $Row.IconImage
+                    $visRendered = $false
+                    $visProp = '-'
+                    $opac = '-'
+                    $aw = 0
+                    $ah = 0
+                    $srcSize = '-'
+                    $spinnerState = '-'
+                    $fallbackState = '-'
+                    try { $visRendered = [bool]$img.IsVisible } catch {}
+                    try { $visProp = [string]$img.Visibility } catch {}
+                    try { $opac = [string]$img.Opacity } catch {}
+                    try { $aw = [int]$img.ActualWidth; $ah = [int]$img.ActualHeight } catch {}
+                    try { if ($img.Source) { $srcSize = ([int]$img.Source.PixelWidth).ToString() + 'x' + ([int]$img.Source.PixelHeight).ToString() } } catch {}
+                    try { $spinnerState = [string]$Row.IconSpinner.Visibility } catch {}
+                    try { $fallbackState = [string]$Row.IconFallback.Visibility } catch {}
+                    $inRows = $false
+                    try { $inRows = $script:UiRows.ContainsKey([string]$Row.sessionId) } catch {}
+                    Write-PreviewTrace $flow 'IMAGE_VISIBLE' @{ sid = [string]$Row.sessionId; w = $decodedW; h = $decodedH } ('isVisible=' + $visRendered + ' visibility=' + $visProp + ' opacity=' + $opac + ' actual=' + $aw + 'x' + $ah + ' source=' + $srcSize + ' spinner=' + $spinnerState + ' fallback=' + $fallbackState + ' rowInUiRows=' + $inRows)
+                    if ($isSelfTest) {
+                        Write-RuntimeLog ('PREVIEW_UI_SELFTEST_OK sid=' + [string]$Row.sessionId + ' flow=' + $flow + ' decoded=' + $decodedW + 'x' + $decodedH + ' bytes=' + $Bytes.Length + ' isVisible=' + $visRendered + ' actual=' + $aw + 'x' + $ah)
+                    }
+                } catch {
+                    Write-PreviewTrace $flow 'IMAGE_VISIBLE' @{ error = [string]$_.Exception.Message }
+                }
+                Clear-PreviewFlow $flow
+            }.GetNewClosure()
+            try {
+                [void]$Row.IconImage.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::Render, [System.Action]$measure)
+            } catch {
+                # Das Messen ist nur Zusatzdiagnose - ein Fehler darf die
+                # Anzeige selbst nicht stoppen, muss aber sichtbar bleiben.
+                Write-PreviewTrace $flow 'IMAGE_VISIBLE' @{ error = [string]$_.Exception.Message } 'messdispatch=fehlgeschlagen'
+                Clear-PreviewFlow $flow
+            }
+        } catch {
+            Write-PreviewTrace $flow 'IMAGE_ASSIGN_FAILED' @{ sid = [string]$Row.sessionId; error = [string]$_.Exception.Message; bytes = $Bytes.Length; w = $decodedW; h = $decodedH }
+            Write-UiErrorLog 'Place-Vorschau konnte nicht angezeigt werden' $_
+            if ($isSelfTest) {
+                Write-RuntimeLog ('PREVIEW_UI_SELFTEST_FAILED sid=' + [string]$Row.sessionId + ' flow=' + $flow + ' error=' + [string]$_.Exception.Message)
+            }
+            Clear-PreviewFlow $flow
+        }
+    }.GetNewClosure()
+    # UI-Zuweisung ausschliesslich ueber den Dispatcher des Fensters/Elements.
+    try {
+        if ($Row.IconImage.Dispatcher -and -not $Row.IconImage.Dispatcher.CheckAccess()) {
+            [void]$Row.IconImage.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::Normal, [System.Action]$apply)
         } else {
-            $Row.IconImage.Opacity = 1
+            & $apply
         }
     } catch {
+        Write-PreviewTrace $flow 'IMAGE_ASSIGN_FAILED' @{ error = [string]$_.Exception.Message }
         Write-UiErrorLog 'Place-Vorschau konnte nicht angezeigt werden' $_
+        Clear-PreviewFlow $flow
+    }
+}
+
+function New-PlacePreviewSelfTestImage {
+    # Unverwechselbar: Magenta/Neon-Limette-Schachbrett mit orangem Rand.
+    # Wird komplett im Speicher gezeichnet - kein Fenster, kein Netzwerk.
+    $bmp = New-Object System.Drawing.Bitmap 64, 44
+    try {
+        $colorA = [System.Drawing.Color]::FromArgb(255, 255, 0, 255)
+        $colorB = [System.Drawing.Color]::FromArgb(255, 57, 255, 20)
+        $colorEdge = [System.Drawing.Color]::FromArgb(255, 255, 128, 0)
+        for ($y = 0; $y -lt 44; $y++) {
+            for ($x = 0; $x -lt 64; $x++) {
+                $color = $colorA
+                if ($x -lt 3 -or $y -lt 3 -or $x -ge 61 -or $y -ge 41) { $color = $colorEdge }
+                elseif (([int]($x / 8) + [int]($y / 8)) % 2 -eq 0) { $color = $colorB }
+                $bmp.SetPixel($x, $y, $color)
+            }
+        }
+        $memory = New-Object System.IO.MemoryStream
+        try {
+            $bmp.Save($memory, [System.Drawing.Imaging.ImageFormat]::Png)
+            $result = $memory.ToArray()
+        } finally { $memory.Dispose() }
+        return , $result
+    } finally { $bmp.Dispose() }
+}
+
+function Invoke-PlacePreviewUiSelfTest {
+    param($Row, [string]$SessionId)
+    # Derselbe Set-PlacePreviewImage-Pfad wie die echte Vorschau - aber mit
+    # einem im Speicher gezeichneten, eindeutig farbigen Testbild. Erscheint
+    # das Testbild nicht, liegt der Fehler in WPF/UI (nicht in der
+    # Fensteraufnahme). Erscheint es, prueft ~2,5 s spaeter die echte
+    # Aufnahme sichtbar dagegen. Ergebnis: PREVIEW_UI_SELFTEST_OK/FAILED.
+    $flow = 'selftest-1'
+    Write-PreviewTrace $flow 'CAPTURE_START' @{ sid = [string]$SessionId; pid = '-'; hwnd = '-'; title = '(in Speicher gezeichnetes Testbild)'; type = 'in-memory-png'; w = 64; h = 44 } 'origin=PREVIEW_UI_SELFTEST'
+    try {
+        Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+        $bytes = New-PlacePreviewSelfTestImage
+        if (-not $bytes -or $bytes.Length -eq 0) { throw 'Testbild konnte nicht erzeugt werden (0 Bytes)' }
+        Write-PreviewTrace $flow 'RESULT_RECEIVED' @{ sid = [string]$SessionId; type = [string]$bytes.GetType().FullName; bytes = $bytes.Length; w = 64; h = 44 } 'method=in-memory'
+        Set-PlacePreviewImage $Row $bytes $flow
+    } catch {
+        Write-PreviewTrace $flow 'RESULT_RECEIVED' @{ sid = [string]$SessionId; error = [string]$_.Exception.Message }
+        Write-RuntimeLog ('PREVIEW_UI_SELFTEST_FAILED sid=' + [string]$SessionId + ' error=' + [string]$_.Exception.Message)
+        Clear-PreviewFlow $flow
     }
 }
 
@@ -15303,10 +15857,6 @@ function Start-PlacePreviewCapture {
     param($Studio, $Row)
     if ($null -eq $Row -or $null -eq $Row.IconFrame) { return }
 
-    # 6.0.3: Kein synchroner Web-Abruf im WPF-Thread. Diese Kachel ist eine
-    # Vorschau des Studio-FENSTERS, kein Roblox-Spiel-Icon. Die bisherige
-    # Thumbnail-Abfrage konnte die komplette UI bis zu 8 Sekunden blockieren
-    # und verzoegerte die eigentliche Aufnahme bei jedem neuen Place.
     $sessionId = [string]$Studio.sessionId
     # Die virtuelle "Alle Places"-Zeile bekommt (erstmal) bewusst keine
     # Vorschau - siehe New-AllPlacesRow (Frame dort dauerhaft ausgeblendet).
@@ -15315,11 +15865,13 @@ function Start-PlacePreviewCapture {
     # ohnehin niemand die Vorschau - dann auch keine neuen Aufnahmen starten.
     try { if ($window -and $window.WindowState -eq 'Minimized') { return } } catch {}
 
+    # Bereits laufende Aufnahme: der naechste Tick rueckt erst nach, wenn sie
+    # fertig ist - kein Log-Spam noetig (normale Skips sind keine Versuche).
+    if ($script:PlacePreviewJobs.ContainsKey($sessionId)) { return }
+
     $handle = Resolve-PlacePreviewHandle $Studio $Row
-    # Version 6.0.2: $null-fest. Vorher konnte ein nicht aufgeloester Handle
-    # bis zur Aufnahme durchreichen - $handle.ToInt64() warf dann still im
-    # aufrufenden try/catch und die Zeile blieb mit ewig drehendem Kreis
-    # zurueck, ohne dass irgendwo ein Grund protokolliert wurde.
+    # Version 6.0.2: $null-fest. Ein nicht aufgeloester Handle darf nicht bis
+    # zur Aufnahme durchreichen ($handle.ToInt64() warf sonst still).
     if ($null -eq $handle) { $handle = [IntPtr]::Zero }
     $Row.PreviewHandle = $handle
     if ($handle -eq [IntPtr]::Zero) {
@@ -15331,29 +15883,87 @@ function Start-PlacePreviewCapture {
                 try { $Row.IconSpinner.Visibility = 'Collapsed'; $Row.IconFallback.Visibility = 'Visible' } catch {}
             }
         }
-        # 6.0.3: Auch der Fehler VOR dem Worker darf nicht unsichtbar bleiben.
+        # Auch der Fehler VOR dem Worker bleibt sichtbar (gedrosselt).
         $now = Get-Date
         $lastLog = [DateTime]::MinValue
         if ($script:PlacePreviewFailLogAt.ContainsKey($sessionId)) { $lastLog = [DateTime]$script:PlacePreviewFailLogAt[$sessionId] }
         if (($now - $lastLog).TotalSeconds -ge 15) {
             $script:PlacePreviewFailLogAt[$sessionId] = $now
+            $flow = New-PreviewFlowId
+            $reason = '-'
+            try {
+                if ($script:PreviewHandleInfos.ContainsKey($sessionId)) { $reason = [string]$script:PreviewHandleInfos[$sessionId].Reason }
+            } catch {}
+            Write-PreviewTrace $flow 'HANDLE_RESOLVED' @{ sid = $sessionId; hwnd = '0x0'; error = 'kein passendes Fenster' } ('resolved=none reason=' + $reason)
             try { Write-RuntimeLog "Place-Vorschau ($sessionId): Aufnahme fehlgeschlagen - kein passendes Roblox-Studio-Fenster gefunden." } catch {}
+            Clear-PreviewFlow $flow
         }
         return
     }
     $script:PlacePreviewHandles[$sessionId] = $handle
 
-    # Ein Capture je Sitzung reicht - laeuft schon eines, nicht erneut starten.
-    if ($script:PlacePreviewJobs.ContainsKey($sessionId)) { return }
-
+    # Gedrosselt: hoechstens alle $script:PlacePreviewIntervalSeconds je Sitzung.
     $lastAt = [DateTime]::MinValue
     if ($script:PlacePreviewLastCaptureAt.ContainsKey($sessionId)) { $lastAt = [DateTime]$script:PlacePreviewLastCaptureAt[$sessionId] }
     if (((Get-Date) - $lastAt).TotalSeconds -lt $script:PlacePreviewIntervalSeconds) { return }
     $script:PlacePreviewLastCaptureAt[$sessionId] = Get-Date
 
+    # --- Ab hier: echter Aufnahmeversuch mit eigener Ablauf-ID. -------------
+    $flow = New-PreviewFlowId
+    $metaPid = '-'
+    $metaTitle = '-'
+    $metaReason = '-'
+    $metaRowTitle = '-'
+    try {
+        if ($script:PreviewHandleInfos.ContainsKey($sessionId)) {
+            $meta = $script:PreviewHandleInfos[$sessionId]
+            if ($null -ne $meta.ProcessId) { $metaPid = [string]$meta.ProcessId }
+            if ($meta.Title) { $metaTitle = (([string]$meta.Title) -replace '"', "'") }
+            if ($meta.Reason) { $metaReason = [string]$meta.Reason }
+            if ($meta.RowTitle) { $metaRowTitle = (([string]$meta.RowTitle) -replace '"', "'") }
+        }
+    } catch {}
     $handleValue = $handle.ToInt64()
+    $hwndHex = '0x' + ('{0:X}' -f $handleValue)
+
+    # WINDOWS_ENUMERATED + HANDLE_RESOLVED: die Fensterliste, die Resolve-
+    # PlacePreviewHandle gerade benutzt hat (<=1,5 s alt), samt Zuordnungsgrund.
+    $enumParts = New-Object System.Collections.Generic.List[string]
+    foreach ($infoItem in @($script:PreviewWindowCache)) {
+        try {
+            $infoTitle = (([string]$infoItem.Title) -replace '"', "'")
+            $enumParts.Add('pid=' + $infoItem.ProcessId + ';hwnd=0x' + ('{0:X}' -f [int64]$infoItem.Handle) + ';title="' + $infoTitle + '"')
+        } catch {}
+    }
+    Write-PreviewTrace $flow 'WINDOWS_ENUMERATED' @{ sid = $sessionId } ('count=' + @($script:PreviewWindowCache).Count + ' [' + ($enumParts -join ' | ') + ']')
+    Write-PreviewTrace $flow 'HANDLE_RESOLVED' @{ sid = $sessionId; pid = $metaPid; hwnd = $hwndHex; title = $metaTitle } ('reason=' + $metaReason + ' rowTitle="' + $metaRowTitle + '"')
+    Write-PreviewTrace $flow 'CAPTURE_START' @{ sid = $sessionId; pid = $metaPid; hwnd = $hwndHex; title = $metaTitle } ('targetH=' + $script:PlacePreviewCaptureHeight)
+
     $targetHeight = $script:PlacePreviewCaptureHeight
-    $worker = [PowerShell]::Create()
+    $job = [pscustomobject]@{ FlowId = $flow; SessionId = $sessionId; StartedAt = (Get-Date); Kind = ''; Task = $null; Worker = $null; Handle = $null }
+
+    # Primaerweg 6.0.4: kompilierter C#-Helfer im Hauptprozess. Das Ergebnis
+    # (unveraenderliches byte[]) durchquert keine Runspace-Grenze mehr.
+    if ([string]$script:PreviewCaptureMode -eq 'csharp' -and ('Arena.PreviewCapture' -as [type])) {
+        try {
+            $job.Kind = 'csharp-helper'
+            $job.Task = [Arena.PreviewCapture]::CaptureAsync($handleValue, [int]$targetHeight)
+            $script:PlacePreviewJobs[$sessionId] = $job
+            Write-PreviewTrace $flow 'WORKER_STARTED' $null 'kind=csharp-helper thread=threadpool'
+            return
+        } catch {
+            Write-PreviewTrace $flow 'WORKER_START_FAILED' @{ error = [string]$_.Exception.Message } 'kind=csharp-helper'
+            Write-UiErrorLog ('Place-Vorschau-Aufnahme ' + $sessionId + ' konnte nicht gestartet werden') $_
+            Clear-PreviewFlow $flow
+            return
+        }
+    }
+
+    # Fallback (unveraendert aus 6.0.3): Hintergrund-Runspace-Worker - nur wenn
+    # der C#-Helfer nicht kompiliert werden konnte. Grund steht im Start-Log
+    # (PreviewCaptureMode=ps-fallback).
+    $job.Kind = 'ps-runspace-fallback'
+    $worker = $null
     $code = @'
 param($handleValue, $targetHeight)
 try {
@@ -15429,44 +16039,132 @@ try {
     return @{ ok = $false; error = [string]$_.Exception.Message }
 }
 '@
-    [void]$worker.AddScript($code).AddArgument($handleValue).AddArgument($targetHeight)
     try {
-        $script:PlacePreviewJobs[$sessionId] = [pscustomobject]@{ Worker = $worker; Handle = $worker.BeginInvoke(); SessionId = $sessionId; StartedAt = Get-Date }
+        $worker = [PowerShell]::Create()
+        [void]$worker.AddScript($code).AddArgument($handleValue).AddArgument($targetHeight)
+        $job.Worker = $worker
+        $job.Handle = $worker.BeginInvoke()
+        $script:PlacePreviewJobs[$sessionId] = $job
+        Write-PreviewTrace $flow 'WORKER_STARTED' $null 'kind=ps-runspace-fallback'
     } catch {
         try { $worker.Dispose() } catch {}
+        Write-PreviewTrace $flow 'WORKER_START_FAILED' @{ error = [string]$_.Exception.Message } 'kind=ps-runspace-fallback'
         Write-UiErrorLog ('Place-Vorschau-Aufnahme ' + $sessionId + ' konnte nicht gestartet werden') $_
+        Clear-PreviewFlow $flow
     }
 }
 
 function Update-PlacePreviewCaptures {
     foreach ($sessionId in @($script:PlacePreviewJobs.Keys)) {
         $job = $script:PlacePreviewJobs[$sessionId]
-        if (-not $job.Handle.IsCompleted) {
-            # Ein blockiertes PrintWindow darf diese Sitzung nicht fuer immer
-            # sperren. Nach 10 s Job entsorgen; der normale Tick startet neu.
+        $flow = [string]$job.FlowId
+        $isPsFallback = ([string]$job.Kind -eq 'ps-runspace-fallback')
+        $completed = $false
+        try {
+            if ($isPsFallback) { $completed = [bool]$job.Handle.IsCompleted }
+            else { $completed = ($null -ne $job.Task -and [bool]$job.Task.IsCompleted) }
+        } catch { $completed = $false }
+        if (-not $completed) {
+            # Ein blockierter Aufnahmeaufruf darf diese Sitzung nicht fuer
+            # immer sperren: Nach 10 s wird der Job fallengelassen (Task) bzw.
+            # beendet (PS-Fallback); der normale Tick startet ihn neu. Der
+            # UI-Thread wartet dabei NIE blockierend auf einen Worker.
             if ($job.StartedAt -and ((Get-Date) - [DateTime]$job.StartedAt).TotalSeconds -ge 10) {
-                try { $job.Worker.Stop() } catch {}
-                try { $job.Worker.Dispose() } catch {}
+                if ($isPsFallback) {
+                    try { $job.Worker.Stop() } catch {}
+                    try { $job.Worker.Dispose() } catch {}
+                }
                 $script:PlacePreviewJobs.Remove($sessionId)
+                Write-PreviewTrace $flow 'WORKER_TIMEOUT' @{ error = 'Zeitueberschreitung nach 10 s' } ('kind=' + [string]$job.Kind)
                 try { Write-RuntimeLog "Place-Vorschau ($sessionId): Aufnahme-Worker nach 10 Sekunden beendet (Zeitüberschreitung)." } catch {}
+                Clear-PreviewFlow $flow
             }
             continue
         }
+        $elapsedMs = '-'
+        try { $elapsedMs = [string][int]((Get-Date) - [DateTime]$job.StartedAt).TotalMilliseconds } catch {}
+        Write-PreviewTrace $flow 'WORKER_COMPLETED' $null ('kind=' + [string]$job.Kind + ' ms=' + $elapsedMs)
+
         $bytes = $null
-        $result = $null
+        $resultOk = $false
+        $resultError = ''
+        $resultMethod = ''
+        $resultAttempts = ''
+        $resultType = '-'
+        $resultW = '-'
+        $resultH = '-'
+        $minimized = $false
+        $endError = ''
         try {
-            $result = @($job.Worker.EndInvoke($job.Handle))[0]
-            if ($result -and $result.ok -eq $true) { $bytes = [byte[]]$result.bytes }
+            if ($isPsFallback) {
+                $workerResult = @($job.Worker.EndInvoke($job.Handle))[0]
+                if ($workerResult) {
+                    $resultOk = ($workerResult.ok -eq $true)
+                    $minimized = ($workerResult.minimized -eq $true)
+                    $resultError = [string]$workerResult.error
+                    $resultMethod = [string]$workerResult.method
+                    if ($resultOk -and $workerResult.bytes) {
+                        $bytes = [byte[]]$workerResult.bytes
+                        $resultType = [string]$workerResult.bytes.GetType().FullName
+                    }
+                    $resultW = [string]$workerResult.w
+                    $resultH = [string]$workerResult.h
+                }
+            } else {
+                # CLR-Ergebnis des C#-Helfers: byte[] ist hier GARANTIERT ein
+                # echtes System.Byte[] - kein PSObject, kein Object[], keine
+                # Serialisierung irgendwo dazwischen.
+                $cap = $job.Task.Result
+                if ($null -ne $cap) {
+                    $resultOk = [bool]$cap.Ok
+                    $minimized = [bool]$cap.Minimized
+                    $resultError = [string]$cap.Error
+                    $resultMethod = [string]$cap.Method
+                    $resultAttempts = [string]$cap.AttemptLog
+                    $resultW = [string]$cap.Width
+                    $resultH = [string]$cap.Height
+                    if ($resultOk -and $cap.Png) {
+                        $bytes = [byte[]]$cap.Png
+                        $resultType = [string]$cap.Png.GetType().FullName
+                    }
+                }
+            }
         } catch {
-            $result = $null
-            # Version 6.0.2: NIE wieder still - der Grund landet (gedrosselt)
-            # im runtime.log, damit ein leeres Vorschaubild endlich nachvoll-
-            # ziehbar wird statt komplett spurlos zu verschwinden.
-            try { Write-RuntimeLog "Place-Vorschau ($sessionId): Aufnahme schlug fehl - $($_.Exception.Message)" } catch {}
+            $endError = [string]$_.Exception.Message
+            try { Write-RuntimeLog "Place-Vorschau ($sessionId): Aufnahme schlug fehl - $endError" } catch {}
         }
-        try { $job.Worker.Dispose() } catch {}
+        if ($isPsFallback) { try { $job.Worker.Dispose() } catch {} }
         $script:PlacePreviewJobs.Remove($sessionId)
+
+        $byteLen = 0
+        if ($bytes) { $byteLen = $bytes.Length }
+        $traceError = $resultError
+        if ($endError) { $traceError = $endError }
+        $resultExtra = 'ok=' + $resultOk + ' minimized=' + $minimized + ' method=' + $(if ($resultMethod) { $resultMethod } else { '-' })
+        if ($resultAttempts) { $resultExtra += ' attempts=[' + $resultAttempts + ']' }
+        Write-PreviewTrace $flow 'RESULT_RECEIVED' @{ type = $resultType; bytes = $byteLen; w = $resultW; h = $resultH; error = $traceError } $resultExtra
+
         if ($bytes -and $script:UiRows.ContainsKey($sessionId)) {
+            # Eindeutig pruefbare Uebergabe: jede erfolgreiche Aufnahme liegt
+            # zusaetzlich als atomar getauschte PNG-Datei pro Sitzung vor;
+            # der Kurzhash stammt aus denselben Bytes, die die UI bekommt.
+            try {
+                $previewDir = Join-Path $script:AppDataRoot 'preview-cache'
+                [void][System.IO.Directory]::CreateDirectory($previewDir)
+                $safeSid = ($sessionId -replace '[^A-Za-z0-9_-]', '_')
+                $pngPath = Join-Path $previewDir ($safeSid + '.png')
+                $tmpPath = $pngPath + '.tmp'
+                [System.IO.File]::WriteAllBytes($tmpPath, $bytes)
+                if (Test-Path -LiteralPath $pngPath) { try { [System.IO.File]::Delete($pngPath) } catch {} }
+                [System.IO.File]::Move($tmpPath, $pngPath)
+                $shaShort = '-'
+                try {
+                    $shaShort = ([System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash($bytes))).Replace('-', '').Substring(0, 12)
+                } catch {}
+                Write-PreviewTrace $flow 'PNG_STORED' $null ('file="' + $pngPath + '" sha256=' + $shaShort)
+            } catch {
+                Write-PreviewTrace $flow 'PNG_STORE_FAILED' @{ error = [string]$_.Exception.Message }
+            }
             $row = $script:UiRows[$sessionId]
             $row.PreviewFailCount = 0
             if (-not $row.PreviewLoggedOnce) {
@@ -15475,27 +16173,21 @@ function Update-PlacePreviewCaptures {
                 $row.PreviewLoggedOnce = $true
                 $sizeInfo = ''
                 try {
-                    if ($result) {
-                        $sizeInfo = " ($([int]$result.w)x$([int]$result.h) px"
-                        if ($result.method) { $sizeInfo += ", $([string]$result.method)" }
-                        $sizeInfo += ')'
-                    }
+                    $sizeInfo = " ($resultW" + 'x' + "$resultH px"
+                    if ($resultMethod) { $sizeInfo += ", $resultMethod" }
+                    $sizeInfo += ')'
                 } catch {}
                 try { Write-RuntimeLog "Place-Vorschau ($sessionId): Live-Vorschau aktiv$sizeInfo." } catch {}
             }
-            Set-PlacePreviewImage $row $bytes
+            Set-PlacePreviewImage $row $bytes $flow
         } elseif (-not $bytes) {
-            # Version 6.0.2: Gescheiterte Aufnahme zaehlen, begruenden und
-            # nach 3 Fehlversuchen in Folge das Platzhalter-Symbol zeigen
-            # (statt des bisher endlos drehenden Kreises - genau das war der
-            # 6.0.1-Live-Befund "nie erscheint ein Bild"). Die Aufnahmen
-            # laufen gedrosselt weiter: Sobald eine klappt, erscheint die
-            # Live-Vorschau trotzdem (Set-PlacePreviewImage blendet sie ein).
+            # Gescheiterte Aufnahme zaehlen, begruenden und nach 3
+            # Fehlversuchen in Folge das Platzhalter-Symbol zeigen (statt des
+            # endlos drehenden Kreises). Die Aufnahmen laufen gedrosselt
+            # weiter: Sobald eine klappt, erscheint die Live-Vorschau.
             $reason = 'unbekannter Fehler'
-            if ($result) {
-                if ($result.minimized -eq $true) { $reason = 'Studio-Fenster ist minimiert' }
-                elseif ($result.error) { $reason = [string]$result.error }
-            }
+            if ($minimized) { $reason = 'Studio-Fenster ist minimiert' }
+            elseif ($traceError) { $reason = [string]$traceError }
             if ($script:UiRows.ContainsKey($sessionId)) {
                 $row = $script:UiRows[$sessionId]
                 $row.PreviewFailCount = [int]$row.PreviewFailCount + 1
@@ -15503,6 +16195,9 @@ function Update-PlacePreviewCaptures {
                     try { $row.IconSpinner.Visibility = 'Collapsed'; $row.IconFallback.Visibility = 'Visible' } catch {}
                 }
             }
+            $failCountNow = '-'
+            try { if ($script:UiRows.ContainsKey($sessionId)) { $failCountNow = [string]$script:UiRows[$sessionId].PreviewFailCount } } catch {}
+            Write-PreviewTrace $flow 'CAPTURE_FAILED' @{ error = $reason } ('failCount=' + $failCountNow)
             $now = Get-Date
             $lastLog = [DateTime]::MinValue
             if ($script:PlacePreviewFailLogAt.ContainsKey($sessionId)) { $lastLog = [DateTime]$script:PlacePreviewFailLogAt[$sessionId] }
@@ -15510,6 +16205,12 @@ function Update-PlacePreviewCaptures {
                 $script:PlacePreviewFailLogAt[$sessionId] = $now
                 try { Write-RuntimeLog "Place-Vorschau ($sessionId): Aufnahme fehlgeschlagen - $reason." } catch {}
             }
+            Clear-PreviewFlow $flow
+        } else {
+            # Bilddaten ok, aber die Zeile ist inzwischen weg (Sitzung beendet,
+            # waehrend die Aufnahme lief) - auch das war frueher ein stiller Weg.
+            Write-PreviewTrace $flow 'IMAGE_ASSIGN_SKIPPED' @{ bytes = $byteLen } 'grund=Zeile nicht mehr in UiRows'
+            Clear-PreviewFlow $flow
         }
     }
 }
@@ -16701,6 +17402,22 @@ function Add-PlaceRowToPlaceList {
     } catch {
         Write-UiErrorLog ($Label + ': Diagnose-Vermessung fehlgeschlagen') $_
     }
+
+    # Version 6.0.4: Sichtbarer Selbsttest des kompletten Vorschau-UI-Pfads
+    # (einmal je Programmstart, erste echte Place-Zeile): Ein im Speicher
+    # gezeichnetes Testbild durchlaeuft exakt denselben Set-PlacePreviewImage-
+    # Weg wie echte Aufnahmen. Ergebnis im Log: PREVIEW_UI_SELFTEST_OK oder
+    # PREVIEW_UI_SELFTEST_FAILED - damit ist sofort entschieden, ob der
+    # Fehler in WPF/UI oder in der Fensteraufnahme liegt.
+    try {
+        if (-not $script:PreviewSelfTestDone -and $Label -eq 'Place-Zeile') {
+            $script:PreviewSelfTestDone = $true
+            Invoke-PlacePreviewUiSelfTest $Row $SessionId
+        }
+    } catch {
+        Write-UiErrorLog 'Vorschau-Selbsttest konnte nicht ausgefuehrt werden' $_
+        try { Write-RuntimeLog ('PREVIEW_UI_SELFTEST_FAILED sid=' + [string]$SessionId + ' error=' + [string]$_.Exception.Message) } catch {}
+    }
 }
 
 # Baut die Liste nur um, wenn sich etwas geaendert hat -> kein Flackern.
@@ -16878,7 +17595,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '6.0.3'
+    $versionText = '6.0.4'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -17462,7 +18179,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 6.0.3" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 6.0.4" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -17502,7 +18219,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 6.0.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 6.0.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -17550,7 +18267,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 6.0.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 6.0.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -17563,7 +18280,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '6.0.3'
+    $verText = '6.0.4'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
