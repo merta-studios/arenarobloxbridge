@@ -187,6 +187,37 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v6.0.5: VORSCHAU - "ZUGEWIESEN, ABER UNSICHTBAR" BEHOBEN. Messbefund statt
+  Vermutung: (1) Die Einstellungen zeigten beim Nutzer "Version 6.0.4" -> es
+  lief wirklich 6.0.4, der Updater-Verdacht ist widerlegt. (2) Die pinke
+  Selbsttest-Kachel erschien trotzdem NIE. Da ein einmal gesetztes Bild im
+  Programm durch nichts mehr entfernt wird (PreviewHasFrame=$true sperrt das
+  Platzhalter-Symbol, IconImage.Source wird nirgends zurueckgesetzt), haette
+  es dauerhaft stehen bleiben MUESSEN -> es war nie sichtbar -> Fehler im
+  Anzeigepfad, nicht in der Fensteraufnahme.
+  URSACHE: Set-PlacePreviewImage setzte beim ERSTEN Bild Opacity = 0 und
+  ueberliess das Sichtbarwerden allein der DoubleAnimation (0->1). Laeuft die
+  Animation nicht an, bleibt die Kachel fuer immer leer. Derselbe Ausfall ist
+  fuer die Place-ZEILE seit 5.0.2 belegt (Waechter "Einblend-Animation kam nie
+  an") - das Vorschaubild hatte keinen Waechter.
+  FIX: Opacity = 1 zuerst, Animation nur noch Deko (FillBehavior=Stop),
+  Waechter nach 400 ms (PREVIEW_OPACITY_RESCUE). Selbsttest-Urteil erst nach
+  1,5 s und nur bei gemessener Sichtbarkeit (neue Station PREVIEW_UI_VERIFY
+  misst Bild+Rahmen+Zeile und die effektive Deckkraft). Neuer Kurzbericht
+  %LOCALAPPDATA%\ArenaRobloxBridge\preview-diagnose.txt (klein, komplett
+  weitergebbar - ersetzt das Verschicken der grossen runtime.log).
+  LIVE-ABNAHME 6.0.5 (NUTZER-PC):
+  1. Update starten, Einstellungen oeffnen: Fusszeile muss 6.0.5 zeigen.
+  2. Ein Place/Studio-Fenster oeffnen: die PINKE Testkachel muss erscheinen
+     UND stehen bleiben, bis ein echtes Fensterbild kommt.
+  3. preview-diagnose.txt oeffnen: "UI-Selbsttest:" muss
+     PREVIEW_UI_SELFTEST_OK zeigen. Steht dort FAILED, nennt derselbe Eintrag
+     den Grund (Deckkraft/Flaeche/Baum/Bildquelle).
+  4. Fehlt PREVIEW_UI_VERIFY komplett -> in diesem Prozess laufen keine
+     Dispatcher-Timer/Animationen (dann ist DAS die naechste Spur).
+  5. Kommt danach kein echtes Studio-Bild, sind nur noch die
+     PREVIEW [cap-N]-Zeilen im Kurzbericht massgeblich (RESULT_RECEIVED
+     ok=False mit attempts=[...]).
 - v6.0.4: VORSCHAU: ENDE DES RATENS - LAUFZEIT-DIAGNOSE + ROBUSTE AUFNAHME.
   Lagearbeit 6.0.1-6.0.3: Die Kachel blieb beim Nutzer leer, ohne dass ein
   einziger Aufnahmeversuch im runtime.log belegt war; alle bisherigen Fixes
