@@ -20,7 +20,7 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test_v398_structure.py` | Python-Strukturtest für 6.0.2 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test_v398_structure.py` | Python-Strukturtest für 6.0.3 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -35,6 +35,23 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 6.0.3
+- **Mehrfenster-Vorschau wirklich repariert.** Die Fensterliste wurde durch ein
+  überflüssiges PowerShell-Komma als verschachteltes Array zurückgegeben. Bei
+  mehreren Studio-Fenstern versuchte die Bridge deshalb, ein ganzes
+  Handle-Array als einzelnes Fenster zu behandeln; die Aufnahme startete nie.
+  Fenster- und Titellisten werden jetzt garantiert flach zurückgegeben.
+- **Direkte Fensteraufnahme statt Bildschirmfoto.** `PrintWindow` mit
+  `PW_RENDERFULLCONTENT` rendert das zugeordnete Studio-Fenster auch dann, wenn
+  die Bridge oder ein anderes Fenster davor liegt. `CopyFromScreen` bleibt als
+  automatischer Fallback für Systeme, die `PrintWindow` ablehnen.
+- **Sofortiger Start ohne Web-Blockade.** Die synchrone Roblox-Thumbnail-
+  Abfrage wurde aus dem WPF-Thread entfernt. Die Kachel ist wieder
+  ausschließlich eine echte Studio-Fenster-Vorschau.
+- **Selbstheilung und Diagnose.** Blockierte Aufnahme-Worker werden nach zehn
+  Sekunden beendet und neu versucht. Auch eine bereits vor dem Worker
+  gescheiterte Fensterzuordnung steht nun mit Ursache in `runtime.log`.
 
 ## 6.0.2
 - **Spiel-Icon-/Vorschau-System repariert (der lang ersehnte Fix).** In 6.0.1

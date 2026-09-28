@@ -187,6 +187,22 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v6.0.3: FENSTER-VORSCHAU ENDGUELTIG REPARIERT. Live-Ursache aus 6.0.2:
+  Get-StudioWindowInfos (und derselbe Altfehler in Get-StudioWindowName) gab
+  per `return , $cache` ein verschachteltes object[][] zurueck. Bei mehreren
+  Studio-Fenstern war Count deshalb 1 und ein Handle-ARRAY wurde nach IntPtr
+  gecastet; Start-PlacePreviewCapture brach vor jedem Worker ab. Beide Caches
+  werden jetzt ohne unitaeres Komma flach ausgegeben; Strukturtest verbietet
+  die Regression. Aufnahme primaer per PrintWindow(PW_RENDERFULLCONTENT),
+  damit die Bridge/andere Fenster Studio nicht im Bild verdecken;
+  CopyFromScreen bleibt Fallback. Synchrone thumbnails.roblox.com-Abfrage aus
+  dem UI-Thread komplett entfernt (nur echte Fenster-Vorschau). Worker haben
+  10-s-Watchdog; fehlende Fenster werden schon vor Worker-Start begruendet
+  geloggt; Remove-DeadSession stoppt Worker und leert alle Vorschau-Caches.
+  LIVE-ABNAHME: Zwei Studio-Fenster oeffnen, Bridge davor legen: beide Zeilen
+  muessen innerhalb weniger Sekunden unterschiedliche Studio-Bilder zeigen;
+  runtime.log meldet je sid "Live-Vorschau aktiv (..., PrintWindow)". Danach
+  ein Studio schliessen und pruefen, dass seine Zeile/Worker verschwinden.
 - v6.0.2: ICON-/VORSCHAU-REPARATUR + UPDATE-SICHERHEITSNETZ. Live-Befund:
   Beim Nutzer erschien "seit vielen Versionen nie ein Bild" in der Kachel.
   Zwei Ursachen angegangen: (a) 6.0.1 blieb bei JEDEM gescheiterten Aufnahme-
