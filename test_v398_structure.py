@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 6.0.2.
+"""Offline structure check for Arena Roblox Bridge 6.0.3.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "6.0.2"
+VERSION = "6.0.3"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -226,7 +226,7 @@ def main() -> int:
 
     # Stale FUNCTIONAL 6.0 literals (history comments may mention 6.0; the
     # Liquid-Glass design markers from 6.0 stay required below, only the
-    # exact version-number literals must have moved on to 6.0.2).
+    # exact version-number literals must have moved on to 6.0.3).
     stale_60_literals = [
         "DocsVersion     = '6.0'",
         'local ARENA_VERSION  = "6.0"',
@@ -246,7 +246,7 @@ def main() -> int:
 
     # Stale FUNCTIONAL 6.0.1 literals (history comments may mention 6.0.1 -
     # e.g. the live-preview design notes - but every functional literal must
-    # have moved on to 6.0.2).
+    # have moved on to 6.0.3).
     stale_601_literals = [
         "DocsVersion     = '6.0.1'",
         'local ARENA_VERSION  = "6.0.1"',
@@ -265,14 +265,14 @@ def main() -> int:
         require(marker not in source, f"stale 6.0.1 literal remains: {marker}")
 
     required_markers = [
-        "DocsVersion     = '6.0.2'",
-        'local ARENA_VERSION  = "6.0.2"',
-        "bridgeVersion = '6.0.2'",
-        "serverVersion = '6.0.2'",
-        "version = '6.0.2'",
-        "$versionText = '6.0.2'",
-        "$verText = '6.0.2'",
-        'Text="Arena Roblox Bridge - Version 6.0.2"',
+        "DocsVersion     = '6.0.3'",
+        'local ARENA_VERSION  = "6.0.3"',
+        "bridgeVersion = '6.0.3'",
+        "serverVersion = '6.0.3'",
+        "version = '6.0.3'",
+        "$versionText = '6.0.3'",
+        "$verText = '6.0.3'",
+        'Text="Arena Roblox Bridge - Version 6.0.3"',
         # 4.0.0: the config table that keeps the top-level local count in check.
         "local ARENA_CFG = {",
         "ARENA_CFG.POLL_WAIT",
@@ -434,6 +434,14 @@ def main() -> int:
         # fallback so a failed main-runspace Add-Type cannot kill every
         # capture with a silent TypeNotFound.
         "if (-not ('Arena.ScreenHelper' -as [type])) {",
+        # Version 6.0.3: truly flat window enumeration, occlusion-safe direct
+        # window rendering, and self-healing capture workers.
+        "return $script:PreviewWindowCache",
+        "return $script:WindowNameCache",
+        "[Arena.ScreenHelper]::PrintWindow($hwnd, $hdc, 2)",
+        "CopyFromScreen-Fallback",
+        "Aufnahme-Worker nach 10 Sekunden beendet",
+        "kein passendes Roblox-Studio-Fenster gefunden",
         # Version 6.0.2: update safety net - after a launcher start whose
         # status does not prove a fresh install, the app verifies version.json
         # itself and pulls the update directly if the launcher failed to.
@@ -489,6 +497,16 @@ def main() -> int:
             "the old aggregate-row icon mosaic signature is still present")
     require("$script:IconFolder" not in source,
             "the old on-disk icon cache folder is still present")
+    # 6.0.3: window previews must start locally and immediately; never put a
+    # synchronous thumbnail request back onto the WPF dispatcher thread.
+    require("thumbnails.roblox.com/v1/games/icons" not in source,
+            "the blocking Roblox game-icon request is back in the window-preview path")
+    preview_fn = source[source.index("function Get-StudioWindowInfos"):source.index("function Resolve-PlacePreviewHandle")]
+    require("return , $script:PreviewWindowCache" not in preview_fn,
+            "window info cache is nested again by unary comma (breaks multiple Studio windows)")
+    window_name_fn = source[source.index("function Get-StudioWindowName"):source.index("function Get-PlaceName")]
+    require("return , $script:WindowNameCache" not in window_name_fn,
+            "window title cache is nested again by unary comma (breaks multi-window title matching)")
 
     # A no-HTTP fallback must not return an instructions-to-enable-HTTP error.
     start_chunk = source[source.index("local function startPlay"):source.index("local function stopPlay")]
@@ -565,7 +583,7 @@ def main() -> int:
         except ET.ParseError as exc:
             raise AssertionError(f"XAML block {index} is not XML: {exc}") from exc
 
-    print("OK: 6.0.2 structure, Lua and XAML validation passed")
+    print("OK: 6.0.3 structure, Lua and XAML validation passed")
     return 0
 
 

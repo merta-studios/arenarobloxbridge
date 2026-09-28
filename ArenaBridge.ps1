@@ -1,4 +1,26 @@
 ﻿# ============================================================================
+# Arena Roblox Bridge  -  Version 6.0.3
+#
+# FENSTER-VORSCHAU ENDGUELTIG REPARIERT (Live-Befund: Bei mehreren Studio-
+# Fenstern blieb die Vorschau trotz 6.0.2 leer):
+#   * ARRAY-FEHLER BEHOBEN: Get-StudioWindowInfos gab den Fenster-Cache durch
+#     ein ueberfluessiges unitaeres Komma als verschachteltes object[][] aus.
+#     Dadurch sah Resolve-PlacePreviewHandle mehrere Fenster als EIN Element
+#     und konnte das Handle-Array nicht in IntPtr umwandeln. Der gesamte
+#     Vorschau-Aufruf brach vor dem Worker ab. Cache und Rueckgabe sind jetzt
+#     wirklich flach; ein Strukturtest sichert genau diesen Fehler ab.
+#   * ECHTE FENSTER-AUFNAHME: PrintWindow(PW_RENDERFULLCONTENT) rendert das
+#     zugeordnete Studio-Fenster nun direkt, auch wenn die Bridge davor liegt.
+#     CopyFromScreen bleibt als Fallback, falls Windows/Studio PrintWindow
+#     ablehnt. Damit wird nicht mehr versehentlich der Bildschirm vor Studio
+#     statt des Studio-Fensters fotografiert.
+#   * KEIN NETZWERK-BLOCKER MEHR: Die synchrone Roblox-Thumbnail-Abfrage im
+#     UI-Thread wurde entfernt. Die Kachel zeigt wieder ausschliesslich die
+#     verlangte Fenster-Vorschau und startet sofort.
+#   * HAENGENDE WORKER HEILEN SICH: Aufnahmejobs haben ein 10-s-Zeitlimit,
+#     werden danach beendet und beim naechsten Tick neu gestartet. Auch ein
+#     nicht gefundenes Fenster wird jetzt gedrosselt mit Ursache protokolliert.
+#
 # Arena Roblox Bridge  -  Version 6.0.2
 #
 # VORSCHAU-REPARATUR + UPDATE-SICHERHEITSNETZ VERSION 6.0.2 (beides als
@@ -1301,7 +1323,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '6.0.2'
+    DocsVersion     = '6.0.3'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -1460,7 +1482,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 6.0.2)
+  Arena Studio Bridge - Studio Plugin  (Version 6.0.3)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1531,7 +1553,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "6.0.2"
+local ARENA_VERSION  = "6.0.3"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -9636,6 +9658,7 @@ namespace Arena {
     public static class ScreenHelper {
         [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
         [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
+        [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
         [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
         [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
     }
@@ -12189,7 +12212,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '6.0.2'
+            version = '6.0.3'
             docsVersion = [string]$Shared.DocsVersion
             role = 'A normal token controls exactly one live Roblox Studio place. The special aggregate token copied from Alle Places controls several places: call GET /api/places first and pass one exact targetPlace in every request; the bridge refuses to guess. This makes switching safe and explicit. Send every request as POST /api/tool with JSON body { "token": "...", "targetPlace": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -12304,7 +12327,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '6.0.2'
+            bridgeVersion = '6.0.3'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -12544,7 +12567,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '6.0.2'
+                        bridgeVersion = '6.0.3'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -12796,7 +12819,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '6.0.2'
+                        serverVersion = '6.0.3'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -12983,7 +13006,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='6.0.2'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='6.0.3'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -13012,8 +13035,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '6.0.2'
-                    serverVersion = '6.0.2'
+                    bridgeVersion = '6.0.3'
+                    serverVersion = '6.0.3'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -13667,6 +13690,19 @@ function Remove-DeadSession {
         try { [void]$script:Shared.$bagName.TryRemove($SessionId, [ref]$junk) } catch {}
     }
     try { $script:PlaceNames.Remove($SessionId) } catch {}
+    # Vorschau-Worker und Caches gehoeren zur Sitzung und duerfen nach dem
+    # Schliessen eines Studio-Fensters weder weiterlaufen noch Handles halten.
+    try {
+        if ($script:PlacePreviewJobs.ContainsKey($SessionId)) {
+            $previewJob = $script:PlacePreviewJobs[$SessionId]
+            try { $previewJob.Worker.Stop() } catch {}
+            try { $previewJob.Worker.Dispose() } catch {}
+            [void]$script:PlacePreviewJobs.Remove($SessionId)
+        }
+        [void]$script:PlacePreviewHandles.Remove($SessionId)
+        [void]$script:PlacePreviewLastCaptureAt.Remove($SessionId)
+        [void]$script:PlacePreviewFailLogAt.Remove($SessionId)
+    } catch {}
     Write-RuntimeLog ('Place-Sitzung ' + $SessionId + ' ("' + $placeName + '") nach ' + $script:PlaceCleanupSeconds + ' s ohne Lebenszeichen entfernt.')
 }
 function Get-ActiveStudios {
@@ -15015,7 +15051,7 @@ function Test-StandardPlaceName {
 
 function Get-StudioWindowName {
     if (((Get-Date) - $script:WindowNameCacheAt).TotalSeconds -lt 4) {
-        return , $script:WindowNameCache
+        return $script:WindowNameCache
     }
     $names = New-Object System.Collections.Generic.List[string]
     try {
@@ -15033,9 +15069,9 @@ function Get-StudioWindowName {
             $names.Add((Repair-Mojibake $clean))
         }
     } catch {}
-    $script:WindowNameCache = @($names)
+    $script:WindowNameCache = [string[]]$names.ToArray()
     $script:WindowNameCacheAt = Get-Date
-    return , $script:WindowNameCache
+    return $script:WindowNameCache
 }
 
 function Get-PlaceName {
@@ -15112,7 +15148,9 @@ function Get-StudioWindowInfos {
     # Kurzer Cache (1.5 s): Fenster kommen/gehen selten, ein Neuenumerieren
     # bei jedem 900-ms-Tick waere unnoetiger Overhead.
     if (((Get-Date) - $script:PreviewWindowCacheAt).TotalSeconds -lt 1.5) {
-        return , $script:PreviewWindowCache
+        # Kein unitaeres Komma: Das wuerde object[] als EIN Pipeline-Objekt
+        # zurueckgeben und beim Aufrufer erneut in object[] einpacken.
+        return $script:PreviewWindowCache
     }
     $infos = New-Object System.Collections.Generic.List[object]
     try {
@@ -15121,18 +15159,19 @@ function Get-StudioWindowInfos {
                 if ($null -eq $proc -or $proc.MainWindowHandle -eq [IntPtr]::Zero) { continue }
                 $title = [string]$proc.MainWindowTitle
                 $clean = ($title -replace '\s*[-–]\s*Roblox Studio\s*$', '').Trim()
-                $infos.Add([pscustomobject]@{ Handle = $proc.MainWindowHandle; Title = $clean })
+                $infos.Add([pscustomobject]@{ Handle = [IntPtr]$proc.MainWindowHandle; Title = $clean; ProcessId = [int]$proc.Id })
             }
         }
     } catch {}
-    # Version 6.0.2: Cache und Rueckgabe sind jetzt garantiert ein FLACHES
-    # object[] - exakt das bewaehrte Muster von Get-StudioWindowName (dort
-    # laeuft es seit Jahren stabil). Vorher gab der Cache eine reine
-    # List[object] zurueck, was je nach Aufrufer-Kontext leicht anders
-    # verpakt ankommen konnte.
-    $script:PreviewWindowCache = @($infos)
+    # Version 6.0.3: Eine Funktion schreibt Arrays ohnehin elementweise in
+    # die PowerShell-Pipeline. `return , $array` unterdrueckt genau dieses
+    # Entrollen und erzeugte beim Aufrufer `@(Get-...)` ein object[][].
+    # Bei mehreren Fenstern wurde deshalb der Ein-Fenster-Zweig genommen und
+    # ein komplettes Handle-Array nach IntPtr gecastet - die Aufnahme startete
+    # nie. Hier deshalb bewusst KEIN unitaeres Komma.
+    $script:PreviewWindowCache = [object[]]$infos.ToArray()
     $script:PreviewWindowCacheAt = Get-Date
-    return , $script:PreviewWindowCache
+    return $script:PreviewWindowCache
 }
 
 function Resolve-PlacePreviewHandle {
@@ -15264,32 +15303,10 @@ function Start-PlacePreviewCapture {
     param($Studio, $Row)
     if ($null -eq $Row -or $null -eq $Row.IconFrame) { return }
 
-    # 6.0.2: zuerst das echte Roblox-Spiel-Icon laden. Die Live-Aufnahme
-    # bleibt nur der Fallback für lokale/unveröffentlichte Places. Wichtig:
-    # placeId ist auch dann vorhanden, wenn gameId noch 0 ist.
-    if (-not $Row.PreviewHasFrame -and -not $Row.IconIconAttempted) {
-        $Row | Add-Member -NotePropertyName IconIconAttempted -NotePropertyValue $true -Force
-        $iconId = [string]$Studio.placeId
-        if ([string]::IsNullOrWhiteSpace($iconId) -or $iconId -eq '0') { $iconId = [string]$Studio.gameId }
-        if ($iconId -match '^\d+$' -and $iconId -ne '0') {
-            try {
-                $url = "https://thumbnails.roblox.com/v1/games/icons?placeIds=$iconId&returnPolicy=PlaceHolder&size=150x150&format=Png&isCircular=false"
-                $response = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec 8 -UseBasicParsing
-                $imageUrl = [string]$response.data[0].imageUrl
-                if (-not [string]::IsNullOrWhiteSpace($imageUrl)) {
-                    $bytes = (New-Object System.Net.WebClient).DownloadData($imageUrl)
-                    if ($bytes -and $bytes.Length -gt 100) {
-                        Set-PlacePreviewImage $Row $bytes
-                        $Row.IconFrame.ToolTip = 'Roblox-Spiel-Icon'
-                        try { Write-RuntimeLog "Spiel-Icon geladen (placeId $iconId)." } catch {}
-                        return
-                    }
-                }
-            } catch {
-                try { Write-RuntimeLog "Spiel-Icon nicht verfügbar (placeId $iconId): $($_.Exception.Message)" } catch {}
-            }
-        }
-    }
+    # 6.0.3: Kein synchroner Web-Abruf im WPF-Thread. Diese Kachel ist eine
+    # Vorschau des Studio-FENSTERS, kein Roblox-Spiel-Icon. Die bisherige
+    # Thumbnail-Abfrage konnte die komplette UI bis zu 8 Sekunden blockieren
+    # und verzoegerte die eigentliche Aufnahme bei jedem neuen Place.
     $sessionId = [string]$Studio.sessionId
     # Die virtuelle "Alle Places"-Zeile bekommt (erstmal) bewusst keine
     # Vorschau - siehe New-AllPlacesRow (Frame dort dauerhaft ausgeblendet).
@@ -15308,13 +15325,19 @@ function Start-PlacePreviewCapture {
     if ($handle -eq [IntPtr]::Zero) {
         [void]$script:PlacePreviewHandles.Remove($sessionId)
         if (-not $Row.PreviewHasFrame) {
-            # Version 6.0.2: erst nach 3 Ticks ohne Fenster auf das Platz-
-            # halter-Symbol fallen (ein Fenster kann jeden Moment erscheinen)
-            # - davor zeigt der Ladekreis, dass noch gearbeitet wird.
+            # Erst nach 3 Ticks ohne Fenster auf das Platzhalter-Symbol fallen.
             $Row.PreviewFailCount = [int]$Row.PreviewFailCount + 1
             if ([int]$Row.PreviewFailCount -ge 3) {
                 try { $Row.IconSpinner.Visibility = 'Collapsed'; $Row.IconFallback.Visibility = 'Visible' } catch {}
             }
+        }
+        # 6.0.3: Auch der Fehler VOR dem Worker darf nicht unsichtbar bleiben.
+        $now = Get-Date
+        $lastLog = [DateTime]::MinValue
+        if ($script:PlacePreviewFailLogAt.ContainsKey($sessionId)) { $lastLog = [DateTime]$script:PlacePreviewFailLogAt[$sessionId] }
+        if (($now - $lastLog).TotalSeconds -ge 15) {
+            $script:PlacePreviewFailLogAt[$sessionId] = $now
+            try { Write-RuntimeLog "Place-Vorschau ($sessionId): Aufnahme fehlgeschlagen - kein passendes Roblox-Studio-Fenster gefunden." } catch {}
         }
         return
     }
@@ -15341,7 +15364,7 @@ try {
     # Aufnahme still mit TypeNotFound - jetzt legt der Worker seinen eigenen
     # minimalen ScreenHelper nach.
     if (-not ('Arena.ScreenHelper' -as [type])) {
-        Add-Type -TypeDefinition 'namespace Arena { [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; } public static class ScreenHelper { [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool IsIconic(System.IntPtr hWnd); [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr hWnd, out RECT lpRect); } }' -ErrorAction Stop
+        Add-Type -TypeDefinition 'namespace Arena { [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; } public static class ScreenHelper { [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool IsIconic(System.IntPtr hWnd); [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr hWnd, out RECT lpRect); [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool PrintWindow(System.IntPtr hWnd, System.IntPtr hdcBlt, uint nFlags); } }' -ErrorAction Stop
     }
     $hwnd = [IntPtr]$handleValue
     # Minimiert -> bewusst NICHTS aufnehmen, das zuletzt gezeigte Bild bleibt
@@ -15354,10 +15377,36 @@ try {
     $width = $rect.Right - $rect.Left
     $height = $rect.Bottom - $rect.Top
     if ($width -le 40 -or $height -le 40) { return @{ ok = $false; error = 'Fenstergroesse ungueltig' } }
-    $full = New-Object System.Drawing.Bitmap $width, $height
+    $full = [System.Drawing.Bitmap]::new($width, $height, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
     $g = [System.Drawing.Graphics]::FromImage($full)
-    try { $g.CopyFromScreen($rect.Left, $rect.Top, 0, 0, (New-Object System.Drawing.Size $width, $height)) }
-    finally { $g.Dispose() }
+    $captureMethod = 'PrintWindow'
+    $printed = $false
+    try {
+        # PW_RENDERFULLCONTENT (2): Windows rendert das Quellfenster selbst.
+        # Anders als CopyFromScreen funktioniert das auch, wenn die Bridge vor
+        # Studio liegt oder ein anderes Fenster Teile davon verdeckt.
+        $hdc = $g.GetHdc()
+        try { $printed = [Arena.ScreenHelper]::PrintWindow($hwnd, $hdc, 2) }
+        finally { $g.ReleaseHdc($hdc) }
+        # Einige GPU-beschleunigte Fenster melden bei PrintWindow Erfolg,
+        # liefern aber nur eine komplett schwarze/transparente Bitmap. An
+        # mehreren Punkten pruefen, statt so ein Schein-Ergebnis anzuzeigen.
+        if ($printed) {
+            $hasPixels = $false
+            foreach ($px in @(2, [Math]::Max(2,[int]($width/2)), [Math]::Max(2,$width-3))) {
+                foreach ($py in @(2, [Math]::Max(2,[int]($height/2)), [Math]::Max(2,$height-3))) {
+                    $color = $full.GetPixel([Math]::Min($width-1,$px), [Math]::Min($height-1,$py))
+                    if (($color.R + $color.G + $color.B) -gt 24) { $hasPixels = $true; break }
+                }
+                if ($hasPixels) { break }
+            }
+            if (-not $hasPixels) { $printed = $false }
+        }
+        if (-not $printed) {
+            $captureMethod = 'CopyFromScreen-Fallback'
+            $g.CopyFromScreen($rect.Left, $rect.Top, 0, 0, (New-Object System.Drawing.Size $width, $height))
+        }
+    } finally { $g.Dispose() }
     # Sofort auf Kachel-Groesse herunterskalieren (Performance!) - jedes
     # zusaetzliche Pixel darueber hinaus kostet nur Zeit/Speicher, ohne in der
     # kleinen Vorschau je sichtbar zu werden.
@@ -15375,14 +15424,14 @@ try {
     $small.Dispose()
     $bytes = $ms.ToArray()
     $ms.Dispose()
-    return @{ ok = $true; bytes = $bytes; w = $smallWidth; h = $targetHeight }
+    return @{ ok = $true; bytes = $bytes; w = $smallWidth; h = $targetHeight; method = $captureMethod }
 } catch {
     return @{ ok = $false; error = [string]$_.Exception.Message }
 }
 '@
     [void]$worker.AddScript($code).AddArgument($handleValue).AddArgument($targetHeight)
     try {
-        $script:PlacePreviewJobs[$sessionId] = [pscustomobject]@{ Worker = $worker; Handle = $worker.BeginInvoke(); SessionId = $sessionId }
+        $script:PlacePreviewJobs[$sessionId] = [pscustomobject]@{ Worker = $worker; Handle = $worker.BeginInvoke(); SessionId = $sessionId; StartedAt = Get-Date }
     } catch {
         try { $worker.Dispose() } catch {}
         Write-UiErrorLog ('Place-Vorschau-Aufnahme ' + $sessionId + ' konnte nicht gestartet werden') $_
@@ -15392,7 +15441,17 @@ try {
 function Update-PlacePreviewCaptures {
     foreach ($sessionId in @($script:PlacePreviewJobs.Keys)) {
         $job = $script:PlacePreviewJobs[$sessionId]
-        if (-not $job.Handle.IsCompleted) { continue }
+        if (-not $job.Handle.IsCompleted) {
+            # Ein blockiertes PrintWindow darf diese Sitzung nicht fuer immer
+            # sperren. Nach 10 s Job entsorgen; der normale Tick startet neu.
+            if ($job.StartedAt -and ((Get-Date) - [DateTime]$job.StartedAt).TotalSeconds -ge 10) {
+                try { $job.Worker.Stop() } catch {}
+                try { $job.Worker.Dispose() } catch {}
+                $script:PlacePreviewJobs.Remove($sessionId)
+                try { Write-RuntimeLog "Place-Vorschau ($sessionId): Aufnahme-Worker nach 10 Sekunden beendet (Zeitüberschreitung)." } catch {}
+            }
+            continue
+        }
         $bytes = $null
         $result = $null
         try {
@@ -15415,7 +15474,13 @@ function Update-PlacePreviewCaptures {
                 # Sitzung wirklich Bilder liefert - inkl. Aufnahme-Groesse.
                 $row.PreviewLoggedOnce = $true
                 $sizeInfo = ''
-                try { if ($result) { $sizeInfo = " ($([int]$result.w)x$([int]$result.h) px)" } } catch {}
+                try {
+                    if ($result) {
+                        $sizeInfo = " ($([int]$result.w)x$([int]$result.h) px"
+                        if ($result.method) { $sizeInfo += ", $([string]$result.method)" }
+                        $sizeInfo += ')'
+                    }
+                } catch {}
                 try { Write-RuntimeLog "Place-Vorschau ($sessionId): Live-Vorschau aktiv$sizeInfo." } catch {}
             }
             Set-PlacePreviewImage $row $bytes
@@ -16813,7 +16878,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '6.0.2'
+    $versionText = '6.0.3'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -17397,7 +17462,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 6.0.2" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 6.0.3" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -17437,7 +17502,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 6.0.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 6.0.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -17485,7 +17550,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 6.0.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 6.0.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -17498,7 +17563,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '6.0.2'
+    $verText = '6.0.3'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
