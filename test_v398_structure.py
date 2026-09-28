@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 6.0.1.
+"""Offline structure check for Arena Roblox Bridge 6.0.2.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "6.0.1"
+VERSION = "6.0.2"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -226,7 +226,7 @@ def main() -> int:
 
     # Stale FUNCTIONAL 6.0 literals (history comments may mention 6.0; the
     # Liquid-Glass design markers from 6.0 stay required below, only the
-    # exact version-number literals must have moved on to 6.0.1).
+    # exact version-number literals must have moved on to 6.0.2).
     stale_60_literals = [
         "DocsVersion     = '6.0'",
         'local ARENA_VERSION  = "6.0"',
@@ -244,15 +244,35 @@ def main() -> int:
     for marker in stale_60_literals:
         require(marker not in source, f"stale 6.0 literal remains: {marker}")
 
-    required_markers = [
+    # Stale FUNCTIONAL 6.0.1 literals (history comments may mention 6.0.1 -
+    # e.g. the live-preview design notes - but every functional literal must
+    # have moved on to 6.0.2).
+    stale_601_literals = [
         "DocsVersion     = '6.0.1'",
         'local ARENA_VERSION  = "6.0.1"',
         "bridgeVersion = '6.0.1'",
+        "bridgeVersion='6.0.1'",
         "serverVersion = '6.0.1'",
         "version = '6.0.1'",
         "$versionText = '6.0.1'",
         "$verText = '6.0.1'",
+        'Arena Studio Bridge - Studio Plugin  (Version 6.0.1)',
         'Text="Arena Roblox Bridge - Version 6.0.1"',
+        "Version 6.0.1 - aktuell. Beim naechsten Start",
+        "# Arena Roblox Bridge  -  Version 6.0.1",
+    ]
+    for marker in stale_601_literals:
+        require(marker not in source, f"stale 6.0.1 literal remains: {marker}")
+
+    required_markers = [
+        "DocsVersion     = '6.0.2'",
+        'local ARENA_VERSION  = "6.0.2"',
+        "bridgeVersion = '6.0.2'",
+        "serverVersion = '6.0.2'",
+        "version = '6.0.2'",
+        "$versionText = '6.0.2'",
+        "$verText = '6.0.2'",
+        'Text="Arena Roblox Bridge - Version 6.0.2"',
         # 4.0.0: the config table that keeps the top-level local count in check.
         "local ARENA_CFG = {",
         "ARENA_CFG.POLL_WAIT",
@@ -397,6 +417,30 @@ def main() -> int:
         "function Update-PlacePreviewCaptures",
         "[Arena.ScreenHelper]::IsIconic($hwnd)",
         "Place-Zeile: Vorschau-Aufnahme fehlgeschlagen",
+        # Version 6.0.2: preview can no longer fail silently - failures are
+        # counted, logged with a reason (throttled), and after 3 consecutive
+        # failures the placeholder glyph replaces the eternal spinner.
+        "$script:PlacePreviewFailLogAt = @{}",
+        "PreviewFailCount = 0",
+        "PreviewLoggedOnce = $true",
+        "Place-Vorschau ($sessionId): Aufnahme fehlgeschlagen",
+        "Place-Vorschau ($sessionId): Live-Vorschau aktiv",
+        "Studio-Fenster ist minimiert",
+        # Version 6.0.2: window-handle resolution is null-safe and tolerant
+        # (trim, case-insensitive, prefix match, versionMismatch suffix).
+        "$previousRaw = $script:PlacePreviewHandles[$sessionId]",
+        "[System.StringComparison]::OrdinalIgnoreCase",
+        # Version 6.0.2: the capture worker carries its own ScreenHelper
+        # fallback so a failed main-runspace Add-Type cannot kill every
+        # capture with a silent TypeNotFound.
+        "if (-not ('Arena.ScreenHelper' -as [type])) {",
+        # Version 6.0.2: update safety net - after a launcher start whose
+        # status does not prove a fresh install, the app verifies version.json
+        # itself and pulls the update directly if the launcher failed to.
+        "$script:SelfUpdateVerifyTimeout = 6",
+        "Invoke-AutostartSelfUpdate -VerifyMode",
+        "$starterProvesFreshInstall = ((@('update-erfolgreich', 'erster-start') -contains $UpdateStatus) -eq $true)",
+        "param([string]$Branch, [string]$File, [int]$TimeoutSec = 0)",
     ]
     for marker in required_markers:
         require(marker in source, f"required marker missing: {marker}")
@@ -521,7 +565,7 @@ def main() -> int:
         except ET.ParseError as exc:
             raise AssertionError(f"XAML block {index} is not XML: {exc}") from exc
 
-    print("OK: 6.0.1 structure, Lua and XAML validation passed")
+    print("OK: 6.0.2 structure, Lua and XAML validation passed")
     return 0
 
 

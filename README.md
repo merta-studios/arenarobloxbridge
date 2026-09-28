@@ -20,7 +20,7 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test_v398_structure.py` | Python-Strukturtest für 6.0 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test_v398_structure.py` | Python-Strukturtest für 6.0.2 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -35,6 +35,51 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 6.0.2
+- **Spiel-Icon-/Vorschau-System repariert (der lang ersehnte Fix).** In 6.0.1
+  blieb bei *jedem* gescheiterten Aufnahmeversuch des Studio-Fensters (z. B.
+  Studio minimiert, Fenster mehreren Zeilen nicht eindeutig zuordbar, Fehler
+  beim Aufnehmen) der Ladekreis endlos stehen – nie ein Bild, nie eine
+  Fehlermeldung. Jetzt: Nach 3 gescheiterten Versuchen erscheint das
+  Platzhalter-Symbol, die Aufnahmen laufen im Hintergrund weiter, und sobald
+  eine klappt, blendet die Live-Vorschau ein. Jede fehlgeschlagene Aufnahme
+  wird außerdem mit Grund in `runtime.log` protokolliert (gedrosselt), und
+  die erste erfolgreiche Aufnahme je Sitzung wird einmalig bestätigt.
+- **Zuordnung bei mehreren Studio-Fenstern robuster.** Der Zeilentitel musste
+  bisher exakt dem bereinigten Fenstertitel entsprechen – der angehängte
+  Hinweis „Studio neu starten (Plugin veraltet)“ oder Leerraum-/Groß-/Klein-
+  Schreibabweichungen brachen die Zuordnung. Jetzt: exakter Treffer, danach
+  toleranter Treffer (Leerraum, Groß-/Kleinschreibung, Anfangs-
+  Übereinstimmung), danach der zuletzt bekannte Handle.
+- **Null- und Type-Sicherheit.** Ein nicht auflösbarer Fenster-Handle kann
+  nicht mehr still bis zur Aufnahme durchreichen; der Aufnahme-Worker bringt
+  zudem seinen eigenen ScreenHelper-Fallback mit (Add-Type im Worker), falls
+  der Typ im Haupt-Runspace nicht geladen werden konnte.
+- **Update-Sicherheitsnetz (wichtigster Fix).** Startet der Starter (EXE) das
+  Programm mit einem Status, der nicht beweist, dass er gerade frisch
+  installiert hat („kein Update“, „keine Verbindung“, „Update-Fehler“,
+  „Update-Suche-Fehler“), prüft das Programm jetzt selbst kurz gegen
+  `version.json` im Repository und zieht ein Update notfalls direkt (kurzes
+  Zeitlimit, stilles Scheitern, Neustart mit Hinweisfenster). Grund: Ein
+  hängender oder defekter Starter ließ sonst jedes im Repository
+  veröffentlichte Fix für immer beim Nutzer nicht ankommen – die plausibelste
+  Erklärung dafür, dass mehrere Icon-Reparaturen der letzten Versionen beim
+  Nutzer „nie ankamen“.
+- Alles Weitere bleibt wie 6.0/6.0.1 (Design, Bedienung, Einstellungen,
+  Server, Plugin-Protokolle).
+
+## 6.0.1
+- **Spiel-Icons ersetzt durch eine Live-Vorschau.** Statt eines von Roblox
+  heruntergeladenen Spiel-Icons (das bei unveröffentlichten Places nie ein
+  echtes Bild zeigen konnte, weil `game.GameId` dort 0 ist) macht die Bridge
+  jetzt direkt einen Live-Screenshot des jeweiligen Roblox-Studio-Fensters –
+  ohne Internetverbindung zu Roblox und unabhängig davon, ob das Place
+  veröffentlicht ist. Aufnahmen laufen im Hintergrund (nie auf dem UI-Thread),
+  sind pro Sitzung auf höchstens eine alle ~2,5 s gedrosselt und werden sofort
+  auf Kachelgröße verkleinert. Ist das Studio-Fenster minimiert, wird die
+  Vorschau bewusst nicht aktualisiert – das zuletzt gezeigte Bild bleibt
+  stehen. Die „Alle Places“-Sammelzeile zeigt bewusst keine Vorschau.
 
 ## 6.0
 - **Komplett neues Design: „Liquid Glass“.** Die gesamte Oberfläche ist nach

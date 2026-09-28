@@ -1,5 +1,47 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 6.0.1
+# Arena Roblox Bridge  -  Version 6.0.2
+#
+# VORSCHAU-REPARATUR + UPDATE-SICHERHEITSNETZ VERSION 6.0.2 (beides als
+# Reaktion auf den Live-Befund "beim Nutzer erscheint seit vielen Versionen
+# nie ein Bild in der Icon-/Vorschau-Kachel"):
+#   * VORSCHAU ZEIGT NIE NICHTS MEHR: In 6.0.1 blieb bei JEDEM gescheiterten
+#     Aufnahmeversuch (Studio-Fenster minimiert, Fenster nicht eindeutig
+#     zuordbar, Fehler beim Aufnehmen) der Ladekreis endlos stehen - nie ein
+#     Bild, nie eine Fehlermeldung. Jetzt: Nach 3 gescheiterten Versuchen
+#     erscheint das Platzhalter-Symbol, die Aufnahmen laufen im Hintergrund
+#     weiter, und sobald eine klappt, blendet die Live-Vorschau doch ein.
+#   * JEDE FEHLGESCHLAGENE AUFNAHME WIRD BEGRUENDET PROTOKOLLIERT: Grund
+#     (minimiert / GetWindowRect / Fenstergroesse / Exception) und Sitzung
+#     stehen mit Zeitstempel in runtime.log (gedrosselt auf hoechstens eine
+#     Zeile je Sitzung und 15 s). Auch die erste erfolgreiche Aufnahme je
+#     Sitzung wird einmalig protokolliert - ein leeres Vorschaubild ist damit
+#     endgueltig nachvollziehbar statt still.
+#   * ZUORDNUNG BEI MEHREREN FENSTERN ROBUSTER: Der Zeilentitel musste exakt
+#     dem bereinigten Fenstertitel entsprechen - der angehaengte Hinweis
+#     "Studio neu starten (Plugin veraltet)" oder Leerraum-/Gross-/Klein-
+#     schreibabweichungen brachen die Zuordnung, die Zeile blieb ohne Bild.
+#     Jetzt: exakter Treffer, danach toleranter Treffer (Leerraum an den
+#     Enden, Gross-/Kleinschreibung, Anfangs-Uebereinstimmung), danach der
+#     zuletzt bekannte Handle (solange das Fenster existiert).
+#   * NULL- + TYPE-SICHERHEIT: Ein nicht aufloesbarer Handle kann nicht mehr
+#     still bis zur Aufnahme durchreichen ($handle.ToInt64() warf vorher im
+#     aufrufenden try/catch - der Kreis drehte ewig). Der Aufnahme-Worker
+#     bringt zudem einen EIGENEN ScreenHelper-Fallback mit (Add-Type im
+#     Worker), falls der Typ im Haupt-Runspace nicht geladen werden konnte.
+#     Cache und Rueckgabe der Fensterliste sind jetzt ein flaches object[]
+#     (bewaehrtes Muster von Get-StudioWindowName).
+#   * UPDATE-SICHERHEITSNETZ (wichtigster Fix): Startet der Starter (EXE) das
+#     Programm mit einem Status, der nicht beweist, dass er gerade frisch
+#     installiert hat ('kein-update', 'keine-verbindung', 'update-fehler',
+#     'update-suche-fehler'), prueft das Programm jetzt selbst kurz gegen
+#     version.json im Repository und zieht ein Update notfalls direkt (kurzes
+#     Zeitlimit, stilles Scheitern, Neustart mit Hinweisfenster). Grund: Ein
+#     haengender/defekter Starter liess sonst JEDES im Repository veroeffent-
+#     lichte Fix fuer immer beim Nutzer nicht ankommen - die plausibelste
+#     Erklaerung dafuer, dass mehrere Icon-Reparaturen der letzten Versionen
+#     beim Nutzer "nie ankamen".
+#   * Alles Weitere bleibt wie 6.0/6.0.1: gleiches Liquid-Glass-Design,
+#     gleiche Bedienung, gleiche Einstellungen, gleiche Protokolle.
 #
 # LIVE-VORSCHAU VERSION 6.0.1 (ersetzt die Spiel-Icons durch einen echten
 # Fenster-Screenshot - System und Bedienung bleiben sonst exakt wie in 6.0):
@@ -859,6 +901,10 @@ $script:PlacePreviewIntervalSeconds = 2.5
 $script:PlacePreviewCaptureHeight = 88
 $script:PreviewWindowCache = @()
 $script:PreviewWindowCacheAt = [DateTime]::MinValue
+# Version 6.0.2: Fehler-Drossel fuer die Vorschau-Diagnose (siehe
+# Update-PlacePreviewCaptures): fehlgeschlagene Aufnahmen werden begruendet
+# in runtime.log protokolliert - hoechstens eine Zeile je Sitzung und 15 s.
+$script:PlacePreviewFailLogAt = @{}
 # Version 5.2: Sichtbarkeit/Aufraeumen der Place-Liste. Das Edit-Plugin
 # heartbeatet etwa alle 5 Sekunden - 15 s decken 3 verlorene Beats locker ab.
 # Ein sauber abgemeldetes Fenster (Studio/Place geschlossen) verschwindet nach
@@ -898,6 +944,12 @@ $script:RepoName = 'arenarobloxbridge'
 $script:RepoBranch = ''
 $script:RepoBranchFallbacks = @('main', 'master')
 $script:SelfUpdateTimeout = 12
+# Version 6.0.2: knapperes Zeitlimit fuer den Sicherheits-Check nach einem
+# Starter-Start (siehe Invoke-AutostartSelfUpdate -VerifyMode) - der
+# normale Programmstart darf durch den Check nie spuerbar verzoegert
+# werden. Gilt nur fuer version.json; der grosse Skript-Download nutzt
+# weiterhin das normale Zeitlimit.
+$script:SelfUpdateVerifyTimeout = 6
 
 New-Item -ItemType Directory -Path $script:AppDataRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $script:ShotFolder -Force | Out-Null
@@ -999,11 +1051,16 @@ function Compare-BridgeVersion {
 }
 
 function Get-RawGitHubText {
-    param([string]$Branch, [string]$File)
+    # 6.0.2: -TimeoutSec erlaubt dem Sicherheits-Check nach einem Starter-
+    # Start ein knapperes Zeitlimit als der normale Autostart-Update-Pfad
+    # (12 s) - sonst wuerde ein totes Netz den Programmstart spuerbar
+    # verzoegern.
+    param([string]$Branch, [string]$File, [int]$TimeoutSec = 0)
+    if ($TimeoutSec -le 0) { $TimeoutSec = [int]$script:SelfUpdateTimeout }
     $url = "https://raw.githubusercontent.com/$($script:RepoOwner)/$($script:RepoName)/$Branch/$File"
     $text = $null
     try {
-        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec $script:SelfUpdateTimeout -ErrorAction Stop
+        $response = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec $TimeoutSec -ErrorAction Stop
         if ([int]$response.StatusCode -eq 200) {
             $content = $response.Content
             if ($content -is [byte[]]) {
@@ -1032,17 +1089,35 @@ function Get-RawGitHubText {
 function Invoke-AutostartSelfUpdate {
     # Rueckgabe: $true, wenn ein Update installiert wurde und dieser Prozess
     # sich gleich beendet (der Neustart laeuft dann schon).
+    #
+    # 6.0.2: -VerifyMode = kurzer Sicherheits-Check auch nach einem Starter-
+    # Start. Der Starter hat dann zwar ein -UpdateStatus uebergeben, aber
+    # keines, das ein frisch installiertes Update BEWEIST ('kein-update',
+    # 'keine-verbindung', 'update-fehler', 'update-suche-fehler'). In dem
+    # Fall vergleicht die Bridge selbst kurz mit version.json im Repository
+    # und zieht ein Update notfalls direkt - ein haengender/defekter Starter
+    # konnte vorher beliebig lange dieselbe lokale Fassung starten lassen.
+    # Zeitlimit knapp halten und nach dem ersten unerreichbaren Branch
+    # aufhoeren: Der normale Programmstart darf nie spuerbar warten.
+    param([switch]$VerifyMode)
     if ($script:IsExeMode) { return $false }           # EXE aktualisiert der Starter
     if (-not $script:ScriptPath) { return $false }
     if (-not (Test-Path -LiteralPath $script:ScriptPath)) { return $false }
 
     $localVersion = Get-LocalBridgeVersion
-    Write-RuntimeLog "Autostart-Update: Suche nach einer neueren Fassung (lokal $localVersion) ..."
+    if ($VerifyMode) {
+        Write-RuntimeLog "Sicherheits-Check: Starter meldete kein frisches Update - pruefe selbst nach (lokal $localVersion) ..."
+    } else {
+        Write-RuntimeLog "Autostart-Update: Suche nach einer neueren Fassung (lokal $localVersion) ..."
+    }
 
     foreach ($branch in (Get-UpdateBranchChain)) {
-        $versionText = Get-RawGitHubText -Branch $branch -File 'version.json'
+        $jsonTimeout = [int]$script:SelfUpdateTimeout
+        if ($VerifyMode) { $jsonTimeout = [int]$script:SelfUpdateVerifyTimeout }
+        $versionText = Get-RawGitHubText -Branch $branch -File 'version.json' -TimeoutSec $jsonTimeout
         if (-not $versionText) {
-            Write-RuntimeLog "Autostart-Update: Branch '$branch' nicht erreichbar - naechster Versuch."
+            Write-RuntimeLog "Update-Suche: Branch '$branch' nicht erreichbar - naechster Versuch."
+            if ($VerifyMode) { break }
             continue
         }
 
@@ -1053,20 +1128,24 @@ function Invoke-AutostartSelfUpdate {
             $remoteVersion = [string]$info.version
             if ($info.PSObject.Properties['notes']) { $remoteNotes = [string]$info.notes }
         } catch {
-            Write-RuntimeLog "Autostart-Update: version.json auf Branch '$branch' ist unlesbar."
+            Write-RuntimeLog "Update-Suche: version.json auf Branch '$branch' ist unlesbar."
             continue
         }
         if ([string]::IsNullOrWhiteSpace($remoteVersion)) { continue }
 
         if ((Compare-BridgeVersion -Remote $remoteVersion -Local $localVersion) -ne 1) {
-            Write-RuntimeLog "Autostart-Update: Version $remoteVersion online, $localVersion lokal - kein Update noetig."
+            if ($VerifyMode) {
+                Write-RuntimeLog "Sicherheits-Check: Version $remoteVersion online, $localVersion lokal - lokaler Stand ist aktuell."
+            } else {
+                Write-RuntimeLog "Autostart-Update: Version $remoteVersion online, $localVersion lokal - kein Update noetig."
+            }
             return $false
         }
 
-        Write-RuntimeLog "Autostart-Update: Neue Version $remoteVersion gefunden - wird geladen ..."
+        Write-RuntimeLog "Update-Suche: Neue Version $remoteVersion gefunden - wird geladen ..."
         $newScript = Get-RawGitHubText -Branch $branch -File 'ArenaBridge.ps1'
         if ([string]::IsNullOrWhiteSpace($newScript) -or $newScript.Length -lt 50000) {
-            Write-RuntimeLog 'Autostart-Update: Download unvollstaendig - es bleibt bei der lokalen Fassung.'
+            Write-RuntimeLog 'Update-Suche: Download unvollstaendig - es bleibt bei der lokalen Fassung.'
             return $false
         }
 
@@ -1114,15 +1193,19 @@ function Invoke-AutostartSelfUpdate {
                 '-UpdateStatus', 'update-erfolgreich'
             ) -WorkingDirectory $script:AppFolder | Out-Null
 
-            Write-RuntimeLog "Autostart-Update: Version $remoteVersion installiert - Neustart laeuft."
+            Write-RuntimeLog "Update-Suche: Version $remoteVersion installiert - Neustart laeuft."
             return $true
         } catch {
-            Write-RuntimeLog "Autostart-Update fehlgeschlagen: $($_.Exception.Message) - es wird die lokale Fassung gestartet."
+            Write-RuntimeLog "Update-Suche fehlgeschlagen: $($_.Exception.Message) - es wird die lokale Fassung gestartet."
             return $false
         }
     }
 
-    Write-RuntimeLog 'Autostart-Update: Kein Branch erreichbar - es wird die lokale Fassung gestartet.'
+    if ($VerifyMode) {
+        Write-RuntimeLog 'Sicherheits-Check: Repository nicht erreichbar - es wird die lokale Fassung gestartet.'
+    } else {
+        Write-RuntimeLog 'Autostart-Update: Kein Branch erreichbar - es wird die lokale Fassung gestartet.'
+    }
     return $false
 }
 
@@ -1218,7 +1301,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '6.0.1'
+    DocsVersion     = '6.0.2'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -1377,7 +1460,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 6.0.1)
+  Arena Studio Bridge - Studio Plugin  (Version 6.0.2)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1448,7 +1531,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "6.0.1"
+local ARENA_VERSION  = "6.0.2"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -12113,7 +12196,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '6.0.1'
+            version = '6.0.2'
             docsVersion = [string]$Shared.DocsVersion
             role = 'A normal token controls exactly one live Roblox Studio place. The special aggregate token copied from Alle Places controls several places: call GET /api/places first and pass one exact targetPlace in every request; the bridge refuses to guess. This makes switching safe and explicit. Send every request as POST /api/tool with JSON body { "token": "...", "targetPlace": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -12228,7 +12311,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '6.0.1'
+            bridgeVersion = '6.0.2'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -12468,7 +12551,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '6.0.1'
+                        bridgeVersion = '6.0.2'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -12720,7 +12803,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '6.0.1'
+                        serverVersion = '6.0.2'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -12907,7 +12990,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='6.0.1'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='6.0.2'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -12936,8 +13019,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '6.0.1'
-                    serverVersion = '6.0.1'
+                    bridgeVersion = '6.0.2'
+                    serverVersion = '6.0.2'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -15042,16 +15125,21 @@ function Get-StudioWindowInfos {
     try {
         foreach ($processName in @('RobloxStudioBeta', 'RobloxStudio')) {
             foreach ($proc in @(Get-Process -Name $processName -ErrorAction SilentlyContinue)) {
-                if ($proc.MainWindowHandle -eq [IntPtr]::Zero) { continue }
+                if ($null -eq $proc -or $proc.MainWindowHandle -eq [IntPtr]::Zero) { continue }
                 $title = [string]$proc.MainWindowTitle
                 $clean = ($title -replace '\s*[-–]\s*Roblox Studio\s*$', '').Trim()
                 $infos.Add([pscustomobject]@{ Handle = $proc.MainWindowHandle; Title = $clean })
             }
         }
     } catch {}
-    $script:PreviewWindowCache = $infos
+    # Version 6.0.2: Cache und Rueckgabe sind jetzt garantiert ein FLACHES
+    # object[] - exakt das bewaehrte Muster von Get-StudioWindowName (dort
+    # laeuft es seit Jahren stabil). Vorher gab der Cache eine reine
+    # List[object] zurueck, was je nach Aufrufer-Kontext leicht anders
+    # verpakt ankommen konnte.
+    $script:PreviewWindowCache = @($infos)
     $script:PreviewWindowCacheAt = Get-Date
-    return , $infos
+    return , $script:PreviewWindowCache
 }
 
 function Resolve-PlacePreviewHandle {
@@ -15060,21 +15148,41 @@ function Resolve-PlacePreviewHandle {
     $infos = @(Get-StudioWindowInfos)
     if ($infos.Count -eq 0) { return [IntPtr]::Zero }
     # Nur EIN Studio-Fenster offen: keine Titel-Rateaktion noetig.
-    if ($infos.Count -eq 1) { return $infos[0].Handle }
+    if ($infos.Count -eq 1) { return [IntPtr]$infos[0].Handle }
     # Mehrere Fenster: demselben angezeigten Namen zuordnen, den Get-PlaceName
     # fuer diese Zeile bereits gewaehlt hat (dieselbe Kandidatenliste, die die
     # Namensanzeige seit Version 5 zur Unterscheidung mehrerer Fenster nutzt).
-    $wanted = [string]$Row.Title.Text
+    # Version 6.0.2: robust gegen Leerraum an den Enden, Gross-/Klein-
+    # schreibung und angehaengte Zusaetze (z. B. den versionMismatch-Hinweis
+    # "Studio neu starten (Plugin veraltet)"). Vorher brach jede Abweichung
+    # die Zuordnung, und die Zeile blieb ohne Vorschaubild.
+    $wanted = ([string]$Row.Title.Text).Trim()
     foreach ($info in $infos) {
-        if (-not [string]::IsNullOrWhiteSpace($info.Title) -and $info.Title -eq $wanted) {
-            return $info.Handle
+        $infoTitle = ([string]$info.Title).Trim()
+        if (-not [string]::IsNullOrWhiteSpace($infoTitle) -and $infoTitle -eq $wanted) {
+            return [IntPtr]$info.Handle
+        }
+    }
+    $comparable = $wanted -replace '\s+-\s+Studio neu starten \(Plugin veraltet\)\s*$', ''
+    $comparable = $comparable.Trim()
+    if (-not [string]::IsNullOrWhiteSpace($comparable)) {
+        foreach ($info in $infos) {
+            $infoTitle = ([string]$info.Title).Trim()
+            if ([string]::IsNullOrWhiteSpace($infoTitle)) { continue }
+            if ($infoTitle.StartsWith($comparable, [System.StringComparison]::OrdinalIgnoreCase) -or
+                $comparable.StartsWith($infoTitle, [System.StringComparison]::OrdinalIgnoreCase)) {
+                return [IntPtr]$info.Handle
+            }
         }
     }
     # Titel gerade uneindeutig/leer: den zuletzt zugeordneten Handle behalten,
     # solange das Fenster noch existiert (verhindert Flackern).
     if ($script:PlacePreviewHandles.ContainsKey($sessionId)) {
-        $previous = [IntPtr]$script:PlacePreviewHandles[$sessionId]
-        foreach ($info in $infos) { if ($info.Handle -eq $previous) { return $previous } }
+        $previousRaw = $script:PlacePreviewHandles[$sessionId]
+        if ($null -ne $previousRaw) {
+            $previous = [IntPtr]$previousRaw
+            foreach ($info in $infos) { if ([IntPtr]$info.Handle -eq $previous) { return $previous } }
+        }
     }
     return [IntPtr]::Zero
 }
@@ -15171,11 +15279,22 @@ function Start-PlacePreviewCapture {
     try { if ($window -and $window.WindowState -eq 'Minimized') { return } } catch {}
 
     $handle = Resolve-PlacePreviewHandle $Studio $Row
+    # Version 6.0.2: $null-fest. Vorher konnte ein nicht aufgeloester Handle
+    # bis zur Aufnahme durchreichen - $handle.ToInt64() warf dann still im
+    # aufrufenden try/catch und die Zeile blieb mit ewig drehendem Kreis
+    # zurueck, ohne dass irgendwo ein Grund protokolliert wurde.
+    if ($null -eq $handle) { $handle = [IntPtr]::Zero }
     $Row.PreviewHandle = $handle
     if ($handle -eq [IntPtr]::Zero) {
         [void]$script:PlacePreviewHandles.Remove($sessionId)
         if (-not $Row.PreviewHasFrame) {
-            try { $Row.IconSpinner.Visibility = 'Collapsed'; $Row.IconFallback.Visibility = 'Visible' } catch {}
+            # Version 6.0.2: erst nach 3 Ticks ohne Fenster auf das Platz-
+            # halter-Symbol fallen (ein Fenster kann jeden Moment erscheinen)
+            # - davor zeigt der Ladekreis, dass noch gearbeitet wird.
+            $Row.PreviewFailCount = [int]$Row.PreviewFailCount + 1
+            if ([int]$Row.PreviewFailCount -ge 3) {
+                try { $Row.IconSpinner.Visibility = 'Collapsed'; $Row.IconFallback.Visibility = 'Visible' } catch {}
+            }
         }
         return
     }
@@ -15196,6 +15315,14 @@ function Start-PlacePreviewCapture {
 param($handleValue, $targetHeight)
 try {
     Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+    # Version 6.0.2: Der Worker haelt sich selbst versorgbar. Normalerweise
+    # hat der Haupt-Runspace Arena.ScreenHelper bereits per Add-Type geladen
+    # (prozessweit sichtbar). Falls DAS je scheiterte, starb hier bisher jede
+    # Aufnahme still mit TypeNotFound - jetzt legt der Worker seinen eigenen
+    # minimalen ScreenHelper nach.
+    if (-not ('Arena.ScreenHelper' -as [type])) {
+        Add-Type -TypeDefinition 'namespace Arena { [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; } public static class ScreenHelper { [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool IsIconic(System.IntPtr hWnd); [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr hWnd, out RECT lpRect); } }' -ErrorAction Stop
+    }
     $hwnd = [IntPtr]$handleValue
     # Minimiert -> bewusst NICHTS aufnehmen, das zuletzt gezeigte Bild bleibt
     # stehen (Nutzerwunsch, statt eines schwarzen/leeren Screenshots).
@@ -15228,7 +15355,7 @@ try {
     $small.Dispose()
     $bytes = $ms.ToArray()
     $ms.Dispose()
-    return @{ ok = $true; bytes = $bytes }
+    return @{ ok = $true; bytes = $bytes; w = $smallWidth; h = $targetHeight }
 } catch {
     return @{ ok = $false; error = [string]$_.Exception.Message }
 }
@@ -15247,17 +15374,57 @@ function Update-PlacePreviewCaptures {
         $job = $script:PlacePreviewJobs[$sessionId]
         if (-not $job.Handle.IsCompleted) { continue }
         $bytes = $null
+        $result = $null
         try {
             $result = @($job.Worker.EndInvoke($job.Handle))[0]
             if ($result -and $result.ok -eq $true) { $bytes = [byte[]]$result.bytes }
-            # $result.minimized bzw. ein Fehlschlag: bewusst nichts tun - das
-            # zuletzt gezeigte Bild bleibt stehen, der naechste Tick versucht
-            # es (gedrosselt) automatisch erneut.
-        } catch {}
+        } catch {
+            $result = $null
+            # Version 6.0.2: NIE wieder still - der Grund landet (gedrosselt)
+            # im runtime.log, damit ein leeres Vorschaubild endlich nachvoll-
+            # ziehbar wird statt komplett spurlos zu verschwinden.
+            try { Write-RuntimeLog "Place-Vorschau ($sessionId): Aufnahme schlug fehl - $($_.Exception.Message)" } catch {}
+        }
         try { $job.Worker.Dispose() } catch {}
         $script:PlacePreviewJobs.Remove($sessionId)
         if ($bytes -and $script:UiRows.ContainsKey($sessionId)) {
-            Set-PlacePreviewImage $script:UiRows[$sessionId] $bytes
+            $row = $script:UiRows[$sessionId]
+            $row.PreviewFailCount = 0
+            if (-not $row.PreviewLoggedOnce) {
+                # Einmalig festhalten, dass (und ab wann) die Vorschau dieser
+                # Sitzung wirklich Bilder liefert - inkl. Aufnahme-Groesse.
+                $row.PreviewLoggedOnce = $true
+                $sizeInfo = ''
+                try { if ($result) { $sizeInfo = " ($([int]$result.w)x$([int]$result.h) px)" } } catch {}
+                try { Write-RuntimeLog "Place-Vorschau ($sessionId): Live-Vorschau aktiv$sizeInfo." } catch {}
+            }
+            Set-PlacePreviewImage $row $bytes
+        } elseif (-not $bytes) {
+            # Version 6.0.2: Gescheiterte Aufnahme zaehlen, begruenden und
+            # nach 3 Fehlversuchen in Folge das Platzhalter-Symbol zeigen
+            # (statt des bisher endlos drehenden Kreises - genau das war der
+            # 6.0.1-Live-Befund "nie erscheint ein Bild"). Die Aufnahmen
+            # laufen gedrosselt weiter: Sobald eine klappt, erscheint die
+            # Live-Vorschau trotzdem (Set-PlacePreviewImage blendet sie ein).
+            $reason = 'unbekannter Fehler'
+            if ($result) {
+                if ($result.minimized -eq $true) { $reason = 'Studio-Fenster ist minimiert' }
+                elseif ($result.error) { $reason = [string]$result.error }
+            }
+            if ($script:UiRows.ContainsKey($sessionId)) {
+                $row = $script:UiRows[$sessionId]
+                $row.PreviewFailCount = [int]$row.PreviewFailCount + 1
+                if ([int]$row.PreviewFailCount -ge 3 -and -not $row.PreviewHasFrame) {
+                    try { $row.IconSpinner.Visibility = 'Collapsed'; $row.IconFallback.Visibility = 'Visible' } catch {}
+                }
+            }
+            $now = Get-Date
+            $lastLog = [DateTime]::MinValue
+            if ($script:PlacePreviewFailLogAt.ContainsKey($sessionId)) { $lastLog = [DateTime]$script:PlacePreviewFailLogAt[$sessionId] }
+            if (($now - $lastLog).TotalSeconds -ge 15) {
+                $script:PlacePreviewFailLogAt[$sessionId] = $now
+                try { Write-RuntimeLog "Place-Vorschau ($sessionId): Aufnahme fehlgeschlagen - $reason." } catch {}
+            }
         }
     }
 }
@@ -15618,6 +15785,8 @@ function New-Row {
         IconFallback = $null
         PreviewHandle   = $null
         PreviewHasFrame = $false
+        PreviewFailCount = 0
+        PreviewLoggedOnce = $false
         Mode       = $null
         ModeUntil  = [DateTime]::MinValue
     }
@@ -16623,7 +16792,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '6.0.1'
+    $versionText = '6.0.2'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -17207,7 +17376,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 6.0.1" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 6.0.2" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -17247,7 +17416,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 6.0.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 6.0.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -17295,7 +17464,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 6.0.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 6.0.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -17308,7 +17477,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '6.0.1'
+    $verText = '6.0.2'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
@@ -17322,19 +17491,28 @@ if (-not $script:EncodingOk) {
 }
 
 # ----------------------------------------------------------------------------
-# AUTOSTART: SELBST NACH UPDATES SUCHEN (Version 3.9.8)
+# AUTOSTART + SICHERHEITS-CHECK: SELBST NACH UPDATES SUCHEN (3.9.8 / 6.0.2)
 # Ohne -UpdateStatus wurde das Programm NICHT vom Starter geoeffnet - das ist
 # genau der Windows-Autostart ("Beim PC-Start automatisch oeffnen"). Dann
-# uebernimmt die Bridge die Update-Suche selbst. Alles ist abgesichert: ein
-# Netzproblem darf den Start niemals verhindern.
+# uebernimmt die Bridge die Update-Suche selbst.
+# 6.0.2 ZUSATZ: Auch nach einem Starter-Start mit einem Status, der NICHT
+# beweist, dass der Starter gerade frisch installiert hat ('kein-update',
+# 'keine-verbindung', 'update-fehler', 'update-suche-fehler'), prueft die
+# Bridge kurz selbst gegen version.json im Repository und zieht ein Update
+# notfalls direkt (kurzes Zeitlimit, stilles Scheitern, Neustart mit
+# Hinweisfenster). Grund (Live-Befund der 6.0.1-Runde): haengt die Update-
+# Logik des Starters, startet er unbegrenzt lange dieselbe lokale Fassung -
+# jedes im Repository veroeffentlichte Fix kam dann beim Nutzer NIE an.
+# Alles ist abgesichert: ein Netzproblem darf den Start niemals verhindern.
 # ----------------------------------------------------------------------------
-if ([string]::IsNullOrWhiteSpace($UpdateStatus)) {
+$starterProvesFreshInstall = ((@('update-erfolgreich', 'erster-start') -contains $UpdateStatus) -eq $true)
+if (-not $starterProvesFreshInstall) {
     $selfUpdated = $false
     try {
-        $selfUpdated = Invoke-AutostartSelfUpdate
+        $selfUpdated = Invoke-AutostartSelfUpdate -VerifyMode:([bool]$UpdateStatus)
     } catch {
         $selfUpdated = $false
-        try { Write-RuntimeLog "Autostart-Update uebersprungen: $($_.Exception.Message)" } catch {}
+        try { Write-RuntimeLog "Update-Suche uebersprungen: $($_.Exception.Message)" } catch {}
     }
     if ($selfUpdated) {
         # Die neue Fassung laeuft bereits - dieser Prozess wird beendet.
