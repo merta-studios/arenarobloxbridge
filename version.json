@@ -1,10 +1,10 @@
 {
-  "version": "6.0.5",
+  "version": "6.0.6",
   "notes": [
-    "• Gemessen statt geraten: Zwei Befunde von deinem PC haben die Ursache eingekreist. Die Einstellungen zeigten „Version 6.0.4“ – die neue Fassung kam also wirklich an. Trotzdem erschien die pinke Selbsttest-Kachel nie. Da ein einmal gesetztes Vorschaubild im Programm durch nichts mehr entfernt werden kann, hätte es dauerhaft stehen bleiben müssen: Es war nie sichtbar. Der Fehler lag damit nachweisbar in der Anzeige – nicht in der Fensteraufnahme.",
-    "• Behoben: Das erste Bild einer Zeile wurde bisher mit Deckkraft 0 eingesetzt und nur durch eine Einblend-Animation sichtbar gemacht. Läuft diese Animation nicht an, bleibt die Kachel für immer leer, obwohl Bild, Sichtbarkeit und Layout stimmen – genau dieser Ausfall ist im Programm für die Place-Zeile selbst schon belegt und wird dort seit Version 5.0.2 abgefangen. Das Vorschaubild ist jetzt sofort sichtbar; die Einblendung ist nur noch Verzierung und wird nach 400 ms notfalls hart korrigiert.",
-    "• Ehrliche Selbstprüfung: Der Vorschau-Selbsttest meldete bisher „OK“, sobald das Einsetzen des Bildes nicht abgestürzt war – auch bei unsichtbarer Kachel. Das Urteil fällt jetzt erst 1,5 Sekunden später und nur dann positiv, wenn das Bild wirklich sichtbar ist (Deckkraft, Fläche und Bildquelle werden zusammen mit Rahmen und Zeile geprüft).",
-    "• Neuer Kurzbericht: %LOCALAPPDATA%\\ArenaRobloxBridge\\preview-diagnose.txt fasst Version, Prüfsumme, Aufnahmeweg, Selbsttest-Ergebnis, gespeicherte Vorschaubilder und die letzten Schritte auf wenigen Zeilen zusammen. Diese kleine Datei genügt künftig zur Fehlersuche – das große Protokoll muss nicht mehr verschickt werden.",
-    "• Design, Bedienung, Einstellungen, Server, Plugin und alle übrigen Funktionen bleiben unverändert."
+    "• Nachgewiesene Ursache aus der ausgelieferten 6.0.5: runtime.log bestätigt Version 6.0.5 mit SHA-256 7433925B…E588 und den geladenen C#-Helfer. Noch vor jeder Fensteraufnahme bricht New-PlacePreviewVisual jedoch mit „Für new und die folgende Argumenteanzahl kann keine Überladung gefunden werden: 1“ ab. Der Selbsttest bestätigt die Folge mit „IMAGE_ASSIGN_SKIPPED … grund=Zeile/IconImage fehlt“.",
+    "• Gezielte Änderung: Die Strichfolge des Ladekreises wird nicht mehr über den in Windows PowerShell 5.1 fehlgeschlagenen Ein-Argument-Aufruf DoubleCollection::new(@(4.0, 8.0)) erzeugt. 6.0.6 verwendet den parameterlosen Konstruktor, fügt beide double-Werte einzeln hinzu und weist die fertige Collection anschließend zu. UI-Aufbau und Aufnahmewege bleiben ansonsten unverändert.",
+    "• Regressionstest: Der Python-Strukturtest verbietet den belegten Konstruktoraufruf und verlangt Konstruktor, beide Add-Schritte und Zuweisung in dieser Reihenfolge. Zusätzlich werden alle funktionalen 6.0.6-Versionsstellen mit exakten Anzahlen geprüft.",
+    "• Ehrlicher Prüfstatus: Die statischen Struktur-, Lua- und XAML-Tests laufen ohne PowerShell. Die Live-Abnahme auf dem Nutzer-PC bleibt ausdrücklich offen; erst preview-diagnose.txt aus 6.0.6 darf PREVIEW_UI_VERIFY/SELFTEST_OK und anschließend die echte Studio-Aufnahme belegen.",
+    "• Keine Toast-/Popup-Meldungen und kein UI-Umbau."
   ]
 }

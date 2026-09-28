@@ -20,7 +20,7 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test_v398_structure.py` | Python-Strukturtest für 6.0.5 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test_v398_structure.py` | Python-Strukturtest für 6.0.6 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -35,6 +35,32 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 6.0.6
+- **Laufzeitursache aus 6.0.5 nachgewiesen.** Die ausgelieferte Datei lief mit
+  Version `6.0.5`, SHA-256
+  `7433925B060FDD21A699936B3B8267E899EF1BB80A1673119D1DDFFB9B20E588`,
+  `LanguageMode=FullLanguage` und geladenem C#-Helfer. Trotzdem brach
+  `New-PlacePreviewVisual` schon beim UI-Aufbau mit
+  `MethodException: Für "new" und die folgende Argumenteanzahl kann keine
+  Überladung gefunden werden: "1"` ab (Laufzeitzeile 16101). Der nachfolgende
+  Selbsttest belegte die direkte Folge:
+  `IMAGE_ASSIGN_SKIPPED ... grund=Zeile/IconImage fehlt`.
+- **Gezielte Änderung in `New-PlacePreviewVisual`.** Der belegte
+  Ein-Argument-Aufruf
+  `[System.Windows.Media.DoubleCollection]::new(@(4.0, 8.0))` wurde ersetzt:
+  parameterlos konstruieren, `4.0` und `8.0` einzeln per `Add` eintragen, dann
+  erst `StrokeDashArray` zuweisen. Damit wird das von Windows PowerShell 5.1
+  nicht bindbare `object[]` vermieden. Kein UI-Umbau und keine Änderung an
+  Fensterzuordnung oder Aufnahmewegen.
+- **Regressionstest erweitert.** `test_v398_structure.py` verbietet genau den
+  fehlgeschlagenen Konstruktoraufruf, prüft die Reihenfolge
+  Konstruktor → `Add(4.0)` → `Add(8.0)` → Zuweisung und kontrolliert alle
+  funktionalen Versionsliterale mit exakten Anzahlen.
+- **Live-Abnahme offen.** Die Änderung ist statisch geprüft, aber noch nicht
+  auf dem Nutzer-PC bestätigt. Maßgeblich sind erst eine 6.0.6-Identität und
+  `PREVIEW_UI_VERIFY`/`PREVIEW_UI_SELFTEST_OK` sowie danach die `cap-N`- und
+  PNG-Nachweise. Keine Erfolgsmeldung vor diesen Laufzeitbelegen.
 
 ## 6.0.5
 - **Fenster-Vorschau: zugewiesen, aber unsichtbar – Einblendung repariert.**
