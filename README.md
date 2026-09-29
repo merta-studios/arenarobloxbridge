@@ -20,7 +20,7 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test_v398_structure.py` | Python-Strukturtest für 6.1.2 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test_v398_structure.py` | Python-Strukturtest für 6.1.3 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -35,6 +35,13 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 6.1.3
+- **Polygon-Builder: sichtbare Lücken geschlossen.** `build_polygon_model` hat einzelne Flächen kommentarlos weggelassen – besonders bei Bäumen, Stämmen, Tieren und anderen runden oder organischen Formen. Ursache war ein Punktreihenfolge-Bug in `MASTER_BUILD.triangleWedges`: Beim internen Umsortieren (längste Kante nach unten) wurden nur zwei der drei Dreieckspunkte neu gesetzt, sodass zwei Ecken auf denselben Punkt zeigten und ein völlig korrektes Dreieck als „entartet“ verworfen wurde. Ob eine Fläche entstand, hing damit allein von der zufälligen Reihenfolge der gelieferten Punkte ab – bei einem achteckigen Stamm fielen so alle 16 Wedges aus.
+- **Offene Nähte werden wieder verschweißt.** `MASTER_BUILD.pointKey` erzeugte aus winzigen negativen Rundungsresten (z. B. `sin(2*pi)`) den Schlüssel `-0.00000` statt `0.00000`. Derselbe Punkt bekam dadurch zwei verschiedene Schlüssel, und runde Querschnitte konnten ihre eigene Anfangs-/End-Naht nicht schließen. Negative Null wird jetzt normalisiert.
+- **Robustere Triangulierung mit Retry und Fallback.** `cleanPolygonPoints` entfernt vorab Beinahe-Duplikate und exakt kollineare Zwischenpunkte; scheitert eine Fläche trotzdem, versucht `triangulate` es mit gelockerter Toleranz, danach mit umgekehrter Orientierung und zuletzt mit einer Fan-Triangulierung. `weldEntryVertices` verschweißt praktisch identische Vertices eines Untermodells, bevor `closeOpenings` die Ränder sucht.
+- **Ehrliche Diagnose statt stiller Lücken.** `build_polygon_model` liefert jetzt `facesTotal`, `facesBuilt`, `facesSkipped`, `incomplete` und einen lesbaren `warnings`-Text. Ein Modell mit übersprungenen Flächen sieht nicht mehr wie ein voller Erfolg aus; jeder Eintrag in `skipped` und `fallbackFaces` nennt Untermodell, Polygonname und Grund. Bestehende Felder bleiben unverändert.
+- Nach dem Update Roblox Studio einmal neu starten, damit das Plugin **6.1.3** geladen wird.
 
 ## 6.1.2
 - **Kritischer Start-Hotfix.** Die 6.1.1-Datei enthielt nach dem vorgesehenen letzten `Exit(0)` versehentlich sieben beschädigte Textfragmente, darunter eine alleinstehende schließende Klammer. Windows PowerShell parst das gesamte Skript vor dem ersten Fenster; deshalb konnte die Bridge nach dem funktionierenden EXE-Updater gar nicht mehr starten.
