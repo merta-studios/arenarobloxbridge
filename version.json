@@ -1,11 +1,9 @@
 {
-  "version": "6.1.0",
+  "version": "6.1.1",
   "notes": [
-    "• Mitteilungen sind jetzt wirklich kurz und menschlich: Arena schreibt selbst einen lebendigen Titel (max. 70 Zeichen) und einen einladenden Inhalt (max. 140 Zeichen). Die Bridge prüft beide Windows-11-Anzeigebudgets, statt lange Änderungslisten abzuschneiden.",
-    "• Vorschauen aktualisieren sich bei geöffneter Bridge alle 3 Sekunden weiter – auch wenn ein Roblox-Studio-Fenster minimiert ist. Die Bridge versucht weiterhin PrintWindow statt die Aufnahme vorab zu blockieren.",
-    "• Die Toolbox ist offen für 3D-Modelle, Models, Meshes/MeshParts, Plugins, Fonts, Audio, Bilder/Decals, Video und Animation. Der alte allowModels-Freigabeschalter ist aus der Doku entfernt; transparente Typ-, Rechte- und Skriptprüfungen bleiben erhalten.",
-    "• Der leere Arena-Verlauf pro Place ist repariert: Eine verschachtelte PowerShell-Array-Rückgabe wurde abgeflacht, sodass Aktionen wieder erscheinen.",
-    "• Neue Meister-Bautools: build_assembly erstellt große gruppierte Baugruppen samt Wiederholungen in einem Call. build_polygon_model nimmt Punkte oder ein kompaktes POLYGON-Skript, trianguliert auch konkave Flächen selbst und baut jedes Dreieck ausschließlich aus zwei ultradünnen WedgeParts in ein fertiges Model.",
-    "• Arena bekommt eine kürzere, freiheitsorientierte Anleitung: weniger starre Vorschriften, klare Fähigkeiten und freie Werkzeugwahl. Dedizierte Bautools werden sichtbar angeboten, run_lua bleibt für Speziallogik verfügbar."
+    "• Polygon-Modelling ist jetzt Arenas stark empfohlener Blender-ähnlicher Modellierweg: ein Call kann riesige Modelle mit mehreren untergeordneten Foldern, individuellen Materialien/Farben, Auto-Welds und animierbaren Haupt-Welds bauen.",
+    "• Wedge-Flächen werden von der richtigen sichtbaren Seite statt aus der Dickenmitte berechnet. Dadurch treffen auch stark gedrehte Flächen ohne die bisherigen Rillen aufeinander; optional werden offene Ränder automatisch geschlossen.",
+    "• Toolbox-Modelle können mit sanitize=true vor dem Einfügen vollständig von Scripts, Remote-/Bindable-Events, Functions und typischem Viren-Müll bereinigt werden.",
+    "• In den Einstellungen lassen sich die Live-Vorschau-Icons im Editor abschalten. Dann verschwinden sie und alle Fensteraufnahmen stoppen sofort, um Leistung zu sparen."
   ]
 }

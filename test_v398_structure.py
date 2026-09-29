@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 6.1.0.
+"""Offline structure check for Arena Roblox Bridge 6.1.1.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "6.1.0"
+VERSION = "6.1.1"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -320,7 +320,7 @@ def main() -> int:
         require(marker not in source, f"stale 6.0.4 literal remains: {marker}")
 
     # Stale FUNCTIONAL 6.0.5 literals. The 6.0.5 changelog remains on
-    # purpose, but every value consumed at runtime must have moved to 6.1.0.
+    # purpose, but every value consumed at runtime must have moved to 6.1.1.
     stale_605_literals = [
         "DocsVersion     = '6.0.5'",
         'local ARENA_VERSION  = "6.0.5"',
@@ -340,15 +340,15 @@ def main() -> int:
         require(marker not in source, f"stale functional 6.0.5 literal remains: {marker}")
 
     required_markers = [
-        "DocsVersion     = '6.1.0'",
-        'local ARENA_VERSION  = "6.1.0"',
-        "bridgeVersion = '6.1.0'",
-        "serverVersion = '6.1.0'",
-        "version = '6.1.0'",
-        "$versionText = '6.1.0'",
-        "$verText = '6.1.0'",
-        'Arena Studio Bridge - Studio Plugin  (Version 6.1.0)',
-        'Text="Arena Roblox Bridge - Version 6.1.0"',
+        "DocsVersion     = '6.1.1'",
+        'local ARENA_VERSION  = "6.1.1"',
+        "bridgeVersion = '6.1.1'",
+        "serverVersion = '6.1.1'",
+        "version = '6.1.1'",
+        "$versionText = '6.1.1'",
+        "$verText = '6.1.1'",
+        'Arena Studio Bridge - Studio Plugin  (Version 6.1.1)',
+        'Text="Arena Roblox Bridge - Version 6.1.1"',
         # 4.0.0: the config table that keeps the top-level local count in check.
         "local ARENA_CFG = {",
         "ARENA_CFG.POLL_WAIT",
@@ -559,7 +559,7 @@ def main() -> int:
         "kind=csharp-helper",
         "ps-runspace-fallback",
         "Get-FileHash -Algorithm SHA256",
-        "Laufzeit-Identitaet: Bridge-Version=6.1.0",
+        "Laufzeit-Identitaet: Bridge-Version=6.1.1",
         "LanguageMode",
         "$script:PreviewFlowContexts = @{}",
         "$script:PreviewHandleInfos = @{}",
@@ -592,19 +592,19 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '6.1.0'": 1,
-        'local ARENA_VERSION  = "6.1.0"': 1,
-        "version = '6.1.0'": 1,
-        "bridgeVersion = '6.1.0'": 3,
-        "bridgeVersion='6.1.0'": 1,
-        "serverVersion = '6.1.0'": 2,
-        "$versionText = '6.1.0'": 1,
-        "$verText = '6.1.0'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 6.1.0)": 1,
-        'Text="Arena Roblox Bridge - Version 6.1.0"': 1,
-        "Version 6.1.0 - aktuell. Beim naechsten Start": 2,
-        "Laufzeit-Identitaet: Bridge-Version=6.1.0": 1,
-        "Kurzbericht Fenster-Vorschau (Version 6.1.0)": 1,
+        "DocsVersion     = '6.1.1'": 1,
+        'local ARENA_VERSION  = "6.1.1"': 1,
+        "version = '6.1.1'": 1,
+        "bridgeVersion = '6.1.1'": 3,
+        "bridgeVersion='6.1.1'": 1,
+        "serverVersion = '6.1.1'": 2,
+        "$versionText = '6.1.1'": 1,
+        "$verText = '6.1.1'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 6.1.1)": 1,
+        'Text="Arena Roblox Bridge - Version 6.1.1"': 1,
+        "Version 6.1.1 - aktuell. Beim naechsten Start": 2,
+        "Laufzeit-Identitaet: Bridge-Version=6.1.1": 1,
+        "Kurzbericht Fenster-Vorschau (Version 6.1.1)": 1,
     }
     for marker, expected_count in functional_version_counts.items():
         actual_count = source.count(marker)
@@ -676,7 +676,7 @@ def main() -> int:
     require("[System.IO.File]::WriteAllBytes($tmpPath, $bytes)" in update_fn
             and "[System.IO.File]::Move($tmpPath, $pngPath)" in update_fn,
             "atomic per-session PNG handover (tmp write + move) is missing")
-    # 6.1.0 REGRESSION GUARD (live 6.0.5 failure): Windows PowerShell 5.1
+    # 6.1.1 REGRESSION GUARD (live 6.0.5 failure): Windows PowerShell 5.1
     # could not bind object[] from @(4.0, 8.0) to a one-argument
     # DoubleCollection constructor. New-PlacePreviewVisual then aborted, so
     # the row had no IconImage and the self-test necessarily skipped assign.
@@ -816,11 +816,22 @@ def main() -> int:
         except ET.ParseError as exc:
             raise AssertionError(f"XAML block {index} is not XML: {exc}") from exc
 
-    # 6.1 master update guards.
+    # 6.1.1 mini-update guards: modelling hierarchy/seams/caps/welds,
+    # detached asset sanitation and the performance switch all stay present.
     for marker in (
         "tools.build_polygon_model = function(args)",
         "tools.build_assembly = function(args)",
-        "ear-clipping + two ultra-thin WedgeParts per triangle",
+        "side-corrected skin placement + ear-clipping + two WedgeParts per triangle",
+        "function MASTER_BUILD.closeBoundaryLoops(entries)",
+        "function MASTER_BUILD.weldContainer(container,weldName)",
+        'local mainWelds=args.mainWelds or {}',
+        'args.sanitize == true or args.removeScripts == true',
+        'inst:IsA("RemoteEvent") or inst:IsA("RemoteFunction")',
+        "EditorIconsSwitch",
+        "function Set-EditorIconsEnabled",
+        "editorIconsEnabled = $true",
+        "$editorIconsSwitch.IsChecked = $editorIconsNow",
+        "Set-EditorIconsEnabled ([bool]$s.IsChecked)",
         "titleCharacters = 70",
         "messageCharacters = 140",
         "$script:PlacePreviewIntervalSeconds = 3.0",
@@ -832,7 +843,7 @@ def main() -> int:
     require("if (IsIconic(hwnd)) { result.Minimized = true" not in source, "C# preview still blocks minimized Studio")
     require("if ([Arena.ScreenHelper]::IsIconic($hwnd))" not in source, "fallback preview still blocks minimized Studio")
 
-    print("OK: 6.1.0 structure, Lua and XAML validation passed")
+    print("OK: 6.1.1 structure, Lua and XAML validation passed")
     return 0
 
 
