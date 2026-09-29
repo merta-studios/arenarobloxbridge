@@ -1,9 +1,9 @@
 {
-  "version": "6.1.4",
+  "version": "6.1.5",
   "notes": [
-    "• Polygon Engine 2.0 – dauerhafte KI-Regel gegen 90°-Drehfehler & Nahtspalten: build_polygon_model triangulierte Dreiecke schon seit 6.1.3 korrekt, aber die richtige WedgePart-Achsenkonvention war nirgends als feste Regel für die KI hinterlegt. Sobald Arena statt des Tools eigenen Lua-Code für Polygone/Wedges schrieb (z. B. über run_lua), konnte sie versehentlich die falsche Achse als Dicke/Höhe/Basiskante verwenden – genau das erzeugt 90°-Drehfehler und klaffende Nähte.",
-    "• Harte Achsen-Regel jetzt in jeder Session verankert: lokal X = Dicke/Flächennormale, lokal Y = Höhe/Orthogonale zur Basiskante, lokal Z = Basiskanten-Richtung. Get-BridgeGuides liefert diese Regel samt einer fertigen, geprüften Referenz-Lua-Funktion (längste Kante als Basis, Lotfußpunkt-Teilung in zwei rechtwinklige Keile, nach innen versetzter Skin-Offset gegen Nahtspalten) automatisch bei Sessionstart, get_docs und /api/docs.",
-    "• Kein Verhaltenswechsel an build_polygon_model: Das Tool bleibt unverändert die stark empfohlene erste Wahl für Polygon-Modelle. Die neue Regel greift nur, wenn Arena bewusst eigene Wedge-/Dreieck-Logik über run_lua schreibt.",
-    "• Hinweis: Roblox Studio nach dem Update einmal neu starten, damit das neue Plugin geladen wird."
+    "• Polygon-System wirklich repariert: Polygon-Untermodelle werden jetzt standardmäßig mit WeldConstraints verbunden. Bei anchored=false behandelt Roblox die Dreiecks-Wedges dadurch als ein einziges Objekt, statt sie auseinanderfallen und kreuz und quer rotieren zu lassen. Nur autoWeld=false schaltet das bewusst ab.",
+    "• Berechnete Dreiecks-Geometrie ist jetzt unveränderlich: Position, Orientation, Rotation, CFrame, Size und PivotOffset aus style.properties können die vom Builder berechneten Wedge-Frames nicht mehr überschreiben. Solche Angaben werden ignoriert und im Ergebnis transparent unter ignoredGeometryProperties gemeldet.",
+    "• Neue Laufzeitdiagnose: build_polygon_model liefert autoWeldDefault, weldedSubmodels und geometryInvariant. Arena wird für Polygon-/Freiformflächen verbindlich auf den Builder geroutet, statt einzelne Flächen mit eigener Rotation zu raten.",
+    "• Bestehende Aufrufe bleiben kompatibel; Farben, Materialien, Kollision und sonstige Part-Eigenschaften funktionieren weiter. Roblox Studio nach dem Update einmal neu starten, damit Plugin 6.1.5 geladen wird."
   ]
 }
