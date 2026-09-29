@@ -36,6 +36,14 @@ heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestarte
 
 ## Versionsverlauf
 
+## 6.1.0
+- **Kurze, lebendige Windows-Mitteilungen.** `report_done` besitzt jetzt getrennte Felder für einen von Arena formulierten Titel (maximal 70 Zeichen) und Inhalt (maximal 140 Zeichen). Die Bridge validiert diese konservativen Windows-11-Anzeigebudgets, damit Toasts nicht zu langen Änderungslisten werden. Microsoft setzt bei adaptiven Toast-Textfeldern keine feste Zeichenzahl pro Feld; die Darstellung hängt von Layout, Breite und Skalierung ab (Titel bis zu 2 Zeilen, Beschreibungen zusammen bis zu 4 Zeilen). Deshalb verwendet die Bridge bewusst feste Vollanzeige-Budgets. Quellen: [Microsoft – App notification content](https://learn.microsoft.com/en-us/windows/apps/develop/notifications/app-notifications/adaptive-interactive-toasts) und [Notifications Visualizer](https://learn.microsoft.com/en-us/windows/apps/develop/notifications/notifications-visualizer) (5-KB-Payloadlimit).
+- **Live-Vorschauen alle drei Sekunden.** Solange das Bridge-Fenster geöffnet und nicht minimiert ist, werden alle Place-Vorschauen weiter aktualisiert. Ein minimiertes Roblox-Studio-Fenster wird nicht mehr durch `IsIconic` vorab ausgeschlossen; die direkten `PrintWindow`-Aufnahmewege dürfen es weiterhin rendern.
+- **Toolbox vollständig geöffnet.** Arena kann nach 3D-Modellen, Models, Meshes/MeshParts, Plugins, Fonts, Audio, Bildern/Decals, Video und Animation suchen. Der frühere `allowModels`-Freigabeschalter ist aus Vertrag und Anleitung entfernt. Typ-, Rechte- und Skriptprüfungen beim tatsächlichen Einfügen bleiben als transparente Rückmeldung erhalten.
+- **Arena-Verlauf repariert.** Die History-Funktion gab alle Einträge durch ein überflüssiges unäres Komma als ein verschachteltes Array zurück. Die UI erhält nun eine flache Liste; Aktionen erscheinen wieder pro Place und in „Alle Places“.
+- **Neue Meister-Bautools.** `build_assembly` erstellt bis zu 2.000 Instanzen einschließlich linearer oder radialer Wiederholungen direkt in einem Model. `build_polygon_model` akzeptiert Punktlisten oder kompakte `POLYGON … END`-Skripte. Die Bridge berechnet Newell-Normale, 3D-Projektion, Orientierung, Ear-Clipping für konkave Polygone, Triangulation und Wedge-CFrames. Jede Fläche wird ausschließlich aus ultradünnen WedgeParts gebaut (zwei pro Dreieck) und strukturiert gruppiert.
+- **Freier arbeitende Arena.** Die lange Vorschriftenliste der Sitzungsdokumentation wurde durch eine kurze Fähigkeitenübersicht ersetzt. Arena kann Bau-, Asset-, Skript-, Batch- und Testwerkzeuge passend zur Aufgabe kombinieren. Dedizierte Bautools werden klar angeboten; `run_lua` bleibt für echte Speziallogik verfügbar.
+
 ## 6.0.6
 - **Laufzeitursache aus 6.0.5 nachgewiesen.** Die ausgelieferte Datei lief mit
   Version `6.0.5`, SHA-256
@@ -461,7 +469,7 @@ heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestarte
 - Neue Einstellung **„Benachrichtigung, wenn Arena fertig ist“** (Standard:
   aus). An: Arena ruft am Ende seiner Arbeit den neuen Befehl `report_done`
   mit einer eigenen deutschen Meldung – der Nutzer bekommt eine echte
-  Windows-Benachrichtigung (z. B. „Ich bin fertig“)
+  Windows-Benachrichtigung mit eigenem Titel und kurzem Inhalt
 - Playtests deutlich zuverlässiger: Start/Stop über den offiziellen
   StudioTestService (neue Studio-API), gestaffelte Stop-Versuche, und der
   alte fehlerhafte Run-Fallback („kein Charakter spawnt“) ist entfernt
