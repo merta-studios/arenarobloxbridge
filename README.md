@@ -20,7 +20,7 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test_v398_structure.py` | Python-Strukturtest für 6.0.6 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test_v398_structure.py` | Python-Strukturtest für 6.1.2 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -35,6 +35,11 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 6.1.2
+- **Kritischer Start-Hotfix.** Die 6.1.1-Datei enthielt nach dem vorgesehenen letzten `Exit(0)` versehentlich sieben beschädigte Textfragmente, darunter eine alleinstehende schließende Klammer. Windows PowerShell parst das gesamte Skript vor dem ersten Fenster; deshalb konnte die Bridge nach dem funktionierenden EXE-Updater gar nicht mehr starten.
+- **Behebung ohne Funktionsrückbau.** Der fehlerhafte Dateianhang ist entfernt. Oberfläche, Update-Hinweis und alle 6.1.1-Funktionen bleiben erhalten.
+- **Dauerhafter Regressionstest.** `test_v398_structure.py` prüft jetzt die feste, beabsichtigte Schlusssequenz der PowerShell-Datei. Jede angehängte Zeile – ob unvollständig oder nicht – lässt den Release-Test fehlschlagen.
 
 ## 6.1.1
 - **Polygon-Modelling wie in Blender – ausdrücklich stark empfohlen.** `build_polygon_model` kann jetzt in einem Call sehr große, vollständig untergeordnete Modelle aus mehreren Foldern/Untermodellen erstellen. Ein Baum kann etwa aus Stamm und drei Kronen bestehen; jedes Untermodell erhält eigene Farbe, Material-, Kollisions-, Transparenz- und normale Part-Eigenschaften. Optionale Auto-Welds halten jedes Untermodell zusammen, klassische benannte Haupt-Welds verbinden sie animierbar miteinander.

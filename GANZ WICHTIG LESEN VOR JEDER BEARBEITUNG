@@ -187,6 +187,14 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v6.1.2: KRITISCHER START-HOTFIX. Die 6.1.1-Auslieferung enthielt nach
+  dem vorgesehenen letzten [System.Environment]::Exit(0) sieben versehentlich
+  angehängte, beschädigte Textfragmente (inklusive einer alleinstehenden `)`).
+  Windows PowerShell parst die ganze Datei vor dem ersten Fenster; dadurch
+  startete nach dem funktionierenden EXE-Updater gar nichts. Der Anhang ist
+  entfernt, alle 6.1.1-Funktionen bleiben. `test_v398_structure.py` prüft die
+  exakte Schlusssequenz des Skripts, damit kein Fragment mehr angehängt wird.
+- v6.1.1: Polygon-Modelle, Wedge-Haut, Asset-Säuberung und Vorschau-Schalter.
 - v6.1.0: MITTEILUNGEN + TOOLBOX + VERLAUF + MEISTER-BAUEN. report_done
   verlangt einen lebendigen Titel (70 Zeichen) und Inhalt (140 Zeichen).
   Vorschauen laufen bei geoeffneter Bridge alle 3 s weiter und blockieren
