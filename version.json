@@ -1,9 +1,8 @@
 {
-  "version": "6.1.1",
+  "version": "6.1.2",
   "notes": [
-    "• Polygon-Modelling ist jetzt Arenas stark empfohlener Blender-ähnlicher Modellierweg: ein Call kann riesige Modelle mit mehreren untergeordneten Foldern, individuellen Materialien/Farben, Auto-Welds und animierbaren Haupt-Welds bauen.",
-    "• Wedge-Flächen werden von der richtigen sichtbaren Seite statt aus der Dickenmitte berechnet. Dadurch treffen auch stark gedrehte Flächen ohne die bisherigen Rillen aufeinander; optional werden offene Ränder automatisch geschlossen.",
-    "• Toolbox-Modelle können mit sanitize=true vor dem Einfügen vollständig von Scripts, Remote-/Bindable-Events, Functions und typischem Viren-Müll bereinigt werden.",
-    "• In den Einstellungen lassen sich die Live-Vorschau-Icons im Editor abschalten. Dann verschwinden sie und alle Fensteraufnahmen stoppen sofort, um Leistung zu sparen."
+    "• Kritischer Startfix: In 6.1.1 waren nach dem regulären Programmende versehentlich beschädigte Textfragmente in ArenaBridge.ps1 gelandet. Windows PowerShell konnte die Datei dadurch gar nicht erst laden – der EXE-Updater lief, aber danach erschien kein Fenster.",
+    "• 6.1.2 entfernt ausschließlich diesen fehlerhaften Anhang. Start, Update-Hinweis, Oberfläche und alle Funktionen aus 6.1.1 bleiben erhalten.",
+    "• Ein neuer Regressionstest prüft das exakte Ende der PowerShell-Datei, damit kein nachträglich angehängtes Fragment den Start erneut blockieren kann."
   ]
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 6.1.1.
+"""Offline structure check for Arena Roblox Bridge 6.1.2.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "6.1.1"
+VERSION = "6.1.2"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -94,6 +94,23 @@ def main() -> int:
     source = raw.decode("utf-8-sig")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     require(version["version"] == VERSION, f"version.json is not {VERSION}")
+
+    # 6.1.1 shipped seven accidental fragments after the intended final exit,
+    # including a bare closing parenthesis. Windows PowerShell parses the
+    # complete file before it can show the updater notice or main WPF window,
+    # so that one trailing token made the program appear not to start at all.
+    # Keep the intentional final fallback exit as the actual physical end of
+    # the script; no source may be appended after it.
+    expected_final_lines = [
+        "# Sicherheitsnetz (Version 3.4): Falls das Closed-Ereignis doch nicht zum",
+        "# Exit gefuehrt haben sollte, wird der Prozess hier garantiert beendet.",
+        "try { Write-RuntimeLog '=== Programmende ===' } catch {}",
+        "[System.Environment]::Exit(0)",
+    ]
+    require(
+        source.rstrip().splitlines()[-4:] == expected_final_lines,
+        "ArenaBridge.ps1 has content after or instead of its intentional final fallback exit",
+    )
     require("3.9.5" not in source, "stale 3.9.5 literal remains in ArenaBridge.ps1")
 
     # Stale FUNCTIONAL 5.2 literals (history comments may mention 5.2).
@@ -320,7 +337,7 @@ def main() -> int:
         require(marker not in source, f"stale 6.0.4 literal remains: {marker}")
 
     # Stale FUNCTIONAL 6.0.5 literals. The 6.0.5 changelog remains on
-    # purpose, but every value consumed at runtime must have moved to 6.1.1.
+    # purpose, but every value consumed at runtime must have moved to 6.1.2.
     stale_605_literals = [
         "DocsVersion     = '6.0.5'",
         'local ARENA_VERSION  = "6.0.5"',
@@ -339,16 +356,34 @@ def main() -> int:
     for marker in stale_605_literals:
         require(marker not in source, f"stale functional 6.0.5 literal remains: {marker}")
 
-    required_markers = [
+    # 6.1.1 must not remain in executable version fields. It is valid in
+    # historical release notes only; clients and the updater compare these
+    # literals at runtime.
+    stale_611_literals = [
         "DocsVersion     = '6.1.1'",
         'local ARENA_VERSION  = "6.1.1"',
         "bridgeVersion = '6.1.1'",
+        "bridgeVersion='6.1.1'",
         "serverVersion = '6.1.1'",
         "version = '6.1.1'",
         "$versionText = '6.1.1'",
         "$verText = '6.1.1'",
         'Arena Studio Bridge - Studio Plugin  (Version 6.1.1)',
         'Text="Arena Roblox Bridge - Version 6.1.1"',
+    ]
+    for marker in stale_611_literals:
+        require(marker not in source, f"stale functional 6.1.1 literal remains: {marker}")
+
+    required_markers = [
+        "DocsVersion     = '6.1.2'",
+        'local ARENA_VERSION  = "6.1.2"',
+        "bridgeVersion = '6.1.2'",
+        "serverVersion = '6.1.2'",
+        "version = '6.1.2'",
+        "$versionText = '6.1.2'",
+        "$verText = '6.1.2'",
+        'Arena Studio Bridge - Studio Plugin  (Version 6.1.2)',
+        'Text="Arena Roblox Bridge - Version 6.1.2"',
         # 4.0.0: the config table that keeps the top-level local count in check.
         "local ARENA_CFG = {",
         "ARENA_CFG.POLL_WAIT",
@@ -559,7 +594,7 @@ def main() -> int:
         "kind=csharp-helper",
         "ps-runspace-fallback",
         "Get-FileHash -Algorithm SHA256",
-        "Laufzeit-Identitaet: Bridge-Version=6.1.1",
+        "Laufzeit-Identitaet: Bridge-Version=6.1.2",
         "LanguageMode",
         "$script:PreviewFlowContexts = @{}",
         "$script:PreviewHandleInfos = @{}",
@@ -592,19 +627,19 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '6.1.1'": 1,
-        'local ARENA_VERSION  = "6.1.1"': 1,
-        "version = '6.1.1'": 1,
-        "bridgeVersion = '6.1.1'": 3,
-        "bridgeVersion='6.1.1'": 1,
-        "serverVersion = '6.1.1'": 2,
-        "$versionText = '6.1.1'": 1,
-        "$verText = '6.1.1'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 6.1.1)": 1,
-        'Text="Arena Roblox Bridge - Version 6.1.1"': 1,
-        "Version 6.1.1 - aktuell. Beim naechsten Start": 2,
-        "Laufzeit-Identitaet: Bridge-Version=6.1.1": 1,
-        "Kurzbericht Fenster-Vorschau (Version 6.1.1)": 1,
+        "DocsVersion     = '6.1.2'": 1,
+        'local ARENA_VERSION  = "6.1.2"': 1,
+        "version = '6.1.2'": 1,
+        "bridgeVersion = '6.1.2'": 3,
+        "bridgeVersion='6.1.2'": 1,
+        "serverVersion = '6.1.2'": 2,
+        "$versionText = '6.1.2'": 1,
+        "$verText = '6.1.2'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 6.1.2)": 1,
+        'Text="Arena Roblox Bridge - Version 6.1.2"': 1,
+        "Version 6.1.2 - aktuell. Beim naechsten Start": 2,
+        "Laufzeit-Identitaet: Bridge-Version=6.1.2": 1,
+        "Kurzbericht Fenster-Vorschau (Version 6.1.2)": 1,
     }
     for marker, expected_count in functional_version_counts.items():
         actual_count = source.count(marker)
@@ -676,7 +711,7 @@ def main() -> int:
     require("[System.IO.File]::WriteAllBytes($tmpPath, $bytes)" in update_fn
             and "[System.IO.File]::Move($tmpPath, $pngPath)" in update_fn,
             "atomic per-session PNG handover (tmp write + move) is missing")
-    # 6.1.1 REGRESSION GUARD (live 6.0.5 failure): Windows PowerShell 5.1
+    # 6.1.2 REGRESSION GUARD (live 6.0.5 failure): Windows PowerShell 5.1
     # could not bind object[] from @(4.0, 8.0) to a one-argument
     # DoubleCollection constructor. New-PlacePreviewVisual then aborted, so
     # the row had no IconImage and the self-test necessarily skipped assign.
@@ -816,7 +851,7 @@ def main() -> int:
         except ET.ParseError as exc:
             raise AssertionError(f"XAML block {index} is not XML: {exc}") from exc
 
-    # 6.1.1 mini-update guards: modelling hierarchy/seams/caps/welds,
+    # 6.1.2 mini-update guards: modelling hierarchy/seams/caps/welds,
     # detached asset sanitation and the performance switch all stay present.
     for marker in (
         "tools.build_polygon_model = function(args)",
@@ -843,7 +878,7 @@ def main() -> int:
     require("if (IsIconic(hwnd)) { result.Minimized = true" not in source, "C# preview still blocks minimized Studio")
     require("if ([Arena.ScreenHelper]::IsIconic($hwnd))" not in source, "fallback preview still blocks minimized Studio")
 
-    print("OK: 6.1.1 structure, Lua and XAML validation passed")
+    print("OK: 6.1.2 structure, Lua and XAML validation passed")
     return 0
 
 
