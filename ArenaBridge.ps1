@@ -1,4 +1,28 @@
 ﻿# ============================================================================
+# Arena Roblox Bridge  -  Version 6.1.5
+#
+# POLYGON-SYSTEM 6.1.5: WEDGES BLEIBEN VERBUNDEN UND GEOMETRIE UNVERDREHBAR
+#   * URSACHE FUER AUSEINANDERFALLEN BEHOBEN: Polygon-Untermodelle wurden
+#     standardmaessig NICHT verschweisst. Sobald Arena eine bewegliche Haut
+#     mit anchored=false erzeugte, simulierte Roblox jeden Dreiecks-Wedge als
+#     eigenes Physikteil. Die Teile starteten zwar an der richtigen Position,
+#     fielen dann aber auseinander und rotierten kreuz und quer. autoWeld ist
+#     fuer build_polygon_model jetzt standardmaessig AN; nur ein ausdruecklich
+#     gesetztes autoWeld=false schaltet die Verbindung ab.
+#   * BERECHNETE GEOMETRIE KANN NICHT MEHR UEBERSCHRIEBEN WERDEN: Freie
+#     style.properties wurden bisher NACH Size/CFrame angewandt. Enthielten
+#     sie Position, Orientation, Rotation, CFrame, Size oder PivotOffset,
+#     ueberschrieben sie die exakt berechnete Dreiecks-Lage. Diese sechs
+#     Geometrie-Eigenschaften werden nun ignoriert und gemeldet; Size/CFrame
+#     setzt der Builder absichtlich zuletzt.
+#   * LAUFZEIT-DIAGNOSE: Das Ergebnis nennt autoWeldDefault, weldedSubmodels,
+#     ignoredGeometryProperties und geometryInvariant. Damit ist sichtbar,
+#     dass die Polygonhaut verbunden ist und kein Style die Frames verdreht.
+#   * API bleibt kompatibel: autoWeld=false ist der bewusste Opt-out fuer
+#     getrennte Teile; Farben, Materialien, Kollision und sonstige normale
+#     Part-Eigenschaften funktionieren unveraendert.
+#
+# ============================================================================
 # Arena Roblox Bridge  -  Version 6.1.4
 #
 # POLYGON ENGINE 2.0: KANONISCHE WEDGE-ACHSEN-REGEL FEST IN DER KI-DOKU
@@ -1568,7 +1592,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '6.1.4'
+    DocsVersion     = '6.1.5'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -1657,8 +1681,8 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-    $script:PreviewDiagIdentity = ("Bridge-Version=6.1.4, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=6.1.4, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    $script:PreviewDiagIdentity = ("Bridge-Version=6.1.5, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=6.1.5, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 6.0.5: Hinweis auf den kleinen Kurzbericht - er enthaelt alles,
     # was zur Beurteilung der Fenster-Vorschau noetig ist.
     Write-RuntimeLog ("Vorschau-Kurzbericht: " + (Join-Path $script:AppDataRoot 'preview-diagnose.txt'))
@@ -1752,7 +1776,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 6.1.4)
+  Arena Studio Bridge - Studio Plugin  (Version 6.1.5)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1823,7 +1847,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "6.1.4"
+local ARENA_VERSION  = "6.1.5"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -8407,11 +8431,10 @@ function MASTER_BUILD.triangleWedges(a,b,c,parent,style,name,faceNormal,solidCen
     end
 
     local made={}
+    local geometryOwned={cframe=true,position=true,orientation=true,rotation=true,size=true,pivotoffset=true}
     local function one(index,size,cf)
         local w=Instance.new("WedgePart")
         w.Name=name.."_W"..tostring(index)
-        w.Size=Vector3.new(thickness,math.max(0.01,size.Y),math.max(0.01,size.Z))
-        w.CFrame=cf+shift
         w.Anchored=style.anchored ~= false
         w.CanCollide=style.canCollide == true
         w.CanQuery=style.canQuery ~= false
@@ -8423,7 +8446,18 @@ function MASTER_BUILD.triangleWedges(a,b,c,parent,style,name,faceNormal,solidCen
         if style.materialVariant then pcall(function() w.MaterialVariant=tostring(style.materialVariant) end) end
         if style.collisionGroup then pcall(function() w.CollisionGroup=tostring(style.collisionGroup) end) end
         if style.reflectance then w.Reflectance=math.clamp(tonumber(style.reflectance) or 0,0,1) end
-        if type(style.properties)=="table" then applyProperties(w,style.properties) end
+        if type(style.properties)=="table" then
+            local safeProperties={}
+            for key,value in pairs(style.properties) do
+                if not geometryOwned[string.lower(tostring(key))] then safeProperties[key]=value end
+            end
+            applyProperties(w,safeProperties)
+        end
+        -- Size and CFrame are geometry invariants. Set them LAST so generic
+        -- style properties can never move, resize or rotate a triangle away
+        -- from the supplied vertices.
+        w.Size=Vector3.new(thickness,math.max(0.01,size.Y),math.max(0.01,size.Z))
+        w.CFrame=cf+shift
         w:SetAttribute("ArenaPolygonTriangle",name)
         w:SetAttribute("ThicknessPlacement",placement)
         w.Parent=parent; table.insert(made,w)
@@ -8473,8 +8507,12 @@ tools.build_polygon_model = function(args)
 
     local wedgeCount,triCount,weldCount,capCount,skipped=0,0,0,0,{}
     local facesTotal,facesSkipped,fallbackFaces=0,0,{}
+    local ignoredGeometryProperties={}
+    local ignoredGeometrySeen={}
+    local geometryOwned={cframe=true,position=true,orientation=true,rotation=true,size=true,pivotoffset=true}
     local maxWedges=math.min(10000,math.max(2,tonumber(args.maxWedges) or 4000))
     local roots={}
+    local weldedSubmodels=0
     for si,spec in ipairs(specs) do
         local className=(string.lower(tostring(spec.containerClass or spec.className or "folder"))=="model") and "Model" or "Folder"
         local container=Instance.new(className); container.Name=tostring(spec.name or ("Submodel"..si)); container.Parent=model
@@ -8484,6 +8522,15 @@ tools.build_polygon_model = function(args)
         for pi,poly in ipairs(spec.polygons or {}) do
             local style=MASTER_BUILD.mergeStyle(subStyle,poly.style)
             for _,k in ipairs({"color","material","materialVariant","collisionGroup","thickness","thicknessPlacement","surfaceSide","anchored","canCollide","canQuery","canTouch","castShadow","transparency","reflectance","properties"}) do if poly[k]~=nil then style[k]=poly[k] end end
+            if type(style.properties)=="table" then
+                for key,_ in pairs(style.properties) do
+                    local lower=string.lower(tostring(key))
+                    if geometryOwned[lower] and not ignoredGeometrySeen[lower] then
+                        ignoredGeometrySeen[lower]=true
+                        table.insert(ignoredGeometryProperties,tostring(key))
+                    end
+                end
+            end
             local pts={}
             for _,raw in ipairs(poly.points or {}) do local v=MASTER_BUILD.vec3(raw); if v then local tv=transform*(v*scale); table.insert(pts,tv); centerSum=centerSum+tv; centerCount=centerCount+1 end end
             if #pts>3 and (pts[1]-pts[#pts]).Magnitude<1e-6 then table.remove(pts,#pts) end
@@ -8527,9 +8574,16 @@ tools.build_polygon_model = function(args)
             end
         end
         container:SetAttribute("TriangleCount",subTriangles)
-        local shouldWeld=args.autoWeld==true
-        if spec.autoWeld~=nil then shouldWeld=spec.autoWeld==true end
-        if shouldWeld then local root,count=MASTER_BUILD.weldContainer(container,"ArenaSurfaceWeld"); roots[container.Name]=root; weldCount=weldCount+count else
+        -- Polygon surfaces are one object by default. Without WeldConstraints,
+        -- unanchored Wedges become independent physics bodies and immediately
+        -- scatter/rotate in play mode. Only explicit false opts out.
+        local shouldWeld=args.autoWeld~=false
+        if spec.autoWeld~=nil then shouldWeld=spec.autoWeld~=false end
+        if shouldWeld then
+            local root,count=MASTER_BUILD.weldContainer(container,"ArenaSurfaceWeld")
+            roots[container.Name]=root; weldCount=weldCount+count
+            if root then weldedSubmodels=weldedSubmodels+1 end
+        else
             for _,d in ipairs(container:GetDescendants()) do if d:IsA("BasePart") then roots[container.Name]=d; break end end
         end
     end
@@ -8569,7 +8623,11 @@ tools.build_polygon_model = function(args)
     elseif #fallbackFaces>0 then
         warningsText=tostring(#fallbackFaces).." face(s) needed a fallback triangulation strategy (still built, see result.fallbackFaces)."
     end
-    return ok({model=describeRef(model),submodels=#specs,polygons=#rawPolygons,triangles=triCount,wedges=wedgeCount,autoCaps=capCount,welds=weldCount,mainWelds=mainWeldCount,facesTotal=facesTotal,facesBuilt=facesTotal-facesSkipped,facesSkipped=facesSkipped,incomplete=incomplete,skipped=skipped,fallbackFaces=fallbackFaces,geometry=waitMeasurable(sample,2),method="side-corrected skin placement + ear-clipping + two WedgeParts per triangle (auto-retries alternate tolerance/winding and vertex-welds shared edges before giving up on a face)",editable=true},warningsText)
+    if #ignoredGeometryProperties>0 then
+        local note="Ignored geometry-owned style.properties ("..table.concat(ignoredGeometryProperties,", ")..") so polygon Size/CFrame cannot be overwritten."
+        warningsText=warningsText and (warningsText.." "..note) or note
+    end
+    return ok({model=describeRef(model),submodels=#specs,polygons=#rawPolygons,triangles=triCount,wedges=wedgeCount,autoCaps=capCount,welds=weldCount,weldedSubmodels=weldedSubmodels,autoWeldDefault=true,mainWelds=mainWeldCount,facesTotal=facesTotal,facesBuilt=facesTotal-facesSkipped,facesSkipped=facesSkipped,incomplete=incomplete,skipped=skipped,fallbackFaces=fallbackFaces,ignoredGeometryProperties=ignoredGeometryProperties,geometryInvariant="Size/CFrame applied after safe style properties",geometry=waitMeasurable(sample,2),method="connected geometry-safe, side-corrected skin placement + ear-clipping + two WedgeParts per triangle (auto-welded by default; computed Size/CFrame cannot be overridden)",editable=true},warningsText)
 end
 
 tools.build_assembly = function(args)
@@ -12842,9 +12900,9 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             example = @{ modelName='Saeulenring'; items=@(@{className='Part';name='Saeule{n}';properties=@{Size=@{x=2;y=12;z=2};Anchored=$true};repeat=@{count=12;radius=20}}) };
             errors = @('BUDGET_EXCEEDED: mehr als 2000 Teile.', 'BAD_ARGS: nichts erstellt.') })
         $t.Add(@{ name = 'build_polygon_model'; category = 'create'; summary = 'STARK EMPFOHLENES MODELLING-TOOL: fast wie Blender, nur direkt aus Polygonpunkten.';
-            description = 'FUER MODELLING AUSDRUECKLICH STARK EMPFOHLEN: build_polygon_model ist Arenas schnellster Weg zu freien, grossen 3D-Modellen und funktioniert vom Prinzip fast wie Polygon-Modelling in Blender. Arena beschreibt Flaechen und Untermodelle, die Bridge erledigt Newell-Normalen, Projektion, Ear-Clipping, Triangulation sowie nahtlose, seitengerechte Wedge-CFrames. Ein einziger Call kann ein riesiges Modell mit mehreren untergeordneten Foldern bauen, z.B. einen Baum mit Stamm und drei getrennten Kronen. Jedes Untermodell besitzt eigene normale Part-Eigenschaften wie Farbe, Material, MaterialVariant, Transparenz, Kollision und Schatten. autoWeld verbindet lose Dreiecke je Untermodell; animierbare klassische mainWelds verbinden Untermodelle, sodass ein Script z.B. Kronen realistisch am Stamm wackeln lassen kann. closeOpenings schliesst vergessene Randloecher wie die offene Oberseite eines Stamms automatisch. Die Standard-Dickenplatzierung berechnet die Wedges von der sichtbaren Polygonseite statt von der Mitte: auch stark gedrehte Nachbarflaechen treffen ohne die bisherigen Rillen aufeinander.';
-            params = @{ modelName=@{type='string';required=$false;default="'ArenaPolygonModel'";description='Oberstes fertiges Model.'}; submodels=@{type='array';required=$false;default='[]';description='EMPFOHLEN: [{name,containerClass="Folder|Model",polygons:[...],style:{...},autoWeld,closeOpenings,capStyle}]. Alles bleibt dem Hauptmodel untergeordnet.'}; polygons=@{type='array';required=$false;default='[]';description='Einfache Flaechen [{name,points,color,material,thickness,...,style}]. Fuer grosse Modelle besser submodels verwenden.'}; points=@{type='Vector3[]';required=$false;default='null';description='Kurzform fuer ein Polygon.'}; script=@{type='string';required=$false;default='null';description='Mehrere Bloecke: POLYGON name=Roof color=#884422 material=Slate thickness=0.03, Punkte, END.'}; style=@{type='table';required=$false;default='{}';description='Globale Part-Defaults: color, material, materialVariant, collisionGroup, thickness, thicknessPlacement (inside Standard|center|positive|negative), anchored, canCollide, canQuery, canTouch, castShadow, transparency, reflectance, properties.'}; autoWeld=@{type='bool';required=$false;default='false';description='WeldConstraint-Kette innerhalb jedes Untermodells. Bei anchored=false faellt es als zusammenhaengendes Objekt statt in Einzelteilen.'}; mainWeld=@{type='bool';required=$false;default='false';description='Verbindet alle Untermodelle automatisch mit dem ersten.'}; mainWelds=@{type='array';required=$false;default='[]';description='Animierbare Verbindungen [{name,from,to}] zwischen benannten Untermodellen. Erzeugt klassische Welds mit C0/C1 fuer Script-Animation.'}; closeOpenings=@{type='bool';required=$false;default='false';description='Erkennt offene Rand-Loops pro Untermodell und verschliesst sie automatisch mit triangulierten AutoCap-Flaechen.'}; capStyle=@{type='table';required=$false;default='{}';description='Eigener Style fuer automatisch geschlossene Oeffnungen.'}; origin=@{type='Vector3';required=$false;default='{0,0,0}';description='Gesamt-Offset.'}; rotation=@{type='Vector3 degrees';required=$false;default='{0,0,0}';description='Gesamtrotation.'}; scale=@{type='number';required=$false;default='1';description='Gesamtskalierung.'}; maxWedges=@{type='int';required=$false;default='4000';description='Budget, maximal 10000.'}; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'} };
-            returns = '{ model, submodels, polygons, triangles, wedges, autoCaps, welds, mainWelds, skipped, geometry, method, editable }';
+            description = 'FUER MODELLING AUSDRUECKLICH STARK EMPFOHLEN: build_polygon_model ist Arenas schnellster Weg zu freien, grossen 3D-Modellen und funktioniert vom Prinzip fast wie Polygon-Modelling in Blender. Arena beschreibt Flaechen und Untermodelle, die Bridge erledigt Newell-Normalen, Projektion, Ear-Clipping, Triangulation sowie nahtlose, seitengerechte Wedge-CFrames. Ein einziger Call kann ein riesiges Modell mit mehreren untergeordneten Foldern bauen, z.B. einen Baum mit Stamm und drei getrennten Kronen. Jedes Untermodell besitzt eigene normale Part-Eigenschaften wie Farbe, Material, MaterialVariant, Transparenz, Kollision und Schatten. autoWeld ist standardmaessig aktiv und verbindet alle Dreiecke je Untermodell; animierbare klassische mainWelds verbinden Untermodelle, sodass ein Script z.B. Kronen realistisch am Stamm wackeln lassen kann. closeOpenings schliesst vergessene Randloecher wie die offene Oberseite eines Stamms automatisch. Die Standard-Dickenplatzierung berechnet die Wedges von der sichtbaren Polygonseite statt von der Mitte: auch stark gedrehte Nachbarflaechen treffen ohne die bisherigen Rillen aufeinander.';
+            params = @{ modelName=@{type='string';required=$false;default="'ArenaPolygonModel'";description='Oberstes fertiges Model.'}; submodels=@{type='array';required=$false;default='[]';description='EMPFOHLEN: [{name,containerClass="Folder|Model",polygons:[...],style:{...},autoWeld,closeOpenings,capStyle}]. Alles bleibt dem Hauptmodel untergeordnet.'}; polygons=@{type='array';required=$false;default='[]';description='Einfache Flaechen [{name,points,color,material,thickness,...,style}]. Fuer grosse Modelle besser submodels verwenden.'}; points=@{type='Vector3[]';required=$false;default='null';description='Kurzform fuer ein Polygon.'}; script=@{type='string';required=$false;default='null';description='Mehrere Bloecke: POLYGON name=Roof color=#884422 material=Slate thickness=0.03, Punkte, END.'}; style=@{type='table';required=$false;default='{}';description='Globale Part-Defaults: color, material, materialVariant, collisionGroup, thickness, thicknessPlacement (inside Standard|center|positive|negative), anchored, canCollide, canQuery, canTouch, castShadow, transparency, reflectance, properties. Geometrie bleibt Builder-eigen: Position/Orientation/Rotation/CFrame/Size/PivotOffset in properties werden ignoriert, damit keine Flaeche verdreht wird.'}; autoWeld=@{type='bool';required=$false;default='true';description='Standard AN: WeldConstraint-Kette innerhalb jedes Untermodells, damit Polygon-Wedges auch bei anchored=false als ein Objekt verbunden bleiben. Nur autoWeld=false erzeugt bewusst getrennte Teile.'}; mainWeld=@{type='bool';required=$false;default='false';description='Verbindet alle Untermodelle automatisch mit dem ersten.'}; mainWelds=@{type='array';required=$false;default='[]';description='Animierbare Verbindungen [{name,from,to}] zwischen benannten Untermodellen. Erzeugt klassische Welds mit C0/C1 fuer Script-Animation.'}; closeOpenings=@{type='bool';required=$false;default='false';description='Erkennt offene Rand-Loops pro Untermodell und verschliesst sie automatisch mit triangulierten AutoCap-Flaechen.'}; capStyle=@{type='table';required=$false;default='{}';description='Eigener Style fuer automatisch geschlossene Oeffnungen.'}; origin=@{type='Vector3';required=$false;default='{0,0,0}';description='Gesamt-Offset.'}; rotation=@{type='Vector3 degrees';required=$false;default='{0,0,0}';description='Gesamtrotation.'}; scale=@{type='number';required=$false;default='1';description='Gesamtskalierung.'}; maxWedges=@{type='int';required=$false;default='4000';description='Budget, maximal 10000.'}; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'} };
+            returns = '{ model, submodels, polygons, triangles, wedges, autoCaps, welds, weldedSubmodels, autoWeldDefault, mainWelds, skipped, ignoredGeometryProperties, geometryInvariant, geometry, method, editable }';
             example = @{ modelName='RiesigerBaum'; submodels=@(@{name='Stamm';containerClass='Folder';style=@{color='#704020';material='Wood';anchored=$false};autoWeld=$true;closeOpenings=$true;polygons=@('... Seitenflaechen ...')},@{name='Krone1';style=@{color='#3E8B3E';material='Grass';anchored=$false};autoWeld=$true;polygons=@('...')},@{name='Krone2';style=@{color='#438F43';material='Grass';anchored=$false};autoWeld=$true;polygons=@('...')},@{name='Krone3';style=@{color='#397F39';material='Grass';anchored=$false};autoWeld=$true;polygons=@('...')}); mainWelds=@(@{name='Krone1AmStamm';from='Stamm';to='Krone1'},@{name='Krone2AmStamm';from='Stamm';to='Krone2'},@{name='Krone3AmStamm';from='Stamm';to='Krone3'}) };
             errors = @('POLYGON_INVALID: kein gueltiges Polygon.', 'BUDGET_EXCEEDED', 'BAD_ARGS', 'REF_NOT_FOUND') })
 
@@ -13177,7 +13235,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         return @{
             importantRules = @(
                 'Choose the tools and workflow that best fit the task. The bridge exposes precise read, build, script, asset, playtest and batch tools; these are capabilities, not a mandatory checklist.',
-                'For modelling, STRONGLY prefer build_polygon_model: it works much like Blender polygon modelling while the bridge handles triangulation, side-corrected seamless Wedges, nested submodels, per-submodel Part properties, automatic hole caps and optional welds. It can create one huge model (for example a tree split into trunk plus three crown folders) in a single call, including animatable main Welds between submodels. build_assembly is excellent for repeated modular construction. bulk_create, unions and normal tools remain freely mixable; use run_lua only for genuinely custom logic.',
+                'For polygon or freeform surface modelling, ALWAYS use build_polygon_model unless the user explicitly requires custom low-level WedgeParts: it works much like Blender polygon modelling while the bridge handles triangulation, side-corrected seamless Wedges, nested submodels, per-submodel Part properties, automatic hole caps and default-on WeldConstraints. NEVER set autoWeld=false unless the user explicitly asks for physically independent polygon pieces; otherwise unanchored Wedges can scatter and rotate separately. It can create one huge model (for example a tree split into trunk plus three crown folders) in a single call, including animatable main Welds between submodels. build_assembly is excellent for repeated modular construction. bulk_create, unions and normal tools remain freely mixable; use run_lua only for genuinely custom logic.',
                 'Object ids such as #42 are stable within the current plugin session and avoid ambiguity when names repeat. Paths and selectors are also accepted where documented.',
                 'Several Places can be connected. With the Alle-Places token, GET /api/places returns targetPlace values; selecting one target keeps edits unambiguous.',
                 'GET and POST use the same bridge code path. Pick whichever transport your environment supports.',
@@ -13407,7 +13465,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '6.1.4'
+            version = '6.1.5'
             docsVersion = [string]$Shared.DocsVersion
             role = 'A normal token controls exactly one live Roblox Studio place. The special aggregate token copied from Alle Places controls several places: call GET /api/places first and pass one exact targetPlace in every request; the bridge refuses to guess. This makes switching safe and explicit. Send every request as POST /api/tool with JSON body { "token": "...", "targetPlace": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -13522,7 +13580,7 @@ end
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '6.1.4'
+            bridgeVersion = '6.1.5'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -13771,7 +13829,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '6.1.4'
+                        bridgeVersion = '6.1.5'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -14023,7 +14081,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '6.1.4'
+                        serverVersion = '6.1.5'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -14210,7 +14268,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='6.1.4'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='6.1.5'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -14239,8 +14297,8 @@ end
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '6.1.4'
-                    serverVersion = '6.1.4'
+                    bridgeVersion = '6.1.5'
+                    serverVersion = '6.1.5'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -16385,7 +16443,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 6.1.4)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 6.1.5)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -18687,7 +18745,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '6.1.4'
+    $versionText = '6.1.5'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -19288,7 +19346,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 6.1.4" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 6.1.5" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -19330,7 +19388,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 6.1.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 6.1.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -19383,7 +19441,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 6.1.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 6.1.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -19396,7 +19454,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '6.1.4'
+    $verText = '6.1.5'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

@@ -1,7 +1,7 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 6.1.4 - 29.09.2026)                                #
+#   (Stand: Version 6.1.5 - 29.09.2026)                                #
 #                                                                      #
 ##########################################################################
 
@@ -187,6 +187,17 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v6.1.5: POLYGON-SYSTEM TATSAECHLICH VERBUNDEN UND UNVERDREHBAR. Ursache
+  fuer Teile an richtiger Position mit anschliessender kreuz-und-quer Rotation:
+  build_polygon_model liess autoWeld standardmaessig AUS. Bei anchored=false
+  simulierte Roblox deshalb jeden Wedge als eigenen Koerper. autoWeld ist nun
+  standardmaessig AN (nur explizites false schaltet ab). Zweite reale Ursache:
+  style.properties wurde nach berechnetem Size/CFrame angewandt und konnte mit
+  Position/Orientation/Rotation/CFrame/Size/PivotOffset die Geometrie wieder
+  zerstoeren. Diese Felder werden gefiltert und Size/CFrame zuletzt gesetzt.
+  Rueckgabe: autoWeldDefault, weldedSubmodels, ignoredGeometryProperties,
+  geometryInvariant. Session-Regel: Polygon-/Freiformflaechen immer ueber
+  build_polygon_model, ausser der Nutzer verlangt ausdruecklich Low-Level-Wedges.
 - v6.1.4: POLYGON ENGINE 2.0 - dauerhafte KI-Regel gegen 90-Grad-Drehfehler
   und Nahtspalten. build_polygon_model trianguliert seit v6.1.3 korrekt, aber
   die richtige WedgePart-Achsenkonvention (lokal X=Dicke/Normale,

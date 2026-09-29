@@ -20,7 +20,7 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test_v398_structure.py` | Python-Strukturtest für 6.1.3 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test_v398_structure.py` | Python-Strukturtest für 6.1.5 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -35,6 +35,12 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 6.1.5
+- **Polygone bleiben als ein Objekt verbunden.** `build_polygon_model` verschweißt jedes Polygon-Untermodell jetzt standardmäßig per `WeldConstraint`. Das behebt den konkreten Laufzeitfehler, bei dem unanchored Wedges zwar an der richtigen Position entstanden, in der Physiksimulation aber als unabhängige Teile auseinanderfielen und kreuz und quer rotierten. Nur ein bewusstes `autoWeld=false` schaltet die Verbindung ab.
+- **Berechnete Rotation kann nicht mehr überschrieben werden.** Freie `style.properties` wurden bisher nach dem berechneten `Size`/`CFrame` angewandt. Dadurch konnten `Position`, `Orientation`, `Rotation`, `CFrame`, `Size` oder `PivotOffset` die korrekte Dreiecksgeometrie zerstören. Diese Builder-eigenen Felder werden nun gefiltert; `Size` und `CFrame` werden garantiert zuletzt gesetzt.
+- **Messbare Diagnose statt Vermutung.** Die Rückgabe enthält `autoWeldDefault=true`, `weldedSubmodels`, `ignoredGeometryProperties` und `geometryInvariant`. Die Session-Regel routet Polygon-/Freiformflächen verbindlich über `build_polygon_model`, sofern nicht ausdrücklich Low-Level-Wedges verlangt werden.
+- Bestehende Aufrufe bleiben kompatibel. Farben, Materialien, Kollision und andere normale Part-Eigenschaften bleiben erhalten; `autoWeld=false` ist der explizite Opt-out. Nach dem Update Roblox Studio einmal neu starten, damit Plugin **6.1.5** geladen wird.
 
 ## 6.1.4
 - **Polygon Engine 2.0 – dauerhafte KI-Regel gegen 90°-Drehfehler & Nahtspalten.** `build_polygon_model` trianguliert Dreiecke seit 6.1.3 korrekt (siehe unten), aber die richtige `WedgePart`-Achsenkonvention war nirgends als feste, sitzungsübergreifende Regel für die KI hinterlegt. Schrieb Arena statt des Tools eigenen Lua-Code für Polygone/Wedges (z. B. über `run_lua`), konnte sie versehentlich Dicke, Höhe und Basiskante auf die falschen lokalen Achsen legen – genau das erzeugt die gemeldeten 90°-Drehfehler und klaffenden Nahtstellen.
@@ -55,7 +61,7 @@ heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestarte
 - **Dauerhafter Regressionstest.** `test_v398_structure.py` prüft jetzt die feste, beabsichtigte Schlusssequenz der PowerShell-Datei. Jede angehängte Zeile – ob unvollständig oder nicht – lässt den Release-Test fehlschlagen.
 
 ## 6.1.1
-- **Polygon-Modelling wie in Blender – ausdrücklich stark empfohlen.** `build_polygon_model` kann jetzt in einem Call sehr große, vollständig untergeordnete Modelle aus mehreren Foldern/Untermodellen erstellen. Ein Baum kann etwa aus Stamm und drei Kronen bestehen; jedes Untermodell erhält eigene Farbe, Material-, Kollisions-, Transparenz- und normale Part-Eigenschaften. Optionale Auto-Welds halten jedes Untermodell zusammen, klassische benannte Haupt-Welds verbinden sie animierbar miteinander.
+- **Polygon-Modelling wie in Blender – ausdrücklich stark empfohlen.** `build_polygon_model` kann jetzt in einem Call sehr große, vollständig untergeordnete Modelle aus mehreren Foldern/Untermodellen erstellen. Ein Baum kann etwa aus Stamm und drei Kronen bestehen; jedes Untermodell erhält eigene Farbe, Material-, Kollisions-, Transparenz- und normale Part-Eigenschaften. Auto-Welds halten jedes Untermodell zusammen (seit 6.1.5 standardmäßig aktiv), klassische benannte Haupt-Welds verbinden sie animierbar miteinander.
 - **Nahtlose Wedge-Haut.** Die Dicke wird standardmäßig von der sichtbaren Polygonseite nach innen aufgebaut statt um die Flächenmitte. Dadurch bleiben die gelieferten Polygonpunkte die exakte Außenhaut und stark gegeneinander gedrehte Flächen erzeugen keine wachsenden Rillen mehr; die Innenseiten überlappen sauber. `thicknessPlacement=center` erhält bei Bedarf das alte Verhalten.
 - **Offene Modelle automatisch schließen.** `closeOpenings=true` erkennt offene Rand-Loops eines Untermodells und erzeugt triangulierte `AutoCap`-Flächen – etwa wenn an einem Baumstamm die Oberseite vergessen wurde.
 - **Toolbox-Säuberung vor dem Einfügen.** `insert_asset { sanitize=true }` entfernt bereits im noch nicht untergeordneten Asset alle Lua-Skripte, Remote-/Bindable-Events und Functions. So kann Arena Modelle bewusst als reine Geometrie ohne Skripte oder typischen Viren-Müll einsetzen.
