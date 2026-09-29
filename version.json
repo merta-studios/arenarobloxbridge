@@ -1,10 +1,11 @@
 {
-  "version": "6.0.6",
+  "version": "6.1.0",
   "notes": [
-    "• Nachgewiesene Ursache aus der ausgelieferten 6.0.5: runtime.log bestätigt Version 6.0.5 mit SHA-256 7433925B…E588 und den geladenen C#-Helfer. Noch vor jeder Fensteraufnahme bricht New-PlacePreviewVisual jedoch mit „Für new und die folgende Argumenteanzahl kann keine Überladung gefunden werden: 1“ ab. Der Selbsttest bestätigt die Folge mit „IMAGE_ASSIGN_SKIPPED … grund=Zeile/IconImage fehlt“.",
-    "• Gezielte Änderung: Die Strichfolge des Ladekreises wird nicht mehr über den in Windows PowerShell 5.1 fehlgeschlagenen Ein-Argument-Aufruf DoubleCollection::new(@(4.0, 8.0)) erzeugt. 6.0.6 verwendet den parameterlosen Konstruktor, fügt beide double-Werte einzeln hinzu und weist die fertige Collection anschließend zu. UI-Aufbau und Aufnahmewege bleiben ansonsten unverändert.",
-    "• Regressionstest: Der Python-Strukturtest verbietet den belegten Konstruktoraufruf und verlangt Konstruktor, beide Add-Schritte und Zuweisung in dieser Reihenfolge. Zusätzlich werden alle funktionalen 6.0.6-Versionsstellen mit exakten Anzahlen geprüft.",
-    "• Ehrlicher Prüfstatus: Die statischen Struktur-, Lua- und XAML-Tests laufen ohne PowerShell. Die Live-Abnahme auf dem Nutzer-PC bleibt ausdrücklich offen; erst preview-diagnose.txt aus 6.0.6 darf PREVIEW_UI_VERIFY/SELFTEST_OK und anschließend die echte Studio-Aufnahme belegen.",
-    "• Keine Toast-/Popup-Meldungen und kein UI-Umbau."
+    "• Mitteilungen sind jetzt wirklich kurz und menschlich: Arena schreibt selbst einen lebendigen Titel (max. 70 Zeichen) und einen einladenden Inhalt (max. 140 Zeichen). Die Bridge prüft beide Windows-11-Anzeigebudgets, statt lange Änderungslisten abzuschneiden.",
+    "• Vorschauen aktualisieren sich bei geöffneter Bridge alle 3 Sekunden weiter – auch wenn ein Roblox-Studio-Fenster minimiert ist. Die Bridge versucht weiterhin PrintWindow statt die Aufnahme vorab zu blockieren.",
+    "• Die Toolbox ist offen für 3D-Modelle, Models, Meshes/MeshParts, Plugins, Fonts, Audio, Bilder/Decals, Video und Animation. Der alte allowModels-Freigabeschalter ist aus der Doku entfernt; transparente Typ-, Rechte- und Skriptprüfungen bleiben erhalten.",
+    "• Der leere Arena-Verlauf pro Place ist repariert: Eine verschachtelte PowerShell-Array-Rückgabe wurde abgeflacht, sodass Aktionen wieder erscheinen.",
+    "• Neue Meister-Bautools: build_assembly erstellt große gruppierte Baugruppen samt Wiederholungen in einem Call. build_polygon_model nimmt Punkte oder ein kompaktes POLYGON-Skript, trianguliert auch konkave Flächen selbst und baut jedes Dreieck ausschließlich aus zwei ultradünnen WedgeParts in ein fertiges Model.",
+    "• Arena bekommt eine kürzere, freiheitsorientierte Anleitung: weniger starre Vorschriften, klare Fähigkeiten und freie Werkzeugwahl. Dedizierte Bautools werden sichtbar angeboten, run_lua bleibt für Speziallogik verfügbar."
   ]
 }

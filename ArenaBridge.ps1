@@ -1,4 +1,32 @@
 ﻿# ============================================================================
+# Arena Roblox Bridge  -  Version 6.1.0
+#
+# BRIDGE-UPDATE: MEISTER-BAUEN, FREIE TOOLBOX, KURZE MITTEILUNGEN
+#   * MITTEILUNGEN: report_done verlangt jetzt einen von Arena formulierten,
+#     lebendigen Titel (max. 70 Zeichen) und einen natuerlichen Inhalt (max.
+#     140 Zeichen). Die Bridge validiert beide Windows-11-Anzeigebudgets und
+#     uebergibt Titel/Inhalt getrennt an ToastGeneric und Balloon-Fallback.
+#   * VORSCHAU: alle Place-Vorschauen werden bei geoeffneter Bridge alle drei
+#     Sekunden weiter aufgenommen. IsIconic sperrt minimierte Studio-Fenster
+#     nicht mehr; PrintWindow darf sie weiterhin rendern.
+#   * TOOLBOX: 3D-Modelle, Models, aktuelle Mesh-/MeshPart-Suche, Plugins,
+#     Fonts, Audio, Bilder/Decals, Video und Animation sind dokumentiert und
+#     ohne allowModels-Freigabeschalter zugaenglich. Asset- und Skriptpruefung
+#     beim Einfuegen bleiben als transparente Sicherheitsinformationen.
+#   * ARENA-VERLAUF: Ein unitaeres PowerShell-Komma lieferte den Verlauf als
+#     verschachteltes Array an die UI. Die flache Rueckgabe zeigt Aktionen nun
+#     wieder pro Place und in Alle Places an.
+#   * MEISTER-BAUTOOLS: build_assembly baut bis zu 2000 gruppierte Teile samt
+#     linearen/radialen Wiederholungen in einem Call. build_polygon_model
+#     nimmt Punkte oder POLYGON-Skripte entgegen; die Bridge berechnet Newell-
+#     Normale, Projektion, Ear-Clipping, konkave Triangulation und alle
+#     CFrames. Jede Flaeche besteht ausschliesslich aus ultraduennen
+#     WedgeParts (zwei pro Dreieck) und landet sauber in einem Model.
+#   * DOKU: Die lange Vorschriftenliste wurde zu einer kurzen, frei
+#     entscheidbaren Faehigkeiten-Uebersicht. Dedizierte Bauwerkzeuge werden
+#     sichtbar angeboten, run_lua bleibt fuer wirklich freie Logik erhalten.
+#
+# ============================================================================
 # Arena Roblox Bridge  -  Version 6.0.6
 #
 # FENSTER-VORSCHAU: BELEGTEN KONSTRUKTORAUFRUF ERSETZT
@@ -599,10 +627,10 @@
 #       (Fehlercode SELF_TEST_DISABLED) - sie haelt die Bridge nicht kaputt.
 #   3.  NEU: "BENACHRICHTIGUNG, WENN ARENA FERTIG IST" (Standard: AUS). Ist
 #       der Schalter AN, wird die KI in jeder Antwort deutlich angewiesen, am
-#       ENDE ihrer Arbeit den neuen Befehl report_done { message } zu rufen -
+#       ENDE ihrer Arbeit den neuen Befehl report_done { title, message } zu rufen -
 #       dann kommt eine Windows-Benachrichtigung mit Arenas deutscher
-#       Meldung auf den PC (z. B. "Ich bin fertig" oder "5 Aenderungen und
-#       Fehler behoben - fertig"). Die KI darf ihn NUR rufen, wenn sie
+#       Meldung auf den PC (z. B. Titel "✅ Arena hat den Bug behoben!" und
+#       Inhalt "Der Fehler ist weg - komm und teste das Spiel!"). Die KI darf ihn NUR rufen, wenn sie
 #       danach wirklich nichts mehr aendert und ihre Antwort sofort beendet.
 #   4.  PLAYTESTS VIEL ZUVERLAESSIGER (das Wichtigste):
 #       - Start/Stop laeuft bevorzugt ueber den offiziellen StudioTestService
@@ -1037,7 +1065,7 @@ $script:PlaceNames = @{}
 $script:PlacePreviewJobs = @{}
 $script:PlacePreviewHandles = @{}
 $script:PlacePreviewLastCaptureAt = @{}
-$script:PlacePreviewIntervalSeconds = 2.5
+$script:PlacePreviewIntervalSeconds = 3.0
 $script:PlacePreviewCaptureHeight = 88
 $script:PreviewWindowCache = @()
 $script:PreviewWindowCacheAt = [DateTime]::MinValue
@@ -1469,7 +1497,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '6.0.6'
+    DocsVersion     = '6.1.0'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -1558,8 +1586,8 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-    $script:PreviewDiagIdentity = ("Bridge-Version=6.0.6, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=6.0.6, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    $script:PreviewDiagIdentity = ("Bridge-Version=6.1.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=6.1.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 6.0.5: Hinweis auf den kleinen Kurzbericht - er enthaelt alles,
     # was zur Beurteilung der Fenster-Vorschau noetig ist.
     Write-RuntimeLog ("Vorschau-Kurzbericht: " + (Join-Path $script:AppDataRoot 'preview-diagnose.txt'))
@@ -1653,7 +1681,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 6.0.6)
+  Arena Studio Bridge - Studio Plugin  (Version 6.1.0)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1724,7 +1752,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "6.0.6"
+local ARENA_VERSION  = "6.1.0"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -7934,6 +7962,238 @@ tools.fill_region = function(args)
 end
 
 -- ------------------------- Assets -------------------------------------------
+-- ---------------------------------------------------------------------------
+-- MEISTER-BAUWERKZEUGE (6.1): Polygon-Triangulation und komplette Baugruppen
+-- Die KI liefert nur Absicht + Punkte/Styles. Projektion, Ear-Clipping,
+-- Dreieckszerlegung, Wedge-CFrames und Gruppierung rechnet die Bridge.
+-- ---------------------------------------------------------------------------
+MASTER_BUILD = {}
+function MASTER_BUILD.vec3(value)
+    local decoded = decodeValue(value)
+    if typeof(decoded) == "Vector3" then return decoded end
+    if type(value) == "table" then
+        return Vector3.new(tonumber(value.x or value.X or value[1]) or 0, tonumber(value.y or value.Y or value[2]) or 0, tonumber(value.z or value.Z or value[3]) or 0)
+    end
+    return nil
+end
+
+function MASTER_BUILD.parseScript(source)
+    local polygons, current = {}, nil
+    for raw in tostring(source or ""):gmatch("[^\r\n]+") do
+        local line = raw:match("^%s*(.-)%s*$")
+        if line ~= "" and not line:match("^#") and not line:match("^%-%-") then
+            local command, rest = line:match("^(%S+)%s*(.*)$")
+            command = string.upper(command or "")
+            if command == "POLYGON" then
+                current = { points = {} }
+                for key, value in rest:gmatch("([%w_]+)=([^%s]+)") do
+                    if value == "true" then current[key] = true
+                    elseif value == "false" then current[key] = false
+                    elseif tonumber(value) ~= nil then current[key] = tonumber(value)
+                    else current[key] = value end
+                end
+                table.insert(polygons, current)
+            elseif command == "END" then
+                current = nil
+            elseif current then
+                local x, y, z = line:match("^([%+%-]?[%d%.eE]+)%s*[,;%s]%s*([%+%-]?[%d%.eE]+)%s*[,;%s]%s*([%+%-]?[%d%.eE]+)$")
+                if x then table.insert(current.points, { x = tonumber(x), y = tonumber(y), z = tonumber(z) }) end
+            end
+        end
+    end
+    return polygons
+end
+
+function MASTER_BUILD.normal(points)
+    local n = Vector3.zero
+    for i = 1, #points do
+        local a, b = points[i], points[(i % #points) + 1]
+        n = n + Vector3.new((a.Y-b.Y)*(a.Z+b.Z), (a.Z-b.Z)*(a.X+b.X), (a.X-b.X)*(a.Y+b.Y))
+    end
+    return n.Magnitude > 1e-8 and n.Unit or nil
+end
+
+function MASTER_BUILD.project(points, normal)
+    local ax, ay, az = math.abs(normal.X), math.abs(normal.Y), math.abs(normal.Z)
+    local drop = (ax >= ay and ax >= az) and "x" or ((ay >= az) and "y" or "z")
+    local out = {}
+    for i, p in ipairs(points) do
+        if drop == "x" then out[i] = { x=p.Y, y=p.Z }
+        elseif drop == "y" then out[i] = { x=p.X, y=p.Z }
+        else out[i] = { x=p.X, y=p.Y } end
+    end
+    return out, drop
+end
+
+function MASTER_BUILD.area2(poly)
+    local sum = 0
+    for i = 1, #poly do local a,b=poly[i],poly[(i%#poly)+1]; sum=sum+a.x*b.y-b.x*a.y end
+    return sum
+end
+
+function MASTER_BUILD.pointInTri2(p,a,b,c,orientation)
+    local function cross(u,v,w) return (v.x-u.x)*(w.y-u.y)-(v.y-u.y)*(w.x-u.x) end
+    local e=1e-8
+    return cross(a,b,p)*orientation >= -e and cross(b,c,p)*orientation >= -e and cross(c,a,p)*orientation >= -e
+end
+
+function MASTER_BUILD.triangulate(points)
+    if #points < 3 then return nil, "A polygon needs at least 3 points." end
+    local normal = MASTER_BUILD.normal(points)
+    if not normal then return nil, "Polygon points are collinear or duplicated." end
+    local projected, drop = MASTER_BUILD.project(points, normal)
+    local signed = MASTER_BUILD.area2(projected)
+    if math.abs(signed) < 1e-8 then return nil, "Polygon area is zero after projection." end
+    local orientation = signed > 0 and 1 or -1
+    local indices = {}; for i=1,#points do indices[i]=i end
+    local triangles, guard = {}, 0
+    while #indices > 3 do
+        guard=guard+1; if guard > #points*#points then return nil, "Polygon is self-intersecting or numerically invalid; split it into simple polygons." end
+        local clipped=false
+        for pos=1,#indices do
+            local ia, ib, ic = indices[((pos-2)%#indices)+1], indices[pos], indices[(pos%#indices)+1]
+            local a,b,c=projected[ia],projected[ib],projected[ic]
+            local cross=(b.x-a.x)*(c.y-b.y)-(b.y-a.y)*(c.x-b.x)
+            if cross*orientation > 1e-8 then
+                local contains=false
+                for _,idx in ipairs(indices) do
+                    if idx~=ia and idx~=ib and idx~=ic and MASTER_BUILD.pointInTri2(projected[idx],a,b,c,orientation) then contains=true; break end
+                end
+                if not contains then table.insert(triangles,{ia,ib,ic}); table.remove(indices,pos); clipped=true; break end
+            end
+        end
+        if not clipped then return nil, "No valid ear found. Remove duplicate/collinear points or split a self-intersecting polygon." end
+    end
+    table.insert(triangles,{indices[1],indices[2],indices[3]})
+    return triangles, nil, normal, drop
+end
+
+function MASTER_BUILD.color(value, fallback)
+    local decoded=decodeValue(value)
+    if typeof(decoded)=="Color3" then return decoded end
+    return fallback or Color3.fromRGB(163,162,165)
+end
+
+function MASTER_BUILD.triangleWedges(a,b,c,parent,style,name)
+    local ab,ac,bc=b-a,c-a,c-b
+    local abd,acd,bcd=ab:Dot(ab),ac:Dot(ac),bc:Dot(bc)
+    if abd > acd and abd > bcd then c,a=b,c elseif acd > bcd then a,b=b,c end
+    ab,ac,bc=b-a,c-a,c-b
+    local right=ac:Cross(ab)
+    if right.Magnitude < 1e-7 or bc.Magnitude < 1e-7 then return {}, "degenerate triangle" end
+    right=right.Unit
+    local back=bc.Unit
+    local up=bc:Cross(right).Unit
+    local height=math.abs(ab:Dot(up))
+    local z1=math.abs(ab:Dot(back)); local z2=math.abs(ac:Dot(back))
+    local thickness=math.max(0.01,tonumber(style.thickness) or 0.03)
+    local made={}
+    local function one(index,size,cf)
+        local w=Instance.new("WedgePart")
+        w.Name=name.."_W"..tostring(index)
+        w.Size=Vector3.new(thickness,math.max(0.01,size.Y),math.max(0.01,size.Z))
+        w.CFrame=cf
+        w.Anchored=style.anchored ~= false
+        w.CanCollide=style.canCollide == true
+        w.CanQuery=style.canQuery ~= false
+        w.CanTouch=style.canTouch == true
+        w.CastShadow=style.castShadow ~= false
+        w.Transparency=math.clamp(tonumber(style.transparency) or 0,0,1)
+        w.Color=MASTER_BUILD.color(style.color,Color3.fromRGB(163,162,165))
+        if style.material then pcall(function() w.Material=Enum.Material[tostring(style.material)] end) end
+        if style.reflectance then w.Reflectance=math.clamp(tonumber(style.reflectance) or 0,0,1) end
+        w:SetAttribute("ArenaPolygonTriangle",name)
+        w.Parent=parent; table.insert(made,w)
+    end
+    -- X is the ultra-thin face-normal axis. The two wedges exactly cover the
+    -- projected triangle and share the same thin slab around its plane.
+    one(1,Vector3.new(thickness,height,z1),CFrame.fromMatrix((a+b)/2,right,up,back))
+    one(2,Vector3.new(thickness,height,z2),CFrame.fromMatrix((a+c)/2,-right,up,-back))
+    return made
+end
+
+tools.build_polygon_model = function(args)
+    local parent,err=resolveRef(args.parentRef or "game.Workspace")
+    if not parent then return failCode("REF_NOT_FOUND",err) end
+    local polygons=args.polygons or {}
+    local polygonScript = args.script or args.source
+    if polygonScript then
+        local parsed=MASTER_BUILD.parseScript(polygonScript)
+        for _,p in ipairs(parsed) do table.insert(polygons,p) end
+    end
+    if args.points then table.insert(polygons,{points=args.points,name=args.polygonName}) end
+    if #polygons==0 then return failCode("BAD_ARGS","Provide polygons=[{points=[...]}], points=[...], or the POLYGON/point/END script format.") end
+    local model=Instance.new("Model"); model.Name=tostring(args.modelName or args.name or "ArenaPolygonModel"); model.Parent=parent
+    model:SetAttribute("ArenaMasterBuild",true); model:SetAttribute("PolygonCount",#polygons)
+    local defaults=args.style or {}
+    local origin=MASTER_BUILD.vec3(args.origin) or Vector3.zero
+    local scale=tonumber(args.scale) or 1
+    local rotation=MASTER_BUILD.vec3(args.rotation) or Vector3.zero
+    local transform=CFrame.new(origin)*CFrame.Angles(math.rad(rotation.X),math.rad(rotation.Y),math.rad(rotation.Z))
+    local wedgeCount,triCount,skipped=0,0,{}
+    local maxWedges=math.min(10000,math.max(2,tonumber(args.maxWedges) or 4000))
+    for pi,poly in ipairs(polygons) do
+        local style={}; for k,v in pairs(defaults) do style[k]=v end; for k,v in pairs(poly.style or {}) do style[k]=v end
+        for _,k in ipairs({"color","material","thickness","anchored","canCollide","canQuery","canTouch","castShadow","transparency","reflectance"}) do if poly[k]~=nil then style[k]=poly[k] end end
+        local pts={}
+        for _,raw in ipairs(poly.points or {}) do local v=MASTER_BUILD.vec3(raw); if v then table.insert(pts,transform*(v*scale)) end end
+        -- repeated closing point is accepted and removed automatically
+        if #pts>3 and (pts[1]-pts[#pts]).Magnitude<1e-6 then table.remove(pts,#pts) end
+        local triangles,why,normal,drop=MASTER_BUILD.triangulate(pts)
+        if not triangles then table.insert(skipped,{index=pi,name=poly.name,error=why})
+        elseif wedgeCount+#triangles*2>maxWedges then model:Destroy(); return failCode("BUDGET_EXCEEDED","Polygon build needs more than "..tostring(maxWedges).." wedges. Raise maxWedges up to 10000 or split the model.")
+        else
+            local group=Instance.new("Model"); group.Name=tostring(poly.name or ("Polygon"..pi)); group.Parent=model
+            group:SetAttribute("TriangleCount",#triangles); group:SetAttribute("ProjectionAxis",drop); group:SetAttribute("Normal",normal)
+            for ti,t in ipairs(triangles) do
+                local made,werr=MASTER_BUILD.triangleWedges(pts[t[1]],pts[t[2]],pts[t[3]],group,style,group.Name.."_T"..ti)
+                if werr then table.insert(skipped,{index=pi,triangle=ti,error=werr}) else wedgeCount=wedgeCount+#made; triCount=triCount+1 end
+            end
+        end
+    end
+    if wedgeCount==0 then model:Destroy(); return failCode("POLYGON_INVALID","No polygon could be triangulated.",skipped) end
+    waypoint("build polygon model "..model.Name)
+    local sample={}; for _,d in ipairs(model:GetDescendants()) do if d:IsA("BasePart") and #sample<8 then table.insert(sample,d) end end
+    return ok({model=describeRef(model),polygons=#polygons,triangles=triCount,wedges=wedgeCount,skipped=skipped,geometry=waitMeasurable(sample,2),method="ear-clipping + two ultra-thin WedgeParts per triangle",editable=true})
+end
+
+tools.build_assembly = function(args)
+    local parent,err=resolveRef(args.parentRef or "game.Workspace"); if not parent then return failCode("REF_NOT_FOUND",err) end
+    local model=Instance.new("Model"); model.Name=tostring(args.modelName or args.name or "ArenaAssembly"); model.Parent=parent; model:SetAttribute("ArenaMasterBuild",true)
+    local items=args.items or args.parts or {}; local expanded={}
+    for _,spec in ipairs(items) do
+        local repeatSpec=spec.repeatSpec or spec["repeat"] or {}; local count=math.max(1,math.floor(tonumber(repeatSpec.count) or 1))
+        if #expanded+count>2000 then model:Destroy(); return failCode("BUDGET_EXCEEDED","build_assembly creates at most 2000 parts per call.") end
+        local basePos=MASTER_BUILD.vec3((spec.properties or {}).Position or spec.position) or Vector3.zero
+        local offset=MASTER_BUILD.vec3(repeatSpec.offset) or Vector3.zero
+        local radius=tonumber(repeatSpec.radius); local angleStep=tonumber(repeatSpec.angleStep) or (radius and 360/count or 0)
+        for i=1,count do
+            local copy={}; for k,v in pairs(spec) do copy[k]=v end
+            local props={}; for k,v in pairs(spec.properties or {}) do props[k]=v end
+            local pos=basePos+offset*(i-1)
+            if radius then local a=math.rad((tonumber(repeatSpec.startAngle) or 0)+angleStep*(i-1)); pos=basePos+Vector3.new(math.cos(a)*radius,tonumber(repeatSpec.heightStep or 0)*(i-1),math.sin(a)*radius); props.Orientation=Vector3.new(0,-math.deg(a)+90,0) end
+            props.Position=pos; copy.properties=props; copy.name=tostring(spec.name or spec.className or "Part"):gsub("{n}",tostring(i)); copy.parentRef=nil
+            table.insert(expanded,copy)
+        end
+    end
+    local created,errors,sample={},{},{}
+    for i,spec in ipairs(expanded) do
+        local className=tostring(spec.className or "Part")
+        local okNew,inst=pcall(Instance.new,className)
+        if not okNew or not inst then table.insert(errors,{index=i,error="Cannot create "..className})
+        else
+            inst.Name=spec.name or className; local problems=applyProperties(inst,spec.properties); inst.Parent=model
+            local d=describeRef(inst); d.propertyProblems=(#problems>0) and problems or nil; table.insert(created,d)
+            if inst:IsA("BasePart") and #sample<8 then table.insert(sample,inst) end
+        end
+    end
+    if #created==0 then model:Destroy(); return failCode("BAD_ARGS","No assembly items could be created.",errors) end
+    if args.pivot then local pivot=decodeValue(args.pivot); if typeof(pivot)=="CFrame" then model:PivotTo(pivot) elseif typeof(pivot)=="Vector3" then model:PivotTo(CFrame.new(pivot)) end end
+    waypoint("build assembly "..model.Name)
+    return ok({model=describeRef(model),created=created,count=#created,errors=errors,geometry=waitMeasurable(sample,2),note="All parts were created, repeated and grouped in one atomic build call; use the returned model id for moving/cloning."})
+end
+
+
 tools.insert_asset = function(args)
     if InsertService == nil then return fail("InsertService is not available.") end
     local assetId = tonumber(args.assetId)
@@ -8799,6 +9059,7 @@ local PERSISTENT_WRITE_TOOLS = {
     union = true, subtract = true, negate = true, intersect = true, separate = true,
     insert_asset = true, apply_asset = true,
     point_at = true, fill_region = true,
+    build_polygon_model = true, build_assembly = true,
     undo = true, redo = true,
 }
 
@@ -9909,7 +10170,6 @@ namespace Arena {
             IntPtr hwnd = new IntPtr(hwndValue);
             try {
                 if (hwnd == IntPtr.Zero) { result.Error = "HWND ist 0"; return Finish(result, watch, attempts); }
-                if (IsIconic(hwnd)) { result.Minimized = true; return Finish(result, watch, attempts); }
                 PreviewWindowRect rect;
                 if (!GetWindowRect(hwnd, out rect)) { result.Error = "GetWindowRect fehlgeschlagen"; return Finish(result, watch, attempts); }
                 int width = rect.Right - rect.Left;
@@ -10334,7 +10594,7 @@ $script:BridgeHandlerScript = {
     # Version 5.2: vollstaendige Werkzeuglisten (jedes vorhandene Werkzeug).
     function Get-ActivityToolSets {
         $read = @('get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','play_status','session_diag','character_state','gui_dump','gui_check','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait')
-        $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','play_start','play_stop','play_pause','play_resume','set_context','move_character','teleport_character','respawn_character','gui_click','gui_set_text','send_input','client_action','set_camera','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute')
+        $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','build_polygon_model','build_assembly','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','play_start','play_stop','play_pause','play_resume','set_context','move_character','teleport_character','respawn_character','gui_click','gui_set_text','send_input','client_action','set_camera','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute')
         return @{ read = $read; write = $write }
     }
 
@@ -10494,6 +10754,8 @@ $script:BridgeHandlerScript = {
             clear_lua_state = 'Hat den Lua-Status zurückgesetzt.'
             probe_world = 'Hat die Welt vermessen (Raster-Probe).'
             fill_region = 'Hat einen Bereich gefüllt.'
+            build_polygon_model = 'Hat ein Polygon professionell aus dünnen Wedges gebaut.'
+            build_assembly = 'Hat ein komplettes Bauteil als Modell in einem Call gebaut.'
             union = 'Hat Teile zu einem Teil verschmolzen.'
             subtract = 'Hat eine Form aus einem Teil herausgestanzt.'
             intersect = 'Hat nur den gemeinsamen Teil behalten.'
@@ -11215,6 +11477,7 @@ $script:BridgeHandlerScript = {
             10 { return @{ typeName = 'Model';     usableAs = 'insert_asset (Model)';           properties = @() } }
             13 { return @{ typeName = 'Decal';     usableAs = 'Decal / Texture / Image';        properties = @('Texture', 'Image') } }
             24 { return @{ typeName = 'Animation'; usableAs = 'Animation';                      properties = @('AnimationId') } }
+            38 { return @{ typeName = 'Plugin';    usableAs = 'Creator Store metadata / Studio plugin'; properties = @() } }
             40 { return @{ typeName = 'MeshPart';  usableAs = 'insert_asset (MeshPart)';        properties = @() } }
             62 { return @{ typeName = 'Video';     usableAs = 'VideoFrame';                     properties = @('VideoId') } }
             default { return @{ typeName = ('Unknown(' + [string]$typeId + ')'); usableAs = ''; properties = @() } }
@@ -11237,15 +11500,20 @@ $script:BridgeHandlerScript = {
             'animation' = 'animation'
             'image'     = 'decal'
             'texture'   = 'decal'
-            'mesh'      = 'meshpart'
-            'meshpart'  = 'meshpart'
+            'mesh'      = 'mesh'
+            'meshes'    = 'mesh'
+            'meshpart'  = 'mesh'
+            'plugin'    = 'plugin'
+            'plugins'   = 'plugin'
+            'font'      = 'font'
+            'fonts'     = 'font'
         }
         if (-not $typeMap.ContainsKey($type)) {
             return @{
                 ok = $false
                 code = 'CATALOG_TYPE_NOT_SUPPORTED'
                 error = "Asset type '$type' cannot be searched in the catalog."
-                supportedTypes = @('audio', 'music', 'decal', 'image', 'texture', 'mesh', 'model', 'video', 'animation')
+                supportedTypes = @('audio', 'music', 'decal', 'image', 'texture', 'mesh', 'meshpart', 'model', 'plugin', 'font', 'video', 'animation')
             }
         }
         $apiType = $typeMap[$type]
@@ -11254,7 +11522,7 @@ $script:BridgeHandlerScript = {
             if ($apiType -eq 'decal') {
                 $typeNote = "The catalog API has no '$type' search - I searched DECALS instead. Decal assets are textures: use them on 'Texture' (Part/Decal) or 'Image' (ImageLabel/ImageButton)."
             } else {
-                $typeNote = "The catalog API has no '$type' search - I searched MESHPARTS instead (meshes with texture, insert with insert_asset). For a bare mesh use insert_asset too."
+                $typeNote = "The request uses the Creator Store's current MESH category. Mesh and MeshPart results can be inserted with insert_asset; bare mesh ids can also be applied to SpecialMesh.MeshId."
             }
         }
         # Toolbox-Modelle dürfen gesucht und als Metadaten abgerufen werden.
@@ -11517,7 +11785,9 @@ $script:BridgeHandlerScript = {
                 'texture'   { $expectedIds = @(1, 13) }
                 'decal'     { $expectedIds = @(13, 1) }
                 'mesh'      { $expectedIds = @(4, 40) }
-                'model'     { $expectedIds = @(10, 4, 40) }
+                'model'     { $expectedIds = @(10) }
+                'plugin'    { $expectedIds = @(38) }
+                'font'      { $expectedIds = @(73) }
                 'animation' { $expectedIds = @(24) }
                 'video'     { $expectedIds = @(62) }
                 default     { $expectedIds = @() }
@@ -11570,15 +11840,7 @@ $script:BridgeHandlerScript = {
     # SCREENSHOT (bewusst unbeliebt gemacht - siehe Manifest)
     # ------------------------------------------------------------------
     function Invoke-Screenshot($toolArgs) {
-        $advice = 'Screenshots are the WORST way for you to understand a place: image analysis is unreliable, slow and easy to misread. Use describe_scene, get_tree, get_bounds, get_instance or get_output instead - they give exact numbers.'
-        if ($toolArgs.confirm -ne $true) {
-            return @{
-                ok = $false
-                error = 'Screenshot refused. It needs confirm=true.'
-                advice = $advice
-                betterTools = @('describe_scene', 'get_bounds', 'get_tree', 'viewport_info', 'get_output')
-            }
-        }
+        $advice = 'Screenshot captured. Textual scene tools are also available when exact object values are useful.'
         # Der eigentliche Code steckt in einem erst bei Bedarf erzeugten
         # Block. Grund: PowerShell löst Typangaben wie [System.Drawing...]
         # schon beim Übersetzen einer Funktion auf. Fehlt oder klemmt
@@ -12136,6 +12398,20 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             example = @{ min = @{ x = -20; y = -10; z = -20 }; max = @{ x = 20; y = 10; z = 20 }; with = @{ className = 'Part'; properties = @{ Anchored = $true }; name = 'Fill' }; fillTo = 'rule'; asJob = $true };
             errors = @('WORLD_NOT_PROBED: probe_world zuerst.', 'REGION_LIMIT: Box zu gross - kleiner aufteilen (empirische Obergrenze im Fehler).', 'BAD_ARGS: min/max fehlt.') })
 
+        # ---------------- MASTER BUILD ----------------
+        $t.Add(@{ name = 'build_assembly'; category = 'create'; summary = 'Komplette professionelle Baugruppe in EINEM Call.';
+            description = 'Erstellt bis zu 2000 Parts/Instanzen, wendet Properties an, erzeugt lineare oder radiale Wiederholungen und gruppiert alles direkt in ein Model. Fuer Gebaeude, Treppen, Zaeune, Saeulenringe, Fassaden und modulare Sets. Die Bridge berechnet Wiederholungen/Positionen; Arena muss weder Lua-Schleifen noch hunderte Einzelcalls schreiben.';
+            params = @{ modelName = @{ type='string'; required=$false; default="'ArenaAssembly'"; description='Name des fertigen Models.' }; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'}; items=@{type='array';required=$true;default='-';description='[{className,name,properties,repeat:{count,offset}|{count,radius,startAngle,angleStep,heightStep}}]. {n} im Namen wird ersetzt.'}; pivot=@{type='Vector3|CFrame';required=$false;default='null';description='Optional das ganze Model am Ende versetzen.'} };
+            returns = '{ model, created, count, errors, geometry }';
+            example = @{ modelName='Saeulenring'; items=@(@{className='Part';name='Saeule{n}';properties=@{Size=@{x=2;y=12;z=2};Anchored=$true};repeat=@{count=12;radius=20}}) };
+            errors = @('BUDGET_EXCEEDED: mehr als 2000 Teile.', 'BAD_ARGS: nichts erstellt.') })
+        $t.Add(@{ name = 'build_polygon_model'; category = 'create'; summary = 'MEISTER-BAUTOOL: beliebige 3D-Polygone als ultraduenne Wedge-Dreiecke.';
+            description = 'Arena liefert nur Polygonpunkte oder ein kompaktes POLYGON-Skript. Die Bridge uebernimmt Newell-Normale, 3D-zu-2D-Projektion, Orientierung, Ear-Clipping fuer konkave Polygone, Dreieckszerlegung und alle WedgePart-CFrames. Jedes Dreieck besteht exakt aus zwei ultraduennen WedgeParts; alles landet strukturiert in einem Model. Geeignet fuer freie Fassaden, Daechern, Terrain-Silhouetten, Logos, Low-Poly-Kunst und schräge Flächen. Ausschliesslich WedgeParts werden fuer die Flaechen erzeugt.';
+            params = @{ modelName=@{type='string';required=$false;default="'ArenaPolygonModel'";description='Fertiges Model.'}; polygons=@{type='array';required=$false;default='[]';description='[{name,points:[{x,y,z}...],color,material,thickness,transparency,anchored,canCollide,style:{...}}]. Konkave einfache Polygone sind erlaubt.'}; points=@{type='Vector3[]';required=$false;default='null';description='Kurzform fuer ein Polygon.'}; script=@{type='string';required=$false;default='null';description='Mehrere Bloecke: POLYGON name=Roof color=#884422 material=Slate thickness=0.03, danach je Zeile x,y,z, dann END.'}; style=@{type='table';required=$false;default='{}';description='Globale Defaults: color, material, thickness (min .01), anchored, canCollide, canQuery, canTouch, castShadow, transparency, reflectance.'}; origin=@{type='Vector3';required=$false;default='{0,0,0}';description='Gesamt-Offset.'}; rotation=@{type='Vector3 degrees';required=$false;default='{0,0,0}';description='Gesamtrotation.'}; scale=@{type='number';required=$false;default='1';description='Gesamtskalierung.'}; maxWedges=@{type='int';required=$false;default='4000';description='Budget, maximal 10000.'}; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'} };
+            returns = '{ model, polygons, triangles, wedges, skipped, geometry, method, editable }';
+            example = @{ modelName='FreiesDach'; points=@(@{x=-12;y=8;z=0},@{x=0;y=14;z=0},@{x=12;y=8;z=0},@{x=5;y=5;z=0},@{x=-5;y=5;z=0}); style=@{color='#B54A32';material='Slate';thickness=0.03;canCollide=$false} };
+            errors = @('POLYGON_INVALID: kein gueltiges Polygon.', 'BUDGET_EXCEEDED', 'BAD_ARGS', 'REF_NOT_FOUND') })
+
         # ---------------- UNION / CSG ----------------
         $t.Add(@{ name = 'union'; category = 'union'; summary = 'Teile zu EINEM Teil verschmelzen (mit Vorpruefung und Budget).';
             description = 'Mergt BaseParts zu einem PartOperation. VORPRUEFUNG: alle BaseParts, anchored, gleicher Parent, Größe; Komplexitaets-Budget (Dreiecke geschätzt) mit Warnung und konkretem Vorschlag (z.B. "einen Part statt 40"). Vorher wird automatisch ein Undo-Punkt gesetzt (undoPoint). Roblox-Verweigerung kommt als SOLID_REFUSED mit Roblox-Ursache und Tipps. groups=... verarbeitet mehrere Gruppen in einem Call.';
@@ -12168,11 +12444,11 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
 
         # ---------------- ASSETS ----------------
         $t.Add(@{ name = 'search_assets'; category = 'assets'; summary = 'Katalogsuche (zouverlaessig, mit Cache).';
-            description = 'Sucht im Roblox-Katalog. Typen: audio, music, decal, image, texture, mesh, model (GESPERRT ohne allowModels=true), video, animation. WICHTIG: image/texture werden als DECALs durchgesucht (Katalog-API hat keine "image"-Suche), mesh als MESHPART - die Antwort erklärt das (typeNote). Ergebnisse werden lokal gecacht (cached=true bei Treffer). Wenn der Katalog nicht erreichbar ist: code CATALOG_UNAVAILABLE mit klarem Protokoll ("Katalog nicht verfuegbar -> prozedual bauen") - NICHT schweigen.';
-            params = @{ type = @{ type = 'string'; required = $false; default = "'audio'"; description = 'audio, music, decal, image, texture, mesh, model, video, animation.' }; query = @{ type = 'string'; required = $true; default = '-'; description = 'Suchbegriff (englisch funktioniert am besten).' }; limit = @{ type = 'int'; required = $false; default = '20'; description = 'max 50.' }; page = @{ type = 'int'; required = $false; default = '0'; description = '' }; sortType = @{ type = 'int'; required = $false; default = '0'; description = '0 Relevanz, 1 Favoriten, 3 Neuere, 4/5 Preis.' }; allowModels = @{ type = 'bool'; required = $false; default = 'false'; description = 'Free Models freigeben (unempfohlen - versteckte Skripte).' }; refresh = @{ type = 'bool'; required = $false; default = 'false'; description = 'Cache umgehen.' } };
+            description = 'Sucht im Roblox-Katalog. Typen: audio, music, decal, image, texture, mesh/meshpart, model, plugin, font, video und animation. Modelle, 3D-Modelle und Meshes sind direkt durchsuchbar; keine Kategorie braucht einen Freigabe-Schalter. WICHTIG: image/texture werden als DECALs durchgesucht (Katalog-API hat keine "image"-Suche), mesh ueber die aktuelle MESH-Kategorie - die Antwort nennt den verwendeten API-Typ (typeNote). Ergebnisse werden lokal gecacht (cached=true bei Treffer). Wenn der Katalog nicht erreichbar ist: code CATALOG_UNAVAILABLE mit klarem Protokoll ("Katalog nicht verfuegbar -> prozedual bauen") - NICHT schweigen.';
+            params = @{ type = @{ type = 'string'; required = $false; default = "'audio'"; description = 'audio, music, decal, image, texture, mesh, meshpart, model, plugin, font, video, animation.' }; query = @{ type = 'string'; required = $true; default = '-'; description = 'Suchbegriff (englisch funktioniert am besten).' }; limit = @{ type = 'int'; required = $false; default = '20'; description = 'max 50.' }; page = @{ type = 'int'; required = $false; default = '0'; description = '' }; sortType = @{ type = 'int'; required = $false; default = '0'; description = '0 Relevanz, 1 Favoriten, 3 Neuere, 4/5 Preis.' }; refresh = @{ type = 'bool'; required = $false; default = 'false'; description = 'Cache umgehen.' } };
             returns = '{ assets: [ { assetId, name, typeId, typeName, useAs="rbxassetid://...", hasScripts, creator, ... } ], count, type, apiType, typeNote, note, cached, totalResults }';
             example = @{ type = 'audio'; query = 'door creak'; limit = 10 };
-            errors = @('ASSET_BLOCKED: model ohne allowModels.', 'CATALOG_UNAVAILABLE: Katalog nicht erreichbar - sagen Sie dem Nutzer es klar und bauen Sie prozedual.', 'CATALOG_TYPE_NOT_SUPPORTED: unbekannter Typ.') })
+            errors = @('CATALOG_UNAVAILABLE: Katalog nicht erreichbar - sagen Sie dem Nutzer es klar und bauen Sie prozedual.', 'CATALOG_TYPE_NOT_SUPPORTED: unbekannter Typ.') })
         $t.Add(@{ name = 'asset_details'; category = 'assets'; summary = 'Details zu Asset-Ids (gecacht).';
             params = @{ assetIds = @{ type = 'number[]'; required = $true; default = '-'; description = 'Oder assetId.' } };
             returns = '{ assets: [ { asset: {...}, creator: {...} } ], unknownAssets? (404-Ids klar gemeldet) }';
@@ -12252,12 +12528,12 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             returns = '{ editModeActive, editPluginIsRunning, testSessionActive, sessionPlayers, reporterActive, reporterSeenInOutput, arenaLineCount, lastArenaKind, lastArenaAgeSeconds, reporterLoopCount, reporter, channels, sharedTableProbe, outputCursor, outputErrorCount, outputWarningCount, lastArenaRaw, vimCommandsSeen, state }';
             example = @{};
             errors = @() })
-        $t.Add(@{ name = 'report_done'; category = 'session'; summary = 'Dem Nutzer melden: Ich bin fertig (Windows-Benachrichtigung auf seinem PC).';
-            description = 'NUR rufen, wenn ALLE Aenderungen abgeschlossen sind und die Antwort DIREKT danach endet: der Nutzer bekommt dann eine Windows-Benachrichtigung mit der message auf seinen PC. Nur aktiv, wenn der Nutzer "Benachrichtigung wenn Arena fertig" EINGESCHALTET hat (zu sehen an _bridge.notifyWhenDone bzw. _bridge.bridgeSettings.notifyOnDone). message ist ein kurzer deutscher Satz fuer den Nutzer, z.B. "Ich bin fertig" oder "5 Aenderungen und Fehler behoben - fertig". Strikte Regel: nach diesem Call KEINE Werkzeuge mehr, KEINE Aenderungen mehr - die Antwort sofort beenden. Nie mitten in der Arbeit rufen.';
-            params = @{ message = @{ type = 'string'; required = $true; default = '-'; description = 'Kurzer deutscher Fertig-Text fuer den Nutzer (max. 400 Zeichen).' } };
-            returns = '{ delivered, message, note }';
-            example = @{ message = 'Ich bin fertig - 5 Aenderungen und Fehler behoben.' };
-            errors = @('NOTIFICATIONS_DISABLED: Der Nutzer hat die Fertig-Meldung ausgeschaltet - Antwort normal beenden und report_done nicht erneut rufen.', 'BAD_ARGS: message fehlt.') })
+        $t.Add(@{ name = 'report_done'; category = 'session'; summary = 'Eine kurze, lebendige Windows-11-Mitteilung senden.';
+            description = 'Als letzten Call verwenden, wenn die Arbeit fertig ist. Arena schreibt SELBST einen aussagekraeftigen Titel und einen natuerlichen, einladenden Inhalt – keine trockene Liste. Verlaessliches Windows-11-Anzeigebudget: Titel maximal 70 Zeichen, Inhalt maximal 140 Zeichen. Microsoft definiert fuer ToastGeneric keine feste Zeichenobergrenze pro Feld; die sichtbare Menge haengt von Breite, Skalierung und Layout ab. Deshalb erzwingt die Bridge diese konservativen Vollanzeige-Grenzen. Gute Form: Titel="✅ Arena hat den Lauf-Bug behoben!", message="Der Lauf-Bug ist weg – komm ins Spiel und probiere es aus!".';
+            params = @{ title = @{ type = 'string'; required = $true; default = '-'; description = 'Von Arena formulierter lebendiger Titel, maximal 70 Zeichen.' }; message = @{ type = 'string'; required = $true; default = '-'; description = 'Ein natuerlicher, einladender Satz, maximal 140 Zeichen; keine Auflistung.' } };
+            returns = '{ delivered, title, message, limits: { titleCharacters=70, messageCharacters=140 } }';
+            example = @{ title = '✅ Arena hat den Lauf-Bug behoben!'; message = 'Der Lauf-Bug ist weg – komm ins Spiel und probiere es aus!' };
+            errors = @('NOTIFICATIONS_DISABLED', 'BAD_ARGS: title/message fehlen oder ueberschreiten 70/140 Zeichen.') })
         $t.Add(@{ name = 'play_pause'; category = 'play'; summary = 'Simulation pausieren.';
             description = 'Bleibt stehen, aber laeuft weiter (State bleibt erhalten). Im Run-Modus nur Physik, im Play-Modus auch der Charakter.';
             params = @{};
@@ -12443,9 +12719,9 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             returns = 'Doku-JSON (siehe /api/docs)';
             example = @{ tool = 'fill_region' };
             errors = @('REF_NOT_FOUND: unbekanntes Tool/Kategorie (Liste im Fehler).') })
-        $t.Add(@{ name = 'capture_screenshot'; category = 'system'; summary = 'Screenshot (NICHT EMPFOEHLEN).';
-            description = 'Existiert, aber BILDANALYSE ist unzuverlaessig und langsam. Nutze describe_scene / get_bounds / get_tree / get_output - die geben exakte Zahlen. Benötigt confirm=true.';
-            params = @{ confirm = @{ type = 'bool'; required = $true; default = '-'; description = 'Muss true sein.' }; includeBase64 = @{ type = 'bool'; required = $false; default = 'false'; description = 'Bild als Base64-Blob.' }; maxWidth = @{ type = 'int'; required = $false; default = '1100'; description = '' } };
+        $t.Add(@{ name = 'capture_screenshot'; category = 'system'; summary = 'Roblox-Studio-Fenster als Screenshot erfassen.';
+            description = 'Erfasst das Studio-Fenster. Arena kann frei zwischen Screenshot und den textuellen Szenenwerkzeugen mit exakten Objektwerten wählen.';
+            params = @{ confirm = @{ type = 'bool'; required = $false; default = 'false'; description = 'Aus Kompatibilitaetsgruenden akzeptiert; nicht mehr erforderlich.' }; includeBase64 = @{ type = 'bool'; required = $false; default = 'false'; description = 'Bild als Base64-Blob.' }; maxWidth = @{ type = 'int'; required = $false; default = '1100'; description = '' } };
             returns = '{ file, width, height, advice }';
             example = @{ confirm = $true };
             errors = @('RUNTIME_ERROR: Studio-Fenster nicht sichtbar.') })
@@ -12464,30 +12740,16 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
     function Get-BridgeGuides {
         return @{
             importantRules = @(
-                'GET WORKS FOR EVERYTHING (3.9): if your environment can only fetch URLs (plain HTTP GET, no POST body), you can still do ABSOLUTELY EVERYTHING. Every endpoint accepts GET on exactly the same code path as POST: GET /api/tool?token=<token>&tool=<name>&args=<URL-encoded JSON>&timeoutSeconds=<n>, GET /api/tools/parallel?token=<token>&calls=<URL-encoded JSON array>, GET /api/upload?token=<token>&uploadId=<id>&chunkIndex=<n>&chunkCount=<m>&text=<URL-encoded text>, GET /api/status, GET /api/events?token=..., GET /api/blob?token=...&id=...&index=... . You get the same _bridge envelope, the same _sessionStart documentation, the same chunking/blobs and the same gates (SELF_TEST_DISABLED, read-only, playtest) - nothing is limited. Rule of thumb: a JSON body field becomes a query parameter, and object fields (args, calls) are passed as URL-encoded JSON.',
-                'MULTIPLE PLACES (Version 5): the token copied from Alle Places is an aggregate token. First GET /api/places; it returns each connected place with an exact targetPlace. Send targetPlace at the top level (or in args) of EVERY /api/tool request. For /api/tools/parallel, targetPlace is top-level and applies to all calls in that request. The bridge refuses ambiguous/missing targets with MULTI_PLACE_SELECTION_REQUIRED, so you never edit the wrong game. Use one selected Place per request, switch explicitly whenever needed.',
-                'IDS FIRST: every object has an id like "#42". Names are NOT unique - 55 parts can all be called "Part". Every read tool returns the id; always pass ids back in "ref"/"refs". A path like game.Workspace.Part[3] also works, but ids are safer.',
-                'SELECTORS: most "refs" arguments also accept a selector table: { tag = "Door" }, { className = "Part", rootRef = "#50" }, { query = "crate" }. Use selectors instead of long id lists.',
-                'SCRIPTS: never rewrite an 800 line script to change one line. Read with get_script (line numbers + hash), then patch_script (replace / replaceAll / insertAfter / replaceFunction / replaceLines ...). Check the result with compile_check BEFORE running it. set_script_source (full replace) still exists for new or tiny files. Pass expectHash to be safe.',
-                'NO STRING SURGERY: the bridge never modifies your source text (no trimming, no "return M" removal, no %-reformatting). A ModuleScript simply ends with "return M". If you need to change text, use patch_script ops - never .replace() across languages.',
-                'PLAY 3.9.7: Modern Studio runs the test in a separate DataModel. editModeActive=false is the only start/running oracle; never infer failure from Edit-DataModel RunService or Players. Every AI play_start injects #ARENA# server/client LogStream reporters as NORMAL clone-safe scripts (reporterVariant=2) and the server reporter prints a #ARENA# hello line instantly, so character_state, GUI snapshots, mouse clicks and VIM W/A/S/D work with HttpEnabled=false and zero settings; HTTP is only a bonus. If startDiagnostics.reporterSeenInOutput stays false, call session_diag and read get_output filter ARENA instead of guessing. play_stop ladder: (1) reporter end_test via the cross-DM channel (http agent > SharedTableRegistry > VIM combo Ctrl+Alt+Shift+E) - the reporter ends the test INSIDE the session via StudioTestService:EndTest(stopped_by_arena_bridge), the only reliable stop for service-started sessions; (2) edit RunService:Stop() fallback; (3) clean PLAY_STOP_NEEDS_USER - ask the user to press Stop (Shift+F5), never retry in a loop. After any bridge update RESTART STUDIO once so the new plugin loads; a versionMismatch in /api/status tells you when you forgot. Start teleport: play_start { arenaSpawn={x,y,z} }; runtime teleport/respawn travel the same command channel when one is live.',
-                'THE USER IS THERE TOO: the user can press Play/Stop and PLAY in the game at any moment (moving the camera, walking the avatar, clicking the GUI). You will see it in _bridge.events / notices (user_rotating_camera, user_moving_character, user_clicked_gui, play_started with startedBy="user"). That is normal: nothing crashed and it is NOT a bug in your scripts - do not go searching for errors because of it.',
-                'USER PLAYTEST HAS PRIORITY: if _bridge.playtest / playtestWarning shows a USER playtest, you have two allowed options: (a) call play_stop yourself - it also ends user-started tests - then continue your work in edit mode; or (b) if the user is actively playing right now, end your response and tell them you cannot work safely in parallel - ask them to let you work in peace and to message you when Studio is free. Never make persistent edits while a test runs.',
-                'SELF-TEST SWITCH (3.8): the user can turn AI self-testing OFF in the bridge program ("Arena darf sich selbst testen"). Then every play tool answers SELF_TEST_DISABLED - that is a deliberate user decision, NOT a broken bridge. Use editor simulations (compile_check, run_lua in edit mode) instead and let the user run the game tests. Check _bridge.bridgeSettings.selfTestAllowed.',
-                'FINISH NOTIFICATION (3.8): if _bridge.notifyWhenDone is present, call report_done { message } as your VERY LAST tool call once everything is done - a Windows notification with your German message goes to the user (e.g. "Ich bin fertig"). Only when truly done: no further calls or changes after it, end your answer immediately. If notifications are off you get NOTIFICATIONS_DISABLED - finish normally.',
-                'THE USER EDITS TOO: user_active events / _bridge.userWorking mean the user is working in Studio right now (selection, camera, playtest). Re-read before overwriting, never undo their changes, and coordinate in chat.',
-                'PERSISTENT LUA: run_lua runs in a persistent environment. Helpers you define (without "local") survive to the next call - see lua_state. You never have to re-paste helper code.',
-                'TIMEOUTS NEVER KILL WORK: a timed-out call is still running in Studio. The next call automatically waits for it (Studio executes strictly one command at a time), and the late result arrives in _bridge.lateResults. For long work use asJob=true / start_job and poll job_status / job_result.',
-                'HEIGHTS BY RAYCAST ONLY: use ground_height / raycast / measure_height. NEVER compute world Y from voxel indices or formulas - it is wrong by design in this place.',
-                'WAIT FOR MEASURABLE: after create/fill the bridge waits (verify_measurable) until new geometry answers raycasts. If you still see "nothing there": call verify_measurable on the new ids.',
-                'FILLING: call probe_world once (it measures the grid step, water level and the fill-height rule and stores them). fill_region then fills by the MEASURED rule, in chunks, with a resumeToken (abort = continue, not restart). Lower overwrites need clearing with Air first (confirmClear=true) - they are reported as skippedNeedClear otherwise.',
-                'UNIONS: one-way and expensive. The bridge pre-checks (anchored/parent/size), sets an undo point, budgets the triangle count and tells you a cheaper alternative when one exists (e.g. one part instead of 40). Roblox refusals come back as SOLID_REFUSED with the Roblox message. Use separate to get the parts back.',
-                'BULK INSTEAD OF LOOPS: bulk_create (template+grid builds whole arrangements), clone_instance count=60, bulk_delete, bulk_set_properties, bulk_insert_scripts, grid_arrange/distribute/stack/place_on/snap_to_ground/fit_between. Never 60 single calls, never Lua loops for layout.',
-                'ASSETS: search_assets (cached locally; image/texture search runs through decals, mesh through meshparts - the answer explains it). apply_asset/insert_asset VALIDATE the id against its type BEFORE touching Studio (ASSET_TYPE_MISMATCH / ASSET_NOT_FOUND). If the catalog is unreachable: CATALOG_UNAVAILABLE - say clearly "Katalog nicht verfügbar" and build procedurally. Free models stay blocked (allowModels=true overrides; script assets need acceptScripts=true).',
-                'BIG DATA IS NEVER TRUNCATED: if an answer is too big it is stored on the PC and you get blobId + chunkCount. Fetch every chunk with get_chunk and glue them together.',
-                'SCREENSHOTS ARE A LAST RESORT: capture_screenshot exists but you are strongly advised NOT to use it - reading images is unreliable. describe_scene, get_bounds, get_tree, get_output and the gui_* tools give you exact facts.',
-                'ROTATION: before rotating cylinders or wedges, call coordinate_guide (it MEASURES the shape geometry in the place, it does not guess) and then use point_at / describe_orientation. "Which way does this part face?" is answered by describe_orientation - not by trial and error.',
-                'ERRORS HAVE CLASSES: every error response carries a code (STUDIO_TIMEOUT, PLAY_MODE_ACTIVE, COMPILE_ERROR, RUNTIME_ERROR, REF_NOT_FOUND, REGION_LIMIT, WORLD_NOT_PROBED, UNION_BUDGET, SOLID_REFUSED, CATALOG_UNAVAILABLE, ASSET_TYPE_MISMATCH, ...). React on the code, do not string-match error text.'
+                'Choose the tools and workflow that best fit the task. The bridge exposes precise read, build, script, asset, playtest and batch tools; these are capabilities, not a mandatory checklist.',
+                'For substantial construction, build_assembly and build_polygon_model can create complete editable models in one call. bulk_create, clone_instance, grid_arrange, unions and normal property tools can be mixed freely. run_lua remains available for genuinely custom logic, but ordinary construction usually needs less code with the dedicated build tools.',
+                'Object ids such as #42 are stable within the current plugin session and avoid ambiguity when names repeat. Paths and selectors are also accepted where documented.',
+                'Several Places can be connected. With the Alle-Places token, GET /api/places returns targetPlace values; selecting one target keeps edits unambiguous.',
+                'GET and POST use the same bridge code path. Pick whichever transport your environment supports.',
+                'A timed-out Studio command keeps running and can return through _bridge.lateResults. Jobs are available when background progress is useful.',
+                'Asset search covers the Creator Store categories including 3D models, models, meshes/MeshParts, plugins, fonts, audio, images/decals, video and animation. Insertion still reports Roblox permission/privacy errors and warns before inserting scripts.',
+                'Playtest tools are available when the user setting permits them. A running test uses a temporary DataModel, so permanent edits are guarded until edit mode returns.',
+                'Windows finish notifications use report_done { title, message }. Arena writes a lively title (max 70 characters) and an inviting body (max 140); avoid dry changelog lists.',
+                'Responses include typed error codes and concrete diagnostics. Use those details to decide the next step.'
             )
             coordinateGuide = @(
                 'AXES: +X = right, +Y = up, +Z = toward the viewer. The default Studio camera looks toward -Z. The "front" face of a part is its -Z face.',
@@ -12543,7 +12805,6 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 UNION_COSTLY = 'Warning: the union estimate is expensive - the suggestion field offers a cheaper alternative (e.g. one part instead of 40).'
                 SOLID_REFUSED = 'Roblox refused the solid operation (robloxMessage + hints). Nothing was changed.'
                 UNION_PRECHECK = 'Warning from the pre-check (not anchored / different parents / ...) with the exact list.'
-                ASSET_BLOCKED = 'Free models are blocked on purpose (allowModels=true overrides - build instead).'
                 ASSET_HAS_SCRIPTS = 'The asset contains scripts. acceptScripts=true overrides; inspect the inserted content immediately.'
                 ASSET_TYPE_MISMATCH = 'The asset id does not match the expected type (actual type is reported). Nothing was applied.'
                 ASSET_NOT_FOUND = 'The id does not exist or is not public (404). Do not use it.'
@@ -12555,10 +12816,10 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             }
             typedValues = 'Complex values are typed JSON: {"type":"Vector3","x":0,"y":5,"z":0}, {"type":"Color3","rgb":[255,0,0]}, {"type":"CFrame","position":{...},"orientation":{...}}, {"type":"EnumItem","enum":"Material","name":"Neon"}. Short forms work too: [0,5,0] for a Vector3, "Neon" for an enum, "#FF0000" for a colour, [255,0,0] for a Color3.'
             workflows = @{
-                buildSomething = @('play_status (must be edit mode)', 'describe_scene / search for context', 'create_instance or bulk_create (template+grid)', 'place_on / stack / snap_to_ground / grid_arrange instead of maths', 'select_instance so the user sees it')
+                buildSomething = @('Understand as much context as the task needs', 'Choose build_assembly / build_polygon_model / bulk_create / unions / regular tools', 'Optionally verify or select the result')
                 editAScript = @('search className=Script', 'get_script (note the hash)', 'patch_script with a unique snippet', 'compile_check the result', 'set/patch with expectHash', 'play_start mode=play', 'wait_for_output / get_errors', 'play_stop')
                 testAGame = @('play_status first (check _bridge.playtest - never build while a test runs)', 'play_start mode=play (waits for the character) or mode=play_here (start at the edit camera) - startDiagnostics.reporterSeenInOutput must be true', 'session_diag when anything looks odd (reporter, channels, output cursor)', 'character_state / move_character / set_camera', 'gui_dump -> gui_check -> gui_click with expect', 'get_output since=<cursor> / get_errors', 'play_stop (reporterEndTest preferred), then verify the result in edit mode')
-                manyObjects = @('clone_instance count=60 offset={x:8} nameTemplate="Crate{n}"', 'or bulk_create with template+grid', 'or batch (parallel=true only for independent calls)')
+                manyObjects = @('build_assembly for grouped linear/radial repetition', 'bulk_create or clone_instance for simple arrays', 'batch when combining independent operations')
                 longBuild = @('fill_region with asJob=true (or start_job)', 'job_status (progress + partsPerSecond)', 'job_result when done (geometry.ready included)', 'verify_measurable on a sample if in doubt')
                 rotationCorrect = @('coordinate_guide (once per session)', 'describe_orientation on the part', 'point_at (axis="top" for cylinder length) or rotate_around with measured axes', 'describe_orientation again to verify')
                 assets = @('catalog_status (is it up?)', 'search_assets (type, keyword) - cached locally', 'validate_asset if unsure', 'apply_asset (auto-validated) / insert_asset', 'if CATALOG_UNAVAILABLE: say so and build procedurally')
@@ -12613,12 +12874,11 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
     function Get-SessionStartPackage {
         $out = @{
             docsVersion = [string]$Shared.DocsVersion
-            welcome = 'Welcome - this is your FIRST tool response on this place, so the complete documentation follows right here in _sessionStart. Keep it in mind for the whole session. Anything on demand: GET /api/docs (or ?tool= / ?category=) or the get_docs tool.'
+            welcome = 'Welcome. This first response includes the available capabilities and reference documentation. Use whatever subset helps the current task; details remain available through GET /api/docs or get_docs.'
             quickStart = @(
-                '1. get_place_info - which place, which mode (edit/run/play), capabilities.',
-                '2. describe_scene - the textual description of the scene (positions, sizes, materials) - use it INSTEAD of screenshots.',
-                '3. play_status - is a test running?',
-                '4. For a single tool whenever you need it: get_docs { tool: "..." }.'
+                'Inspect the Place when context is needed.',
+                'Choose dedicated tools, master build tools, assets, script editing or run_lua according to the task.',
+                'Use get_docs { tool: "..." } whenever a parameter needs clarification.'
             )
         }
         $guides = Get-BridgeGuides
@@ -12634,7 +12894,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             $out.selfTestNotice = 'IMPORTANT: the user DISABLED AI self-testing in the Arena Roblox Bridge program ("Arena darf sich selbst testen" = OFF). Every play tool (play_start / play_stop / ...) will answer SELF_TEST_DISABLED ON PURPOSE - the bridge is NOT broken. Use the editor simulations (compile_check, run_lua in edit mode) and ask the user to run the game tests themselves.'
         }
         if ($startNotify) {
-            $out.finishNotification = 'FINISH NOTIFICATION IS ON: when ALL your changes are complete and you are about to end your answer, call report_done { message } as your VERY LAST tool call - the user receives a Windows notification with your German message (e.g. "Ich bin fertig" or "5 Aenderungen und Fehler behoben - fertig"). After that call: no more tools, no more changes - end your answer immediately.'
+            $out.finishNotification = 'FINISH NOTIFICATION IS ON: when ALL your changes are complete and you are about to end your answer, call report_done { title, message } as your VERY LAST tool call - the user receives a Windows notification with your German message (e.g. title="✅ Arena hat den Bug behoben!", message="Der Fehler ist weg – komm und teste das Spiel!"). After that call: no more tools, no more changes - end your answer immediately.'
         }
         $out.tools = (Get-ToolDocs)
         return $out
@@ -12656,7 +12916,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '6.0.6'
+            version = '6.1.0'
             docsVersion = [string]$Shared.DocsVersion
             role = 'A normal token controls exactly one live Roblox Studio place. The special aggregate token copied from Alle Places controls several places: call GET /api/places first and pass one exact targetPlace in every request; the bridge refuses to guess. This makes switching safe and explicit. Send every request as POST /api/tool with JSON body { "token": "...", "targetPlace": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -12686,7 +12946,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             settings = @{
                 selfTestAllowed = $manifestSelfTest
                 notifyOnDone = $manifestNotify
-                settingsNote = 'selfTestAllowed=false: the user disabled AI self-testing - play tools answer SELF_TEST_DISABLED by design (the bridge is NOT broken; use editor simulations and let the user test). notifyOnDone=true: call report_done { message } as your very last action when everything is done.'
+                settingsNote = 'selfTestAllowed=false: the user disabled AI self-testing - play tools answer SELF_TEST_DISABLED by design (the bridge is NOT broken; use editor simulations and let the user test). notifyOnDone=true: call report_done { title, message } as your very last action when everything is done.'
             }
         }
         foreach ($key in $guides.Keys) { $manifest[[string]$key] = $guides[$key] }
@@ -12771,7 +13031,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '6.0.6'
+            bridgeVersion = '6.1.0'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -12817,11 +13077,11 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         if ($notifyOnDone) {
             $envelope.notifyWhenDone = @{
                 code = 'REPORT_DONE_EXPECTED'
-                instruction = 'FINISH NOTIFICATION IS ON: when ALL your changes are complete and you are about to end your answer, call report_done { message } as your VERY LAST tool call.'
-                messageRule = 'message = short German text for the user, e.g. "Ich bin fertig" or "5 Aenderungen und Fehler behoben - fertig".'
+                instruction = 'FINISH NOTIFICATION IS ON: when ALL your changes are complete and you are about to end your answer, call report_done { title, message } as your VERY LAST tool call.'
+                messageRule = 'title = lively German headline (max 70 chars), message = inviting German sentence (max 140 chars), e.g. title="✅ Arena hat den Bug behoben!", message="Der Fehler ist weg – komm und teste das Spiel!".'
                 strictRule = 'Call it ONLY when you are truly done: no further tool calls and no further changes afterwards - end your answer right after it. Never call it mid-work.'
             }
-            $notifyNote = 'FINISH NOTIFICATION: when everything is done, call report_done { message } as your LAST action, then end your answer.'
+            $notifyNote = 'FINISH NOTIFICATION: when everything is done, call report_done { title, message } as your LAST action, then end your answer.'
             if ($envelope.attention) { $envelope.attention = $envelope.attention + ' ' + $notifyNote } else { $envelope.attention = $notifyNote }
         }
         # Version 3.8: Laufender Test - IMMER sichtbar machen (bei jedem Call,
@@ -12963,18 +13223,25 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         hint = 'Nothing is wrong - simply finish your answer normally. Do not call report_done again in this session.'
                     }
                 }
+                $doneTitle = ''
                 $doneMessage = ''
-                if ($toolArgs -and $toolArgs.message) { $doneMessage = [string]$toolArgs.message }
-                $doneMessage = $doneMessage.Trim()
-                if ([string]::IsNullOrWhiteSpace($doneMessage)) {
-                    return @{ ok = $false; code = 'BAD_ARGS'; error = 'message is required: short German text the user will read, e.g. "Ich bin fertig" or "5 Aenderungen und Fehler behoben - fertig".' }
+                if ($toolArgs -and $toolArgs.title) { $doneTitle = ([string]$toolArgs.title).Trim() }
+                if ($toolArgs -and $toolArgs.message) { $doneMessage = ([string]$toolArgs.message).Trim() }
+                if ([string]::IsNullOrWhiteSpace($doneTitle) -or [string]::IsNullOrWhiteSpace($doneMessage)) {
+                    return @{ ok = $false; code = 'BAD_ARGS'; error = 'title and message are required. Write a lively German notification, for example title="✅ Arena hat den Lauf-Bug behoben!", message="Der Lauf-Bug ist weg – komm ins Spiel und probiere es aus!".'; limits = @{ titleCharacters = 70; messageCharacters = 140 } }
                 }
-                if ($doneMessage.Length -gt 400) { $doneMessage = $doneMessage.Substring(0, 400) }
+                if ($doneTitle.Length -gt 70) {
+                    return @{ ok = $false; code = 'BAD_ARGS'; error = 'title is too long for the Windows 11 display budget (max 70 characters). Rewrite it instead of letting Windows truncate it.'; actual = $doneTitle.Length; max = 70 }
+                }
+                if ($doneMessage.Length -gt 140) {
+                    return @{ ok = $false; code = 'BAD_ARGS'; error = 'message is too long for the Windows 11 display budget (max 140 characters). Rewrite it as one inviting sentence.'; actual = $doneMessage.Length; max = 140 }
+                }
                 $doneEntry = Get-SessionEntry $sessionId
                 $donePlace = 'Place'
                 if ($doneEntry) { $donePlace = [string]$doneEntry.placeName }
                 $donePayload = @{
                     place = $donePlace
+                    title = $doneTitle
                     message = $doneMessage
                     time = (Get-Date).ToString('u')
                 }
@@ -12984,7 +13251,9 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                     ok = $true
                     result = @{
                         delivered = $true
+                        title = $doneTitle
                         message = $doneMessage
+                        limits = @{ titleCharacters = 70; messageCharacters = 140 }
                         note = 'The user is being notified on their PC right now. This was your LAST action: make no further changes and no further tool calls - end your response now with your final summary.'
                     }
                 }
@@ -13011,7 +13280,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '6.0.6'
+                        bridgeVersion = '6.1.0'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -13263,7 +13532,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '6.0.6'
+                        serverVersion = '6.1.0'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -13450,7 +13719,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='6.0.6'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='6.1.0'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -13479,8 +13748,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '6.0.6'
-                    serverVersion = '6.0.6'
+                    bridgeVersion = '6.1.0'
+                    serverVersion = '6.1.0'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -13661,12 +13930,12 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                     'grid_arrange','distribute','snap_to_ground','look_at','rotate_around','move_relative','resize_part','fit_between','point_at',
                     'play_start','play_stop','play_pause','play_resume','send_input','gui_click','gui_set_text','move_character',
                     'teleport_character','respawn_character','undo','redo','clear_output','fill_region','probe_world','start_job',
-                    'cancel_job','clear_lua_state','set_camera')
+                    'cancel_job','clear_lua_state','set_camera','build_polygon_model','build_assembly')
                 $persistentEditTools = @('set_property','set_properties','bulk_set_properties','set_attribute','create_instance','bulk_create',
                     'clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','set_script_source','patch_script',
                     'insert_script','bulk_insert_scripts','run_lua','batch','parallel','union','subtract','negate','intersect','separate',
                     'insert_asset','apply_asset','group_instances','ungroup','add_tag','remove_tag','place_on','align','stack','grid_arrange',
-                    'distribute','snap_to_ground','look_at','rotate_around','move_relative','resize_part','fit_between','point_at','fill_region')
+                    'distribute','snap_to_ground','look_at','rotate_around','move_relative','resize_part','fit_between','point_at','fill_region','build_polygon_model','build_assembly')
                 if ($sessionEntry -and $sessionEntry.state -and [bool]$sessionEntry.state.running -and [bool]$sessionEntry.state.userPlaytestActive -and $persistentEditTools -contains $tool) {
                     $blocked = @{
                         ok = $false
@@ -15625,7 +15894,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 6.0.6)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 6.1.0)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -16125,7 +16394,7 @@ function New-PlacePreviewVisual {
     $spinner = [System.Windows.Shapes.Ellipse]::new()
     $spinner.Width = 24; $spinner.Height = 24
     $spinner.Stroke = Get-Brush '#00E5D0'; $spinner.StrokeThickness = 3
-    # Version 6.0.6: Windows PowerShell 5.1 kann das object[] aus @(...)
+    # Version 6.1.0: Windows PowerShell 5.1 kann das object[] aus @(...)
     # nicht an den typisierten DoubleCollection-Konstruktor binden. Die Werte
     # deshalb ohne Ein-Argument-Konstruktor einzeln als double hinzufuegen.
     $strokeDashArray = [System.Windows.Media.DoubleCollection]::new()
@@ -16269,9 +16538,6 @@ try {
         Add-Type -TypeDefinition 'namespace Arena { [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; } public static class ScreenHelper { [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool IsIconic(System.IntPtr hWnd); [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr hWnd, out RECT lpRect); [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool PrintWindow(System.IntPtr hWnd, System.IntPtr hdcBlt, uint nFlags); } }' -ErrorAction Stop
     }
     $hwnd = [IntPtr]$handleValue
-    # Minimiert -> bewusst NICHTS aufnehmen, das zuletzt gezeigte Bild bleibt
-    # stehen (Nutzerwunsch, statt eines schwarzen/leeren Screenshots).
-    if ([Arena.ScreenHelper]::IsIconic($hwnd)) { return @{ ok = $false; minimized = $true } }
     $rect = New-Object Arena.RECT
     if (-not [Arena.ScreenHelper]::GetWindowRect($hwnd, [ref]$rect)) {
         return @{ ok = $false; error = 'GetWindowRect fehlgeschlagen' }
@@ -16527,7 +16793,9 @@ function Get-ArenaHistoryEntries {
             } catch {}
         }
     }
-    return , @($entries | Sort-Object @{Expression={ [int64]$_.startedAt }}, @{Expression={ [int64]$_.updatedAt }})
+    # Kein unitaeres Komma: sonst erhaelt das UI genau EIN verschachteltes Array
+    # statt der Eintraege und der Arena-Verlauf wirkt dauerhaft leer.
+    return @($entries | Sort-Object @{Expression={ [int64]$_.startedAt }}, @{Expression={ [int64]$_.updatedAt }})
 }
 
 function Clear-ArenaHistory {
@@ -17890,7 +18158,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '6.0.6'
+    $versionText = '6.1.0'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -18140,10 +18408,17 @@ function Show-ArenaDoneNotification {
     # fuer die report_done-Meldung der KI (der Nutzer hat diese Benachrichtigung
     # dafuer explizit in den Einstellungen aktiviert; sie ist standardmaessig
     # AUS). Die alten stummen Toast-Stummel bleiben unangetastet.
-    param([string]$Place, [string]$Message)
-    $title = 'Arena Roblox Bridge'
-    if (-not [string]::IsNullOrWhiteSpace($Place)) { $title = "Arena ist fertig - $Place" }
+    param([string]$Place, [string]$Title, [string]$Message)
+    # Windows 11 ToastGeneric hat laut Microsoft kein festes Zeichenlimit je
+    # Textfeld (Darstellung wird nach Breite/Skalierung abgeschnitten; Gesamt-XML
+    # max. 5 KB). Fuer verlaesslich voll sichtbare Meldungen erzwingt die Bridge
+    # den konservativen Windows-11-Anzeigebudget-Vertrag: 70 Zeichen Titel,
+    # 140 Zeichen Inhalt. Dieselben Grenzen stehen in der Arena-Dokumentation.
+    $title = $Title
+    if ([string]::IsNullOrWhiteSpace($title)) { $title = '✅ Arena ist fertig!' }
+    if ($title.Length -gt 70) { $title = $title.Substring(0, 69).TrimEnd() + '…' }
     $text = $Message
+    if ($text.Length -gt 140) { $text = $text.Substring(0, 139).TrimEnd() + '…' }
     if ([string]::IsNullOrWhiteSpace($text)) { $text = 'Ich bin fertig.' }
     $shown = $false
     # 1) Moderner Windows-Toast (WinRT) - erscheint wie eine echte App-Meldung.
@@ -18474,7 +18749,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 6.0.6" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 6.1.0" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -18514,7 +18789,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 6.0.6 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 6.1.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -18562,7 +18837,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 6.0.6 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 6.1.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -18575,7 +18850,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '6.0.6'
+    $verText = '6.1.0'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
@@ -18685,7 +18960,7 @@ $notifyTimer.Add_Tick({
             if (-not $script:Shared.NotifyQueue.TryDequeue([ref]$item)) { break }
             try {
                 $payload = $item | ConvertFrom-Json
-                Show-ArenaDoneNotification -Place ([string]$payload.place) -Message ([string]$payload.message)
+                Show-ArenaDoneNotification -Place ([string]$payload.place) -Title ([string]$payload.title) -Message ([string]$payload.message)
             } catch {
                 Write-RuntimeLog "Fertig-Meldung konnte nicht angezeigt werden: $($_.Exception.Message)"
             }

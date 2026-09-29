@@ -1,7 +1,7 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 6.0.6 - 28.09.2026)                                #
+#   (Stand: Version 6.1.0 - 29.09.2026)                                #
 #                                                                      #
 ##########################################################################
 
@@ -187,6 +187,16 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v6.1.0: MITTEILUNGEN + TOOLBOX + VERLAUF + MEISTER-BAUEN. report_done
+  verlangt einen lebendigen Titel (70 Zeichen) und Inhalt (140 Zeichen).
+  Vorschauen laufen bei geoeffneter Bridge alle 3 s weiter und blockieren
+  minimierte Studio-Fenster nicht mehr vor PrintWindow. Toolbox-Kategorien
+  einschliesslich 3D-Modelle, Meshes/MeshParts, Plugins und Fonts sind frei.
+  Der leere Arena-Verlauf ist als verschachtelte Array-Rueckgabe repariert.
+  Neu: build_assembly fuer bis zu 2000 gruppierte Teile und
+  build_polygon_model fuer konkave 3D-Polygone; die Bridge trianguliert per
+  Ear-Clipping und baut ausschliesslich ultraduenne WedgeParts (2/Dreieck).
+  Die Arena-Anleitung ist kuerzer und faehigkeitsorientiert statt starr.
 - v6.0.6: FENSTER-VORSCHAU - UI-VISUAL BRACH VOR JEDER AUFNAHME AB.
   HARTER LAUFZEITBELEG AUS 6.0.5: Identitaet 6.0.5 mit SHA-256
   7433925B060FDD21A699936B3B8267E899EF1BB80A1673119D1DDFFB9B20E588,
