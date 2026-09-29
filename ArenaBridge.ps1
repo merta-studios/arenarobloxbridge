@@ -8046,41 +8046,151 @@ function MASTER_BUILD.area2(poly)
     return sum
 end
 
-function MASTER_BUILD.pointInTri2(p,a,b,c,orientation)
+function MASTER_BUILD.pointInTri2(p,a,b,c,orientation,eps)
     local function cross(u,v,w) return (v.x-u.x)*(w.y-u.y)-(v.y-u.y)*(w.x-u.x) end
-    local e=1e-8
+    local e=eps or 1e-8
     return cross(a,b,p)*orientation >= -e and cross(b,c,p)*orientation >= -e and cross(c,a,p)*orientation >= -e
 end
 
-function MASTER_BUILD.triangulate(points)
-    if #points < 3 then return nil, "A polygon needs at least 3 points." end
-    local normal = MASTER_BUILD.normal(points)
-    if not normal then return nil, "Polygon points are collinear or duplicated." end
-    local projected, drop = MASTER_BUILD.project(points, normal)
-    local signed = MASTER_BUILD.area2(projected)
-    if math.abs(signed) < 1e-8 then return nil, "Polygon area is zero after projection." end
-    local orientation = signed > 0 and 1 or -1
-    local indices = {}; for i=1,#points do indices[i]=i end
-    local triangles, guard = {}, 0
-    while #indices > 3 do
-        guard=guard+1; if guard > #points*#points then return nil, "Polygon is self-intersecting or numerically invalid; split it into simple polygons." end
+-- Removes consecutive near-duplicate vertices and vertices that sit exactly
+-- on the line between their neighbours (zero-area contribution). Both are
+-- extremely common in exported organic meshes (trees, rocks, animals) and
+-- are the leading real-world cause of "no valid ear found" / self-
+-- intersection false positives further down the pipeline.
+function MASTER_BUILD.cleanPolygonPoints(points)
+    local n=#points
+    if n==0 then return points, 1e-5 end
+    local minP,maxP=points[1],points[1]
+    for _,p in ipairs(points) do
+        minP=Vector3.new(math.min(minP.X,p.X),math.min(minP.Y,p.Y),math.min(minP.Z,p.Z))
+        maxP=Vector3.new(math.max(maxP.X,p.X),math.max(maxP.Y,p.Y),math.max(maxP.Z,p.Z))
+    end
+    local diag=(maxP-minP).Magnitude
+    local eps=math.max(1e-5,diag*1e-5)
+    local deduped={}
+    for i=1,n do
+        local p=points[i]
+        local last=deduped[#deduped]
+        if not last or (p-last).Magnitude>eps then table.insert(deduped,p) end
+    end
+    if #deduped>3 and (deduped[1]-deduped[#deduped]).Magnitude<=eps then table.remove(deduped,#deduped) end
+    if #deduped>3 then
+        local cleaned={}
+        local m=#deduped
+        for i=1,m do
+            local prev=deduped[((i-2)%m)+1]
+            local cur=deduped[i]
+            local nxt=deduped[(i%m)+1]
+            local v1,v2=cur-prev,nxt-cur
+            local keep=true
+            if v1.Magnitude>eps and v2.Magnitude>eps then
+                local d=v1.Unit:Dot(v2.Unit)
+                if d>0.999999 then keep=false end
+            end
+            if keep then table.insert(cleaned,cur) end
+        end
+        if #cleaned>=3 then deduped=cleaned end
+    end
+    return deduped,eps
+end
+
+-- Standalone ear-clipping pass with a caller-supplied tolerance. Kept
+-- separate from MASTER_BUILD.triangulate so the wrapper can retry it with a
+-- looser tolerance / different winding before giving up on a face.
+function MASTER_BUILD.earClip(projected,orientation,eps)
+    local n=#projected
+    local indices={}; for i=1,n do indices[i]=i end
+    local triangles,guard={},0
+    while #indices>3 do
+        guard=guard+1
+        if guard>n*n+32 then return nil,"Polygon is self-intersecting or numerically invalid; split it into simple polygons." end
         local clipped=false
         for pos=1,#indices do
-            local ia, ib, ic = indices[((pos-2)%#indices)+1], indices[pos], indices[(pos%#indices)+1]
+            local ia,ib,ic=indices[((pos-2)%#indices)+1],indices[pos],indices[(pos%#indices)+1]
             local a,b,c=projected[ia],projected[ib],projected[ic]
             local cross=(b.x-a.x)*(c.y-b.y)-(b.y-a.y)*(c.x-b.x)
-            if cross*orientation > 1e-8 then
+            if cross*orientation>eps then
                 local contains=false
                 for _,idx in ipairs(indices) do
-                    if idx~=ia and idx~=ib and idx~=ic and MASTER_BUILD.pointInTri2(projected[idx],a,b,c,orientation) then contains=true; break end
+                    if idx~=ia and idx~=ib and idx~=ic and MASTER_BUILD.pointInTri2(projected[idx],a,b,c,orientation,eps) then contains=true; break end
                 end
                 if not contains then table.insert(triangles,{ia,ib,ic}); table.remove(indices,pos); clipped=true; break end
             end
         end
-        if not clipped then return nil, "No valid ear found. Remove duplicate/collinear points or split a self-intersecting polygon." end
+        if not clipped then return nil,"No valid ear found. Remove duplicate/collinear points or split a self-intersecting polygon." end
     end
     table.insert(triangles,{indices[1],indices[2],indices[3]})
-    return triangles, nil, normal, drop
+    return triangles
+end
+
+-- Triangulates one polygon face. Returns triangles (index triples into the
+-- returned, possibly-cleaned point list), an error string on total failure,
+-- the face normal, the dropped projection axis, the cleaned point list, and
+-- an optional diagnostic note ("relaxed-tolerance" / "reordered" /
+-- "fan-fallback") when a fallback strategy had to be used so a valid face
+-- could still be produced instead of silently leaving a hole.
+function MASTER_BUILD.triangulate(points)
+    if #points < 3 then return nil, "A polygon needs at least 3 points." end
+    local cleaned,weldEps = MASTER_BUILD.cleanPolygonPoints(points)
+    if #cleaned < 3 then return nil, "Polygon points collapse to fewer than 3 distinct points after cleanup." end
+    local normal = MASTER_BUILD.normal(cleaned)
+    if not normal then return nil, "Polygon points are collinear or duplicated." end
+    local projected, drop = MASTER_BUILD.project(cleaned, normal)
+    local minx,maxx,miny,maxy=projected[1].x,projected[1].x,projected[1].y,projected[1].y
+    for _,p in ipairs(projected) do
+        minx=math.min(minx,p.x); maxx=math.max(maxx,p.x); miny=math.min(miny,p.y); maxy=math.max(maxy,p.y)
+    end
+    local areaScale=math.max((maxx-minx)*(maxy-miny), weldEps*weldEps, 1e-6)
+    local signed = MASTER_BUILD.area2(projected)
+    if math.abs(signed) < areaScale*1e-8 then return nil, "Polygon area is zero after projection." end
+    local orientation = signed > 0 and 1 or -1
+
+    -- Attempt 1: standard ear-clipping with a tight tolerance.
+    local triangles,why = MASTER_BUILD.earClip(projected, orientation, areaScale*1e-9)
+    local note=nil
+    if not triangles then
+        -- Attempt 2: relax the tolerance. Slightly non-planar or rounded
+        -- input coordinates can make an otherwise-valid ear look borderline
+        -- self-intersecting; a looser epsilon recovers it without changing
+        -- the resulting shape in any perceptible way.
+        triangles,why = MASTER_BUILD.earClip(projected, orientation, areaScale*1e-4)
+        if triangles then note="relaxed-tolerance" end
+    end
+    if not triangles then
+        -- Attempt 3: try the opposite winding/orientation. Some organic
+        -- meshes list points in an order that is only marginally consistent;
+        -- walking them the other way changes the numeric path of the ear
+        -- test and frequently succeeds where the original order failed.
+        local reversed={}
+        for i=#cleaned,1,-1 do table.insert(reversed,cleaned[i]) end
+        local rNormal=MASTER_BUILD.normal(reversed)
+        if rNormal then
+            local rProjected,rDrop=MASTER_BUILD.project(reversed,rNormal)
+            local rSigned=MASTER_BUILD.area2(rProjected)
+            if math.abs(rSigned)>=areaScale*1e-8 then
+                local rOrientation=rSigned>0 and 1 or -1
+                local rTriangles=MASTER_BUILD.earClip(rProjected,rOrientation,areaScale*1e-4)
+                if rTriangles then
+                    local remapped={}
+                    for _,t in ipairs(rTriangles) do
+                        table.insert(remapped,{#cleaned-t[1]+1,#cleaned-t[2]+1,#cleaned-t[3]+1})
+                    end
+                    return remapped,nil,rNormal,rDrop,cleaned,"reordered"
+                end
+            end
+        end
+    end
+    if not triangles then
+        -- Last resort: fan triangulation from the first vertex. This keeps
+        -- the face present (no hole in the model) instead of dropping it
+        -- outright; the caller is told about the fallback via the returned
+        -- note so the build result stays honest about it.
+        local fan={}
+        for i=2,#cleaned-1 do table.insert(fan,{1,i,i+1}) end
+        if #fan>0 then return fan,nil,normal,drop,cleaned,"fan-fallback" end
+        return nil, why or "No valid ear found."
+    end
+    return triangles, nil, normal, drop, cleaned, note
 end
 
 function MASTER_BUILD.color(value, fallback)
@@ -8104,7 +8214,36 @@ end
 function MASTER_BUILD.pointKey(v)
     -- Shared mesh vertices often arrive as separate JSON objects. Quantising
     -- makes boundary detection stable without moving the actual geometry.
-    return string.format("%.5f,%.5f,%.5f",v.X,v.Y,v.Z)
+    -- Rounding also normalises "negative zero" (e.g. sin(2*pi) evaluates to
+    -- a tiny negative float instead of exactly 0): without this, a value
+    -- that rounds to "-0.00000" produced a DIFFERENT string than the exact
+    -- "0.00000" it geometrically equals, so a circular cross-section (round
+    -- trunks, tree crowns, animal bodies built from sin/cos) could fail to
+    -- weld its own start/end seam and leave a visible gap there.
+    local function q(n)
+        local r = math.floor(n*100000 + 0.5) / 100000
+        if r == 0 then r = 0 end
+        return r
+    end
+    return string.format("%.5f,%.5f,%.5f", q(v.X), q(v.Y), q(v.Z))
+end
+
+-- Snaps vertices that are within quantisation distance of each other to the
+-- exact same Vector3 instance across every polygon of a submodel. Adjacent
+-- faces are usually authored with matching-but-not-bit-identical coordinates
+-- (separate JSON points, float rounding); welding them here is what lets the
+-- independently-built WedgeParts of neighbouring triangles meet edge-to-edge
+-- instead of leaving hairline gaps, and it also makes closeBoundaryLoops'
+-- edge matching far more reliable.
+function MASTER_BUILD.weldEntryVertices(entries)
+    local canon={}
+    for _,entry in ipairs(entries) do
+        for i,p in ipairs(entry.points) do
+            local k=MASTER_BUILD.pointKey(p)
+            local existing=canon[k]
+            if existing then entry.points[i]=existing else canon[k]=p end
+        end
+    end
 end
 
 function MASTER_BUILD.closeBoundaryLoops(entries)
@@ -8159,10 +8298,29 @@ end
 function MASTER_BUILD.triangleWedges(a,b,c,parent,style,name,faceNormal,solidCenter)
     local ab,ac,bc=b-a,c-a,c-b
     local abd,acd,bcd=ab:Dot(ab),ac:Dot(ac),bc:Dot(bc)
-    if abd > acd and abd > bcd then c,a=b,c elseif acd > bcd then a,b=b,c end
+    -- Re-label the vertices so BC is always the triangle's longest edge and A
+    -- is the opposite vertex: the perpendicular foot dropped from A then
+    -- always lands inside segment BC, whatever order the caller supplied the
+    -- points in. The previous version only reassigned two of the three local
+    -- variables on these swaps ("c,a=b,c" / "a,b=b,c"), which silently made
+    -- B and C alias the very same point (a fake zero-length edge) whenever
+    -- the longest edge happened to be AB or AC. That bug rejected perfectly
+    -- valid triangles as "degenerate" purely based on point order.
+    if abd > acd and abd > bcd then
+        a,b,c = c,a,b
+    elseif acd > bcd then
+        a,b,c = b,a,c
+    end
     ab,ac,bc=b-a,c-a,c-b
+    local longestSq = math.max(ab:Dot(ab), ac:Dot(ac), bc:Dot(bc), 1e-12)
+    -- Tolerances now scale with the triangle's own size instead of one fixed
+    -- absolute number, so a hair-thin sliver on a huge terrain piece and a
+    -- genuinely collapsed micro-triangle on a tiny prop are both judged
+    -- correctly instead of a single epsilon being wrong for either scale.
+    local areaTolerance = math.max(1e-7, longestSq*1e-6)
+    local lengthTolerance = math.max(1e-6, math.sqrt(longestSq)*1e-5)
     local right=ac:Cross(ab)
-    if right.Magnitude < 1e-7 or bc.Magnitude < 1e-7 then return {}, "degenerate triangle" end
+    if right.Magnitude < areaTolerance or bc.Magnitude < lengthTolerance then return {}, "degenerate triangle" end
     right=right.Unit
     local back=bc.Unit
     local up=bc:Cross(right).Unit
@@ -8258,6 +8416,7 @@ tools.build_polygon_model = function(args)
     for _,spec in ipairs(subSpecs) do table.insert(specs,spec) end
 
     local wedgeCount,triCount,weldCount,capCount,skipped=0,0,0,0,{}
+    local facesTotal,facesSkipped,fallbackFaces=0,0,{}
     local maxWedges=math.min(10000,math.max(2,tonumber(args.maxWedges) or 4000))
     local roots={}
     for si,spec in ipairs(specs) do
@@ -8274,6 +8433,12 @@ tools.build_polygon_model = function(args)
             if #pts>3 and (pts[1]-pts[#pts]).Magnitude<1e-6 then table.remove(pts,#pts) end
             table.insert(entries,{points=pts,name=poly.name or ("Polygon"..pi),style=style,index=pi})
         end
+        -- Weld matching vertices across this submodel's polygons before
+        -- anything else touches them: closeOpenings' loop-matching and every
+        -- triangle's WedgePart placement then work off exactly the same
+        -- Vector3 for a shared edge instead of near-identical-but-different
+        -- floats, which is what makes neighbouring faces meet without gaps.
+        MASTER_BUILD.weldEntryVertices(entries)
         if (spec.closeOpenings==true or args.closeOpenings==true) then
             local caps=MASTER_BUILD.closeBoundaryLoops(entries)
             for _,cap in ipairs(caps) do cap.style=MASTER_BUILD.mergeStyle(subStyle,spec.capStyle or args.capStyle); table.insert(entries,cap); capCount=capCount+1 end
@@ -8281,15 +8446,27 @@ tools.build_polygon_model = function(args)
         local solidCenter=centerCount>0 and centerSum/centerCount or nil
         local subTriangles=0
         for _,entry in ipairs(entries) do
-            local triangles,why,normal,drop=MASTER_BUILD.triangulate(entry.points)
-            if not triangles then table.insert(skipped,{submodel=container.Name,index=entry.index,name=entry.name,error=why})
+            facesTotal=facesTotal+1
+            local triangles,why,normal,drop,cleanedPoints,note=MASTER_BUILD.triangulate(entry.points)
+            if not triangles then
+                facesSkipped=facesSkipped+1
+                table.insert(skipped,{submodel=container.Name,polygon=entry.name,name=entry.name,index=entry.index,autoCap=entry.autoCap==true,error=why})
             elseif wedgeCount+#triangles*2>maxWedges then model:Destroy(); return failCode("BUDGET_EXCEEDED","Polygon build needs more than "..tostring(maxWedges).." wedges. Raise maxWedges up to 10000 or split the model.")
             else
                 local group=Instance.new("Model"); group.Name=tostring(entry.name); group.Parent=container
                 group:SetAttribute("TriangleCount",#triangles); group:SetAttribute("ProjectionAxis",drop); group:SetAttribute("Normal",normal); group:SetAttribute("AutoCap",entry.autoCap==true)
+                if note then
+                    group:SetAttribute("TriangulationFallback",note)
+                    table.insert(fallbackFaces,{submodel=container.Name,polygon=entry.name,index=entry.index,note=note})
+                end
+                local usePoints=cleanedPoints or entry.points
                 for ti,t in ipairs(triangles) do
-                    local made,werr=MASTER_BUILD.triangleWedges(entry.points[t[1]],entry.points[t[2]],entry.points[t[3]],group,entry.style,group.Name.."_T"..ti,normal,solidCenter)
-                    if werr then table.insert(skipped,{submodel=container.Name,index=entry.index,triangle=ti,error=werr}) else wedgeCount=wedgeCount+#made; triCount=triCount+1; subTriangles=subTriangles+1 end
+                    local made,werr=MASTER_BUILD.triangleWedges(usePoints[t[1]],usePoints[t[2]],usePoints[t[3]],group,entry.style,group.Name.."_T"..ti,normal,solidCenter)
+                    if werr then
+                        table.insert(skipped,{submodel=container.Name,polygon=entry.name,index=entry.index,triangle=ti,error=werr})
+                    else
+                        wedgeCount=wedgeCount+#made; triCount=triCount+1; subTriangles=subTriangles+1
+                    end
                 end
             end
         end
@@ -8316,11 +8493,27 @@ tools.build_polygon_model = function(args)
             weld.C0=p0.CFrame:ToObjectSpace(p1.CFrame); weld.C1=CFrame.new(); weld.Parent=model; mainWeldCount=mainWeldCount+1
         else table.insert(skipped,{mainWeld=wi,error="Could not resolve from/to submodel roots."}) end
     end
-    if wedgeCount==0 then model:Destroy(); return failCode("POLYGON_INVALID","No polygon could be triangulated.",skipped) end
+    if wedgeCount==0 then
+        model:Destroy()
+        return failCode("POLYGON_INVALID","No polygon could be triangulated. "..tostring(#skipped).." face(s) failed; see result.skipped for polygon/submodel/reason per failure.",{skipped=skipped,facesTotal=facesTotal,facesSkipped=facesSkipped})
+    end
     model:SetAttribute("PolygonCount",#rawPolygons); model:SetAttribute("SubmodelCount",#specs)
+    model:SetAttribute("FacesBuilt",facesTotal-facesSkipped); model:SetAttribute("FacesSkipped",facesSkipped)
     waypoint("build polygon model "..model.Name)
     local sample={}; for _,d in ipairs(model:GetDescendants()) do if d:IsA("BasePart") and #sample<8 then table.insert(sample,d) end end
-    return ok({model=describeRef(model),submodels=#specs,polygons=#rawPolygons,triangles=triCount,wedges=wedgeCount,autoCaps=capCount,welds=weldCount,mainWelds=mainWeldCount,skipped=skipped,geometry=waitMeasurable(sample,2),method="side-corrected skin placement + ear-clipping + two WedgeParts per triangle",editable=true})
+    -- A build that skipped faces (or had to fall back to a less-strict
+    -- triangulation) is never reported as a silent full success: `incomplete`
+    -- and the human-readable `warnings` text make partial results impossible
+    -- to miss, while `skipped`/`fallbackFaces` keep the exact polygon name,
+    -- submodel name and error reason for each affected face.
+    local incomplete=#skipped>0
+    local warningsText=nil
+    if incomplete then
+        warningsText=tostring(#skipped).." of "..tostring(facesTotal).." face(s) were skipped and are MISSING from the model - see result.skipped for {submodel, polygon, error} per failure. Consider fixing the source points (duplicate/self-intersecting) or re-running with different point order."
+    elseif #fallbackFaces>0 then
+        warningsText=tostring(#fallbackFaces).." face(s) needed a fallback triangulation strategy (still built, see result.fallbackFaces)."
+    end
+    return ok({model=describeRef(model),submodels=#specs,polygons=#rawPolygons,triangles=triCount,wedges=wedgeCount,autoCaps=capCount,welds=weldCount,mainWelds=mainWeldCount,facesTotal=facesTotal,facesBuilt=facesTotal-facesSkipped,facesSkipped=facesSkipped,incomplete=incomplete,skipped=skipped,fallbackFaces=fallbackFaces,geometry=waitMeasurable(sample,2),method="side-corrected skin placement + ear-clipping + two WedgeParts per triangle (auto-retries alternate tolerance/winding and vertex-welds shared edges before giving up on a face)",editable=true},warningsText)
 end
 
 tools.build_assembly = function(args)
