@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 6.1.3.
+"""Offline structure check for Arena Roblox Bridge 6.1.4.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "6.1.3"
+VERSION = "6.1.4"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -395,16 +395,38 @@ def main() -> int:
     for marker in stale_612_literals:
         require(marker not in source, f"stale functional 6.1.2 literal remains: {marker}")
 
-    required_markers = [
+    # 6.1.3 must not remain in executable version fields either. Its changelog
+    # heading stays on purpose (the polygon-builder gap fix is still
+    # documented there), but every literal the updater, the plugin and the UI
+    # compare at runtime has to have moved to 6.1.4.
+    stale_613_literals = [
         "DocsVersion     = '6.1.3'",
         'local ARENA_VERSION  = "6.1.3"',
         "bridgeVersion = '6.1.3'",
+        "bridgeVersion='6.1.3'",
         "serverVersion = '6.1.3'",
         "version = '6.1.3'",
         "$versionText = '6.1.3'",
         "$verText = '6.1.3'",
         'Arena Studio Bridge - Studio Plugin  (Version 6.1.3)',
         'Text="Arena Roblox Bridge - Version 6.1.3"',
+        "Version 6.1.3 - aktuell. Beim naechsten Start",
+        "Laufzeit-Identitaet: Bridge-Version=6.1.3",
+        "Kurzbericht Fenster-Vorschau (Version 6.1.3)",
+    ]
+    for marker in stale_613_literals:
+        require(marker not in source, f"stale functional 6.1.3 literal remains: {marker}")
+
+    required_markers = [
+        "DocsVersion     = '6.1.4'",
+        'local ARENA_VERSION  = "6.1.4"',
+        "bridgeVersion = '6.1.4'",
+        "serverVersion = '6.1.4'",
+        "version = '6.1.4'",
+        "$versionText = '6.1.4'",
+        "$verText = '6.1.4'",
+        'Arena Studio Bridge - Studio Plugin  (Version 6.1.4)',
+        'Text="Arena Roblox Bridge - Version 6.1.4"',
         # 4.0.0: the config table that keeps the top-level local count in check.
         "local ARENA_CFG = {",
         "ARENA_CFG.POLL_WAIT",
@@ -615,7 +637,7 @@ def main() -> int:
         "kind=csharp-helper",
         "ps-runspace-fallback",
         "Get-FileHash -Algorithm SHA256",
-        "Laufzeit-Identitaet: Bridge-Version=6.1.3",
+        "Laufzeit-Identitaet: Bridge-Version=6.1.4",
         "LanguageMode",
         "$script:PreviewFlowContexts = @{}",
         "$script:PreviewHandleInfos = @{}",
@@ -648,19 +670,19 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '6.1.3'": 1,
-        'local ARENA_VERSION  = "6.1.3"': 1,
-        "version = '6.1.3'": 1,
-        "bridgeVersion = '6.1.3'": 3,
-        "bridgeVersion='6.1.3'": 1,
-        "serverVersion = '6.1.3'": 2,
-        "$versionText = '6.1.3'": 1,
-        "$verText = '6.1.3'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 6.1.3)": 1,
-        'Text="Arena Roblox Bridge - Version 6.1.3"': 1,
-        "Version 6.1.3 - aktuell. Beim naechsten Start": 2,
-        "Laufzeit-Identitaet: Bridge-Version=6.1.3": 1,
-        "Kurzbericht Fenster-Vorschau (Version 6.1.3)": 1,
+        "DocsVersion     = '6.1.4'": 1,
+        'local ARENA_VERSION  = "6.1.4"': 1,
+        "version = '6.1.4'": 1,
+        "bridgeVersion = '6.1.4'": 3,
+        "bridgeVersion='6.1.4'": 1,
+        "serverVersion = '6.1.4'": 2,
+        "$versionText = '6.1.4'": 1,
+        "$verText = '6.1.4'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 6.1.4)": 1,
+        'Text="Arena Roblox Bridge - Version 6.1.4"': 1,
+        "Version 6.1.4 - aktuell. Beim naechsten Start": 2,
+        "Laufzeit-Identitaet: Bridge-Version=6.1.4": 1,
+        "Kurzbericht Fenster-Vorschau (Version 6.1.4)": 1,
     }
     for marker, expected_count in functional_version_counts.items():
         actual_count = source.count(marker)
@@ -895,11 +917,27 @@ def main() -> int:
     ):
         require(marker in source, f"required 6.1 marker missing: {marker}")
     require("return , @($entries | Sort-Object" not in source, "history entries are nested again")
+
+    # 6.1.4 Polygon Engine 2.0 guards: the canonical WedgePart axis rule and
+    # its reference Lua snippet must ship as permanent AI-facing guidance
+    # (Get-BridgeGuides), reaching every new session via session-start /
+    # get_docs, not just live in a one-off human changelog note.
+    for marker in (
+        "polygonEngineRules = @{",
+        "Local X = thickness / face normal",
+        "CFrame.fromMatrix(position, normal, up, dir)",
+        "skinOffset = -normal * thickness * 0.5",
+        "local function drawSeamlessTriangle(p1, p2, p3, parent, props)",
+        "local skinOffset = -normal * (thickness * 0.5)",
+        "HARD CONSTRAINT for any hand-written WedgePart/triangle geometry",
+    ):
+        require(marker in source, f"required Polygon Engine 2.0 marker missing: {marker}")
+
     # Studio minimization must no longer pre-block periodic preview capture.
     require("if (IsIconic(hwnd)) { result.Minimized = true" not in source, "C# preview still blocks minimized Studio")
     require("if ([Arena.ScreenHelper]::IsIconic($hwnd))" not in source, "fallback preview still blocks minimized Studio")
 
-    print("OK: 6.1.3 structure, Lua and XAML validation passed")
+    print("OK: 6.1.4 structure, Lua and XAML validation passed")
     return 0
 
 
