@@ -1,5 +1,33 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 6.1.3
+# Arena Roblox Bridge  -  Version 6.1.4
+#
+# POLYGON ENGINE 2.0: KANONISCHE WEDGE-ACHSEN-REGEL FEST IN DER KI-DOKU
+#   * DAUERHAFTE SYSTEM-REGEL STATT EINMAL-FIX: build_polygon_model rotierte
+#     Dreiecke schon seit 6.1.3 korrekt (siehe Block darunter) - aber sobald
+#     Arena in einer NEUEN Session stattdessen eigenen Lua-Code ueber run_lua
+#     schreibt (z. B. fuer Spezialfaelle), gab es kein dauerhaftes Gedaechtnis
+#     an die richtige WedgePart-Achsenkonvention. Falsch herum zugeordnete
+#     Achsen erzeugen genau die gemeldeten 90-Grad-Drehfehler und klaffenden
+#     Nahtstellen. Get-BridgeGuides liefert die Regel jetzt in JEDER Session
+#     (Sessionstart, get_docs, /api/docs) als harten Constraint mit fertiger
+#     Referenz-Lua-Funktion.
+#   * UNVERLETZLICHE ACHSEN-REGEL: bei einem WedgePart liegt die Schraege
+#     NIE in der lokalen X-Ebene. Lokal X = Dicke/Flaechennormale, lokal
+#     Y = Hoehe/Orthogonale zum Basisschenkel, lokal Z = Basisschenkel-
+#     Richtung. CFrame.fromMatrix(position, normal, up, dir) haelt diese
+#     Zuordnung exakt ein.
+#   * KANONISCHE NULL-FEHLER-FORMEL dokumentiert: laengste Kante als Basis
+#     waehlen, Lotfusspunkt der Gegenspitze bestimmen, Dreieck in zwei
+#     rechtwinklige Keile entlang des Lotfusspunkts teilen, Keildicke per
+#     Skin-Offset (-normal * Dicke/2) nach innen versetzen, damit die
+#     gelieferten Punkte exakt die Aussenhaut bleiben und keine Nahtspalten
+#     entstehen. build_polygon_model bleibt die STARK EMPFOHLENE erste Wahl
+#     (inklusive Retry/Fallback-Triangulierung und Vertex-Welding); die
+#     Formel ist die verbindliche Referenz fuer echte run_lua-Spezialfaelle.
+#   * Kein Verhaltens- oder API-Wechsel an build_polygon_model selbst - nur
+#     Doku-/Guide-Ergaenzung (Get-BridgeGuides), damit die Regel jede neue
+#     KI-Session automatisch erreicht statt vom Zufall der Trainingsdaten
+#     abzuhaengen.
 #
 # POLYGON-BAUEN 6.1.3: SICHTBARE LUECKEN IN MODELLEN GESCHLOSSEN
 #   * LUECKEN BEIM BAUEN WEG: build_polygon_model hat einzelne Flaechen
@@ -1540,7 +1568,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '6.1.3'
+    DocsVersion     = '6.1.4'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -1629,8 +1657,8 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-    $script:PreviewDiagIdentity = ("Bridge-Version=6.1.3, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=6.1.3, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    $script:PreviewDiagIdentity = ("Bridge-Version=6.1.4, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=6.1.4, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 6.0.5: Hinweis auf den kleinen Kurzbericht - er enthaelt alles,
     # was zur Beurteilung der Fenster-Vorschau noetig ist.
     Write-RuntimeLog ("Vorschau-Kurzbericht: " + (Join-Path $script:AppDataRoot 'preview-diagnose.txt'))
@@ -1724,7 +1752,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 6.1.3)
+  Arena Studio Bridge - Studio Plugin  (Version 6.1.4)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1795,7 +1823,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "6.1.3"
+local ARENA_VERSION  = "6.1.4"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -12776,7 +12804,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             example = @{ source = 'local x = 1 + ' };
             errors = @('COMPILE_ERROR: mit Zeilennummer.') })
         $t.Add(@{ name = 'run_lua'; category = 'scripts'; summary = 'Lua im Server-/Edit-Kontext ausfuehren (persistent!).';
-            description = 'Fuehrt Lua aus und gibt Rueckgabe + alles, was gedruckt wurde, zurueck. WICHTIG: Die Umgebung ist PERSISTENT - ein Helfer aus einem frueheren Call (z.B. "M = {...}" ohne local) ist im naechsten Call weiter da (lua_state zeigt alle persiste Variablen). Fuer Läufe ueber 60s: asJob=true oder start_job.';
+            description = 'Fuehrt Lua aus und gibt Rueckgabe + alles, was gedruckt wurde, zurueck. WICHTIG: Die Umgebung ist PERSISTENT - ein Helfer aus einem frueheren Call (z.B. "M = {...}" ohne local) ist im naechsten Call weiter da (lua_state zeigt alle persiste Variablen). Fuer Läufe ueber 60s: asJob=true oder start_job. Fuer Polygon-/WedgePart-Geometrie erst build_polygon_model pruefen - schreibst du trotzdem eigene Dreieck-/Wedge-Logik hier, gilt die harte Achsen-Regel aus polygonEngineRules (get_docs / Sessionstart): lokal X=Dicke/Normale, Y=Hoehe, Z=Basiskante - sonst drohen 90-Grad-Drehfehler und Nahtspalten.';
             params = @{ source = @{ type = 'string'; required = $true; default = '-'; description = 'Oder sourceRef.' }; context = @{ type = "'server'|'auto'"; required = $false; default = "'auto'"; description = 'client ist NICHT moeglich (loadstring gesperrt) - fuer den Client: client_action/gui_*/move_character/send_input.' }; asJob = @{ type = 'bool'; required = $false; default = 'false'; description = 'Im Hintergrund als Job laufen lassen (rueckgibt jobId).' } };
             returns = '{ returned, output: [ { seq, message, type } ], context, environment="persistent", persistentKeys } oder (asJob) { ok, jobId, status="running" }';
             example = @{ source = 'local p = workspace:FindFirstChild("Part"); return p and p.Position' };
@@ -13157,8 +13185,63 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 'Asset search covers the Creator Store categories including 3D models, models, meshes/MeshParts, plugins, fonts, audio, images/decals, video and animation. Insertion still reports Roblox permission/privacy errors and warns before inserting scripts.',
                 'Playtest tools are available when the user setting permits them. A running test uses a temporary DataModel, so permanent edits are guarded until edit mode returns.',
                 'Windows finish notifications use report_done { title, message }. Arena writes a lively title (max 70 characters) and an inviting body (max 140); avoid dry changelog lists.',
-                'Responses include typed error codes and concrete diagnostics. Use those details to decide the next step.'
+                'Responses include typed error codes and concrete diagnostics. Use those details to decide the next step.',
+                'HARD CONSTRAINT for any hand-written WedgePart/triangle geometry (build_polygon_model already does this correctly - this rule is for genuinely custom run_lua geometry code only): see polygonEngineRules below for the mandatory WedgePart axis convention and the canonical seamless-triangle formula. Getting the axis order wrong is the single most common cause of 90-degree rotation errors and gaping seams in procedural low-poly builds.'
             )
+            polygonEngineRules = @{
+                title = 'Polygon Engine 2.0 - canonical WedgePart rule (prevents 90-degree rotation errors and seam gaps forever)'
+                whenThisApplies = 'build_polygon_model already implements this correctly (longest-edge base, side-corrected inward skin offset, retry/fallback triangulation, vertex welding) - always STRONGLY prefer it for modelling. Only read on if you are writing bespoke geometry directly with run_lua/Instance.new("WedgePart") because the task needs logic the tool does not cover.'
+                axisRule = 'The slanted face of a WedgePart is NEVER in its local X plane. Local X = thickness / face normal. Local Y = height / the axis orthogonal to the base edge. Local Z = the base-edge direction (dir, or -dir for the mirrored half). Build every WedgePart CFrame as CFrame.fromMatrix(position, normal, up, dir) - swapping which vector goes into which slot is exactly what produces 90-degree rotation errors.'
+                seamRule = 'Seam gaps come from placing the wedge thickness symmetrically around the supplied skin points. Instead, treat the given triangle points as the exact outer skin and shift the whole wedge inward by half the thickness along -normal (skinOffset = -normal * thickness * 0.5) before building the CFrame, so neighbouring faces overlap cleanly on the inside instead of leaving visible grooves.'
+                referenceLua = @'
+-- Canonical zero-error formula for hand-written run_lua triangle/wedge builders.
+-- applyProps(part, props, parent) is your own helper that sets Color/Material/
+-- Anchored/CanCollide/Parent etc. - keep using whatever the rest of your script uses.
+local function drawSeamlessTriangle(p1, p2, p3, parent, props)
+    -- 1. Re-label so the LONGEST edge becomes the base (p2 -> p3); this
+    --    guarantees the altitude foot from p1 lands inside that edge.
+    local ab, ac, bc = (p2-p1).Magnitude, (p3-p1).Magnitude, (p3-p2).Magnitude
+    if ab >= ac and ab >= bc then p1, p2, p3 = p3, p1, p2
+    elseif ac >= ab and ac >= bc then p1, p2, p3 = p2, p3, p1 end
+
+    local baseVec = p3 - p2
+    local baseLen = baseVec.Magnitude
+    if baseLen < 0.001 then return end
+    local dir = baseVec.Unit
+
+    -- 2. Face normal and the altitude foot point (pMid) on the base edge.
+    local normal = (p2 - p1):Cross(p3 - p1).Unit
+    local proj = (p1 - p2):Dot(dir)
+    local pMid = p2 + dir * proj
+    local height = (p1 - pMid).Magnitude
+    local up = (p1 - pMid).Unit
+
+    local len1 = proj
+    local len2 = baseLen - proj
+    local thickness = props.Thickness or 0.2
+
+    -- 3. Side-corrected skin placement: shift the wedge thickness INWARD so
+    --    the given points stay the exact outer skin and neighbours seal.
+    local skinOffset = -normal * (thickness * 0.5)
+
+    -- Wedge 1 (pMid -> p2): local X=normal (thickness), Y=up (height), Z=-dir (base).
+    if len1 > 0.01 and height > 0.01 then
+        local w1 = Instance.new("WedgePart")
+        w1.Size = Vector3.new(thickness, height, len1)
+        w1.CFrame = CFrame.fromMatrix((pMid + p2)/2 + up * (height/2) + skinOffset, normal, up, -dir)
+        applyProps(w1, props, parent)
+    end
+
+    -- Wedge 2 (pMid -> p3): mirrored, Z=dir.
+    if len2 > 0.01 and height > 0.01 then
+        local w2 = Instance.new("WedgePart")
+        w2.Size = Vector3.new(thickness, height, len2)
+        w2.CFrame = CFrame.fromMatrix((pMid + p3)/2 + up * (height/2) + skinOffset, -normal, up, dir)
+        applyProps(w2, props, parent)
+    end
+end
+'@
+            }
             coordinateGuide = @(
                 'AXES: +X = right, +Y = up, +Z = toward the viewer. The default Studio camera looks toward -Z. The "front" face of a part is its -Z face.',
                 'YAW: rotation around +Y in degrees, positive = counter-clockwise seen from above. A yaw of d turns the front face to direction (-sin d, 0, -cos d) - so positive yaw turns the front toward -X (left).',
@@ -13324,7 +13407,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '6.1.3'
+            version = '6.1.4'
             docsVersion = [string]$Shared.DocsVersion
             role = 'A normal token controls exactly one live Roblox Studio place. The special aggregate token copied from Alle Places controls several places: call GET /api/places first and pass one exact targetPlace in every request; the bridge refuses to guess. This makes switching safe and explicit. Send every request as POST /api/tool with JSON body { "token": "...", "targetPlace": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -13439,7 +13522,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '6.1.3'
+            bridgeVersion = '6.1.4'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -13688,7 +13771,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '6.1.3'
+                        bridgeVersion = '6.1.4'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -13940,7 +14023,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '6.1.3'
+                        serverVersion = '6.1.4'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -14127,7 +14210,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='6.1.3'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='6.1.4'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -14156,8 +14239,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '6.1.3'
-                    serverVersion = '6.1.3'
+                    bridgeVersion = '6.1.4'
+                    serverVersion = '6.1.4'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -16302,7 +16385,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 6.1.3)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 6.1.4)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -18604,7 +18687,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '6.1.3'
+    $versionText = '6.1.4'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -19205,7 +19288,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 6.1.3" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 6.1.4" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -19247,7 +19330,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 6.1.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 6.1.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -19300,7 +19383,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 6.1.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 6.1.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -19313,7 +19396,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '6.1.3'
+    $verText = '6.1.4'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

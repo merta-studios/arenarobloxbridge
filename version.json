@@ -1,10 +1,9 @@
 {
-  "version": "6.1.3",
+  "version": "6.1.4",
   "notes": [
-    "• Polygon-Builder: Lücken geschlossen. build_polygon_model hat einzelne Flächen kommentarlos weggelassen – vor allem bei Bäumen, Stämmen, Tieren und anderen runden Formen. Ursache war ein Punktreihenfolge-Bug in triangleWedges: Beim internen Umsortieren wurden nur zwei der drei Dreieckspunkte neu gesetzt, wodurch korrekte Dreiecke fälschlich als „entartet“ verworfen wurden.",
-    "• Offene Nähte verschweißt: pointKey machte aus winzigen negativen Rundungsresten (z. B. sin(2*pi)) den Schlüssel \"-0.00000\" statt \"0.00000\". Derselbe Punkt bekam so zwei Schlüssel und runde Querschnitte konnten ihre Anfangs-/End-Naht nicht schließen. Negative Null wird jetzt normalisiert.",
-    "• Robustere Triangulierung: Beinahe-Duplikate und kollineare Zwischenpunkte werden vorab entfernt; scheitert eine Fläche trotzdem, wird mit gelockerter Toleranz, umgekehrter Orientierung und zuletzt mit einer Fan-Triangulierung erneut versucht statt die Fläche wegzulassen.",
-    "• Ehrliche Diagnose: build_polygon_model meldet jetzt facesSkipped, incomplete und einen lesbaren warnings-Text. Ein Modell mit übersprungenen Flächen sieht nicht mehr wie ein voller Erfolg aus – jeder übersprungene Eintrag nennt Untermodell, Polygonname und Grund.",
+    "• Polygon Engine 2.0 – dauerhafte KI-Regel gegen 90°-Drehfehler & Nahtspalten: build_polygon_model triangulierte Dreiecke schon seit 6.1.3 korrekt, aber die richtige WedgePart-Achsenkonvention war nirgends als feste Regel für die KI hinterlegt. Sobald Arena statt des Tools eigenen Lua-Code für Polygone/Wedges schrieb (z. B. über run_lua), konnte sie versehentlich die falsche Achse als Dicke/Höhe/Basiskante verwenden – genau das erzeugt 90°-Drehfehler und klaffende Nähte.",
+    "• Harte Achsen-Regel jetzt in jeder Session verankert: lokal X = Dicke/Flächennormale, lokal Y = Höhe/Orthogonale zur Basiskante, lokal Z = Basiskanten-Richtung. Get-BridgeGuides liefert diese Regel samt einer fertigen, geprüften Referenz-Lua-Funktion (längste Kante als Basis, Lotfußpunkt-Teilung in zwei rechtwinklige Keile, nach innen versetzter Skin-Offset gegen Nahtspalten) automatisch bei Sessionstart, get_docs und /api/docs.",
+    "• Kein Verhaltenswechsel an build_polygon_model: Das Tool bleibt unverändert die stark empfohlene erste Wahl für Polygon-Modelle. Die neue Regel greift nur, wenn Arena bewusst eigene Wedge-/Dreieck-Logik über run_lua schreibt.",
     "• Hinweis: Roblox Studio nach dem Update einmal neu starten, damit das neue Plugin geladen wird."
   ]
 }

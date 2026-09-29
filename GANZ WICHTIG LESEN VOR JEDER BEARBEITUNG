@@ -1,7 +1,7 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 6.1.0 - 29.09.2026)                                #
+#   (Stand: Version 6.1.4 - 29.09.2026)                                #
 #                                                                      #
 ##########################################################################
 
@@ -187,6 +187,29 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v6.1.4: POLYGON ENGINE 2.0 - dauerhafte KI-Regel gegen 90-Grad-Drehfehler
+  und Nahtspalten. build_polygon_model trianguliert seit v6.1.3 korrekt, aber
+  die richtige WedgePart-Achsenkonvention (lokal X=Dicke/Normale,
+  Y=Hoehe/Orthogonale zur Basiskante, Z=Basiskanten-Richtung,
+  CFrame.fromMatrix(position, normal, up, dir)) war nirgends als feste Regel
+  fuer die KI hinterlegt - schrieb Arena statt des Tools eigenen Wedge-/
+  Dreieck-Code ueber run_lua, konnte sie die Achsen vertauschen. Die Regel
+  samt geprueftem Referenz-Lua-Schnipsel (drawSeamlessTriangle: laengste
+  Kante als Basis, Lotfusspunkt-Teilung, nach innen versetzter Skin-Offset)
+  liegt jetzt in Get-BridgeGuides (polygonEngineRules) und erreicht dadurch
+  JEDE neue Session automatisch ueber Sessionstart/get_docs/api-docs. Kein
+  Verhaltenswechsel an build_polygon_model selbst - reine Doku-Ergaenzung.
+- v6.1.3: POLYGON-BUILDER-LUECKEN GESCHLOSSEN. triangleWedges rotierte die
+  drei Dreieckspunkte beim Umsortieren auf die laengste Basiskante zuvor nur
+  unvollstaendig (nur 2 von 3 Variablen neu gesetzt) - dadurch fielen ganze
+  Flaechen (z. B. alle 16 Wedges eines achteckigen Baumstamms) als
+  "entartet" durch, rein abhaengig von der Eingabe-Punktreihenfolge. pointKey
+  normalisiert jetzt ausserdem negative Null (sin(2*pi)-Rundungsfehler), was
+  offene Rundungsnaehte an Staemmen/Kronen verschweisst. triangulate hat
+  Retry-/Fallback-Stufen (gelockerte Toleranz, umgekehrte Orientierung,
+  Fan-Triangulierung) statt Flaechen kommentarlos wegzulassen; die
+  Rueckgabe von build_polygon_model nennt facesTotal/facesBuilt/
+  facesSkipped/incomplete/warnings ehrlich statt vollen Erfolg vorzutaeuschen.
 - v6.1.2: KRITISCHER START-HOTFIX. Die 6.1.1-Auslieferung enthielt nach
   dem vorgesehenen letzten [System.Environment]::Exit(0) sieben versehentlich
   angehängte, beschädigte Textfragmente (inklusive einer alleinstehenden `)`).
