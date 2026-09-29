@@ -4,6 +4,12 @@ Kleiner, gezielter Fix für den Wedge-basierten Polygon-Builder. Keine
 Architekturänderung, keine neuen Tools, Wedges bleiben wie bisher die
 Baueinheit.
 
+> **Ausgeliefert als Version 6.1.3.** Der Code-Fix selbst kam mit PR #31 in
+> `main`; veröffentlicht (und damit für den Auto-Updater der `ArenaBridge.exe`
+> sichtbar) wurde er mit dem Versionssprung 6.1.2 → 6.1.3 in `version.json`
+> und `ArenaBridge.ps1`. Nach dem Update Roblox Studio einmal neu starten,
+> damit das neue Plugin geladen wird.
+
 ## Ursache der Lücken (reproduziert und behoben)
 
 **Hauptursache — Punktreihenfolge-Bug in `MASTER_BUILD.triangleWedges`:**

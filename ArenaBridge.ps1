@@ -1,5 +1,33 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 6.1.2
+# Arena Roblox Bridge  -  Version 6.1.3
+#
+# POLYGON-BAUEN 6.1.3: SICHTBARE LUECKEN IN MODELLEN GESCHLOSSEN
+#   * LUECKEN BEIM BAUEN WEG: build_polygon_model hat einzelne Flaechen
+#     kommentarlos weggelassen - besonders bei Baeumen, Staemmen, Tieren und
+#     anderen runden oder organischen Formen. Die Ursache lag in der internen
+#     Umsortierung der Dreieckspunkte (MASTER_BUILD.triangleWedges): dabei
+#     wurden nur zwei der drei Punkte neu gesetzt, wodurch zwei Ecken auf
+#     denselben Punkt zeigten und ein voellig korrektes Dreieck faelschlich
+#     als "entartet" verworfen wurde. Ob eine Flaeche entstand, hing damit
+#     allein von der zufaelligen Reihenfolge der gelieferten Punkte ab (bei
+#     einem achteckigen Stamm fielen so alle 16 Wedges aus). Die Umsortierung
+#     rotiert jetzt korrekt alle drei Punkte.
+#   * OFFENE NAEHTE GESCHLOSSEN: MASTER_BUILD.pointKey machte aus winzigen
+#     negativen Rundungsresten (z. B. sin(2*pi)) den Schluessel "-0.00000"
+#     statt "0.00000". Derselbe Punkt bekam dadurch zwei verschiedene
+#     Schluessel, und runde Querschnitte konnten ihre eigene Anfangs-/End-Naht
+#     nicht verschweissen. Negative Null wird jetzt normalisiert.
+#   * ROBUSTERE TRIANGULIERUNG: cleanPolygonPoints entfernt vorab
+#     Beinahe-Duplikate und exakt kollineare Zwischenpunkte, triangulate
+#     versucht es nach einem Fehlschlag erneut mit gelockerter Toleranz,
+#     danach mit umgekehrter Orientierung und zuletzt mit einer
+#     Fan-Triangulierung. weldEntryVertices verschweisst praktisch identische
+#     Vertices eines Untermodells, bevor closeOpenings die Raender sucht.
+#   * EHRLICHE RUECKMELDUNG: build_polygon_model liefert jetzt facesTotal,
+#     facesBuilt, facesSkipped, incomplete und einen lesbaren warnings-Text.
+#     Ein Modell mit uebersprungenen Flaechen sieht nicht mehr wie ein voller
+#     Erfolg aus; jeder Eintrag in skipped und fallbackFaces nennt
+#     Untermodell, Polygonname und Grund. Bestehende Felder bleiben erhalten.
 #
 # KRITISCHER START-HOTFIX 6.1.2
 #   * START WIEDER MOEGLICH: Die 6.1.1-Auslieferung enthielt nach dem
@@ -1512,7 +1540,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '6.1.2'
+    DocsVersion     = '6.1.3'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -1601,8 +1629,8 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-    $script:PreviewDiagIdentity = ("Bridge-Version=6.1.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=6.1.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    $script:PreviewDiagIdentity = ("Bridge-Version=6.1.3, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=6.1.3, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 6.0.5: Hinweis auf den kleinen Kurzbericht - er enthaelt alles,
     # was zur Beurteilung der Fenster-Vorschau noetig ist.
     Write-RuntimeLog ("Vorschau-Kurzbericht: " + (Join-Path $script:AppDataRoot 'preview-diagnose.txt'))
@@ -1696,7 +1724,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 6.1.2)
+  Arena Studio Bridge - Studio Plugin  (Version 6.1.3)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1767,7 +1795,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "6.1.2"
+local ARENA_VERSION  = "6.1.3"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -13296,7 +13324,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '6.1.2'
+            version = '6.1.3'
             docsVersion = [string]$Shared.DocsVersion
             role = 'A normal token controls exactly one live Roblox Studio place. The special aggregate token copied from Alle Places controls several places: call GET /api/places first and pass one exact targetPlace in every request; the bridge refuses to guess. This makes switching safe and explicit. Send every request as POST /api/tool with JSON body { "token": "...", "targetPlace": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -13411,7 +13439,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '6.1.2'
+            bridgeVersion = '6.1.3'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -13660,7 +13688,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '6.1.2'
+                        bridgeVersion = '6.1.3'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -13912,7 +13940,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '6.1.2'
+                        serverVersion = '6.1.3'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -14099,7 +14127,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='6.1.2'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='6.1.3'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -14128,8 +14156,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '6.1.2'
-                    serverVersion = '6.1.2'
+                    bridgeVersion = '6.1.3'
+                    serverVersion = '6.1.3'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -16274,7 +16302,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 6.1.2)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 6.1.3)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -16774,7 +16802,7 @@ function New-PlacePreviewVisual {
     $spinner = [System.Windows.Shapes.Ellipse]::new()
     $spinner.Width = 24; $spinner.Height = 24
     $spinner.Stroke = Get-Brush '#00E5D0'; $spinner.StrokeThickness = 3
-    # Version 6.1.2: Windows PowerShell 5.1 kann das object[] aus @(...)
+    # Version 6.1.3: Windows PowerShell 5.1 kann das object[] aus @(...)
     # nicht an den typisierten DoubleCollection-Konstruktor binden. Die Werte
     # deshalb ohne Ein-Argument-Konstruktor einzeln als double hinzufuegen.
     $strokeDashArray = [System.Windows.Media.DoubleCollection]::new()
@@ -18576,7 +18604,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '6.1.2'
+    $versionText = '6.1.3'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -19177,7 +19205,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 6.1.2" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 6.1.3" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -19219,7 +19247,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 6.1.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 6.1.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -19272,7 +19300,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 6.1.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 6.1.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -19285,7 +19313,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '6.1.2'
+    $verText = '6.1.3'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

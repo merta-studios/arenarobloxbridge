@@ -1,8 +1,10 @@
 {
-  "version": "6.1.2",
+  "version": "6.1.3",
   "notes": [
-    "• Kritischer Startfix: In 6.1.1 waren nach dem regulären Programmende versehentlich beschädigte Textfragmente in ArenaBridge.ps1 gelandet. Windows PowerShell konnte die Datei dadurch gar nicht erst laden – der EXE-Updater lief, aber danach erschien kein Fenster.",
-    "• 6.1.2 entfernt ausschließlich diesen fehlerhaften Anhang. Start, Update-Hinweis, Oberfläche und alle Funktionen aus 6.1.1 bleiben erhalten.",
-    "• Ein neuer Regressionstest prüft das exakte Ende der PowerShell-Datei, damit kein nachträglich angehängtes Fragment den Start erneut blockieren kann."
+    "• Polygon-Builder: Lücken geschlossen. build_polygon_model hat einzelne Flächen kommentarlos weggelassen – vor allem bei Bäumen, Stämmen, Tieren und anderen runden Formen. Ursache war ein Punktreihenfolge-Bug in triangleWedges: Beim internen Umsortieren wurden nur zwei der drei Dreieckspunkte neu gesetzt, wodurch korrekte Dreiecke fälschlich als „entartet“ verworfen wurden.",
+    "• Offene Nähte verschweißt: pointKey machte aus winzigen negativen Rundungsresten (z. B. sin(2*pi)) den Schlüssel \"-0.00000\" statt \"0.00000\". Derselbe Punkt bekam so zwei Schlüssel und runde Querschnitte konnten ihre Anfangs-/End-Naht nicht schließen. Negative Null wird jetzt normalisiert.",
+    "• Robustere Triangulierung: Beinahe-Duplikate und kollineare Zwischenpunkte werden vorab entfernt; scheitert eine Fläche trotzdem, wird mit gelockerter Toleranz, umgekehrter Orientierung und zuletzt mit einer Fan-Triangulierung erneut versucht statt die Fläche wegzulassen.",
+    "• Ehrliche Diagnose: build_polygon_model meldet jetzt facesSkipped, incomplete und einen lesbaren warnings-Text. Ein Modell mit übersprungenen Flächen sieht nicht mehr wie ein voller Erfolg aus – jeder übersprungene Eintrag nennt Untermodell, Polygonname und Grund.",
+    "• Hinweis: Roblox Studio nach dem Update einmal neu starten, damit das neue Plugin geladen wird."
   ]
 }
