@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 6.1.5.
+"""Offline structure check for Arena Roblox Bridge 6.2.0.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "6.1.5"
+VERSION = "6.2.0"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -398,7 +398,7 @@ def main() -> int:
     # 6.1.3 must not remain in executable version fields either. Its changelog
     # heading stays on purpose (the polygon-builder gap fix is still
     # documented there), but every literal the updater, the plugin and the UI
-    # compare at runtime has to have moved to 6.1.5.
+    # compare at runtime has to have moved to 6.2.0.
     stale_613_literals = [
         "DocsVersion     = '6.1.3'",
         'local ARENA_VERSION  = "6.1.3"',
@@ -437,16 +437,37 @@ def main() -> int:
     for marker in stale_614_literals:
         require(marker not in source, f"stale functional 6.1.4 literal remains: {marker}")
 
-    required_markers = [
+    # 6.1.5 is historical as of 6.2.0. Its changelog heading stays (the polygon
+    # welding fix is still documented there and its code guards below still
+    # apply), but no executable version field may advertise it anymore.
+    stale_615_literals = [
         "DocsVersion     = '6.1.5'",
         'local ARENA_VERSION  = "6.1.5"',
         "bridgeVersion = '6.1.5'",
+        "bridgeVersion='6.1.5'",
         "serverVersion = '6.1.5'",
         "version = '6.1.5'",
         "$versionText = '6.1.5'",
         "$verText = '6.1.5'",
         'Arena Studio Bridge - Studio Plugin  (Version 6.1.5)',
         'Text="Arena Roblox Bridge - Version 6.1.5"',
+        "Version 6.1.5 - aktuell. Beim naechsten Start",
+        "Laufzeit-Identitaet: Bridge-Version=6.1.5",
+        "Kurzbericht Fenster-Vorschau (Version 6.1.5)",
+    ]
+    for marker in stale_615_literals:
+        require(marker not in source, f"stale functional 6.1.5 literal remains: {marker}")
+
+    required_markers = [
+        "DocsVersion     = '6.2.0'",
+        'local ARENA_VERSION  = "6.2.0"',
+        "bridgeVersion = '6.2.0'",
+        "serverVersion = '6.2.0'",
+        "version = '6.2.0'",
+        "$versionText = '6.2.0'",
+        "$verText = '6.2.0'",
+        'Arena Studio Bridge - Studio Plugin  (Version 6.2.0)',
+        'Text="Arena Roblox Bridge - Version 6.2.0"',
         # 4.0.0: the config table that keeps the top-level local count in check.
         "local ARENA_CFG = {",
         "ARENA_CFG.POLL_WAIT",
@@ -657,7 +678,7 @@ def main() -> int:
         "kind=csharp-helper",
         "ps-runspace-fallback",
         "Get-FileHash -Algorithm SHA256",
-        "Laufzeit-Identitaet: Bridge-Version=6.1.5",
+        "Laufzeit-Identitaet: Bridge-Version=6.2.0",
         "LanguageMode",
         "$script:PreviewFlowContexts = @{}",
         "$script:PreviewHandleInfos = @{}",
@@ -690,19 +711,19 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '6.1.5'": 1,
-        'local ARENA_VERSION  = "6.1.5"': 1,
-        "version = '6.1.5'": 1,
-        "bridgeVersion = '6.1.5'": 3,
-        "bridgeVersion='6.1.5'": 1,
-        "serverVersion = '6.1.5'": 2,
-        "$versionText = '6.1.5'": 1,
-        "$verText = '6.1.5'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 6.1.5)": 1,
-        'Text="Arena Roblox Bridge - Version 6.1.5"': 1,
-        "Version 6.1.5 - aktuell. Beim naechsten Start": 2,
-        "Laufzeit-Identitaet: Bridge-Version=6.1.5": 1,
-        "Kurzbericht Fenster-Vorschau (Version 6.1.5)": 1,
+        "DocsVersion     = '6.2.0'": 1,
+        'local ARENA_VERSION  = "6.2.0"': 1,
+        "version = '6.2.0'": 1,
+        "bridgeVersion = '6.2.0'": 3,
+        "bridgeVersion='6.2.0'": 1,
+        "serverVersion = '6.2.0'": 2,
+        "$versionText = '6.2.0'": 1,
+        "$verText = '6.2.0'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 6.2.0)": 1,
+        'Text="Arena Roblox Bridge - Version 6.2.0"': 1,
+        "Version 6.2.0 - aktuell. Beim naechsten Start": 2,
+        "Laufzeit-Identitaet: Bridge-Version=6.2.0": 1,
+        "Kurzbericht Fenster-Vorschau (Version 6.2.0)": 1,
     }
     for marker, expected_count in functional_version_counts.items():
         actual_count = source.count(marker)
@@ -981,7 +1002,81 @@ def main() -> int:
     require("if (IsIconic(hwnd)) { result.Minimized = true" not in source, "C# preview still blocks minimized Studio")
     require("if ([Arena.ScreenHelper]::IsIconic($hwnd))" not in source, "fallback preview still blocks minimized Studio")
 
-    print("OK: 6.1.5 structure, Lua and XAML validation passed")
+
+    # ------------------------------------------------------------------
+    # 6.2.0 regression guards: UI Engine 1.0.
+    # These lock in the invariants the engine exists to own, exactly like the
+    # polygon guards above. If any of them is lost, the old GUI bugs return.
+    # ------------------------------------------------------------------
+    require("local UI_ENGINE" not in lua,
+            "UI_ENGINE must stay a GLOBAL table like MASTER_BUILD: a top-level "
+            "local would push the plugin over Luau's 200-register limit")
+    for marker in (
+        "UI_ENGINE = {}",
+        'UI_ENGINE.ENGINE_VERSION = "1.0"',
+        # Rule 1 - transform wrapper owns AnchorPoint and UIScale.
+        'wrapper.AnchorPoint = Vector2.new(0.5, 0.5)',
+        'local scale = Instance.new("UIScale"); scale.Name = "ArenaScale"',
+        # Rule 1b - layout children get an outer slot so the layout drives the
+        # position while the scale animation still grows from the centre.
+        'slot.AnchorPoint = Vector2.new(0, 0)',
+        # Rule 2 - design space compiles to scale-only UDim2.
+        "pos = UDim2.fromScale(math.clamp(x, -50, 150) / 100",
+        "offsetUsed = 0",
+        # Rule 3 - padding is derived from the corner radius.
+        "local padScale = math.max(radius * 0.36, tonumber(opts.padding) or 0.04)",
+        # Rule 4 - stroke thickness scales.
+        "stroke.StrokeSizingMode = Enum.StrokeSizingMode.ScaledSize",
+        # Rule 5 - a UIGradient is parented INTO a UIStroke.
+        'UI_ENGINE.gradient(stroke, stops, skin.gradStroke or 0, nil, "ArenaStrokeGradient")',
+        # Rule 7 - CanvasGroup only on purpose, never nested.
+        "local useGroup = wantsGroupFade and caps.canvasGroup and opts.insideCanvasGroup ~= true",
+        "screen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling",
+        # Rule 8 - shadows in scale.
+        "shadow.BlurRadius = UDim.new(math.clamp(tonumber(spec.blur) or 0.08, 0, 1), 0)",
+        # Capability probing instead of training-data assumptions.
+        "function UI_ENGINE.caps(force)",
+        'c.uiShadow = UI_ENGINE.probeClass("UIShadow")',
+        # Anti-generic guard and honest measurement.
+        'failCode("STYLE_TOO_GENERIC"',
+        "function UI_ENGINE.isGeneric(c)",
+        "blandnessScore = blandness",
+        # The five tools.
+        "tools.ui_capabilities = function(args)",
+        "tools.ui_skin = function(args)",
+        "tools.build_surface = function(args)",
+        "tools.build_interface = function(args)",
+        "tools.ui_audit = function(args)",
+        # Write protection and permanent session rule.
+        "build_surface = true, build_interface = true,",
+        "uiEngineRules = @{",
+        "NO FRAME IS EVER JUST A FRAME",
+    ):
+        require(marker in source, f"required UI Engine 1.0 marker missing: {marker}")
+
+    require(source.count("category = 'ui'") == 5,
+            "expected exactly 5 documented UI Engine tools")
+
+    # The transform wrapper must be anchored BEFORE the UIScale exists, and the
+    # content padding must be computed AFTER the corner radius is known.
+    surface_fn = lua[lua.index("function UI_ENGINE.surface(opts)"):lua.index("function UI_ENGINE.textNode")]
+    require(surface_fn.index("wrapper.AnchorPoint") < surface_fn.index('local scale = Instance.new("UIScale")'),
+            "the transform wrapper must get its AnchorPoint before its UIScale")
+    require(surface_fn.index("local radius = UI_ENGINE.applyCorner") < surface_fn.index("local padScale = math.max"),
+            "content padding must be derived from the already-computed corner radius")
+
+    # The runtime motion LocalScript is a separate Luau chunk - parse it too,
+    # otherwise a syntax error there would only surface in a live playtest.
+    motion = re.findall(r"UI_ENGINE\.MOTION = \[==\[(.+?)\]==\]", lua, re.S)
+    require(len(motion) == 1, "UI_ENGINE.MOTION source block not found exactly once")
+    try:
+        ast.parse(motion[0])
+    except Exception as exc:
+        raise AssertionError(f"UI_ENGINE.MOTION does not parse as Luau: {exc}") from exc
+    require("scale.Scale = P.from" in motion[0] and "TweenService:Create(scale, info, { Scale = 1 })" in motion[0],
+            "the motion script must animate the UIScale of the transform wrapper, not the element size")
+
+    print("OK: 6.2.0 structure, Lua and XAML validation passed")
     return 0
 
 
