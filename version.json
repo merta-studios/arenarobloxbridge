@@ -1,9 +1,10 @@
 {
-  "version": "6.1.5",
+  "version": "6.2.0",
   "notes": [
-    "• Polygon-System wirklich repariert: Polygon-Untermodelle werden jetzt standardmäßig mit WeldConstraints verbunden. Bei anchored=false behandelt Roblox die Dreiecks-Wedges dadurch als ein einziges Objekt, statt sie auseinanderfallen und kreuz und quer rotieren zu lassen. Nur autoWeld=false schaltet das bewusst ab.",
-    "• Berechnete Dreiecks-Geometrie ist jetzt unveränderlich: Position, Orientation, Rotation, CFrame, Size und PivotOffset aus style.properties können die vom Builder berechneten Wedge-Frames nicht mehr überschreiben. Solche Angaben werden ignoriert und im Ergebnis transparent unter ignoredGeometryProperties gemeldet.",
-    "• Neue Laufzeitdiagnose: build_polygon_model liefert autoWeldDefault, weldedSubmodels und geometryInvariant. Arena wird für Polygon-/Freiformflächen verbindlich auf den Builder geroutet, statt einzelne Flächen mit eigener Rotation zu raten.",
-    "• Bestehende Aufrufe bleiben kompatibel; Farben, Materialien, Kollision und sonstige Part-Eigenschaften funktionieren weiter. Roblox Studio nach dem Update einmal neu starten, damit Plugin 6.1.5 geladen wird."
+    "• Die Bridge kann jetzt GUIs BAUEN. Bisher gab es dafür kein einziges Werkzeug – nur Test-Funktionen. Alles Sichtbare entstand freihändig, mit immer denselben Fehlern: Elemente wuchsen bei Animationen nach unten rechts statt aus der Mitte, Handy-GUIs verrutschten oder wurden riesig, Inhalt lief über zu runde Ecken, und farblich kam immer dasselbe dunkle Dashboard heraus.",
+    "• Neue Grundidee: Kein Frame ist je nur ein Frame. Jede Oberfläche wird als kompletter Schichtstapel gebaut – Schatten, Füllung, Farbverlauf, gekachelte Textur, Konturen mit Verlauf AUF der Kontur, Glanzkante, Ecken und Innenabstand. Genau wie beim Polygon-Bauen rechnet die Bridge alles Fehleranfällige selbst.",
+    "• Fünf neue Werkzeuge: ui_capabilities misst, was dein Studio wirklich kann (UIShadow, einzelne Eckenradien, skalierbare UIStroke-Dicke, Flex, Path2D und mehr). build_surface baut eine Oberfläche, build_interface ein komplettes GUI samt Animation in einem Call. ui_skin bietet zwölf Kunstrichtungen – oder liest den Stil deiner vorhandenen GUIs aus, damit neue dazu passen. ui_audit misst das Ergebnis.",
+    "• Schluss mit der Dark-Website: Die Farbpalette wird aus EINER Markenfarbe abgeleitet und bleibt immer farbig. Entsättigtes Dunkelblaugrau wird aktiv abgelehnt. ui_audit vergibt zusätzlich einen Generik-Score und rechnet die echten Pixelgrößen für Handy, Tablet und Desktop aus – ohne Screenshot.",
+    "• Roblox Studio nach dem Update einmal neu starten, damit Plugin 6.2.0 geladen wird."
   ]
 }

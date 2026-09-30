@@ -20,7 +20,7 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test_v398_structure.py` | Python-Strukturtest für 6.1.5 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test_v398_structure.py` | Python-Strukturtest für 6.2.0 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -35,6 +35,17 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 6.2.0
+- **UI Engine 1.0 – die Bridge kann endlich GUIs bauen.** Bis 6.1.5 gab es kein einziges GUI-Bauwerkzeug: `gui_dump`, `gui_check`, `gui_click` und `gui_set_text` sind ausnahmslos Test-Funktionen. Jede Oberfläche entstand freihändig über `create_instance`/`run_lua` – also im selben Zustand, in dem der Polygon-Bau vor 6.1.0 war. Die Folge waren reproduzierbar dieselben Fehler: `AnchorPoint` 0,0 zusammen mit `UIScale` (das Element wächst nach unten rechts statt aus der Mitte), Offset statt Scale (Handy-GUI verrutscht oder wird riesig), Inhalt über zu großen Eckenradien, `CanvasGroup` statt `Frame` ohne Grund, `UIGradient` immer auf dem Frame und nie auf einem `UIStroke`, keine Textur, kein Schatten – und farblich immer dasselbe dunkle Dashboard.
+- **Die eine Idee: kein Frame ist je nur ein Frame.** Eine Oberfläche ist ein kompilierter Schichtstapel – Schattenstapel, Füllung, Füllgradient, gekachelte Raster-Textur, Konturstapel mit `UIGradient` **im** `UIStroke`, Glanzkante, Eckenprofil und ein Inhaltsschacht – eingefasst in einen Transform-Wrapper. Das ist das 2D-Gegenstück zur Polygonregel, dass jede Fläche aus Dreiecken dünner Wedges besteht.
+- **Design-Raum statt UDim2.** Arena liefert Rechtecke in 0…100 des Elternteils; die Bridge kompiliert daraus reines Scale-`UDim2`, leitet den `AnchorPoint` aus der Ausrichtung ab und sichert Proportionen mit `UIAspectRatioConstraint`. Offset ist strukturell nicht erreichbar; jede Rückgabe enthält `offsetUsed = 0`. Layout-Kinder bekommen automatisch einen äußeren Slot, damit `UIListLayout`/`UIGridLayout` die Position steuert und die Skalierungsanimation trotzdem mittig bleibt.
+- **Fünf neue Werkzeuge.** `ui_capabilities` probt mit `Instance.new`/`pcall` in genau dieser Studio-Version, ob `UIShadow`, einzelne `UICorner`-Radien, `UIStroke.StrokeSizingMode.ScaledSize`, `BorderOffset`, mehrere `UIStroke`s, `UIFlexItem`, `UIDragDetector`, `Path2D`, `StyleSheet`, `CanvasGroup` und `FontFace` existieren – kein Code mehr aus veraltetem Trainingswissen, und für jede fehlende Fähigkeit nennt die Antwort den automatischen Fallback. `build_surface` baut eine komposite Oberfläche, `build_interface` ein komplettes GUI samt mitgeliefertem Bewegungs-`LocalScript` in einem Call, `ui_skin` wählt eine von zwölf Kunstrichtungen oder liest den Stil vorhandener GUIs aus, `ui_audit` misst das Ergebnis.
+- **Anti-Generik ist eingebaut.** Die Palette wird aus **einer** Markenfarbe harmonisch abgeleitet, mit Mindestsättigung – auch ein dunkler Skin bleibt farbig statt neutral-anthrazit. Entsättigtes Dunkelblaugrau wird mit `STYLE_TOO_GENERIC` abgelehnt (bewusster Opt-out: `allowGeneric=true`). Textfarben werden gegen den tatsächlichen Hintergrund auf Kontrast geprüft und notfalls korrigiert.
+- **„Den Stil der anderen GUIs bitte“ wird messbar.** `ui_skin { action = "extract" }` liest ein bestehendes GUI und meldet dominante Farben, wahrscheinliche Markenfarbe, Eckenradien, Schriften und ob dort überhaupt Strokes, Gradients, Schatten oder Texturen verwendet werden. Diese Werte gehen direkt in den nächsten `build_interface`-Aufruf.
+- **Ehrliche Messung statt Hoffnung.** `ui_audit` rechnet die effektiven Pixelgrößen für Phone/Tablet/Desktop/Ultrawide aus der Scale-Kette aus – ohne Screenshot und ohne Playtest – und meldet `offsetRatio`, Anker-Fehler, Ecken-Überlauf, Textkontrast, zu kleine Touch-Ziele, verschachtelte `CanvasGroup`s, das Stroke-Budget und einen `blandnessScore`, bei dem 1.0 exakt das generische dunkle Dashboard ist.
+- **Dauerhafte Session-Regel.** `Get-BridgeGuides` liefert `uiEngineRules` mit acht harten Regeln und geprüftem Referenz-Lua in jeder Session – genau wie `polygonEngineRules` seit 6.1.4. Damit greift die Regel auch dann, wenn Arena bewusst eigenen GUI-Code über `run_lua` schreibt.
+- Bestehende Werkzeuge bleiben unverändert. Nach dem Update Roblox Studio einmal neu starten, damit Plugin **6.2.0** geladen wird.
 
 ## 6.1.5
 - **Polygone bleiben als ein Objekt verbunden.** `build_polygon_model` verschweißt jedes Polygon-Untermodell jetzt standardmäßig per `WeldConstraint`. Das behebt den konkreten Laufzeitfehler, bei dem unanchored Wedges zwar an der richtigen Position entstanden, in der Physiksimulation aber als unabhängige Teile auseinanderfielen und kreuz und quer rotierten. Nur ein bewusstes `autoWeld=false` schaltet die Verbindung ab.

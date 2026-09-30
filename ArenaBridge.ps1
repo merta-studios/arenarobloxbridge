@@ -1,4 +1,55 @@
 ﻿# ============================================================================
+# Arena Roblox Bridge  -  Version 6.2.0
+#
+# UI ENGINE 1.0: KOMPOSITE OBERFLAECHEN STATT NACKTER FRAMES
+#   * DIE LUECKE: die Bridge hatte bisher KEIN einziges GUI-BAUWERKZEUG. Nur
+#     gui_dump/gui_check/gui_click/gui_set_text - und die testen alle nur.
+#     Alles Sichtbare entstand freihaendig ueber create_instance/run_lua, also
+#     genau in dem Zustand, in dem der Polygon-Builder frueher war. Ergebnis
+#     waren immer dieselben Fehler: AnchorPoint 0,0 mit UIScale (waechst nach
+#     unten rechts statt aus der Mitte), Offset statt Scale (Handy-GUI
+#     verrutscht oder wird riesig), Inhalt laeuft ueber zu grosse Ecken,
+#     CanvasGroup wahllos statt Frame, UIGradient immer auf dem Frame und nie
+#     auf einem UIStroke, keine Textur, kein Schatten - und farblich immer
+#     dasselbe dunkle Dashboard-Blaugrau.
+#   * DIE EINE IDEE: KEIN FRAME IST JE NUR EIN FRAME. Eine Oberflaeche ist ein
+#     KOMPILIERTER SCHICHTSTAPEL - Schatten, Fuellung, Fuellgradient,
+#     gekachelte Raster-Textur, Konturstapel mit Gradient IM UIStroke,
+#     Glanzkante, Eckenprofil, Inhaltsschacht - in einem Transform-Wrapper.
+#     Das ist das 2D-Gegenstueck zur Polygonregel, dass jede Flaeche aus
+#     Dreiecken duenner Wedges besteht.
+#   * DESIGN-RAUM STATT UDIM2: Arena liefert Rechtecke in 0..100 des
+#     Elternteils; die Bridge kompiliert daraus reines Scale-UDim2, leitet
+#     AnchorPoint aus der Ausrichtung ab und nagelt Proportionen per
+#     UIAspectRatioConstraint fest. Offset ist strukturell nicht erreichbar,
+#     offsetUsed=0 steht in jeder Rueckgabe.
+#   * FUENF NEUE WERKZEUGE: ui_capabilities probt mit Instance.new/pcall, was
+#     DIESES Studio wirklich kann (UIShadow, einzelne UICorner-Radien,
+#     UIStroke.StrokeSizingMode.ScaledSize, BorderOffset, mehrere UIStrokes,
+#     UIFlexItem, UIDragDetector, Path2D, StyleSheet, CanvasGroup, FontFace) -
+#     Schluss mit Code aus veraltetem Trainingswissen. build_surface baut eine
+#     komposite Oberflaeche, build_interface ein komplettes GUI samt
+#     Laufzeit-Choreografie in EINEM Call, ui_skin waehlt eine von zwoelf
+#     Kunstrichtungen ODER liest den Stil vorhandener GUIs aus, ui_audit
+#     misst das Ergebnis.
+#   * ANTI-GENERIK IST EINGEBAUT: die Palette wird aus EINER Markenfarbe
+#     harmonisch abgeleitet, mit Mindestsaettigung - auch ein dunkler Skin
+#     bleibt farbig statt neutral-anthrazit. Entsaettigtes Dunkelblaugrau wird
+#     mit STYLE_TOO_GENERIC abgelehnt (Opt-out: allowGeneric=true).
+#   * EHRLICHE MESSUNG STATT HOFFNUNG: ui_audit rechnet die effektiven
+#     Pixelgroessen fuer phone/tablet/desktop/ultrawide aus der Scale-Kette
+#     aus - ohne Screenshot und ohne Playtest - und meldet offsetRatio,
+#     Anker-Fehler, Ecken-Ueberlauf, Textkontrast, zu kleine Touch-Ziele,
+#     verschachtelte CanvasGroups, Stroke-Budget und einen blandnessScore, bei
+#     dem 1.0 exakt das generische dunkle Dashboard ist.
+#   * DAUERHAFTE SESSION-REGEL: Get-BridgeGuides liefert uiEngineRules mit
+#     acht harten Regeln plus geprueftem Referenz-Lua in JEDER Session -
+#     genau wie polygonEngineRules seit 6.1.4. Damit greift die Regel auch,
+#     wenn Arena bewusst eigenen GUI-Code ueber run_lua schreibt.
+#   * Keine Aenderung an bestehenden Werkzeugen. Nach dem Update Roblox Studio
+#     einmal neu starten, damit Plugin 6.2.0 geladen wird.
+#
+# ============================================================================
 # Arena Roblox Bridge  -  Version 6.1.5
 #
 # POLYGON-SYSTEM 6.1.5: WEDGES BLEIBEN VERBUNDEN UND GEOMETRIE UNVERDREHBAR
@@ -1592,7 +1643,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '6.1.5'
+    DocsVersion     = '6.2.0'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
@@ -1681,8 +1732,8 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-    $script:PreviewDiagIdentity = ("Bridge-Version=6.1.5, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=6.1.5, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    $script:PreviewDiagIdentity = ("Bridge-Version=6.2.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=6.2.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 6.0.5: Hinweis auf den kleinen Kurzbericht - er enthaelt alles,
     # was zur Beurteilung der Fenster-Vorschau noetig ist.
     Write-RuntimeLog ("Vorschau-Kurzbericht: " + (Join-Path $script:AppDataRoot 'preview-diagnose.txt'))
@@ -1776,7 +1827,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 6.1.5)
+  Arena Studio Bridge - Studio Plugin  (Version 6.2.0)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1847,7 +1898,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "6.1.5"
+local ARENA_VERSION  = "6.2.0"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -8667,6 +8718,1479 @@ tools.build_assembly = function(args)
 end
 
 
+-- ---------------------------------------------------------------------------
+-- UI ENGINE 1.0 (6.2): KOMPOSITE OBERFLAECHEN STATT NACKTER FRAMES
+-- Die KI liefert nur Absicht (Rolle, Rechteck im Design-Raum, Skin). Die
+-- Bridge rechnet AnchorPoint, Scale-UDim2, Seitenverhaeltnis, Eckenradius,
+-- Innenabstand, Schattenstapel, Konturstapel, Farbharmonie und Kontrast.
+-- MASTER_BUILD ist das Vorbild: eine globale Tabelle, damit das Plugin kein
+-- weiteres Top-Level-local verbraucht (Luau-Grenze 200).
+-- ---------------------------------------------------------------------------
+UI_ENGINE = {}
+UI_ENGINE.ENGINE_VERSION = "1.0"
+
+-- AnchorPoint wird NIE geraten: er folgt immer aus der Ausrichtung. Das ist
+-- die Wurzel des haeufigsten Fehlers (AnchorPoint 0,0 + Skalierungs-
+-- animation => das Element waechst nach unten rechts statt aus der Mitte).
+UI_ENGINE.ALIGN = {
+    center = {0.5, 0.5}, top = {0.5, 0}, bottom = {0.5, 1}, left = {0, 0.5}, right = {1, 0.5},
+    topleft = {0, 0}, topright = {1, 0}, bottomleft = {0, 1}, bottomright = {1, 1},
+}
+-- Eckenprofile statt roher Pixelzahlen; Skalenwerte sind aufloesungsunabhaengig.
+UI_ENGINE.CORNER = { sharp = 0, crisp = 0.02, soft = 0.055, round = 0.13, chunky = 0.22, pill = 0.5 }
+-- Reale Roblox-Viewports fuer die rechnerische Geraetematrix (keine Screenshots noetig).
+UI_ENGINE.DEVICES = { phone = {896, 414}, tablet = {1112, 834}, desktop = {1920, 1080}, ultrawide = {2560, 1080} }
+UI_ENGINE.FONTFAMILY = {
+    Gotham = "rbxasset://fonts/families/GothamSSm.json",
+    Montserrat = "rbxasset://fonts/families/Montserrat.json",
+    SourceSans = "rbxasset://fonts/families/SourceSansPro.json",
+    Fredoka = "rbxasset://fonts/families/FredokaOne.json",
+    Bangers = "rbxasset://fonts/families/Bangers.json",
+    Luckiest = "rbxasset://fonts/families/LuckiestGuy.json",
+    Marker = "rbxasset://fonts/families/PermanentMarker.json",
+    Merriweather = "rbxasset://fonts/families/Merriweather.json",
+    Arimo = "rbxasset://fonts/families/Arimo.json",
+    Mono = "rbxasset://fonts/families/Inconsolata.json",
+    Creepster = "rbxasset://fonts/families/Creepster.json",
+    Kalam = "rbxasset://fonts/families/Kalam.json",
+}
+
+-- ---------------------------------------------------------------------------
+-- FAEHIGKEITSPROBE: nie wieder Code aus altem Wissen schreiben.
+-- Jede moderne Instanz/Eigenschaft wird zur Laufzeit GEMESSEN, nicht geraten.
+-- ---------------------------------------------------------------------------
+function UI_ENGINE.probeClass(className)
+    local made, inst = pcall(Instance.new, className)
+    if made and inst then pcall(function() inst:Destroy() end); return true end
+    return false
+end
+
+function UI_ENGINE.caps(force)
+    if UI_ENGINE._caps ~= nil and force ~= true then return UI_ENGINE._caps end
+    local c = {}
+    c.uiShadow = UI_ENGINE.probeClass("UIShadow")
+    c.uiFlexItem = UI_ENGINE.probeClass("UIFlexItem")
+    c.uiDragDetector = UI_ENGINE.probeClass("UIDragDetector")
+    c.path2D = UI_ENGINE.probeClass("Path2D")
+    c.styleSheet = UI_ENGINE.probeClass("StyleSheet")
+    c.canvasGroup = UI_ENGINE.probeClass("CanvasGroup")
+    c.individualCorners = false
+    local madeC, corner = pcall(Instance.new, "UICorner")
+    if madeC and corner then
+        c.individualCorners = pcall(function() corner.TopRightRadius = UDim.new(0, 4) end)
+        pcall(function() corner:Destroy() end)
+    end
+    c.strokeScaledSize, c.strokeBorderOffset, c.strokeMulti = false, false, false
+    local madeS, stroke = pcall(Instance.new, "UIStroke")
+    if madeS and stroke then
+        c.strokeScaledSize = pcall(function() stroke.StrokeSizingMode = Enum.StrokeSizingMode.ScaledSize end)
+        c.strokeBorderOffset = pcall(function() stroke.BorderOffset = UDim.new(0, 0) end)
+        pcall(function() stroke:Destroy() end)
+    end
+    local madeF, probe = pcall(Instance.new, "Frame")
+    if madeF and probe then
+        local a, b = Instance.new("UIStroke"), Instance.new("UIStroke")
+        local both = pcall(function() a.Parent = probe; b.Parent = probe end)
+        c.strokeMulti = both and (#probe:GetChildren() >= 2)
+        pcall(function() probe:Destroy() end)
+    end
+    c.fontFace = pcall(function() return Font.new(UI_ENGINE.FONTFAMILY.Gotham, Enum.FontWeight.Bold) end)
+    UI_ENGINE._caps = c
+    return c
+end
+
+function UI_ENGINE.capNotes()
+    local c, notes = UI_ENGINE.caps(), {}
+    if not c.uiShadow then table.insert(notes, "UIShadow missing: the engine falls back to a stacked halo-frame shadow. Ask the user to update Roblox Studio for native drop shadows.") end
+    if not c.strokeScaledSize then table.insert(notes, "UIStroke.StrokeSizingMode missing: stroke thickness falls back to pixel offset and is rescaled by the runtime script instead.") end
+    if not c.individualCorners then table.insert(notes, "Individual UICorner radii missing: all four corners share one radius.") end
+    if not c.strokeMulti then table.insert(notes, "Only one UIStroke per object: the inner bevel stroke is skipped.") end
+    return notes
+end
+
+-- ---------------------------------------------------------------------------
+-- FARBE: Ableitung statt Erfindung. Eine Markenfarbe erzeugt die Palette.
+-- ---------------------------------------------------------------------------
+function UI_ENGINE.col(value, fallback)
+    if typeof(value) == "Color3" then return value end
+    if type(value) == "string" then
+        local hex = value:gsub("#", "")
+        if #hex == 6 then
+            local r = tonumber(hex:sub(1, 2), 16); local g = tonumber(hex:sub(3, 4), 16); local b = tonumber(hex:sub(5, 6), 16)
+            if r and g and b then return Color3.fromRGB(r, g, b) end
+        end
+    end
+    if type(value) == "table" then
+        local r = tonumber(value.r or value.R or value[1])
+        local g = tonumber(value.g or value.G or value[2])
+        local b = tonumber(value.b or value.B or value[3])
+        if r and g and b then
+            if r <= 1 and g <= 1 and b <= 1 and (r + g + b) <= 3 then return Color3.new(r, g, b) end
+            return Color3.fromRGB(r, g, b)
+        end
+    end
+    return fallback or Color3.fromRGB(255, 255, 255)
+end
+
+function UI_ENGINE.shift(c, dh, ds, dv)
+    local h, s, v = c:ToHSV()
+    h = (h + (dh or 0)) % 1
+    s = math.clamp(s + (ds or 0), 0, 1)
+    v = math.clamp(v + (dv or 0), 0, 1)
+    return Color3.fromHSV(h, s, v)
+end
+
+function UI_ENGINE.mix(a, b, t)
+    t = math.clamp(t or 0.5, 0, 1)
+    return Color3.new(a.R + (b.R - a.R) * t, a.G + (b.G - a.G) * t, a.B + (b.B - a.B) * t)
+end
+
+-- WCAG-artige relative Leuchtdichte -> echter, messbarer Textkontrast.
+function UI_ENGINE.lum(c)
+    local function ch(u) if u <= 0.03928 then return u / 12.92 end return ((u + 0.055) / 1.055) ^ 2.4 end
+    return 0.2126 * ch(c.R) + 0.7152 * ch(c.G) + 0.0722 * ch(c.B)
+end
+
+function UI_ENGINE.contrast(a, b)
+    local la, lb = UI_ENGINE.lum(a), UI_ENGINE.lum(b)
+    if la < lb then la, lb = lb, la end
+    return (la + 0.05) / (lb + 0.05)
+end
+
+function UI_ENGINE.readable(bg, light, dark)
+    light = light or Color3.fromRGB(255, 255, 255)
+    dark = dark or Color3.fromRGB(18, 14, 20)
+    if UI_ENGINE.contrast(bg, light) >= UI_ENGINE.contrast(bg, dark) then return light end
+    return dark
+end
+
+-- Generik-Erkennung: das entsaettigte Blaugrau der immergleichen
+-- "Dark-Website"-GUI wird als Signatur erkannt und abgelehnt.
+function UI_ENGINE.isGeneric(c)
+    local h, s, v = c:ToHSV()
+    local deg = h * 360
+    if s < 0.07 and v < 0.42 then return true end
+    if s < 0.26 and v < 0.32 and deg > 192 and deg < 272 then return true end
+    return false
+end
+
+-- Die Palette ist hue-gebunden: auch ein dunkler Skin bleibt farbig
+-- (tiefes Pflaume/Teal/Moos), nie das neutrale Dashboard-Anthrazit.
+function UI_ENGINE.palette(brand, mood, overrides)
+    local a = UI_ENGINE.col(brand, Color3.fromRGB(255, 77, 109))
+    local h, s, v = a:ToHSV()
+    s = math.max(s, 0.45)
+    local p = {}
+    p.accent = Color3.fromHSV(h, s, math.max(v, 0.62))
+    p.accentHi = UI_ENGINE.shift(p.accent, 0.015, -0.14, 0.18)
+    p.accentLo = UI_ENGINE.shift(p.accent, -0.015, 0.08, -0.26)
+    p.comp = Color3.fromHSV((h + 0.5) % 1, s * 0.85, math.max(v, 0.6))
+    p.warm = Color3.fromHSV((h + 0.07) % 1, s, math.max(v, 0.7))
+    if mood == "light" then
+        p.surface = Color3.fromHSV(h, math.min(0.11, s * 0.22), 0.97)
+        p.surfaceHi = Color3.fromHSV(h, math.min(0.05, s * 0.10), 1.00)
+        p.surfaceLo = Color3.fromHSV(h, math.min(0.19, s * 0.38), 0.87)
+        p.text = Color3.fromHSV(h, math.min(0.42, s * 0.55), 0.14)
+    elseif mood == "pastel" then
+        p.surface = Color3.fromHSV(h, math.min(0.28, s * 0.45), 0.94)
+        p.surfaceHi = Color3.fromHSV(h, math.min(0.16, s * 0.28), 0.99)
+        p.surfaceLo = Color3.fromHSV(h, math.min(0.38, s * 0.62), 0.82)
+        p.text = Color3.fromHSV(h, math.min(0.48, s * 0.7), 0.22)
+    elseif mood == "ink" then
+        p.surface = Color3.fromHSV(h, 0.05, 0.99)
+        p.surfaceHi = Color3.fromRGB(255, 255, 255)
+        p.surfaceLo = Color3.fromHSV(h, 0.10, 0.90)
+        p.text = Color3.fromRGB(16, 14, 18)
+    else
+        -- "deep": bewusst stark eingefaerbt, Mindestsaettigung verhindert Anthrazit.
+        p.surface = Color3.fromHSV(h, math.max(0.38, s * 0.74), 0.235)
+        p.surfaceHi = Color3.fromHSV(h, math.max(0.34, s * 0.66), 0.34)
+        p.surfaceLo = Color3.fromHSV(h, math.max(0.46, s * 0.86), 0.145)
+        p.text = Color3.fromHSV(h, 0.10, 0.98)
+    end
+    p.textMuted = UI_ENGINE.mix(p.text, p.surface, 0.44)
+    p.stroke = UI_ENGINE.mix(p.surfaceLo, p.accent, 0.35)
+    p.strokeHi = UI_ENGINE.mix(p.surfaceHi, Color3.fromRGB(255, 255, 255), 0.55)
+    p.shadow = Color3.fromHSV(h, math.min(0.75, s * 1.1), 0.08)
+    p.glow = p.accent
+    if type(overrides) == "table" then
+        for key, value in pairs(overrides) do p[key] = UI_ENGINE.col(value, p[key]) end
+    end
+    return p
+end
+
+-- ---------------------------------------------------------------------------
+-- SKIN-KATALOG: Kunstrichtung als Rezept, nicht als Farbschema.
+-- Kein einziger Eintrag ist ein dunkles Dashboard.
+-- ---------------------------------------------------------------------------
+UI_ENGINE.SKINS = {
+    glass = { label = "Frosted Glass", mood = "deep", corner = "round", texture = "noise", texAlpha = 0.93, fillAlpha = 0.18,
+        strokes = { { w = 0.006, alpha = 0.32, tint = "strokeHi", grad = true }, { w = 0.0035, alpha = 0.72, tint = "accent", inner = true } },
+        shadows = { { blur = 0.11, alpha = 0.55, oy = 0.022, spread = -0.01 }, { blur = 0.025, alpha = 0.42, oy = 0.006, spread = -0.02 } },
+        sheen = 0.20, gradFill = 112, gradStroke = 24, fonts = { "Montserrat", "Gotham" }, energy = "soft" },
+    arcade = { label = "Neon Arcade", mood = "deep", corner = "crisp", texture = "scanlines", texAlpha = 0.88, fillAlpha = 0,
+        strokes = { { w = 0.009, alpha = 0, tint = "accent", grad = true }, { w = 0.004, alpha = 0.45, tint = "comp", inner = true } },
+        shadows = { { blur = 0.22, alpha = 0.35, spread = 0.02, tint = "glow" }, { blur = 0.05, alpha = 0.25, oy = 0.012 } },
+        sheen = 0.10, gradFill = 90, gradStroke = 0, fonts = { "Mono", "Gotham" }, energy = "snappy" },
+    comic = { label = "Comic Ink", mood = "ink", corner = "soft", texture = "halftone", texAlpha = 0.90, fillAlpha = 0,
+        strokes = { { w = 0.016, alpha = 0, tint = "text" } },
+        shadows = { { blur = 0.004, alpha = 0, ox = 0.018, oy = 0.026, tint = "text" } },
+        sheen = 0, gradFill = 90, gradStroke = 0, fonts = { "Bangers", "Arimo" }, energy = "bouncy" },
+    sticker = { label = "Sticker / Toy", mood = "pastel", corner = "chunky", texture = "none", texAlpha = 1, fillAlpha = 0,
+        strokes = { { w = 0.022, alpha = 0, tint = "surfaceHi" }, { w = 0.008, alpha = 0.15, tint = "accentLo", inner = true } },
+        shadows = { { blur = 0.05, alpha = 0.45, oy = 0.03, spread = -0.01 } },
+        sheen = 0.30, gradFill = 105, gradStroke = 45, fonts = { "Fredoka", "Gotham" }, energy = "bouncy" },
+    clay = { label = "Claymorphism", mood = "pastel", corner = "chunky", texture = "none", texAlpha = 1, fillAlpha = 0,
+        strokes = { { w = 0.005, alpha = 0.55, tint = "surfaceHi" } },
+        shadows = { { blur = 0.14, alpha = 0.55, oy = 0.035, spread = -0.015 }, { blur = 0.10, alpha = 0.72, oy = -0.02, spread = -0.02, tint = "surfaceHi" } },
+        sheen = 0.22, gradFill = 120, gradStroke = 90, fonts = { "Fredoka", "Montserrat" }, energy = "soft" },
+    parchment = { label = "Fantasy Parchment", mood = "light", corner = "soft", texture = "fiber", texAlpha = 0.86, fillAlpha = 0,
+        strokes = { { w = 0.010, alpha = 0.05, tint = "accentLo", grad = true }, { w = 0.004, alpha = 0.35, tint = "warm", inner = true } },
+        shadows = { { blur = 0.09, alpha = 0.55, oy = 0.02 } },
+        sheen = 0.08, gradFill = 100, gradStroke = 35, fonts = { "Merriweather", "Arimo" }, energy = "heavy" },
+    metal = { label = "Brushed Metal", mood = "deep", corner = "crisp", texture = "brush", texAlpha = 0.90, fillAlpha = 0,
+        strokes = { { w = 0.005, alpha = 0.10, tint = "strokeHi", grad = true }, { w = 0.003, alpha = 0.40, tint = "shadow", inner = true } },
+        shadows = { { blur = 0.07, alpha = 0.45, oy = 0.016 }, { blur = 0.015, alpha = 0.3, oy = 0.004 } },
+        sheen = 0.34, gradFill = 100, gradStroke = 12, fonts = { "Montserrat", "Gotham" }, energy = "snappy" },
+    paper = { label = "Paper / Cardstock", mood = "light", corner = "crisp", texture = "fiber", texAlpha = 0.93, fillAlpha = 0,
+        strokes = { { w = 0.0035, alpha = 0.55, tint = "surfaceLo" } },
+        shadows = { { blur = 0.045, alpha = 0.62, oy = 0.014, spread = -0.008 } },
+        sheen = 0.06, gradFill = 95, gradStroke = 90, fonts = { "Arimo", "SourceSans" }, energy = "soft" },
+    crt = { label = "Retro CRT", mood = "deep", corner = "round", texture = "scanlines", texAlpha = 0.82, fillAlpha = 0,
+        strokes = { { w = 0.007, alpha = 0.2, tint = "accent", grad = true } },
+        shadows = { { blur = 0.18, alpha = 0.45, spread = 0.015, tint = "glow" } },
+        sheen = 0.26, gradFill = 90, gradStroke = 0, fonts = { "Mono", "Mono" }, energy = "snappy" },
+    holo = { label = "Holographic", mood = "deep", corner = "round", texture = "grid", texAlpha = 0.90, fillAlpha = 0.12,
+        strokes = { { w = 0.008, alpha = 0, tint = "accent", grad = true, rainbow = true }, { w = 0.003, alpha = 0.5, tint = "comp", inner = true } },
+        shadows = { { blur = 0.16, alpha = 0.40, spread = 0.01, tint = "glow" }, { blur = 0.03, alpha = 0.35, oy = 0.01 } },
+        sheen = 0.30, gradFill = 118, gradStroke = 0, fonts = { "Montserrat", "Gotham" }, energy = "snappy" },
+    cozywood = { label = "Cozy Wood", mood = "light", corner = "round", texture = "grain", texAlpha = 0.84, fillAlpha = 0,
+        strokes = { { w = 0.009, alpha = 0.1, tint = "accentLo" }, { w = 0.004, alpha = 0.4, tint = "surfaceHi", inner = true } },
+        shadows = { { blur = 0.08, alpha = 0.5, oy = 0.022 } },
+        sheen = 0.12, gradFill = 100, gradStroke = 60, fonts = { "Kalam", "Arimo" }, energy = "soft" },
+    chalk = { label = "Chalkboard", mood = "deep", corner = "soft", texture = "noise", texAlpha = 0.80, fillAlpha = 0,
+        strokes = { { w = 0.006, alpha = 0.35, tint = "surfaceHi" } },
+        shadows = { { blur = 0.06, alpha = 0.5, oy = 0.014 } },
+        sheen = 0.05, gradFill = 90, gradStroke = 90, fonts = { "Kalam", "Arimo" }, energy = "soft" },
+}
+
+function UI_ENGINE.skinNames()
+    local names = {}
+    for name in pairs(UI_ENGINE.SKINS) do table.insert(names, name) end
+    table.sort(names)
+    return names
+end
+
+function UI_ENGINE.resolveSkin(spec, brand, overrides)
+    local name = "glass"
+    local recipe = nil
+    if type(spec) == "string" then name = string.lower(spec)
+    elseif type(spec) == "table" then
+        name = string.lower(tostring(spec.name or spec.skin or "glass"))
+        recipe = spec
+    end
+    local base = UI_ENGINE.SKINS[name]
+    if base == nil then base = UI_ENGINE.SKINS.glass; name = "glass" end
+    local skin = {}
+    for key, value in pairs(base) do skin[key] = value end
+    if recipe then for key, value in pairs(recipe) do if key ~= "name" and key ~= "skin" then skin[key] = value end end end
+    skin.key = name
+    skin.p = UI_ENGINE.palette(brand or skin.brand, skin.mood, overrides)
+    return skin
+end
+
+-- ---------------------------------------------------------------------------
+-- DESIGN-RAUM: die KI gibt 0..100-Koordinaten, die Bridge macht Scale-UDim2.
+-- Offset ist strukturell nicht erreichbar - der haeufigste Handy-Bug faellt weg.
+-- ---------------------------------------------------------------------------
+function UI_ENGINE.rect(spec, align)
+    local x, y, w, h = 50, 50, 40, 20
+    if type(spec) == "table" then
+        if spec[1] ~= nil then
+            x = tonumber(spec[1]) or x; y = tonumber(spec[2]) or y
+            w = tonumber(spec[3]) or w; h = tonumber(spec[4]) or h
+        else
+            local at = spec.at or spec.pos or spec.position
+            local sz = spec.size or spec.sz
+            if type(at) == "table" then x = tonumber(at[1] or at.x) or x; y = tonumber(at[2] or at.y) or y end
+            if type(sz) == "table" then w = tonumber(sz[1] or sz.x or sz.w) or w; h = tonumber(sz[2] or sz.y or sz.h) or h end
+            x = tonumber(spec.x) or x; y = tonumber(spec.y) or y
+            w = tonumber(spec.w or spec.width) or w; h = tonumber(spec.h or spec.height) or h
+        end
+    end
+    local a = UI_ENGINE.ALIGN[string.lower(tostring(align or "center"))] or UI_ENGINE.ALIGN.center
+    return {
+        anchor = Vector2.new(a[1], a[2]),
+        pos = UDim2.fromScale(math.clamp(x, -50, 150) / 100, math.clamp(y, -50, 150) / 100),
+        size = UDim2.fromScale(math.clamp(w, 0.1, 200) / 100, math.clamp(h, 0.1, 200) / 100),
+        w = w, h = h,
+    }
+end
+
+-- ---------------------------------------------------------------------------
+-- EINZELNE SCHICHTEN
+-- ---------------------------------------------------------------------------
+function UI_ENGINE.gradient(parent, stops, rotation, transparency, name)
+    local grad = Instance.new("UIGradient")
+    grad.Name = name or "ArenaGradient"
+    local seq = {}
+    for index, stop in ipairs(stops) do
+        table.insert(seq, ColorSequenceKeypoint.new(math.clamp(stop[1], 0, 1), stop[2]))
+        if index == 1 and stop[1] > 0 then table.insert(seq, 1, ColorSequenceKeypoint.new(0, stop[2])) end
+    end
+    if #seq < 2 then table.insert(seq, ColorSequenceKeypoint.new(1, seq[1].Value)) end
+    if seq[#seq].Time < 1 then table.insert(seq, ColorSequenceKeypoint.new(1, seq[#seq].Value)) end
+    pcall(function() grad.Color = ColorSequence.new(seq) end)
+    grad.Rotation = rotation or 90
+    if type(transparency) == "table" then
+        local tseq = {}
+        for _, stop in ipairs(transparency) do table.insert(tseq, NumberSequenceKeypoint.new(math.clamp(stop[1], 0, 1), math.clamp(stop[2], 0, 1))) end
+        pcall(function() grad.Transparency = NumberSequence.new(tseq) end)
+    end
+    grad.Parent = parent
+    return grad
+end
+
+function UI_ENGINE.applyCorner(target, profile, caps, shape)
+    local radius = UI_ENGINE.CORNER[string.lower(tostring(profile or "soft"))]
+    if radius == nil then radius = tonumber(profile) or UI_ENGINE.CORNER.soft end
+    radius = math.clamp(radius, 0, 0.5)
+    if radius <= 0 then return 0 end
+    local corner = Instance.new("UICorner")
+    corner.Name = "ArenaCorner"
+    corner.CornerRadius = UDim.new(radius, 0)
+    if caps.individualCorners and type(shape) == "table" then
+        pcall(function()
+            if shape.tl then corner.TopLeftRadius = UDim.new(math.clamp(shape.tl, 0, 0.5), 0) end
+            if shape.tr then corner.TopRightRadius = UDim.new(math.clamp(shape.tr, 0, 0.5), 0) end
+            if shape.bl then corner.BottomLeftRadius = UDim.new(math.clamp(shape.bl, 0, 0.5), 0) end
+            if shape.br then corner.BottomRightRadius = UDim.new(math.clamp(shape.br, 0, 0.5), 0) end
+        end)
+    end
+    corner.Parent = target
+    return radius
+end
+
+-- Schattenstapel: nativ wenn vorhanden, sonst gestapelte Halo-Frames.
+-- BlurRadius/Offset/Spread bewusst in SCALE - damit skaliert der Schatten mit.
+function UI_ENGINE.shadowStack(base, skin, caps, holder)
+    local made, kind = 0, "none"
+    local specs = skin.shadows or {}
+    if caps.uiShadow then
+        kind = "UIShadow"
+        for index, spec in ipairs(specs) do
+            local shadow = Instance.new("UIShadow")
+            shadow.Name = "ArenaShadow" .. tostring(index)
+            pcall(function()
+                shadow.BlurRadius = UDim.new(math.clamp(tonumber(spec.blur) or 0.08, 0, 1), 0)
+                shadow.Color = UI_ENGINE.col(spec.color, skin.p[spec.tint or "shadow"] or skin.p.shadow)
+                shadow.Transparency = math.clamp(tonumber(spec.alpha) or 0.5, 0, 1)
+                shadow.Offset = UDim2.fromScale(tonumber(spec.ox) or 0, tonumber(spec.oy) or 0)
+                shadow.Spread = UDim2.fromScale(tonumber(spec.spread) or 0, tonumber(spec.spread) or 0)
+                shadow.ZIndex = -index
+            end)
+            shadow.Parent = base
+            made = made + 1
+        end
+    elseif holder ~= nil then
+        kind = "haloFallback"
+        for index, spec in ipairs(specs) do
+            local grow = (tonumber(spec.blur) or 0.08) * 0.9
+            for step = 3, 1, -1 do
+                local halo = Instance.new("Frame")
+                halo.Name = "ArenaShadowFallback" .. tostring(index) .. "_" .. tostring(step)
+                halo.AnchorPoint = Vector2.new(0.5, 0.5)
+                halo.Position = UDim2.new(0.5, 0, 0.5, 0) + UDim2.fromScale(tonumber(spec.ox) or 0, tonumber(spec.oy) or 0)
+                halo.Size = UDim2.fromScale(1 + grow * step * 0.5, 1 + grow * step * 0.9)
+                halo.BackgroundColor3 = UI_ENGINE.col(spec.color, skin.p[spec.tint or "shadow"] or skin.p.shadow)
+                halo.BackgroundTransparency = math.clamp((tonumber(spec.alpha) or 0.5) + step * 0.14, 0, 1)
+                halo.BorderSizePixel = 0
+                halo.ZIndex = -10 + step
+                UI_ENGINE.applyCorner(halo, skin.corner, caps)
+                halo.Parent = holder
+                made = made + 1
+            end
+        end
+    end
+    return made, kind
+end
+
+-- Konturstapel. StrokeSizingMode.ScaledSize ist Pflicht, damit die Dicke
+-- mitskaliert. Mindestens eine Kontur traegt einen UIGradient - genau das,
+-- was sonst nie passiert.
+function UI_ENGINE.strokeStack(base, skin, caps)
+    local made, gradients, scaled = 0, 0, 0
+    for index, spec in ipairs(skin.strokes or {}) do
+        if index > 1 and not caps.strokeMulti then break end
+        local stroke = Instance.new("UIStroke")
+        stroke.Name = spec.inner and "ArenaStrokeInner" or ("ArenaStroke" .. tostring(index))
+        stroke.Color = UI_ENGINE.col(spec.color, skin.p[spec.tint or "stroke"] or skin.p.stroke)
+        stroke.Transparency = math.clamp(tonumber(spec.alpha) or 0.2, 0, 1)
+        stroke.LineJoinMode = Enum.LineJoinMode.Round
+        pcall(function() stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border end)
+        local width = tonumber(spec.w) or 0.006
+        if caps.strokeScaledSize then
+            local applied = pcall(function()
+                stroke.StrokeSizingMode = Enum.StrokeSizingMode.ScaledSize
+                stroke.Thickness = math.clamp(width, 0.0005, 0.5)
+            end)
+            if applied then scaled = scaled + 1 else stroke.Thickness = math.max(1, width * 260) end
+        else
+            stroke.Thickness = math.max(1, width * 260)
+            stroke:SetAttribute("ArenaScaleThickness", width)
+        end
+        if caps.strokeBorderOffset and spec.inner then
+            pcall(function() stroke.BorderOffset = UDim.new(-(width * 1.6), 0) end)
+        end
+        stroke.Parent = base
+        made = made + 1
+        if spec.grad then
+            local p = skin.p
+            local stops
+            if spec.rainbow then
+                stops = { {0, p.accent}, {0.33, p.comp}, {0.66, p.warm}, {1, p.accent} }
+            else
+                stops = { {0, UI_ENGINE.mix(stroke.Color, p.surfaceHi, 0.75)}, {0.5, stroke.Color}, {1, UI_ENGINE.mix(stroke.Color, p.shadow, 0.55)} }
+            end
+            local grad = UI_ENGINE.gradient(stroke, stops, skin.gradStroke or 0, nil, "ArenaStrokeGradient")
+            grad:SetAttribute("ArenaDrift", spec.rainbow and 46 or 18)
+            gradients = gradients + 1
+        end
+    end
+    return made, gradients, scaled
+end
+
+-- Raster-Textur: entweder ein echtes gekacheltes Bild (TileSize in SCALE!)
+-- oder ein prozedurales Raster aus echten Frames - kein totes Asset noetig.
+function UI_ENGINE.textureLayer(base, skin, budget)
+    local pattern = string.lower(tostring(skin.texture or "none"))
+    if pattern == "none" then return nil, 0, pattern end
+    local layer = Instance.new("Frame")
+    layer.Name = "ArenaTexture"
+    layer.BackgroundTransparency = 1
+    layer.Size = UDim2.fromScale(1, 1)
+    layer.AnchorPoint = Vector2.new(0.5, 0.5)
+    layer.Position = UDim2.fromScale(0.5, 0.5)
+    layer.ZIndex = 2
+    layer.ClipsDescendants = true
+    layer:SetAttribute("ArenaParallax", tonumber(skin.parallax) or 0.006)
+    if skin.textureImage then
+        local image = Instance.new("ImageLabel")
+        image.Name = "ArenaTextureImage"
+        image.BackgroundTransparency = 1
+        image.Size = UDim2.fromScale(1, 1)
+        image.Image = tostring(skin.textureImage)
+        image.ScaleType = Enum.ScaleType.Tile
+        image.TileSize = UDim2.fromScale(tonumber(skin.tileX) or 0.18, tonumber(skin.tileY) or 0.18)
+        image.ImageTransparency = math.clamp(tonumber(skin.texAlpha) or 0.9, 0, 1)
+        image.ImageColor3 = UI_ENGINE.col(skin.textureTint, skin.p.surfaceHi)
+        image.Parent = layer
+        layer.Parent = base
+        return layer, 1, pattern .. "+image"
+    end
+    local p = skin.p
+    local tint = UI_ENGINE.col(skin.textureTint, UI_ENGINE.mix(p.surfaceHi, p.accent, 0.25))
+    local alpha = math.clamp(tonumber(skin.texAlpha) or 0.9, 0, 1)
+    local count, maximum = 0, math.max(4, math.min(tonumber(budget) or 26, 64))
+    local function line(horizontal, at, thick, extra)
+        if count >= maximum then return end
+        local bar = Instance.new("Frame")
+        bar.Name = "ArenaTexLine" .. tostring(count)
+        bar.BorderSizePixel = 0
+        bar.BackgroundColor3 = tint
+        bar.BackgroundTransparency = math.clamp(alpha + (extra or 0), 0, 1)
+        bar.AnchorPoint = Vector2.new(0.5, 0.5)
+        if horizontal then
+            bar.Size = UDim2.new(1.5, 0, thick, 0); bar.Position = UDim2.fromScale(0.5, at)
+        else
+            bar.Size = UDim2.new(thick, 0, 1.5, 0); bar.Position = UDim2.fromScale(at, 0.5)
+        end
+        bar.ZIndex = 2
+        bar.Parent = layer
+        count = count + 1
+    end
+    local function dot(px, py, size, extra)
+        if count >= maximum then return end
+        local cell = Instance.new("Frame")
+        cell.Name = "ArenaTexDot" .. tostring(count)
+        cell.BorderSizePixel = 0
+        cell.BackgroundColor3 = tint
+        cell.BackgroundTransparency = math.clamp(alpha + (extra or 0), 0, 1)
+        cell.AnchorPoint = Vector2.new(0.5, 0.5)
+        cell.Position = UDim2.fromScale(px, py)
+        cell.Size = UDim2.fromScale(size, size * 2.2)
+        cell.ZIndex = 2
+        local round = Instance.new("UICorner"); round.CornerRadius = UDim.new(0.5, 0); round.Parent = cell
+        cell.Parent = layer
+        count = count + 1
+    end
+    if pattern == "scanlines" then
+        for i = 1, 18 do line(true, i / 19, 0.012, -0.12) end
+    elseif pattern == "grid" then
+        for i = 1, 7 do line(true, i / 8, 0.004) end
+        for i = 1, 7 do line(false, i / 8, 0.004) end
+    elseif pattern == "brush" then
+        for i = 1, 22 do line(false, i / 23, 0.0035, ((i % 3) - 1) * 0.05) end
+    elseif pattern == "grain" then
+        for i = 1, 9 do line(true, (i / 10) + ((i % 2) * 0.015), 0.008, ((i % 4) - 2) * 0.04) end
+    elseif pattern == "halftone" then
+        for row = 1, 5 do for colIndex = 1, 6 do dot((colIndex - 0.5) / 6 + ((row % 2) * 0.08), (row - 0.5) / 5, 0.018, 0) end end
+    elseif pattern == "fiber" then
+        for i = 1, 11 do line(true, i / 12, 0.003, 0.03) end
+        for i = 1, 5 do line(false, i / 6, 0.002, 0.05) end
+    else
+        for row = 1, 6 do for colIndex = 1, 7 do dot((colIndex - 0.5) / 7, (row - 0.5) / 6, 0.010, ((row + colIndex) % 3) * 0.05) end end
+    end
+    layer.Parent = base
+    return layer, count, pattern
+end
+
+function UI_ENGINE.sheenLayer(base, skin, caps, radius)
+    local strength = tonumber(skin.sheen) or 0
+    if strength <= 0.001 then return nil end
+    local sheen = Instance.new("Frame")
+    sheen.Name = "ArenaSheen"
+    sheen.BackgroundColor3 = skin.p.surfaceHi
+    sheen.BackgroundTransparency = math.clamp(1 - strength, 0, 1)
+    sheen.BorderSizePixel = 0
+    sheen.AnchorPoint = Vector2.new(0.5, 0)
+    sheen.Position = UDim2.fromScale(0.5, 0)
+    sheen.Size = UDim2.fromScale(1, 0.42)
+    sheen.ZIndex = 3
+    UI_ENGINE.applyCorner(sheen, radius or skin.corner, caps, { bl = 0, br = 0 })
+    UI_ENGINE.gradient(sheen, { {0, skin.p.surfaceHi}, {1, skin.p.surfaceHi} }, 90,
+        { {0, math.clamp(1 - strength, 0, 1)}, {1, 1} }, "ArenaSheenFade")
+    sheen:SetAttribute("ArenaSheenSweep", true)
+    sheen.Parent = base
+    return sheen
+end
+
+function UI_ENGINE.applyFont(label, family, weight, caps)
+    local path = UI_ENGINE.FONTFAMILY[family or "Gotham"] or UI_ENGINE.FONTFAMILY.Gotham
+    local applied = false
+    if caps.fontFace then
+        applied = pcall(function()
+            label.FontFace = Font.new(path, Enum.FontWeight[weight or "Bold"] or Enum.FontWeight.Bold, Enum.FontStyle.Normal)
+        end)
+    end
+    if not applied then pcall(function() label.Font = Enum.Font.GothamBold end) end
+    return applied
+end
+
+-- ---------------------------------------------------------------------------
+-- DIE KOMPOSITE OBERFLAECHE - das Gegenstueck zu build_polygon_model.
+-- ---------------------------------------------------------------------------
+function UI_ENGINE.surface(opts)
+    local caps = UI_ENGINE.caps()
+    local skin = opts.skin
+    local parent = opts.parent
+    local rect = UI_ENGINE.rect(opts.rect, opts.align)
+    local role = string.lower(tostring(opts.role or "card"))
+    local report = { layers = 0, warnings = {} }
+
+    -- 0. Layout-Schacht. Ein UIListLayout/UIGridLayout ueberschreibt Position
+    --    und vertraegt sich nicht mit AnchorPoint 0.5. Deshalb bekommt ein
+    --    Layout-Kind einen aeusseren Slot (Anker 0,0, vom Layout gesetzt) und
+    --    DARIN erst den zentrierten Transform-Wrapper. So bleibt die
+    --    Skalierungsanimation mittig, obwohl das Layout die Position steuert.
+    local host, slot = parent, nil
+    if opts.inLayout == true then
+        slot = Instance.new("Frame")
+        slot.Name = tostring(opts.name or opts.id or "Surface") .. "Slot"
+        slot.BackgroundTransparency = 1
+        slot.BorderSizePixel = 0
+        slot.AnchorPoint = Vector2.new(0, 0)
+        slot.Size = rect.size
+        slot.LayoutOrder = tonumber(opts.layoutOrder) or 0
+        if opts.flex and caps.uiFlexItem then
+            local flex = Instance.new("UIFlexItem")
+            pcall(function() flex.FlexMode = Enum.UIFlexMode[opts.flex] or Enum.UIFlexMode.Fill end)
+            flex.Parent = slot
+        end
+        slot.Parent = parent
+        host = slot
+        report.layoutSlot = true
+    end
+
+    -- 1. Transform-Wrapper: AnchorPoint folgt der Ausrichtung, UIScale sitzt
+    --    hier. Jede Animation greift NUR an diesem Knoten an - dadurch
+    --    waechst das Element immer aus seinem eigenen Ankerpunkt.
+    local wrapper = Instance.new("Frame")
+    wrapper.Name = tostring(opts.name or opts.id or "Surface")
+    wrapper.BackgroundTransparency = 1
+    wrapper.BorderSizePixel = 0
+    if slot then
+        wrapper.AnchorPoint = Vector2.new(0.5, 0.5)
+        wrapper.Position = UDim2.fromScale(0.5, 0.5)
+        wrapper.Size = UDim2.fromScale(1, 1)
+    else
+        wrapper.AnchorPoint = rect.anchor
+        wrapper.Position = rect.pos
+        wrapper.Size = rect.size
+    end
+    wrapper.ZIndex = tonumber(opts.zIndex) or 1
+    wrapper:SetAttribute("ArenaSurface", true)
+    wrapper:SetAttribute("ArenaRole", role)
+    wrapper:SetAttribute("ArenaSkin", skin.key)
+    wrapper:SetAttribute("ArenaOrder", tonumber(opts.order) or 0)
+    wrapper:SetAttribute("ArenaMotion", tostring(opts.motion or (skin.energy == "bouncy" and "pop") or "rise"))
+    local scale = Instance.new("UIScale"); scale.Name = "ArenaScale"; scale.Scale = 1; scale.Parent = wrapper
+    if opts.aspect then
+        local ratio = Instance.new("UIAspectRatioConstraint")
+        ratio.AspectRatio = math.max(0.05, tonumber(opts.aspect) or 1)
+        ratio.DominantAxis = Enum.DominantAxis.Width
+        ratio.Parent = wrapper
+        report.aspectLocked = true
+    end
+    if opts.layoutOrder and slot == nil then wrapper.LayoutOrder = tonumber(opts.layoutOrder) or 0 end
+    wrapper.Parent = host
+
+    -- 2. Basis. CanvasGroup NUR wenn der ganze Teilbaum als Einheit faden
+    --    oder getoent werden soll; sonst Frame. Die Entscheidung trifft die
+    --    Bridge und begruendet sie - nicht die KI.
+    local wantsGroupFade = opts.groupFade == true
+    local useGroup = wantsGroupFade and caps.canvasGroup and opts.insideCanvasGroup ~= true
+    local base
+    if useGroup then
+        base = Instance.new("CanvasGroup")
+        base.GroupTransparency = 0
+        report.canvasGroupReason = "group fade/tint requested: the whole subtree animates as one texture"
+    else
+        base = Instance.new("Frame")
+        if wantsGroupFade and opts.insideCanvasGroup == true then
+            table.insert(report.warnings, "groupFade ignored: nesting CanvasGroups blurs content on non-integer AbsolutePosition")
+        end
+    end
+    base.Name = "Base"
+    base.AnchorPoint = Vector2.new(0.5, 0.5)
+    base.Position = UDim2.fromScale(0.5, 0.5)
+    base.Size = UDim2.fromScale(1, 1)
+    base.BorderSizePixel = 0
+    base.BackgroundColor3 = UI_ENGINE.col(opts.fill, skin.p.surface)
+    base.BackgroundTransparency = math.clamp(tonumber(opts.fillAlpha or skin.fillAlpha) or 0, 0, 1)
+    base.ZIndex = 1
+    base:SetAttribute("ArenaBase", true)
+    base.Parent = wrapper
+    report.layers = report.layers + 1
+
+    -- 3. Schatten. Bei Fallback brauchen sie einen NICHT clippenden Halter.
+    local holder = nil
+    if not caps.uiShadow and #(skin.shadows or {}) > 0 then
+        holder = Instance.new("Frame")
+        holder.Name = "ArenaShadowHolder"
+        holder.BackgroundTransparency = 1
+        holder.AnchorPoint = Vector2.new(0.5, 0.5)
+        holder.Position = UDim2.fromScale(0.5, 0.5)
+        holder.Size = UDim2.fromScale(1, 1)
+        holder.ZIndex = 0
+        holder.Parent = wrapper
+    end
+    local shadowCount, shadowKind = UI_ENGINE.shadowStack(base, skin, caps, holder)
+    report.shadows = shadowCount
+    report.shadowKind = shadowKind
+    if shadowCount > 0 then report.layers = report.layers + 1 end
+    if opts.insideCanvasGroup == true and shadowCount > 0 then
+        table.insert(report.warnings, "an ancestor CanvasGroup always clips: this shadow may be cut off")
+    end
+
+    -- 4. Fuellgradient (Winkel A).
+    local fillBase = base.BackgroundColor3
+    UI_ENGINE.gradient(base, {
+        {0, UI_ENGINE.mix(fillBase, skin.p.surfaceHi, 0.34)},
+        {0.55, fillBase},
+        {1, UI_ENGINE.mix(fillBase, skin.p.surfaceLo, 0.55)},
+    }, skin.gradFill or 90, nil, "ArenaFillGradient")
+    report.layers = report.layers + 1
+    report.gradients = 1
+
+    -- 5. Raster-Textur.
+    local texture, texCount, texKind = UI_ENGINE.textureLayer(base, skin, opts.textureBudget)
+    report.textureParts = texCount
+    report.texture = texKind
+    if texture then report.layers = report.layers + 1 end
+
+    -- 6/7. Konturstapel inkl. Gradient AUF der Kontur.
+    local strokeCount, strokeGradients, strokeScaled = UI_ENGINE.strokeStack(base, skin, caps)
+    report.strokes = strokeCount
+    report.strokeGradients = strokeGradients
+    report.strokesScaled = strokeScaled
+    report.gradients = report.gradients + strokeGradients
+    if strokeCount > 0 then report.layers = report.layers + 1 end
+
+    -- 8. Ecken + 9. Glanzkante.
+    local radius = UI_ENGINE.applyCorner(base, opts.corner or skin.corner, caps, opts.cornerShape)
+    report.cornerRadius = radius
+    if UI_ENGINE.sheenLayer(base, skin, caps, opts.corner or skin.corner) then report.layers = report.layers + 1 end
+
+    -- 10. Inhaltsschacht: Innenabstand folgt dem Radius, damit Inhalt
+    --     niemals ueber eine runde Ecke laufen kann.
+    local content = Instance.new("Frame")
+    content.Name = "Content"
+    content.BackgroundTransparency = 1
+    content.AnchorPoint = Vector2.new(0.5, 0.5)
+    content.Position = UDim2.fromScale(0.5, 0.5)
+    content.Size = UDim2.fromScale(1, 1)
+    content.ZIndex = 4
+    local padScale = math.max(radius * 0.36, tonumber(opts.padding) or 0.04)
+    local pad = Instance.new("UIPadding")
+    pad.Name = "ArenaPadding"
+    pad.PaddingLeft = UDim.new(padScale, 0); pad.PaddingRight = UDim.new(padScale, 0)
+    pad.PaddingTop = UDim.new(padScale, 0); pad.PaddingBottom = UDim.new(padScale, 0)
+    pad.Parent = content
+    content.Parent = base
+    report.padding = padScale
+    report.cornerSafe = padScale >= radius * 0.3
+
+    if role == "button" then
+        local hit = Instance.new("TextButton")
+        hit.Name = "Hit"
+        hit.BackgroundTransparency = 1
+        hit.Text = ""
+        hit.Size = UDim2.fromScale(1, 1)
+        hit.ZIndex = 9
+        hit.AutoButtonColor = false
+        hit.Parent = base
+        wrapper:SetAttribute("ArenaHover", tonumber(opts.hover) or 0.035)
+        wrapper:SetAttribute("ArenaPress", tonumber(opts.press) or 0.055)
+    end
+    return { wrapper = wrapper, slot = slot, base = base, content = content, report = report, skin = skin, radius = radius, isGroup = useGroup }
+end
+
+-- ---------------------------------------------------------------------------
+-- TEXT: TextScaled + UITextSizeConstraint = aufloesungsunabhaengig lesbar.
+-- ---------------------------------------------------------------------------
+function UI_ENGINE.textNode(parent, spec, skin, caps, bg)
+    local label = Instance.new("TextLabel")
+    label.Name = tostring(spec.name or "Label")
+    label.BackgroundTransparency = 1
+    label.Size = UDim2.fromScale(1, 1)
+    label.AnchorPoint = Vector2.new(0.5, 0.5)
+    label.Position = UDim2.fromScale(0.5, 0.5)
+    label.Text = tostring(spec.value or spec.text or "")
+    label.TextScaled = spec.scaled ~= false
+    label.TextWrapped = spec.wrap == true
+    label.RichText = spec.rich == true
+    label.ZIndex = 5
+    local target = UI_ENGINE.col(spec.color, nil)
+    if target == nil or spec.color == nil then target = UI_ENGINE.readable(bg or skin.p.surface, skin.p.text, skin.p.surface) end
+    if UI_ENGINE.contrast(target, bg or skin.p.surface) < 3.2 then
+        target = UI_ENGINE.readable(bg or skin.p.surface, Color3.fromRGB(255, 255, 255), Color3.fromRGB(16, 14, 18))
+    end
+    label.TextColor3 = target
+    label.TextXAlignment = Enum.TextXAlignment[spec.xAlign or "Center"] or Enum.TextXAlignment.Center
+    label.TextYAlignment = Enum.TextYAlignment[spec.yAlign or "Center"] or Enum.TextYAlignment.Center
+    local fonts = skin.fonts or { "Gotham", "Gotham" }
+    UI_ENGINE.applyFont(label, spec.font or (spec.display and fonts[1] or fonts[2]), spec.weight or (spec.display and "Heavy" or "Medium"), caps)
+    local limit = Instance.new("UITextSizeConstraint")
+    limit.MinTextSize = math.max(8, math.floor(tonumber(spec.minSize) or 11))
+    limit.MaxTextSize = math.max(limit.MinTextSize, math.floor(tonumber(spec.maxSize) or 48))
+    limit.Parent = label
+    if spec.stroke ~= false then
+        local outline = Instance.new("UIStroke")
+        outline.Name = "ArenaTextStroke"
+        outline.Color = UI_ENGINE.mix(target, skin.p.shadow, 0.8)
+        outline.Transparency = math.clamp(tonumber(spec.strokeAlpha) or 0.55, 0, 1)
+        outline.Thickness = 1
+        pcall(function()
+            outline.StrokeSizingMode = Enum.StrokeSizingMode.ScaledSize
+            outline.Thickness = 0.035
+        end)
+        outline.Parent = label
+    end
+    label.Parent = parent
+    return label
+end
+
+-- ---------------------------------------------------------------------------
+-- LAUFZEIT-CHOREOGRAFIE. Wird als LocalScript mitgeliefert und ist rein
+-- attributgetrieben: ein Script animiert jede Oberflaeche des Baums.
+-- ---------------------------------------------------------------------------
+UI_ENGINE.MOTION = [==[
+-- Arena UI Engine 1.0 - Bewegung. Datengetrieben ueber Attribute.
+-- REGEL: animiert wird ausschliesslich der Transform-Wrapper (UIScale) und
+-- nie eine gelayoutete Groesse - sonst kaempft der Tween gegen das Layout.
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local root = script.Parent
+local ENERGY = script:GetAttribute("ArenaEnergy") or "snappy"
+local STAGGER = script:GetAttribute("ArenaStagger") or 0.045
+local IDLE = script:GetAttribute("ArenaIdle") ~= false
+
+local PROFILE = {
+    soft = { time = 0.42, style = Enum.EasingStyle.Quint, from = 0.965, lift = 0.018 },
+    snappy = { time = 0.30, style = Enum.EasingStyle.Back, from = 0.93, lift = 0.026 },
+    bouncy = { time = 0.52, style = Enum.EasingStyle.Back, from = 0.82, lift = 0.05 },
+    heavy = { time = 0.60, style = Enum.EasingStyle.Quart, from = 0.97, lift = 0.012 },
+}
+local P = PROFILE[ENERGY] or PROFILE.snappy
+
+local function surfaces()
+    local list = {}
+    for _, inst in ipairs(root:GetDescendants()) do
+        if inst:IsA("GuiObject") and inst:GetAttribute("ArenaSurface") then table.insert(list, inst) end
+    end
+    table.sort(list, function(a, b) return (a:GetAttribute("ArenaOrder") or 0) < (b:GetAttribute("ArenaOrder") or 0) end)
+    return list
+end
+
+local function scaleOf(surface)
+    return surface:FindFirstChild("ArenaScale")
+end
+
+local function play(surface, index)
+    local scale = scaleOf(surface)
+    if not scale then return end
+    local mode = surface:GetAttribute("ArenaMotion") or "rise"
+    local base = surface.Position
+    scale.Scale = P.from
+    local group = surface:FindFirstChild("Base")
+    if group and group:IsA("CanvasGroup") then group.GroupTransparency = 1 end
+    if mode == "rise" then surface.Position = base - UDim2.fromScale(0, P.lift) end
+    task.delay(index * STAGGER, function()
+        if not surface.Parent then return end
+        local info = TweenInfo.new(P.time, P.style, Enum.EasingDirection.Out)
+        TweenService:Create(scale, info, { Scale = 1 }):Play()
+        if mode == "rise" then TweenService:Create(surface, info, { Position = base }):Play() end
+        if group and group:IsA("CanvasGroup") then
+            TweenService:Create(group, TweenInfo.new(P.time * 0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { GroupTransparency = 0 }):Play()
+        end
+    end)
+end
+
+local function bindButton(surface)
+    local scale = scaleOf(surface)
+    local base = surface:FindFirstChild("Base")
+    if not scale or not base then return end
+    local hit = base:FindFirstChild("Hit")
+    if not hit then return end
+    local hover = surface:GetAttribute("ArenaHover") or 0.035
+    local press = surface:GetAttribute("ArenaPress") or 0.055
+    local quick = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local shadows = {}
+    for _, child in ipairs(base:GetChildren()) do
+        if child.ClassName == "UIShadow" then table.insert(shadows, { obj = child, alpha = child.Transparency }) end
+    end
+    local function to(target, shadowDelta)
+        TweenService:Create(scale, quick, { Scale = target }):Play()
+        for _, entry in ipairs(shadows) do
+            TweenService:Create(entry.obj, quick, { Transparency = math.clamp(entry.alpha + shadowDelta, 0, 1) }):Play()
+        end
+    end
+    hit.MouseEnter:Connect(function() to(1 + hover, -0.08) end)
+    hit.MouseLeave:Connect(function() to(1, 0) end)
+    hit.MouseButton1Down:Connect(function() to(1 - press, 0.22) end)
+    hit.MouseButton1Up:Connect(function() to(1 + hover, -0.08) end)
+end
+
+local drifts, sheens, parallax = {}, {}, {}
+local function collectIdle()
+    drifts, sheens, parallax = {}, {}, {}
+    for _, inst in ipairs(root:GetDescendants()) do
+        if inst.ClassName == "UIGradient" and inst:GetAttribute("ArenaDrift") then
+            table.insert(drifts, { obj = inst, speed = inst:GetAttribute("ArenaDrift") })
+        elseif inst:IsA("GuiObject") and inst:GetAttribute("ArenaSheenSweep") then
+            table.insert(sheens, inst)
+        elseif inst:IsA("GuiObject") and inst:GetAttribute("ArenaParallax") then
+            table.insert(parallax, { obj = inst, amount = inst:GetAttribute("ArenaParallax") })
+        end
+    end
+end
+
+for index, surface in ipairs(surfaces()) do
+    play(surface, index - 1)
+    if surface:GetAttribute("ArenaRole") == "button" then bindButton(surface) end
+end
+collectIdle()
+
+if IDLE then
+    local clock = 0
+    RunService.RenderStepped:Connect(function(dt)
+        clock = clock + dt
+        for _, entry in ipairs(drifts) do
+            entry.obj.Rotation = (entry.obj.Rotation + entry.speed * dt) % 360
+        end
+        for _, entry in ipairs(parallax) do
+            entry.obj.Position = UDim2.new(0.5, 0, 0.5, 0) + UDim2.fromScale(math.sin(clock * 0.22) * entry.amount, math.cos(clock * 0.17) * entry.amount)
+        end
+        local sweep = (clock % 6) / 6
+        for _, sheen in ipairs(sheens) do
+            local fade = sheen:FindFirstChild("ArenaSheenFade")
+            if fade then fade.Offset = Vector2.new(-1 + sweep * 2, 0) end
+        end
+    end)
+end
+]==]
+
+-- ---------------------------------------------------------------------------
+-- RECHNERISCHE GERAETEMATRIX: effektive Pixelgroessen ohne Screenshot.
+-- ---------------------------------------------------------------------------
+function UI_ENGINE.pxSize(inst, parentW, parentH)
+    local s = inst.Size
+    return s.X.Scale * parentW + s.X.Offset, s.Y.Scale * parentH + s.Y.Offset
+end
+
+function UI_ENGINE.offsetWeight(inst)
+    local s, p = inst.Size, inst.Position
+    local off = math.abs(s.X.Offset) + math.abs(s.Y.Offset) + math.abs(p.X.Offset) + math.abs(p.Y.Offset)
+    local sca = math.abs(s.X.Scale) + math.abs(s.Y.Scale) + math.abs(p.X.Scale) + math.abs(p.Y.Scale)
+    return off, sca
+end
+
+function UI_ENGINE.walk(inst, w, h, device, out, depth)
+    if depth > 14 then return end
+    for _, child in ipairs(inst:GetChildren()) do
+        if child:IsA("GuiObject") then
+            local cw, ch = UI_ENGINE.pxSize(child, w, h)
+            local entry = out[child]
+            if entry == nil then entry = { inst = child, px = {} }; out[child] = entry; table.insert(out, entry) end
+            entry.px[device] = { w = cw, h = ch }
+            UI_ENGINE.walk(child, cw, ch, device, out, depth + 1)
+        end
+    end
+end
+
+-- ---------------------------------------------------------------------------
+-- WERKZEUGE DER UI ENGINE
+-- ---------------------------------------------------------------------------
+function UI_ENGINE.ensureScreen(parent, args)
+    if parent:IsA("GuiObject") or parent:IsA("LayerCollector") then return parent, nil end
+    local screen = Instance.new("ScreenGui")
+    screen.Name = tostring((args and args.screenName) or (args and args.name) or "ArenaInterface")
+    -- Sibling ist Pflicht: ohne diese Reihenfolge rendert CanvasGroup nicht.
+    screen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    screen.ResetOnSpawn = not (args and args.resetOnSpawn == false)
+    screen.IgnoreGuiInset = (args and args.ignoreGuiInset) == true
+    screen.DisplayOrder = tonumber(args and args.displayOrder) or 10
+    -- Notch/Home-Indicator: Roblox schneidet selbst frei, wenn wir es verlangen.
+    pcall(function() screen.ScreenInsets = Enum.ScreenInsets.DeviceSafeInsets end)
+    screen.Parent = parent
+    return screen, screen
+end
+
+function UI_ENGINE.attachLayout(host, layout, skin, caps)
+    local kind = string.lower(tostring(layout.kind or layout.type or "list"))
+    local gap = (tonumber(layout.gap) or 3) / 100
+    local made = nil
+    if kind == "grid" then
+        local cols = math.max(1, math.floor(tonumber(layout.cols) or 3))
+        local cellW = (1 - gap * (cols - 1)) / cols
+        local cellH = (tonumber(layout.cellH) and (tonumber(layout.cellH) / 100)) or cellW
+        made = Instance.new("UIGridLayout")
+        made.CellSize = UDim2.fromScale(math.max(0.02, cellW), math.max(0.02, cellH))
+        made.CellPadding = UDim2.fromScale(gap, gap)
+        made.SortOrder = Enum.SortOrder.LayoutOrder
+        made.HorizontalAlignment = Enum.HorizontalAlignment[layout.xAlign or "Center"] or Enum.HorizontalAlignment.Center
+        made.VerticalAlignment = Enum.VerticalAlignment[layout.yAlign or "Top"] or Enum.VerticalAlignment.Top
+    elseif kind ~= "none" then
+        made = Instance.new("UIListLayout")
+        made.FillDirection = (string.lower(tostring(layout.dir or "vertical")) == "horizontal") and Enum.FillDirection.Horizontal or Enum.FillDirection.Vertical
+        made.Padding = UDim.new(gap, 0)
+        made.SortOrder = Enum.SortOrder.LayoutOrder
+        made.HorizontalAlignment = Enum.HorizontalAlignment[layout.xAlign or "Center"] or Enum.HorizontalAlignment.Center
+        made.VerticalAlignment = Enum.VerticalAlignment[layout.yAlign or "Center"] or Enum.VerticalAlignment.Center
+        if caps.uiFlexItem then
+            pcall(function()
+                if layout.wrap == true then made.Wraps = true end
+                if layout.hFlex then made.HorizontalFlex = Enum.UIFlexAlignment[layout.hFlex] or Enum.UIFlexAlignment.None end
+                if layout.vFlex then made.VerticalFlex = Enum.UIFlexAlignment[layout.vFlex] or Enum.UIFlexAlignment.None end
+            end)
+        end
+    end
+    if made then made.Name = "ArenaLayout"; made.Parent = host end
+    return made, kind
+end
+
+function UI_ENGINE.buildNode(spec, parentHost, skin, caps, ctx, depth, inLayout, insideGroup)
+    if depth > 8 then table.insert(ctx.warnings, "node nesting deeper than 8 levels was cut off"); return nil end
+    if ctx.count >= ctx.budget then ctx.overBudget = true; return nil end
+    ctx.count = ctx.count + 1
+    ctx.order = ctx.order + 1
+    local nodeSkin = skin
+    if spec.skin ~= nil or spec.brand ~= nil then nodeSkin = UI_ENGINE.resolveSkin(spec.skin or skin.key, spec.brand or ctx.brand, spec.colors) end
+
+    local built = UI_ENGINE.surface({
+        parent = parentHost, name = spec.id or spec.name, role = spec.role, rect = spec.rect, align = spec.align,
+        corner = spec.corner, cornerShape = spec.cornerShape, aspect = spec.aspect, padding = spec.padding,
+        fill = spec.fill, fillAlpha = spec.fillAlpha, groupFade = spec.groupFade, insideCanvasGroup = insideGroup,
+        inLayout = inLayout, layoutOrder = spec.layoutOrder or ctx.order, flex = spec.flex, skin = nodeSkin,
+        order = ctx.order, motion = spec.motion, zIndex = spec.zIndex, hover = spec.hover, press = spec.press,
+        textureBudget = spec.textureBudget or ctx.textureBudget,
+    })
+    ctx.layers = ctx.layers + built.report.layers
+    ctx.strokes = ctx.strokes + (built.report.strokes or 0)
+    ctx.strokeGradients = ctx.strokeGradients + (built.report.strokeGradients or 0)
+    ctx.shadows = ctx.shadows + (built.report.shadows or 0)
+    ctx.gradients = ctx.gradients + (built.report.gradients or 0)
+    ctx.textureParts = ctx.textureParts + (built.report.textureParts or 0)
+    if built.isGroup then ctx.canvasGroups = ctx.canvasGroups + 1 end
+    if built.report.layers < 4 then ctx.thinSurfaces = ctx.thinSurfaces + 1 end
+    for _, warning in ipairs(built.report.warnings) do table.insert(ctx.warnings, tostring(spec.id or "node") .. ": " .. warning) end
+
+    if spec.text ~= nil then
+        local textSpec = spec.text
+        if type(textSpec) ~= "table" then textSpec = { value = tostring(textSpec) } end
+        UI_ENGINE.textNode(built.content, textSpec, nodeSkin, caps, built.base.BackgroundColor3)
+        ctx.texts = ctx.texts + 1
+    end
+    if spec.image ~= nil then
+        local picture = Instance.new("ImageLabel")
+        picture.Name = "Image"
+        picture.BackgroundTransparency = 1
+        picture.Size = UDim2.fromScale(1, 1)
+        picture.AnchorPoint = Vector2.new(0.5, 0.5)
+        picture.Position = UDim2.fromScale(0.5, 0.5)
+        picture.Image = tostring(spec.image)
+        picture.ScaleType = Enum.ScaleType.Fit
+        picture.ZIndex = 5
+        picture.Parent = built.content
+        table.insert(ctx.images, tostring(spec.image))
+    end
+
+    local childHost = built.content
+    local layout = spec.layout
+    if type(layout) == "table" then
+        if layout.scroll == true then
+            local scroller = Instance.new("ScrollingFrame")
+            scroller.Name = "Scroll"
+            scroller.BackgroundTransparency = 1
+            scroller.BorderSizePixel = 0
+            scroller.Size = UDim2.fromScale(1, 1)
+            scroller.CanvasSize = UDim2.new()
+            scroller.AutomaticCanvasSize = (string.lower(tostring(layout.dir or "vertical")) == "horizontal") and Enum.AutomaticSize.X or Enum.AutomaticSize.Y
+            scroller.ScrollBarThickness = 4
+            scroller.ScrollBarImageColor3 = nodeSkin.p.accent
+            scroller.ScrollBarImageTransparency = 0.25
+            scroller.ZIndex = 4
+            scroller.Parent = built.content
+            childHost = scroller
+            ctx.scrolls = ctx.scrolls + 1
+        end
+        UI_ENGINE.attachLayout(childHost, layout, nodeSkin, caps)
+    end
+
+    local children = spec.children or spec.items or {}
+    local repeatSpec = spec.repeatSpec or spec["repeat"]
+    if type(repeatSpec) == "table" then
+        local template = repeatSpec.template or repeatSpec.item or spec.template or {}
+        local count = math.max(0, math.min(math.floor(tonumber(repeatSpec.count) or 0), 200))
+        for index = 1, count do
+            local copy = {}
+            for key, value in pairs(template) do copy[key] = value end
+            copy.id = tostring(template.id or "Item") .. tostring(index)
+            if type(template.text) == "table" then
+                local t = {}
+                for key, value in pairs(template.text) do t[key] = value end
+                if type(t.value) == "string" then t.value = t.value:gsub("{n}", tostring(index)) end
+                copy.text = t
+            elseif type(template.text) == "string" then
+                copy.text = template.text:gsub("{n}", tostring(index))
+            end
+            copy.layoutOrder = index
+            table.insert(children, copy)
+        end
+    end
+    local childInLayout = type(layout) == "table" and string.lower(tostring(layout.kind or "list")) ~= "none"
+    for _, child in ipairs(children) do
+        UI_ENGINE.buildNode(child, childHost, nodeSkin, caps, ctx, depth + 1, childInLayout, insideGroup or built.isGroup)
+    end
+    return built
+end
+
+function UI_ENGINE.newContext(args, skin)
+    return {
+        count = 0, order = 0, layers = 0, strokes = 0, strokeGradients = 0, shadows = 0, gradients = 0,
+        textureParts = 0, canvasGroups = 0, thinSurfaces = 0, texts = 0, scrolls = 0, images = {},
+        warnings = {}, budget = math.max(1, math.min(tonumber(args.maxSurfaces) or 160, 400)),
+        textureBudget = tonumber(args.textureBudget) or 26, brand = args.brand, overBudget = false,
+    }
+end
+
+function UI_ENGINE.guardGeneric(args, skin)
+    if args.allowGeneric == true then return nil end
+    local suspects = {}
+    if args.fill ~= nil then table.insert(suspects, { "fill", UI_ENGINE.col(args.fill, skin.p.surface) }) end
+    if args.brand ~= nil then table.insert(suspects, { "brand", UI_ENGINE.col(args.brand, skin.p.accent) }) end
+    for _, entry in ipairs(suspects) do
+        if UI_ENGINE.isGeneric(entry[2]) then
+            return failCode("STYLE_TOO_GENERIC",
+                "'" .. entry[1] .. "' is the desaturated dark blue-grey of the generic dashboard look that this engine exists to prevent. Pick a saturated brand colour and let the engine derive the palette, choose a different skin, or pass allowInsteadGeneric.",
+                { rejectedColor = entry[1], skins = UI_ENGINE.skinNames(),
+                  hint = "Every skin derives its whole palette from ONE brand colour. A 'deep' mood stays strongly hue-tinted on purpose; it is never neutral anthracite.",
+                  override = "allowGeneric=true" })
+        end
+    end
+    return nil
+end
+
+tools.ui_capabilities = function(args)
+    local caps = UI_ENGINE.caps(args ~= nil and args.refresh == true)
+    return ok({
+        engineVersion = UI_ENGINE.ENGINE_VERSION,
+        capabilities = caps,
+        notes = UI_ENGINE.capNotes(),
+        skins = UI_ENGINE.skinNames(),
+        corners = { "sharp", "crisp", "soft", "round", "chunky", "pill" },
+        devices = { "phone", "tablet", "desktop", "ultrawide" },
+        measured = "Every entry was probed with Instance.new/pcall in THIS Studio session - it is measured, not assumed from training data.",
+    })
+end
+
+tools.ui_skin = function(args)
+    args = args or {}
+    local action = string.lower(tostring(args.action or "list"))
+    if action == "list" then
+        local list = {}
+        for _, name in ipairs(UI_ENGINE.skinNames()) do
+            local entry = UI_ENGINE.SKINS[name]
+            table.insert(list, { name = name, label = entry.label, mood = entry.mood, corner = entry.corner,
+                texture = entry.texture, energy = entry.energy, strokes = #(entry.strokes or {}), shadows = #(entry.shadows or {}),
+                strokeGradient = (entry.strokes and entry.strokes[1] and entry.strokes[1].grad) == true })
+        end
+        return ok({ skins = list, count = #list, note = "None of these is a dark dashboard. Pass skin + brand to build_interface/build_surface." })
+    end
+    if action == "get" or action == "resolve" or action == "preview" then
+        local skin = UI_ENGINE.resolveSkin(args.skin or args.name or "glass", args.brand, args.colors)
+        local hex = {}
+        for key, value in pairs(skin.p) do
+            hex[key] = string.format("#%02X%02X%02X", math.floor(value.R * 255 + 0.5), math.floor(value.G * 255 + 0.5), math.floor(value.B * 255 + 0.5))
+        end
+        return ok({ skin = skin.key, label = skin.label, mood = skin.mood, corner = skin.corner, texture = skin.texture,
+            energy = skin.energy, fonts = skin.fonts, palette = hex,
+            textContrast = UI_ENGINE.contrast(skin.p.text, skin.p.surface),
+            generic = UI_ENGINE.isGeneric(skin.p.surface) })
+    end
+    if action == "extract" then
+        local root, err = resolveRef(args.ref or args.rootRef or "game.StarterGui")
+        if not root then return failCode("REF_NOT_FOUND", err) end
+        local counts, corners, fonts = {}, {}, {}
+        local strokes, gradients, strokeGradients, shadows, textures, filled = 0, 0, 0, 0, 0, 0
+        local function scan(inst, depth)
+            if depth > 14 then return end
+            for _, child in ipairs(inst:GetChildren()) do
+                local cls = child.ClassName
+                if cls == "UIStroke" then
+                    strokes = strokes + 1
+                    if child:FindFirstChildOfClass("UIGradient") then strokeGradients = strokeGradients + 1 end
+                elseif cls == "UIGradient" then gradients = gradients + 1
+                elseif cls == "UIShadow" then shadows = shadows + 1
+                elseif cls == "UICorner" then
+                    local key = string.format("%.3f", child.CornerRadius.Scale) .. "/" .. tostring(child.CornerRadius.Offset)
+                    corners[key] = (corners[key] or 0) + 1
+                elseif child:IsA("GuiObject") then
+                    if child.BackgroundTransparency < 0.92 then
+                        filled = filled + 1
+                        local c = child.BackgroundColor3
+                        local key = string.format("%02X%02X%02X", math.floor(c.R * 255 + 0.5), math.floor(c.G * 255 + 0.5), math.floor(c.B * 255 + 0.5))
+                        counts[key] = (counts[key] or 0) + 1
+                    end
+                    if child:IsA("ImageLabel") and child.ScaleType == Enum.ScaleType.Tile then textures = textures + 1 end
+                    if child:IsA("TextLabel") or child:IsA("TextButton") then
+                        local okFont, face = pcall(function() return tostring(child.FontFace.Family) end)
+                        local name = okFont and face or tostring(child.Font)
+                        fonts[name] = (fonts[name] or 0) + 1
+                    end
+                end
+                scan(child, depth + 1)
+            end
+        end
+        scan(root, 0)
+        local topKey, topCount = nil, 0
+        local dominantList = {}
+        for key, value in pairs(counts) do
+            table.insert(dominantList, { color = "#" .. key, count = value })
+            if value > topCount then topKey, topCount = key, value end
+        end
+        table.sort(dominantList, function(a, b) return a.count > b.count end)
+        local brandKey, brandScore = topKey, -1
+        for key, value in pairs(counts) do
+            local c = UI_ENGINE.col("#" .. key, Color3.new())
+            local _, s, v = c:ToHSV()
+            local score = s * 2 + v
+            if score > brandScore then brandKey, brandScore = key, score end
+        end
+        local fontList = {}
+        for name, value in pairs(fonts) do table.insert(fontList, { font = name, count = value }) end
+        table.sort(fontList, function(a, b) return a.count > b.count end)
+        local cornerList = {}
+        for key, value in pairs(corners) do table.insert(cornerList, { radius = key, count = value }) end
+        table.sort(cornerList, function(a, b) return a.count > b.count end)
+        local surface = topKey and UI_ENGINE.col("#" .. topKey, Color3.new()) or Color3.fromRGB(128, 128, 128)
+        local _, _, sv = surface:ToHSV()
+        return ok({
+            source = describeRef(root),
+            brand = brandKey and ("#" .. brandKey) or nil,
+            dominantColors = dominantList,
+            suggestedMood = (sv > 0.72 and "light") or (sv > 0.45 and "pastel") or "deep",
+            corners = cornerList, fonts = fontList,
+            found = { filledSurfaces = filled, strokes = strokes, gradients = gradients, gradientsOnStrokes = strokeGradients, shadows = shadows, tiledTextures = textures },
+            reuseThisStyle = "Pass brand plus the skin whose mood matches suggestedMood to build_interface, so a new GUI keeps the existing look instead of inventing a new one.",
+        })
+    end
+    return failCode("BAD_ARGS", "action must be list, get or extract.")
+end
+
+tools.build_surface = function(args)
+    local parent, err = resolveRef(args.parentRef or "game.StarterGui")
+    if not parent then return failCode("REF_NOT_FOUND", err) end
+    local caps = UI_ENGINE.caps()
+    local skin = UI_ENGINE.resolveSkin(args.skin or "glass", args.brand, args.colors)
+    local refused = UI_ENGINE.guardGeneric(args, skin)
+    if refused then return refused end
+    local host, createdScreen = UI_ENGINE.ensureScreen(parent, args)
+    local ctx = UI_ENGINE.newContext(args, skin)
+    local spec = args.surface or args
+    local built = UI_ENGINE.buildNode(spec, host, skin, caps, ctx, 0, args.inLayout == true, false)
+    if built == nil then
+        if createdScreen then createdScreen:Destroy() end
+        return failCode("BAD_ARGS", "No surface could be built from the given specification.")
+    end
+    waypoint("build surface " .. built.wrapper.Name)
+    local warnings = (#ctx.warnings > 0) and table.concat(ctx.warnings, " | ") or nil
+    return ok({
+        surface = describeRef(built.wrapper), content = describeRef(built.content),
+        screenGui = createdScreen and describeRef(createdScreen) or nil,
+        skin = skin.key, layers = built.report.layers, shadows = built.report.shadows, shadowKind = built.report.shadowKind,
+        strokes = built.report.strokes, strokeGradients = built.report.strokeGradients, strokesScaled = built.report.strokesScaled,
+        gradients = built.report.gradients, texture = built.report.texture, textureParts = built.report.textureParts,
+        cornerRadius = built.report.cornerRadius, padding = built.report.padding, cornerSafe = built.report.cornerSafe,
+        canvasGroup = built.isGroup, canvasGroupReason = built.report.canvasGroupReason,
+        offsetUsed = 0, anchorPoint = { built.wrapper.AnchorPoint.X, built.wrapper.AnchorPoint.Y },
+        invariants = "AnchorPoint from align, Scale-only UDim2, UIScale on the transform wrapper, padding >= radius*0.3",
+        capabilities = caps,
+    }, warnings)
+end
+
+tools.build_interface = function(args)
+    local parent, err = resolveRef(args.parentRef or "game.StarterGui")
+    if not parent then return failCode("REF_NOT_FOUND", err) end
+    local surfaces = args.surfaces or args.nodes or args.children
+    if type(surfaces) ~= "table" or #surfaces == 0 then
+        if type(args.surface) == "table" then surfaces = { args.surface } else
+            return failCode("BAD_ARGS", "Provide surfaces=[{id,role,rect,text,children,...}] - each rect is {x,y,w,h} in 0..100 design units of its parent.")
+        end
+    end
+    local caps = UI_ENGINE.caps()
+    local skin = UI_ENGINE.resolveSkin(args.skin or "glass", args.brand, args.colors)
+    local refused = UI_ENGINE.guardGeneric(args, skin)
+    if refused then return refused end
+    local host, createdScreen = UI_ENGINE.ensureScreen(parent, args)
+    local screen = createdScreen
+    if screen == nil and host:IsA("LayerCollector") then screen = host end
+    local ctx = UI_ENGINE.newContext(args, skin)
+    local roots = {}
+    for _, spec in ipairs(surfaces) do
+        local built = UI_ENGINE.buildNode(spec, host, skin, caps, ctx, 0, false, false)
+        if built then table.insert(roots, describeRef(built.wrapper)) end
+    end
+    if #roots == 0 then
+        if createdScreen then createdScreen:Destroy() end
+        return failCode("BAD_ARGS", "No surface could be built from the given specification.")
+    end
+
+    local motionSpec = args.motion
+    if type(motionSpec) ~= "table" then motionSpec = {} end
+    local motionRef = nil
+    if motionSpec.enabled ~= false and screen ~= nil then
+        local script = Instance.new("LocalScript")
+        script.Name = "ArenaMotion"
+        local written = pcall(function() script.Source = UI_ENGINE.MOTION end)
+        if written then
+            script:SetAttribute("ArenaEnergy", tostring(motionSpec.energy or skin.energy or "snappy"))
+            script:SetAttribute("ArenaStagger", math.clamp(tonumber(motionSpec.stagger) or 0.045, 0, 0.5))
+            script:SetAttribute("ArenaIdle", motionSpec.idle ~= false)
+            script.Parent = screen
+            motionRef = describeRef(script)
+        else
+            script:Destroy()
+            table.insert(ctx.warnings, "the motion LocalScript could not be written (no script injection permission)")
+        end
+    end
+    if ctx.overBudget then table.insert(ctx.warnings, "surface budget reached - later nodes were skipped") end
+    if ctx.thinSurfaces > 0 then table.insert(ctx.warnings, tostring(ctx.thinSurfaces) .. " surface(s) ended up with fewer than 4 layers") end
+    if ctx.strokes > 300 then table.insert(ctx.warnings, "more than 300 UIStrokes on screen - Roblox recommends staying below that on low-end devices") end
+    waypoint("build interface " .. (screen and screen.Name or "surfaces"))
+    local warnings = (#ctx.warnings > 0) and table.concat(ctx.warnings, " | ") or nil
+    return ok({
+        screenGui = screen and describeRef(screen) or nil,
+        roots = roots, surfaces = ctx.count, layers = ctx.layers,
+        strokes = ctx.strokes, strokeGradients = ctx.strokeGradients, shadows = ctx.shadows,
+        gradients = ctx.gradients, textureParts = ctx.textureParts, texts = ctx.texts,
+        canvasGroups = ctx.canvasGroups, scrollers = ctx.scrolls, thinSurfaces = ctx.thinSurfaces,
+        motionScript = motionRef, skin = skin.key, energy = skin.energy,
+        imageAssets = ctx.images,
+        offsetUsed = 0,
+        invariants = "design-space rects compiled to Scale-only UDim2; AnchorPoint derived from align; UIScale transform wrapper; layout children wrapped in slots; padding >= radius*0.3; ZIndexBehavior=Sibling",
+        capabilities = caps,
+        nextStep = "Call ui_audit on the returned screenGui - it measures offsetRatio, contrast, per-device pixel sizes, tap targets and the blandness score.",
+    }, warnings)
+end
+
+tools.ui_audit = function(args)
+    args = args or {}
+    local root, err = resolveRef(args.ref or args.rootRef or "game.StarterGui")
+    if not root then return failCode("REF_NOT_FOUND", err) end
+    local caps = UI_ENGINE.caps()
+    local nodes, screens = {}, {}
+    local stats = { total = 0, filled = 0, genericColors = 0, flatSurfaces = 0, strokes = 0, strokesScaled = 0,
+        gradients = 0, gradientsOnStrokes = 0, shadows = 0, textures = 0, canvasGroups = 0, nestedCanvasGroups = 0,
+        uiScales = 0, offsetHeavy = 0, texts = 0 }
+    local problems = { anchorMismatches = {}, cornerOverflow = {}, contrastFailures = {}, flatSurfaces = {}, genericColors = {},
+        offsetHeavy = {}, nestedCanvasGroups = {}, textTooSmall = {}, tapTargetsTooSmall = {}, outOfBounds = {} }
+    local function push(list, inst, detail)
+        if #list < 14 then local entry = describeRef(inst); entry.detail = detail; table.insert(list, entry) end
+    end
+    local function bgOf(inst)
+        local cursor = inst
+        while cursor and cursor:IsA("GuiObject") do
+            if cursor.BackgroundTransparency < 0.55 then return cursor.BackgroundColor3 end
+            cursor = cursor.Parent
+        end
+        return Color3.fromRGB(40, 40, 40)
+    end
+    local function scan(inst, depth, insideGroup)
+        if depth > 14 then return end
+        for _, child in ipairs(inst:GetChildren()) do
+            if child:IsA("LayerCollector") then
+                table.insert(screens, child); scan(child, depth, false)
+            elseif child:IsA("GuiObject") then
+                stats.total = stats.total + 1
+                table.insert(nodes, child)
+                local hasGradient, hasStroke, hasShadow, hasScale, hasPadding, cornerRadius = false, false, false, false, nil, 0
+                for _, mod in ipairs(child:GetChildren()) do
+                    local cls = mod.ClassName
+                    if cls == "UIGradient" then
+                        stats.gradients = stats.gradients + 1; hasGradient = true
+                    elseif cls == "UIStroke" then
+                        stats.strokes = stats.strokes + 1; hasStroke = true
+                        local scaled = false
+                        pcall(function() scaled = (mod.StrokeSizingMode == Enum.StrokeSizingMode.ScaledSize) end)
+                        if scaled then stats.strokesScaled = stats.strokesScaled + 1 end
+                        if mod:FindFirstChildOfClass("UIGradient") then
+                            stats.gradientsOnStrokes = stats.gradientsOnStrokes + 1
+                            stats.gradients = stats.gradients + 1
+                        end
+                    elseif cls == "UIShadow" then
+                        stats.shadows = stats.shadows + 1; hasShadow = true
+                    elseif cls == "UIScale" then
+                        stats.uiScales = stats.uiScales + 1; hasScale = true
+                    elseif cls == "UIPadding" then
+                        hasPadding = mod
+                    elseif cls == "UICorner" then
+                        cornerRadius = mod.CornerRadius.Scale
+                    end
+                end
+                if child:IsA("CanvasGroup") then
+                    stats.canvasGroups = stats.canvasGroups + 1
+                    if insideGroup then
+                        stats.nestedCanvasGroups = stats.nestedCanvasGroups + 1
+                        push(problems.nestedCanvasGroups, child, "nested CanvasGroup: content blurs on non-integer AbsolutePosition")
+                    end
+                end
+                if child:IsA("ImageLabel") and child.ScaleType == Enum.ScaleType.Tile then stats.textures = stats.textures + 1 end
+                -- Anker-Regel: skaliert animiert, aber waechst nicht aus der Mitte.
+                if hasScale and child.AnchorPoint.X == 0 and child.AnchorPoint.Y == 0 then
+                    push(problems.anchorMismatches, child, "UIScale with AnchorPoint 0,0 grows toward the bottom right instead of from its own anchor")
+                end
+                -- Ecken-Tangente: Inhalt darf nicht ueber den Radius laufen.
+                if cornerRadius and cornerRadius >= 0.08 and #child:GetChildren() > 0 then
+                    local padScale = 0
+                    if hasPadding then padScale = math.min(hasPadding.PaddingLeft.Scale, hasPadding.PaddingTop.Scale) end
+                    if padScale < cornerRadius * 0.3 then
+                        push(problems.cornerOverflow, child, string.format("corner radius %.3f needs padding >= %.3f, measured %.3f", cornerRadius, cornerRadius * 0.3, padScale))
+                    end
+                end
+                if child.BackgroundTransparency < 0.92 then
+                    stats.filled = stats.filled + 1
+                    if UI_ENGINE.isGeneric(child.BackgroundColor3) then
+                        stats.genericColors = stats.genericColors + 1
+                        push(problems.genericColors, child, "desaturated dark blue-grey: the generic dashboard signature")
+                    end
+                    if not hasGradient and not hasStroke and not hasShadow then
+                        stats.flatSurfaces = stats.flatSurfaces + 1
+                        push(problems.flatSurfaces, child, "bare filled frame: no gradient, no stroke, no shadow")
+                    end
+                end
+                local sizeOff = math.abs(child.Size.X.Offset) + math.abs(child.Size.Y.Offset)
+                local posOff = math.abs(child.Position.X.Offset) + math.abs(child.Position.Y.Offset)
+                if sizeOff > 4 or posOff > 4 then
+                    stats.offsetHeavy = stats.offsetHeavy + 1
+                    push(problems.offsetHeavy, child, "layout depends on pixel offset (" .. tostring(sizeOff) .. "px size, " .. tostring(posOff) .. "px position) - it will drift on other screens")
+                end
+                if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
+                    stats.texts = stats.texts + 1
+                    local ratio = UI_ENGINE.contrast(child.TextColor3, bgOf(child.Parent))
+                    if ratio < 3.0 then
+                        push(problems.contrastFailures, child, string.format("text contrast %.2f:1 is below the 3.0:1 floor", ratio))
+                    end
+                end
+                scan(child, depth + 1, insideGroup or child:IsA("CanvasGroup"))
+            else
+                scan(child, depth, insideGroup)
+            end
+        end
+    end
+    if root:IsA("LayerCollector") then table.insert(screens, root) end
+    scan(root, 0, false)
+
+    -- Geraetematrix: effektive Pixelgroessen werden GERECHNET, nicht geschaetzt.
+    local wanted = args.devices
+    if type(wanted) ~= "table" then wanted = { "phone", "tablet", "desktop" } end
+    local matrix, px = {}, {}
+    for _, name in ipairs(wanted) do
+        local size = UI_ENGINE.DEVICES[string.lower(tostring(name))]
+        if size then
+            matrix[name] = { viewport = { size[1], size[2] } }
+            for _, screen in ipairs(screens) do UI_ENGINE.walk(screen, size[1], size[2], name, px, 0) end
+        end
+    end
+    local smallestDevice = wanted[1] and string.lower(tostring(wanted[1])) or "phone"
+    for _, entry in ipairs(px) do
+        local inst = entry.inst
+        for device, box in pairs(entry.px) do
+            local view = UI_ENGINE.DEVICES[string.lower(tostring(device))]
+            if inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox") then
+                local effective = inst.TextScaled and (box.h * 0.7) or inst.TextSize
+                local limit = inst:FindFirstChildOfClass("UITextSizeConstraint")
+                if limit and inst.TextScaled then effective = math.clamp(effective, limit.MinTextSize, limit.MaxTextSize) end
+                if effective < 11 then push(problems.textTooSmall, inst, string.format("%s: about %.0f px - below the 11 px readability floor", tostring(device), effective)) end
+            end
+            if inst:IsA("GuiButton") and string.lower(tostring(device)) == smallestDevice then
+                local smallest = math.min(box.w, box.h)
+                if smallest < 44 then push(problems.tapTargetsTooSmall, inst, string.format("%s: %.0f px - below the 44 px touch target", tostring(device), smallest)) end
+            end
+            if view and (box.w > view[1] * 1.02 or box.h > view[2] * 1.02) then
+                push(problems.outOfBounds, inst, string.format("%s: %.0fx%.0f px is larger than the %dx%d viewport", tostring(device), box.w, box.h, view[1], view[2]))
+            end
+        end
+    end
+
+    local filled = math.max(1, stats.filled)
+    local blandness = 0
+    blandness = blandness + 0.30 * (stats.genericColors / filled)
+    blandness = blandness + 0.22 * (stats.flatSurfaces / filled)
+    if stats.gradientsOnStrokes == 0 then blandness = blandness + 0.16 end
+    if stats.textures == 0 then blandness = blandness + 0.14 end
+    if stats.shadows == 0 then blandness = blandness + 0.10 end
+    if stats.gradients <= filled * 0.5 then blandness = blandness + 0.08 end
+    blandness = math.clamp(blandness, 0, 1)
+
+    local failures = #problems.anchorMismatches + #problems.cornerOverflow + #problems.contrastFailures
+        + #problems.offsetHeavy + #problems.nestedCanvasGroups + #problems.textTooSmall + #problems.tapTargetsTooSmall
+    local verdict = "clean"
+    if failures > 0 then verdict = "needs fixing" end
+    if blandness >= 0.5 then verdict = (failures > 0) and "needs fixing and looks generic" or "technically fine but looks generic" end
+    return ok({
+        scope = describeRef(root), screenGuis = #screens, elements = stats.total,
+        offsetRatio = stats.total > 0 and (stats.offsetHeavy / stats.total) or 0,
+        blandnessScore = blandness, verdict = verdict, failureCount = failures,
+        counts = stats, problems = problems, deviceMatrix = matrix,
+        strokeBudget = { used = stats.strokes, recommendedMax = 300 },
+        capabilities = caps,
+        howToRead = "offsetRatio 0 = fully scale-based. blandnessScore 1.0 = the generic dark dashboard, below 0.25 is the target. Every problem list names the exact instance id and the measured value.",
+    })
+end
+
+
 tools.insert_asset = function(args)
     if InsertService == nil then return fail("InsertService is not available.") end
     local assetId = tonumber(args.assetId)
@@ -9554,6 +11078,7 @@ local PERSISTENT_WRITE_TOOLS = {
     insert_asset = true, apply_asset = true,
     point_at = true, fill_region = true,
     build_polygon_model = true, build_assembly = true,
+    build_surface = true, build_interface = true,
     undo = true, redo = true,
 }
 
@@ -11087,8 +12612,8 @@ $script:BridgeHandlerScript = {
 
     # Version 5.2: vollstaendige Werkzeuglisten (jedes vorhandene Werkzeug).
     function Get-ActivityToolSets {
-        $read = @('get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','play_status','session_diag','character_state','gui_dump','gui_check','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait')
-        $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','build_polygon_model','build_assembly','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','play_start','play_stop','play_pause','play_resume','set_context','move_character','teleport_character','respawn_character','gui_click','gui_set_text','send_input','client_action','set_camera','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute')
+        $read = @('get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','play_status','session_diag','character_state','gui_dump','gui_check','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait','ui_capabilities','ui_skin','ui_audit')
+        $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','build_polygon_model','build_assembly','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','play_start','play_stop','play_pause','play_resume','set_context','move_character','teleport_character','respawn_character','gui_click','gui_set_text','send_input','client_action','set_camera','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute','build_surface','build_interface')
         return @{ read = $read; write = $write }
     }
 
@@ -11250,6 +12775,11 @@ $script:BridgeHandlerScript = {
             fill_region = 'Hat einen Bereich gefüllt.'
             build_polygon_model = 'Hat ein Polygon professionell aus dünnen Wedges gebaut.'
             build_assembly = 'Hat ein komplettes Bauteil als Modell in einem Call gebaut.'
+            ui_capabilities = 'Hat gemessen, welche modernen UI-Instanzen dieses Studio kann.'
+            ui_skin = 'Hat eine GUI-Kunstrichtung gewählt oder den vorhandenen Stil ausgelesen.'
+            build_surface = 'Hat eine komposite Oberfläche mit vollem Schichtstapel gebaut.'
+            build_interface = 'Hat ein komplettes GUI samt Bewegung in einem Call gebaut.'
+            ui_audit = 'Hat das GUI vermessen (Geräte, Kontrast, Anker, Generik-Score).'
             union = 'Hat Teile zu einem Teil verschmolzen.'
             subtract = 'Hat eine Form aus einem Teil herausgestanzt.'
             intersect = 'Hat nur den gemeinsamen Teil behalten.'
@@ -12906,6 +14436,38 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             example = @{ modelName='RiesigerBaum'; submodels=@(@{name='Stamm';containerClass='Folder';style=@{color='#704020';material='Wood';anchored=$false};autoWeld=$true;closeOpenings=$true;polygons=@('... Seitenflaechen ...')},@{name='Krone1';style=@{color='#3E8B3E';material='Grass';anchored=$false};autoWeld=$true;polygons=@('...')},@{name='Krone2';style=@{color='#438F43';material='Grass';anchored=$false};autoWeld=$true;polygons=@('...')},@{name='Krone3';style=@{color='#397F39';material='Grass';anchored=$false};autoWeld=$true;polygons=@('...')}); mainWelds=@(@{name='Krone1AmStamm';from='Stamm';to='Krone1'},@{name='Krone2AmStamm';from='Stamm';to='Krone2'},@{name='Krone3AmStamm';from='Stamm';to='Krone3'}) };
             errors = @('POLYGON_INVALID: kein gueltiges Polygon.', 'BUDGET_EXCEEDED', 'BAD_ARGS', 'REF_NOT_FOUND') })
 
+        # ---------------- UI ENGINE 1.0 (6.2) ----------------
+        $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN: misst, welche modernen UI-Instanzen dieses Studio wirklich kann.';
+            description = 'Probt mit Instance.new/pcall in GENAU dieser Studio-Version, ob UIShadow, einzelne UICorner-Radien, UIStroke.StrokeSizingMode.ScaledSize, UIStroke.BorderOffset, mehrere UIStrokes pro Objekt, UIFlexItem, UIDragDetector, Path2D, StyleSheet, CanvasGroup und FontFace vorhanden sind. Damit schreibt Arena nie wieder Code aus veraltetem Trainingswissen und nie wieder Code fuer Instanzen, die es nicht gibt. Fehlt etwas, nennt notes den Fallback, den die Engine automatisch verwendet (z.B. gestapelte Halo-Frames statt UIShadow). Liefert ausserdem die verfuegbaren Skins, Eckenprofile und Geraete.';
+            params = @{ refresh = @{ type = 'bool'; required = $false; default = 'false'; description = 'Zwischenspeicher verwerfen und neu messen.' } };
+            returns = '{ engineVersion, capabilities: { uiShadow, individualCorners, strokeScaledSize, strokeBorderOffset, strokeMulti, uiFlexItem, uiDragDetector, path2D, styleSheet, canvasGroup, fontFace }, notes, skins, corners, devices, measured }';
+            example = @{ };
+            errors = @() })
+        $t.Add(@{ name = 'ui_skin'; category = 'ui'; summary = 'Kunstrichtung waehlen ODER den Stil vorhandener GUIs auslesen.';
+            description = 'action=list nennt alle zwoelf Skins (glass, arcade, comic, sticker, clay, parchment, metal, paper, crt, holo, cozywood, chalk) - keiner davon ist ein dunkles Dashboard. action=get loest einen Skin plus Markenfarbe zur vollstaendigen Palette auf und meldet den gemessenen Textkontrast. action=extract liest ein BESTEHENDES GUI und meldet dominante Farben, wahrscheinliche Markenfarbe, Eckenradien, Schriften und ob dort ueberhaupt Strokes/Gradients/Schatten/Texturen benutzt werden. Genau damit wird der Wunsch den bisherigen Stil der anderen GUIs bitte messbar statt geraten: extract aufrufen, brand und suggestedMood uebernehmen, dann build_interface damit aufrufen.';
+            params = @{ action = @{ type = "'list' | 'get' | 'extract'"; required = $false; default = "'list'"; description = 'Was getan werden soll.' }; skin = @{ type = 'string'; required = $false; default = "'glass'"; description = 'Skinname fuer get.' }; brand = @{ type = 'color'; required = $false; default = 'null'; description = 'EINE gesaettigte Markenfarbe; die ganze Palette wird daraus harmonisch abgeleitet.' }; colors = @{ type = 'table'; required = $false; default = '{}'; description = 'Einzelne Palettenwerte gezielt ueberschreiben.' }; ref = @{ type = 'ref'; required = $false; default = "'game.StarterGui'"; description = 'Wurzel fuer extract.' } };
+            returns = 'list: { skins, count } | get: { skin, palette (hex), textContrast, fonts, generic } | extract: { brand, dominantColors, suggestedMood, corners, fonts, found, reuseThisStyle }';
+            example = @{ action = 'extract'; ref = 'game.StarterGui' };
+            errors = @('BAD_ARGS: action unbekannt.', 'REF_NOT_FOUND') })
+        $t.Add(@{ name = 'build_surface'; category = 'ui'; summary = 'EINE komposite Oberflaeche - niemals nur ein Frame.';
+            description = 'Das GUI-Gegenstueck zu build_polygon_model. Arena liefert nur Absicht (Rolle, Rechteck im Design-Raum 0..100, Skin); die Bridge kompiliert daraus den vollstaendigen Schichtstapel: Transform-Wrapper mit AnchorPoint aus align und UIScale, Basis (Frame oder CanvasGroup nach Regel), Schattenstapel mit BlurRadius in Scale, Fuellgradient, gekachelte Raster-Textur, Konturstapel mit ScaledSize plus UIGradient IM UIStroke, Glanzkante, Eckenprofil und ein Inhaltsschacht, dessen Innenabstand aus dem Radius folgt. Die Rueckgabe meldet offsetUsed=0 und jede gebaute Schicht. Arena kann die klassischen Fehler gar nicht mehr machen, weil sie die fehleranfaelligen Teile nie selbst anfasst.';
+            params = @{ parentRef = @{ type = 'ref'; required = $false; default = "'game.StarterGui'"; description = 'Ziel. Ist es StarterGui, wird automatisch ein ScreenGui mit ZIndexBehavior=Sibling und DeviceSafeInsets erzeugt.' }; skin = @{ type = 'string|table'; required = $false; default = "'glass'"; description = 'Kunstrichtung. Einzelne Rezeptfelder koennen als Tabelle ueberschrieben werden.' }; brand = @{ type = 'color'; required = $false; default = "'#FF4D6D'"; description = 'EINE Markenfarbe -> ganze Palette.' }; role = @{ type = "'card'|'button'|'panel'|'modal'|'header'|'bar'|'chip'"; required = $false; default = "'card'"; description = 'button erzeugt zusaetzlich eine Trefferflaeche und Hover/Press-Attribute.' }; rect = @{ type = '{x,y,w,h}'; required = $false; default = '{50,50,40,20}'; description = 'DESIGN-RAUM 0..100 des Elternteils. x,y ist der Ankerpunkt. Es gibt bewusst kein Offset.' }; align = @{ type = 'string'; required = $false; default = "'center'"; description = 'center/top/bottom/left/right/topleft/... - bestimmt den AnchorPoint. Wird nie geraten.' }; corner = @{ type = "'sharp'|'crisp'|'soft'|'round'|'chunky'|'pill'"; required = $false; default = 'aus dem Skin'; description = 'Eckenprofil statt Pixelzahl.' }; cornerShape = @{ type = '{tl,tr,bl,br}'; required = $false; default = 'null'; description = 'Einzelne Eckenradien fuer Tabs, Kerben, Sprechblasen (nur wenn ui_capabilities.individualCorners true ist).' }; aspect = @{ type = 'number'; required = $false; default = 'null'; description = 'Seitenverhaeltnis festnageln (UIAspectRatioConstraint) - verhindert Verzerrung auf dem Handy.' }; groupFade = @{ type = 'bool'; required = $false; default = 'false'; description = 'NUR wenn der ganze Teilbaum als Einheit faden/toenen soll: erzeugt eine CanvasGroup und begruendet das in der Rueckgabe. Verschachtelung wird verweigert.' }; text = @{ type = 'table'; required = $false; default = 'null'; description = '{ value, display, weight, xAlign, minSize, maxSize, rich, wrap } - TextScaled plus UITextSizeConstraint, Farbe wird auf Kontrast geprueft und notfalls korrigiert.' }; padding = @{ type = 'number'; required = $false; default = 'aus dem Radius'; description = 'Zusaetzlicher Innenabstand als Scale. Die Untergrenze radius*0.3 gilt immer.' }; allowGeneric = @{ type = 'bool'; required = $false; default = 'false'; description = 'Die Sperre gegen entsaettigtes Dunkelblaugrau bewusst aufheben.' } };
+            returns = '{ surface, content, screenGui, skin, layers, shadows, shadowKind, strokes, strokeGradients, strokesScaled, gradients, texture, textureParts, cornerRadius, padding, cornerSafe, canvasGroup, canvasGroupReason, offsetUsed, anchorPoint, invariants, capabilities }';
+            example = @{ skin = 'holo'; brand = '#38F2C6'; role = 'button'; rect = @(50, 82, 26, 9); text = @{ value = 'JETZT SPIELEN'; display = $true } };
+            errors = @('STYLE_TOO_GENERIC: die uebergebene Farbe ist das generische Dashboard-Blaugrau.', 'REF_NOT_FOUND', 'BAD_ARGS') })
+        $t.Add(@{ name = 'build_interface'; category = 'ui'; summary = 'STARK EMPFOHLEN: ein KOMPLETTES GUI in EINEM Call, inklusive Bewegung.';
+            description = 'FUER GUIS AUSDRUECKLICH STARK EMPFOHLEN - das Gegenstueck zu build_polygon_model fuer 2D. Ein Call erzeugt ScreenGui (ZIndexBehavior=Sibling, DeviceSafeInsets gegen Notch), einen beliebig tief verschachtelten Baum komposite Oberflaechen, Text, Bilder, Listen-/Grid-/Scroll-Layout inklusive Flex sowie einen mitgelieferten LocalScript fuer die Laufzeit-Choreografie. Jedes Rechteck liegt im DESIGN-RAUM 0..100 des jeweiligen Elternteils und wird zu reinem Scale-UDim2 kompiliert - Offset ist strukturell nicht erreichbar. Layout-Kinder bekommen automatisch einen aeusseren Slot, damit das Layout die Position steuert und die Skalierungsanimation trotzdem aus der Mitte waechst. Der Bewegungsscript ist rein attributgetrieben: gestaffelte Feder-Eingaenge, Hover/Press mit Schattenreaktion, und im Leerlauf driftende Stroke-Gradienten, wandernde Texturen und Glanzstreifen. Danach ui_audit aufrufen.';
+            params = @{ name = @{ type = 'string'; required = $false; default = "'ArenaInterface'"; description = 'Name des ScreenGui.' }; parentRef = @{ type = 'ref'; required = $false; default = "'game.StarterGui'"; description = 'Ziel.' }; skin = @{ type = 'string|table'; required = $false; default = "'glass'"; description = 'Kunstrichtung fuer den ganzen Baum; einzelne Knoten duerfen abweichen.' }; brand = @{ type = 'color'; required = $false; default = "'#FF4D6D'"; description = 'EINE Markenfarbe -> ganze Palette mit garantiertem Textkontrast.' }; surfaces = @{ type = 'array'; required = $true; default = '-'; description = 'Baum aus Knoten: { id, role, rect:{x,y,w,h}, align, corner, cornerShape, aspect, groupFade, padding, text, image, flex, layout:{ kind:list|grid|none, dir, gap, cols, cellH, scroll, wrap, hFlex, vFlex, xAlign, yAlign }, children:[...], repeat:{ count, template } }. {n} im Text wird durch den Index ersetzt.' }; motion = @{ type = 'table'; required = $false; default = '{}'; description = '{ enabled, energy: soft|snappy|bouncy|heavy, stagger, idle } - steuert den mitgelieferten LocalScript.' }; ignoreGuiInset = @{ type = 'bool'; required = $false; default = 'false'; description = 'Topbar-Bereich mitbenutzen.' }; resetOnSpawn = @{ type = 'bool'; required = $false; default = 'true'; description = '' }; maxSurfaces = @{ type = 'int'; required = $false; default = '160'; description = 'Budget, maximal 400.' }; allowGeneric = @{ type = 'bool'; required = $false; default = 'false'; description = 'Generik-Sperre aufheben.' } };
+            returns = '{ screenGui, roots, surfaces, layers, strokes, strokeGradients, shadows, gradients, textureParts, texts, canvasGroups, scrollers, thinSurfaces, motionScript, skin, energy, imageAssets, offsetUsed, invariants, capabilities, nextStep }';
+            example = @{ name = 'ShopUI'; skin = 'sticker'; brand = '#FFB020'; surfaces = @(@{ id = 'Panel'; role = 'modal'; rect = @(50, 50, 62, 70); groupFade = $true; children = @(@{ id = 'Title'; role = 'header'; rect = @(50, 9, 86, 13); text = @{ value = 'SHOP'; display = $true } }, @{ id = 'Grid'; role = 'panel'; rect = @(50, 58, 90, 70); layout = @{ kind = 'grid'; cols = 3; gap = 4; cellH = 30; scroll = $true }; repeatSpec = @{ count = 9; template = @{ role = 'button'; rect = @(0, 0, 28, 28); text = @{ value = 'Item {n}' } } } }) }) };
+            errors = @('STYLE_TOO_GENERIC', 'BAD_ARGS: surfaces fehlt oder leer.', 'REF_NOT_FOUND') })
+        $t.Add(@{ name = 'ui_audit'; category = 'ui'; summary = 'GUI MESSEN statt hoffen: Geraetematrix, Kontrast, Anker, Ecken, Generik-Score.';
+            description = 'Der Linter zur UI Engine - die ehrliche Rueckmeldung, die es bisher nur beim Polygon-Builder gab (facesSkipped). Prueft rein rechnerisch, ohne Screenshot und ohne Playtest: offsetRatio (wie viel Layout an Pixeln haengt), Elemente mit UIScale und AnchorPoint 0,0 (wachsen nach unten rechts), Eckenradius gegen Innenabstand (Inhalt laeuft ueber die runde Ecke), Textkontrast gegen den tatsaechlichen Hintergrund, verschachtelte CanvasGroups, nackte gefuellte Frames ohne Gradient/Stroke/Schatten, Stroke-Budget und einen blandnessScore, bei dem 1.0 exakt das generische dunkle Dashboard ist. Zusaetzlich rechnet die Geraetematrix die effektiven Pixelgroessen fuer phone/tablet/desktop/ultrawide aus der Scale-Kette aus und meldet zu kleinen Text (unter 11 px), zu kleine Touch-Ziele (unter 44 px) und Elemente ausserhalb des Sichtfelds. Jeder Befund nennt die Objekt-ID und den GEMESSENEN Wert.';
+            params = @{ ref = @{ type = 'ref'; required = $false; default = "'game.StarterGui'"; description = 'Wurzel der Pruefung (ScreenGui oder ein beliebiger Teilbaum).' }; devices = @{ type = 'string[]'; required = $false; default = "@('phone','tablet','desktop')"; description = 'phone 896x414, tablet 1112x834, desktop 1920x1080, ultrawide 2560x1080.' } };
+            returns = '{ scope, screenGuis, elements, offsetRatio, blandnessScore, verdict, failureCount, counts, problems: { anchorMismatches, cornerOverflow, contrastFailures, flatSurfaces, genericColors, offsetHeavy, nestedCanvasGroups, textTooSmall, tapTargetsTooSmall, outOfBounds }, deviceMatrix, strokeBudget, capabilities, howToRead }';
+            example = @{ ref = 'game.StarterGui.ShopUI'; devices = @('phone', 'desktop') };
+            errors = @('REF_NOT_FOUND') })
+
         # ---------------- UNION / CSG ----------------
         $t.Add(@{ name = 'union'; category = 'union'; summary = 'Teile zu EINEM Teil verschmelzen (mit Vorpruefung und Budget).';
             description = 'Mergt BaseParts zu einem PartOperation. VORPRUEFUNG: alle BaseParts, anchored, gleicher Parent, Größe; Komplexitaets-Budget (Dreiecke geschätzt) mit Warnung und konkretem Vorschlag (z.B. "einen Part statt 40"). Vorher wird automatisch ein Undo-Punkt gesetzt (undoPoint). Roblox-Verweigerung kommt als SOLID_REFUSED mit Roblox-Ursache und Tipps. groups=... verarbeitet mehrere Gruppen in einem Call.';
@@ -13236,6 +14798,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             importantRules = @(
                 'Choose the tools and workflow that best fit the task. The bridge exposes precise read, build, script, asset, playtest and batch tools; these are capabilities, not a mandatory checklist.',
                 'For polygon or freeform surface modelling, ALWAYS use build_polygon_model unless the user explicitly requires custom low-level WedgeParts: it works much like Blender polygon modelling while the bridge handles triangulation, side-corrected seamless Wedges, nested submodels, per-submodel Part properties, automatic hole caps and default-on WeldConstraints. NEVER set autoWeld=false unless the user explicitly asks for physically independent polygon pieces; otherwise unanchored Wedges can scatter and rotate separately. It can create one huge model (for example a tree split into trunk plus three crown folders) in a single call, including animatable main Welds between submodels. build_assembly is excellent for repeated modular construction. bulk_create, unions and normal tools remain freely mixable; use run_lua only for genuinely custom logic.',
+                'For ANY visual/GUI work, ALWAYS use build_interface (whole screen in one call) or build_surface unless the user explicitly asks for raw GuiObjects: the bridge owns AnchorPoint, Scale-only UDim2, aspect locking, corner-safe padding, layered shadows, scaled strokes, gradients on strokes, raster textures, CanvasGroup discipline and the runtime motion script. Call ui_capabilities first (it probes this Studio build instead of trusting training data), ui_skin to pick or extract an art direction, and ui_audit afterwards - it measures offsetRatio, contrast, per-device pixel sizes and a blandness score. See uiEngineRules below for the eight hard rules.',
                 'Object ids such as #42 are stable within the current plugin session and avoid ambiguity when names repeat. Paths and selectors are also accepted where documented.',
                 'Several Places can be connected. With the Alle-Places token, GET /api/places returns targetPlace values; selecting one target keeps edits unambiguous.',
                 'GET and POST use the same bridge code path. Pick whichever transport your environment supports.',
@@ -13297,6 +14860,115 @@ local function drawSeamlessTriangle(p1, p2, p3, parent, props)
         w2.CFrame = CFrame.fromMatrix((pMid + p3)/2 + up * (height/2) + skinOffset, -normal, up, dir)
         applyProps(w2, props, parent)
     end
+end
+'@
+            }
+            uiEngineRules = @{
+                title = 'UI Engine 1.0 - canonical rules for every GUI (prevents the anchor/scale/corner/CanvasGroup bugs and the generic dark-dashboard look forever)'
+                whenThisApplies = 'build_interface and build_surface already implement all of this correctly - ALWAYS strongly prefer them for anything visual, exactly like build_polygon_model for 3D. Only read the hard rules below if you are writing bespoke GUI code with run_lua/create_instance because the task truly needs logic the tools do not cover.'
+                theOneIdea = 'NO FRAME IS EVER JUST A FRAME. A surface is a compiled layer stack, never a single instance: shadow stack -> base fill + fill gradient -> tiled raster texture -> stroke stack (with a UIGradient INSIDE a UIStroke) -> sheen highlight -> corner profile -> padded content slot, all inside a transform wrapper. This is the 2D equivalent of the polygon rule that every surface is triangles of thin wedges.'
+                hardRules = @(
+                    '1 TRANSFORM WRAPPER: never animate a laid-out element. Every animated element gets a wrapper Frame with AnchorPoint 0.5,0.5, Position/Size in Scale and a UIScale child; the tween touches ONLY that UIScale. AnchorPoint 0,0 plus a scale animation is exactly what makes elements grow toward the bottom right instead of from their own centre. If the element sits in a UIListLayout/UIGridLayout, put an outer slot Frame (AnchorPoint 0,0, positioned by the layout) around the centred wrapper - the layout drives the slot, the animation drives the wrapper.',
+                    '2 SCALE FIRST: Size and Position are Scale-only. Offset is allowed for exactly three things - hairline separators of 1-2 px, UIPadding around text, and UISizeConstraint limits. Lock proportions with UIAspectRatioConstraint. Offset-driven layout is the single cause of phone GUIs that end up shifted or gigantic.',
+                    '3 CORNER TANGENT: radius <= min(width,height)/2 AND content padding >= radius * 0.3. Use a corner profile (sharp/crisp/soft/round/chunky/pill), never a raw pixel number. Without the padding rule the content runs over the rounded corner.',
+                    '4 STROKE SCALING: set UIStroke.StrokeSizingMode = Enum.StrokeSizingMode.ScaledSize and give Thickness as a fraction of the shortest parent axis. UIStroke thickness is no longer offset-only. BorderOffset aligns a stroke inside/centre/outside, and multiple UIStrokes per object are allowed - use an outer contour plus an inner bevel.',
+                    '5 GRADIENT PAIR: every surface carries at least TWO UIGradients at DIFFERENT rotations, and at least one of them is parented INTO a UIStroke, not the Frame. Animate the stroke gradient Rotation/Offset instead of tweening a fill colour. A UIGradient on a stroke is the cheapest way to make a UI look expensive and it is almost never used.',
+                    '6 DEPTH: a filled surface has at least four layers (shadow, fill + gradient, raster texture, stroke stack). A bare filled Frame with one UICorner is the GUI equivalent of building a tree from a cylinder and a ball.',
+                    '7 CANVASGROUP DISCIPLINE: use a CanvasGroup ONLY to fade or tint a whole subtree as one unit, or to clip rotated content. It ALWAYS clips (not optional), it requires ScreenGui.ZIndexBehavior = Sibling, it allocates an extra texture of AbsoluteSize.x * AbsoluteSize.y, it makes text blurry, and it gets down-ressed under texture memory pressure. Never nest CanvasGroups and never wrap a whole ScreenGui - nested groups blur badly as soon as AbsolutePosition is not a whole number. Keep shadows outside the clipping group. Otherwise use a plain Frame.',
+                    '8 SHADOW: use UIShadow with BlurRadius/Offset/Spread in SCALE so the shadow scales with the element, stack at least two (wide+soft ambient plus tight+dark contact), give them negative ZIndex, and make sure no ancestor clips them. UIShadow does not shadow text glyphs - only the rectangular bounds of the element.'
+                )
+                modernInstances = @(
+                    'UIShadow: native 2D drop shadow. BlurRadius (UDim), Color, Transparency, Offset (UDim2), Spread (UDim2), ZIndex (negative only), Enabled. Scale values are a percentage of the parent. Multiple shadows per instance. No text glyph shadows, no inset shadows, no gradients or textures on the shadow itself.',
+                    'UICorner individual radii: TopLeftRadius / TopRightRadius / BottomLeftRadius / BottomRightRadius give tabs, chat bubbles, notches and asymmetric cards instead of the same uniform pill everywhere.',
+                    'UIStroke StrokeSizingMode.ScaledSize + BorderOffset + unlimited strokes per object. Stay below roughly 300 UIStrokes on screen for low-end devices.',
+                    'UI Styling: StyleSheet, StyleRule, StyleLink, StyleDerive plus tokens and themes - engine-native CSS with class, name, tag, hierarchy and GuiState (hover) selectors. This is the correct way to keep a whole place on ONE consistent style and to swap themes. Only one StyleLink applies per instance; use tag selectors for variants.',
+                    'UIListLayout flex: Wraps, HorizontalFlex/VerticalFlex (Fill, SpaceBetween, SpaceAround, SpaceEvenly) and UIFlexItem (FlexMode, GrowRatio, ShrinkRatio) give real responsive layout without hand-computed positions.',
+                    'UIDragDetector: dragging for 2D UI with DragStyle, ResponseStyle in Scale, axis/movement limits and BoundingUI.',
+                    'Path2D: 2D splines in the UI for curved connectors, progress arcs, skill trees and path animations - not everything has to be a rectangle.',
+                    'ImageLabel raster textures: ScaleType = Enum.ScaleType.Tile with TileSize in SCALE turns a dead flat frame into a living surface. Also use 9-slice (Slice + SliceCenter) for ornamental borders.',
+                    'Text: FontFace = Font.new(family, Enum.FontWeight.X) for real weights, TextScaled together with UITextSizeConstraint for resolution independence, RichText for emphasis, MaxVisibleGraphemes for typewriter effects.',
+                    'ALWAYS call ui_capabilities first instead of trusting training data: it probes this exact Studio build with Instance.new/pcall and reports which of these really exist, plus the fallback the engine will use.'
+                )
+                antiSameness = 'Do not hand-pick colours. Pass ONE saturated brand colour and a skin; the engine derives the whole palette with guaranteed text contrast. The twelve skins (glass, arcade, comic, sticker, clay, parchment, metal, paper, crt, holo, cozywood, chalk) are art directions, not colour schemes. Desaturated dark blue-grey surfaces are rejected with STYLE_TOO_GENERIC because that generic dashboard look is the single most common failure. Even a deep mood stays strongly hue-tinted on purpose. To match an existing GUI call ui_skin { action = extract } first and reuse the reported brand and mood.'
+                workflow = 'ui_capabilities -> ui_skin (list or extract) -> build_interface (one call for the whole screen) -> ui_audit. ui_audit MEASURES instead of guessing: offsetRatio, anchor mismatches, corner overflow, text contrast, per-device pixel sizes for phone/tablet/desktop, tap targets, nested CanvasGroups, stroke budget and a blandness score where 1.0 is the generic dark dashboard and below 0.25 is the target.'
+                referenceLua = @'
+-- Canonical hand-written composite surface for genuinely custom run_lua GUI
+-- code. build_surface already does all of this - only mirror it by hand when
+-- the tool cannot express what you need.
+local function arenaSurface(parent, cx, cy, w, h, fill, accent)
+    -- 1. Transform wrapper: the ONLY node an animation may touch.
+    local wrapper = Instance.new("Frame")
+    wrapper.BackgroundTransparency = 1
+    wrapper.AnchorPoint = Vector2.new(0.5, 0.5)          -- RULE 1
+    wrapper.Position = UDim2.fromScale(cx, cy)           -- RULE 2: scale only
+    wrapper.Size = UDim2.fromScale(w, h)
+    local scale = Instance.new("UIScale")                -- animate THIS
+    scale.Scale = 1
+    scale.Parent = wrapper
+    wrapper.Parent = parent
+
+    -- 2. Base fill.
+    local base = Instance.new("Frame")
+    base.AnchorPoint = Vector2.new(0.5, 0.5)
+    base.Position = UDim2.fromScale(0.5, 0.5)
+    base.Size = UDim2.fromScale(1, 1)
+    base.BackgroundColor3 = fill
+    base.BorderSizePixel = 0
+    base.Parent = wrapper
+
+    -- 3. Layered shadows in SCALE, negative ZIndex.           RULE 8
+    for index, spec in ipairs({ { 0.10, 0.55, 0.022 }, { 0.025, 0.40, 0.006 } }) do
+        local shadow = Instance.new("UIShadow")
+        shadow.BlurRadius = UDim.new(spec[1], 0)
+        shadow.Transparency = spec[2]
+        shadow.Offset = UDim2.fromScale(0, spec[3])
+        shadow.ZIndex = -index
+        shadow.Parent = base
+    end
+
+    -- 4. Fill gradient (angle A).                             RULE 5
+    local fillGradient = Instance.new("UIGradient")
+    fillGradient.Rotation = 112
+    fillGradient.Parent = base
+
+    -- 5. Tiled raster texture - TileSize in SCALE.
+    local texture = Instance.new("ImageLabel")
+    texture.BackgroundTransparency = 1
+    texture.Size = UDim2.fromScale(1, 1)
+    texture.ScaleType = Enum.ScaleType.Tile
+    texture.TileSize = UDim2.fromScale(0.18, 0.18)
+    texture.ImageTransparency = 0.9
+    texture.Parent = base
+
+    -- 6. Stroke stack, thickness in SCALE.                    RULE 4
+    local outer = Instance.new("UIStroke")
+    outer.Color = accent
+    outer.StrokeSizingMode = Enum.StrokeSizingMode.ScaledSize
+    outer.Thickness = 0.006
+    outer.Parent = base
+
+    -- 7. Gradient ON THE STROKE - the step that is always skipped.
+    local strokeGradient = Instance.new("UIGradient")
+    strokeGradient.Rotation = 24
+    strokeGradient.Parent = outer
+
+    -- 8. Corner profile plus padding derived from it.         RULE 3
+    local radius = 0.13
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(radius, 0)
+    corner.Parent = base
+
+    local content = Instance.new("Frame")
+    content.BackgroundTransparency = 1
+    content.Size = UDim2.fromScale(1, 1)
+    local padding = Instance.new("UIPadding")
+    local pad = UDim.new(math.max(radius * 0.36, 0.04), 0)
+    padding.PaddingLeft, padding.PaddingRight = pad, pad
+    padding.PaddingTop, padding.PaddingBottom = pad, pad
+    padding.Parent = content
+    content.Parent = base
+
+    return wrapper, content
 end
 '@
             }
@@ -13465,7 +15137,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '6.1.5'
+            version = '6.2.0'
             docsVersion = [string]$Shared.DocsVersion
             role = 'A normal token controls exactly one live Roblox Studio place. The special aggregate token copied from Alle Places controls several places: call GET /api/places first and pass one exact targetPlace in every request; the bridge refuses to guess. This makes switching safe and explicit. Send every request as POST /api/tool with JSON body { "token": "...", "targetPlace": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -13580,7 +15252,7 @@ end
         try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $envelope = @{
-            bridgeVersion = '6.1.5'
+            bridgeVersion = '6.2.0'
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
@@ -13829,7 +15501,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '6.1.5'
+                        bridgeVersion = '6.2.0'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -14081,7 +15753,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '6.1.5'
+                        serverVersion = '6.2.0'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
@@ -14268,7 +15940,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='6.1.5'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='6.2.0'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -14297,8 +15969,8 @@ end
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '6.1.5'
-                    serverVersion = '6.1.5'
+                    bridgeVersion = '6.2.0'
+                    serverVersion = '6.2.0'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -14479,12 +16151,12 @@ end
                     'grid_arrange','distribute','snap_to_ground','look_at','rotate_around','move_relative','resize_part','fit_between','point_at',
                     'play_start','play_stop','play_pause','play_resume','send_input','gui_click','gui_set_text','move_character',
                     'teleport_character','respawn_character','undo','redo','clear_output','fill_region','probe_world','start_job',
-                    'cancel_job','clear_lua_state','set_camera','build_polygon_model','build_assembly')
+                    'cancel_job','clear_lua_state','set_camera','build_polygon_model','build_assembly','build_surface','build_interface')
                 $persistentEditTools = @('set_property','set_properties','bulk_set_properties','set_attribute','create_instance','bulk_create',
                     'clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','set_script_source','patch_script',
                     'insert_script','bulk_insert_scripts','run_lua','batch','parallel','union','subtract','negate','intersect','separate',
                     'insert_asset','apply_asset','group_instances','ungroup','add_tag','remove_tag','place_on','align','stack','grid_arrange',
-                    'distribute','snap_to_ground','look_at','rotate_around','move_relative','resize_part','fit_between','point_at','fill_region','build_polygon_model','build_assembly')
+                    'distribute','snap_to_ground','look_at','rotate_around','move_relative','resize_part','fit_between','point_at','fill_region','build_polygon_model','build_assembly','build_surface','build_interface')
                 if ($sessionEntry -and $sessionEntry.state -and [bool]$sessionEntry.state.running -and [bool]$sessionEntry.state.userPlaytestActive -and $persistentEditTools -contains $tool) {
                     $blocked = @{
                         ok = $false
@@ -16443,7 +18115,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 6.1.5)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 6.2.0)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -18745,7 +20417,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '6.1.5'
+    $versionText = '6.2.0'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -19346,7 +21018,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 6.1.5" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 6.2.0" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -19388,7 +21060,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 6.1.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 6.2.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -19441,7 +21113,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 6.1.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 6.2.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -19454,7 +21126,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '6.1.5'
+    $verText = '6.2.0'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
