@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Modelltest der 7.0.5-Queue-Regeln (kein PowerShell, kein Roblox Studio).
+"""Modelltest der 7.0.6-Queue-Regeln (kein PowerShell, kein Roblox Studio).
 
 Dies ist ein *Modell* des Server-/Plugin-Verhaltens, kein Live-Test. Es bildet
 die Regeln nach, die ArenaBridge.ps1 anwendet, und prueft mit einer virtuellen
@@ -9,7 +9,7 @@ aufloesen:
   A) Nachbau 7.0.4: Der Executor-Watchdog lief NUR in /plugin/poll. Haengt ein
      Befehl ohne yield (oder antwortet das Plugin nicht mehr), kommt kein Poll
      mehr -> nichts raeumt auf -> Queue + lateResults bleiben fuer immer leer.
-  B) 7.0.5: Ein unabhaengiger Sweep (eigener Runspace, 2 s) bricht den Befehl
+  B) 7.0.5-Sweep (in 7.0.6 unveraendert): Ein unabhaengiger Sweep (eigener Runspace, 2 s) bricht den Befehl
      nach budget+15 s ab, beantwortet den Wartenden bzw. legt das Ergebnis in
      die lateResults der ANRUFER-Sitzung und laesst die Queue weiterlaufen.
   C) 7.0.5: Beim Reconnect gehen nur NIE zugestellte Befehle an die neue
@@ -17,8 +17,17 @@ aufloesen:
      ihr gespeichertes Ergebnis erneut aus, statt neu zu laufen.
   D) 7.0.5: Die HTTP-Antwort liegt mit 55 s (max 85 s) unter dem ~100-s-524
      von Cloudflare; ein abgebrochener Befehl kommt als lateResult zurueck.
-  E) 7.0.5: force_fail/clear_pending beantwortet JEDEN offenen Befehl sofort
-     und leert die serielle Queue.
+  E) 7.0.5-Sweep: force_fail/clear_pending beantwortet JEDEN offenen Befehl
+     sofort und leert die serielle Queue.
+  F) 7.0.6: Dieselbe Plugin-Instanz (instanceGuid) behaelt IMMER dieselbe
+     Sitzung und denselben Token - hier entstand der "Bridge connected"-Sturm
+     alle ~2 Sekunden; eine unbekannte Sitzung mit bekannter Instanz bekommt
+     ihre sessionId zurueck, statt eine neue zu erzeugen.
+  G) 7.0.6: Ist der Executor nachweislich stumm, antwortet die Bridge SOFORT
+     mit STUDIO_UNREACHABLE (nichts wird eingereiht) statt 55 s zu warten; ist
+     er belegt und die FIFO nicht leer, kommt SOFORT STUDIO_BUSY.
+  H) 7.0.6: Jeder Befehl traegt die Zustell-Timeline queuedAt -> deliveredAt ->
+     receivedAt -> startedAt -> heartbeatAt (+ lastError) fuer /api/queue.
 
 Die Zeitfenster werden aus ArenaBridge.ps1 GELESEN - aendert jemand dort eine
 Konstante (oder entfernt den unabhaengigen Sweep), faellt der Test auf.
@@ -56,6 +65,9 @@ SESSION_ALIVE = read_int(r"sessionAge -le (\d+)", "Sweep: Sitzung lebendig")
 HTTP_DEFAULT = read_int(r"\$timeout = (\d+)\n", "HTTP-Default")
 HTTP_CAP = read_int(r"\[Math\]::Min\(\[int\]\$body\.timeoutSeconds, (\d+)\)", "HTTP-Cap")
 SWEEP_INTERVAL = read_int(r"Start-Sleep -Seconds (\d+)\n\s*\}\n\}", "Sweep-Intervall")
+HEALTH_FRESH = read_int(r"elseif \(\$age -le (\d+)\) \{ \$state = 'ok' \}", "Health: frisches Lebenszeichen")
+HEALTH_WAIT = read_int(r"\$waiting -gt 0 -and \$oldestWaiting -gt (\d+)", "Health: wartende Arbeit")
+HEALTH_DEAD = read_int(r"-not \[bool\]\$executor\.alive -and \$age -gt (\d+)", "Health: stummer Executor")
 CF_524 = 100
 
 require("$script:BridgeSweepScript = {" in SOURCE, "Der unabhaengige Sweep-Runspace fehlt.")
@@ -71,6 +83,24 @@ require(HTTP_DEFAULT <= 55 and HTTP_CAP <= 85,
 require(HTTP_CAP < CF_524, "HTTP-Cap muss unter dem Cloudflare-524-Fenster liegen.")
 require(BUDGET_GRACE > 0 and HEARTBEAT_STALE > 0 and DELIVERY_TTL >= HEARTBEAT_STALE,
         "Sweep-Zeitfenster sind unplausibel.")
+require("$reuseReason = 'same-instance'" in SOURCE
+        and "$Shared.InstanceSessions[$guid] = $sessionId" in SOURCE
+        and "function Resolve-InstanceSession" in SOURCE
+        and "InstanceSessions = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()" in SOURCE,
+        "Die Sitzungs-Identitaet (instanceGuid -> sessionId) fehlt - der Reconnect-Sturm waere zurueck.")
+require("if ($deliveryHealth.state -eq 'wedged')" in SOURCE
+        and "code = 'STUDIO_UNREACHABLE'" in SOURCE
+        and "code = 'STUDIO_BUSY'" in SOURCE
+        and "commandSent = $false" in SOURCE,
+        "Die Vorab-Pruefung vor dem Einreihen (Fast-Fail) fehlt - Befehle wuerden wieder 55 s warten.")
+require("timeline = $timeline" in SOURCE and "timelineRule" in SOURCE
+        and "lastError = if ($info.lastError)" in SOURCE
+        and SOURCE.count("$Shared.CommandHistory.TryAdd($sid, $historyQueue)") == 2,
+        "Die Zustell-Timeline fehlt (inkl. Historie fuer den Waechter-Runspace).")
+require("sessionId = $(if ([string]::IsNullOrWhiteSpace($knownSessionId))" in SOURCE,
+        "Eine unbekannte Sitzung mit bekannter Instanz bekommt ihre sessionId nicht zurueck.")
+require(0 < HEALTH_FRESH < HEALTH_WAIT < HEALTH_DEAD,
+        f"Gesundheitsfenster unplausibel: fresh={HEALTH_FRESH}, wait={HEALTH_WAIT}, dead={HEALTH_DEAD}")
 
 
 # --- Modell -----------------------------------------------------------------
@@ -87,6 +117,7 @@ class Command:
         self.origin = "A"
         self.executions = 0
         self.results_posted = 0
+        self.last_error = ""
 
 
 class Bridge:
@@ -102,6 +133,9 @@ class Bridge:
         self.executed: list[str] = []
         self.abandoned_total = 0
         self.poll_alive = True  # 7.0.4: Sweep lief nur in der Poll-Anfrage
+        self.instances: dict[str, str] = {}
+        self.sessions: set[str] = set()
+        self.session_counter = 0
 
     # -- Ablauf ---------------------------------------------------------------
     def enqueue(self, command: Command, session: str = "A") -> None:
@@ -160,6 +194,7 @@ class Bridge:
 
     def abandon(self, command: Command, code: str) -> None:
         command.status = "abandoned"
+        command.last_error = code
         self.abandoned_total += 1
         if command.id in self.waiting:
             del self.waiting[command.id]
@@ -174,6 +209,43 @@ class Bridge:
             self.abandon(command, "FORCE_CLEARED")
             count += 1
         return count
+
+    # -- Sitzungs-Identitaet (7.0.6) -----------------------------------------
+    def register(self, instance_guid: str, known_session: str = "") -> tuple[str, bool]:
+        """Gibt (sessionId, tokenErneuert) zurueck.
+
+        Dieselbe Instanz bekommt dieselbe Sitzung - auch wenn die Sitzung von
+        aussen tot aussieht. Nur eine NEUE Instanz erzeugt eine neue Sitzung;
+        eine unbekannte sessionId mit bekannter Instanz bekommt die bekannte
+        sessionId zurueck (kein neuer Token, kein Sturm).
+        """
+        if instance_guid in self.instances:
+            return self.instances[instance_guid], False
+        if known_session:
+            self.instances[instance_guid] = known_session
+            return known_session, False
+        self.session_counter += 1
+        session = f"S{self.session_counter}"
+        self.instances[instance_guid] = session
+        return session, True
+
+    def poll(self, instance_guid: str, session: str) -> tuple[str, bool]:
+        if session in self.sessions:
+            return session, False
+        known = self.instances.get(instance_guid, "")
+        resolved, renewed = self.register(instance_guid, known)
+        require(not renewed, "7.0.6: eine bekannte Instanz darf keinen neuen Token bekommen")
+        return resolved, True
+
+    # -- Gesundheit (7.0.6) ---------------------------------------------------
+    def call_tool(self, tool: str, waiting: int, seconds_since_sign: int, alive: bool, busy: bool, as_job: bool = False) -> str:
+        """Antwort der Bridge VOR dem Einreihen: ok | STUDIO_UNREACHABLE | STUDIO_BUSY."""
+        wedged = (waiting > HEALTH_WAIT and seconds_since_sign > HEALTH_WAIT) or (not alive and seconds_since_sign > HEALTH_DEAD)
+        if wedged:
+            return "STUDIO_UNREACHABLE"   # sofort, nichts wird eingereiht
+        if busy and waiting > 0 and not as_job:
+            return "STUDIO_BUSY"          # sofort, nichts wird eingereiht
+        return "ok"
 
     # -- Reconnect ----------------------------------------------------------
     def handover(self, old: str, new: str) -> int:
@@ -282,12 +354,79 @@ def main() -> int:
             "force_fail muss fuer jeden Befehl ein lateResult beim Anrufer hinterlegen")
     print("E) Admin-Reset: 3 offene Befehle sofort mit FORCE_CLEARED beantwortet, Queue leer.")
 
+    # F) Sitzungs-Identitaet: kein Reconnect-Sturm --------------------------
+    bridge = Bridge(independent_sweep=True)
+    first_session, renewed = bridge.register("inst-1")
+    bridge.sessions.add(first_session)
+    require(renewed, "7.0.6: die erste Anmeldung erzeugt genau eine Sitzung")
+    # 20 Handshakes derselben Instanz (auch nach Cleanup/Reconnect):
+    for _ in range(20):
+        same, renewed = bridge.register("inst-1")
+        require(same == first_session and not renewed,
+                "7.0.6: dieselbe Instanz darf nie eine neue Sitzung/Token bekommen")
+    # Die Sitzung wurde aufgeraeumt und das Plugin pollt mit der alten Id:
+    resolved, _ = bridge.poll("inst-1", "unbekannt")
+    require(resolved == first_session,
+            "7.0.6: eine unbekannte Sitzung mit bekannter Instanz bekommt ihre sessionId zurueck")
+    second_session, renewed = bridge.register("inst-2")
+    require(renewed and second_session != first_session,
+            "7.0.6: nur eine WIRKLICH neue Instanz erzeugt eine neue Sitzung")
+    require(len(bridge.instances) == 2, "7.0.6: hoechstens eine Sitzung je Plugin-Instanz")
+    print("F) Sitzungs-Identitaet: 20 Handshakes = 1 Sitzung/Token; neue Instanz = neue Sitzung (Sturm beendet).")
+
+    # G) Fast-Fail: sofort ehrlich antworten statt 55 s warten ---------------
+    bridge = Bridge(independent_sweep=True)
+    hung = Command("g1", "run_lua", budget=90)
+    bridge.enqueue(hung, "A")
+    bridge.deliver("A")
+    bridge.plugin_start(hung)
+    bridge.poll_alive = False
+    for _ in range(120):   # die Lua-VM ist blockiert, nichts pollt mehr
+        bridge.tick()
+    verdict = bridge.call_tool("get_place_info", waiting=len(bridge.pending),
+                               seconds_since_sign=120, alive=False, busy=True)
+    require(verdict == "STUDIO_UNREACHABLE",
+            "7.0.6: ein stummer Executor muss SOFORT als STUDIO_UNREACHABLE erkannt werden")
+    busy_verdict = bridge.call_tool("get_tree", waiting=1, seconds_since_sign=3, alive=True, busy=True)
+    require(busy_verdict == "STUDIO_BUSY",
+            "7.0.6: ein belegter Executor mit wartender FIFO muss SOFORT STUDIO_BUSY melden")
+    job_verdict = bridge.call_tool("get_tree", waiting=1, seconds_since_sign=3, alive=True, busy=True, as_job=True)
+    require(job_verdict == "ok", "7.0.6: args.asJob=true muss die Busy-Sperre umgehen")
+    ok_verdict = bridge.call_tool("get_tree", waiting=0, seconds_since_sign=2, alive=True, busy=False)
+    require(ok_verdict == "ok", "7.0.6: ein gesunder Executor darf nie blockiert werden")
+    print(f"G) Fast-Fail: wedged => STUDIO_UNREACHABLE, busy+FIFO => STUDIO_BUSY "
+          f"(Schwellen fresh={HEALTH_FRESH}s, wait={HEALTH_WAIT}s, dead={HEALTH_DEAD}s).")
+
+    # H) Zustell-Timeline: queuedAt -> ... -> lastError ----------------------
+    bridge = Bridge(independent_sweep=True)
+    for _ in range(3):
+        bridge.tick()   # die virtuelle Uhr startet nicht bei 0
+    timeline_cmd = Command("h1", "site_survey", budget=90)
+    bridge.enqueue(timeline_cmd, "A")
+    require(timeline_cmd.queued_at > 0 and timeline_cmd.delivered_at == 0
+            and timeline_cmd.started_at == 0 and timeline_cmd.heartbeat_at == 0,
+            "7.0.6: eine neue Zeitleiste darf nur queuedAt tragen")
+    bridge.deliver("A")
+    bridge.plugin_start(timeline_cmd)
+    require(timeline_cmd.delivered_at > 0 and timeline_cmd.started_at > 0
+            and timeline_cmd.heartbeat_at > 0,
+            "7.0.6: die Timeline muss deliveredAt, startedAt und heartbeatAt tragen")
+    bridge.sweep()
+    for _ in range(90 + BUDGET_GRACE + SWEEP_INTERVAL + 1):
+        bridge.tick()
+    # Zwei ehrliche Gruende sind moeglich: der Budget-Abbruch (budget+15 s) oder -
+    # wenn der Heartbeat vorher 45 s stillsteht - EXECUTOR_UNRESPONSIVE.
+    require(timeline_cmd.status == "abandoned"
+            and timeline_cmd.last_error in ("STUDIO_ABANDONED", "EXECUTOR_UNRESPONSIVE"),
+            "7.0.6: nach dem Abbruch muss die Timeline den Grund in lastError tragen")
+    print(f"H) Zustell-Timeline: queued -> delivered -> started -> heartbeat -> abandoned/{timeline_cmd.last_error} vollstaendig.")
+
     if FAILURES:
         print("\nFEHLGESCHLAGEN:")
         for failure in FAILURES:
             print(f"  - {failure}")
         return 1
-    print("\nOK: 7.0.5-Queue-Modell (Waechter, Reconnect, Cloudflare, Admin-Reset) geprueft.")
+    print("\nOK: 7.0.6-Queue-Modell (Waechter, Reconnect, Cloudflare, Admin-Reset, Sitzungs-Identitaet, Fast-Fail, Timeline) geprueft.")
     return 0
 
 

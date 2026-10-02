@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 7.0.5.
+"""Offline structure check for Arena Roblox Bridge 7.0.6.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.0.5"
+VERSION = "7.0.6"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -95,11 +95,13 @@ def main() -> int:
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     require(version["version"] == VERSION, f"version.json is not {VERSION}")
     release_notes = "\n".join(str(note) for note in version.get("notes", []))
-    require("7.0.5" in release_notes
-            and "Waechter" in release_notes
-            and "RECONNECT-SICHER" in release_notes
-            and "force_fail" in release_notes,
-            "version.json does not describe the 7.0.5 watchdog/reconnect/admin release")
+    require("7.0.6" in release_notes
+            and "SELBSTAUSKUNFT" in release_notes
+            and "instanceGuid" in release_notes
+            and "STUDIO_UNREACHABLE" in release_notes
+            and "timeline" in release_notes
+            and "get_bridge_log" in release_notes,
+            "version.json does not describe the 7.0.6 self-report/session-identity/delivery release")
 
     # 6.1.1 shipped seven accidental fragments after the intended final exit,
     # including a bare closing parenthesis. Windows PowerShell parses the
@@ -711,21 +713,21 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '7.0.5'": 1,
-        'local ARENA_VERSION  = "7.0.5"': 1,
-        "version = '7.0.5'": 1,
-        "bridgeVersion = '7.0.5'": 3,
-        "bridgeVersion='7.0.5'": 1,
-        "serverVersion = '7.0.5'": 2,
-        "$versionText = '7.0.5'": 1,
-        "$verText = '7.0.5'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 7.0.5)": 1,
-        'Text="Arena Roblox Bridge - Version 7.0.5"': 1,
-        "Version 7.0.5 - aktuell. Beim naechsten Start": 2,
-        "Laufzeit-Identitaet: Bridge-Version=7.0.5": 1,
-        "Kurzbericht Fenster-Vorschau (Version 7.0.5)": 1,
-        "Arena Roblox Bridge - Leistungsbericht (Version 7.0.5)": 1,
-        "Arena Roblox Bridge - Place-Diagnose (Version 7.0.5)": 1,
+        "DocsVersion     = '7.0.6'": 1,
+        'local ARENA_VERSION  = "7.0.6"': 1,
+        "version = '7.0.6'": 1,
+        "bridgeVersion = '7.0.6'": 3,
+        "bridgeVersion='7.0.6'": 1,
+        "serverVersion = '7.0.6'": 2,
+        "$versionText = '7.0.6'": 1,
+        "$verText = '7.0.6'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.0.6)": 1,
+        'Text="Arena Roblox Bridge - Version 7.0.6"': 1,
+        "Version 7.0.6 - aktuell. Beim naechsten Start": 2,
+        "Laufzeit-Identitaet: Bridge-Version=7.0.6": 1,
+        "Kurzbericht Fenster-Vorschau (Version 7.0.6)": 1,
+        "Arena Roblox Bridge - Leistungsbericht (Version 7.0.6)": 1,
+        "Arena Roblox Bridge - Place-Diagnose (Version 7.0.6)": 1,
     }
     for marker, expected_count in functional_version_counts.items():
         actual_count = source.count(marker)
@@ -1650,7 +1652,40 @@ def main() -> int:
     require("resultOutbox = outboxCount" in source and "cachedResults = completedCount" in source,
             "the executor snapshot does not report cached results / outbox size")
 
-    print("OK: 7.0.5 structure, watchdog, reconnect routing, admin reset, Lua and XAML validation passed")
+    # 7.0.6 guarantees: one self-report answer that proves deployment, stable
+    # session identity instead of a new session per handshake, a delivery
+    # timeline per command, instant answers for dead/busy executors and a
+    # visible plugin state in Studio.
+    for marker in (
+        "if ($path -eq '/api/version')",
+        "function Get-VersionReport",
+        "InstanceSessions = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()",
+        "function Resolve-InstanceSession",
+        "function Get-StudioDeliveryHealth",
+        "STUDIO_UNREACHABLE",
+        "STUDIO_BUSY",
+        "timelineRule",
+        "'get_bridge_log' {",
+        "function Update-RuntimeLine",
+        'Text="Bridge 7.0.6"',
+        "local function setWidgetStatus(extra)",
+        "ARENA-PLUGIN-FEHLER",
+        "function Invoke-PlaceRowCancel",
+        "function Get-PlaceOpenCommand",
+        "preview = @{",
+    ):
+        require(marker in source, f"7.0.6 marker missing: {marker}")
+    require("sessionId = $(if ([string]::IsNullOrWhiteSpace($knownSessionId))" in source,
+            "an unknown session poll would no longer receive the known sessionId")
+    require("if ($deliveryHealth.state -eq 'wedged')" in source
+            and "commandSent = $false" in source,
+            "the executor pre-flight (STUDIO_UNREACHABLE before queueing) is missing")
+    require("queuedAt = [int64]$item.queuedAt" in source
+            and "deliveredAt = [int64]$item.deliveredAt" in source
+            and "heartbeatAt = [int64]$item.heartbeatAt" in source,
+            "the per-command delivery timeline is incomplete")
+
+    print("OK: 7.0.6 structure, self-report, session identity, delivery timeline, Lua and XAML validation passed")
     return 0
 
 
