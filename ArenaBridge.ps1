@@ -1,5 +1,60 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.0.5
+# Arena Roblox Bridge  -  Version 7.0.6
+#
+# BEWEISBARES DEPLOYMENT + STABILE SITZUNG + SOFORTIGE ANTWORTEN - VERSION 7.0.6:
+#
+#   AUSGANGSLAGE: 7.0.5 hat die Mechanik repariert (unabhaengiger Waechter,
+#   Reconnect-Routing, force_fail) - aber niemand hat belegt, dass diese Mechanik
+#   beim Nutzer ueberhaupt LAEUFT. Gemeldet blieb "alles ist wie immer, Befehle
+#   haengen", waehrend die Meldungen im Arena-Verlauf ("The queued Studio work was
+#   cleared through the force_fail control", "queue was manually reset through
+#   queue controls") wortwoertlich aus dem 7.0.5-Code stammen. Der Server- und
+#   Admin-Pfad lief also - gemessen wurde nichts. Genau das aendert 7.0.6.
+#
+#   DIE FIXES DIESER VERSION:
+#   * SELBSTAUSKUNFT STATT VERMUTUNG: GET /api/version liefert in EINER Antwort
+#     Version, Datei-Pfad, SHA-256 der laufenden Datei, Startzeit, Sprachmodus,
+#     die immer mitlaufenden Zaehler (hello/poll/result/tool, neue Sitzungen der
+#     letzten 60 s, Sitzungs-Wiederbelebungen, Fast-Fails) und den Waechterstand
+#     (running/secondsSinceSweep/abandonedTotal). Die Titelleiste zeigt dauerhaft
+#     "Bridge 7.0.6 - <SHA-8> - Waechter aktiv seit ...". Damit ist die Frage
+#     "laeuft 7.0.6 beim Nutzer ueberhaupt?" ohne Log-Datei entscheidbar (H1).
+#   * SITZUNGS-IDENTITAET STATT NEUER SESSION-ID (beendet den
+#     "Bridge connected"-Sturm, H3): Dieselbe Plugin-instanceGuid bekommt IMMER
+#     dieselbe Sitzung und denselben Token - auch nach Cleanup, Reconnect oder
+#     einem Zwischenzustand, der von aussen "tot" aussieht. /plugin/hello und
+#     /plugin/poll beleben die bekannte Sitzung wieder, statt eine neue zu
+#     erfinden; das Plugin uebernimmt eine vom Server genannte sessionId, statt
+#     seine Sitzung zu verwerfen. Ein Sturm wird als Warnung mit Zaehler sichtbar
+#     (Telemetry.StormWarnings, newSessionsLast60s).
+#   * KEINE 55-SEKUNDEN-TIMEOUTS MEHR FUER TOTE ODER BELEGTE EXECUTORS (H5/H4):
+#     Get-StudioDeliveryHealth klassifiziert VOR jedem Befehl. Ist der Executor
+#     nachweislich stumm (kein offener Poll, kein Lebenszeichen, Arbeit wartet),
+#     antwortet die Bridge SOFORT mit STUDIO_UNREACHABLE samt klarer
+#     Handlungsanweisung (Studio einmal komplett schliessen und neu oeffnen - ein
+#     blockiertes Lua im Plugin gibt nur der Studio-Neustart frei). Ist der
+#     Executor belegt und die FIFO nicht leer, kommt SOFORT STUDIO_BUSY (mit
+#     laufendem Tool und Laufzeit) statt einer weiteren Warteschlang-Wartezeit;
+#     args.asJob=true umgeht das. Telemetry zaehlt FastFailWedged/FastFailBusy.
+#   * ZUSTELL-TIMELINE: Jeder Befehl traegt queuedAt -> deliveredAt -> receivedAt
+#     -> startedAt -> heartbeatAt -> finishedAt (+ lastError) und erscheint in
+#     GET /api/queue als timeline[] - in EINER Antwort ist sichtbar, wo es
+#     klemmt, ohne Studio-Log.
+#   * get_bridge_log ALS TOOL: die KI liest die letzten Zeilen von runtime.log und
+#     performance.txt selbst, statt den Nutzer nach Dateien zu fragen.
+#   * PLUGIN SICHTBAR: Das Widget zeigt "Poll: laeuft / letzte Antwort vor X s -
+#     Befehle: n - zuletzt: <tool>"; Poll- und Handshake-Antworten (inklusive
+#     pluginOutdated) landen im Studio-Output, Fehler klar markiert mit
+#     "ARENA-PLUGIN-FEHLER: ...".
+#   * VORSCHAU EHRLICH: Ist das Studio-Fenster nachweislich ohne Inhalt
+#     (schwarz/leer) oder antwortet es nicht, steht der Grund in
+#     preview-diagnose.txt und im runtime.log - die Aufnahme laeuft mit hartem
+#     Zeitlimit statt endlos zu drehen.
+#
+#   EHRLICHE EINORDNUNG: Offline ist diese Version nur strukturell geprueft
+#   (test_v398_structure.py, test_queue_model_706.py) - NICHT auf Windows
+#   gemessen. Erst die Live-Abnahme im README (GET /api/version, ein normaler
+#   Befehl, ein erzwungener Haenger, Reconnect) belegt den Erfolg.
 #
 # HAENGENDE BEFEHLE + RECONNECT + PLACE-LISTE - VERSION 7.0.5:
 #
@@ -1376,6 +1431,9 @@ $script:UiRows = @{}
 $script:PlaceNames = @{}
 $script:PlaceNameResolveErrorLogged = @{}
 $script:PlaceRowFailureLogAt = @{}
+# Version 7.0.6: je Sitzung einmal im Log vermerken, wenn das Studio-Plugin
+# veraltet ist - der stille Fall "alles ist wie immer" wird damit beweisbar.
+$script:PluginOutdatedLogged = @{}
 $script:PlaceListRepairLastLog = [DateTime]::MinValue
 # Version 7.0.0: EINE Zeile haengt an einer STABILEN Identitaet (PID + HWND
 # bzw. Plugin-Session + placeId) - niemals am Anzeigenamen. PlaceIdentities
@@ -1420,6 +1478,12 @@ $script:PreviewHandleInfos = @{}
 $script:PlacesDiagnoseLines = New-Object System.Collections.Generic.List[string]
 $script:PreviewCaptureMode = 'ps-fallback'
 $script:PreviewCaptureModeReason = 'C#-Helfer noch nicht initialisiert'
+# Version 7.0.6: letztes Aufnahme-Ergebnis als Klartextgrund ("EHRLICHE
+# VORSCHAU"). Ist es schwarz/leer oder kommt keine Antwort, steht der Grund ab
+# sofort in preview-diagnose.txt, im runtime.log UND in GET /api/version -
+# statt eines endlos drehenden Kreises ohne Begruendung.
+$script:PreviewLastOutcome = 'noch keine Aufnahme versucht'
+$script:PreviewLastOutcomeAt = [DateTime]::MinValue
 # Version 5.2: Sichtbarkeit/Aufraeumen der Place-Liste. Das Edit-Plugin
 # heartbeatet etwa alle 5 Sekunden - 15 s decken 3 verlorene Beats locker ab.
 # Ein sauber abgemeldetes Fenster (Studio/Place geschlossen) verschwindet nach
@@ -1815,6 +1879,11 @@ $script:Shared = [hashtable]::Synchronized(@{
     CommandOwners   = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     CommandStates   = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     CompletedCommandIds = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
+    # Version 7.0.6: sessionId -> die letzten abgeschlossenen Befehle (kompakt).
+    # Erst damit zeigt GET /api/queue die vollstaendige Zustell-Timeline
+    # (queuedAt -> deliveredAt -> receivedAt -> startedAt -> heartbeatAt ->
+    # finishedAt + Code), auch nachdem der offene Eintrag entfernt wurde.
+    CommandHistory = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
     # sessionId:commandId -> cancel timestamp; sessionId -> executor reset timestamp.
     CancelRequests  = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
     ExecutorResetRequests = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
@@ -1872,7 +1941,51 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.0.5'
+    DocsVersion     = '7.0.6'
+    # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
+    # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
+    # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
+    # in EINER Antwort sichtbar ist, ob 7.0.6 ueberhaupt laeuft und ob das
+    # Studio-Plugin pollt. Ohne diese Zahlen war jede Fehlersuche geraten.
+    Telemetry = [hashtable]::Synchronized(@{
+        StartedAt = 0L
+        Hello = 0L
+        Poll = 0L
+        Result = 0L
+        ToolCalls = 0L
+        NewSessions = 0L
+        ReusedSessions = 0L
+        RevivedSessions = 0L
+        UnknownSessionPolls = 0L
+        StormWarnings = 0L
+        FastFailWedged = 0L
+        FastFailBusy = 0L
+        RowCancels = 0L
+        LastHelloAt = 0L
+        LastPollAt = 0L
+        LastResultAt = 0L
+    })
+    # Version 7.0.6: Zeitpunkte der Sitzungs-Neuanlagen (Sturm-Beweis ohne Log).
+    SessionCreations = [System.Collections.Concurrent.ConcurrentQueue[long]]::new()
+    # Version 7.0.6: DIESELBE Plugin-Instanz bekommt IMMER dieselbe Sitzung und
+    # denselben Token - auch nach Cleanup, Reconnect oder einem Zustand, der von
+    # aussen "tot" aussieht. Erst das beendet den "Bridge connected"-Sturm alle
+    # 2 Sekunden und verhindert, dass Befehle in einer Sitzung landen, die das
+    # Plugin nicht mehr pollt.
+    InstanceSessions = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    InstanceLastSeen = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
+    # Version 7.0.6: Laufzeit-Identitaet der LAUFENDEN Datei (Version, Pfad,
+    # SHA-256, Sprachmodus, Startzeit) fuer GET /api/version.
+    RuntimeInfo = [hashtable]::Synchronized(@{
+        Version = '7.0.6'
+        File = ''
+        Sha256 = ''
+        LanguageMode = ''
+        AppDataRoot = ''
+        LogFile = ''
+        PerfFile = ''
+        StartedAt = 0L
+    })
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         simAllowed      = $false    # sim_start bleibt bis zu echter Edit-Modus-Simulation gesperrt
@@ -2005,8 +2118,21 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-    $script:PreviewDiagIdentity = ("Bridge-Version=7.0.5, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.0.5, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    $script:PreviewDiagIdentity = ("Bridge-Version=7.0.6, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.0.6, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
+    # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
+    try {
+        $script:Shared.RuntimeInfo.Version = '7.0.6'
+        $script:Shared.RuntimeInfo.File = [string]$runFile
+        $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
+        $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
+        $script:Shared.RuntimeInfo.AppDataRoot = [string]$script:AppDataRoot
+        $script:Shared.RuntimeInfo.LogFile = [string]$script:RuntimeLog
+        $script:Shared.RuntimeInfo.PerfFile = (Join-Path $script:AppDataRoot 'performance.txt')
+        $script:Shared.RuntimeInfo.StartedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        $script:Shared.Telemetry.StartedAt = [long]$script:Shared.RuntimeInfo.StartedAt
+    } catch {}
     # Version 6.0.5: Hinweis auf den kleinen Kurzbericht - er enthaelt alles,
     # was zur Beurteilung der Fenster-Vorschau noetig ist.
     Write-RuntimeLog ("Vorschau-Kurzbericht: " + (Join-Path $script:AppDataRoot 'preview-diagnose.txt'))
@@ -2100,7 +2226,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.0.5)
+  Arena Studio Bridge - Studio Plugin  (Version 7.0.6)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -2173,7 +2299,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.0.5"
+local ARENA_VERSION  = "7.0.6"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -2409,6 +2535,48 @@ body.TextXAlignment = Enum.TextXAlignment.Left
 body.TextYAlignment = Enum.TextYAlignment.Top
 body.Text = "Dieses Plugin verbindet das aktuell geöffnete Place automatisch mit dem Programm Arena Roblox Bridge. Dieses Fenster kann jederzeit geschlossen werden - die Verbindung bleibt dabei aktiv."
 body.Parent = frame
+
+-- Version 7.0.6: SICHTBARER ZUSTAND. Vorher war im Studio nicht erkennbar, ob
+-- das Plugin ueberhaupt pollt, wie viele Befehle es ausgefuehrt hat oder ob die
+-- Bridge das Plugin fuer veraltet haelt. Fehler landen klar markiert im
+-- Studio-Output ("ARENA-PLUGIN-FEHLER: ..."), aber gedrosselt (hoechstens eine
+-- Meldung je 60 s), damit das Output-Fenster nicht zugemuellt wird.
+local pluginCmdCount = 0
+local lastToolName = '-'
+local lastPollOkAt = 0
+local lastPollError = ''
+local lastPluginErrorText = ''
+local lastPluginErrorAt = 0
+local pluginOutdated = false
+local function setWidgetStatus(extra)
+    local status
+    if lastPollOkAt > 0 then
+        status = string.format('Poll: laeuft (letzte Antwort vor %.1f s) - Befehle: %d', os.clock() - lastPollOkAt, pluginCmdCount)
+    else
+        status = 'Poll: noch keine Antwort von der Bridge - Befehle: ' .. tostring(pluginCmdCount)
+    end
+    if executorState.runningTool ~= nil then
+        status = status .. ' - laeuft: ' .. tostring(executorState.runningTool)
+    elseif lastToolName ~= '-' then
+        status = status .. ' - zuletzt: ' .. tostring(lastToolName)
+    end
+    if lastPollError ~= '' then
+        status = status .. ' - Fehler: ' .. tostring(lastPollError)
+    end
+    if pluginOutdated then
+        status = status .. ' - PLUGIN VERALTET: Roblox Studio einmal komplett neu oeffnen'
+    end
+    if extra then status = status .. ' - ' .. tostring(extra) end
+    pcall(function() body.Text = status end)
+end
+local function pluginOutputError(message)
+    local text = 'ARENA-PLUGIN-FEHLER: ' .. tostring(message)
+    if text == lastPluginErrorText and (os.clock() - lastPluginErrorAt) < 60 then return end
+    lastPluginErrorText = text
+    lastPluginErrorAt = os.clock()
+    pcall(function() warn(text) end)
+    pcall(function() setWidgetStatus('siehe Output') end)
+end
 
 button.Click:Connect(function()
     widget.Enabled = true
@@ -10668,6 +10836,7 @@ local function pumpCommandQueue()
                         executorState.runningTool = nil
                         executorState.startedAt = 0
                         executorState.lastTick = os.time()
+                        setWidgetStatus()
                     end
                 end
             end
@@ -10833,9 +11002,11 @@ local function handshake()
         -- 7.0.0: keine Reporter mehr - die Sitzung gehoert nur noch dieser
         -- Plugin-Instanz. Kein SetSetting ueber DataModel-Grenzen.
         if response.pluginOutdated then
+            pluginOutdated = true
             title.Text = "Arena Bridge: Studio neu starten"
-            body.Text = "Plugin und Bridge haben unterschiedliche Versionen. Studio neu starten - Simulationen warten bis dahin."
+            pluginOutputError('Plugin-Version ' .. tostring(ARENA_VERSION) .. ' passt nicht zur Bridge (erwartet ' .. tostring(response.docsVersion) .. '). Roblox Studio einmal KOMPLETT schliessen und neu oeffnen - ein laufendes Studio behaelt das alte Plugin im Speicher.')
         end
+        setWidgetStatus('verbunden')
         connected = true
         -- Version 7.0.5: Nach einem Reconnect sofort alles nachliefern, was noch
         -- im Ausgangskorb liegt - die Ergebnisse gehören zum commandId, nicht zur
@@ -10992,6 +11163,13 @@ task.spawn(function()
             if perfWanted then payload.perf = perfReport() end
             local started = os.clock()
             local response = post("/plugin/poll", payload)
+            if response ~= nil then
+                lastPollOkAt = os.clock()
+                lastPollError = ''
+            else
+                lastPollError = 'keine Antwort'
+                pluginOutputError('Poll-Anfrage an die Bridge ohne Antwort. Laeuft die Bridge und ist der Tunnel erreichbar?')
+            end
             local pollMs = math.floor((os.clock() - started) * 1000)
             perfStats.polls = perfStats.polls + 1
             perfStats.waitMs = perfStats.waitMs + math.floor(waitSeconds * 1000)
@@ -11000,11 +11178,28 @@ task.spawn(function()
             if response == nil then
                 task.wait(0.5)
             elseif response.unknownSession == true then
-                sessionId = nil
-                quiet = false
-                emptyPolls = 0
-                task.wait(backoff)
-                backoff = math.min(backoff * 1.6, 5)
+                -- Version 7.0.6: Die Bridge ist die Autoritaet fuer Identitaet.
+                -- Kennt sie diese Instanz noch, schickt sie die gueltige
+                -- sessionId mit - das Plugin uebernimmt sie, statt seine
+                -- Sitzung zu verwerfen. Genau das beendet den
+                -- "Bridge connected"-Sturm alle 2 Sekunden.
+                if response.sessionId ~= nil and tostring(response.sessionId) ~= "" then
+                    sessionId = tostring(response.sessionId)
+                    lastPollOkAt = os.clock()
+                    lastPollError = ''
+                    quiet = false
+                    emptyPolls = 0
+                    backoff = 0.5
+                    setWidgetStatus('gleiche Sitzung uebernommen')
+                else
+                    sessionId = nil
+                    lastPollError = 'Sitzung unbekannt'
+                    quiet = false
+                    emptyPolls = 0
+                    pluginOutputError('Die Bridge kennt diese Sitzung nicht mehr. Studio neu oeffnen; die Bridge vergibt fuer dieselbe Instanz wieder dieselbe Sitzung.')
+                    task.wait(backoff)
+                    backoff = math.min(backoff * 1.6, 5)
+                end
             else
                 backoff = 0.5
                 lastHeartbeat = os.clock()
@@ -11032,6 +11227,7 @@ task.spawn(function()
                     local receivedIds = {}
                     for _, command in ipairs(response.commands) do
                         delivered = delivered + 1
+                        lastToolName = tostring(command and command.tool or '?')
                         enqueueCommand(command)
                         if command and command.id then table.insert(receivedIds, tostring(command.id)) end
                     end
@@ -11048,6 +11244,7 @@ task.spawn(function()
             end
             if delivered > 0 then
                 perfStats.cmds = perfStats.cmds + delivered
+                pluginCmdCount = pluginCmdCount + delivered
                 emptyPolls = 0
                 quiet = false
             else
@@ -11055,6 +11252,7 @@ task.spawn(function()
                 if emptyPolls >= ARENA_CFG.QUIET_AFTER_POLLS then quiet = true end
             end
             perfStats.quiet = quiet
+            setWidgetStatus()
             -- PFLICHT-PAUSE: zwischen zwei Anfragen ist der HTTP-Platz frei.
             task.wait(gapSeconds)
             perfStats.gapMs = perfStats.gapMs + math.floor(gapSeconds * 1000)
@@ -12023,7 +12221,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.0.5 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.0.6 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -12881,6 +13079,10 @@ $script:BridgeHandlerScript = {
             resultCode = if ($parsed -and $parsed.code) { [string]$parsed.code } else { '' }
         }
         $Shared.CommandStates[$id] = (To-Json $finalState 8)
+        # Version 7.0.6: Die Historie haelt das Endergebnis fest, damit
+        # GET /api/queue auch nach dem Entfernen des offenen Eintrags zeigt,
+        # wie der Befehl geendet hat (finishedAt/abandonedAt + Code).
+        Add-CommandHistory $sid $id $tool ([string]$finalState.status) ("finished at " + [string]$completedAt + " (" + [string]$finalState.resultCode + ")")
         # Keep any outstanding cancellation request until the plugin acknowledges
         # it; removing it here would make queue cancel/reset a no-op in Studio.
 
@@ -12932,6 +13134,7 @@ $script:BridgeHandlerScript = {
         $info.status = 'abandoned'
         $info | Add-Member -NotePropertyName 'abandonedAt' -NotePropertyValue (Get-UnixSeconds) -Force
         $info | Add-Member -NotePropertyName 'abandonReason' -NotePropertyValue $reasonCode -Force
+        $info | Add-Member -NotePropertyName 'lastError' -NotePropertyValue ($reasonCode + ': ' + $reason) -Force
         # Version 7.0.5: after a reconnect the record and the queue entry belong to
         # the successor session; the caller session reaches them through the chain.
         $ownerSid = Get-CommandOwner $id
@@ -13233,6 +13436,7 @@ $script:BridgeHandlerScript = {
                     runningSeconds = if ($startedAt -gt 0) { [int][Math]::Max(0, $now - $startedAt) } else { 0 }
                     budgetSeconds = [int]$info.budgetSeconds
                     abandonReason = if ($info.abandonReason) { [string]$info.abandonReason } else { '' }
+                    lastError = if ($info.lastError) { [string]$info.lastError } elseif ($info.abandonReason) { [string]$info.abandonReason } else { '' }
                 })
             } catch {
                 # A malformed legacy value cannot poison following requests.
@@ -13323,6 +13527,202 @@ $script:BridgeHandlerScript = {
         return @{ ok=$false; accepted=$false; commandId=$id; error='Unknown command phase.' }
     }
 
+    # Version 7.0.6: kurze, dauerhafte Befehls-Historie je Sitzung.
+    function Add-CommandHistory($sessionId, $commandId, $tool, $status, [string]$detail) {
+        try {
+            $sid = [string]$sessionId
+            if ([string]::IsNullOrWhiteSpace($sid)) { return }
+            $historyQueue = $null
+            if (-not $Shared.CommandHistory.TryGetValue($sid, [ref]$historyQueue)) {
+                $historyQueue = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+                [void]$Shared.CommandHistory.TryAdd($sid, $historyQueue)
+                [void]$Shared.CommandHistory.TryGetValue($sid, [ref]$historyQueue)
+            }
+            $historyQueue.Enqueue((To-Json @{
+                commandId = [string]$commandId
+                tool      = [string]$tool
+                status    = [string]$status
+                at        = (Get-UnixSeconds)
+                detail    = [string]$detail
+            } 6))
+            while ($historyQueue.Count -gt 40) { $dropHistory = $null; [void]$historyQueue.TryDequeue([ref]$dropHistory) }
+        } catch {}
+    }
+
+    # Version 7.0.6: Kann dieser Place ueberhaupt noch Befehle ausfuehren?
+    # Bewusst konservativ: ein offener Poll oder ein frisches Lebenszeichen
+    # bedeutet IMMER "erreichbar". Erst wenn nachweislich nichts mehr antwortet
+    # UND Arbeit wartet, gilt der Executor als stumm ("wedged") - dann antwortet
+    # die Bridge sofort, statt 55 Sekunden in den Timeout zu laufen.
+    function Get-StudioDeliveryHealth($sessionId) {
+        $sid = [string]$sessionId
+        $now = Get-UnixSeconds
+        $delivery = Get-DeliverySession $sid
+        $executor = Get-SessionExecutorSnapshot $delivery
+        $openPolls = 0
+        [void]$Shared.Pollers.TryGetValue($delivery, [ref]$openPolls)
+        $presenceStamp = [int64]0
+        $hasPresence = $Shared.Presence.TryGetValue($delivery, [ref]$presenceStamp)
+        $lastSeen = 0
+        try { $lastSeen = [int64]$executor.lastSeen } catch {}
+        $lastSign = $(if ($hasPresence) { [int64]$presenceStamp } else { [int64]$lastSeen })
+        $age = $(if ($lastSign -gt 0) { [int][Math]::Max(0, $now - $lastSign) } else { 999999 })
+        $waiting = 0
+        $oldestWaiting = 0
+        $bag = $null
+        if ($Shared.PendingCommands.TryGetValue($delivery, [ref]$bag)) {
+            foreach ($pair in @($bag.GetEnumerator())) {
+                try {
+                    $info = $pair.Value | ConvertFrom-Json
+                    $status = [string]$info.status
+                    if ($status -eq 'queued' -or $status -eq 'delivered' -or $status -eq 'received' -or $status -eq 'started' -or $status -eq 'running') {
+                        $waiting = $waiting + 1
+                        $queuedAt = [int64]$info.queuedAt
+                        if ($queuedAt -le 0) { try { $queuedAt = [int64]$info.createdAt } catch {} }
+                        if ($queuedAt -gt 0) {
+                            $waitAge = [int][Math]::Max(0, $now - $queuedAt)
+                            if ($waitAge -gt $oldestWaiting) { $oldestWaiting = $waitAge }
+                        }
+                    }
+                } catch {}
+            }
+        }
+        $state = 'ok'
+        if ($openPolls -gt 0) { $state = 'ok' }
+        elseif ($age -le 15) { $state = 'ok' }
+        elseif ($waiting -gt 0 -and $oldestWaiting -gt 25) { $state = 'wedged' }
+        elseif (-not [bool]$executor.alive -and $age -gt 45) { $state = 'wedged' }
+        elseif ($age -gt 45) { $state = 'quiet' }
+        $runningTool = ''
+        try { $runningTool = [string]$executor.runningTool } catch {}
+        $runningSeconds = 0
+        try { if ([int64]$executor.startedAt -gt 0) { $runningSeconds = [int][Math]::Max(0, $now - [int64]$executor.startedAt) } } catch {}
+        return @{
+            state = $state
+            deliverySession = $delivery
+            secondsSinceLastSign = $age
+            openPolls = [int]$openPolls
+            waitingCommands = $waiting
+            oldestWaitingSeconds = $oldestWaiting
+            runningTool = $runningTool
+            runningSeconds = $runningSeconds
+            busy = ($runningSeconds -gt 0 -and -not [string]::IsNullOrWhiteSpace($runningTool))
+            executorAlive = [bool]$executor.alive
+            rule = 'ok = open poll or fresh sign of life; busy = a tool is running with fresh heartbeats; wedged = no poll, no sign of life and waiting work (a blocked Lua VM only a Studio restart frees); quiet = simply no activity.'
+        }
+    }
+
+    # Version 7.0.6: EINE Antwort, die Deployment und Verbindung beweist.
+    # Bewusst OHNE Token erreichbar (nur lokal bzw. ueber den Tunnel), damit sie
+    # auch dann hilft, wenn der Token nicht mehr gueltig ist. Sie enthaelt KEINE
+    # Tokens - nur gekuerzte Sitzungs-Ids.
+    function Get-VersionReport {
+        $now = Get-UnixSeconds
+        $rt = $Shared.RuntimeInfo
+        $tel = $Shared.Telemetry
+        $recentCreations = 0
+        try {
+            foreach ($creationStamp in @($Shared.SessionCreations.ToArray())) {
+                if ([int64]$creationStamp -ge ($now - 60)) { $recentCreations = $recentCreations + 1 }
+            }
+        } catch {}
+        $sessions = New-Object System.Collections.Generic.List[object]
+        foreach ($pair in $Shared.Sessions.GetEnumerator()) {
+            try {
+                $sid = [string]$pair.Key
+                $entry = $pair.Value | ConvertFrom-Json
+                $openPolls = 0
+                [void]$Shared.Pollers.TryGetValue($sid, [ref]$openPolls)
+                $lastSeen = [int64]$entry.lastSeen
+                $executor = Get-SessionExecutorSnapshot $sid
+                $pendingCount = 0
+                $pendingBag = $null
+                if ($Shared.PendingCommands.TryGetValue($sid, [ref]$pendingBag)) { $pendingCount = [int]$pendingBag.Count }
+                $sessions.Add(@{
+                    sessionIdShort = $(if ($sid.Length -gt 8) { $sid.Substring(0, 8) } else { $sid })
+                    placeName = [string]$entry.placeName
+                    placeId = [string]$entry.placeId
+                    pluginVersion = [string]$entry.pluginVersion
+                    pluginOutdated = ([string]$entry.pluginVersion -ne [string]$Shared.DocsVersion)
+                    secondsSinceLastSeen = [int][Math]::Max(0, $now - $lastSeen)
+                    openPolls = [int]$openPolls
+                    pendingCommands = $pendingCount
+                    executorAlive = [bool]$executor.alive
+                    runningTool = [string]$executor.runningTool
+                    executorQueueDepth = [int]$executor.queueDepth
+                    orphan = [bool]$entry.orphan
+                })
+            } catch {}
+        }
+        $sweep = @{
+            running = ([int64]$Shared.SweepState.LastSweepAt -gt 0 -and ($now - [int64]$Shared.SweepState.LastSweepAt) -le 10)
+            startedAt = [int64]$Shared.SweepState.StartedAt
+            lastSweepAt = [int64]$Shared.SweepState.LastSweepAt
+            secondsSinceSweep = $(if ([int64]$Shared.SweepState.LastSweepAt -gt 0) { [int][Math]::Max(0, $now - [int64]$Shared.SweepState.LastSweepAt) } else { -1 })
+            sweeps = [int64]$Shared.SweepState.Sweeps
+            abandonedTotal = [int64]$Shared.SweepState.Abandoned
+        }
+        return @{
+            ok = $true
+            bridgeVersion = [string]$Shared.DocsVersion
+            deployment = @{
+                version = [string]$rt.Version
+                file = [string]$rt.File
+                sha256 = [string]$rt.Sha256
+                sha256Short = $(if ([string]$rt.Sha256 -and ([string]$rt.Sha256).Length -ge 8) { ([string]$rt.Sha256).Substring(0, 8).ToLowerInvariant() } else { '' })
+                languageMode = [string]$rt.LanguageMode
+                startedAt = [int64]$rt.StartedAt
+                runningSeconds = $(if ([int64]$rt.StartedAt -gt 0) { [int][Math]::Max(0, $now - [int64]$rt.StartedAt) } else { 0 })
+                logFile = [string]$rt.LogFile
+                runtimeLog = [string]$rt.LogFile
+                rootFolder = [string]$rt.AppDataRoot
+            }
+            counters = @{
+                hello = [int64]$tel.Hello
+                poll = [int64]$tel.Poll
+                result = [int64]$tel.Result
+                toolCalls = [int64]$tel.ToolCalls
+                newSessions = [int64]$tel.NewSessions
+                reusedSessions = [int64]$tel.ReusedSessions
+                revivedSessions = [int64]$tel.RevivedSessions
+                unknownSessionPolls = [int64]$tel.UnknownSessionPolls
+                stormWarnings = [int64]$tel.StormWarnings
+                fastFailWedged = [int64]$tel.FastFailWedged
+                fastFailBusy = [int64]$tel.FastFailBusy
+                rowCancels = [int64]$tel.RowCancels
+                newSessionsLast60s = [int]$recentCreations
+                lastHelloAt = [int64]$tel.LastHelloAt
+                lastPollAt = [int64]$tel.LastPollAt
+                lastResultAt = [int64]$tel.LastResultAt
+                secondsSinceLastPoll = $(if ([int64]$tel.LastPollAt -gt 0) { [int][Math]::Max(0, $now - [int64]$tel.LastPollAt) } else { -1 })
+            }
+            sweep = $sweep
+            preview = @{
+                mode = [string]$script:PreviewCaptureMode
+                modeReason = [string]$script:PreviewCaptureModeReason
+                selfTestVerdict = [string]$script:PreviewSelfTestVerdict
+                lastOutcome = [string]$script:PreviewLastOutcome
+                lastOutcomeSecondsAgo = $(try { if ($script:PreviewLastOutcomeAt -gt [DateTime]::MinValue) { [int][Math]::Max(0, ((Get-Date) - $script:PreviewLastOutcomeAt).TotalSeconds) } else { -1 } } catch { -1 })
+                activeCaptures = @($script:PlacePreviewJobs.Keys).Count
+                intervalSeconds = [double]$script:PlacePreviewIntervalSeconds
+                targetHeight = [int]$script:PlacePreviewCaptureHeight
+                diagnoseFile = (Join-Path $script:AppDataRoot 'preview-diagnose.txt')
+                cacheFolder = (Join-Path $script:AppDataRoot 'preview-cache')
+                note = 'The window preview never spins silently: the last outcome (ok with pixel size and method, or the exact reason) is reported here and in preview-diagnose.txt. If mode is ps-fallback, the C# helper could not be compiled - modeReason says why.'
+            }
+            connectedPlaces = $Shared.Sessions.Count
+            sessions = $sessions
+            verdict = @{
+                versionLoaded = [string]$rt.Version
+                ifThisIsNotTheVersionYouDeployed = 'The running file is listed under deployment.file with its SHA-256; compare it with the file in the repository (git show origin/main:ArenaBridge.ps1 | sha256sum). A different hash means an old copy is running.'
+                pluginOutdated = (@($sessions | Where-Object { $_.pluginOutdated }).Count -gt 0)
+                storm = ([int]$recentCreations -ge 6)
+                watchdogRunning = [bool]$sweep.running
+                hint = 'If sessions stay empty although Studio is open, the plugin never reached the bridge: check that Roblox Studio was restarted after the update (the plugin file is rewritten at every bridge start, but a running Studio keeps the old plugin in memory).'
+            }
+        }
+    }
+
     function Get-SessionCancellationIds($sessionId) {
         $prefix = [string]$sessionId + ':'
         $items = New-Object System.Collections.Generic.List[string]
@@ -13351,6 +13751,39 @@ $script:BridgeHandlerScript = {
             }
         } catch {}
         $deliverySession = Get-DeliverySession ([string]$sessionId)
+        # Version 7.0.6: Die Zustell-Timeline beantwortet in EINER Anfrage, WO
+        # ein Befehl klemmt: queuedAt -> deliveredAt -> receivedAt -> startedAt
+        # -> heartbeatAt -> finishedAt. Ohne diese Zeiten war jede Diagnose
+        # geraten (H7: kommt der Befehl ueberhaupt an?).
+        $timeline = New-Object System.Collections.Generic.List[object]
+        foreach ($item in @($pending)) {
+            $timeline.Add(@{
+                commandId = [string]$item.commandId
+                tool = [string]$item.tool
+                status = [string]$item.status
+                seconds = [int]$item.seconds
+                queuedAt = [int64]$item.queuedAt
+                deliveredAt = [int64]$item.deliveredAt
+                receivedAt = [int64]$item.receivedAt
+                startedAt = [int64]$item.startedAt
+                heartbeatAt = [int64]$item.heartbeatAt
+                runningSeconds = [int]$item.runningSeconds
+                budgetSeconds = [int]$item.budgetSeconds
+                lastError = [string]$item.lastError
+            })
+        }
+        $recentCommands = New-Object System.Collections.Generic.List[object]
+        try {
+            $historyQueue = $null
+            if ($Shared.CommandHistory.TryGetValue([string]$sessionId, [ref]$historyQueue)) {
+                foreach ($historyRaw in @($historyQueue.ToArray())) {
+                    try { $recentCommands.Add(($historyRaw | ConvertFrom-Json)) } catch {}
+                }
+                if ($recentCommands.Count -gt 12) {
+                    $recentCommands = @($recentCommands | Select-Object -Last 12)
+                }
+            }
+        } catch {}
         return @{
             ok = $true
             sessionId = [string]$sessionId
@@ -13360,10 +13793,14 @@ $script:BridgeHandlerScript = {
             delivered = $delivered
             running = $running
             pending = $pending
+            timeline = $timeline
+            recent = @($recentCommands)
+            delivery = (Get-StudioDeliveryHealth $sessionId)
             executor = $executor
             sweep = $sweep
             cancelledCommandIds = @(Get-SessionCancellationIds $sessionId)
             resetRequested = $Shared.ExecutorResetRequests.ContainsKey([string]$sessionId)
+            timelineRule = 'queuedAt -> deliveredAt -> receivedAt -> startedAt -> heartbeatAt -> finishedAt/abandonedAt. A missing deliveredAt means the plugin never polled the command away; a missing startedAt means it was never started in Studio; a stalled heartbeatAt means the executor stopped reporting.'
         }
     }
 
@@ -13422,8 +13859,52 @@ $script:BridgeHandlerScript = {
         $placeName = [string]$body.placeName
         $now = Get-UnixSeconds
 
+        # Version 7.0.6: IDENTITAET ZUERST. Hat dieses Plugin-Fenster
+        # (instanceGuid) schon eine Sitzung, dann ist DAS die Sitzung - ohne
+        # Namensraten und ohne "sieht tot aus"-Heuristik. Genau hier entstand
+        # der "Bridge connected"-Sturm alle 2 Sekunden, und genau deshalb
+        # landeten Befehle in Sitzungen, die niemand mehr pollte.
+        $instanceSessionId = ''
+        if (-not [string]::IsNullOrWhiteSpace($guid)) {
+            [void]$Shared.InstanceSessions.TryGetValue($guid, [ref]$instanceSessionId)
+            $instanceSessionId = [string]$instanceSessionId
+            $Shared.InstanceLastSeen[$guid] = $now
+        }
+
         $reusable = $null
         $reuseReason = $null
+        if (-not [string]::IsNullOrWhiteSpace($instanceSessionId)) {
+            $instanceEntry = Get-SessionEntry $instanceSessionId
+            if (-not $instanceEntry) {
+                # Die Sitzung war schon aufgeraeumt (z. B. 120 s ohne
+                # Lebenszeichen). Dieselbe Identitaet wird wiederbelebt, statt
+                # eine neue sessionId zu erfinden - der Token bleibt gueltig,
+                # wartende Befehle bleiben erreichbar.
+                $instanceEntry = @{
+                    sessionId     = $instanceSessionId
+                    instanceGuid  = $guid
+                    placeName     = $placeName
+                    placeId       = $placeId
+                    gameId        = [string]$body.gameId
+                    token         = ''
+                    accessMode    = 'readwrite'
+                    lastSeen      = $now
+                    connectedAt   = $now
+                    state         = $null
+                    pluginVersion = [string]$body.pluginVersion
+                    capabilities  = $body.capabilities
+                    reconnects    = 0
+                    orphan        = $false
+                    revived       = $true
+                }
+                try { $Shared.Telemetry.RevivedSessions = [long]$Shared.Telemetry.RevivedSessions + 1 } catch {}
+                Write-BridgeLog ("Sitzung " + $instanceSessionId + " wurde fuer dieselbe Plugin-Instanz wiederbelebt (keine neue sessionId, kein neuer Token).")
+            }
+            if ($instanceEntry) {
+                $reusable = $instanceEntry
+                $reuseReason = 'same-instance'
+            }
+        }
         foreach ($pair in $Shared.Sessions.GetEnumerator()) {
             $entry = $null
             try { $entry = $pair.Value | ConvertFrom-Json } catch { $entry = $null }
@@ -13547,6 +14028,11 @@ $script:BridgeHandlerScript = {
             }
             Save-SessionExecutorState $sessionId $body.executor
             $Shared.Presence[$sessionId] = $now
+            if (-not [string]::IsNullOrWhiteSpace($guid)) {
+                $Shared.InstanceSessions[$guid] = $sessionId
+                $Shared.InstanceLastSeen[$guid] = $now
+            }
+            try { $Shared.Telemetry.ReusedSessions = [long]$Shared.Telemetry.ReusedSessions + 1 } catch {}
             return $entry
         }
 
@@ -13618,8 +14104,54 @@ $script:BridgeHandlerScript = {
                 Write-BridgeLog ('Befehle der vorherigen Sitzung ' + [string]$predecessor.sessionId + ' an ' + $sessionId + ' uebergeben (Reconnect).')
             }
         } catch {}
+        # Version 7.0.6: Identitaet merken und Sitzungs-Neuanlagen zaehlen.
+        # Mehr als sechs neue Sitzungen in 60 Sekunden sind kein normaler
+        # Reconnect, sondern ein Sturm - er wird sichtbar gemacht, statt
+        # stillschweigend weiterzulaufen.
+        if (-not [string]::IsNullOrWhiteSpace($guid)) {
+            $Shared.InstanceSessions[$guid] = $sessionId
+            $Shared.InstanceLastSeen[$guid] = $now
+        }
+        try {
+            $tel = $Shared.Telemetry
+            $tel.NewSessions = [long]$tel.NewSessions + 1
+            if ([long]$tel.StartedAt -le 0) { $tel.StartedAt = $now }
+            $Shared.SessionCreations.Enqueue($now)
+            $cutoff = $now - 300
+            $stampProbe = [long]0
+            while ($Shared.SessionCreations.TryPeek([ref]$stampProbe) -and [int64]$stampProbe -lt $cutoff) {
+                $dropStamp = [long]0
+                [void]$Shared.SessionCreations.TryDequeue([ref]$dropStamp)
+            }
+            $recentCreations = 0
+            foreach ($creationStamp in @($Shared.SessionCreations.ToArray())) {
+                if ([int64]$creationStamp -ge ($now - 60)) { $recentCreations = $recentCreations + 1 }
+            }
+            if ($recentCreations -ge 6) {
+                $tel.StormWarnings = [long]$tel.StormWarnings + 1
+                Write-BridgeLog ("WARNUNG: $recentCreations neue Studio-Sitzungen in 60 Sekunden. Dieselbe Plugin-Instanz muss dieselbe Sitzung behalten (instanceGuid). Pruefe /api/version (newSessionsLast60s) und die Plugin-Version im Studio.")
+            }
+        } catch {}
         Add-BridgeEvent $sessionId 'connected' "Place '$placeName' is connected." @{ placeId = $placeId }
         Write-BridgeLog "Neue Sitzung $sessionId fuer Place '$placeName' (placeId $placeId)."
+        return $entry
+    }
+
+    # Version 7.0.6: Eine unbekannte Sitzung wird nur dann wiederbelebt, wenn
+    # die INSTANZ bekannt ist (instanceGuid -> sessionId). Es wird nie eine neue
+    # Sitzung erfunden: genau das war der Reconnect-Sturm.
+    function Resolve-InstanceSession($body) {
+        if (-not $body) { return $null }
+        $guid = [string]$body.instanceGuid
+        if ([string]::IsNullOrWhiteSpace($guid)) { return $null }
+        $known = ''
+        if (-not $Shared.InstanceSessions.TryGetValue($guid, [ref]$known)) { return $null }
+        $known = [string]$known
+        if ([string]::IsNullOrWhiteSpace($known)) { return $null }
+        $entry = Register-Session $body
+        if ($entry) {
+            try { $Shared.Telemetry.RevivedSessions = [long]$Shared.Telemetry.RevivedSessions + 1 } catch {}
+        }
         return $entry
     }
 
@@ -14525,6 +15057,44 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         $deliverySession = Get-DeliverySession $callerSession
         $sessionId = $deliverySession
         $queue = Ensure-Queue $sessionId
+        # Version 7.0.6: VOR dem Einreihen messen, ob der Executor ueberhaupt
+        # antwortet. 7.0.5 liess jeden Befehl 55 Sekunden in den Timeout laufen,
+        # wenn das Plugin stumm war - genau das war "Befehle haengen". Jetzt
+        # gibt es sofort eine ehrliche, umsetzbare Antwort.
+        $deliveryHealth = Get-StudioDeliveryHealth $sessionId
+        if ($deliveryHealth.state -eq 'wedged') {
+            try { $Shared.Telemetry.FastFailWedged = [long]$Shared.Telemetry.FastFailWedged + 1 } catch {}
+            Add-CommandHistory $callerSession $null $tool 'not_queued' ('STUDIO_UNREACHABLE: no sign of life for ' + [string]$deliveryHealth.secondsSinceLastSign + ' s; command was not queued')
+            $unreachableHint = 'Roblox Studio does not answer the bridge: no poll and no sign of life for ' + [string]$deliveryHealth.secondsSinceLastSign + ' seconds while ' + [string]$deliveryHealth.waitingCommands + ' command(s) are waiting. This is NOT an Arena bug and nothing is running in Studio any more. Tell the user, in German, to close Roblox Studio COMPLETELY (Alt+F4, all Studio windows) and then open the place again - a blocked Lua VM inside the Studio plugin can only be freed by a Studio restart. The place itself is not damaged.'
+            return (To-Json @{
+                ok = $false
+                code = 'STUDIO_UNREACHABLE'
+                studioUnreachable = $true
+                error = ('Roblox Studio did not answer for ' + [string]$deliveryHealth.secondsSinceLastSign + ' seconds. The command was NOT queued - it could never be executed and would only block the queue.')
+                measurement = $deliveryHealth
+                userHint = $unreachableHint
+                howToFix = 'Ask the user to restart Roblox Studio once (close Studio completely, open the place again). Afterwards the plugin reconnects with the SAME session and the SAME token and commands work again. Do not retry this call in a loop and do not call force_fail repeatedly - the bridge already knows the executor is gone.'
+                commandSent = $false
+                workIsLost = $false
+            } 12)
+        }
+        if ($deliveryHealth.busy -and $queue.Count -gt 0) {
+            try { $Shared.Telemetry.FastFailBusy = [long]$Shared.Telemetry.FastFailBusy + 1 } catch {}
+            Add-CommandHistory $callerSession $null $tool 'not_queued' ('STUDIO_BUSY: ' + [string]$deliveryHealth.runningTool + ' running for ' + [string]$deliveryHealth.runningSeconds + ' s with ' + [string]$queue.Count + ' command(s) queued')
+            return (To-Json @{
+                ok = $false
+                code = 'STUDIO_BUSY'
+                studioBusy = $true
+                error = ('Studio is still executing ' + [string]$deliveryHealth.runningTool + ' (' + [string]$deliveryHealth.runningSeconds + ' s) and ' + [string]$queue.Count + ' command(s) are already waiting in the queue. The command was NOT queued, so it cannot pile up behind the running work.')
+                runningTool = [string]$deliveryHealth.runningTool
+                runningSeconds = [int]$deliveryHealth.runningSeconds
+                queueDepth = [int]$queue.Count
+                measurement = $deliveryHealth
+                howToFix = 'Studio executes commands strictly one after another. Either wait for the running command (GET /api/queue shows running + heartbeatAt) and repeat this call, or repeat it with args.asJob = true so it runs in the background without blocking.'
+                commandSent = $false
+                workIsLost = $false
+            } 12)
+        }
         if ($queue.Count -ge 64) {
             return (To-Json @{ ok=$false; code='QUEUE_FULL'; error='The Studio command queue is full (64 queued commands). Wait for the current work or reset the queue through /api/queue.'; queueDepth=[int]$queue.Count; commandSent=$false } 8)
         }
@@ -14590,6 +15160,12 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         $t = New-Object System.Collections.Generic.List[object]
 
         # ---------------- INFO ----------------
+        $t.Add(@{ name = 'get_bridge_log'; category = 'info'; summary = 'Letzte Zeilen von runtime.log / performance.txt (Selbstdiagnose).';
+            description = 'Liest die Log-Dateien der Bridge selbst - ohne den Nutzer nach Dateien zu fragen. Immer enthalten: Laufzeit-Identitaet (Version + Datei + SHA-256 der LAUFENDEN Datei), Waechter-Status und der Zustell-Zustand dieses Places (ok/busy/wedged). Damit laesst sich jede Fehlersuche mit Belegen fuehren statt mit Vermutungen.';
+            params = @{ lines = @{ type = 'number'; required = $false; default = 120; description = 'Zeilenzahl ab dem Ende (10-500).' }; file = @{ type = 'string'; required = $false; default = 'runtime'; description = 'runtime (Standard) oder performance.' } };
+            returns = '{ file, path, exists, lines[], deployment { version, file, sha256, startedAt }, sweep { running, secondsSinceSweep, abandonedTotal }, delivery { state, secondsSinceLastSign, runningTool } }';
+            example = @{ lines = 120; file = 'runtime' };
+            errors = @('Die Datei existiert noch nicht (z. B. performance.txt ohne eingeschaltete Leistungsdiagnose).') })
         $t.Add(@{ name = 'get_place_info'; category = 'info'; summary = 'Place, Play-Zustand, Faehigkeiten.';
             description = 'Was fuer ein Place ist verbunden, welche Id hat er, laeuft gerade eine Simulation (edit/run), welche Faehigkeiten hat das Plugin. Immer der erste sinnvolle Call.';
             params = @{};
@@ -15752,7 +16328,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.0.5'
+            version = '7.0.6'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -15979,7 +16555,7 @@ end
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.0.5'
+            bridgeVersion = '7.0.6'
             executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent = 0, never an error. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
@@ -16124,6 +16700,63 @@ end
                 $qFull = if ($toolArgs.full -eq $true) { 'true' } else { $null }
                 return (Get-DocsResponse $qTool $qCategory $qFull)
             }
+            'get_bridge_log' {
+                # Version 7.0.6: die KI liest die Logs SELBST, statt den Nutzer
+                # nach Dateien zu fragen. Immer mit Waechter- und
+                # Zustell-Zustand, damit die Zeilen einordbar sind.
+                $logLines = 120
+                if ($toolArgs -and $toolArgs.lines) { $logLines = [int]$toolArgs.lines }
+                if ($logLines -lt 10) { $logLines = 10 }
+                if ($logLines -gt 500) { $logLines = 500 }
+                $whichFile = 'runtime'
+                if ($toolArgs -and $toolArgs.file) { $whichFile = ([string]$toolArgs.file).Trim().ToLowerInvariant() }
+                $logPath = ''
+                if ($whichFile -eq 'performance' -or $whichFile -eq 'perf') {
+                    $logPath = [string]$Shared.RuntimeInfo.PerfFile
+                    $whichFile = 'performance'
+                } else {
+                    $logPath = [string]$Shared.RuntimeInfo.LogFile
+                    $whichFile = 'runtime'
+                }
+                $linesOut = New-Object System.Collections.Generic.List[string]
+                $fileExists = $false
+                $fileError = ''
+                try {
+                    if (-not [string]::IsNullOrWhiteSpace($logPath) -and (Test-Path -LiteralPath $logPath)) {
+                        $fileExists = $true
+                        $all = [System.IO.File]::ReadAllLines($logPath)
+                        $start = [Math]::Max(0, $all.Length - $logLines)
+                        for ($i = $start; $i -lt $all.Length; $i++) { $linesOut.Add([string]$all[$i]) }
+                    } else {
+                        $fileError = 'Die Datei existiert noch nicht.'
+                    }
+                } catch { $fileError = $_.Exception.Message }
+                return @{
+                    ok = $true
+                    result = @{
+                        file = $whichFile
+                        path = $logPath
+                        exists = $fileExists
+                        error = $fileError
+                        requestedLines = $logLines
+                        returnedLines = $linesOut.Count
+                        lines = @($linesOut)
+                        deployment = @{
+                            version = [string]$Shared.RuntimeInfo.Version
+                            file = [string]$Shared.RuntimeInfo.File
+                            sha256 = [string]$Shared.RuntimeInfo.Sha256
+                            startedAt = [int64]$Shared.RuntimeInfo.StartedAt
+                        }
+                        sweep = @{
+                            running = ([int64]$Shared.SweepState.LastSweepAt -gt 0 -and ((Get-UnixSeconds) - [int64]$Shared.SweepState.LastSweepAt) -le 10)
+                            secondsSinceSweep = $(if ([int64]$Shared.SweepState.LastSweepAt -gt 0) { [int][Math]::Max(0, (Get-UnixSeconds) - [int64]$Shared.SweepState.LastSweepAt) } else { -1 })
+                            abandonedTotal = [int64]$Shared.SweepState.Abandoned
+                        }
+                        delivery = (Get-StudioDeliveryHealth $sessionId)
+                        note = 'runtime.log enthaelt die Laufzeit-Identitaet (Version, Datei, SHA-256), jede Sitzungs-Anmeldung, jede Zustellung und jeden Waechter-Abbruch. performance.txt erscheint nur, wenn der Nutzer die Leistungsdiagnose eingeschaltet hat.'
+                    }
+                }
+            }
             'get_pending' {
                 $pending = Get-PendingCommands $sessionId
                 $late = Take-LateResults $sessionId
@@ -16267,7 +16900,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.0.5'
+                        bridgeVersion = '7.0.6'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -16508,6 +17141,10 @@ end
 
             if ($path -eq '/plugin/hello') {
                 Add-PerfCount 'HelloRequests'
+                try {
+                    $Shared.Telemetry.Hello = [long]$Shared.Telemetry.Hello + 1
+                    $Shared.Telemetry.LastHelloAt = Get-UnixSeconds
+                } catch {}
                 $entry = Register-Session $body
                 if (-not $entry) {
                     Send-Json $context 400 @{ ok = $false; error = 'Ungültige Anmeldung.' }
@@ -16521,7 +17158,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.0.5'
+                        serverVersion = '7.0.6'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -16543,9 +17180,29 @@ end
 
             if ($path -eq '/plugin/poll') {
                 Add-PerfCount 'PollRequests'
+                try {
+                    $Shared.Telemetry.Poll = [long]$Shared.Telemetry.Poll + 1
+                    $Shared.Telemetry.LastPollAt = Get-UnixSeconds
+                } catch {}
                 $entry = Update-Session $body
                 if (-not $entry) {
-                    Send-Json $context 200 @{ ok = $false; unknownSession = $true }
+                    # Version 7.0.6: Dieselbe Plugin-Instanz bekommt dieselbe
+                    # Sitzung zurueck - auch wenn sie zwischendurch als tot
+                    # aufgeraeumt wurde. Kein neuer Token, keine neue sessionId,
+                    # keine Befehle in einer verwaisten Sitzung.
+                    $entry = Resolve-InstanceSession $body
+                }
+                if (-not $entry) {
+                    try { $Shared.Telemetry.UnknownSessionPolls = [long]$Shared.Telemetry.UnknownSessionPolls + 1 } catch {}
+                    $knownSessionId = ''
+                    try {
+                        $pollGuid = [string]$body.instanceGuid
+                        if (-not [string]::IsNullOrWhiteSpace($pollGuid)) {
+                            $knownRaw = ''
+                            if ($Shared.InstanceSessions.TryGetValue($pollGuid, [ref]$knownRaw)) { $knownSessionId = [string]$knownRaw }
+                        }
+                    } catch {}
+                    Send-Json $context 200 @{ ok = $false; unknownSession = $true; sessionId = $(if ([string]::IsNullOrWhiteSpace($knownSessionId)) { $null } else { $knownSessionId }) }
                     continue
                 }
                 $sid = [string]$entry.sessionId
@@ -16610,6 +17267,10 @@ end
             }
 
             if ($path -eq '/plugin/result') {
+                try {
+                    $Shared.Telemetry.Result = [long]$Shared.Telemetry.Result + 1
+                    $Shared.Telemetry.LastResultAt = Get-UnixSeconds
+                } catch {}
                 if ($body -and $body.commandId -and $body.sessionId) {
                     $commandId = [string]$body.commandId
                     $sidForResult = [string]$body.sessionId
@@ -16738,6 +17399,15 @@ end
                 continue
             }
 
+            # Version 7.0.6: Selbstauskunft OHNE Token - sie muss auch dann
+            # funktionieren, wenn der Token nicht mehr gueltig ist (genau der
+            # Fall, in dem bisher nur geraten wurde). Nur lokal bzw. ueber den
+            # eigenen Tunnel erreichbar, ohne Tokens im Inhalt.
+            if ($path -eq '/api/version') {
+                Send-Json $context 200 (Get-VersionReport)
+                continue
+            }
+
             # ---------------- Zugriff prüfen -------------------------------
             $token = Get-Token $context.Request $body
             $sessionId = Get-SessionForToken $token
@@ -16766,7 +17436,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.0.5'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.0.6'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -16796,8 +17466,8 @@ end
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.0.5'
-                    serverVersion = '7.0.5'
+                    bridgeVersion = '7.0.6'
+                    serverVersion = '7.0.6'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -16807,6 +17477,23 @@ end
                     restartStudioHint = if ($sessionEntry -and [bool]$sessionEntry.versionMismatch) { 'Studio neu starten: Plugin-Version ist veraltet; Simulationen warten.' } else { $null }
                     queue = $queueSnapshot
                     executor = $queueSnapshot.executor
+                    # Version 7.0.6: Zustell-Zustand und Sturm-Kennzahlen direkt
+                    # im Status - damit ist "hängt es oder ist es tot?" in EINER
+                    # Antwort entschieden (auch fuer die KI).
+                    delivery = $queueSnapshot.delivery
+                    timeline = $queueSnapshot.timeline
+                    recentCommands = $queueSnapshot.recent
+                    counters = @{
+                        newSessionsLast60s = $(try { [int](($Shared.SessionCreations.ToArray() | Where-Object { [int64]$_ -ge ((Get-UnixSeconds) - 60) }).Count) } catch { 0 })
+                        newSessionsTotal = [int64]$Shared.Telemetry.NewSessions
+                        reusedSessions = [int64]$Shared.Telemetry.ReusedSessions
+                        revivedSessions = [int64]$Shared.Telemetry.RevivedSessions
+                        unknownSessionPolls = [int64]$Shared.Telemetry.UnknownSessionPolls
+                        stormWarnings = [int64]$Shared.Telemetry.StormWarnings
+                        fastFailWedged = [int64]$Shared.Telemetry.FastFailWedged
+                        fastFailBusy = [int64]$Shared.Telemetry.FastFailBusy
+                    }
+                    heartbeatHint = 'pluginVersion, pluginOutdated and delivery decide what to do: pluginOutdated=true means Studio runs an old plugin (Studio restart); delivery.state=wedged means Studio stopped answering (Studio restart); delivery.state=ok/busy means normal work.'
                     settings = @{
                         simAllowed = $statusSim
                         notifyOnDone = $statusNotify
@@ -16929,6 +17616,7 @@ end
             }
 
             if ($path -eq '/api/tool') {
+                try { $Shared.Telemetry.ToolCalls = [long]$Shared.Telemetry.ToolCalls + 1 } catch {}
                 if (-not $body) {
                     Send-Json $context 400 @{ ok = $false; error = 'JSON Body fehlt.' }
                     continue
@@ -17437,6 +18125,25 @@ $script:BridgeSweepScript = {
                         }
                         $failureJson = ($failure | ConvertTo-Json -Depth 10 -Compress)
                         $Shared.CommandStates[$id] = $failureJson
+                        # Version 7.0.6: Der Waechter laeuft in einem EIGENEN
+                        # Runspace ohne Handler-Funktionen - die Historie wird
+                        # hier deshalb direkt geschrieben.
+                        try {
+                            $historyQueue = $null
+                            if (-not $Shared.CommandHistory.TryGetValue($sid, [ref]$historyQueue)) {
+                                $historyQueue = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+                                [void]$Shared.CommandHistory.TryAdd($sid, $historyQueue)
+                                [void]$Shared.CommandHistory.TryGetValue($sid, [ref]$historyQueue)
+                            }
+                            $historyQueue.Enqueue(([pscustomobject]@{
+                                commandId = $id
+                                tool = [string]$info.tool
+                                status = 'abandoned'
+                                at = $now
+                                detail = ($abandonCode + ' by server-watchdog after ' + [string]$age + ' s')
+                            } | ConvertTo-Json -Compress))
+                            while ($historyQueue.Count -gt 40) { $dropHistory = $null; [void]$historyQueue.TryDequeue([ref]$dropHistory) }
+                        } catch {}
                         $origin = $sid
                         $originRaw = $null
                         if ($Shared.CommandOrigins.TryGetValue($id, [ref]$originRaw)) {
@@ -18609,6 +19316,7 @@ $xaml = @'
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="Arena Roblox Bridge" Foreground="{StaticResource TextMain}" FontSize="18.5" FontWeight="Bold"/>
                             <TextBlock x:Name="SubtitleText" Text="Bereit für verbundene Places" Foreground="{StaticResource TextMuted}" FontSize="11.5" Margin="0,3,0,0"/>
+                            <TextBlock x:Name="RuntimeLine" Text="Bridge 7.0.6" Foreground="{StaticResource TextFaint}" FontSize="9.5" Margin="0,2,0,0"/>
                         </StackPanel>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -18825,6 +19533,7 @@ $window.Dispatcher.add_UnhandledException({
 
 $TitleBar        = $window.FindName('TitleBar')
 $SubtitleText    = $window.FindName('SubtitleText')
+$RuntimeLine     = $window.FindName('RuntimeLine')
 $SplashScreen    = $window.FindName('SplashScreen')
 $CopyConfirm     = $window.FindName('CopyConfirm')
 $CopyConfirmText = $window.FindName('CopyConfirmText')
@@ -19393,7 +20102,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.0.5)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.0.6)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -19485,6 +20194,48 @@ function Format-ProgressMessage {
     return $msg
 }
 
+function Get-PlaceOpenCommand {
+    # Version 7.0.6: der aelteste noch offene Befehl dieser Sitzung - genau
+    # der, der die strikt serielle Studio-Queue blockiert. Er wird in der
+    # Place-Zeile sichtbar gemacht und kann dort abgebrochen werden.
+    param([string]$sessionId)
+    $best = $null
+    try {
+        if ([string]::IsNullOrWhiteSpace($sessionId)) { return $null }
+        $bag = $null
+        if (-not $script:Shared.PendingCommands.TryGetValue($sessionId, [ref]$bag)) { return $null }
+        foreach ($pair in @($bag.GetEnumerator())) {
+            $info = $null
+            try { $info = $pair.Value | ConvertFrom-Json } catch { continue }
+            $status = [string]$info.status
+            if ($status -ne 'queued' -and $status -ne 'delivered' -and $status -ne 'received' -and $status -ne 'started' -and $status -ne 'running' -and $status -ne 'cancel_requested') { continue }
+            if ($null -eq $best -or [int64]$info.queuedAt -lt [int64]$best.queuedAt) { $best = $info }
+        }
+    } catch {}
+    return $best
+}
+
+function Invoke-PlaceRowCancel {
+    # Version 7.0.6: Abbrechen direkt in der Place-Zeile. Es laeuft ueber
+    # denselben Weg wie der KI-Abbruch (Request-CommandCancel + Signal), damit
+    # es nur EINEN Abbruchpfad gibt.
+    param([string]$sessionId)
+    try {
+        if ([string]::IsNullOrWhiteSpace($sessionId)) { return }
+        $sid = Get-DeliverySession $sessionId
+        $cmd = Get-PlaceOpenCommand $sid
+        if ($null -eq $cmd) { return }
+        $commandId = [string]$cmd.commandId
+        $toolName = [string]$cmd.tool
+        $ok = Request-CommandCancel $sid $commandId 'Cancelled by the user from the place row.'
+        try { $script:Shared.Telemetry.RowCancels = [long]$script:Shared.Telemetry.RowCancels + 1 } catch {}
+        Write-BridgeLog ("Place-Zeile: Befehl " + $toolName + " (" + $commandId + ") wurde vom Nutzer abgebrochen.")
+        Add-BridgeEvent $sid 'command_cancel_requested' ("Command " + $commandId + " (" + $toolName + ") was cancelled from the place row.") @{ commandId = $commandId; tool = $toolName }
+    } catch {
+        Write-UiErrorLog 'Befehl aus der Place-Zeile konnte nicht abgebrochen werden' $_
+    }
+}
+
 function Update-PlaceProgressVisual {
     param($Row, $Studio)
     if ($null -eq $Row -or $null -eq $Row.ProgressPanel) { return }
@@ -19492,9 +20243,42 @@ function Update-PlaceProgressVisual {
     try { $show = [bool]$script:Shared.BridgeSettings.progressInPlaceList } catch {}
     $sessionId = [string]$Studio.sessionId
     $snapshot = Get-ProgressStateSnapshot $sessionId
-    if (-not $show -or $null -eq $snapshot) {
+    # Version 7.0.6: Die Bridge zeigt den ECHTEN Befehlszustand, nicht nur den
+    # vom Aufrufer gemeldeten Fortschritt. Der offene Befehl ist die Ursache
+    # jeder Haenge-Zeit und stand bisher nirgends in der Zeile.
+    $openCmd = Get-PlaceOpenCommand (Get-DeliverySession $sessionId)
+    if (-not $show -or ($null -eq $snapshot -and $null -eq $openCmd)) {
         $Row.ProgressPanel.Visibility = 'Collapsed'
         $Row.ProgressState = 'idle'
+        try { if ($Row.CommandCancelButton) { $Row.CommandCancelButton.Visibility = 'Collapsed' } } catch {}
+        return
+    }
+    if ($null -ne $openCmd) {
+        $status = [string]$openCmd.status
+        $ageBase = [int64]$openCmd.startedAt
+        if ($ageBase -le 0) { $ageBase = [int64]$openCmd.queuedAt }
+        $age = 0
+        try { if ($ageBase -gt 0) { $age = [int][Math]::Max(0, ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - $ageBase)) } } catch {}
+        $color = '#FF4C9BFF'
+        if ($status -eq 'cancel_requested') { $color = '#FFFFC95E' }
+        elseif ($status -eq 'delivered' -or $status -eq 'received') { $color = '#FF8A93A6' }
+        $label = 'Befehl: ' + [string]$openCmd.tool + ' - ' + $status + ' seit ' + [string]$age + ' s'
+        if ($show) { $Row.ProgressPanel.Visibility = 'Visible' } else { $Row.ProgressPanel.Visibility = 'Collapsed' }
+        $Row.ProgressState = 'command'
+        Set-Text $Row.ProgressText $label
+        $Row.ProgressText.Foreground = Get-Brush $color
+        $Row.ProgressBar.Visibility = 'Collapsed'
+        Set-Text $Row.ProgressPercent ''
+        $Row.ProgressPercent.Visibility = 'Collapsed'
+        try {
+            if ($Row.CommandCancelButton) {
+                $Row.CommandCancelButton.Tag = $sessionId
+                $Row.CommandCancelButton.Visibility = 'Visible'
+            }
+        } catch {}
+        $tip = 'commandId=' + [string]$openCmd.commandId + ' tool=' + [string]$openCmd.tool + ' status=' + $status + ' sichtbar seit ' + [string]$age + ' s. Abbrechen loest den Befehl sauber auf (COMMAND_CANCELLED) und gibt die Studio-Queue sofort wieder frei.'
+        $Row.ProgressText.ToolTip = $tip
+        $Row.ProgressPanel.ToolTip = $tip
         return
     }
     # AUS: Die Bridge zeigt nichts, speichert aber alles weiter - beim
@@ -19512,10 +20296,14 @@ function Update-PlaceProgressVisual {
     $Row.ProgressPanel.Visibility = 'Visible'
     $Row.ProgressState = $state
     Set-Text $Row.ProgressText $label
+    $Row.ProgressText.Foreground = Get-Brush '#FF6FB6FF'
+    $Row.ProgressBar.Visibility = 'Visible'
+    $Row.ProgressPercent.Visibility = 'Visible'
     $Row.ProgressBar.Value = $(if ($state -eq 'waiting') { $Row.ProgressBar.Value } else { $percent })
     $Row.ProgressBar.Foreground = Get-Brush $color
     $Row.ProgressPercent.Text = ($percent.ToString() + ' %')
     $Row.ProgressPercent.Foreground = Get-Brush $color
+    try { if ($Row.CommandCancelButton) { $Row.CommandCancelButton.Visibility = 'Collapsed' } } catch {}
     $tooltip = Format-ProgressMessage $snapshot
     $Row.ProgressBar.ToolTip = $tooltip
     $Row.ProgressText.ToolTip = $tooltip
@@ -19853,7 +20641,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.0.5)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.0.6)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -20743,6 +21531,10 @@ function Update-PlacePreviewCaptures {
             }
             $row = $script:UiRows[$sessionId]
             $row.PreviewFailCount = 0
+            try {
+                $script:PreviewLastOutcome = 'ok: ' + [string]$resultW + 'x' + [string]$resultH + ' px, ' + $(if ($resultMethod) { [string]$resultMethod } else { 'Methode unbekannt' })
+                $script:PreviewLastOutcomeAt = Get-Date
+            } catch {}
             if (-not $row.PreviewLoggedOnce) {
                 # Einmalig festhalten, dass (und ab wann) die Vorschau dieser
                 # Sitzung wirklich Bilder liefert - inkl. Aufnahme-Groesse.
@@ -20775,6 +21567,11 @@ function Update-PlacePreviewCaptures {
             $failCountNow = '-'
             try { if ($script:UiRows.ContainsKey($sessionId)) { $failCountNow = [string]$script:UiRows[$sessionId].PreviewFailCount } } catch {}
             Write-PreviewTrace $flow 'CAPTURE_FAILED' @{ error = $reason } ('failCount=' + $failCountNow)
+            try {
+                $script:PreviewLastOutcome = 'fehlgeschlagen: ' + [string]$reason
+                $script:PreviewLastOutcomeAt = Get-Date
+                Add-PreviewDiagLine ('Aufnahme fehlgeschlagen: ' + [string]$reason + ' (sid=' + $sessionId + ', Versuch ' + [string]$failCountNow + ')')
+            } catch {}
             $now = Get-Date
             $lastLog = [DateTime]::MinValue
             if ($script:PlacePreviewFailLogAt.ContainsKey($sessionId)) { $lastLog = [DateTime]$script:PlacePreviewFailLogAt[$sessionId] }
@@ -21380,6 +22177,17 @@ function New-Row {
     $progressRow.Children.Add($progressText) | Out-Null
     $progressRow.Children.Add($progressBar) | Out-Null
     $progressRow.Children.Add($progressPercent) | Out-Null
+    # Version 7.0.6: Abbrechen direkt neben dem Befehlszustand.
+    $cancelButton = [System.Windows.Controls.Button]::new()
+    $cancelButton.Content = 'Abbrechen'
+    $cancelButton.FontSize = 10.5
+    $cancelButton.Padding = [System.Windows.Thickness]::new(6, 1, 6, 1)
+    $cancelButton.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
+    $cancelButton.VerticalAlignment = 'Center'
+    $cancelButton.Visibility = 'Collapsed'
+    $cancelButton.Add_Click({ param($sender, $eventArgs) try { Invoke-PlaceRowCancel ([string]$sender.Tag) } catch {} })
+    $progressRow.Children.Add($cancelButton) | Out-Null
+    $row.CommandCancelButton = $cancelButton
     $titleRowDefinition = [System.Windows.Controls.RowDefinition]::new()
     $titleRowDefinition.Height = [System.Windows.GridLength]::Auto
     $progressRowDefinition = [System.Windows.Controls.RowDefinition]::new()
@@ -21989,7 +22797,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.0.5)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.0.6)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -22066,7 +22874,60 @@ function Write-PerfReport {
     }
 }
 
+function Update-RuntimeLine {
+    # Version 7.0.6: dauerhaft sichtbarer Deployment-Beweis. Ohne diese Zeile
+    # war nicht unterscheidbar, ob 7.0.6 beim Nutzer ueberhaupt laeuft (H1) und
+    # ob das Studio-Plugin zur Bridge passt (H2).
+    try {
+        if ($null -eq $RuntimeLine) { return }
+        $info = $script:Shared.RuntimeInfo
+        $version = [string]$info.Version
+        if ([string]::IsNullOrWhiteSpace($version)) { $version = [string]$script:Shared.DocsVersion }
+        $shaText = 'unbekannt'
+        try {
+            $sha = [string]$info.Sha256
+            if (-not [string]::IsNullOrWhiteSpace($sha) -and $sha.Length -ge 8) { $shaText = $sha.Substring(0, 8).ToLowerInvariant() }
+        } catch {}
+        $sweepText = 'Wächter startet'
+        try {
+            if ([int64]$script:Shared.SweepState.StartedAt -gt 0 -and [int64]$script:Shared.SweepState.LastSweepAt -gt 0) {
+                $sinceSweep = [int][Math]::Max(0, ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [int64]$script:Shared.SweepState.LastSweepAt))
+                $sweepText = 'Wächter aktiv (vor ' + [string]$sinceSweep + ' s)'
+            }
+        } catch {}
+        $recent = 0
+        try {
+            $nowStamp = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+            foreach ($creationStamp in @($script:Shared.SessionCreations.ToArray())) {
+                if ([int64]$creationStamp -ge ($nowStamp - 60)) { $recent = $recent + 1 }
+            }
+        } catch {}
+        $line = 'Bridge ' + $version + ' · SHA ' + $shaText + ' · ' + $sweepText
+        if ($recent -gt 0) { $line += ' · neue Sitzungen (60 s): ' + [string]$recent }
+        $outdated = ''
+        try {
+            foreach ($pair in $script:Shared.Sessions.GetEnumerator()) {
+                $entry = $pair.Value | ConvertFrom-Json
+                $pluginVersion = [string]$entry.pluginVersion
+                if (-not [string]::IsNullOrWhiteSpace($pluginVersion) -and $pluginVersion -ne [string]$script:Shared.DocsVersion) {
+                    $outdated = '⚠ Studio-Plugin ' + $pluginVersion + ' veraltet: Studio einmal komplett neu öffnen'
+                    $logKey = [string]$pair.Key
+                    if (-not $script:PluginOutdatedLogged.ContainsKey($logKey)) {
+                        $script:PluginOutdatedLogged[$logKey] = $true
+                        Write-RuntimeLog ('Plugin veraltet: Studio meldet ' + $pluginVersion + ', die Bridge erwartet ' + [string]$script:Shared.DocsVersion + ' (session ' + $logKey + '). Ein laufendes Studio behaelt das alte Plugin im Speicher - Studio einmal komplett neu oeffnen.')
+                    }
+                    break
+                }
+            }
+        } catch {}
+        if (-not [string]::IsNullOrWhiteSpace($outdated)) { $line += ' · ' + $outdated }
+        Set-Text $RuntimeLine $line
+        try { $RuntimeLine.Foreground = Get-Brush $(if ($outdated) { '#FFFFC95E' } else { '#8CA3C8' }) } catch {}
+    } catch {}
+}
+
 function Refresh-Ui {
+    Update-RuntimeLine
     $line = $null
     while ($script:TunnelLines.TryDequeue([ref]$line)) {
         $script:LastTunnelMessage = $line
@@ -22359,6 +23220,16 @@ function New-MinimalPlaceRow {
     $progressPanel.Children.Add($progressText) | Out-Null
     $progressPanel.Children.Add($progressBar) | Out-Null
     $progressPanel.Children.Add($progressPercent) | Out-Null
+    $cancelButton = [System.Windows.Controls.Button]::new()
+    $cancelButton.Content = 'Abbrechen'
+    $cancelButton.FontSize = 10
+    $cancelButton.Padding = [System.Windows.Thickness]::new(6, 1, 6, 1)
+    $cancelButton.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
+    $cancelButton.VerticalAlignment = 'Center'
+    $cancelButton.Visibility = 'Collapsed'
+    $cancelButton.Add_Click({ param($sender, $eventArgs) try { Invoke-PlaceRowCancel ([string]$sender.Tag) } catch {} })
+    $progressPanel.Children.Add($cancelButton) | Out-Null
+    $row.CommandCancelButton = $cancelButton
     $namePanel.Children.Add($progressPanel) | Out-Null
     $row.ProgressPanel = $progressPanel
     $row.ProgressBar = $progressBar
@@ -22664,7 +23535,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.0.5'
+    $versionText = '7.0.6'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -23288,7 +24159,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.0.5" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.0.6" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -23333,7 +24204,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.0.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.0.6 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -23392,7 +24263,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.0.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.0.6 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -23405,7 +24276,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.0.5'
+    $verText = '7.0.6'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
