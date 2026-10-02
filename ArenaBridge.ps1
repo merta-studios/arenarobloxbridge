@@ -1,7 +1,23 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.0.0
+# Arena Roblox Bridge  -  Version 7.0.1
 #
-# DER SCHNITT: KEIN PLAYTEST MEHR - DAFUER EINE EHRLICHE SIMULATION, ENGINE 2.0
+# UI-/EINSTELLUNGS-HOTFIXES VERSION 7.0.1:
+#   * Place-Liste: Wenn eine reich ausgestattete Place-Zeile wegen eines
+#     einzelnen UI-Fehlers nicht gebaut werden kann, erscheint jetzt eine
+#     sichere Minimal-Zeile mit Place-Name und Prompt-Kopieren. Verwaiste oder
+#     unvollstaendige UI-Zeilen werden erkannt und neu aufgebaut, statt die
+#     korrekte Verbindungszahl neben einer leeren Liste stehen zu lassen.
+#   * Einstellungen haben gleichmaessiges Innen-Padding; der Arena-AI-Link
+#     sitzt fest unten rechts im Hauptfenster und nutzt den gruenen Glasstil
+#     des Prompt-Kopieren-Knopfs. Alle vier verbliebenen AN/AUS-Schalter werden beim Laden
+#     visuell auf ihren gespeicherten Zustand gesetzt.
+#   * Bisherigen Modus verifiziert: StudioTestService:ExecuteRunModeAsync
+#     startet die offizielle Studio-Run-Simulation (Physik + Server-Skripte,
+#     ohne Spieler/Client), verlaesst aber Edit Mode (EditModeActive=false).
+#     Deshalb ist sim_start deaktiviert; die dokumentierte API bietet keinen
+#     echten Edit-Modus-Pfad fuer Physik/Skripte.
+#
+# DER SCHNITT: KEIN PLAYTEST MEHR - STUDIO-RUN GESPERRT, ENGINE 2.0
 # UND ENGINE 1.0
 #   * WARUM: Playtests (F5 mit Spieler, Charakter, Client-Agent) haben die
 #     Bridge dauerhaft unzuverlaessig gemacht: getrennte DataModels,
@@ -14,19 +30,16 @@
 #     Session-Agent, SharedTable-Kanal, Play-Here-Heuristik und Client-Agent.
 #     Existiert ein Werkzeug nicht mehr, sagt die Bridge UNKNOWN_TOOL - nicht
 #     mehr und nicht weniger.
-#   * SIMULATION STATT PLAYTEST: sim_start startet den Run-Modus ueber
-#     StudioTestService:ExecuteRunModeAsync (Orakel: EditModeActive), sim_stop
-#     stoppt ihn wieder, sim_status liest den echten Zustand. Es gibt KEINEN
-#     Spieler, KEINEN Charakter, KEINE Client-Skripte, KEIN GUI-Testen - dafuer
-#     laufen Skripte und Physik zuverlaessig, und get_output/get_errors zeigen
-#     alles. Waehrend der Simulation blockiert SIM_RUNNING dauerhafte
-#     Aenderungen (allowInSimMode=true nur fuer Wegwerf-Aenderungen).
-#   * EINSTELLUNG HEISST JETZT "Arena darf Simulationen (Run) starten" und
-#     blockiert NUR sim_start (SIM_DISABLED, severeness notice, kein Fehler).
+#   * sim_start ist deaktiviert: Die fruehere Implementierung nutzte die
+#     offizielle Studio-Run-Simulation (ExecuteRunModeAsync) und verliess den
+#     Edit-Modus (EditModeActive=false). Die dokumentierte API bietet keinen
+#     unterstuetzten Weg fuer Physik/Skripte bei aktivem Edit-Modus. sim_status
+#     bleibt lesbar; sim_stop kann bestehende Sessions sicher beenden.
+#   * Es gibt keinen Simulations-Schalter mehr: sim_start antwortet mit
+#     SIM_DISABLED, weil der alte Studio-Run nicht im echten Edit-Modus laeuft.
 #     Bauen, GUIs, Assets, Jobs, compile_check und run_lua bleiben unberuehrt.
 #     Ein vom NUTZER gestarteter Playtest blockiert weiterhin jede dauerhafte
-#     Aenderung (USER_PLAYTEST_ACTIVE) - die Bridge kann ihn nicht mehr selbst
-#     beenden und bittet den Nutzer ausdruecklich, selbst zu stoppen.
+#     Aenderung (USER_PLAYTEST_ACTIVE) - die Bridge kann ihn nicht selbst stoppen.
 #   * UI ENGINE 2.0: ui_glow baut Glow (nie mehr handgemachte
 #     Transparenz-Ketten), ui_texture liefert das ehrliche Rezept
 #     "echte Textur zuerst", ui_radial baut Radialmenues aus EINER Bild-Id mit
@@ -53,7 +66,7 @@
 #     Namen werden nur noch angezeigt; ein veraltetes Plugin steht rot unter
 #     dem Place-Namen und sperrt die Kopier-Buttons, statt still zu wirken.
 #   * Keine Aenderung an bestehenden Bau-, Polygon-, Asset- oder Job-Werkzeugen.
-#     Nach dem Update Roblox Studio einmal neu starten, damit Plugin 7.0.0
+#     Nach dem Update Roblox Studio einmal neu starten, damit Plugin 7.0.1
 #     geladen wird.
 #
 
@@ -1257,6 +1270,9 @@ $script:StartTime = Get-Date
 $script:TunnelLines = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
 $script:UiRows = @{}
 $script:PlaceNames = @{}
+$script:PlaceNameResolveErrorLogged = @{}
+$script:PlaceRowFailureLogAt = @{}
+$script:PlaceListRepairLastLog = [DateTime]::MinValue
 # Version 7.0.0: EINE Zeile haengt an einer STABILEN Identitaet (PID + HWND
 # bzw. Plugin-Session + placeId) - niemals am Anzeigenamen. PlaceIdentities
 # haelt je Sitzung das gebundene Studio-Fenster, PlaceNameSources die
@@ -1628,9 +1644,9 @@ $script:SettingsFile = Join-Path $script:AppDataRoot 'settings.json'
 function Get-BridgeSettingsFile {
     $settings = @{
         autoStart       = $false
-        # Version 7.0.0: "Arena darf sich selbst testen" war an Playtests
-        # gebunden und ist ersetzt durch "Arena darf Simulationen (Run) starten".
-        simAllowed      = $true     # Arena darf den Run-Modus starten (Standard: an)
+        # sim_start is intentionally disabled until supported true Edit-mode
+        # physics/script execution exists. Ignore legacy simAllowed opt-ins.
+        simAllowed      = $false
         notifyOnDone    = $false    # Fertig-Meldung als Windows-Notification (Standard: aus)
         editorIconsEnabled = $true # Live-Vorschau-Icons im Editor (Standard: an)
         progressInPlaceList = $true # Fortschrittsanzeige in der Place-Liste (Standard: an)
@@ -1641,9 +1657,6 @@ function Get-BridgeSettingsFile {
         if (Test-Path -LiteralPath $script:SettingsFile) {
             $loaded = Get-Content -LiteralPath $script:SettingsFile -Raw -Encoding UTF8 | ConvertFrom-Json
             if ($loaded.PSObject.Properties.Name -contains 'autoStart') { $settings.autoStart = [bool]$loaded.autoStart }
-            if ($loaded.PSObject.Properties.Name -contains 'simAllowed') { $settings.simAllowed = [bool]$loaded.simAllowed }
-            # Migration: alte selfTestAllowed-Datei -> Simulationen bleiben erlaubt.
-            if (($loaded.PSObject.Properties.Name -contains 'selfTestAllowed') -and -not ($loaded.PSObject.Properties.Name -contains 'simAllowed')) { $settings.simAllowed = [bool]$loaded.selfTestAllowed }
             if ($loaded.PSObject.Properties.Name -contains 'progressInPlaceList') { $settings.progressInPlaceList = [bool]$loaded.progressInPlaceList }
             if ($loaded.PSObject.Properties.Name -contains 'notifyOnDone') { $settings.notifyOnDone = [bool]$loaded.notifyOnDone }
             if ($loaded.PSObject.Properties.Name -contains 'editorIconsEnabled') { $settings.editorIconsEnabled = [bool]$loaded.editorIconsEnabled }
@@ -1658,7 +1671,7 @@ function Save-BridgeSettingsFile {
     try {
         $out = @{
             autoStart       = [bool]$script:SettingsCache.autoStart
-            simAllowed      = [bool]$script:SettingsCache.simAllowed
+            simAllowed      = $false
             notifyOnDone    = [bool]$script:SettingsCache.notifyOnDone
             editorIconsEnabled = [bool]$script:SettingsCache.editorIconsEnabled
             progressInPlaceList = [bool]$script:SettingsCache.progressInPlaceList
@@ -1719,10 +1732,10 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.0.0'
+    DocsVersion     = '7.0.1'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
-        simAllowed      = $true     # Arena darf Simulationen (Run) starten
+        simAllowed      = $false    # sim_start bleibt bis zu echter Edit-Modus-Simulation gesperrt
         notifyOnDone    = $false    # report_done -> Windows-Benachrichtigung
         progressInPlaceList = $true # Fortschrittsanzeige in der Place-Liste
         # Read-only is session-local only. It is intentionally not persisted.
@@ -1796,6 +1809,18 @@ function Write-UiErrorLog {
     Write-RuntimeLog ('{0}: {1}: {2} | Skriptzeile: {3} | Stacktrace: {4}' -f $Context, $typeName, $message, $lineNumber, $trace)
 }
 
+function Write-PlaceRowFailure {
+    param([string]$Context, [string]$SessionId, $ErrorRecord)
+    $sid = if ([string]::IsNullOrWhiteSpace($SessionId)) { '(unknown)' } else { $SessionId }
+    $key = $sid + '|' + $Context
+    $now = Get-Date
+    if ($script:PlaceRowFailureLogAt.ContainsKey($key)) {
+        if (($now - [DateTime]$script:PlaceRowFailureLogAt[$key]).TotalSeconds -lt 15) { return }
+    }
+    $script:PlaceRowFailureLogAt[$key] = $now
+    Write-UiErrorLog ("$Context (sid=$sid)") $ErrorRecord
+}
+
 $runModeText = if ($script:IsExeMode) { "EXE-Modus ($script:ExePath)" } else { "Skript-Modus ($script:ScriptPath)" }
 Write-RuntimeLog "=== Programmstart (PID $PID, PowerShell $($PSVersionTable.PSVersion), $runModeText) ==="
 Write-RuntimeLog "Codierung: Umlaute korrekt gelesen = $script:EncodingOk (Marker-Laenge $($script:EncodingMarker.Length))"
@@ -1818,8 +1843,8 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-    $script:PreviewDiagIdentity = ("Bridge-Version=7.0.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.0.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    $script:PreviewDiagIdentity = ("Bridge-Version=7.0.1, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.0.1, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 6.0.5: Hinweis auf den kleinen Kurzbericht - er enthaelt alles,
     # was zur Beurteilung der Fenster-Vorschau noetig ist.
     Write-RuntimeLog ("Vorschau-Kurzbericht: " + (Join-Path $script:AppDataRoot 'preview-diagnose.txt'))
@@ -1913,7 +1938,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.0.0)
+  Arena Studio Bridge - Studio Plugin  (Version 7.0.1)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1926,8 +1951,10 @@ function Get-PluginSource {
       ganzen Text neu zu schreiben.
     * Vollstaendiger Zugriff auf das Ausgabefenster (Output) inklusive
       Client-Ausgaben im Testmodus.
-    * Editor-Simulation starten/stoppen (sim_start/sim_stop): Run-Modus mit
-      Skripten und Physik - OHNE Spieler, ohne Client-Skripte, ohne Playtest.
+    * sim_start ist deaktiviert: Die fruehere offizielle Studio-Run-Simulation
+      (ExecuteRunModeAsync) verliess Edit Mode (EditModeActive=false). Die
+      dokumentierte API bietet keinen echten Edit-Modus-Pfad fuer Physik/Skripte;
+      sim_status bleibt lesbar und sim_stop fuer bestehende Sessions verfuegbar.
     * Schutz: dauerhafte Aenderungen werden im Play-Modus blockiert, weil sie
       beim Stoppen verloren gehen.
     * Unions: zusammenfuegen, abziehen, schneiden, trennen - mit Warnungen.
@@ -1949,12 +1976,12 @@ function Get-PluginSource {
       (Wasser y1-2, sonst y1 oder y1+2, kein Raten, keine Tiefen-Ueberschreibung).
     * Union mit Vorpruefung: anchored, Eltern, Groessen, Dreiecks-Budget,
       "einer statt vierzig"-Vorschlag, saubere SOLID_REFUSED-Fehler.
-    * Editor-Simulation (Run): sim_start/sim_stop/sim_status warten auf das
-      echte Studio-Orakel (StudioTestService.EditModeActive); ohne Spieler,
-      ohne Client-Skripte, ohne Playtest. BENUTZER-Aktionen (Kamera, Auswahl)
-      werden der KI gemeldet; ein vom Nutzer gestarteter Playtest blockiert.
+    * Studio-Run-Simulation: sim_status/sim_stop koennen bestehende Sessions
+      lesen/beenden; neue Starts ueber sim_start sind gesperrt, weil Studio Run
+      EditModeActive=false setzt. BENUTZER-Aktionen werden gemeldet; ein vom
+      Nutzer gestarteter Play/F5-Test blockiert weiterhin.
     * Fehler als Klassen (codes) statt Freitext: BAD_ARGS, REF_NOT_FOUND,
-      BUDGET_EXCEEDED, SIM_START_FAILED, SOLID_REFUSED, REGION_LIMIT, ...
+      BUDGET_EXCEEDED, SIM_DISABLED, SIM_STOP_NEEDS_USER, SOLID_REFUSED, REGION_LIMIT, ...
     * Dokumentationen auf Abruf (get_docs) und automatisch am Sitzungsstart.
 ============================================================================]]
 
@@ -1984,7 +2011,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.0.0"
+local ARENA_VERSION  = "7.0.1"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -2074,8 +2101,8 @@ local function testSessionActive()
 end
 
 
--- A hello proves the script is alive; Play is only ready once a real player
--- and HumanoidRootPart snapshot has arrived through the reporter channel.
+-- Test activity comes from RunService and EditModeActive; this bridge does
+-- not launch Play/F5 or depend on a client-side reporter.
 
 
 local capabilities = {
@@ -2179,53 +2206,67 @@ local function currentContext()
 end
 
 local function currentMode()
-    if not RunService:IsRunning() then
-        if RunService:IsEdit() then
-            return "edit"
-        end
+    local runningNow = false
+    pcall(function() runningNow = RunService:IsRunning() end)
+    if not runningNow then
+        local editNow = false
+        pcall(function() editNow = RunService:IsEdit() end)
+        if editNow then return "edit" end
         return "paused"
     end
-    local isRunMode = false
+
+    -- IsRunMode distinguishes the server-only Studio Run from a player Play/F5
+    -- test. If this API is unavailable, report "unknown" instead of conflating
+    -- the two modes.
+    local isRunMode = nil
     pcall(function() isRunMode = RunService:IsRunMode() end)
-    if isRunMode then
-        return "run"
-    end
-    -- "Play Here" erkennen: der Charakter ist (fast) genau dort gespawnt, wo
-    -- die Kamera im EDITOR stand, als Play gedrueckt wurde (Studio-Test-Tab:
-    -- "Play Here"). Normales Play spawnt am SpawnLocation. Heuristik - wird
-    -- im playState als solche gekennzeichnet.
-    return "run"
+    if isRunMode == true then return "run" end
+    if isRunMode == false then return "play" end
+    return "unknown"
 end
 
+local function currentPlayerCount()
+    local count = 0
+    pcall(function() count = #Players:GetPlayers() end)
+    return count
+end
 
 local function playState()
-    -- Version 7.0.0: NUR die Physik-/Skript-Simulation im Editor (Run) bleibt.
-    -- Es gibt keinen Playtest, keinen Client-Agenten und keinen Reporter mehr.
-    -- Verbindliches Lauf-Orakel: StudioTestService.EditModeActive.
+    -- StudioTestService.EditModeActive is the oracle for leaving Edit mode;
+    -- currentMode separately distinguishes Studio Run from player Play/F5.
     local editModeActive = nil
     if StudioTestService ~= nil then
         pcall(function() editModeActive = StudioTestService.EditModeActive end)
     end
-    local runningNow = false
-    pcall(function() runningNow = RunService:IsRunning() end)
     local sessionActive = testSessionActive()
     local mode = currentMode()
-    if sessionActive then mode = simMode or "run" end
+    if sessionActive and (mode == "edit" or mode == "paused") then mode = "unknown" end
+    local context = currentContext()
+    if sessionActive and context == "edit" then context = "session" end
+    local isEdit = false
+    local isServer = false
+    local isClient = false
+    pcall(function() isEdit = RunService:IsEdit() end)
+    pcall(function() isServer = RunService:IsServer() end)
+    pcall(function() isClient = RunService:IsClient() end)
+    if sessionActive then isEdit = false end
+    local playerCount = currentPlayerCount()
     return {
         running    = sessionActive,
-        mode       = sessionActive and mode or currentMode(),
-        context    = sessionActive and "session" or currentContext(),
-        isEdit     = sessionActive and false or RunService:IsEdit(),
-        isServer   = sessionActive and true or RunService:IsServer(),
-        isClient   = sessionActive and false or RunService:IsClient(),
-        playerCount = 0,
-        sessionPlayers = 0,
+        mode       = mode,
+        context    = context,
+        isEdit     = isEdit,
+        isServer   = isServer,
+        isClient   = isClient,
+        playerCount = playerCount,
+        sessionPlayers = playerCount,
         agentConnected = false,
         reporterActive = false,
         httpEnabled = readHttpEnabled(),
         userPlaytestActive = userPlaytestActive,
+        startedByBridge = simStartedByBridge,
         simRunning = (sessionActive and simStartedByBridge == true) or false,
-        simMode = simMode,
+        simMode = sessionActive and mode or nil,
         editModeActive = editModeActive,
         sessionSnapshot = nil,
     }
@@ -3853,8 +3894,8 @@ end
 tools.get_place_info = function()
     local state = playState()
     state.modeInfo = {
-        edit      = "permanent building (also: editor simulations like compile_check/run_lua)",
-        run       = "editor simulation (sim_start): physics + scripts run, but there is NO player, NO client script and NO playtest",
+        edit      = "permanent building and one-off edit-mode script checks (compile_check/run_lua)",
+        run       = "sim_start is disabled. Its former Studio Run implementation ran physics/server scripts without a player/client but exited Edit mode (EditModeActive=false); no Play/F5 test",
     }
     return ok({
         name       = game.Name,
@@ -8649,7 +8690,7 @@ tools.set_context = function(args)
         return failCode("CONTEXT_UNAVAILABLE", "Client context is gone since 7.0.0 (no playtest, no client agent). run_lua always runs on the server side.")
     end
     defaultContext = "server"
-    return ok({ context = defaultContext, note = "Only the server context exists; the editor simulation (sim_start) runs without a player and without client scripts." })
+    return ok({ context = defaultContext, note = "Only the server context exists. sim_start is disabled because the former Studio Run simulation exits Edit mode (EditModeActive=false); the documented Studio API has no supported true Edit-mode physics/script path." })
 end
 
 -- FIX 3.2: Robuste Lua-Ausfuehrung ueber alle Studio-Versionen hinweg.
@@ -8665,15 +8706,25 @@ local requireBoxSeq = 0
 
 
 -- ---------------------------------------------------------------------------
--- Version 7.0.0: EDITOR-SIMULATION (Run) - der Playtest ist ersatzlos weg.
--- Run laesst Skripte und Physik im Editor laufen, aber KEINEN Spieler, keine
--- Client-Skripte, keinen Playtest. Beendet wird ueber RunService:Stop();
--- alte Tastenkombinationen (F8, Shift+F5) bleiben als Fallback.
+-- Die fruehere Studio-Run-Simulation (ExecuteRunModeAsync) liess Studio den
+-- Edit-Modus verlassen. Sie wird nicht mehr gestartet: Die dokumentierte API
+-- bietet keinen unterstuetzten Weg fuer Physik/Skripte bei EditModeActive=true.
+-- sim_stop bleibt fuer bestehende Sessions erhalten.
 -- ---------------------------------------------------------------------------
 local function simAllowedNow()
-    local allowed = true
-    pcall(function() allowed = plugin:GetSetting("arenaSimAllowed") ~= false end)
-    return allowed
+    -- The setting and every legacy opt-in are ignored until true Edit-mode
+    -- simulation is supported; sim_status must always report the effective false.
+    return false
+end
+
+local function simDisabledResult()
+    return {
+        ok = false,
+        code = "SIM_DISABLED",
+        severity = "notice",
+        reason = "EDIT_MODE_SIMULATION_UNAVAILABLE",
+        error = "sim_start is disabled: the former Studio Run simulation exits Edit mode (EditModeActive=false), and the documented Studio API has no supported true Edit-mode physics/script path.",
+    }
 end
 
 local function simStateData()
@@ -8684,79 +8735,25 @@ local function simStateData()
     local runningNow = false
     pcall(function() runningNow = RunService:IsRunning() end)
     local active = testSessionActive()
+    local mode = currentMode()
+    if active and (mode == "edit" or mode == "paused") then mode = "unknown" end
+    local playerCount = currentPlayerCount()
     return {
         running = active,
-        kind = "run",
-        mode = simMode,
+        kind = mode,
+        mode = mode,
         startedByBridge = simStartedByBridge,
         startedAt = simStartedAt > 0 and math.floor(simStartedAt) or nil,
         editModeActive = editModeActive,
         runServiceRunning = runningNow,
         userPlaytestActive = userPlaytestActive,
-        playerCount = 0,
-        note = "Run mode: scripts and physics run, but there is no player, no client script and no playtest.",
+        playerCount = playerCount,
+        note = "Status only: mode='run' is official Studio Run (no player/client, but EditModeActive=false); mode='play' is a separate player Play/F5 test; mode='unknown' means Studio left Edit mode but RunService could not classify the session. This bridge starts neither. True Edit-mode physics/script execution is unsupported.",
     }
 end
 
 tools.sim_start = function(args)
-    if not simAllowedNow() then
-        return failCode("SIM_DISABLED",
-            "The user disabled editor simulations in the Arena Roblox Bridge program (setting \"Arena darf Simulationen (Run) starten\" = OFF). This is on purpose and NOT a bug. Keep building and auditing in edit mode.")
-    end
-    args = args or {}
-    if testSessionActive() and simStartedByBridge ~= true then
-        return failCode("USER_PLAYTEST_ACTIVE",
-            "A test is already running and it was NOT started by the bridge. Do not start anything: either the user stops it themselves, or you ask them to. Persistent edits are blocked while a test runs.")
-    end
-    if testSessionActive() and simStartedByBridge == true then
-        return ok({ alreadyRunning = true, state = simStateData(), note = "The editor simulation started by the bridge is already running." })
-    end
-    local diagnostics = { usedPath = nil, serviceError = nil, editModeActiveBefore = nil, editModeActiveAfter = nil }
-    if StudioTestService ~= nil then pcall(function() diagnostics.editModeActiveBefore = StudioTestService.EditModeActive end) end
-    if userPlaytestActive == true then
-        return failCode("USER_PLAYTEST_ACTIVE",
-            "The USER started a playtest right now. Arena must not work: ask the user to stop it (or end your response) - the bridge deliberately blocks persistent changes during a test.")
-    end
-    simMode = "run"
-    local usedPath = nil
-    if StudioTestService ~= nil then
-        diagnostics.usedPath = "studioTestService"
-        local startedAsync = false
-        task.spawn(function()
-            pcall(function() StudioTestService:ExecuteRunModeAsync() end)
-        end)
-        startedAsync = true
-        local reached = waitForEditMode(false, 25)
-        diagnostics.editModeActiveAfter = nil
-        if reached then
-            usedPath = "studioTestService"
-        else
-            pcall(function() diagnostics.serviceError = "ExecuteRunModeAsync did not switch Studio to Run mode in time" end)
-        end
-    end
-    if usedPath == nil then
-        -- Fallback: die alten Tastenkuerzel (F8 fuer Run) bleiben erhalten.
-        diagnostics.usedPath = "studioShortcut"
-        local keyOk, keyError = SimSendKey("F8", 0.06)
-        if keyOk and waitForEditMode(false, 12) then
-            usedPath = "studioShortcut"
-        else
-            diagnostics.serviceError = keyError or diagnostics.serviceError
-            local runOk = pcall(function() RunService:Run() end)
-            if runOk and waitForEditMode(false, 8) then usedPath = "runServiceApi" end
-        end
-    end
-    if usedPath == nil then
-        return failCode("SIM_START_FAILED",
-            "Studio did not switch into Run mode in time. Try once more; if it fails again, ask the user to start Run themselves (F8).",
-            { startDiagnostics = diagnostics, state = simStateData() })
-    end
-    simStartedByBridge = true
-    simStartedAt = os.time()
-    aiPlayIntent = { action = "start", at = os.time(), mode = "run" }
-    waypoint("sim_start")
-    return ok({ state = simStateData(), startMethod = usedPath, startDiagnostics = diagnostics,
-        note = "Editor simulation started. Persistent edits are blocked while it runs, because they would be discarded on stop." })
+    return simDisabledResult()
 end
 
 tools.sim_stop = function(args)
@@ -8766,11 +8763,12 @@ tools.sim_stop = function(args)
         simStartedByBridge = false
         return ok({ alreadyStopped = true, state = simStateData() })
     end
-    if simStartedByBridge ~= true and userPlaytestActive then
-        return failCode("USER_PLAYTEST_ACTIVE",
-            "This is the USER's test, not the bridge simulation. Do not stop it silently: ask the user (or end your response). Persistent edits stay blocked while it runs.")
+    if simStartedByBridge ~= true or userPlaytestActive == true then
+        return failCode("SIM_NOT_BRIDGE_OWNED",
+            "Studio has left Edit mode, but this session is not confirmed as bridge-owned. To avoid interrupting a user-started Studio Run or Play/F5 test, the bridge will not stop it; the user must stop it in Studio (Shift+F5).",
+            { state = simStateData() })
     end
-    -- Rang 1: RunService:Stop() - der offizielle Weg fuer den Editor-Run-Modus.
+    -- Rang 1: RunService:Stop() - der offizielle Weg zum Stoppen der Studio-Run-Simulation.
     diagnostics.usedPath = "runServiceStop"
     pcall(function() RunService:Stop() end)
     if waitForEditMode(true, 12) then
@@ -8797,7 +8795,7 @@ end
 
 tools.sim_status = function(args)
     return ok({ state = simStateData(), simAllowed = simAllowedNow(),
-        note = "sim_ tools are the only test path: Run mode without a player, without client scripts and without a playtest. A user-started playtest still blocks work (USER_PLAYTEST_ACTIVE)." })
+        note = "sim_start is disabled. mode='run' is official Studio Run without a player/client and exits Edit mode; mode='play' is a separate player Play/F5 test. This bridge starts neither; true Edit-mode physics/script execution is unsupported." })
 end
 
 function SimSendKey(name, hold, shift)
@@ -8808,9 +8806,9 @@ function SimSendKey(name, hold, shift)
     end)
     local okSend, err = pcall(function()
         if shift then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.LeftShift, false, game) end
-        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode[name] or Enum.KeyCode.F8, false, game)
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode[name] or Enum.KeyCode.F5, false, game)
         task.wait(hold or 0.05)
-        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode[name] or Enum.KeyCode.F8, false, game)
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode[name] or Enum.KeyCode.F5, false, game)
         if shift then VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.LeftShift, false, game) end
     end)
     if okSend then return true end
@@ -9955,6 +9953,11 @@ end
 
 executeTool = function(tool, args, insideBatch)
     args = args or {}
+    -- Enforce the limitation here as well as at the desktop HTTP boundary so
+    -- batch, parallel and start_job cannot bypass the disabled sim_start.
+    if tool == "sim_start" then
+        return simDisabledResult()
+    end
     local handler = tools[tool]
     if handler == nil then
         return failCode("UNKNOWN_TOOL", "Unknown tool: " .. tostring(tool), {
@@ -9980,9 +9983,9 @@ executeTool = function(tool, args, insideBatch)
             })
         elseif args.allowInSimMode ~= true then
             return failCode("SIM_RUNNING",
-                "The editor simulation (sim_start) is running. '" .. tostring(tool)
+                "A Studio Run session is active. '" .. tostring(tool)
                 .. "' would change the place, but every change made during the simulation is thrown away when it stops.", {
-                howToFix = "Call sim_stop first (allowed at any time), do the real work, then sim_start again if you still need the simulation. If you only want a throw-away change for this run, repeat the call with allowInSimMode=true.",
+                howToFix = "Call sim_stop to leave an existing bridge-owned session, then do the real work in Edit mode. sim_start is disabled; test live behavior manually in Studio.",
                 state = playState(),
             })
         end
@@ -10180,11 +10183,10 @@ local function handshake()
     return false
 end
 
--- Zustandswaechter: merkt, wenn der BENUTZER einen Test startet oder stoppt
--- (USER_PLAYTEST_ACTIVE bleibt) und meldet, wenn der Nutzer selbst im Editor
--- arbeitet. Version 7.0.0: KEIN Playtest-Werkzeug, kein Client-Agent - die
--- Erkennung dient ausschliesslich dem Schutz (Arena darf waehrend eines
--- Nutzer-Tests nicht arbeiten).
+-- Zustandswaechter: unterscheidet Studio Run von player Play/F5 anhand des
+-- RunService-Modus. Nur Play/F5 ist USER_PLAYTEST_ACTIVE; ein user-gestartetes
+-- Studio Run wird separat als SIM_RUNNING behandelt. Es gibt keine Start- oder
+-- Stop-Steuerung fuer user-eigene Tests.
 task.spawn(function()
     local lastActive = testSessionActive()
     while running do
@@ -10211,17 +10213,19 @@ task.spawn(function()
             local byAi = (os.time() - (aiPlayIntent.at or 0)) <= 25
             local who = byAi and "assistant" or "user"
             if activeNow then
-                userPlaytestActive = not byAi
+                local mode = currentMode()
+                if mode == "edit" or mode == "paused" then mode = "unknown" end
+                userPlaytestActive = (mode == "play" and not byAi)
                 if byAi then simStartedByBridge = true end
                 addNotice("sim_started",
-                    "An editor simulation (Run) is running now - started by the " .. who .. ". Persistent changes are temporary until it is stopped; the bridge blocks them.",
-                    { mode = "run", startedBy = who })
+                    "A Studio test session is active in " .. mode .. " mode - started by the " .. who .. ". mode='run' is official Studio Run without a player/client; mode='play' is a separate player Play/F5 test. Studio has left Edit mode, so persistent changes are temporary.",
+                    { mode = mode, startedBy = who, playerCount = currentPlayerCount() })
             else
                 userPlaytestActive = false
                 simStartedByBridge = false
                 simStartedAt = 0
                 addNotice("sim_stopped",
-                    "The editor simulation (Run) was stopped by the " .. who .. ". Studio is back in edit mode - this is NOT a crash and nothing went wrong.",
+                    "The Studio Run simulation was stopped by the " .. who .. ". Studio is back in edit mode - this is NOT a crash and nothing went wrong.",
                     { stoppedBy = who })
             end
             aiPlayIntent = { action = nil, at = 0 }
@@ -11206,7 +11210,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.0.0 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.0.1 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -11412,8 +11416,8 @@ $script:BridgeHandlerScript = {
         if ($tool -eq 'rotate_around') { return 'Hat „' + $ref + '“ gedreht.' }
         if ($tool -eq 'fit_between') { return 'Hat „' + $ref + '“ zwischen zwei Punkte gespannt.' }
         if ($tool -eq 'place_on') { return 'Hat „' + $ref + '“ platziert.' }
-        if ($tool -eq 'sim_start') { return 'Hat eine Editor-Simulation gestartet.' }
-        if ($tool -eq 'sim_stop') { return 'Hat die Editor-Simulation beendet.' }
+        if ($tool -eq 'sim_start') { return 'Hat den deaktivierten Studio-Run-Start angefragt.' }
+        if ($tool -eq 'sim_stop') { return 'Hat die Studio-Run-Simulation beendet.' }
         if ($tool -eq 'sim_status') { return 'Hat den Simulationsstatus gelesen.' }
         # ---- Jeder verbleibende Werkzeugtyp bekommt einen eigenen Satz -----
         $texts = @{
@@ -11652,11 +11656,9 @@ $script:BridgeHandlerScript = {
     }
 
     function Update-PlayStateTracking {
-        # Erkennt Play-Start/Stop ZUVERLAESSIG - auch wenn das Plugin beim
-        # Wechsel neu geladen wurde (die neue Plugin-Instanz sieht den Wechsel
-        # dann selbst nie). Wer den Test gestartet hat, weiss der SERVER:
-        # play_start / play_stop der KI laufen IMMER ueber ihn
-        # ($Shared.AiPlayIntents) - das ueberlebt jeden Plugin-Neustart.
+        # Erkennt Studio-Run- und Play/F5-Uebergaenge auch nach einem Plugin-
+        # Neuladen. Nur mode=play gilt als userPlaytestActive; mode=run bleibt
+        # ein eigener, serverseitiger Studio-Run-Test.
         param($sessionId, $oldState, $newState)
         if (-not $newState) { return $newState }
         $sid = [string]$sessionId
@@ -11667,13 +11669,17 @@ $script:BridgeHandlerScript = {
         if ($wasRunning -ne $nowRunning) {
             if ($nowRunning) {
                 $byAi = Test-AiPlayActive $sid 'start'
+                $bridgeOwned = ($byAi -or [bool]$newState.simRunning -or [bool]$newState.startedByBridge)
                 $who = 'user'
-                if ($byAi) { $who = 'assistant' }
+                if ($bridgeOwned) { $who = 'assistant' }
                 $Shared.RunOwners[$sid] = $who
-                Set-StateField $newState 'userPlaytestActive' (-not $byAi)
+                $modeText = [string]$newState.mode
+                $isUserPlay = ($modeText -eq 'play' -and -not $bridgeOwned)
+                Set-StateField $newState 'userPlaytestActive' $isUserPlay
                 if (-not (Test-RecentPlayEvent $sid 'sim_started' $now)) {
                     $Shared.LastPlayEvents[$sid] = @{ kind = 'sim_started'; at = $now }
-                    Add-BridgeEvent $sid 'sim_started' ("Studio switched into " + [string]$newState.mode + " mode (started by: " + $who + "). Editor simulation: scripts and physics run, but there is no player and no client. Changes during the simulation are temporary.") @{ mode = [string]$newState.mode; startedBy = $who; detectedBy = 'server' }
+                    $modeNote = "mode='run' is official Studio Run without a player/client; mode='play' is the separate player Play/F5 test. EditModeActive is false in both, and changes are temporary."
+                    Add-BridgeEvent $sid 'sim_started' ("Studio entered " + $modeText + " mode (started by: " + $who + "). " + $modeNote) @{ mode = $modeText; startedBy = $who; detectedBy = 'server' }
                 }
             } else {
                 $byAi = Test-AiPlayActive $sid 'stop'
@@ -11690,31 +11696,33 @@ $script:BridgeHandlerScript = {
         } elseif ($nowRunning) {
             $owner = $null
             if (-not $Shared.RunOwners.TryGetValue($sid, [ref]$owner)) {
-                # Kein Wechsel beobachtet (z. B. echtes Plugin-Neuladen durch
-                # Studio): Ein unbekannter Starter gilt sicherheitshalber als
-                # NUTZER-Test - die KI baut dann nicht einfach weiter.
-                $Shared.RunOwners[$sid] = 'user'
+                # Kein Wechsel beobachtet (z. B. Desktop-/Plugin-Neustart):
+                # bewahre bekannte Bridge-Eigentuemerschaft aus dem Pluginstatus;
+                # sonst gilt die Session sicherheitshalber als nutzer-eigen.
                 $owner = 'user'
+                if ([bool]$newState.simRunning -or [bool]$newState.startedByBridge) { $owner = 'assistant' }
+                $Shared.RunOwners[$sid] = $owner
             }
             if ([string]$owner -eq 'user') {
-                Set-StateField $newState 'userPlaytestActive' $true
+                Set-StateField $newState 'userPlaytestActive' ([string]$newState.mode -eq 'play')
+            } else {
+                Set-StateField $newState 'userPlaytestActive' $false
             }
         }
         return $newState
     }
 
     function New-SimBlockedResult([string]$tool) {
-        # Version 7.0.0: Antwort, wenn die KI sim_start ruft, obwohl der Nutzer
-        # "Arena darf Simulationen (Run) starten" AUSgeschaltet hat.
         return @{
             ok = $false
             code = 'SIM_DISABLED'
+            reason = 'EDIT_MODE_SIMULATION_UNAVAILABLE'
             severity = 'notice'
-            error = "The tool '$tool' is not available: the user turned OFF 'Arena darf Simulationen (Run) starten' in the Arena Roblox Bridge settings."
-            why = 'This is a deliberate user decision - the bridge is NOT broken and nothing failed. Editor SIMULATIONS (Run mode) are turned off for you; everything else still works.'
-            whatStillWorks = 'Everything else works unchanged: compile_check (syntax), run_lua (pure Lua logic in the edit place), all reading tools, all building tools, GUIs, assets, jobs, progress and handoff. The user runs the game tests.'
-            howToFix = 'Do not retry sim_start. Keep building and auditing in edit mode. If a running simulation is truly needed, ask the user to turn the setting on.'
-            userHint = 'Ich darf gerade keine Simulation (Run) starten (in der Bridge deaktiviert). Ich baue und pruefe weiter im Editor - teste du bitte das Spiel in Studio.'
+            error = "The tool '$tool' is intentionally disabled. The former implementation started official Studio Run and exited Edit mode (EditModeActive=false); the documented Studio API has no supported true Edit-mode physics/script path."
+            why = 'This is an intentional limitation, not a bridge failure. The available Studio Run simulation does not meet the requested true Edit-mode behavior.'
+            whatStillWorks = 'compile_check, one-off run_lua in the edit place, sim_status, sim_stop for an existing bridge-owned session, all reading/building tools, GUIs, assets, jobs, progress and handoff.'
+            howToFix = 'Do not retry sim_start. Continue building and auditing in Edit mode; test live physics/scripts manually in Studio until Roblox provides a supported true Edit-mode API.'
+            userHint = 'sim_start ist deaktiviert, weil Studio Run den Edit-Modus verlaesst. Bauen, compile_check und run_lua bleiben verfuegbar.'
         }
     }
 
@@ -12655,7 +12663,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
     }
 
     function Get-DedupedPlayResult($sessionId, [string]$tool, $toolArgs) {
-        if ($tool -notin @('sim_start','sim_stop')) { return $null }
+        if ($tool -ne 'sim_stop') { return $null }
         $key = [string]$sessionId + ':' + $tool
         $raw = $null
         if (-not $Shared.PlayRetryDedupe.TryGetValue($key, [ref]$raw)) { return $null }
@@ -12667,13 +12675,13 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
     }
 
     function Save-DedupedPlayResult($sessionId, [string]$tool, $toolArgs, [string]$resultJson) {
-        if ($tool -notin @('sim_start','sim_stop') -or [string]::IsNullOrWhiteSpace($resultJson)) { return }
+        if ($tool -ne 'sim_stop' -or [string]::IsNullOrWhiteSpace($resultJson)) { return }
         $key = [string]$sessionId + ':' + $tool
         $Shared.PlayRetryDedupe[$key] = (To-Json @{ at=(Get-UnixSeconds); fingerprint=(Get-PlayRetryFingerprint $tool $toolArgs); resultJson=$resultJson } 30)
     }
 
     function Reserve-PlayRetry($sessionId, [string]$tool, $toolArgs) {
-        if ($tool -notin @('sim_start','sim_stop')) { return $true }
+        if ($tool -ne 'sim_stop') { return $true }
         $key = [string]$sessionId + ':' + $tool
         $fingerprint = Get-PlayRetryFingerprint $tool $toolArgs
         $now = Get-UnixSeconds
@@ -13334,7 +13342,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             example = @{ since = 1234; limit = 100; filter = 'error' };
             errors = @() })
         $t.Add(@{ name = 'wait_for_output'; category = 'output'; summary = 'Bis eine Zeile erscheint warten.';
-            description = 'Ideal nach sim_start oder run_lua: blockiert im Studio, bis ein Muster auftaucht (oder die Zeit abgelaufen ist).';
+            description = 'Nach run_lua oder einer bestehenden Studio-Aktion: wartet im Studio auf ein Muster (oder bis die Zeit abgelaufen ist). sim_start ist deaktiviert.';
             params = @{ pattern = @{ type = 'string'; required = $true; default = '-'; description = 'Suchtext.' }; timeoutSeconds = @{ type = 'number'; required = $false; default = '15'; description = 'max 110.' }; since = @{ type = 'int'; required = $false; default = 'jetzt'; description = 'Ab welchem Cursor.' }; regex = @{ type = 'bool'; required = $false; default = 'false'; description = '' }; types = @{ type = 'string[]'; required = $false; default = 'all'; description = '' } };
             returns = '{ found, lines?, cursor, waited? }';
             example = @{ pattern = 'loaded'; timeoutSeconds = 20 };
@@ -13372,23 +13380,23 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         # ---------------- GUI / CLIENT ----------------
                                                         
 
-        # ---------------- SIMULATION (Run im Editor) ----------------
-        $t.Add(@{ name = 'sim_start'; category = 'sim'; summary = 'Editor-Simulation (Run) starten: Skripte + Physik, ohne Spieler, ohne Client.';
-            description = 'Startet den Run-Modus ueber StudioTestService:ExecuteRunModeAsync in task.spawn; ERFOLG ist ausschliesslich der Wechsel von StudioTestService.EditModeActive true->false innerhalb von 25s (Fallback: F8). Es gibt KEINEN Spieler, KEINEN Charakter, KEINE Client-Skripte und keinen Playtest. Waehrend der Simulation blockiert die Bridge dauerhafte Aenderungen (SIM_RUNNING), bis sim_stop laeuft; bereits laufendeJobs laufen weiter. Antwort: { running, simMode, editModeActive, startedByBridge, playerCount:0, note }.';
-            params = @{ allowWhileUserPlaytest = @{ type = 'bool'; required = $false; default = 'false'; description = 'Nur fuer Sonderfaelle - USER_PLAYTEST_ACTIVE bleibt sonst hart.' } };
-            returns = '{ ok, state { running, mode="run", editModeActive, startedByBridge, simStartedAt, simAllowed } }';
+        # ---------------- SIMULATION (sim_start bewusst gesperrt) ----------------
+        $t.Add(@{ name = 'sim_start'; category = 'sim'; summary = 'Deaktiviert: keine unterstuetzte Physik-/Skript-Simulation im echten Edit-Modus.';
+            description = 'Dieser Aufruf ist dauerhaft gesperrt, solange die dokumentierte Roblox-Studio-API keinen unterstuetzten Weg fuer Physik/Skripte bei EditModeActive=true bietet. Die fruehere Implementierung nutzte StudioTestService:ExecuteRunModeAsync (offizieller Studio Run) und verliess den Edit-Modus. Nicht erneut versuchen; compile_check und run_lua bleiben verfuegbar, Live-Verhalten muss der Nutzer in Studio pruefen.';
+            params = @{};
+            returns = '{ ok=false, code="SIM_DISABLED", reason="EDIT_MODE_SIMULATION_UNAVAILABLE" }';
             example = @{};
-            errors = @('SIM_DISABLED: Der Nutzer hat Simulationen in der Bridge deaktiviert (bewusste Entscheidung, KEIN Fehler).', 'USER_PLAYTEST_ACTIVE: Der Nutzer testet gerade selbst - erst beenden lassen.', 'SIM_ALREADY_RUNNING', 'SIM_START_FAILED: Studio ist nicht rechtzeitig in den Run-Modus gewechselt.') })
-        $t.Add(@{ name = 'sim_stop'; category = 'sim'; summary = 'Editor-Simulation stoppen (Place wird wiederhergestellt).';
-            description = 'Stoppt die Simulation mit RunService:Stop() (Session-DataModel: StudioTestService) und wartet auf EditModeActive=true (12s). Fallback: F5 senden. Schlaegt das fehl, kommt SIM_STOP_NEEDS_USER mit userMessage - NICHT in einer Schleife wiederholen. Danach ist ein sofortiger zweiter sim_start wieder moeglich (Zombie-Frei).';
+            errors = @('SIM_DISABLED: sim_start ist bis zu einer unterstuetzten echten Edit-Modus-Simulation deaktiviert.') })
+        $t.Add(@{ name = 'sim_stop'; category = 'sim'; summary = 'Nur eine bestaetigt bridge-eigene Studio-Run-Session stoppen.';
+            description = 'Stoppt ausschliesslich eine bereits laufende, der Bridge gehoerende Session mit RunService:Stop() und wartet auf EditModeActive=true (12s). Der Start neuer Studio-Run-Simulationen ist deaktiviert; ein vom Nutzer gestarteter Test wird nicht fernbeendet. Fallback: Shift+F5; nicht in einer Schleife wiederholen.';
             params = @{};
             returns = '{ ok, state { running=false, editModeActive=true, stoppedByBridge } }';
             example = @{};
-            errors = @('SIM_NOT_RUNNING: Es lief keine Simulation.', 'SIM_STOP_NEEDS_USER: Weder RunService:Stop() noch F5 haben gegriffen - den Nutzer bitten, selbst zu stoppen.') })
-        $t.Add(@{ name = 'sim_status'; category = 'sim'; summary = 'Laeuft eine Simulation? Ist Run erlaubt? (read-only, jederzeit)';
-            description = 'Liest den echten Zustand: StudioTestService.EditModeActive (verbindliches Orakel), RunService:IsRunning, startedByBridge/simStartedAt, playerCount (immer 0 - es gibt keinen Spieler mehr) und die Einstellung arenaSimAllowed. Kein Raten, keine Reporter-Snapshots.';
+            errors = @('SIM_NOT_BRIDGE_OWNED: aktive Session ist nicht als bridge-eigen bestaetigt.', 'SIM_STOP_NEEDS_USER: Nutzer muss selbst stoppen.') })
+        $t.Add(@{ name = 'sim_status'; category = 'sim'; summary = 'Studio-Teststatus lesen; sim_start ist deaktiviert (read-only).';
+            description = 'Liest EditModeActive, RunService-Modus (Studio Run vs Play/F5, sonst unknown), startedByBridge/simStartedAt und die verfuegbare Player-Zahl. simAllowed ist immer false: Die fruehere Studio-Run-Implementierung verliess den Edit-Modus (EditModeActive=false); die dokumentierte API bietet keinen unterstuetzten true Edit-Modus-Pfad fuer Physik/Skripte.';
             params = @{};
-            returns = '{ running, mode, editModeActive, runServiceRunning, startedByBridge, simStartedAt, simAllowed, playerCount, note }';
+            returns = '{ running, mode, editModeActive, runServiceRunning, startedByBridge, simStartedAt, simAllowed=false, playerCount, note }';
             example = @{};
             errors = @() })
 
@@ -13516,7 +13524,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 'GET and POST use the same bridge code path. Pick whichever transport your environment supports.',
                 'A timed-out Studio command keeps running and can return through _bridge.lateResults. Jobs are available when background progress is useful.',
                 'Asset search covers the Creator Store categories including 3D models, models, meshes/MeshParts, plugins, fonts, audio, images/decals, video and animation. Insertion still reports Roblox permission/privacy errors and warns before inserting scripts.',
-                'Editor simulations (sim_start) are available when the user setting permits them; they run in Run mode (scripts + physics, NO player, NO client scripts) and permanent edits are guarded until sim_stop returns to edit mode. A playtest started by the USER blocks building (USER_PLAYTEST_ACTIVE) and can only be ended by the user.',
+                'sim_start is disabled because the former official Studio Run simulation exits Edit mode (EditModeActive=false), and the documented Studio API has no supported true Edit-mode physics/script path. A USER-started Play/F5 test is separate, blocks building (USER_PLAYTEST_ACTIVE), and can only be ended by the user.',
                 'Windows finish notifications use report_done { title, message }. Arena writes a lively title (max 70 characters) and an inviting body (max 140); avoid dry changelog lists.',
                 'Responses include typed error codes and concrete diagnostics. Use those details to decide the next step.',
                 'HARD CONSTRAINT for any hand-written WedgePart/triangle geometry (build_polygon_model already does this correctly - this rule is for genuinely custom run_lua geometry code only): see polygonEngineRules below for the mandatory WedgePart axis convention and the canonical seamless-triangle formula. Getting the axis order wrong is the single most common cause of 90-degree rotation errors and gaping seams in procedural low-poly builds.'
@@ -13705,7 +13713,7 @@ end
             )
             simulationModes = @{
                 edit = 'No simulation: everything you build is PERMANENT. Building and script editing happen here. compile_check and run_lua run in edit mode too - they need no simulation and stay available even when simulations are disabled.'
-                run = 'Editor simulation (sim_start, Studio "Run", F8): the place runs as a server simulation - scripts and physics only. There is NO player, NO character, NO client and NO GUI. Use get_output/get_errors to audit, then sim_stop. Permanent edits are blocked while it runs (SIM_RUNNING) unless allowInSimMode=true is passed for a throw-away change.'
+                run = 'Unavailable: sim_start is disabled. Its former implementation used official Studio Run, which exits Edit mode (EditModeActive=false); the documented Studio API has no supported way to run physics/scripts while true Edit mode remains active. Use compile_check/run_lua for edit-mode checks and test live behavior manually in Studio.'
                 userPlaytest = 'A playtest started by the USER (F5) is their own, temporary world. Since 7.0.0 the bridge has no play_start/play_stop and cannot end it: you stop working (USER_PLAYTEST_ACTIVE), ask the user to stop it (Shift+F5) and continue afterwards.'
             }
             userPresence = @(
@@ -13728,12 +13736,10 @@ end
                 COMPILE_ERROR = 'Lua does not compile (line number included). Fix and check with compile_check before running.'
                 RUNTIME_ERROR = 'Lua ran and failed (message + context).'
                 PLUGIN_OUTDATED = 'plugin outdated - simulations/version checks wait. Ask the user to restart Studio so the matching plugin loads.'
-                SIM_DISABLED = 'The user turned OFF "Arena darf Simulationen (Run) starten". ONLY sim_start is blocked - on purpose, the bridge is NOT broken. Building, GUIs, assets, jobs, compile_check and run_lua all keep working; if a simulation is truly needed, ask the user to enable the setting.'
-                SIM_RUNNING = 'An editor simulation (sim_start) is running; a permanent change was blocked because it would be thrown away at sim_stop. Call sim_stop first, or pass allowInSimMode=true for a deliberate throw-away change.'
-                SIM_ALREADY_RUNNING = 'A simulation is already running - use sim_status, audit with get_output/get_errors, then sim_stop.'
-                SIM_NOT_RUNNING = 'sim_stop was called while no simulation runs - nothing to do (not an error).'
-                SIM_START_FAILED = 'Studio did not switch into Run mode in time. Read sim_status and get_output; do not retry in a loop.'
-                SIM_STOP_NEEDS_USER = 'RunService:Stop() and the F5 fallback did not return Studio to edit mode. Do NOT retry in a loop - the answer carries a German userMessage: ask the user to stop the simulation (Shift+F5).'
+                SIM_DISABLED = 'sim_start is intentionally disabled because the only existing simulation path enters Studio Run and exits Edit mode. The documented Studio API has no supported true Edit-mode physics/script path. Building, GUIs, assets, jobs, compile_check, run_lua and sim_status remain available.'
+                SIM_NOT_BRIDGE_OWNED = 'Studio has left Edit mode (Run, Play/F5, or an unclassified test), but this session is not confirmed as bridge-owned. The bridge will not stop a user-started Studio session; the user must stop it manually.'
+                SIM_RUNNING = 'A Studio Run session is active; a permanent change was blocked because it would be thrown away at sim_stop. Stop an existing bridge-owned session with sim_stop, or wait for the user to return Studio to Edit mode.'
+                SIM_STOP_NEEDS_USER = 'RunService:Stop() and the Shift+F5 fallback did not return Studio to edit mode. Do NOT retry in a loop - the answer carries a German userMessage: ask the user to stop the simulation (Shift+F5).'
                 NOTIFICATIONS_DISABLED = 'report_done is inactive: the user has not enabled finish notifications. Finish your answer normally and do not call report_done again.'
                 REF_NOT_FOUND = 'An id/path/selector could not be resolved (object deleted, or the plugin reloaded - get fresh ids with search/get_tree).'
                 BAD_ARGS = 'Arguments missing or invalid (the message says what exactly).'
@@ -13762,7 +13768,7 @@ end
             workflows = @{
                 buildSomething = @('Understand as much context as the task needs', 'Choose build_assembly / build_polygon_model / bulk_create / unions / regular tools', 'Optionally verify or select the result')
                 editAScript = @('search className=Script', 'get_script (note the hash)', 'patch_script with a unique snippet', 'compile_check the result', 'set/patch with expectHash', 'get_output / get_errors')
-                testASimulation = @('sim_status first (check _bridge.simulation - never build persistently while a simulation runs)', 'sim_start - then get_output since=<cursor> for #ARENA#/print evidence', 'run_lua for pure logic or read tools for state', 'sim_stop (waits for edit mode), then audit the result in edit mode', 'remember: no player, no client scripts and no GUI testing - the user tests the game itself')
+                testASimulation = @('sim_start is disabled; do not call it (the former Studio Run path exits Edit mode)', 'Use compile_check for syntax, run_lua for one-off edit-place logic, and read tools for state', 'sim_status can inspect an existing session; sim_stop only ends an existing bridge-owned session', 'For live physics/server-script behavior, the user must test manually in Roblox Studio until a supported true Edit-mode API exists')
                 manyObjects = @('build_assembly for grouped linear/radial repetition', 'bulk_create or clone_instance for simple arrays', 'batch when combining independent operations')
                 longBuild = @('fill_region with asJob=true (or start_job)', 'job_status (progress + partsPerSecond)', 'job_result when done (geometry.ready included)', 'verify_measurable on a sample if in doubt')
                 rotationCorrect = @('coordinate_guide (once per session)', 'describe_orientation on the part', 'point_at (axis="top" for cylinder length) or rotate_around with measured axes', 'describe_orientation again to verify')
@@ -13828,7 +13834,7 @@ end
         $guides = Get-BridgeGuides
         foreach ($key in $guides.Keys) { $out[[string]$key] = $guides[$key] }
         # Version 3.8: Bridge-Einstellungen prominent unterbringen
-        $startSim = $true
+        $startSim = $false
         $startNotify = $false
         try { $startSim = [bool]$Shared.BridgeSettings.simAllowed } catch {}
         try { $startNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
@@ -13857,7 +13863,7 @@ end
             $out.previousHandoffNote = 'A handoff from an earlier session exists for this place. Continue from it instead of starting over - it is already included here, nothing needs to be copied.'
         }
         if (-not $startSim) {
-            $out.simNotice = 'IMPORTANT: the user DISABLED editor simulations ("Arena darf Simulationen (Run) starten" = OFF). Every sim_ tool answers SIM_DISABLED ON PURPOSE - the bridge is NOT broken. Keep building and auditing in edit mode.'
+            $out.simNotice = 'IMPORTANT: sim_start is intentionally disabled because the former Studio Run path exits Edit mode (EditModeActive=false), and the documented Studio API has no supported true Edit-mode physics/script path. Do not retry it; continue building and auditing in edit mode.'
         }
         if ($startNotify) {
             $out.finishNotification = 'FINISH NOTIFICATION IS ON: when ALL your changes are complete and you are about to end your answer, call report_done { title, message } as your VERY LAST tool call - the user receives a Windows notification with your German message (e.g. title="✅ Arena hat den Bug behoben!", message="Der Fehler ist weg – komm und teste das Spiel!"). After that call: no more tools, no more changes - end your answer immediately.'
@@ -13876,15 +13882,15 @@ end
             $toolIndex.Add(@{ name = $d.name; category = $d.category; description = $d.summary })
         }
         $guides = Get-BridgeGuides
-        $manifestSim = $true
+        $manifestSim = $false
         $manifestNotify = $false
         try { $manifestSim = [bool]$Shared.BridgeSettings.simAllowed } catch {}
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.0.0'
+            version = '7.0.1'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
-            simulation = 'Only the editor simulation exists (sim_start / sim_stop / sim_status - Run mode: scripts and physics, no player, no client scripts, no playtest). A user-started playtest still blocks work with USER_PLAYTEST_ACTIVE.'
+            simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
             docsVersion = [string]$Shared.DocsVersion
             role = 'A normal token controls exactly one live Roblox Studio place. The special aggregate token copied from Alle Places controls several places: call GET /api/places first and pass one exact targetPlace in every request; the bridge refuses to guess. This makes switching safe and explicit. Send every request as POST /api/tool with JSON body { "token": "...", "targetPlace": "...", "tool": "...", "args": { ... } }.'
@@ -13915,7 +13921,7 @@ end
             settings = @{
                 simAllowed = $manifestSim
                 notifyOnDone = $manifestNotify
-                settingsNote = 'simAllowed=false: the user disabled editor simulations (Run) - ONLY sim_start answers SIM_DISABLED by design (the bridge is NOT broken; building, GUIs, assets and jobs keep working). notifyOnDone=true: call report_done { title, message } as your very last action when everything is done.'
+                settingsNote = 'simAllowed=false: sim_start is disabled by design because the former Studio Run path exits Edit mode (EditModeActive=false); the documented Studio API has no supported true Edit-mode physics/script path. Building, GUIs, assets, jobs, compile_check, run_lua and sim_status remain available. notifyOnDone=true: call report_done { title, message } as your very last action when everything is done.'
             }
         }
         foreach ($key in $guides.Keys) { $manifest[[string]$key] = $guides[$key] }
@@ -13995,7 +14001,7 @@ end
         $entry = Get-SessionEntry $sessionId
         $events = Take-Events $sessionId 12
         # Version 3.8: Bridge-Einstellungen (Selbst-Tests / Fertig-Meldung)
-        $simAllowed = $true
+        $simAllowed = $false
         $notifyOnDone = $false
         try { $simAllowed = [bool]$Shared.BridgeSettings.simAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
@@ -14005,7 +14011,7 @@ end
             try { $progressView = $progressJson | ConvertFrom-Json } catch {}
         }
         $envelope = @{
-            bridgeVersion = '7.0.0'
+            bridgeVersion = '7.0.1'
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent = 0, never an error. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
                 lastPercent = $(if ($progressView) { [double]$progressView.percent } else { 0 })
@@ -14042,17 +14048,16 @@ end
             }
             if ($envelope.attention) { $envelope.attention += ' plugin outdated - Simulationen warten; Studio neu starten.' } else { $envelope.attention = 'plugin outdated - Simulationen warten; Studio neu starten.' }
         }
-        # Version 3.8: Hat der Nutzer die Selbst-Tests AUSgeschaltet, steht das
-        # hier deutlich dabei - die KI soll wissen, dass das Absicht ist und
-        # die Bridge NICHT kaputt ist.
+        # sim_start is blocked because the available simulation leaves Edit mode.
         if (-not $simAllowed) {
-            $envelope.selfTestDisabled = @{
+            $envelope.simDisabled = @{
                 code = 'SIM_DISABLED'
-                message = 'The user turned OFF AI self-testing in the Arena Roblox Bridge program (setting "Arena darf sich selbst testen" = OFF). Run, Play and Play Here are unavailable for you ON PURPOSE.'
-                whatThisMeans = 'This is NOT a bug and the bridge is NOT broken. The user wants to run game tests themselves.'
-                whatStillWorks = 'Editor simulations still work: compile_check (syntax), run_lua (pure Lua logic in the edit place), get_output / get_errors, and all reading/building tools.'
+                reason = 'EDIT_MODE_SIMULATION_UNAVAILABLE'
+                message = 'sim_start is intentionally unavailable: the former Studio Run implementation exits Edit mode (EditModeActive=false), and the documented Studio API has no supported true Edit-mode physics/script path.'
+                whatThisMeans = 'This is an intentional compatibility/safety decision, not a bridge failure. The requested simulation while EditModeActive=true is not supported by the documented Studio API.'
+                whatStillWorks = 'compile_check, one-off run_lua in the edit place, sim_status, sim_stop for an existing bridge-owned session, get_output / get_errors, all reading/building tools, GUIs, assets, jobs, progress and handoff.'
             }
-            $envelope.attention = 'SELF-TESTING IS DISABLED BY THE USER: play tools answer SIM_DISABLED by design - do not retry them and do not think the bridge is broken. Use editor simulations (compile_check / run_lua) and let the user test the game.'
+            $envelope.attention = 'sim_start is disabled. Do not retry it; continue building/auditing in edit mode and test live physics/scripts manually in Studio.'
         }
         # Version 3.8: Fertig-Meldung aktiv? In JEDER Antwort deutlich daran
         # erinnern, report_done als ALLERLETZTE Aktion zu rufen.
@@ -14292,7 +14297,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.0.0'
+                        bridgeVersion = '7.0.1'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -14544,7 +14549,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.0.0'
+                        serverVersion = '7.0.1'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -14731,7 +14736,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.0.0'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.0.1'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -14754,14 +14759,14 @@ end
             }
 
             if ($path -eq '/api/status') {
-                $statusSim = $true
+                $statusSim = $false
                 $statusNotify = $false
                 try { $statusSim = [bool]$Shared.BridgeSettings.simAllowed } catch {}
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.0.0'
-                    serverVersion = '7.0.0'
+                    bridgeVersion = '7.0.1'
+                    serverVersion = '7.0.1'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -14813,29 +14818,25 @@ end
                     Send-Json $context 400 @{ ok = $false; error = 'calls fehlt: { "calls": [ { "tool": "...", "args": {} } ] }' }
                     continue
                 }
-                # Version 7.0.0: Nur die Simulation (Run) ist per Einstellung
-                # abschaltbar - Bauen, GUIs, Assets und Jobs laufen weiter.
-                $simOkPar = $true
-                try { $simOkPar = [bool]$Shared.BridgeSettings.simAllowed } catch {}
-                if (-not $simOkPar) {
-                    $blockedTool = $null
-                    foreach ($call in @($body.calls)) {
-                        if (@('sim_start') -contains [string]$call.tool) {
-                            $blockedTool = [string]$call.tool
-                            break
-                        }
+                # Block sim_start at the desktop boundary too; the plugin has
+                # a second guard for batch/parallel/start_job nested calls.
+                $blockedTool = $null
+                foreach ($call in @($body.calls)) {
+                    if ([string]$call.tool -eq 'sim_start') {
+                        $blockedTool = 'sim_start'
+                        break
                     }
-                    if ($blockedTool) {
-                        $blockedSimPar = New-SimBlockedResult $blockedTool
-                        $blockedSimPar._bridge = (New-Envelope $sessionId)
-                        Send-Json $context 200 $blockedSimPar
-                        continue
-                    }
+                }
+                if ($blockedTool) {
+                    $blockedSimPar = New-SimBlockedResult $blockedTool
+                    $blockedSimPar._bridge = (New-Envelope $sessionId)
+                    Send-Json $context 200 $blockedSimPar
+                    continue
                 }
                 foreach ($call in @($body.calls)) {
                     $callTool = [string]$call.tool
-                    if ($callTool -eq 'sim_start' -or $callTool -eq 'sim_stop') {
-                        $Shared.AiPlayIntents[$sessionId] = @{ action = ($callTool -replace '^sim_', ''); at = (Get-UnixSeconds) }
+                    if ($callTool -eq 'sim_stop') {
+                        $Shared.AiPlayIntents[$sessionId] = @{ action = 'stop'; at = (Get-UnixSeconds) }
                     }
                 }
                 $timeout = 90
@@ -14996,18 +14997,15 @@ end
                     continue
                 }
 
-                # Version 7.0.0: Selbst-Simulationen deaktiviert? Dann ist
-                # NUR sim_start gesperrt (kein Fehler, bewusste Entscheidung).
-                $simOk = $true
-                try { $simOk = [bool]$Shared.BridgeSettings.simAllowed } catch {}
-                if (-not $simOk -and @('sim_start') -contains $tool) {
+                # sim_start is never dispatched to Studio. The remaining status
+                # and cleanup calls receive an explicit false availability bit.
+                if ($tool -eq 'sim_start') {
                     $blockedSim = New-SimBlockedResult $tool
                     Complete-ArenaActivity $sessionId $activityId $tool $toolArgs (To-Json $blockedSim 40)
                     $blockedSim._bridge = (New-Envelope $sessionId)
                     Send-Json $context 200 $blockedSim
                     continue
                 }
-
                 if ($accessMode -eq 'readonly' -and $writeTools -contains $tool) {
                     $readOnlyResult = @{ ok=$false; code='READONLY_TOKEN'; error=("The tool '" + $tool + "' changes the place, but this token is set to read only.") }
                     Complete-ArenaActivity $sessionId $activityId $tool $toolArgs (To-Json $readOnlyResult 12)
@@ -15034,8 +15032,8 @@ end
                 # Version 3.8: Play-Absicht der KI vermerken - der SERVER weiss
                 # dann zuverlaessig, wer einen Test gestartet/gestoppt hat
                 # (das ueberlebt auch ein echtes Neu-Laden des Plugins durch Studio).
-                if ($tool -eq 'sim_start' -or $tool -eq 'sim_stop') {
-                    $Shared.AiPlayIntents[$sessionId] = @{ action = ($tool -replace '^sim_', ''); at = (Get-UnixSeconds) }
+                if ($tool -eq 'sim_stop') {
+                    $Shared.AiPlayIntents[$sessionId] = @{ action = 'stop'; at = (Get-UnixSeconds) }
                 }
 
                 $resultJson = Get-DedupedPlayResult $sessionId $tool $toolArgs
@@ -15472,6 +15470,12 @@ function Remove-DeadSession {
         try { [void]$script:Shared.$bagName.TryRemove($SessionId, [ref]$junk) } catch {}
     }
     try { $script:PlaceNames.Remove($SessionId) } catch {}
+    try { $script:PlaceNameResolveErrorLogged.Remove($SessionId) } catch {}
+    try {
+        foreach ($failureKey in @($script:PlaceRowFailureLogAt.Keys)) {
+            if ([string]$failureKey -like ($SessionId + '|*')) { [void]$script:PlaceRowFailureLogAt.Remove([string]$failureKey) }
+        }
+    } catch {}
     try { $script:PlaceNameSources.Remove($SessionId) } catch {}
     try {
         # Fenster-Besitz freigeben, damit ein neu geoeffnetes Studio-Fenster
@@ -16305,51 +16309,69 @@ $xaml = @'
                                         <TextBlock x:Name="PlacesCountText" Text="0" Foreground="#8FF5E9" FontSize="11" FontWeight="Bold"/>
                                     </Border>
                                 </StackPanel>
-                                <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center" Text="Automatisch verbunden" Foreground="{StaticResource TextFaint}" FontSize="11"/>
+                                <TextBlock x:Name="PlaceListStatusText" HorizontalAlignment="Right" VerticalAlignment="Center" Text="Automatisch verbunden" Foreground="{StaticResource TextFaint}" FontSize="11"/>
                             </Grid>
                         </Border>
 
                         <Grid Grid.Row="1">
-                            <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Width="430">
-                                <Border Width="76" Height="76" CornerRadius="22" HorizontalAlignment="Center" RenderTransformOrigin="0.5,0.5">
-                                    <Border.Background>
-                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                            <GradientStop Color="#331B2C6E" Offset="0"/>
-                                            <GradientStop Color="#1A0E1F44" Offset="1"/>
-                                        </LinearGradientBrush>
-                                    </Border.Background>
-                                    <Border.BorderBrush>
-                                        <SolidColorBrush Color="#40FFFFFF"/>
-                                    </Border.BorderBrush>
-                                    <Border.BorderThickness>1</Border.BorderThickness>
-                                    <Border.RenderTransform>
-                                        <TranslateTransform X="0" Y="0"/>
-                                    </Border.RenderTransform>
-                                    <Border.Triggers>
-                                        <EventTrigger RoutedEvent="Loaded">
-                                            <BeginStoryboard>
-                                                <Storyboard>
-                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="-7" Duration="0:0:3.2" AutoReverse="True" RepeatBehavior="Forever">
-                                                        <DoubleAnimation.EasingFunction>
-                                                            <SineEase EasingMode="EaseInOut"/>
-                                                        </DoubleAnimation.EasingFunction>
-                                                    </DoubleAnimation>
-                                                </Storyboard>
-                                            </BeginStoryboard>
-                                        </EventTrigger>
-                                    </Border.Triggers>
-                                    <Grid>
-                                        <Ellipse Width="10" Height="10" Fill="#8FF5E9" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="15,0,0,0"/>
-                                        <Ellipse Width="10" Height="10" Fill="#00E5D0" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,15,0"/>
-                                        <Rectangle Height="3" Fill="#8B6BFF" Margin="30,0,30,0" RadiusX="1.5" RadiusY="1.5"/>
-                                    </Grid>
-                                </Border>
-                                <TextBlock x:Name="EmptyTitle" Text="Öffne ein Place in Roblox Studio" Foreground="{StaticResource TextMain}" FontSize="21" FontWeight="Bold" TextAlignment="Center" Margin="0,22,0,0"/>
-                                <TextBlock x:Name="EmptyBody" Text="Sobald sich ein Studio-Fenster mit einem geladenen Place verbindet, erscheint es hier automatisch." Foreground="{StaticResource TextMuted}" FontSize="13.5" TextAlignment="Center" TextWrapping="Wrap" Margin="0,10,0,0"/>
-                            </StackPanel>
-                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="14" Margin="0,0,0,0">
-                                <StackPanel x:Name="PlaceList"/>
-                            </ScrollViewer>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0">
+                                <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Width="430">
+                                    <Border Width="76" Height="76" CornerRadius="22" HorizontalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                <GradientStop Color="#331B2C6E" Offset="0"/>
+                                                <GradientStop Color="#1A0E1F44" Offset="1"/>
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                        <Border.BorderBrush>
+                                            <SolidColorBrush Color="#40FFFFFF"/>
+                                        </Border.BorderBrush>
+                                        <Border.BorderThickness>1</Border.BorderThickness>
+                                        <Border.RenderTransform>
+                                            <TranslateTransform X="0" Y="0"/>
+                                        </Border.RenderTransform>
+                                        <Border.Triggers>
+                                            <EventTrigger RoutedEvent="Loaded">
+                                                <BeginStoryboard>
+                                                    <Storyboard>
+                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="-7" Duration="0:0:3.2" AutoReverse="True" RepeatBehavior="Forever">
+                                                            <DoubleAnimation.EasingFunction>
+                                                                <SineEase EasingMode="EaseInOut"/>
+                                                            </DoubleAnimation.EasingFunction>
+                                                        </DoubleAnimation>
+                                                    </Storyboard>
+                                                </BeginStoryboard>
+                                            </EventTrigger>
+                                        </Border.Triggers>
+                                        <Grid>
+                                            <Ellipse Width="10" Height="10" Fill="#8FF5E9" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="15,0,0,0"/>
+                                            <Ellipse Width="10" Height="10" Fill="#00E5D0" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,15,0"/>
+                                            <Rectangle Height="3" Fill="#8B6BFF" Margin="30,0,30,0" RadiusX="1.5" RadiusY="1.5"/>
+                                        </Grid>
+                                    </Border>
+                                    <TextBlock x:Name="EmptyTitle" Text="Öffne ein Place in Roblox Studio" Foreground="{StaticResource TextMain}" FontSize="21" FontWeight="Bold" TextAlignment="Center" Margin="0,22,0,0"/>
+                                    <TextBlock x:Name="EmptyBody" Text="Sobald sich ein Studio-Fenster mit einem geladenen Place verbindet, erscheint es hier automatisch." Foreground="{StaticResource TextMuted}" FontSize="13.5" TextAlignment="Center" TextWrapping="Wrap" Margin="0,10,0,0"/>
+                                </StackPanel>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="14" Margin="0,0,0,0">
+                                    <StackPanel x:Name="PlaceList"/>
+                                </ScrollViewer>
+                            </Grid>
+                            <Border Grid.Row="1" Background="#12FFFFFF" BorderBrush="#1FFFFFFF" BorderThickness="0,1,0,0" Padding="14,10,14,12">
+                                <Button x:Name="ArenaAiButton" Width="178" Height="40" HorizontalAlignment="Right"
+                                        Background="{StaticResource GreenBtnBg}" BorderBrush="#4DFFFFFF" BorderThickness="1"
+                                        Foreground="#FFFFFF" ToolTip="Arena AI im Browser öffnen">
+                                    <Button.Content>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <TextBlock Text="&#xE71B;" FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="#FFFFFF" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                            <TextBlock Text="Arena AI öffnen" Foreground="#FFFFFF" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button.Content>
+                                </Button>
+                            </Border>
                         </Grid>
                     </Grid>
                 </Border>
@@ -16490,10 +16512,12 @@ $EmptyState      = $window.FindName('EmptyState')
 $EmptyTitle      = $window.FindName('EmptyTitle')
 $EmptyBody       = $window.FindName('EmptyBody')
 $PlacesCountText = $window.FindName('PlacesCountText')
+$PlaceListStatusText = $window.FindName('PlaceListStatusText')
 $LiveBadge       = $window.FindName('LiveBadge')
 $LiveDot         = $window.FindName('LiveDot')
 $LiveText        = $window.FindName('LiveText')
 $SettingsButton  = $window.FindName('SettingsButton')
+$ArenaAiButton   = $window.FindName('ArenaAiButton')
 $UpdateBadge     = $window.FindName('UpdateBadge')
 $MinimizeButton  = $window.FindName('MinimizeButton')
 $CloseButton     = $window.FindName('CloseButton')
@@ -17040,7 +17064,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.0.0)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.0.1)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -17368,7 +17392,7 @@ function Get-SettingsNotificationLines {
             try { $name = [string]$script:PlaceNames[[string]$item.sessionId] } catch {}
             if ([string]::IsNullOrWhiteSpace($name)) { $name = [string]$item.placeName }
             if ($item.versionMismatch -eq $true) {
-                $lines.Add(('{0}: Plugin veraltet (Plugin {1}, Bridge 7.0.0) - Roblox Studio einmal neu starten, sonst warten neue Werkzeuge.' -f $name, [string]$item.pluginVersion))
+                $lines.Add(('{0}: Plugin veraltet (Plugin {1}, Bridge 7.0.1) - Roblox Studio einmal neu starten, sonst warten neue Werkzeuge.' -f $name, [string]$item.pluginVersion))
             }
         }
     } catch {}
@@ -17477,6 +17501,35 @@ function Get-PlaceName {
     return [string]$script:PlaceNames[$sessionId]
 }
 
+function Get-PlaceDisplayName {
+    param($Studio, $WindowNames)
+
+    $sessionId = ''
+    try { $sessionId = [string]$Studio.sessionId } catch {}
+    try {
+        $name = [string](Get-PlaceName $Studio $WindowNames)
+        if (-not [string]::IsNullOrWhiteSpace($name)) { return $name }
+    } catch {
+        if (-not [string]::IsNullOrWhiteSpace($sessionId) -and -not $script:PlaceNameResolveErrorLogged.ContainsKey($sessionId)) {
+            $script:PlaceNameResolveErrorLogged[$sessionId] = $true
+            Write-UiErrorLog ("Place-Name konnte nicht aufgeloest werden (sid=$sessionId); verwende einen sichtbaren Fallback") $_
+        }
+    }
+
+    $reported = ''
+    try { $reported = Repair-Mojibake ([string]$Studio.placeName) } catch {}
+    if (-not [string]::IsNullOrWhiteSpace($reported)) {
+        $reported = $reported.Trim()
+        if ($reported.Length -gt 80) { $reported = $reported.Substring(0, 77) + '…' }
+        return $reported
+    }
+    if (-not [string]::IsNullOrWhiteSpace($sessionId)) {
+        $suffixLength = [Math]::Min(6, $sessionId.Length)
+        return 'Place ' + $sessionId.Substring($sessionId.Length - $suffixLength)
+    }
+    return 'Verbundenes Place'
+}
+
 # ----------------------------------------------------------------------------
 # FENSTER-VORSCHAU DER STUDIO-FENSTER (LIVE)  -  AUFNAHME + LAUFZEIT-DIAGNOSE
 # ----------------------------------------------------------------------------
@@ -17543,7 +17596,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.0.0)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.0.1)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -18852,6 +18905,7 @@ function New-Row {
         ProgressText  = $null
         ProgressPercent = $null
         ProgressState   = 'idle'
+        IsMinimalFallback = $false
     }
 
     # Version 6.0 (Liquid Glass): Die Place-Zeile ist eine Teal-Glaskarte.
@@ -18956,7 +19010,7 @@ function New-Row {
         Write-UiErrorLog 'Place-Zeile: Vorschau-Visual konnte nicht erstellt werden' $_
     }
     $title = [System.Windows.Controls.TextBlock]::new()
-    $title.Text = Get-PlaceName $Studio $WindowNames
+    $title.Text = Get-PlaceDisplayName $Studio $WindowNames
     $title.Foreground = Get-Brush '#FFFFFF'
     $title.FontSize = 16
     $title.FontWeight = 'SemiBold'
@@ -19311,7 +19365,7 @@ function Update-AllPlacesRow {
 function Update-Row {
     param($Row, $Studio, $WindowNames)
 
-    $placeTitle = Get-PlaceName $Studio $WindowNames
+    $placeTitle = Get-PlaceDisplayName $Studio $WindowNames
     Set-Text $Row.Title $placeTitle
     # Version 7.0.0: "Plugin veraltet - Studio neustarten" steht NICHT mehr im
     # Namen, sondern als ROTER Hinweis UNTER dem Namen. Solange das Plugin
@@ -19338,7 +19392,9 @@ function Update-Row {
     $mode = if ([string]$Studio.accessMode -eq 'readonly') { 'readonly' } else { 'readwrite' }
     # Kurz nach einem Klick hat der lokale Wert Vorrang (verhindert Flackern)
     if ([DateTime]::UtcNow -lt $Row.ModeUntil) { return }
-    if ($Row.Mode -ne $mode) { Set-RowMode $Row $mode -Silent }
+    if ($Row.Mode -ne $mode) {
+        if ($null -ne $Row.Toggle) { Set-RowMode $Row $mode -Silent } else { $Row.Mode = $mode }
+    }
 }
 
 
@@ -19711,6 +19767,8 @@ function Refresh-Ui {
 function Add-PlaceRowToPlaceList {
     param($Row, [string]$SessionId, [string]$Label)
 
+    if ($null -eq $Row -or $null -eq $Row.Root) { throw 'Place-Zeile oder Root-Control ist null.' }
+    $Row.Root.Tag = $SessionId
     $PlaceList.Children.Add($Row.Root) | Out-Null
 
     try {
@@ -19761,7 +19819,7 @@ function Add-PlaceRowToPlaceList {
     # PREVIEW_UI_SELFTEST_FAILED - damit ist sofort entschieden, ob der
     # Fehler in WPF/UI oder in der Fensteraufnahme liegt.
     try {
-        if (-not $script:PreviewSelfTestDone -and $Label -eq 'Place-Zeile') {
+        if (-not $Row.IsMinimalFallback -and -not $script:PreviewSelfTestDone -and $Label -eq 'Place-Zeile') {
             $script:PreviewSelfTestDone = $true
             Invoke-PlacePreviewUiSelfTest $Row $SessionId
         }
@@ -19769,6 +19827,102 @@ function Add-PlaceRowToPlaceList {
         Write-UiErrorLog 'Vorschau-Selbsttest konnte nicht ausgefuehrt werden' $_
         try { Write-RuntimeLog ('PREVIEW_UI_SELFTEST_FAILED sid=' + [string]$SessionId + ' error=' + [string]$_.Exception.Message) } catch {}
     }
+}
+
+function New-MinimalPlaceRow {
+    param($Studio, [string]$SessionId)
+
+    # A connected session must still get a visible, useful row when a nonessential
+    # rich control (menu, preview, animation) fails to construct.
+    $row = [pscustomobject]@{
+        SessionId = $SessionId
+        Root = $null; Title = $null; Copy = $null; Menu = $null; Popup = $null
+        Toggle = $null; IconFrame = $null; IconImage = $null; IconSpinner = $null
+        IconFallback = $null; PreviewHandle = [IntPtr]::Zero; PreviewHasFrame = $false
+        PreviewVerifyDone = $false; IconIconAttempted = $false; PreviewFailCount = 0
+        PreviewLoggedOnce = $false; Mode = $(if ([string]$Studio.accessMode -eq 'readonly') {'readonly'} else {'readwrite'})
+        ModeUntil = [DateTime]::MinValue; StaleText = $null
+        ProgressPanel = $null; ProgressBar = $null; ProgressText = $null
+        ProgressPercent = $null; ProgressState = 'idle'; IsMinimalFallback = $true
+    }
+
+    $root = [System.Windows.Controls.Border]::new()
+    $root.CornerRadius = [System.Windows.CornerRadius]::new(14)
+    $root.Background = Get-Brush '#C9121C44'
+    $root.BorderBrush = Get-Brush '#3DFFFFFF'
+    $root.BorderThickness = [System.Windows.Thickness]::new(1)
+    $root.Padding = [System.Windows.Thickness]::new(16, 9, 12, 9)
+    $root.Margin = [System.Windows.Thickness]::new(0, 0, 0, 10)
+    $root.MinHeight = 64
+    $root.Tag = $SessionId
+
+    $content = [System.Windows.Controls.Grid]::new()
+    $copyColumn = [System.Windows.Controls.ColumnDefinition]::new()
+    $copyColumn.Width = [System.Windows.GridLength]::Auto
+    $content.ColumnDefinitions.Add([System.Windows.Controls.ColumnDefinition]::new()) | Out-Null
+    $content.ColumnDefinitions.Add($copyColumn) | Out-Null
+
+    $namePanel = [System.Windows.Controls.StackPanel]::new()
+    $namePanel.VerticalAlignment = 'Center'
+    $title = [System.Windows.Controls.TextBlock]::new()
+    $title.Text = Get-PlaceDisplayName $Studio $null
+    $title.Foreground = Get-Brush '#F2F6FF'
+    $title.FontSize = 14
+    $title.FontWeight = 'SemiBold'
+    $title.TextTrimming = 'CharacterEllipsis'
+    $title.ToolTip = $title.Text
+    $staleText = [System.Windows.Controls.TextBlock]::new()
+    $staleText.Text = if ($Studio.versionMismatch -eq $true) { 'Plugin veraltet - Studio neustarten' } else { '' }
+    $staleText.Foreground = Get-Brush '#FFFF8C9F'
+    $staleText.FontSize = 10.5
+    $staleText.Margin = [System.Windows.Thickness]::new(0, 3, 0, 0)
+    $staleText.Visibility = if ($Studio.versionMismatch -eq $true) { 'Visible' } else { 'Collapsed' }
+    $namePanel.Children.Add($title) | Out-Null
+    $namePanel.Children.Add($staleText) | Out-Null
+    [System.Windows.Controls.Grid]::SetColumn($namePanel, 0)
+    $content.Children.Add($namePanel) | Out-Null
+
+    $copyButton = [System.Windows.Controls.Button]::new()
+    $copyButton.MinWidth = 154
+    $copyButton.Height = 40
+    $copyButton.Margin = [System.Windows.Thickness]::new(16, 0, 0, 0)
+    $copyButton.VerticalAlignment = 'Center'
+    $copyButton.HorizontalAlignment = 'Right'
+    $copyButton.Cursor = [System.Windows.Input.Cursors]::Hand
+    $copyButton.Background = $window.FindResource('GreenBtnBg')
+    $copyButton.BorderBrush = Get-Brush '#4DFFFFFF'
+    $copyButton.BorderThickness = [System.Windows.Thickness]::new(1)
+    $copyButton.Foreground = Get-Brush '#FFFFFF'
+    $copyButton.IsEnabled = (-not [string]::IsNullOrWhiteSpace($script:TunnelUrl)) -and ($Studio.versionMismatch -ne $true)
+    $copyButton.ToolTip = 'Prompt-URL und Place-Token kopieren'
+    $copyContent = [System.Windows.Controls.StackPanel]::new()
+    $copyContent.Orientation = 'Horizontal'
+    $copyContent.HorizontalAlignment = 'Center'
+    $copyGlyph = [System.Windows.Controls.TextBlock]::new()
+    $copyGlyph.Text = [char]0xE8C8
+    $copyGlyph.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe MDL2 Assets')
+    $copyGlyph.FontSize = 13
+    $copyGlyph.Foreground = Get-Brush '#FFFFFF'
+    $copyGlyph.VerticalAlignment = 'Center'
+    $copyGlyph.Margin = [System.Windows.Thickness]::new(0, 0, 8, 0)
+    $copyLabel = [System.Windows.Controls.TextBlock]::new()
+    $copyLabel.Text = 'Prompt kopieren'
+    $copyLabel.Foreground = Get-Brush '#FFFFFF'
+    $copyLabel.VerticalAlignment = 'Center'
+    $copyContent.Children.Add($copyGlyph) | Out-Null
+    $copyContent.Children.Add($copyLabel) | Out-Null
+    $copyButton.Content = $copyContent
+    $copyButton.Tag = $SessionId
+    $copyButton.Add_Click({ param($sender, $e) Copy-Prompt ([string]$sender.Tag) })
+    [System.Windows.Controls.Grid]::SetColumn($copyButton, 1)
+    $content.Children.Add($copyButton) | Out-Null
+
+    $root.Child = $content
+    $row.Root = $root
+    $row.Title = $title
+    $row.Copy = $copyButton
+    $row.StaleText = $staleText
+    return $row
 }
 
 # Baut die Liste nur um, wenn sich etwas geaendert hat -> kein Flackern.
@@ -19807,16 +19961,69 @@ function Sync-PlaceList {
         $desired.Add($sid)
 
         if ($script:UiRows.ContainsKey($sid)) {
+            $existingRow = $script:UiRows[$sid]
+            if ($null -eq $existingRow -or $null -eq $existingRow.Root -or $null -eq $existingRow.Title -or $null -eq $existingRow.Copy) {
+                Write-RuntimeLog "Place-Zeile sid=$sid war unvollstaendig; sie wird neu aufgebaut."
+                try { if ($existingRow -and $existingRow.Root) { $PlaceList.Children.Remove($existingRow.Root) | Out-Null } } catch {}
+                [void]$script:UiRows.Remove($sid)
+            }
+        }
+
+        if ($script:UiRows.ContainsKey($sid)) {
             try { Update-Row $script:UiRows[$sid] $studio $windowNames } catch {
-                Write-UiErrorLog 'Place-Zeile konnte nicht aktualisiert werden' $_
+                $updateErrorRecord = $_
+                $updateErrorMessage = [string]$updateErrorRecord.Exception.Message
+                Write-PlaceRowFailure -Context 'Place-Zeile konnte nicht aktualisiert werden; ersetze sie durch eine Minimalansicht' -SessionId $sid -ErrorRecord $updateErrorRecord
+                $brokenRow = $script:UiRows[$sid]
+                try { if ($brokenRow -and $brokenRow.Root) { $PlaceList.Children.Remove($brokenRow.Root) | Out-Null } } catch {}
+                [void]$script:UiRows.Remove($sid)
+                try {
+                    $fallbackRow = New-MinimalPlaceRow $studio $sid
+                    $script:UiRows[$sid] = $fallbackRow
+                    Add-PlaceRowToPlaceList $fallbackRow $sid 'Place-Zeilen-Fallback'
+                    Write-RuntimeLog "PLACE_ROW_FALLBACK sid=$sid stage=update reason=$updateErrorMessage"
+                } catch {
+                    Write-PlaceRowFailure -Context 'Place-Zeilen-Fallback konnte nicht erstellt werden' -SessionId $sid -ErrorRecord $_
+                }
             }
         } else {
+            $row = $null
             try {
                 $row = New-Row $studio $windowNames
-                $script:UiRows[$sid] = $row
-                Add-PlaceRowToPlaceList $row $sid 'Place-Zeile'
+                if ($null -eq $row -or $null -eq $row.Root -or $null -eq $row.Title -or $null -eq $row.Copy) {
+                    throw 'New-Row lieferte kein vollstaendiges Zeilenobjekt.'
+                }
             } catch {
-                Write-UiErrorLog 'Place-Zeile konnte nicht erstellt werden' $_
+                $richRowError = [string]$_.Exception.Message
+                Write-PlaceRowFailure -Context 'Place-Zeile konnte nicht erstellt werden; versuche Minimalansicht' -SessionId $sid -ErrorRecord $_
+                try {
+                    $row = New-MinimalPlaceRow $studio $sid
+                    Write-RuntimeLog "PLACE_ROW_FALLBACK sid=$sid stage=construct reason=$richRowError"
+                } catch {
+                    $row = $null
+                    Write-PlaceRowFailure -Context 'Place-Zeilen-Fallback konnte nicht erstellt werden' -SessionId $sid -ErrorRecord $_
+                }
+            }
+            if ($null -ne $row -and $null -ne $row.Root) {
+                $script:UiRows[$sid] = $row
+                try {
+                    $label = if ($row.IsMinimalFallback) { 'Place-Zeilen-Fallback' } else { 'Place-Zeile' }
+                    Add-PlaceRowToPlaceList $row $sid $label
+                } catch {
+                    Write-PlaceRowFailure -Context 'Place-Zeile konnte nicht an die Liste angehaengt werden' -SessionId $sid -ErrorRecord $_
+                    try { $PlaceList.Children.Remove($row.Root) | Out-Null } catch {}
+                    if (-not $row.IsMinimalFallback) {
+                        try {
+                            $fallbackRow = New-MinimalPlaceRow $studio $sid
+                            $script:UiRows[$sid] = $fallbackRow
+                            Add-PlaceRowToPlaceList $fallbackRow $sid 'Place-Zeilen-Fallback'
+                            Write-RuntimeLog "PLACE_ROW_FALLBACK sid=$sid stage=attach"
+                        } catch {
+                            Write-PlaceRowFailure -Context 'Place-Zeilen-Fallback konnte nicht an die Liste angehaengt werden' -SessionId $sid -ErrorRecord $_
+                            [void]$script:UiRows.Remove($sid)
+                        }
+                    } else { [void]$script:UiRows.Remove($sid) }
+                }
             }
         }
     }
@@ -19859,8 +20066,40 @@ function Sync-PlaceList {
     $count = $Studios.Count
     Set-Text $PlacesCountText ([string]$count)
     if ($count -eq 0) {
+        # Restore the normal empty copy only if this function set the repair
+        # message on a previous tick; preserve other diagnostics (e.g. Studio
+        # not installed) written by the startup checks.
+        if ([string]$EmptyTitle.Text -eq 'Place-Liste wird repariert') {
+            Set-Text $EmptyTitle 'Öffne ein Place in Roblox Studio'
+            Set-Text $EmptyBody 'Sobald sich ein Studio-Fenster mit einem geladenen Place verbindet, erscheint es hier automatisch.'
+        }
+        Set-Text $PlaceListStatusText 'Automatisch verbunden'
+        $PlaceListStatusText.Foreground = Get-Brush '#AFC0E0'
         $EmptyState.Visibility = 'Visible'
+    } elseif ($PlaceList.Children.Count -lt $desired.Count) {
+        Set-Text $PlaceListStatusText 'Liste wird repariert'
+        $PlaceListStatusText.Foreground = Get-Brush '#FFFFC95E'
+        if ($PlaceList.Children.Count -eq 0) {
+            Set-Text $EmptyTitle 'Place-Liste wird repariert'
+            Set-Text $EmptyBody 'Die Liste ist noch unvollständig. Die Bridge versucht, fehlende Zeilen automatisch erneut anzuzeigen; Details stehen in runtime.log.'
+            $EmptyState.Visibility = 'Visible'
+        } else {
+            # Do not cover rows that did render; report a partial failure in the
+            # header while the visible Place rows remain fully usable.
+            $EmptyState.Visibility = 'Collapsed'
+        }
+        if (((Get-Date) - $script:PlaceListRepairLastLog).TotalSeconds -ge 10) {
+            $script:PlaceListRepairLastLog = Get-Date
+            $visibleIds = New-Object System.Collections.Generic.List[string]
+            foreach ($child in $PlaceList.Children) { $visibleIds.Add([string]$child.Tag) }
+            $missingIds = New-Object System.Collections.Generic.List[string]
+            foreach ($wantedId in $desired) { if (-not $visibleIds.Contains($wantedId)) { $missingIds.Add($wantedId) } }
+            $missingText = if ($missingIds.Count -gt 0) { $missingIds -join ',' } else { '(child-count mismatch)' }
+            Write-RuntimeLog "PLACE_LIST_INCOMPLETE connectedCount=$count attachedRows=$($PlaceList.Children.Count) expectedRows=$($desired.Count) missing=$missingText uiRows=$($script:UiRows.Count); row fallback will retry."
+        }
     } else {
+        Set-Text $PlaceListStatusText 'Automatisch verbunden'
+        $PlaceListStatusText.Foreground = Get-Brush '#AFC0E0'
         $EmptyState.Visibility = 'Collapsed'
     }
 }
@@ -19879,6 +20118,7 @@ $MinimizeButton.Add_Click({ $window.WindowState = 'Minimized' })
 $SettingsButton.Add_Click({
     try { Open-SettingsWindow } catch { Write-RuntimeLog "Einstellungsfenster konnte nicht geoeffnet werden: $($_.Exception.Message)" }
 })
+$ArenaAiButton.Add_Click({ Open-ArenaAiPage })
 
 $window.Add_PreviewMouseDown({
     param($s, $e)
@@ -19946,7 +20186,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.0.0'
+    $versionText = '7.0.1'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -20259,13 +20499,24 @@ function Show-ArenaDoneNotification {
     Write-RuntimeLog "Arena-Fertig-Meldung angezeigt: $text"
 }
 
+function Set-ArenaSwitchVisualState {
+    param($Switch)
+    if ($null -eq $Switch) { return }
+    try {
+        $Switch.ApplyTemplate() | Out-Null
+        $thumb = $Switch.Template.FindName('thumb', $Switch)
+        if ($null -ne $thumb -and $thumb.RenderTransform -is [System.Windows.Media.TranslateTransform]) {
+            $thumb.RenderTransform.BeginAnimation([System.Windows.Media.TranslateTransform]::XProperty, $null)
+            $thumb.RenderTransform.X = if ([bool]$Switch.IsChecked) { 22.0 } else { 0.0 }
+        }
+    } catch {}
+}
+
 function Open-SettingsWindow {
     $autoStartNow = Get-StartupEnabled
-    $simNow = $true
     $notifyNow = $false
     $editorIconsNow = $true
     $progressNow = $true
-    try { $simNow = [bool]$script:Shared.BridgeSettings.simAllowed } catch {}
     try { $notifyNow = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch {}
     try { $editorIconsNow = [bool]$script:SettingsCache.editorIconsEnabled } catch {}
     try { $progressNow = [bool]$script:Shared.BridgeSettings.progressInPlaceList } catch {}
@@ -20473,13 +20724,13 @@ function Open-SettingsWindow {
                 </Ellipse>
             </Grid>
 
-            <Grid>
+            <Grid Margin="24">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <!-- Titelzeile (verschiebbar) -->
+                <!-- Titelzeile (verschiebbar, mit sicherem Innenabstand) -->
                 <Grid x:Name="TitleBar" Grid.Row="0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
@@ -20533,11 +20784,11 @@ function Open-SettingsWindow {
                             </StackPanel>
                         </Border>
 
-                        <TextBlock Text="ARENA (KI-TESTS)" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
+                        <TextBlock Text="SIMULATION" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
                         <Border Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="14" Padding="16,12">
                             <StackPanel>
-                                <CheckBox x:Name="SimSwitch" Style="{StaticResource ArenaSwitch}" Content="Arena darf Simulationen (Run) starten"/>
-                                <TextBlock Text="Run-Modus: Skripte und Physik laufen im Editor - kein Spieler, keine Client-Skripte, kein Playtest. Nur die sim_-Werkzeuge sind davon betroffen; Bauen und GUIs sind nie blockiert." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="60,2,0,0"/>
+                                <TextBlock Text="sim_start ist deaktiviert" Foreground="#FFFFC95E" FontSize="12.5" FontWeight="SemiBold"/>
+                                <TextBlock Text="Der bisherige Studio-Run verlässt Edit Mode (EditModeActive=false). Die dokumentierte Roblox-Studio-API bietet keinen unterstützten Weg für Physik/Skripte bei aktivem Edit Mode. compile_check, run_lua und alle Bau-/Lesewerkzeuge bleiben verfügbar." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
                             </StackPanel>
                         </Border>
                         <Border Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="14" Padding="16,12" Margin="0,10,0,0">
@@ -20552,23 +20803,6 @@ function Open-SettingsWindow {
                             <StackPanel>
                                 <TextBlock x:Name="NotifyDetailText" Foreground="#DCE6FF" FontSize="11.5" TextWrapping="Wrap" LineHeight="19"/>
                                 <TextBlock x:Name="ProgressStatsText" Foreground="{StaticResource SwTextMuted}" FontSize="11" TextWrapping="Wrap" Margin="0,10,0,0"/>
-                                <Button x:Name="ArenaAiButton" Content="Arena AI oeffnen" Height="34" Width="170" HorizontalAlignment="Right" Margin="0,12,0,0" Cursor="Hand">
-                                    <Button.Template>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border x:Name="bd" CornerRadius="11" Background="#3DE11D48" BorderBrush="#66FF5C77" BorderThickness="1">
-                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                    <TextBlock Text="&#xE71B;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="#FFC7D3" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                                    <ContentPresenter VerticalAlignment="Center"/>
-                                                </StackPanel>
-                                            </Border>
-                                            <ControlTemplate.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter TargetName="bd" Property="Background" Value="#59FF5C77"/>
-                                                </Trigger>
-                                            </ControlTemplate.Triggers>
-                                        </ControlTemplate>
-                                    </Button.Template>
-                                </Button>
                             </StackPanel>
                         </Border>
 
@@ -20576,7 +20810,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.0.0" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.0.1" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -20604,32 +20838,32 @@ function Open-SettingsWindow {
     $swTitleBar      = $settingsWindow.FindName('TitleBar')
     $swClose         = $settingsWindow.FindName('CloseButton')
     $startupSwitch   = $settingsWindow.FindName('StartupSwitch')
-    $simSwitch       = $settingsWindow.FindName('SimSwitch')
     $notifySwitch    = $settingsWindow.FindName('NotifySwitch')
     $progressSwitch  = $settingsWindow.FindName('ProgressSwitch')
     $editorIconsSwitch = $settingsWindow.FindName('EditorIconsSwitch')
     $updateText      = $settingsWindow.FindName('UpdateInfoText')
     $notifyDetail    = $settingsWindow.FindName('NotifyDetailText')
     $progressStats   = $settingsWindow.FindName('ProgressStatsText')
-    $arenaAiButton   = $settingsWindow.FindName('ArenaAiButton')
 
     $startupSwitch.IsChecked = $autoStartNow
-    $simSwitch.IsChecked = $simNow
     $notifySwitch.IsChecked = $notifyNow
     $progressSwitch.IsChecked = $progressNow
     $editorIconsSwitch.IsChecked = $editorIconsNow
+    foreach ($toggleSwitch in @($startupSwitch, $notifySwitch, $progressSwitch, $editorIconsSwitch)) {
+        Set-ArenaSwitchVisualState $toggleSwitch
+        $toggleSwitch.Add_Loaded({ param($s, $e) Set-ArenaSwitchVisualState $s })
+    }
     try {
         $detailLines = @(Get-SettingsNotificationLines)
         $notifyDetail.Text = ($detailLines -join "`n")
         $progressStats.Text = Get-ProgressContractSummary
     } catch {}
-    $arenaAiButton.Add_Click({ Open-ArenaAiPage })
 
     if ($script:UpdateInfoState) {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.0.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.0.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -20649,15 +20883,6 @@ function Open-SettingsWindow {
             Write-RuntimeLog "Der Autostart konnte nicht geaendert werden: $($_.Exception.Message)"
             $s.IsChecked = Get-StartupEnabled
         }
-    })
-    $simSwitch.Add_Click({
-        param($s, $e)
-        $script:Shared.BridgeSettings.simAllowed = [bool]$s.IsChecked
-        $script:SettingsCache.simAllowed = [bool]$s.IsChecked
-        Save-BridgeSettingsFile
-        $stateText = 'deaktiviert'
-        if ($s.IsChecked) { $stateText = 'aktiviert' }
-        Write-RuntimeLog "Editor-Simulationen (sim_*) der KI $stateText."
     })
     $progressSwitch.Add_Click({
         param($s, $e)
@@ -20693,7 +20918,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.0.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.0.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -20706,7 +20931,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.0.0'
+    $verText = '7.0.1'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

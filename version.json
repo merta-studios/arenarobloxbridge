@@ -1,12 +1,10 @@
 {
-  "version": "7.0.0",
+  "version": "7.0.1",
   "notes": [
-    "• Die Bridge baut wieder, statt Playtests zu reparieren: Alle Playtest-Werkzeuge sind entfernt (kein play_start, play_stop, play_pause, play_resume, play_status, session_diag, kein Charakter-, GUI- oder Kamera-Testing, kein Client-Agent, keine Reporter). Existiert ein Werkzeug nicht mehr, sagt die Bridge das klar – statt einen Test zu starten, der ohnehin unzuverlässig war.",
-    "• Simulation (Run) bleibt – ehrlich und ohne Spieler: sim_start startet die Editor-Simulation über ExecuteRunModeAsync (Orakel EditModeActive), sim_stop beendet sie zuverlässig, sim_status zeigt den echten Zustand. Skripte und Physik laufen, get_output/get_errors zeigen alles. Während der Simulation sind dauerhafte Änderungen blockiert (SIM_RUNNING) – Wegwerf-Änderungen gehen mit allowInSimMode=true.",
-    "• Die Einstellung heißt jetzt „Arena darf Simulationen (Run) starten“ und blockiert NUR sim_start (SIM_DISABLED, kein Fehler). Bauen, GUIs, Assets, Jobs, compile_check und run_lua bleiben unberührt. Einen vom NUTZER gestarteten Playtest blockiert die Bridge weiter (USER_PLAYTEST_ACTIVE) und bittet ausdrücklich darum, selbst zu stoppen – sie kann und will ihn nicht mehr fernsteuern.",
-    "• UI Engine 2.0: ui_glow baut Glow (nie mehr selbst gebastelt), ui_texture liefert echte Texturen zuerst (fehlt eine: TEXTURE_ASSET_MISSING als Warnung, nie als Fehler), ui_radial baut Radialmenüs aus EINER Bild-Id mit beiden Farben aus der Engine. ui_audit zählt Glow, echte Texturbilder und Radials und nennt die Engine-Version.",
-    "• Welt-Engine 1.0: world_style/style_lock (Palette, Materialien, Dichte, Wetter, Seed), site_survey (gemessene Höhen, Materialien, Wasser, freier Raum), variation (deterministisch statt math.random), prop_place/prop_save/prop_list (Props mit Boden-Snap), world_glow (eine Engine-Lampe), refine (messbarer Feinschliff) und model_audit/world_audit (Platzhalter, Blockouts, Phase, Stil-Treue).",
-    "• Fortschritt und Übergabe sind jetzt Vertrag: progress={percent,message} an jedem Aufruf (fehlt er: 0 %, nichts blockiert), Place-Zeile blau/grün/grau/rot mit Nachricht und Tooltip, Verlauf + places-diagnose.txt; handoff nur für komplette Spiele/Mehrsystem-Verbünde (HANDOFF_NOT_ALLOWED) und automatisch in der nächsten Sitzung desselben Places.",
-    "• Roblox Studio nach dem Update einmal neu starten, damit Plugin 7.0.0 geladen wird."
+    "• Mehr Innenabstand in den Einstellungen; die vier verbleibenden Schalter zeigen beim Öffnen ihren gespeicherten Zustand korrekt an.",
+    "• „Arena AI öffnen“ aus den Einstellungen entfernt und als grünen Button unten rechts unter der Place-Liste platziert.",
+    "• Place-Liste erhält eine Minimalansicht mit Place-Name und Prompt-Kopieren als Fallback. Fehler und fehlende Zeilen werden mit Session-IDs in runtime.log protokolliert; bei Teilfehlern bleibt die sichtbare Liste nutzbar und zeigt einen Reparaturstatus.",
+    "• sim_start ist absichtlich mit SIM_DISABLED gesperrt: ExecuteRunModeAsync startet Studio Run und setzt EditModeActive=false; die dokumentierte API bietet keinen unterstützten Physik-/Skript-Pfad bei aktivem Edit Mode. sim_status unterscheidet Studio Run von Play/F5 (sonst unknown); sim_stop beendet nur bestätigte bridge-eigene Sessions. compile_check, run_lua und alle Bau-/Lesewerkzeuge bleiben verfügbar.",
+    "• Roblox Studio nach dem Update einmal neu starten, damit Plugin 7.0.1 geladen wird."
   ]
 }

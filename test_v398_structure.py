@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 7.0.0.
+"""Offline structure check for Arena Roblox Bridge 7.0.1.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.0.0"
+VERSION = "7.0.1"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -515,7 +515,14 @@ def main() -> int:
         'InvocationInfo.ScriptLineNumber',
         '$ErrorRecord.ScriptStackTrace',
         'function Add-PlaceRowToPlaceList',
-        "Add-PlaceRowToPlaceList $row $sid 'Place-Zeile'",
+        "Add-PlaceRowToPlaceList $row $sid $label",
+        'function New-MinimalPlaceRow',
+        'function Write-PlaceRowFailure',
+        '$script:PlaceRowFailureLogAt = @{}',
+        'PLACE_ROW_FALLBACK',
+        'PLACE_LIST_INCOMPLETE connectedCount=',
+        'function Get-PlaceDisplayName',
+        'x:Name="PlaceListStatusText"',
         "Add-PlaceRowToPlaceList $script:AllPlacesRow $allSid 'Alle-Places-Zeile'",
         'hinzugefuegt (sid={1}): PlaceList.Children={2}',
         'hart auf sichtbar gestellt',
@@ -641,15 +648,12 @@ def main() -> int:
         'tools.sim_start = function(args)',
         'tools.sim_stop = function(args)',
         'tools.sim_status = function(args)',
-        'StudioTestService:ExecuteRunModeAsync()',
-        'waitForEditMode(false, 25)',
+        'ExecuteRunModeAsync',
         'waitForEditMode(true, 12)',
-        'SIM_START_FAILED',
         'SIM_STOP_NEEDS_USER',
         'SIM_DISABLED',
         'SIM_RUNNING',
         'simAllowedNow',
-        'plugin:GetSetting("arenaSimAllowed")',
         'simStateData',
         'USER_PLAYTEST_ACTIVE',
         'allowInSimMode',
@@ -697,25 +701,105 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '7.0.0'": 1,
-        'local ARENA_VERSION  = "7.0.0"': 1,
-        "version = '7.0.0'": 1,
-        "bridgeVersion = '7.0.0'": 3,
-        "bridgeVersion='7.0.0'": 1,
-        "serverVersion = '7.0.0'": 2,
-        "$versionText = '7.0.0'": 1,
-        "$verText = '7.0.0'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 7.0.0)": 1,
-        'Text="Arena Roblox Bridge - Version 7.0.0"': 1,
-        "Version 7.0.0 - aktuell. Beim naechsten Start": 2,
-        "Laufzeit-Identitaet: Bridge-Version=7.0.0": 1,
-        "Kurzbericht Fenster-Vorschau (Version 7.0.0)": 1,
+        "DocsVersion     = '7.0.1'": 1,
+        'local ARENA_VERSION  = "7.0.1"': 1,
+        "version = '7.0.1'": 1,
+        "bridgeVersion = '7.0.1'": 3,
+        "bridgeVersion='7.0.1'": 1,
+        "serverVersion = '7.0.1'": 2,
+        "$versionText = '7.0.1'": 1,
+        "$verText = '7.0.1'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.0.1)": 1,
+        'Text="Arena Roblox Bridge - Version 7.0.1"': 1,
+        "Version 7.0.1 - aktuell. Beim naechsten Start": 2,
+        "Laufzeit-Identitaet: Bridge-Version=7.0.1": 1,
+        "Kurzbericht Fenster-Vorschau (Version 7.0.1)": 1,
     }
     for marker, expected_count in functional_version_counts.items():
         actual_count = source.count(marker)
         require(actual_count == expected_count,
                 f"functional version marker count for {marker!r}: "
                 f"expected {expected_count}, found {actual_count}")
+
+    stale_700_functional = [
+        "DocsVersion     = '7.0.0'",
+        'local ARENA_VERSION  = "7.0.0"',
+        "version = '7.0.0'",
+        "bridgeVersion = '7.0.0'",
+        "bridgeVersion='7.0.0'",
+        "serverVersion = '7.0.0'",
+        "$versionText = '7.0.0'",
+        "$verText = '7.0.0'",
+        "Arena Studio Bridge - Studio Plugin  (Version 7.0.0)",
+        'Text="Arena Roblox Bridge - Version 7.0.0"',
+        "Version 7.0.0 - aktuell. Beim naechsten Start",
+        "Bridge-Version=7.0.0",
+        "Kurzbericht Fenster-Vorschau (Version 7.0.0)",
+    ]
+    for marker in stale_700_functional:
+        require(marker not in source, f"stale functional 7.0.0 literal remains: {marker}")
+
+    # 7.0.1 UI contract: the link belongs to the main-list footer, settings
+    # have padding, all four remaining toggles are initialized, and a broken rich Place
+    # row has a visible minimal fallback.
+    main_xaml_match = re.search(r"\$xaml = @'\n([\s\S]*?)\n'@", source)
+    settings_xaml_match = re.search(r"\$settingsXaml = @'\n([\s\S]*?)\n'@", source)
+    require(main_xaml_match is not None and settings_xaml_match is not None,
+            "main/settings XAML here-strings were not found")
+    main_xaml = main_xaml_match.group(1)
+    settings_xaml = settings_xaml_match.group(1)
+    require('x:Name="ArenaAiButton"' in main_xaml and 'Grid.Row="1"' in main_xaml,
+            "Arena AI button is not in the main-list footer")
+    require('ArenaAiButton' not in settings_xaml,
+            "Arena AI button is still in Settings")
+    require('<Grid Margin="24">' in settings_xaml,
+            "Settings content grid has no interior padding")
+    require('Background="{StaticResource GreenBtnBg}"' in main_xaml,
+            "Arena AI footer button does not use the green Prompt-copy design resource")
+    switch_names = ("StartupSwitch", "EditorIconsSwitch", "NotifySwitch", "ProgressSwitch")
+    open_settings = source[source.index("function Open-SettingsWindow"):source.index("# Version 3.8: Die Update-Infos")]
+    switch_variables = {
+        "StartupSwitch": "$startupSwitch",
+        "EditorIconsSwitch": "$editorIconsSwitch",
+        "NotifySwitch": "$notifySwitch",
+        "ProgressSwitch": "$progressSwitch",
+    }
+    for name in switch_names:
+        require(f'x:Name="{name}"' in settings_xaml, f"missing settings switch {name}")
+        require(f"$settingsWindow.FindName('{name}')" in open_settings,
+                f"settings switch {name} is not bound to code")
+        require(f"{switch_variables[name]}.Add_Click" in open_settings,
+                f"settings switch {name} has no change handler")
+    require("Set-StartupEnabled ([bool]$s.IsChecked)" in open_settings
+            and "Set-EditorIconsEnabled ([bool]$s.IsChecked)" in open_settings
+            and "$script:Shared.BridgeSettings.notifyOnDone = [bool]$s.IsChecked" in open_settings
+            and "$script:Shared.BridgeSettings.progressInPlaceList = [bool]$s.IsChecked" in open_settings
+            and open_settings.count("Save-BridgeSettingsFile") >= 4,
+            "settings switches do not persist their expected values")
+    for marker in (
+        "$autoStartNow = Get-StartupEnabled",
+        "$notifyNow = [bool]$script:Shared.BridgeSettings.notifyOnDone",
+        "$editorIconsNow = [bool]$script:SettingsCache.editorIconsEnabled",
+        "$progressNow = [bool]$script:Shared.BridgeSettings.progressInPlaceList",
+        "$startupSwitch.IsChecked = $autoStartNow",
+        "$notifySwitch.IsChecked = $notifyNow",
+        "$editorIconsSwitch.IsChecked = $editorIconsNow",
+        "$progressSwitch.IsChecked = $progressNow",
+    ):
+        require(marker in open_settings, f"settings switch does not initialize from its persisted value: {marker}")
+    require('SimSwitch' not in settings_xaml and 'sim_start ist deaktiviert' in settings_xaml,
+            "disabled sim_start is still presented as an enable switch")
+    require("Set-ArenaSwitchVisualState $toggleSwitch" in open_settings
+            and "$toggleSwitch.Add_Loaded" in open_settings,
+            "switch visual state is not synchronized after loading")
+    require("function Set-ArenaSwitchVisualState" in source
+            and "$thumb.RenderTransform.X = if ([bool]$Switch.IsChecked)" in source,
+            "switch thumb does not reflect its saved IsChecked state")
+    place_sync = source[source.index("function Sync-PlaceList"):source.index("# FENSTERSTEUERUNG")]
+    for marker in ("New-MinimalPlaceRow $studio $sid", "PLACE_ROW_FALLBACK",
+                   "PlaceList.Children.Count -lt $desired.Count", "Get-PlaceDisplayName"):
+        require(marker in place_sync or marker in source,
+                f"connected Place row fallback/diagnostic missing: {marker}")
 
     # Version 6.0 negative guards: the pre-6.0 palette must really be gone
     # from the redesigned surfaces (the tech-dark slate/indigo scheme).
@@ -846,18 +930,27 @@ def main() -> int:
     require("return , $script:WindowNameCache" not in window_name_fn,
             "window title cache is nested again by unary comma (breaks multi-window title matching)")
 
-    # 7.0.0: the playtest machinery is gone from the executable Lua - the
+    # 7.0.1: the playtest machinery is gone and sim_start is disabled.
     lua_text = plugin_source(source)
-    # simulation block is the only test path, and it must keep its gates.
     require("startPlay" not in lua_text and "stopPlay" not in lua_text and "sessionAgent" not in lua_text,
             "playtest helpers survived the 7.0.0 cut")
     require("tools.play_start" not in lua_text and "tools.play_stop" not in lua_text and "tools.gui_click" not in lua_text,
             "a removed playtest tool is still registered")
     sim_start = lua_text[lua_text.index("tools.sim_start = function"):lua_text.index("tools.sim_stop = function")]
-    require("ExecuteRunModeAsync" in sim_start and "waitForEditMode(false, 25)" in sim_start,
-            "sim_start does not use ExecuteRunModeAsync with the EditModeActive oracle")
-    require("SIM_DISABLED" in sim_start and "USER_PLAYTEST_ACTIVE" in sim_start,
-            "sim_start lost the disabled/user-playtest gates")
+    require("return simDisabledResult()" in sim_start,
+            "sim_start does not use the central disabled-result helper")
+    sim_disabled_fn = lua_text[lua_text.index("local function simDisabledResult()"):lua_text.index("local function simStateData")]
+    require('code = "SIM_DISABLED"' in sim_disabled_fn
+            and 'severity = "notice"' in sim_disabled_fn
+            and 'EDIT_MODE_SIMULATION_UNAVAILABLE' in sim_disabled_fn
+            and 'documented Studio API' in sim_disabled_fn,
+            "sim_start is not explicitly disabled with the correct notice and Edit-mode reason")
+    require("ExecuteRunModeAsync" not in sim_start,
+            "disabled sim_start still contains a reachable Studio Run start path")
+    require("StudioTestService:ExecuteRunModeAsync()" not in lua_text
+            and "RunService:Run()" not in lua_text
+            and "Enum.KeyCode.F8" not in lua_text,
+            "an executable Studio Run start path survived outside the sim_start stub")
     sim_stop = lua_text[lua_text.index("tools.sim_stop = function"):lua_text.index("tools.sim_status = function")]
     require("RunService:Stop()" in sim_stop and "waitForEditMode(true, 12)" in sim_stop,
             "sim_stop lost its RunService:Stop() + EditModeActive return")
@@ -869,11 +962,46 @@ def main() -> int:
     require("play_start" not in lua_text and "play_stop" not in lua_text and "play_here" not in lua_text,
             "a playtest name survived inside the plugin Lua")
 
-    # 7.0.0: only sim_start is switchable; the setting never blocks building.
+    # 7.0.1: sim_start stays blocked at HTTP and plugin boundaries; all other
+    # tools remain available, including calls nested inside batch/start_job.
     require("New-SimBlockedResult" in source and "New-SelfTestBlockedResult" not in source,
             "the sim-disabled result helper is missing or the old self-test helper survived")
-    require("@('sim_start') -contains $tool" in source and "@('sim_start') -contains [string]$call.tool" in source,
-            "the SIM_DISABLED guard does not target sim_start exactly")
+    require("if ($tool -eq 'sim_start')" in source and "if ([string]$call.tool -eq 'sim_start')" in source,
+            "the direct/parallel SIM_DISABLED guards do not target sim_start")
+    require('if tool == "sim_start" then' in lua_text and 'SIM_DISABLED' in lua_text,
+            "nested plugin calls can bypass the sim_start disable guard")
+    sim_allowed_fn = lua_text[lua_text.index("local function simAllowedNow"):lua_text.index("local function simStateData")]
+    require("return false" in sim_allowed_fn and "_bridgeSimAllowed" not in lua_text,
+            "simAllowed must remain false even for legacy or caller-supplied opt-ins")
+    sim_status = lua_text[lua_text.index("tools.sim_status = function"):lua_text.index("function SimSendKey")]
+    require("simAllowed = simAllowedNow()" in sim_status,
+            "sim_status does not report the same effective setting as sim_start")
+    mode_fn = lua_text[lua_text.index("local function currentMode()"):lua_text.index("local function currentPlayerCount()")]
+    require('isRunMode == true then return "run"' in mode_fn
+            and 'isRunMode == false then return "play"' in mode_fn
+            and 'return "unknown"' in mode_fn,
+            "Studio Run and player Play/F5 are conflated in the mode detector")
+    sim_state_fn = lua_text[lua_text.index("local function simStateData()"):lua_text.index("tools.sim_start = function")]
+    require("playerCount = currentPlayerCount()" in sim_state_fn
+            and "mode='run' is official Studio Run" in sim_state_fn
+            and "mode='play' is a separate player Play/F5 test" in sim_state_fn
+            and "mode='play' is a separate player Play/F5 test" in sim_status,
+            "sim_status does not report the distinct mode/player state clearly")
+    sim_stop = lua_text[lua_text.index("tools.sim_stop = function"):lua_text.index("tools.sim_status = function")]
+    require('simStartedByBridge ~= true or userPlaytestActive == true' in sim_stop
+            and 'SIM_NOT_BRIDGE_OWNED' in sim_stop
+            and 'user-started Studio Run or Play/F5 test' in sim_stop
+            and sim_stop.index('SIM_NOT_BRIDGE_OWNED') < sim_stop.index('RunService:Stop()'),
+            "sim_stop could interrupt a session that is not confirmed bridge-owned")
+    require("exits Edit mode" in source and "documented Studio API has no supported true Edit-mode physics/script path" in source,
+            "Run/Edit-mode limitation is not stated accurately")
+    require("([string]$newState.mode -eq 'play')" in source,
+            "USER_PLAYTEST_ACTIVE must be reserved for actual Play/F5 mode, not Studio Run")
+    require("$newState.simRunning" in source and "$newState.startedByBridge" in source
+            and "startedByBridge = simStartedByBridge" in lua_text,
+            "known bridge ownership is not preserved for safe cleanup after a server reconnect")
+    require("simAllowed      = $false" in source and "$settings.simAllowed = [bool]$loaded.simAllowed" not in source,
+            "legacy settings can re-enable the unsupported Studio Run simulation")
     require("code = 'SELF_TEST_DISABLED'" not in source
             and "BridgeSettings.selfTestAllowed" not in source
             and "plugin:GetSetting(\"arenaSelfTest\")" not in source,
@@ -1078,15 +1206,13 @@ def main() -> int:
             "the motion script must animate the UIScale of the transform wrapper, not the element size")
 
     # ------------------------------------------------------------------
-    # 7.0.0 regression guards: simulation, progress contract, handoff,
+    # 7.0.1 regression guards: disabled simulation, progress contract, handoff,
     # UI Engine 2.0 and World Engine 1.0.
     # ------------------------------------------------------------------
     for marker in (
         # Simulation tools and their honest state report.
         "local function simStateData()",
         "simStartedByBridge",
-        "SIM_ALREADY_RUNNING",
-        'SimSendKey("F8", 0.06)',
         # Progress contract: never block on a missing percent.
         "Missing percent",
         "progressPercent",
@@ -1120,7 +1246,7 @@ def main() -> int:
             and "CLIENT_AGENT_SOURCE" not in source and "SESSION_REPORTER_SOURCE" not in source,
             "removed 7.0.0 playtest machinery is still present")
 
-    print("OK: 7.0.0 structure, Lua and XAML validation passed")
+    print("OK: 7.0.1 structure, Lua and XAML validation passed")
     return 0
 
 
