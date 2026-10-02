@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Modelltest der 7.0.6-Queue-Regeln (kein PowerShell, kein Roblox Studio).
+"""Modelltest der 7.0.7-Queue-Regeln (kein PowerShell, kein Roblox Studio).
 
 Dies ist ein *Modell* des Server-/Plugin-Verhaltens, kein Live-Test. Es bildet
 die Regeln nach, die ArenaBridge.ps1 anwendet, und prueft mit einer virtuellen
@@ -28,6 +28,13 @@ aufloesen:
      er belegt und die FIFO nicht leer, kommt SOFORT STUDIO_BUSY.
   H) 7.0.6: Jeder Befehl traegt die Zustell-Timeline queuedAt -> deliveredAt ->
      receivedAt -> startedAt -> heartbeatAt (+ lastError) fuer /api/queue.
+  I) 7.0.7 LIVE-FIX: Die Place-Liste bleibt leer, wenn ein Zeilen-Bauer an einer
+     NICHT deklarierten [pscustomobject]-Eigenschaft abbricht (live: 7.0.6,
+     "$row.CommandCancelButton"). Der Test baut den Fall nach - beide Bauer
+     brechen ab, keine Zeile erscheint - und prueft am echten Quellcode, dass
+     die Eigenschaft in BEIDEN Initialisierern steht und der optionale Knopf in
+     try/catch gebaut wird. Ausserdem: der UI-Abbruch darf keine Funktionen des
+     Server-Runspaces aufrufen.
 
 Die Zeitfenster werden aus ArenaBridge.ps1 GELESEN - aendert jemand dort eine
 Konstante (oder entfernt den unabhaengigen Sweep), faellt der Test auf.
@@ -101,6 +108,26 @@ require("sessionId = $(if ([string]::IsNullOrWhiteSpace($knownSessionId))" in SO
         "Eine unbekannte Sitzung mit bekannter Instanz bekommt ihre sessionId nicht zurueck.")
 require(0 < HEALTH_FRESH < HEALTH_WAIT < HEALTH_DEAD,
         f"Gesundheitsfenster unplausibel: fresh={HEALTH_FRESH}, wait={HEALTH_WAIT}, dead={HEALTH_DEAD}")
+
+# --- 7.0.7: Place-Zeilen-Bauer und UI-Abbruch --------------------------------
+require(SOURCE.count("CommandCancelButton = $null") == 2,
+        "CommandCancelButton ist nicht in BEIDEN Zeilen-Initialisierern deklariert (7.0.6-Live-Fehler).")
+require(SOURCE.count("$row.CommandCancelButton = $cancelButton") == 2,
+        "Der optionale Abbrechen-Knopf wird nicht in genau beiden Zeilen-Bauern gebaut.")
+_sync_start = SOURCE.index("function Sync-PlaceList {")
+_builder_main = SOURCE[SOURCE.index("function New-Row {"):SOURCE.index("function New-MinimalPlaceRow {")]
+_builder_min = SOURCE[_sync_start - 8000:_sync_start]
+require("Abbrechen-Knopf konnte" in _builder_main and "Abbrechen-Knopf konnte" in _builder_min,
+        "Ein Zeilen-Bauer baut den optionalen Knopf ohne try/catch - ein Extra darf die Zeile nie kosten.")
+_cancel_fn = SOURCE[SOURCE.index("function Invoke-PlaceRowCancel {"):SOURCE.index("function Update-PlaceProgressVisual {")]
+_cancel_code = "\n".join(line for line in _cancel_fn.splitlines() if not line.strip().startswith("#"))
+require("Get-DeliverySession " not in _cancel_code and "Request-CommandCancel" not in _cancel_code,
+        "Der UI-Abbruch ruft wieder Funktionen des Server-Runspaces auf (wirkungslos).")
+require("function Get-UiDeliverySession" in SOURCE and "COMMAND_CANCELLED" in _cancel_fn
+        and "$script:Shared.CancelRequests[$cancelKey] = $now" in _cancel_fn,
+        "Der UI-Abbruch nutzt nicht den gemeinsamen Zustand (CancelRequests + COMMAND_CANCELLED).")
+require("$script:LastPlaceRowError" in SOURCE and "'Ursache: ' + [string]$script:LastPlaceRowError" in SOURCE,
+        "Die Reparatur-Anzeige nennt den echten Grund nicht.")
 
 
 # --- Modell -----------------------------------------------------------------
@@ -258,6 +285,33 @@ class Bridge:
                 moved += 1
             # zugestellte/gelaufene Befehle werden NICHT wiederholt
         return moved
+
+
+def build_row(declared: set[str]) -> bool:
+    """Nachbau des 7.0.6-Live-Fehlers beim Aufbau einer Place-Zeile.
+
+    Windows PowerShell wirft bei `$row.X = ...`, wenn X im
+    [pscustomobject]-Initialisierer fehlt ("property cannot be found on this
+    object"). Der Wurf reisst den KOMPLETTEN Zeilenaufbau mit - und weil der
+    Minimal-Fallback dieselbe Zeile enthaelt, scheitern beide Bauer.
+    """
+    class PsCustomRow:
+        """[pscustomobject]-Nachbau: nur DEKLARIERTE Eigenschaften sind setzbar."""
+
+        def __init__(self, props):
+            self.__dict__["_declared"] = set(props)
+
+        def __setattr__(self, name, value):
+            if name not in self.__dict__["_declared"]:
+                raise AttributeError(f"'{name}' cannot be found on this object")
+            self.__dict__[name] = value
+
+    row = PsCustomRow(declared)
+    try:
+        row.CommandCancelButton = object()   # die Zuweisung aus dem Code
+    except AttributeError:
+        return False
+    return True
 
 
 def run_704_wedge() -> tuple[Bridge, Command]:
@@ -421,12 +475,27 @@ def main() -> int:
             "7.0.6: nach dem Abbruch muss die Timeline den Grund in lastError tragen")
     print(f"H) Zustell-Timeline: queued -> delivered -> started -> heartbeat -> abandoned/{timeline_cmd.last_error} vollstaendig.")
 
+    # I) 7.0.7: Place-Zeile baut wieder (Live-Fehler nachgestellt) ----------
+    declared_706 = {"SessionId", "Root", "Title", "Copy", "Menu", "Popup",
+                    "ProgressPanel", "ProgressBar", "ProgressText", "ProgressPercent"}
+    declared_707 = set(declared_706) | {"CommandCancelButton"}
+    require(build_row(declared_706) is False,
+            "7.0.6-Nachbau: die fehlende Deklaration muss den Zeilenaufbau abbrechen")
+    require(build_row(declared_707) is True,
+            "7.0.7: mit deklarierter Eigenschaft muss die Zeile aufgebaut werden")
+    require(SOURCE.count("CommandCancelButton = $null") == 2,
+            "7.0.7: die Eigenschaft fehlt in einem der beiden Initialisierer")
+    both_builders_fail = (build_row(declared_706) is False)
+    require(both_builders_fail, "7.0.6-Nachbau: identischer Fehler im Minimal-Fallback")
+    print("I) Place-Zeile: 7.0.6-Nachbau bricht ab (leere Liste), 7.0.7 deklariert die "
+          "Eigenschaft in beiden Bauern und baut den Knopf in try/catch.")
+
     if FAILURES:
         print("\nFEHLGESCHLAGEN:")
         for failure in FAILURES:
             print(f"  - {failure}")
         return 1
-    print("\nOK: 7.0.6-Queue-Modell (Waechter, Reconnect, Cloudflare, Admin-Reset, Sitzungs-Identitaet, Fast-Fail, Timeline) geprueft.")
+    print("\nOK: 7.0.7-Modell (Waechter, Reconnect, Cloudflare, Admin-Reset, Sitzungs-Identitaet, Fast-Fail, Timeline, Place-Zeile) geprueft.")
     return 0
 
 

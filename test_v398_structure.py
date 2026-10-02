@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 7.0.6.
+"""Offline structure check for Arena Roblox Bridge 7.0.7.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.0.6"
+VERSION = "7.0.7"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -95,13 +95,12 @@ def main() -> int:
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     require(version["version"] == VERSION, f"version.json is not {VERSION}")
     release_notes = "\n".join(str(note) for note in version.get("notes", []))
-    require("7.0.6" in release_notes
-            and "SELBSTAUSKUNFT" in release_notes
-            and "instanceGuid" in release_notes
-            and "STUDIO_UNREACHABLE" in release_notes
-            and "timeline" in release_notes
-            and "get_bridge_log" in release_notes,
-            "version.json does not describe the 7.0.6 self-report/session-identity/delivery release")
+    require("7.0.7" in release_notes
+            and "HOTFIX" in release_notes
+            and "PLACE-LISTE" in release_notes
+            and "CommandCancelButton" in release_notes
+            and "COMMAND_CANCELLED" in release_notes,
+            "version.json does not describe the 7.0.7 place-row hotfix")
 
     # 6.1.1 shipped seven accidental fragments after the intended final exit,
     # including a bare closing parenthesis. Windows PowerShell parses the
@@ -713,21 +712,21 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '7.0.6'": 1,
-        'local ARENA_VERSION  = "7.0.6"': 1,
-        "version = '7.0.6'": 1,
-        "bridgeVersion = '7.0.6'": 3,
-        "bridgeVersion='7.0.6'": 1,
-        "serverVersion = '7.0.6'": 2,
-        "$versionText = '7.0.6'": 1,
-        "$verText = '7.0.6'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 7.0.6)": 1,
-        'Text="Arena Roblox Bridge - Version 7.0.6"': 1,
-        "Version 7.0.6 - aktuell. Beim naechsten Start": 2,
-        "Laufzeit-Identitaet: Bridge-Version=7.0.6": 1,
-        "Kurzbericht Fenster-Vorschau (Version 7.0.6)": 1,
-        "Arena Roblox Bridge - Leistungsbericht (Version 7.0.6)": 1,
-        "Arena Roblox Bridge - Place-Diagnose (Version 7.0.6)": 1,
+        "DocsVersion     = '7.0.7'": 1,
+        'local ARENA_VERSION  = "7.0.7"': 1,
+        "version = '7.0.7'": 1,
+        "bridgeVersion = '7.0.7'": 3,
+        "bridgeVersion='7.0.7'": 1,
+        "serverVersion = '7.0.7'": 2,
+        "$versionText = '7.0.7'": 1,
+        "$verText = '7.0.7'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.0.7)": 1,
+        'Text="Arena Roblox Bridge - Version 7.0.7"': 1,
+        "Version 7.0.7 - aktuell. Beim naechsten Start": 2,
+        "Laufzeit-Identitaet: Bridge-Version=7.0.7": 1,
+        "Kurzbericht Fenster-Vorschau (Version 7.0.7)": 1,
+        "Arena Roblox Bridge - Leistungsbericht (Version 7.0.7)": 1,
+        "Arena Roblox Bridge - Place-Diagnose (Version 7.0.7)": 1,
     }
     for marker, expected_count in functional_version_counts.items():
         actual_count = source.count(marker)
@@ -1667,7 +1666,7 @@ def main() -> int:
         "timelineRule",
         "'get_bridge_log' {",
         "function Update-RuntimeLine",
-        'Text="Bridge 7.0.6"',
+        'Text="Bridge 7.0.7"',
         "local function setWidgetStatus(extra)",
         "ARENA-PLUGIN-FEHLER",
         "function Invoke-PlaceRowCancel",
@@ -1685,7 +1684,39 @@ def main() -> int:
             and "heartbeatAt = [int64]$item.heartbeatAt" in source,
             "the per-command delivery timeline is incomplete")
 
-    print("OK: 7.0.6 structure, self-report, session identity, delivery timeline, Lua and XAML validation passed")
+    # 7.0.7 LIVE FIX: Both row builders must DECLARE CommandCancelButton in
+    # their [pscustomobject] initializer. Without the declaration the assignment
+    # throws in Windows PowerShell, the whole row build aborts - and with the
+    # minimal fallback carrying the same line, NO row is ever attached (live
+    # symptom: "Place-Liste wird repariert" with an empty list).
+    require(source.count("CommandCancelButton = $null") == 2,
+            "CommandCancelButton is not declared in BOTH row initializers (7.0.6 live bug)")
+    require(source.count("$row.CommandCancelButton = $cancelButton") == 2,
+            "the optional cancel button is not built in exactly both row builders")
+    cancel_builder = source[source.index("function New-Row {"):source.index("function New-MinimalPlaceRow {")]
+    fallback_builder = source[source.index("function New-MinimalPlaceRow {"):source.index("function Sync-PlaceList {")]
+    for builder, name in ((cancel_builder, "New-Row"), (fallback_builder, "New-MinimalPlaceRow")):
+        require("try {" in builder and "Abbrechen-Knopf konnte" in builder,
+                f"{name} builds the optional cancel button without try/catch protection")
+    # The UI runs in the MAIN runspace: it must never call the server handler's
+    # functions (Get-DeliverySession / Request-CommandCancel only exist there).
+    cancel_fn = source[source.index("function Invoke-PlaceRowCancel {"):source.index("function Update-PlaceProgressVisual {")]
+    # Kommentarzeilen zaehlen nicht: geprueft wird der ausfuehrbare Code.
+    cancel_code = "\n".join(line for line in cancel_fn.splitlines() if not line.strip().startswith("#"))
+    require("Get-DeliverySession " not in cancel_code and "Request-CommandCancel" not in cancel_code,
+            "the place-row cancel path calls server-runspace functions again")
+    require("function Get-UiDeliverySession" in source
+            and "$script:Shared.CancelRequests[$cancelKey] = $now" in cancel_fn
+            and "'COMMAND_CANCELLED'" in cancel_fn
+            and "CompletedCommandIds[$cancelKey] = $now" in cancel_fn,
+            "the place-row cancel does not resolve the delivery chain / answer the waiter itself")
+    require("Get-PlaceOpenCommand (Get-UiDeliverySession $sessionId)" in source,
+            "Update-PlaceProgressVisual still resolves the delivery session with the handler function")
+    require("$script:LastPlaceRowError" in source
+            and "'Ursache: ' + [string]$script:LastPlaceRowError" in source,
+            "the repair notice does not show the real row error")
+
+    print("OK: 7.0.7 structure, place-row hotfix, self-report, session identity, delivery timeline, Lua and XAML validation passed")
     return 0
 
 
