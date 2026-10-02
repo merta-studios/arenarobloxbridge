@@ -1,16 +1,50 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.0.4
+# Arena Roblox Bridge  -  Version 7.0.5
 #
-# QUEUE-REPAIR + PLACE-UI VERSION 7.0.4:
-#   * Studio commands now have explicit WAITING/RUNNING/DONE/ABANDONED states,
+# HAENGENDE BEFEHLE + RECONNECT + PLACE-LISTE - VERSION 7.0.5:
+#
+#   LIVE-BEFUND 7.0.4 (belegt): Jeder Studio-Befehl lief in den 60-s-Timeout,
+#   blieb danach fuer immer in pendingInStudio ("macht gerade"), lateResults kam
+#   nie an, und die strikt serielle Queue blockierte alles (zwei haengende
+#   list_jobs = 15 Minuten Stillstand). Ursache: Der Executor-Watchdog lief NUR
+#   in der /plugin/poll-Anfrage. Ein Befehl ohne yield blockiert die komplette
+#   Lua-VM des Plugins -> es kommt kein Poll mehr -> der Watchdog laeuft nie ->
+#   der Befehl wird nie als "haengt" erkannt. Zusaetzlich ordnete der Server
+#   Ergebnisse ueber die zufaellige Session-Id zu; nach einem Reconnect wurde
+#   jedes Ergebnis mit 403 abgewiesen (und ein Plugin-Neustart verwarf die
+#   wartende Queue komplett).
+#
+#   DIE FIXES DIESER VERSION:
+#   * UNABHAENGIGER WATCHDOG (eigener Runspace, 2-s-Sweep): prueft alle offenen
+#     Befehle OHNE jede Plugin-Anfrage, beendet tote/stumme Ausfuehrungen mit
+#     klarem Code, weckt wartende HTTP-Aufrufer oder legt das Ergebnis als
+#     lateResult der ANRUFER-Sitzung ab und laesst die Queue weiterlaufen.
+#     GET /api/queue zeigt queue.sweep.running/secondsSinceSweep als Beweis.
+#   * RECONNECT-SICHER: Results werden per commandId + Plugin-instanceGuid
+#     zugeordnet. Ein Plugin-Neustart verwirft die Queue nicht mehr; nie
+#     zugestellte Befehle gehen an die neue Session ueber (SessionSuccessors +
+#     Get-DeliverySession), die aufrufende Session behaelt Token und Empfang
+#     (CommandOrigins), und ein bereits ausgeführter commandId wird mit dem
+#     gespeicherten Ergebnis erneut zugestellt statt doppelt ausgeführt.
+#   * CLOUDFLARE-SCHUTZ: Tool-Antworten enden nach 55 s (maximal 85 s, auch mit
+#     timeoutSeconds) - deutlich unter dem ~100-s-524 des Tunnels. Laengere
+#     Arbeit laeuft weiter und kommt ueber lateResults/asJob zurueck.
+#   * ADMIN-RESET: force_fail / clear_pending (Tool und POST /api/queue) leeren
+#     eine wedged Queue sofort: jeder offene Befehl erhaelt ein endgueltiges
+#     FORCE_CLEARED-Ergebnis, Studio wird gebeten, seine lokale Queue zu
+#     verwerfen - ohne Studio-Neustart.
+#   * PLACE-LISTE: Vorschau, Titel und Hinweis wieder MITTIG und kompakt - die
+#     Vorschau laeuft ueber beide Zeilen, die blaue Arbeitszeile sitzt unter dem
+#     Namen (vorher in der Vorschau-Spalte, was die Zeile hochzog und die Mitte
+#     auseinanderzog), symmetrisches Innen-Padding.
+#
+# VORHERIGE VERSION 7.0.4 (aus 7.0.3 uebernommen):
+#   * Studio commands have explicit WAITING/RUNNING/DONE/ABANDONED states,
 #     per-tool execution budgets, plugin heartbeats and watchdog recovery.
 #   * The plugin executor isolates every command, reports tracebacks and
 #     self-recovers after a stuck command; results are retained by commandId.
 #   * Adds queue status/cancel/clear/reset endpoints, pre-queue schema checks,
 #     executor liveness in status, and reconnect/event flood protection.
-#   * The Place row shows the Place name higher, then a blue work label,
-#     progress bar and percentage. Settings no longer contain a Mitteilungen
-#     section; the visible progress-contract text has been removed.
 #
 # LEISTUNGS-FIX VERSION 7.0.3 - DIE URSACHE, NICHT DIE FREQUENZ:
 #
@@ -1808,6 +1842,25 @@ $script:Shared = [hashtable]::Synchronized(@{
     PendingCommands = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
     # sessionId -> completed results whose HTTP caller had already timed out.
     LateResults     = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
+    # Version 7.0.5: commandId -> session that CALLED the tool (owns the token and
+    # the lateResults queue). CommandOwners keeps the session that currently has to
+    # deliver/execute the command; after a plugin restart both can differ, so a
+    # result still reaches the caller that is waiting for that commandId.
+    CommandOrigins  = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    # Version 7.0.5: commandId -> plugin instanceGuid. A result is accepted from the
+    # same physical plugin instance even after it registered a new session.
+    CommandInstanceGuids = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    # Version 7.0.5: sessionId -> successor session (same plugin window after a
+    # reconnect). Deliveries follow this chain so commands are not stranded in a
+    # session the plugin no longer polls. The caller keeps its own token/session.
+    SessionSuccessors = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    # Version 7.0.5: proof that the independent server-side watchdog really runs.
+    SweepState = [hashtable]::Synchronized(@{
+        LastSweepAt = 0L
+        Sweeps = 0L
+        Abandoned = 0L
+        StartedAt = 0L
+    })
     # sessionId -> { tool -> @{ fingerprint, at, resultJson } }; retries of
     # play_start/play_stop within 3s reuse the original result.
     PlayRetryDedupe = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
@@ -1819,7 +1872,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.0.4'
+    DocsVersion     = '7.0.5'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         simAllowed      = $false    # sim_start bleibt bis zu echter Edit-Modus-Simulation gesperrt
@@ -1952,8 +2005,8 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-    $script:PreviewDiagIdentity = ("Bridge-Version=7.0.4, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.0.4, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    $script:PreviewDiagIdentity = ("Bridge-Version=7.0.5, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.0.5, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 6.0.5: Hinweis auf den kleinen Kurzbericht - er enthaelt alles,
     # was zur Beurteilung der Fenster-Vorschau noetig ist.
     Write-RuntimeLog ("Vorschau-Kurzbericht: " + (Join-Path $script:AppDataRoot 'preview-diagnose.txt'))
@@ -2047,7 +2100,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.0.4)
+  Arena Studio Bridge - Studio Plugin  (Version 7.0.5)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -2120,7 +2173,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.0.4"
+local ARENA_VERSION  = "7.0.5"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -2178,6 +2231,25 @@ local executorState  = {
 }
 local cancelRequests = {}
 local seenCommandIds = {}
+-- Version 7.0.5: Ergebnisse der zuletzt ausgeführten Befehle. Wird derselbe
+-- commandId nach einem Reconnect/Plugin-Neuladen erneut zugestellt, schickt das
+-- Plugin das GESPEICHERTE Ergebnis noch einmal -statt den Befehl ein zweites Mal
+-- auszuführen (weder doppelt ausführen noch verlieren).
+local completedResults = {}
+local completedOrder = {}
+local completedResultLimit = 48
+local function rememberCompletedResult(commandId, result)
+    local id = tostring(commandId)
+    if completedResults[id] == nil then table.insert(completedOrder, id) end
+    completedResults[id] = result
+    while #completedOrder > completedResultLimit do
+        local oldest = table.remove(completedOrder, 1)
+        if oldest then completedResults[oldest] = nil end
+    end
+end
+local function getCompletedResult(commandId)
+    return completedResults[tostring(commandId)]
+end
 local connectedEventSessionId = nil
 local defaultContext = "server"   -- fuer Laufzeit-Befehle im Play-Modus
 local userPlaytestActive = false       -- vom Nutzer gestarteter/aktiv gespielter Test
@@ -10583,6 +10655,7 @@ local function pumpCommandQueue()
                         if timedOut then commandFinished = true end
                         commandResult = commandResult or failCode("RUNTIME_ERROR", "Executor ended without a result.", { commandId = commandId })
                         commandResult.commandId = commandId
+                        rememberCompletedResult(commandId, commandResult)
                         local sendOk, delivered = pcall(postResult, commandId, commandResult)
                         if not sendOk or delivered ~= true then
                             executorState.resultOutbox[commandId] = {
@@ -10613,6 +10686,7 @@ local function pumpCommandQueue()
                     tool = executorState.runningTool,
                     partialChangesPossible = true,
                 })
+                rememberCompletedResult(failedId, failure)
                 local sendOk, delivered = pcall(postResult, failedId, failure)
                 if not sendOk or delivered ~= true then
                     executorState.resultOutbox[failedId] = {
@@ -10638,8 +10712,28 @@ end
 local function enqueueCommand(command)
     if type(command) ~= "table" or command.id == nil then return end
     local commandId = tostring(command.id)
-    if seenCommandIds[commandId] then return end
+    if seenCommandIds[commandId] then
+        -- Version 7.0.5: schon einmal ausgeführt -> Ergebnis erneut zustellen
+        -- (der Server hat es verloren, z. B. durch einen Reconnect mid-Result).
+        local cached = completedResults[commandId]
+        if cached ~= nil then
+            task.spawn(function()
+                pcall(postResult, commandId, cached)
+            end)
+        end
+        return
+    end
     seenCommandIds[commandId] = os.time()
+    local cachedResult = completedResults[commandId]
+    if cachedResult ~= nil then
+        -- Erst nach einem Plugin-Neuladen möglich (seenCommandIds ist weg, der
+        -- Ergebnisspeicher aber auch) - Schutz für einen zweiten Zustellversuch
+        -- desselben Servers innerhalb derselben VM.
+        task.spawn(function()
+            pcall(postResult, commandId, cachedResult)
+        end)
+        return
+    end
     local seenCount = 0
     local oldestId = nil
     local oldestAt = math.huge
@@ -10711,6 +10805,10 @@ local function statePayload()
     for _, queuedCommand in ipairs(commandQueue) do
         if queuedCommand and queuedCommand.id then table.insert(queuedCommandIds, tostring(queuedCommand.id)) end
     end
+    local outboxCount = 0
+    for _ in pairs(executorState.resultOutbox) do outboxCount = outboxCount + 1 end
+    local completedCount = 0
+    for _ in pairs(completedResults) do completedCount = completedCount + 1 end
     payload.executor = {
         lastTick = executorState.lastTick,
         runningCommandId = executorState.runningCommandId,
@@ -10719,6 +10817,8 @@ local function statePayload()
         queueDepth = #commandQueue,
         queuedCommandIds = queuedCommandIds,
         dispatcherBusy = executorState.dispatcherBusy,
+        resultOutbox = outboxCount,
+        cachedResults = completedCount,
     }
     return payload
 end
@@ -10737,6 +10837,15 @@ local function handshake()
             body.Text = "Plugin und Bridge haben unterschiedliche Versionen. Studio neu starten - Simulationen warten bis dahin."
         end
         connected = true
+        -- Version 7.0.5: Nach einem Reconnect sofort alles nachliefern, was noch
+        -- im Ausgangskorb liegt - die Ergebnisse gehören zum commandId, nicht zur
+        -- alten Session.
+        task.spawn(function()
+            for commandId, item in pairs(executorState.resultOutbox) do
+                local okSend, delivered = pcall(postResult, commandId, item.payload)
+                if okSend and delivered == true then executorState.resultOutbox[commandId] = nil end
+            end
+        end)
         return true
     end
     connected = false
@@ -11914,7 +12023,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.0.4 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.0.5 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -12467,9 +12576,11 @@ $script:BridgeHandlerScript = {
         return , $queue
     }
 
-    function Add-PendingCommand($sessionId, $commandId, $tool, [int]$budgetSeconds = 90, [long]$queuedAt = 0) {
+    function Add-PendingCommand($sessionId, $commandId, $tool, [int]$budgetSeconds = 90, [long]$queuedAt = 0, [string]$originSessionId = '') {
         $sid = [string]$sessionId
         $id = [string]$commandId
+        if ([string]::IsNullOrWhiteSpace($originSessionId)) { $originSessionId = $sid }
+        $originSessionId = [string]$originSessionId
         $now = Get-UnixSeconds
         if ($queuedAt -le 0) { $queuedAt = $now }
         $budgetSeconds = [Math]::Max(5, [Math]::Min(300, $budgetSeconds))
@@ -12488,6 +12599,9 @@ $script:BridgeHandlerScript = {
         $bag = Ensure-PendingBag $sid
         $bag[$id] = (To-Json $record 8)
         $Shared.CommandOwners[$id] = $sid
+        $Shared.CommandOrigins[$id] = $originSessionId
+        $guid = Get-SessionInstanceGuid $sid
+        if (-not [string]::IsNullOrWhiteSpace($guid)) { $Shared.CommandInstanceGuids[$id] = $guid }
         $Shared.CommandStates[$id] = (To-Json $record 8)
     }
 
@@ -12499,10 +12613,20 @@ $script:BridgeHandlerScript = {
     }
 
     function Get-PendingInfo($sessionId, $commandId) {
-        $bag = Ensure-PendingBag $sessionId
-        $raw = $null
-        if ($bag.TryGetValue([string]$commandId, [ref]$raw)) {
-            try { return ($raw | ConvertFrom-Json) } catch {}
+        $id = [string]$commandId
+        $probe = [string]$sessionId
+        for ($hop = 0; $hop -lt 8; $hop++) {
+            $bag = Ensure-PendingBag $probe
+            $raw = $null
+            if ($bag.TryGetValue($id, [ref]$raw)) {
+                try { return ($raw | ConvertFrom-Json) } catch {}
+            }
+            # Version 7.0.5: after a plugin reconnect the record lives in the new
+            # session's bag; the caller's session reaches it through this chain.
+            $next = $null
+            if (-not $Shared.SessionSuccessors.TryGetValue($probe, [ref]$next)) { break }
+            $probe = [string]$next
+            if ([string]::IsNullOrWhiteSpace($probe) -or $probe -eq $sessionId) { break }
         }
         return $null
     }
@@ -12526,6 +12650,102 @@ $script:BridgeHandlerScript = {
         $owner = $null
         if ($Shared.CommandOwners.TryGetValue([string]$commandId, [ref]$owner)) { return [string]$owner }
         return $null
+    }
+
+    # Version 7.0.5: the session that CALLED the tool. It owns the token the AI
+    # keeps using and therefore the lateResults queue; it survives a plugin
+    # reconnect that issues a new sessionId.
+    function Get-CommandOrigin([string]$commandId) {
+        $origin = $null
+        if ($Shared.CommandOrigins.TryGetValue([string]$commandId, [ref]$origin) -and
+            -not [string]::IsNullOrWhiteSpace([string]$origin)) { return [string]$origin }
+        return (Get-CommandOwner $commandId)
+    }
+
+    function Get-SessionInstanceGuid([string]$sessionId) {
+        $entry = Get-SessionEntry $sessionId
+        if ($entry) {
+            try { return [string]$entry.instanceGuid } catch {}
+        }
+        return ''
+    }
+
+    # A result/ack may arrive from a session that is not the current owner when
+    # the plugin re-registered (new sessionId, same physical window). Then the
+    # commandId still points at the same plugin INSTANCE - that is the proof we
+    # accept, never a bare "some session claims this id".
+    function Test-CommandInstanceMatches([string]$sessionId, [string]$commandId) {
+        $expected = $null
+        if (-not $Shared.CommandInstanceGuids.TryGetValue([string]$commandId, [ref]$expected)) { return $false }
+        $expected = [string]$expected
+        if ([string]::IsNullOrWhiteSpace($expected)) { return $false }
+        $reporting = Get-SessionInstanceGuid $sessionId
+        if ([string]::IsNullOrWhiteSpace($reporting)) { return $false }
+        return ($reporting -eq $expected)
+    }
+
+    # Deliveries follow the reconnect chain (old session -> new session) so a
+    # command queued under the caller's token still reaches the plugin that now
+    # polls under a different sessionId. Max 8 hops; a cycle simply stops.
+    function Get-DeliverySession([string]$sessionId) {
+        $current = [string]$sessionId
+        for ($hop = 0; $hop -lt 8; $hop++) {
+            $next = $null
+            if (-not $Shared.SessionSuccessors.TryGetValue($current, [ref]$next)) { break }
+            $next = [string]$next
+            if ([string]::IsNullOrWhiteSpace($next) -or $next -eq $current) { break }
+            $current = $next
+        }
+        return $current
+    }
+
+    function Register-SessionSuccessor([string]$oldSessionId, [string]$newSessionId) {
+        $old = [string]$oldSessionId
+        $new = [string]$newSessionId
+        if ([string]::IsNullOrWhiteSpace($old) -or [string]::IsNullOrWhiteSpace($new) -or $old -eq $new) { return }
+        $Shared.SessionSuccessors[$old] = $new
+        # Re-point existing commands of the old session so their results and acks
+        # are accepted from the new plugin instance as well.
+        $oldBag = $null
+        $newBag = Ensure-PendingBag $new
+        if ($Shared.PendingCommands.TryGetValue($old, [ref]$oldBag)) {
+            $oldGuid = Get-SessionInstanceGuid $old
+            foreach ($pair in @($oldBag.GetEnumerator())) {
+                $id = [string]$pair.Key
+                if ([string]::IsNullOrWhiteSpace($id) -or [string]::IsNullOrWhiteSpace([string]$pair.Value)) { continue }
+                try {
+                    $info = $pair.Value | ConvertFrom-Json
+                    $info.sessionId = $new
+                    $newBag[$id] = (To-Json $info 10)
+                    $Shared.CommandStates[$id] = (To-Json $info 10)
+                } catch { continue }
+                $discard = $null
+                [void]$oldBag.TryRemove($id, [ref]$discard)
+                if ((Get-CommandOwner $id) -eq $old) { $Shared.CommandOwners[$id] = $new }
+                # The caller's own session stays the origin; late results must reach it.
+                if (-not $Shared.CommandOrigins.ContainsKey($id)) { $Shared.CommandOrigins[$id] = $old }
+                if (-not $Shared.CommandInstanceGuids.ContainsKey($id) -and -not [string]::IsNullOrWhiteSpace($oldGuid)) {
+                    $Shared.CommandInstanceGuids[$id] = $oldGuid
+                }
+            }
+        }
+        # Move the not-yet-delivered FIFO of the old session to the new one. A
+        # command that was never handed out cannot have run, so handing it to the
+        # new session is safe and it is NOT replayed twice.
+        $oldQueue = Ensure-Queue $old
+        $newQueue = Ensure-Queue $new
+        $raw = $null
+        [System.Threading.Monitor]::Enter($Shared.CommandQueueLock)
+        try {
+            while ($oldQueue.TryDequeue([ref]$raw)) {
+                if (-not [string]::IsNullOrWhiteSpace([string]$raw)) { $newQueue.Enqueue([string]$raw) }
+            }
+        } finally {
+            [System.Threading.Monitor]::Exit($Shared.CommandQueueLock)
+        }
+        $wake = Ensure-Signal $new
+        [void]$wake.Set()
+        Add-BridgeEvent $new 'queue_followed' 'Studio reconnected with a new session id; commands that were still waiting were handed over to the new session (nothing was executed twice).' @{ previousSessionId = $old }
     }
 
     function Save-SessionExecutorState($sessionId, $executor) {
@@ -12680,12 +12900,17 @@ $script:BridgeHandlerScript = {
                 $Shared.CommandResults[$id] = $resultJson
                 try { [void]$signal.Set() } catch {}
             } else {
-                Queue-LateResult $sid $id $resultJson $pendingInfo
+                # Version 7.0.5: late results always go to the CALLER session, so a
+                # reconnect (which changes the executing session) cannot hide them.
+                Queue-LateResult (Get-CommandOrigin $id) $id $resultJson $pendingInfo
             }
         } finally {
             [System.Threading.Monitor]::Exit($Shared.CommandResultLock)
         }
         Remove-PendingCommand $sid $id | Out-Null
+        Remove-CommandFromQueue $sid $id
+        $removedGuid = $null
+        [void]$Shared.CommandInstanceGuids.TryRemove($id, [ref]$removedGuid)
         return $true
     }
 
@@ -12694,13 +12919,25 @@ $script:BridgeHandlerScript = {
         $id = [string]$commandId
         $info = Get-PendingInfo $sid $id
         if (-not $info) { return $false }
-        $cancelKey = Get-CommandControlKey $sid $id
-        $Shared.CancelRequests[$cancelKey] = Get-UnixSeconds
+        # The command must not keep running in Studio either: request a cancel for
+        # every session on the reconnect chain that may be executing it.
+        $cancelSid = $sid
+        while (-not [string]::IsNullOrWhiteSpace($cancelSid)) {
+            $cancelKey = Get-CommandControlKey $cancelSid $id
+            $Shared.CancelRequests[$cancelKey] = Get-UnixSeconds
+            $nextSid = $null
+            if (-not $Shared.SessionSuccessors.TryGetValue([string]$cancelSid, [ref]$nextSid)) { break }
+            $cancelSid = [string]$nextSid
+        }
         $info.status = 'abandoned'
         $info | Add-Member -NotePropertyName 'abandonedAt' -NotePropertyValue (Get-UnixSeconds) -Force
         $info | Add-Member -NotePropertyName 'abandonReason' -NotePropertyValue $reasonCode -Force
-        Save-PendingInfo $sid $id $info | Out-Null
-        Remove-CommandFromQueue $sid $id
+        # Version 7.0.5: after a reconnect the record and the queue entry belong to
+        # the successor session; the caller session reaches them through the chain.
+        $ownerSid = Get-CommandOwner $id
+        if ([string]::IsNullOrWhiteSpace($ownerSid)) { $ownerSid = $sid }
+        Save-PendingInfo $ownerSid $id $info | Out-Null
+        Remove-CommandFromQueue $ownerSid $id
         $seconds = 0
         try {
             $start = [int64]$info.startedAt
@@ -12721,7 +12958,7 @@ $script:BridgeHandlerScript = {
             status = 'abandoned'
             hint = 'The executor was released so the Studio queue can continue. Inspect the Place before retrying because partial changes may have been applied.'
         }
-        return (Complete-CommandResult $sid $id (To-Json $failure 10) $reasonCode)
+        return (Complete-CommandResult $ownerSid $id (To-Json $failure 10) $reasonCode)
     }
 
     function Request-CommandCancel($sessionId, $commandId, [string]$reason = 'Cancelled by the client.') {
@@ -12747,6 +12984,39 @@ $script:BridgeHandlerScript = {
             hint = 'Cancellation is best-effort and may leave partial changes. Inspect the Place before retrying.'
         }
         return (Complete-CommandResult $sid $id (To-Json $failure 10) 'cancelled')
+    }
+
+    # Version 7.0.5: ADMIN-RESET. Marks every pending command of this Place as
+    # failed/abandoned, delivers a real answer to every waiter (or as a
+    # lateResult), empties the FIFO and asks the plugin to drop its local queue.
+    # This is the escape hatch for a wedged queue - it needs no Studio restart.
+    function Force-FailSessionQueue($sessionId, [string]$reason = 'The pending Studio queue was cleared through the admin control.', [string]$reasonCode = 'FORCE_CLEARED', [string]$source = 'force_fail') {
+        $sid = [string]$sessionId
+        $failed = 0
+        foreach ($item in @(Get-PendingCommands $sid)) {
+            $id = [string]$item.commandId
+            if ([string]::IsNullOrWhiteSpace($id)) { continue }
+            if (Mark-CommandAbandoned $sid $id $reasonCode $reason) { $failed = $failed + 1 }
+        }
+        $queue = Ensure-Queue $sid
+        $raw = $null
+        [System.Threading.Monitor]::Enter($Shared.CommandQueueLock)
+        try {
+            while ($queue.TryDequeue([ref]$raw)) { $raw = $null }
+        } finally {
+            [System.Threading.Monitor]::Exit($Shared.CommandQueueLock)
+        }
+        $Shared.ExecutorResetRequests[$sid] = Get-UnixSeconds
+        $wake = Ensure-Signal $sid
+        [void]$wake.Set()
+        try { $Shared.SweepState.Abandoned = [int64]$Shared.SweepState.Abandoned + [int64]$failed } catch {}
+        return @{
+            ok = $true
+            action = $source
+            clearedCommands = $failed
+            executor = (Get-SessionExecutorSnapshot $sid)
+            note = 'Every waiting command was answered with ' + $reasonCode + '. Studio was asked to drop its local queue; a wedged Lua executor can still need a Studio restart.'
+        }
     }
 
     function Reset-SessionQueue($sessionId, [string]$reason = 'The Studio executor queue was manually reset.', [string]$pendingCode = 'COMMAND_CANCELLED') {
@@ -12919,11 +13189,27 @@ $script:BridgeHandlerScript = {
 
     function Get-PendingCommands($sessionId) {
         Invoke-SessionExecutorWatchdog $sessionId
-        $bag = Ensure-PendingBag $sessionId
         $now = Get-UnixSeconds
         $items = New-Object System.Collections.Generic.List[object]
+        # Version 7.0.5: a caller session also sees the commands that were handed
+        # over to its successor sessions after a Studio reconnect.
+        $chain = New-Object System.Collections.Generic.List[string]
+        $probe = [string]$sessionId
+        for ($hop = 0; $hop -lt 8; $hop++) {
+            if ([string]::IsNullOrWhiteSpace($probe)) { break }
+            $chain.Add($probe)
+            $next = $null
+            if (-not $Shared.SessionSuccessors.TryGetValue($probe, [ref]$next)) { break }
+            $nextProbe = [string]$next
+            if ([string]::IsNullOrWhiteSpace($nextProbe) -or $nextProbe -eq $probe) { break }
+            $probe = $nextProbe
+        }
+        $seenIds = New-Object System.Collections.Generic.HashSet[string]
+        foreach ($chainSession in $chain) {
+        $bag = Ensure-PendingBag $chainSession
         foreach ($pair in $bag.GetEnumerator()) {
             try {
+                if (-not $seenIds.Add([string]$pair.Key)) { continue }
                 $info = $pair.Value | ConvertFrom-Json
                 $createdAt = [int64]$info.createdAt
                 $queuedAt = [int64]$info.queuedAt
@@ -12953,6 +13239,7 @@ $script:BridgeHandlerScript = {
                 $removed = $null; [void]$bag.TryRemove([string]$pair.Key, [ref]$removed)
             }
         }
+        }
         return , $items
     }
 
@@ -12977,7 +13264,12 @@ $script:BridgeHandlerScript = {
             $received = 0
             foreach ($receivedIdValue in @($body.commandIds)) {
                 $receivedId = [string]$receivedIdValue
-                if ([string]::IsNullOrWhiteSpace($receivedId) -or (Get-CommandOwner $receivedId) -ne $sid) { continue }
+                if ([string]::IsNullOrWhiteSpace($receivedId)) { continue }
+                $receivedOwner = Get-CommandOwner $receivedId
+                if ($receivedOwner -ne $sid) {
+                    if (-not (Test-CommandInstanceMatches $sid $receivedId)) { continue }
+                    $sid = $receivedOwner
+                }
                 $receivedInfo = Get-PendingInfo $sid $receivedId
                 if (-not $receivedInfo) { continue }
                 if ([string]$receivedInfo.status -eq 'delivered' -or [string]$receivedInfo.status -eq 'queued') {
@@ -12990,7 +13282,15 @@ $script:BridgeHandlerScript = {
             return @{ ok=$true; accepted=$true; received=$received }
         }
         if ([string]::IsNullOrWhiteSpace($id)) { return @{ ok=$false; accepted=$false; error='commandId is required' } }
-        if ((Get-CommandOwner $id) -ne $sid) { return @{ ok=$false; accepted=$false; cancelled=$true; commandId=$id } }
+        $ownerSession = Get-CommandOwner $id
+        if ($ownerSession -ne $sid) {
+            # Version 7.0.5: started/heartbeat/cancel acks from the same plugin
+            # instance are valid after it re-registered with a new sessionId.
+            if (-not (Test-CommandInstanceMatches $sid $id)) {
+                return @{ ok=$false; accepted=$false; cancelled=$true; commandId=$id }
+            }
+            $sid = $ownerSession
+        }
 
         $dedupeKey = Get-CommandControlKey $sid $id
         if ($Shared.CompletedCommandIds.ContainsKey($dedupeKey)) {
@@ -13041,15 +13341,27 @@ $script:BridgeHandlerScript = {
         $queued = @($pending | Where-Object { $_.status -eq 'queued' })
         $delivered = @($pending | Where-Object { $_.status -eq 'delivered' -or $_.status -eq 'received' })
         $running = @($pending | Where-Object { $_.status -eq 'started' -or $_.status -eq 'running' -or $_.status -eq 'cancel_requested' })
+        $sweep = $null
+        try {
+            $sweep = @{
+                lastSweepAt = [int64]$Shared.SweepState.LastSweepAt
+                secondsSinceSweep = if ([int64]$Shared.SweepState.LastSweepAt -gt 0) { [int][Math]::Max(0, (Get-UnixSeconds) - [int64]$Shared.SweepState.LastSweepAt) } else { -1 }
+                abandonedTotal = [int64]$Shared.SweepState.Abandoned
+                running = ([int64]$Shared.SweepState.LastSweepAt -gt 0 -and ((Get-UnixSeconds) - [int64]$Shared.SweepState.LastSweepAt) -le 10)
+            }
+        } catch {}
+        $deliverySession = Get-DeliverySession ([string]$sessionId)
         return @{
             ok = $true
             sessionId = [string]$sessionId
+            deliverySession = $deliverySession
             queueDepth = [int]$queue.Count
             queued = $queued
             delivered = $delivered
             running = $running
             pending = $pending
             executor = $executor
+            sweep = $sweep
             cancelledCommandIds = @(Get-SessionCancellationIds $sessionId)
             resetRequested = $Shared.ExecutorResetRequests.ContainsKey([string]$sessionId)
         }
@@ -13225,8 +13537,13 @@ $script:BridgeHandlerScript = {
             }
             Save-SessionEntry $entry
             if ($reuseReason -eq 'reconnect') {
-                Reset-SessionQueue $sessionId 'The Studio plugin instance restarted. Previous in-flight commands were abandoned rather than replayed because they may have partially changed the Place.' 'EXECUTOR_UNAVAILABLE' | Out-Null
-                Add-BridgeEvent $sessionId 'studio_reconnected' 'The Studio plugin reconnected after Studio reloaded it. Previous in-flight commands were marked abandoned rather than replayed.' @{ placeName = $placeName }
+                # Version 7.0.5: a plugin restart must NOT throw away commands that
+                # were never handed out. They stay in the queue and go to the fresh
+                # executor; only work that the DEAD executor had already taken is
+                # abandoned, and the watchdog decides that from the timestamps
+                # (nothing is replayed blindly).
+                Invoke-SessionExecutorWatchdog $sessionId
+                Add-BridgeEvent $sessionId 'studio_reconnected' 'The Studio plugin reconnected. Waiting commands stay queued for the new executor; work that the previous executor had taken is abandoned after the watchdog timeout instead of being replayed.' @{ placeName = $placeName }
             }
             Save-SessionExecutorState $sessionId $body.executor
             $Shared.Presence[$sessionId] = $now
@@ -13264,6 +13581,43 @@ $script:BridgeHandlerScript = {
         $Shared.Presence[$sessionId] = $now
         [void](Ensure-Queue $sessionId)
         [void](Ensure-Signal $sessionId)
+        # Version 7.0.5: if the same Studio window comes back with a NEW plugin
+        # instanceGuid (Roblox reloaded the plugin / the connection was reset), the
+        # commands that were never delivered are handed over to the new session
+        # instead of being lost. A live second window is never touched.
+        try {
+            $predecessor = $null
+            foreach ($candidatePair in @($Shared.Sessions.GetEnumerator())) {
+                if ([string]$candidatePair.Key -eq $sessionId) { continue }
+                $candidate = $null
+                try { $candidate = $candidatePair.Value | ConvertFrom-Json } catch { continue }
+                if (-not $candidate) { continue }
+                $candidateSid = [string]$candidate.sessionId
+                if ([string]::IsNullOrWhiteSpace($candidateSid)) { continue }
+                if ([string]$candidate.placeId -ne $placeId) { continue }
+                $candidatePolls = 0
+                [void]$Shared.Pollers.TryGetValue($candidateSid, [ref]$candidatePolls)
+                $candidatePresence = [int64]0
+                $candidateHasPresence = $Shared.Presence.TryGetValue($candidateSid, [ref]$candidatePresence)
+                $candidateSeen = [int64]0
+                try { $candidateSeen = [int64]$candidate.lastSeen } catch {}
+                $candidateAliveAt = $(if ($candidateHasPresence) { [int64]$candidatePresence } else { [int64]$candidateSeen })
+                $candidateAge = $(if ($candidateAliveAt -gt 0) { $now - $candidateAliveAt } else { 999999 })
+                $candidateBag = $null
+                $candidatePending = 0
+                if ($Shared.PendingCommands.TryGetValue($candidateSid, [ref]$candidateBag)) { $candidatePending = [int]$candidateBag.Count }
+                # Only a session that clearly stopped polling (dead executor) with
+                # work still waiting qualifies - never a live second Studio window.
+                if ($candidatePolls -le 0 -and $candidateAge -gt 20 -and $candidatePending -gt 0) {
+                    $predecessor = $candidate
+                    break
+                }
+            }
+            if ($predecessor) {
+                Register-SessionSuccessor ([string]$predecessor.sessionId) $sessionId
+                Write-BridgeLog ('Befehle der vorherigen Sitzung ' + [string]$predecessor.sessionId + ' an ' + $sessionId + ' uebergeben (Reconnect).')
+            }
+        } catch {}
         Add-BridgeEvent $sessionId 'connected' "Place '$placeName' is connected." @{ placeId = $placeId }
         Write-BridgeLog "Neue Sitzung $sessionId fuer Place '$placeName' (placeId $placeId)."
         return $entry
@@ -14164,6 +14518,12 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
     function Invoke-PluginTool($sessionId, $tool, $toolArgs, [int]$timeoutSeconds, [string]$activityId = '') {
         $argumentCheck = Test-CommandArguments ([string]$tool) $toolArgs
         if (-not $argumentCheck.ok) { return (To-Json $argumentCheck 12) }
+        # Version 7.0.5: the caller keeps its session/token; the DELIVERY follows the
+        # reconnect chain, so commands are not stranded in a session the plugin no
+        # longer polls. Results are routed back by commandId (origin stays the caller).
+        $callerSession = [string]$sessionId
+        $deliverySession = Get-DeliverySession $callerSession
+        $sessionId = $deliverySession
         $queue = Ensure-Queue $sessionId
         if ($queue.Count -ge 64) {
             return (To-Json @{ ok=$false; code='QUEUE_FULL'; error='The Studio command queue is full (64 queued commands). Wait for the current work or reset the queue through /api/queue.'; queueDepth=[int]$queue.Count; commandSent=$false } 8)
@@ -14179,7 +14539,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         [void]$Shared.ResultSignals.TryAdd($commandId, $signal)
 
         $command = @{ id=$commandId; tool=$tool; args=$toolArgs; queuedAt=$queuedAt; budgetSeconds=$commandBudget }
-        Add-PendingCommand $sessionId $commandId $tool $commandBudget $queuedAt
+        Add-PendingCommand $sessionId $commandId $tool $commandBudget $queuedAt $callerSession
         $enqueue = Enqueue-Command $sessionId $queue (To-Json $command 40)
         if (-not $enqueue.ok) {
             Remove-PendingCommand $sessionId $commandId | Out-Null
@@ -14911,6 +15271,18 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             returns = '{ cancelled = true, note }';
             example = @{ jobId = 'job_3' };
             errors = @('JOB_NOT_FOUND') })
+        $t.Add(@{ name = 'force_fail'; category = 'jobs'; summary = 'Haengende Studio-Queue sofort leeren (Admin-Reset, ohne Studio-Neustart).';
+            description = 'Rettungsanker, wenn Befehle in pendingInStudio haengen: JEDER noch offene Befehl dieses Places wird sofort mit einem endgueltigen Fehler beantwortet (Code FORCE_CLEARED), die serielle Warteschlange wird geleert und Studio wird gebeten, seine lokale Queue zu verwerfen. Kein Befehl wird wiederholt. Ein haengendes Lua im Plugin kann trotzdem einen Studio-Neustart brauchen - dann zeigt die Antwort executor.alive=false.';
+            params = @{ reason = @{ type = 'string'; required = $false; default = 'cleared by admin control'; description = 'Grund, der in jeder Fehlerantwort steht.' }; code = @{ type = 'string'; required = $false; default = 'FORCE_CLEARED'; description = 'Fehlercode der Antworten (z. B. FORCE_CLEARED).' } };
+            returns = '{ ok, action, clearedCommands, executor: { alive, runningCommandId, queueDepth }, queue, note }';
+            example = @{ reason = 'bridge wedged after a 15 minute list_jobs block' };
+            errors = @() })
+        $t.Add(@{ name = 'clear_pending'; category = 'jobs'; summary = 'Alias fuer force_fail (Queue leeren).';
+            description = 'Exakt dasselbe wie force_fail: alle offenen Befehle sofort mit FORCE_CLEARED beantworten und die Warteschlange leeren. Fuer Notfaelle gedacht, wenn die KI sonst nur noch Timeouts sieht.';
+            params = @{ reason = @{ type = 'string'; required = $false; default = 'cleared by admin control'; description = 'Grund in der Fehlerantwort.' }; code = @{ type = 'string'; required = $false; default = 'FORCE_CLEARED'; description = 'Antwortcode.' } };
+            returns = '{ ok, action, clearedCommands, executor, queue, note }';
+            example = @{};
+            errors = @() })
         $t.Add(@{ name = 'get_pending'; category = 'jobs'; summary = 'Was laeuft noch in Studio? (ueberlebte Timeouts).';
             description = 'Listet pro commandId ausstehende Befehle (queued/delivered/received/started), Executor-Heartbeats, Zeitbudget und späte Ergebnisse. Ein Folgeaufruf kann auf serialisierte Studio-Arbeit warten; bei Executor-Ausfall gibt der Watchdog die Queue frei und meldet, ob Teiländerungen möglich sind. Vor einem Retry Zustand prüfen.';
             params = @{};
@@ -15006,7 +15378,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 'Several Places can be connected. With the Alle-Places token, GET /api/places returns targetPlace values; selecting one target keeps edits unambiguous.',
                 'Queue recovery is explicit and diagnosable: GET /api/queue shows queued/delivered/running commandIds, delivery/start timestamps and executor liveness; POST /api/queue with action=cancel and commandId cancels one command, while action=reset abandons pending work and asks the plugin to reset its local queue. A reset/cancel can leave partial edits; inspect before retrying.',
                 'Normal GET and POST tool calls use the same bridge code path. Queue cancellation/reset are mutating controls and require POST.',
-                'After an HTTP timeout, a Studio command remains tracked by commandId and may return through _bridge.lateResults. A plugin execution budget and server heartbeat watchdog abandon stalled commands so they cannot block the serial queue forever; inspect the Place before retrying because partial changes may exist. Use asJob=true when a long task should deliberately continue in the background.',
+                'After an HTTP timeout, a Studio command remains tracked by commandId and may return through _bridge.lateResults. A plugin execution budget and an INDEPENDENT server-side watchdog (queue.sweep) abandon stalled commands so they cannot block the serial queue forever; inspect the Place before retrying because partial changes may exist. Use asJob=true when a long task should deliberately continue in the background. HTTP answers are capped at 55 seconds by default (85 seconds maximum) so a Cloudflare 524 can never cut the connection before the bridge replies.',
                 'Asset search covers the Creator Store categories including 3D models, models, meshes/MeshParts, plugins, fonts, audio, images/decals, video and animation. Insertion still reports Roblox permission/privacy errors and warns before inserting scripts.',
                 'sim_start is disabled because the former official Studio Run simulation exits Edit mode (EditModeActive=false), and the documented Studio API has no supported true Edit-mode physics/script path. A USER-started Play/F5 test is separate, blocks building (USER_PLAYTEST_ACTIVE), and can only be ended by the user.',
                 'Windows finish notifications use report_done { title, message }. Arena writes a lively title (max 70 characters) and an inviting body (max 140); avoid dry changelog lists.',
@@ -15380,7 +15752,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.0.4'
+            version = '7.0.5'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -15427,6 +15799,10 @@ end
     # ------------------------------------------------------------------
     function Invoke-PluginToolsParallel($sessionId, $calls, [int]$timeoutSeconds, $progressPayload = $null) {
         $pending = New-Object System.Collections.Generic.List[object]
+        # Version 7.0.5: deliveries follow the reconnect chain; the caller keeps its
+        # own session/token and receives the results by commandId.
+        $callerSession = [string]$sessionId
+        $sessionId = Get-DeliverySession $callerSession
         $queue = Ensure-Queue $sessionId
         $commandBudget = [Math]::Max(90, [Math]::Min(300, $timeoutSeconds + 30))
         $progressStarted = $false
@@ -15483,7 +15859,7 @@ end
                 [void]$Shared.ResultSignals.TryAdd($commandId, $signal)
                 $command = @{ id=$commandId; tool=$callTool; args=$callArgs; queuedAt=$queuedAt; budgetSeconds=$commandBudget }
                 $Shared.ActivityCommandMap[$commandId] = (To-Json @{ sessionId=$sessionId; activityId=$activityId; tool=$callTool; args=$callArgs } 20)
-                Add-PendingCommand $sessionId $commandId $callTool $commandBudget $queuedAt
+                Add-PendingCommand $sessionId $commandId $callTool $commandBudget $queuedAt $callerSession
                 $enqueue = Enqueue-Command $sessionId $queue (To-Json $command 40)
                 if (-not $enqueue.ok) {
                     Remove-PendingCommand $sessionId $commandId | Out-Null
@@ -15599,9 +15975,11 @@ end
         if ($Shared.ProgressStates.TryGetValue([string]$sessionId, [ref]$progressJson) -and -not [string]::IsNullOrWhiteSpace($progressJson)) {
             try { $progressView = $progressJson | ConvertFrom-Json } catch {}
         }
-        $executorSnapshot = Get-SessionExecutorSnapshot $sessionId
+        # Version 7.0.5: describe the session that currently EXECUTES (a reconnect
+        # may have moved delivery to a successor while the caller keeps its token).
+        $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.0.4'
+            bridgeVersion = '7.0.5'
             executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent = 0, never an error. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
@@ -15889,7 +16267,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.0.4'
+                        bridgeVersion = '7.0.5'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -16143,7 +16521,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.0.4'
+                        serverVersion = '7.0.5'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -16235,9 +16613,16 @@ end
                 if ($body -and $body.commandId -and $body.sessionId) {
                     $commandId = [string]$body.commandId
                     $sidForResult = [string]$body.sessionId
-                    if ((Get-CommandOwner $commandId) -ne $sidForResult) {
-                        Send-Json $context 403 @{ ok=$false; code='COMMAND_OWNER_MISMATCH'; error='This commandId does not belong to the supplied Studio session.' }
-                        continue
+                    $ownerSession = Get-CommandOwner $commandId
+                    if ($ownerSession -ne $sidForResult) {
+                        # Version 7.0.5: after a plugin reconnect the result may arrive
+                        # under a new sessionId of the SAME plugin instance. Accept it by
+                        # commandId + instanceGuid instead of dropping it for good.
+                        if (-not (Test-CommandInstanceMatches $sidForResult $commandId)) {
+                            Send-Json $context 403 @{ ok=$false; code='COMMAND_OWNER_MISMATCH'; error='This commandId does not belong to the supplied Studio session.' }
+                            continue
+                        }
+                        $sidForResult = $ownerSession
                     }
                     $dedupeKey = Get-CommandControlKey $sidForResult $commandId
                     if ($Shared.CompletedCommandIds.ContainsKey($dedupeKey)) {
@@ -16381,7 +16766,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.0.4'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.0.5'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -16411,8 +16796,8 @@ end
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.0.4'
-                    serverVersion = '7.0.4'
+                    bridgeVersion = '7.0.5'
+                    serverVersion = '7.0.5'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -16461,7 +16846,17 @@ end
                     Send-Json $context 200 @{ ok=$true; action='reset'; cancelledCommands=$resetCount; queue=(Get-QueueSnapshot $sessionId) }
                     continue
                 }
-                Send-Json $context 400 @{ ok=$false; code='BAD_ARGS'; error="Unknown queue action '$action'. Use cancel or reset." }
+                if ($action -eq 'force_fail' -or $action -eq 'clear_pending' -or $action -eq 'fail_all') {
+                    # Version 7.0.5: the admin escape hatch for a wedged queue. Unlike
+                    # reset it FAILS every pending command with a real result, so no
+                    # caller waits forever and nothing silently disappears.
+                    $forced = Force-FailSessionQueue $sessionId 'The command was cleared by the admin queue control (force_fail/clear_pending). Nothing was replayed.' 'FORCE_CLEARED' $action
+                    Add-BridgeEvent $sessionId 'executor_force_failed' 'The Studio queue was force-failed through the admin control; every pending command received a final failure result.' @{ clearedCommands=$forced.clearedCommands }
+                    $forced.queue = (Get-QueueSnapshot $sessionId)
+                    Send-Json $context 200 $forced
+                    continue
+                }
+                Send-Json $context 400 @{ ok=$false; code='BAD_ARGS'; error="Unknown queue action '$action'. Use cancel, reset, clear_pending or force_fail." }
                 continue
             }
 
@@ -16522,8 +16917,9 @@ end
                         $Shared.AiPlayIntents[$sessionId] = @{ action = 'stop'; at = (Get-UnixSeconds) }
                     }
                 }
-                $timeout = 90
-                if ($body.timeoutSeconds) { $timeout = [Math]::Min([int]$body.timeoutSeconds, 180) }
+                # Version 7.0.5: stay clearly below Cloudflare's ~100 s 524 limit.
+                $timeout = 55
+                if ($body.timeoutSeconds) { $timeout = [Math]::Min([int]$body.timeoutSeconds, 85) }
                 $parallelProgress = $null
                 try { if ($body.PSObject.Properties['progress']) { $parallelProgress = $body.progress } } catch {}
                 $resultsJson = Invoke-PluginToolsParallel $sessionId $body.calls $timeout $parallelProgress
@@ -16652,6 +17048,24 @@ end
                     }
                 }
 
+                # Version 7.0.5: ADMIN-RESET als Tool (nicht als Studio-Befehl). Der
+                # Aufruf raeumt eine haengende Queue sofort auf, OHNE dass die KI
+                # einen Studio-Neustart braucht; jeder wartende Befehl bekommt eine
+                # endgueltige Fehlerantwort (Waiter oder lateResult).
+                if ($tool -eq 'clear_pending' -or $tool -eq 'force_fail') {
+                    $forcedCode = 'FORCE_CLEARED'
+                    if ($toolArgs -and $toolArgs.code) { $forcedCode = ([string]$toolArgs.code).Trim().ToUpperInvariant() }
+                    if ([string]::IsNullOrWhiteSpace($forcedCode)) { $forcedCode = 'FORCE_CLEARED' }
+                    $forcedReason = 'The queued Studio work was cleared through the ' + $tool + ' control. Nothing was replayed; inspect the Place before retrying.'
+                    if ($toolArgs -and $toolArgs.reason) { $forcedReason = [string]$toolArgs.reason }
+                    $forcedResult = Force-FailSessionQueue $sessionId $forcedReason $forcedCode $tool
+                    Add-BridgeEvent $sessionId 'executor_force_failed' 'The Studio queue was force-failed through a tool call; every pending command received a final failure result.' @{ clearedCommands=$forcedResult.clearedCommands; tool=$tool }
+                    Complete-ArenaActivity $sessionId $activityId $tool $toolArgs (To-Json $forcedResult 40)
+                    $forcedResult._bridge = (New-Envelope $sessionId)
+                    Send-Json $context 200 $forcedResult
+                    continue
+                }
+
                 $serverResult = Invoke-ServerTool $sessionId $tool $toolArgs
                 if ($null -ne $serverResult) {
                     Complete-ArenaActivity $sessionId $activityId $tool $toolArgs (To-Json $serverResult 40)
@@ -16710,12 +17124,15 @@ end
                     continue
                 }
 
-                $timeout = 60
+                # Version 7.0.5: never hold a Cloudflare-proxied request long enough
+                # for the ~100 s 524 to hit. A longer Studio job keeps running and is
+                # picked up as a lateResult (or asJob=true from the start).
+                $timeout = 55
                 if ($toolArgs.timeoutSeconds) {
-                    $timeout = [Math]::Min([int]$toolArgs.timeoutSeconds + 25, 180)
+                    $timeout = [Math]::Min([int]$toolArgs.timeoutSeconds + 25, 85)
                 }
                 if ($body.timeoutSeconds) {
-                    $timeout = [Math]::Min([int]$body.timeoutSeconds, 180)
+                    $timeout = [Math]::Min([int]$body.timeoutSeconds, 85)
                 }
 
                 # Langer Lauf? Als Job in den Hintergrund - läuft sicher über 60 s hinaus.
@@ -16846,6 +17263,220 @@ end
 # Der Pool sorgt dafür, dass mehrere Studio-Fenster (jedes hält einen
 # Long-Poll offen) das Programm nicht ausbremsen.
 # ----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+# UNABHAENGIGER SERVER-WAECHTER (Version 7.0.5) - DIE URSACHE DER EWIG HAENGENDEN
+# BEFEHLE:
+#
+#   Bis 7.0.4 lief der Executor-Watchdog NUR in der /plugin/poll-Anfrage. Ein
+#   Befehl wurde also genau dann als "haengt" erkannt, wenn das Plugin noch
+#   pollte. Genau das ist im Fehlerfall nicht mehr der Fall: ein Befehl ohne
+#   yield blockiert die komplette Lua-VM des Plugins (dann kommt kein Poll mehr),
+#   oder die Verbindung bricht weg. Folge: pendingInStudio blieb FUER IMMER
+#   stehen, lateResults kam nie an, und die serielle Queue blockierte alles
+#   (real beobachtet: zwei list_jobs blockierten 15 Minuten).
+#
+#   Dieser Waechter laeuft in einem EIGENEN Runspace (zusammen mit dem Server
+#   gestartet) und sieht nur den gemeinsamen Zustand. Er:
+#     * erkennt einen toten/stummen Executor ohne jede Plugin-Anfrage,
+#     * beendet das Kommando mit einem klaren Fehlercode (STUDIO_ABANDONED,
+#       EXECUTOR_UNRESPONSIVE, EXECUTOR_UNAVAILABLE, EXECUTOR_DROPPED_COMMAND,
+#       COMMAND_DELIVERY_UNCONFIRMED, QUEUE_EXPIRED),
+#     * weckt einen noch wartenden HTTP-Aufrufer oder legt das Ergebnis als
+#       lateResult der ANRUFER-Sitzung ab - es geht also nie verloren,
+#     * laesst die serielle Queue danach weiterlaufen,
+#     * verlangt vom Plugin, das laufende Kommando abzubrechen.
+#
+#   Er ist absichtlich selbststaendig (keine Handler-Funktionen), weil er in
+#   einem frischen Runspace laeuft. Get-QueueSnapshot zeigt sweep.running=true
+#   und sweep.secondsSinceSweep, damit die Funktion live belegbar ist.
+# ----------------------------------------------------------------------------
+$script:BridgeSweepScript = {
+    param($Shared)
+
+    function Get-SweepNow { return [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() }
+    function Get-SweepJsonOrNull { param($Raw) if ([string]::IsNullOrWhiteSpace([string]$Raw)) { return $null }; try { return ([string]$Raw | ConvertFrom-Json) } catch { return $null } }
+    function Get-SweepIdList { param($Value) $list = @(); if ($null -eq $Value) { return $list }; foreach ($item in @($Value)) { $list += [string]$item }; return $list }
+
+    try { $Shared.SweepState.StartedAt = Get-SweepNow } catch {}
+    while ($true) {
+        $now = Get-SweepNow
+        try {
+            foreach ($sessionPair in @($Shared.Sessions.GetEnumerator())) {
+                $sid = [string]$sessionPair.Key
+                if ([string]::IsNullOrWhiteSpace($sid)) { continue }
+
+                # --- Lebenszeichen der Sitzung (Presence hat Vorrang) -----------
+                $presence = [int64]0
+                $hasPresence = $Shared.Presence.TryGetValue($sid, [ref]$presence)
+                $entry = Get-SweepJsonOrNull $sessionPair.Value
+                $lastSeen = [int64]0
+                if ($entry) { try { $lastSeen = [int64]$entry.lastSeen } catch {} }
+                $aliveAt = $(if ($hasPresence) { [int64]$presence } else { [int64]$lastSeen })
+                $sessionAge = $(if ($aliveAt -gt 0) { $now - $aliveAt } else { 999999 })
+                $openPolls = 0
+                [void]$Shared.Pollers.TryGetValue($sid, [ref]$openPolls)
+                $sessionAlive = (($sessionAge -le 30) -or ($openPolls -gt 0))
+
+                # --- unabhaengige Executor-Sicht (Snapshot aus dem Poll) --------
+                $snap = $null
+                $snapRaw = $null
+                if ($Shared.ExecutorStates.TryGetValue($sid, [ref]$snapRaw)) { $snap = Get-SweepJsonOrNull $snapRaw }
+                $executorFresh = $false
+                $executorRunningId = ''
+                $executorStartedAt = [int64]0
+                $executorQueuedIds = @()
+                if ($snap) {
+                    $snapReceived = [int64]0
+                    try { $snapReceived = [int64]$snap.receivedAt } catch {}
+                    $executorFresh = ($snapReceived -gt 0 -and ($now - $snapReceived) -le 30)
+                    try { $executorRunningId = [string]$snap.runningCommandId } catch {}
+                    try { $executorStartedAt = [int64]$snap.startedAt } catch {}
+                    try { $executorQueuedIds = Get-SweepIdList $snap.queuedCommandIds } catch {}
+                }
+
+                $bag = $null
+                if (-not $Shared.PendingCommands.TryGetValue($sid, [ref]$bag)) { continue }
+                foreach ($pendingPair in @($bag.GetEnumerator())) {
+                    try {
+                        $id = [string]$pendingPair.Key
+                        $info = Get-SweepJsonOrNull $pendingPair.Value
+                        if ([string]::IsNullOrWhiteSpace($id) -or $null -eq $info) {
+                            $discard = $null
+                            [void]$bag.TryRemove($id, [ref]$discard)
+                            continue
+                        }
+                        $status = [string]$info.status
+                        if ([string]::IsNullOrWhiteSpace($status)) { $status = 'queued' }
+                        $queuedAt = [int64]0; $startedAt = [int64]0; $heartbeatAt = [int64]0
+                        $deliveredAt = [int64]0; $receivedAt = [int64]0
+                        try { $queuedAt = [int64]$info.queuedAt } catch {}
+                        if ($queuedAt -le 0) { try { $queuedAt = [int64]$info.createdAt } catch {} }
+                        try { $startedAt = [int64]$info.startedAt } catch {}
+                        try { $heartbeatAt = [int64]$info.heartbeatAt } catch {}
+                        try { $deliveredAt = [int64]$info.deliveredAt } catch {}
+                        try { $receivedAt = [int64]$info.receivedAt } catch {}
+                        $budget = 90
+                        try { $budget = [int]$info.budgetSeconds } catch {}
+                        if ($budget -le 0) { $budget = 90 }
+                        $age = [int][Math]::Max(0, $now - $queuedAt)
+
+                        # Frischer Executor-Snapshot beweist, dass dieser Befehl
+                        # laeuft - dann ist ein verlorener Heartbeat-POST harmlos.
+                        if ($executorFresh -and $executorRunningId -eq $id) {
+                            if ($startedAt -le 0) { $startedAt = $(if ($executorStartedAt -gt 0) { $executorStartedAt } else { $now }) }
+                            $heartbeatAt = $now
+                            if ($status -ne 'started' -and $status -ne 'running') { $status = 'started' }
+                            try {
+                                $info.status = 'started'; $info.startedAt = $startedAt; $info.heartbeatAt = $heartbeatAt
+                                $bag[$id] = ($info | ConvertTo-Json -Depth 8 -Compress)
+                                $Shared.CommandStates[$id] = $bag[$id]
+                            } catch {}
+                        }
+
+                        $abandonCode = ''
+                        $abandonReason = ''
+                        if ($status -eq 'started' -or $status -eq 'running') {
+                            if ($startedAt -gt 0 -and ($now - $startedAt) -gt ($budget + 15)) {
+                                $abandonCode = 'STUDIO_ABANDONED'
+                                $abandonReason = "The Studio command exceeded its $budget-second execution budget and was stopped by the bridge watchdog so the queue can continue. Inspect the Place for partial changes before retrying."
+                            } elseif ($heartbeatAt -gt 0 -and ($now - $heartbeatAt) -gt 45) {
+                                $abandonCode = 'EXECUTOR_UNRESPONSIVE'
+                                $abandonReason = 'Studio stopped reporting executor heartbeats for more than 45 seconds. The command was aborted so the queue can recover; partial changes may exist.'
+                            } elseif (-not $sessionAlive -and $startedAt -gt 0 -and ($now - $startedAt) -gt 60) {
+                                $abandonCode = 'EXECUTOR_UNAVAILABLE'
+                                $abandonReason = 'The Studio plugin stopped answering while this command was running. It was aborted so the queue can continue; partial changes may exist.'
+                            }
+                        } elseif ($status -eq 'delivered' -or $status -eq 'received') {
+                            $inLocalQueue = ($executorQueuedIds -contains $id)
+                            if (-not $sessionAlive -and $age -gt 60) {
+                                $abandonCode = 'EXECUTOR_UNAVAILABLE'
+                                $abandonReason = 'The Studio plugin stopped answering after this command was handed over. It was not replayed (it may have run) and is reported as abandoned instead.'
+                            } elseif ($status -eq 'delivered' -and $age -gt 120) {
+                                $abandonCode = 'COMMAND_DELIVERY_UNCONFIRMED'
+                                $abandonReason = 'Studio never confirmed receiving this command. It was released so the queue can continue.'
+                            } elseif ($status -eq 'received' -and $executorFresh -and -not $inLocalQueue -and $executorRunningId -ne $id -and $age -gt 60) {
+                                $abandonCode = 'EXECUTOR_DROPPED_COMMAND'
+                                $abandonReason = 'The plugin acknowledged this command but it is neither running nor present in its local queue any more. It was released so the queue can continue.'
+                            } elseif ($status -eq 'received' -and -not $executorFresh -and $age -gt 120) {
+                                $abandonCode = 'EXECUTOR_UNRESPONSIVE'
+                                $abandonReason = 'The plugin executor stopped reporting liveness while this command was waiting to start. It was released so the queue can continue.'
+                            }
+                        } elseif ($status -eq 'queued') {
+                            if (-not $sessionAlive -and $age -gt 60) {
+                                $abandonCode = 'EXECUTOR_UNAVAILABLE'
+                                $abandonReason = 'The Studio plugin has not polled for more than 60 seconds while this command was waiting. It was released so the queue cannot stay blocked forever.'
+                            } elseif ($age -gt 1800) {
+                                $abandonCode = 'QUEUE_EXPIRED'
+                                $abandonReason = 'The command exceeded the maximum queue-retention time and was removed.'
+                            }
+                        }
+                        if ([string]::IsNullOrWhiteSpace($abandonCode)) { continue }
+
+                        $dedupeKey = $sid + ':' + $id
+                        if ($Shared.CompletedCommandIds.ContainsKey($dedupeKey)) {
+                            $discard = $null
+                            [void]$bag.TryRemove($id, [ref]$discard)
+                            continue
+                        }
+                        [void]$Shared.CompletedCommandIds.TryAdd($dedupeKey, $now)
+                        $failure = @{
+                            ok = $false
+                            code = $abandonCode
+                            commandId = $id
+                            tool = [string]$info.tool
+                            error = $abandonReason
+                            workIsLost = $false
+                            partialChangesPossible = ($startedAt -gt 0)
+                            retrySafe = $false
+                            status = 'abandoned'
+                            elapsedSeconds = $age
+                            budgetSeconds = $budget
+                            abandonedBy = 'server-watchdog'
+                            hint = 'The queue was released automatically. Check the Place for partial changes before retrying; the watchdog runs even when Studio stops answering.'
+                        }
+                        $failureJson = ($failure | ConvertTo-Json -Depth 10 -Compress)
+                        $Shared.CommandStates[$id] = $failureJson
+                        $origin = $sid
+                        $originRaw = $null
+                        if ($Shared.CommandOrigins.TryGetValue($id, [ref]$originRaw)) {
+                            if (-not [string]::IsNullOrWhiteSpace([string]$originRaw)) { $origin = [string]$originRaw }
+                        }
+                        $signal = $null
+                        [System.Threading.Monitor]::Enter($Shared.CommandResultLock)
+                        try {
+                            if ($Shared.ResultSignals.TryGetValue($id, [ref]$signal)) {
+                                $Shared.CommandResults[$id] = $failureJson
+                                try { [void]$signal.Set() } catch {}
+                            } else {
+                                $lateQueue = $null
+                                if (-not $Shared.LateResults.TryGetValue($origin, [ref]$lateQueue)) {
+                                    $lateQueue = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+                                    [void]$Shared.LateResults.TryAdd($origin, $lateQueue)
+                                    [void]$Shared.LateResults.TryGetValue($origin, [ref]$lateQueue)
+                                }
+                                $lateQueue.Enqueue($failureJson)
+                                while ($lateQueue.Count -gt 60) { $drop = $null; [void]$lateQueue.TryDequeue([ref]$drop) }
+                            }
+                        } finally {
+                            [System.Threading.Monitor]::Exit($Shared.CommandResultLock)
+                        }
+                        $discardPending = $null
+                        [void]$bag.TryRemove($id, [ref]$discardPending)
+                        $Shared.CancelRequests[$dedupeKey] = $now
+                        $Shared.SweepState.Abandoned = [int64]$Shared.SweepState.Abandoned + 1
+                    } catch {}
+                }
+            }
+        } catch {}
+        try {
+            $Shared.SweepState.LastSweepAt = $now
+            $Shared.SweepState.Sweeps = [int64]$Shared.SweepState.Sweeps + 1
+        } catch {}
+        Start-Sleep -Seconds 2
+    }
+}
+
 $script:BridgeListenerScript = {
     param($Port, $Shared, $HandlerScript)
 
@@ -16977,6 +17608,18 @@ function Start-BridgeServer {
     [void]$ps.AddScript([string]$script:BridgeListenerScript).AddArgument($Port).AddArgument($script:Shared).AddArgument($handlerText)
     [void]$ps.BeginInvoke()
     $script:ServerPowerShell = $ps
+    # Version 7.0.5: Der unabhaengige Waechter laeuft in einem EIGENEN Runspace.
+    # Er raeumt haengende Befehle auch dann ab, wenn das Plugin gar nicht mehr
+    # pollt (das war bis 7.0.4 die Ursache der ewig haengenden Queue).
+    try {
+        $sweepPs = [PowerShell]::Create()
+        [void]$sweepPs.AddScript([string]$script:BridgeSweepScript).AddArgument($script:Shared)
+        [void]$sweepPs.BeginInvoke()
+        $script:SweepPowerShell = $sweepPs
+        Write-RuntimeLog 'Unabhaengiger Studio-Waechter gestartet (2-s-Sweep, unabhaengig von Plugin-Anfragen).'
+    } catch {
+        Write-RuntimeLog ('Warnung: unabhaengiger Studio-Waechter konnte nicht gestartet werden: ' + $_.Exception.Message)
+    }
     Write-RuntimeLog "Lokaler Bridge Server wird auf Port $Port gestartet."
 }
 
@@ -18750,7 +19393,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.0.4)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.0.5)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -19210,7 +19853,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.0.4)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.0.5)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -20576,7 +21219,9 @@ function New-Row {
     $border.Background = $rowBg
     $border.BorderBrush = Get-Brush '#47FFFFFF'
     $border.BorderThickness = [System.Windows.Thickness]::new(1)
-    $border.Padding = [System.Windows.Thickness]::new(16, 0, 16, 0)
+    # Version 7.0.5: symmetrisch und kompakt - 7.0.4 hatte 8 px oben/unten
+    # plus die (falsch platzierte) Arbeitszeile, wodurch die Zeile hoch wirkte.
+    $border.Padding = [System.Windows.Thickness]::new(16, 6, 16, 6)
     $border.Margin = [System.Windows.Thickness]::new(0, 0, 0, 12)
     $border.MinHeight = 64
     $border.Tag = $sessionId
@@ -20640,7 +21285,10 @@ function New-Row {
     $grid.ColumnDefinitions.Add($menuCol)
 
     $namePanel = [System.Windows.Controls.Grid]::new()
-    $namePanel.VerticalAlignment = 'Top'
+    # Version 7.0.5: Inhalt wieder MITTIG in der Zeile (7.0.4 hatte auf 'Top'
+    # gestellt - Vorschau/Titel/Hinweis standen dadurch oben und die Zeile wirkte
+    # zu hoch). Die Vorschau läuft über BEIDE Zeilen und wird selbst zentriert.
+    $namePanel.VerticalAlignment = 'Center'
     $iconCol2 = [System.Windows.Controls.ColumnDefinition]::new(); $iconCol2.Width = [System.Windows.GridLength]::Auto
     $titleCol = [System.Windows.Controls.ColumnDefinition]::new()
     $namePanel.ColumnDefinitions.Add($iconCol2)
@@ -20656,6 +21304,9 @@ function New-Row {
     try {
         $placeIcon = New-PlacePreviewVisual
         [System.Windows.Controls.Grid]::SetColumn($placeIcon.Frame, 0)
+        # Vorschau mittig über Titel UND Fortschrittszeile (kein Höhentreiben).
+        [System.Windows.Controls.Grid]::SetRowSpan($placeIcon.Frame, 2)
+        $placeIcon.Frame.VerticalAlignment = 'Center'
     } catch {
         $placeIcon = $null
         Write-UiErrorLog 'Place-Zeile: Vorschau-Visual konnte nicht erstellt werden' $_
@@ -20666,7 +21317,7 @@ function New-Row {
     $title.FontSize = 16
     $title.FontWeight = 'SemiBold'
     $title.VerticalAlignment = 'Center'
-    $title.Margin = [System.Windows.Thickness]::new(0, 0, 14, 0)
+    $title.Margin = [System.Windows.Thickness]::new(0, 0, 0, 0)
     $title.TextTrimming = 'CharacterEllipsis'
     [System.Windows.Controls.Grid]::SetColumn($title, 1)
     # Version 7.0.0: unter dem Namen liegt eine zweite Zeile - dort steht der
@@ -20677,11 +21328,11 @@ function New-Row {
     $staleText.FontSize = 11.5
     $staleText.FontWeight = 'SemiBold'
     $staleText.Visibility = 'Collapsed'
-    $staleText.Margin = [System.Windows.Thickness]::new(0, 2, 0, 0)
+    $staleText.Margin = [System.Windows.Thickness]::new(0, 1, 0, 0)
     $staleText.TextTrimming = 'CharacterEllipsis'
     $titleStack = [System.Windows.Controls.StackPanel]::new()
     $titleStack.VerticalAlignment = 'Center'
-    $titleStack.Margin = [System.Windows.Thickness]::new(0, 5, 14, 0)
+    $titleStack.Margin = [System.Windows.Thickness]::new(0, 0, 12, 0)
     $titleStack.Children.Add($title) | Out-Null
     $titleStack.Children.Add($staleText) | Out-Null
     [System.Windows.Controls.Grid]::SetColumn($titleStack, 1)
@@ -20724,7 +21375,7 @@ function New-Row {
     $progressRow = [System.Windows.Controls.StackPanel]::new()
     $progressRow.Orientation = 'Horizontal'
     $progressRow.VerticalAlignment = 'Center'
-    $progressRow.Margin = [System.Windows.Thickness]::new(0, 3, 0, 5)
+    $progressRow.Margin = [System.Windows.Thickness]::new(0, 1, 0, 0)
     $progressRow.Visibility = 'Collapsed'
     $progressRow.Children.Add($progressText) | Out-Null
     $progressRow.Children.Add($progressBar) | Out-Null
@@ -20737,6 +21388,10 @@ function New-Row {
     $namePanel.RowDefinitions.Add($progressRowDefinition) | Out-Null
     [System.Windows.Controls.Grid]::SetRow($titleStack, 0)
     [System.Windows.Controls.Grid]::SetRow($progressRow, 1)
+    # Version 7.0.5: Die Arbeitszeile gehoert UNTER den Place-Namen (Spalte 1),
+    # nicht unter die Vorschau (Standardspalte 0). Genau das machte die Place-
+    # Zeile hoch und zog die Mitte auseinander.
+    [System.Windows.Controls.Grid]::SetColumn($progressRow, 1)
     $namePanel.Children.Add($progressRow) | Out-Null
     $row.ProgressPanel = $progressRow
     $row.ProgressBar = $progressBar
@@ -21334,7 +21989,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.0.4)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.0.5)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -21648,7 +22303,7 @@ function New-MinimalPlaceRow {
     $root.Background = Get-Brush '#C9121C44'
     $root.BorderBrush = Get-Brush '#3DFFFFFF'
     $root.BorderThickness = [System.Windows.Thickness]::new(1)
-    $root.Padding = [System.Windows.Thickness]::new(16, 9, 12, 9)
+    $root.Padding = [System.Windows.Thickness]::new(16, 7, 12, 7)
     $root.Margin = [System.Windows.Thickness]::new(0, 0, 0, 10)
     $root.MinHeight = 64
     $root.Tag = $SessionId
@@ -21660,7 +22315,8 @@ function New-MinimalPlaceRow {
     $content.ColumnDefinitions.Add($copyColumn) | Out-Null
 
     $namePanel = [System.Windows.Controls.StackPanel]::new()
-    $namePanel.VerticalAlignment = 'Top'
+    # Version 7.0.5: auch die Ersatzzeile zentriert ihren Inhalt wieder.
+    $namePanel.VerticalAlignment = 'Center'
     $title = [System.Windows.Controls.TextBlock]::new()
     $title.Text = Get-PlaceDisplayName $Studio $null
     $title.Foreground = Get-Brush '#F2F6FF'
@@ -21672,7 +22328,7 @@ function New-MinimalPlaceRow {
     $staleText.Text = if ($Studio.versionMismatch -eq $true) { 'Plugin veraltet - Studio neustarten' } else { '' }
     $staleText.Foreground = Get-Brush '#FFFF8C9F'
     $staleText.FontSize = 10.5
-    $staleText.Margin = [System.Windows.Thickness]::new(0, 3, 0, 0)
+    $staleText.Margin = [System.Windows.Thickness]::new(0, 2, 0, 0)
     $staleText.Visibility = if ($Studio.versionMismatch -eq $true) { 'Visible' } else { 'Collapsed' }
     $namePanel.Children.Add($title) | Out-Null
     $namePanel.Children.Add($staleText) | Out-Null
@@ -21698,7 +22354,7 @@ function New-MinimalPlaceRow {
     $progressPercent.VerticalAlignment = 'Center'
     $progressPanel = [System.Windows.Controls.StackPanel]::new()
     $progressPanel.Orientation = 'Horizontal'
-    $progressPanel.Margin = [System.Windows.Thickness]::new(0, 3, 0, 0)
+    $progressPanel.Margin = [System.Windows.Thickness]::new(0, 2, 0, 0)
     $progressPanel.Visibility = 'Collapsed'
     $progressPanel.Children.Add($progressText) | Out-Null
     $progressPanel.Children.Add($progressBar) | Out-Null
@@ -22008,7 +22664,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.0.4'
+    $versionText = '7.0.5'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -22632,7 +23288,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.0.4" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.0.5" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -22677,7 +23333,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.0.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.0.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -22736,7 +23392,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.0.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.0.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -22749,7 +23405,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.0.4'
+    $verText = '7.0.5'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
