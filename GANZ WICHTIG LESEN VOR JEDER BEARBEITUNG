@@ -1,7 +1,7 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 6.1.5 - 29.09.2026)                                #
+#   (Stand: Version 7.0.2 - 02.10.2026)                                #
 #                                                                      #
 ##########################################################################
 
@@ -187,6 +187,19 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v7.0.2: LEERLAUF-LAG REDUZIERT. Im transparenten Hauptfenster liefen neun
+  dauerhaft wiederholte XAML-Loaded-Storyboards (Aurora/Glanz/Splash) plus
+  zwei endlose Punkt-Pulse; sie sind entfernt bzw. statisch, Farbgestaltung
+  und kurze Hover-/Einblend-Effekte bleiben. Place/UI-Abgleich von 0,9 auf
+  1,8 s; minimiert 5 s und Rueckkehr vor Session-/Zeilenabfragen. Vorschau AUS
+  stoppt auch die Spinner-Animationsuhr und ueberspringt den visuellen
+  Selbsttest. Handoff wird einmal pro UI-Tick statt je Place-Zeile geprueft;
+  Studio-Leerlaufwaechter 1,5 statt 0,5 s. WINDOWS-LIVE-ABNAHME OFFEN: Nach
+  Update mit einem verbundenen Place und deaktivierter Vorschau Task-Manager-
+  CPU der Bridge vergleichen; Place-Liste muss beim Restore sofort nachziehen.
+- v7.0.1: Place-Zeilen-Fallback/Diagnose verbessert, Einstellungs-Padding und
+  Schalterzustand repariert; Studio-Run-Simulation als ausserhalb des Edit-Modus
+  belegt und sim_start gesperrt.
 - v6.1.5: POLYGON-SYSTEM TATSAECHLICH VERBUNDEN UND UNVERDREHBAR. Ursache
   fuer Teile an richtiger Position mit anschliessender kreuz-und-quer Rotation:
   build_polygon_model liess autoWeld standardmaessig AUS. Bei anchored=false

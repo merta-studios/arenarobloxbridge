@@ -1,10 +1,10 @@
 {
-  "version": "7.0.1",
+  "version": "7.0.2",
   "notes": [
-    "• Mehr Innenabstand in den Einstellungen; die vier verbleibenden Schalter zeigen beim Öffnen ihren gespeicherten Zustand korrekt an.",
-    "• „Arena AI öffnen“ aus den Einstellungen entfernt und als grünen Button unten rechts unter der Place-Liste platziert.",
-    "• Place-Liste erhält eine Minimalansicht mit Place-Name und Prompt-Kopieren als Fallback. Fehler und fehlende Zeilen werden mit Session-IDs in runtime.log protokolliert; bei Teilfehlern bleibt die sichtbare Liste nutzbar und zeigt einen Reparaturstatus.",
-    "• sim_start ist absichtlich mit SIM_DISABLED gesperrt: ExecuteRunModeAsync startet Studio Run und setzt EditModeActive=false; die dokumentierte API bietet keinen unterstützten Physik-/Skript-Pfad bei aktivem Edit Mode. sim_status unterscheidet Studio Run von Play/F5 (sonst unknown); sim_stop beendet nur bestätigte bridge-eigene Sessions. compile_check, run_lua und alle Bau-/Lesewerkzeuge bleiben verfügbar.",
-    "• Roblox Studio nach dem Update einmal neu starten, damit Plugin 7.0.1 geladen wird."
+    "• Weniger Leerlauf-Rendering: Die dauerhaft wiederholten Deko-Animationen im Hauptfenster sind statisch; Farben, Layout sowie Hover- und kurze Einblend-Effekte bleiben erhalten.",
+    "• Weniger Hintergrundarbeit bei verbundenen Places: sichtbarer UI-Abgleich alle 1,8 Sekunden statt 0,9; im minimierten Fenster nur Tunnel-Ausgabe, keine Place-/Zeilen-Abfragen. Server, Tunnel und Plugin-Verbindung laufen weiter.",
+    "• Vorschau AUS stoppt jetzt auch den Vorschau-Spinner und ueberspringt den visuellen Selbsttest. Spinner enden ebenfalls nach einem Bild oder dem Platzhalter-Fallback.",
+    "• Handoff-Pruefung einmal pro UI-Aktualisierung statt je Place-Zeile; Studio-Leerlaufwaechter pollt alle 1,5 statt 0,5 Sekunden.",
+    "• Roblox Studio nach dem Update einmal neu starten, damit Plugin 7.0.2 geladen wird."
   ]
 }
