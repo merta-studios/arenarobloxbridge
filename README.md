@@ -22,6 +22,7 @@ sein.
 | `README.md` | Diese Datei |
 | `test_v398_structure.py` | Python-Strukturtest für 7.0.5 (Versionen, Watchdog-/Reconnect-Guards, Kanal-Guards, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
 | `test_queue_model_705.py` | Python-Modelltest: reproduziert den Queue-Stillstand von 7.0.4 und prüft die 7.0.5-Regeln (unabhängiger Watchdog, lateResults, Reconnect-Übergabe, kein Doppel-Ausführen) |
+| `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `force_fail` |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
