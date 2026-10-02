@@ -1,5 +1,51 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.0.2
+# Arena Roblox Bridge  -  Version 7.0.3
+#
+# LEISTUNGS-FIX VERSION 7.0.3 - DIE URSACHE, NICHT DIE FREQUENZ:
+#
+#   Beobachtung: Sobald IRGENDEIN Place verbunden ist, bleibt das Lag - auch
+#   wenn Arena nichts tut und die Fenster-Vorschau ausgeschaltet ist. 7.0.2
+#   hat nur die Oberflaeche beruhigt (Deko-Animationen, 1,8-s-Abgleich,
+#   minimiertes Fenster, Handoff-Pruefung) und deshalb nichts geaendert.
+#
+#   Belegte Ursache: Das Studio-Plugin haelt seit dem Verbinden DAUERHAFT eine
+#   HTTP-Anfrage offen. Der Long-Poll fragte 12 s an und startete unmittelbar
+#   danach die naechste Anfrage - ohne jede Pause. Roblox Studio fuehrt aber
+#   nur DREI HTTP-Anfragen gleichzeitig aus (DevForum-Bericht "HttpService
+#   only allows 3 in-flight requests at a time", von Roblox bestaetigt), und
+#   Roblox sagt selbst: "If certain plugins or game scripts are making
+#   requests that utilize long polling, or generally requests that by nature
+#   take a long time, this can currently stall next requests." Genau dieser
+#   Dauerzustand begann mit dem ersten verbundenen Place; Vorschau, UI-Takt
+#   und Deko-Animationen der Bridge waren daran unbeteiligt. Zusaetzlich kam
+#   ein zweiter Dauerkanal hinzu: ein eigener Heartbeat alle 5 s, obwohl der
+#   Poll die Sitzung ohnehin bei jeder Anfrage auffrischt.
+#
+#   ZWEITER FUND (Bridge-Seite): Jede HTTP-Anfrage erzeugte ein neues
+#   PowerShell-Objekt und parste den 337 KB grossen Handler-Scriptblock neu
+#   (~4300 Zeilen). Diese Kosten liefen exakt mit den Plugin-Anfragen an. Der
+#   Handler wird jetzt EINMAL als ScriptBlock erzeugt und in den Pool-Runspaces
+#   nur noch aufgerufen.
+#
+#   KORREKTUR (klein und belastbar):
+#     * Jede Poll-Anfrage ist kurz (4 s aktiv / 6 s Ruhemodus) - nie mehr
+#       "long running".
+#     * Nach JEDER Anfrage folgt eine Pflichtpause (0,3 s aktiv / 2,0 s ruhig).
+#       Der HTTP-Platz ist damit garantiert zeitweise frei - auch im Leerlauf
+#       und ohne jede Arena-Aufgabe.
+#     * Ruhemodus erst nach drei leeren Polls; ein eintreffender Befehl schaltet
+#       sofort zurueck auf aktiv (Arena-Aufrufe bleiben schnell).
+#     * Kein zweiter Dauerkanal: der 5-s-Heartbeat ist jetzt ein Rueckfall und
+#       laeuft nur, wenn 20 s kein Poll mehr durchkam.
+#     * Abschaltbare Laufzeitdiagnostik (Einstellungen -> DIAGNOSE): zaehlt
+#       hoechstens alle 30 s einen kompakten Bericht nach performance.txt
+#       (Anfragen/Minute, Poll-Dauer, Pflichtpausen, UI-Zeit, HTTP-Zeit) und
+#       schreibt bei auffaelligem Poll-Verhalten eine Leistungswarnung.
+#
+#   MESSUNG: Diese Aenderung ist hier NICHT auf Windows gemessen worden (es
+#   gab keine Windows-/PowerShell-Laufzeit). Erst die Messanleitung im README
+#   (Diagnose an, Place verbinden, nichts tun, performance.txt vergleichen)
+#   belegt am Zielsystem, ob das Lag verschwindet.
 #
 # LEISTUNGS-UPDATE VERSION 7.0.2:
 #   * Das transparente Hauptfenster hatte mehrere dauerhaft wiederholte
@@ -1663,6 +1709,7 @@ function Get-BridgeSettingsFile {
         notifyOnDone    = $false    # Fertig-Meldung als Windows-Notification (Standard: aus)
         editorIconsEnabled = $true # Live-Vorschau-Icons im Editor (Standard: an)
         progressInPlaceList = $true # Fortschrittsanzeige in der Place-Liste (Standard: an)
+        perfDiagnostics = $false    # Laufzeitdiagnostik Leistung (Standard: AUS)
         # accessModes aus älteren Versionen werden absichtlich NICHT mehr geladen:
         # Lesezugriff gilt nur für die aktuelle Verbindung und startet immer aus.
     }
@@ -1673,6 +1720,7 @@ function Get-BridgeSettingsFile {
             if ($loaded.PSObject.Properties.Name -contains 'progressInPlaceList') { $settings.progressInPlaceList = [bool]$loaded.progressInPlaceList }
             if ($loaded.PSObject.Properties.Name -contains 'notifyOnDone') { $settings.notifyOnDone = [bool]$loaded.notifyOnDone }
             if ($loaded.PSObject.Properties.Name -contains 'editorIconsEnabled') { $settings.editorIconsEnabled = [bool]$loaded.editorIconsEnabled }
+            if ($loaded.PSObject.Properties.Name -contains 'perfDiagnostics') { $settings.perfDiagnostics = [bool]$loaded.perfDiagnostics }
             # Legacy accessModes are deliberately ignored (Version 5): the
             # per-place read-only switch is temporary and never survives a registration.
         }
@@ -1688,6 +1736,7 @@ function Save-BridgeSettingsFile {
             notifyOnDone    = [bool]$script:SettingsCache.notifyOnDone
             editorIconsEnabled = [bool]$script:SettingsCache.editorIconsEnabled
             progressInPlaceList = [bool]$script:SettingsCache.progressInPlaceList
+            perfDiagnostics = [bool]$script:SettingsCache.perfDiagnostics
         }
         $json = $out | ConvertTo-Json -Depth 6
         [System.IO.File]::WriteAllText($script:SettingsFile, $json, [System.Text.UTF8Encoding]::new($true))
@@ -1745,12 +1794,15 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.0.2'
+    DocsVersion     = '7.0.3'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         simAllowed      = $false    # sim_start bleibt bis zu echter Edit-Modus-Simulation gesperrt
         notifyOnDone    = $false    # report_done -> Windows-Benachrichtigung
         progressInPlaceList = $true # Fortschrittsanzeige in der Place-Liste
+        # Version 7.0.3: Laufzeitdiagnostik fuer die Leistungsmessung.
+        # Standard AUS: ohne diese Zustimmung wird nichts gemessen/geloggt.
+        perfDiagnostics = $false
         # Read-only is session-local only. It is intentionally not persisted.
     })
     # report_done-Meldungen: der Server legt sie ab, die Oberflaeche zeigt sie an
@@ -1782,6 +1834,24 @@ $script:Shared = [hashtable]::Synchronized(@{
     Handoffs        = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     # Version 7.0.0: Audit-Kennzahlen (Platzhalter/Blockout) fuer HANDOFF_REQUIRED.
     AuditFlags      = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    # Version 7.0.3: LAUFZEITDIAGNOSTIK (Leistung). Zaehler fuer die Bereiche,
+    # die im Leerlauf Arbeit verursachen koennen: HTTP-Anfragen der Plugins,
+    # UI-Abgleich (DispatcherTimer) und die vom Plugin gemeldeten Poll-Zahlen.
+    # Alle Werte sind Summen/Intervalle; geschrieben wird nur, wenn die
+    # Diagnose in den Einstellungen aktiv ist (Standard: aus) und dann
+    # hoechstens alle 30 Sekunden - kein Logging pro Tick.
+    Perf            = [hashtable]::Synchronized(@{
+        HttpRequests   = 0L
+        HttpMsTotal    = 0.0
+        HttpMsMax      = 0.0
+        HttpDone       = 0L
+        PollRequests   = 0L
+        HelloRequests  = 0L
+        Heartbeats     = 0L
+        UiTicks        = 0L
+        UiMsTotal      = 0.0
+        UiMsMax        = 0.0
+    })
     # One aggregate token per program start, never derived from the place list.
     MultiPlaceToken    = $null
 })
@@ -1791,6 +1861,7 @@ try {
     if ($script:SettingsCache.simAllowed -is [bool]) { $script:Shared.BridgeSettings.simAllowed = [bool]$script:SettingsCache.simAllowed }
     if ($script:SettingsCache.notifyOnDone -is [bool]) { $script:Shared.BridgeSettings.notifyOnDone = [bool]$script:SettingsCache.notifyOnDone }
     if ($script:SettingsCache.progressInPlaceList -is [bool]) { $script:Shared.BridgeSettings.progressInPlaceList = [bool]$script:SettingsCache.progressInPlaceList }
+    if ($script:SettingsCache.perfDiagnostics -is [bool]) { $script:Shared.BridgeSettings.perfDiagnostics = [bool]$script:SettingsCache.perfDiagnostics }
     # Version 5: legacy per-place accessModes are ignored on purpose.
 } catch {}
 
@@ -1856,8 +1927,8 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-    $script:PreviewDiagIdentity = ("Bridge-Version=7.0.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.0.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    $script:PreviewDiagIdentity = ("Bridge-Version=7.0.3, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.0.3, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 6.0.5: Hinweis auf den kleinen Kurzbericht - er enthaelt alles,
     # was zur Beurteilung der Fenster-Vorschau noetig ist.
     Write-RuntimeLog ("Vorschau-Kurzbericht: " + (Join-Path $script:AppDataRoot 'preview-diagnose.txt'))
@@ -1951,7 +2022,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.0.2)
+  Arena Studio Bridge - Studio Plugin  (Version 7.0.3)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -2024,15 +2095,34 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.0.2"
+local ARENA_VERSION  = "7.0.3"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
 -- 200"), wodurch das Plugin gar nicht mehr kompilierte und sich nie verband
 -- (Spieleliste blieb leer). Tabellenfelder zaehlen NICHT als Locals.
 local ARENA_CFG = {
-    POLL_WAIT            = 12,     -- Sekunden Long-Poll (Befehle kommen sofort an)
-    HEARTBEAT_EVERY      = 5,      -- Sekunden
+    -- Version 7.0.3 - WARUM DER KANAL NEU GEBAUT IST:
+    -- Roblox Studio fuehrt nur 3 HTTP-Anfragen GLEICHZEITIG aus, und eine
+    -- dauerhaft offene Anfrage (Long-Poll) belegt einen dieser drei Plaetze
+    -- ohne Pause. Roblox selbst dazu: "If certain plugins or game scripts are
+    -- making requests that utilize long polling, or generally requests that by
+    -- nature take a long time, this can currently stall next requests."
+    -- Genau das war der Dauerzustand ab dem Moment, in dem ein Place verbunden
+    -- war - auch ohne jede Arena-Aufgabe und bei abgeschalteter Vorschau.
+    -- Deshalb gilt jetzt:
+    --   * jede Anfrage ist KURZ (maximal POLL_WAIT_QUIET Sekunden),
+    --   * nach JEDER Anfrage liegt eine Pause (Gap), der HTTP-Platz wird also
+    --     garantiert wieder frei,
+    --   * nur EIN Kanal: der Poll frischt die Sitzung selbst auf; der frueher
+    --     zusaetzliche 5-Sekunden-Heartbeat ist nur noch Rueckfall, wenn kein
+    --     Poll mehr durchkommt.
+    POLL_WAIT_ACTIVE     = 4,      -- Sekunden, solange Arena arbeitet
+    POLL_GAP_ACTIVE      = 0.3,    -- Sekunden Pause nach jeder Anfrage (aktiv)
+    POLL_WAIT_QUIET      = 6,      -- Sekunden, wenn laenger kein Befehl kam
+    POLL_GAP_QUIET       = 2.0,    -- Sekunden Pause im Ruhezustand (Platz frei)
+    QUIET_AFTER_POLLS    = 3,      -- leere Polls in Folge bis Ruhezustand
+    HEARTBEAT_FALLBACK   = 20,     -- Sekunden ohne erfolgreichen Poll -> Ersatz-Heartbeat
     CHUNK_SIZE           = 48000,  -- Bytes je Teilstueck einer Antwort
     MAX_OUTPUT           = 6000,   -- Zeilen im Ausgabespeicher
     UNION_SOFT_LIMIT     = 8,
@@ -2058,6 +2148,45 @@ local bridgeCommandActive = false      -- laeuft gerade ein Bridge-Befehl? (unte
 local lastEditCamCFrame = nil          -- Kamera-Position im Edit-Modus (Play-Here-Erkennung + Start)
 local lastEditCamPos = nil             -- zur Bewegungserkennung (Nutzer navigiert im Editor)
 local lastUserActiveNotice = 0         -- os.clock() der letzten Nutzer-Aktivitaets-Meldung
+
+-- Version 7.0.3: LAUFZEITDIAGNOSTIK (Leistung), standardmaessig AUS.
+-- Sie wird nur aktiv, wenn die Bridge sie in den Einstellungen einschaltet;
+-- dann fordert die Bridge sie im Poll-Ergebnis an ("perf": true) und bekommt
+-- die Zaehler mit der NAECHSTEN Poll-Anfrage zurueck - ohne eine einzige
+-- zusaetzliche HTTP-Anfrage und ohne Logging pro Tick. Die Zaehler sind
+-- Interval-Werte: perfReport() liest sie und setzt sie zurueck.
+local perfWanted = false
+local perfStats = {
+    since = os.clock(), requests = 0, polls = 0, waitMs = 0, pollMs = 0,
+    gapMs = 0, cmds = 0, hbFallback = 0, quiet = false,
+}
+
+local function perfReport()
+    local now = os.clock()
+    local periodMs = math.floor((now - perfStats.since) * 1000)
+    if periodMs < 1 then periodMs = 1 end
+    local out = {
+        periodMs  = periodMs,
+        requests  = perfStats.requests,
+        polls     = perfStats.polls,
+        waitMs    = perfStats.waitMs,
+        pollMs    = perfStats.pollMs,
+        gapMs     = perfStats.gapMs,
+        cmds      = perfStats.cmds,
+        hbFallback = perfStats.hbFallback,
+        quiet     = perfStats.quiet and 1 or 0,
+    }
+    perfStats.since = now
+    perfStats.requests = 0
+    perfStats.polls = 0
+    perfStats.waitMs = 0
+    perfStats.pollMs = 0
+    perfStats.gapMs = 0
+    perfStats.cmds = 0
+    perfStats.hbFallback = 0
+    return out
+end
+
 -- Der Plugin-Code bleibt in aktuellen Studio-Versionen im Edit-DataModel.
 -- Der Session-Agent unten ist deshalb die verbindliche Sicht auf den echten Test.
 -- 3.9.7: The reporter is the always-on, HTTP-independent truth from the
@@ -2183,6 +2312,7 @@ local function post(path, payload)
     -- reporter. The live 4.0.3 run showed postFailCount climbing although
     -- the reporter itself was still alive. Retry once before reporting nil.
     for attempt = 1, 2 do
+        perfStats.requests = perfStats.requests + 1
         local ok, response = pcall(function()
             return HttpService:RequestAsync({
                 Url = BASE_URL .. path,
@@ -10266,14 +10396,17 @@ Selection.SelectionChanged:Connect(function()
     end)
 end)
 
--- Heartbeat: haelt die Anzeige im Programm aktuell (kleine Pakete).
--- Version 7.0.0: keine Reporter-Abfrage mehr; der Zustand kommt direkt aus
--- dem Edit-DataModel (EditModeActive ist das Lauf-Orakel).
+-- Version 7.0.3: KEIN eigener 5-Sekunden-Heartbeat mehr.
+-- Der Poll unten frischt die Sitzung bei JEDER Anfrage selbst auf
+-- (Update-Session auf der Bridge-Seite), also war der zweite Dauerkanal
+-- doppelte Last. Der Heartbeat existiert nur noch als Rueckfall im Poll:
+-- nur wenn laenger als HEARTBEAT_FALLBACK Sekunden kein Poll durchkam.
 task.spawn(function()
     if isSessionDataModel then return end
     while running do
-        if sessionId ~= nil and os.clock() - lastHeartbeat > ARENA_CFG.HEARTBEAT_EVERY then
+        if sessionId ~= nil and os.clock() - lastHeartbeat > ARENA_CFG.HEARTBEAT_FALLBACK then
             lastHeartbeat = os.clock()
+            perfStats.hbFallback = perfStats.hbFallback + 1
             local response = post("/plugin/heartbeat", statePayload())
             if response then
                 if response.unknownSession == true then
@@ -10283,13 +10416,17 @@ task.spawn(function()
                 end
             end
         end
-        task.wait(1)
+        task.wait(2)
     end
 end)
 
--- Long-Poll: Befehle kommen ohne Wartezeit an und erzeugen kaum Last.
+-- Befehls- und Lebenszeichen-Kanal (Long-Poll).
 -- Version 7.0.0: Im Test-DataModel laeuft KEIN Reporter mehr; die Instanz
 -- meldet sich dort gar nicht erst an (kein zweites Place, kein Zombie).
+-- Version 7.0.3: Der Poll ist jetzt KURZ und laesst nach jeder Anfrage eine
+-- Pause, damit Studio seinen HTTP-Platz zurueckbekommt (siehe ARENA_CFG).
+-- Im Ruhezustand waechst die Pause; kommt ein Befehl, geht es sofort wieder
+-- auf "aktiv", damit Arena-Aufrufe schnell bleiben.
 task.spawn(function()
     local sessionDm = isSessionDataModel
     if sessionDm ~= true then
@@ -10302,34 +10439,66 @@ task.spawn(function()
         return
     end
     local backoff = 0.5
+    local emptyPolls = 0
+    local quiet = false
     while running do
         if sessionId == nil then
             if handshake() then
                 backoff = 0.5
+                lastHeartbeat = os.clock()
                 addNotice("connected", "Bridge connected. Place '" .. tostring(game.Name) .. "' is ready.", { placeId = game.PlaceId })
             else
                 task.wait(backoff)
                 backoff = math.min(backoff * 1.6, 5)
             end
         else
+            local waitSeconds = ARENA_CFG.POLL_WAIT_ACTIVE
+            local gapSeconds = ARENA_CFG.POLL_GAP_ACTIVE
+            if quiet then
+                waitSeconds = ARENA_CFG.POLL_WAIT_QUIET
+                gapSeconds = ARENA_CFG.POLL_GAP_QUIET
+            end
             local payload = statePayload()
-            payload.wait = ARENA_CFG.POLL_WAIT
+            payload.wait = waitSeconds
+            if perfWanted then payload.perf = perfReport() end
+            local started = os.clock()
             local response = post("/plugin/poll", payload)
+            local pollMs = math.floor((os.clock() - started) * 1000)
+            perfStats.polls = perfStats.polls + 1
+            perfStats.waitMs = perfStats.waitMs + math.floor(waitSeconds * 1000)
+            perfStats.pollMs = perfStats.pollMs + pollMs
+            local delivered = 0
             if response == nil then
                 task.wait(0.5)
             elseif response.unknownSession == true then
                 sessionId = nil
             else
                 backoff = 0.5
+                lastHeartbeat = os.clock()
                 if response.accessMode then accessMode = response.accessMode end
+                perfWanted = (response.perf == true)
                 if response.commands ~= nil then
                     for _, command in ipairs(response.commands) do
+                        delivered = delivered + 1
                         enqueueCommand(command)
                     end
                 elseif response.command ~= nil then
+                    delivered = 1
                     enqueueCommand(response.command)
                 end
             end
+            if delivered > 0 then
+                perfStats.cmds = perfStats.cmds + delivered
+                emptyPolls = 0
+                quiet = false
+            else
+                emptyPolls = emptyPolls + 1
+                if emptyPolls >= ARENA_CFG.QUIET_AFTER_POLLS then quiet = true end
+            end
+            perfStats.quiet = quiet
+            -- PFLICHT-PAUSE: zwischen zwei Anfragen ist der HTTP-Platz frei.
+            task.wait(gapSeconds)
+            perfStats.gapMs = perfStats.gapMs + math.floor(gapSeconds * 1000)
         end
     end
 end)
@@ -10857,6 +11026,68 @@ $script:BridgeHandlerScript = {
         } catch {}
     }
 
+    # ------------------------------------------------------------------
+    # Version 7.0.3: LAUFZEITDIAGNOSTIK (Leistung) - abschaltbar.
+    # Ohne die Zustimmung in den Einstellungen (Standard: aus) zaehlt und
+    # schreibt hier nichts. Es gibt KEIN Logging pro Anfrage/Tick; die
+    # Zaehler werden in $Shared.Perf gesammelt und von der Oberflaeche
+    # hoechstens alle 30 Sekunden als eine Zeile ausgegeben.
+    # ------------------------------------------------------------------
+    function Test-PerfEnabled {
+        try { return ($Shared.BridgeSettings.perfDiagnostics -eq $true) } catch { return $false }
+    }
+
+    function Add-PerfCount {
+        param([string]$Name, [long]$Delta = 1)
+        try {
+            if (-not (Test-PerfEnabled)) { return }
+            $perf = $Shared.Perf
+            if ($null -eq $perf) { return }
+            $current = [long]0
+            if ($perf.ContainsKey($Name)) { $current = [long]$perf[$Name] }
+            $perf[$Name] = $current + $Delta
+        } catch {}
+    }
+
+    # Die vom Plugin gemeldeten Interval-Zaehler (Poll-Kanal) ablegen.
+    function Record-PluginPerf([string]$SessionId, $PerfPayload) {
+        try {
+            if (-not (Test-PerfEnabled)) { return }
+            $perf = $Shared.Perf
+            if ($null -eq $perf) { return }
+            $perf['Plugin:' + $SessionId] = (To-Json $PerfPayload 6)
+            $perf['PluginAt:' + $SessionId] = (Get-UnixSeconds)
+        } catch {}
+    }
+
+    # Beweis statt Vermutung: Ein Plugin, das deutlich haeufiger pollt als
+    # seine eigene Richtlinie erlaubt (> 30 Anfragen je 60 s), wird EINMAL
+    # pro 5 Minuten protokolliert. Das kostet pro Anfrage nur wenige
+    # Hashtable-Zugriffe und laeuft immer mit.
+    function Test-PollRateSane([string]$SessionId) {
+        try {
+            $perf = $Shared.Perf
+            if ($null -eq $perf -or [string]::IsNullOrWhiteSpace($SessionId)) { return }
+            $key = 'PollRate:' + $SessionId
+            $state = $null
+            if ($perf.ContainsKey($key)) { $state = $perf[$key] }
+            $nowSeconds = Get-UnixSeconds
+            if ($null -eq $state) {
+                $state = @{ windowStart = $nowSeconds; count = 0; lastWarn = 0 }
+                $perf[$key] = $state
+            }
+            $state.count = [int]$state.count + 1
+            if (($nowSeconds - [int]$state.windowStart) -ge 60) {
+                if ([int]$state.count -gt 30 -and ($nowSeconds - [int]$state.lastWarn) -ge 300) {
+                    $state.lastWarn = $nowSeconds
+                    Write-BridgeLog ('Leistungswarnung: Sitzung ' + $SessionId + ' hat in 60 s ' + [int]$state.count + ' Poll-Anfragen geschickt (Richtlinie: etwa 10-16).')
+                }
+                $state.windowStart = $nowSeconds
+                $state.count = 0
+            }
+        } catch {}
+    }
+
     function To-Json($obj, [int]$Depth = 30) {
         $obj | ConvertTo-Json -Depth $Depth -Compress
     }
@@ -11225,7 +11456,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.0.2 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.0.3 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -13903,7 +14134,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.0.2'
+            version = '7.0.3'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -14026,7 +14257,7 @@ end
             try { $progressView = $progressJson | ConvertFrom-Json } catch {}
         }
         $envelope = @{
-            bridgeVersion = '7.0.2'
+            bridgeVersion = '7.0.3'
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent = 0, never an error. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
                 lastPercent = $(if ($progressView) { [double]$progressView.percent } else { 0 })
@@ -14312,7 +14543,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.0.2'
+                        bridgeVersion = '7.0.3'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -14551,6 +14782,7 @@ end
             }
 
             if ($path -eq '/plugin/hello') {
+                Add-PerfCount 'HelloRequests'
                 $entry = Register-Session $body
                 if (-not $entry) {
                     Send-Json $context 400 @{ ok = $false; error = 'Ungültige Anmeldung.' }
@@ -14564,7 +14796,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.0.2'
+                        serverVersion = '7.0.3'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -14574,6 +14806,7 @@ end
             }
 
             if ($path -eq '/plugin/heartbeat') {
+                Add-PerfCount 'Heartbeats'
                 $entry = Update-Session $body
                 if (-not $entry) {
                     Send-Json $context 200 @{ ok = $false; unknownSession = $true }
@@ -14584,19 +14817,32 @@ end
             }
 
             if ($path -eq '/plugin/poll') {
+                Add-PerfCount 'PollRequests'
                 $entry = Update-Session $body
                 if (-not $entry) {
                     Send-Json $context 200 @{ ok = $false; unknownSession = $true }
                     continue
                 }
                 $sid = [string]$entry.sessionId
+                Test-PollRateSane $sid
+                # Version 7.0.3: Die vom Plugin gemeldeten Interval-Zaehler
+                # (Anfragen, Poll-Dauer, Pausen, Befehle) ablegen, damit die
+                # Diagnose sie zusammen mit den Bridge-Zahlen zeigt.
+                if ($body.perf) { Record-PluginPerf $sid $body.perf }
                 $queue = Ensure-Queue $sid
                 $signal = Ensure-Signal $sid
 
+                # Version 7.0.3: HARTE OBERGRENZE. Eine Anfrage darf nie
+                # "long running" werden: Roblox Studio fuehrt nur 3 Anfragen
+                # gleichzeitig aus, und lange offene Anfragen stallen dort
+                # nachweislich die naechsten (Roblox-Staff). Das Plugin fragt
+                # ohnehin nur noch 4-6 Sekunden an; die Grenze schuetzt auch
+                # gegen ein altes Plugin im Ordner.
                 $waitSeconds = 20
                 if ($body.wait) {
                     $waitSeconds = [Math]::Min([double]$body.wait, 25)
                 }
+                if ($waitSeconds -gt 8) { $waitSeconds = 8 }
                 $deadline = [DateTime]::UtcNow.AddSeconds($waitSeconds)
                 $collected = New-Object System.Collections.Generic.List[string]
 
@@ -14620,7 +14866,12 @@ end
 
                 $mode = 'readwrite'
                 [void]$Shared.AccessModes.TryGetValue($sid, [ref]$mode)
-                $json = '{"ok":true,"accessMode":' + (To-Json $mode 3) + ',"commands":[' + ($collected -join ',') + ']}'
+                # Version 7.0.3: Der Diagnosewunsch geht mit dem Poll-Ergebnis
+                # zurueck; das Plugin legt seine Zaehler dann an die NAECHSTE
+                # Anfrage - es wird KEINE zusaetzliche Anfrage gesendet.
+                $perfFlag = 'false'
+                if (Test-PerfEnabled) { $perfFlag = 'true' }
+                $json = '{"ok":true,"accessMode":' + (To-Json $mode 3) + ',"perf":' + $perfFlag + ',"commands":[' + ($collected -join ',') + ']}'
                 Send-RawJson $context 200 $json
                 continue
             }
@@ -14751,7 +15002,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.0.2'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.0.3'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -14780,8 +15031,8 @@ end
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.0.2'
-                    serverVersion = '7.0.2'
+                    bridgeVersion = '7.0.3'
+                    serverVersion = '7.0.3'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -15201,29 +15452,87 @@ $script:BridgeListenerScript = {
         $pool = $null
     }
 
+    # ------------------------------------------------------------------
+    # Version 7.0.3: Der 337-KB-Handler wird EINMAL geparst/kompiliert.
+    # Vorher erzeugte jede einzelne HTTP-Anfrage ein neues PowerShell-Objekt
+    # mit AddScript(<vollstaendiger Handler-Text>); damit wurde der komplette
+    # Handler bei JEDER Anfrage neu geparst. Genau diese Anfragen beginnen
+    # mit einem verbundenen Place (Heartbeat/Poll) - und waren damit
+    # Dauerlast, obwohl im Leerlauf nichts zu tun ist.
+    # Der Scriptblock ist ungebunden und daher in jedem Pool-Runspace
+    # aufrufbar; die Worker bekommen nur noch einen Mini-Wrapper zu parsen.
+    # ------------------------------------------------------------------
+    $handlerBlock = $null
+    try { $handlerBlock = [ScriptBlock]::Create($HandlerScript) } catch { $handlerBlock = $null }
+    $fastWorkers = $false
+    if ($null -ne $handlerBlock) {
+        # Selbsttest: Der Handler muss als UNGEBUNDENER Scriptblock in einem
+        # Pool-Runspace aufrufbar sein. Der Test benutzt denselben Weg wie
+        # spaeter jede Anfrage, aber mit einem harmlosen Mini-Scriptblock -
+        # so kann der echte Handler nie zweimal laufen.
+        try {
+            $probeBlock = [ScriptBlock]::Create('param($Value) return ("ok:" + [string]$Value)')
+            $probe = [PowerShell]::Create()
+            if ($pool) { $probe.RunspacePool = $pool }
+            [void]$probe.AddScript('param($Handler, $Value) & $Handler $Value').AddArgument($probeBlock).AddArgument('probe')
+            $probeResult = $probe.Invoke()
+            $fastWorkers = ($null -ne $probeResult -and $probeResult.Count -gt 0 -and [string]$probeResult[0] -eq 'ok:probe')
+            try { $probe.Dispose() } catch {}
+        } catch { $fastWorkers = $false }
+    }
+    if ($fastWorkers) {
+        $workerScript = 'param($Context, $Shared, $Handler, $HandlerText) & $Handler $Context $Shared'
+        Write-BridgeLog 'Server: Handler wird einmal kompiliert und wiederverwendet (337 KB pro Anfrage gespart).'
+    } else {
+        $workerScript = 'param($Context, $Shared, $Handler, $HandlerText) & ([ScriptBlock]::Create($HandlerText)) $Context $Shared'
+        $handlerBlock = $null
+        Write-BridgeLog 'Server: Scriptblock-Wiederverwendung nicht verfuegbar - Handler wird wie bisher je Anfrage geparst.'
+    }
+
+    function Add-PerfHttpSample {
+        param([double]$Milliseconds)
+        try {
+            $perf = $Shared.Perf
+            if ($null -eq $perf) { return }
+            $perf.HttpRequests = [long]$perf.HttpRequests + 1
+            $perf.HttpDone = [long]$perf.HttpDone + 1
+            $perf.HttpMsTotal = [double]$perf.HttpMsTotal + $Milliseconds
+            if ($Milliseconds -gt [double]$perf.HttpMsMax) { $perf.HttpMsMax = $Milliseconds }
+        } catch {}
+    }
+
     $workers = [System.Collections.Generic.List[object]]::new()
     while ($listener.IsListening) {
         $context = $null
         try { $context = $listener.GetContext() } catch { break }
 
-        $ps = [PowerShell]::Create()
-        if ($pool) { $ps.RunspacePool = $pool }
-        [void]$ps.AddScript($HandlerScript).AddArgument($context).AddArgument($Shared)
-        $handle = $ps.BeginInvoke()
-        $workers.Add([pscustomobject]@{ Shell = $ps; Handle = $handle })
-
-        if ($workers.Count -ge 24) {
+        # Fertige Anfragen sofort einsammeln. Nur dann wird (abschaltbar)
+        # die Dauer je Anfrage gemessen - kein Logging pro Anfrage.
+        $perfOn = $false
+        try { $perfOn = ($Shared.BridgeSettings.perfDiagnostics -eq $true) } catch {}
+        if ($workers.Count -gt 0) {
             $remaining = [System.Collections.Generic.List[object]]::new()
             foreach ($worker in $workers) {
-                if ($worker.Handle.IsCompleted) {
+                $done = $false
+                try { $done = [bool]$worker.Handle.IsCompleted } catch { $done = $true }
+                if ($done) {
                     try { $worker.Shell.EndInvoke($worker.Handle) } catch {}
                     try { $worker.Shell.Dispose() } catch {}
+                    if ($perfOn) {
+                        try { Add-PerfHttpSample ([double](([DateTime]::UtcNow - [DateTime]$worker.StartedAt).TotalMilliseconds)) } catch {}
+                    }
                 } else {
                     $remaining.Add($worker)
                 }
             }
             $workers = $remaining
         }
+
+        $ps = [PowerShell]::Create()
+        if ($pool) { $ps.RunspacePool = $pool }
+        [void]$ps.AddScript($workerScript).AddArgument($context).AddArgument($Shared).AddArgument($handlerBlock).AddArgument($HandlerScript)
+        $handle = $ps.BeginInvoke()
+        $workers.Add([pscustomobject]@{ Shell = $ps; Handle = $handle; StartedAt = [DateTime]::UtcNow })
     }
     foreach ($worker in $workers) {
         try { $worker.Shell.Dispose() } catch {}
@@ -15484,6 +15793,15 @@ function Remove-DeadSession {
     foreach ($bagName in @('AccessModes','Pollers','Presence','PendingCommands','LateResults','PlayRetryDedupe','DocsSent','AiPlayIntents','LastPlayEvents','RunOwners','UserActiveAt','AgentKeys','AgentQueues','AgentResults','AgentStates','AgentLastSeen','CommandQueues','CommandSignals','ActivityLogs','ActivityCommandMap')) {
         try { [void]$script:Shared.$bagName.TryRemove($SessionId, [ref]$junk) } catch {}
     }
+    # Version 7.0.3: Auch die Diagnose-Eintraege dieser Sitzung entfernen,
+    # damit wiederholtes Verbinden/Trennen nichts ansammelt.
+    try {
+        if ($null -ne $script:Shared.Perf) {
+            foreach ($perfKey in @('PollRate:' + $SessionId, 'Plugin:' + $SessionId, 'PluginAt:' + $SessionId)) {
+                [void]$script:Shared.Perf.Remove($perfKey)
+            }
+        }
+    } catch {}
     try { $script:PlaceNames.Remove($SessionId) } catch {}
     try { $script:PlaceNameResolveErrorLogged.Remove($SessionId) } catch {}
     try {
@@ -16984,7 +17302,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.0.2)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.0.3)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -17312,7 +17630,7 @@ function Get-SettingsNotificationLines {
             try { $name = [string]$script:PlaceNames[[string]$item.sessionId] } catch {}
             if ([string]::IsNullOrWhiteSpace($name)) { $name = [string]$item.placeName }
             if ($item.versionMismatch -eq $true) {
-                $lines.Add(('{0}: Plugin veraltet (Plugin {1}, Bridge 7.0.2) - Roblox Studio einmal neu starten, sonst warten neue Werkzeuge.' -f $name, [string]$item.pluginVersion))
+                $lines.Add(('{0}: Plugin veraltet (Plugin {1}, Bridge 7.0.3) - Roblox Studio einmal neu starten, sonst warten neue Werkzeuge.' -f $name, [string]$item.pluginVersion))
             }
         }
     } catch {}
@@ -17516,7 +17834,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.0.2)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.0.3)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -19578,6 +19896,137 @@ function Update-SplashScreen {
     }
 }
 
+# ----------------------------------------------------------------------------
+# Version 7.0.3: LAUFZEITDIAGNOSTIK (Leistung) - Ausgabe auf der UI-Seite.
+# Es wird NICHTS geschrieben, solange die Diagnose in den Einstellungen aus
+# ist (Standard). Ist sie an, entsteht hoechstens alle 30 Sekunden EINE
+# Zeile in runtime.log und ein kompakter Bericht in performance.txt - kein
+# Logging pro Tick, keine zusaetzlichen HTTP-Anfragen, keine Messung im
+# Vorschaupfad.
+# ----------------------------------------------------------------------------
+$script:PerfLastWrite = [DateTime]::MinValue
+$script:PerfLastSnapshot = @{}
+
+function Test-PerfDiagnosticsEnabled {
+    try { return ($script:Shared.BridgeSettings.perfDiagnostics -eq $true) } catch { return $false }
+}
+
+function Get-PerfDelta {
+    param([string]$Name, [double]$Value)
+    $last = 0.0
+    if ($script:PerfLastSnapshot.ContainsKey($Name)) { $last = [double]$script:PerfLastSnapshot[$Name] }
+    $script:PerfLastSnapshot[$Name] = $Value
+    return ($Value - $last)
+}
+
+function Update-PerfUiTick {
+    param([double]$Milliseconds)
+    try {
+        $perf = $script:Shared.Perf
+        if ($null -ne $perf) {
+            $perf.UiTicks = [long]$perf.UiTicks + 1
+            $perf.UiMsTotal = [double]$perf.UiMsTotal + $Milliseconds
+            if ($Milliseconds -gt [double]$perf.UiMsMax) { $perf.UiMsMax = $Milliseconds }
+        }
+        Write-PerfReport
+    } catch {}
+}
+
+function Write-PerfReport {
+    param([switch]$Force)
+    try {
+        if (-not (Test-PerfDiagnosticsEnabled)) {
+            $script:PerfLastWrite = [DateTime]::MinValue
+            $script:PerfLastSnapshot = @{}
+            return
+        }
+        $now = Get-Date
+        if (-not $Force -and ($now - $script:PerfLastWrite).TotalSeconds -lt 30) { return }
+        $wasWritten = ($script:PerfLastWrite -ne [DateTime]::MinValue)
+        $windowSeconds = 0.0
+        if ($wasWritten) { $windowSeconds = ($now - $script:PerfLastWrite).TotalSeconds }
+        $script:PerfLastWrite = $now
+
+        $perf = $script:Shared.Perf
+        if ($null -eq $perf) { return }
+        $lines = New-Object System.Collections.Generic.List[string]
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.0.3)')
+        $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
+        $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
+        $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
+        $lines.Add('')
+
+        $httpRequests = [double]$perf.HttpRequests
+        $httpMsTotal = [double]$perf.HttpMsTotal
+        $httpMsMax = [double]$perf.HttpMsMax
+        $uiTicks = [double]$perf.UiTicks
+        $uiMsTotal = [double]$perf.UiMsTotal
+        $uiMsMax = [double]$perf.UiMsMax
+        $avgHttp = 0.0
+        if ($httpRequests -gt 0) { $avgHttp = $httpMsTotal / $httpRequests }
+        $avgUi = 0.0
+        if ($uiTicks -gt 0) { $avgUi = $uiMsTotal / $uiTicks }
+
+        $lines.Add('BRIDGE-SEITE (Prozess Arena Roblox Bridge)')
+        $lines.Add(('  HTTP-Anfragen gesamt: {0}   davon Poll {1} / Heartbeat {2} / Hello {3}' -f [int]$httpRequests, [int]$perf.PollRequests, [int]$perf.Heartbeats, [int]$perf.HelloRequests))
+        $lines.Add(('  Handler-Dauer je Anfrage: Durchschnitt {0:N1} ms, Maximum {1:N0} ms (enthaelt Parsen/Ausfuehren des Handlers)' -f $avgHttp, $httpMsMax))
+        $lines.Add(('  UI-Abgleich (Place-Liste): {0} Ticks, Durchschnitt {1:N1} ms, Maximum {2:N0} ms' -f [int]$uiTicks, $avgUi, $uiMsMax))
+        if ($wasWritten -and $windowSeconds -gt 1) {
+            $uiRate = (Get-PerfDelta 'ui' $uiTicks) / $windowSeconds
+            $httpRate = (Get-PerfDelta 'http' $httpRequests) / $windowSeconds
+            $lines.Add(('  Letzte Messspanne ({0:N0} s): {1:N2} UI-Ticks/s, {2:N2} HTTP-Anfragen/s' -f $windowSeconds, $uiRate, $httpRate))
+        }
+        $lines.Add('')
+
+        $lines.Add('STUDIO-PLUGIN (Kanal je verbundenem Place)')
+        $sessionCount = 0
+        foreach ($sid in @($script:Shared.Sessions.Keys)) {
+            try {
+                $sessionCount = $sessionCount + 1
+                $raw = $null
+                if (-not $perf.ContainsKey('Plugin:' + $sid)) { continue }
+                $raw = $perf['Plugin:' + $sid]
+                $stats = $raw | ConvertFrom-Json
+                $periodMs = [double]$stats.periodMs
+                if ($periodMs -lt 1) { $periodMs = 1 }
+                $requests = [double]$stats.requests
+                $pollMs = [double]$stats.pollMs
+                $gapMs = [double]$stats.gapMs
+                $reqPerMin = $requests * 60000.0 / $periodMs
+                $duty = 0.0
+                if (($pollMs + $gapMs) -gt 0) { $duty = 100.0 * $pollMs / ($pollMs + $gapMs) }
+                $avgPoll = 0.0
+                if ([double]$stats.polls -gt 0) { $avgPoll = $pollMs / [double]$stats.polls }
+                $avgGap = 0.0
+                if ([double]$stats.polls -gt 0) { $avgGap = $gapMs / [double]$stats.polls }
+                $mode = 'aktiv'
+                if ([int]$stats.quiet -eq 1) { $mode = 'Ruhemodus' }
+                $placeName = ''
+                if ($script:PlaceNames.ContainsKey([string]$sid)) { $placeName = [string]$script:PlaceNames[[string]$sid] }
+                if ([string]::IsNullOrWhiteSpace($placeName)) { $placeName = [string]$sid }
+                $lines.Add(('  Place "{0}" ({1})' -f $placeName, $mode))
+                $lines.Add(('    Anfragen/Minute: {0:N1}   Poll-Dauer: {1:N0} ms im Mittel, {2:N0} ms maximal erwaehlt' -f $reqPerMin, $avgPoll, [double]$stats.waitMs / [double]([Math]::Max(1, [double]$stats.polls))))
+                $lines.Add(('    HTTP-Platz belegt: {0:N0} % der Zeit, Pause: {1:N0} ms im Mittel (Pflichtpause je Anfrage)' -f $duty, $avgGap))
+                $lines.Add(('    Befehle empfangen: {0}   Ersatz-Heartbeats: {1}   Messspanne: {2:N0} s' -f [int]$stats.cmds, [int]$stats.hbFallback, $periodMs / 1000.0))
+            } catch {}
+        }
+        if ($sessionCount -eq 0) { $lines.Add('  (kein Place verbunden)') }
+        $lines.Add('')
+        $lines.Add('BEWERTUNG')
+        $lines.Add('  Ziel: Poll-Dauer im Ruhemodus deutlich unter 100 % (Pflichtpause) und wenige Anfragen pro Minute.')
+        $lines.Add('  Ist der Platz dauerhaft ~100 % belegt, arbeitet noch ein altes Plugin im Studio-Ordner - Studio neu starten.')
+
+        $path = Join-Path $script:AppDataRoot 'performance.txt'
+        [System.IO.File]::WriteAllText($path, ($lines -join [Environment]::NewLine), (New-Object System.Text.UTF8Encoding($false)))
+        if ($wasWritten) {
+            Write-RuntimeLog ('LEISTUNG Diagnose: HTTP {0} Anfragen, Handler im Mittel {1:N1} ms / max {2:N0} ms; UI-Ticks {3}, im Mittel {4:N1} ms / max {5:N0} ms; Orte {6}. Details: {7}' -f `
+                [int]$httpRequests, $avgHttp, $httpMsMax, [int]$uiTicks, $avgUi, $uiMsMax, $sessionCount, $path)
+        }
+    } catch {
+        try { Write-RuntimeLog ('Leistungsbericht konnte nicht geschrieben werden: ' + $_.Exception.Message) } catch {}
+    }
+}
+
 function Refresh-Ui {
     $line = $null
     while ($script:TunnelLines.TryDequeue([ref]$line)) {
@@ -20143,7 +20592,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.0.2'
+    $versionText = '7.0.3'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -20474,9 +20923,11 @@ function Open-SettingsWindow {
     $notifyNow = $false
     $editorIconsNow = $true
     $progressNow = $true
+    $perfNow = $false
     try { $notifyNow = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch {}
     try { $editorIconsNow = [bool]$script:SettingsCache.editorIconsEnabled } catch {}
     try { $progressNow = [bool]$script:Shared.BridgeSettings.progressInPlaceList } catch {}
+    try { $perfNow = [bool]$script:SettingsCache.perfDiagnostics } catch {}
 
     $settingsXaml = @'
 <?xml version="1.0" encoding="utf-8"?>
@@ -20741,6 +21192,14 @@ function Open-SettingsWindow {
                             </StackPanel>
                         </Border>
 
+                        <TextBlock Text="DIAGNOSE" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
+                        <Border Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="14" Padding="16,12">
+                            <StackPanel>
+                                <CheckBox x:Name="PerfSwitch" Style="{StaticResource ArenaSwitch}" Content="Leistungsdiagnose aufzeichnen"/>
+                                <TextBlock Text="Schreibt höchstens alle 30 Sekunden einen kompakten Bericht nach %LOCALAPPDATA%\ArenaRobloxBridge\performance.txt: Anfragen pro Minute, Dauer und Pausen des Studio-Kanals, UI-Zeit und HTTP-Zeit. Standard: aus." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,7,0,0"/>
+                            </StackPanel>
+                        </Border>
+
                         <TextBlock Text="SIMULATION" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
                         <Border Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="14" Padding="16,12">
                             <StackPanel>
@@ -20767,7 +21226,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.0.2" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.0.3" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -20798,6 +21257,7 @@ function Open-SettingsWindow {
     $notifySwitch    = $settingsWindow.FindName('NotifySwitch')
     $progressSwitch  = $settingsWindow.FindName('ProgressSwitch')
     $editorIconsSwitch = $settingsWindow.FindName('EditorIconsSwitch')
+    $perfSwitch      = $settingsWindow.FindName('PerfSwitch')
     $updateText      = $settingsWindow.FindName('UpdateInfoText')
     $notifyDetail    = $settingsWindow.FindName('NotifyDetailText')
     $progressStats   = $settingsWindow.FindName('ProgressStatsText')
@@ -20806,7 +21266,8 @@ function Open-SettingsWindow {
     $notifySwitch.IsChecked = $notifyNow
     $progressSwitch.IsChecked = $progressNow
     $editorIconsSwitch.IsChecked = $editorIconsNow
-    foreach ($toggleSwitch in @($startupSwitch, $notifySwitch, $progressSwitch, $editorIconsSwitch)) {
+    $perfSwitch.IsChecked = $perfNow
+    foreach ($toggleSwitch in @($startupSwitch, $notifySwitch, $progressSwitch, $editorIconsSwitch, $perfSwitch)) {
         Set-ArenaSwitchVisualState $toggleSwitch
         $toggleSwitch.Add_Loaded({ param($s, $e) Set-ArenaSwitchVisualState $s })
     }
@@ -20820,7 +21281,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.0.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.0.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -20857,6 +21318,20 @@ function Open-SettingsWindow {
         Set-EditorIconsEnabled ([bool]$s.IsChecked)
         Save-BridgeSettingsFile
     })
+    $perfSwitch.Add_Click({
+        param($s, $e)
+        # Version 7.0.3: Laufzeitdiagnostik. Beim Einschalten wird sofort ein
+        # erster Bericht erzeugt, damit die Datei ohne Warten existiert.
+        $script:SettingsCache.perfDiagnostics = [bool]$s.IsChecked
+        $script:Shared.BridgeSettings.perfDiagnostics = [bool]$s.IsChecked
+        Save-BridgeSettingsFile
+        $stateText = 'aus'
+        if ($s.IsChecked) {
+            $stateText = 'an'
+            try { Write-PerfReport -Force } catch {}
+        }
+        Write-RuntimeLog "Leistungsdiagnose (Laufzeitmessung) $stateText."
+    })
     $notifySwitch.Add_Click({
         param($s, $e)
         $script:Shared.BridgeSettings.notifyOnDone = [bool]$s.IsChecked
@@ -20875,7 +21350,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.0.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.0.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -20888,7 +21363,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.0.2'
+    $verText = '7.0.3'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
@@ -20991,7 +21466,15 @@ $timer.Add_Tick({
         $minimized = $false
         try { $minimized = ($window.WindowState -eq 'Minimized') } catch {}
         Set-UiRefreshCadence $minimized
+        # Version 7.0.3: Laufzeitdiagnostik. Der Waechter laeuft immer, misst
+        # aber nur, wenn die Diagnose in den Einstellungen an ist - dann
+        # entsteht hoechstens alle 30 s eine Zeile (kein Logging pro Tick).
+        $perfWatch = $null
+        try { if (Test-PerfDiagnosticsEnabled) { $perfWatch = [System.Diagnostics.Stopwatch]::StartNew() } } catch {}
         Refresh-Ui
+        if ($null -ne $perfWatch) {
+            try { Update-PerfUiTick $perfWatch.Elapsed.TotalMilliseconds } catch {}
+        }
     } catch {
         Write-RuntimeLog "Refresh Fehler: $($_.Exception.Message)"
         try { Show-Toast -Message "Fehler abgefangen: $($_.Exception.Message)" -Kind 'Error' -Seconds 6 } catch {}

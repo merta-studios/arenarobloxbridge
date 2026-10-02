@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 7.0.2.
+"""Offline structure check for Arena Roblox Bridge 7.0.3.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.0.2"
+VERSION = "7.0.3"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -481,7 +481,11 @@ def main() -> int:
 
     required_markers = [
         'local ARENA_CFG = {',
-        'ARENA_CFG.POLL_WAIT',
+        'ARENA_CFG.POLL_WAIT_ACTIVE',
+        'ARENA_CFG.POLL_GAP_ACTIVE',
+        'ARENA_CFG.POLL_WAIT_QUIET',
+        'ARENA_CFG.POLL_GAP_QUIET',
+        'ARENA_CFG.HEARTBEAT_FALLBACK',
         'ARENA_CFG.CHUNK_SIZE',
         'PLAY_STOP_NEEDS_USER',
         'REPORTER_NOT_CONNECTED',
@@ -701,19 +705,22 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '7.0.2'": 1,
-        'local ARENA_VERSION  = "7.0.2"': 1,
-        "version = '7.0.2'": 1,
-        "bridgeVersion = '7.0.2'": 3,
-        "bridgeVersion='7.0.2'": 1,
-        "serverVersion = '7.0.2'": 2,
-        "$versionText = '7.0.2'": 1,
-        "$verText = '7.0.2'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 7.0.2)": 1,
-        'Text="Arena Roblox Bridge - Version 7.0.2"': 1,
-        "Version 7.0.2 - aktuell. Beim naechsten Start": 2,
-        "Laufzeit-Identitaet: Bridge-Version=7.0.2": 1,
-        "Kurzbericht Fenster-Vorschau (Version 7.0.2)": 1,
+        "DocsVersion     = '7.0.3'": 1,
+        'local ARENA_VERSION  = "7.0.3"': 1,
+        "version = '7.0.3'": 1,
+        "bridgeVersion = '7.0.3'": 3,
+        "bridgeVersion='7.0.3'": 1,
+        "serverVersion = '7.0.3'": 2,
+        "$versionText = '7.0.3'": 1,
+        "$verText = '7.0.3'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.0.3)": 1,
+        'Text="Arena Roblox Bridge - Version 7.0.3"': 1,
+        "Version 7.0.3 - aktuell. Beim naechsten Start": 2,
+        "Laufzeit-Identitaet: Bridge-Version=7.0.3": 1,
+        "Kurzbericht Fenster-Vorschau (Version 7.0.3)": 1,
+        "Arena Roblox Bridge - Leistungsbericht (Version 7.0.3)": 1,
+        "Arena Roblox Bridge - Place-Diagnose (Version 7.0.3)": 1,
+        "Plugin {1}, Bridge 7.0.3)": 1,
     }
     for marker, expected_count in functional_version_counts.items():
         actual_count = source.count(marker)
@@ -748,6 +755,118 @@ def main() -> int:
     require("task.wait(1.5)" in plugin_source(source),
             "Studio idle watcher returned to a 0.5-second polling cadence")
 
+    # ------------------------------------------------------------------
+    # 7.0.3 regression guards: THE CAUSE OF THE IDLE LAG.
+    # The Studio plugin used to hold an HTTP request open permanently: a 12 s
+    # long-poll that was immediately followed by the next request (100 % duty
+    # cycle), plus a second permanent channel (a 5 s heartbeat). Roblox Studio
+    # only runs 3 HTTP requests at a time and Roblox confirms that long polling
+    # "can currently stall next requests" - that is why the lag started as soon
+    # as a place connected, independent of preview capture or UI cadence.
+    # ------------------------------------------------------------------
+    plugin = plugin_source(source)
+    require("HEARTBEAT_EVERY" not in plugin,
+            "the plugin regained a second permanent heartbeat channel")
+    require(plugin.count('post("/plugin/poll"') == 1,
+            "the plugin must use exactly one command channel (one poll call site)")
+    require(plugin.count('post("/plugin/heartbeat"') == 1,
+            "the plugin must keep at most one fallback heartbeat call site")
+    require("os.clock() - lastHeartbeat > ARENA_CFG.HEARTBEAT_FALLBACK" in plugin,
+            "the fallback heartbeat is no longer gated on a failed poll channel")
+    require("HEARTBEAT_FALLBACK   = 20" in plugin,
+            "the fallback heartbeat interval is missing")
+
+    poll_block = plugin[plugin.index("local waitSeconds = ARENA_CFG.POLL_WAIT_ACTIVE"):
+                        plugin.index('game:GetPropertyChangedSignal("Name")')]
+    require(poll_block.count("task.wait(gapSeconds)") == 1,
+            "the mandatory pause after every poll request is missing or duplicated")
+    require(poll_block.index('post("/plugin/poll"') < poll_block.index("task.wait(gapSeconds)"),
+            "the pause must run AFTER the poll request so the HTTP slot is released")
+    require("task.wait(0.5)" in poll_block,
+            "a failed poll is no longer paced")
+    require("ARENA_CFG.QUIET_AFTER_POLLS" in poll_block and "quiet = true" in poll_block,
+            "the quiet mode is no longer entered after empty polls")
+    require("emptyPolls = 0" in poll_block and "quiet = false" in poll_block,
+            "a delivered command no longer returns the channel to active mode")
+    require("perfWanted = (response.perf == true)" in poll_block,
+            "the plugin no longer follows the bridge diagnostics switch")
+    require("if perfWanted then payload.perf = perfReport() end" in plugin,
+            "performance counters must travel with the existing poll request")
+    require(plugin.count("perfStats.requests = perfStats.requests + 1") == 1,
+            "HTTP request counting must live in exactly one place (post)")
+
+    # The promised numbers are bounded: a request must never become "long
+    # running" and the pause must stay a real fraction of the cycle.
+    def cfg_number(name: str) -> float:
+        m = re.search(rf"^\s*{name}\s*=\s*([0-9.]+)", plugin, re.M)
+        require(m is not None, f"ARENA_CFG.{name} is missing")
+        return float(m.group(1))
+
+    require(cfg_number("POLL_WAIT_ACTIVE") <= 4.0, "active poll wait grew again")
+    require(cfg_number("POLL_WAIT_QUIET") <= 8.0, "quiet poll wait grew again")
+    require(cfg_number("POLL_GAP_ACTIVE") >= 0.2, "active duty cycle has no pause")
+    require(cfg_number("POLL_GAP_QUIET") >= 1.0, "quiet duty cycle has no pause")
+    quiet_duty = cfg_number("POLL_WAIT_QUIET") / (
+        cfg_number("POLL_WAIT_QUIET") + cfg_number("POLL_GAP_QUIET"))
+    require(quiet_duty <= 0.85,
+            f"quiet mode still holds the Studio HTTP slot {quiet_duty:.0%} of the time")
+
+    # Bridge: the 337 KB handler must be compiled once instead of per request.
+    require("[ScriptBlock]::Create($HandlerScript)" in source,
+            "the HTTP handler is no longer compiled once for the listener")
+    require("$workerScript = 'param($Context, $Shared, $Handler, $HandlerText) & $Handler $Context $Shared'" in source,
+            "the tiny worker wrapper that invokes the cached handler is missing")
+    require("$workerScript = 'param($Context, $Shared, $Handler, $HandlerText) & ([ScriptBlock]::Create($HandlerText)) $Context $Shared'" in source,
+            "the self-test fallback that re-parses the handler text is missing "
+            "(a ScriptBlock from [ScriptBlock]::Create cannot be assumed to run "
+            "inside every pool runspace)")
+    require(".AddScript($workerScript)" in source,
+            "the listener no longer uses the cached handler wrapper")
+    require(".AddScript($HandlerScript)" not in source,
+            "every HTTP request still re-parses the full handler text")
+    require(".AddArgument($handlerBlock).AddArgument($HandlerScript)" in source,
+            "the worker no longer receives both the cached ScriptBlock and the "
+            "handler text used by the fallback")
+    require("$fastWorkers = ($null -ne $probeResult" in source,
+            "the listener lost the security probe that proves a cached, unbound "
+            "ScriptBlock really runs inside its own runspace pool")
+    require("$handlerBlock = $null\n        Write-BridgeLog" in source,
+            "the fallback path must drop the unusable ScriptBlock before the "
+            "worker falls back to the handler text")
+    require("if ($waitSeconds -gt 8) { $waitSeconds = 8 }" in source,
+            "the server-side cap that keeps any poll request short is missing")
+    perf_needle = '"perf":' + "' + $perfFlag"
+    require(perf_needle in source,
+            "the poll response no longer carries the diagnostics switch")
+    require("if ($body.perf) { Record-PluginPerf $sid $body.perf }" in source,
+            "the plugin counters are no longer read from the poll payload")
+    require("Leistungswarnung: Sitzung " in source,
+            "the poll rate warning that proves runaway polling is missing")
+
+    # Diagnostics: opt-in, sparse, and never inside the request path.
+    handler_fn = source[source.index("$script:BridgeHandlerScript = {"):
+                        source.index("$script:BridgeListenerScript = {")]
+    require("Write-PerfReport" not in handler_fn,
+            "the performance report must not run inside an HTTP request")
+    perf_fn = source[source.index("function Write-PerfReport {"):
+                     source.index("function Refresh-Ui {")]
+    require("if (-not (Test-PerfDiagnosticsEnabled)) {" in perf_fn,
+            "the performance report no longer respects the off switch")
+    require(".TotalSeconds -lt 30" in perf_fn,
+            "the performance report lost its 30 second throttle")
+    require("performance.txt" in perf_fn,
+            "the shareable performance report file is missing")
+    require("perfDiagnostics = $false" in source,
+            "the performance diagnostics are no longer OFF by default")
+    require("if (Test-PerfDiagnosticsEnabled) { $perfWatch = [System.Diagnostics.Stopwatch]::StartNew() }" in source,
+            "the UI tick timer measures even when diagnostics are off")
+    require("Update-PerfUiTick $perfWatch.Elapsed.TotalMilliseconds" in source,
+            "the UI tick timing is not reported through the throttled writer")
+    require("x:Name=\"PerfSwitch\"" in source and "$perfSwitch.Add_Click(" in source,
+            "the settings switch for the performance diagnostics is missing")
+    require("Set-PlacePreviewSpinnerAnimation" in source,
+            "preview handling was removed while fixing the channel")
+
     stale_700_functional = [
         "DocsVersion     = '7.0.0'",
         'local ARENA_VERSION  = "7.0.0"',
@@ -765,6 +884,28 @@ def main() -> int:
     ]
     for marker in stale_700_functional:
         require(marker not in source, f"stale functional 7.0.0 literal remains: {marker}")
+
+    # 7.0.3: the functional 7.0.2 markers must all be gone (history notes in
+    # the changelog may still mention 7.0.2 on purpose).
+    stale_702_functional = [
+        "DocsVersion     = '7.0.2'",
+        'local ARENA_VERSION  = "7.0.2"',
+        "version = '7.0.2'",
+        "bridgeVersion = '7.0.2'",
+        "bridgeVersion='7.0.2'",
+        "serverVersion = '7.0.2'",
+        "$versionText = '7.0.2'",
+        "$verText = '7.0.2'",
+        "Arena Studio Bridge - Studio Plugin  (Version 7.0.2)",
+        'Text="Arena Roblox Bridge - Version 7.0.2"',
+        "Version 7.0.2 - aktuell. Beim naechsten Start",
+        "Bridge-Version=7.0.2",
+        "Kurzbericht Fenster-Vorschau (Version 7.0.2)",
+        "Place-Diagnose (Version 7.0.2)",
+        "Plugin {1}, Bridge 7.0.2)",
+    ]
+    for marker in stale_702_functional:
+        require(marker not in source, f"stale functional 7.0.2 literal remains: {marker}")
 
     # 7.0.1 UI contract: the link belongs to the main-list footer, settings
     # have padding, all four remaining toggles are initialized, and a broken rich Place
@@ -1273,7 +1414,7 @@ def main() -> int:
             and "CLIENT_AGENT_SOURCE" not in source and "SESSION_REPORTER_SOURCE" not in source,
             "removed 7.0.0 playtest machinery is still present")
 
-    print("OK: 7.0.2 structure, performance guards, Lua and XAML validation passed")
+    print("OK: 7.0.3 structure, channel and performance guards, Lua and XAML validation passed")
     return 0
 
 
