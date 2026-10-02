@@ -20,7 +20,7 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test_v398_structure.py` | Python-Strukturtest für 6.2.0 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test_v398_structure.py` | Python-Strukturtest für 7.0.0 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -35,6 +35,16 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 7.0.0
+- **Der Schnitt: kein Playtest mehr.** `play_start`, `play_stop`, `play_pause`, `play_resume`, `play_status`, `session_diag`, `character_state`, `move_character`, `teleport_character`, `respawn_character`, `gui_dump`, `gui_check`, `gui_click`, `gui_set_text`, `send_input`, `client_action` und `set_camera` sind entfernt – samt Reporter-Injektion, Session-Agent, SharedTable-Befehlskanal, Play-Here-Heuristik und Client-Agent. Die Bridge baut wieder, statt getrennte DataModels, Cross-DM-Kanäle und Zombie-Sweeps zu reparieren.
+- **Simulation (Run) statt Playtest.** `sim_start` startet die Editor-Simulation über `StudioTestService:ExecuteRunModeAsync` (Erfolgs-Orakel: `EditModeActive`), `sim_stop` beendet sie mit `RunService:Stop()` und F5-Fallback, `sim_status` liest den echten Zustand. Es gibt keinen Spieler, keinen Charakter, keine Client-Skripte und kein GUI-Testen – dafür laufen Skripte und Physik zuverlässig, und `get_output`/`get_errors` zeigen alles. Während der Simulation blockiert `SIM_RUNNING` dauerhafte Änderungen; `allowInSimMode=true` ist nur für bewusste Wegwerf-Änderungen da.
+- **Einstellung „Arena darf Simulationen (Run) starten“.** Sie blockiert ausschließlich `sim_start` (`SIM_DISABLED`, severity notice, ausdrücklich kein Fehler). Bauen, GUIs, Assets, Jobs, `compile_check` und `run_lua` bleiben unberührt. Einen vom **Nutzer** gestarteten Playtest blockiert die Bridge weiterhin (`USER_PLAYTEST_ACTIVE`) und bittet darum, selbst zu stoppen (Shift+F5) – sie kann und will ihn nicht mehr fernsteuern.
+- **UI Engine 2.0.** `ui_glow` baut Glow (nie mehr handgemachte Transparenz-Ketten), `ui_texture` liefert das Rezept „echte Textur zuerst“ (`TEXTURE_ASSET_MISSING` ist eine Warnung, kein Fehler), `ui_radial` baut Radialmenüs aus **einer** Bild-Id mit Ring- und Aktivfarbe aus der Engine (`RADIAL_ASSET_MISSING`, wenn keine Id vorliegt). `ui_audit` zählt Glow-Stapel, echte Texturbilder und Radials und nennt die Engine-Version.
+- **Welt-Engine 1.0.** `world_style`/`style_lock` (Palette, Materialien, Dichte, Wetter, Seed), `site_survey` (gemessene Höhen, Materialien, Wasser, freier Raum, bestehende Teile), `variation` (deterministisch statt `math.random`), `prop_place`/`prop_save`/`prop_list` (wiederverwendbare Props mit Boden-Snap), `world_glow` (eine Engine-Lampe statt Glow-Bastelei), `refine` (messbarer Feinschliff) und `model_audit`/`world_audit` (Platzhalter, Blockouts, Phase, Stil-Treue – genau die Zahlen, die `HANDOFF_REQUIRED` liest).
+- **Fortschrittsvertrag und Übergabe.** Jeder Aufruf trägt `progress={percent,message}`; ein fehlendes Prozentfeld gilt als 0 % und blockiert **nie** einen Bau. Die Place-Zeile färbt blau (arbeitet), grün (nach `report_done`), grau (keine Rückmeldung) und rot (Fehler), zeigt Nachricht und Tooltip und schreibt alles in Verlauf und `places-diagnose.txt`. `handoff { scope="game", ... }` ist nur für komplette Spiele oder Mehrsystem-Verbünde erlaubt (`HANDOFF_NOT_ALLOWED`/`HANDOFF_INCOMPLETE`) und wird der nächsten Sitzung desselben Places automatisch vorgelegt.
+- **Fenster- und Place-Identität über stabile Schlüssel.** Die Zuordnung nutzt Fensterhandle, Prozess-Id und Place-Id statt Anzeigenamen; ein veraltetes Plugin steht rot unter dem Place-Namen und sperrt die Kopier-Buttons, statt still zu wirken.
+- Keine Änderung an den bestehenden Bau-, Polygon-, Asset- und Job-Werkzeugen. Nach dem Update Roblox Studio einmal neu starten, damit Plugin **7.0.0** geladen wird.
 
 ## 6.2.0
 - **UI Engine 1.0 – die Bridge kann endlich GUIs bauen.** Bis 6.1.5 gab es kein einziges GUI-Bauwerkzeug: `gui_dump`, `gui_check`, `gui_click` und `gui_set_text` sind ausnahmslos Test-Funktionen. Jede Oberfläche entstand freihändig über `create_instance`/`run_lua` – also im selben Zustand, in dem der Polygon-Bau vor 6.1.0 war. Die Folge waren reproduzierbar dieselben Fehler: `AnchorPoint` 0,0 zusammen mit `UIScale` (das Element wächst nach unten rechts statt aus der Mitte), Offset statt Scale (Handy-GUI verrutscht oder wird riesig), Inhalt über zu großen Eckenradien, `CanvasGroup` statt `Frame` ohne Grund, `UIGradient` immer auf dem Frame und nie auf einem `UIStroke`, keine Textur, kein Schatten – und farblich immer dasselbe dunkle Dashboard.

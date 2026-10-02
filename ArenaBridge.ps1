@@ -1,6 +1,62 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 6.2.0
+# Arena Roblox Bridge  -  Version 7.0.0
 #
+# DER SCHNITT: KEIN PLAYTEST MEHR - DAFUER EINE EHRLICHE SIMULATION, ENGINE 2.0
+# UND ENGINE 1.0
+#   * WARUM: Playtests (F5 mit Spieler, Charakter, Client-Agent) haben die
+#     Bridge dauerhaft unzuverlaessig gemacht: getrennte DataModels,
+#     Reporter-Injektion, Cross-DM-Befehlskanaele, Dedupe und Zombie-Sweeps.
+#     Die Bridge baut jetzt wieder, statt Test-Infrastruktur zu reparieren.
+#   * ENTFERNT: play_start, play_stop, play_pause, play_resume, play_status,
+#     session_diag, character_state, move_character, teleport_character,
+#     respawn_character, gui_dump, gui_check, gui_click, gui_set_text,
+#     send_input, client_action, set_camera - samt Reporter-Injektion,
+#     Session-Agent, SharedTable-Kanal, Play-Here-Heuristik und Client-Agent.
+#     Existiert ein Werkzeug nicht mehr, sagt die Bridge UNKNOWN_TOOL - nicht
+#     mehr und nicht weniger.
+#   * SIMULATION STATT PLAYTEST: sim_start startet den Run-Modus ueber
+#     StudioTestService:ExecuteRunModeAsync (Orakel: EditModeActive), sim_stop
+#     stoppt ihn wieder, sim_status liest den echten Zustand. Es gibt KEINEN
+#     Spieler, KEINEN Charakter, KEINE Client-Skripte, KEIN GUI-Testen - dafuer
+#     laufen Skripte und Physik zuverlaessig, und get_output/get_errors zeigen
+#     alles. Waehrend der Simulation blockiert SIM_RUNNING dauerhafte
+#     Aenderungen (allowInSimMode=true nur fuer Wegwerf-Aenderungen).
+#   * EINSTELLUNG HEISST JETZT "Arena darf Simulationen (Run) starten" und
+#     blockiert NUR sim_start (SIM_DISABLED, severeness notice, kein Fehler).
+#     Bauen, GUIs, Assets, Jobs, compile_check und run_lua bleiben unberuehrt.
+#     Ein vom NUTZER gestarteter Playtest blockiert weiterhin jede dauerhafte
+#     Aenderung (USER_PLAYTEST_ACTIVE) - die Bridge kann ihn nicht mehr selbst
+#     beenden und bittet den Nutzer ausdruecklich, selbst zu stoppen.
+#   * UI ENGINE 2.0: ui_glow baut Glow (nie mehr handgemachte
+#     Transparenz-Ketten), ui_texture liefert das ehrliche Rezept
+#     "echte Textur zuerst", ui_radial baut Radialmenues aus EINER Bild-Id mit
+#     beiden Farben aus der Engine. ui_audit zaehlt Glow-Stapel, echte
+#     Texturbilder und Radials und nennt die Engine-Version. Fehlende Assets
+#     sind Warnungen (TEXTURE_ASSET_MISSING/RADIAL_ASSET_MISSING), nie Fehler.
+#   * WELT-ENGINE 1.0: world_style/style_lock (Palette, Materialien, Dichte,
+#     Wetter, Seed), site_survey (gemessene Hoehen, Materialien, Wasser, freier
+#     Raum), variation (deterministisch statt math.random), prop_place /
+#     prop_save / prop_list (wiederverwendbare Props mit Boden-Snap),
+#     world_glow (eine Engine-Lampe statt Glow-Bastelei), refine (messbarer
+#     Feinschliff) und model_audit / world_audit (Platzhalter, Blockouts,
+#     Phase, Stil-Treue - die Zahlen, die HANDOFF_REQUIRED liest).
+#   * FORTSCHRITTSVERTRAG UND UEBERGABE: Jeder Aufruf traegt
+#     progress={percent,message}; fehlt er, gilt 0 % und NICHTS blockiert.
+#     Die Place-Zeile faerbt blau (arbeitet), gruen (nach report_done), grau
+#     (keine Rueckmeldung) und rot (Fehler), zeigt Nachricht + Tooltip und
+#     schreibt alles in Verlauf und places-diagnose.txt. handoff { scope="game",
+#     ... } ist nur fuer komplette Spiele/Mehrsystem-Verbuende erlaubt
+#     (HANDOFF_NOT_ALLOWED/HANDOFF_INCOMPLETE) und wird der naechsten Sitzung
+#     desselben Places automatisch vorgelegt.
+#   * FENSTER UND PLACES: Die Zuordnung laeuft ueber stabile Schluessel
+#     (Fensterhandle + Prozess-Id + Place-Id), nicht ueber Anzeigenamen.
+#     Namen werden nur noch angezeigt; ein veraltetes Plugin steht rot unter
+#     dem Place-Namen und sperrt die Kopier-Buttons, statt still zu wirken.
+#   * Keine Aenderung an bestehenden Bau-, Polygon-, Asset- oder Job-Werkzeugen.
+#     Nach dem Update Roblox Studio einmal neu starten, damit Plugin 7.0.0
+#     geladen wird.
+#
+
 # UI ENGINE 1.0: KOMPOSITE OBERFLAECHEN STATT NACKTER FRAMES
 #   * DIE LUECKE: die Bridge hatte bisher KEIN einziges GUI-BAUWERKZEUG. Nur
 #     gui_dump/gui_check/gui_click/gui_set_text - und die testen alle nur.
@@ -736,7 +792,7 @@
 #       Koerper zusammen, den ein POST geschickt haette, und schickt ihn
 #       durch EXAKT denselben Programmpfad. Damit gibt es keinerlei
 #       Unterschied: _bridge-Umschlag, _sessionStart, Stueckelung/Blobs,
-#       die SELF_TEST_DISABLED-Sperre, Play-Absichten und report_done
+#       die SIM_DISABLED-Sperre, Play-Absichten und report_done
 #       verhalten sich identisch. Dokumentation, Manifest (Endpunkt-Liste)
 #       und die Sitzungsstart-Hinweise sagen der KI ausdruecklich, dass sie
 #       AUSSCHLIESSLICH ueber GET arbeiten kann.
@@ -767,7 +823,7 @@
 #       Editor-Simulationen (compile_check / run_lua) bleiben. Die KI wird in
 #       Dokumentation, Manifest, Sitzungsstart und in JEDER Antwort darueber
 #       informiert, dass der Nutzer das bewusst ausgeschaltet hat
-#       (Fehlercode SELF_TEST_DISABLED) - sie haelt die Bridge nicht kaputt.
+#       (Fehlercode SIM_DISABLED) - sie haelt die Bridge nicht kaputt.
 #   3.  NEU: "BENACHRICHTIGUNG, WENN ARENA FERTIG IST" (Standard: AUS). Ist
 #       der Schalter AN, wird die KI in jeder Antwort deutlich angewiesen, am
 #       ENDE ihrer Arbeit den neuen Befehl report_done { title, message } zu rufen -
@@ -1201,6 +1257,15 @@ $script:StartTime = Get-Date
 $script:TunnelLines = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
 $script:UiRows = @{}
 $script:PlaceNames = @{}
+# Version 7.0.0: EINE Zeile haengt an einer STABILEN Identitaet (PID + HWND
+# bzw. Plugin-Session + placeId) - niemals am Anzeigenamen. PlaceIdentities
+# haelt je Sitzung das gebundene Studio-Fenster, PlaceNameSources die
+# Herkunft des Namens. PreviewHandleClaims verhindert, dass zwei Zeilen sich
+# dasselbe HWND ausleihen (genau das erzeugte zwei identische Vorschauen).
+$script:PlaceIdentities = @{}
+$script:PlaceNameSources = @{}
+$script:PreviewHandleClaims = @{}
+$script:PlacesDiagLastWrite = [DateTime]::MinValue
 # Version 6.0.1: Statt heruntergeladener Roblox-Spiel-Icons (siehe Changelog
 # oben) macht die Bridge jetzt eine Live-Vorschau des jeweiligen Studio-
 # Fensters direkt vom Bildschirm - kein Netzwerk, keine gameId noetig.
@@ -1230,6 +1295,9 @@ $script:PreviewDiagLastWrite = [DateTime]::MinValue
 $script:PreviewFlowCounter = [long]0
 $script:PreviewFlowContexts = @{}
 $script:PreviewHandleInfos = @{}
+# Version 7.0.0: Identitaets-Report (places-diagnose.txt) - PID, HWND,
+# Fenstertitel, erkannter Place-Name und Zeilen-Schluessel je Fenster.
+$script:PlacesDiagnoseLines = New-Object System.Collections.Generic.List[string]
 $script:PreviewCaptureMode = 'ps-fallback'
 $script:PreviewCaptureModeReason = 'C#-Helfer noch nicht initialisiert'
 # Version 5.2: Sichtbarkeit/Aufraeumen der Place-Liste. Das Edit-Plugin
@@ -1560,9 +1628,12 @@ $script:SettingsFile = Join-Path $script:AppDataRoot 'settings.json'
 function Get-BridgeSettingsFile {
     $settings = @{
         autoStart       = $false
-        selfTestAllowed = $true     # Arena darf eigene Tests starten (Standard: an)
+        # Version 7.0.0: "Arena darf sich selbst testen" war an Playtests
+        # gebunden und ist ersetzt durch "Arena darf Simulationen (Run) starten".
+        simAllowed      = $true     # Arena darf den Run-Modus starten (Standard: an)
         notifyOnDone    = $false    # Fertig-Meldung als Windows-Notification (Standard: aus)
         editorIconsEnabled = $true # Live-Vorschau-Icons im Editor (Standard: an)
+        progressInPlaceList = $true # Fortschrittsanzeige in der Place-Liste (Standard: an)
         # accessModes aus älteren Versionen werden absichtlich NICHT mehr geladen:
         # Lesezugriff gilt nur für die aktuelle Verbindung und startet immer aus.
     }
@@ -1570,7 +1641,10 @@ function Get-BridgeSettingsFile {
         if (Test-Path -LiteralPath $script:SettingsFile) {
             $loaded = Get-Content -LiteralPath $script:SettingsFile -Raw -Encoding UTF8 | ConvertFrom-Json
             if ($loaded.PSObject.Properties.Name -contains 'autoStart') { $settings.autoStart = [bool]$loaded.autoStart }
-            if ($loaded.PSObject.Properties.Name -contains 'selfTestAllowed') { $settings.selfTestAllowed = [bool]$loaded.selfTestAllowed }
+            if ($loaded.PSObject.Properties.Name -contains 'simAllowed') { $settings.simAllowed = [bool]$loaded.simAllowed }
+            # Migration: alte selfTestAllowed-Datei -> Simulationen bleiben erlaubt.
+            if (($loaded.PSObject.Properties.Name -contains 'selfTestAllowed') -and -not ($loaded.PSObject.Properties.Name -contains 'simAllowed')) { $settings.simAllowed = [bool]$loaded.selfTestAllowed }
+            if ($loaded.PSObject.Properties.Name -contains 'progressInPlaceList') { $settings.progressInPlaceList = [bool]$loaded.progressInPlaceList }
             if ($loaded.PSObject.Properties.Name -contains 'notifyOnDone') { $settings.notifyOnDone = [bool]$loaded.notifyOnDone }
             if ($loaded.PSObject.Properties.Name -contains 'editorIconsEnabled') { $settings.editorIconsEnabled = [bool]$loaded.editorIconsEnabled }
             # Legacy accessModes are deliberately ignored (Version 5): the
@@ -1584,9 +1658,10 @@ function Save-BridgeSettingsFile {
     try {
         $out = @{
             autoStart       = [bool]$script:SettingsCache.autoStart
-            selfTestAllowed = [bool]$script:SettingsCache.selfTestAllowed
+            simAllowed      = [bool]$script:SettingsCache.simAllowed
             notifyOnDone    = [bool]$script:SettingsCache.notifyOnDone
             editorIconsEnabled = [bool]$script:SettingsCache.editorIconsEnabled
+            progressInPlaceList = [bool]$script:SettingsCache.progressInPlaceList
         }
         $json = $out | ConvertTo-Json -Depth 6
         [System.IO.File]::WriteAllText($script:SettingsFile, $json, [System.Text.UTF8Encoding]::new($true))
@@ -1640,14 +1715,16 @@ $script:Shared = [hashtable]::Synchronized(@{
     DocsSent        = [System.Collections.Concurrent.ConcurrentDictionary[string,bool]]::new()
     # Pfad des lokalen Asset-Caches (Suche/Details, damit pro Session nichts neu geladen wird)
     AssetCachePath  = Join-Path $script:AppDataRoot 'asset_cache.json'
+    AppDataRoot     = $script:AppDataRoot
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '6.2.0'
+    DocsVersion     = '7.0.0'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
-        selfTestAllowed = $true     # Arena darf eigene Playtests starten/stoppen
+        simAllowed      = $true     # Arena darf Simulationen (Run) starten
         notifyOnDone    = $false    # report_done -> Windows-Benachrichtigung
+        progressInPlaceList = $true # Fortschrittsanzeige in der Place-Liste
         # Read-only is session-local only. It is intentionally not persisted.
     })
     # report_done-Meldungen: der Server legt sie ab, die Oberflaeche zeigt sie an
@@ -1671,14 +1748,23 @@ $script:Shared = [hashtable]::Synchronized(@{
     # live collection; entries stay only for the running bridge process.
     ActivityLogs       = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
     ActivityCommandMap = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    # Version 7.0.0: Fortschrittsvertrag. sessionId -> JSON
+    # { percent, message, state, updatedAt, lastCallAt, calls, callsWithProgress,
+    #   autoSet, history[] }. Jeder Aufruf traegt ihn; fehlt er, gilt 0 %.
+    ProgressStates  = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    # Version 7.0.0: Uebergaben (Handoff) je Sitzung + zuletzt geschriebener Pfad.
+    Handoffs        = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    # Version 7.0.0: Audit-Kennzahlen (Platzhalter/Blockout) fuer HANDOFF_REQUIRED.
+    AuditFlags      = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     # One aggregate token per program start, never derived from the place list.
     MultiPlaceToken    = $null
 })
 
 # Gespeicherte Einstellungen in den gemeinsamen Zustand uebernehmen (3.8)
 try {
-    if ($script:SettingsCache.selfTestAllowed -is [bool]) { $script:Shared.BridgeSettings.selfTestAllowed = [bool]$script:SettingsCache.selfTestAllowed }
+    if ($script:SettingsCache.simAllowed -is [bool]) { $script:Shared.BridgeSettings.simAllowed = [bool]$script:SettingsCache.simAllowed }
     if ($script:SettingsCache.notifyOnDone -is [bool]) { $script:Shared.BridgeSettings.notifyOnDone = [bool]$script:SettingsCache.notifyOnDone }
+    if ($script:SettingsCache.progressInPlaceList -is [bool]) { $script:Shared.BridgeSettings.progressInPlaceList = [bool]$script:SettingsCache.progressInPlaceList }
     # Version 5: legacy per-place accessModes are ignored on purpose.
 } catch {}
 
@@ -1732,8 +1818,8 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-    $script:PreviewDiagIdentity = ("Bridge-Version=6.2.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=6.2.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    $script:PreviewDiagIdentity = ("Bridge-Version=7.0.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.0.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 6.0.5: Hinweis auf den kleinen Kurzbericht - er enthaelt alles,
     # was zur Beurteilung der Fenster-Vorschau noetig ist.
     Write-RuntimeLog ("Vorschau-Kurzbericht: " + (Join-Path $script:AppDataRoot 'preview-diagnose.txt'))
@@ -1827,7 +1913,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 6.2.0)
+  Arena Studio Bridge - Studio Plugin  (Version 7.0.0)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -1840,8 +1926,8 @@ function Get-PluginSource {
       ganzen Text neu zu schreiben.
     * Vollstaendiger Zugriff auf das Ausgabefenster (Output) inklusive
       Client-Ausgaben im Testmodus.
-    * Play/Run starten, stoppen, pausieren; Server- und Client-Kontext;
-      Charakter steuern, GUIs benutzen, Tasten und Maus simulieren.
+    * Editor-Simulation starten/stoppen (sim_start/sim_stop): Run-Modus mit
+      Skripten und Physik - OHNE Spieler, ohne Client-Skripte, ohne Playtest.
     * Schutz: dauerhafte Aenderungen werden im Play-Modus blockiert, weil sie
       beim Stoppen verloren gehen.
     * Unions: zusammenfuegen, abziehen, schneiden, trennen - mit Warnungen.
@@ -1863,12 +1949,12 @@ function Get-PluginSource {
       (Wasser y1-2, sonst y1 oder y1+2, kein Raten, keine Tiefen-Ueberschreibung).
     * Union mit Vorpruefung: anchored, Eltern, Groessen, Dreiecks-Budget,
       "einer statt vierzig"-Vorschlag, saubere SOLID_REFUSED-Fehler.
-    * Echter Playtest: Player/Charakter/Client-Agent werden aktiv gewartet;
-      Run-Modus erklaert seine Grenzen; BENUTZER-Aktionen (Kamera, GUI-Klicks,
-      Avatar-Bewegung) werden der KI gemeldet.
-    * GUI-Test-Harness: gui_check, gui_click mit expect, set_camera.
+    * Editor-Simulation (Run): sim_start/sim_stop/sim_status warten auf das
+      echte Studio-Orakel (StudioTestService.EditModeActive); ohne Spieler,
+      ohne Client-Skripte, ohne Playtest. BENUTZER-Aktionen (Kamera, Auswahl)
+      werden der KI gemeldet; ein vom Nutzer gestarteter Playtest blockiert.
     * Fehler als Klassen (codes) statt Freitext: BAD_ARGS, REF_NOT_FOUND,
-      BUDGET_EXCEEDED, PLAY_NO_PLAYER, SOLID_REFUSED, REGION_LIMIT, ...
+      BUDGET_EXCEEDED, SIM_START_FAILED, SOLID_REFUSED, REGION_LIMIT, ...
     * Dokumentationen auf Abruf (get_docs) und automatisch am Sitzungsstart.
 ============================================================================]]
 
@@ -1898,7 +1984,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "6.2.0"
+local ARENA_VERSION  = "7.0.0"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -1931,8 +2017,6 @@ local userPlaytestActive = false       -- vom Nutzer gestarteter/aktiv gespielte
 local bridgeCommandActive = false      -- laeuft gerade ein Bridge-Befehl? (unterdrueckt Nutzer-Meldungen)
 local lastEditCamCFrame = nil          -- Kamera-Position im Edit-Modus (Play-Here-Erkennung + Start)
 local lastEditCamPos = nil             -- zur Bewegungserkennung (Nutzer navigiert im Editor)
-local lastPlayHereDetected = false     -- aktueller Test ist ein "Play Here" (Charakter an der Edit-Kamera)
-local playHereCheckUntil = 0           -- bis wann nach Teststart nach Play Here gesucht wird
 local lastUserActiveNotice = 0         -- os.clock() der letzten Nutzer-Aktivitaets-Meldung
 -- Der Plugin-Code bleibt in aktuellen Studio-Versionen im Edit-DataModel.
 -- Der Session-Agent unten ist deshalb die verbindliche Sicht auf den echten Test.
@@ -1941,15 +2025,6 @@ local lastUserActiveNotice = 0         -- os.clock() der letzten Nutzer-Aktivita
 -- agent is alive; `httpConnected` only means the optional fast path answered.
 -- 3.9.7 NEW: reporter evidence (hello line) is counted (arenaLineCount) and
 -- the session accepts commands through HTTP / SharedTable / VIM channels.
-local sessionAgent = {
-    key = nil, connected = false, httpConnected = false,
-    reporterActive = false, playerCount = 0, mode = "play", lastAnswer = 0,
-    agentMode = "logStream", snapshot = nil, guiSnapshot = nil,
-    httpEnabled = nil, reporterAt = 0, reporterLoopError = nil,
-    reporterSeenInOutput = false, reporterOutputLineCount = 0,
-    -- 4.0.3: Lebensbeweise der Session-Reporter-Schleife (session_diag).
-    reporterLoopCount = 0, reporterPostFailCount = 0, reporterLoopCountMirrored = nil,
-}
 
 local function readHttpEnabled()
     local enabled = false
@@ -1998,34 +2073,20 @@ local function testSessionActive()
     return false
 end
 
-local function sessionReporterUsable()
-    -- Reporter data from the previous Play session must never make Edit mode
-    -- look like a live test. This was visible in the live 4.0.3 check:
-    -- editModeActive=true but reporterActive/sessionPlayers stayed populated.
-    return sessionAgent ~= nil and sessionAgent.reporterActive == true
-        and testSessionActive()
-end
 
 -- A hello proves the script is alive; Play is only ready once a real player
 -- and HumanoidRootPart snapshot has arrived through the reporter channel.
-local function sessionPlayReady()
-    if not sessionReporterUsable() then return false end
-    local snap = sessionAgent and sessionAgent.snapshot or nil
-    local character = snap and (snap.character or (snap.characters and snap.characters[1])) or nil
-    return snap ~= nil and (tonumber(snap.players or snap.playerCount) or 0) >= 1
-        and character ~= nil and character.hasCharacter == true and character.position ~= nil
-end
 
-local function currentSessionSnapshot()
-    return sessionAgent and sessionAgent.snapshot or nil
-end
 
 local capabilities = {
     virtualInput   = (VirtualInputManager ~= nil),
     changeHistory  = (ChangeHistoryService ~= nil),
     insertService  = (InsertService ~= nil),
     solidModeling  = true,
+    -- Version 7.0.0: kein Client-Agent, kein Playtest - nur die Simulation.
     clientAgent    = false,
+    playtest       = false,
+    editorSimulation = true,
     studioTest     = (StudioTestService ~= nil),
 }
 
@@ -2133,56 +2194,40 @@ local function currentMode()
     -- die Kamera im EDITOR stand, als Play gedrueckt wurde (Studio-Test-Tab:
     -- "Play Here"). Normales Play spawnt am SpawnLocation. Heuristik - wird
     -- im playState als solche gekennzeichnet.
-    if lastPlayHereDetected then
-        return "play_here"
-    end
-    return "play"
+    return "run"
 end
 
-local absorbSharedTableReports
 
 local function playState()
-    if absorbSharedTableReports then pcall(absorbSharedTableReports) end
+    -- Version 7.0.0: NUR die Physik-/Skript-Simulation im Editor (Run) bleibt.
+    -- Es gibt keinen Playtest, keinen Client-Agenten und keinen Reporter mehr.
+    -- Verbindliches Lauf-Orakel: StudioTestService.EditModeActive.
     local editModeActive = nil
     if StudioTestService ~= nil then
         pcall(function() editModeActive = StudioTestService.EditModeActive end)
     end
-    -- B1/B2: IsRunning and Players in the edit DataModel are intentionally
-    -- ignored as a session oracle. EditModeActive=false is the Studio-owned
-    -- signal that the separate test DataModel exists.
-    local separateSession = (StudioTestService ~= nil and editModeActive == false)
-    local active = RunService:IsRunning() or separateSession
-    local liveReporter = sessionReporterUsable() and active
-    local snapshot = liveReporter and currentSessionSnapshot() or nil
-    local reporterRunning = liveReporter and separateSession
-    local players = active and #Players:GetPlayers() or 0
-    if active and snapshot and snapshot.players ~= nil then players = tonumber(snapshot.players) or players end
-    if active and snapshot and snapshot.playerCount ~= nil then players = tonumber(snapshot.playerCount) or players end
+    local runningNow = false
+    pcall(function() runningNow = RunService:IsRunning() end)
+    local sessionActive = testSessionActive()
+    local mode = currentMode()
+    if sessionActive then mode = simMode or "run" end
     return {
-        running    = active,
-        mode       = (separateSession or reporterRunning) and (sessionAgent.mode or "play") or currentMode(),
-        context    = (separateSession or reporterRunning) and "session" or currentContext(),
-        isEdit     = active and false or RunService:IsEdit(),
-        isServer   = (separateSession or reporterRunning) and true or RunService:IsServer(),
-        isClient   = (separateSession or reporterRunning) and false or RunService:IsClient(),
-        playerCount = players,
-        sessionPlayers = players,
-        agentConnected = active and sessionAgent and sessionAgent.connected == true,
-        reporterActive = liveReporter,
-        agentMode = active and ((sessionAgent and sessionAgent.agentMode) or "logStream") or nil,
+        running    = sessionActive,
+        mode       = sessionActive and mode or currentMode(),
+        context    = sessionActive and "session" or currentContext(),
+        isEdit     = sessionActive and false or RunService:IsEdit(),
+        isServer   = sessionActive and true or RunService:IsServer(),
+        isClient   = sessionActive and false or RunService:IsClient(),
+        playerCount = 0,
+        sessionPlayers = 0,
+        agentConnected = false,
+        reporterActive = false,
         httpEnabled = readHttpEnabled(),
-        reporterLastKind = liveReporter and sessionAgent.lastArenaKind or nil,
-        reporterLastAgeSeconds = liveReporter and sessionAgent.reporterAt and sessionAgent.reporterAt > 0
-            and (math.floor((os.clock() - sessionAgent.reporterAt) * 10) / 10) or nil,
-        arenaLineCount = liveReporter and (sessionAgent.arenaLineCount or 0) or 0,
-        -- 4.0.3: wie oft die Session-Reporter-Schleife laut letztem
-        -- Heartbeat lief (steigt ~alle 0,4s, solange sie gesund ist).
-        reporterLoopCount = liveReporter and sessionAgent.reporterLoopCount or nil,
-        reporterVariantUsed = liveReporter and sessionAgent.reporterVariantUsed or nil,
         userPlaytestActive = userPlaytestActive,
-        -- true = Studio is in edit mode and there is NO test session.
+        simRunning = (sessionActive and simStartedByBridge == true) or false,
+        simMode = simMode,
         editModeActive = editModeActive,
-        sessionSnapshot = snapshot,
+        sessionSnapshot = nil,
     }
 end
 
@@ -2256,56 +2301,8 @@ pcall(function()
     end
 end)
 
-local function captureSessionReporter(message, fromOutput)
-    -- The test session prints this through LogService. This connection exists
-    -- in the edit DataModel too, which is why it works without HttpEnabled.
-    local prefix = "#ARENA# "
-    local text = tostring(message or "")
-    if string.sub(text, 1, #prefix) ~= prefix then return false end
-    local decodedOk, report = pcall(function()
-        return HttpService:JSONDecode(string.sub(text, #prefix + 1))
-    end)
-    if not decodedOk or type(report) ~= "table" then return false end
-    -- Every decoded report is reporter evidence. Only a real LogService
-    -- callback counts as output evidence; SharedTable/session-plugin polling
-    -- must not falsely claim that get_output contains #ARENA# lines.
-    sessionAgent.arenaLineCount = (sessionAgent.arenaLineCount or 0) + 1
-    if fromOutput == true then
-        sessionAgent.reporterSeenInOutput = true
-        sessionAgent.reporterOutputLineCount = (sessionAgent.reporterOutputLineCount or 0) + 1
-    end
-    sessionAgent.lastArenaKind = tostring(report.kind)
-    sessionAgent.lastArenaRaw = string.sub(text, 1, 500)
-    sessionAgent.reporterAt = os.clock()
-    if report.kind == "session" then
-        sessionAgent.snapshot = report
-        sessionAgent.playerCount = tonumber(report.players or report.playerCount) or 0
-        sessionAgent.mode = report.mode or sessionAgent.mode or "play"
-        sessionAgent.reporterActive = true
-        sessionAgent.connected = true
-        if not sessionAgent.httpConnected then sessionAgent.agentMode = "logStream" end
-    elseif report.kind == "gui" then
-        sessionAgent.guiSnapshot = report
-        sessionAgent.reporterActive = true
-        sessionAgent.connected = true
-        sessionAgent.vimCommandsSeen = tonumber(report.vimCommands) or sessionAgent.vimCommandsSeen or 0
-        if not sessionAgent.httpConnected then sessionAgent.agentMode = "logStream" end
-    elseif report.kind == "hello" then
-        -- Proof that the injection survived into the session DataModel.
-        sessionAgent.reporterActive = true
-        sessionAgent.connected = true
-        if not sessionAgent.httpConnected then sessionAgent.agentMode = "logStream" end
-        if report.side == "server" and report.variant ~= nil then
-            sessionAgent.reporterVariantInSession = tonumber(report.variant) or sessionAgent.reporterVariantInSession
-        end
-    end
-    return true
-end
 
 LogService.MessageOut:Connect(function(message, messageType)
-    captureSessionReporter(message, true)
-    -- Keep #ARENA# lines in get_output. They are the first diagnostic source
-    -- if a user reports a Play problem.
     pushOutput(message, shortType(messageType), currentContext())
 end)
 
@@ -2455,26 +2452,6 @@ local function childByToken(parent, token)
     return parent:FindFirstChild(token)
 end
 
-local function findByPath(path)
-    if path == nil or path == "" or path == "game" then
-        return game
-    end
-    local normalized = string.gsub(tostring(path), "^game%.", "")
-    local current = game
-    for _, token in ipairs(splitPathSegments(normalized)) do
-        if current == nil then return nil end
-        local nextInst = childByToken(current, token)
-        if nextInst == nil then
-            -- Dienste, die noch nicht geladen sind
-            local ok, service = pcall(function() return game:GetService(token) end)
-            if ok and service and current == game then
-                nextInst = service
-            end
-        end
-        current = nextInst
-    end
-    return current
-end
 
 -- FIX 3.2: Vorwaerts-Deklarationen (findMatches/resolveSelector stehen weiter
 -- unten, MUSSSEN aber hier im Scope sein, damit resolveRef/resolveMany sie
@@ -3279,1457 +3256,13 @@ end
 -- LocalScript in den Spieler eingesetzt. Er wird nie mitgespeichert
 -- (Archivable = false) und verschwindet mit dem Testlauf.
 -- ---------------------------------------------------------------------------
-local CLIENT_AGENT_SOURCE = [==[
--- Arena Bridge Client Agent (nur waehrend des Tests aktiv)
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-local LogService = game:GetService("LogService")
-local GuiService = game:GetService("GuiService")
-local UserInputService = game:GetService("UserInputService")
-
-local cameraUserIntentUntil = 0
-
-local player = Players.LocalPlayer
-local link = ReplicatedStorage:WaitForChild("ArenaBridgeLink", 20)
-local logLink = ReplicatedStorage:WaitForChild("ArenaBridgeLog", 20)
-if not link then return end
-
-local function guiPath(inst)
-    local parts = {}
-    local current = inst
-    while current and current ~= player.PlayerGui do
-        table.insert(parts, 1, current.Name)
-        current = current.Parent
-    end
-    return table.concat(parts, ".")
-end
-
-local function collectGui(maxItems)
-    local items = {}
-    local inset = GuiService:GetGuiInset()
-    for _, screen in ipairs(player.PlayerGui:GetChildren()) do
-        if screen:IsA("LayerCollector") then
-            for _, obj in ipairs(screen:GetDescendants()) do
-                if obj:IsA("GuiObject") and #items < maxItems then
-                    local visible = obj.Visible
-                    local parent = obj.Parent
-                    while visible and parent and parent:IsA("GuiObject") do
-                        visible = parent.Visible
-                        parent = parent.Parent
-                    end
-                    local text = nil
-                    pcall(function() text = obj.Text end)
-                    table.insert(items, {
-                        name = obj.Name,
-                        className = obj.ClassName,
-                        path = screen.Name .. "." .. guiPath(obj),
-                        text = text,
-                        visible = visible and screen.Enabled,
-                        clickable = obj:IsA("GuiButton"),
-                        x = obj.AbsolutePosition.X,
-                        y = obj.AbsolutePosition.Y,
-                        width = obj.AbsoluteSize.X,
-                        height = obj.AbsoluteSize.Y,
-                        centerX = obj.AbsolutePosition.X + obj.AbsoluteSize.X / 2,
-                        centerY = obj.AbsolutePosition.Y + obj.AbsoluteSize.Y / 2 + inset.Y,
-                    })
-                end
-            end
-        end
-    end
-    return items
-end
-
-local function findGui(query)
-    local wanted = string.lower(tostring(query or ""))
-    local best = nil
-    for _, item in ipairs(collectGui(600)) do
-        local nameMatch = string.find(string.lower(item.name), wanted, 1, true)
-        local textMatch = item.text and string.find(string.lower(tostring(item.text)), wanted, 1, true)
-        local pathMatch = string.find(string.lower(item.path), wanted, 1, true)
-        if nameMatch or textMatch or pathMatch then
-            if best == nil or (item.clickable and not best.clickable) then
-                best = item
-            end
-        end
-    end
-    return best
-end
-
-local function characterInfo()
-    local character = player.Character
-    if not character then return { hasCharacter = false } end
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    local root = character:FindFirstChild("HumanoidRootPart")
-    return {
-        hasCharacter = true,
-        position = root and { x = root.Position.X, y = root.Position.Y, z = root.Position.Z } or nil,
-        health = humanoid and humanoid.Health or nil,
-        maxHealth = humanoid and humanoid.MaxHealth or nil,
-        walkSpeed = humanoid and humanoid.WalkSpeed or nil,
-        state = humanoid and tostring(humanoid:GetState()) or nil,
-        moveDirection = humanoid and { x = humanoid.MoveDirection.X, y = humanoid.MoveDirection.Y, z = humanoid.MoveDirection.Z } or nil,
-    }
-end
-
-link.OnClientInvoke = function(request)
-    request = request or {}
-    local action = tostring(request.action or "")
-    local args = request.args or {}
-
-    if action == "state" then
-        local camera = workspace.CurrentCamera
-        return {
-            ok = true,
-            player = player.Name,
-            character = characterInfo(),
-            camera = camera and {
-                position = { x = camera.CFrame.Position.X, y = camera.CFrame.Position.Y, z = camera.CFrame.Position.Z },
-                viewportSize = { x = camera.ViewportSize.X, y = camera.ViewportSize.Y },
-                cameraType = tostring(camera.CameraType),
-            } or nil,
-            guiInset = { x = GuiService:GetGuiInset().X, y = GuiService:GetGuiInset().Y },
-            mouseBehavior = tostring(UserInputService.MouseBehavior),
-        }
-    elseif action == "gui_dump" then
-        return { ok = true, items = collectGui(tonumber(args.limit) or 200) }
-    elseif action == "gui_find" then
-        local item = findGui(args.query)
-        if item then return { ok = true, item = item } end
-        return { ok = false, error = "No GUI element matches '" .. tostring(args.query) .. "'." }
-    elseif action == "set_text" then
-        local item = findGui(args.query)
-        if not item then return { ok = false, error = "GUI element not found." } end
-        local target = player.PlayerGui
-        for segment in string.gmatch(item.path, "[^%.]+") do
-            target = target:FindFirstChild(segment)
-            if not target then break end
-        end
-        if target then
-            local ok = pcall(function() target.Text = tostring(args.text or "") end)
-            return { ok = ok, path = item.path }
-        end
-        return { ok = false, error = "GUI element vanished." }
-    elseif action == "move" then
-        local character = player.Character
-        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-        if not humanoid then return { ok = false, error = "No humanoid." } end
-        local target = args.position
-        if target then
-            humanoid:MoveTo(Vector3.new(target.x or 0, target.y or 0, target.z or 0))
-            if args.waitForArrival then
-                local reached = humanoid.MoveToFinished:Wait()
-                return { ok = true, reached = reached, state = characterInfo() }
-            end
-            return { ok = true, state = characterInfo() }
-        end
-        return { ok = false, error = "position missing." }
-    elseif action == "jump" then
-        local character = player.Character
-        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-        if not humanoid then return { ok = false, error = "No humanoid." } end
-        humanoid.Jump = true
-        return { ok = true }
-    elseif action == "camera" then
-        cameraUserIntentUntil = os.clock() + 4
-        local camera = workspace.CurrentCamera
-        if args.position and camera then
-            camera.CameraType = Enum.CameraType.Scriptable
-            camera.CFrame = CFrame.new(Vector3.new(args.position.x or 0, args.position.y or 0, args.position.z or 0))
-            if args.lookAt then
-                camera.CFrame = CFrame.lookAt(camera.CFrame.Position, Vector3.new(args.lookAt.x or 0, args.lookAt.y or 0, args.lookAt.z or 0))
-            end
-        end
-        return { ok = true }
-    elseif action == "ping" then
-        return { ok = true, time = os.clock() }
-    end
-    return { ok = false, error = "Unknown client action: " .. action }
-end
-
--- Client-Ausgaben an den Server weiterreichen (Sammelpakete alle 0.4s)
-local userLink = ReplicatedStorage:WaitForChild("ArenaBridgeUser", 20)
-local pendingUser = {}
-
-local function reportUser(kind, data)
-    table.insert(pendingUser, { kind = kind, data = data, time = os.time() })
-    if #pendingUser > 20 then table.remove(pendingUser, 1) end
-end
-
--- Benutzer drehen/bewegen die Kamera? (wird gedrosselt, KI-Kamerabefehle unterdrueckt)
-local lastCam = nil
-local lastCamReport = 0
-RunService.Heartbeat:Connect(function()
-    local camera = workspace.CurrentCamera
-    if camera then
-        local cf = camera.CFrame
-        if lastCam then
-            local deltaPos = (cf.Position - lastCam.Position).Magnitude
-            local deltaLook = (cf.LookVector - lastCam.LookVector).Magnitude
-            if (deltaPos > 0.5 or deltaLook > 0.02) and os.clock() - lastCamReport > 3
-                and os.clock() > cameraUserIntentUntil then
-                reportUser(deltaLook > 0.02 and "user_rotating_camera" or "user_moving_camera", nil)
-                lastCamReport = os.clock()
-            end
-        end
-        lastCam = cf
-    end
-end)
-
--- Benutzer klickt in der GUI (oder in die Welt)?
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    local isPointer = input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch
-    if isPointer then
-        if gameProcessed then
-            reportUser("user_gui_click", {
-                x = input.Position and input.Position.X or nil,
-                y = input.Position and input.Position.Y or nil,
-            })
-        else
-            reportUser("user_clicking_viewport", nil)
-        end
-    end
-end)
-
-if logLink or userLink then
-    local pending = {}
-    LogService.MessageOut:Connect(function(message, messageType)
-        table.insert(pending, { message = message, type = tostring(messageType.Name) })
-        if #pending > 200 then table.remove(pending, 1) end
-    end)
-    task.spawn(function()
-        while true do
-            task.wait(0.4)
-            if logLink and #pending > 0 then
-                local batch = pending
-                pending = {}
-                pcall(function() logLink:FireServer(batch) end)
-            end
-            if userLink and #pendingUser > 0 then
-                local batchUser = pendingUser
-                pendingUser = {}
-                pcall(function() userLink:FireServer(batchUser) end)
-            end
-        end
-    end)
-end
-]==]
 
 -- ---------------------------------------------------------------------------
--- SESSION-AGENT (3.9.7)
--- Studio Play runs in a separate DataModel on current Studio versions. The
--- plugin therefore cannot see Players there. A temporary Script is copied into
--- the test snapshot, reports to the local bridge and is destroyed in edit mode
--- immediately afterwards, so it is never saved into the place.
+-- SIMULATION (Run, ab 7.0.0)
+-- Kein Reporter, kein Session-Agent, kein Client-Agent. Verbindliches Orakel
+-- fuer "laeuft eine Simulation" ist allein StudioTestService.EditModeActive;
+-- RunService:IsRunning wird nur als zweite, schwaechere Quelle gemeldet.
 -- ---------------------------------------------------------------------------
-local SESSION_AGENT_SOURCE = [==[
-local HttpService = game:GetService("HttpService")
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local LogService = game:GetService("LogService")
-local StudioTestService = nil
-pcall(function() StudioTestService = game:GetService("StudioTestService") end)
-local BASE_URL = "__BASE_URL__"
-local SESSION_ID = "__SESSION_ID__"
-local SESSION_KEY = "__SESSION_KEY__"
-local output, warnedHttp = {}, false
-
-local CLIENT_SOURCE = [=[
-local Players = game:GetService("Players")
-local remote = game:GetService("ReplicatedStorage"):WaitForChild("ArenaSessionBridge", 10)
-if not remote then return end
-local player = Players.LocalPlayer
-local function pathOf(inst) return inst:GetFullName() end
-local function dump(limit)
-  local items = {}
-  for _, inst in ipairs(player:WaitForChild("PlayerGui"):GetDescendants()) do
-    if #items >= (limit or 200) then break end
-    if inst:IsA("GuiObject") then
-      local text = nil
-      pcall(function() text = inst.Text end)
-      table.insert(items, { name=inst.Name, className=inst.ClassName, path=pathOf(inst), text=text, visible=inst.Visible,
-        clickable=inst:IsA("GuiButton"), x=inst.AbsolutePosition.X, y=inst.AbsolutePosition.Y,
-        width=inst.AbsoluteSize.X, height=inst.AbsoluteSize.Y,
-        centerX=inst.AbsolutePosition.X + inst.AbsoluteSize.X/2, centerY=inst.AbsolutePosition.Y + inst.AbsoluteSize.Y/2 })
-    end
-  end
-  return items
-end
-local function find(query)
-  query = string.lower(tostring(query or ""))
-  for _, item in ipairs(dump(600)) do
-    if string.find(string.lower(item.name), query, 1, true) or (item.text and string.find(string.lower(tostring(item.text)), query, 1, true)) or string.find(string.lower(item.path), query, 1, true) then return item end
-  end
-end
-remote.OnClientInvoke = function(req)
-  local action, args = req.action, req.args or {}
-  if action == "ping" then return {ok=true} end
-  if action == "gui_dump" then return {ok=true, items=dump(tonumber(args.limit) or 200)} end
-  if action == "gui_find" then local item=find(args.query); return item and {ok=true,item=item} or {ok=false,error="GUI element not found."} end
-  if action == "set_text" then
-    local wanted=tostring(args.query or ""):lower()
-    for _, inst in ipairs(player.PlayerGui:GetDescendants()) do if inst:IsA("TextBox") and (inst.Name:lower():find(wanted,1,true) or inst:GetFullName():lower():find(wanted,1,true)) then inst.Text=tostring(args.text or ""); return {ok=true,path=inst:GetFullName()} end end
-    return {ok=false,error="TextBox not found."}
-  end
-  if action == "gui_click_at" then
-    local x,y=tonumber(args.x) or -1,tonumber(args.y) or -1
-    for _, inst in ipairs(player.PlayerGui:GetDescendants()) do
-      if inst:IsA("GuiButton") and inst.Visible then local p,s=inst.AbsolutePosition,inst.AbsoluteSize; if x>=p.X and x<=p.X+s.X and y>=p.Y and y<=p.Y+s.Y then inst:Activate(); return {ok=true} end end
-    end
-    return {ok=false,error="No visible GuiButton at this position."}
-  end
-  if action == "state" then return {ok=true, player=player.Name} end
-  return {ok=false,error="Unsupported client action: "..tostring(action)}
-end
-]=]
-
-local function jsonRequest(payload)
-  local ok, response = pcall(function()
-    return HttpService:RequestAsync({Url=BASE_URL.."/plugin/session", Method="POST", Headers={["Content-Type"]="application/json"}, Body=HttpService:JSONEncode(payload)})
-  end)
-  if not ok or not response or not response.Success then
-    if not warnedHttp then warnedHttp=true; warn("Arena optional HTTP-Agent ist nicht erreichbar; LogStream-Reporter bleibt aktiv.") end
-    return nil
-  end
-  local decodedOk, decoded = pcall(function() return HttpService:JSONDecode(response.Body) end)
-  return decodedOk and decoded or nil
-end
-local function vec(v) return v and {x=v.X,y=v.Y,z=v.Z} or nil end
-local function characterState()
-  local p=Players:GetPlayers()[1]; local c=p and p.Character; local h=c and c:FindFirstChildOfClass("Humanoid"); local r=c and c:FindFirstChild("HumanoidRootPart")
-  return {ok=true, playerCount=#Players:GetPlayers(), hasCharacter=c~=nil, player=p and p.Name or nil, position=vec(r and r.Position), health=h and h.Health or nil, maxHealth=h and h.MaxHealth or nil, walkSpeed=h and h.WalkSpeed or nil, state=h and tostring(h:GetState()) or nil}
-end
-local remote = Instance.new("RemoteFunction"); remote.Name="ArenaSessionBridge"; remote.Archivable=false; remote.Parent=ReplicatedStorage
-local template=Instance.new("LocalScript"); template.Name="ArenaSessionClientAgent"; template.Archivable=false; template.Source=CLIENT_SOURCE; template.Disabled=true; template.Parent=ReplicatedStorage
-local function addClient(p)
-  task.spawn(function() local gui=p:WaitForChild("PlayerGui",10); if gui then local c=template:Clone(); c.Parent=gui; c.Disabled=false end end)
-end
-for _,p in ipairs(Players:GetPlayers()) do addClient(p) end
-Players.PlayerAdded:Connect(addClient)
-LogService.MessageOut:Connect(function(message, kind) table.insert(output,{message=tostring(message),type=tostring(kind)}); if #output>100 then table.remove(output,1) end end)
-local function client(action,args)
-  local p=Players:GetPlayers()[1]; if not p then return {ok=false,error="No player in session."} end
-  local ok,res=pcall(function() return remote:InvokeClient(p,{action=action,args=args or {}}) end); return ok and res or {ok=false,error=tostring(res)}
-end
-local function execute(cmd)
-  local action,args=cmd.action,cmd.args or {}
-  if action=="ping" then local r=characterState(); r.mode="play"; return r end
-  if action=="character_state" then return characterState() end
-  local p=Players:GetPlayers()[1]; local c=p and p.Character; local h=c and c:FindFirstChildOfClass("Humanoid"); local root=c and c:FindFirstChild("HumanoidRootPart")
-  if action=="move_character" then
-    if not h then return {ok=false,error="No character."} end
-    local q=args.position
-    if type(q)=="table" then
-      local target=Vector3.new(tonumber(q.x) or 0,tonumber(q.y) or 0,tonumber(q.z) or 0); h:MoveTo(target); return {ok=true,moving=true,position=vec(root and root.Position)}
-    end
-    local keys=args.keys or args.direction; if type(keys)=="string" then keys={keys} end
-    if type(keys)=="table" then
-      local d=Vector3.zero; for _,key in ipairs(keys) do local k=string.upper(tostring(key)); if k=="W" then d=d+Vector3.new(0,0,-1) elseif k=="S" then d=d+Vector3.new(0,0,1) elseif k=="A" then d=d+Vector3.new(-1,0,0) elseif k=="D" then d=d+Vector3.new(1,0,0) elseif k=="SPACE" then h.Jump=true end end
-      if d.Magnitude>0 then
-        d=d.Unit
-        local duration=math.max(0.05,math.min(tonumber(args.duration) or 1,12))
-        local untilAt=os.clock()+duration
-        while os.clock()<untilAt and h.Parent and h.Health>0 do
-          h:Move(d,false)
-          RunService.Heartbeat:Wait()
-        end
-        h:Move(Vector3.zero,false)
-      end
-      return {ok=true,pressed=keys,position=vec(root and root.Position)}
-    end
-    return {ok=false,error="Need position or keys."}
-  end
-  if action=="teleport_character" then local q=args.position; if not c or type(q)~="table" then return {ok=false,error="No character or position."} end; local target=Vector3.new(tonumber(q.x) or 0,tonumber(q.y) or 0,tonumber(q.z) or 0); c:PivotTo(CFrame.new(target)); return {ok=true,position=vec(target)} end
-  if action=="respawn_character" then if not p then return {ok=false,error="No player."} end; p:LoadCharacter(); return {ok=true,respawned=true} end
-  if action=="client_action" then return client(args.action,args.args or args) end
-  if action=="gui_click" then return client("gui_click_at",args) end
-  if action=="end_test" then task.defer(function() task.wait(0.15); if StudioTestService then pcall(function() StudioTestService:EndTest("stopped_by_arena_bridge") end) else pcall(function() RunService:Stop() end) end end); return {ok=true,ending=true} end
-  if action=="output" then return {ok=true,lines=output} end
-  return {ok=false,error="Unsupported Session-Agent action: "..tostring(action)}
-end
-local agentNotRunningStreak = 0
-while true do
-  local loopOk, loopError = pcall(function()
-    local response=jsonRequest({sessionId=SESSION_ID,sessionKey=SESSION_KEY,action="heartbeat",state={running=true,mode="play",playerCount=#Players:GetPlayers(),character=characterState(),output=output}})
-    if response and response.commands then
-      for _,cmd in ipairs(response.commands) do
-        task.spawn(function()
-          local result=execute(cmd)
-          jsonRequest({sessionId=SESSION_ID,sessionKey=SESSION_KEY,action="result",commandId=cmd.id,result=result})
-        end)
-      end
-    end
-  end)
-  local runningOk, runningNow = pcall(function() return RunService:IsRunning() end)
-  if runningOk and runningNow then agentNotRunningStreak=0 else
-    agentNotRunningStreak=agentNotRunningStreak+1
-    if agentNotRunningStreak >= 15 then break end
-  end
-  task.wait(0.35)
-end
-]==]
-
--- ---------------------------------------------------------------------------
--- SESSION REPORTER (3.9.7, no HTTP required)
--- This source deliberately contains no RequestAsync. Studio's output bridge
--- reaches the edit plugin even when a place forbids HTTP requests.
--- 3.9.7 NEW: it prints a "#ARENA# hello" line immediately (proof that the
--- injection survived into the session) and it answers commands through the
--- cross-DM channels (RemoteEvent fed by VIM key combos, SharedTableRegistry).
--- ---------------------------------------------------------------------------
-local SESSION_CLIENT_REPORTER_SOURCE = [==[
-local HttpService = game:GetService("HttpService")
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
-local player = Players.LocalPlayer
-local SharedTableRegistry = nil
-pcall(function() SharedTableRegistry = game:GetService("SharedTableRegistry") end)
-local function itemPath(inst)
-  local ok, value = pcall(function() return inst:GetFullName() end)
-  return ok and value or inst.Name
-end
-local function guiItems(limit)
-  local out = {}
-  local gui = player and player:FindFirstChildOfClass("PlayerGui")
-  if not gui then return out end
-  for _, inst in ipairs(gui:GetDescendants()) do
-    if #out >= (limit or 300) then break end
-    if inst:IsA("GuiObject") then
-      local text = nil
-      pcall(function() text = inst.Text end)
-      table.insert(out, {
-        name=inst.Name, className=inst.ClassName, path=itemPath(inst), text=text,
-        visible=inst.Visible, clickable=inst:IsA("GuiButton"),
-        x=inst.AbsolutePosition.X, y=inst.AbsolutePosition.Y,
-        width=inst.AbsoluteSize.X, height=inst.AbsoluteSize.Y,
-        centerX=inst.AbsolutePosition.X + inst.AbsoluteSize.X / 2,
-        centerY=inst.AbsolutePosition.Y + inst.AbsoluteSize.Y / 2,
-      })
-    end
-  end
-  return out
-end
--- 3.9.7: hello proves immediately that the reporter survived into the session
--- (the 3.9.6 failure was: zero #ARENA# lines, reporter never existed here).
-pcall(function() print("#ARENA# " .. HttpService:JSONEncode({ kind="hello", side="client", player=player and player.Name or nil })) end)
-
--- 3.9.7 CHANNEL vim: invisible key combos sent by the edit plugin through
--- VirtualInputManager reach this client and are forwarded to the server
--- reporter, which runs EndTest / respawn / state inside the session DM.
-local vimCommands = 0
-local cmdRemote = ReplicatedStorage:WaitForChild("ArenaSessionCmd", 15)
-local function modsHeld()
-  return UserInputService:IsKeyDown(Enum.KeyCode.LeftControl)
-    and UserInputService:IsKeyDown(Enum.KeyCode.LeftAlt)
-    and UserInputService:IsKeyDown(Enum.KeyCode.LeftShift)
-end
-UserInputService.InputBegan:Connect(function(input)
-  if input.UserInputType ~= Enum.UserInputType.Keyboard then return end
-  if not modsHeld() then return end
-  local action = nil
-  if input.KeyCode == Enum.KeyCode.E then action = "end_test"
-  elseif input.KeyCode == Enum.KeyCode.R then action = "respawn_character"
-  elseif input.KeyCode == Enum.KeyCode.P then action = "character_state" end
-  if action == nil then return end
-  vimCommands = vimCommands + 1
-  if cmdRemote then pcall(function() cmdRemote:FireServer({ action = action, id = HttpService:GenerateGUID(false) }) end) end
-end)
-
--- 3.9.7 CHANNEL sharedTable: full-args client commands (camera etc.). The
--- edit plugin writes st.clientCommand; this reporter writes st.clientResult.
-local st = nil
-if SharedTableRegistry then pcall(function() st = SharedTableRegistry:GetSharedTable("arenaBridge") end) end
-local function publishClientReport(report)
-  if st == nil then return end
-  pcall(function()
-    local raw = HttpService:JSONEncode(report)
-    st.clientReport = raw
-    st.clientReportAt = os.clock()
-  end)
-end
-local function runClientCommand(cmd)
-  local args = type(cmd.args) == "table" and cmd.args or {}
-  if cmd.action == "camera" then
-    local position = args.position
-    local camera = workspace.CurrentCamera
-    if camera == nil or position == nil then return { ok=false, error="No camera or position." } end
-    local origin = Vector3.new(tonumber(position.x) or 0, tonumber(position.y) or 0, tonumber(position.z) or 0)
-    local lookAt = type(args.lookAt) == "table" and args.lookAt or nil
-    if lookAt ~= nil then
-      camera.CFrame = CFrame.lookAt(origin, Vector3.new(tonumber(lookAt.x) or 0, tonumber(lookAt.y) or 0, tonumber(lookAt.z) or 0))
-    else
-      camera.CFrame = CFrame.new(origin)
-    end
-    return { ok=true, camera="moved" }
-  end
-  if cmd.action == "ping" then return { ok=true, vimCommands=vimCommands } end
-  return { ok=false, error="Unsupported client command: " .. tostring(cmd.action) }
-end
-
-local count = 0
-local notRunningStreak = 0
-while true do
-  count = count + 1
-  if st ~= nil then pcall(function()
-    local raw = st.clientCommand
-    if type(raw) == "string" and raw ~= "" then
-      local okD, cmd = pcall(function() return HttpService:JSONDecode(raw) end)
-      if okD and type(cmd) == "table" and cmd.id ~= st.clientDone then
-        st.clientDone = cmd.id
-        st.clientCommand = ""
-        st.clientResult = HttpService:JSONEncode({ id = cmd.id, result = runClientCommand(cmd) })
-      else
-        st.clientCommand = ""
-      end
-    end
-  end) end
-  local camera = workspace.CurrentCamera
-  local viewport = camera and camera.ViewportSize or nil
-  local report = {kind="gui", player=player and player.Name or nil, items=guiItems(350),
-    viewport=viewport and {x=viewport.X,y=viewport.Y} or nil, vimCommands=vimCommands}
-  publishClientReport(report)
-  pcall(function() print("#ARENA# " .. HttpService:JSONEncode(report)) end)
-  local runningOk, runningNow = pcall(function() return RunService:IsRunning() end)
-  if runningOk and runningNow then notRunningStreak = 0 else
-    notRunningStreak = notRunningStreak + 1
-    if notRunningStreak >= 15 then break end
-  end
-  task.wait(count <= 6 and 0.5 or 1)
-end
-]==]
-
-local SESSION_REPORTER_SOURCE = [==[
-local HttpService = game:GetService("HttpService")
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local StudioTestService = nil
-pcall(function() StudioTestService = game:GetService("StudioTestService") end)
-local SharedTableRegistry = nil
-pcall(function() SharedTableRegistry = game:GetService("SharedTableRegistry") end)
-local function vec(v) return v and {x=v.X,y=v.Y,z=v.Z} or nil end
-local function characterState(player)
-  local c = player and player.Character
-  local h = c and c:FindFirstChildOfClass("Humanoid")
-  local root = c and c:FindFirstChild("HumanoidRootPart")
-  return {player=player and player.Name or nil, hasCharacter=c~=nil,
-    position=vec(root and root.Position), health=h and h.Health or nil,
-    maxHealth=h and h.MaxHealth or nil, walkSpeed=h and h.WalkSpeed or nil,
-    state=h and tostring(h:GetState()) or nil}
-end
-local testArgs = {}
-if StudioTestService then pcall(function() testArgs = StudioTestService:GetTestArgs() or {} end) end
-
--- 4.0.1 LIVE-BEWEIS: EndTest ist der EINZIGE Rueckkanal, der nachweislich vom
--- Session-Server-DataModel in das Edit-DataModel zurueckkommt - sein Wert ist
--- der Rueckgabewert von ExecutePlayModeAsync. arenaProbe=true laesst den
--- Reporter genau das tun: er wartet auf Spieler + Charakter und beendet den
--- Test dann selbst mit einem eindeutigen Lebensbeweis. Damit ist bewiesen,
--- (a) dass das injizierte Script im Play-Snapshot gelandet ist und laeuft und
--- (b) dass EndTest den Test automatisch beendet - ohne MessageOut, ohne
--- SharedTable und ohne HttpEnabled.
-if testArgs and testArgs.arenaProbe == true and StudioTestService ~= nil then
-  task.spawn(function()
-    local deadline = os.clock() + 20
-    while os.clock() < deadline do
-      local player = Players:GetPlayers()[1]
-      local character = player and player.Character
-      local root = character and character:FindFirstChild("HumanoidRootPart")
-      local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-      if root ~= nil then
-        local proof = { proof = "ARENA_REPORTER_ALIVE", players = #Players:GetPlayers(),
-          player = player.Name, hasCharacter = true,
-          position = { x = root.Position.X, y = root.Position.Y, z = root.Position.Z },
-          health = humanoid and humanoid.Health or nil,
-          maxHealth = humanoid and humanoid.MaxHealth or nil }
-        local encoded = "ARENA_REPORTER_ALIVE"
-        pcall(function() encoded = HttpService:JSONEncode(proof) end)
-        pcall(function() StudioTestService:EndTest(encoded) end)
-        return
-      end
-      task.wait(0.25)
-    end
-    pcall(function() StudioTestService:EndTest("{\"proof\":\"ARENA_REPORTER_ALIVE\",\"players\":0}") end)
-  end)
-end
-
-local function applyArenaSpawn(player)
-  local spawn = testArgs and testArgs.arenaSpawn
-  if type(spawn) ~= "table" then return end
-  task.spawn(function()
-    local character = player.Character or player.CharacterAdded:Wait()
-    local root = character and character:WaitForChild("HumanoidRootPart", 10)
-    if root then pcall(function() character:PivotTo(CFrame.new(tonumber(spawn.x) or 0, tonumber(spawn.y) or 0, tonumber(spawn.z) or 0)) end) end
-  end)
-end
-for _, player in ipairs(Players:GetPlayers()) do applyArenaSpawn(player) end
-Players.PlayerAdded:Connect(applyArenaSpawn)
-
--- 3.9.7 CHANNELS into the running session (B1/B2 of the 3.9.6 live test):
---  A) RemoteEvent fed by the client reporter (virtual key combos)
---  B) SharedTableRegistry cross-DM memory written by the edit plugin
--- Both run commands ONLY here, in the session server DataModel, which is the
--- sole place where StudioTestService:EndTest works for service sessions.
-local cmdRemote = Instance.new("RemoteEvent")
-cmdRemote.Name = "ArenaSessionCmd"
-cmdRemote.Archivable = false
-cmdRemote.Parent = ReplicatedStorage
-
-local st = nil
-if SharedTableRegistry then pcall(function() st = SharedTableRegistry:GetSharedTable("arenaBridge") end) end
-local function publishSessionReport(report)
-  if st == nil then return end
-  pcall(function()
-    local raw = HttpService:JSONEncode(report)
-    st.report = raw
-    st.reportAt = os.clock()
-    st.reporterAlive = true
-  end)
-end
-
-local function executeCommand(cmd)
-  if type(cmd) ~= "table" then return { ok=false, error="Bad command." } end
-  local action = tostring(cmd.action or "")
-  local args = type(cmd.args) == "table" and cmd.args or {}
-  if action == "end_test" then
-    task.defer(function()
-      task.wait(0.15)
-      if StudioTestService ~= nil then
-        pcall(function() StudioTestService:EndTest("stopped_by_arena_bridge") end)
-      else
-        pcall(function() RunService:Stop() end)
-      end
-    end)
-    return { ok=true, ending=true, reason="stopped_by_arena_bridge" }
-  end
-  if action == "teleport_character" then
-    local targetPlayer = Players:GetPlayers()[1]
-    local character = targetPlayer and targetPlayer.Character
-    local q = type(args.position) == "table" and args.position or nil
-    if character == nil or q == nil then return { ok=false, error="No character or position." } end
-    local target = Vector3.new(tonumber(q.x) or 0, tonumber(q.y) or 0, tonumber(q.z) or 0)
-    pcall(function() character:PivotTo(CFrame.new(target)) end)
-    return { ok=true, position=vec(target) }
-  end
-  if action == "respawn_character" then
-    local targetPlayer = Players:GetPlayers()[1]
-    if targetPlayer == nil then return { ok=false, error="No player." } end
-    task.spawn(function() pcall(function() targetPlayer:LoadCharacter() end) end)
-    return { ok=true, respawned=true }
-  end
-  if action == "character_state" then
-    local state = characterState(Players:GetPlayers()[1])
-    state.ok = true
-    state.playerCount = #Players:GetPlayers()
-    return state
-  end
-  if action == "move_character" then
-    local targetPlayer = Players:GetPlayers()[1]
-    local character = targetPlayer and targetPlayer.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-    if character == nil or humanoid == nil or root == nil then
-      return { ok=false, error="No character to move in the session." }
-    end
-    local before = vec(root.Position)
-    local keys = type(args.keys) == "table" and args.keys or {}
-    if type(args.keys) == "string" then keys = { args.keys } end
-    local duration = math.max(0.05, math.min(tonumber(args.duration) or 1, 12))
-    local dx, dz = 0, 0
-    for _, key in ipairs(keys) do
-      local up = string.upper(tostring(key))
-      if up == "W" or up == "UP" then dz = dz - 1
-      elseif up == "S" or up == "DOWN" then dz = dz + 1
-      elseif up == "A" or up == "LEFT" then dx = dx - 1
-      elseif up == "D" or up == "RIGHT" then dx = dx + 1
-      elseif up == "SPACE" then pcall(function() humanoid.Jump = true end) end
-    end
-    if dx == 0 and dz == 0 then
-      return { ok=true, keys=keys, duration=0, positionBefore=before, positionAfter=before, via="sharedTableReporter" }
-    end
-    local look = Vector3.new(0, 0, -1)
-    local direction = Vector3.new(dx, 0, -dz)
-    if direction.Magnitude > 0 then direction = direction.Unit end
-    local okMove, errMove = pcall(function()
-      -- Humanoid:Move is frame-scoped in modern Studio. Keep feeding it for
-      -- the requested duration; one call followed by task.wait looked like a
-      -- successful move but often moved the avatar by zero studs.
-      local untilAt = os.clock() + duration
-      while os.clock() < untilAt and humanoid.Parent and humanoid.Health > 0 do
-        humanoid:Move(direction, false)
-        RunService.Heartbeat:Wait()
-      end
-      humanoid:Move(Vector3.new(0, 0, 0), false)
-    end)
-    if not okMove then return { ok=false, error=tostring(errMove) } end
-    local afterRoot = character:FindFirstChild("HumanoidRootPart")
-    return { ok=true, keys=keys, duration=duration, positionBefore=before,
-      positionAfter=vec(afterRoot and afterRoot.Position), via="sharedTableReporter" }
-  end
-  return { ok=false, error="Unsupported reporter command: " .. action }
-end
-
-local function acceptCommand(cmd)
-  local result = executeCommand(cmd)
-  if st ~= nil and type(cmd) == "table" and cmd.id ~= nil then
-    pcall(function() st.lastResult = HttpService:JSONEncode({ id = cmd.id, result = result }) end)
-  end
-  return result
-end
-
-cmdRemote.OnServerEvent:Connect(function(_, payload)
-  if type(payload) == "table" then acceptCommand(payload) end
-end)
-
--- 4.0.0: SharedTableRegistry is the reliable return path. MessageOut is
--- still emitted for older Studio builds, but the edit plugin no longer relies
--- on a cross-DataModel LogService bridge.
-local helloReport = { kind="hello", side="server", mode=(testArgs and testArgs.mode) or "play",
-  variant=tonumber(testArgs and testArgs.reporterVariant) or 2, sharedTable=(st ~= nil), studioTestService=(StudioTestService ~= nil) }
-publishSessionReport(helloReport)
-pcall(function() print("#ARENA# " .. HttpService:JSONEncode(helloReport)) end)
-
-local count = 0
-local notRunningStreak = 0
-while true do
-  local iterationOk, iterationError = pcall(function()
-    count = count + 1
-    if st ~= nil then
-      -- The registry may be unavailable or isolated per DataModel. Never let
-      -- one SharedTable error terminate the reporter loop.
-      pcall(function()
-        if st.probe ~= nil and st.probeEcho ~= st.probe then st.probeEcho = st.probe end
-        local raw = st.command
-        if type(raw) == "string" and raw ~= "" then
-          local okD, cmd = pcall(function() return HttpService:JSONDecode(raw) end)
-          if okD and type(cmd) == "table" and cmd.id ~= st.commandDone then
-            st.commandDone = cmd.id
-            st.command = ""
-            task.spawn(function() acceptCommand(cmd) end)
-          else
-            st.command = ""
-          end
-        end
-      end)
-    end
-    local all = Players:GetPlayers()
-    local chars = {}
-    for _, player in ipairs(all) do table.insert(chars, characterState(player)) end
-    local report = {kind="session", mode=(testArgs and testArgs.mode) or "play", players=#all, playerCount=#all,
-      characters=chars, character=chars[1], reporterAlive=true, reporterLoopAlive=true,
-      reporterLoopCount=count, reporterLoopError=iterationError,
-      states={running=true, server=RunService:IsServer()}}
-    publishSessionReport(report)
-    pcall(function() print("#ARENA# " .. HttpService:JSONEncode(report)) end)
-  end)
-  if not iterationOk then
-    pcall(function() print("#ARENA# " .. HttpService:JSONEncode({kind="reporter_error", reporterLoopCount=count, error=tostring(iterationError)})) end)
-  end
-  local runningOk, runningNow = pcall(function() return RunService:IsRunning() end)
-  if runningOk and runningNow then
-    notRunningStreak = 0
-  else
-    notRunningStreak = notRunningStreak + 1
-    if notRunningStreak >= 15 then break end
-  end
-  task.wait(count <= 6 and 0.5 or 1)
-end
-]==]
--- 3.9.7 B1-FIX (live proven): deletion race / Archivable=false kept the
--- reporter OUT of the session in 3.9.6 (zero #ARENA# lines, sessionPlayers=0).
--- Two injection variants exist so the behaviour can be tested empirically:
---   variant 1 = Archivable=false helpers (the 3.9.6 behaviour - live finding:
---               they seem NOT to be cloned into the test DataModel at all);
---   variant 2 = DEFAULT, normal clone-safe scripts that ARE part of the test
---               snapshot and are deleted from the EDIT place only AFTER
---               editModeActive=false proved the snapshot already exists
---               (plus safety sweeps at play_stop and at plugin unload, so
---               nothing reporter-like can ever be saved/published).
-local REPORTER_NAMES = { server = "ArenaSessionReporter", client = "ArenaSessionClientReporter", httpAgent = "ArenaOptionalHttpAgent" }
-
-local function installSessionReporters(variant)
-    variant = (tonumber(variant) == 1) and 1 or 2
-    local created = {}
-    local server = Instance.new("Script")
-    server.Name = REPORTER_NAMES.server
-    if variant == 1 then server.Archivable = false end
-    server.Source = SESSION_REPORTER_SOURCE
-    server.Parent = ServerScriptService
-    table.insert(created, server)
-
-    local starterPlayer = nil
-    pcall(function() starterPlayer = game:GetService("StarterPlayer") end)
-    local starterScripts = starterPlayer and starterPlayer:FindFirstChild("StarterPlayerScripts")
-    if starterScripts then
-        local client = Instance.new("LocalScript")
-        client.Name = REPORTER_NAMES.client
-        if variant == 1 then client.Archivable = false end
-        client.Source = SESSION_CLIENT_REPORTER_SOURCE
-        client.Parent = starterScripts
-        table.insert(created, client)
-    end
-    return created, variant
-end
-
--- Belt-and-braces cleanup for variant 2 (and after crashes): helper scripts
--- must never survive in the EDIT place, or they would be saved with it.
-local function sweepEditReporterCopies()
-    local removed = 0
-    pcall(function()
-        local direct = game:GetService("ServerScriptService"):FindFirstChild(REPORTER_NAMES.server)
-        if direct then pcall(function() direct:Destroy() end); removed = removed + 1 end
-        local httpCopy = game:GetService("ServerScriptService"):FindFirstChild(REPORTER_NAMES.httpAgent)
-        if httpCopy then pcall(function() httpCopy:Destroy() end); removed = removed + 1 end
-    end)
-    pcall(function()
-        local starterPlayer = game:GetService("StarterPlayer")
-        local starterScripts = starterPlayer and starterPlayer:FindFirstChild("StarterPlayerScripts")
-        local clientCopy = starterScripts and starterScripts:FindFirstChild(REPORTER_NAMES.client)
-        if clientCopy then pcall(function() clientCopy:Destroy() end); removed = removed + 1 end
-    end)
-    return removed
-end
-
-local function removeTransientReporters(created)
-    for _, inst in ipairs(created or {}) do pcall(function() inst:Destroy() end) end
-    return sweepEditReporterCopies()
-end
-
-local function sessionDiagnostics(diag)
-    local active = testSessionActive()
-    local snap = active and currentSessionSnapshot() or nil
-    diag.sessionPlayers = active and (tonumber((snap and (snap.players or snap.playerCount)) or sessionAgent.playerCount) or 0) or 0
-    diag.reporterActive = active and sessionReporterUsable() or false
-    diag.reporterSeenInOutput = active and sessionAgent.reporterSeenInOutput == true or false
-    diag.arenaLineCount = active and (sessionAgent.arenaLineCount or 0) or 0
-    -- 4.0.3: Schleifenzaehler des Session-Reporters in jede play_start-/
-    -- play_stop-Diagnose uebernehmen (Beweis, wie oft die Schleife lief).
-    if sessionAgent.reporterLoopCount ~= nil then diag.reporterLoopCount = sessionAgent.reporterLoopCount end
-    if sessionAgent.reporterPostFailCount ~= nil then diag.reporterPostFailCount = sessionAgent.reporterPostFailCount end
-    diag.agentMode = active and ((sessionAgent and sessionAgent.agentMode) or "logStream") or nil
-    diag.httpEnabled = readHttpEnabled()
-    diag.lastArenaKind = active and sessionAgent.lastArenaKind or nil
-    if active and sessionAgent.reporterAt and sessionAgent.reporterAt > 0 then
-        diag.lastArenaAgeSeconds = math.floor((os.clock() - sessionAgent.reporterAt) * 10) / 10
-    end
-    if sessionAgent.reporterInjected then diag.reporterInjected = true end
-    if sessionAgent.reporterVariantUsed then diag.reporterVariantUsed = sessionAgent.reporterVariantUsed end
-    return diag
-end
-
-local function sessionAgentCall(action, args, timeout)
-    if sessionAgent.key == nil or sessionId == nil then return nil, "Session-Agent ist nicht eingerichtet." end
-    local commandId = HttpService:GenerateGUID(false)
-    local queued = post("/plugin/session", { sessionId = sessionId, sessionKey = sessionAgent.key, action = "command", command = { id = commandId, action = action, args = args or {} } })
-    if queued == nil or queued.ok ~= true then return nil, "Optional HTTP Session-Agent did not accept the command." end
-    local waited, limit = 0, timeout or 8
-    while waited < limit do
-        local response = post("/plugin/session", { sessionId = sessionId, sessionKey = sessionAgent.key, action = "query", commandId = commandId })
-        if response and response.result ~= nil then
-            sessionAgent.connected = true
-            sessionAgent.httpConnected = true
-            sessionAgent.agentMode = "http"
-            sessionAgent.lastAnswer = os.clock()
-            if type(response.result) == "table" then
-                sessionAgent.playerCount = tonumber(response.result.playerCount) or sessionAgent.playerCount
-                sessionAgent.mode = response.result.mode or sessionAgent.mode
-            end
-            return response.result
-        end
-        task.wait(0.15); waited = waited + 0.15
-    end
-    return nil, "Optional HTTP Session-Agent did not answer; LogStream reporter remains available."
-end
-
-local function installSessionAgent(variant)
-    if sessionId == nil then return nil, "Bridge-Sitzung ist noch nicht verbunden." end
-    local key = HttpService:GenerateGUID(false)
-    sessionAgent.key = key
-    sessionAgent.httpEnabled = true
-    local script = Instance.new("Script")
-    script.Name = "ArenaOptionalHttpAgent"
-    -- Same clone policy as the reporters: variant 2 (default) must be part of
-    -- the session snapshot; variant 1 keeps the old Archivable=false probe.
-    if tonumber(variant) == 1 then script.Archivable = false end
-    script.Source = SESSION_AGENT_SOURCE:gsub("__SESSION_ID__", sessionId):gsub("__SESSION_KEY__", key)
-    script.Parent = ServerScriptService
-    return script
-end
-
-local clientLink = nil
-local clientLogLink = nil
-local clientAgentTemplate = nil
-
-local function cleanupRuntimeHelpers()
-    for _, name in ipairs({ "ArenaBridgeLink", "ArenaBridgeLog", "ArenaBridgeUser" }) do
-        local existing = ReplicatedStorage:FindFirstChild(name)
-        if existing then
-            pcall(function() existing:Destroy() end)
-        end
-    end
-    for _, player in ipairs(Players:GetPlayers()) do
-        local gui = player:FindFirstChild("PlayerGui")
-        if gui then
-            local agent = gui:FindFirstChild("ArenaClientAgent")
-            if agent then pcall(function() agent:Destroy() end) end
-        end
-    end
-    clientLink = nil
-    clientLogLink = nil
-    capabilities.clientAgent = false
-end
-
--- Clear reporter state when Studio ends a session itself (Stop/Shift+F5).
--- Without this, the next edit heartbeat could expose the old snapshot.
-local function clearSessionReporterState()
-    sessionAgent.connected = false
-    sessionAgent.httpConnected = false
-    sessionAgent.reporterActive = false
-    sessionAgent.key = nil
-    sessionAgent.snapshot = nil
-    sessionAgent.guiSnapshot = nil
-    sessionAgent.reporterAt = 0
-    sessionAgent.arenaLineCount = 0
-    sessionAgent.reporterSeenInOutput = false
-    sessionAgent.reporterOutputLineCount = 0
-    sessionAgent.lastArenaKind = nil
-    sessionAgent.lastArenaRaw = nil
-    sessionAgent.lastSharedReport = nil
-    sessionAgent.lastSharedClientReport = nil
-    sessionAgent.reporterVariantInSession = nil
-    sessionAgent.reporterInjected = false
-    sessionAgent.reporterVariantUsed = nil
-    sessionAgent.reporterLoopCount = nil
-    sessionAgent.reporterPostFailCount = nil
-    sessionAgent.reporterLoopError = nil
-end
-
-local function installClientAgent(player)
-    if clientAgentTemplate == nil then return end
-    local ok = pcall(function()
-        local gui = player:WaitForChild("PlayerGui", 10)
-        if gui == nil then return end
-        local existing = gui:FindFirstChild("ArenaClientAgent")
-        if existing then existing:Destroy() end
-        local copy = clientAgentTemplate:Clone()
-        copy.Parent = gui
-        copy.Disabled = false
-    end)
-    if ok then
-        capabilities.clientAgent = true
-    end
-end
-
-local function ensureRuntimeHelpers()
-    if not RunService:IsRunning() then return false end
-    if not RunService:IsServer() then return false end
-
-    if ReplicatedStorage:FindFirstChild("ArenaBridgeLink") == nil then
-        local remote = Instance.new("RemoteFunction")
-        remote.Name = "ArenaBridgeLink"
-        remote.Archivable = false
-        remote.Parent = ReplicatedStorage
-        clientLink = remote
-    else
-        clientLink = ReplicatedStorage:FindFirstChild("ArenaBridgeLink")
-    end
-
-    if ReplicatedStorage:FindFirstChild("ArenaBridgeLog") == nil then
-        local logRemote = Instance.new("RemoteEvent")
-        logRemote.Name = "ArenaBridgeLog"
-        logRemote.Archivable = false
-        logRemote.Parent = ReplicatedStorage
-        clientLogLink = logRemote
-        logRemote.OnServerEvent:Connect(function(_, batch)
-            if type(batch) ~= "table" then return end
-            for _, entry in ipairs(batch) do
-                pushOutput(entry.message, entry.type or "Output", "client")
-            end
-        end)
-    else
-        clientLogLink = ReplicatedStorage:FindFirstChild("ArenaBridgeLog")
-    end
-
-    if ReplicatedStorage:FindFirstChild("ArenaBridgeUser") == nil then
-        local userRemote = Instance.new("RemoteEvent")
-        userRemote.Name = "ArenaBridgeUser"
-        userRemote.Archivable = false
-        userRemote.Parent = ReplicatedStorage
-        userRemote.OnServerEvent:Connect(function(_, batch)
-            if type(batch) ~= "table" then return end
-            for _, entry in ipairs(batch) do
-                local kind = tostring(entry and entry.kind or "")
-                if kind ~= "" then
-                    -- Kamera-/GUI-Aktivitaet beweist, dass der Nutzer den laufenden
-                    -- Test gerade selbst bedient. Ab jetzt haben seine Aktionen
-                    -- Vorrang und dauerhafte KI-Bearbeitungen werden blockiert.
-                    userPlaytestActive = true
-                    addNotice(kind,
-                        "The USER did something in the game: " .. kind .. ". This is the user playing, NOT a bug in your scripts - do not change anything because of it.",
-                        entry.data)
-                end
-            end
-        end)
-    end
-
-    if clientAgentTemplate == nil or clientAgentTemplate.Parent == nil then
-        local script = Instance.new("LocalScript")
-        script.Name = "ArenaClientAgent"
-        script.Archivable = false
-        script.Source = CLIENT_AGENT_SOURCE
-        script.Disabled = true
-        script.Parent = ReplicatedStorage
-        clientAgentTemplate = script
-    end
-
-    for _, player in ipairs(Players:GetPlayers()) do
-        local gui = player:FindFirstChild("PlayerGui")
-        if gui == nil or gui:FindFirstChild("ArenaClientAgent") == nil then
-            task.spawn(installClientAgent, player)
-        end
-    end
-    return true
-end
-
-Players.PlayerAdded:Connect(function(player)
-    if RunService:IsRunning() and RunService:IsServer() then
-        ensureRuntimeHelpers()
-        task.spawn(installClientAgent, player)
-    end
-end)
-
--- 3.9.7: forward declarations - the cross-DM channel helpers are defined
--- further below in the channel section but are already used right here.
-local writeClientCommand
-local readClientResult
-
-local function logStreamClientAction(action, args)
-    local report = sessionAgent and sessionAgent.guiSnapshot
-    local items = report and report.items or {}
-    if action == "gui_dump" then return { ok=true, items=items } end
-    if action == "gui_find" then
-        local wanted = string.lower(tostring((args or {}).query or ""))
-        for _, item in ipairs(items) do
-            local name = string.lower(tostring(item.name or ""))
-            local text = string.lower(tostring(item.text or ""))
-            local path = string.lower(tostring(item.path or ""))
-            if string.find(name,wanted,1,true) or string.find(text,wanted,1,true) or string.find(path,wanted,1,true) then
-                return {ok=true,item=item}
-            end
-        end
-        return {ok=false,error="GUI element not found in LogStream snapshot."}
-    end
-    if action == "camera" then
-        -- 3.9.7: full-args client commands travel through the cross-DM shared
-        -- table to the session client reporter (works with HttpEnabled=false).
-        local id, werr = writeClientCommand("camera", args or {})
-        if id == nil then
-            return nil, "Camera needs the cross-DM client channel (sharedTable), which is unavailable: " .. tostring(werr) .. " Check session_diag > channels."
-        end
-        local waited, limit = 0, 8
-        while waited < limit do
-            local res = readClientResult(id)
-            if res ~= nil then return res end
-            task.wait(0.2)
-            waited = waited + 0.2
-        end
-        return nil, "The client camera command was never answered (sharedTable cross-DM did not echo). See session_diag > sharedTableProbe."
-    end
-    return nil, "This client action requires the optional HTTP agent; gui_dump/gui_click remain available through LogStream."
-end
-
-local function callClient(action, args, timeout)
-    if not RunService:IsRunning() and sessionReporterUsable() then
-        return logStreamClientAction(action, args)
-    end
-    if not RunService:IsRunning() and sessionAgent and sessionAgent.httpConnected then
-        return sessionAgentCall("client_action", { action = action, args = args or {} }, timeout)
-    end
-    if not RunService:IsRunning() then
-        if testSessionActive() then
-            return nil, "REPORTER_NOT_CONNECTED: a session is active (editModeActive=false) but the #ARENA# reporter has not delivered data. Call session_diag and read get_output filter='ARENA'."
-        end
-        return nil, "Not in play mode. Start a test with play_start first."
-    end
-    ensureRuntimeHelpers()
-    local player = Players:GetPlayers()[1]
-    if player == nil then
-        return nil, "No player in the test session. Use play_start with mode 'play' (Run mode has no character)."
-    end
-    if clientLink == nil then
-        return nil, "Client link is not available."
-    end
-    local result = nil
-    local errorText = nil
-    local finished = false
-    task.spawn(function()
-        local ok, response = pcall(function()
-            return clientLink:InvokeClient(player, { action = action, args = args or {} })
-        end)
-        if ok then result = response else errorText = tostring(response) end
-        finished = true
-    end)
-    local waited = 0
-    local limit = timeout or 8
-    while not finished and waited < limit do
-        task.wait(0.05)
-        waited = waited + 0.05
-    end
-    if not finished then
-        return nil, "Client did not answer in time (agent may still be loading)."
-    end
-    if errorText then return nil, errorText end
-    return result
-end
-
--- ---------------------------------------------------------------------------
--- EINGABEN SIMULIEREN (Tastatur / Maus)
--- ---------------------------------------------------------------------------
-local function keyCodeFromName(name)
-    if name == nil then return nil end
-    local text = tostring(name)
-    if #text == 1 then text = string.upper(text) end
-    local ok, code = pcall(function() return Enum.KeyCode[text] end)
-    if ok and code then return code end
-    return nil
-end
-
-local function sendKey(name, duration, modifiers)
-    if VirtualInputManager == nil then
-        return false, "VirtualInputManager is not available in this Studio version."
-    end
-    local code = keyCodeFromName(name)
-    if code == nil then
-        return false, "Unknown key '" .. tostring(name) .. "'."
-    end
-    local mods = {}
-    for _, modifier in ipairs(modifiers or {}) do
-        local modCode = keyCodeFromName(modifier)
-        if modCode then table.insert(mods, modCode) end
-    end
-    local ok, err = pcall(function()
-        for _, modCode in ipairs(mods) do
-            VirtualInputManager:SendKeyEvent(true, modCode, false, game)
-        end
-        VirtualInputManager:SendKeyEvent(true, code, false, game)
-        task.wait(duration or 0.08)
-        VirtualInputManager:SendKeyEvent(false, code, false, game)
-        for _, modCode in ipairs(mods) do
-            VirtualInputManager:SendKeyEvent(false, modCode, false, game)
-        end
-    end)
-    if not ok then return false, tostring(err) end
-    return true
-end
-
-local function sendClick(x, y, button, holdSeconds)
-    if not RunService:IsRunning() and (not sessionReporterUsable()) and sessionAgent and sessionAgent.httpConnected then
-        local response, err = sessionAgentCall("gui_click", { x = x, y = y }, 8)
-        return response ~= nil and response.ok == true, err or (response and response.error)
-    end
-    if VirtualInputManager == nil then
-        return false, "VirtualInputManager is not available in this Studio version."
-    end
-    local ok, err = pcall(function()
-        VirtualInputManager:SendMouseMoveEvent(x, y, game)
-        task.wait(0.03)
-        VirtualInputManager:SendMouseButtonEvent(x, y, button or 0, true, game, 0)
-        task.wait(holdSeconds or 0.06)
-        VirtualInputManager:SendMouseButtonEvent(x, y, button or 0, false, game, 0)
-    end)
-    if not ok then return false, tostring(err) end
-    return true
-end
-
--- ---------------------------------------------------------------------------
--- 3.9.7 BEFEHLSKANAL IN DIE SESSION (kein HTTP noetig - B2/B6 live test)
--- Prioritaet: (1) optionaler HTTP-Agent, (2) SharedTableRegistry als Cross-DM-
--- Speicher Edit-Plugin <-> Session-Reporter, (3) unsichtbare VirtualInput-
--- Manager-Tastenkombos (nur Befehle ohne Argumente), (4) GetTestArgs-Neustart
--- als Notfall (arenaSpawn/arenaCommand gehoeren in den Start).
--- ---------------------------------------------------------------------------
-local VIM_COMMAND_KEYS = {
-    end_test = "E",
-    respawn_character = "R",
-    character_state = "P",
-}
-
-local sharedTableServiceChecked = false
-local sharedTable = nil
-
-local function getSharedTable()
-    if sharedTableServiceChecked then return sharedTable end
-    sharedTableServiceChecked = true
-    pcall(function()
-        local service = game:GetService("SharedTableRegistry")
-        if service ~= nil then
-            sharedTable = service:GetSharedTable("arenaBridge")
-        end
-    end)
-    capabilities.sharedTable = (sharedTable ~= nil)
-    return sharedTable
-end
-
-local function writeSessionCommand(action, args)
-    local st = getSharedTable()
-    if st == nil then return nil, "SharedTableRegistry is not available in this Studio." end
-    local id = HttpService:GenerateGUID(false)
-    local okWrite, errWrite = pcall(function()
-        st.command = HttpService:JSONEncode({ id = id, action = action, args = args or {} })
-    end)
-    if not okWrite then return nil, "SharedTable write failed: " .. tostring(errWrite) end
-    return id
-end
-
-local function readSessionResult(id)
-    local st = getSharedTable()
-    if st == nil then return nil end
-    local raw = nil
-    pcall(function() raw = st.lastResult end)
-    if type(raw) ~= "string" or raw == "" then return nil end
-    local okDecode, decoded = pcall(function() return HttpService:JSONDecode(raw) end)
-    if not okDecode or type(decoded) ~= "table" or decoded.id ~= id then return nil end
-    return decoded.result
-end
-
-writeClientCommand = function(action, args)
-    local st = getSharedTable()
-    if st == nil then return nil, "SharedTableRegistry is not available in this Studio." end
-    local id = HttpService:GenerateGUID(false)
-    local okWrite, errWrite = pcall(function()
-        st.clientCommand = HttpService:JSONEncode({ id = id, action = action, args = args or {} })
-    end)
-    if not okWrite then return nil, "SharedTable write failed: " .. tostring(errWrite) end
-    return id
-end
-
-readClientResult = function(id)
-    local st = getSharedTable()
-    if st == nil then return nil end
-    local raw = nil
-    pcall(function() raw = st.clientResult end)
-    if type(raw) ~= "string" or raw == "" then return nil end
-    local okDecode, decoded = pcall(function() return HttpService:JSONDecode(raw) end)
-    if not okDecode or type(decoded) ~= "table" or decoded.id ~= id then return nil end
-    return decoded.result
-end
-
--- 4.0.0: consume the actual session reporter through SharedTableRegistry.
--- This is independent of MessageOut crossing the Edit/Play DataModel boundary.
--- The payload is also mirrored into get_output so existing diagnostics keep
--- working exactly as before (#ARENA# filtering and arenaLineCount included).
-absorbSharedTableReports = function()
-    local st = getSharedTable()
-    if st == nil then return false end
-    local changed = false
-    -- 4.0.3: Der Session-Reporter spiegelt seinen Schleifenzaehler in die
-    -- SharedTable (st.pluginReporterLoopCount) - so bleibt sichtbar, dass
-    -- die Schleife laeuft, selbst wenn ihre HTTP-Heartbeats nie ankommen.
-    pcall(function()
-        local mirrored = tonumber(st.pluginReporterLoopCount)
-        if mirrored ~= nil and mirrored > (sessionAgent.reporterLoopCountMirrored or 0) then
-            sessionAgent.reporterLoopCountMirrored = mirrored
-            sessionAgent.reporterLoopMirroredAt = os.clock()
-        end
-        if type(st.pluginReporterLoopError) == "string" and st.pluginReporterLoopError ~= "" then
-            sessionAgent.reporterLoopErrorMirrored = st.pluginReporterLoopError
-        else
-            sessionAgent.reporterLoopErrorMirrored = nil
-        end
-    end)
-    local raw = nil
-    pcall(function() raw = st.report end)
-    if type(raw) == "string" and raw ~= "" and raw ~= sessionAgent.lastSharedReport then
-        sessionAgent.lastSharedReport = raw
-        captureSessionReporter("#ARENA# " .. raw, false)
-        if not sessionAgent.httpConnected then sessionAgent.agentMode = "sharedTable" end
-        pushOutput("#ARENA# " .. raw, "Output", "sharedTable")
-        changed = true
-    end
-    local clientRaw = nil
-    pcall(function() clientRaw = st.clientReport end)
-    if type(clientRaw) == "string" and clientRaw ~= "" and clientRaw ~= sessionAgent.lastSharedClientReport then
-        sessionAgent.lastSharedClientReport = clientRaw
-        captureSessionReporter("#ARENA# " .. clientRaw, false)
-        if not sessionAgent.httpConnected then sessionAgent.agentMode = "sharedTable" end
-        pushOutput("#ARENA# " .. clientRaw, "Output", "sharedTable")
-        changed = true
-    end
-    return changed
-end
-
-local function sendVimSessionCommand(action)
-    local key = VIM_COMMAND_KEYS[action]
-    if key == nil then return false, "This action has no VIM key combo." end
-    if VirtualInputManager == nil then return false, "VirtualInputManager is not available." end
-    return sendKey(key, 0.08, { "LeftControl", "LeftAlt", "LeftShift" })
-end
-
--- ONE entry point for everything the session must do on its own side
--- (end_test, teleport_character, respawn_character, character_state).
--- Returns result, channel, attemptedChannels.
-local function sessionChannelCommand(action, args, timeout)
-    local attempted = {}
-    -- 4.0.1 RANG 0: Plugin-Reporter im Test-DataModel. Er laeuft IMMER, wenn
-    -- Studio den Test gestartet hat, und darf als Plugin HTTP sprechen - also
-    -- vollkommen unabhaengig von HttpEnabled des Place.
-    -- 4.0.5: Frueher war "agentMode == sessionPlugin" die Bedingung. Stand
-    -- dieses Feld (z.B. nach einem stillen Heartbeat-Ausfall) auf etwas
-    -- anderem, wurde der EINZIGE funktionierende Stop-Kanal uebersprungen und
-    -- play_stop endete in PLAY_STOP_NEEDS_USER. Es genuegt ein Sitzungs-
-    -- schluessel: der Aufruf ist ohnehin durch timeout begrenzt.
-    if sessionAgent and sessionAgent.key ~= nil then
-        local label = (sessionAgent.agentMode == "sessionPlugin") and "sessionPlugin" or "sessionAgent"
-        table.insert(attempted, label)
-        local result = sessionAgentCall(action, args or {}, timeout or 8)
-        if result ~= nil then return result, label, attempted end
-    end
-    if sessionAgent and sessionAgent.httpConnected == true then
-        table.insert(attempted, "http")
-        local result = sessionAgentCall(action, args or {}, timeout or 8)
-        if result ~= nil then return result, "http", attempted end
-    end
-    if getSharedTable() ~= nil then
-        table.insert(attempted, "sharedTable")
-        local id = writeSessionCommand(action, args)
-        if id ~= nil then
-            local waited, limit = 0, timeout or 8
-            while waited < limit do
-                local result = readSessionResult(id)
-                if result ~= nil then return result, "sharedTable", attempted end
-                task.wait(0.2)
-                waited = waited + 0.2
-            end
-        end
-    end
-    if VIM_COMMAND_KEYS[action] ~= nil then
-        table.insert(attempted, "vim")
-        local sent = sendVimSessionCommand(action)
-        if sent then
-            return { ok = true, sent = true, awaitingConfirmation = true }, "vim", attempted
-        end
-    end
-    return nil, nil, attempted
-end
-
--- Full diagnostic for the session_diag tool (and for REPORTER_NOT_CONNECTED
--- errors). skipProbe=true leaves out the 2.5s SharedTable live probe.
-local function sessionDiagnosticsData(skipProbe)
-    if absorbSharedTableReports then pcall(absorbSharedTableReports) end
-    local diag = {}
-    local editActive = nil
-    if StudioTestService ~= nil then pcall(function() editActive = StudioTestService.EditModeActive end) end
-    diag.editModeActive = editActive
-    diag.editPluginIsRunning = RunService:IsRunning()
-    diag.testSessionActive = testSessionActive()
-    sessionDiagnostics(diag)
-    diag.reporterInjected = sessionAgent.reporterInjected == true
-    diag.outputCursor = outputSeq
-    diag.outputErrorCount = errorCount
-    diag.outputWarningCount = warningCount
-    diag.lastArenaRaw = sessionAgent.lastArenaRaw
-    diag.vimCommandsSeen = sessionAgent.vimCommandsSeen or 0
-    local probe = nil
-    local st = getSharedTable()
-    if skipProbe ~= true then
-        probe = { available = (st ~= nil), crossDm = nil }
-        if st ~= nil then
-            local token = HttpService:GenerateGUID(false)
-            pcall(function() st.probe = token end)
-            local waited, echoed = 0, nil
-            while waited < 2.5 do
-                pcall(function() echoed = st.probeEcho end)
-                if echoed == token then break end
-                task.wait(0.25)
-                waited = waited + 0.25
-            end
-            pcall(function() echoed = st.probeEcho end)
-            probe.crossDm = (echoed == token)
-            if probe.crossDm ~= true then probe.note = "no echo from the session (reporter missing or table is per-DataModel)" end
-        end
-    end
-    diag.sharedTableProbe = probe
-    diag.channels = {
-        priority = { "http (optional fast path)", "sharedTable (cross-DM memory)", "vim (key combos, args-free)", "GetTestArgs at play_start (restart fallback)" },
-        httpConnected = (sessionAgent and sessionAgent.httpConnected == true),
-        sharedTableAvailable = (st ~= nil),
-        sharedTableCrossDm = (probe and probe.crossDm) or nil,
-        vimAvailable = (VirtualInputManager ~= nil),
-        vimCommandsSeen = sessionAgent.vimCommandsSeen or 0,
-    }
-    diag.reporter = {
-        active = sessionReporterUsable(),
-        seenInOutput = sessionAgent.reporterSeenInOutput == true,
-        arenaLineCount = sessionAgent.arenaLineCount or 0,
-        lastKind = sessionAgent.lastArenaKind,
-        lastAgeSeconds = diag.lastArenaAgeSeconds,
-        variantInjected = sessionAgent.reporterVariantUsed,
-        variantInSession = sessionAgent.reporterVariantInSession,
-        note = "2 (default, clone-safe normal script) is expected. 1 = Archivable=false probe that never entered the session in the 3.9.6 live test.",
-        -- 4.0.2: last error caught inside runSessionReporterLoop's per-iteration
-        -- pcall, if any. The loop keeps running regardless (see 4.0.2 notes).
-        lastLoopError = sessionAgent.reporterLoopError,
-        -- 4.0.3: proof of life from the session reporter loop. loopCount
-        -- climbs by 1 per heartbeat while the loop is healthy (the 4.0.2
-        -- bug froze it after the first heartbeat); postFailCount climbs
-        -- when post() silently returns nil; loopCountViaSharedTable is the
-        -- SharedTable mirror that stays visible even without HTTP.
-        loopCount = sessionAgent.reporterLoopCount,
-        postFailCount = sessionAgent.reporterPostFailCount,
-        loopCountViaSharedTable = sessionAgent.reporterLoopCountMirrored,
-        loopErrorViaSharedTable = sessionAgent.reporterLoopErrorMirrored,
-    }
-    diag.state = playState()
-    return diag
-end
-
--- Extra block attached to REPORTER_NOT_CONNECTED errors (B4 of 3.9.6 live).
-local function reporterNotConnectedExtra()
-    return {
-        sessionDiag = sessionDiagnosticsData(true),
-        hint = "A test session IS active, so the old 'No test running' guard was simply wrong. Call session_diag, then read get_output filter='ARENA'. If reporter.seenInOutput stays false, the reporter never entered the session: play_stop, then play_start again (reporterVariant=2 default is clone-safe; variant 1 is the broken Archivable=false probe).",
-    }
-end
-
--- Guard for tools that need live session data (GUI/client/character).
-local function sessionLiveDataGuard()
-    if not RunService:IsRunning() and testSessionActive()
-        and not sessionReporterUsable()
-        and not (sessionAgent and sessionAgent.httpConnected) then
-        return failCode("REPORTER_NOT_CONNECTED",
-            "A test session is active (editModeActive=false), but its #ARENA# reporter has not delivered data yet, so live session access is unavailable right now.",
-            reporterNotConnectedExtra())
-    end
-    return nil
-end
-
--- ---------------------------------------------------------------------------
--- PLAY / RUN STEUERN
--- Zum Starten und Stoppen werden die echten Studio-Tastenkuerzel benutzt.
--- Grund: RunService:Stop() setzt den Place NICHT zurueck - Aenderungen aus
--- dem Testlauf wuerden im Place haengen bleiben. Der echte Stopp-Knopf
--- stellt den Zustand von vorher wieder her.
--- ---------------------------------------------------------------------------
-local aiPlayIntent = { action = nil, at = 0 }
-
-local function waitForState(wantRunning, seconds)
-    local waited = 0
-    while waited < (seconds or 12) do
-        if RunService:IsRunning() == wantRunning then return true end
-        task.wait(0.15)
-        waited = waited + 0.15
-    end
-    return RunService:IsRunning() == wantRunning
-end
-
--- Wann der letzte KI-gesteuerte Charakterbefehl war (damit die
--- Benutzer-Erkennung nicht KI-Bewegung als Benutzer-Bewegung meldet).
-local aiMoveUntil = 0
 
 local function waitForEditMode(wanted, seconds)
     local waited = 0
@@ -4745,429 +3278,6 @@ local function waitForEditMode(wanted, seconds)
     return value == wanted, value
 end
 
--- 4.0.1: Zustand des Plugin-Reporters aus dem Test-DataModel abholen.
--- Der Reporter schickt seinen Snapshot per /plugin/session heartbeat an die
--- Bridge; hier fragt ihn das Edit-Plugin ab. Das funktioniert ohne
--- HttpEnabled des Place, weil das Plugin selbst immer HTTP sprechen darf.
-function pollSessionPluginState()
-    if sessionId == nil then return nil end
-    local response = post("/plugin/session", { sessionId = sessionId,
-        sessionKey = sessionAgent.key, action = "reporter_state" })
-    if response == nil or response.state == nil then return nil end
-    local snap = response.state
-    local count = tonumber(snap.players or snap.playerCount) or 0
-    sessionAgent.snapshot = snap
-    sessionAgent.playerCount = count
-    sessionAgent.reporterActive = true
-    sessionAgent.connected = true
-    sessionAgent.httpConnected = true
-    sessionAgent.agentMode = "sessionPlugin"
-    sessionAgent.lastAnswer = os.clock()
-    sessionAgent.reporterAt = os.clock()
-    sessionAgent.arenaLineCount = (sessionAgent.arenaLineCount or 0) + 1
-    sessionAgent.lastArenaKind = "sessionPlugin"
-    -- 4.0.2 BUG-1-FIX: surface the reporter loop's own last error (if any)
-    -- so session_diag shows WHY it struggled instead of just going quiet.
-    sessionAgent.reporterLoopError = snap.reporterLoopError
-    -- 4.0.3: Schleifenzaehler des Reporters uebernehmen - session_diag
-    -- zeigt so live, wie oft runSessionReporterLoop bisher lief.
-    if tonumber(snap.reporterLoopCount) ~= nil then
-        sessionAgent.reporterLoopCount = tonumber(snap.reporterLoopCount)
-    end
-    if tonumber(snap.reporterPostFailCount) ~= nil then
-        sessionAgent.reporterPostFailCount = tonumber(snap.reporterPostFailCount)
-    end
-    return snap
-end
-
--- 4.0.1: Der Rueckgabewert von ExecutePlayModeAsync ist der Wert, den der
--- Reporter im Session-DataModel an StudioTestService:EndTest uebergeben hat.
--- Er ist damit ein UNABHAENGIGER Lebensbeweis des injizierten Scripts, der
--- weder von MessageOut noch von SharedTable abhaengt.
-function captureTestResult(value)
-    local text = tostring(value or "")
-    if text == "" then return false end
-    if string.find(text, "ARENA_REPORTER_ALIVE", 1, true) == nil then return false end
-    local decoded = nil
-    pcall(function() decoded = HttpService:JSONDecode(text) end)
-    sessionAgent.reporterProof = text
-    sessionAgent.reporterProofAt = os.clock()
-    if type(decoded) == "table" then
-        sessionAgent.reporterProofData = decoded
-        if decoded.position ~= nil then
-            sessionAgent.snapshot = {
-                kind = "session", mode = "play",
-                players = tonumber(decoded.players) or 1,
-                playerCount = tonumber(decoded.players) or 1,
-                character = { player = decoded.player, hasCharacter = true,
-                    position = decoded.position, health = decoded.health,
-                    maxHealth = decoded.maxHealth },
-            }
-            sessionAgent.snapshot.characters = { sessionAgent.snapshot.character }
-            sessionAgent.playerCount = tonumber(decoded.players) or 1
-            sessionAgent.reporterActive = true
-            sessionAgent.connected = true
-            sessionAgent.agentMode = "endTestProof"
-        end
-    end
-    sessionAgent.arenaLineCount = (sessionAgent.arenaLineCount or 0) + 1
-    sessionAgent.lastArenaKind = "endTestProof"
-    sessionAgent.lastArenaRaw = string.sub(text, 1, 500)
-    sessionAgent.reporterAt = os.clock()
-    pushOutput("#ARENA# " .. text, "Output", "endTestProof")
-    return true
-end
-
-local function startPlay(mode, startArgs)
-    mode = string.lower(tostring(mode or "play"))
-    if mode ~= "play" and mode ~= "run" and mode ~= "play_here" then mode = "play" end
-    startArgs = startArgs or {}
-    local diagnostics = {
-        usedPath = nil, editModeActiveBefore = nil, editModeActiveAfter = nil,
-        serviceError = nil, sessionAgentAnswered = false, sessionPlayers = 0,
-        reporterActive = false, agentMode = "logStream", httpEnabled = readHttpEnabled(),
-        reporterInjected = false, reporterSeenInOutput = false, reporterVariantUsed = nil,
-    }
-    local editActive = nil
-    if StudioTestService ~= nil then pcall(function() editActive = StudioTestService.EditModeActive end) end
-    diagnostics.editModeActiveBefore = editActive
-
-    -- B2: false in the edit DataModel is a real running test, even if this
-    -- plugin's RunService and Players are empty. Never "repair" that session
-    -- before an Execute call has actually failed.
-    if RunService:IsRunning() or editActive == false then
-        diagnostics.usedPath = "existingSession"
-        diagnostics.editModeActiveAfter = editActive
-        sessionDiagnostics(diagnostics)
-        return { ok = true, alreadyRunning = true, startedBy = userPlaytestActive and "user" or "existing", state = playState(), startDiagnostics = diagnostics, note = "A Studio test is already active (EditModeActive=false). Reusing it." }
-    end
-
-    aiPlayIntent = { action = "start", at = os.time(), mode = mode }
-    if StudioTestService == nil then
-        diagnostics.usedPath = "studioShortcut"
-        local used = nil
-        if VirtualInputManager ~= nil then
-            local keyOk, keyError = sendKey(mode == "run" and "F8" or "F5", 0.06, {})
-            if keyOk and waitForState(true, 12) then used = "studioShortcut" else diagnostics.serviceError = keyError end
-        end
-        if not used and mode == "run" then
-            local okRun = pcall(function() RunService:Run() end)
-            if okRun and waitForState(true, 8) then used = "runServiceApi" end
-        end
-        diagnostics.editModeActiveAfter = nil
-        sessionDiagnostics(diagnostics)
-        if not used then
-            return { ok=false, code="PLAY_START_UNAVAILABLE", error="No safe Play start path is available.", userMessage="Ich kann den Play-Test hier nicht sicher starten. Bitte in Roblox Studio selbst Play (F5) druecken.", state=playState(), startDiagnostics=diagnostics }
-        end
-        return { ok=true, state=playState(), startedBy="assistant", startMethod=used, requestedMode=mode, startDiagnostics=diagnostics }
-    end
-
-    diagnostics.usedPath = "studioTestService"
-    -- 3.9.7 B1-FIX: the reporter must physically exist in the injected
-    -- snapshot when Studio clones the place. 3.9.6's Archivable=false helpers
-    -- never made it (zero #ARENA# lines live). Variant 2 (default) therefore
-    -- injects NORMAL clone-safe scripts and deletes the EDIT copies only
-    -- after editModeActive=false proves the session already stands.
-    -- reporterVariant=1 stays available for empirical verification.
-    local variant = tonumber(startArgs.reporterVariant) or 2
-    if string.lower(tostring(startArgs.reporterVariant or "")) == "archivablefalse" then variant = 1 end
-    sessionAgent = {
-        key=nil, connected=false, httpConnected=false, reporterActive=false,
-        playerCount=0, mode=(mode == "run" and "run" or "play"), lastAnswer=0,
-        agentMode="logStream", snapshot=nil, guiSnapshot=nil,
-        httpEnabled=diagnostics.httpEnabled, reporterAt=0,
-        reporterInjected=false, reporterVariantUsed=variant, reporterVariantInSession=nil,
-        arenaLineCount=0, reporterSeenInOutput=false, reporterOutputLineCount=0,
-        lastArenaKind=nil, lastArenaRaw=nil,
-        lastSharedReport=nil, lastSharedClientReport=nil, vimCommandsSeen=0,
-        reporterLoopCount=nil, reporterPostFailCount=nil, reporterLoopCountMirrored=nil,
-    }
-    -- SharedTableRegistry is process-global. Do not let the previous test's
-    -- last snapshot make the next Play look healthy before its reporter starts.
-    local freshShared = getSharedTable()
-    if freshShared ~= nil then pcall(function()
-        freshShared.report = ""
-        freshShared.clientReport = ""
-        freshShared.lastResult = ""
-        freshShared.clientResult = ""
-        freshShared.command = ""
-        freshShared.clientCommand = ""
-        freshShared.reporterAlive = false
-    end) end
-    local transient
-    transient, variant = installSessionReporters(variant)
-    sessionAgent.reporterInjected = true
-    diagnostics.reporterInjected = true
-    diagnostics.reporterVariantUsed = variant
-    local httpTransient = nil
-    if diagnostics.httpEnabled and mode ~= "run" then
-        httpTransient = installSessionAgent(variant)
-        if httpTransient then table.insert(transient, httpTransient) end
-    end
-
-    -- 4.0.1: Schluessel fuer den Plugin-Reporter im Test-DataModel setzen.
-    -- Er liest ihn ueber plugin:GetSetting und meldet sich damit als Reporter
-    -- DIESER Sitzung an (statt als zweites Place).
-    local sessionKey = HttpService:GenerateGUID(false)
-    sessionAgent.key = sessionKey
-    pcall(function() plugin:SetSetting("arenaSessionKey", sessionKey) end)
-    pcall(function() plugin:SetSetting("arenaOwnerSession", sessionId) end)
-    -- Version 5: every test receives a fresh ephemeral key. Register it with
-    -- the local bridge BEFORE the cloned session plugin/HTTP agent starts.
-    -- Without this, the key from a finished test could make all following
-    -- move_character/end_test heartbeats fail with 403.
-    local keyRegistration = post("/plugin/session", { sessionId = sessionId, sessionKey = sessionKey, action = "register" })
-    diagnostics.sessionKeyRegistered = keyRegistration and keyRegistration.ok == true or false
-
-    local testArgs = { startedBy = "arena-bridge", mode = mode, reporterVariant = variant, arenaProbe = false }
-    -- GetTestArgs in the reporter receives this exact value. It is the only
-    -- supported character teleport path: before the player spawns.
-    local spawn = startArgs.arenaSpawn or startArgs.spawn or startArgs.position
-    if mode == "play_here" and lastEditCamCFrame then
-        spawn = { x=lastEditCamCFrame.Position.X, y=lastEditCamCFrame.Position.Y + 3, z=lastEditCamCFrame.Position.Z }
-    end
-    if type(spawn) == "table" then
-        testArgs.arenaSpawn = { x=tonumber(spawn.x) or 0, y=tonumber(spawn.y) or 0, z=tonumber(spawn.z) or 0 }
-    end
-
-    -- 4.0.1: ChangeHistoryService-Wegpunkt + kurze Pause, damit der injizierte
-    -- Reporter garantiert Teil des Snapshots ist, den Studio fuer die Session
-    -- klont (live bewiesen: ohne Pause kann das Script fehlen).
-    if ChangeHistoryService ~= nil then
-        pcall(function() ChangeHistoryService:SetWaypoint("ArenaBridge reporter injected") end)
-    end
-    task.wait(0.35)
-
-    local serviceDone, serviceOk, serviceError = false, false, nil
-    task.spawn(function()
-        local okStart, errStart = pcall(function()
-            if mode == "run" then return StudioTestService:ExecuteRunModeAsync(testArgs) end
-            return StudioTestService:ExecutePlayModeAsync(testArgs)
-        end)
-        -- 4.0.1 LIVE-BEWEIS: Bei Erfolg ist errStart der RUECKGABEWERT des
-        -- Tests - also genau der Wert, den EndTest im Session-DataModel
-        -- uebergeben hat. Das ist der einzige nachweislich funktionierende
-        -- Rueckkanal aus der Session (MessageOut und SharedTable kamen im
-        -- Live-Test nie an).
-        if okStart then
-            sessionAgent.lastTestResult = tostring(errStart)
-            sessionAgent.lastTestResultAt = os.clock()
-            captureTestResult(errStart)
-        end
-        serviceOk, serviceError, serviceDone = okStart, (okStart and nil or tostring(errStart)), true
-    end)
-
-    -- Execute*Async yields until the test ends. Destroy helpers when the
-    -- snapshot has been taken (EditModeActive=false), never at service return.
-    -- 3.9.7: edit copies are removed ONLY after the session provably stands,
-    -- plus a 1.5s safety margin, because deleting first was the 3.9.6 race.
-    -- Additional sweeps happen in play_stop and at plugin unload.
-    task.spawn(function()
-        local entered = waitForEditMode(false, 20)
-        if entered then task.wait(1.5) end
-        removeTransientReporters(transient)
-    end)
-
-    local entered, after = waitForEditMode(false, 20)
-    diagnostics.editModeActiveAfter = after
-    -- An immediate "previous one is still in progress" error plus false is
-    -- success: Studio told us the existing separate session is already alive.
-    if serviceDone then diagnostics.serviceError = serviceError end
-    if not entered then
-        sessionDiagnostics(diagnostics)
-        return { ok=false, code="PLAY_START_FAILED", error=serviceError or "StudioTestService did not change EditModeActive to false within 20 seconds.", userMessage="Der Studio-Test hat nicht gestartet. Bitte die #ARENA#-Zeilen in get_output pruefen.", state=playState(), startDiagnostics=diagnostics }
-    end
-    local lowerServiceError = string.lower(tostring(serviceError or ""))
-    local previousAlreadyRunning = string.find(lowerServiceError, "previous one is still in progress", 1, true) ~= nil
-        or string.find(lowerServiceError, "already in progress", 1, true) ~= nil
-    if serviceDone and not serviceOk and editActive == true and after == false and not RunService:IsRunning() and not previousAlreadyRunning then
-        -- This is the sole PLAY_SERVICE_STUCK branch. A known "previous" error
-        -- is a healthy existing session and remains usable.
-        pcall(function() RunService:Stop() end)
-        local recovered, recoveredState = waitForEditMode(true, 3)
-        diagnostics.editModeActiveAfter = recoveredState
-        if not recovered then
-            sessionDiagnostics(diagnostics)
-            return {ok=false, code="PLAY_SERVICE_STUCK", error=serviceError, userMessage="Studio-Testdienst steckt fest - bitte Roblox Studio einmal neu starten.", howToFix="Restart Roblox Studio once. Do not retry Play while StudioTestService is stuck.", state=playState(), startDiagnostics=diagnostics}
-        end
-        sessionDiagnostics(diagnostics)
-        return {ok=false, code="PLAY_START_FAILED", error=serviceError, state=playState(), startDiagnostics=diagnostics}
-    end
-
-    -- Reporter output is optional for start success, but normally arrives in
-    -- the first half second (the 3.9.7 hello line). HTTP can enrich it only
-    -- when explicitly enabled.
-    -- 4.0.1: Der Plugin-Reporter im Test-DataModel meldet seinen Zustand
-    -- ueber /plugin/session an die Bridge. Das Edit-Plugin fragt ihn hier ab -
-    -- unabhaengig von HttpEnabled der PLACE-Einstellung, denn das Plugin darf
-    -- immer mit dem lokalen Bridge-Server sprechen.
-    local waited = 0
-    while waited < 25 and mode ~= "run" and not sessionPlayReady() do
-        if absorbSharedTableReports then pcall(absorbSharedTableReports) end
-        local snap = pollSessionPluginState()
-        if snap ~= nil then diagnostics.sessionAgentAnswered = true end
-        task.wait(0.3); waited = waited + 0.3
-    end
-    diagnostics.reporterSeenInOutput = sessionAgent.reporterSeenInOutput == true
-    if mode ~= "run" and not sessionPlayReady() then
-        sessionDiagnosticsData(true)
-        return { ok=false, code="REPORTER_NOT_CONNECTED",
-            error="Studio reported a running Play session, but the session reporter did not answer through SharedTableRegistry or Output.",
-            userMessage="Der Play-Test läuft, aber der Rückkanal aus der Test-Session ist noch nicht erreichbar. Bitte session_diag prüfen.",
-            sessionDiag=sessionDiagnosticsData(true), state=playState(), startDiagnostics=diagnostics }
-    end
-    if diagnostics.httpEnabled and sessionAgent.key and not sessionAgent.httpConnected then
-        local ping = sessionAgentCall("ping", {}, 1)
-        if ping then diagnostics.sessionAgentAnswered = true end
-    end
-    sessionDiagnostics(diagnostics)
-
-    local result = {
-        ok=true, state=playState(), startedBy="assistant", startMethod="studioTestService",
-        requestedMode=mode, startDiagnostics=diagnostics,
-        note="Test is running. Persistent edits are blocked until you call play_stop.",
-    }
-    local snapshot = currentSessionSnapshot()
-    local character = snapshot and (snapshot.character or (snapshot.characters and snapshot.characters[1]))
-    if character and character.hasCharacter then
-        result.playerReady = true
-        result.character = { name=character.player, health=character.health, position=character.position }
-    end
-    return result
-end
-
--- Success tail shared by every stop path: prove edit mode, clean all
--- session/run state, sweep leftover edit copies (zombie-freedom = an
--- immediate second play_start must work again).
-local function finishStopSuccess(diagnostics, usedPath, stopMethod, note)
-    sessionDiagnostics(diagnostics)
-    sessionAgent.connected=false; sessionAgent.httpConnected=false; sessionAgent.reporterActive=false
-    sessionAgent.key=nil; sessionAgent.snapshot=nil; sessionAgent.guiSnapshot=nil
-    sessionAgent.arenaLineCount=0; sessionAgent.reporterSeenInOutput=false; sessionAgent.reporterOutputLineCount=0
-    sessionAgent.lastArenaKind=nil; sessionAgent.lastArenaRaw=nil
-    sessionAgent.lastSharedReport=nil; sessionAgent.lastSharedClientReport=nil
-    sessionAgent.vimCommandsSeen=0
-    cleanupRuntimeHelpers()
-    sweepEditReporterCopies()
-    local stoppedShared = getSharedTable()
-    if stoppedShared ~= nil then pcall(function()
-        stoppedShared.report = ""
-        stoppedShared.clientReport = ""
-        stoppedShared.lastResult = ""
-        stoppedShared.clientResult = ""
-        stoppedShared.command = ""
-        stoppedShared.clientCommand = ""
-        stoppedShared.reporterAlive = false
-    end) end
-    return {ok=true, state=playState(), stoppedBy="assistant", stopMethod=stopMethod,
-        startDiagnostics=diagnostics, note=note or ("Test stopped via " .. tostring(stopMethod) .. ".")}
-end
-
-local function stopPlay()
-    local diagnostics = {
-        usedPath=nil, editModeActiveBefore=nil, editModeActiveAfter=nil,
-        serviceError=nil, sessionAgentAnswered=false, sessionPlayers=0,
-        reporterActive=sessionReporterUsable(), agentMode=(sessionAgent and sessionAgent.agentMode) or "logStream",
-        httpEnabled=readHttpEnabled(), reporterSeenInOutput=false, channelAttempts=nil,
-    }
-    if StudioTestService ~= nil then pcall(function() diagnostics.editModeActiveBefore = StudioTestService.EditModeActive end) end
-    aiPlayIntent = { action="stop", at=os.time() }
-
-    if diagnostics.editModeActiveBefore == true and not RunService:IsRunning() then
-        sessionDiagnostics(diagnostics)
-        return {ok=true, alreadyStopped=true, state=playState(), startDiagnostics=diagnostics}
-    end
-
-    -- 3.9.7 B2-FIX RANG 1: EndTest works ONLY inside the session server
-    -- DataModel. The session reporter executes it when a command reaches it
-    -- (http agent / sharedTable / VIM combo, in that priority order).
-    -- 4.0.1 RANG 0: Der Plugin-Reporter im Test-DataModel ist der einzige
-    -- Ort, an dem EndTest erlaubt ist (live bewiesen). Erst kurz abfragen,
-    -- ob er lebt - dann den Befehl ueber genau diesen Kanal schicken.
-    pcall(pollSessionPluginState)
-
-    -- 4.0.5: Das Tor haengt nicht mehr an der Reporter-Frische. Solange eine
-    -- Session laeuft, wird der end_test-Kanal IMMER versucht - ein veralteter
-    -- Frische-Wert darf den einzigen zuverlaessigen Stop nicht blockieren.
-    if sessionReporterUsable() or testSessionActive() or (sessionAgent and sessionAgent.httpConnected) then
-        -- (the gate is reporter evidence: only then is something alive inside
-        -- the session that can execute our commands - no dead 15s waits)
-        local channelResult, channel, attempted = sessionChannelCommand("end_test", {}, 6)
-        diagnostics.channelAttempts = attempted
-        if channelResult ~= nil then
-            local reachedChannel, afterChannel = waitForEditMode(true, 16)
-            diagnostics.editModeActiveAfter = afterChannel
-            if (not reachedChannel) and channel == "sessionAgent" then
-                -- The reporter received the command but Studio can take a few
-                -- seconds to transition. Requeue once instead of falling back
-                -- immediately to an edit-DataModel stop that service sessions ignore.
-                local retryResult = sessionAgentCall("end_test", {}, 5)
-                if retryResult ~= nil then reachedChannel, afterChannel = waitForEditMode(true, 10); diagnostics.editModeActiveAfter = afterChannel end
-            end
-            if reachedChannel then
-                diagnostics.usedPath = "sessionEndTest:" .. tostring(channel)
-                return finishStopSuccess(diagnostics, diagnostics.usedPath, "reporterEndTest",
-                    "Test stopped by the session reporter via " .. tostring(channel) .. " (StudioTestService:EndTest inside the session, reason stopped_by_arena_bridge).")
-            end
-        end
-    end
-
-    -- RANG 2 Fallback: RunService:Stop() from the edit DataModel. Proven for
-    -- classic F5 sessions; ExecutePlayModeAsync sessions may ignore it (B2).
-    diagnostics.usedPath = "editRunServiceStop"
-    local stopped, stopErr = pcall(function() RunService:Stop() end)
-    if not stopped then diagnostics.serviceError = tostring(stopErr) end
-    local reached, after = waitForEditMode(true, 12)
-    diagnostics.editModeActiveAfter = after
-    if not reached and RunService:IsRunning() then
-        local second, secondErr = pcall(function() RunService:Stop() end)
-        if not second then diagnostics.serviceError = tostring(secondErr) end
-        reached, after = waitForEditMode(true, 3)
-        diagnostics.editModeActiveAfter = after
-    end
-    if reached or (StudioTestService == nil and not RunService:IsRunning()) then
-        return finishStopSuccess(diagnostics, "editRunServiceStop", "editRunServiceStop",
-            "Test stopped from the Edit DataModel (RunService:Stop).")
-    end
-
-    -- 4.0.5 RANG 2.5: Letzter automatischer Versuch - end_test nur noch in die
-    -- Warteschlange legen und NICHT auf die Antwort warten. Der Reporter holt
-    -- sich Befehle bei jedem Heartbeat ab; er muss also nur noch abholen, nicht
-    -- rechtzeitig antworten. Genau dieser Fall (Reporter lebt, Antwortweg
-    -- klemmt) trieb play_stop vorher in PLAY_STOP_NEEDS_USER.
-    if sessionAgent and sessionAgent.key ~= nil and sessionId ~= nil then
-        local enqueued = pcall(function()
-            post("/plugin/session", { sessionId = sessionId, sessionKey = sessionAgent.key,
-                action = "command", command = { id = HttpService:GenerateGUID(false),
-                    action = "end_test", args = {} } })
-        end)
-        if enqueued then
-            diagnostics.queuedEndTest = true
-            local reachedQueued, afterQueued = waitForEditMode(true, 10)
-            diagnostics.editModeActiveAfter = afterQueued
-            if reachedQueued then
-                return finishStopSuccess(diagnostics, "queuedSessionEndTest", "reporterEndTest",
-                    "Test stopped by the session reporter (end_test picked up from the command queue).")
-            end
-        end
-    end
-
-    -- RANG 3: NO endless retry loop. One clean pass, then a precise handover
-    -- to the human (PLAY_STOP_NEEDS_USER) with the evidence attached.
-    sessionDiagnostics(diagnostics)
-    return {ok=false, code="PLAY_STOP_NEEDS_USER",
-        error="The test could not be stopped automatically: the session reporter "
-            .. (sessionReporterUsable() and "did not confirm EndTest" or "is not connected")
-            .. " and RunService:Stop() from the edit DataModel was ignored.",
-        userMessage="Bitte druecke in Roblox Studio selbst auf Stop (Shift+F5) - der laufende Test konnte von der Bridge nicht automatisch beendet werden.",
-        howToFix="Press Stop (Shift+F5) in Roblox Studio yourself, then verify with session_diag that editModeActive=true. Do NOT call play_stop in a retry loop. session_diag > channels shows which command path into the session was available and why none landed.",
-        sessionDiag=sessionDiagnosticsData(true),
-        state=playState(), startDiagnostics=diagnostics}
-end
-
--- ---------------------------------------------------------------------------
--- UNIONS (Solid Modeling)
--- ---------------------------------------------------------------------------
 local function collisionFidelityFrom(name)
     local ok, value = pcall(function() return Enum.CollisionFidelity[name or "Default"] end)
     if ok and value then return value end
@@ -5744,9 +3854,7 @@ tools.get_place_info = function()
     local state = playState()
     state.modeInfo = {
         edit      = "permanent building (also: editor simulations like compile_check/run_lua)",
-        run       = "physics + server-script simulation in the editor - NO player/character/client/GUI",
-        play      = "full game: test player with character, GUI and client agent",
-        play_here = "like play, but the character starts at the old EDIT camera position",
+        run       = "editor simulation (sim_start): physics + scripts run, but there is NO player, NO client script and NO playtest",
     }
     return ok({
         name       = game.Name,
@@ -8727,7 +6835,9 @@ end
 -- weiteres Top-Level-local verbraucht (Luau-Grenze 200).
 -- ---------------------------------------------------------------------------
 UI_ENGINE = {}
-UI_ENGINE.ENGINE_VERSION = "1.0"
+-- Version 7.0.0: Engine 2.0 - Glow, echte Texturen (textureImage statt
+-- nur prozeduraler Muster) und Radialmenues aus einer Bild-Id.
+UI_ENGINE.ENGINE_VERSION = "2.0"
 
 -- AnchorPoint wird NIE geraten: er folgt immer aus der Ausrichtung. Das ist
 -- die Wurzel des haeufigsten Fehlers (AnchorPoint 0,0 + Skalierungs-
@@ -9822,6 +7932,196 @@ function UI_ENGINE.guardGeneric(args, skin)
     return nil
 end
 
+-- ===========================================================================
+-- UI ENGINE 2.0 (Version 7.0.0): Glow, echte Texturen, Radialmenue
+-- VERTRAG: Was die Engine kann, baut die KI nicht selbst.
+--   * Glow wird IMMER hier gebaut (ui_glow) - nie als handgemachte
+--     Transparenz-Kette im eigenen Code. Ohne echte Textur faellt alles
+--     weich auf einen Gradienten zurueck und MELDET das ehrlich.
+--   * Radialmenues kommen aus EINER Bild-Id (ui_radial); Ringfarbe UND
+--     Akzentfarbe gehoeren der Engine, nicht dem Aufrufer.
+--   * Echte Texturen schlagen prozedurale: ui_texture gibt zuerst die echte
+--     Textur-Id zurueck. Fehlt sie, kommt TEXTURE_ASSET_MISSING als Warnung.
+-- ===========================================================================
+
+function UI_ENGINE.textureRecipe(skin, spec)
+    skin = skin or UI_ENGINE.resolveSkin("glass", nil, nil)
+    spec = spec or {}
+    local explicit = spec.textureImage or spec.textureId
+    if explicit ~= nil and tostring(explicit) ~= "" then
+        return {
+            mode = "texture",
+            textureId = tostring(explicit),
+            tile = Vector2.new(tonumber(spec.tileX) or tonumber(skin.tileX) or 0.18,
+                tonumber(spec.tileY) or tonumber(skin.tileY) or 0.18),
+            tint = UI_ENGINE.col(spec.textureTint, skin.p.surfaceHi),
+            warning = nil,
+        }
+    end
+    return {
+        mode = "gradient",
+        textureId = nil,
+        warning = "TEXTURE_ASSET_MISSING",
+        note = "no real texture id was given - the gradient fallback stays visible on purpose; this is a warning, not an error",
+    }
+end
+
+function UI_ENGINE.glowEmitter(parent, skin, spec)
+    skin = skin or UI_ENGINE.resolveSkin("arcade", nil, nil)
+    spec = spec or {}
+    local layers = math.clamp(math.floor(tonumber(spec.layers) or 3), 1, 5)
+    local strength = math.clamp(tonumber(spec.strength) or 0.55, 0.05, 1)
+    local color = UI_ENGINE.col(spec.color, skin.p.glow or skin.p.accent)
+    local holder = Instance.new("Frame")
+    holder.Name = "ArenaGlow"
+    holder.BackgroundTransparency = 1
+    holder.Size = UDim2.fromScale(1, 1)
+    holder.AnchorPoint = Vector2.new(0.5, 0.5)
+    holder.Position = UDim2.fromScale(0.5, 0.5)
+    holder.ClipsDescendants = false
+    holder.ZIndex = math.max(0, (tonumber(spec.zIndex) or 1) - 1)
+    local caps = UI_ENGINE.caps()
+    for i = layers, 1, -1 do
+        local ring = Instance.new("Frame")
+        ring.Name = "ArenaGlowLayer" .. tostring(i)
+        ring.BackgroundColor3 = color
+        ring.BackgroundTransparency = math.clamp(1 - (strength / i), 0, 0.98)
+        ring.BorderSizePixel = 0
+        ring.AnchorPoint = Vector2.new(0.5, 0.5)
+        ring.Position = UDim2.fromScale(0.5, 0.5)
+        local grow = 0.02 * i * math.clamp(tonumber(spec.spread) or 1, 0.2, 3)
+        ring.Size = UDim2.fromScale(1 + grow, 1 + grow)
+        ring.ZIndex = holder.ZIndex
+        UI_ENGINE.applyCorner(ring, spec.corner or skin.corner, caps, spec.cornerShape)
+        ring.Parent = holder
+    end
+    holder:SetAttribute("ArenaGlow", true)
+    holder:SetAttribute("ArenaGlowColor", "#" .. color:ToHex())
+    holder.Parent = parent
+    return holder, {
+        mode = "layered-neon",
+        layers = layers,
+        color = color,
+        colorHex = color:ToHex(),
+        strength = strength,
+        note = "engine-built glow: never hand-build this chain in your own code",
+    }
+end
+
+function UI_ENGINE.radialMenu(parent, skin, spec)
+    skin = skin or UI_ENGINE.resolveSkin("glass", nil, nil)
+    spec = spec or {}
+    local count = math.clamp(math.floor(tonumber(spec.items) or 6), 3, 12)
+    local radius = math.clamp(tonumber(spec.radius) or 0.34, 0.15, 0.46)
+    local imageId = spec.imageId or spec.textureImage
+    local ringColor = UI_ENGINE.col(spec.ringColor, skin.p.strokeHi or skin.p.accent)
+    local activeColor = UI_ENGINE.col(spec.activeColor, skin.p.accent)
+    local holder = Instance.new("Frame")
+    holder.Name = "ArenaRadial"
+    holder.BackgroundTransparency = 1
+    holder.Size = UDim2.fromScale(1, 1)
+    holder.AnchorPoint = Vector2.new(0.5, 0.5)
+    holder.Position = UDim2.fromScale(0.5, 0.5)
+    if imageId ~= nil and tostring(imageId) ~= "" then
+        local ring = Instance.new("ImageLabel")
+        ring.Name = "ArenaRadialRing"
+        ring.BackgroundTransparency = 1
+        ring.Image = tostring(imageId)
+        ring.ImageTransparency = math.clamp(tonumber(spec.ringAlpha) or 0.15, 0, 1)
+        ring.ImageColor3 = ringColor
+        ring.Size = UDim2.fromScale(radius * 2.2, radius * 2.2)
+        ring.AnchorPoint = Vector2.new(0.5, 0.5)
+        ring.Position = UDim2.fromScale(0.5, 0.5)
+        ring.ZIndex = 1
+        ring.Parent = holder
+        holder:SetAttribute("ArenaRadialImage", tostring(imageId))
+    end
+    local itemSize = math.clamp(tonumber(spec.itemSize) or 0.16, 0.08, 0.3)
+    for i = 1, count do
+        local angle = (i - 1) / count * math.pi * 2 - math.pi / 2
+        local item = Instance.new("Frame")
+        item.Name = "ArenaRadialItem" .. tostring(i)
+        item.BackgroundColor3 = (spec.activeIndex == i) and activeColor or ringColor
+        item.BackgroundTransparency = (spec.activeIndex == i) and 0.05 or 0.2
+        item.Size = UDim2.fromScale(itemSize, itemSize)
+        item.AnchorPoint = Vector2.new(0.5, 0.5)
+        item.Position = UDim2.fromScale(0.5 + radius * math.cos(angle), 0.5 + radius * math.sin(angle))
+        item.ZIndex = 3
+        UI_ENGINE.applyCorner(item, spec.corner or "round", UI_ENGINE.caps(), nil)
+        local label = Instance.new("TextLabel")
+        label.Name = "ArenaRadialLabel"
+        label.BackgroundTransparency = 1
+        label.Size = UDim2.fromScale(1, 1)
+        label.Font = Enum.Font.GothamBold
+        label.TextScaled = true
+        label.TextColor3 = skin.p.text
+        label.Text = tostring(i)
+        label.ZIndex = 4
+        label.Parent = item
+        item.Parent = holder
+    end
+    holder:SetAttribute("ArenaRadial", true)
+    holder:SetAttribute("ArenaRadialItems", count)
+    holder.Parent = parent
+    return holder, {
+        mode = (imageId ~= nil and tostring(imageId) ~= "") and "texture-ring" or "procedural-ring",
+        imageId = imageId,
+        items = count,
+        radius = radius,
+        colors = { ring = "#" .. ringColor:ToHex(), active = "#" .. activeColor:ToHex() },
+        warning = (imageId == nil or tostring(imageId) == "") and "RADIAL_ASSET_MISSING" or nil,
+        note = "one image id, both colours from the engine - do not rebuild this by hand",
+    }
+end
+
+tools.ui_texture = function(args)
+    local skin = UI_ENGINE.resolveSkin(args.skin or "glass", args.brand, args.colors)
+    local recipe = UI_ENGINE.textureRecipe(skin, args)
+    local warnings = {}
+    if recipe.warning then table.insert(warnings, recipe.warning) end
+    return ok({
+        engine = UI_ENGINE.ENGINE_VERSION,
+        recipe = { mode = recipe.mode, textureId = recipe.textureId, tile = { recipe.tile.X, recipe.tile.Y }, tint = "#" .. recipe.tint:ToHex() },
+        skin = skin.key,
+        warnings = warnings,
+        honest = recipe.note or "real texture id accepted - the engine uses it before any procedural fill",
+    })
+end
+
+tools.ui_glow = function(args)
+    local parent, err = resolveRef(args.ref or args.parentRef or "game.StarterGui")
+    if not parent then return failCode("REF_NOT_FOUND", err) end
+    local skin = UI_ENGINE.resolveSkin(args.skin or "arcade", args.brand, args.colors)
+    local spec = args.glow or args
+    local holder, report = UI_ENGINE.glowEmitter(parent, skin, spec)
+    waypoint("ui glow")
+    return ok({
+        engine = UI_ENGINE.ENGINE_VERSION,
+        parent = describeRef(holder.Parent),
+        glow = report,
+        warnings = {},
+        note = report.note,
+    })
+end
+
+tools.ui_radial = function(args)
+    local parent, err = resolveRef(args.ref or args.parentRef or "game.StarterGui")
+    if not parent then return failCode("REF_NOT_FOUND", err) end
+    local skin = UI_ENGINE.resolveSkin(args.skin or "glass", args.brand, args.colors)
+    local spec = args.radial or args
+    local holder, report = UI_ENGINE.radialMenu(parent, skin, spec)
+    local warnings = {}
+    if report.warning then table.insert(warnings, report.warning) end
+    waypoint("ui radial")
+    return ok({
+        engine = UI_ENGINE.ENGINE_VERSION,
+        parent = describeRef(holder.Parent),
+        radial = report,
+        warnings = warnings,
+        note = report.note,
+    })
+end
+
 tools.ui_capabilities = function(args)
     local caps = UI_ENGINE.caps(args ~= nil and args.refresh == true)
     return ok({
@@ -10033,7 +8333,8 @@ tools.ui_audit = function(args)
     local nodes, screens = {}, {}
     local stats = { total = 0, filled = 0, genericColors = 0, flatSurfaces = 0, strokes = 0, strokesScaled = 0,
         gradients = 0, gradientsOnStrokes = 0, shadows = 0, textures = 0, canvasGroups = 0, nestedCanvasGroups = 0,
-        uiScales = 0, offsetHeavy = 0, texts = 0 }
+        uiScales = 0, offsetHeavy = 0, texts = 0,
+        glowStacks = 0, radialMenus = 0, textureImages = 0 }
     local problems = { anchorMismatches = {}, cornerOverflow = {}, contrastFailures = {}, flatSurfaces = {}, genericColors = {},
         offsetHeavy = {}, nestedCanvasGroups = {}, textTooSmall = {}, tapTargetsTooSmall = {}, outOfBounds = {} }
     local function push(list, inst, detail)
@@ -10086,7 +8387,14 @@ tools.ui_audit = function(args)
                         push(problems.nestedCanvasGroups, child, "nested CanvasGroup: content blurs on non-integer AbsolutePosition")
                     end
                 end
-                if child:IsA("ImageLabel") and child.ScaleType == Enum.ScaleType.Tile then stats.textures = stats.textures + 1 end
+                if child:IsA("ImageLabel") and child.ScaleType == Enum.ScaleType.Tile then
+                    stats.textures = stats.textures + 1
+                end
+                if child:IsA("ImageLabel") and child.Image ~= nil and tostring(child.Image) ~= "" then
+                    stats.textureImages = stats.textureImages + 1
+                end
+                if child:GetAttribute("ArenaGlow") then stats.glowStacks = stats.glowStacks + 1 end
+                if child:GetAttribute("ArenaRadial") then stats.radialMenus = stats.radialMenus + 1 end
                 -- Anker-Regel: skaliert animiert, aber waechst nicht aus der Mitte.
                 if hasScale and child.AnchorPoint.X == 0 and child.AnchorPoint.Y == 0 then
                     push(problems.anchorMismatches, child, "UIScale with AnchorPoint 0,0 grows toward the bottom right instead of from its own anchor")
@@ -10169,7 +8477,8 @@ tools.ui_audit = function(args)
     blandness = blandness + 0.30 * (stats.genericColors / filled)
     blandness = blandness + 0.22 * (stats.flatSurfaces / filled)
     if stats.gradientsOnStrokes == 0 then blandness = blandness + 0.16 end
-    if stats.textures == 0 then blandness = blandness + 0.14 end
+    if stats.textures == 0 and stats.textureImages == 0 then blandness = blandness + 0.14 end
+    if stats.glowStacks == 0 and stats.radialMenus == 0 and stats.textureImages == 0 then blandness = blandness + 0.04 end
     if stats.shadows == 0 then blandness = blandness + 0.10 end
     if stats.gradients <= filled * 0.5 then blandness = blandness + 0.08 end
     blandness = math.clamp(blandness, 0, 1)
@@ -10185,6 +8494,7 @@ tools.ui_audit = function(args)
         blandnessScore = blandness, verdict = verdict, failureCount = failures,
         counts = stats, problems = problems, deviceMatrix = matrix,
         strokeBudget = { used = stats.strokes, recommendedMax = 300 },
+        engine = UI_ENGINE.ENGINE_VERSION,
         capabilities = caps,
         howToRead = "offsetRatio 0 = fully scale-based. blandnessScore 1.0 = the generic dark dashboard, below 0.25 is the target. Every problem list names the exact instance id and the measured value.",
     })
@@ -10279,10 +8589,8 @@ end
 
 -- ------------------------- Ausgabefenster -----------------------------------
 tools.get_output = function(args)
-    if absorbSharedTableReports then pcall(absorbSharedTableReports) end
-    -- LogService from the edit DataModel is the universal source. In
-    -- particular it retains #ARENA# reporter evidence even when optional HTTP
-    -- is enabled, so diagnosis never changes by configuration.
+    -- LogService from the edit DataModel is the universal source (also for the
+    -- Run-mode simulation). Version 7.0.0: no session reporter, no SharedTable.
     return ok(readOutput(args))
 end
 
@@ -10328,75 +8636,20 @@ tools.wait_for_output = function(args)
     return ok({ found = false, cursor = outputSeq, waited = timeout, note = "Nothing matched within the timeout." })
 end
 
--- ------------------------- Play / Test --------------------------------------
-tools.play_status = function()
-    local state = playState()
-    state.capabilities = capabilities
-    state.defaultContext = defaultContext
-    state.modeInfo = {
-        edit      = "PERMANENT building. Editor simulations (compile_check, run_lua) also run here - no test session needed.",
-        run       = "Physics + server-script simulation in the editor (F8). NO player, NO character, NO client, NO GUI - by design.",
-        play      = "Full game: one test player with character, GUI and client agent (F5).",
-        play_here = "Like play, but the character starts where the EDIT camera was (Studio's 'Play Here'). Detected as 'play_here' when the character spawns near the old edit camera position.",
-    }
-    state.advice = state.running
-        and ("A " .. tostring(state.mode) .. " test is running. Persistent edits are blocked (pass allowInPlayMode=true only for throw-away test changes). Call play_stop before real building. If the USER started/plays this test, stop or ask first - see _bridge.playtest.")
-        or "Edit mode - all changes are permanent and will be saved. Editor simulations (compile_check / run_lua) need no test session."
-    return ok(state)
-end
+-- ------------------------- Simulation / Kontext -----------------------------
 
-tools.play_start = function(args)
-    args = args or {}
-    local result = startPlay(args.mode or "play", args)
-    if result.ok then
-        return ok(result, result.warnings)
-    end
-    local extra = { state = result.state, warnings = result.warnings, startDiagnostics = result.startDiagnostics }
-    if result.howToFix then extra.howToFix = result.howToFix end
-    if result.userMessage then extra.userMessage = result.userMessage end
-    if result.reason then extra.reason = result.reason end
-    if result.recentErrors then extra.recentErrors = result.recentErrors end
-    if result.advice then extra.advice = result.advice end
-    return failCode(result.code or "PLAY_START_FAILED", result.error, extra)
-end
 
-tools.play_stop = function()
-    local result = stopPlay()
-    if result.ok then
-        return ok(result, result.warnings)
-    end
-    local extra = { state = result.state, warnings = result.warnings, startDiagnostics = result.startDiagnostics, userMessage = result.userMessage }
-    if result.howToFix then extra.howToFix = result.howToFix end
-    if result.sessionDiag then extra.sessionDiag = result.sessionDiag end
-    return failCode(result.code or "PLAY_STOP_FAILED", result.error, extra)
-end
 
--- 3.9.7: live truth about session, reporter and command channels.
--- READ-ONLY tool - call it any time instead of guessing.
-tools.session_diag = function(args)
-    return ok(sessionDiagnosticsData(args and args.skipProbe == true))
-end
 
-tools.play_pause = function()
-    if not RunService:IsRunning() then return fail("Nothing is running.") end
-    local okRun = pcall(function() RunService:Pause() end)
-    if not okRun then return fail("Pause failed.") end
-    return ok({ paused = true, state = playState() })
-end
 
-tools.play_resume = function()
-    local okRun = pcall(function() RunService:Run() end)
-    if not okRun then return fail("Resume failed.") end
-    return ok({ resumed = true, state = playState() })
-end
 
 tools.set_context = function(args)
-    local wanted = string.lower(tostring(args.context or "server"))
-    if wanted ~= "server" and wanted ~= "client" then
-        return fail("context must be 'server' or 'client'.")
+    local context = string.lower(tostring(args and args.context or "server"))
+    if context == "client" then
+        return failCode("CONTEXT_UNAVAILABLE", "Client context is gone since 7.0.0 (no playtest, no client agent). run_lua always runs on the server side.")
     end
-    defaultContext = wanted
-    return ok({ context = defaultContext, note = "Runtime tools now target the " .. defaultContext .. " side." })
+    defaultContext = "server"
+    return ok({ context = defaultContext, note = "Only the server context exists; the editor simulation (sim_start) runs without a player and without client scripts." })
 end
 
 -- FIX 3.2: Robuste Lua-Ausfuehrung ueber alle Studio-Versionen hinweg.
@@ -10409,6 +8662,160 @@ end
 --      "local _ENV" bindet die persistente Umgebung; der top-level Return
 --      des Nutzers wird natuerlich der Wert von require().
 local requireBoxSeq = 0
+
+
+-- ---------------------------------------------------------------------------
+-- Version 7.0.0: EDITOR-SIMULATION (Run) - der Playtest ist ersatzlos weg.
+-- Run laesst Skripte und Physik im Editor laufen, aber KEINEN Spieler, keine
+-- Client-Skripte, keinen Playtest. Beendet wird ueber RunService:Stop();
+-- alte Tastenkombinationen (F8, Shift+F5) bleiben als Fallback.
+-- ---------------------------------------------------------------------------
+local function simAllowedNow()
+    local allowed = true
+    pcall(function() allowed = plugin:GetSetting("arenaSimAllowed") ~= false end)
+    return allowed
+end
+
+local function simStateData()
+    local editModeActive = nil
+    if StudioTestService ~= nil then
+        pcall(function() editModeActive = StudioTestService.EditModeActive end)
+    end
+    local runningNow = false
+    pcall(function() runningNow = RunService:IsRunning() end)
+    local active = testSessionActive()
+    return {
+        running = active,
+        kind = "run",
+        mode = simMode,
+        startedByBridge = simStartedByBridge,
+        startedAt = simStartedAt > 0 and math.floor(simStartedAt) or nil,
+        editModeActive = editModeActive,
+        runServiceRunning = runningNow,
+        userPlaytestActive = userPlaytestActive,
+        playerCount = 0,
+        note = "Run mode: scripts and physics run, but there is no player, no client script and no playtest.",
+    }
+end
+
+tools.sim_start = function(args)
+    if not simAllowedNow() then
+        return failCode("SIM_DISABLED",
+            "The user disabled editor simulations in the Arena Roblox Bridge program (setting \"Arena darf Simulationen (Run) starten\" = OFF). This is on purpose and NOT a bug. Keep building and auditing in edit mode.")
+    end
+    args = args or {}
+    if testSessionActive() and simStartedByBridge ~= true then
+        return failCode("USER_PLAYTEST_ACTIVE",
+            "A test is already running and it was NOT started by the bridge. Do not start anything: either the user stops it themselves, or you ask them to. Persistent edits are blocked while a test runs.")
+    end
+    if testSessionActive() and simStartedByBridge == true then
+        return ok({ alreadyRunning = true, state = simStateData(), note = "The editor simulation started by the bridge is already running." })
+    end
+    local diagnostics = { usedPath = nil, serviceError = nil, editModeActiveBefore = nil, editModeActiveAfter = nil }
+    if StudioTestService ~= nil then pcall(function() diagnostics.editModeActiveBefore = StudioTestService.EditModeActive end) end
+    if userPlaytestActive == true then
+        return failCode("USER_PLAYTEST_ACTIVE",
+            "The USER started a playtest right now. Arena must not work: ask the user to stop it (or end your response) - the bridge deliberately blocks persistent changes during a test.")
+    end
+    simMode = "run"
+    local usedPath = nil
+    if StudioTestService ~= nil then
+        diagnostics.usedPath = "studioTestService"
+        local startedAsync = false
+        task.spawn(function()
+            pcall(function() StudioTestService:ExecuteRunModeAsync() end)
+        end)
+        startedAsync = true
+        local reached = waitForEditMode(false, 25)
+        diagnostics.editModeActiveAfter = nil
+        if reached then
+            usedPath = "studioTestService"
+        else
+            pcall(function() diagnostics.serviceError = "ExecuteRunModeAsync did not switch Studio to Run mode in time" end)
+        end
+    end
+    if usedPath == nil then
+        -- Fallback: die alten Tastenkuerzel (F8 fuer Run) bleiben erhalten.
+        diagnostics.usedPath = "studioShortcut"
+        local keyOk, keyError = SimSendKey("F8", 0.06)
+        if keyOk and waitForEditMode(false, 12) then
+            usedPath = "studioShortcut"
+        else
+            diagnostics.serviceError = keyError or diagnostics.serviceError
+            local runOk = pcall(function() RunService:Run() end)
+            if runOk and waitForEditMode(false, 8) then usedPath = "runServiceApi" end
+        end
+    end
+    if usedPath == nil then
+        return failCode("SIM_START_FAILED",
+            "Studio did not switch into Run mode in time. Try once more; if it fails again, ask the user to start Run themselves (F8).",
+            { startDiagnostics = diagnostics, state = simStateData() })
+    end
+    simStartedByBridge = true
+    simStartedAt = os.time()
+    aiPlayIntent = { action = "start", at = os.time(), mode = "run" }
+    waypoint("sim_start")
+    return ok({ state = simStateData(), startMethod = usedPath, startDiagnostics = diagnostics,
+        note = "Editor simulation started. Persistent edits are blocked while it runs, because they would be discarded on stop." })
+end
+
+tools.sim_stop = function(args)
+    local diagnostics = { editModeActiveBefore = nil, editModeActiveAfter = nil, usedPath = nil, serviceError = nil }
+    if StudioTestService ~= nil then pcall(function() diagnostics.editModeActiveBefore = StudioTestService.EditModeActive end) end
+    if not testSessionActive() then
+        simStartedByBridge = false
+        return ok({ alreadyStopped = true, state = simStateData() })
+    end
+    if simStartedByBridge ~= true and userPlaytestActive then
+        return failCode("USER_PLAYTEST_ACTIVE",
+            "This is the USER's test, not the bridge simulation. Do not stop it silently: ask the user (or end your response). Persistent edits stay blocked while it runs.")
+    end
+    -- Rang 1: RunService:Stop() - der offizielle Weg fuer den Editor-Run-Modus.
+    diagnostics.usedPath = "runServiceStop"
+    pcall(function() RunService:Stop() end)
+    if waitForEditMode(true, 12) then
+        diagnostics.editModeActiveAfter = true
+        simStartedByBridge = false
+        simStartedAt = 0
+        aiPlayIntent = { action = "stop", at = os.time() }
+        waypoint("sim_stop")
+        return ok({ stopped = true, stopMethod = "runServiceStop", startDiagnostics = diagnostics, state = simStateData() })
+    end
+    -- Rang 2: Tastenkuerzel Shift+F5 (Fallback).
+    diagnostics.usedPath = "studioShortcut"
+    local keyOk = SimSendKey("F5", 0.06, true)
+    if keyOk and waitForEditMode(true, 12) then
+        diagnostics.editModeActiveAfter = true
+        simStartedByBridge = false
+        simStartedAt = 0
+        return ok({ stopped = true, stopMethod = "studioShortcut", startDiagnostics = diagnostics, state = simStateData() })
+    end
+    return failCode("SIM_STOP_NEEDS_USER",
+        "Studio still reports the simulation as running. Press Stop (Shift+F5) in Roblox Studio yourself - do NOT repeat sim_stop in a loop.",
+        { startDiagnostics = diagnostics, state = simStateData() })
+end
+
+tools.sim_status = function(args)
+    return ok({ state = simStateData(), simAllowed = simAllowedNow(),
+        note = "sim_ tools are the only test path: Run mode without a player, without client scripts and without a playtest. A user-started playtest still blocks work (USER_PLAYTEST_ACTIVE)." })
+end
+
+function SimSendKey(name, hold, shift)
+    if VirtualInputManager == nil then return false, "VirtualInputManager unavailable in this Studio version" end
+    local keyCode = nil
+    pcall(function()
+        if shift then keyCode = Enum.KeyCode.LeftShift end
+    end)
+    local okSend, err = pcall(function()
+        if shift then VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.LeftShift, false, game) end
+        VirtualInputManager:SendKeyEvent(true, Enum.KeyCode[name] or Enum.KeyCode.F8, false, game)
+        task.wait(hold or 0.05)
+        VirtualInputManager:SendKeyEvent(false, Enum.KeyCode[name] or Enum.KeyCode.F8, false, game)
+        if shift then VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.LeftShift, false, game) end
+    end)
+    if okSend then return true end
+    return false, tostring(err)
+end
 
 local function requireExec(source, envTable)
     requireBoxSeq = requireBoxSeq + 1
@@ -10486,7 +8893,7 @@ end
 tools.run_lua = function(args)
     local context = string.lower(tostring(args.context or "auto"))
     if context == "client" then
-        return failCode("NO_PLAYER", "Arbitrary Lua cannot run on the client (loadstring is disabled there). Use client_action, gui_click, gui_dump, move_character or send_input instead - they cover character, GUI and input.")
+        return failCode("CONTEXT_UNAVAILABLE", "Client context is gone since 7.0.0 (no playtest, no client agent). run_lua always runs on the server side.")
     end
     local source = tostring(args.source or args.code or "")
     if source == "" then return failCode("BAD_ARGS", "source missing.") end
@@ -10641,165 +9048,10 @@ tools.cancel_job = function(args)
     return ok({ jobId = job.id, requested = false, status = job.status, note = "The job already finished." })
 end
 
-tools.client_action = function(args)
-    local guard = sessionLiveDataGuard()
-    if guard ~= nil then return guard end
-    local response, err = callClient(args.action, args.args or args, tonumber(args.timeoutSeconds) or 8)
-    if response == nil then
-        return failCode("NO_PLAYER", err)
-    end
-    if type(response) == "table" and response.ok == false then
-        return failCode("RUNTIME_ERROR", response.error or "Client action failed.", { client = true })
-    end
-    return ok(response)
-end
 
-tools.character_state = function()
-    if not RunService:IsRunning() and sessionReporterUsable() then
-        local snapshot = currentSessionSnapshot() or {}
-        local character = snapshot.character or (snapshot.characters and snapshot.characters[1])
-        if not character then return failCode("NO_PLAYER", "The LogStream reporter has not seen a player character yet.") end
-        local response = {}
-        for key, value in pairs(character) do response[key] = value end
-        response.playerCount = tonumber(snapshot.players or snapshot.playerCount) or sessionAgent.playerCount or 0
-        response.agentMode = sessionAgent.agentMode or "sharedTable"
-        return ok(response)
-    end
-    if not RunService:IsRunning() and sessionAgent and sessionAgent.httpConnected then
-        local response, err = sessionAgentCall("character_state", {}, 8)
-        if response == nil then return failCode("NO_PLAYER", err) end
-        return ok(response)
-    end
-    if not RunService:IsRunning() and testSessionActive() then
-        return failCode("REPORTER_NOT_CONNECTED",
-            "A test session IS active (editModeActive=false) - only the #ARENA# reporter has not been seen, so there is no live character snapshot yet.",
-            reporterNotConnectedExtra())
-    end
-    if not RunService:IsRunning() then return fail("No test running. Call play_start first.") end
-    local player = Players:GetPlayers()[1]
-    if player == nil then return fail("No player. Run mode has no character - use play_start with mode 'play'.") end
-    local character = player.Character
-    if character == nil then return ok({ hasCharacter = false, player = player.Name }) end
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    local root = character:FindFirstChild("HumanoidRootPart")
-    return ok({ hasCharacter=true, player=player.Name, position=root and encodeValue(root.Position) or nil,
-        cframe=root and encodeValue(root.CFrame) or nil, health=humanoid and humanoid.Health or nil,
-        maxHealth=humanoid and humanoid.MaxHealth or nil, walkSpeed=humanoid and humanoid.WalkSpeed or nil,
-        jumpPower=humanoid and humanoid.JumpPower or nil, state=humanoid and tostring(humanoid:GetState()) or nil })
-end
 
-tools.move_character = function(args)
-    args = args or {}
-    local keys = args.keys or args.direction
-    if type(keys) == "string" then keys = { keys } end
-    if type(keys) ~= "table" or #keys == 0 then
-        return failCode("INPUT_REQUIRED", "move_character across a separate Play DataModel requires keys/direction (W/A/S/D/Space) and optional duration/shift. Position teleporting is only supported at play_start via arenaSpawn.")
-    end
-    if not testSessionActive() then
-        return fail("No test running. Call play_start first.")
-    end
-    local duration = tonumber(args.duration) or 1
-    duration = math.max(0.03, math.min(duration, 12))
-    aiMoveUntil = os.clock() + duration + 4
 
-    -- 4.0.2 BUG-2-FIX: VirtualInputManager:SendKeyEvent now throws "The
-    -- current thread cannot call 'SendKeyEvent' (lacking capability
-    -- RobloxScript)" from the edit plugin against the separate session
-    -- DataModel (live-observed). Key simulation from here is dead, so
-    -- movement is executed AS A COMMAND by the session reporter itself
-    -- (Humanoid:Move inside the session DataModel, where it has full
-    -- capability). RunService:IsRunning() true in THIS DataModel means the
-    -- classic same-process F5 case, where direct VirtualInputManager still
-    -- works and stays as a fallback.
-    if RunService:IsRunning() then
-        local pressed = {}
-        for _, key in ipairs(keys) do
-            local okKey, keyErr = sendKey(key, duration, args.shift and { "LeftShift" } or nil)
-            table.insert(pressed, { key=key, ok=okKey, error=keyErr })
-        end
-        task.wait(0.5)
-        if absorbSharedTableReports then pcall(absorbSharedTableReports) end
-        local snap = currentSessionSnapshot()
-        local character = snap and (snap.character or (snap.characters and snap.characters[1]))
-        return ok({ pressed=pressed, duration=duration, position=character and character.position or nil,
-            agentMode="directInput", note="Input was sent through VirtualInputManager (same-DataModel run); read character_state after movement for the updated position." })
-    end
 
-    local beforeSnap = currentSessionSnapshot()
-    local beforeCharacter = beforeSnap and (beforeSnap.character or (beforeSnap.characters and beforeSnap.characters[1]))
-    local positionBefore = beforeCharacter and beforeCharacter.position or nil
-
-    local result, channel, attempted = sessionChannelCommand("move_character", { keys = keys, duration = duration }, duration + 8)
-    if result == nil then
-        return failCode("REPORTER_NOT_CONNECTED",
-            "No command channel into the session answered (tried: " .. table.concat(attempted or {}, ",") .. "). move_character needs the session reporter (sessionPlugin/http/sharedTable) because VirtualInputManager can no longer reach a separate Play DataModel.",
-            reporterNotConnectedExtra())
-    end
-    if result.ok == false then
-        return failCode("RUNTIME_ERROR", result.error or "Session reporter rejected move_character.")
-    end
-
-    -- Refresh the reporter snapshot so the returned "after" position is fresh.
-    pcall(pollSessionPluginState)
-    local afterSnap = currentSessionSnapshot()
-    local afterCharacter = afterSnap and (afterSnap.character or (afterSnap.characters and afterSnap.characters[1]))
-    local positionAfter = result.positionAfter or (afterCharacter and afterCharacter.position) or nil
-
-    return ok({ keys=keys, duration=duration, via=channel,
-        positionBefore = result.positionBefore or positionBefore,
-        positionAfter = positionAfter,
-        agentMode="sessionPlugin",
-        note="Executed as Humanoid:Move inside the session DataModel by the session reporter; positionBefore/positionAfter come from its own snapshot." })
-end
-
-tools.teleport_character = function(args)
-    args = args or {}
-    if not testSessionActive() then
-        return failCode("START_ONLY_TELEPORT", "No test is running. Start the test with play_start { mode='play', arenaSpawn={x,y,z} }; the Session Reporter reads GetTestArgs and places the character before testing begins.")
-    end
-    -- 3.9.7: with a working command channel the session reporter teleports
-    -- the character INSIDE the session DataModel (blocked only if no channel).
-    local q = args.position or args.arenaSpawn or args.spawn
-    if type(q) ~= "table" then
-        return failCode("BAD_ARGS", "teleport_character needs position={x,y,z}. It is delivered to the session reporter through the cross-DM command channel (sharedTable or the optional HTTP agent).")
-    end
-    local target = { x = tonumber(q.x) or 0, y = tonumber(q.y) or 0, z = tonumber(q.z) or 0 }
-    local result, channel, attempted = sessionChannelCommand("teleport_character", { position = target }, 8)
-    if result == nil then
-        return failCode("REPORTER_NOT_CONNECTED",
-            "No command channel into the session answered (tried: " .. table.concat(attempted or {}, ",") .. "). Without a channel, teleport only works at play_start via arenaSpawn={x,y,z}.",
-            reporterNotConnectedExtra())
-    end
-    if result.ok == false then
-        return failCode("NO_PLAYER", result.error or "Session reporter rejected the teleport.")
-    end
-    return ok({ teleported = true, via = channel, position = result.position or target })
-end
-
-tools.respawn_character = function()
-    if not RunService:IsRunning() and testSessionActive() then
-        -- 3.9.7: the session reporter respawns the player from inside the
-        -- session DataModel (http / sharedTable / VIM channels in order).
-        local result, channel, attempted = sessionChannelCommand("respawn_character", {}, 8)
-        if result == nil then
-            return failCode("REPORTER_NOT_CONNECTED",
-                "No command channel into the session answered (tried: " .. table.concat(attempted or {}, ",") .. ").",
-                reporterNotConnectedExtra())
-        end
-        if result.ok == false then
-            return failCode("NO_PLAYER", result.error or "Respawn failed inside the session.")
-        end
-        if channel == "vim" then task.wait(0.8) end
-        return ok({ respawned = true, via = channel })
-    end
-    if not RunService:IsRunning() then return fail("No test running.") end
-    local player = Players:GetPlayers()[1]
-    if player == nil then return fail("No player.") end
-    local okLoad = pcall(function() player:LoadCharacter() end)
-    if not okLoad then return fail("LoadCharacter failed.") end
-    task.wait(0.5)
-    return ok({ respawned = true })
-end
 
 local function guiFindInItems(items, query)
     local wanted = string.lower(tostring(query))
@@ -10817,219 +9069,12 @@ local function guiFindInItems(items, query)
     return best
 end
 
-tools.gui_dump = function(args)
-    local guard = sessionLiveDataGuard()
-    if guard ~= nil then return guard end
-    local response, err = callClient("gui_dump", { limit = tonumber(args.limit) or 200 }, 8)
-    if response == null then return failCode("NO_PLAYER", err) end
-    return ok(response)
-end
 
 -- GUI-TEST-HARNESS: EIN Dump, dann alle erwarteten Zustaende gepraeft.
-tools.gui_check = function(args)
-    local checks = args.checks or args.expect or {}
-    if #checks == 0 then
-        return failCode("BAD_ARGS", "checks must be a list, e.g. { { query = 'Start', expectVisible = true }, { query = 'Score', expectText = '10' } }.")
-    end
-    local guard = sessionLiveDataGuard()
-    if guard ~= nil then return guard end
-    local response, err = callClient("gui_dump", { limit = tonumber(args.limit) or 400 }, 8)
-    if response == nil then return failCode("NO_PLAYER", err) end
-    local items = response.items or {}
-    local results = {}
-    local allPassed = true
-    for _, check in ipairs(checks) do
-        local query = check.query or check.text or check.name
-        if query == nil then
-            table.insert(results, { passed = false, error = "check needs query/text/name" })
-            allPassed = false
-        else
-            local item = guiFindInItems(items, query)
-            local entry = { query = query, found = (item ~= nil) }
-            local passed = true
-            if item == nil then
-                passed = (check.expectPresent == false)
-                if not passed then entry.fail = "element not found" end
-            else
-                entry.item = { name = item.name, path = item.path, text = item.text, visible = item.visible, clickable = item.clickable }
-                if check.expectPresent == false then
-                    passed = false
-                    entry.fail = "expected to be absent, but it exists"
-                end
-                if passed and check.expectVisible ~= nil and check.expectVisible ~= item.visible then
-                    passed = false
-                    entry.fail = "visible = " .. tostring(item.visible) .. ", expected " .. tostring(check.expectVisible)
-                end
-                if passed and check.expectText then
-                    local textOk = item.text and string.find(tostring(item.text), tostring(check.expectText), 1, true) ~= nil
-                    if not textOk then
-                        -- Text auch in anderen Elementen suchen (z.B. Counter neben dem Button)
-                        for _, other in ipairs(items) do
-                            if other.text and string.find(tostring(other.text), tostring(check.expectText), 1, true) then
-                                textOk = true
-                                break
-                            end
-                        end
-                    end
-                    if not textOk then
-                        passed = false
-                        entry.fail = "no element contains the text '" .. tostring(check.expectText) .. "'"
-                    end
-                end
-            end
-            entry.passed = passed
-            if not passed then allPassed = false end
-            table.insert(results, entry)
-        end
-    end
-    return ok({ allPassed = allPassed, checks = results, guiItemCount = #items })
-end
 
-tools.gui_click = function(args)
-    local guard = sessionLiveDataGuard()
-    if guard ~= nil then return guard end
-    local query = args.query or args.text or args.name
-    if query == nil then return failCode("BAD_ARGS", "Need query/text/name of the GUI element.") end
-    local response, err = callClient("gui_find", { query = query }, 8)
-    if response == nil then return failCode("NO_PLAYER", err) end
-    if response.ok ~= true or response.item == nil then
-        return failCode("GUI_NOT_FOUND", response.error or "GUI element not found.")
-    end
-    local item = response.item
-    if item.visible == false then
-        return failCode("GUI_NOT_FOUND", "The element '" .. tostring(item.name) .. "' is currently not visible.", { element = item })
-    end
-    local clicked, clickErr = sendClick(item.centerX, item.centerY, 0, tonumber(args.holdSeconds) or 0.06)
-    if not clicked then
-        return failCode("RUNTIME_ERROR", "Could not send the click: " .. tostring(clickErr), { element = item })
-    end
-    task.wait(tonumber(args.settleSeconds) or 0.35)
-    local recent = readOutput({ limit = 25 })
 
-    -- Erwartetes Ergebnis pruefen (gui_click mit expect)
-    local expect = args.expect
-    local expectResult = nil
-    local afterSnapshot = nil
-    if expect ~= nil then
-        task.wait(tonumber(args.waitSeconds) or 0.8)
-        local dumpResp, dumpErr = callClient("gui_dump", { limit = 400 }, 8)
-        if dumpResp == nil then
-            expectResult = { expected = expect, passed = false, error = dumpErr or "gui dump failed" }
-        else
-            local items = dumpResp.items or {}
-            afterSnapshot = { guiItemCount = #items }
-            local target = guiFindInItems(items, query)
-            if type(expect) == "table" then
-                local okExpect = true
-                local problems = {}
-                if expect.visible ~= nil and (target == nil or target.visible ~= expect.visible) then
-                    okExpect = false
-                    table.insert(problems, "visibility")
-                end
-                if expect.text then
-                    local foundText = false
-                    for _, other in ipairs(items) do
-                        if other.text and string.find(tostring(other.text), tostring(expect.text), 1, true) then
-                            foundText = true
-                            break
-                        end
-                    end
-                    if not foundText then
-                        okExpect = false
-                        table.insert(problems, "text '" .. tostring(expect.text) .. "'")
-                    end
-                end
-                expectResult = {
-                    expected = expect,
-                    passed = okExpect,
-                    problems = (#problems > 0) and problems or nil,
-                    target = target and { name = target.name, visible = target.visible, text = target.text } or nil,
-                }
-            elseif type(expect) == "string" then
-                local found = false
-                for _, other in ipairs(items) do
-                    if (other.text and string.find(tostring(other.text), expect, 1, true))
-                        or string.find(string.lower(other.name), string.lower(expect), 1, true) then
-                        found = true
-                        break
-                    end
-                end
-                expectResult = { expected = expect, passed = found }
-            end
-        end
-    end
 
-    return ok({
-        clicked = item,
-        expect = expectResult,
-        outputAfterClick = recent.lines,
-        afterSnapshot = afterSnapshot,
-    })
-end
 
-tools.set_camera = function(args)
-    local lookAt = nil
-    if args.lookAt then
-        lookAt = decodeValue(args.lookAt)
-    elseif args.targetRef then
-        local target = resolveRef(args.targetRef)
-        local cf = target and getPivotOf(target)
-        if cf then lookAt = cf.Position end
-    end
-    local guard = sessionLiveDataGuard()
-    if guard ~= nil then return guard end
-    local position = decodeValue(args.position)
-    if typeof(position) ~= "Vector3" then
-        return failCode("BAD_ARGS", "position must be {x,y,z} (and optionally lookAt {x,y,z} or targetRef).")
-    end
-    local response, err = callClient("camera", { position = encodeValue(position), lookAt = lookAt and encodeValue(lookAt) or nil }, 8)
-    if response == nil then return failCode("NO_PLAYER", err) end
-    return ok({ camera = "moved (client agent marks this as AI-driven for 4 seconds, so user-action events stay clean)" })
-end
-
-tools.gui_set_text = function(args)
-    local guard = sessionLiveDataGuard()
-    if guard ~= nil then return guard end
-    local response, err = callClient("set_text", { query = args.query or args.name, text = args.text }, 8)
-    if response == nil then return fail(err) end
-    return ok(response)
-end
-
-tools.send_input = function(args)
-    if not testSessionActive() then
-        return fail("No test running. Call play_start first.")
-    end
-    local results = {}
-    if args.keys then
-        local keys = args.keys
-        if type(keys) == "string" then keys = { keys } end
-        for _, key in ipairs(keys) do
-            local keyName = key
-            local duration = tonumber(args.duration) or 0.1
-            local modifiers = args.modifiers
-            if type(key) == "table" then
-                keyName = key.key
-                duration = tonumber(key.duration) or duration
-                modifiers = key.modifiers or modifiers
-            end
-            local okKey, keyErr = sendKey(keyName, duration, modifiers)
-            table.insert(results, { key = keyName, ok = okKey, error = keyErr })
-        end
-    end
-    if args.click then
-        local click = args.click
-        local okClick, clickErr = sendClick(tonumber(click.x) or 0, tonumber(click.y) or 0, tonumber(click.button) or 0, tonumber(click.hold) or 0.06)
-        table.insert(results, { click = click, ok = okClick, error = clickErr })
-    end
-    if #results == 0 then
-        return fail("Nothing to send. Use keys=['W'] or click={x=..,y=..}.")
-    end
-    if VirtualInputManager == nil then
-        return fail("VirtualInputManager is not available, so real input cannot be simulated in this Studio version.")
-    end
-    task.wait(tonumber(args.settleSeconds) or 0.2)
-    return ok({ sent = results, output = readOutput({ limit = 25 }).lines })
-end
 
 tools.wait = function(args)
     local seconds = tonumber(args.seconds) or 1
@@ -11086,13 +9131,17 @@ local WRITE_TOOLS = {}
 for name, value in pairs(PERSISTENT_WRITE_TOOLS) do WRITE_TOOLS[name] = value end
 WRITE_TOOLS.run_lua = true
 WRITE_TOOLS.select_instance = true
-WRITE_TOOLS.play_start = true
-WRITE_TOOLS.play_stop = true
-WRITE_TOOLS.send_input = true
-WRITE_TOOLS.gui_click = true
-WRITE_TOOLS.gui_set_text = true
-WRITE_TOOLS.move_character = true
-WRITE_TOOLS.teleport_character = true
+WRITE_TOOLS.sim_start = true
+WRITE_TOOLS.style_lock = true
+WRITE_TOOLS.prop_place = true
+WRITE_TOOLS.prop_save = true
+WRITE_TOOLS.refine = true
+WRITE_TOOLS.world_glow = true
+WRITE_TOOLS.ui_glow = true
+WRITE_TOOLS.ui_radial = true
+-- sim_stop is deliberately NOT a write tool: stopping a simulation must always
+-- be possible, even while a test is running.
+
 
 local function takeNotices()
     local list = {}
@@ -11115,6 +9164,718 @@ end
 -- ---------------------------------------------------------------------------
 -- AUSFUEHRUNG
 -- ---------------------------------------------------------------------------
+
+-- ===========================================================================
+-- WELT-ENGINE 1.0 (Version 7.0.0)
+-- VERTRAG: Die Welt ist ein Ort mit Regeln, nicht eine Sammlung von Teilen.
+--   * Erst messen (site_survey), dann Stil festlegen (world_style), dann
+--     bauen - und am Ende model_audit/world_audit statt Behauptungen.
+--   * Jede Variation ist deterministisch: derselbe Seed liefert dieselbe
+--     Welt. Kein math.random, kein Raten, keine zwei gleichen Nachbarn.
+--   * Platzhalter und Blockouts werden GEZAEHLT und gemeldet; die KI darf
+--     ohne Uebergabe (handoff) nicht "fertig" behaupten, solange sie existieren.
+--   * Der billige Weg ist schlechter als der richtige: ohne Stil/Lock sinkt
+--     die Bewertung von model_audit und world_audit sichtbar.
+-- ===========================================================================
+local WORLD_ENGINE = {}
+WORLD_ENGINE.VERSION = "1.0"
+WORLD_ENGINE.ROOT = "ArenaWelt"
+WORLD_ENGINE.PROPS = "ArenaProps"
+WORLD_ENGINE.DETAIL = "ArenaDetail"
+
+local worldStyle = nil
+
+WORLD_ENGINE.PRESETS = {
+    coastal = { label = "Coastal", palette = { "#E9DFC8", "#8FB8B0", "#3E6B63", "#D9A15B", "#5B6B78" },
+        materials = { "Wood", "Sand", "Slate", "Fabric", "Metal", "Glass" }, density = 0.55, weathering = 0.35 },
+    forest  = { label = "Forest",  palette = { "#DDE3C4", "#6E8B52", "#2F4A33", "#B98A54", "#4A5D53" },
+        materials = { "Wood", "Grass", "LeafyGrass", "Slate", "Fabric" }, density = 0.65, weathering = 0.30 },
+    desert  = { label = "Desert",  palette = { "#F0DFC0", "#D9B173", "#9C6B3F", "#5A4632", "#C97F4A" },
+        materials = { "Sand", "Sandstone", "Slate", "Wood", "Fabric" }, density = 0.40, weathering = 0.55 },
+    snow    = { label = "Snow",    palette = { "#F2F6FA", "#B9CFE0", "#5D7C9B", "#3A4A5C", "#C4A484" },
+        materials = { "Snow", "Ice", "Slate", "Wood", "Metal", "Glass" }, density = 0.45, weathering = 0.25 },
+    urban   = { label = "Urban",   palette = { "#E4E0DA", "#9A9C9E", "#4A4E52", "#C2A15A", "#7A4A3A" },
+        materials = { "Concrete", "Metal", "Glass", "Brick", "Asphalt", "Wood" }, density = 0.75, weathering = 0.40 },
+    volcanic = { label = "Volcanic", palette = { "#E8D5C0", "#8C4A3A", "#3A2B2B", "#D96A2B", "#6B3A54" },
+        materials = { "Basalt", "Slate", "Rock", "Metal", "CrackedLava" }, density = 0.50, weathering = 0.70 },
+}
+
+local function styleCopy(source, overrides)
+    local copy = {}
+    for key, value in pairs(source or {}) do
+        if type(value) == "table" then
+            local inner = {}
+            for k2, v2 in pairs(value) do inner[k2] = v2 end
+            copy[key] = inner
+        else
+            copy[key] = value
+        end
+    end
+    for key, value in pairs(overrides or {}) do copy[key] = value end
+    return copy
+end
+
+local function stylePaletteList(style)
+    local list = {}
+    for _, value in ipairs((style or {}).palette or {}) do
+        local col = UI_ENGINE and UI_ENGINE.col(value, nil) or nil
+        if col then table.insert(list, col) end
+    end
+    return list
+end
+
+local function nearestPalette(style, color)
+    local list = stylePaletteList(style)
+    if #list == 0 then return nil, 999 end
+    local best, bestDist = nil, 9e9
+    for _, entry in ipairs(list) do
+        local dr = (entry.R - color.R) * 255
+        local dg = (entry.G - color.G) * 255
+        local db = (entry.B - color.B) * 255
+        local dist = math.sqrt(dr * dr + dg * dg + db * db)
+        if dist < bestDist then best, bestDist = entry, dist end
+    end
+    return best, bestDist
+end
+
+local function hexOf(color)
+    return string.format("#%02X%02X%02X", math.floor(color.R * 255 + 0.5), math.floor(color.G * 255 + 0.5), math.floor(color.B * 255 + 0.5))
+end
+
+-- deterministic variation: same seed -> same world, always.
+local function lcg(seed)
+    local state = math.floor(math.abs(tonumber(seed) or 1)) % 2147483647
+    if state == 0 then state = 1 end
+    return function()
+        state = (state * 48271) % 2147483647
+        return state / 2147483647
+    end
+end
+
+local function variationValue(seed, index, low, high, decimals)
+    local rng = lcg((tonumber(seed) or 1) + (tonumber(index) or 0) * 7919)
+    local value = low + (high - low) * rng()
+    if decimals then
+        local factor = 10 ^ decimals
+        value = math.floor(value * factor + 0.5) / factor
+    end
+    return value
+end
+
+local function groundHit(x, z)
+    local params = RaycastParams.new()
+    pcall(function() params.FilterType = Enum.RaycastFilterType.Exclude end)
+    params.FilterDescendantsInstances = { workspace:FindFirstChild(WORLD_ENGINE.ROOT) }
+    local result = workspace:Raycast(Vector3.new(x, 4000, z), Vector3.new(0, -6000, 0), params)
+    if result then return result end
+    return nil
+end
+
+local function partsInBox(center, size)
+    local params = OverlapParams.new()
+    pcall(function() params.FilterType = Enum.RaycastFilterType.Exclude end)
+    local okBox, list = pcall(function() return workspace:GetPartBoundsInBox(CFrame.new(center), size, params) end)
+    if okBox and list then return list end
+    return {}
+end
+
+local function isPlaceholderName(name)
+    return string.match(string.lower(tostring(name or "")), "placehold") ~= nil
+        or string.match(string.lower(tostring(name or "")), "blockout") ~= nil
+        or string.match(string.lower(tostring(name or "")), "provisor") ~= nil
+        or string.match(string.lower(tostring(name or "")), "todo") ~= nil
+end
+
+local function isPlaceholderPart(part)
+    if part:GetAttribute("ArenaPlaceholder") == true then return true, "attribute ArenaPlaceholder" end
+    if isPlaceholderName(part.Name) then return true, "name looks like a placeholder" end
+    return false, nil
+end
+
+local function isBlockoutPart(part)
+    if not part:IsA("BasePart") then return false end
+    if part:IsA("MeshPart") then return false end
+    local ok = pcall(function()
+        if part.Material ~= Enum.Material.Plastic then error("material") end
+    end)
+    if not ok then return false end
+    local color = part.Color
+    local dr = math.abs(color.R * 255 - 163)
+    local dg = math.abs(color.G * 255 - 162)
+    local db = math.abs(color.B * 255 - 165)
+    return (dr < 12 and dg < 12 and db < 12), hexOf(color)
+end
+
+local function targetFrom(args, allowSelection)
+    if args.ref ~= nil then
+        local root, err = resolveRef(args.ref)
+        if not root then return nil, err end
+        return root, nil
+    end
+    if allowSelection == true or args.useSelection == true then
+        local selected = Selection:Get()
+        if #selected == 0 then return nil, "Selection is empty - select something in Studio or pass ref." end
+        return selected[1], nil
+    end
+    return nil, nil
+end
+
+local function collectParts(root, out, limit)
+    out = out or {}
+    limit = limit or 8000
+    local stack = { root }
+    while #stack > 0 and #out < limit do
+        local current = table.remove(stack)
+        if current:IsA("BasePart") then table.insert(out, current) end
+        for _, child in ipairs(current:GetChildren()) do
+            if not child:IsA("BasePart") then table.insert(stack, child)
+            elseif #out < limit then table.insert(out, child) end
+        end
+    end
+    return out
+end
+
+local function buildProceduralProp(kind, style, index, seed)
+    local model = Instance.new("Model")
+    model.Name = "ArenaProp"
+    local palette = stylePaletteList(style)
+    local base = palette[1 + (#palette > 0 and (index % #palette) or 0)] or Color3.fromRGB(180, 180, 180)
+    local accent = palette[1 + ((index + 1) % math.max(#palette, 1))] or base
+    local parts = {}
+    local function add(class, size, cf, color, material)
+        local part = Instance.new(class)
+        part.Size = size
+        part.CFrame = cf
+        part.Color = color
+        pcall(function() part.Material = Enum.Material[material] end)
+        part.Anchored = true
+        part.Parent = model
+        table.insert(parts, part)
+        return part
+    end
+    if kind == "rock" then
+        local n = 3
+        for i = 1, n do
+            local s = variationValue(seed, index * 31 + i, 1.6, 3.4, 2)
+            local rot = variationValue(seed, index * 37 + i, 0, math.pi * 2, 3)
+            add("Part", Vector3.new(s, s * 0.8, s * variationValue(seed, index * 41 + i, 0.8, 1.3, 2)),
+                CFrame.new(variationValue(seed, index * 43 + i, -1.2, 1.2, 2), s * 0.35, variationValue(seed, index * 47 + i, -1.2, 1.2, 2))
+                    * CFrame.Angles(variationValue(seed, index * 53 + i, -0.4, 0.4, 3), rot, 0),
+                i == 1 and base or accent, i == 1 and "Slate" or "Rock")
+        end
+    elseif kind == "bush" then
+        for i = 1, 3 do
+            local s = variationValue(seed, index * 59 + i, 1.2, 2.2, 2)
+            add("Part", Vector3.new(s, s, s),
+                CFrame.new(variationValue(seed, index * 61 + i, -0.8, 0.8, 2), 0.8 + i * 0.5, variationValue(seed, index * 67 + i, -0.8, 0.8, 2)),
+                i == 1 and accent or base, "LeafyGrass")
+        end
+    else -- crate
+        add("Part", Vector3.new(2, 2, 2), CFrame.new(0, 1, 0), base, "Wood")
+        for i = 1, 4 do
+            local angle = (i - 1) * math.pi / 2
+            add("Part", Vector3.new(0.16, 2.06, 0.16), CFrame.new(math.cos(angle) * 1.0, 1, math.sin(angle) * 1.0), accent, "Wood")
+        end
+    end
+    model.PrimaryPart = parts[1]
+    for _, part in ipairs(parts) do
+        if part ~= parts[1] then
+            local weld = Instance.new("WeldConstraint")
+            weld.Part0 = parts[1]
+            weld.Part1 = part
+            weld.Parent = parts[1]
+        end
+    end
+    model:SetAttribute("ArenaPropKind", kind)
+    return model
+end
+
+tools.world_style = function(args)
+    local overrides = {}
+    local presetKey = args.preset and string.lower(tostring(args.preset)) or nil
+    local source = presetKey and WORLD_ENGINE.PRESETS[presetKey] or ((worldStyle and worldStyle.preset and WORLD_ENGINE.PRESETS[worldStyle.preset]) or {})
+    if presetKey and not WORLD_ENGINE.PRESETS[presetKey] then
+        return failCode("BAD_ARGS", "Unknown preset '" .. tostring(args.preset) .. "'. Known: coastal, forest, desert, snow, urban, volcanic.", { known = { "coastal", "forest", "desert", "snow", "urban", "volcanic" } })
+    end
+    if type(args.palette) == "table" then overrides.palette = args.palette end
+    if type(args.materials) == "table" then overrides.materials = args.materials end
+    if args.density ~= nil then overrides.density = math.clamp(tonumber(args.density) or 0.5, 0, 1) end
+    if args.weathering ~= nil then overrides.weathering = math.clamp(tonumber(args.weathering) or 0.3, 0, 1) end
+    if args.seed ~= nil then overrides.seed = math.floor(tonumber(args.seed) or 1) end
+    if args.label ~= nil then overrides.label = tostring(args.label) end
+    local style = styleCopy(source, overrides)
+    style.preset = presetKey or style.preset
+    style.seed = style.seed or math.floor(os.time() % 100000)
+    style.locked = false
+    worldStyle = style
+    local paletteHex = {}
+    for _, value in ipairs(stylePaletteList(style)) do table.insert(paletteHex, hexOf(value)) end
+    return ok({
+        style = { preset = style.preset, label = style.label, seed = style.seed, density = style.density, weathering = style.weathering },
+        palette = paletteHex,
+        materials = (style.materials or {}),
+        locked = false,
+        rules = {
+            "site_survey first: measure ground, clearance and existing parts before placing anything.",
+            "Every variation uses this seed - the same seed rebuilds the same world.",
+            "style_lock before a large build; model_audit/world_audit afterwards. Placeholders must be zero before 'done'.",
+        },
+        nextStep = "Call style_lock to bind this style to the place, then build with prop_place / refine.",
+    })
+end
+
+tools.style_lock = function(args)
+    if not worldStyle then
+        return failCode("NO_WORLD_STYLE", "No style is active. Call world_style first (one call: preset=\"coastal\" or your own palette).", {
+            howToFix = "world_style { preset = \"forest\" } then style_lock.",
+        })
+    end
+    worldStyle.locked = true
+    if args.seed ~= nil then worldStyle.seed = math.floor(tonumber(args.seed) or worldStyle.seed) end
+    local root = workspace:FindFirstChild(WORLD_ENGINE.ROOT)
+    if not root then
+        root = Instance.new("Folder")
+        root.Name = WORLD_ENGINE.ROOT
+        root.Parent = workspace
+    end
+    local styleFolder = root:FindFirstChild("Style")
+    if not styleFolder then
+        styleFolder = Instance.new("Folder")
+        styleFolder.Name = "Style"
+        styleFolder.Parent = root
+    end
+    styleFolder:SetAttribute("ArenaWorldStylePreset", tostring(worldStyle.preset or "custom"))
+    styleFolder:SetAttribute("ArenaWorldStyleLabel", tostring(worldStyle.label or "custom"))
+    styleFolder:SetAttribute("ArenaWorldStyleSeed", tonumber(worldStyle.seed) or 0)
+    styleFolder:SetAttribute("ArenaWorldStyleLocked", true)
+    waypoint("style lock")
+    return ok({
+        locked = true,
+        preset = worldStyle.preset,
+        label = worldStyle.label,
+        seed = worldStyle.seed,
+        folder = WORLD_ENGINE.ROOT .. ".Style",
+        note = "world_style/model_audit/world_audit read this lock; off-style parts are reported with measured distance.",
+    })
+end
+
+tools.site_survey = function(args)
+    local center = args.center or { x = 0, y = 0, z = 0 }
+    local size = args.size or { x = 200, y = 120, z = 200 }
+    local cx, cy, cz = tonumber(center.x) or 0, tonumber(center.y) or 0, tonumber(center.z) or 0
+    local sx, sy, sz = tonumber(size.x) or 200, tonumber(size.y) or 120, tonumber(size.z) or 200
+    local samples = math.clamp(math.floor(tonumber(args.samples) or 5), 2, 9)
+    local heights, materials, water = {}, {}, 0
+    local minH, maxH, sumH = nil, nil, 0
+    local clearance = {}
+    local total = 0
+    for ix = 0, samples - 1 do
+        for iz = 0, samples - 1 do
+            local x = cx - sx / 2 + sx * (ix + 0.5) / samples
+            local z = cz - sz / 2 + sz * (iz + 0.5) / samples
+            local hit = groundHit(x, z)
+            total = total + 1
+            if hit then
+                local h = hit.Position.Y
+                if minH == nil or h < minH then minH = h end
+                if maxH == nil or h > maxH then maxH = h end
+                sumH = sumH + h
+                table.insert(heights, math.floor(h * 100 + 0.5) / 100)
+                local mat = "Unknown"
+                pcall(function() mat = hit.Material.Name end)
+                materials[mat] = (materials[mat] or 0) + 1
+                if mat == "Water" then water = water + 1 end
+                local params = RaycastParams.new()
+                pcall(function() params.FilterType = Enum.RaycastFilterType.Exclude end)
+                local up = workspace:Raycast(Vector3.new(x, h + 2, z), Vector3.new(0, sy, 0), params)
+                table.insert(clearance, up and math.floor((up.Position.Y - h) * 10) / 10 or sy)
+            end
+        end
+    end
+    local parts = partsInBox(Vector3.new(cx, cy, cz), Vector3.new(sx, sy, sz))
+    table.sort(clearance)
+    local medianClearance = #clearance > 0 and clearance[math.max(1, math.floor(#clearance / 2))] or nil
+    local span = (maxH and minH) and math.floor((maxH - minH) * 100) / 100 or 0
+    return ok({
+        area = { center = { x = cx, y = cy, z = cz }, size = { x = sx, y = sy, z = sz } },
+        samples = total,
+        ground = {
+            minHeight = minH and math.floor(minH * 100) / 100 or nil,
+            maxHeight = maxH and math.floor(maxH * 100) / 100 or nil,
+            averageHeight = total > 0 and math.floor((sumH / total) * 100) / 100 or nil,
+            span = span,
+            slope = (sx > 0 and samples > 1) and math.floor((span / (sx * (samples - 1) / samples)) * 1000) / 1000 or 0,
+            materials = materials,
+            waterSamples = water,
+        },
+        freeSpace = { medianClearanceStuds = medianClearance, samples = #clearance },
+        existingParts = #parts,
+        suggestedOrigin = { x = cx, y = (minH or cy), z = cz },
+        honest = "measured by raycast and overlap query - nothing here is estimated from training data",
+    })
+end
+
+tools.variation = function(args)
+    local seed = math.floor(tonumber(args.seed) or 1)
+    local count = math.clamp(math.floor(tonumber(args.count) or 8), 1, 512)
+    local low = tonumber(args.min) or 0
+    local high = tonumber(args.max) or 1
+    local decimals = args.decimals and math.clamp(math.floor(tonumber(args.decimals) or 0), 0, 6) or 4
+    local list = {}
+    for i = 1, count do table.insert(list, variationValue(seed, i, low, high, decimals)) end
+    return ok({ seed = seed, count = count, min = low, max = high, values = list,
+        formula = "state = (state * 48271) % 2147483647 - deterministic for a given seed",
+        nextSeed = (seed * 48271) % 2147483647 })
+end
+
+tools.prop_place = function(args)
+    local kinds = { rock = true, bush = true, crate = true }
+    local kind = string.lower(tostring(args.kind or "rock"))
+    local saved = nil
+    if args.propName then
+        local folder = workspace:FindFirstChild(WORLD_ENGINE.PROPS)
+        saved = folder and folder:FindFirstChild(tostring(args.propName)) or nil
+        if not saved then
+            return failCode("PROP_NOT_FOUND", "No saved prop named '" .. tostring(args.propName) .. "' under workspace." .. WORLD_ENGINE.PROPS .. ".", {
+                hint = "prop_list shows what exists; prop_save stores a selection.",
+            })
+        end
+    elseif not kinds[kind] then
+        return failCode("BAD_ARGS", "Unknown kind '" .. tostring(kind) .. "'. Use rock, bush, crate or propName=<saved prop>.", { known = { "rock", "bush", "crate" } })
+    end
+    local count = math.clamp(math.floor(tonumber(args.count) or 6), 1, 200)
+    local seed = math.floor(tonumber(args.seed) or (worldStyle and worldStyle.seed) or 1)
+    local center = args.center or { x = 0, y = 0, z = 0 }
+    local size = args.size or { x = 60, y = 0, z = 60 }
+    local cx, cz = tonumber(center.x) or 0, tonumber(center.z) or 0
+    local sx, sz = tonumber(size.x) or 60, tonumber(size.z) or 60
+    local root = workspace:FindFirstChild(WORLD_ENGINE.ROOT)
+    if not root then
+        root = Instance.new("Folder")
+        root.Name = WORLD_ENGINE.ROOT
+        root.Parent = workspace
+    end
+    local holder = args.group and root:FindFirstChild(tostring(args.group)) or nil
+    if not holder then
+        holder = Instance.new("Folder")
+        holder.Name = tostring(args.group or (kind .. "s"))
+        holder.Parent = root
+    end
+    local style = worldStyle or WORLD_ENGINE.PRESETS.coastal
+    local placed, skipped, parts = 0, 0, 0
+    for i = 1, count do
+        local x = cx + variationValue(seed, i * 11, -sx / 2, sx / 2, 3)
+        local z = cz + variationValue(seed, i * 13, -sz / 2, sz / 2, 3)
+        local hit = groundHit(x, z)
+        if hit and hit.Material ~= Enum.Material.Water then
+            local y = hit.Position.Y
+            local yaw = variationValue(seed, i * 17, 0, math.pi * 2, 4)
+            local scale = variationValue(seed, i * 19, 0.85, 1.15, 3)
+            local prop
+            if saved then
+                prop = saved:Clone()
+                prop.Name = string.format("%s_%03d", tostring(saved.Name), i)
+            else
+                prop = buildProceduralProp(kind, style, i, seed)
+                prop.Name = string.format("%s_%03d", kind, i)
+            end
+            prop:PivotTo(CFrame.new(x, y, z) * CFrame.Angles(0, yaw, 0) * CFrame.Angles(0, 0, 0))
+            if scale ~= 1 then
+                pcall(function() prop:ScaleTo(scale) end)
+            end
+            prop:SetAttribute("ArenaVariationSeed", seed)
+            prop:SetAttribute("ArenaVariationIndex", i)
+            prop.Parent = holder
+            placed = placed + 1
+            parts = parts + #collectParts(prop, {}, 500)
+        else
+            skipped = skipped + 1
+        end
+    end
+    waypoint("place props " .. kind)
+    return ok({
+        kind = saved and "saved" or kind,
+        propName = saved and saved.Name or nil,
+        group = holder:GetFullName(),
+        requested = count,
+        placed = placed,
+        skipped = skipped,
+        skippedBecause = skipped > 0 and "no ground or water under the sampled point" or nil,
+        variationSeed = seed,
+        partsCreated = parts,
+        stylePreset = (worldStyle and worldStyle.preset) or nil,
+        styleLocked = (worldStyle and worldStyle.locked) or false,
+        note = "Deterministic: same seed + same area = same result. Run model_audit afterwards.",
+    })
+end
+
+tools.prop_save = function(args)
+    if not args.name or tostring(args.name) == "" then
+        return failCode("BAD_ARGS", "name is missing - saved props are looked up by name in prop_place.")
+    end
+    local source, err = targetFrom(args, true)
+    if not source then
+        return failCode(args.ref == nil and "BAD_ARGS" or "REF_NOT_FOUND",
+            err or "prop_save needs ref (a Model/Folder or part) or useSelection=true.",
+            { hint = "Select the prop in Studio and call prop_save { name=\"tree_a\", useSelection=true }." })
+    end
+    local root = workspace:FindFirstChild(WORLD_ENGINE.PROPS)
+    if not root then
+        root = Instance.new("Folder")
+        root.Name = WORLD_ENGINE.PROPS
+        root.Parent = workspace
+    end
+    local name = tostring(args.name)
+    local existing = root:FindFirstChild(name)
+    if existing and args.overwrite ~= true then
+        return failCode("PROP_EXISTS", "A prop named '" .. name .. "' already exists.", { howToFix = "Pass overwrite=true or choose another name." })
+    end
+    if existing then existing:Destroy() end
+    local copy = source:Clone()
+    copy.Name = name
+    copy.Parent = root
+    local partList = collectParts(copy, {}, 5000)
+    copy:SetAttribute("ArenaPropParts", #partList)
+    copy:SetAttribute("ArenaPropSavedAt", os.time())
+    copy:SetAttribute("ArenaPropSource", source:GetFullName())
+    return ok({ name = name, parts = #partList, folder = WORLD_ENGINE.PROPS,
+        source = source:GetFullName(), note = "prop_place { propName=\"" .. name .. "\" } clones this with deterministic variation." })
+end
+
+tools.prop_list = function(args)
+    local root = workspace:FindFirstChild(WORLD_ENGINE.PROPS)
+    local list = {}
+    if root then
+        for _, child in ipairs(root:GetChildren()) do
+            local parts = tonumber(child:GetAttribute("ArenaPropParts")) or #collectParts(child, {}, 5000)
+            table.insert(list, { name = child.Name, className = child.ClassName, parts = parts,
+                kind = child:GetAttribute("ArenaPropKind"), savedAt = child:GetAttribute("ArenaPropSavedAt") })
+        end
+    end
+    table.sort(list, function(a, b) return a.name < b.name end)
+    return ok({ props = list, count = #list, folder = WORLD_ENGINE.PROPS })
+end
+
+tools.model_audit = function(args)
+    local root, err = targetFrom(args, false)
+    if not root then
+        if args.ref ~= nil then return failCode("REF_NOT_FOUND", err) end
+        root = workspace
+    end
+    local parts = collectParts(root, {}, 8000)
+    local placeholders, blockouts, meshes, unions, untextured, named = {}, {}, 0, 0, 0, 0
+    local materials = {}
+    for _, part in ipairs(parts) do
+        if part:IsA("MeshPart") then meshes = meshes + 1 end
+        if part:IsA("UnionOperation") or part:IsA("IntersectOperation") then unions = unions + 1 end
+        local isPlaceholder, why = isPlaceholderPart(part)
+        if isPlaceholder then
+            table.insert(placeholders, { id = idOf(part), path = part:GetFullName(), name = part.Name, why = why })
+        else
+            local blockout, colorHex = isBlockoutPart(part)
+            if blockout then table.insert(blockouts, { id = idOf(part), path = part:GetFullName(), color = colorHex }) end
+        end
+        if part.Name ~= string.gsub(part.ClassName, "^", "") and not isPlaceholderName(part.Name) then named = named + 1 end
+        local matName = "Unknown"
+        pcall(function() matName = part.Material.Name end)
+        materials[matName] = (materials[matName] or 0) + 1
+        if part:IsA("BasePart") and part:FindFirstChildOfClass("Decal") == nil and part:IsA("Part") then untextured = untextured + 1 end
+    end
+    local phase, verdict
+    if #placeholders > 0 then
+        phase, verdict = "blockout", "NOT done: " .. tostring(#placeholders) .. " placeholder(s) are still in the place."
+    elseif #blockouts > 0 then
+        phase, verdict = "blockout", "Blockout: " .. tostring(#blockouts) .. " part(s) still carry the default grey plastic look."
+    elseif meshes + unions == 0 then
+        phase, verdict = "modelled", "Modelled, but nothing is a mesh/union - check whether detail is missing."
+    else
+        phase, verdict = "modelled", "Clean: no placeholders, no blockouts found in the checked scope."
+    end
+    return ok({
+        scope = root:GetFullName(),
+        parts = #parts,
+        placeholderCount = #placeholders,
+        placeholders = placeholders,
+        blockoutCount = #blockouts,
+        blockoutExamples = { blockouts[1], blockouts[2], blockouts[3] },
+        meshes = meshes,
+        unions = unions,
+        namedParts = named,
+        materials = materials,
+        phase = phase,
+        verdict = verdict,
+        nextStep = (#placeholders + #blockouts) > 0 and "refine the flagged parts or replace them, then run model_audit again." or "Run world_audit for style/lighting, then continue.",
+    })
+end
+
+tools.world_audit = function(args)
+    local parts = collectParts(workspace, {}, 8000)
+    local lights, lightKinds = 0, {}
+    local hasAtmosphere, hasSky, hasClouds = false, false, false
+    local collections = {}
+    pcall(function() collections = game:GetService("CollectionService"):GetAllTags() end)
+    for _, child in ipairs(workspace:GetDescendants()) do
+        if child:IsA("Light") then
+            lights = lights + 1
+            lightKinds[child.ClassName] = (lightKinds[child.ClassName] or 0) + 1
+        elseif child:IsA("Atmosphere") then hasAtmosphere = true
+        elseif child:IsA("Sky") then hasSky = true
+        elseif child:IsA("Clouds") then hasClouds = true end
+    end
+    local offStyle, details = {}, 0
+    local styleLocked = (worldStyle and worldStyle.locked) or false
+    for _, part in ipairs(parts) do
+        if part:GetAttribute("ArenaDetail") == true then details = details + 1 end
+        if styleLocked then
+            local _, dist = nearestPalette(worldStyle, part.Color)
+            local matName = "Unknown"
+            pcall(function() matName = part.Material.Name end)
+            local allowed = false
+            for _, mat in ipairs((worldStyle or {}).materials or {}) do
+                if mat == matName then allowed = true break end
+            end
+            if (not allowed) and dist and dist > 60 then
+                if #offStyle < 20 then table.insert(offStyle, { id = idOf(part), path = part:GetFullName(), color = hexOf(part.Color), material = matName, paletteDistance = math.floor(dist) }) end
+            end
+        end
+    end
+    local styleCompliance = 1
+    if styleLocked and #parts > 0 then styleCompliance = math.floor((1 - #offStyle / #parts) * 1000) / 1000 end
+    local phase = "modelled"
+    if details > 0 then phase = "refined" end
+    if details > 0 and lights > 0 and (hasAtmosphere or hasSky) then phase = "polished" end
+    local issues = {}
+    if not styleLocked then table.insert(issues, "No style lock: call world_style + style_lock so audits can measure compliance.") end
+    if lights == 0 then table.insert(issues, "No Light in the place: geometry alone cannot carry a mood.") end
+    if not hasAtmosphere and not hasSky then table.insert(issues, "Neither Atmosphere nor Sky exists - the sky is the default blue.") end
+    if #offStyle > 0 then table.insert(issues, tostring(#offStyle) .. " part(s) are outside the locked style (colour distance > 60 or material not in the list).") end
+    return ok({
+        scope = "game.Workspace",
+        parts = #parts,
+        lights = lights,
+        lightKinds = lightKinds,
+        atmosphere = hasAtmosphere,
+        sky = hasSky,
+        clouds = hasClouds,
+        tags = collections,
+        styleLocked = styleLocked,
+        stylePreset = (worldStyle and worldStyle.preset) or nil,
+        styleCompliance = styleCompliance,
+        offStyleParts = offStyle,
+        detailParts = details,
+        phase = phase,
+        verdict = (#issues == 0) and "Polished: style, light and detail are consistent." or ("Open points: " .. table.concat(issues, " ")),
+        issues = issues,
+    })
+end
+
+tools.refine = function(args)
+    local root, err = targetFrom(args, true)
+    if not root then
+        return failCode(args.ref == nil and "BAD_ARGS" or "REF_NOT_FOUND",
+            err or "refine needs ref or useSelection=true.",
+            { hint = "refine { useSelection=true } works on the Studio selection." })
+    end
+    local seed = math.floor(tonumber(args.seed) or (worldStyle and worldStyle.seed) or 1)
+    local maxParts = math.clamp(math.floor(tonumber(args.maxParts) or 24), 1, 200)
+    local parts = collectParts(root, {}, 2000)
+    table.sort(parts, function(a, b)
+        local av = a.Size.X * a.Size.Y * a.Size.Z
+        local bv = b.Size.X * b.Size.Y * b.Size.Z
+        return av > bv
+    end)
+    local style = worldStyle or WORLD_ENGINE.PRESETS.coastal
+    local palette = stylePaletteList(style)
+    local trimColor = palette[#palette] or Color3.fromRGB(120, 120, 120)
+    local added, touched = 0, 0
+    for index, part in ipairs(parts) do
+        if added >= maxParts then break end
+        if part:IsA("BasePart") and not part:GetAttribute("ArenaDetail") then
+            local top = part.CFrame * CFrame.new(0, part.Size.Y / 2, 0)
+            local thickness = math.clamp(part.Size.Y * 0.06, 0.05, 0.35)
+            local along = "X"
+            local length = part.Size.X
+            if part.Size.Z > part.Size.X then along = "Z" length = part.Size.Z end
+            local trim = Instance.new("Part")
+            trim.Name = "ArenaDetail_Trim"
+            trim.Size = along == "X" and Vector3.new(length * 0.92, thickness, thickness) or Vector3.new(thickness, thickness, length * 0.92)
+            trim.CFrame = top
+            trim.Color = trimColor
+            pcall(function() trim.Material = Enum.Material[(style.materials or {})[1] or "Wood"] end)
+            trim.Anchored = part.Anchored
+            trim:SetAttribute("ArenaDetail", true)
+            trim:SetAttribute("ArenaRefineSeed", seed)
+            trim.Parent = part.Parent
+            if not part.Anchored then
+                local weld = Instance.new("WeldConstraint")
+                weld.Part0 = part
+                weld.Part1 = trim
+                weld.Parent = trim
+            end
+            added = added + 1
+            touched = touched + 1
+        end
+    end
+    waypoint("refine " .. root.Name)
+    return ok({
+        scope = root:GetFullName(),
+        seed = seed,
+        partsChecked = #parts,
+        partsTouched = touched,
+        detailsAdded = added,
+        maxParts = maxParts,
+        stoppedBecause = added >= maxParts and "maxParts reached - call refine again with a higher maxParts if the model needs more." or nil,
+        stylePreset = (worldStyle and worldStyle.preset) or nil,
+        nextStep = "model_audit now counts ArenaDetail parts; world_audit rates the phase.",
+    })
+end
+
+tools.world_glow = function(args)
+    -- Glow gehoert der Engine: EINE Lampe + optional Neon, nie eine
+    -- handgebaute Kette aus Ball-Teilen mit Transparency-Stufen.
+    local target, err = targetFrom(args, true)
+    if not target then
+        return failCode(args.ref == nil and "BAD_ARGS" or "REF_NOT_FOUND",
+            err or "world_glow needs ref or useSelection=true.",
+            { hint = "world_glow { ref=\"game.Workspace.Lampe\" } or select the part and use useSelection=true." })
+    end
+    if not target:IsA("BasePart") then
+        return failCode("BAD_ARGS", "world_glow works on a BasePart (the light is parented to it), not on " .. target.ClassName .. ".")
+    end
+    local style = worldStyle or WORLD_ENGINE.PRESETS.coastal
+    local palette = stylePaletteList(style)
+    local color = UI_ENGINE and UI_ENGINE.col(args.color, palette[#palette] or Color3.fromRGB(255, 214, 140)) or Color3.fromRGB(255, 214, 140)
+    local lightClass = tostring(args.lightClass or "PointLight")
+    if lightClass ~= "PointLight" and lightClass ~= "SpotLight" and lightClass ~= "SurfaceLight" then
+        return failCode("BAD_ARGS", "lightClass must be PointLight, SpotLight or SurfaceLight.")
+    end
+    local light = target:FindFirstChildOfClass(lightClass)
+    if not light then
+        light = Instance.new(lightClass)
+        light.Parent = target
+    end
+    light.Color = color
+    light.Brightness = math.clamp(tonumber(args.brightness) or 2, 0, 10)
+    if lightClass == "PointLight" or lightClass == "SurfaceLight" then
+        pcall(function() light.Range = math.clamp(tonumber(args.range) or 18, 1, 60) end)
+    end
+    if args.neon == true then
+        pcall(function() target.Material = Enum.Material.Neon end)
+    end
+    target:SetAttribute("ArenaGlow", true)
+    target:SetAttribute("ArenaGlowColor", "#" .. color:ToHex())
+    waypoint("world glow")
+    return ok({
+        engine = WORLD_ENGINE.VERSION,
+        target = target:GetFullName(),
+        lightClass = lightClass,
+        color = color:ToHex(),
+        brightness = light.Brightness,
+        material = (function() local name = "unknown"; pcall(function() name = target.Material.Name end) return name end)(),
+        stylePreset = (worldStyle and worldStyle.preset) or nil,
+        note = "one engine-built light per part; tone down with brightness instead of stacking more lights",
+    })
+end
 
 local function toolNames()
     local names = {}
@@ -11211,21 +9972,21 @@ executeTool = function(tool, args, insideBatch)
     if testSessionActive() and PERSISTENT_WRITE_TOOLS[tool] then
         if userPlaytestActive then
             return failCode("USER_PLAYTEST_ACTIVE",
-                "IMPORTANT: The user is currently in Roblox Studio " .. currentMode() .. " mode. STOP your current response and do not edit anything: test-mode changes would be temporary and could disrupt the user while they are playing.", {
-                assistantAction = "STOP_CURRENT_RESPONSE",
-                howToFix = "You have TWO options: (a) call play_stop yourself - that is allowed and also ends user-started tests - then continue your work in edit mode, or (b) if the user is actively playing right now (see user_moving_character / user_active events), end your response and tell the user you cannot work safely in parallel - ask them to let you work in peace and to message you when Studio is free again.",
-                userMessage = "Ich sehe, dass du Roblox Studio gerade im Playtest benutzt. Parallel kann ich nicht sicher arbeiten. Ich beende den Test jetzt ODER du meldest dich, wenn ich in Ruhe weiterarbeiten soll.",
+                "IMPORTANT: The user started and is using a playtest right now. STOP your current response and do not edit anything: changes during a test would be temporary and could disrupt the user.", {
+                assistantAction = "STOP_OR_YIELD",
+                howToFix = "The playtest is the user's, and the bridge cannot stop it for you. Either end your response and ask the user to stop the test (or to let you work in peace), or keep working with read-only tools. NEVER claim the changes were saved.",
+                userMessage = "Ich sehe, dass du Roblox Studio gerade selbst testest. Parallel kann ich nicht sicher bauen. Beende den Test bitte selbst (Shift+F5) oder sag mir Bescheid, wenn ich in Ruhe weiterarbeiten darf.",
                 state = playState(),
             })
-        elseif args.allowInPlayMode ~= true then
-            return failCode("PLAY_MODE_ACTIVE",
-                "Studio is currently in " .. currentMode() .. " mode. '" .. tostring(tool)
-                .. "' would change the place, but every change made during a test is thrown away when the test stops.", {
-                howToFix = "Call play_stop first, do the real work, then play_start again. If you only want a throw-away change for this assistant-owned test run, repeat the call with allowInPlayMode=true.",
+        elseif args.allowInSimMode ~= true then
+            return failCode("SIM_RUNNING",
+                "The editor simulation (sim_start) is running. '" .. tostring(tool)
+                .. "' would change the place, but every change made during the simulation is thrown away when it stops.", {
+                howToFix = "Call sim_stop first (allowed at any time), do the real work, then sim_start again if you still need the simulation. If you only want a throw-away change for this run, repeat the call with allowInSimMode=true.",
                 state = playState(),
             })
         end
-        warnings = { "allowInPlayMode was used: this change only exists during the running test and disappears when it stops." }
+        warnings = { "allowInSimMode was used: this change only exists during the running simulation and disappears when it stops." }
     end
 
     local okRun, result = pcall(handler, args)
@@ -11375,22 +10136,6 @@ end
 -- ---------------------------------------------------------------------------
 -- VERBINDUNG
 -- ---------------------------------------------------------------------------
-local function statePayload()
-    return {
-        sessionId    = sessionId,
-        instanceGuid = instanceGuid,
-        placeName    = game.Name,
-        placeId      = game.PlaceId,
-        gameId       = game.GameId,
-        creatorId    = game.CreatorId,
-        state        = playState(),
-        pluginVersion = ARENA_VERSION,
-        outputCursor = outputSeq,
-        errorCount   = errorCount,
-        -- 4.0.1: Die Instanz im Test-DataModel ist KEIN eigenes Place.
-        sessionDataModel = isSessionDataModel,
-    }
-end
 
 -- ---------------------------------------------------------------------------
 -- 4.0.1 SESSION-REPORTER (Plugin-Instanz IM Test-DataModel)
@@ -11399,234 +10144,20 @@ end
 -- ausschliesslich hier funktionieren - allen voran EndTest (automatischer
 -- Stop) und LeaveTest.
 -- ---------------------------------------------------------------------------
-local function runSessionReporterLoop()
-    -- 4.0.3: LIVE-BEFUND 4.0.2 - die Schleife sendete GENAU EINEN Heartbeat
-    -- (arenaLineCount blieb konstant 1, reporterLastAgeSeconds wuchs
-    -- 53 -> 97 -> 142), danach REPORTER_NOT_CONNECTED bei move_character
-    -- und play_stop ("tried: sessionPlugin,http,sharedTable"). Die Schleife
-    -- ist deshalb jetzt while true mit RunService:IsRunning() NUR als
-    -- Ausstiegs-Orakel (~6s Toleranz, gepcallt) plus Supervisor im
-    -- Aufrufer: KEIN einzelner Fehler, kein falscher IsRunning-Wert und kein
-    -- werfender Aufruf kann den Reporter noch still beenden. Nur der Abbau
-    -- des Session-DataModel (Test-Ende) stoppt ihn.
-    local key = nil
-    local owner = nil
-    local function snapshot()
-        local players = Players:GetPlayers()
-        local list = {}
-        for _, player in ipairs(players) do
-            local character = player.Character
-            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-            local root = character and character:FindFirstChild("HumanoidRootPart")
-            table.insert(list, {
-                player = player.Name, hasCharacter = character ~= nil,
-                position = root and { x = root.Position.X, y = root.Position.Y, z = root.Position.Z } or nil,
-                health = humanoid and humanoid.Health or nil,
-                maxHealth = humanoid and humanoid.MaxHealth or nil,
-                walkSpeed = humanoid and humanoid.WalkSpeed or nil,
-                state = humanoid and tostring(humanoid:GetState()) or nil,
-            })
-        end
-        return {
-            -- 4.0.5: running/editModeActive MUESSEN mit. Dieser Code existiert
-            -- nur im Test-DataModel, ist also per Definition "laufend". Ohne
-            -- die Felder las der Server aus jedem Heartbeat ein running=false
-            -- und haette den laufenden Test als beendet verbucht.
-            kind = "session", mode = "play", players = #players, playerCount = #players,
-            characters = list, character = list[1], reporterAlive = true,
-            source = "sessionPlugin", running = true, editModeActive = false,
-            context = "session",
-        }
-    end
-    local function execute(command)
-        local action = tostring(command and command.action or "")
-        local args = type(command) == "table" and type(command.args) == "table" and command.args or {}
-        if action == "end_test" then
-            task.defer(function()
-                task.wait(0.1)
-                local stopped = false
-                if StudioTestService ~= nil then
-                    stopped = pcall(function() StudioTestService:EndTest("stopped_by_arena_bridge") end)
-                end
-                if not stopped then pcall(function() RunService:Stop() end) end
-            end)
-            return { ok = true, ending = true, via = "sessionPluginEndTest" }
-        end
-        if action == "character_state" then
-            local snap = snapshot()
-            local first = snap.character
-            if first == nil then return { ok = false, error = "No character in the session." } end
-            first.ok = true
-            first.playerCount = snap.players
-            return first
-        end
-        if action == "teleport_character" then
-            local player = Players:GetPlayers()[1]
-            local character = player and player.Character
-            local q = type(args.position) == "table" and args.position or nil
-            if character == nil or q == nil then return { ok = false, error = "No character or position." } end
-            local target = Vector3.new(tonumber(q.x) or 0, tonumber(q.y) or 0, tonumber(q.z) or 0)
-            pcall(function() character:PivotTo(CFrame.new(target)) end)
-            return { ok = true, position = { x = target.X, y = target.Y, z = target.Z } }
-        end
-        if action == "respawn_character" then
-            local player = Players:GetPlayers()[1]
-            if player == nil then return { ok = false, error = "No player." } end
-            task.spawn(function() pcall(function() player:LoadCharacter() end) end)
-            return { ok = true, respawned = true }
-        end
-        if action == "ping" then return { ok = true, pong = true, players = #Players:GetPlayers() } end
-        if action == "move_character" then
-            local player = Players:GetPlayers()[1]
-            local character = player and player.Character
-            local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-            local root = character and character:FindFirstChild("HumanoidRootPart")
-            if character == nil or humanoid == nil or root == nil then
-                return { ok = false, error = "No character to move in the session." }
-            end
-            -- 4.0.2 BUG-2-FIX: VirtualInputManager:SendKeyEvent now throws
-            -- "lacking capability RobloxScript" from the edit plugin, so key
-            -- simulation across the DataModel boundary is dead. Moving the
-            -- character INSIDE the session DataModel via Humanoid:Move/MoveTo
-            -- needs no VirtualInputManager and always has capability here.
-            local beforePos = { x = root.Position.X, y = root.Position.Y, z = root.Position.Z }
-            local keys = type(args.keys) == "table" and args.keys or {}
-            local duration = tonumber(args.duration) or 1
-            duration = math.max(0.05, math.min(duration, 12))
-            local dx, dz = 0, 0
-            for _, k in ipairs(keys) do
-                local up = string.upper(tostring(k))
-                if up == "W" or up == "UP" then dz = dz - 1
-                elseif up == "S" or up == "DOWN" then dz = dz + 1
-                elseif up == "A" or up == "LEFT" then dx = dx - 1
-                elseif up == "D" or up == "RIGHT" then dx = dx + 1 end
-            end
-            local moveOk = true
-            local moveErr = nil
-            if dx == 0 and dz == 0 then
-                moveOk, moveErr = pcall(function() humanoid.Jump = true end)
-            else
-                local camera = Workspace.CurrentCamera
-                local look = camera and camera.CFrame.LookVector or Vector3.new(0, 0, -1)
-                look = Vector3.new(look.X, 0, look.Z)
-                if look.Magnitude < 0.001 then look = Vector3.new(0, 0, -1) end
-                look = look.Unit
-                local right = Vector3.new(look.Z, 0, -look.X)
-                local direction = (look * -dz) + (right * dx)
-                if direction.Magnitude > 0.001 then
-                    direction = direction.Unit
-                    moveOk, moveErr = pcall(function()
-                        -- Keep Move alive for every physics frame. A single
-                        -- Humanoid:Move call is not a held W/A/S/D input.
-                        local untilAt = os.clock() + duration
-                        while os.clock() < untilAt and humanoid.Parent and humanoid.Health > 0 do
-                            humanoid:Move(direction, false)
-                            RunService.Heartbeat:Wait()
-                        end
-                        humanoid:Move(Vector3.new(0, 0, 0), false)
-                    end)
-                end
-            end
-            if not moveOk then return { ok = false, error = tostring(moveErr) } end
-            local afterRoot = character and character:FindFirstChild("HumanoidRootPart")
-            local afterPos = afterRoot and { x = afterRoot.Position.X, y = afterRoot.Position.Y, z = afterRoot.Position.Z } or beforePos
-            return { ok = true, keys = keys, duration = duration, positionBefore = beforePos, positionAfter = afterPos, via = "sessionPluginMove" }
-        end
-        return { ok = false, error = "Unsupported session command: " .. action }
-    end
-    -- 4.0.3: Zaehler als sessionAgent-Felder - sie ueberleben den
-    -- Supervised-Neustart (Aufrufer unten) und sind in JEDEM Heartbeat
-    -- sichtbar: session_diag zeigt unter reporter.loopCount, wie oft die
-    -- Schleife wirklich lief, und unter postFailCount, wie oft post()
-    -- still nil lieferte (das unsichtbare Symptom von 4.0.2: kein Lua-
-    -- Fehler, aber nichts kam an der Bridge an).
-    if type(sessionAgent.reporterLoopCount) ~= "number" then sessionAgent.reporterLoopCount = 0 end
-    if type(sessionAgent.reporterPostFailCount) ~= "number" then sessionAgent.reporterPostFailCount = 0 end
-    local notRunningStreak = 0
-    while true do
-        local iterOk, iterErr = pcall(function()
-            -- 4.0.3 (Ursache c): plugin:GetSetting wird IN der Schleife
-            -- gelesen, bis beide Settings da sind. Laedt dieses Plugin, bevor
-            -- das Edit-Plugin sie geschrieben hat, wartet die Schleife -
-            -- statt still VOR der Schleife zurueckzukehren.
-            if type(owner) ~= "string" or owner == "" or type(key) ~= "string" or key == "" then
-                local newKey, newOwner = nil, nil
-                pcall(function() newKey = plugin:GetSetting("arenaSessionKey") end)
-                pcall(function() newOwner = plugin:GetSetting("arenaOwnerSession") end)
-                if type(newOwner) == "string" and newOwner ~= ""
-                    and type(newKey) == "string" and newKey ~= "" then
-                    owner, key = newOwner, newKey
-                end
-            end
-            sessionAgent.reporterLoopCount = sessionAgent.reporterLoopCount + 1
-            -- 4.0.3: Schleifenzaehler auch in die SharedTable spiegeln - bleibt
-            -- sichtbar, selbst wenn HTTP aus der Session heraus versagt.
-            pcall(function()
-                local registry = game:GetService("SharedTableRegistry")
-                local st = registry:GetSharedTable("arenaBridge")
-                if st ~= nil then
-                    st.pluginReporterLoopCount = sessionAgent.reporterLoopCount
-                    st.pluginReporterLoopError = sessionAgent.reporterLoopError
-                end
-            end)
-            if type(owner) ~= "string" or owner == "" then
-                -- Ohne Settings noch nichts postbar - aber der Zaehler oben
-                -- beweist ueber die SharedTable, dass die Schleife laeuft.
-                return
-            end
-            local state = snapshot()
-            -- 4.0.3: JEDER Heartbeat traegt Schleifenzaehler + letzten
-            -- Fehlertext - damit zeigt session_diag live, wie oft sie lief.
-            state.reporterLoopCount = sessionAgent.reporterLoopCount
-            state.reporterLoopAlive = true
-            state.reporterPostFailCount = sessionAgent.reporterPostFailCount
-            if sessionAgent.reporterLoopError ~= nil then
-                state.reporterLoopError = sessionAgent.reporterLoopError
-            end
-            local response = post("/plugin/session", {
-                sessionId = owner, sessionKey = key, action = "heartbeat",
-                state = state,
-            })
-            if response == nil then
-                -- post() wirft nie (interner pcall) - aber still nil liefern
-                -- (Netz, 403, leerer Body) ist ein eigener Fehler und wird
-                -- gezaehlt, statt unbemerkt weiterzulaufen.
-                sessionAgent.reporterPostFailCount = sessionAgent.reporterPostFailCount + 1
-            elseif type(response.commands) == "table" then
-                for _, command in ipairs(response.commands) do
-                    -- 4.0.3: Befehle im eigenen Thread - move_character
-                    -- wartet bis zu 12s, die Heartbeats laufen weiter und
-                    -- der Reporter bleibt sichtbar frisch.
-                    task.spawn(function()
-                        local okRun, result = pcall(execute, command)
-                        if not okRun then result = { ok = false, error = tostring(result) } end
-                        pcall(function()
-                            post("/plugin/session", { sessionId = owner, sessionKey = key,
-                                action = "result", commandId = command and command.id, result = result })
-                        end)
-                    end)
-                end
-            end
-        end)
-        if iterOk then
-            sessionAgent.reporterLoopError = nil
-        else
-            sessionAgent.reporterLoopError = tostring(iterErr)
-        end
-        -- 4.0.3 (Ursache a/b): RunService:IsRunning() ist NUR noch das
-        -- Ausstiegs-Orakel - gepcallt und mit Toleranz: Ein einzelner
-        -- false-Wert (oder ein werfender Aufruf) beendet die Schleife nicht
-        -- mehr. Erst ~6 durchgehende Sekunden "nicht laufend" lassen sie
-        -- zurueckkehren, und der Supervisor unten startet sie sofort neu.
-        local runningOk, runningNow = pcall(function() return RunService:IsRunning() end)
-        if runningOk == true and runningNow == true then
-            notRunningStreak = 0
-        else
-            notRunningStreak = notRunningStreak + 1
-            if notRunningStreak >= 15 then return end
-        end
-        task.wait(0.4)
-    end
+
+local function statePayload()
+    local payload = {
+        instanceGuid = instanceGuid,
+        placeId = tostring(game.PlaceId),
+        placeName = tostring(game.Name),
+        mode = currentMode(),
+        context = currentContext(),
+        capabilities = capabilities,
+        pluginVersion = ARENA_VERSION,
+    }
+    local okState, stateValue = pcall(playState)
+    if okState then payload.state = stateValue end
+    return payload
 end
 
 local function handshake()
@@ -11636,13 +10167,11 @@ local function handshake()
     if response and response.sessionId then
         sessionId = response.sessionId
         accessMode = response.accessMode or "readwrite"
-        -- 4.0.1: plugin:SetSetting ueberlebt den DataModel-Wechsel (live
-        -- bewiesen). Die Plugin-Instanz im Test-DataModel liest hierueber,
-        -- zu welcher Sitzung sie als Reporter gehoert.
-        pcall(function() plugin:SetSetting("arenaOwnerSession", sessionId) end)
+        -- 7.0.0: keine Reporter mehr - die Sitzung gehoert nur noch dieser
+        -- Plugin-Instanz. Kein SetSetting ueber DataModel-Grenzen.
         if response.pluginOutdated then
             title.Text = "Arena Bridge: Studio neu starten"
-            body.Text = "Plugin und Bridge haben unterschiedliche Versionen. Studio neu starten - Tests warten bis dahin."
+            body.Text = "Plugin und Bridge haben unterschiedliche Versionen. Studio neu starten - Simulationen warten bis dahin."
         end
         connected = true
         return true
@@ -11651,26 +10180,19 @@ local function handshake()
     return false
 end
 
--- Zustandswaechter: merkt, wenn der BENUTZER Play startet oder stoppt,
--- UND meldet, wenn der BENUTZER selbst im Test spielt (Avatar bewegt).
+-- Zustandswaechter: merkt, wenn der BENUTZER einen Test startet oder stoppt
+-- (USER_PLAYTEST_ACTIVE bleibt) und meldet, wenn der Nutzer selbst im Editor
+-- arbeitet. Version 7.0.0: KEIN Playtest-Werkzeug, kein Client-Agent - die
+-- Erkennung dient ausschliesslich dem Schutz (Arena darf waehrend eines
+-- Nutzer-Tests nicht arbeiten).
 task.spawn(function()
-    local lastRunning = RunService:IsRunning()
-    local lastMode = currentMode()
-    local lastCharPos = nil
-    local lastCharReport = 0
+    local lastActive = testSessionActive()
     while running do
-        task.wait(0.4)
-        local nowRunning = RunService:IsRunning()
-        local nowMode = currentMode()
-
-        -- Version 3.8: Im Edit-Modus die Kamera-Position merken. Zwei Gruende:
-        --  a) "Play Here"-Erkennung (Charakter spawnt an der alten Kamera)
-        --  b) Der Nutzer bewegt sich gerade selbst im Editor (= Nutzer aktiv).
-        if not nowRunning then
-            lastPlayHereDetected = false
+        task.wait(0.5)
+        local activeNow = testSessionActive()
+        if not activeNow then
             local cam = Workspace.CurrentCamera
             if cam ~= nil then
-                lastEditCamCFrame = cam.CFrame
                 local camPos = cam.CFrame.Position
                 if lastEditCamPos ~= nil and os.clock() - lastUserActiveNotice >= 25 and bridgeCommandActive == false then
                     local moved = (camPos - lastEditCamPos).Magnitude
@@ -11682,82 +10204,28 @@ task.spawn(function()
                     end
                 end
                 lastEditCamPos = camPos
+                lastEditCamCFrame = cam.CFrame
             end
         end
-
-        if nowRunning ~= lastRunning then
-            local byAi = (os.time() - (aiPlayIntent.at or 0)) <= 20
+        if activeNow ~= lastActive then
+            local byAi = (os.time() - (aiPlayIntent.at or 0)) <= 25
             local who = byAi and "assistant" or "user"
-            if nowRunning then
+            if activeNow then
                 userPlaytestActive = not byAi
-                playHereCheckUntil = os.clock() + 10
-                addNotice("play_started",
-                    "The " .. nowMode .. " test was started by the " .. who .. ". Studio is running now: changes to the place are temporary until it is stopped.",
-                    { mode = nowMode, startedBy = who })
-                task.spawn(function()
-                    task.wait(0.8)
-                    ensureRuntimeHelpers()
-                end)
+                if byAi then simStartedByBridge = true end
+                addNotice("sim_started",
+                    "An editor simulation (Run) is running now - started by the " .. who .. ". Persistent changes are temporary until it is stopped; the bridge blocks them.",
+                    { mode = "run", startedBy = who })
             else
                 userPlaytestActive = false
-                lastPlayHereDetected = false
-                playHereCheckUntil = 0
-                addNotice("play_stopped",
-                    "The test was stopped by the " .. who .. ". Studio is back in edit mode - this is NOT a crash and nothing went wrong. Everything that happened during the test is gone; permanent edits are allowed again.",
-                    { mode = nowMode, stoppedBy = who })
-                cleanupRuntimeHelpers()
+                simStartedByBridge = false
+                simStartedAt = 0
+                addNotice("sim_stopped",
+                    "The editor simulation (Run) was stopped by the " .. who .. ". Studio is back in edit mode - this is NOT a crash and nothing went wrong.",
+                    { stoppedBy = who })
             end
             aiPlayIntent = { action = nil, at = 0 }
-            lastRunning = nowRunning
-            lastMode = nowMode
-            lastCharPos = nil
-        elseif nowMode ~= lastMode then
-            -- Nur ein Modus-Wechsel WAHREND des Tests (z. B. play -> play_here,
-            -- sobald die Erkennung angesprungen ist): kein zweiter Start-
-            -- Hinweis noetig, der laufende Test bleibt derselbe.
-            lastMode = nowMode
-        end
-
-        -- Version 3.8: Kurz nach einem Play-Start pruefen, ob der Charakter
-        -- dort spawnt, wo die Edit-Kamera stand -> "Play Here".
-        if nowRunning and (nowMode == "play" or nowMode == "play_here") and os.clock() < playHereCheckUntil then
-            local player = Players:GetPlayers()[1]
-            local character = player and player.Character
-            local root = character and character:FindFirstChild("HumanoidRootPart")
-            if root ~= nil then
-                if lastEditCamCFrame ~= nil then
-                    local delta = root.Position - lastEditCamCFrame.Position
-                    local flat = math.sqrt(delta.X * delta.X + delta.Z * delta.Z)
-                    if flat < 12 and math.abs(delta.Y) < 40 then
-                        lastPlayHereDetected = true
-                    end
-                end
-                playHereCheckUntil = 0
-            end
-        end
-
-        -- Benutzer bewegt seinen Avatar waehrend des Playtests?
-        if nowRunning and (nowMode == "play" or nowMode == "play_here") then
-            local player = Players:GetPlayers()[1]
-            local character = player and player.Character
-            local root = character and character:FindFirstChild("HumanoidRootPart")
-            if root then
-                if lastCharPos then
-                    local dist = (root.Position - lastCharPos).Magnitude
-                    if dist > 1.5 and os.clock() - lastCharReport > 5 and os.clock() > aiMoveUntil then
-                        userPlaytestActive = true
-                        addNotice("user_moving_character",
-                            "The USER is moving their avatar right now - this is the user playing, NOT your script. Do not hunt for movement bugs in your own code because of this.",
-                            { movedStuds = math.floor(dist * 10) / 10 })
-                        lastCharReport = os.clock()
-                    end
-                end
-                lastCharPos = root.Position
-            else
-                lastCharPos = nil
-            end
-        else
-            lastCharPos = nil
+            lastActive = activeNow
         end
     end
 end)
@@ -11779,35 +10247,12 @@ Selection.SelectionChanged:Connect(function()
     end)
 end)
 
--- Heartbeat: haelt die Anzeige im Programm aktuell (kleine Pakete)
+-- Heartbeat: haelt die Anzeige im Programm aktuell (kleine Pakete).
+-- Version 7.0.0: keine Reporter-Abfrage mehr; der Zustand kommt direkt aus
+-- dem Edit-DataModel (EditModeActive ist das Lauf-Orakel).
 task.spawn(function()
-    -- 4.0.3 (d): gleiche lazy Session-Erkennung wie im Long-Poll-Thread.
-    local sessionDm = isSessionDataModel
-    if sessionDm ~= true then
-        local isEdit = true
-        pcall(function() isEdit = RunService:IsEdit() end)
-        if isEdit == false then sessionDm = true end
-    end
-    if sessionDm then return end
-    local lastSessionPoll = 0
-    local wasSessionActive = testSessionActive()
+    if isSessionDataModel then return end
     while running do
-        local sessionActiveNow = testSessionActive()
-        if wasSessionActive and not sessionActiveNow then
-            clearSessionReporterState()
-        end
-        wasSessionActive = sessionActiveNow
-        if sessionActiveNow and absorbSharedTableReports then pcall(absorbSharedTableReports) end
-        -- 4.0.3: Zustand des Session-Plugin-Reporters regelmaessig abholen.
-        -- Haelt den Snapshot (Position/Gesundheit) waehrend des Tests frisch
-        -- UND laesst arenaLineCount sichtbar hochzaehlen, solange die
-        -- Reporter-Schleife laeuft (4.0.2-Befund: nach dem ersten Poll von
-        -- play_start fror der Zaehler bei 1 ein, weil niemand mehr pollte).
-        if sessionActiveNow and sessionAgent ~= nil and sessionAgent.key ~= nil
-            and os.clock() - lastSessionPoll > 2 then
-            lastSessionPoll = os.clock()
-            pcall(pollSessionPluginState)
-        end
         if sessionId ~= nil and os.clock() - lastHeartbeat > ARENA_CFG.HEARTBEAT_EVERY then
             lastHeartbeat = os.clock()
             local response = post("/plugin/heartbeat", statePayload())
@@ -11824,16 +10269,9 @@ task.spawn(function()
 end)
 
 -- Long-Poll: Befehle kommen ohne Wartezeit an und erzeugen kaum Last.
--- 4.0.1: Laeuft dieses Plugin im Test-DataModel, wird KEIN zweites Place
--- angemeldet (das war die Ursache fuer den zusaetzlichen "Game"-Eintrag).
--- Stattdessen arbeitet die Instanz als Session-Reporter der echten Sitzung.
+-- Version 7.0.0: Im Test-DataModel laeuft KEIN Reporter mehr; die Instanz
+-- meldet sich dort gar nicht erst an (kein zweites Place, kein Zombie).
 task.spawn(function()
-    -- 4.0.3 (Ursache d): Session-Erkennung wird HIER neu bewertet, nicht
-    -- nur beim Plugin-Load. isSessionDataModel wurde mit
-    -- RunService:IsRunning() beim Laden berechnet - zu frueh, wenn Studio
-    -- das Session-DataModel noch im Aufbau hatte. IsEdit() unterscheidet
-    -- Edit- und Session-DataModel zuverlaessig (im Edit-DataModel true) und
-    -- bleibt per pcall + Load-Wert abgesichert.
     local sessionDm = isSessionDataModel
     if sessionDm ~= true then
         local isEdit = true
@@ -11842,14 +10280,6 @@ task.spawn(function()
     end
     if sessionDm then
         widget.Enabled = false
-        -- 4.0.3 SUPERVISOR: runSessionReporterLoop kehrt erst nach ~6s
-        -- durchgehendem "nicht laufend" zurueck und wird sofort neu
-        -- gestartet. Nur der Abbau des Session-DataModel beendet alles -
-        -- der Reporter kann nie wieder nach einem Heartbeat verschwinden.
-        while true do
-            pcall(runSessionReporterLoop)
-            task.wait(1)
-        end
         return
     end
     local backoff = 0.5
@@ -11891,9 +10321,6 @@ end)
 
 plugin.Unloading:Connect(function()
     running = false
-    pcall(cleanupRuntimeHelpers)
-    -- 3.9.7 safety: never leave reporter edit copies in the place.
-    pcall(sweepEditReporterCopies)
     if sessionId then
         post("/plugin/disconnect", { sessionId = sessionId, reason = "unloading" })
     end
@@ -12611,9 +11038,265 @@ $script:BridgeHandlerScript = {
     }
 
     # Version 5.2: vollstaendige Werkzeuglisten (jedes vorhandene Werkzeug).
+    # ------------------------------------------------------------------
+    # Version 7.0.0: FORTSCHRITTSVERTRAG (progress)
+    # Jeder Aufruf traegt progress = { percent = 43, message = "..." } auf
+    # derselben Ebene wie token/targetPlace/tool ODER innerhalb von args.
+    # Liegt er in args, zieht die Bridge ihn heraus - das Plugin sieht ihn nie.
+    # Fehlt er, gilt 0 % (Normalfall beim ersten Aufruf) und es ist NIE ein
+    # Fehler. Die Bridge fuehrt je Sitzung Buch und zeigt das ehrlich an.
+    # ------------------------------------------------------------------
+    function Clamp-ProgressPercent($value) {
+        $number = 0.0
+        try { $number = [double]$value } catch { $number = 0.0 }
+        if ($number -ne $number) { $number = 0.0 }
+        if ($number -lt 0) { $number = 0 }
+        if ($number -gt 100) { $number = 100 }
+        return [math]::Round($number, 1)
+    }
+
+    function Read-ProgressState([string]$sessionId) {
+        $json = ''
+        if (-not $Shared.ProgressStates.TryGetValue([string]$sessionId, [ref]$json)) { return $null }
+        if ([string]::IsNullOrWhiteSpace($json)) { return $null }
+        try { return ($json | ConvertFrom-Json) } catch { return $null }
+    }
+
+    function Save-ProgressState([string]$sessionId, $state) {
+        try { $Shared.ProgressStates[[string]$sessionId] = ($state | ConvertTo-Json -Depth 8 -Compress) } catch {}
+    }
+
+    function Update-ArenaProgressState {
+        param([string]$sessionId, [string]$tool, $percent, [string]$message, [bool]$reported, [bool]$isDone, [bool]$autoSet)
+        $state = Read-ProgressState $sessionId
+        if ($null -eq $state) {
+            $state = [pscustomobject]@{
+                percent = 0.0; message = ''; state = 'working'; updatedAt = 0; lastCallAt = 0
+                calls = 0; callsWithProgress = 0; autoSet = $false; history = @(); lastTool = ''
+            }
+        }
+        $now = Get-UnixSeconds
+        $state.calls = [int]$state.calls + 1
+        $state.lastCallAt = $now
+        $state.lastTool = [string]$tool
+        if ($reported) {
+            $state.callsWithProgress = [int]$state.callsWithProgress + 1
+            $state.percent = Clamp-ProgressPercent $percent
+            if (-not [string]::IsNullOrWhiteSpace($message)) { $state.message = $message.Trim() }
+            $state.updatedAt = $now
+            $state.state = 'working'
+            $state.autoSet = $false
+        }
+        if ($isDone) {
+            if (-not $reported) {
+                $state.percent = 100.0
+                $state.autoSet = $true
+                if ([string]::IsNullOrWhiteSpace([string]$state.message)) { $state.message = 'Automatisch gesetzt (report_done ohne Prozentangabe)' }
+                $state.updatedAt = $now
+                $state.callsWithProgress = [int]$state.callsWithProgress + 1
+            }
+            $state.percent = 100.0
+            $state.state = 'done'
+        }
+        $state.updatedAt = $now
+        $line = ('{0}% {1} {2}' -f [string]$state.percent, [string]$tool, [string]$state.message).Trim()
+        $history = @()
+        if ($state.history) { $history = @($state.history) }
+        $history = @($line) + $history
+        if ($history.Count -gt 12) { $history = $history[0..11] }
+        $state.history = $history
+        Save-ProgressState $sessionId $state
+        return $state
+    }
+
+
+    # ==================================================================
+    # Version 7.0.0: UEBERGABE (HANDOFF)
+    # Nur fuer ein KOMPLETTES SPIEL oder einen Verbund mehrerer Systeme.
+    # Alles andere MUSS in dieser Sitzung fertig werden - eine Uebergabe
+    # dafuer wird als HANDOFF_NOT_ALLOWED abgelehnt.
+    # Die Bruecke baut den Rahmen (Version, Place, Platzhalter, Audits,
+    # offene Punkte aus frueheren Uebergaben, Simulations-/Playtest-Hinweise),
+    # Arena fuellt den Inhalt.
+    # ==================================================================
+    function Format-HandoffList($value, [string]$fallback) {
+        if ($null -eq $value) { return @($fallback) }
+        $items = @()
+        if ($value -is [string]) { $items = @([string]$value) }
+        else { foreach ($entry in @($value)) { $items += [string]$entry } }
+        $clean = @()
+        foreach ($item in $items) { if (-not [string]::IsNullOrWhiteSpace($item)) { $clean += $item.Trim() } }
+        if ($clean.Count -eq 0) { return @($fallback) }
+        return $clean
+    }
+
+    function Invoke-HandoffWrite([string]$sessionId, $toolArgs) {
+        $scope = ''
+        try { $scope = [string]$toolArgs.scope } catch {}
+        if ([string]::IsNullOrWhiteSpace($scope)) { $scope = 'unknown' }
+        $scopeKey = $scope.ToLowerInvariant()
+        if ($scopeKey -notin @('game', 'full_game', 'fullgame')) {
+            return @{
+                ok = $false
+                code = 'HANDOFF_NOT_ALLOWED'
+                error = 'A handoff is ONLY for a complete game or a combination of several systems. A single object, decoration, a scene, a single system or UI work MUST be finished completely in this session.'
+                scopeReceived = $scope
+                action = 'Finish the rest here. Do not hand off: "der Rest wird fertig, hier."'
+            }
+        }
+        $entry = Get-SessionEntry $sessionId
+        $placeName = ''
+        $placeId = ''
+        $pluginVersion = ''
+        if ($entry) {
+            $placeName = [string]$entry.placeName
+            $placeId = [string]$entry.placeId
+            $pluginVersion = [string]$entry.pluginVersion
+        }
+        if ([string]::IsNullOrWhiteSpace($placeName)) { $placeName = [string]$sessionId }
+        $completed = ''
+        foreach ($field in @('completed', 'summary', 'etappe1')) { try { if ($toolArgs.PSObject.Properties[$field]) { $completed = [string]$toolArgs.$field } } catch {} }
+        $nextSteps = Format-HandoffList (Get-Property -Object $toolArgs -Name @('nextSteps','next_steps','naechsteSchritte')) '(nicht angegeben)'
+        $decisions = Format-HandoffList (Get-Property -Object $toolArgs -Name @('decisions','entscheidungen')) '(nicht angegeben)'
+        $pitfalls  = Format-HandoffList (Get-Property -Object $toolArgs -Name @('pitfalls','fallstricke')) '(keine)'
+        $toolsWorked = Format-HandoffList (Get-Property -Object $toolArgs -Name @('toolsThatWorked','bewaehrteWerkzeuge','bewaehrt')) '(nicht angegeben)'
+        $placeholders = Format-HandoffList (Get-Property -Object $toolArgs -Name @('placeholders','platzhalter')) ''
+        $untested = Format-HandoffList (Get-Property -Object $toolArgs -Name @('untested','ungetestet')) ''
+        $stageIndex = 0; $stageTotal = 0; $stageTitle = ''
+        try { $stageIndex = [int](Get-Property -Object $toolArgs -Name @('stageIndex','stage')) } catch {}
+        try { $stageTotal = [int](Get-Property -Object $toolArgs -Name @('stageTotal','stages')) } catch {}
+        try { $stageTitle = [string](Get-Property -Object $toolArgs -Name @('stageTitle','etappe')) } catch {}
+        if ([string]::IsNullOrWhiteSpace($completed)) {
+            return @{
+                ok = $false
+                code = 'HANDOFF_INCOMPLETE'
+                error = 'The handoff has no content. Describe what is finished (with proof), then the exact next steps, the binding decisions and the pitfalls.'
+                required = @('completed (what is finished, with proof)', 'nextSteps (concrete enough that a chat without memory can follow them)', 'decisions (style, brand colour, skin, naming)', 'pitfalls + toolsThatWorked (honest)')
+                note = 'The bridge already fills in version, place, plugin state, audits, placeholders and open points. You fill in the content - and honestly name placeholders, blockouts and untested spots.'
+            }
+        }
+        if ($nextSteps.Count -eq 0 -or $nextSteps[0] -eq '(nicht angegeben)') {
+            return @{ ok = $false; code = 'HANDOFF_INCOMPLETE'; error = 'nextSteps is missing: the next session must be able to continue without guessing. Give the following steps in order, each one concrete.' }
+        }
+
+        # Rahmen: Audit-Zahlen, Platzhalter, offene Punkte frueherer Uebergaben
+        $audit = $null
+        $auditJson = ''
+        if ($Shared.AuditFlags.TryGetValue([string]$sessionId, [ref]$auditJson) -and -not [string]::IsNullOrWhiteSpace($auditJson)) {
+            try { $audit = $auditJson | ConvertFrom-Json } catch { $audit = $null }
+        }
+        $previousJson = ''
+        $previous = $null
+        if ($Shared.Handoffs.TryGetValue([string]$sessionId, [ref]$previousJson) -and -not [string]::IsNullOrWhiteSpace($previousJson)) {
+            try { $previous = $previousJson | ConvertFrom-Json } catch { $previous = $null }
+        }
+        $progress = $null
+        $progressJson = ''
+        if ($Shared.ProgressStates.TryGetValue([string]$sessionId, [ref]$progressJson) -and -not [string]::IsNullOrWhiteSpace($progressJson)) {
+            try { $progress = $progressJson | ConvertFrom-Json } catch { $progress = $null }
+        }
+        $now = Get-Date
+        $stamp = $now.ToString('yyyy-MM-dd_HH-mm-ss')
+        $safePlace = ($placeName -replace '[^\w\-]+', '_')
+        $folder = Join-Path ([string]$Shared.AppDataRoot) 'handoff'
+        $path = Join-Path $folder ($safePlace + '-' + $stamp + '.md')
+        try { if (-not (Test-Path -LiteralPath $folder)) { New-Item -ItemType Directory -Path $folder -Force | Out-Null } } catch {}
+
+        $md = New-Object System.Text.StringBuilder
+        [void]$md.AppendLine('# Uebergabe - ' + $placeName)
+        [void]$md.AppendLine('')
+        [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.0.0 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
+        [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
+        [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
+        if ($audit) {
+            [void]$md.AppendLine(('- Audits: ' + $(if ($audit.summary) { [string]$audit.summary } else { 'keine Zahlen hinterlegt' })))
+            [void]$md.AppendLine(('- Offene Platzhalter: ' + [string]$audit.placeholderCount))
+            if ($audit.placeholders) { foreach ($p in @($audit.placeholders)) { [void]$md.AppendLine('    - ' + [string]$p) } }
+        } else {
+            [void]$md.AppendLine('- Audits: keine Messung in dieser Sitzung hinterlegt (ehrlich: nicht gemessen).')
+        }
+        if ($progress) { [void]$md.AppendLine(('- Fortschritt zuletzt: ' + [string]$progress.percent + ' % - "' + [string]$progress.message + '"')) }
+        if ($previous) {
+            [void]$md.AppendLine('- Offene Punkte aus frueheren Uebergaben:')
+            foreach ($n in @($previous.nextSteps)) { [void]$md.AppendLine('    - ' + [string]$n) }
+        }
+        [void]$md.AppendLine('')
+        [void]$md.AppendLine('## Inhalt (von Arena)')
+        [void]$md.AppendLine('')
+        [void]$md.AppendLine('### Fertig (mit Belegen)')
+        [void]$md.AppendLine($completed)
+        [void]$md.AppendLine('')
+        [void]$md.AppendLine('### Naechste Schritte (in Reihenfolge)')
+        $stepNo = 0
+        foreach ($step in $nextSteps) { $stepNo++; [void]$md.AppendLine(('{0}. {1}' -f $stepNo, $step)) }
+        [void]$md.AppendLine('')
+        [void]$md.AppendLine('### Gueltige Entscheidungen')
+        foreach ($d in $decisions) { [void]$md.AppendLine('- ' + $d) }
+        [void]$md.AppendLine('')
+        [void]$md.AppendLine('### Fallstricke')
+        foreach ($p in $pitfalls) { [void]$md.AppendLine('- ' + $p) }
+        [void]$md.AppendLine('')
+        [void]$md.AppendLine('### Bewaehrte Werkzeugwege')
+        foreach ($t in $toolsWorked) { [void]$md.AppendLine('- ' + $t) }
+        if ($placeholders.Count -gt 0 -and $placeholders[0] -ne '') {
+            [void]$md.AppendLine('')
+            [void]$md.AppendLine('### Offene Platzhalter / Blockouts (ehrlich)')
+            foreach ($p in $placeholders) { [void]$md.AppendLine('- ' + $p) }
+        }
+        if ($untested.Count -gt 0 -and $untested[0] -ne '') {
+            [void]$md.AppendLine('')
+            [void]$md.AppendLine('### Ungetestet')
+            foreach ($u in $untested) { [void]$md.AppendLine('- ' + $u) }
+        }
+        [void]$md.AppendLine('')
+        [void]$md.AppendLine('---')
+        [void]$md.AppendLine('Dieser Block ist die vollstaendige Uebergabe. Neuen Chat mit Bridge-Zugriff oeffnen und den Block unveraendert senden.')
+        $markdown = $md.ToString()
+        try { [System.IO.File]::WriteAllText($path, $markdown, (New-Object System.Text.UTF8Encoding($false))) } catch {
+            return @{ ok = $false; code = 'HANDOFF_WRITE_FAILED'; error = ('The handoff file could not be written: ' + $_.Exception.Message) }
+        }
+
+        $closing = @()
+        $closing += ('Etappe ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal } else { '1' }) + ' ist vollstaendig fertig - kein halber Kuchen.')
+        $closing += 'Das hier ist ein grosses Projekt, und das schafft niemand in einem Anlauf. Was oben steht, ist eine komplette, gepruefte Etappe: gebaut, gemessen, dokumentiert. Die restlichen Etappen stehen in der Uebergabe, Schritt fuer Schritt, in Reihenfolge.'
+        $closing += 'Kein Problem - ich will sofort weiterbauen. Kopier den Block oben, oeffne einen neuen Chat mit Bridge-Zugriff und schick ihn ab. Dort weiss ich in der ersten Sekunde, wo wir stehen, welchen Stil wir benutzen und was als Naechstes drankommt - und lege direkt los.'
+        $closing += 'Na los, worauf wartest du?'
+
+        $record = [pscustomobject]@{
+            ok = $true
+            handoffId = ('ho_' + $stamp)
+            place = $placeName
+            placeId = $placeId
+            path = $path
+            stageIndex = $stageIndex
+            stageTotal = $stageTotal
+            stageTitle = $stageTitle
+            markdown = $markdown
+            block = $markdown
+            closing = $closing
+            headline = ('UEBERGABE - Etappe ' + $(if ($stageIndex -gt 0) { [string]$stageIndex } else { '1' }) + ' von ' + $(if ($stageTotal -gt 0) { [string]$stageTotal } else { '?' }) + ' vollstaendig')
+            arenaUrl = 'https://arena.ai/agent/'
+            chatInstruction = 'Show the biggest available heading with the headline, then the complete block unchanged, then the closing message. Exactly once per turn, never repeated after every tool call.'
+            savedAt = $now.ToString('u')
+        }
+        try { $Shared.Handoffs[[string]$sessionId] = ($record | ConvertTo-Json -Depth 6 -Compress) } catch {}
+        try { Add-BridgeEvent $sessionId 'handoff' ('Uebergabe gespeichert: ' + $path) @{ stageIndex = $stageIndex; stageTotal = $stageTotal } } catch {}
+        return $record
+    }
+
+    function Get-Property($Object, [string[]]$Name) {
+        if ($null -eq $Object) { return $null }
+        foreach ($n in $Name) {
+            try { if ($Object.PSObject.Properties[$n]) { return $Object.$n } } catch {}
+        }
+        return $null
+    }
+
     function Get-ActivityToolSets {
-        $read = @('get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','play_status','session_diag','character_state','gui_dump','gui_check','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait','ui_capabilities','ui_skin','ui_audit')
-        $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','build_polygon_model','build_assembly','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','play_start','play_stop','play_pause','play_resume','set_context','move_character','teleport_character','respawn_character','gui_click','gui_set_text','send_input','client_action','set_camera','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute','build_surface','build_interface')
+        $read = @('get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','sim_status','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait','ui_capabilities','ui_skin','ui_audit','ui_texture','world_style','site_survey','variation','model_audit','world_audit','prop_list')
+        $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','build_polygon_model','build_assembly','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','sim_start','set_context','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute','build_surface','build_interface','ui_glow','ui_radial','prop_place','prop_save','refine','style_lock','world_glow')
         return @{ read = $read; write = $write }
     }
 
@@ -12729,9 +11412,9 @@ $script:BridgeHandlerScript = {
         if ($tool -eq 'rotate_around') { return 'Hat „' + $ref + '“ gedreht.' }
         if ($tool -eq 'fit_between') { return 'Hat „' + $ref + '“ zwischen zwei Punkte gespannt.' }
         if ($tool -eq 'place_on') { return 'Hat „' + $ref + '“ platziert.' }
-        if ($tool -eq 'play_start') { return 'Hat einen Playtest gestartet.' }
-        if ($tool -eq 'play_stop') { return 'Hat den Playtest beendet.' }
-        if ($tool -eq 'move_character') { return 'Hat den Charakter im Playtest bewegt.' }
+        if ($tool -eq 'sim_start') { return 'Hat eine Editor-Simulation gestartet.' }
+        if ($tool -eq 'sim_stop') { return 'Hat die Editor-Simulation beendet.' }
+        if ($tool -eq 'sim_status') { return 'Hat den Simulationsstatus gelesen.' }
         # ---- Jeder verbleibende Werkzeugtyp bekommt einen eigenen Satz -----
         $texts = @{
             get_place_info = 'Hat Informationen über den Place abgerufen.'
@@ -12795,22 +11478,9 @@ $script:BridgeHandlerScript = {
             wait_for_output = 'Hat auf eine Ausgabezeile gewartet.'
             clear_output = 'Hat die Ausgabe geleert.'
             get_errors = 'Hat die Fehlerzeilen gelesen.'
-            play_status = 'Hat den Teststatus abgefragt.'
-            session_diag = 'Hat eine Live-Diagnose gemacht.'
-            play_pause = 'Hat die Simulation pausiert.'
-            play_resume = 'Hat die Simulation fortgesetzt.'
+            sim_status = 'Hat den Simulationsstatus abgefragt.'
             set_context = 'Hat die Seite (Server/Client) gewechselt.'
-            character_state = 'Hat den Charakterstatus gelesen.'
-            teleport_character = 'Hat den Charakter teleportiert.'
-            respawn_character = 'Hat den Charakter neu laden lassen.'
             wait = 'Hat im Place gewartet.'
-            gui_dump = 'Hat die GUI-Struktur eingelesen.'
-            gui_check = 'Hat die GUI geprüft.'
-            gui_click = 'Hat auf ein GUI-Element geklickt.'
-            gui_set_text = 'Hat Text in ein GUI-Feld geschrieben.'
-            send_input = 'Hat Tasten-/Maus-Eingaben gesendet.'
-            client_action = 'Hat eine Client-Aktion ausgeführt.'
-            set_camera = 'Hat die Kamera gesetzt.'
             start_job = 'Hat einen Hintergrundjob gestartet.'
             job_status = 'Hat den Status eines Jobs abgefragt.'
             job_result = 'Hat das Ergebnis eines Jobs abgeholt.'
@@ -13001,9 +11671,9 @@ $script:BridgeHandlerScript = {
                 if ($byAi) { $who = 'assistant' }
                 $Shared.RunOwners[$sid] = $who
                 Set-StateField $newState 'userPlaytestActive' (-not $byAi)
-                if (-not (Test-RecentPlayEvent $sid 'play_started' $now)) {
-                    $Shared.LastPlayEvents[$sid] = @{ kind = 'play_started'; at = $now }
-                    Add-BridgeEvent $sid 'play_started' ("Studio switched into " + [string]$newState.mode + " mode (started by: " + $who + "). Changes during the test are temporary.") @{ mode = [string]$newState.mode; startedBy = $who; detectedBy = 'server' }
+                if (-not (Test-RecentPlayEvent $sid 'sim_started' $now)) {
+                    $Shared.LastPlayEvents[$sid] = @{ kind = 'sim_started'; at = $now }
+                    Add-BridgeEvent $sid 'sim_started' ("Studio switched into " + [string]$newState.mode + " mode (started by: " + $who + "). Editor simulation: scripts and physics run, but there is no player and no client. Changes during the simulation are temporary.") @{ mode = [string]$newState.mode; startedBy = $who; detectedBy = 'server' }
                 }
             } else {
                 $byAi = Test-AiPlayActive $sid 'stop'
@@ -13012,9 +11682,9 @@ $script:BridgeHandlerScript = {
                 $removedOwner = $null
                 [void]$Shared.RunOwners.TryRemove($sid, [ref]$removedOwner)
                 Set-StateField $newState 'userPlaytestActive' $false
-                if (-not (Test-RecentPlayEvent $sid 'play_stopped' $now)) {
-                    $Shared.LastPlayEvents[$sid] = @{ kind = 'play_stopped'; at = $now }
-                    Add-BridgeEvent $sid 'play_stopped' ("Studio returned to edit mode (stopped by: " + $who + "). Everything from the test is discarded - this is normal, not a crash.") @{ stoppedBy = $who; detectedBy = 'server' }
+                if (-not (Test-RecentPlayEvent $sid 'sim_stopped' $now)) {
+                    $Shared.LastPlayEvents[$sid] = @{ kind = 'sim_stopped'; at = $now }
+                    Add-BridgeEvent $sid 'sim_stopped' ("Studio returned to edit mode (stopped by: " + $who + "). Everything from the simulation is discarded - this is normal, not a crash.") @{ stoppedBy = $who; detectedBy = 'server' }
                 }
             }
         } elseif ($nowRunning) {
@@ -13033,18 +11703,18 @@ $script:BridgeHandlerScript = {
         return $newState
     }
 
-    function New-SelfTestBlockedResult([string]$tool) {
-        # Version 3.8: Antwort, wenn die KI ein Play-Werkzeug ruft, obwohl der
-        # Nutzer "Arena darf sich selbst testen" AUSgeschaltet hat.
+    function New-SimBlockedResult([string]$tool) {
+        # Version 7.0.0: Antwort, wenn die KI sim_start ruft, obwohl der Nutzer
+        # "Arena darf Simulationen (Run) starten" AUSgeschaltet hat.
         return @{
             ok = $false
-            code = 'SELF_TEST_DISABLED'
+            code = 'SIM_DISABLED'
             severity = 'notice'
-            error = "The tool '$tool' is not available: the user DISABLED AI self-testing in the Arena Roblox Bridge settings ('Arena darf sich selbst testen' is OFF)."
-            why = 'This is a deliberate user decision - the bridge is NOT broken and nothing failed. Real game tests (Run, Play, Play Here) are turned off for you.'
-            whatStillWorks = 'Editor simulations still work: compile_check (syntax), run_lua (pure Lua logic in the edit place), get_output / get_errors and all reading/building tools. Real physics/character/GUI testing must be done by the USER.'
-            howToFix = 'Do not retry this tool. Continue with editor simulations and ask the user to test the game themselves (they know that self-testing is off).'
-            userHint = 'Ich darf gerade nicht selbst testen (Selbst-Test ist in der Bridge deaktiviert). Bitte teste du das Spiel in Studio - ich pruefe derweil alles im Editor.'
+            error = "The tool '$tool' is not available: the user turned OFF 'Arena darf Simulationen (Run) starten' in the Arena Roblox Bridge settings."
+            why = 'This is a deliberate user decision - the bridge is NOT broken and nothing failed. Editor SIMULATIONS (Run mode) are turned off for you; everything else still works.'
+            whatStillWorks = 'Everything else works unchanged: compile_check (syntax), run_lua (pure Lua logic in the edit place), all reading tools, all building tools, GUIs, assets, jobs, progress and handoff. The user runs the game tests.'
+            howToFix = 'Do not retry sim_start. Keep building and auditing in edit mode. If a running simulation is truly needed, ask the user to turn the setting on.'
+            userHint = 'Ich darf gerade keine Simulation (Run) starten (in der Bridge deaktiviert). Ich baue und pruefe weiter im Editor - teste du bitte das Spiel in Studio.'
         }
     }
 
@@ -13205,6 +11875,24 @@ $script:BridgeHandlerScript = {
                 break
             }
         }
+        # Version 7.0.0: Ein LEBENDES Fenster wird NIE uebernommen. Der alte
+        # Reconnect-Zweig durfte ueber placeId=0 + gleichem Anzeigenamen eine
+        # fremde, noch lebende Sitzung samt Token uebernehmen - dadurch teilten
+        # sich zwei offene Places EINE Zeile (gleicher Name, gleiche Vorschau).
+        # Uebernommen wird nur noch, was nachweislich tot ist UND dessen
+        # Instanz nicht mehr heartbeatet. Bei placeId=0 zusaetzlich nur mit
+        # identischer instanceGuid.
+        $claimable = @()
+        if ($reusable) {
+            $claimable = @($reusable)
+            $reusable = $null
+            $reuseReason = $null
+            foreach ($entry in $claimable) {
+                if ([string]$entry.instanceGuid -eq $guid -and $guid -ne '') {
+                    $reusable = $entry; $reuseReason = 'same-instance'; break
+                }
+            }
+        }
 
         if (-not $reusable) {
             $best = $null
@@ -13212,11 +11900,14 @@ $script:BridgeHandlerScript = {
                 $entry = $null
                 try { $entry = $pair.Value | ConvertFrom-Json } catch { $entry = $null }
                 if (-not $entry) { continue }
+                # Version 7.0.0: Ohne echte placeId (0 = unveroeffentlicht/lokal)
+                # ist ein Namensvergleich KEIN Identitaetsbeweis. Zwei Fenster
+                # koennen beide "obby" heissen und trotzdem zwei verschiedene
+                # Places sein. Dann wird nur bei identischer instanceGuid
+                # uebernommen - sonst bleibt jedes Fenster eine eigene Zeile.
+                if ([string]::IsNullOrWhiteSpace($placeId) -or $placeId -eq '0') { continue }
                 $age = $now - [int64]$entry.lastSeen
                 $samePlace = ([string]$entry.placeId -eq $placeId)
-                if ($placeId -eq '0' -or [string]::IsNullOrWhiteSpace($placeId)) {
-                    $samePlace = $samePlace -and ([string]$entry.placeName -eq $placeName)
-                }
                 # Wann darf eine alte Sitzung samt Token weiterbenutzt werden?
                 #   a) Das Plugin hat sich sauber abgemeldet (Studio geschlossen, Neuladen,
                 #      Studio geschlossen)  ->  sofort.
@@ -13227,7 +11918,18 @@ $script:BridgeHandlerScript = {
                 $openPolls = 0
                 [void]$Shared.Pollers.TryGetValue([string]$entry.sessionId, [ref]$openPolls)
                 $isOrphan = ($entry.orphan -eq $true)
-                $looksDead = ($openPolls -le 0 -and $age -ge 10)
+                # Version 7.0.0: Ein offener Long-Poll beweist ein LEBENDES
+                # Fenster. So etwas wird niemals uebernommen - auch nicht mit
+                # "orphan"-Flag (Plugin-Neuladen im selben Fenster).
+                if ($openPolls -gt 0) { continue }
+                $looksDead = ($age -ge 10)
+                # Lebenszeichen aus Presence (Edit-Heartbeat) schuetzt ebenso.
+                try {
+                    $presence = [int64]0
+                    if ($Shared.Presence.TryGetValue([string]$entry.sessionId, [ref]$presence)) {
+                        if (($now - [int64]$presence) -lt $script:PlaceVisibleSeconds) { continue }
+                    }
+                } catch {}
                 if ($samePlace -and ($isOrphan -or $looksDead) -and $age -le 900) {
                     if (-not $best -or [int64]$entry.lastSeen -gt [int64]$best.lastSeen) { $best = $entry }
                 }
@@ -13953,7 +12655,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
     }
 
     function Get-DedupedPlayResult($sessionId, [string]$tool, $toolArgs) {
-        if ($tool -notin @('play_start','play_stop')) { return $null }
+        if ($tool -notin @('sim_start','sim_stop')) { return $null }
         $key = [string]$sessionId + ':' + $tool
         $raw = $null
         if (-not $Shared.PlayRetryDedupe.TryGetValue($key, [ref]$raw)) { return $null }
@@ -13965,13 +12667,13 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
     }
 
     function Save-DedupedPlayResult($sessionId, [string]$tool, $toolArgs, [string]$resultJson) {
-        if ($tool -notin @('play_start','play_stop') -or [string]::IsNullOrWhiteSpace($resultJson)) { return }
+        if ($tool -notin @('sim_start','sim_stop') -or [string]::IsNullOrWhiteSpace($resultJson)) { return }
         $key = [string]$sessionId + ':' + $tool
         $Shared.PlayRetryDedupe[$key] = (To-Json @{ at=(Get-UnixSeconds); fingerprint=(Get-PlayRetryFingerprint $tool $toolArgs); resultJson=$resultJson } 30)
     }
 
     function Reserve-PlayRetry($sessionId, [string]$tool, $toolArgs) {
-        if ($tool -notin @('play_start','play_stop')) { return $true }
+        if ($tool -notin @('sim_start','sim_stop')) { return $true }
         $key = [string]$sessionId + ':' + $tool
         $fingerprint = Get-PlayRetryFingerprint $tool $toolArgs
         $now = Get-UnixSeconds
@@ -14038,9 +12740,9 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
 
         # ---------------- INFO ----------------
         $t.Add(@{ name = 'get_place_info'; category = 'info'; summary = 'Place, Play-Zustand, Faehigkeiten.';
-            description = 'Was fuer ein Place ist verbunden, welche Id hat er, laeuft gerade ein Test (edit/run/play), welche Faehigkeiten hat das Plugin. Immer der erste sinnvolle Call.';
+            description = 'Was fuer ein Place ist verbunden, welche Id hat er, laeuft gerade eine Simulation (edit/run), welche Faehigkeiten hat das Plugin. Immer der erste sinnvolle Call.';
             params = @{};
-            returns = '{ name, placeId, gameId, creatorId, state: { running, mode (edit|run|play|play_here), context, playerCount, editModeActive, modeInfo }, capabilities, pluginVersion }';
+            returns = '{ name, placeId, gameId, creatorId, state: { running, mode (edit|run), context, playerCount, editModeActive, modeInfo }, capabilities, pluginVersion }';
             example = @{};
             errors = @('REF_NOT_FOUND: kein Studio-Fenster verbunden (Token ungültig oder Place geschlossen).') })
         $t.Add(@{ name = 'get_tree'; category = 'info'; summary = 'Instanz-Baum mit Ids.';
@@ -14393,10 +13095,10 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             errors = @('COMPILE_ERROR: mit Zeilennummer.') })
         $t.Add(@{ name = 'run_lua'; category = 'scripts'; summary = 'Lua im Server-/Edit-Kontext ausfuehren (persistent!).';
             description = 'Fuehrt Lua aus und gibt Rueckgabe + alles, was gedruckt wurde, zurueck. WICHTIG: Die Umgebung ist PERSISTENT - ein Helfer aus einem frueheren Call (z.B. "M = {...}" ohne local) ist im naechsten Call weiter da (lua_state zeigt alle persiste Variablen). Fuer Läufe ueber 60s: asJob=true oder start_job. Fuer Polygon-/WedgePart-Geometrie erst build_polygon_model pruefen - schreibst du trotzdem eigene Dreieck-/Wedge-Logik hier, gilt die harte Achsen-Regel aus polygonEngineRules (get_docs / Sessionstart): lokal X=Dicke/Normale, Y=Hoehe, Z=Basiskante - sonst drohen 90-Grad-Drehfehler und Nahtspalten.';
-            params = @{ source = @{ type = 'string'; required = $true; default = '-'; description = 'Oder sourceRef.' }; context = @{ type = "'server'|'auto'"; required = $false; default = "'auto'"; description = 'client ist NICHT moeglich (loadstring gesperrt) - fuer den Client: client_action/gui_*/move_character/send_input.' }; asJob = @{ type = 'bool'; required = $false; default = 'false'; description = 'Im Hintergrund als Job laufen lassen (rueckgibt jobId).' } };
+            params = @{ source = @{ type = 'string'; required = $true; default = '-'; description = 'Oder sourceRef.' }; context = @{ type = "'server'|'auto'"; required = $false; default = "'auto'"; description = 'Client existiert seit 7.0.0 nicht mehr (kein Playtest, kein Client-Agent) - "client" antwortet CONTEXT_UNAVAILABLE.' }; asJob = @{ type = 'bool'; required = $false; default = 'false'; description = 'Im Hintergrund als Job laufen lassen (rueckgibt jobId).' } };
             returns = '{ returned, output: [ { seq, message, type } ], context, environment="persistent", persistentKeys } oder (asJob) { ok, jobId, status="running" }';
             example = @{ source = 'local p = workspace:FindFirstChild("Part"); return p and p.Position' };
-            errors = @('COMPILE_ERROR: Syntax (Zeile im Fehler).', 'RUNTIME_ERROR: Laufzeit (Mitteilung + Output).', 'NO_PLAYER / PLAY_NOT_RUNNING: falscher Kontext.') })
+            errors = @('COMPILE_ERROR: Syntax (Zeile im Fehler).', 'RUNTIME_ERROR: Laufzeit (Mitteilung + Output).', 'CONTEXT_UNAVAILABLE: "client" gibt es nicht mehr.') })
         $t.Add(@{ name = 'lua_state'; category = 'scripts'; summary = 'Was lebt in der persistenten Lua-Umgebung?';
             params = @{};
             returns = '{ keys: [ "M", "helpers", ... ], count, jobs: [ { id, name, status } ] }';
@@ -14462,7 +13164,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             example = @{ name = 'ShopUI'; skin = 'sticker'; brand = '#FFB020'; surfaces = @(@{ id = 'Panel'; role = 'modal'; rect = @(50, 50, 62, 70); groupFade = $true; children = @(@{ id = 'Title'; role = 'header'; rect = @(50, 9, 86, 13); text = @{ value = 'SHOP'; display = $true } }, @{ id = 'Grid'; role = 'panel'; rect = @(50, 58, 90, 70); layout = @{ kind = 'grid'; cols = 3; gap = 4; cellH = 30; scroll = $true }; repeatSpec = @{ count = 9; template = @{ role = 'button'; rect = @(0, 0, 28, 28); text = @{ value = 'Item {n}' } } } }) }) };
             errors = @('STYLE_TOO_GENERIC', 'BAD_ARGS: surfaces fehlt oder leer.', 'REF_NOT_FOUND') })
         $t.Add(@{ name = 'ui_audit'; category = 'ui'; summary = 'GUI MESSEN statt hoffen: Geraetematrix, Kontrast, Anker, Ecken, Generik-Score.';
-            description = 'Der Linter zur UI Engine - die ehrliche Rueckmeldung, die es bisher nur beim Polygon-Builder gab (facesSkipped). Prueft rein rechnerisch, ohne Screenshot und ohne Playtest: offsetRatio (wie viel Layout an Pixeln haengt), Elemente mit UIScale und AnchorPoint 0,0 (wachsen nach unten rechts), Eckenradius gegen Innenabstand (Inhalt laeuft ueber die runde Ecke), Textkontrast gegen den tatsaechlichen Hintergrund, verschachtelte CanvasGroups, nackte gefuellte Frames ohne Gradient/Stroke/Schatten, Stroke-Budget und einen blandnessScore, bei dem 1.0 exakt das generische dunkle Dashboard ist. Zusaetzlich rechnet die Geraetematrix die effektiven Pixelgroessen fuer phone/tablet/desktop/ultrawide aus der Scale-Kette aus und meldet zu kleinen Text (unter 11 px), zu kleine Touch-Ziele (unter 44 px) und Elemente ausserhalb des Sichtfelds. Jeder Befund nennt die Objekt-ID und den GEMESSENEN Wert.';
+            description = 'Der Linter zur UI Engine - die ehrliche Rueckmeldung, die es bisher nur beim Polygon-Builder gab (facesSkipped). Prueft rein rechnerisch, ohne Screenshot und ohne Simulation: offsetRatio (wie viel Layout an Pixeln haengt), Elemente mit UIScale und AnchorPoint 0,0 (wachsen nach unten rechts), Eckenradius gegen Innenabstand (Inhalt laeuft ueber die runde Ecke), Textkontrast gegen den tatsaechlichen Hintergrund, verschachtelte CanvasGroups, nackte gefuellte Frames ohne Gradient/Stroke/Schatten, Stroke-Budget und einen blandnessScore, bei dem 1.0 exakt das generische dunkle Dashboard ist. Zusaetzlich rechnet die Geraetematrix die effektiven Pixelgroessen fuer phone/tablet/desktop/ultrawide aus der Scale-Kette aus und meldet zu kleinen Text (unter 11 px), zu kleine Touch-Ziele (unter 44 px) und Elemente ausserhalb des Sichtfelds. Jeder Befund nennt die Objekt-ID und den GEMESSENEN Wert.';
             params = @{ ref = @{ type = 'ref'; required = $false; default = "'game.StarterGui'"; description = 'Wurzel der Pruefung (ScreenGui oder ein beliebiger Teilbaum).' }; devices = @{ type = 'string[]'; required = $false; default = "@('phone','tablet','desktop')"; description = 'phone 896x414, tablet 1112x834, desktop 1920x1080, ultrawide 2560x1080.' } };
             returns = '{ scope, screenGuis, elements, offsetRatio, blandnessScore, verdict, failureCount, counts, problems: { anchorMismatches, cornerOverflow, contrastFailures, flatSurfaces, genericColors, offsetHeavy, nestedCanvasGroups, textTooSmall, tapTargetsTooSmall, outOfBounds }, deviceMatrix, strokeBudget, capabilities, howToRead }';
             example = @{ ref = 'game.StarterGui.ShopUI'; devices = @('phone', 'desktop') };
@@ -14516,6 +13218,95 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             returns = '{ verified, assetId, assetName, typeId, typeName, usableAs, hasScripts, creator, matchesExpect, note }';
             example = @{ assetId = 1838833093; expectType = 'audio' };
             errors = @('ASSET_NOT_FOUND: Id existiert nicht / ist nicht oeffentlich - NICHT verwenden.', 'CATALOG_UNAVAILABLE: konnte nicht verifiziert werden (verified=false) - Anwenden erlaubt, aber mit Risiko.') })
+
+        # ---------------- UI ENGINE 2.0 ----------------
+        $t.Add(@{ name = 'ui_glow'; category = 'ui'; summary = 'Glow bauen - IMMER hier, nie selbst basteln.';
+            description = 'Baut einen weichen Glow-Stapel (3 Schichten, Scale-only, UICorner) hinter/um das Ziel. Glow gehoert der Engine: handgebaute Transparenz-Ketten sind verboten, weil sie bei jeder Aufloesung anders brechen. color default = Skin-Glow/Akzent, strength 0..1, layers 1..5, spread skaliert die Ausdehnung.';
+            params = @{ ref = @{ type = 'string'; required = $true; default = '-'; description = 'Ziel-GuiObject oder ScreenGui.' }; skin = @{ type = 'string'; required = $false; default = "'arcade'"; description = 'Skin fuer Glow-Farbe/Ecken.' }; color = @{ type = 'string'; required = $false; default = 'null'; description = 'Eigene Farbe (#RRGGBB).' }; strength = @{ type = 'number'; required = $false; default = '0.55'; description = '0.05..1.' }; layers = @{ type = 'number'; required = $false; default = '3'; description = '1..5 Schichten.' }; spread = @{ type = 'number'; required = $false; default = '1'; description = 'Ausdehnungs-Faktor.' } };
+            returns = '{ ok, engine="2.0", glow { mode="layered-neon", layers, color, strength } }';
+            example = @{ ref = '#42'; skin = 'arcade'; strength = 0.7 };
+            errors = @('REF_NOT_FOUND') })
+        $t.Add(@{ name = 'ui_texture'; category = 'ui'; summary = 'Textur-Rezept: echte Textur-ID zuerst, sonst ehrlicher Gradienten-Fallback.';
+            description = 'Echte Texturen schlagen prozedurale Muster. Mit textureId kommt mode="texture" und die Engine nutzt genau diese Id (Tile/Groesse aus tileX/tileY, Tint aus textureTint). Ohne Id kommt mode="gradient" plus Warnung TEXTURE_ASSET_MISSING - kein Fehler, aber ehrlich sichtbar. Reines Rezept (baut nichts), ideal vor build_surface/build_interface.';
+            params = @{ skin = @{ type = 'string'; required = $false; default = "'glass'"; description = '' }; textureId = @{ type = 'string'; required = $false; default = 'null'; description = 'echte Roblox-Bild-Id (z.B. rbxassetid://...).' }; tileX = @{ type = 'number'; required = $false; default = '0.18'; description = '' }; tileY = @{ type = 'number'; required = $false; default = '0.18'; description = '' }; textureTint = @{ type = 'string'; required = $false; default = 'null'; description = '' } };
+            returns = '{ ok, engine, recipe { mode="texture"|"gradient", textureId, tile, tint }, warnings=[TEXTURE_ASSET_MISSING?] }';
+            example = @{ textureId = 'rbxassetid://123456789'; tileX = 0.25 };
+            errors = @() })
+        $t.Add(@{ name = 'ui_radial'; category = 'ui'; summary = 'Radialmenue aus EINER Bild-Id - beide Farben gehoeren der Engine.';
+            description = 'Baut count (3..12) Eintraege auf einem Kreis. Der Ring kommt aus EINER imageId (Skalierung/Transparenz/Tint); fehlt sie, baut die Engine prozedural weiter und meldet RADIAL_ASSET_MISSING als Warnung. Ringfarbe UND Aktivfarbe leitet die Engine aus dem Skin ab - der Aufrufer uebergibt hoechstens eigene Farben, baut aber nie selbst einen Ring aus Teilen. activeIndex hebt genau einen Eintrag hervor. Alle Positionen sind Scale, kein Offset.';
+            params = @{ ref = @{ type = 'string'; required = $true; default = '-'; description = 'Eltern-GuiObject.' }; skin = @{ type = 'string'; required = $false; default = "'glass'"; description = '' }; imageId = @{ type = 'string'; required = $false; default = 'null'; description = 'Eine Bild-Id fuer den Ring.' }; items = @{ type = 'number'; required = $false; default = '6'; description = '3..12.' }; radius = @{ type = 'number'; required = $false; default = '0.34'; description = '0.15..0.46 des Elternteils.' }; activeIndex = @{ type = 'number'; required = $false; default = 'null'; description = 'Hervorgehobener Eintrag.' } };
+            returns = '{ ok, engine, radial { mode="texture-ring"|"procedural-ring", imageId, items, colors { ring, active } }, warnings }';
+            example = @{ ref = 'game.StarterGui.Main'; items = 8; activeIndex = 3 };
+            errors = @('REF_NOT_FOUND') })
+
+        # ---------------- WORLD ENGINE 1.0 ----------------
+        $t.Add(@{ name = 'world_style'; category = 'world'; summary = 'Welt-Stil festlegen: Palette, Materialien, Dichte, Wetter, Seed.';
+            description = 'Setzt den aktiven Welt-Stil (Preset coastal/forest/desert/snow/urban/volcanic oder eigene Palette/Materialien). Der Seed steuert JEDE Variation deterministisch - derselbe Seed baut dieselbe Welt. Ohne Stil baut prop_place weiter, aber model_audit/world_audit koennen keine Stil-Treue messen (der billige Weg ist sichtbar schlechter).';
+            params = @{ preset = @{ type = 'string'; required = $false; default = 'null'; description = 'coastal, forest, desert, snow, urban oder volcanic.' }; palette = @{ type = 'table'; required = $false; default = 'null'; description = 'Eigene Farben (#RRGGBB), 3..6 Stueck.' }; materials = @{ type = 'table'; required = $false; default = 'null'; description = 'Erlaubte Materialnamen.' }; density = @{ type = 'number'; required = $false; default = '0.55'; description = '0..1 - wie dicht die Welt gefuellt wird.' }; weathering = @{ type = 'number'; required = $false; default = '0.35'; description = '0..1 - wie gebraucht die Welt aussieht.' }; seed = @{ type = 'number'; required = $false; default = 'null'; description = 'Determinismus.' } };
+            returns = '{ ok, style, palette, materials, rules, nextStep }';
+            example = @{ preset = 'forest'; seed = 4711 };
+            errors = @('BAD_ARGS: unbekanntes Preset (bekannte Liste liegt bei).') })
+        $t.Add(@{ name = 'style_lock'; category = 'world'; summary = 'Welt-Stil an den Place binden (Grundlage fuer Stil-Audits).';
+            description = 'Schreibt den aktiven Stil als Attribute in workspace.ArenaWelt.Style (Preset, Label, Seed, locked=true) und schaltet die Stil-Pruefung in world_audit/model_audit scharf. Ohne Lock gibt es keine Messung.';
+            params = @{ seed = @{ type = 'number'; required = $false; default = 'null'; description = 'Ueberschreibt den Stil-Seed.' } };
+            returns = '{ ok, locked, preset, label, seed, folder }';
+            example = @{};
+            errors = @('NO_WORLD_STYLE: erst world_style aufrufen.') })
+        $t.Add(@{ name = 'site_survey'; category = 'world'; summary = 'Gelaende MESSEN: Hoehen, Materialien, Wasser, freier Raum, bestehende Teile.';
+            description = 'Raycastet ein Raster (samples x samples) im Bereich, misst min/max/mittlere Hoehe, Span, Steigung, Bodenmaterialien, Wasser-Treffer und den freien Raum ueber dem Boden; dazu die Zahl der bereits vorhandenen Teile im Volumen. Alles gemessen, nichts geschaetzt. Immer VOR dem Bauen aufrufen.';
+            params = @{ center = @{ type = '{x,y,z}'; required = $false; default = '{0,0,0}'; description = '' }; size = @{ type = '{x,y,z}'; required = $false; default = '{200,120,200}'; description = '' }; samples = @{ type = 'number'; required = $false; default = '5'; description = '2..9 pro Achse.' } };
+            returns = '{ ok, area, samples, ground { minHeight, maxHeight, averageHeight, span, slope, materials, waterSamples }, freeSpace { medianClearanceStuds }, existingParts, suggestedOrigin }';
+            example = @{ center = @{ x = 0; z = 0 }; size = @{ x = 120; y = 80; z = 120 }; samples = 6 };
+            errors = @() })
+        $t.Add(@{ name = 'variation'; category = 'world'; summary = 'Deterministische Variation aus einem Seed (statt math.random).';
+            description = 'Liefert count Zahlen zwischen min und max aus einem LCG-Seed. Gleicher Seed + gleicher Index = gleicher Wert, immer. Fuer KI-eigenen Code, der einzelne Werte braucht, ohne die Welt neu zu bauen.';
+            params = @{ seed = @{ type = 'number'; required = $false; default = '1'; description = '' }; count = @{ type = 'number'; required = $false; default = '8'; description = '1..512.' }; min = @{ type = 'number'; required = $false; default = '0'; description = '' }; max = @{ type = 'number'; required = $false; default = '1'; description = '' }; decimals = @{ type = 'number'; required = $false; default = '4'; description = '0..6.' } };
+            returns = '{ ok, seed, count, values, formula, nextSeed }';
+            example = @{ seed = 4711; count = 12; min = 0.85; max = 1.15; decimals = 3 };
+            errors = @() })
+        $t.Add(@{ name = 'prop_place'; category = 'world'; summary = 'Props deterministisch platzieren (Boden-Snap, Seed, Stil).';
+            description = 'Platziert count Props (kind rock/bush/crate oder propName aus prop_save) im Bereich. Position/Rotation/Groesse kommen aus dem Seed, der Boden wird per Raycast gefunden (Wasser wird uebersprungen und gezaehlt), Stil-Palette und -Materialien gelten automatisch. Ergebnis nennt placed/skipped, Seed, Teilezahl und ob ein Stil-Lock aktiv ist.';
+            params = @{ kind = @{ type = 'string'; required = $false; default = "'rock'"; description = 'rock, bush oder crate.' }; propName = @{ type = 'string'; required = $false; default = 'null'; description = 'Gespeicherter Prop (hat Vorrang vor kind).' }; count = @{ type = 'number'; required = $false; default = '6'; description = '1..200.' }; seed = @{ type = 'number'; required = $false; default = 'Stil-Seed'; description = '' }; center = @{ type = '{x,y,z}'; required = $false; default = '{0,0,0}'; description = '' }; size = @{ type = '{x,z}'; required = $false; default = '{60,60}'; description = 'Bereich, in dem gestreut wird.' }; group = @{ type = 'string'; required = $false; default = 'null'; description = 'Ordnername unter workspace.ArenaWelt.' } };
+            returns = '{ ok, kind, group, requested, placed, skipped, variationSeed, partsCreated, stylePreset, styleLocked }';
+            example = @{ kind = 'rock'; count = 14; size = @{ x = 90; z = 90 }; seed = 4711 };
+            errors = @('PROP_NOT_FOUND', 'BAD_ARGS: unbekannte Art.') })
+        $t.Add(@{ name = 'prop_save'; category = 'world'; summary = 'Auswahl als wiederverwendbaren Prop speichern.';
+            description = 'Klont das Ziel (oder die Studio-Auswahl) nach workspace.ArenaProps/<name>, setzt Attribute (Teilezahl, Zeit, Quelle) und macht es fuer prop_place { propName=<name> } nutzbar. Vorhandene Namen werden nur mit overwrite=true ersetzt.';
+            params = @{ name = @{ type = 'string'; required = $true; default = '-'; description = '' }; ref = @{ type = 'string'; required = $false; default = 'null'; description = 'Model/Ordner/Teil.' }; useSelection = @{ type = 'bool'; required = $false; default = 'false'; description = 'Studio-Auswahl nehmen.' }; overwrite = @{ type = 'bool'; required = $false; default = 'false'; description = '' } };
+            returns = '{ ok, name, parts, folder, source }';
+            example = @{ name = 'tree_a'; useSelection = $true };
+            errors = @('BAD_ARGS: ref oder useSelection fehlt.', 'PROP_EXISTS') })
+        $t.Add(@{ name = 'prop_list'; category = 'world'; summary = 'Gespeicherte Props auflisten.';
+            description = 'Listet workspace.ArenaProps mit Name, Klasse, Teilezahl, Art und Speicherzeit.';
+            params = @{};
+            returns = '{ ok, props: [ { name, className, parts, kind, savedAt } ], count }';
+            example = @{};
+            errors = @() })
+        $t.Add(@{ name = 'model_audit'; category = 'world'; summary = 'Modell-Audit: Platzhalter, Blockouts, Phase, Urteil.';
+            description = 'Zaehlt im Ziel (ref oder ganzer Workspace) Platzhalter (Name oder Attribut ArenaPlaceholder), Blockouts (Default-Grau 163/162/165 + Material Plastic, kein Mesh), Meshes, Unions und Materialien. Liefert phase (blockout|modelled|refined), verdict und die Liste der Platzhalter mit Id/Pfad. Solange Platzhalter oder Blockouts existieren, darf ohne Handoff kein "fertig" behauptet werden (die Bridge liest genau diese Zahlen fuer HANDOFF_REQUIRED).';
+            params = @{ ref = @{ type = 'string'; required = $false; default = 'game.Workspace'; description = '' } };
+            returns = '{ ok, scope, parts, placeholderCount, placeholders, blockoutCount, meshes, unions, materials, phase, verdict, nextStep }';
+            example = @{ ref = 'game.Workspace.Stadt' };
+            errors = @('REF_NOT_FOUND') })
+        $t.Add(@{ name = 'world_audit'; category = 'world'; summary = 'Welt-Audit: Stil-Treue, Licht, Atmosphaere, Phase.';
+            description = 'Prueft Workspace gegen den gelockten Stil: zaehlt Lichter, Atmosphaere/Sky/Clouds, Detail-Teile, Farbabstand und Material-Abweichungen jedes Teils. styleCompliance sinkt messbar, wenn ohne Stil gebaut wurde - der billige Weg ist nachweisbar schlechter. Liefert offStyleParts mit gemessenem Abstand und issues als klare Arbeitsliste.';
+            params = @{};
+            returns = '{ ok, parts, lights, lightKinds, atmosphere, sky, clouds, styleLocked, stylePreset, styleCompliance, offStyleParts, detailParts, phase, verdict, issues }';
+            example = @{};
+            errors = @() })
+        $t.Add(@{ name = 'world_glow'; category = 'world'; summary = 'Licht/Glow fuer ein Teil - immer ueber die Engine.';
+            description = 'Setzt EINE Lampe (PointLight/SpotLight/SurfaceLight) auf ein Teil, optional Material Neon, Farbe aus Stil-Palette oder explizit. Glow wird nie als handgebaute Kette aus Ball-Teilen gebaut; Helligkeit/Reichweite sind geklemmt.';
+            params = @{ ref = @{ type = 'string'; required = $false; default = 'null'; description = '' }; useSelection = @{ type = 'bool'; required = $false; default = 'false'; description = '' }; lightClass = @{ type = 'string'; required = $false; default = "'PointLight'"; description = '' }; color = @{ type = 'string'; required = $false; default = 'Stil-Palette'; description = '' }; brightness = @{ type = 'number'; required = $false; default = '2'; description = '0..10.' }; range = @{ type = 'number'; required = $false; default = '18'; description = '1..60 (Punkt/Flaeche).' }; neon = @{ type = 'bool'; required = $false; default = 'false'; description = 'Material Neon setzen.' } };
+            returns = '{ ok, engine, target, lightClass, color, brightness, material }';
+            example = @{ ref = 'game.Workspace.Laterne'; brightness = 3; color = '#FFD68C'; neon = $true };
+            errors = @('BAD_ARGS: kein BasePart / falsche lightClass.', 'REF_NOT_FOUND') })
+        $t.Add(@{ name = 'refine'; category = 'world'; summary = 'Feinschliff: messbare Details statt "sieht gut aus".';
+            description = 'Geht die groessten Teile des Ziels durch und setzt entlang der laengsten Oberkante eine duenne Zierleiste (ArenaDetail, Stil-Material/Farbe), verankert wie das Original und per WeldConstraint verbunden. Bounded durch maxParts; das Ergebnis nennt partsTouched, detailsAdded und ob maxParts der Grund zum Stoppen war. model_audit zaehlt die Details danach als Phase refined.';
+            params = @{ ref = @{ type = 'string'; required = $false; default = 'null'; description = '' }; useSelection = @{ type = 'bool'; required = $false; default = 'false'; description = '' }; seed = @{ type = 'number'; required = $false; default = 'Stil-Seed'; description = '' }; maxParts = @{ type = 'number'; required = $false; default = '24'; description = '1..200.' } };
+            returns = '{ ok, scope, seed, partsChecked, partsTouched, detailsAdded, maxParts, stoppedBecause }';
+            example = @{ ref = 'game.Workspace.Haus'; maxParts = 40 };
+            errors = @('BAD_ARGS: ref oder useSelection fehlt.', 'REF_NOT_FOUND') })
+
         $t.Add(@{ name = 'insert_asset'; category = 'assets'; summary = 'Mesh/Model/MeshPart in den Place einfuegen.';
             description = 'Lädt das Asset in den Place und validiert vorher den Typ. Wenn nur Geometrie gebraucht wird, sanitize=true verwenden: Noch bevor das geladene Asset dem Place untergeordnet wird, entfernt die Bridge automatisch ALLE Scripts/LocalScripts/ModuleScripts sowie RemoteEvents, RemoteFunctions, BindableEvents und BindableFunctions (typischer Virus-/Event-Muell). Damit kann Arena gezielt scriptfreie Toolbox-Modelle suchen und sicher als reine Bauteile einfuegen. unpack=true zerlegt das Model in seine Kinder.';
             params = @{ assetId = @{ type = 'number'; required = $true; default = '-'; description = '' }; parentRef = @{ type = 'ref'; required = $false; default = "'game.Workspace'"; description = '' }; unpack = @{ type = 'bool'; required = $false; default = 'true'; description = 'Model zerlegen.' }; name = @{ type = 'string'; required = $false; default = 'null'; description = 'Name (bei unpack).' }; sanitize = @{ type = 'bool'; required = $false; default = 'false'; description = 'EMPFOHLEN wenn nur das Modell gebraucht wird: vor Einfuegen alle Scripts, Remotes, Bindable-Events/-Functions und damit Virus-Muell entfernen.' }; removeScripts = @{ type = 'bool'; required = $false; default = 'false'; description = 'Nur alle LuaSourceContainer entfernen.' }; removeEvents = @{ type = 'bool'; required = $false; default = 'false'; description = 'Nur Remote-/Bindable-Events und Functions entfernen.' }; acceptScripts = @{ type = 'bool'; required = $false; default = 'false'; description = 'Skripte bewusst behalten (nur wenn wirklich erforderlich; sanitize ist sicherer).' }; skipValidation = @{ type = 'bool'; required = $false; default = 'false'; description = 'Tyvalidierung ueberspringen (nur im Notfall).' } };
@@ -14543,7 +13334,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             example = @{ since = 1234; limit = 100; filter = 'error' };
             errors = @() })
         $t.Add(@{ name = 'wait_for_output'; category = 'output'; summary = 'Bis eine Zeile erscheint warten.';
-            description = 'Ideal nach play_start oder run_lua: blockiert im Studio, bis ein Muster auftaucht (oder die Zeit abgelaufen ist).';
+            description = 'Ideal nach sim_start oder run_lua: blockiert im Studio, bis ein Muster auftaucht (oder die Zeit abgelaufen ist).';
             params = @{ pattern = @{ type = 'string'; required = $true; default = '-'; description = 'Suchtext.' }; timeoutSeconds = @{ type = 'number'; required = $false; default = '15'; description = 'max 110.' }; since = @{ type = 'int'; required = $false; default = 'jetzt'; description = 'Ab welchem Cursor.' }; regex = @{ type = 'bool'; required = $false; default = 'false'; description = '' }; types = @{ type = 'string[]'; required = $false; default = 'all'; description = '' } };
             returns = '{ found, lines?, cursor, waited? }';
             example = @{ pattern = 'loaded'; timeoutSeconds = 20 };
@@ -14560,125 +13351,46 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             errors = @() })
 
         # ---------------- PLAY / TEST ----------------
-        $t.Add(@{ name = 'play_status'; category = 'play'; summary = 'Läuft ein Test? Welcher Modus (edit/run/play/play_here)? Ist ein Player da?';
-            description = 'Laufender Zustand mit edit/run/play/play_here. Moderne Studio-Sessions laufen in einem getrennten DataModel: editModeActive=false ist das verbindliche Lauf-Orakel, NICHT RunService/Players im Edit-Plugin. Der #ARENA# LogStream-Reporter (3.9.7: als normales, klon-sicheres Script injiziert + sofortige hello-Zeile als Injektions-Beweis) liefert sessionPlayers, Charakter/Gesundheit und GUI auch bei httpEnabled=false; HTTP ist nur ein optionaler Schnellpfad. reporterLastKind/reporterLastAgeSeconds/arenaLineCount zeigen die Reporter-Frische; Details liefert das neue Werkzeug session_diag.';
-            params = @{};
-            returns = '{ running, mode, context, playerCount, sessionPlayers, agentConnected, reporterActive, reporterLastKind, reporterLastAgeSeconds, arenaLineCount, reporterLoopCount, reporterVariantUsed, agentMode (http|logStream), httpEnabled, editModeActive, sessionSnapshot, modeInfo, userPlaytestActive }';
-            example = @{};
-            errors = @() })
-        $t.Add(@{ name = 'play_start'; category = 'play'; summary = 'Test starten: mode="play" (echt, mit Player), "play_here" (play an der Edit-Kamera) oder "run" (Physik-/Script-Simulation im Editor).';
-            description = 'Startet StudioTestService in task.spawn. ERFOLG ist ausschliesslich der Wechsel EditModeActive true->false innerhalb 20s; RunService:IsRunning und Players im Edit-DataModel werden absichtlich nicht abgefragt. Vorher werden Server- und Client-Reporter injiziert - 3.9.7 als NORMALE klon-sichere Scripts (reporterVariant=2, Standard), damit sie garantiert im Session-Snapshot landen; die Edit-Kopien werden erst NACH editModeActive=false plus Sicherheits-Sweeps gelöscht (3.9.6 hatte den Loesch-Race: Null #ARENA#-Zeilen, weil der Reporter nie in der Session ankam). Der Server-Reporter druckt sofort eine #ARENA# hello-Zeile und danach Snapshots (Spieler, Charakter, Gesundheit; 0.5s/2s), der Client-Reporter den GUI-Baum mit Bildschirmkoordinaten. Ein Execute-Fehler "previous one is still in progress" bei EditModeActive=false bedeutet: bestehende Session nutzen, kein Fehler. arenaSpawn={x,y,z} via GetTestArgs ersetzt jeglichen Laufzeit-Teleport als Start; play_here setzt den Spawn automatisch aus der Edit-Kamera. Wiederholte gleiche play_start/play_stop innerhalb 3s werden dedupliziert.';
-            params = @{ mode = @{ type = "'play'|'play_here'|'run'"; required = $false; default = "'play'"; description = 'play = echt mit Charakter; play_here = Start an der Edit-Kamera; run = nur Physik/Server-Skripte ohne Player.' }; arenaSpawn = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Start-Teleport via GetTestArgs; funktioniert auch ohne HTTP.' }; reporterVariant = @{ type = 'int'; required = $false; default = '2'; description = '2 = normal/klon-sicher (Standard); 1 = Archivable=false-Diagnose-Sonde (3.9.6-Verhalten, kam nie in der Session an).' } };
-            returns = '{ state, requestedMode, startMethod, startDiagnostics { editModeActiveBefore, editModeActiveAfter, serviceError, usedPath, sessionPlayers, reporterActive, reporterInjected, reporterSeenInOutput, reporterVariantUsed, agentMode, httpEnabled }, warnings }';
-            example = @{ mode = 'play' };
-            errors = @('PLAY_SERVICE_STUCK: Studio-Testdienst steckt fest; Roblox Studio neu starten.', 'LOGSTREAM_REPORTER_UNAVAILABLE: #ARENA#-Reporter ist noch nicht sichtbar; get_output lesen und kurz warten.', 'PLAY_NO_PLAYER: Play-Modus aktiv, aber kein Charakter.', 'PLAY_START_UNAVAILABLE: Diese Studio-Version kann keinen echten Play-Test aus einem Plugin starten.', 'PLAY_START_FAILED: Studio ist rechtzeitig nicht in den Testmodus gewechselt (einmal wiederholen, dann den Nutzer bitten).', 'STUDIO_TIMEOUT: Studio hat nicht geantwortet (Fenster nicht fokussiert? Dialog offen?).', 'SELF_TEST_DISABLED: Der Nutzer hat die Selbst-Tests deaktiviert - kein Fehler, bewusste Entscheidung.') })
-        $t.Add(@{ name = 'play_stop'; category = 'play'; summary = 'Test zuverlaessig stoppen (Place wird wiederhergestellt).';
-            description = 'Gestaffelter Stop (3.9.7): (1) Reporter-Befehl end_test an den Session-Reporter ueber den Befehlskanal - Prioritaet http-Agent (nur bei HttpEnabled=true), dann SharedTableRegistry (Cross-DM-Speicher), dann VirtualInputManager-Kombo Strg+Alt+Umschalt+E; der Reporter ruft StudioTestService:EndTest(stopped_by_arena_bridge) IM Session-Server-DataModel, dem einzigen Ort, an dem ExecutePlayModeAsync-Sessions zuverlaessig enden. (2) Fallback RunService:Stop() aus dem Edit-DataModel. (3) Wenn beides scheitert: sauberer Fehler PLAY_STOP_NEEDS_USER - der Nutzer soll selbst Stop (Shift+F5) druecken; NICHT in einer Schleife wiederholen. Danach muss editModeActive=true sein und ein sofortiger zweiter play_start muss wieder klappen (Zombie-Frei). startDiagnostics zeigt EditModeActive vorher/nachher, channelAttempts, Reporter, Playerzahl, Agentpfad und HTTP-Status.';
-            params = @{};
-            returns = '{ state, stopMethod (reporterEndTest | editRunServiceStop), startDiagnostics { editModeActiveBefore, editModeActiveAfter, serviceError, channelAttempts, sessionPlayers, reporterActive, reporterSeenInOutput, agentMode, httpEnabled }, note }';
-            example = @{};
-            errors = @('PLAY_STOP_NEEDS_USER: Weder Reporter-Kanal noch RunService:Stop() haben gegriffen - Nutzer bitten, selbst Stop (Shift+F5) zu druecken (userMessage liegt bei). session_diag > channels zeigt, welcher Befehlsweg verfuegbar war. Nicht in einer Schleife wiederholen.') })
-        $t.Add(@{ name = 'session_diag'; category = 'play'; summary = 'Live-Diagnose: Reporter, Befehlskanaele, Output-Cursor (read-only, jederzeit aufrufbar).';
-            description = 'Liefert die komplette Session-Wahrheit ohne Raten: editModeActive/IsRunning/testSessionActive, reporter { active, seenInOutput, arenaLineCount, lastKind, lastAgeSeconds, loopCount, postFailCount, lastLoopError (4.0.3: Schleifenzaehler/Post-Fehlerzaehler/letzter Fehler der Session-Reporter-Schleife - loopCount steigt, solange sie gesund laeuft), variantInjected (2=klon-sicher, 1=Archivable=false-Sonde), variantInSession }, channels { httpConnected, sharedTableAvailable, sharedTableCrossDm (Live-Probe mit Echo), vimAvailable, vimCommandsSeen }, Output-Cursor und Fehler-/Warnungszaehler plus den kompletten play_status. Bei JEDEM Playtest-Problem ZUERST session_diag lesen und dann get_output filter="ARENA". skipProbe=true laesst die 2.5s-SharedTable-Sonde weg.';
-            params = @{ skipProbe = @{ type = 'bool'; required = $false; default = 'false'; description = 'true = keine SharedTable-Live-Sonde (schnellere Antwort).' } };
-            returns = '{ editModeActive, editPluginIsRunning, testSessionActive, sessionPlayers, reporterActive, reporterSeenInOutput, arenaLineCount, lastArenaKind, lastArenaAgeSeconds, reporterLoopCount, reporter, channels, sharedTableProbe, outputCursor, outputErrorCount, outputWarningCount, lastArenaRaw, vimCommandsSeen, state }';
-            example = @{};
-            errors = @() })
-        $t.Add(@{ name = 'report_done'; category = 'session'; summary = 'Eine kurze, lebendige Windows-11-Mitteilung senden.';
+                                        $t.Add(@{ name = 'report_done'; category = 'session'; summary = 'Eine kurze, lebendige Windows-11-Mitteilung senden.';
             description = 'Als letzten Call verwenden, wenn die Arbeit fertig ist. Arena schreibt SELBST einen aussagekraeftigen Titel und einen natuerlichen, einladenden Inhalt – keine trockene Liste. Verlaessliches Windows-11-Anzeigebudget: Titel maximal 70 Zeichen, Inhalt maximal 140 Zeichen. Microsoft definiert fuer ToastGeneric keine feste Zeichenobergrenze pro Feld; die sichtbare Menge haengt von Breite, Skalierung und Layout ab. Deshalb erzwingt die Bridge diese konservativen Vollanzeige-Grenzen. Gute Form: Titel="✅ Arena hat den Lauf-Bug behoben!", message="Der Lauf-Bug ist weg – komm ins Spiel und probiere es aus!".';
             params = @{ title = @{ type = 'string'; required = $true; default = '-'; description = 'Von Arena formulierter lebendiger Titel, maximal 70 Zeichen.' }; message = @{ type = 'string'; required = $true; default = '-'; description = 'Ein natuerlicher, einladender Satz, maximal 140 Zeichen; keine Auflistung.' } };
             returns = '{ delivered, title, message, limits: { titleCharacters=70, messageCharacters=140 } }';
             example = @{ title = '✅ Arena hat den Lauf-Bug behoben!'; message = 'Der Lauf-Bug ist weg – komm ins Spiel und probiere es aus!' };
             errors = @('NOTIFICATIONS_DISABLED', 'BAD_ARGS: title/message fehlen oder ueberschreiten 70/140 Zeichen.') })
-        $t.Add(@{ name = 'play_pause'; category = 'play'; summary = 'Simulation pausieren.';
-            description = 'Bleibt stehen, aber laeuft weiter (State bleibt erhalten). Im Run-Modus nur Physik, im Play-Modus auch der Charakter.';
-            params = @{};
-            example = @{};
-            returns = '{ paused, state }';
-            errors = @('PLAY_NOT_RUNNING') })
-        $t.Add(@{ name = 'play_resume'; category = 'play'; summary = 'Simulation fortsetzen.';
-            description = 'Setzt eine pausierte Simulation (play_pause) wieder in Gang.';
-            params = @{};
-            example = @{};
-            returns = '{ resumed, state }';
-            errors = @() })
-        $t.Add(@{ name = 'set_context'; category = 'play'; summary = 'Seite wechseln: server oder client.';
+                        $t.Add(@{ name = 'set_context'; category = 'session'; summary = 'Seite wechseln: server oder client.';
             description = 'Bestimmt, welche Seite Laufzeit-Werkzeuge (run_lua) treffen. run_lua selbst laeuft IMMER nur auf der Server/Seite - fuer den Client die client_-Werkzeuge.';
             params = @{ context = @{ type = "'server'|'client'"; required = $true; default = '-'; description = '' } };
             returns = '{ context, note }';
             example = @{ context = 'client' };
             errors = @('BAD_ARGS: context muss server oder client sein.') })
-        $t.Add(@{ name = 'character_state'; category = 'play'; summary = 'Charakter: Position, Gesundheit, Zustand.';
-            params = @{};
-            returns = '{ hasCharacter, player, position, cframe, health, maxHealth, walkSpeed, jumpPower, state }';
-            example = @{};
-            errors = @('PLAY_NOT_RUNNING', 'NO_PLAYER: mode="run" hat keinen Charakter - play_start mit mode="play".', 'REPORTER_NOT_CONNECTED: Session aktiv, aber Reporter noch nie im Output gesehen - sessionDiag liegt bei, session_diag + get_output filter="ARENA" lesen.') })
-        $t.Add(@{ name = 'move_character'; category = 'play'; summary = 'Charakter bewegen (ueber den Session-Reporter im Test-DataModel).';
-            description = '4.0.2: VirtualInputManager:SendKeyEvent wirft aus dem Edit-Plugin gegen die getrennte Session-DataModel jetzt "lacking capability RobloxScript" - Tastensimulation ueber die DataModel-Grenze ist tot. move_character schickt keys/direction (W/A/S/D/Space) und duration deshalb als Befehl ueber den Session-Reporter-Kanal (sessionPlugin/http/sharedTable); der Reporter bewegt den Charakter IM Session-DataModel per Humanoid:Move und liefert positionBefore/positionAfter aus seinem eigenen Snapshot zurueck. Laeuft der Test ausnahmsweise im SELBEN DataModel (klassisches F5 ohne getrennte Session), wird weiterhin direkt per VirtualInputManager gesteuert.';
-            params = @{ keys = @{ type = 'string[]'; required = $true; default = '-'; description = "z.B. ['W'] oder ['A','W']; echte Tasten." }; duration = @{ type = 'number'; required = $false; default = '1'; description = 'Bewegungsdauer in Sekunden.' }; shift = @{ type = 'bool'; required = $false; default = 'false'; description = 'Nur im Same-DataModel-Fallback: beim Gehen Shift gedrueckt halten.' } };
-            returns = '{ keys, duration, via, positionBefore, positionAfter, agentMode }';
-            example = @{ keys = @('W'); duration = 1 };
-            errors = @('INPUT_REQUIRED: keys/direction ist Pflicht.', 'REPORTER_NOT_CONNECTED: kein Befehlskanal in die Session hat geantwortet.', 'RUNTIME_ERROR') })
-        $t.Add(@{ name = 'teleport_character'; category = 'play'; summary = 'Charakter zur Laufzeit teleportieren (ueber den Befehlskanal in die Session).';
-            description = '3.9.7: Der Befehl geht ueber den Cross-DM-Kanal (http-Agent, SharedTableRegistry, in dieser Reihenfolge) an den Session-Reporter, der den Charakter IM Session-DataModel per PivotTo setzt - funktioniert mit httpEnabled=false, solange ein Kanal antwortet. Ohne Kanal bleibt play_start { mode="play", arenaSpawn={x,y,z} } (GetTestArgs vor dem Spawn) der einzige Weg.';
-            params = @{ position = @{ type = '{x,y,z}'; required = $true; default = '-'; description = 'Zielposition.' } };
-            returns = '{ teleported, via (http|sharedTable), position }';
-            example = @{ position = @{ x = 0; y = 10; z = 0 } };
-            errors = @('START_ONLY_TELEPORT: Kein Test aktiv - play_start mit arenaSpawn nutzen.', 'BAD_ARGS: position fehlt.', 'REPORTER_NOT_CONNECTED: Kein Befehlskanal antwortete.', 'NO_PLAYER: Kein Charakter in der Session.') })
-        $t.Add(@{ name = 'respawn_character'; category = 'play'; summary = 'Charakter neu laden.';
-            description = 'Killt und neu-spawnt den Test-Player (nach Crashes oder festgefahrenem Avatar). Nur im Play-Modus. 3.9.7: bei getrennter Session geht der Befehl ueber den Befehlskanal an den Session-Reporter (http, SharedTable, VIM-Kombo Strg+Alt+Umschalt+R).';
-            params = @{};
-            example = @{};
-            returns = '{ respawned, via (http|sharedTable|vim|direct) }';
-            errors = @('PLAY_NOT_RUNNING', 'NO_PLAYER', 'REPORTER_NOT_CONNECTED: kein Befehlskanal antwortete - session_diag lesen.') })
-        $t.Add(@{ name = 'wait'; category = 'play'; summary = 'Im Place warten + Output mitlesen.';
+                                        $t.Add(@{ name = 'wait'; category = 'session'; summary = 'Im Place warten + Output mitlesen.';
             params = @{ seconds = @{ type = 'number'; required = $false; default = '1'; description = 'max 60.' } };
             returns = '{ waited, output: [...] }';
             example = @{ seconds = 2 };
             errors = @() })
 
         # ---------------- GUI / CLIENT ----------------
-        $t.Add(@{ name = 'gui_dump'; category = 'gui'; summary = 'ALLE GUI-Elemente des Players.';
-            description = 'Jedes GuiObject mit Position, Groesse, Text, Sichtbarkeit und Klickrarigkeit (viewport-Koordinaten, mit GUI-Inset korrigiert). Damit ist "wird mein HUD angezeigt?" endlich beantwortbar.';
-            params = @{ limit = @{ type = 'int'; required = $false; default = '200'; description = 'max 600.' } };
-            returns = '{ items: [ { name, className, path, text, visible, clickable, x, y, width, height, centerX, centerY } ] }';
-            example = @{ limit = 100 };
-            errors = @('PLAY_NOT_RUNNING: nur waehrend eines Tests.', 'NO_PLAYER', 'STUDIO_TIMEOUT: Client-Agent laedt noch.') })
-        $t.Add(@{ name = 'gui_check'; category = 'gui'; summary = 'GUI-Test: Elemente finden + erwartete Werte pruefen.';
-            description = 'Fuehrt gui_dump einmal aus und prueft jede Check: gefunden? sichtbar? Text richtig? Das ist der "erwartete Ergebnis"-Check fuer das GUI-Test-Harness. allPassed zusammenfaessend.';
-            params = @{ checks = @{ type = 'array'; required = $true; default = '-'; description = '[ { query, expectVisible?, expectText?, expectTextContains?, expectMissing? } ].' }; limit = @{ type = 'int'; required = $false; default = '400'; description = '' } };
-            returns = '{ checks: [ { query, found, element?, pass_visible?, pass_text?, passed, reason? } ], allPassed, guiCount }';
-            example = @{ checks = @(@{ query = 'HealthBar'; expectVisible = $true }, @{ query = 'ScoreLabel'; expectTextContains = '100' }) };
-            errors = @('PLAY_NOT_RUNNING', 'NO_PLAYER') })
-        $t.Add(@{ name = 'gui_click'; category = 'gui'; summary = 'GUI-Element WIRKLICH anklicken (mit Ergebnis-Check).';
-            description = 'Findet das Element (Name/Text/Pfad), schickt einen echten Maus-Klick in die Mitte und gibt die folgende Output-Zeilen zurueck. Mit expect=... wird NACH dem Klick automatisch geprueft, ob das erwartete Element/Text da ist (expectationMet).';
-            params = @{ query = @{ type = 'string'; required = $true; default = '-'; description = 'Name/Text/Pfad-Ausschnitt des Elements.' }; holdSeconds = @{ type = 'number'; required = $false; default = '0.06'; description = 'Klick-Haltedauer.' }; settleSeconds = @{ type = 'number'; required = $false; default = '0.35'; description = 'Warten nach dem Klick.' }; expect = @{ type = '{ query, textContains?, text?, visible? }'; required = $false; default = 'null'; description = 'Erwartetes Ergebnis (wird geprueft).' }; waitSeconds = @{ type = 'number'; required = $false; default = '1.5'; description = 'Warten vor der Erwartungs-Pruefung.' } };
-            returns = '{ clicked: { element... }, outputAfterClick, expectationMet?, expectation? }';
-            example = @{ query = 'PlayButton'; expect = @{ query = 'ResultLabel'; textContains = 'Won' } };
-            errors = @('PLAY_NOT_RUNNING', 'NO_PLAYER', 'REF_NOT_FOUND: Element nicht gefunden (gui_dump zeigt was da ist).', 'GUI_HIDDEN: Element nicht sichtbar.') })
-        $t.Add(@{ name = 'gui_set_text'; category = 'gui'; summary = 'In ein TextBox schreiben.';
-            params = @{ query = @{ type = 'string'; required = $true; default = '-'; description = '' }; text = @{ type = 'string'; required = $true; default = '-'; description = '' } };
-            returns = '{ ok, path }';
-            example = @{ query = 'NameBox'; text = 'Hello' };
-            errors = @('PLAY_NOT_RUNNING', 'NO_PLAYER', 'REF_NOT_FOUND') })
-        $t.Add(@{ name = 'send_input'; category = 'gui'; summary = 'Roh-Eingabe: Tasten + Maus.';
-            description = 'Sendet echte Tastatur/Maus-Eingaben an den laufenden Test (VirtualInputManager). Der Client-Agent merkt sich die Fenster, damit nicht mit "User klickt" verwechselt wird.';
-            params = @{ keys = @{ type = 'string[]'; required = $false; default = 'null'; description = 'z.B. ["Space"] oder [{key="W", duration=1, modifiers=["LeftShift"]}]' }; click = @{ type = '{ x, y, button?, hold? }'; required = $false; default = 'null'; description = 'Mausklick in Viewport-Koordinaten.' }; duration = @{ type = 'number'; required = $false; default = '0.1'; description = 'Standard-Haltedauer.' }; modifiers = @{ type = 'string[]'; required = $false; default = 'null'; description = '' }; settleSeconds = @{ type = 'number'; required = $false; default = '0.2'; description = '' } };
-            returns = '{ sent: [ { key|click, ok, error? } ], output }';
-            example = @{ keys = @('Space'); click = @{ x = 400; y = 300 } };
-            errors = @('BAD_ARGS: keys oder click angeben.', 'RUNTIME_ERROR: VirtualInputManager nicht verfuegbar.') })
-        $t.Add(@{ name = 'client_action'; category = 'gui'; summary = 'Niedrigebenen-Client-Zugriff.';
-            description = 'Direkter Zugriff auf den Client-Agent: state (Player/Kamera/GUI-Inset), gui_dump, gui_find, set_text, move, jump, camera (position+lookAt), ping. Fuer alles, was gui_* nicht direkt abdeckt.';
-            params = @{ action = @{ type = 'string'; required = $true; default = '-'; description = 'state, gui_dump, gui_find, set_text, move, jump, camera, ping.' }; args = @{ type = 'table'; required = $false; default = '{}'; description = 'z.B. camera: { position={x,y,z}, lookAt={x,y,z} }.' }; timeoutSeconds = @{ type = 'number'; required = $false; default = '8'; description = '' } };
-            returns = 'abhaengig von action (immer ok=true + Inhalt)';
-            example = @{ action = 'camera'; args = @{ position = @{ x = 0; y = 20; z = 30 }; lookAt = @{ x = 0; y = 5; z = 0 } } };
-            errors = @('PLAY_NOT_RUNNING', 'NO_PLAYER', 'STUDIO_TIMEOUT: Agent antwortet nicht.') })
-        $t.Add(@{ name = 'set_camera'; category = 'gui'; summary = 'Kamera setzen (Position + Blickziel).';
-            description = 'Setzt die Player-Kamera (Scriptable) auf position und blickt auf lookAt. Kurzform fuer client_action camera.';
-            params = @{ position = @{ type = '{x,y,z}'; required = $true; default = '-'; description = '' }; lookAt = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Ziel des Blicks.' } };
-            returns = '{ ok }';
-            example = @{ position = @{ x = 0; y = 20; z = 30 }; lookAt = @{ x = 0; y = 5; z = 0 } };
-            errors = @('PLAY_NOT_RUNNING', 'NO_PLAYER') })
+                                                        
+
+        # ---------------- SIMULATION (Run im Editor) ----------------
+        $t.Add(@{ name = 'sim_start'; category = 'sim'; summary = 'Editor-Simulation (Run) starten: Skripte + Physik, ohne Spieler, ohne Client.';
+            description = 'Startet den Run-Modus ueber StudioTestService:ExecuteRunModeAsync in task.spawn; ERFOLG ist ausschliesslich der Wechsel von StudioTestService.EditModeActive true->false innerhalb von 25s (Fallback: F8). Es gibt KEINEN Spieler, KEINEN Charakter, KEINE Client-Skripte und keinen Playtest. Waehrend der Simulation blockiert die Bridge dauerhafte Aenderungen (SIM_RUNNING), bis sim_stop laeuft; bereits laufendeJobs laufen weiter. Antwort: { running, simMode, editModeActive, startedByBridge, playerCount:0, note }.';
+            params = @{ allowWhileUserPlaytest = @{ type = 'bool'; required = $false; default = 'false'; description = 'Nur fuer Sonderfaelle - USER_PLAYTEST_ACTIVE bleibt sonst hart.' } };
+            returns = '{ ok, state { running, mode="run", editModeActive, startedByBridge, simStartedAt, simAllowed } }';
+            example = @{};
+            errors = @('SIM_DISABLED: Der Nutzer hat Simulationen in der Bridge deaktiviert (bewusste Entscheidung, KEIN Fehler).', 'USER_PLAYTEST_ACTIVE: Der Nutzer testet gerade selbst - erst beenden lassen.', 'SIM_ALREADY_RUNNING', 'SIM_START_FAILED: Studio ist nicht rechtzeitig in den Run-Modus gewechselt.') })
+        $t.Add(@{ name = 'sim_stop'; category = 'sim'; summary = 'Editor-Simulation stoppen (Place wird wiederhergestellt).';
+            description = 'Stoppt die Simulation mit RunService:Stop() (Session-DataModel: StudioTestService) und wartet auf EditModeActive=true (12s). Fallback: F5 senden. Schlaegt das fehl, kommt SIM_STOP_NEEDS_USER mit userMessage - NICHT in einer Schleife wiederholen. Danach ist ein sofortiger zweiter sim_start wieder moeglich (Zombie-Frei).';
+            params = @{};
+            returns = '{ ok, state { running=false, editModeActive=true, stoppedByBridge } }';
+            example = @{};
+            errors = @('SIM_NOT_RUNNING: Es lief keine Simulation.', 'SIM_STOP_NEEDS_USER: Weder RunService:Stop() noch F5 haben gegriffen - den Nutzer bitten, selbst zu stoppen.') })
+        $t.Add(@{ name = 'sim_status'; category = 'sim'; summary = 'Laeuft eine Simulation? Ist Run erlaubt? (read-only, jederzeit)';
+            description = 'Liest den echten Zustand: StudioTestService.EditModeActive (verbindliches Orakel), RunService:IsRunning, startedByBridge/simStartedAt, playerCount (immer 0 - es gibt keinen Spieler mehr) und die Einstellung arenaSimAllowed. Kein Raten, keine Reporter-Snapshots.';
+            params = @{};
+            returns = '{ running, mode, editModeActive, runServiceRunning, startedByBridge, simStartedAt, simAllowed, playerCount, note }';
+            example = @{};
+            errors = @() })
 
         # ---------------- JOBS ----------------
         $t.Add(@{ name = 'start_job'; category = 'jobs'; summary = 'Arbeit im Hintergrund starten (keine 60s-Grenze).';
@@ -14798,17 +13510,26 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             importantRules = @(
                 'Choose the tools and workflow that best fit the task. The bridge exposes precise read, build, script, asset, playtest and batch tools; these are capabilities, not a mandatory checklist.',
                 'For polygon or freeform surface modelling, ALWAYS use build_polygon_model unless the user explicitly requires custom low-level WedgeParts: it works much like Blender polygon modelling while the bridge handles triangulation, side-corrected seamless Wedges, nested submodels, per-submodel Part properties, automatic hole caps and default-on WeldConstraints. NEVER set autoWeld=false unless the user explicitly asks for physically independent polygon pieces; otherwise unanchored Wedges can scatter and rotate separately. It can create one huge model (for example a tree split into trunk plus three crown folders) in a single call, including animatable main Welds between submodels. build_assembly is excellent for repeated modular construction. bulk_create, unions and normal tools remain freely mixable; use run_lua only for genuinely custom logic.',
-                'For ANY visual/GUI work, ALWAYS use build_interface (whole screen in one call) or build_surface unless the user explicitly asks for raw GuiObjects: the bridge owns AnchorPoint, Scale-only UDim2, aspect locking, corner-safe padding, layered shadows, scaled strokes, gradients on strokes, raster textures, CanvasGroup discipline and the runtime motion script. Call ui_capabilities first (it probes this Studio build instead of trusting training data), ui_skin to pick or extract an art direction, and ui_audit afterwards - it measures offsetRatio, contrast, per-device pixel sizes and a blandness score. See uiEngineRules below for the eight hard rules.',
+                'For ANY visual/GUI work, ALWAYS use build_interface (whole screen in one call) or build_surface unless the user explicitly asks for raw GuiObjects: the bridge owns AnchorPoint, Scale-only UDim2, aspect locking, corner-safe padding, layered shadows, scaled strokes, gradients on strokes, REAL raster textures, CanvasGroup discipline and the runtime motion script. Call ui_capabilities first (it probes this Studio build instead of trusting training data), ui_skin to pick or extract an art direction, ui_glow for glow (never hand-build it), ui_texture for the real-texture-first recipe, ui_radial for radial menus (one image id, both colours engine-owned), and ui_audit afterwards - it measures offsetRatio, contrast, per-device pixel sizes, glow/texture/radial usage and a blandness score. See uiEngineRules below for the hard rules.',
                 'Object ids such as #42 are stable within the current plugin session and avoid ambiguity when names repeat. Paths and selectors are also accepted where documented.',
                 'Several Places can be connected. With the Alle-Places token, GET /api/places returns targetPlace values; selecting one target keeps edits unambiguous.',
                 'GET and POST use the same bridge code path. Pick whichever transport your environment supports.',
                 'A timed-out Studio command keeps running and can return through _bridge.lateResults. Jobs are available when background progress is useful.',
                 'Asset search covers the Creator Store categories including 3D models, models, meshes/MeshParts, plugins, fonts, audio, images/decals, video and animation. Insertion still reports Roblox permission/privacy errors and warns before inserting scripts.',
-                'Playtest tools are available when the user setting permits them. A running test uses a temporary DataModel, so permanent edits are guarded until edit mode returns.',
+                'Editor simulations (sim_start) are available when the user setting permits them; they run in Run mode (scripts + physics, NO player, NO client scripts) and permanent edits are guarded until sim_stop returns to edit mode. A playtest started by the USER blocks building (USER_PLAYTEST_ACTIVE) and can only be ended by the user.',
                 'Windows finish notifications use report_done { title, message }. Arena writes a lively title (max 70 characters) and an inviting body (max 140); avoid dry changelog lists.',
                 'Responses include typed error codes and concrete diagnostics. Use those details to decide the next step.',
                 'HARD CONSTRAINT for any hand-written WedgePart/triangle geometry (build_polygon_model already does this correctly - this rule is for genuinely custom run_lua geometry code only): see polygonEngineRules below for the mandatory WedgePart axis convention and the canonical seamless-triangle formula. Getting the axis order wrong is the single most common cause of 90-degree rotation errors and gaping seams in procedural low-poly builds.'
             )
+            worldEngineRules = @{
+                title = 'World Engine 1.0 - the world is a place with rules, not a pile of parts'
+                workflow = 'site_survey (measure ground, water, clearance, existing parts) -> world_style (palette, materials, density, weathering, seed) -> style_lock -> build with prop_place / build_assembly / build_polygon_model / refine -> model_audit + world_audit. Never place a large build without the survey, never call it finished while model_audit reports placeholders.'
+                determinism = 'EVERY variation comes from the style seed (prop_place, refine, variation). The same seed must rebuild the same world - math.random is forbidden for anything a user could see twice.'
+                styleLock = 'A style lock turns measurement on: world_audit then reports styleCompliance, colour distance and off-style parts. Building without a style is allowed but measurably worse - that is the honest contract, not a hidden penalty.'
+                light = 'Light comes from world_glow (one engine-built light per part, clamped brightness/range). Never fake glow with stacked transparent spheres or dozens of flickering lights, and never leave a night scene without Atmosphere/Sky.'
+                phases = 'model_audit phases: blockout (placeholders/blockouts exist) -> modelled (clean geometry, no mesh/union yet) -> refined (ArenaDetail parts exist) -> polished (details + light + atmosphere). report_done is only honest in refined/polished; blockout means handoff or keep working.'
+                props = 'prop_save stores a selection under workspace.ArenaProps; prop_place clones it with deterministic variation and ground snap. Prefer saved props over rebuilding the same tree ten times by hand.'
+            }
             polygonEngineRules = @{
                 title = 'Polygon Engine 2.0 - canonical WedgePart rule (prevents 90-degree rotation errors and seam gaps forever)'
                 whenThisApplies = 'build_polygon_model already implements this correctly (longest-edge base, side-corrected inward skin offset, retry/fallback triangulation, vertex welding) - always STRONGLY prefer it for modelling. Only read on if you are writing bespoke geometry directly with run_lua/Instance.new("WedgePart") because the task needs logic the tool does not cover.'
@@ -14864,7 +13585,7 @@ end
 '@
             }
             uiEngineRules = @{
-                title = 'UI Engine 1.0 - canonical rules for every GUI (prevents the anchor/scale/corner/CanvasGroup bugs and the generic dark-dashboard look forever)'
+                title = 'UI Engine 2.0 - canonical rules for every GUI (anchor/scale/corner/CanvasGroup bugs, glow, real textures, radial menus and the generic dark-dashboard look)'
                 whenThisApplies = 'build_interface and build_surface already implement all of this correctly - ALWAYS strongly prefer them for anything visual, exactly like build_polygon_model for 3D. Only read the hard rules below if you are writing bespoke GUI code with run_lua/create_instance because the task truly needs logic the tools do not cover.'
                 theOneIdea = 'NO FRAME IS EVER JUST A FRAME. A surface is a compiled layer stack, never a single instance: shadow stack -> base fill + fill gradient -> tiled raster texture -> stroke stack (with a UIGradient INSIDE a UIStroke) -> sheen highlight -> corner profile -> padded content slot, all inside a transform wrapper. This is the 2D equivalent of the polygon rule that every surface is triangles of thin wedges.'
                 hardRules = @(
@@ -14875,7 +13596,10 @@ end
                     '5 GRADIENT PAIR: every surface carries at least TWO UIGradients at DIFFERENT rotations, and at least one of them is parented INTO a UIStroke, not the Frame. Animate the stroke gradient Rotation/Offset instead of tweening a fill colour. A UIGradient on a stroke is the cheapest way to make a UI look expensive and it is almost never used.',
                     '6 DEPTH: a filled surface has at least four layers (shadow, fill + gradient, raster texture, stroke stack). A bare filled Frame with one UICorner is the GUI equivalent of building a tree from a cylinder and a ball.',
                     '7 CANVASGROUP DISCIPLINE: use a CanvasGroup ONLY to fade or tint a whole subtree as one unit, or to clip rotated content. It ALWAYS clips (not optional), it requires ScreenGui.ZIndexBehavior = Sibling, it allocates an extra texture of AbsoluteSize.x * AbsoluteSize.y, it makes text blurry, and it gets down-ressed under texture memory pressure. Never nest CanvasGroups and never wrap a whole ScreenGui - nested groups blur badly as soon as AbsolutePosition is not a whole number. Keep shadows outside the clipping group. Otherwise use a plain Frame.',
-                    '8 SHADOW: use UIShadow with BlurRadius/Offset/Spread in SCALE so the shadow scales with the element, stack at least two (wide+soft ambient plus tight+dark contact), give them negative ZIndex, and make sure no ancestor clips them. UIShadow does not shadow text glyphs - only the rectangular bounds of the element.'
+                    '8 SHADOW: use UIShadow with BlurRadius/Offset/Spread in SCALE so the shadow scales with the element, stack at least two (wide+soft ambient plus tight+dark contact), give them negative ZIndex, and make sure no ancestor clips them. UIShadow does not shadow text glyphs - only the rectangular bounds of the element.',
+                    '9 GLOW BELONGS TO THE ENGINE: never hand-build glow as a chain of transparent Frames/Balls with stepped transparency. Call ui_glow (UI) or world_glow (3D light). Both build one reportable stack, use scale-only sizes and return what they made - if you need it stronger, raise strength/brightness instead of stacking more copies.',
+                    '10 REAL TEXTURES FIRST: ui_texture returns the honest recipe. With a real textureId the engine uses exactly that image (tile + tint); without one it falls back to a gradient and reports TEXTURE_ASSET_MISSING as a WARNING - a missing texture never fails a build, but it is never silently hidden either.',
+                    '11 RADIAL MENUS: build them with ui_radial from ONE image id. The ring colour AND the highlight colour come from the engine/skin; do not assemble a ring out of parts and do not pass both colours as separate images. No image id -> procedural fallback plus RADIAL_ASSET_MISSING warning.'
                 )
                 modernInstances = @(
                     'UIShadow: native 2D drop shadow. BlurRadius (UDim), Color, Transparency, Offset (UDim2), Spread (UDim2), ZIndex (negative only), Enabled. Scale values are a percentage of the parent. Multiple shadows per instance. No text glyph shadows, no inset shadows, no gradients or textures on the shadow itself.',
@@ -14979,16 +13703,15 @@ end
                 'SHAPE DEFAULTS (reported measured by coordinate_guide - never guess): Block = axis aligned. Ball = sphere. Cylinder = length axis is VERTICAL (Y), flat caps on top and bottom (so "the cylinder points up" by default). Wedge = a ramp: coordinate_guide tells you the exact high edge and slope direction.',
                 'WORKFLOW: coordinate_guide (once) -> describe_orientation (where do the faces point now?) -> point_at or rotate_around (with the measured axis) -> describe_orientation again to verify.'
             )
-            playModes = @{
-                edit = 'No test: everything you build is PERMANENT. This is where building and script editing happens. Editor simulations (compile_check for syntax, run_lua for pure logic) also run here - they need NO test session and stay available even when self-testing is disabled.'
-                run = 'Physics + server-script simulation IN THE EDITOR (Studio "Run", F8): the place runs as a server simulation. There is NO player, NO character, NO client and NO GUI. Use it for physics/server-logic tests. A tool answering "No player" in run mode is working as designed - switch to play for characters/GUI.'
-                play = 'Full game (Studio "Play", F5): separate session DataModel. play_start succeeds on editModeActive true->false, then #ARENA# LogStream reports real players, character position/health and GUI without HTTP. Use move_character keys+duration (4.0.2: executed as Humanoid:Move INSIDE the session by the session reporter, since VirtualInputManager:SendKeyEvent now lacks capability across the DataModel boundary), gui_click coordinates, teleport_character/respawn_character/set_camera over the command channel and play_stop (ladder: reporter EndTest over the channel, then edit RunService:Stop, else PLAY_STOP_NEEDS_USER = ask the user for Shift+F5).'
-                play_here = 'Play at the editor camera. Internally this is a play_start arenaSpawn passed through GetTestArgs to the Session Reporter, not a post-start teleport. For an explicit spawn use play_start { arenaSpawn={x,y,z} }.'
+            simulationModes = @{
+                edit = 'No simulation: everything you build is PERMANENT. Building and script editing happen here. compile_check and run_lua run in edit mode too - they need no simulation and stay available even when simulations are disabled.'
+                run = 'Editor simulation (sim_start, Studio "Run", F8): the place runs as a server simulation - scripts and physics only. There is NO player, NO character, NO client and NO GUI. Use get_output/get_errors to audit, then sim_stop. Permanent edits are blocked while it runs (SIM_RUNNING) unless allowInSimMode=true is passed for a throw-away change.'
+                userPlaytest = 'A playtest started by the USER (F5) is their own, temporary world. Since 7.0.0 the bridge has no play_start/play_stop and cannot end it: you stop working (USER_PLAYTEST_ACTIVE), ask the user to stop it (Shift+F5) and continue afterwards.'
             }
             userPresence = @(
                 'The user is a second person in Studio: they click around, move the camera, edit objects, start/stop playtests and play the game at any time.'
-                'You see their actions as events/notices: user_active (selection/camera in edit mode), user_rotating_camera, user_moving_character, user_clicked_gui (during a playtest), play_started / play_stopped with startedBy="user".'
-                'While _bridge.playtest / playtestWarning shows a USER playtest: either call play_stop (allowed - it also ends user tests) and continue in edit mode, or end your response and ask the user to let you work in peace.'
+                'You see their actions as events/notices: user_active (selection/camera in edit mode), user_rotating_camera, sim_started / sim_stopped with startedBy="user" when they use Run or Play themselves.'
+                'While _bridge.simulation / simulationWarning shows a USER playtest: you cannot stop it (there is no play_stop since 7.0.0). End your response and ask the user to stop the test (Shift+F5) or to let you know when Studio is free.'
                 'While _bridge.userWorking shows recent user activity in edit mode: re-read before overwriting, never undo their changes, and coordinate in chat.'
             )
             jobsGuide = @(
@@ -14999,24 +13722,18 @@ end
             )
             errorCodes = @{
                 STUDIO_TIMEOUT = 'HTTP call timed out, but the command is STILL RUNNING in Studio - nothing is lost. The next call waits for it automatically. Long work should use asJob=true.'
-                PLAY_MODE_ACTIVE = 'Building/editing is blocked while a test runs (changes are thrown away at stop). play_stop first, work, then play_start. allowInPlayMode=true for throw-away test changes.'
                 MULTI_PLACE_SELECTION_REQUIRED = 'This is an Alle-Places token. Call GET /api/places and repeat the request with one exact targetPlace.'
                 MULTI_PLACE_TARGET_NOT_FOUND = 'The aggregate target is disconnected, unknown or ambiguous. Refresh GET /api/places and choose one exact targetPlace.'
                 READONLY_TOKEN = 'This place is set to read-only in the bridge window. The user can switch it back.'
                 COMPILE_ERROR = 'Lua does not compile (line number included). Fix and check with compile_check before running.'
                 RUNTIME_ERROR = 'Lua ran and failed (message + context).'
-                NO_PLAYER = 'No player/character - you are probably in run mode. Use play_start mode="play".'
-                PLAY_NOT_RUNNING = 'A playtest tool was called while nothing is running.'
-                INPUT_REQUIRED = 'move_character in a separate session accepts real W/A/S/D/Space keys and duration, not MoveTo/position.'
-                START_ONLY_TELEPORT = 'No test running - play_start { arenaSpawn={x,y,z} } places the character before the test starts. During a session teleport_character travels the cross-DM command channel (sharedTable/http agent).'
-                REPORTER_NOT_CONNECTED = 'A session IS active but its #ARENA# reporter was never seen - the old No test running answer was simply wrong. The error carries sessionDiag; read it, call session_diag, then get_output filter ARENA. Fix: play_stop, then play_start again (reporterVariant=2 default); repeated failures mean the place or Studio blocks script injection - tell the user.'
-                PLAY_STOP_NEEDS_USER = 'Stop ladder exhausted: no reporter channel landed and edit RunService:Stop() was ignored. Do NOT retry play_stop in a loop - use the included German userMessage and ask the user to press Stop (Shift+F5) in Studio, then confirm editModeActive=true with session_diag.'
-                PLUGIN_OUTDATED = 'plugin outdated - Tests warten. Ask the user to restart Studio before play testing.'
-                PLAY_FALLBACK_RUN = 'The Studio Play shortcut could not be pressed, so Run mode started instead (no player) - try again with the Studio window focused.'
-                PLAY_START_UNAVAILABLE = 'This Studio version has no safe Play start API.'
-                PLAY_START_FAILED = 'Studio did not change editModeActive true->false within 20 seconds. Read startDiagnostics and #ARENA# output; do not guess.'
-                PLAY_STOP_FAILED = 'Studio still reports EditModeActive=false after edit RunService:Stop(). Read diagnostics/#ARENA# lines; restart Studio only if it is truly stuck.'
-                SELF_TEST_DISABLED = 'The user turned OFF "Arena darf sich selbst testen" in the bridge program. Run/Play/Play Here and all playtest tools are blocked ON PURPOSE - the bridge is NOT broken. Editor simulations (compile_check, run_lua) still work; the user runs the game tests.'
+                PLUGIN_OUTDATED = 'plugin outdated - simulations/version checks wait. Ask the user to restart Studio so the matching plugin loads.'
+                SIM_DISABLED = 'The user turned OFF "Arena darf Simulationen (Run) starten". ONLY sim_start is blocked - on purpose, the bridge is NOT broken. Building, GUIs, assets, jobs, compile_check and run_lua all keep working; if a simulation is truly needed, ask the user to enable the setting.'
+                SIM_RUNNING = 'An editor simulation (sim_start) is running; a permanent change was blocked because it would be thrown away at sim_stop. Call sim_stop first, or pass allowInSimMode=true for a deliberate throw-away change.'
+                SIM_ALREADY_RUNNING = 'A simulation is already running - use sim_status, audit with get_output/get_errors, then sim_stop.'
+                SIM_NOT_RUNNING = 'sim_stop was called while no simulation runs - nothing to do (not an error).'
+                SIM_START_FAILED = 'Studio did not switch into Run mode in time. Read sim_status and get_output; do not retry in a loop.'
+                SIM_STOP_NEEDS_USER = 'RunService:Stop() and the F5 fallback did not return Studio to edit mode. Do NOT retry in a loop - the answer carries a German userMessage: ask the user to stop the simulation (Shift+F5).'
                 NOTIFICATIONS_DISABLED = 'report_done is inactive: the user has not enabled finish notifications. Finish your answer normally and do not call report_done again.'
                 REF_NOT_FOUND = 'An id/path/selector could not be resolved (object deleted, or the plugin reloaded - get fresh ids with search/get_tree).'
                 BAD_ARGS = 'Arguments missing or invalid (the message says what exactly).'
@@ -15033,13 +13750,19 @@ end
                 CATALOG_TYPE_NOT_SUPPORTED = 'That asset type cannot be searched in the catalog (list of supported types included).'
                 JOB_NOT_FOUND = 'Unknown jobId (it may have been removed after job_result).'
                 JOB_RUNNING = 'The job is not finished yet - poll job_status and fetch the result later.'
+                PROP_NOT_FOUND = 'No saved prop with that name - prop_list shows what exists, prop_save stores the selection.'
+                PROP_EXISTS = 'A saved prop with that name exists. Pass overwrite=true or choose another name.'
+                NO_WORLD_STYLE = 'No world style is active - call world_style first, then style_lock. Building without a style is allowed but world_audit cannot measure compliance.'
+                CONTEXT_UNAVAILABLE = 'The client context is gone since 7.0.0 (no playtest, no client agent). run_lua always runs on the server side.'
+                TEXTURE_ASSET_MISSING = 'Warning, not an error: no real texture id was given, so the engine uses its gradient fallback and says so.'
+                RADIAL_ASSET_MISSING = 'Warning, not an error: no image id for the ring was given, so the engine builds the ring procedurally and says so.'
                 GEOMETRY_NOT_READY = 'Warning: new geometry was not immediately raycastable; verify_measurable waited for it (see geometry in the result).'
             }
             typedValues = 'Complex values are typed JSON: {"type":"Vector3","x":0,"y":5,"z":0}, {"type":"Color3","rgb":[255,0,0]}, {"type":"CFrame","position":{...},"orientation":{...}}, {"type":"EnumItem","enum":"Material","name":"Neon"}. Short forms work too: [0,5,0] for a Vector3, "Neon" for an enum, "#FF0000" for a colour, [255,0,0] for a Color3.'
             workflows = @{
                 buildSomething = @('Understand as much context as the task needs', 'Choose build_assembly / build_polygon_model / bulk_create / unions / regular tools', 'Optionally verify or select the result')
-                editAScript = @('search className=Script', 'get_script (note the hash)', 'patch_script with a unique snippet', 'compile_check the result', 'set/patch with expectHash', 'play_start mode=play', 'wait_for_output / get_errors', 'play_stop')
-                testAGame = @('play_status first (check _bridge.playtest - never build while a test runs)', 'play_start mode=play (waits for the character) or mode=play_here (start at the edit camera) - startDiagnostics.reporterSeenInOutput must be true', 'session_diag when anything looks odd (reporter, channels, output cursor)', 'character_state / move_character / set_camera', 'gui_dump -> gui_check -> gui_click with expect', 'get_output since=<cursor> / get_errors', 'play_stop (reporterEndTest preferred), then verify the result in edit mode')
+                editAScript = @('search className=Script', 'get_script (note the hash)', 'patch_script with a unique snippet', 'compile_check the result', 'set/patch with expectHash', 'get_output / get_errors')
+                testASimulation = @('sim_status first (check _bridge.simulation - never build persistently while a simulation runs)', 'sim_start - then get_output since=<cursor> for #ARENA#/print evidence', 'run_lua for pure logic or read tools for state', 'sim_stop (waits for edit mode), then audit the result in edit mode', 'remember: no player, no client scripts and no GUI testing - the user tests the game itself')
                 manyObjects = @('build_assembly for grouped linear/radial repetition', 'bulk_create or clone_instance for simple arrays', 'batch when combining independent operations')
                 longBuild = @('fill_region with asJob=true (or start_job)', 'job_status (progress + partsPerSecond)', 'job_result when done (geometry.ready included)', 'verify_measurable on a sample if in doubt')
                 rotationCorrect = @('coordinate_guide (once per session)', 'describe_orientation on the part', 'point_at (axis="top" for cylinder length) or rotate_around with measured axes', 'describe_orientation again to verify')
@@ -15105,14 +13828,36 @@ end
         $guides = Get-BridgeGuides
         foreach ($key in $guides.Keys) { $out[[string]$key] = $guides[$key] }
         # Version 3.8: Bridge-Einstellungen prominent unterbringen
-        $startSelfTest = $true
+        $startSim = $true
         $startNotify = $false
-        try { $startSelfTest = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
+        try { $startSim = [bool]$Shared.BridgeSettings.simAllowed } catch {}
         try { $startNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
-        $out.selfTestAllowed = $startSelfTest
+        $out.simAllowed = $startSim
         $out.notifyWhenDone = $startNotify
-        if (-not $startSelfTest) {
-            $out.selfTestNotice = 'IMPORTANT: the user DISABLED AI self-testing in the Arena Roblox Bridge program ("Arena darf sich selbst testen" = OFF). Every play tool (play_start / play_stop / ...) will answer SELF_TEST_DISABLED ON PURPOSE - the bridge is NOT broken. Use the editor simulations (compile_check, run_lua in edit mode) and ask the user to run the game tests themselves.'
+        # Version 7.0.0: Fortschrittsvertrag + Qualitaetsvertrag gehoeren in
+        # JEDE Sitzung - kurz, hart, maschinenlesbar.
+        $out.progressContract = @{
+            field = 'Every API call carries progress = { percent = 43, message = "kurze, konkrete Nachricht" } on the same level as token/targetPlace/tool. Inside args works too: the bridge pulls it out and NEVER forwards it to the plugin.'
+            missing = 'A missing percent is 0 percent (the normal case on the first call) and is NEVER an error - a missing progress field must never block building.'
+            last = 'The last call of a completed task is report_done; it fills in 100 itself and marks "Automatisch gesetzt".'
+            display = 'The bridge shows percent + message in the place row (blue = working, green = done only after report_done, grey = waiting/no feedback for ~2 minutes, red = error). Every message is logged in the Arena history and in places-diagnose.txt.'
+            rewind = 'Rewinds are allowed. From more than 20 points of drop the row says "neuer Versuch".'
+        }
+        $out.qualityContract = @(
+            'No turn has to end with "done". It ends with report_done OR with a handoff - both are complete finishes.',
+            'Classify first: single object, scene, or full game. The class decides the minimum depth.',
+            'Single object and scene (including decoration and animations): no shortcuts, finished completely in this session - polygons, refinement, audit.',
+            'Only a full game gets stages: deliver stage 1 completely, then hand off; never hand off in the middle of a stage.',
+            'Never claim "done" while placeholders, blockouts or open audit points exist.',
+            'Good is the standard, not a luxury. If time is short, build less - not worse.'
+        )
+        $handoffJson = ''
+        if ($Shared.Handoffs.TryGetValue([string]$sessionId, [ref]$handoffJson) -and -not [string]::IsNullOrWhiteSpace($handoffJson)) {
+            $out.previousHandoff = $handoffJson | ConvertFrom-Json
+            $out.previousHandoffNote = 'A handoff from an earlier session exists for this place. Continue from it instead of starting over - it is already included here, nothing needs to be copied.'
+        }
+        if (-not $startSim) {
+            $out.simNotice = 'IMPORTANT: the user DISABLED editor simulations ("Arena darf Simulationen (Run) starten" = OFF). Every sim_ tool answers SIM_DISABLED ON PURPOSE - the bridge is NOT broken. Keep building and auditing in edit mode.'
         }
         if ($startNotify) {
             $out.finishNotification = 'FINISH NOTIFICATION IS ON: when ALL your changes are complete and you are about to end your answer, call report_done { title, message } as your VERY LAST tool call - the user receives a Windows notification with your German message (e.g. title="✅ Arena hat den Bug behoben!", message="Der Fehler ist weg – komm und teste das Spiel!"). After that call: no more tools, no more changes - end your answer immediately.'
@@ -15131,13 +13876,16 @@ end
             $toolIndex.Add(@{ name = $d.name; category = $d.category; description = $d.summary })
         }
         $guides = Get-BridgeGuides
-        $manifestSelfTest = $true
+        $manifestSim = $true
         $manifestNotify = $false
-        try { $manifestSelfTest = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
+        try { $manifestSim = [bool]$Shared.BridgeSettings.simAllowed } catch {}
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '6.2.0'
+            version = '7.0.0'
+            progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
+            simulation = 'Only the editor simulation exists (sim_start / sim_stop / sim_status - Run mode: scripts and physics, no player, no client scripts, no playtest). A user-started playtest still blocks work with USER_PLAYTEST_ACTIVE.'
+            handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
             docsVersion = [string]$Shared.DocsVersion
             role = 'A normal token controls exactly one live Roblox Studio place. The special aggregate token copied from Alle Places controls several places: call GET /api/places first and pass one exact targetPlace in every request; the bridge refuses to guess. This makes switching safe and explicit. Send every request as POST /api/tool with JSON body { "token": "...", "targetPlace": "...", "tool": "...", "args": { ... } }.'
             firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
@@ -15165,9 +13913,9 @@ end
             toolsIndex = $toolIndex
             tools = $docs
             settings = @{
-                selfTestAllowed = $manifestSelfTest
+                simAllowed = $manifestSim
                 notifyOnDone = $manifestNotify
-                settingsNote = 'selfTestAllowed=false: the user disabled AI self-testing - play tools answer SELF_TEST_DISABLED by design (the bridge is NOT broken; use editor simulations and let the user test). notifyOnDone=true: call report_done { title, message } as your very last action when everything is done.'
+                settingsNote = 'simAllowed=false: the user disabled editor simulations (Run) - ONLY sim_start answers SIM_DISABLED by design (the bridge is NOT broken; building, GUIs, assets and jobs keep working). notifyOnDone=true: call report_done { title, message } as your very last action when everything is done.'
             }
         }
         foreach ($key in $guides.Keys) { $manifest[[string]$key] = $guides[$key] }
@@ -15247,19 +13995,32 @@ end
         $entry = Get-SessionEntry $sessionId
         $events = Take-Events $sessionId 12
         # Version 3.8: Bridge-Einstellungen (Selbst-Tests / Fertig-Meldung)
-        $selfTestAllowed = $true
+        $simAllowed = $true
         $notifyOnDone = $false
-        try { $selfTestAllowed = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
+        try { $simAllowed = [bool]$Shared.BridgeSettings.simAllowed } catch {}
         try { $notifyOnDone = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
+        $progressJson = ''
+        $progressView = $null
+        if ($Shared.ProgressStates.TryGetValue([string]$sessionId, [ref]$progressJson) -and -not [string]::IsNullOrWhiteSpace($progressJson)) {
+            try { $progressView = $progressJson | ConvertFrom-Json } catch {}
+        }
         $envelope = @{
-            bridgeVersion = '6.2.0'
+            bridgeVersion = '7.0.0'
+            progressContract = @{
+                rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent = 0, never an error. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
+                lastPercent = $(if ($progressView) { [double]$progressView.percent } else { 0 })
+                lastMessage = $(if ($progressView) { [string]$progressView.message } else { '' })
+                state = $(if ($progressView) { [string]$progressView.state } else { 'idle' })
+                callsWithProgress = $(if ($progressView) { [int]$progressView.callsWithProgress } else { 0 })
+                callsTotal = $(if ($progressView) { [int]$progressView.calls } else { 0 })
+            }
             place         = if ($entry) { $entry.placeName } else { $null }
             sessionId     = $sessionId
             studio        = if ($entry) { $entry.state } else { $null }
             serverTime    = (Get-Date).ToString('u')
             docsVersion   = [string]$Shared.DocsVersion
             bridgeSettings = @{
-                selfTestAllowed = $selfTestAllowed
+                simAllowed = $simAllowed
                 notifyOnDone    = $notifyOnDone
             }
             docs          = 'Full tool documentation (parameters, types, defaults, returns, examples, error codes): GET /api/docs, or ?tool=<name>, or ?category=<name>. It was also delivered automatically with the first tool call of this session (_sessionStart).'
@@ -15276,22 +14037,22 @@ end
                 code = 'PLUGIN_OUTDATED'
                 pluginVersion = [string]$entry.pluginVersion
                 bridgeVersion = [string]$Shared.DocsVersion
-                message = 'plugin outdated - Tests warten. Tell the user to restart Roblox Studio; do not diagnose a Play failure until versions match.'
+                message = 'plugin outdated - simulations and version checks wait. Tell the user to restart Roblox Studio so the matching plugin loads; do not diagnose a simulation failure until the versions match.'
                 userHint = 'Studio neu starten: Das Studio-Plugin ist aelter als die Bridge. Playtests warten bis zum Neustart.'
             }
-            if ($envelope.attention) { $envelope.attention += ' plugin outdated - Tests warten; Studio neu starten.' } else { $envelope.attention = 'plugin outdated - Tests warten; Studio neu starten.' }
+            if ($envelope.attention) { $envelope.attention += ' plugin outdated - Simulationen warten; Studio neu starten.' } else { $envelope.attention = 'plugin outdated - Simulationen warten; Studio neu starten.' }
         }
         # Version 3.8: Hat der Nutzer die Selbst-Tests AUSgeschaltet, steht das
         # hier deutlich dabei - die KI soll wissen, dass das Absicht ist und
         # die Bridge NICHT kaputt ist.
-        if (-not $selfTestAllowed) {
+        if (-not $simAllowed) {
             $envelope.selfTestDisabled = @{
-                code = 'SELF_TEST_DISABLED'
+                code = 'SIM_DISABLED'
                 message = 'The user turned OFF AI self-testing in the Arena Roblox Bridge program (setting "Arena darf sich selbst testen" = OFF). Run, Play and Play Here are unavailable for you ON PURPOSE.'
                 whatThisMeans = 'This is NOT a bug and the bridge is NOT broken. The user wants to run game tests themselves.'
                 whatStillWorks = 'Editor simulations still work: compile_check (syntax), run_lua (pure Lua logic in the edit place), get_output / get_errors, and all reading/building tools.'
             }
-            $envelope.attention = 'SELF-TESTING IS DISABLED BY THE USER: play tools answer SELF_TEST_DISABLED by design - do not retry them and do not think the bridge is broken. Use editor simulations (compile_check / run_lua) and let the user test the game.'
+            $envelope.attention = 'SELF-TESTING IS DISABLED BY THE USER: play tools answer SIM_DISABLED by design - do not retry them and do not think the bridge is broken. Use editor simulations (compile_check / run_lua) and let the user test the game.'
         }
         # Version 3.8: Fertig-Meldung aktiv? In JEDER Antwort deutlich daran
         # erinnern, report_done als ALLERLETZTE Aktion zu rufen.
@@ -15310,26 +14071,27 @@ end
         if ($entry -and $entry.state -and [bool]$entry.state.running) {
             $testMode = [string]$entry.state.mode
             if ([bool]$entry.state.userPlaytestActive) {
-                $envelope.playtestWarning = @{
+                $envelope.simulationWarning = @{
                     severity = 'critical'
                     code = 'USER_PLAYTEST_ACTIVE'
                     assistantAction = 'STOP_OR_YIELD'
                     mode = $testMode
-                    message = "Roblox Studio is in $testMode mode and the user started (or is using) this playtest. Do not make persistent edits."
+                    message = "Roblox Studio is in $testMode mode and the USER started this playtest. Do not make persistent edits."
                     options = @(
-                        'Call play_stop yourself - that is allowed and also ends user-started tests - then continue your work in edit mode.'
-                        'If the user is actively playing right now (user_moving_character / user_active events), end your response instead and tell them you cannot work safely in parallel - ask them to let you work in peace.'
+                        'There is no play_stop tool any more: the bridge cannot and must not stop the user playtest for you.'
+                        'End your response and ask the user to stop the test (Shift+F5) or to tell you when Studio is free again.'
+                        'Reading tools and sim_status stay available; building waits.'
                     )
-                    userRequest = 'Tell the user you can see the active playtest. Either you stop it (play_stop) or they let you work in peace and message you when Studio is free.'
+                    userRequest = 'Tell the user you can see their active playtest, that you cannot build while it runs, and ask them to stop it or to message you when Studio is free.'
                 }
-                $envelope.playtest = $envelope.playtestWarning
-                $critNote = 'CRITICAL PLAYTEST NOTICE: the user is testing/playing right now. Either call play_stop (allowed) and continue in edit mode, or end your response and ask the user to let you work in peace. Do not make persistent edits while the test runs.'
+                $envelope.simulation = $envelope.simulationWarning
+                $critNote = 'CRITICAL PLAYTEST NOTICE: the USER is testing/playing right now. You cannot stop it (no play_stop since 7.0.0): end your response and ask the user to stop the test or to tell you when Studio is free. Do not make persistent edits while the test runs.'
                 if ($envelope.attention) { $envelope.attention = $envelope.attention + ' ' + $critNote } else { $envelope.attention = $critNote }
             } else {
-                $envelope.playtest = @{
+                $envelope.simulation = @{
                     mode = $testMode
                     startedBy = 'assistant (you)'
-                    message = "Your own $testMode test is running. Persistent edits stay blocked until play_stop. Use the character / GUI / output tools for testing now, then play_stop before building again."
+                    message = "Your own $testMode simulation is running. Persistent edits stay blocked until sim_stop. Audit the result with get_output / get_errors, then call sim_stop before building again."
                 }
             }
         }
@@ -15402,6 +14164,7 @@ end
                 }
             }
             'capture_screenshot' { return (Invoke-Screenshot $toolArgs) }
+            'handoff'            { return (Invoke-HandoffWrite $sessionId $toolArgs) }
             'get_chunk' {
                 $index = 1
                 if ($toolArgs.index) { $index = [int]$toolArgs.index }
@@ -15432,6 +14195,34 @@ end
                 }
             }
             'report_done' {
+                # Version 7.0.0: report_done setzt fehlende 100 selbst und
+                # vermerkt "Automatisch gesetzt". Platzhalter/Blockouts im Place
+                # verwandeln ein "fertig" in HANDOFF_REQUIRED.
+                try {
+                    $auditJson = ''
+                    if ($Shared.AuditFlags.TryGetValue([string]$sessionId, [ref]$auditJson) -and -not [string]::IsNullOrWhiteSpace($auditJson)) {
+                        $audit = $auditJson | ConvertFrom-Json
+                        if ([int]$audit.placeholderCount -gt 0) {
+                            $handoffState = ''
+                            [void]$Shared.Handoffs.TryGetValue([string]$sessionId, [ref]$handoffState)
+                            if ([string]::IsNullOrWhiteSpace($handoffState)) {
+                                return @{
+                                    ok = $false
+                                    code = 'HANDOFF_REQUIRED'
+                                    error = ('This place still contains ' + [string]$audit.placeholderCount + ' marked placeholder(s). Do not report "done" yet - write the handoff now: call handoff { scope="game", ... } with the completed stage, the exact next steps and the open placeholders.')
+                                    placeholders = $audit.placeholders
+                                    howToFix = 'Finish the current stage completely, then call handoff. That is an invitation, not a punishment.'
+                                }
+                            }
+                        }
+                    }
+                } catch {}
+                $doneProgress = Read-ProgressState $sessionId
+                if ($null -eq $doneProgress -or [double]$doneProgress.percent -lt 100) {
+                    Update-ArenaProgressState $sessionId 'report_done' 100.0 'Automatisch gesetzt (report_done)' $false $true $true | Out-Null
+                } else {
+                    Update-ArenaProgressState $sessionId 'report_done' 100.0 ([string]$doneProgress.message) $true $true $false | Out-Null
+                }
                 # Version 3.8: Arena meldet "fertig" - der Nutzer bekommt eine
                 # Windows-Benachrichtigung (nur wenn er das aktiviert hat).
                 $notifyOn = $false
@@ -15488,9 +14279,9 @@ end
                 $queue = Ensure-Queue $sessionId
                 $pending = Get-PendingCommands $sessionId
                 $assetCacheEntries = 0
-                $bsSelfTest = $true
+                $bsSim = $true
                 $bsNotify = $false
-                try { $bsSelfTest = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
+                try { $bsSim = [bool]$Shared.BridgeSettings.simAllowed } catch {}
                 try { $bsNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 try {
                     if (Test-Path -LiteralPath [string]$Shared.AssetCachePath) {
@@ -15501,7 +14292,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '6.2.0'
+                        bridgeVersion = '7.0.0'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -15514,7 +14305,7 @@ end
                         storedBlobs = $Shared.Blobs.Count
                         assetCacheEntries = $assetCacheEntries
                         settings = @{
-                            selfTestAllowed = $bsSelfTest
+                            simAllowed = $bsSim
                             notifyOnDone = $bsNotify
                         }
                         docs = 'GET /api/docs for the complete tool documentation (or ?tool= / ?category=).'
@@ -15650,7 +14441,7 @@ end
                             try {
                                 $candidate = $pair.Value | ConvertFrom-Json
                                 if ([string]$candidate.sessionId -ne $sid -and [string]$candidate.placeId -eq [string]$sourceEntry.placeId -and [bool]$candidate.state.running) {
-                                    $r = Invoke-PluginTool ([string]$candidate.sessionId) 'play_stop' @{} 18
+                                    $r = Invoke-PluginTool ([string]$candidate.sessionId) 'sim_stop' @{} 18
                                     if ($r) { $stopped = $true; break }
                                 }
                             } catch {}
@@ -15753,10 +14544,10 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '6.2.0'
+                        serverVersion = '7.0.0'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
-                        restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Tests warten.' } else { $null }
+                        restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
                     }
                 }
                 continue
@@ -15878,7 +14669,7 @@ end
                         $entry.state = Update-PlayStateTracking ([string]$body.sessionId) $entry.state (Get-StateObject $body)
                         $entry.lastSeen = (Get-UnixSeconds)
                         Save-SessionEntry $entry
-                        if ($eventKind -ne 'play_started' -and $eventKind -ne 'play_stopped') {
+                        if ($eventKind -ne 'sim_started' -and $eventKind -ne 'sim_stopped') {
                             Add-BridgeEvent ([string]$body.sessionId) $eventKind ([string]$body.event.message) $body.event.data
                         }
                     } else {
@@ -15940,7 +14731,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='6.2.0'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.0.0'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -15963,23 +14754,23 @@ end
             }
 
             if ($path -eq '/api/status') {
-                $statusSelfTest = $true
+                $statusSim = $true
                 $statusNotify = $false
-                try { $statusSelfTest = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
+                try { $statusSim = [bool]$Shared.BridgeSettings.simAllowed } catch {}
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '6.2.0'
-                    serverVersion = '6.2.0'
+                    bridgeVersion = '7.0.0'
+                    serverVersion = '7.0.0'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
                     accessMode = $accessMode
                     pluginVersion = if ($sessionEntry) { [string]$sessionEntry.pluginVersion } else { $null }
                     pluginOutdated = if ($sessionEntry) { [bool]$sessionEntry.versionMismatch } else { $false }
-                    restartStudioHint = if ($sessionEntry -and [bool]$sessionEntry.versionMismatch) { 'Studio neu starten: Plugin-Version ist veraltet; Tests warten.' } else { $null }
+                    restartStudioHint = if ($sessionEntry -and [bool]$sessionEntry.versionMismatch) { 'Studio neu starten: Plugin-Version ist veraltet; Simulationen warten.' } else { $null }
                     settings = @{
-                        selfTestAllowed = $statusSelfTest
+                        simAllowed = $statusSim
                         notifyOnDone = $statusNotify
                     }
                 }
@@ -16022,28 +14813,29 @@ end
                     Send-Json $context 400 @{ ok = $false; error = 'calls fehlt: { "calls": [ { "tool": "...", "args": {} } ] }' }
                     continue
                 }
-                # Version 3.8: Selbst-Tests deaktiviert? Play-Werkzeuge sperren.
-                $selfTestOkPar = $true
-                try { $selfTestOkPar = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
-                if (-not $selfTestOkPar) {
+                # Version 7.0.0: Nur die Simulation (Run) ist per Einstellung
+                # abschaltbar - Bauen, GUIs, Assets und Jobs laufen weiter.
+                $simOkPar = $true
+                try { $simOkPar = [bool]$Shared.BridgeSettings.simAllowed } catch {}
+                if (-not $simOkPar) {
                     $blockedTool = $null
                     foreach ($call in @($body.calls)) {
-                        if (@('play_start','play_stop','play_pause','play_resume','send_input','gui_click','gui_set_text','move_character','teleport_character','respawn_character','set_camera') -contains [string]$call.tool) {
+                        if (@('sim_start') -contains [string]$call.tool) {
                             $blockedTool = [string]$call.tool
                             break
                         }
                     }
                     if ($blockedTool) {
-                        $blockedPar = New-SelfTestBlockedResult $blockedTool
-                        $blockedPar._bridge = (New-Envelope $sessionId)
-                        Send-Json $context 200 $blockedPar
+                        $blockedSimPar = New-SimBlockedResult $blockedTool
+                        $blockedSimPar._bridge = (New-Envelope $sessionId)
+                        Send-Json $context 200 $blockedSimPar
                         continue
                     }
                 }
                 foreach ($call in @($body.calls)) {
                     $callTool = [string]$call.tool
-                    if ($callTool -eq 'play_start' -or $callTool -eq 'play_stop') {
-                        $Shared.AiPlayIntents[$sessionId] = @{ action = ($callTool -replace '^play_', ''); at = (Get-UnixSeconds) }
+                    if ($callTool -eq 'sim_start' -or $callTool -eq 'sim_stop') {
+                        $Shared.AiPlayIntents[$sessionId] = @{ action = ($callTool -replace '^sim_', ''); at = (Get-UnixSeconds) }
                     }
                 }
                 $timeout = 90
@@ -16077,6 +14869,37 @@ end
                         Send-Json $context 400 @{ ok = $false; error = "Unknown sourceRef '$($toolArgs.sourceRef)'. Upload the text again with upload_text." }
                         continue
                     }
+                }
+
+                # Version 7.0.0: FORTSCHRITT EINSAMMELN, BEVOR IRGENDETWAS
+                # ans Plugin geht. Liegt progress in args, wird es entfernt -
+                # Werkzeuge sehen die Zahl nie.
+                $progressNode = $null
+                $progressReported = $false
+                $progressMessage = ''
+                $progressPercent = 0.0
+                try {
+                    if ($body.PSObject.Properties['progress']) { $progressNode = $body.progress }
+                } catch {}
+                try {
+                    if ($null -eq $progressNode -and $toolArgs.PSObject.Properties['progress']) {
+                        $progressNode = $toolArgs.progress
+                        try { $toolArgs.PSObject.Properties.Remove('progress') } catch {}
+                    }
+                } catch {}
+                if ($null -ne $progressNode) {
+                    $progressReported = $true
+                    if ($progressNode -is [ValueType] -or $progressNode -is [string]) {
+                        $progressPercent = Clamp-ProgressPercent $progressNode
+                    } else {
+                        try { if ($progressNode.PSObject.Properties['percent']) { $progressPercent = Clamp-ProgressPercent $progressNode.percent } } catch {}
+                        try { if ($progressNode.PSObject.Properties['message']) { $progressMessage = [string]$progressNode.message } } catch {}
+                    }
+                }
+                $isDoneTool = ($tool -eq 'report_done')
+                $progressState = Update-ArenaProgressState $sessionId $tool $progressPercent $progressMessage $progressReported $isDoneTool $false
+                if ($progressReported -and -not [string]::IsNullOrWhiteSpace($progressMessage)) {
+                    try { Add-BridgeEvent $sessionId 'progress' $progressMessage @{ percent = $progressPercent; tool = [string]$tool } } catch {}
                 }
 
                 # Version 5: the visible Arena history starts as soon as the
@@ -16149,9 +14972,8 @@ end
                     'insert_script','bulk_insert_scripts','select_instance','run_lua','batch','parallel','union','subtract','negate','intersect',
                     'separate','insert_asset','apply_asset','group_instances','ungroup','add_tag','remove_tag','place_on','align','stack',
                     'grid_arrange','distribute','snap_to_ground','look_at','rotate_around','move_relative','resize_part','fit_between','point_at',
-                    'play_start','play_stop','play_pause','play_resume','send_input','gui_click','gui_set_text','move_character',
-                    'teleport_character','respawn_character','undo','redo','clear_output','fill_region','probe_world','start_job',
-                    'cancel_job','clear_lua_state','set_camera','build_polygon_model','build_assembly','build_surface','build_interface')
+                    'sim_start','undo','redo','clear_output','fill_region','probe_world','start_job',
+                    'cancel_job','clear_lua_state','build_polygon_model','build_assembly','build_surface','build_interface')
                 $persistentEditTools = @('set_property','set_properties','bulk_set_properties','set_attribute','create_instance','bulk_create',
                     'clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','set_script_source','patch_script',
                     'insert_script','bulk_insert_scripts','run_lua','batch','parallel','union','subtract','negate','intersect','separate',
@@ -16162,11 +14984,11 @@ end
                         ok = $false
                         code = 'USER_PLAYTEST_ACTIVE'
                         severity = 'critical'
-                        assistantAction = 'STOP_CURRENT_RESPONSE'
-                        error = "IMPORTANT: Roblox Studio is currently in $([string]$sessionEntry.state.mode) mode. The requested edit '$tool' was NOT sent to Studio."
-                        why = 'The user is playing/testing the game. Editing now would interrupt them and persistent changes would be discarded when the test ends.'
-                        requiredResponse = 'You have TWO options: (a) call play_stop yourself - that is allowed and also ends user-started tests - then continue your work in edit mode; or (b) if the user is actively playing right now, end your response and tell them you cannot work safely in parallel - ask them to let you work in peace and to message you when Studio is free. Never make persistent edits while the test runs.'
-                        suggestedUserMessage = 'Ich sehe, dass du Roblox Studio gerade im Playtest benutzt. Parallel kann ich nicht sicher arbeiten: Ich beende den Test jetzt ODER du meldest dich, wenn ich in Ruhe weiterarbeiten soll.'
+                        assistantAction = 'STOP_OR_YIELD'
+                        error = "IMPORTANT: Roblox Studio is currently in $([string]$sessionEntry.state.mode) mode and the USER started it. The requested edit '$tool' was NOT sent to Studio."
+                        why = 'The user is playing/testing the game. Editing now would interrupt them and persistent changes would be discarded when the test ends. Since 7.0.0 there is no play_stop any more - the bridge cannot stop the user test.'
+                        requiredResponse = 'End your response and ask the user to stop the test themselves (Shift+F5) or to message you when Studio is free again. Reading tools stay available. Never claim the changes were saved.'
+                        suggestedUserMessage = 'Ich sehe, dass du Roblox Studio gerade selbst testest. Parallel kann ich nicht sicher bauen. Beende den Test bitte selbst (Shift+F5) oder sag mir Bescheid, wenn ich in Ruhe weiterarbeiten darf.'
                     }
                     Complete-ArenaActivity $sessionId $activityId $tool $toolArgs (To-Json $blocked 40)
                     $blocked._bridge = (New-Envelope $sessionId)
@@ -16174,17 +14996,15 @@ end
                     continue
                 }
 
-                # Version 3.8: Selbst-Tests vom Nutzer deaktiviert? Dann sind
-                # Run / Play / Play Here und die komplette Test-Steuerung fuer
-                # die KI gesperrt - nur die Editor-Simulation bleibt. Das ist
-                # KEIN Fehler, die KI wird deutlich darueber informiert.
-                $selfTestOk = $true
-                try { $selfTestOk = [bool]$Shared.BridgeSettings.selfTestAllowed } catch {}
-                if (-not $selfTestOk -and @('play_start','play_stop','play_pause','play_resume','send_input','gui_click','gui_set_text','move_character','teleport_character','respawn_character','set_camera') -contains $tool) {
-                    $blockedSelfTest = New-SelfTestBlockedResult $tool
-                    Complete-ArenaActivity $sessionId $activityId $tool $toolArgs (To-Json $blockedSelfTest 40)
-                    $blockedSelfTest._bridge = (New-Envelope $sessionId)
-                    Send-Json $context 200 $blockedSelfTest
+                # Version 7.0.0: Selbst-Simulationen deaktiviert? Dann ist
+                # NUR sim_start gesperrt (kein Fehler, bewusste Entscheidung).
+                $simOk = $true
+                try { $simOk = [bool]$Shared.BridgeSettings.simAllowed } catch {}
+                if (-not $simOk -and @('sim_start') -contains $tool) {
+                    $blockedSim = New-SimBlockedResult $tool
+                    Complete-ArenaActivity $sessionId $activityId $tool $toolArgs (To-Json $blockedSim 40)
+                    $blockedSim._bridge = (New-Envelope $sessionId)
+                    Send-Json $context 200 $blockedSim
                     continue
                 }
 
@@ -16214,8 +15034,8 @@ end
                 # Version 3.8: Play-Absicht der KI vermerken - der SERVER weiss
                 # dann zuverlaessig, wer einen Test gestartet/gestoppt hat
                 # (das ueberlebt auch ein echtes Neu-Laden des Plugins durch Studio).
-                if ($tool -eq 'play_start' -or $tool -eq 'play_stop') {
-                    $Shared.AiPlayIntents[$sessionId] = @{ action = ($tool -replace '^play_', ''); at = (Get-UnixSeconds) }
+                if ($tool -eq 'sim_start' -or $tool -eq 'sim_stop') {
+                    $Shared.AiPlayIntents[$sessionId] = @{ action = ($tool -replace '^sim_', ''); at = (Get-UnixSeconds) }
                 }
 
                 $resultJson = Get-DedupedPlayResult $sessionId $tool $toolArgs
@@ -16226,6 +15046,34 @@ end
                 if ($null -ne $resultJson) {
                     Save-DedupedPlayResult $sessionId $tool $toolArgs $resultJson
                     Complete-ArenaActivity $sessionId $activityId $tool $toolArgs $resultJson
+                    # Version 7.0.0: Audit-Kennzahlen mitschreiben. Der Handoff-
+                    # Rahmen und HANDOFF_REQUIRED lesen sie spaeter aus.
+                    if ($tool -eq 'ui_audit' -or $tool -eq 'model_audit' -or $tool -eq 'world_audit' -or $tool -eq 'site_survey' -or $tool -eq 'lag_doctor') {
+                        try {
+                            $auditResult = $resultJson | ConvertFrom-Json
+                            $placeholderCount = 0
+                            $placeholders = @()
+                            try { if ($auditResult.PSObject.Properties['placeholderCount']) { $placeholderCount = [int]$auditResult.placeholderCount } } catch {}
+                            try { if ($auditResult.PSObject.Properties['placeholders']) { $placeholders = @($auditResult.placeholders) } } catch {}
+                            if ($placeholderCount -le 0) {
+                                # auch ui_audit/Report-Felder beruecksichtigen
+                                try { if ($auditResult.PSObject.Properties['counts'] -and $auditResult.counts.PSObject.Properties['placeholders']) { $placeholderCount = [int]$auditResult.counts.placeholders } } catch {}
+                            }
+                            $summary = ''
+                            try {
+                                if ($tool -eq 'ui_audit') { $summary = 'ui_audit: blandness ' + [string]$auditResult.blandnessScore + ', techniqueScore ' + [string]$auditResult.techniqueScore }
+                                else { $summary = $tool + ': ' + [string]$auditResult.verdict + ' (' + [string]$auditResult.phase + ')' }
+                            } catch {}
+                            $flag = [pscustomobject]@{
+                                placeholderCount = $placeholderCount
+                                placeholders = $placeholders
+                                summary = $summary
+                                phase = $(try { [string]$auditResult.phase } catch { '' })
+                                at = (Get-UnixSeconds)
+                            }
+                            $Shared.AuditFlags[[string]$sessionId] = ($flag | ConvertTo-Json -Depth 5 -Compress)
+                        } catch {}
+                    }
                 }
                 if ($null -eq $resultJson) {
                     $entryNow = Get-SessionEntry $sessionId
@@ -16624,6 +15472,19 @@ function Remove-DeadSession {
         try { [void]$script:Shared.$bagName.TryRemove($SessionId, [ref]$junk) } catch {}
     }
     try { $script:PlaceNames.Remove($SessionId) } catch {}
+    try { $script:PlaceNameSources.Remove($SessionId) } catch {}
+    try {
+        # Fenster-Besitz freigeben, damit ein neu geoeffnetes Studio-Fenster
+        # den Handle uebernehmen kann (und keine Geister-Bindung bleibt).
+        $identity = $null
+        if ($script:PlaceIdentities.ContainsKey($SessionId)) { $identity = $script:PlaceIdentities[$SessionId] }
+        if ($null -ne $identity) {
+            foreach ($key in @($script:PreviewHandleClaims.Keys)) {
+                if ([string]$script:PreviewHandleClaims[$key] -eq $SessionId) { [void]$script:PreviewHandleClaims.Remove($key) }
+            }
+        }
+        [void]$script:PlaceIdentities.Remove($SessionId)
+    } catch {}
     # Vorschau-Worker und Caches gehoeren zur Sitzung und duerfen nach dem
     # Schliessen eines Studio-Fensters weder weiterlaufen noch Handles halten.
     try {
@@ -16701,12 +15562,13 @@ function Get-ActiveStudios {
             if ([string]$other.sessionId -eq [string]$item.sessionId) { continue }
             # Nur die AELTERE Sitzung darf eine juengere verdecken.
             if ([int64]$other.connectedAt -ge [int64]$item.connectedAt) { continue }
+            # Version 7.0.0: NUR dieselbe Plugin-Instanz darf sich selbst
+            # verdecken. Der alte Zweig "gleiche placeId + laeuft" hat zwei
+            # FENSTER mit placeId=0 (zwei lokale Places) zu EINER Zeile
+            # verschmolzen, sobald eines davon einen Test laufen liess.
             $sameGuid = ((-not [string]::IsNullOrWhiteSpace([string]$item.instanceGuid)) -and
                          ([string]$other.instanceGuid -eq [string]$item.instanceGuid))
-            $samePlaceId = ([string]$other.placeId -eq [string]$item.placeId)
-            $itemRunning = $false
-            try { $itemRunning = [bool]$item.state.running } catch {}
-            if ($sameGuid -or ($samePlaceId -and $itemRunning)) { $hide = $true; break }
+            if ($sameGuid) { $hide = $true; break }
         }
         if (-not $hide) { $deduped.Add($item) }
     }
@@ -17978,6 +16840,568 @@ function New-Separator {
 #      zu dieser Sitzung (kein Hin- und Herspringen zwischen zwei Fenstern).
 #   3. Die Fenstertitel werden nur alle 4 Sekunden gelesen (weniger Last).
 # ----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+# Version 7.0.0: PLACE-IDENTITAET STATT ANZEIGENAME
+# Live-Bug: zwei Places (z. B. "Obby" und "Place1") waren offen, in der Liste
+# standen aber zweimal "Obby" mit derselben Vorschau - egal wie oft man neu
+# oeffnete. Ursache war eine Kette von Namens-Schluesseln: die Sitzungs-
+# Wiederverwendung in Register-Session durfte ueber placeId=0 + gleichem Namen
+# eine LEBENDE Fremdsitzung uebernehmen, die Vorschau-Zuordnung verglich nur
+# Fenstertitel, und Get-PlaceName verlieh freie Titel aus EINER gemeinsamen
+# Fensterliste an beliebige Zeilen. Ab 7.0.0 gilt: der Zeilen-Schluessel ist
+# die Plugin-Session; die Fensterbindung ist PID + HWND und wird exklusiv
+# beansprucht; der Anzeigename ist nur noch ein Etikett dieser Identitaet.
+# ----------------------------------------------------------------------------
+function Get-NormalizedPlaceName {
+    # Fenstertitel sind KEIN Place-Name, sondern eine Behauptung. Hier werden
+    # Studio-Suffixe, Skript-Segmente ("- local script"), ungespeichert-Marker
+    # und Platzhalter entfernt. Rueckgabe: leerer String, wenn nichts Gutes
+    # uebrig bleibt - dann wird NIE geraten.
+    param([string]$Title)
+    if ([string]::IsNullOrWhiteSpace($Title)) { return '' }
+    $value = (Repair-Mojibake $Title).Trim()
+    # Roblox-Studio-Suffixe (rechts) in beliebiger Reihenfolge abtragen
+    for ($i = 0; $i -lt 6; $i++) {
+        $before = $value
+        $value = $value -replace '\s*[-–—|]\s*Roblox\s*Studio(\s*Beta)?\s*$', ''
+        $value = $value -replace '\s*[-–—|]\s*Studio\s*$', ''
+        $value = $value -replace '\s*[-–—|]\s*$', ''
+        $value = $value.Trim()
+        if ($value -eq $before) { break }
+    }
+    # Skript-Segmente: "- local script", "- Script", "- ModuleScript",
+    # "- LocalScript", "Script: Foo", "(LocalScript)" ...
+    $scriptWord = '(?:local\s*script|localscript|module\s*script|modulescript|script|luau|code)'
+    for ($i = 0; $i -lt 4; $i++) {
+        $before = $value
+        $value = $value -replace ("(?i)^\s*" + $scriptWord + "\s*[-–—:]\s*"), ''
+        $value = $value -replace ("(?i)\s*[-–—|:]\s*" + $scriptWord + "\s*$"), ''
+        $value = $value -replace ("(?i)\s*[\(\[]\s*" + $scriptWord + "\s*[\)\]]\s*$"), ''
+        $value = $value.Trim()
+        if ($value -eq $before) { break }
+    }
+    # ungespeichert-Marker und Platzhalter
+    $value = $value -replace '(?i)\s*[-–—|]\s*ungespeichert(es)?\s*(place|spiel)?\s*$', ''
+    $value = $value -replace '(?i)\s*[\(\[]\s*(ungespeichert|unsaved)\s*[\)\]]\s*$', ''
+    $value = $value -replace '(?i)^\s*(neues?\s+place|new\s+place|untitled(\s+place)?|unbenannt(es)?(\s+place)?|baseplate|place\s*\d*)\s*$', ''
+    $value = $value.Trim()
+    if ($value -match '(?i)Roblox\s*Studio') { return '' }
+    if (Test-StandardPlaceName $value) { return '' }
+    return $value
+}
+
+function Get-PlaceNameQuality {
+    # Kleine, ehrliche Qualitaetsstufe - ein einmal erkannter GUTER Name darf
+    # nie durch einen schlechteren ueberschrieben werden.
+    # 0 = unbrauchbar, 1 = Fallback-Titel, 2 = sauberer Titel/Place-Name.
+    param([string]$Name, [string]$Source)
+    if ([string]::IsNullOrWhiteSpace($Name)) { return 0 }
+    if (Test-StandardPlaceName $Name) { return 0 }
+    if ($Source -eq 'plugin') { return 2 }
+    if ($Source -eq 'windowTitle' -and $Name -match '\s') { return 1 }
+    return 2
+}
+
+function Save-PlaceName {
+    # Schreibt Name + Herkunft nur, wenn der neue Name nicht SCHLECHTER ist.
+    param([string]$SessionId, [string]$Name, [string]$Source)
+    if ([string]::IsNullOrWhiteSpace($SessionId) -or [string]::IsNullOrWhiteSpace($Name)) { return $false }
+    $clean = $Name.Trim()
+    $old = [string]''
+    if ($script:PlaceNames.ContainsKey($SessionId)) { $old = [string]$script:PlaceNames[$SessionId] }
+    $oldSource = [string]''
+    if ($script:PlaceNameSources.ContainsKey($SessionId)) { $oldSource = [string]$script:PlaceNameSources[$SessionId] }
+    $oldQuality = Get-PlaceNameQuality $old $oldSource
+    $newQuality = Get-PlaceNameQuality $clean $Source
+    if ($newQuality -le 0) { return $false }
+    if ($oldQuality -gt $newQuality) { return $false }
+    if ($oldQuality -eq $newQuality -and $old -eq $clean) { return $false }
+    $script:PlaceNames[$SessionId] = $clean
+    $script:PlaceNameSources[$SessionId] = $Source
+    return $true
+}
+
+function Get-PlaceIdentity {
+    # Stabile Identitaet einer Zeile: Plugin-Session + placeId + (falls
+    # gebunden) PID/HWND. Der Anzeigename ist NUR ein Etikett.
+    param([string]$SessionId)
+    $identity = $null
+    if ($script:PlaceIdentities.ContainsKey($SessionId)) { $identity = $script:PlaceIdentities[$SessionId] }
+    if ($null -eq $identity) {
+        $identity = [pscustomobject]@{
+            SessionKey = [string]$SessionId
+            PlaceId    = ''
+            InstanceGuid = ''
+            ProcessId  = 0
+            WindowHandle = [IntPtr]::Zero
+            WindowTitle = ''
+            Name       = ''
+            NameSource = ''
+            BoundAt    = [DateTime]::MinValue
+        }
+        $script:PlaceIdentities[$SessionId] = $identity
+    }
+    return $identity
+}
+
+function Save-PlaceIdentity {
+    param([string]$SessionId, $Studio, $WindowInfo, [string]$Reason)
+    $identity = Get-PlaceIdentity $SessionId
+    if ($null -ne $Studio) {
+        try { $identity.PlaceId = [string]$Studio.placeId } catch {}
+        try { $identity.InstanceGuid = [string]$Studio.instanceGuid } catch {}
+    }
+    if ($null -ne $WindowInfo) {
+        try { $identity.ProcessId = [int]$WindowInfo.ProcessId } catch { $identity.ProcessId = 0 }
+        try { $identity.WindowHandle = [IntPtr]$WindowInfo.Handle } catch { $identity.WindowHandle = [IntPtr]::Zero }
+        try { $identity.WindowTitle = [string]$WindowInfo.Title } catch { $identity.WindowTitle = '' }
+        $identity.BoundAt = Get-Date
+    }
+    $identity.Name = [string]$script:PlaceNames[$SessionId]
+    if ($script:PlaceNameSources.ContainsKey($SessionId)) { $identity.NameSource = [string]$script:PlaceNameSources[$SessionId] }
+    $identity.BindReason = [string]$Reason
+    return $identity
+}
+
+function Get-PlaceIdentityKey {
+    # Der Schluessel, an dem eine Zeile in Diagnose und Logs haengt:
+    # PID+HWND wenn gebunden, sonst die Plugin-Session (+placeId).
+    param([string]$SessionId)
+    $identity = Get-PlaceIdentity $SessionId
+    if ($identity.ProcessId -gt 0 -and $identity.WindowHandle -ne [IntPtr]::Zero) {
+        return ('pid{0}:hwnd{1}|{2}' -f $identity.ProcessId, $identity.WindowHandle.ToInt64(), $SessionId)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($identity.PlaceId)) { return ('session:{0}|place:{1}' -f $SessionId, $identity.PlaceId) }
+    return ('session:' + [string]$SessionId)
+}
+
+function Resolve-PlaceWindowIdentity {
+    # Bindet eine Sitzung an GENAU EIN Studio-Fenster (PID + HWND) und
+    # verhindert, dass zwei Zeilen dasselbe Fenster beanspruchen. Der
+    # Anzeigename dient nur als Hinweis, nie als Schluessel.
+    param($Studio, [string]$SessionId)
+    $identity = Save-PlaceIdentity $SessionId $Studio $null 'lookup'
+    $infos = @(Get-StudioWindowInfos)
+    if ($infos.Count -eq 0) { return $identity }
+    # 1) bereits gebunden und das Fenster existiert noch -> dabei bleiben.
+    if ($identity.ProcessId -gt 0 -and $identity.WindowHandle -ne [IntPtr]::Zero) {
+        foreach ($info in $infos) {
+            if ([IntPtr]$info.Handle -eq [IntPtr]$identity.WindowHandle) {
+                Save-PlaceIdentity $SessionId $Studio $info 'gebunden' | Out-Null
+                return (Get-PlaceIdentity $SessionId)
+            }
+        }
+    }
+    # 2) Kandidat ueber den normalisierten Namen suchen - aber nur Fenster,
+    #    die noch KEINE andere Sitzung beansprucht und nicht bereits vergeben.
+    $wanted = ''
+    if ($script:PlaceNames.ContainsKey($SessionId)) { $wanted = Get-NormalizedPlaceName ([string]$script:PlaceNames[$SessionId]) }
+    if (-not [string]::IsNullOrWhiteSpace($wanted)) {
+        foreach ($info in $infos) {
+            $normalized = Get-NormalizedPlaceName ([string]$info.Title)
+            if ([string]::IsNullOrWhiteSpace($normalized)) { continue }
+            if ($normalized -ne $wanted) { continue }
+            if (Test-PreviewHandleClaimed $info.Handle $SessionId) { continue }
+            $script:PreviewHandleClaims[[int64]$info.Handle] = $SessionId
+            Save-PlaceIdentity $SessionId $Studio $info 'titelExakt' | Out-Null
+            return (Get-PlaceIdentity $SessionId)
+        }
+    }
+    # 3) Einziges Fenster -> binden, unabhaengig vom Namen (Beweis: PID+HWND).
+    if ($infos.Count -eq 1 -and -not (Test-PreviewHandleClaimed $infos[0].Handle $SessionId)) {
+        $script:PreviewHandleClaims[[int64]$infos[0].Handle] = $SessionId
+        Save-PlaceIdentity $SessionId $Studio $infos[0] 'einzelnesFenster' | Out-Null
+        return (Get-PlaceIdentity $SessionId)
+    }
+    return $identity
+}
+
+function Test-PreviewHandleClaimed {
+    param($Handle, [string]$ForSession)
+    $key = [int64]$Handle
+    if (-not $script:PreviewHandleClaims.ContainsKey($key)) { return $false }
+    $owner = [string]$script:PreviewHandleClaims[$key]
+    if ([string]::IsNullOrWhiteSpace($owner)) { return $false }
+    if ($owner -eq [string]$ForSession) { return $false }
+    # Besitzer tot? Dann freigeben (Fenster geschlossen / Session weg).
+    if (-not $script:PlaceIdentities.ContainsKey($owner)) { return $false }
+    $ownerIdentity = $script:PlaceIdentities[$owner]
+    if ([IntPtr]$ownerIdentity.WindowHandle -eq [IntPtr]$Handle) { return $true }
+    return $false
+}
+
+function Write-PlacesDiagnoseFile {
+    # Beweis-Datei fuer den Mehrfach-Places-Bug: je erkanntem Studio-Fenster
+    # PID, HWND, Fenstertitel, erkannter Place-Name und zugewiesener
+    # Zeilen-Schluessel - plus die Namenquelle und die Handle-Besitzer.
+    param([switch]$Force)
+    if (-not $Force -and ((Get-Date) - $script:PlacesDiagLastWrite).TotalSeconds -lt 5) { return }
+    $script:PlacesDiagLastWrite = Get-Date
+    try {
+        $sb = New-Object System.Text.StringBuilder
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.0.0)')
+        [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
+        [void]$sb.AppendLine('')
+        [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
+        $infos = @(Get-StudioWindowInfos)
+        if ($infos.Count -eq 0) { [void]$sb.AppendLine('  (keine Roblox-Studio-Fenster gefunden)') }
+        foreach ($info in $infos) {
+            $owner = ''
+            $key = [int64]$info.Handle
+            if ($script:PreviewHandleClaims.ContainsKey($key)) { $owner = [string]$script:PreviewHandleClaims[$key] }
+            $normalized = Get-NormalizedPlaceName ([string]$info.Title)
+            if ([string]::IsNullOrWhiteSpace($normalized)) { $normalized = '(kein brauchbarer Name)' }
+            [void]$sb.AppendLine(('  PID={0} HWND={1} Titel="{2}" -> normalisiert="{3}" Besitzer={4}' -f $info.ProcessId, $key, [string]$info.Title, $normalized, $(if ($owner) { $owner } else { '(frei)' })))
+        }
+        [void]$sb.AppendLine('')
+        [void]$sb.AppendLine('ZEILEN (Plugin-Session = Schluessel; Name ist nur ein Etikett)')
+        foreach ($pair in $script:Shared.Sessions.GetEnumerator()) {
+            try {
+                $item = $pair.Value | ConvertFrom-Json
+                $sid = [string]$item.sessionId
+                $identity = Get-PlaceIdentity $sid
+                $name = ''
+                if ($script:PlaceNames.ContainsKey($sid)) { $name = [string]$script:PlaceNames[$sid] }
+                $source = ''
+                if ($script:PlaceNameSources.ContainsKey($sid)) { $source = [string]$script:PlaceNameSources[$sid] }
+                [void]$sb.AppendLine(('  Zeile={0} placeId={1} instance={2} PID={3} HWND={4} Name="{5}" Quelle={6} Plugin-Stand={7}' -f `
+                    (Get-PlaceIdentityKey $sid), [string]$item.placeId, [string]$item.instanceGuid, $identity.ProcessId, $(if ($identity.WindowHandle -ne [IntPtr]::Zero) { $identity.WindowHandle.ToInt64() } else { 0 }), $name, $(if ($source) { $source } else { '(offen)' }), [string]$item.pluginVersion))
+            } catch {}
+        }
+        [void]$sb.AppendLine('')
+        [void]$sb.AppendLine('FORTSCHRITT')
+        foreach ($line in (Get-ProgressDiagnoseLines)) { [void]$sb.AppendLine([string]$line) }
+        if ($script:HandoffDiagnoseLines.Count -gt 0) {
+            [void]$sb.AppendLine('')
+            [void]$sb.AppendLine('UEBERGABEN')
+            foreach ($line in $script:HandoffDiagnoseLines.ToArray()) { [void]$sb.AppendLine('  ' + [string]$line) }
+        }
+        $path = Join-Path $script:AppDataRoot 'places-diagnose.txt'
+        [System.IO.File]::WriteAllText($path, $sb.ToString(), (New-Object System.Text.UTF8Encoding($false)))
+    } catch {
+        Write-RuntimeLog ('places-diagnose.txt konnte nicht geschrieben werden: ' + $_.Exception.Message)
+    }
+}
+
+
+# ----------------------------------------------------------------------------
+# Version 7.0.0: FORTSCHRITT IN DER PLACE-ZEILE
+# BLAU = laeuft (ausdruecklich gewuenscht, NICHT ins Pink-Schema umbiegen),
+# GRUEN = fertig (nur nach report_done), GRAU = wartet/keine Rueckmeldung,
+# ROT = Fehler. Alles nur in der Zeile - keine Toasts, keine Popups.
+# ----------------------------------------------------------------------------
+function Get-ProgressStateSnapshot {
+    param([string]$SessionId)
+    $json = ''
+    if (-not $script:Shared.ProgressStates.TryGetValue([string]$SessionId, [ref]$json)) { return $null }
+    if ([string]::IsNullOrWhiteSpace($json)) { return $null }
+    $state = $null
+    try { $state = $json | ConvertFrom-Json } catch { return $null }
+    if ($null -eq $state) { return $null }
+    $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    $lastCall = [int64]$state.lastCallAt
+    if ($lastCall -le 0) { $lastCall = [int64]$state.updatedAt }
+    $silent = ($now - $lastCall)
+    $view = [pscustomobject]@{
+        Percent = [double]$state.percent
+        Message = [string]$state.message
+        State   = [string]$state.state
+        AutoSet = [bool]$state.autoSet
+        UpdatedAt = [int64]$state.updatedAt
+        LastCallAt = $lastCall
+        SilentSeconds = $silent
+        Calls = [int]$state.calls
+        CallsWithProgress = [int]$state.callsWithProgress
+    }
+    # Zwei Minuten keine Rueckmeldung: ehrlich "wartet auf Arena" und die
+    # Leiste FRIERT EIN, statt weiterzulaufen.
+    if ($silent -gt 120 -and $view.State -ne 'done') {
+        $view.State = 'waiting'
+        if ([string]::IsNullOrWhiteSpace($view.Message)) { $view.Message = 'wartet auf Arena / keine Rueckmeldung' }
+    }
+    return $view
+}
+
+function Format-ProgressMessage {
+    param($Snapshot)
+    if ($null -eq $Snapshot) { return '' }
+    $msg = [string]$Snapshot.Message
+    if ([string]::IsNullOrWhiteSpace($msg)) { $msg = 'Arena arbeitet gerade...' }
+    if ($Snapshot.State -eq 'waiting' -and $msg -notmatch '(?i)wartet') { $msg = 'wartet auf Arena / keine Rueckmeldung - ' + $msg }
+    return $msg
+}
+
+function Update-PlaceProgressVisual {
+    param($Row, $Studio)
+    if ($null -eq $Row -or $null -eq $Row.ProgressPanel) { return }
+    $show = $true
+    try { $show = [bool]$script:Shared.BridgeSettings.progressInPlaceList } catch {}
+    $sessionId = [string]$Studio.sessionId
+    $snapshot = Get-ProgressStateSnapshot $sessionId
+    if (-not $show -or $null -eq $snapshot) {
+        $Row.ProgressPanel.Visibility = 'Collapsed'
+        $Row.ProgressState = 'idle'
+        return
+    }
+    # AUS: Die Bridge zeigt nichts, speichert aber alles weiter - beim
+    # Wiedereinschalten ist der Verlauf vollstaendig da.
+    $state = [string]$snapshot.State
+    $color = '#FF4C9BFF'      # arbeitet = blau
+    $label = 'Arena arbeitet gerade...'
+    if ($state -eq 'done') { $color = '#FF38D16C'; $label = 'fertig' }
+    elseif ($state -eq 'waiting') { $color = '#FF8A93A6'; $label = 'wartet auf Arena / keine Rueckmeldung' }
+    elseif ($state -eq 'error') { $color = '#FFE11D48'; $label = 'Fehler' }
+    $percent = [math]::Round([double]$snapshot.Percent, 0)
+    if ($percent -lt 0) { $percent = 0 }
+    if ($percent -gt 100) { $percent = 100 }
+    $Row.ProgressPanel.Visibility = 'Visible'
+    $Row.ProgressState = $state
+    Set-Text $Row.ProgressText $label
+    $Row.ProgressBar.Value = $(if ($state -eq 'waiting') { $Row.ProgressBar.Value } else { $percent })
+    $Row.ProgressBar.Foreground = Get-Brush $color
+    $Row.ProgressPercent.Text = ($percent.ToString() + ' %')
+    $Row.ProgressPercent.Foreground = Get-Brush $color
+    $tooltip = Format-ProgressMessage $snapshot
+    if ($snapshot.AutoSet) { $tooltip = $tooltip + '  (Automatisch gesetzt)' }
+    if ($snapshot.CallsWithProgress -gt 0) {
+        $tooltip = $tooltip + ('  [Fortschrittsvertrag: {0} von {1} Aufrufen]' -f $snapshot.CallsWithProgress, $snapshot.Calls)
+    }
+    $Row.ProgressBar.ToolTip = $tooltip
+    $Row.ProgressText.ToolTip = $tooltip
+    $Row.ProgressPanel.ToolTip = $tooltip
+}
+
+function Get-ProgressContractSummary {
+    # Dezente Befolgungsstatistik fuer Einstellungen und Diagnosebericht.
+    $calls = 0
+    $withProgress = 0
+    try {
+        foreach ($pair in $script:Shared.ProgressStates.GetEnumerator()) {
+            $state = $null
+            try { $state = ($pair.Value | ConvertFrom-Json) } catch { $state = $null }
+            if ($null -eq $state) { continue }
+            $calls += [int]$state.calls
+            $withProgress += [int]$state.callsWithProgress
+        }
+    } catch {}
+    return ('Fortschrittsvertrag: {0} von {1} Aufrufen' -f $withProgress, $calls)
+}
+
+function Get-ProgressDiagnoseLines {
+    $lines = New-Object System.Collections.Generic.List[string]
+    $lines.Add((Get-ProgressContractSummary))
+    try {
+        foreach ($pair in $script:Shared.ProgressStates.GetEnumerator()) {
+            $state = $null
+            try { $state = ($pair.Value | ConvertFrom-Json) } catch { $state = $null }
+            if ($null -eq $state) { continue }
+            $name = ''
+            try { $name = [string]$script:PlaceNames[[string]$pair.Key] } catch {}
+            if ([string]::IsNullOrWhiteSpace($name)) { $name = [string]$pair.Key }
+            $lines.Add(('  {0}: {1} % / {2} - "{3}" (Aufrufe {4}, davon mit Fortschritt {5})' -f $name, [string]$state.percent, [string]$state.state, [string]$state.message, [string]$state.calls, [string]$state.callsWithProgress))
+            foreach ($h in @($state.history)) { $lines.Add('      ' + [string]$h) }
+        }
+    } catch {}
+    return $lines
+}
+
+
+
+# ----------------------------------------------------------------------------
+# Version 7.0.0: UEBERGABE ALS KARTE IM BRIDGE-FENSTER
+# Grosse Karte mit Kopier-Knopf und "Arena AI oeffnen" - genau wie gefordert.
+# ----------------------------------------------------------------------------
+$script:HandoffWindow = $null
+$script:HandoffShownStamp = ''
+
+function Open-HandoffWindow {
+    param($Record)
+    if ($null -eq $Record) { return }
+    if ($script:HandoffWindow) {
+        try { $script:HandoffWindow.Close() } catch {}
+        $script:HandoffWindow = $null
+    }
+    $win = [System.Windows.Window]::new()
+    $win.Title = 'Uebergabe'
+    $win.Width = 720
+    $win.Height = 640
+    $win.MinWidth = 720; $win.MinHeight = 640; $win.MaxWidth = 720; $win.MaxHeight = 640
+    $win.WindowStartupLocation = 'CenterOwner'
+    $win.WindowStyle = 'None'
+    $win.AllowsTransparency = $true
+    $win.Background = [System.Windows.Media.Brushes]::Transparent
+    $win.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe UI')
+    try { $win.Owner = $window } catch {}
+    $shell = [System.Windows.Controls.Border]::new()
+    $shell.CornerRadius = [System.Windows.CornerRadius]::new(18)
+    $shell.Background = Get-Brush '#F50B1030'
+    $shell.BorderBrush = Get-Brush '#33FFFFFF'
+    $shell.BorderThickness = [System.Windows.Thickness]::new(1)
+    $shell.Padding = [System.Windows.Thickness]::new(20)
+    $grid = [System.Windows.Controls.Grid]::new()
+    foreach ($h in @('Auto', 'Auto', '*', 'Auto')) {
+        $rd = [System.Windows.Controls.RowDefinition]::new()
+        if ($h -ne 'Auto') { $rd.Height = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star) }
+        [void]$grid.RowDefinitions.Add($rd)
+    }
+    $head = [System.Windows.Controls.TextBlock]::new()
+    $head.Text = [string]$Record.headline
+    $head.Foreground = Get-Brush '#F4F8FF'
+    $head.FontSize = 24
+    $head.FontWeight = 'Bold'
+    $head.TextWrapping = 'Wrap'
+    [System.Windows.Controls.Grid]::SetRow($head, 0)
+    [void]$grid.Children.Add($head)
+    $sub = [System.Windows.Controls.TextBlock]::new()
+    $sub.Text = ('Gespeichert: ' + [string]$Record.path + "`n" + 'Diesen Block unveraendert in einen neuen Chat mit Bridge-Zugriff kopieren - er wird beim naechsten Start automatisch mitgeliefert.')
+    $sub.Foreground = Get-Brush '#9AA9CE'
+    $sub.FontSize = 11.5
+    $sub.TextWrapping = 'Wrap'
+    $sub.Margin = [System.Windows.Thickness]::new(0, 8, 0, 12)
+    [System.Windows.Controls.Grid]::SetRow($sub, 1)
+    [void]$grid.Children.Add($sub)
+    $box = [System.Windows.Controls.TextBox]::new()
+    $box.Text = [string]$Record.markdown
+    $box.IsReadOnly = $true
+    $box.TextWrapping = 'Wrap'
+    $box.AcceptsReturn = $true
+    $box.VerticalScrollBarVisibility = 'Auto'
+    $box.Background = Get-Brush '#33101838'
+    $box.Foreground = Get-Brush '#DCE6FF'
+    $box.BorderBrush = Get-Brush '#26FFFFFF'
+    $box.FontFamily = [System.Windows.Media.FontFamily]::new('Consolas')
+    $box.FontSize = 12
+    $box.Padding = [System.Windows.Thickness]::new(10)
+    [System.Windows.Controls.Grid]::SetRow($box, 2)
+    [void]$grid.Children.Add($box)
+    $buttons = [System.Windows.Controls.StackPanel]::new()
+    $buttons.Orientation = 'Horizontal'
+    $buttons.HorizontalAlignment = 'Right'
+    $buttons.Margin = [System.Windows.Thickness]::new(0, 14, 0, 0)
+    $copy = [System.Windows.Controls.Button]::new()
+    $copy.Content = 'Block kopieren'
+    $copy.Width = 160; $copy.Height = 40
+    $copy.Background = Get-Brush '#E61FA34A'
+    $copy.Foreground = Get-Brush '#FFFFFF'
+    $copy.BorderBrush = Get-Brush '#4DFFFFFF'
+    $copy.Cursor = 'Hand'
+    $copy.Add_Click({
+        try {
+            [System.Windows.Clipboard]::SetText([string]$s.Tag)
+            Show-CopyConfirm 'Uebergabe kopiert - jetzt in einen neuen Chat einfuegen'
+        } catch {}
+    })
+    $copy.Tag = [string]$Record.markdown
+    $arena = [System.Windows.Controls.Button]::new()
+    $arena.Content = 'Arena AI oeffnen'
+    $arena.Width = 170; $arena.Height = 40
+    $arena.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
+    $arena.Background = Get-Brush '#E11D48'
+    $arena.Foreground = Get-Brush '#FFFFFF'
+    $arena.BorderBrush = Get-Brush '#66FF5C77'
+    $arena.Cursor = 'Hand'
+    $arena.Add_Click({ Open-ArenaAiPage })
+    $close = [System.Windows.Controls.Button]::new()
+    $close.Content = 'Schliessen'
+    $close.Width = 120; $close.Height = 40
+    $close.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
+    $close.Background = Get-Brush '#3D3D5A80'
+    $close.Foreground = Get-Brush '#F4F8FF'
+    $close.BorderBrush = Get-Brush '#3DFFFFFF'
+    $close.Cursor = 'Hand'
+    $close.Add_Click({ try { $s.Tag.Close() } catch {} })
+    $close.Tag = $win
+    [void]$buttons.Children.Add($copy)
+    [void]$buttons.Children.Add($arena)
+    [void]$buttons.Children.Add($close)
+    [System.Windows.Controls.Grid]::SetRow($buttons, 3)
+    [void]$grid.Children.Add($buttons)
+    $shell.Child = $grid
+    $win.Content = $shell
+    $win.Add_Closed({ $script:HandoffWindow = $null })
+    $script:HandoffWindow = $win
+    try { [void]$win.Show() } catch { try { [void]$win.ShowDialog() } catch {} }
+}
+
+function Update-HandoffCard {
+    # Wird bei jedem UI-Tick aufgerufen: erscheint eine NEUE Uebergabe, oeffnet
+    # sich die Karte GENAU EINMAL (kein Popup-Spam, keine Dauerschleife).
+    try {
+        foreach ($pair in $script:Shared.Handoffs.GetEnumerator()) {
+            $record = $null
+            try { $record = ($pair.Value | ConvertFrom-Json) } catch { $record = $null }
+            if ($null -eq $record) { continue }
+            $stamp = [string]$record.savedAt
+            if ([string]::IsNullOrWhiteSpace($stamp)) { continue }
+            if ($stamp -eq $script:HandoffShownStamp) { continue }
+            $script:HandoffShownStamp = $stamp
+            Open-HandoffWindow $record
+            break
+        }
+    } catch {}
+}
+
+function Get-SettingsNotificationLines {
+    # Version 7.0.0: Eine rote "1" allein sagt dem Nutzer nichts. Hier steht
+    # KONKRET, was los ist - mit Uhrzeit des letzten Checks bzw. der Sitzung.
+    $lines = New-Object System.Collections.Generic.List[string]
+    try {
+        if ($script:UpdateInfoState -and [bool]$script:UpdateInfoState.IsError) {
+            $when = 'unbekannt'
+            try { if ($script:UpdateDetails -and $script:UpdateDetails.at) { $when = ([DateTime]$script:UpdateDetails.at).ToString('HH:mm') } } catch {}
+            $detail = 'Update-Suche fehlgeschlagen'
+            $reason = ''
+            try { if ($script:UpdateDetails -and $script:UpdateDetails.error) { $reason = [string]$script:UpdateDetails.error } } catch {}
+            if ([string]::IsNullOrWhiteSpace($reason)) { $reason = 'version.json nicht erreichbar' }
+            $lines.Add(('{0} - {1}, letzter Check {2}' -f $detail, $reason, $when))
+        } else {
+            $lines.Add('Updates: alles aktuell, kein Handlungsbedarf.')
+        }
+    } catch {}
+    try {
+        foreach ($pair in $script:Shared.Sessions.GetEnumerator()) {
+            $item = $null
+            try { $item = $pair.Value | ConvertFrom-Json } catch { $item = $null }
+            if ($null -eq $item) { continue }
+            $name = ''
+            try { $name = [string]$script:PlaceNames[[string]$item.sessionId] } catch {}
+            if ([string]::IsNullOrWhiteSpace($name)) { $name = [string]$item.placeName }
+            if ($item.versionMismatch -eq $true) {
+                $lines.Add(('{0}: Plugin veraltet (Plugin {1}, Bridge 7.0.0) - Roblox Studio einmal neu starten, sonst warten neue Werkzeuge.' -f $name, [string]$item.pluginVersion))
+            }
+        }
+    } catch {}
+    try {
+        foreach ($pair in $script:Shared.ProgressStates.GetEnumerator()) {
+            $state = $null
+            try { $state = ($pair.Value | ConvertFrom-Json) } catch { $state = $null }
+            if ($null -eq $state) { continue }
+            $snapshot = Get-ProgressStateSnapshot ([string]$pair.Key)
+            if ($null -eq $snapshot) { continue }
+            if ([string]$snapshot.State -eq 'waiting') {
+                $name = ''
+                try { $name = [string]$script:PlaceNames[[string]$pair.Key] } catch {}
+                $lines.Add(('{0}: Arena wartet auf Rueckmeldung ({1} %) - "{2}"' -f $name, [string]$snapshot.Percent, (Format-ProgressMessage $snapshot)))
+            } elseif ([string]$snapshot.State -eq 'working') {
+                $name = ''
+                try { $name = [string]$script:PlaceNames[[string]$pair.Key] } catch {}
+                $lines.Add(('{0}: Arena arbeitet ({1} %) - "{2}"' -f $name, [string]$snapshot.Percent, (Format-ProgressMessage $snapshot)))
+            }
+        }
+    } catch {}
+    $lines.Add((Get-ProgressContractSummary))
+    return $lines
+}
+
+function Open-ArenaAiPage {
+    try {
+        Start-Process 'https://arena.ai/agent/' | Out-Null
+    } catch {
+        try { Write-RuntimeLog ('Arena-AI-Link konnte nicht geoeffnet werden: ' + $_.Exception.Message) } catch {}
+    }
+}
+
 function Test-StandardPlaceName {
     param([string]$Name)
     if ([string]::IsNullOrWhiteSpace($Name)) { return $true }
@@ -17989,23 +17413,17 @@ function Test-StandardPlaceName {
 }
 
 function Get-StudioWindowName {
+    # Version 7.0.0: Diese Liste liefert nur noch NORMALISIERTE Titel als
+    # Hinweis. Sie ist ausdruecklich KEIN Namensvorrat: verliehen wird nichts.
     if (((Get-Date) - $script:WindowNameCacheAt).TotalSeconds -lt 4) {
         return $script:WindowNameCache
     }
     $names = New-Object System.Collections.Generic.List[string]
     try {
-        $studioProcesses = @()
-        foreach ($processName in @('RobloxStudioBeta', 'RobloxStudio')) {
-            $studioProcesses += @(Get-Process -Name $processName -ErrorAction SilentlyContinue)
-        }
-        foreach ($proc in $studioProcesses) {
-            $title = [string]$proc.MainWindowTitle
-            if ([string]::IsNullOrWhiteSpace($title)) { continue }
-            $clean = ($title -replace '\s*[-–]\s*Roblox Studio\s*$', '').Trim()
+        foreach ($info in @(Get-StudioWindowInfos)) {
+            $clean = Get-NormalizedPlaceName ([string]$info.Title)
             if ([string]::IsNullOrWhiteSpace($clean)) { continue }
-            if ($clean -match 'Roblox\s*Studio') { continue }
-            if (Test-StandardPlaceName $clean) { continue }
-            $names.Add((Repair-Mojibake $clean))
+            if (-not $names.Contains($clean)) { $names.Add($clean) }
         }
     } catch {}
     $script:WindowNameCache = [string[]]$names.ToArray()
@@ -18018,35 +17436,45 @@ function Get-PlaceName {
 
     $sessionId = [string]$Studio.sessionId
     $reported = Repair-Mojibake ([string]$Studio.placeName)
+    Save-PlaceIdentity $sessionId $Studio $null 'name' | Out-Null
 
-    # 1) Vollständiger Name vom Plugin
-    if (-not (Test-StandardPlaceName $reported)) {
-        $script:PlaceNames[$sessionId] = $reported.Trim()
-        return $script:PlaceNames[$sessionId]
+    # 1) AUTORITATIV: der vom Plugin gemeldete echte Place-Name (game.Name).
+    #    Er wird nie durch einen Fenstertitel ersetzt - nur durch einen
+    #    gleichwertigen, wenn das Plugin den Place umbenennt.
+    $reportedName = Get-NormalizedPlaceName $reported
+    if ([string]::IsNullOrWhiteSpace($reportedName) -and -not (Test-StandardPlaceName $reported) -and -not [string]::IsNullOrWhiteSpace($reported)) {
+        # Der Plugin-Name ist bereits sauber (z. B. "obby"); Normalisierung
+        # wuerde nur dann greifen, wenn er wie ein Fenstertitel aussieht.
+        $reportedName = $reported.Trim()
+    }
+    if (-not [string]::IsNullOrWhiteSpace($reportedName)) {
+        [void](Save-PlaceName $sessionId $reportedName 'plugin')
+        Save-PlaceIdentity $sessionId $Studio $null 'pluginName' | Out-Null
+        return [string]$script:PlaceNames[$sessionId]
     }
 
-    # 2) Ein einmal zugeordneter Titel bleibt bei dieser Sitzung
-    if ($script:PlaceNames.ContainsKey($sessionId)) {
-        return $script:PlaceNames[$sessionId]
-    }
+    # 2) Ein einmal erkannter guter Name bleibt - und wird nie durch einen
+    #    schlechteren Titel ueberschrieben (Save-PlaceName prueft das).
+    if ($script:PlaceNames.ContainsKey($sessionId)) { return [string]$script:PlaceNames[$sessionId] }
 
-    # 3) Titel eines Studio-Fensters übernehmen, der noch frei ist
-    if ($WindowNames) {
-        foreach ($candidate in $WindowNames) {
-            if (Test-StandardPlaceName $candidate) { continue }
-            $alreadyUsed = $false
-            foreach ($key in @($script:PlaceNames.Keys)) {
-                if ($key -ne $sessionId -and $script:PlaceNames[$key] -eq $candidate) { $alreadyUsed = $true; break }
-            }
-            if (-not $alreadyUsed) {
-                $script:PlaceNames[$sessionId] = $candidate
-                return $candidate
-            }
+    # 3) FALLBACK: nur der Titel des EIGENEN, exklusiv gebundenen Fensters.
+    #    Niemals ein freier Titel aus einer gemeinsamen Liste - genau das
+    #    liess zwei Fenster denselben Namen "ausleihen".
+    $identity = Resolve-PlaceWindowIdentity $Studio $sessionId
+    if ($identity.ProcessId -gt 0 -and $identity.WindowHandle -ne [IntPtr]::Zero) {
+        $candidate = Get-NormalizedPlaceName ([string]$identity.WindowTitle)
+        if (-not [string]::IsNullOrWhiteSpace($candidate)) {
+            [void](Save-PlaceName $sessionId $candidate 'windowTitle')
+            Save-PlaceIdentity $sessionId $Studio $null 'windowTitle' | Out-Null
+            return [string]$script:PlaceNames[$sessionId]
         }
     }
 
-    if (-not [string]::IsNullOrWhiteSpace($reported)) { return $reported }
-    return 'Unbenanntes Roblox Place'
+    # 4) Letzter Fallback: seiteneindeutiger Arbeitsname aus der Session-Id.
+    #    KEIN Standardname und KEIN Ausleihen - so bleibt jede Zeile eindeutig.
+    $fallback = 'Place ' + $sessionId.Substring([Math]::Max(0, $sessionId.Length - 4))
+    [void](Save-PlaceName $sessionId $fallback 'sessionFallback')
+    return [string]$script:PlaceNames[$sessionId]
 }
 
 # ----------------------------------------------------------------------------
@@ -18115,7 +17543,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 6.2.0)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.0.0)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -18343,8 +17771,22 @@ function Resolve-PlacePreviewHandle {
         Save-PreviewHandleMeta $sessionId $null 'keineStudioFensterGefunden' $rowTitle
         return [IntPtr]::Zero
     }
+    # Version 7.0.0: ZUERST die gebundene Identitaet (PID + HWND). Nur wenn
+    # sie fehlt, wird gesucht - und jede Bindung wird exklusiv beansprucht,
+    # damit zwei Zeilen nie dasselbe Fenster zeigen.
+    $identity = Resolve-PlaceWindowIdentity $Studio $sessionId
+    if ($identity.ProcessId -gt 0 -and $identity.WindowHandle -ne [IntPtr]::Zero) {
+        foreach ($info in $infos) {
+            if ([IntPtr]$info.Handle -eq [IntPtr]$identity.WindowHandle) {
+                Save-PreviewHandleMeta $sessionId $info ('identitaet:' + [string]$identity.BindReason) $rowTitle
+                return [IntPtr]$info.Handle
+            }
+        }
+    }
     # Nur EIN Studio-Fenster offen: keine Titel-Rateaktion noetig.
     if ($infos.Count -eq 1) {
+        $script:PreviewHandleClaims[[int64]$infos[0].Handle] = $sessionId
+        Save-PlaceIdentity $sessionId $Studio $infos[0] 'einzelnesFenster' | Out-Null
         Save-PreviewHandleMeta $sessionId $infos[0] 'einzelnesFenster' $rowTitle
         return [IntPtr]$infos[0].Handle
     }
@@ -18354,10 +17796,13 @@ function Resolve-PlacePreviewHandle {
     # Version 6.0.2: robust gegen Leerraum an den Enden, Gross-/Klein-
     # schreibung und angehaengte Zusaetze (z. B. den versionMismatch-Hinweis
     # "Studio neu starten (Plugin veraltet)").
-    $wanted = $rowTitle
+    $wanted = Get-NormalizedPlaceName $rowTitle
     foreach ($info in $infos) {
-        $infoTitle = ([string]$info.Title).Trim()
+        if (Test-PreviewHandleClaimed $info.Handle $sessionId) { continue }
+        $infoTitle = Get-NormalizedPlaceName ([string]$info.Title)
         if (-not [string]::IsNullOrWhiteSpace($infoTitle) -and $infoTitle -eq $wanted) {
+            $script:PreviewHandleClaims[[int64]$info.Handle] = $sessionId
+            Save-PlaceIdentity $sessionId $Studio $info 'titelExakt' | Out-Null
             Save-PreviewHandleMeta $sessionId $info 'titelExakt' $rowTitle
             return [IntPtr]$info.Handle
         }
@@ -18366,10 +17811,13 @@ function Resolve-PlacePreviewHandle {
     $comparable = $comparable.Trim()
     if (-not [string]::IsNullOrWhiteSpace($comparable)) {
         foreach ($info in $infos) {
-            $infoTitle = ([string]$info.Title).Trim()
+            if (Test-PreviewHandleClaimed $info.Handle $sessionId) { continue }
+            $infoTitle = Get-NormalizedPlaceName ([string]$info.Title)
             if ([string]::IsNullOrWhiteSpace($infoTitle)) { continue }
             if ($infoTitle.StartsWith($comparable, [System.StringComparison]::OrdinalIgnoreCase) -or
                 $comparable.StartsWith($infoTitle, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $script:PreviewHandleClaims[[int64]$info.Handle] = $sessionId
+                Save-PlaceIdentity $sessionId $Studio $info 'titelTolerant' | Out-Null
                 Save-PreviewHandleMeta $sessionId $info 'titelTolerant' $rowTitle
                 return [IntPtr]$info.Handle
             }
@@ -19398,6 +18846,12 @@ function New-Row {
         PreviewLoggedOnce = $false
         Mode       = $null
         ModeUntil  = [DateTime]::MinValue
+        StaleText  = $null
+        ProgressPanel = $null
+        ProgressBar   = $null
+        ProgressText  = $null
+        ProgressPercent = $null
+        ProgressState   = 'idle'
     }
 
     # Version 6.0 (Liquid Glass): Die Place-Zeile ist eine Teal-Glaskarte.
@@ -19510,11 +18964,71 @@ function New-Row {
     $title.Margin = [System.Windows.Thickness]::new(0, 0, 14, 0)
     $title.TextTrimming = 'CharacterEllipsis'
     [System.Windows.Controls.Grid]::SetColumn($title, 1)
+    # Version 7.0.0: unter dem Namen liegt eine zweite Zeile - dort steht der
+    # Plugin-veraltet-Hinweis in ROT (statt angehaengt im Titel, wie bisher).
+    $staleText = [System.Windows.Controls.TextBlock]::new()
+    $staleText.Text = ''
+    $staleText.Foreground = Get-Brush '#FFFF5C77'
+    $staleText.FontSize = 11.5
+    $staleText.FontWeight = 'SemiBold'
+    $staleText.Visibility = 'Collapsed'
+    $staleText.Margin = [System.Windows.Thickness]::new(0, 2, 0, 0)
+    $staleText.TextTrimming = 'CharacterEllipsis'
+    $titleStack = [System.Windows.Controls.StackPanel]::new()
+    $titleStack.VerticalAlignment = 'Center'
+    $titleStack.Children.Add($title) | Out-Null
+    $titleStack.Children.Add($staleText) | Out-Null
+    [System.Windows.Controls.Grid]::SetColumn($titleStack, 1)
     if ($placeIcon) { $namePanel.Children.Add($placeIcon.Frame) | Out-Null }
-    $namePanel.Children.Add($title) | Out-Null
+    $namePanel.Children.Add($titleStack) | Out-Null
     [System.Windows.Controls.Grid]::SetColumn($namePanel, 0)
     $grid.Children.Add($namePanel) | Out-Null
     $row.Title = $title
+    $row.StaleText = $staleText
+    # Version 7.0.0: Fortschritt des Fortschrittsvertrags - BLAU (ausdruecklich
+    # gewuenscht, nicht ins Pink-Schema umbiegen) direkt in der Place-Zeile.
+    # Die konkrete Nachricht steht als Tooltip an der Leiste, damit die
+    # Zeilenhoehe bei jedem Aufruf nicht springt.
+    $progressText = [System.Windows.Controls.TextBlock]::new()
+    $progressText.Text = ''
+    $progressText.Foreground = Get-Brush '#FF6FB6FF'
+    $progressText.FontSize = 11.5
+    $progressText.FontWeight = 'SemiBold'
+    $progressText.Visibility = 'Collapsed'
+    $progressBar = [System.Windows.Controls.ProgressBar]::new()
+    $progressBar.Minimum = 0
+    $progressBar.Maximum = 100
+    $progressBar.Value = 0
+    $progressBar.Height = 5
+    $progressBar.Width = 150
+    $progressBar.Margin = [System.Windows.Thickness]::new(8, 4, 0, 0)
+    $progressBar.Visibility = 'Collapsed'
+    $progressBar.Foreground = Get-Brush '#FF4C9BFF'
+    $progressBar.Background = Get-Brush '#33000000'
+    $progressBar.BorderThickness = [System.Windows.Thickness]::new(0)
+    $progressPercent = [System.Windows.Controls.TextBlock]::new()
+    $progressPercent.Text = ''
+    $progressPercent.Foreground = Get-Brush '#FF9CCBFF'
+    $progressPercent.FontSize = 11
+    $progressPercent.Margin = [System.Windows.Thickness]::new(8, 0, 0, 0)
+    $progressPercent.VerticalAlignment = 'Center'
+    $progressPercent.Visibility = 'Collapsed'
+    $progressRow = [System.Windows.Controls.StackPanel]::new()
+    $progressRow.Orientation = 'Horizontal'
+    $progressRow.VerticalAlignment = 'Center'
+    $progressRow.Visibility = 'Collapsed'
+    $progressRow.Children.Add($progressText) | Out-Null
+    $progressRow.Children.Add($progressBar) | Out-Null
+    $progressRow.Children.Add($progressPercent) | Out-Null
+    $namePanel.RowDefinitions.Add([System.Windows.Controls.RowDefinition]::new()) | Out-Null
+    $namePanel.RowDefinitions.Add([System.Windows.Controls.RowDefinition]::new()) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($titleStack, 0)
+    [System.Windows.Controls.Grid]::SetRow($progressRow, 1)
+    $namePanel.Children.Add($progressRow) | Out-Null
+    $row.ProgressPanel = $progressRow
+    $row.ProgressBar = $progressBar
+    $row.ProgressText = $progressText
+    $row.ProgressPercent = $progressPercent
     if ($placeIcon) {
         $row.IconFrame = $placeIcon.Frame
         $row.IconImage = $placeIcon.Image
@@ -19798,9 +19312,24 @@ function Update-Row {
     param($Row, $Studio, $WindowNames)
 
     $placeTitle = Get-PlaceName $Studio $WindowNames
-    if ($Studio.versionMismatch -eq $true) { $placeTitle += '  -  Studio neu starten (Plugin veraltet)' }
     Set-Text $Row.Title $placeTitle
-    $Row.Copy.IsEnabled = -not [string]::IsNullOrWhiteSpace($script:TunnelUrl)
+    # Version 7.0.0: "Plugin veraltet - Studio neustarten" steht NICHT mehr im
+    # Namen, sondern als ROTER Hinweis UNTER dem Namen. Solange das Plugin
+    # veraltet ist, sind "Prompt kopieren" und "..." abgedunkelt und nicht
+    # anklickbar - ein veralteter Prompt darf nicht kopiert werden.
+    $stale = ($Studio.versionMismatch -eq $true)
+    if ($null -ne $Row.StaleText) {
+        Set-Text $Row.StaleText $(if ($stale) { 'Plugin veraltet - Studio neustarten' } else { '' })
+        $Row.StaleText.Visibility = $(if ($stale) { 'Visible' } else { 'Collapsed' })
+    }
+    $copyEnabled = (-not [string]::IsNullOrWhiteSpace($script:TunnelUrl)) -and (-not $stale)
+    $Row.Copy.IsEnabled = $copyEnabled
+    if ($null -ne $Row.Menu) {
+        $Row.Menu.IsEnabled = -not $stale
+        $Row.Menu.Opacity = $(if ($stale) { 0.45 } else { 1.0 })
+    }
+    try { Update-PlaceProgressVisual $Row $Studio } catch {}
+    try { Update-HandoffCard } catch {}
     # Version 6.0.1: Start-PlacePreviewCapture ist selbst gedrosselt (siehe
     # dort) - ein Aufruf pro Tick ist billig (nur Dictionary-Lookups, solange
     # kein neuer Screenshot faellig ist).
@@ -20417,7 +19946,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '6.2.0'
+    $versionText = '7.0.0'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -20732,12 +20261,14 @@ function Show-ArenaDoneNotification {
 
 function Open-SettingsWindow {
     $autoStartNow = Get-StartupEnabled
-    $selfTestNow = $true
+    $simNow = $true
     $notifyNow = $false
     $editorIconsNow = $true
-    try { $selfTestNow = [bool]$script:Shared.BridgeSettings.selfTestAllowed } catch {}
+    $progressNow = $true
+    try { $simNow = [bool]$script:Shared.BridgeSettings.simAllowed } catch {}
     try { $notifyNow = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch {}
     try { $editorIconsNow = [bool]$script:SettingsCache.editorIconsEnabled } catch {}
+    try { $progressNow = [bool]$script:Shared.BridgeSettings.progressInPlaceList } catch {}
 
     $settingsXaml = @'
 <?xml version="1.0" encoding="utf-8"?>
@@ -21005,12 +20536,39 @@ function Open-SettingsWindow {
                         <TextBlock Text="ARENA (KI-TESTS)" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
                         <Border Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="14" Padding="16,12">
                             <StackPanel>
-                                <CheckBox x:Name="SelfTestSwitch" Style="{StaticResource ArenaSwitch}" Content="Arena darf sich selbst testen"/>
+                                <CheckBox x:Name="SimSwitch" Style="{StaticResource ArenaSwitch}" Content="Arena darf Simulationen (Run) starten"/>
+                                <TextBlock Text="Run-Modus: Skripte und Physik laufen im Editor - kein Spieler, keine Client-Skripte, kein Playtest. Nur die sim_-Werkzeuge sind davon betroffen; Bauen und GUIs sind nie blockiert." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="60,2,0,0"/>
                             </StackPanel>
                         </Border>
                         <Border Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="14" Padding="16,12" Margin="0,10,0,0">
                             <StackPanel>
                                 <CheckBox x:Name="NotifySwitch" Style="{StaticResource ArenaSwitch}" Content="Benachrichtigung, wenn Arena fertig ist"/>
+                                <CheckBox x:Name="ProgressSwitch" Style="{StaticResource ArenaSwitch}" Content="Fortschritt in der Place-Liste anzeigen" Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Text="MITTEILUNGEN" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
+                        <Border Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="14" Padding="16,12">
+                            <StackPanel>
+                                <TextBlock x:Name="NotifyDetailText" Foreground="#DCE6FF" FontSize="11.5" TextWrapping="Wrap" LineHeight="19"/>
+                                <TextBlock x:Name="ProgressStatsText" Foreground="{StaticResource SwTextMuted}" FontSize="11" TextWrapping="Wrap" Margin="0,10,0,0"/>
+                                <Button x:Name="ArenaAiButton" Content="Arena AI oeffnen" Height="34" Width="170" HorizontalAlignment="Right" Margin="0,12,0,0" Cursor="Hand">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border x:Name="bd" CornerRadius="11" Background="#3DE11D48" BorderBrush="#66FF5C77" BorderThickness="1">
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <TextBlock Text="&#xE71B;" FontFamily="Segoe MDL2 Assets" FontSize="14" Foreground="#FFC7D3" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                    <ContentPresenter VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="bd" Property="Background" Value="#59FF5C77"/>
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                </Button>
                             </StackPanel>
                         </Border>
 
@@ -21018,7 +20576,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 6.2.0" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.0.0" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -21046,21 +20604,32 @@ function Open-SettingsWindow {
     $swTitleBar      = $settingsWindow.FindName('TitleBar')
     $swClose         = $settingsWindow.FindName('CloseButton')
     $startupSwitch   = $settingsWindow.FindName('StartupSwitch')
-    $selfTestSwitch  = $settingsWindow.FindName('SelfTestSwitch')
+    $simSwitch       = $settingsWindow.FindName('SimSwitch')
     $notifySwitch    = $settingsWindow.FindName('NotifySwitch')
+    $progressSwitch  = $settingsWindow.FindName('ProgressSwitch')
     $editorIconsSwitch = $settingsWindow.FindName('EditorIconsSwitch')
     $updateText      = $settingsWindow.FindName('UpdateInfoText')
+    $notifyDetail    = $settingsWindow.FindName('NotifyDetailText')
+    $progressStats   = $settingsWindow.FindName('ProgressStatsText')
+    $arenaAiButton   = $settingsWindow.FindName('ArenaAiButton')
 
     $startupSwitch.IsChecked = $autoStartNow
-    $selfTestSwitch.IsChecked = $selfTestNow
+    $simSwitch.IsChecked = $simNow
     $notifySwitch.IsChecked = $notifyNow
+    $progressSwitch.IsChecked = $progressNow
     $editorIconsSwitch.IsChecked = $editorIconsNow
+    try {
+        $detailLines = @(Get-SettingsNotificationLines)
+        $notifyDetail.Text = ($detailLines -join "`n")
+        $progressStats.Text = Get-ProgressContractSummary
+    } catch {}
+    $arenaAiButton.Add_Click({ Open-ArenaAiPage })
 
     if ($script:UpdateInfoState) {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 6.2.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.0.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -21081,14 +20650,25 @@ function Open-SettingsWindow {
             $s.IsChecked = Get-StartupEnabled
         }
     })
-    $selfTestSwitch.Add_Click({
+    $simSwitch.Add_Click({
         param($s, $e)
-        $script:Shared.BridgeSettings.selfTestAllowed = [bool]$s.IsChecked
-        $script:SettingsCache.selfTestAllowed = [bool]$s.IsChecked
+        $script:Shared.BridgeSettings.simAllowed = [bool]$s.IsChecked
+        $script:SettingsCache.simAllowed = [bool]$s.IsChecked
         Save-BridgeSettingsFile
         $stateText = 'deaktiviert'
         if ($s.IsChecked) { $stateText = 'aktiviert' }
-        Write-RuntimeLog "Selbst-Tests der KI (Run/Play/Play Here) $stateText."
+        Write-RuntimeLog "Editor-Simulationen (sim_*) der KI $stateText."
+    })
+    $progressSwitch.Add_Click({
+        param($s, $e)
+        $script:Shared.BridgeSettings.progressInPlaceList = [bool]$s.IsChecked
+        $script:SettingsCache.progressInPlaceList = [bool]$s.IsChecked
+        Save-BridgeSettingsFile
+        # Version 7.0.0: AUS blendet die Anzeige aus - gespeichert wird weiter
+        # alles vollstaendig, beim Wiedereinschalten fehlt nichts.
+        $stateText = 'ausgeblendet'
+        if ($s.IsChecked) { $stateText = 'sichtbar' }
+        Write-RuntimeLog "Fortschrittsanzeige in der Place-Liste $stateText (Verlauf und Diagnose bleiben vollstaendig)."
     })
     $editorIconsSwitch.Add_Click({
         param($s, $e)
@@ -21113,7 +20693,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 6.2.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.0.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -21126,7 +20706,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '6.2.0'
+    $verText = '7.0.0'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

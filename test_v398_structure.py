@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 6.2.0.
+"""Offline structure check for Arena Roblox Bridge 7.0.0.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "6.2.0"
+VERSION = "7.0.0"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -437,6 +437,27 @@ def main() -> int:
     for marker in stale_614_literals:
         require(marker not in source, f"stale functional 6.1.4 literal remains: {marker}")
 
+    # 6.2.0 is historical as of 7.0.0. Its changelog heading stays (UI Engine
+    # 1.0 is still documented there and its code guards below still apply),
+    # but no executable version field may advertise it anymore.
+    stale_620_literals = [
+        "DocsVersion     = '6.2.0'",
+        'local ARENA_VERSION  = "6.2.0"',
+        "bridgeVersion = '6.2.0'",
+        "bridgeVersion='6.2.0'",
+        "serverVersion = '6.2.0'",
+        "version = '6.2.0'",
+        "$versionText = '6.2.0'",
+        "$verText = '6.2.0'",
+        'Arena Studio Bridge - Studio Plugin  (Version 6.2.0)',
+        'Text="Arena Roblox Bridge - Version 6.2.0"',
+        "Version 6.2.0 - aktuell. Beim naechsten Start",
+        "Laufzeit-Identitaet: Bridge-Version=6.2.0",
+        "Kurzbericht Fenster-Vorschau (Version 6.2.0)",
+    ]
+    for marker in stale_620_literals:
+        require(marker not in source, f"stale functional 6.2.0 literal remains: {marker}")
+
     # 6.1.5 is historical as of 6.2.0. Its changelog heading stays (the polygon
     # welding fix is still documented there and its code guards below still
     # apply), but no executable version field may advertise it anymore.
@@ -459,199 +480,116 @@ def main() -> int:
         require(marker not in source, f"stale functional 6.1.5 literal remains: {marker}")
 
     required_markers = [
-        "DocsVersion     = '6.2.0'",
-        'local ARENA_VERSION  = "6.2.0"',
-        "bridgeVersion = '6.2.0'",
-        "serverVersion = '6.2.0'",
-        "version = '6.2.0'",
-        "$versionText = '6.2.0'",
-        "$verText = '6.2.0'",
-        'Arena Studio Bridge - Studio Plugin  (Version 6.2.0)',
-        'Text="Arena Roblox Bridge - Version 6.2.0"',
-        # 4.0.0: the config table that keeps the top-level local count in check.
-        "local ARENA_CFG = {",
-        "ARENA_CFG.POLL_WAIT",
-        "ARENA_CFG.CHUNK_SIZE",
-        "SESSION_REPORTER_SOURCE",
-        "SESSION_CLIENT_REPORTER_SOURCE",
-        '\"#ARENA# \"',
-        'kind="hello"',
-        "StudioTestService:GetTestArgs()",
-        "waitForEditMode(false, 20)",
-        "editRunServiceStop",
-        "reporterEndTest",
-        "PLAY_STOP_NEEDS_USER",
-        "REPORTER_NOT_CONNECTED",
-        "session_diag",
-        "SharedTableRegistry",
-        "sessionChannelCommand",
-        "sessionDiagnosticsData",
-        "reporterSeenInOutput",
-        "reporterVariantUsed",
-        "sweepEditReporterCopies",
-        "testSessionActive",
-        "stopped_by_arena_bridge",
-        "Get-Utf8QueryValue",
-        "[System.Web.HttpUtility]::UrlDecode",
-        "LateResults",
-        "PlayRetryDedupe",
-        "plugin outdated - Tests warten",
-        "Get-RawGitHubText",
-        "$content -is [byte[]]",
-        "[char]0xFEFF",
-        # 4.0.4: the session reporter loop must be while-true + supervised,
-        # carry its loop counter + post-fail counter in EVERY heartbeat, and
-        # the edit plugin must poll the reporter state during a session so
-        # arenaLineCount visibly counts up (4.0.2 live bug: exactly ONE
-        # heartbeat, arenaLineCount frozen at 1).
-        "state.reporterLoopCount = sessionAgent.reporterLoopCount",
-        "reporterPostFailCount",
-        "pluginReporterLoopCount",
-        "notRunningStreak",
-        "local lastSessionPoll = 0",
-        "local sessionDm = isSessionDataModel",
-        "loopCountViaSharedTable",
-        "reporterSeenInOutput = active and sessionAgent.reporterSeenInOutput == true or false",
-        "and testSessionActive()",
-        "reporterLoopAlive=true",
-        "agentNotRunningStreak",
-        "clearSessionReporterState",
-        "wasSessionActive and not sessionActiveNow",
-        "Retry once before reporting nil",
-        # 5.0.1 regression guards: the heartbeat handler must never let a
-        # state-tracking failure swallow the command queue (that live bug made
-        # play_stop/move_character impossible: loopCount 501 / postFail 500),
-        # and play_stop must keep its queued end_test last resort.
-        "function Set-StateField",
+        'local ARENA_CFG = {',
+        'ARENA_CFG.POLL_WAIT',
+        'ARENA_CFG.CHUNK_SIZE',
+        'PLAY_STOP_NEEDS_USER',
+        'REPORTER_NOT_CONNECTED',
+        'session_diag',
+        'SharedTableRegistry',
+        'sessionChannelCommand',
+        'reporterSeenInOutput',
+        'testSessionActive',
+        'stopped_by_arena_bridge',
+        'Get-Utf8QueryValue',
+        '[System.Web.HttpUtility]::UrlDecode',
+        'LateResults',
+        'PlayRetryDedupe',
+        "plugin outdated - simulations/version checks wait",
+        'Get-RawGitHubText',
+        '$content -is [byte[]]',
+        '[char]0xFEFF',
+        'reporterPostFailCount',
+        'pluginReporterLoopCount',
+        'local sessionDm = isSessionDataModel',
+        'Retry once before reporting nil',
+        'function Set-StateField',
         "Set-StateField $newState 'userPlaytestActive'",
-        "queuedEndTest",
-        "queuedSessionEndTest",
-        "or testSessionActive() or (sessionAgent and sessionAgent.httpConnected)",
-        "sessionAgent.key ~= nil",
-        # Version 5: stale session keys cannot block movement/stop, aggregate
-        # multi-place routing and the UI history/icon layer stay present.
-        "action = \"register\"",
-        "sessionKeyRegistered",
-        "Humanoid:Move is frame-scoped",
-        "MultiPlaceToken",
-        "MULTI_PLACE_SELECTION_REQUIRED",
-        "targetPlace",
-        "ActivityLogs",
-        "Open-ArenaHistoryWindow",
-        "Alle Places",
-        # 5.0.2: place-list hard diagnosis + safety net (live bug: count badge
-        # correct, EmptyState hidden, but no row ever rendered; 5.0.1's $host
-        # fix was correct but not sufficient - so errors must now be measured,
-        # not guessed: full type/line/stacktrace logging, post-add tree state,
-        # and every optional row feature individually guarded so a minimal row
-        # (name + copy button) always lands in the tree).
-        "function Write-UiErrorLog",
-        "InvocationInfo.ScriptLineNumber",
-        "$ErrorRecord.ScriptStackTrace",
-        "function Add-PlaceRowToPlaceList",
+        'MultiPlaceToken',
+        'MULTI_PLACE_SELECTION_REQUIRED',
+        'targetPlace',
+        'ActivityLogs',
+        'Open-ArenaHistoryWindow',
+        'Alle Places',
+        'function Write-UiErrorLog',
+        'InvocationInfo.ScriptLineNumber',
+        '$ErrorRecord.ScriptStackTrace',
+        'function Add-PlaceRowToPlaceList',
         "Add-PlaceRowToPlaceList $row $sid 'Place-Zeile'",
         "Add-PlaceRowToPlaceList $script:AllPlacesRow $allSid 'Alle-Places-Zeile'",
-        "hinzugefuegt (sid={1}): PlaceList.Children={2}",
-        "hart auf sichtbar gestellt",
-        "Einblend-Animation kam nie an",
-        "Place-Liste konnte nicht neu angeordnet werden",
-        "Place-Zeile: Vorschau-Visual konnte nicht erstellt werden",
-        "Place-Zeile: Auswahlmenue/Popup konnte nicht erstellt werden",
-        "Arena-Verlaufsfenster konnte nicht geoeffnet werden",
-        # Version 5.2 user-wish update: lean aggregate row, repaired game
-        # icons (dead fallback URL replaced, PNG-verified, retried, locally
-        # drawn last resort), styled+draggable history window with real
-        # numbers instead of [PLATZHALTER], no last-message settings card,
-        # short all-places prompt, and a much quicker ghost-free place list.
-        "$script:PlaceVisibleSeconds = 15",
-        "$script:PlaceOrphanGraceSeconds = 4",
-        "$script:PlaceCleanupSeconds = 120",
-        "function Remove-DeadSession",
-        "Remove-DeadSession $sessionId",
-        "function New-HistoryButton",
-        "$head.Add_MouseLeftButtonDown($dragHandler)",
-        "$shell.Add_MouseLeftButtonDown($dragHandler)",
-        "function Get-ActivityToolSets",
-        "previousLines = select(2, string.gsub(oldSource",
-        "function Get-ResultNumber",
-        # Version 6.0 (Liquid Glass redesign): the glass shell, the aurora
-        # layer behind it, the teal glass rows, the green glass action
-        # buttons and the animation patterns must stay present.
+        'hinzugefuegt (sid={1}): PlaceList.Children={2}',
+        'hart auf sichtbar gestellt',
+        'Einblend-Animation kam nie an',
+        'Place-Liste konnte nicht neu angeordnet werden',
+        'Place-Zeile: Vorschau-Visual konnte nicht erstellt werden',
+        'Place-Zeile: Auswahlmenue/Popup konnte nicht erstellt werden',
+        'Arena-Verlaufsfenster konnte nicht geoeffnet werden',
+        '$script:PlaceVisibleSeconds = 15',
+        '$script:PlaceOrphanGraceSeconds = 4',
+        '$script:PlaceCleanupSeconds = 120',
+        'function Remove-DeadSession',
+        'Remove-DeadSession $sessionId',
+        'function New-HistoryButton',
+        '$head.Add_MouseLeftButtonDown($dragHandler)',
+        '$shell.Add_MouseLeftButtonDown($dragHandler)',
+        'function Get-ActivityToolSets',
+        'previousLines = select(2, string.gsub(oldSource',
+        'function Get-ResultNumber',
         'x:Name="RootShell"',
-        "RoundGlassStyle",
-        "SettingsPillStyle",
-        "GlassFill",
-        "SweepBrush",
-        "function New-AuroraLayer",
-        "New-AuroraLayer -Width 660 -Height 620",
+        'RoundGlassStyle',
+        'SettingsPillStyle',
+        'GlassFill',
+        'SweepBrush',
+        'function New-AuroraLayer',
+        'New-AuroraLayer -Width 660 -Height 620',
         "$RootShell       = $window.FindName('RootShell')",
-        "$RootShell.RenderTransform.BeginAnimation",
-        "$popup.Add_Opened",
-        "PopupAnimation]::None",
+        '$RootShell.RenderTransform.BeginAnimation',
+        '$popup.Add_Opened',
+        'PopupAnimation]::None',
         "'#D900D5C4'",
         "'#F238D16C'",
         "'#47FFFFFF'",
-        "$rowBg.GradientStops.Add",
+        '$rowBg.GradientStops.Add',
         "$hoverGlow.Background = Get-Brush '#5900E5D0'",
-        "$Item.Thumb.RenderTransform.BeginAnimation",
-        "$copy.Background = $greenBg",
-        "RectangleGeometry Rect=\"0,0,920,620\"",
-        "Add_ContentRendered",
-        # Version 6.0.1: the game-icon download is fully replaced by a live
-        # Studio-window preview (throttled, frozen while minimized, no
-        # preview at all for the aggregate "Alle Places" row).
-        "$script:PlacePreviewHandles = @{}",
-        "$script:PlacePreviewLastCaptureAt = @{}",
-        "$script:PlacePreviewIntervalSeconds = 3.0",
-        "$script:PlacePreviewCaptureHeight = 88",
-        "function Get-StudioWindowInfos",
-        "function Resolve-PlacePreviewHandle",
-        "function Set-PlacePreviewImage",
-        "function New-PlacePreviewVisual",
-        "function Start-PlacePreviewCapture",
-        "function Update-PlacePreviewCaptures",
-        "Place-Zeile: Vorschau-Aufnahme fehlgeschlagen",
-        # Version 6.0.2: preview can no longer fail silently - failures are
-        # counted, logged with a reason (throttled), and after 3 consecutive
-        # failures the placeholder glyph replaces the eternal spinner.
-        "$script:PlacePreviewFailLogAt = @{}",
-        "PreviewFailCount = 0",
-        "PreviewLoggedOnce = $true",
-        "Place-Vorschau ($sessionId): Aufnahme fehlgeschlagen",
-        "Place-Vorschau ($sessionId): Live-Vorschau aktiv",
-        "Studio-Fenster ist minimiert",
-        # Version 6.0.2: window-handle resolution is null-safe and tolerant
-        # (trim, case-insensitive, prefix match, versionMismatch suffix).
-        "$previousRaw = $script:PlacePreviewHandles[$sessionId]",
-        "[System.StringComparison]::OrdinalIgnoreCase",
-        # Version 6.0.2: the capture worker carries its own ScreenHelper
-        # fallback so a failed main-runspace Add-Type cannot kill every
-        # capture with a silent TypeNotFound.
+        '$Item.Thumb.RenderTransform.BeginAnimation',
+        '$copy.Background = $greenBg',
+        'RectangleGeometry Rect="0,0,920,620"',
+        'Add_ContentRendered',
+        '$script:PlacePreviewHandles = @{}',
+        '$script:PlacePreviewLastCaptureAt = @{}',
+        '$script:PlacePreviewIntervalSeconds = 3.0',
+        '$script:PlacePreviewCaptureHeight = 88',
+        'function Get-StudioWindowInfos',
+        'function Resolve-PlacePreviewHandle',
+        'function Set-PlacePreviewImage',
+        'function New-PlacePreviewVisual',
+        'function Start-PlacePreviewCapture',
+        'function Update-PlacePreviewCaptures',
+        'Place-Zeile: Vorschau-Aufnahme fehlgeschlagen',
+        '$script:PlacePreviewFailLogAt = @{}',
+        'PreviewFailCount = 0',
+        'PreviewLoggedOnce = $true',
+        'Place-Vorschau ($sessionId): Aufnahme fehlgeschlagen',
+        'Place-Vorschau ($sessionId): Live-Vorschau aktiv',
+        'Studio-Fenster ist minimiert',
+        '$previousRaw = $script:PlacePreviewHandles[$sessionId]',
+        '[System.StringComparison]::OrdinalIgnoreCase',
         "if (-not ('Arena.ScreenHelper' -as [type])) {",
-        # Version 6.0.3: truly flat window enumeration, occlusion-safe direct
-        # window rendering, and self-healing capture workers.
-        "return $script:PreviewWindowCache",
-        "return $script:WindowNameCache",
-        "[Arena.ScreenHelper]::PrintWindow($hwnd, $hdc, 2)",
-        "CopyFromScreen-Fallback",
-        "Aufnahme-Worker nach 10 Sekunden beendet",
-        "kein passendes Roblox-Studio-Fenster gefunden",
-        # Version 6.0.2: update safety net - after a launcher start whose
-        # status does not prove a fresh install, the app verifies version.json
-        # itself and pulls the update directly if the launcher failed to.
-        "$script:SelfUpdateVerifyTimeout = 6",
-        "Invoke-AutostartSelfUpdate -VerifyMode",
+        'return $script:PreviewWindowCache',
+        'return $script:WindowNameCache',
+        '[Arena.ScreenHelper]::PrintWindow($hwnd, $hdc, 2)',
+        'CopyFromScreen-Fallback',
+        'Aufnahme-Worker nach 10 Sekunden beendet',
+        'kein passendes Roblox-Studio-Fenster gefunden',
+        '$script:SelfUpdateVerifyTimeout = 6',
+        'Invoke-AutostartSelfUpdate -VerifyMode',
         "$starterProvesFreshInstall = ((@('update-erfolgreich', 'erster-start') -contains $UpdateStatus) -eq $true)",
-        "param([string]$Branch, [string]$File, [int]$TimeoutSec = 0)",
-        # Version 6.0.4: Laufzeit-Diagnose + robuste Aufnahme fuer die
-        # Fenster-Vorschau (Ablauf-ID + neun Stationen, sichtbarer
-        # UI-Selbsttest, C#-Helfer im Hauptprozess, vier Aufnahmewege,
-        # atomare PNG-Ablage, Laufzeit-Identitaet mit SHA-256/Sprachmodus).
-        "function Write-PreviewTrace",
-        "function New-PreviewFlowId",
-        "function Clear-PreviewFlow",
-        "function Save-PreviewHandleMeta",
-        "PREVIEW [{0}] {1} sid={2} pid={3} hwnd={4}",
+        'param([string]$Branch, [string]$File, [int]$TimeoutSec = 0)',
+        'function Write-PreviewTrace',
+        'function New-PreviewFlowId',
+        'function Clear-PreviewFlow',
+        'function Save-PreviewHandleMeta',
+        'PREVIEW [{0}] {1} sid={2} pid={3} hwnd={4}',
         "'CAPTURE_START'",
         "'WINDOWS_ENUMERATED'",
         "'HANDLE_RESOLVED'",
@@ -661,49 +599,97 @@ def main() -> int:
         "'PNG_DECODED'",
         "'IMAGE_ASSIGNED'",
         "'IMAGE_VISIBLE'",
-        "function Invoke-PlacePreviewUiSelfTest",
-        "function New-PlacePreviewSelfTestImage",
-        "PREVIEW_UI_SELFTEST_OK",
-        "PREVIEW_UI_SELFTEST_FAILED",
-        "Invoke-PlacePreviewUiSelfTest $Row $SessionId",
-        "namespace Arena {",
-        "public sealed class PreviewCaptureResult",
-        "public static Task<PreviewCaptureResult> CaptureAsync(long hwndValue, int targetHeight)",
-        "private const uint PW_RENDERFULLCONTENT = 2;",
-        "TryWindowDcBitBlt",
-        "TryCopyFromScreen",
-        "HasVisibleContent",
-        "true-aber-nichts-sichtbar",
-        "[Arena.PreviewCapture]::CaptureAsync($handleValue, [int]$targetHeight)",
-        "kind=csharp-helper",
-        "ps-runspace-fallback",
-        "Get-FileHash -Algorithm SHA256",
-        "Laufzeit-Identitaet: Bridge-Version=6.2.0",
-        "LanguageMode",
-        "$script:PreviewFlowContexts = @{}",
-        "$script:PreviewHandleInfos = @{}",
-        "$script:PreviewSelfTestDone = $false",
-        "Clear-PreviewFlow $flow",
-        "DispatcherPriority]::Render",
-        "GetNewClosure()",
+        'function Invoke-PlacePreviewUiSelfTest',
+        'function New-PlacePreviewSelfTestImage',
+        'PREVIEW_UI_SELFTEST_OK',
+        'PREVIEW_UI_SELFTEST_FAILED',
+        'Invoke-PlacePreviewUiSelfTest $Row $SessionId',
+        'namespace Arena {',
+        'public sealed class PreviewCaptureResult',
+        'public static Task<PreviewCaptureResult> CaptureAsync(long hwndValue, int targetHeight)',
+        'private const uint PW_RENDERFULLCONTENT = 2;',
+        'TryWindowDcBitBlt',
+        'TryCopyFromScreen',
+        'HasVisibleContent',
+        'true-aber-nichts-sichtbar',
+        '[Arena.PreviewCapture]::CaptureAsync($handleValue, [int]$targetHeight)',
+        'kind=csharp-helper',
+        'ps-runspace-fallback',
+        'Get-FileHash -Algorithm SHA256',
+        'LanguageMode',
+        '$script:PreviewFlowContexts = @{}',
+        '$script:PreviewHandleInfos = @{}',
+        '$script:PreviewSelfTestDone = $false',
+        'Clear-PreviewFlow $flow',
+        'DispatcherPriority]::Render',
+        'GetNewClosure()',
         "Move-Item -LiteralPath $script:RuntimeLog -Destination ($script:RuntimeLog + '.old') -Force",
-        # Version 6.0.5: Die Sichtbarkeit der Kachel darf NIE mehr allein an
-        # der Einblend-Animation haengen; das Selbsttest-Urteil muss gemessen
-        # sein, und der kleine Kurzbericht muss existieren.
-        "function Get-PlacePreviewVisualState",
-        "function Format-PlacePreviewVisualState",
-        "function Start-PlacePreviewVisibilityVerify",
-        "function Write-PreviewDiagnoseFile",
-        "function Add-PreviewDiagLine",
-        "PREVIEW_UI_VERIFY sid=",
-        "PREVIEW_OPACITY_RESCUE sid=",
-        "preview-diagnose.txt",
-        "$fade.FillBehavior = [System.Windows.Media.Animation.FillBehavior]::Stop",
-        "$fadeGuard.Interval = [System.TimeSpan]::FromMilliseconds(400)",
-        "$verifyTimer.Interval = [System.TimeSpan]::FromMilliseconds(1500)",
-        "PreviewVerifyDone = $false",
+        'function Get-PlacePreviewVisualState',
+        'function Format-PlacePreviewVisualState',
+        'function Start-PlacePreviewVisibilityVerify',
+        'function Write-PreviewDiagnoseFile',
+        'function Add-PreviewDiagLine',
+        'PREVIEW_UI_VERIFY sid=',
+        'PREVIEW_OPACITY_RESCUE sid=',
+        'preview-diagnose.txt',
+        '$fade.FillBehavior = [System.Windows.Media.Animation.FillBehavior]::Stop',
+        '$fadeGuard.Interval = [System.TimeSpan]::FromMilliseconds(400)',
+        '$verifyTimer.Interval = [System.TimeSpan]::FromMilliseconds(1500)',
+        'PreviewVerifyDone = $false',
         "$script:PreviewSelfTestVerdict = ''",
-        "reallyVisible",
+        'reallyVisible',
+        'tools.sim_start = function(args)',
+        'tools.sim_stop = function(args)',
+        'tools.sim_status = function(args)',
+        'StudioTestService:ExecuteRunModeAsync()',
+        'waitForEditMode(false, 25)',
+        'waitForEditMode(true, 12)',
+        'SIM_START_FAILED',
+        'SIM_STOP_NEEDS_USER',
+        'SIM_DISABLED',
+        'SIM_RUNNING',
+        'simAllowedNow',
+        'plugin:GetSetting("arenaSimAllowed")',
+        'simStateData',
+        'USER_PLAYTEST_ACTIVE',
+        'allowInSimMode',
+        'progressContract',
+        'ProgressStates',
+        'progressPercent',
+        'HANDOFF_NOT_ALLOWED',
+        'HANDOFF_INCOMPLETE',
+        'HANDOFF_REQUIRED',
+        'AuditFlags',
+        'previousHandoff',
+        'function Get-PlaceIdentityKey',
+        'PreviewHandleInfos',
+        'UI_ENGINE.ENGINE_VERSION = "2.0"',
+        'function UI_ENGINE.textureRecipe',
+        'function UI_ENGINE.glowEmitter',
+        'function UI_ENGINE.radialMenu',
+        'tools.ui_glow = function(args)',
+        'tools.ui_texture = function(args)',
+        'tools.ui_radial = function(args)',
+        'TEXTURE_ASSET_MISSING',
+        'RADIAL_ASSET_MISSING',
+        'glowStacks',
+        'radialMenus',
+        'textureImages',
+        'worldEngineRules = @{',
+        'tools.world_style = function(args)',
+        'tools.style_lock = function(args)',
+        'tools.site_survey = function(args)',
+        'tools.variation = function(args)',
+        'tools.prop_place = function(args)',
+        'tools.prop_save = function(args)',
+        'tools.prop_list = function(args)',
+        'tools.model_audit = function(args)',
+        'tools.world_audit = function(args)',
+        'tools.world_glow = function(args)',
+        'tools.refine = function(args)',
+        'WORLD_ENGINE.PRESETS',
+        'placeholderCount',
+        'styleCompliance',
     ]
     for marker in required_markers:
         require(marker in source, f"required marker missing: {marker}")
@@ -711,19 +697,19 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '6.2.0'": 1,
-        'local ARENA_VERSION  = "6.2.0"': 1,
-        "version = '6.2.0'": 1,
-        "bridgeVersion = '6.2.0'": 3,
-        "bridgeVersion='6.2.0'": 1,
-        "serverVersion = '6.2.0'": 2,
-        "$versionText = '6.2.0'": 1,
-        "$verText = '6.2.0'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 6.2.0)": 1,
-        'Text="Arena Roblox Bridge - Version 6.2.0"': 1,
-        "Version 6.2.0 - aktuell. Beim naechsten Start": 2,
-        "Laufzeit-Identitaet: Bridge-Version=6.2.0": 1,
-        "Kurzbericht Fenster-Vorschau (Version 6.2.0)": 1,
+        "DocsVersion     = '7.0.0'": 1,
+        'local ARENA_VERSION  = "7.0.0"': 1,
+        "version = '7.0.0'": 1,
+        "bridgeVersion = '7.0.0'": 3,
+        "bridgeVersion='7.0.0'": 1,
+        "serverVersion = '7.0.0'": 2,
+        "$versionText = '7.0.0'": 1,
+        "$verText = '7.0.0'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.0.0)": 1,
+        'Text="Arena Roblox Bridge - Version 7.0.0"': 1,
+        "Version 7.0.0 - aktuell. Beim naechsten Start": 2,
+        "Laufzeit-Identitaet: Bridge-Version=7.0.0": 1,
+        "Kurzbericht Fenster-Vorschau (Version 7.0.0)": 1,
     }
     for marker, expected_count in functional_version_counts.items():
         actual_count = source.count(marker)
@@ -860,30 +846,38 @@ def main() -> int:
     require("return , $script:WindowNameCache" not in window_name_fn,
             "window title cache is nested again by unary comma (breaks multi-window title matching)")
 
-    # A no-HTTP fallback must not return an instructions-to-enable-HTTP error.
-    start_chunk = source[source.index("local function startPlay"):source.index("local function stopPlay")]
-    require("HttpEnabled" in start_chunk and "installSessionReporters" in start_chunk,
-            "play_start does not install its no-HTTP reporters")
-    require("waitForEditMode(false, 20)" in start_chunk,
-            "play_start does not use EditModeActive as its 20-second success oracle")
-    require("Allow HTTP Requests" not in start_chunk,
-            "play_start still asks the user to change HTTP settings")
-    require("reporterVariant = variant" in start_chunk or "reporterVariantUsed = variant" in start_chunk,
-            "play_start does not carry the reporter variant through")
+    # 7.0.0: the playtest machinery is gone from the executable Lua - the
+    lua_text = plugin_source(source)
+    # simulation block is the only test path, and it must keep its gates.
+    require("startPlay" not in lua_text and "stopPlay" not in lua_text and "sessionAgent" not in lua_text,
+            "playtest helpers survived the 7.0.0 cut")
+    require("tools.play_start" not in lua_text and "tools.play_stop" not in lua_text and "tools.gui_click" not in lua_text,
+            "a removed playtest tool is still registered")
+    sim_start = lua_text[lua_text.index("tools.sim_start = function"):lua_text.index("tools.sim_stop = function")]
+    require("ExecuteRunModeAsync" in sim_start and "waitForEditMode(false, 25)" in sim_start,
+            "sim_start does not use ExecuteRunModeAsync with the EditModeActive oracle")
+    require("SIM_DISABLED" in sim_start and "USER_PLAYTEST_ACTIVE" in sim_start,
+            "sim_start lost the disabled/user-playtest gates")
+    sim_stop = lua_text[lua_text.index("tools.sim_stop = function"):lua_text.index("tools.sim_status = function")]
+    require("RunService:Stop()" in sim_stop and "waitForEditMode(true, 12)" in sim_stop,
+            "sim_stop lost its RunService:Stop() + EditModeActive return")
+    require("SIM_STOP_NEEDS_USER" in sim_stop,
+            "sim_stop lost the bounded user handover instead of retrying forever")
+    guard = lua_text[lua_text.index("executeTool = function(tool"):lua_text.index("local okRun, result = pcall(handler, args)")]
+    require("USER_PLAYTEST_ACTIVE" in guard and "SIM_RUNNING" in guard and "allowInSimMode" in guard,
+            "the persistent-edit guard no longer blocks with USER_PLAYTEST_ACTIVE/SIM_RUNNING")
+    require("play_start" not in lua_text and "play_stop" not in lua_text and "play_here" not in lua_text,
+            "a playtest name survived inside the plugin Lua")
 
-    # The stop ladder: reporter channel first, edit RunService:Stop() fallback,
-    # then the bounded PLAY_STOP_NEEDS_USER handover (never an endless loop).
-    stop_start = source.index("local function finishStopSuccess")
-    stop_chunk = source[stop_start:stop_start + 8000]
-    require("sessionChannelCommand" in stop_chunk and "reporterEndTest" in stop_chunk,
-            "play_stop does not try the reporter command channel first")
-    require("editRunServiceStop" in stop_chunk, "play_stop lost the edit RunService:Stop() fallback")
-    require("PLAY_STOP_NEEDS_USER" in stop_chunk, "play_stop lost the bounded user handover")
-    require("sweepEditReporterCopies" in stop_chunk, "play_stop does not sweep leftover reporter copies")
-
-    # Session-aware tool guards (B4 of the 3.9.6 live test).
-    require('failCode("REPORTER_NOT_CONNECTED"' in source,
-            "no tool answers REPORTER_NOT_CONNECTED for a live session without reporter")
+    # 7.0.0: only sim_start is switchable; the setting never blocks building.
+    require("New-SimBlockedResult" in source and "New-SelfTestBlockedResult" not in source,
+            "the sim-disabled result helper is missing or the old self-test helper survived")
+    require("@('sim_start') -contains $tool" in source and "@('sim_start') -contains [string]$call.tool" in source,
+            "the SIM_DISABLED guard does not target sim_start exactly")
+    require("code = 'SELF_TEST_DISABLED'" not in source
+            and "BridgeSettings.selfTestAllowed" not in source
+            and "plugin:GetSetting(\"arenaSelfTest\")" not in source,
+            "the old self-test setting/code survived (only the historical notes may mention it)")
 
     # Lua parser check – this verifies the actual generated plugin, not a copy.
     try:
@@ -906,26 +900,15 @@ def main() -> int:
         f"never connect). Bundle constants into a table like ARENA_CFG.",
     )
 
-    # The session helpers are Lua strings INSIDE the plugin: parse each of
-    # them separately as well (a syntax error there would only fire live).
-    embedded = re.findall(r"local (SESSION_AGENT_SOURCE|SESSION_CLIENT_REPORTER_SOURCE|SESSION_REPORTER_SOURCE|CLIENT_AGENT_SOURCE) = \[==\[(.+?)\]==\]", lua, re.S)
-    names = [name for name, _ in embedded]
-    for wanted in ("SESSION_AGENT_SOURCE", "SESSION_CLIENT_REPORTER_SOURCE", "SESSION_REPORTER_SOURCE"):
-        require(wanted in names, f"embedded source missing from the plugin: {wanted}")
-    for name, chunk in embedded:
-        try:
-            ast.parse(chunk)
-        except Exception as exc:
-            raise AssertionError(f"embedded Lua source {name} does not parse: {exc}") from exc
-    # CLIENT_SOURCE lives nested one level deeper inside SESSION_AGENT_SOURCE.
-    reporter_chunks = re.findall(r"local SESSION_REPORTER_SOURCE = \[==\[(.+?)\]==\]", lua, re.S)
-    require(len(reporter_chunks) == 1, "SESSION_REPORTER_SOURCE not found")
-    require("reporterLoopAlive=true" in reporter_chunks[0], "injected reporter does not publish loop liveness")
-    require('action == "move_character"' in reporter_chunks[0], "injected reporter lacks move_character fallback")
-
-    nested = re.findall(r"local CLIENT_SOURCE = \[=\[(.+?)\]=\]", lua, re.S)
-    require(len(nested) == 1, "nested CLIENT_SOURCE not found")
-    ast.parse(nested[0])
+    # 7.0.0: the injected session/client/reporter sources are GONE. No
+    # embedded Lua chunk may come back, and no reporter marker may survive -
+    # the simulation block is plain plugin code now.
+    for gone in ("SESSION_AGENT_SOURCE", "SESSION_CLIENT_REPORTER_SOURCE", "SESSION_REPORTER_SOURCE",
+                 "CLIENT_AGENT_SOURCE", "CLIENT_SOURCE"):
+        require(gone not in lua, f"removed 7.0.0 embedded source is back: {gone}")
+    for gone in ("reporterLoopAlive", 'action == "move_character"', "end_test",
+                 "SharedTableRegistry", "reporterEndTest"):
+        require(gone not in lua, f"removed 7.0.0 reporter/session marker is back: {gone}")
 
     blocks = xaml_blocks(source)
     require(len(blocks) == 3, f"expected 3 XAML Window blocks, found {len(blocks)}")
@@ -1013,7 +996,7 @@ def main() -> int:
             "local would push the plugin over Luau's 200-register limit")
     for marker in (
         "UI_ENGINE = {}",
-        'UI_ENGINE.ENGINE_VERSION = "1.0"',
+        'UI_ENGINE.ENGINE_VERSION = "2.0"',
         # Rule 1 - transform wrapper owns AnchorPoint and UIScale.
         'wrapper.AnchorPoint = Vector2.new(0.5, 0.5)',
         'local scale = Instance.new("UIScale"); scale.Name = "ArenaScale"',
@@ -1047,6 +1030,18 @@ def main() -> int:
         "tools.build_surface = function(args)",
         "tools.build_interface = function(args)",
         "tools.ui_audit = function(args)",
+        # Engine 2.0 - glow, real textures, radial menus.
+        'UI_ENGINE.ENGINE_VERSION = "2.0"',
+        "function UI_ENGINE.textureRecipe",
+        "function UI_ENGINE.glowEmitter",
+        "function UI_ENGINE.radialMenu",
+        "tools.ui_glow = function(args)",
+        "tools.ui_texture = function(args)",
+        "tools.ui_radial = function(args)",
+        "TEXTURE_ASSET_MISSING",
+        "RADIAL_ASSET_MISSING",
+        "glowStacks",
+        "radialMenus",
         # Write protection and permanent session rule.
         "build_surface = true, build_interface = true,",
         "uiEngineRules = @{",
@@ -1054,8 +1049,14 @@ def main() -> int:
     ):
         require(marker in source, f"required UI Engine 1.0 marker missing: {marker}")
 
-    require(source.count("category = 'ui'") == 5,
-            "expected exactly 5 documented UI Engine tools")
+    require(source.count("category = 'ui'") == 8,
+            "expected exactly 8 documented UI Engine tools (5 from 1.0 + glow/texture/radial)")
+    require(source.count("category = 'world'") == 11,
+            "expected exactly 11 documented World Engine tools")
+    require(source.count("category = 'sim'") == 3,
+            "expected exactly 3 documented simulation tools")
+    require(source.count("category = 'play'") == 0,
+            "a playtest-category tool is still documented")
 
     # The transform wrapper must be anchored BEFORE the UIScale exists, and the
     # content padding must be computed AFTER the corner radius is known.
@@ -1076,7 +1077,50 @@ def main() -> int:
     require("scale.Scale = P.from" in motion[0] and "TweenService:Create(scale, info, { Scale = 1 })" in motion[0],
             "the motion script must animate the UIScale of the transform wrapper, not the element size")
 
-    print("OK: 6.2.0 structure, Lua and XAML validation passed")
+    # ------------------------------------------------------------------
+    # 7.0.0 regression guards: simulation, progress contract, handoff,
+    # UI Engine 2.0 and World Engine 1.0.
+    # ------------------------------------------------------------------
+    for marker in (
+        # Simulation tools and their honest state report.
+        "local function simStateData()",
+        "simStartedByBridge",
+        "SIM_ALREADY_RUNNING",
+        'SimSendKey("F8", 0.06)',
+        # Progress contract: never block on a missing percent.
+        "Missing percent",
+        "progressPercent",
+        "$Shared.ProgressStates",
+        # Handoff: complete games only, file under LOCALAPPDATA, session start.
+        "HANDOFF_NOT_ALLOWED",
+        "HANDOFF_INCOMPLETE",
+        "handoffId",
+        "'handoff'",
+        # Stable window/place identity.
+        "Get-PlaceIdentityKey",
+        "PreviewHandleInfos",
+        # World Engine 1.0 surface.
+        "WORLD_ENGINE = {}",
+        'WORLD_ENGINE.VERSION = "1.0"',
+        "workspace.ArenaProps",
+        "ArenaProps",
+        "ArenaDetail",
+        "lcg(seed)",
+        "placeholderCount",
+        "styleCompliance",
+        # UI Engine 2.0 surface.
+        "textureRecipe",
+        "glowEmitter",
+        "radialMenu",
+        "TEXTURE_ASSET_MISSING",
+        "RADIAL_ASSET_MISSING",
+    ):
+        require(marker in source, f"required 7.0.0 marker missing: {marker}")
+    require("tools.play_start" not in lua and "SESSION_AGENT_SOURCE" not in source
+            and "CLIENT_AGENT_SOURCE" not in source and "SESSION_REPORTER_SOURCE" not in source,
+            "removed 7.0.0 playtest machinery is still present")
+
+    print("OK: 7.0.0 structure, Lua and XAML validation passed")
     return 0
 
 
