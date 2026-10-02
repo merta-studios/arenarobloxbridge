@@ -1,5 +1,18 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.0.1
+# Arena Roblox Bridge  -  Version 7.0.2
+#
+# LEISTUNGS-UPDATE VERSION 7.0.2:
+#   * Das transparente Hauptfenster hatte mehrere dauerhaft wiederholte
+#     Hintergrund-, Glanz- und Punkt-Animationen. Die endlosen Deko-Animationen
+#     sind jetzt statisch; Farbverlauf, Layout und Hover-/Einblend-Effekte bleiben.
+#   * Place-/UI-Abgleich laeuft sichtbar nur noch alle 1,8 s statt 0,9 s,
+#     minimiert alle 5 s. Im minimierten Zustand wird die Place-Liste gar nicht
+#     durchsucht/aktualisiert; Server, Tunnel und Plugin-Verbindung laufen weiter.
+#   * Vorschau AUS stoppt jetzt auch die pro Place laufende Spinner-Animation
+#     und ueberspringt den visuellen Vorschau-Selbsttest. Bei Bild/Fallback wird
+#     der Spinner ebenfalls dauerhaft gestoppt.
+#   * Arena-Uebergaben werden einmal je UI-Aktualisierung geprueft statt einmal
+#     je Place-Zeile; der Studio-Leerlaufwaechter wacht alle 1,5 statt 0,5 s auf.
 #
 # UI-/EINSTELLUNGS-HOTFIXES VERSION 7.0.1:
 #   * Place-Liste: Wenn eine reich ausgestattete Place-Zeile wegen eines
@@ -1732,7 +1745,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.0.1'
+    DocsVersion     = '7.0.2'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         simAllowed      = $false    # sim_start bleibt bis zu echter Edit-Modus-Simulation gesperrt
@@ -1843,8 +1856,8 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-    $script:PreviewDiagIdentity = ("Bridge-Version=7.0.1, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.0.1, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    $script:PreviewDiagIdentity = ("Bridge-Version=7.0.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.0.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 6.0.5: Hinweis auf den kleinen Kurzbericht - er enthaelt alles,
     # was zur Beurteilung der Fenster-Vorschau noetig ist.
     Write-RuntimeLog ("Vorschau-Kurzbericht: " + (Join-Path $script:AppDataRoot 'preview-diagnose.txt'))
@@ -1938,7 +1951,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.0.1)
+  Arena Studio Bridge - Studio Plugin  (Version 7.0.2)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -2011,7 +2024,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.0.1"
+local ARENA_VERSION  = "7.0.2"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -10190,7 +10203,9 @@ end
 task.spawn(function()
     local lastActive = testSessionActive()
     while running do
-        task.wait(0.5)
+        -- Version 7.0.2: idle state/camera polling is a background fallback;
+        -- selection changes still report immediately through their event.
+        task.wait(1.5)
         local activeNow = testSessionActive()
         if not activeNow then
             local cam = Workspace.CurrentCamera
@@ -11210,7 +11225,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.0.1 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.0.2 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -13888,7 +13903,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.0.1'
+            version = '7.0.2'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -14011,7 +14026,7 @@ end
             try { $progressView = $progressJson | ConvertFrom-Json } catch {}
         }
         $envelope = @{
-            bridgeVersion = '7.0.1'
+            bridgeVersion = '7.0.2'
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent = 0, never an error. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
                 lastPercent = $(if ($progressView) { [double]$progressView.percent } else { 0 })
@@ -14297,7 +14312,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.0.1'
+                        bridgeVersion = '7.0.2'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -14549,7 +14564,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.0.1'
+                        serverVersion = '7.0.2'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -14736,7 +14751,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.0.1'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.0.2'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -14765,8 +14780,8 @@ end
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.0.1'
-                    serverVersion = '7.0.1'
+                    bridgeVersion = '7.0.2'
+                    serverVersion = '7.0.2'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -16097,16 +16112,6 @@ $xaml = @'
                     <Ellipse.RenderTransform>
                         <TranslateTransform X="0" Y="0"/>
                     </Ellipse.RenderTransform>
-                    <Ellipse.Triggers>
-                        <EventTrigger RoutedEvent="Loaded">
-                            <BeginStoryboard>
-                                <Storyboard>
-                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="0" To="46" Duration="0:0:34" AutoReverse="True" RepeatBehavior="Forever"/>
-                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="30" Duration="0:0:27" AutoReverse="True" RepeatBehavior="Forever"/>
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </EventTrigger>
-                    </Ellipse.Triggers>
                 </Ellipse>
                 <Ellipse Width="500" Height="500" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-180,-170,0">
                     <Ellipse.Fill>
@@ -16118,16 +16123,6 @@ $xaml = @'
                     <Ellipse.RenderTransform>
                         <TranslateTransform X="0" Y="0"/>
                     </Ellipse.RenderTransform>
-                    <Ellipse.Triggers>
-                        <EventTrigger RoutedEvent="Loaded">
-                            <BeginStoryboard>
-                                <Storyboard>
-                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="0" To="-40" Duration="0:0:40" AutoReverse="True" RepeatBehavior="Forever"/>
-                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="26" Duration="0:0:31" AutoReverse="True" RepeatBehavior="Forever"/>
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </EventTrigger>
-                    </Ellipse.Triggers>
                 </Ellipse>
                 <Ellipse Width="440" Height="440" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-150,-180">
                     <Ellipse.Fill>
@@ -16139,16 +16134,6 @@ $xaml = @'
                     <Ellipse.RenderTransform>
                         <TranslateTransform X="0" Y="0"/>
                     </Ellipse.RenderTransform>
-                    <Ellipse.Triggers>
-                        <EventTrigger RoutedEvent="Loaded">
-                            <BeginStoryboard>
-                                <Storyboard>
-                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="0" To="-34" Duration="0:0:29" AutoReverse="True" RepeatBehavior="Forever"/>
-                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="-24" Duration="0:0:36" AutoReverse="True" RepeatBehavior="Forever"/>
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </EventTrigger>
-                    </Ellipse.Triggers>
                 </Ellipse>
                 <Ellipse Width="320" Height="320" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-110,210,0,0">
                     <Ellipse.Fill>
@@ -16160,16 +16145,6 @@ $xaml = @'
                     <Ellipse.RenderTransform>
                         <TranslateTransform X="0" Y="0"/>
                     </Ellipse.RenderTransform>
-                    <Ellipse.Triggers>
-                        <EventTrigger RoutedEvent="Loaded">
-                            <BeginStoryboard>
-                                <Storyboard>
-                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="0" To="38" Duration="0:0:37" AutoReverse="True" RepeatBehavior="Forever"/>
-                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="-26" Duration="0:0:24" AutoReverse="True" RepeatBehavior="Forever"/>
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </EventTrigger>
-                    </Ellipse.Triggers>
                 </Ellipse>
                 <Ellipse Width="280" Height="280" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="90,0,0,-150">
                     <Ellipse.Fill>
@@ -16181,16 +16156,6 @@ $xaml = @'
                     <Ellipse.RenderTransform>
                         <TranslateTransform X="0" Y="0"/>
                     </Ellipse.RenderTransform>
-                    <Ellipse.Triggers>
-                        <EventTrigger RoutedEvent="Loaded">
-                            <BeginStoryboard>
-                                <Storyboard>
-                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="0" To="30" Duration="0:0:45" AutoReverse="True" RepeatBehavior="Forever"/>
-                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="-20" Duration="0:0:33" AutoReverse="True" RepeatBehavior="Forever"/>
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </EventTrigger>
-                    </Ellipse.Triggers>
                 </Ellipse>
                 <Ellipse Width="240" Height="240" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="400,-140,0,0">
                     <Ellipse.Fill>
@@ -16202,16 +16167,6 @@ $xaml = @'
                     <Ellipse.RenderTransform>
                         <TranslateTransform X="0" Y="0"/>
                     </Ellipse.RenderTransform>
-                    <Ellipse.Triggers>
-                        <EventTrigger RoutedEvent="Loaded">
-                            <BeginStoryboard>
-                                <Storyboard>
-                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="0" To="-26" Duration="0:0:26" AutoReverse="True" RepeatBehavior="Forever"/>
-                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="22" Duration="0:0:30" AutoReverse="True" RepeatBehavior="Forever"/>
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </EventTrigger>
-                    </Ellipse.Triggers>
                 </Ellipse>
                 <!-- Sanfter Glas-Schein am oberen Fensterrand -->
                 <Border Height="120" VerticalAlignment="Top" IsHitTestVisible="False">
@@ -16275,17 +16230,6 @@ $xaml = @'
                             <Rectangle.RenderTransform>
                                 <TranslateTransform X="-340"/>
                             </Rectangle.RenderTransform>
-                            <Rectangle.Triggers>
-                                <EventTrigger RoutedEvent="Loaded">
-                                    <BeginStoryboard>
-                                        <Storyboard>
-                                            <DoubleAnimation Storyboard.TargetName="SweepRect"
-                                                             Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)"
-                                                             From="-340" To="1240" Duration="0:0:4.2" RepeatBehavior="Forever"/>
-                                        </Storyboard>
-                                    </BeginStoryboard>
-                                </EventTrigger>
-                            </Rectangle.Triggers>
                         </Rectangle>
                     </Border>
                 </Grid>
@@ -16334,19 +16278,6 @@ $xaml = @'
                                         <Border.RenderTransform>
                                             <TranslateTransform X="0" Y="0"/>
                                         </Border.RenderTransform>
-                                        <Border.Triggers>
-                                            <EventTrigger RoutedEvent="Loaded">
-                                                <BeginStoryboard>
-                                                    <Storyboard>
-                                                        <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="-7" Duration="0:0:3.2" AutoReverse="True" RepeatBehavior="Forever">
-                                                            <DoubleAnimation.EasingFunction>
-                                                                <SineEase EasingMode="EaseInOut"/>
-                                                            </DoubleAnimation.EasingFunction>
-                                                        </DoubleAnimation>
-                                                    </Storyboard>
-                                                </BeginStoryboard>
-                                            </EventTrigger>
-                                        </Border.Triggers>
                                         <Grid>
                                             <Ellipse Width="10" Height="10" Fill="#8FF5E9" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="15,0,0,0"/>
                                             <Ellipse Width="10" Height="10" Fill="#00E5D0" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,15,0"/>
@@ -16418,17 +16349,6 @@ $xaml = @'
                                     <Ellipse.RenderTransform>
                                         <RotateTransform Angle="0"/>
                                     </Ellipse.RenderTransform>
-                                    <Ellipse.Triggers>
-                                        <EventTrigger RoutedEvent="Loaded">
-                                            <BeginStoryboard>
-                                                <Storyboard>
-                                                    <DoubleAnimation Storyboard.TargetName="SplashSpinnerArc"
-                                                                     Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
-                                                                     From="0" To="360" Duration="0:0:1.05" RepeatBehavior="Forever"/>
-                                                </Storyboard>
-                                            </BeginStoryboard>
-                                        </EventTrigger>
-                                    </Ellipse.Triggers>
                                 </Ellipse>
                                 <Grid Width="32" Height="30" HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <Ellipse Width="7" Height="7" Fill="#AFF7EC" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="1,0,0,0"/>
@@ -17064,7 +16984,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.0.1)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.0.2)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -17392,7 +17312,7 @@ function Get-SettingsNotificationLines {
             try { $name = [string]$script:PlaceNames[[string]$item.sessionId] } catch {}
             if ([string]::IsNullOrWhiteSpace($name)) { $name = [string]$item.placeName }
             if ($item.versionMismatch -eq $true) {
-                $lines.Add(('{0}: Plugin veraltet (Plugin {1}, Bridge 7.0.1) - Roblox Studio einmal neu starten, sonst warten neue Werkzeuge.' -f $name, [string]$item.pluginVersion))
+                $lines.Add(('{0}: Plugin veraltet (Plugin {1}, Bridge 7.0.2) - Roblox Studio einmal neu starten, sonst warten neue Werkzeuge.' -f $name, [string]$item.pluginVersion))
             }
         }
     } catch {}
@@ -17596,7 +17516,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.0.1)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.0.2)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -17926,6 +17846,7 @@ function Set-PlacePreviewImage {
             $decodedH = [int]$bitmap.PixelHeight
             Write-PreviewTrace $flow 'PNG_DECODED' @{ sid = [string]$Row.sessionId; type = [string]$bitmap.GetType().FullName; bytes = $Bytes.Length; w = $decodedW; h = $decodedH } ('pngMagic=' + $(if ($magicOk) { 'ok' } else { 'FEHLER' }) + ' format=' + [string]$bitmap.Format)
             $Row.IconImage.Source = $bitmap
+            try { Set-PlacePreviewSpinnerAnimation $Row.IconVisual $false } catch {}
             $Row.IconSpinner.Visibility = 'Collapsed'
             $Row.IconFallback.Visibility = 'Collapsed'
             $Row.IconImage.Visibility = 'Visible'
@@ -18087,6 +18008,25 @@ function Invoke-PlacePreviewUiSelfTest {
     }
 }
 
+function Set-PlacePreviewSpinnerAnimation {
+    param($Visual, [bool]$Enabled)
+    if ($null -eq $Visual -or $null -eq $Visual.Spinner -or $null -eq $Visual.SpinTransform) { return }
+    $isRunning = ([string]$Visual.Spinner.Tag -eq 'ArenaPreviewSpinnerRunning')
+    if ($Enabled) {
+        if ($isRunning) { return }
+        $animation = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 360, [TimeSpan]::FromSeconds(1.4))
+        $animation.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+        $Visual.SpinTransform.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $animation)
+        $Visual.Spinner.Tag = 'ArenaPreviewSpinnerRunning'
+        return
+    }
+    if ($isRunning) {
+        $Visual.SpinTransform.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $null)
+        $Visual.SpinTransform.Angle = 0
+    }
+    $Visual.Spinner.Tag = 'ArenaPreviewSpinnerStopped'
+}
+
 function New-PlacePreviewVisual {
     # Version 6.0.1: Live-Fenster-Vorschau statt Spiel-Icon. Etwas breiter als
     # das alte quadratische Icon (64x44 statt 46x46), damit ein Fenster-
@@ -18128,22 +18068,25 @@ function New-PlacePreviewVisual {
     $spinner.RenderTransformOrigin = [System.Windows.Point]::new(0.5, 0.5)
     $spinTransform = [System.Windows.Media.RotateTransform]::new(0)
     $spinner.RenderTransform = $spinTransform
-    $anim = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 360, [TimeSpan]::FromSeconds(0.9))
-    $anim.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
-    $spinTransform.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $anim)
     $iconHost.Children.Add($image) | Out-Null; $iconHost.Children.Add($fallback) | Out-Null; $iconHost.Children.Add($spinner) | Out-Null
     $frame.Child = $iconHost
-    return [pscustomobject]@{ Frame=$frame; Image=$image; Spinner=$spinner; Fallback=$fallback }
+    $visual = [pscustomobject]@{ Frame=$frame; Image=$image; Spinner=$spinner; Fallback=$fallback; SpinTransform=$spinTransform }
+    if ($script:SettingsCache.editorIconsEnabled -ne $false) { Set-PlacePreviewSpinnerAnimation $visual $true }
+    return $visual
 }
 
 function Start-PlacePreviewCapture {
     param($Studio, $Row)
     if ($null -eq $Row -or $null -eq $Row.IconFrame) { return }
     if ($script:SettingsCache.editorIconsEnabled -eq $false) {
+        try { Set-PlacePreviewSpinnerAnimation $Row.IconVisual $false } catch {}
         try { $Row.IconFrame.Visibility = 'Collapsed' } catch {}
         return
     }
     try { $Row.IconFrame.Visibility = 'Visible' } catch {}
+    if (-not $Row.PreviewHasFrame -and [int]$Row.PreviewFailCount -lt 3) {
+        try { Set-PlacePreviewSpinnerAnimation $Row.IconVisual $true } catch {}
+    }
 
     $sessionId = [string]$Studio.sessionId
     # Die virtuelle "Alle Places"-Zeile bekommt (erstmal) bewusst keine
@@ -18168,6 +18111,7 @@ function Start-PlacePreviewCapture {
             # Erst nach 3 Ticks ohne Fenster auf das Platzhalter-Symbol fallen.
             $Row.PreviewFailCount = [int]$Row.PreviewFailCount + 1
             if ([int]$Row.PreviewFailCount -ge 3) {
+                try { Set-PlacePreviewSpinnerAnimation $Row.IconVisual $false } catch {}
                 try { $Row.IconSpinner.Visibility = 'Collapsed'; $Row.IconFallback.Visibility = 'Visible' } catch {}
             }
         }
@@ -18487,6 +18431,7 @@ function Update-PlacePreviewCaptures {
                 $row = $script:UiRows[$sessionId]
                 $row.PreviewFailCount = [int]$row.PreviewFailCount + 1
                 if ([int]$row.PreviewFailCount -ge 3 -and -not $row.PreviewHasFrame) {
+                    try { Set-PlacePreviewSpinnerAnimation $row.IconVisual $false } catch {}
                     try { $row.IconSpinner.Visibility = 'Collapsed'; $row.IconFallback.Visibility = 'Visible' } catch {}
                 }
             }
@@ -18517,7 +18462,18 @@ function Set-EditorIconsEnabled {
     $script:SettingsCache.editorIconsEnabled = $Enabled
     foreach ($row in @($script:UiRows.Values)) {
         try {
-            if ($row.IconFrame) { $row.IconFrame.Visibility = $(if ($Enabled -and [string]$row.sessionId -ne '__arena_all_places__') { 'Visible' } else { 'Collapsed' }) }
+            $rowIsPreview = ([string]$row.sessionId -ne '__arena_all_places__')
+            if ($row.IconFrame) { $row.IconFrame.Visibility = $(if ($Enabled -and $rowIsPreview) { 'Visible' } else { 'Collapsed' }) }
+            if ($Enabled -and $rowIsPreview -and -not $row.PreviewHasFrame -and [int]$row.PreviewFailCount -lt 3) {
+                try { Set-PlacePreviewSpinnerAnimation $row.IconVisual $true } catch {}
+                if ($row.IconSpinner) { $row.IconSpinner.Visibility = 'Visible' }
+                if ($row.IconFallback) { $row.IconFallback.Visibility = 'Collapsed' }
+            } else {
+                try { Set-PlacePreviewSpinnerAnimation $row.IconVisual $false } catch {}
+                if ($row.PreviewHasFrame -and $row.IconImage) { $row.IconImage.Visibility = 'Visible' }
+                if ($row.IconSpinner) { $row.IconSpinner.Visibility = 'Collapsed' }
+                if ($row.IconFallback) { $row.IconFallback.Visibility = $(if ($Enabled -and $rowIsPreview -and -not $row.PreviewHasFrame) { 'Visible' } else { 'Collapsed' }) }
+            }
         } catch {}
     }
     if (-not $Enabled) {
@@ -18891,6 +18847,7 @@ function New-Row {
         IconImage  = $null
         IconSpinner = $null
         IconFallback = $null
+        IconVisual = $null
         PreviewHandle   = $null
         PreviewHasFrame = $false
         PreviewVerifyDone = $false
@@ -19088,6 +19045,7 @@ function New-Row {
         $row.IconImage = $placeIcon.Image
         $row.IconSpinner = $placeIcon.Spinner
         $row.IconFallback = $placeIcon.Fallback
+        $row.IconVisual = $placeIcon
     }
 
     # Version 6.0: "Prompt kopieren" ist ein gruener Glas-Knopf wie im
@@ -19383,7 +19341,7 @@ function Update-Row {
         $Row.Menu.Opacity = $(if ($stale) { 0.45 } else { 1.0 })
     }
     try { Update-PlaceProgressVisual $Row $Studio } catch {}
-    try { Update-HandoffCard } catch {}
+    # Arena handoffs are checked once by Refresh-Ui, not once per Place row.
     # Version 6.0.1: Start-PlacePreviewCapture ist selbst gedrosselt (siehe
     # dort) - ein Aufruf pro Tick ist billig (nur Dictionary-Lookups, solange
     # kein neuer Screenshot faellig ist).
@@ -19634,6 +19592,10 @@ function Refresh-Ui {
         }
     }
 
+    # Die Tunnel-Ausgabe oben wird auch minimiert abgearbeitet. Die Place-Liste
+    # und WPF-Zeilen sind unsichtbar; Server/Plugin laufen separat weiter.
+    try { if ($window -and $window.WindowState -eq 'Minimized') { return } } catch {}
+
     # Startbildschirm aktualisieren (Ladekreisel, Fortschritt, Ausblenden)
     Update-SplashScreen
 
@@ -19748,7 +19710,9 @@ function Refresh-Ui {
     }
 
     Update-PlacePreviewCaptures
-    Sync-PlaceList @(Get-ActiveStudios)
+    $activeStudios = @(Get-ActiveStudios)
+    Update-HandoffCard
+    Sync-PlaceList $activeStudios
 }
 
 # ----------------------------------------------------------------------------
@@ -19819,7 +19783,7 @@ function Add-PlaceRowToPlaceList {
     # PREVIEW_UI_SELFTEST_FAILED - damit ist sofort entschieden, ob der
     # Fehler in WPF/UI oder in der Fensteraufnahme liegt.
     try {
-        if (-not $Row.IsMinimalFallback -and -not $script:PreviewSelfTestDone -and $Label -eq 'Place-Zeile') {
+        if ($script:SettingsCache.editorIconsEnabled -ne $false -and -not $Row.IsMinimalFallback -and -not $script:PreviewSelfTestDone -and $Label -eq 'Place-Zeile') {
             $script:PreviewSelfTestDone = $true
             Invoke-PlacePreviewUiSelfTest $Row $SessionId
         }
@@ -19838,7 +19802,7 @@ function New-MinimalPlaceRow {
         SessionId = $SessionId
         Root = $null; Title = $null; Copy = $null; Menu = $null; Popup = $null
         Toggle = $null; IconFrame = $null; IconImage = $null; IconSpinner = $null
-        IconFallback = $null; PreviewHandle = [IntPtr]::Zero; PreviewHasFrame = $false
+        IconFallback = $null; IconVisual = $null; PreviewHandle = [IntPtr]::Zero; PreviewHasFrame = $false
         PreviewVerifyDone = $false; IconIconAttempted = $false; PreviewFailCount = 0
         PreviewLoggedOnce = $false; Mode = $(if ([string]$Studio.accessMode -eq 'readonly') {'readonly'} else {'readwrite'})
         ModeUntil = [DateTime]::MinValue; StaleText = $null
@@ -20161,16 +20125,9 @@ $window.Add_Loaded({
         $RootShell.RenderTransform.BeginAnimation([System.Windows.Media.ScaleTransform]::ScaleYProperty, $scaleY)
     } catch {}
 
-    $pulseGrow = [System.Windows.Media.Animation.DoubleAnimation]::new(0.35, 1.0, [System.TimeSpan]::FromMilliseconds(1000))
-    $pulseGrow.AutoReverse = $true
-    $pulseGrow.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
-    $PulseDot.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $pulseGrow)
-
-    # The LIVE pill has its own restrained green breathing indicator.
-    $livePulse = [System.Windows.Media.Animation.DoubleAnimation]::new(0.45, 1.0, [System.TimeSpan]::FromMilliseconds(1100))
-    $livePulse.AutoReverse = $true
-    $livePulse.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
-    $LiveDot.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $livePulse)
+    # Version 7.0.2: Static status dots avoid perpetual per-frame WPF redraws.
+    $PulseDot.Opacity = 1
+    $LiveDot.Opacity = 1
 
     foreach ($toast in $script:PendingToasts) {
         Show-Toast -Message $toast.Message -Kind $toast.Kind -Seconds $toast.Seconds
@@ -20186,7 +20143,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.0.1'
+    $versionText = '7.0.2'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -20810,7 +20767,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.0.1" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.0.2" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -20863,7 +20820,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.0.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.0.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -20918,7 +20875,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.0.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.0.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -20931,7 +20888,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.0.1'
+    $verText = '7.0.2'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
@@ -21017,14 +20974,35 @@ if ($script:RobloxStudioPath) {
     Write-RuntimeLog 'Roblox Studio wurde nicht gefunden.'
 }
 
-$timer = [System.Windows.Threading.DispatcherTimer]::new()
-$timer.Interval = [System.TimeSpan]::FromMilliseconds(900)
+$script:UiRefreshVisibleMs = 1800
+$script:UiRefreshMinimizedMs = 5000
+$script:UiRefreshTimer = [System.Windows.Threading.DispatcherTimer]::new()
+function Set-UiRefreshCadence {
+    param([bool]$Minimized)
+    if ($null -eq $script:UiRefreshTimer) { return }
+    $milliseconds = if ($Minimized) { $script:UiRefreshMinimizedMs } else { $script:UiRefreshVisibleMs }
+    $interval = [System.TimeSpan]::FromMilliseconds($milliseconds)
+    if ($script:UiRefreshTimer.Interval -ne $interval) { $script:UiRefreshTimer.Interval = $interval }
+}
+$timer = $script:UiRefreshTimer
+Set-UiRefreshCadence $false
 $timer.Add_Tick({
     try {
+        $minimized = $false
+        try { $minimized = ($window.WindowState -eq 'Minimized') } catch {}
+        Set-UiRefreshCadence $minimized
         Refresh-Ui
     } catch {
         Write-RuntimeLog "Refresh Fehler: $($_.Exception.Message)"
         try { Show-Toast -Message "Fehler abgefangen: $($_.Exception.Message)" -Kind 'Error' -Seconds 6 } catch {}
+    }
+})
+$window.Add_StateChanged({
+    param($sender, $e)
+    $minimized = ($sender.WindowState -eq 'Minimized')
+    Set-UiRefreshCadence $minimized
+    if (-not $minimized) {
+        try { Refresh-Ui } catch { Write-RuntimeLog "Refresh nach Wiederherstellung fehlgeschlagen: $($_.Exception.Message)" }
     }
 })
 $timer.Start()

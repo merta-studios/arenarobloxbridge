@@ -20,7 +20,7 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test_v398_structure.py` | Python-Strukturtest für 7.0.1 (Versionen, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test_v398_structure.py` | Python-Strukturtest für 7.0.2 (Versionen, Performance-Guards, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -35,6 +35,13 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 7.0.2
+- **Weniger Leerlauf-Rendering.** Die dauerhaft wiederholten Deko-Animationen im transparenten Hauptfenster wurden entfernt. Farbverläufe, Fensteraufbau sowie kurze Hover- und Einblend-Effekte bleiben erhalten; die Oberfläche muss im Leerlauf aber keine Aurora-/Glanz-Bewegungen mehr pro Frame neu zeichnen.
+- **Place-Liste mit weniger Hintergrundarbeit.** Der sichtbare UI-Abgleich läuft alle 1,8 statt 0,9 Sekunden. Im minimierten Zustand wird nur die Tunnel-Ausgabe geleert; Place-Sitzungen und WPF-Zeilen werden bis zum Wiederherstellen nicht durchsucht/aktualisiert. HTTP-Server, Tunnel und Plugin-Verbindungen laufen unabhängig weiter; beim Wiederherstellen wird sofort aktualisiert.
+- **Vorschau AUS ist jetzt wirklich ruhig.** Der per-Place Spinner läuft nur, solange die Vorschau aktiv und noch kein Bild/Fallback da ist; Ausschalten, Bild-Erfolg und Platzhalter stoppen seine WPF-Animationsuhr. Der visuelle Selbsttest wird übersprungen, wenn die Vorschau ausgeschaltet ist.
+- **Weniger doppelte Prüfungen.** Arena-Übergaben werden einmal je UI-Aktualisierung statt für jede einzelne Place-Zeile geprüft. Der Studio-Leerlaufwächter prüft Zustand/Kamera alle 1,5 statt 0,5 Sekunden; Auswahländerungen werden weiterhin direkt über ihr Ereignis gemeldet.
+- Nach dem Update Roblox Studio einmal neu starten, damit Plugin **7.0.2** geladen wird.
 
 ## 7.0.1
 - **Mehr Platz in den Einstellungen und klare Schalterzustände.** Das Einstellungs-Inhaltsraster hat gleichmäßiges Innen-Padding. Beim Öffnen werden alle vier verbleibenden Schalter mit ihrem gespeicherten Wert initialisiert und ihre sichtbare AN/AUS-Position wird nach dem Laden nochmals synchronisiert.

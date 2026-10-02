@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 7.0.1.
+"""Offline structure check for Arena Roblox Bridge 7.0.2.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.0.1"
+VERSION = "7.0.2"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -701,25 +701,52 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '7.0.1'": 1,
-        'local ARENA_VERSION  = "7.0.1"': 1,
-        "version = '7.0.1'": 1,
-        "bridgeVersion = '7.0.1'": 3,
-        "bridgeVersion='7.0.1'": 1,
-        "serverVersion = '7.0.1'": 2,
-        "$versionText = '7.0.1'": 1,
-        "$verText = '7.0.1'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 7.0.1)": 1,
-        'Text="Arena Roblox Bridge - Version 7.0.1"': 1,
-        "Version 7.0.1 - aktuell. Beim naechsten Start": 2,
-        "Laufzeit-Identitaet: Bridge-Version=7.0.1": 1,
-        "Kurzbericht Fenster-Vorschau (Version 7.0.1)": 1,
+        "DocsVersion     = '7.0.2'": 1,
+        'local ARENA_VERSION  = "7.0.2"': 1,
+        "version = '7.0.2'": 1,
+        "bridgeVersion = '7.0.2'": 3,
+        "bridgeVersion='7.0.2'": 1,
+        "serverVersion = '7.0.2'": 2,
+        "$versionText = '7.0.2'": 1,
+        "$verText = '7.0.2'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.0.2)": 1,
+        'Text="Arena Roblox Bridge - Version 7.0.2"': 1,
+        "Version 7.0.2 - aktuell. Beim naechsten Start": 2,
+        "Laufzeit-Identitaet: Bridge-Version=7.0.2": 1,
+        "Kurzbericht Fenster-Vorschau (Version 7.0.2)": 1,
     }
     for marker, expected_count in functional_version_counts.items():
         actual_count = source.count(marker)
         require(actual_count == expected_count,
                 f"functional version marker count for {marker!r}: "
                 f"expected {expected_count}, found {actual_count}")
+
+    # 7.0.2 performance guards: avoid full-frame idle animation and redundant
+    # preview/polling work while keeping the connection/server independent.
+    main_xaml_start = source.index("$xaml = @'\n") + len("$xaml = @'\n")
+    main_xaml_end = source.index("\n'@", main_xaml_start)
+    main_xaml = source[main_xaml_start:main_xaml_end]
+    require('RepeatBehavior="Forever"' not in main_xaml,
+            "the transparent main window regained permanent XAML animations")
+    require('$script:UiRefreshVisibleMs = 1800' in source
+            and '$script:UiRefreshMinimizedMs = 5000' in source,
+            "the 7.0.2 low-frequency UI refresh cadence is missing")
+    refresh_fn = source[source.index("function Refresh-Ui {"):source.index("# ----------------------------------------------------------------------------\n# Version 5.0.2: Zeile sichtbar")]
+    require("$window.WindowState -eq 'Minimized'" in refresh_fn
+            and "Update-HandoffCard\n    Sync-PlaceList $activeStudios" in refresh_fn,
+            "minimized refresh or once-per-tick handoff scheduling regressed")
+    row_update_fn = source[source.index("function Update-Row {"):source.index("# AKTUALISIERUNG DER OBERFLAECHE")]
+    require("Update-HandoffCard" not in row_update_fn,
+            "handoff state is once again scanned for every Place row")
+    require("function Set-PlacePreviewSpinnerAnimation" in source
+            and "Set-PlacePreviewSpinnerAnimation $Row.IconVisual $false" in source
+            and "Set-PlacePreviewSpinnerAnimation $Row.IconVisual $true" in source,
+            "preview spinner animation cannot be stopped/restarted with its setting")
+    add_row_fn = source[source.index("function Add-PlaceRowToPlaceList"):source.index("function New-MinimalPlaceRow")]
+    require("$script:SettingsCache.editorIconsEnabled -ne $false" in add_row_fn,
+            "preview self-test still runs when editor preview is disabled")
+    require("task.wait(1.5)" in plugin_source(source),
+            "Studio idle watcher returned to a 0.5-second polling cadence")
 
     stale_700_functional = [
         "DocsVersion     = '7.0.0'",
@@ -1246,7 +1273,7 @@ def main() -> int:
             and "CLIENT_AGENT_SOURCE" not in source and "SESSION_REPORTER_SOURCE" not in source,
             "removed 7.0.0 playtest machinery is still present")
 
-    print("OK: 7.0.1 structure, Lua and XAML validation passed")
+    print("OK: 7.0.2 structure, performance guards, Lua and XAML validation passed")
     return 0
 
 
