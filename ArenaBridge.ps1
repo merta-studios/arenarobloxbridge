@@ -1,5 +1,37 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.0.6
+# Arena Roblox Bridge  -  Version 7.0.7
+#
+# HOTFIX 7.0.7 - PLACE-LISTE WIEDER DA (LIVE-BEFUND ZU 7.0.6):
+#
+#   LIVE-BEFUND: 7.0.6 ist beim Nutzer nachweislich gelaufen (Titelzeile
+#   "Bridge 7.0.6 - SHA 91389fc3 - Waechter aktiv" + "neue Sitzungen (60 s): 2"),
+#   aber die Place-Liste blieb LEER: "Place-Liste wird repariert / Die Liste ist
+#   noch unvollstaendig". Genau dieses Symptom entsteht, wenn BEIDE Zeilen-Bauer
+#   (New-Row UND der Minimal-Fallback) mit einer Ausnahme abbrechen: dann wird
+#   keine einzige Zeile angehaengt.
+#
+#   URSACHE: In beiden Bauern wurde mit "$row.CommandCancelButton = ..." eine
+#   Eigenschaft gesetzt, die im [pscustomobject]-Initialisierer NICHT deklariert
+#   war. Das ist die EINZIGE Stelle im ganzen Skript, die eine nicht deklarierte
+#   Zeilen-Eigenschaft zuweist - alle anderen Eigenschaften stehen im
+#   Initialisierer. Das Setzen wirft in Windows PowerShell
+#   ("... cannot be found on this object ...") und riss den kompletten
+#   Zeilenaufbau mit; auch der Minimal-Fallback enthaelt die Zeile.
+#
+#   FIXES:
+#   * CommandCancelButton ist in BEIDEN Initialisierern deklariert, und der
+#     optionale Knopf wird in try/catch gebaut: ein Extra darf NIE den Aufbau
+#     der ganzen Zeile kosten.
+#   * Abbrechen in der Place-Zeile laeuft jetzt OHNE Server-Funktionen direkt
+#     ueber den gemeinsamen Zustand (CancelRequests + FIFO + Waiter-Signal).
+#     Vorher rief die UI Get-DeliverySession/Request-CommandCancel auf - beide
+#     existieren nur im Handler-Runspace, der Knopf tat also nichts.
+#   * Die Reparatur-Anzeige nennt den ECHTEN Grund im Klartext (letzter
+#     Zeilenfehler) statt "Details stehen in runtime.log".
+#   * Der Plugin-Hinweis sagt jetzt klar, was zu tun ist: "Studio einmal
+#     komplett schliessen und neu oeffnen - laedt Plugin 7.0.7 (laeuft noch
+#     7.0.5)". Ein laufendes Studio behaelt das alte Plugin im Speicher; das ist
+#     der erwartete, einmalige Schritt und kein Defekt.
 #
 # BEWEISBARES DEPLOYMENT + STABILE SITZUNG + SOFORTIGE ANTWORTEN - VERSION 7.0.6:
 #
@@ -1431,6 +1463,10 @@ $script:UiRows = @{}
 $script:PlaceNames = @{}
 $script:PlaceNameResolveErrorLogged = @{}
 $script:PlaceRowFailureLogAt = @{}
+# Version 7.0.7: letzter echter Zeilenfehler im Klartext. Er steht in der
+# Reparatur-Anzeige der Place-Liste - ein Screenshot genuegt als Beweis,
+# statt die grosse runtime.log suchen zu muessen.
+$script:LastPlaceRowError = ''
 # Version 7.0.6: je Sitzung einmal im Log vermerken, wenn das Studio-Plugin
 # veraltet ist - der stille Fall "alles ist wie immer" wird damit beweisbar.
 $script:PluginOutdatedLogged = @{}
@@ -1941,7 +1977,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.0.6'
+    DocsVersion     = '7.0.7'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -1977,7 +2013,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Version 7.0.6: Laufzeit-Identitaet der LAUFENDEN Datei (Version, Pfad,
     # SHA-256, Sprachmodus, Startzeit) fuer GET /api/version.
     RuntimeInfo = [hashtable]::Synchronized(@{
-        Version = '7.0.6'
+        Version = '7.0.7'
         File = ''
         Sha256 = ''
         LanguageMode = ''
@@ -2087,6 +2123,11 @@ function Write-UiErrorLog {
 function Write-PlaceRowFailure {
     param([string]$Context, [string]$SessionId, $ErrorRecord)
     $sid = if ([string]::IsNullOrWhiteSpace($SessionId)) { '(unknown)' } else { $SessionId }
+    # Version 7.0.7: Grund IMMER merken (auch wenn das Log gedrosselt ist).
+    try {
+        $message = if ($ErrorRecord) { [string]$ErrorRecord.Exception.Message } else { '' }
+        $script:LastPlaceRowError = ($Context + ' (sid=' + $sid + ')' + $(if ($message) { ': ' + $message } else { '' }))
+    } catch {}
     $key = $sid + '|' + $Context
     $now = Get-Date
     if ($script:PlaceRowFailureLogAt.ContainsKey($key)) {
@@ -2118,12 +2159,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-    $script:PreviewDiagIdentity = ("Bridge-Version=7.0.6, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.0.6, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    $script:PreviewDiagIdentity = ("Bridge-Version=7.0.7, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.0.7, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-        $script:Shared.RuntimeInfo.Version = '7.0.6'
+        $script:Shared.RuntimeInfo.Version = '7.0.7'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -2226,7 +2267,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.0.6)
+  Arena Studio Bridge - Studio Plugin  (Version 7.0.7)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -2299,7 +2340,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.0.6"
+local ARENA_VERSION  = "7.0.7"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -12221,7 +12262,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.0.6 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.0.7 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -16328,7 +16369,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.0.6'
+            version = '7.0.7'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -16555,7 +16596,7 @@ end
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.0.6'
+            bridgeVersion = '7.0.7'
             executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent = 0, never an error. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
@@ -16900,7 +16941,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.0.6'
+                        bridgeVersion = '7.0.7'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -17158,7 +17199,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.0.6'
+                        serverVersion = '7.0.7'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -17436,7 +17477,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.0.6'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.0.7'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -17466,8 +17507,8 @@ end
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.0.6'
-                    serverVersion = '7.0.6'
+                    bridgeVersion = '7.0.7'
+                    serverVersion = '7.0.7'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -19316,7 +19357,7 @@ $xaml = @'
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="Arena Roblox Bridge" Foreground="{StaticResource TextMain}" FontSize="18.5" FontWeight="Bold"/>
                             <TextBlock x:Name="SubtitleText" Text="Bereit für verbundene Places" Foreground="{StaticResource TextMuted}" FontSize="11.5" Margin="0,3,0,0"/>
-                            <TextBlock x:Name="RuntimeLine" Text="Bridge 7.0.6" Foreground="{StaticResource TextFaint}" FontSize="9.5" Margin="0,2,0,0"/>
+                            <TextBlock x:Name="RuntimeLine" Text="Bridge 7.0.7" Foreground="{StaticResource TextFaint}" FontSize="9.5" Margin="0,2,0,0"/>
                         </StackPanel>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -20102,7 +20143,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.0.6)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.0.7)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -20194,6 +20235,25 @@ function Format-ProgressMessage {
     return $msg
 }
 
+function Get-UiDeliverySession {
+    # Version 7.0.7: Die Oberflaeche hat KEINEN Zugriff auf die Funktionen des
+    # Server-Runspaces (Get-DeliverySession liegt in $script:BridgeHandlerScript).
+    # Der Nachfolger-Pfad steht aber im gemeinsamen Zustand - den liest die UI
+    # hier direkt, genau mit derselben Regel (max. 8 Hops, kein Zyklus).
+    param([string]$SessionId)
+    $current = [string]$SessionId
+    for ($hop = 0; $hop -lt 8; $hop++) {
+        $next = $null
+        try {
+            if (-not $script:Shared.SessionSuccessors.TryGetValue($current, [ref]$next)) { break }
+        } catch { break }
+        $next = [string]$next
+        if ([string]::IsNullOrWhiteSpace($next) -or $next -eq $current) { break }
+        $current = $next
+    }
+    return $current
+}
+
 function Get-PlaceOpenCommand {
     # Version 7.0.6: der aelteste noch offene Befehl dieser Sitzung - genau
     # der, der die strikt serielle Studio-Queue blockiert. Er wird in der
@@ -20216,21 +20276,66 @@ function Get-PlaceOpenCommand {
 }
 
 function Invoke-PlaceRowCancel {
-    # Version 7.0.6: Abbrechen direkt in der Place-Zeile. Es laeuft ueber
-    # denselben Weg wie der KI-Abbruch (Request-CommandCancel + Signal), damit
-    # es nur EINEN Abbruchpfad gibt.
+    # Version 7.0.7: Abbrechen laeuft OHNE Server-Funktionen (die UI sieht nur
+    # den gemeinsamen Zustand). Dieselben Schritte wie Request-CommandCancel im
+    # Handler-Runspace: Abbruchwunsch merken, FIFO bereinigen, Long-Poll wecken
+    # und den wartenden Aufrufer sofort mit COMMAND_CANCELLED beantworten.
     param([string]$sessionId)
     try {
         if ([string]::IsNullOrWhiteSpace($sessionId)) { return }
-        $sid = Get-DeliverySession $sessionId
+        $sid = Get-UiDeliverySession $sessionId
         $cmd = Get-PlaceOpenCommand $sid
         if ($null -eq $cmd) { return }
         $commandId = [string]$cmd.commandId
         $toolName = [string]$cmd.tool
-        $ok = Request-CommandCancel $sid $commandId 'Cancelled by the user from the place row.'
+        $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        $cancelKey = ($sid + ':' + $commandId)
+        $script:Shared.CancelRequests[$cancelKey] = $now
+        # FIFO bereinigen, damit der Befehl nicht erneut zugestellt wird.
+        try {
+            $bag = $null
+            if ($script:Shared.PendingCommands.TryGetValue($sid, [ref]$bag)) {
+                $removedInfo = $null
+                [void]$bag.TryRemove($commandId, [ref]$removedInfo)
+            }
+            $queue = $null
+            if ($script:Shared.CommandQueues.TryGetValue($sid, [ref]$queue)) {
+                $kept = New-Object System.Collections.Generic.List[string]
+                $raw = $null
+                while ($queue.TryDequeue([ref]$raw)) {
+                    $drop = $false
+                    try { $item = $raw | ConvertFrom-Json; if ([string]$item.id -eq $commandId) { $drop = $true } } catch {}
+                    if (-not $drop) { $kept.Add([string]$raw) }
+                }
+                foreach ($itemJson in $kept) { $queue.Enqueue([string]$itemJson) }
+            }
+        } catch {}
+        # Den wartenden Aufrufer sofort beantworten (kein 55-s-Warten mehr).
+        try {
+            $resultJson = (To-Json @{
+                ok = $false
+                code = 'COMMAND_CANCELLED'
+                commandId = $commandId
+                tool = $toolName
+                error = 'Cancelled by the user from the place row.'
+                workIsLost = $false
+                partialChangesPossible = ([int64]$cmd.startedAt -gt 0)
+                retrySafe = $false
+            } 8)
+            $script:Shared.CommandResults[$commandId] = $resultJson
+            $script:Shared.CompletedCommandIds[$cancelKey] = $now
+            $waiter = $null
+            if ($script:Shared.ResultSignals.TryGetValue($commandId, [ref]$waiter)) {
+                try { $waiter.Set() } catch {}
+            }
+        } catch {}
+        # Long-Poll wecken: das Plugin sieht den Abbruch in der naechsten Antwort.
+        try {
+            $signal = $null
+            if ($script:Shared.CommandSignals.TryGetValue($sid, [ref]$signal)) { try { $signal.Set() } catch {} }
+        } catch {}
         try { $script:Shared.Telemetry.RowCancels = [long]$script:Shared.Telemetry.RowCancels + 1 } catch {}
-        Write-BridgeLog ("Place-Zeile: Befehl " + $toolName + " (" + $commandId + ") wurde vom Nutzer abgebrochen.")
-        Add-BridgeEvent $sid 'command_cancel_requested' ("Command " + $commandId + " (" + $toolName + ") was cancelled from the place row.") @{ commandId = $commandId; tool = $toolName }
+        Write-RuntimeLog ("Place-Zeile: Befehl " + $toolName + " (" + $commandId + ") wurde vom Nutzer abgebrochen (COMMAND_CANCELLED, Queue frei).")
     } catch {
         Write-UiErrorLog 'Befehl aus der Place-Zeile konnte nicht abgebrochen werden' $_
     }
@@ -20246,7 +20351,7 @@ function Update-PlaceProgressVisual {
     # Version 7.0.6: Die Bridge zeigt den ECHTEN Befehlszustand, nicht nur den
     # vom Aufrufer gemeldeten Fortschritt. Der offene Befehl ist die Ursache
     # jeder Haenge-Zeit und stand bisher nirgends in der Zeile.
-    $openCmd = Get-PlaceOpenCommand (Get-DeliverySession $sessionId)
+    $openCmd = Get-PlaceOpenCommand (Get-UiDeliverySession $sessionId)
     if (-not $show -or ($null -eq $snapshot -and $null -eq $openCmd)) {
         $Row.ProgressPanel.Visibility = 'Collapsed'
         $Row.ProgressState = 'idle'
@@ -20641,7 +20746,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.0.6)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.0.7)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -21997,6 +22102,11 @@ function New-Row {
         ProgressPercent = $null
         ProgressState   = 'idle'
         IsMinimalFallback = $false
+        # Version 7.0.7 HOTFIX: Diese Eigenschaft MUSS im Initialisierer stehen.
+        # Ein "$row.CommandCancelButton = ..." ohne Deklaration wirft in Windows
+        # PowerShell ("... cannot be found on this object ...") und riss den
+        # kompletten Zeilenaufbau mit - die Place-Liste blieb leer.
+        CommandCancelButton = $null
     }
 
     # Version 6.0 (Liquid Glass): Die Place-Zeile ist eine Teal-Glaskarte.
@@ -22177,17 +22287,23 @@ function New-Row {
     $progressRow.Children.Add($progressText) | Out-Null
     $progressRow.Children.Add($progressBar) | Out-Null
     $progressRow.Children.Add($progressPercent) | Out-Null
-    # Version 7.0.6: Abbrechen direkt neben dem Befehlszustand.
-    $cancelButton = [System.Windows.Controls.Button]::new()
-    $cancelButton.Content = 'Abbrechen'
-    $cancelButton.FontSize = 10.5
-    $cancelButton.Padding = [System.Windows.Thickness]::new(6, 1, 6, 1)
-    $cancelButton.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
-    $cancelButton.VerticalAlignment = 'Center'
-    $cancelButton.Visibility = 'Collapsed'
-    $cancelButton.Add_Click({ param($sender, $eventArgs) try { Invoke-PlaceRowCancel ([string]$sender.Tag) } catch {} })
-    $progressRow.Children.Add($cancelButton) | Out-Null
-    $row.CommandCancelButton = $cancelButton
+    # Version 7.0.6/7.0.7: Abbrechen direkt neben dem Befehlszustand. Der Knopf
+    # ist OPTIONAL - er wird deshalb in try/catch gebaut. Ein Extra darf NIE
+    # den Aufbau der ganzen Zeile kosten (genau das war der Live-Fehler in 7.0.6).
+    try {
+        $cancelButton = [System.Windows.Controls.Button]::new()
+        $cancelButton.Content = 'Abbrechen'
+        $cancelButton.FontSize = 10.5
+        $cancelButton.Padding = [System.Windows.Thickness]::new(6, 1, 6, 1)
+        $cancelButton.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
+        $cancelButton.VerticalAlignment = 'Center'
+        $cancelButton.Visibility = 'Collapsed'
+        $cancelButton.Add_Click({ param($sender, $eventArgs) try { Invoke-PlaceRowCancel ([string]$sender.Tag) } catch {} })
+        $progressRow.Children.Add($cancelButton) | Out-Null
+        $row.CommandCancelButton = $cancelButton
+    } catch {
+        Write-UiErrorLog 'Abbrechen-Knopf konnte nicht gebaut werden (Zeile bleibt nutzbar)' $_
+    }
     $titleRowDefinition = [System.Windows.Controls.RowDefinition]::new()
     $titleRowDefinition.Height = [System.Windows.GridLength]::Auto
     $progressRowDefinition = [System.Windows.Controls.RowDefinition]::new()
@@ -22797,7 +22913,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.0.6)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.0.7)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -22910,7 +23026,7 @@ function Update-RuntimeLine {
                 $entry = $pair.Value | ConvertFrom-Json
                 $pluginVersion = [string]$entry.pluginVersion
                 if (-not [string]::IsNullOrWhiteSpace($pluginVersion) -and $pluginVersion -ne [string]$script:Shared.DocsVersion) {
-                    $outdated = '⚠ Studio-Plugin ' + $pluginVersion + ' veraltet: Studio einmal komplett neu öffnen'
+                    $outdated = '⚠ Studio einmal komplett schließen und neu öffnen - laedt Plugin ' + [string]$script:Shared.DocsVersion + ' (laueft noch ' + $pluginVersion + ')'
                     $logKey = [string]$pair.Key
                     if (-not $script:PluginOutdatedLogged.ContainsKey($logKey)) {
                         $script:PluginOutdatedLogged[$logKey] = $true
@@ -23157,6 +23273,7 @@ function New-MinimalPlaceRow {
         ModeUntil = [DateTime]::MinValue; StaleText = $null
         ProgressPanel = $null; ProgressBar = $null; ProgressText = $null
         ProgressPercent = $null; ProgressState = 'idle'; IsMinimalFallback = $true
+        CommandCancelButton = $null
     }
 
     $root = [System.Windows.Controls.Border]::new()
@@ -23220,16 +23337,20 @@ function New-MinimalPlaceRow {
     $progressPanel.Children.Add($progressText) | Out-Null
     $progressPanel.Children.Add($progressBar) | Out-Null
     $progressPanel.Children.Add($progressPercent) | Out-Null
-    $cancelButton = [System.Windows.Controls.Button]::new()
-    $cancelButton.Content = 'Abbrechen'
-    $cancelButton.FontSize = 10
-    $cancelButton.Padding = [System.Windows.Thickness]::new(6, 1, 6, 1)
-    $cancelButton.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
-    $cancelButton.VerticalAlignment = 'Center'
-    $cancelButton.Visibility = 'Collapsed'
-    $cancelButton.Add_Click({ param($sender, $eventArgs) try { Invoke-PlaceRowCancel ([string]$sender.Tag) } catch {} })
-    $progressPanel.Children.Add($cancelButton) | Out-Null
-    $row.CommandCancelButton = $cancelButton
+    try {
+        $cancelButton = [System.Windows.Controls.Button]::new()
+        $cancelButton.Content = 'Abbrechen'
+        $cancelButton.FontSize = 10
+        $cancelButton.Padding = [System.Windows.Thickness]::new(6, 1, 6, 1)
+        $cancelButton.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
+        $cancelButton.VerticalAlignment = 'Center'
+        $cancelButton.Visibility = 'Collapsed'
+        $cancelButton.Add_Click({ param($sender, $eventArgs) try { Invoke-PlaceRowCancel ([string]$sender.Tag) } catch {} })
+        $progressPanel.Children.Add($cancelButton) | Out-Null
+        $row.CommandCancelButton = $cancelButton
+    } catch {
+        Write-UiErrorLog 'Abbrechen-Knopf konnte in der Minimalzeile nicht gebaut werden' $_
+    }
     $namePanel.Children.Add($progressPanel) | Out-Null
     $row.ProgressPanel = $progressPanel
     $row.ProgressBar = $progressBar
@@ -23437,7 +23558,15 @@ function Sync-PlaceList {
         $PlaceListStatusText.Foreground = Get-Brush '#FFFFC95E'
         if ($PlaceList.Children.Count -eq 0) {
             Set-Text $EmptyTitle 'Place-Liste wird repariert'
-            Set-Text $EmptyBody 'Die Liste ist noch unvollständig. Die Bridge versucht, fehlende Zeilen automatisch erneut anzuzeigen; Details stehen in runtime.log.'
+            $emptyBodyText = 'Die Liste ist noch unvollständig. Die Bridge versucht, fehlende Zeilen automatisch erneut anzuzeigen; Details stehen in runtime.log.'
+            # Version 7.0.7: den ECHTEN Grund direkt anzeigen - ein Screenshot
+            # davon genuegt, um die Ursache zweifelsfrei zu belegen.
+            try {
+                if (-not [string]::IsNullOrWhiteSpace([string]$script:LastPlaceRowError)) {
+                    $emptyBodyText = 'Ursache: ' + [string]$script:LastPlaceRowError + ' - die Bridge versucht es automatisch erneut.'
+                }
+            } catch {}
+            Set-Text $EmptyBody $emptyBodyText
             $EmptyState.Visibility = 'Visible'
         } else {
             # Do not cover rows that did render; report a partial failure in the
@@ -23535,7 +23664,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.0.6'
+    $versionText = '7.0.7'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -24159,7 +24288,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.0.6" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.0.7" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -24204,7 +24333,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.0.6 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.0.7 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -24263,7 +24392,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.0.6 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.0.7 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -24276,7 +24405,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.0.6'
+    $verText = '7.0.7'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
