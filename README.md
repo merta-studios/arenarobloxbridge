@@ -20,7 +20,7 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test_v398_structure.py` | Python-Strukturtest für 7.0.3 (Versionen, Performance-Guards, Kanal-Guards, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test_v398_structure.py` | Python-Strukturtest für 7.0.4 (Versionen, Performance-Guards, Kanal-Guards, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -35,6 +35,14 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 7.0.4
+- **Executor und Queue erholen sich nach Ausfällen.** Jeder Studio-Befehl erhält eine eindeutige `commandId`, wird mit geschützter Fehlerbehandlung/Traceback und einem festen Zeitbudget ausgeführt und sendet Start-/Liveness-Heartbeats. Ein Plugin-Watchdog markiert hängende Befehle als `STUDIO_ABANDONED`; der Server-Watchdog erkennt fehlende Heartbeats, nicht bestätigte Zustellung und verlorene Executor-Einträge. Abgebrochene Schreibbefehle können Teiländerungen hinterlassen – vor einem Retry den Place prüfen.
+- **Ergebniszustellung ist idempotent.** Resultate und Chunk-Antworten gehören zu ihrer `commandId`; Wiederholungen werden dedupliziert, nicht zugestellte Ergebnisse bleiben in einer Retry-Outbox. Argumente und erforderliche Felder werden vor dem Queueing geprüft, und die Studio-Queue ist begrenzt.
+- **Diagnose und kontrollierte Wiederherstellung.** `GET /api/queue?token=...` zeigt Queue, pending commandIds, Plugin-/Executor-Liveness und Zeitpunkte. `POST /api/queue` mit `{ action: "cancel", commandId: "..." }` bricht einen Befehl best-effort ab; `{ action: "reset" }` markiert offene Befehle und fordert einen lokalen Executor-Reset an. Beide Aktionen können Teiländerungen hinterlassen.
+- **Spatial-/Boden-Tools repariert und begrenzt.** Schema und Handler stimmen für `ground_height`, `measure_height`, `snap_to_ground`, `verify_measurable`, `raycast_many` und weitere räumliche Abfragen wieder überein. Bodenraster und `probe_world` werden vor dem Queueing und erneut im Plugin auf maximal 4.000 Messpunkte begrenzt; große Durchläufe yielden regelmäßig und unterstützen Jobfortschritt/Abbruch. Einzel-Refs und dokumentierte Aliase werden vor der Ausführung korrekt akzeptiert.
+- **Place-Liste und Einstellungen.** Der Place-Name steht etwas höher; darunter erscheinen bei aktiver Arena-Arbeit der blaue Text „Arena arbeitet gerade...“, eine blaue Fortschrittsleiste und Prozent. Die Mitteilungen-Kategorie wurde aus den Einstellungen entfernt; die Place-Zeile zeigt nur die Fortschrittsanzeige, ohne Zusatzlabel.
+- **Nach dem Update Roblox Studio einmal neu starten**, damit Plugin **7.0.4** geladen wird.
 
 ## 7.0.3
 - **Die Ursache des Dauer-Lags, nicht die Frequenz.** 7.0.2 hat nur die Oberfläche beruhigt (Deko-Animationen, 1,8-s-Abgleich, minimiertes Fenster, Handoff-Prüfung) und deshalb nichts geändert. Der Befund liegt im Studio-Kanal: Das Plugin hielt ab dem ersten verbundenen Place **dauerhaft** eine HTTP-Anfrage offen. Der Long-Poll fragte 12 Sekunden an und startete unmittelbar danach die nächste Anfrage – ohne jede Pause (100 % Belegung eines HTTP-Platzes), plus ein eigener Heartbeat alle 5 Sekunden als zweiter Dauerkanal.
