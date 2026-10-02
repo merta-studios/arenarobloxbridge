@@ -1,10 +1,11 @@
 {
-  "version": "7.0.2",
+  "version": "7.0.3",
   "notes": [
-    "• Weniger Leerlauf-Rendering: Die dauerhaft wiederholten Deko-Animationen im Hauptfenster sind statisch; Farben, Layout sowie Hover- und kurze Einblend-Effekte bleiben erhalten.",
-    "• Weniger Hintergrundarbeit bei verbundenen Places: sichtbarer UI-Abgleich alle 1,8 Sekunden statt 0,9; im minimierten Fenster nur Tunnel-Ausgabe, keine Place-/Zeilen-Abfragen. Server, Tunnel und Plugin-Verbindung laufen weiter.",
-    "• Vorschau AUS stoppt jetzt auch den Vorschau-Spinner und ueberspringt den visuellen Selbsttest. Spinner enden ebenfalls nach einem Bild oder dem Platzhalter-Fallback.",
-    "• Handoff-Pruefung einmal pro UI-Aktualisierung statt je Place-Zeile; Studio-Leerlaufwaechter pollt alle 1,5 statt 0,5 Sekunden.",
-    "• Roblox Studio nach dem Update einmal neu starten, damit Plugin 7.0.2 geladen wird."
+    "• Ursache des Dauer-Lags gefunden (bitte mit der neuen Diagnose gegenpruefen): Das Studio-Plugin hielt ab dem Verbinden DAUERHAFT eine HTTP-Anfrage offen (12-s-Long-Poll, sofort danach die naechste Anfrage, ohne Pause) und sendete zusaetzlich alle 5 Sekunden einen eigenen Heartbeat. Roblox Studio fuehrt nur wenige HTTP-Anfragen gleichzeitig aus; Roblox bestaetigt, dass lange offene Anfragen ('long polling') die naechsten Anfragen stallen. Genau das begann mit dem ersten verbundenen Place und lief auch im Leerlauf weiter - unabhaengig von Vorschau und UI-Takt. Diese Dauerbelegung ist in 7.0.3 beseitigt; die Messanleitung im README zeigt, ob das Lag damit verschwindet.",
+    "• Neue Kanal-Regel: Jede Anfrage ist kurz (4 s, im Ruhemodus 6 s) und nach JEDER Anfrage folgt eine Pflichtpause (0,3 s aktiv / 2,0 s ruhig). Der HTTP-Platz ist damit garantiert zeitweise frei. Ruhemodus erst nach drei leeren Polls; ein Befehl schaltet sofort auf aktiv zurueck.",
+    "• Kein zweiter Dauerkanal mehr: Der 5-Sekunden-Heartbeat ist jetzt nur noch Rueckfall und laeuft erst, wenn 20 Sekunden kein Poll mehr durchkam. Der Poll frischt Sitzung und Anzeige weiterhin selbst auf.",
+    "• Bridge-Seite: Jede HTTP-Anfrage parste bisher den 337-KB-Handler (ca. 4300 Zeilen) neu. Der Handler wird jetzt einmal kompiliert und im Runspace-Pool nur noch aufgerufen - weniger CPU genau in dem Moment, in dem Places sich verbinden.",
+    "• Neu: abschaltbare Leistungsdiagnose in den Einstellungen (Abschnitt DIAGNOSE, Standard AUS). Sie schreibt hoechstens alle 30 Sekunden einen kompakten Bericht nach %LOCALAPPDATA%\\ArenaRobloxBridge\\performance.txt (Anfragen/Minute, Poll-Dauer, Pflichtpausen, UI-Zeit, HTTP-Zeit) und warnt im Protokoll, wenn ein Place auffaellig haeufig pollt.",
+    "• Roblox Studio nach dem Update einmal neu starten, damit Plugin 7.0.3 geladen wird (im alten Plugin bleibt die alte Poll-Regel aktiv)."
   ]
 }

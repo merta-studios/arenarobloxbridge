@@ -20,7 +20,7 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test_v398_structure.py` | Python-Strukturtest für 7.0.2 (Versionen, Performance-Guards, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test_v398_structure.py` | Python-Strukturtest für 7.0.3 (Versionen, Performance-Guards, Kanal-Guards, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -35,6 +35,29 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 7.0.3
+- **Die Ursache des Dauer-Lags, nicht die Frequenz.** 7.0.2 hat nur die Oberfläche beruhigt (Deko-Animationen, 1,8-s-Abgleich, minimiertes Fenster, Handoff-Prüfung) und deshalb nichts geändert. Der Befund liegt im Studio-Kanal: Das Plugin hielt ab dem ersten verbundenen Place **dauerhaft** eine HTTP-Anfrage offen. Der Long-Poll fragte 12 Sekunden an und startete unmittelbar danach die nächste Anfrage – ohne jede Pause (100 % Belegung eines HTTP-Platzes), plus ein eigener Heartbeat alle 5 Sekunden als zweiter Dauerkanal.
+- **Warum das Lag erzeugt.** Roblox Studio führt nur **drei HTTP-Anfragen gleichzeitig** aus (DevForum-Bericht „HttpService only allows 3 in-flight requests at a time“, von Roblox bestätigt), und Roblox schreibt selbst: *„If certain plugins or game scripts are making requests that utilize long polling, or generally requests that by nature take a long time, this can currently stall next requests.“* Genau dieser Dauerzustand begann mit dem ersten verbundenen Place und lief im Leerlauf unverändert weiter – unabhängig von Vorschau, Place-Liste und UI-Takt. Die Vorschauaufnahme war nie die Ursache.
+- **Zweiter Fund.** Jede HTTP-Anfrage erzeugte in der Bridge ein neues PowerShell-Objekt und **parste den 337-KB-Handler (~4300 Zeilen) neu**. Diese Kosten liefen exakt mit den Plugin-Anfragen an. Der Handler wird jetzt einmal als ScriptBlock erzeugt und im Runspace-Pool nur noch aufgerufen (Mini-Wrapper).
+- **Kleinste belastbare Korrektur.** Jede Anfrage ist kurz (4 s aktiv / 6 s Ruhemodus) und nach **jeder** Anfrage liegt eine Pflichtpause (0,3 s aktiv / 2,0 s ruhig) – der HTTP-Platz ist garantiert zeitweise frei. Ruhemodus erst nach drei leeren Polls; ein Befehl schaltet sofort auf aktiv zurück (Arena-Aufrufe bleiben schnell, Befehle kommen weiterhin über das Poll-Signal sofort an). Der 5-s-Heartbeat ist jetzt reiner Rückfall und läuft erst, wenn 20 s kein Poll mehr durchkam; der Poll frischt Sitzung und Anzeige ohnehin bei jeder Anfrage auf. Die Bridge begrenzt die Wartezeit serverseitig auf höchstens 8 s (schützt auch gegen ein altes Plugin im Studio-Ordner).
+- **Abschaltbare Leistungsdiagnose (Standard AUS).** Einstellungen → „DIAGNOSE“ → „Leistungsdiagnose aufzeichnen“. Sie schreibt höchstens alle 30 Sekunden **eine** Zeile ins Protokoll und einen kompakten Bericht nach `%LOCALAPPDATA%\ArenaRobloxBridge\performance.txt`: HTTP-Anfragen der Bridge, Handler-Dauer (Ø/Max), UI-Tick-Zeit (Ø/Max) und je Place „Anfragen/Minute“, „Poll-Dauer Ø“, „HTTP-Platz belegt %“ und „Pause Ø“. Kein Logging pro Tick, keine zusätzliche Anfrage. Ein Place, das auffällig häufig pollt (> 30 Anfragen/60 s), wird einmal pro 5 Minuten im Protokoll gemeldet.
+- **Nach dem Update Roblox Studio einmal neu starten**, damit Plugin **7.0.3** geladen wird. Ohne Neustart läuft im Studio weiterhin die alte Poll-Regel.
+- **Ehrliche Einordnung.** Diese Änderung beseitigt eine im Code belegte Dauerbelegung (und den doppelten Kanal), gestützt auf die Roblox-Aussagen unten. Sie ist hier **nicht** auf Windows gemessen worden – deshalb ist die Leistungsdiagnose absichtlich eingebaut. Erst wenn `performance.txt` auf dem Zielsystem „HTTP-Platz belegt“ deutlich unter 100 % und wenige Anfragen pro Minute zeigt **und** das Lag verschwindet, ist der Fall abgeschlossen.
+- **Mehrere Places waren der Extremfall:** Jedes verbundene Fenster hielt vorher seinen eigenen Dauer-Kanal (Long-Poll + 5-s-Heartbeat). Bei drei oder mehr Places war der Plugin-Anteil des Studio-HTTP-Kontingents damit praktisch vollständig dauerbelegt – weitere Plugins/Anfragen mussten warten. Mit Pflichtpause und Rückfall-Heartbeat ist pro Place immer ein Platz frei.
+
+Quellen für den Befund (Roblox Developer Forum):
+- Roblox-Staff zum Stallen durch Long-Polling: <https://devforum.roblox.com/t/httpservice-extremely-sluggish-in-studio/2658364>
+- „HttpService only allows 3 in-flight requests at a time“ (Plugin-Queue, nur Studio-Neustart leert sie): <https://devforum.roblox.com/t/httpservice-only-allows-3-in-flight-requests-at-a-time/2673475>
+- „Update HttpService wiki page to indicate 3 concurrent connection limit“ (Long-Poll-Plugin gegen lokalen Server; Roblox: Long-Polling ist ein Hack und nicht offiziell unterstützt): <https://devforum.roblox.com/t/update-httpservice-wiki-page-to-indicate-3-concurrent-connection-limit/243099>
+
+### Windows-Messanleitung (5 Minuten, liefert den Beweis)
+1. Bridge starten, **Einstellungen → DIAGNOSE → „Leistungsdiagnose aufzeichnen“ einschalten** (Vorschau kann aus bleiben). Roblox Studio neu starten, ein Place öffnen und **nichts** tun.
+2. Zwei Minuten warten. Danach `%LOCALAPPDATA%\ArenaRobloxBridge\performance.txt` öffnen (Windows-Taste + R, Pfad einfügen).
+3. Erwarteter Sollwert im Ruhezustand: „HTTP-Platz belegt“ **unter 80 %** und „Anfragen/Minute“ zwischen **7 und 16** je Place; ohne verbundenes Place dürfen die Plugin-Zeilen fehlen.
+4. Zum Vergleich: Task-Manager → Details → `RobloxStudioBeta.exe` und `powershell.exe`/`ArenaBridge.exe` bei „CPU“ beobachten – jeweils im Leerlauf mit verbundenem Place und danach mit geschlossenem Studio.
+5. Gegenprobe „mehrere Places“: zwei Places öffnen und die Zeilen in `performance.txt` vergleichen (je Place eine eigene Zeile).
+6. Ist „HTTP-Platz belegt“ weiterhin ~100 %, läuft noch ein **altes Plugin** (Studio nicht neu gestartet) – die Datei nennt das in der Zeile „BEWERTUNG“.
 
 ## 7.0.2
 - **Weniger Leerlauf-Rendering.** Die dauerhaft wiederholten Deko-Animationen im transparenten Hauptfenster wurden entfernt. Farbverläufe, Fensteraufbau sowie kurze Hover- und Einblend-Effekte bleiben erhalten; die Oberfläche muss im Leerlauf aber keine Aurora-/Glanz-Bewegungen mehr pro Frame neu zeichnen.
