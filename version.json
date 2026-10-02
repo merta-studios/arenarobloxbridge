@@ -1,11 +1,10 @@
 {
-  "version": "7.0.3",
+  "version": "7.0.4",
   "notes": [
-    "• Ursache des Dauer-Lags gefunden (bitte mit der neuen Diagnose gegenpruefen): Das Studio-Plugin hielt ab dem Verbinden DAUERHAFT eine HTTP-Anfrage offen (12-s-Long-Poll, sofort danach die naechste Anfrage, ohne Pause) und sendete zusaetzlich alle 5 Sekunden einen eigenen Heartbeat. Roblox Studio fuehrt nur wenige HTTP-Anfragen gleichzeitig aus; Roblox bestaetigt, dass lange offene Anfragen ('long polling') die naechsten Anfragen stallen. Genau das begann mit dem ersten verbundenen Place und lief auch im Leerlauf weiter - unabhaengig von Vorschau und UI-Takt. Diese Dauerbelegung ist in 7.0.3 beseitigt; die Messanleitung im README zeigt, ob das Lag damit verschwindet.",
-    "• Neue Kanal-Regel: Jede Anfrage ist kurz (4 s, im Ruhemodus 6 s) und nach JEDER Anfrage folgt eine Pflichtpause (0,3 s aktiv / 2,0 s ruhig). Der HTTP-Platz ist damit garantiert zeitweise frei. Ruhemodus erst nach drei leeren Polls; ein Befehl schaltet sofort auf aktiv zurueck.",
-    "• Kein zweiter Dauerkanal mehr: Der 5-Sekunden-Heartbeat ist jetzt nur noch Rueckfall und laeuft erst, wenn 20 Sekunden kein Poll mehr durchkam. Der Poll frischt Sitzung und Anzeige weiterhin selbst auf.",
-    "• Bridge-Seite: Jede HTTP-Anfrage parste bisher den 337-KB-Handler (ca. 4300 Zeilen) neu. Der Handler wird jetzt einmal kompiliert und im Runspace-Pool nur noch aufgerufen - weniger CPU genau in dem Moment, in dem Places sich verbinden.",
-    "• Neu: abschaltbare Leistungsdiagnose in den Einstellungen (Abschnitt DIAGNOSE, Standard AUS). Sie schreibt hoechstens alle 30 Sekunden einen kompakten Bericht nach %LOCALAPPDATA%\\ArenaRobloxBridge\\performance.txt (Anfragen/Minute, Poll-Dauer, Pflichtpausen, UI-Zeit, HTTP-Zeit) und warnt im Protokoll, wenn ein Place auffaellig haeufig pollt.",
-    "• Roblox Studio nach dem Update einmal neu starten, damit Plugin 7.0.3 geladen wird (im alten Plugin bleibt die alte Poll-Regel aktiv)."
+    "• Executor-Ausfallschutz: Studio-Befehle werden pro commandId isoliert, mit Traceback-Fehlerbehandlung, Heartbeats und festem Zeitbudget ausgefuehrt. Ein Watchdog beendet/markiert unresponsive Ausfuehrungen, damit die Queue nicht dauerhaft haengen bleibt; Teil-Aenderungen werden als moeglich gekennzeichnet.",
+    "• Zustell- und Ergebniszuverlaessigkeit: Queue-Zeitpunkte, Empfangs-/Startbestaetigungen, Deduplizierung und wiederholbare Ergebnis-Chunks sind commandId-gebunden. GET /api/queue zeigt Executor/Queue-Status; POST /api/queue kann einen Befehl abbrechen oder die Queue kontrolliert zuruecksetzen.",
+    "• Spatial-/Boden-Tools repariert und begrenzt: Schema-/Handler-Aliase fuer ground_height, measure_height, snap_to_ground, verify_measurable, raycast_many und weitere Raumabfragen abgeglichen. ground_height/probe_world begrenzen Raster vor dem Queueing und erneut im Plugin auf maximal 4000 Messpunkte; grosse Laeufe yielden und melden Jobfortschritt/Abbruch.",
+    "• Place-Liste: Bei aktiver Arena-Arbeit steht unter dem Place-Namen blau „Arena arbeitet gerade...“ mit Fortschrittsleiste und Prozent; die Mitteilungen-Kategorie in den Einstellungen ist entfernt.",
+    "• Roblox Studio einmal neu starten, damit Plugin 7.0.4 geladen wird."
   ]
 }

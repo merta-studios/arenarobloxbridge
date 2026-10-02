@@ -1,5 +1,16 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.0.3
+# Arena Roblox Bridge  -  Version 7.0.4
+#
+# QUEUE-REPAIR + PLACE-UI VERSION 7.0.4:
+#   * Studio commands now have explicit WAITING/RUNNING/DONE/ABANDONED states,
+#     per-tool execution budgets, plugin heartbeats and watchdog recovery.
+#   * The plugin executor isolates every command, reports tracebacks and
+#     self-recovers after a stuck command; results are retained by commandId.
+#   * Adds queue status/cancel/clear/reset endpoints, pre-queue schema checks,
+#     executor liveness in status, and reconnect/event flood protection.
+#   * The Place row shows the Place name higher, then a blue work label,
+#     progress bar and percentage. Settings no longer contain a Mitteilungen
+#     section; the visible progress-contract text has been removed.
 #
 # LEISTUNGS-FIX VERSION 7.0.3 - DIE URSACHE, NICHT DIE FREQUENZ:
 #
@@ -1068,11 +1079,11 @@
 #       komplett abrufbar.
 #   2.  JOBS: Lange Arbeit läuft im Studio als Hintergrund-Job mit Id weiter
 #       (start_job, job_status, job_result, list_jobs, cancel_job). Jeder
-#       Tool-Call kann mit args.asJob=true in den Hintergrund gehen. Ein
-#       Timeout tötet nichts mehr: Der Befehl läuft im Studio zu Ende, das
-#       Ergebnis kommt nach (siehe _bridge.lateResults) und Studio arbeitet
-#       Befehle strikt nacheinander ab - es wird nie gegen ein noch laufendes
-#       Skript gemessen.
+#       Tool-Call kann mit args.asJob=true in den Hintergrund gehen.
+#       Ein HTTP-Timeout beendet Studio-Arbeit nicht sofort: Plugin-Budget
+#       und Heartbeat-Watchdog geben die Queue bei Hängern trotzdem frei.
+#       Späte Ergebnisse kommen über _bridge.lateResults; Studio arbeitet
+#       Befehle strikt nacheinander ab.
 #   3.  BESTÄNDIGER LUA-WORKER: run_lua und Jobs laufen in EINEM persistenten
 #       Umgebung. Ein Helfer aus einem früheren Call (z.B. "M = {...}") ist im
 #       nächsten Call ohne Neukleben sichtbar (lua_state zeigt den Stand).
@@ -1758,15 +1769,29 @@ $script:Shared = [hashtable]::Synchronized(@{
     SessionTokens   = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     TokenSessions   = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     AccessModes     = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
-    # sessionId -> Warteschlange mit Befehlen (JSON)
+    # sessionId -> Warteschlange mit Befehlen (JSON); queue rewrites are guarded
+    # because dequeue, reset, watchdog removal and enqueue must remain atomic.
     CommandQueues   = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
+    CommandQueueLock = [System.Object]::new()
     # sessionId -> Signal: weckt den wartenden Long-Poll sofort auf
     CommandSignals  = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
     # commandId -> Ergebnis (JSON-Text)
     CommandResults  = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    # commandId -> owning session; a result can only complete its original command.
+    CommandOwners   = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    CommandStates   = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    CompletedCommandIds = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
+    # sessionId:commandId -> cancel timestamp; sessionId -> executor reset timestamp.
+    CancelRequests  = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
+    ExecutorResetRequests = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
+    ExecutorStates  = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    ToolSchemaIndex = $null
+    ToolSchemaLock  = [System.Object]::new()
     ResultSignals   = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
+    CommandResultLock = [System.Object]::new()
     # commandId -> Teilstücke einer großen Antwort
     ResultChunks    = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
+    ResultChunkAt   = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
     # sessionId -> Zeitpunkt des letzten offenen Long-Polls
     Presence        = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
     # sessionId -> Anzahl gerade offener Long-Polls (echte Lebendigkeit)
@@ -1779,7 +1804,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     # sessionId -> Ereignisse (Benutzer hat Play gestartet usw.)
     Events          = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
     Counters        = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
-    # sessionId -> Befehle, die im Studio noch laufen (Timeout überlebt)
+    # sessionId -> ausstehende Befehle samt Queue-/Executor-Status
     PendingCommands = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
     # sessionId -> completed results whose HTTP caller had already timed out.
     LateResults     = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
@@ -1794,7 +1819,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.0.3'
+    DocsVersion     = '7.0.4'
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         simAllowed      = $false    # sim_start bleibt bis zu echter Edit-Modus-Simulation gesperrt
@@ -1927,8 +1952,8 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-    $script:PreviewDiagIdentity = ("Bridge-Version=7.0.3, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.0.3, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    $script:PreviewDiagIdentity = ("Bridge-Version=7.0.4, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.0.4, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 6.0.5: Hinweis auf den kleinen Kurzbericht - er enthaelt alles,
     # was zur Beurteilung der Fenster-Vorschau noetig ist.
     Write-RuntimeLog ("Vorschau-Kurzbericht: " + (Join-Path $script:AppDataRoot 'preview-diagnose.txt'))
@@ -2022,7 +2047,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.0.3)
+  Arena Studio Bridge - Studio Plugin  (Version 7.0.4)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -2095,7 +2120,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.0.3"
+local ARENA_VERSION  = "7.0.4"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -2141,6 +2166,19 @@ local sessionId      = nil
 local accessMode     = "readwrite"
 local lastHeartbeat  = 0
 local connected      = false
+local commandQueue   = {}
+local executorState  = {
+    lastTick = os.time(),
+    runningCommandId = nil,
+    runningTool = nil,
+    startedAt = 0,
+    dispatcherBusy = false,
+    queueDepth = 0,
+    resultOutbox = {},
+}
+local cancelRequests = {}
+local seenCommandIds = {}
+local connectedEventSessionId = nil
 local defaultContext = "server"   -- fuer Laufzeit-Befehle im Play-Modus
 local userPlaytestActive = false       -- vom Nutzer gestarteter/aktiv gespielter Test
 -- Version 3.8: Zuverlaessige Play-Erkennung + Nutzer-Aktivitaet im Editor
@@ -3799,9 +3837,11 @@ local function waitMeasurableCore(insts, maxSeconds)
             local cframe, size = boundsOf(inst)
             local ready = false
             if cframe then
-                local params = measureRayParams({ inst })
+                local params = RaycastParams.new()
+                params.FilterType = Enum.RaycastFilterType.Include
+                params.FilterDescendantsInstances = { inst }
                 local hit = Workspace:Raycast(cframe.Position + Vector3.new(0, size.Y / 2 + 5, 0), Vector3.new(0, -size.Y - 10, 0), params)
-                if hit and hit.Instance == inst then ready = true end
+                if hit and (hit.Instance == inst or hit.Instance:IsDescendantOf(inst)) then ready = true end
             end
             if not ready then
                 allReady = false
@@ -4203,7 +4243,7 @@ tools.get_children = function(args)
 end
 
 tools.get_properties = function(args)
-    local list, errors = resolveMany(args.refs or args.ref)
+    local list, errors = resolveMany(firstNonEmpty(args.refs, args.ref))
     local wanted = args.properties
     local results = {}
     for _, inst in ipairs(list) do
@@ -4405,7 +4445,7 @@ tools.viewport_info = function()
 end
 
 tools.get_bounds = function(args)
-    local list, errors = resolveMany(args.refs or args.ref)
+    local list, errors = resolveMany(firstNonEmpty(args.refs, args.ref))
     if #list == 0 then return fail("No instance resolved. " .. table.concat(errors, " ")) end
     local items = {}
     for _, inst in ipairs(list) do
@@ -4482,11 +4522,37 @@ local function filterMatches(inst, filter)
     return true
 end
 
+local function firstNonEmpty(...)
+    for index = 1, select("#", ...) do
+        local value = select(index, ...)
+        if value ~= nil and not (type(value) == "string" and value == "")
+            and not (type(value) == "table" and next(value) == nil) then
+            return value
+        end
+    end
+    return nil
+end
+
 local function resolveExcluded(exclude)
     local list = {}
     local exList, _ = resolveMany(exclude)
     for _, inst in ipairs(exList) do table.insert(list, inst) end
     return list
+end
+
+local function spatialFilter(args)
+    local filter = {}
+    if type(args.filter) == "table" then
+        for key, value in pairs(args.filter) do filter[key] = value end
+    end
+    if args.className ~= nil then filter.className = args.className end
+    if args.tag ~= nil then filter.tag = args.tag end
+    if next(filter) == nil then return nil end
+    return filter
+end
+
+local function spatialExclude(args)
+    return firstNonEmpty(args.excludeRefs, args.exclude, args.ignore)
 end
 
 local function collectInBox(minVec, maxVec, filter, exclude, limit)
@@ -4515,71 +4581,122 @@ end
 tools.parts_in_box = function(args)
     local minVec = decodeValue(args.min)
     local maxVec = decodeValue(args.max)
-    if typeof(minVec) ~= "Vector3" or typeof(maxVec) ~= "Vector3" then
-        return failCode("BAD_ARGS", "min and max must be {x,y,z}.")
+    local center = nil
+    if typeof(minVec) == "Vector3" and typeof(maxVec) == "Vector3" then
+        -- min/max supplied directly
+    else
+        local centerValue = decodeValue(args.center)
+        local sizeValue = decodeValue(args.size)
+        if typeof(centerValue) == "Vector3" and typeof(sizeValue) == "Vector3" then
+            center = centerValue
+            local half = Vector3.new(math.abs(sizeValue.X), math.abs(sizeValue.Y), math.abs(sizeValue.Z)) / 2
+            minVec, maxVec = center - half, center + half
+        elseif args.refA and args.refB then
+            local a, errA = resolveRef(args.refA)
+            local b, errB = resolveRef(args.refB)
+            if not a then return failCode("REF_NOT_FOUND", errA) end
+            if not b then return failCode("REF_NOT_FOUND", errB) end
+            local cfA = getPivotOf(a)
+            local cfB = getPivotOf(b)
+            if not cfA or not cfB then return failCode("BAD_ARGS", "refA/refB must have measurable positions.") end
+            minVec, maxVec = cfA.Position, cfB.Position
+        else
+            return failCode("BAD_ARGS", "Use min+max, center+size, or refA+refB.")
+        end
     end
-    local found, total = collectInBox(minVec, maxVec, args.filter, args.exclude, args.limit)
-    return ok({ items = found, found = #found, totalMatches = total, clear = (total == 0) })
+    local low = Vector3.new(math.min(minVec.X, maxVec.X), math.min(minVec.Y, maxVec.Y), math.min(minVec.Z, maxVec.Z))
+    local high = Vector3.new(math.max(minVec.X, maxVec.X), math.max(minVec.Y, maxVec.Y), math.max(minVec.Z, maxVec.Z))
+    local tolerance = math.max(0, tonumber(args.tolerance) or 0)
+    local expand = Vector3.new(tolerance, tolerance, tolerance)
+    low, high = low - expand, high + expand
+    if center == nil then center = (low + high) / 2 end
+    local filter = spatialFilter(args)
+    local exclude = spatialExclude(args)
+    local limit = math.max(0, math.min(tonumber(args.limit) or 200, 500))
+    local found, total = collectInBox(low, high, filter, exclude, limit)
+    for _, entry in ipairs(found) do
+        if entry.position then
+            local delta = Vector3.new(entry.position.x - center.X, entry.position.y - center.Y, entry.position.z - center.Z)
+            entry.distanceFromCenter = delta.Magnitude
+        end
+    end
+    local empty = total == 0
+    return ok({
+        items = found, count = #found, totalMatches = total,
+        empty = empty, clear = empty,
+        hint = empty and "No matching BaseParts in this box. Check the bounds, className and tag filters." or nil,
+    })
 end
 
 tools.parts_in_sphere = function(args)
     local center = decodeValue(args.center)
-    if typeof(center) ~= "Vector3" then return failCode("BAD_ARGS", "center must be {x,y,z}.") end
+    if typeof(center) ~= "Vector3" and args.ref then
+        local inst, err = resolveRef(args.ref)
+        if not inst then return failCode("REF_NOT_FOUND", err) end
+        local cf = getPivotOf(inst)
+        if cf then center = cf.Position end
+    end
+    if typeof(center) ~= "Vector3" then return failCode("BAD_ARGS", "Need center={x,y,z} or ref.") end
     local radius = tonumber(args.radius) or 10
-    local half = Vector3.new(radius, radius, radius)
-    local found, _ = collectInBox(center - half, center + half, args.filter, args.exclude, math.max(tonumber(args.limit) or 200, 500))
+    if radius ~= radius or radius < 0 then return failCode("BAD_ARGS", "radius must be >= 0.") end
+    local tolerance = math.max(0, tonumber(args.tolerance) or 0)
+    local limit = math.max(0, math.min(tonumber(args.limit) or 200, 500))
+    local extent = radius + tolerance
+    local half = Vector3.new(extent, extent, extent)
+    local candidates, total = collectInBox(center - half, center + half, spatialFilter(args), spatialExclude(args), 500)
     local inside = {}
-    for _, entry in ipairs(found) do
-        local delta = Vector3.new(entry.position.x - center.X, entry.position.y - center.Y, entry.position.z - center.Z)
-        local tolerance = 0
-        if entry.size then tolerance = (entry.size.x + entry.size.y + entry.size.z) / 6 end
-        if delta.Magnitude <= radius + tolerance then
-            table.insert(inside, entry)
+    for _, entry in ipairs(candidates) do
+        if entry.position then
+            local delta = Vector3.new(entry.position.x - center.X, entry.position.y - center.Y, entry.position.z - center.Z)
+            local partExtent = 0
+            if entry.size then partExtent = (entry.size.x + entry.size.y + entry.size.z) / 6 end
+            if delta.Magnitude <= radius + tolerance + partExtent and #inside < limit then
+                table.insert(inside, entry)
+            end
         end
     end
-    return ok({
-        items = inside,
-        found = #inside,
-        note = "Sphere test: part-center distance plus half the part extent (approximate - a box corner can poke through).",
-    })
+    return ok({ items = inside, count = #inside, totalCandidates = total, empty = (#inside == 0),
+        note = "Sphere test includes part extent approximately; very large scenes are capped at 500 candidate parts." })
 end
 
 tools.nearest_parts = function(args)
-    local from = decodeValue(args.position)
+    local from = decodeValue(args.position or args.origin)
     if typeof(from) ~= "Vector3" and (args.ref or args.fromRef) then
         local inst, err = resolveRef(args.ref or args.fromRef)
         if not inst then return failCode("REF_NOT_FOUND", err) end
         local cf = getPivotOf(inst)
         if cf then from = cf.Position end
     end
-    if typeof(from) ~= "Vector3" then return failCode("BAD_ARGS", "Need position {x,y,z} or ref/fromRef.") end
+    if typeof(from) ~= "Vector3" then return failCode("BAD_ARGS", "Need origin/position {x,y,z} or ref/fromRef.") end
     local radius = tonumber(args.radius) or 50
-    local limit = tonumber(args.limit) or 20
-    local found, _ = collectInBox(
-        from - Vector3.new(radius, radius, radius),
-        from + Vector3.new(radius, radius, radius),
-        args.filter, args.exclude, math.max(limit, 500))
+    if radius ~= radius or radius < 0 then return failCode("BAD_ARGS", "radius must be >= 0.") end
+    local limit = math.max(0, math.min(tonumber(args.limit) or 20, 500))
+    local half = Vector3.new(radius, radius, radius)
+    local candidates, total = collectInBox(from - half, from + half, spatialFilter(args), spatialExclude(args), 500)
     local scored = {}
-    for _, entry in ipairs(found) do
-        local delta = Vector3.new(entry.position.x - from.X, entry.position.y - from.Y, entry.position.z - from.Z)
-        entry.distance = math.floor(delta.Magnitude * 100) / 100
-        table.insert(scored, entry)
+    for _, entry in ipairs(candidates) do
+        if entry.position then
+            local delta = Vector3.new(entry.position.x - from.X, entry.position.y - from.Y, entry.position.z - from.Z)
+            entry.distance = math.floor(delta.Magnitude * 100) / 100
+            table.insert(scored, entry)
+        end
     end
     table.sort(scored, function(a, b) return a.distance < b.distance end)
     local out = {}
     for i = 1, math.min(limit, #scored) do table.insert(out, scored[i]) end
-    return ok({ items = out, count = #out, from = { x = from.X, y = from.Y, z = from.Z } })
+    return ok({ items = out, count = #out, totalCandidates = total, empty = (#out == 0), nearest = out[1],
+        from = { x = from.X, y = from.Y, z = from.Z } })
 end
 
 tools.what_is_in_the_way = function(args)
-    local pointA = decodeValue(args.from)
+    local pointA = decodeValue(args.from or args.origin)
     if typeof(pointA) ~= "Vector3" and args.fromRef then
         local inst, err = resolveRef(args.fromRef)
         if not inst then return failCode("REF_NOT_FOUND", err) end
         local cf = getPivotOf(inst)
         if cf then pointA = cf.Position end
     end
-    local pointB = decodeValue(args.to)
+    local pointB = decodeValue(args.to or args.target)
     if typeof(pointB) ~= "Vector3" and args.toRef then
         local inst, err = resolveRef(args.toRef)
         if not inst then return failCode("REF_NOT_FOUND", err) end
@@ -4593,7 +4710,7 @@ tools.what_is_in_the_way = function(args)
     local length = dir.Magnitude
     if length < 0.01 then return failCode("BAD_ARGS", "from and to are the same point.") end
     local width = tonumber(args.width) or 2
-    local exList = resolveExcluded(args.exclude)
+    local exList = resolveExcluded(spatialExclude(args))
     if args.fromRef then
         local instA = resolveRef(args.fromRef)
         if instA then table.insert(exList, instA) end
@@ -4607,11 +4724,11 @@ tools.what_is_in_the_way = function(args)
     local hi = Vector3.new(math.max(pointA.X, pointB.X), math.max(pointA.Y, pointB.Y), math.max(pointA.Z, pointB.Z))
         + Vector3.new(width / 2, width / 2, width / 2)
     local params = overlapParamsNew(exList)
-    local limit = tonumber(args.limit) or 50
+    local limit = math.max(0, math.min(tonumber(args.limit) or 50, 500))
     local found = {}
     local parts = Workspace:GetPartBoundsInBox((lo + hi) / 2, (hi - lo), params)
     for _, inst in ipairs(parts) do
-        if filterMatches(inst, args.filter) then
+        if filterMatches(inst, spatialFilter(args)) then
             local cf = getPivotOf(inst)
             if cf then
                 local rel = cf.Position - pointA
@@ -4638,73 +4755,110 @@ tools.what_is_in_the_way = function(args)
 end
 
 tools.raycast_many = function(args)
-    local casts = args.casts or {}
-    if #casts == 0 then
-        return failCode("BAD_ARGS", "casts must be a list of { origin = {x,y,z}, direction = {x,y,z} }.")
+    local casts = firstNonEmpty(args.rays, args.casts) or {}
+    if type(casts) ~= "table" or #casts == 0 then
+        return failCode("BAD_ARGS", "rays/casts must be a list of { origin = {x,y,z}, direction = {x,y,z}, length? }.")
     end
     if #casts > 500 then
-        return failCode("REGION_LIMIT", "Too many casts (" .. tostring(#casts) .. ", max 500 per call).")
+        return failCode("REGION_LIMIT", "Too many casts (" .. tostring(#casts) .. ", max 500 per call). Split the batch.", { sampleLimit = 500 })
     end
-    local params = measureRayParams(resolveExcluded(args.exclude))
+    local params = measureRayParams(resolveExcluded(firstNonEmpty(args.exclude, args.ignore)))
     local hits = {}
     local hitCount = 0
+    local job = args._job
     for index, cast in ipairs(casts) do
-        local origin = decodeValue(cast.origin)
-        local direction = decodeValue(cast.direction)
-        if typeof(origin) ~= "Vector3" or typeof(direction) ~= "Vector3" then
-            table.insert(hits, { index = index, error = "origin/direction must be {x,y,z}" })
+        if type(cast) ~= "table" then
+            table.insert(hits, { index = index, error = "ray must be an object with origin and direction" })
         else
-            local hit = Workspace:Raycast(origin, direction, params)
-            if hit then
-                hitCount = hitCount + 1
-                table.insert(hits, {
-                    index = index, hit = true,
-                    instance = describeRef(hit.Instance),
-                    position = { x = hit.Position.X, y = hit.Position.Y, z = hit.Position.Z },
-                    normal = { x = hit.Normal.X, y = hit.Normal.Y, z = hit.Normal.Z },
-                    distance = (hit.Position - origin).Magnitude,
-                    material = tostring(hit.Material),
-                    waterLike = isWaterLike(hit.Instance),
-                })
+            local origin = decodeValue(cast.origin)
+            local direction = decodeValue(cast.direction)
+            if typeof(origin) ~= "Vector3" or typeof(direction) ~= "Vector3" then
+                table.insert(hits, { index = index, error = "origin/direction must be {x,y,z}" })
             else
-                table.insert(hits, { index = index, hit = false })
+                local length = tonumber(cast.length) or 1000
+                if length < 0 then
+                    table.insert(hits, { index = index, error = "length must be >= 0" })
+                else
+                    if direction.Magnitude > 0 then
+                        direction = direction.Unit * length
+                    else
+                        direction = Vector3.new(0, 0, 0)
+                    end
+                    local hit = Workspace:Raycast(origin, direction, params)
+                    if hit then
+                        hitCount = hitCount + 1
+                        table.insert(hits, {
+                            index = index, hit = true,
+                            instance = describeRef(hit.Instance),
+                            position = { x = hit.Position.X, y = hit.Position.Y, z = hit.Position.Z },
+                            normal = { x = hit.Normal.X, y = hit.Normal.Y, z = hit.Normal.Z },
+                            distance = (hit.Position - origin).Magnitude,
+                            material = tostring(hit.Material),
+                            waterLike = isWaterLike(hit.Instance),
+                        })
+                    else
+                        table.insert(hits, { index = index, hit = false })
+                    end
+                end
             end
         end
+        if index % 64 == 0 then
+            if type(job) == "table" and type(job.cancelled) == "function" and job.cancelled() then
+                return failCode("COMMAND_CANCELLED", "Raycast batch job was cancelled.", { measured = index, total = #casts })
+            end
+            if type(job) == "table" and type(job.progress) == "function" then
+                job.progress(index / #casts * 100, tostring(index) .. "/" .. tostring(#casts) .. " rays cast")
+            end
+            task.wait()
+        end
     end
+    if type(job) == "table" and type(job.progress) == "function" then job.progress(100, "raycast batch complete") end
     return ok({ results = hits, count = #hits, hitCount = hitCount })
 end
 
 tools.ground_height = function(args)
-    local positions = args.positions or {}
+    local positions = firstNonEmpty(args.positions, args.points) or {}
+    if type(positions) ~= "table" then
+        return failCode("BAD_ARGS", "points/positions must be an array of {x,y,z} or use min+max+step for a grid.")
+    end
+    if positions.x ~= nil or positions.X ~= nil then positions = { positions } end
     if #positions == 0 and args.min and args.max then
         local minVec = decodeValue(args.min)
         local maxVec = decodeValue(args.max)
         if typeof(minVec) ~= "Vector3" or typeof(maxVec) ~= "Vector3" then
-            return failCode("BAD_ARGS", "Need positions (a list of {x,y,z}) or min+max {x,y,z} with step.")
+            return failCode("BAD_ARGS", "Need points (a list of {x,y,z}) or min+max {x,y,z} with step.")
         end
         local step = tonumber(args.step) or 4
         if step < 0.5 then step = 0.5 end
-        local x = math.min(minVec.X, maxVec.X)
-        local z = math.min(minVec.Z, maxVec.Z)
-        local maxX = math.max(minVec.X, maxVec.X)
-        local maxZ = math.max(minVec.Z, maxVec.Z)
-        while x <= maxX + 0.001 do
-            while z <= maxZ + 0.001 do
+        local minX, maxX = math.min(minVec.X, maxVec.X), math.max(minVec.X, maxVec.X)
+        local minZ, maxZ = math.min(minVec.Z, maxVec.Z), math.max(minVec.Z, maxVec.Z)
+        local countX = math.floor((maxX - minX + 0.001) / step) + 1
+        local countZ = math.floor((maxZ - minZ + 0.001) / step) + 1
+        local estimate = countX * countZ
+        if estimate > 4000 then
+            return failCode("REGION_LIMIT", "Ground grid would contain " .. tostring(estimate) .. " sample points (max 4000). Increase step or split the area before measuring.", {
+                sampleLimit = 4000, estimatedSamples = estimate, step = step,
+            })
+        end
+        positions = {}
+        for ix = 0, countX - 1 do
+            local x = minX + ix * step
+            for iz = 0, countZ - 1 do
+                local z = minZ + iz * step
                 table.insert(positions, { x = x, y = minVec.Y + 400, z = z })
-                z = z + step
             end
-            x = x + step
         end
     end
     if #positions == 0 then
-        return failCode("BAD_ARGS", "Need positions (a list of {x,y,z}; the ray starts there and goes straight down) or min/max+step for a grid.")
+        return failCode("BAD_ARGS", "Need points/positions (a list of {x,y,z}; each ray starts there and goes straight down) or min/max+step for a grid.")
     end
     if #positions > 4000 then
-        return failCode("REGION_LIMIT", "Too many sample points (" .. tostring(#positions) .. ", max 4000). Raise the step or split the area.")
+        return failCode("REGION_LIMIT", "Too many sample points (" .. tostring(#positions) .. ", max 4000). Raise the step or split the area.", { sampleLimit = 4000 })
     end
-    local params = measureRayParams(resolveExcluded(args.exclude))
+    local params = measureRayParams(resolveExcluded(firstNonEmpty(args.exclude, args.ignore)))
     local results = {}
-    for _, p in ipairs(positions) do
+    local job = args._job
+    for index, p in ipairs(positions) do
         local vec = decodeValue(p)
         if typeof(vec) == "Vector3" then
             local hit = Workspace:Raycast(vec, Vector3.new(0, -4000, 0), params)
@@ -4720,46 +4874,93 @@ tools.ground_height = function(args)
                 table.insert(results, { position = { x = vec.X, y = vec.Y, z = vec.Z }, groundY = nil, note = "no surface below" })
             end
         end
+        if index % 128 == 0 then
+            if type(job) == "table" and type(job.cancelled) == "function" and job.cancelled() then
+                return failCode("COMMAND_CANCELLED", "Ground measurement job was cancelled.", { measured = index, total = #positions })
+            end
+            if type(job) == "table" and type(job.progress) == "function" then
+                job.progress(index / #positions * 100, tostring(index) .. "/" .. tostring(#positions) .. " sample points measured")
+            end
+            task.wait()
+        end
     end
+    if type(job) == "table" and type(job.progress) == "function" then job.progress(100, "ground measurement complete") end
     return ok({
         heights = results,
+        results = results,
         count = #results,
         hint = "Heights are RAYCAST results - the only allowed way to get world Y in this place.",
     })
 end
 
 tools.measure_height = function(args)
-    local inst, err = resolveRef(args.ref)
-    if not inst then return failCode("REF_NOT_FOUND", err) end
-    local cframe, size = boundsOf(inst)
-    if not cframe or size == nil then return failCode("BAD_ARGS", "Instance has no geometry.") end
-    local params = measureRayParams({ inst })
-    local origin = cframe.Position + Vector3.new(0, -size.Y / 2 - 1, 0)
-    local hit = Workspace:Raycast(origin, Vector3.new(0, -4000, 0), params)
-    local result = {
-        instance = describeRef(inst),
-        top = cframe.Position.Y + size.Y / 2,
-        bottom = cframe.Position.Y - size.Y / 2,
-        height = size.Y,
-    }
-    if hit then
-        result.groundY = hit.Position.Y
-        result.heightAboveGround = result.bottom - hit.Position.Y
-        result.ground = describeRef(hit.Instance)
-        result.waterLike = isWaterLike(hit.Instance)
+    local inst = nil
+    local cframe = nil
+    local size = nil
+    local origin = nil
+    local err = nil
+    if args.ref ~= nil then
+        inst, err = resolveRef(args.ref)
+        if not inst then return failCode("REF_NOT_FOUND", err) end
+        cframe, size = boundsOf(inst)
+        if not cframe or size == nil then return failCode("BAD_ARGS", "Instance has no measurable geometry.") end
     else
-        result.note = "No surface found below."
+        origin = decodeValue(args.point)
+        if typeof(origin) ~= "Vector3" then
+            return failCode("BAD_ARGS", "Pass either ref or point={x,y,z}.")
+        end
+    end
+    local directionName = string.lower(tostring(args.direction or "down"))
+    if directionName ~= "down" and directionName ~= "up" then
+        return failCode("BAD_ARGS", "direction must be 'down' or 'up'.")
+    end
+    local rayDirection
+    if directionName == "up" then
+        if inst then origin = cframe.Position + Vector3.new(0, size.Y / 2 + 1, 0) end
+        rayDirection = Vector3.new(0, 4000, 0)
+    else
+        if inst then origin = cframe.Position + Vector3.new(0, -size.Y / 2 - 1, 0) end
+        rayDirection = Vector3.new(0, -4000, 0)
+    end
+    local exclusions = resolveExcluded(firstNonEmpty(args.exclude, args.ignore))
+    if inst then table.insert(exclusions, inst) end
+    local hit = Workspace:Raycast(origin, rayDirection, measureRayParams(exclusions))
+    local result = {
+        instance = inst and describeRef(inst) or nil,
+        direction = directionName,
+        origin = { x = origin.X, y = origin.Y, z = origin.Z },
+        hit = (hit ~= nil),
+    }
+    if inst then
+        result.top = cframe.Position.Y + size.Y / 2
+        result.bottom = cframe.Position.Y - size.Y / 2
+        result.height = size.Y
+    end
+    if hit then
+        result.y = hit.Position.Y
+        result.distance = hit.Distance
+        result.hitInstance = describeRef(hit.Instance)
+        result.waterLike = isWaterLike(hit.Instance)
+        if directionName == "down" then
+            result.groundY = hit.Position.Y
+            if inst then result.heightAboveGround = result.bottom - hit.Position.Y end
+        else
+            result.skyY = hit.Position.Y
+        end
+    else
+        result.note = directionName == "down" and "No surface found below." or "No surface found above."
     end
     return ok(result)
 end
 
 tools.verify_measurable = function(args)
-    local list, errors = resolveMany(args.refs or args.ref)
+    local list, errors = resolveMany(firstNonEmpty(args.refs, args.ref))
     if #list == 0 then return failCode("REF_NOT_FOUND", "Nothing resolved. " .. table.concat(errors, " ")) end
     local check = {}
     for i = 1, math.min(10, #list) do table.insert(check, list[i]) end
-    local info = waitMeasurable(check, tonumber(args.seconds) or 2)
-    return ok({ checked = #list, geometry = info })
+    local maxSeconds = math.max(0, math.min(tonumber(args.maxSeconds or args.seconds) or 5, 30))
+    local info = waitMeasurable(check, maxSeconds)
+    return ok({ checked = #list, geometry = info, maxSeconds = maxSeconds })
 end
 
 -- ------------------------- Erstellen / Aendern ------------------------------
@@ -4797,14 +4998,20 @@ local function createOne(spec)
 end
 
 tools.create_instance = function(args)
-    local count = tonumber(args.count) or 1
-    if count <= 1 then
+    local count = math.floor(tonumber(args.count) or 1)
+    if count < 1 then count = 1 end
+    if count > 400 then return failCode("BUDGET_EXCEEDED", "create_instance supports at most 400 copies per call. Split the request.", { sampleLimit = 400 }) end
+    local job = args._job
+    if count == 1 then
         local entry, err = createOne(args)
         if not entry then return fail(err) end
         waypoint("create " .. tostring(args.className))
-        local createdInst = resolveRef(entry.id)
-        local geometry = waitMeasurable({ createdInst }, 2)
-        entry.geometry = geometry
+        local geometry = nil
+        if args.waitForMeasurable ~= false then
+            local createdInst = resolveRef(entry.id)
+            geometry = waitMeasurable({ createdInst }, 2)
+            entry.geometry = geometry
+        end
         return ok(entry)
     end
     local created = {}
@@ -4828,9 +5035,20 @@ tools.create_instance = function(args)
             end
             table.insert(created, entry)
         end
+        if index % 32 == 0 then
+            if type(job) == "table" and type(job.cancelled) == "function" and job.cancelled() then
+                return failCode("COMMAND_CANCELLED", "create_instance job was cancelled after partial creation.", { created = created, count = #created, requested = count })
+            end
+            if type(job) == "table" and type(job.progress) == "function" then
+                job.progress(index / count * 95, tostring(index) .. "/" .. tostring(count) .. " instances created")
+            end
+            task.wait()
+        end
     end
     waypoint("create " .. tostring(count) .. "x " .. tostring(args.className))
-    local geometry = waitMeasurable(createdInsts, 2)
+    local geometry = nil
+    if args.waitForMeasurable ~= false then geometry = waitMeasurable(createdInsts, 2) end
+    if type(job) == "table" and type(job.progress) == "function" then job.progress(100, "create complete") end
     return ok({ created = created, count = #created, geometry = geometry })
 end
 
@@ -4857,6 +5075,9 @@ tools.bulk_create = function(args)
             end
             local rows = math.max(1, math.floor(tonumber(grid.rows) or 1))
             local cols = math.max(1, math.floor(tonumber(grid.cols or grid.columns) or 1))
+            if rows * cols > 400 then
+                return failCode("BUDGET_EXCEEDED", "This grid would create " .. tostring(rows * cols) .. " instances - max 400 per call. Reduce rows/columns before generating it.", { sampleLimit = 400 })
+            end
             local sx = tonumber(grid.spacingX) or 4
             local sz = tonumber(grid.spacingZ) or 4
             for r = 0, rows - 1 do
@@ -4867,6 +5088,9 @@ tools.bulk_create = function(args)
         else
             if typeof(origin) ~= "Vector3" then
                 return failCode("BAD_ARGS", "count needs origin {x,y,z} (plus optional offset {x,y,z} between copies).")
+            end
+            if wantCount > 400 then
+                return failCode("BUDGET_EXCEEDED", "This would create " .. tostring(wantCount) .. " instances - max 400 per call. Reduce count before generating it.", { sampleLimit = 400 })
             end
             local off = decodeValue(args.offset) or Vector3.new(0, 0, 0)
             for i = 0, wantCount - 1 do
@@ -4909,6 +5133,7 @@ tools.bulk_create = function(args)
     local created = {}
     local createdInsts = {}
     local errors = {}
+    local job = args._job
     for index, spec in ipairs(items) do
         local entry = nil
         local err = nil
@@ -4944,9 +5169,19 @@ tools.bulk_create = function(args)
         else
             table.insert(errors, "item " .. tostring(index) .. ": " .. tostring(err))
         end
+        if index % 32 == 0 then
+            if type(job) == "table" and type(job.cancelled) == "function" and job.cancelled() then
+                return failCode("COMMAND_CANCELLED", "bulk_create job was cancelled after partial creation.", { created = created, count = #created, requested = #items, errors = errors })
+            end
+            if type(job) == "table" and type(job.progress) == "function" then
+                job.progress(index / #items * 95, tostring(index) .. "/" .. tostring(#items) .. " instances created")
+            end
+            task.wait()
+        end
     end
     waypoint("bulk create " .. tostring(#created))
     local geometry = waitMeasurable(createdInsts, 2)
+    if type(job) == "table" and type(job.progress) == "function" then job.progress(100, "bulk create complete") end
     return ok({ created = created, count = #created, errors = errors, geometry = geometry })
 end
 
@@ -4962,14 +5197,15 @@ tools.clone_instance = function(args)
         parent = resolved
     end
 
-    local count = tonumber(args.count) or 1
+    local count = math.floor(tonumber(args.count) or 1)
     if count < 1 then count = 1 end
-    if count > 500 then return fail("Refusing to clone more than 500 copies at once.") end
+    if count > 500 then return failCode("BUDGET_EXCEEDED", "Refusing to clone more than 500 copies at once.", { sampleLimit = 500 }) end
 
     local offset = decodeValue(args.offset)
     if typeof(offset) ~= "Vector3" then offset = Vector3.new(0, 0, 0) end
     local rotationStep = tonumber(args.rotateStep) or 0
     local nameTemplate = args.nameTemplate
+    local job = args._job
 
     local copies = {}
     local wasArchivable = source.Archivable
@@ -4995,6 +5231,16 @@ tools.clone_instance = function(args)
             end
         end
         table.insert(copies, describeRef(copy))
+        if index % 16 == 0 then
+            if type(job) == "table" and type(job.cancelled) == "function" and job.cancelled() then
+                source.Archivable = wasArchivable
+                return failCode("COMMAND_CANCELLED", "clone_instance job was cancelled after partial cloning.", { clones = copies, count = #copies, requested = count })
+            end
+            if type(job) == "table" and type(job.progress) == "function" then
+                job.progress(index / count * 95, tostring(index) .. "/" .. tostring(count) .. " copies created")
+            end
+            task.wait()
+        end
     end
     source.Archivable = wasArchivable
     waypoint("clone " .. tostring(count) .. "x " .. source.Name)
@@ -5004,6 +5250,7 @@ tools.clone_instance = function(args)
         if inst and inst:IsA("BasePart") and #copiedInsts < 8 then table.insert(copiedInsts, inst) end
     end
     local geometry = waitMeasurable(copiedInsts, 2)
+    if type(job) == "table" and type(job.progress) == "function" then job.progress(100, "clone complete") end
     return ok({ clones = copies, count = #copies, source = describeRef(source), geometry = geometry })
 end
 
@@ -5018,7 +5265,7 @@ tools.delete_instance = function(args)
 end
 
 tools.bulk_delete = function(args)
-    local list, errors = resolveMany(args.refs or args.ref)
+    local list, errors = resolveMany(firstNonEmpty(args.refs, args.ref))
     local deleted = {}
     for _, inst in ipairs(list) do
         if inst ~= game then
@@ -5129,7 +5376,7 @@ tools.set_attribute = function(args)
 end
 
 tools.add_tag = function(args)
-    local list = resolveMany(args.refs or args.ref)
+    local list = resolveMany(firstNonEmpty(args.refs, args.ref))
     for _, inst in ipairs(list) do
         pcall(function() CollectionService:AddTag(inst, tostring(args.tag)) end)
     end
@@ -5137,7 +5384,7 @@ tools.add_tag = function(args)
 end
 
 tools.remove_tag = function(args)
-    local list = resolveMany(args.refs or args.ref)
+    local list = resolveMany(firstNonEmpty(args.refs, args.ref))
     for _, inst in ipairs(list) do
         pcall(function() CollectionService:RemoveTag(inst, tostring(args.tag)) end)
     end
@@ -5515,17 +5762,22 @@ tools.distribute = function(args)
 end
 
 tools.snap_to_ground = function(args)
-    local list, errors = resolveMany(args.refs or args.ref)
+    local list, errors = resolveMany(firstNonEmpty(args.refs, args.ref))
     if #list == 0 then return failCode("REF_NOT_FOUND", "No instance resolved. " .. table.concat(errors, " ")) end
+    if #list > 500 then return failCode("REGION_LIMIT", "Too many objects to snap (" .. tostring(#list) .. ", max 500). Split the selection.") end
     local offset = tonumber(args.offset) or 0
-    local maxDrop = tonumber(args.maxDrop)
+    local maxDrop = tonumber(args.maxDrop or args.maxFall) or 2000
+    local extraExclusions = resolveExcluded(firstNonEmpty(args.ignore, args.exclude))
     local results = {}
-    for _, inst in ipairs(list) do
+    local movedInstances = {}
+    local job = args._job
+    for index, inst in ipairs(list) do
         local cframe, size = boundsOf(inst)
         if cframe and size then
-            local params = measureRayParams({ inst })
+            local exclusions = { inst }
+            for _, ignored in ipairs(extraExclusions) do table.insert(exclusions, ignored) end
             local origin = cframe.Position
-            local hit = Workspace:Raycast(origin, Vector3.new(0, -4000, 0), params)
+            local hit = Workspace:Raycast(origin, Vector3.new(0, -4000, 0), measureRayParams(exclusions))
             if hit then
                 local newY = hit.Position.Y + size.Y / 2 + offset
                 local drop = origin.Y - newY
@@ -5538,15 +5790,32 @@ tools.snap_to_ground = function(args)
                     })
                 else
                     setPivotOf(inst, CFrame.new(origin.X, newY, origin.Z) * (cframe - cframe.Position))
+                    table.insert(movedInstances, inst)
                     table.insert(results, { instance = describeRef(inst), y = newY, ground = describeRef(hit.Instance) })
                 end
             else
                 table.insert(results, { instance = describeRef(inst), note = "Nothing below - not moved." })
             end
         end
+        if index % 64 == 0 then
+            if type(job) == "table" and type(job.cancelled) == "function" and job.cancelled() then
+                return failCode("COMMAND_CANCELLED", "Snap-to-ground job was cancelled.", { moved = #results, total = #list })
+            end
+            if type(job) == "table" and type(job.progress) == "function" then
+                job.progress(index / #list * 100, tostring(index) .. "/" .. tostring(#list) .. " objects checked")
+            end
+            task.wait()
+        end
     end
+    local measurable = nil
+    if args.waitForMeasurable ~= false and #movedInstances > 0 then
+        local check = {}
+        for index = 1, math.min(10, #movedInstances) do table.insert(check, movedInstances[index]) end
+        measurable = waitMeasurable(check, math.max(0, math.min(tonumber(args.waitSeconds) or 2, 10)))
+    end
+    if type(job) == "table" and type(job.progress) == "function" then job.progress(100, "snap to ground complete") end
     waypoint("snap to ground")
-    return ok({ results = results, count = #results })
+    return ok({ results = results, count = #results, measurable = measurable })
 end
 
 tools.look_at = function(args)
@@ -5698,7 +5967,7 @@ tools.point_at = function(args)
 end
 
 tools.rotate_around = function(args)
-    local list, errors = resolveMany(args.refs or args.ref)
+    local list, errors = resolveMany(firstNonEmpty(args.refs, args.ref))
     if #list == 0 then return fail("No instance resolved.") end
     local degrees = tonumber(args.degrees) or 0
     local axisName = string.lower(tostring(args.axis or "y"))
@@ -5736,7 +6005,7 @@ tools.rotate_around = function(args)
 end
 
 tools.move_relative = function(args)
-    local list, errors = resolveMany(args.refs or args.ref)
+    local list, errors = resolveMany(firstNonEmpty(args.refs, args.ref))
     if #list == 0 then return fail("No instance resolved. " .. table.concat(errors, " ")) end
     local right = tonumber(args.right) or tonumber(args.x) or 0
     local up = tonumber(args.up) or tonumber(args.y) or 0
@@ -5807,136 +6076,50 @@ tools.fit_between = function(args)
 end
 
 tools.overlap_check = function(args)
-    local list, errors = resolveMany(args.refs or args.ref)
+    local list, errors = resolveMany(firstNonEmpty(args.refs, args.ref))
     if #list == 0 then return failCode("REF_NOT_FOUND", "No instance resolved. " .. table.concat(errors, " ")) end
-    local tolerance = tonumber(args.tolerance) or 0
-    local limit = tonumber(args.limit) or 50
-    local exList = resolveExcluded(args.ignore)
+    if #list > 500 then return failCode("REGION_LIMIT", "Too many objects to check (max 500). Split the selection.") end
+    local tolerance = math.max(0, tonumber(args.tolerance) or 0)
+    local limit = math.max(0, math.min(tonumber(args.limit) or 50, 500))
+    local exList = resolveExcluded(args.excludeRefs or args.ignore)
     for _, inst in ipairs(list) do table.insert(exList, inst) end
     local params = overlapParamsNew(exList)
     local items = {}
-    for _, inst in ipairs(list) do
+    local job = args._job
+    for index, inst in ipairs(list) do
         local cframe, size = boundsOf(inst)
         if cframe and size then
             local boxSize = size + Vector3.new(tolerance * 2, tolerance * 2, tolerance * 2)
             local parts = Workspace:GetPartBoundsInBox(cframe.Position, boxSize, params)
             local overlapping = {}
+            local matched = 0
             for _, part in ipairs(parts) do
-                table.insert(overlapping, describeRef(part))
-                if #overlapping >= limit then break end
+                local classMatches = (not args.className) or part.ClassName == tostring(args.className)
+                if classMatches and not part:IsDescendantOf(inst) then
+                    matched = matched + 1
+                    if #overlapping < limit then table.insert(overlapping, describeRef(part)) end
+                end
             end
             table.insert(items, {
                 instance = describeRef(inst),
                 overlapping = overlapping,
-                count = #parts,
-                clear = (#parts == 0),
+                count = matched,
+                clear = (matched == 0),
             })
         end
+        if index % 16 == 0 then
+            if type(job) == "table" and type(job.cancelled) == "function" and job.cancelled() then
+                return failCode("COMMAND_CANCELLED", "Overlap check job was cancelled.", { checked = index, total = #list })
+            end
+            if type(job) == "table" and type(job.progress) == "function" then
+                job.progress(index / #list * 100, tostring(index) .. "/" .. tostring(#list) .. " objects checked")
+            end
+            task.wait()
+        end
     end
+    if type(job) == "table" and type(job.progress) == "function" then job.progress(100, "overlap check complete") end
     if #items == 1 then return ok(items[1]) end
-    return ok({ items = items })
-end
-
--- ------------------------- Unions -------------------------------------------
-local function finishSolidResult(newPart, parent, name, sources, keepOriginals, kind, extra)
-    if newPart == nil then
-        return failCode("SOLID_REFUSED",
-            "Roblox refused the solid operation - it returned nothing. This happens when the parts do not intersect/overlap, are disconnected, or are too complex. NOTHING was changed - all original parts are still there.",
-            {
-                kind = kind,
-                robloxMessage = "Solid modeling returned no new part.",
-                hints = {
-                    "Check that the parts actually overlap (measure_distance or get_bounds).",
-                    "Very thin or far-apart parts are common causes.",
-                    "Try keepOriginals=true to keep the input for a different approach.",
-                },
-            })
-    end
-    newPart.Name = name or (kind .. "Result")
-    newPart.Parent = parent
-    local warnings = unionWarnings(sources, kind)
-    if extra and extra.estimatedTriangles then
-        table.insert(warnings, "Estimated triangles: " .. tostring(extra.estimatedTriangles) .. ".")
-    end
-    if not keepOriginals then
-        for _, part in ipairs(sources) do
-            if part ~= newPart then
-                pcall(function() part:Destroy() end)
-            end
-        end
-    else
-        table.insert(warnings, "Originals were kept (keepOriginals=true) - they now sit inside the result and may be invisible.")
-    end
-    return ok({
-        result = describeRef(newPart),
-        partsUsed = #sources,
-        bounds = boundsInfo(newPart),
-        canBeUndone = "Use 'separate' to split the union back into parts (or undo for the waypoint that was set before this operation).",
-    }, warnings)
-end
-
--- Führt EINE Solid-Operation aus (wird von union/subtract/intersect + groups benutzt).
-local function runSolidOperation(kind, base, others, args)
-    local sources = { base }
-    for _, part in ipairs(others) do table.insert(sources, part) end
-    local warnings, code, message, extra = precheckSolid(sources, 2, args)
-    if code then
-        local resp = failCode(code, message, extra)
-        return resp
-    end
-    local parent = base.Parent
-    if args.parentRef then
-        local resolved = resolveRef(args.parentRef)
-        if resolved then parent = resolved end
-    end
-    if args.undoPoint ~= false then
-        waypoint("before " .. kind .. " " .. base.Name)
-    end
-    local newPart = nil
-    local okRun, runErr = pcall(function()
-        if kind == "union" then
-            newPart = base:UnionAsync(others, collisionFidelityFrom(args.collisionFidelity), renderFidelityFrom(args.renderFidelity))
-        elseif kind == "subtract" then
-            newPart = base:SubtractAsync(others, collisionFidelityFrom(args.collisionFidelity), renderFidelityFrom(args.renderFidelity))
-        else
-            newPart = base:IntersectAsync(others, collisionFidelityFrom(args.collisionFidelity), renderFidelityFrom(args.renderFidelity))
-        end
-    end)
-    if not okRun then
-        return failCode("SOLID_REFUSED",
-            "Roblox refused the solid operation: " .. tostring(runErr) .. " NOTHING was changed - all original parts are still there.",
-            {
-                kind = kind,
-                robloxMessage = tostring(runErr),
-                hints = {
-                    "Check that the parts actually overlap (measure_distance or get_bounds).",
-                    "Unanchored parts move while the operation runs - anchor them first (fixAnchored=true).",
-                    "Try keepOriginals=true to keep the input for a different approach.",
-                },
-            })
-    end
-    return finishSolidResult(newPart, parent, args.name or (kind == "subtract" and (base.Name .. "Cut") or kind .. "Result"), sources, args.keepOriginals == true, kind, extra)
-end
-
--- Batch: groups = [ {refs = {...}, name = ...}, ... ] -> mehrere Operationen in einem Call.
-local function resolveGroups(kind, args)
-    local groups = args.groups
-    if type(groups) == "table" and #groups > 0 then
-        local out = {}
-        for index, group in ipairs(groups) do
-            local refs = group.refs or group
-            local list, errors = resolveMany(refs)
-            if #list < 2 then
-                table.insert(out, { group = index, error = "Group needs at least 2 parts. " .. table.concat(errors, " ") })
-            else
-                local others = {}
-                for ii = 2, #list do table.insert(others, list[ii]) end
-                table.insert(out, { group = index, base = list[1], others = others, name = group.name })
-            end
-        end
-        return out
-    end
-    return nil
+    return ok({ items = items, count = #items })
 end
 
 tools.union = function(args)
@@ -6048,11 +6231,23 @@ tools.probe_world = function(args)
     if typeof(center) ~= "Vector3" then center = Vector3.new(0, 0, 0) end
     local radius = tonumber(args.radius) or 40
     local step = tonumber(args.step) or 10
+    if radius ~= radius or step ~= step or radius < 0 or step <= 0 then
+        return failCode("BAD_ARGS", "radius must be >= 0 and step must be > 0.")
+    end
     if step < 1 then step = 1 end
+    local axisCount = math.floor((2 * radius + 0.001) / step) + 1
+    local estimatedSquare = axisCount * axisCount
+    if estimatedSquare > 4000 then
+        return failCode("REGION_LIMIT", "probe_world would inspect a grid of " .. tostring(estimatedSquare) .. " points (max 4000). Increase step or reduce radius before measuring.", {
+            sampleLimit = 4000, estimatedSquare = estimatedSquare, radius = radius, step = step,
+        })
+    end
     local params = measureRayParams({})
     local heights = {}
     local waterY = nil
     local total = 0
+    local measuredRays = 0
+    local job = args._job
     local x = center.X - radius
     while x <= center.X + radius + 0.001 do
         local z = center.Z - radius
@@ -6068,6 +6263,16 @@ tools.probe_world = function(args)
                     if isWaterLike(hit.Instance) and (waterY == nil or y > waterY) then
                         waterY = y
                     end
+                end
+                measuredRays = measuredRays + 1
+                if measuredRays % 128 == 0 then
+                    if type(job) == "table" and type(job.cancelled) == "function" and job.cancelled() then
+                        return failCode("COMMAND_CANCELLED", "World probe job was cancelled.", { measured = measuredRays, total = estimatedSquare })
+                    end
+                    if type(job) == "table" and type(job.progress) == "function" then
+                        job.progress(measuredRays / estimatedSquare * 100, tostring(measuredRays) .. " surface points measured")
+                    end
+                    task.wait()
                 end
             end
             z = z + step
@@ -6125,6 +6330,7 @@ tools.probe_world = function(args)
         },
     }
     worldProfile = profile
+    if type(job) == "table" and type(job.progress) == "function" then job.progress(100, tostring(total) .. " surface points measured; profile stored") end
     return ok(profile, { "Stored: fill_region now uses this profile. Re-run probe_world after big terrain changes." })
 end
 
@@ -8739,7 +8945,7 @@ tools.insert_asset = function(args)
 end
 
 tools.apply_asset = function(args)
-    local list, errors = resolveMany(args.refs or args.ref)
+    local list, errors = resolveMany(firstNonEmpty(args.refs, args.ref))
     if #list == 0 then return fail("No instance resolved. " .. table.concat(errors, " ")) end
     local assetId = tonumber(args.assetId)
     if assetId == nil then return fail("assetId must be a number.") end
@@ -10135,9 +10341,15 @@ executeTool = function(tool, args, insideBatch)
         warnings = { "allowInSimMode was used: this change only exists during the running simulation and disappears when it stops." }
     end
 
-    local okRun, result = pcall(handler, args)
+    local okRun, result = xpcall(function()
+        return handler(args)
+    end, debug.traceback)
     if not okRun then
-        result = failCode("RUNTIME_ERROR", "Tool crashed: " .. tostring(result))
+        local trace = tostring(result)
+        result = failCode("RUNTIME_ERROR", "Tool crashed: " .. trace, {
+            traceback = trace,
+            tool = tostring(tool),
+        })
     end
     if type(result) ~= "table" then
         result = { ok = true, result = result }
@@ -10177,53 +10389,66 @@ local function postResult(commandId, payload)
         return HttpService:JSONEncode(payload)
     end)
     if not okEncode then
-        json = HttpService:JSONEncode({ ok = false, error = "Result could not be encoded: " .. tostring(json) })
+        json = HttpService:JSONEncode({
+            ok = false,
+            code = "RUNTIME_ERROR",
+            error = "Result could not be encoded: " .. tostring(json),
+            commandId = tostring(commandId),
+        })
+    end
+
+    local function sendResultPart(partPayload)
+        for attempt = 1, 3 do
+            local response = post("/plugin/result", partPayload)
+            if response and response.ok == true then return true end
+            if attempt < 3 then task.wait(0.2 * attempt) end
+        end
+        return false
     end
 
     if #json <= ARENA_CFG.CHUNK_SIZE then
-        post("/plugin/result", { sessionId = sessionId, commandId = commandId, json = json })
-        return
+        return sendResultPart({ sessionId = sessionId, commandId = commandId, json = json })
     end
 
     local total = math.ceil(#json / ARENA_CFG.CHUNK_SIZE)
     for index = 1, total do
         local from = (index - 1) * ARENA_CFG.CHUNK_SIZE + 1
         local piece = string.sub(json, from, from + ARENA_CFG.CHUNK_SIZE - 1)
-        local attempt = 0
-        local delivered = nil
-        while attempt < 3 and delivered == nil do
-            attempt = attempt + 1
-            delivered = post("/plugin/result", {
-                sessionId = sessionId,
-                commandId = commandId,
-                chunkIndex = index,
-                chunkCount = total,
-                chunk = piece,
-                totalBytes = #json,
-            })
-            if delivered == nil then task.wait(0.2) end
-        end
+        local sent = sendResultPart({
+            sessionId = sessionId,
+            commandId = commandId,
+            chunkIndex = index,
+            chunkCount = total,
+            chunk = piece,
+            totalBytes = #json,
+        })
+        if not sent then return false end
     end
+    return true
 end
 
 local function handleCommand(command)
-    if command == nil or command.id == nil then return end
+    if command == nil or command.id == nil then
+        return failCode("RUNTIME_ERROR", "The bridge delivered a command without commandId.")
+    end
     local startedAt = os.clock()
     local result
-    local args = command.args or {}
-    -- Version 3.8: Waehrend eines Bridge-Befehls keine "user_active"-Meldungen
-    -- (unsere eigenen Tools aendern z.B. die Auswahl - das ist nicht der Nutzer).
+    local args = command.args
+    if type(args) ~= "table" then args = {} end
+    -- Waehrend eines Bridge-Befehls keine user_active-Meldungen ausloesen.
     bridgeCommandActive = true
     if args.asJob == true and command.tool ~= "start_job" then
-        -- Langer Lauf: geht in den Hintergrund, der Befehl selbst antwortet sofort.
-        local okJob, jobId = pcall(newJob, command.tool, function(job)
-            local jobArgs = {}
-            for key, value in pairs(args) do jobArgs[key] = value end
-            jobArgs._job = { progress = job.progress, cancelled = job.cancelled }
-            return executeTool(command.tool, jobArgs, true)
-        end)
+        local okJob, jobId = xpcall(function()
+            return newJob(command.tool, function(job)
+                local jobArgs = {}
+                for key, value in pairs(args) do jobArgs[key] = value end
+                jobArgs._job = { progress = job.progress, cancelled = job.cancelled }
+                return executeTool(command.tool, jobArgs, true)
+            end)
+        end, debug.traceback)
         if not okJob then
-            result = failCode("RUNTIME_ERROR", "Could not start job: " .. tostring(jobId))
+            local trace = tostring(jobId)
+            result = failCode("RUNTIME_ERROR", "Could not start job: " .. trace, { traceback = trace })
         else
             result = ok({
                 jobId = jobId,
@@ -10232,52 +10457,231 @@ local function handleCommand(command)
             })
         end
     else
-        local okRun, r = pcall(function()
+        local okRun, value = xpcall(function()
             return executeTool(command.tool, args, false)
-        end)
+        end, debug.traceback)
         if not okRun then
-            r = failCode("RUNTIME_ERROR", tostring(r))
+            local trace = tostring(value)
+            value = failCode("RUNTIME_ERROR", "Command crashed: " .. trace, {
+                traceback = trace,
+                tool = tostring(command.tool),
+                commandId = tostring(command.id),
+            })
         end
-        result = r
+        result = value
     end
-    if type(result) == "table" then
-        result.durationSeconds = math.floor((os.clock() - startedAt) * 1000) / 1000
-    end
+    if type(result) ~= "table" then result = { ok = true, result = result } end
+    result.commandId = tostring(command.id)
+    result.durationSeconds = math.floor((os.clock() - startedAt) * 1000) / 1000
     bridgeCommandActive = false
-    postResult(command.id, result)
+    return result
 end
 
--- ---------------------------------------------------------------------------
--- FIFO-DISPATCHER
--- Studio fuehrt Befehle strikt EINE NACH DER ANDEREN aus - es wird nie gegen
--- ein noch laufendes Skript gemessen. Lange Arbeit geht als Job in den
--- Hintergrund (asJob), der Dispatcher bleibt also frei.
--- ---------------------------------------------------------------------------
-local commandQueue = {}
-local dispatcherBusy = false
+local function commandStateRequest(command, phase)
+    return post("/plugin/command_state", {
+        sessionId = sessionId,
+        commandId = command and command.id or nil,
+        tool = command and command.tool or nil,
+        phase = phase,
+    })
+end
 
 local function pumpCommandQueue()
-    if dispatcherBusy then return end
-    dispatcherBusy = true
+    if executorState.dispatcherBusy or not running then return end
+    executorState.dispatcherBusy = true
     task.spawn(function()
-        while #commandQueue > 0 do
-            local nextCommand = table.remove(commandQueue, 1)
-            local okRun, err = pcall(handleCommand, nextCommand)
-            -- Sicherheitsnetz (Version 3.8): Auch wenn ein Befehl crasht, darf
-            -- die Nutzer-Aktivitaets-Erkennung nicht dauerhaft stumm bleiben.
-            bridgeCommandActive = false
-            if not okRun then
-                postResult(nextCommand and nextCommand.id, failCode("RUNTIME_ERROR", "Command crashed: " .. tostring(err)))
+        local loopOk, loopError = xpcall(function()
+            while running and #commandQueue > 0 do
+                local nextCommand = table.remove(commandQueue, 1)
+                executorState.queueDepth = #commandQueue
+                if nextCommand and nextCommand.id then
+                    local commandId = tostring(nextCommand.id)
+                    local budget = tonumber(nextCommand.budgetSeconds) or 90
+                    budget = math.clamp(budget, 5, 300)
+                    -- Publish the command as locally dispatched before the
+                    -- start acknowledgement; if that POST is lost, the server
+                    -- can reconcile from its next independent executor snapshot.
+                    executorState.runningCommandId = commandId
+                    executorState.runningTool = tostring(nextCommand.tool or "unknown")
+                    executorState.startedAt = os.time()
+                    local startAck = commandStateRequest(nextCommand, "started")
+                    if startAck and startAck.accepted == false then
+                        cancelRequests[commandId] = nil
+                        executorState.runningCommandId = nil
+                        executorState.runningTool = nil
+                        executorState.startedAt = 0
+                    elseif cancelRequests[commandId] then
+                        cancelRequests[commandId] = nil
+                        local cancelled = failCode("COMMAND_CANCELLED", "The command was cancelled before execution.", { commandId = commandId })
+                        pcall(postResult, commandId, cancelled)
+                        executorState.runningCommandId = nil
+                        executorState.runningTool = nil
+                        executorState.startedAt = 0
+                    else
+                        local commandFinished = false
+                        local commandResult = nil
+                        local commandThread = task.spawn(function()
+                            local okRun, value = xpcall(function()
+                                return handleCommand(nextCommand)
+                            end, debug.traceback)
+                            if okRun then
+                                commandResult = value
+                            else
+                                local trace = tostring(value)
+                                commandResult = failCode("RUNTIME_ERROR", "Executor caught an unhandled command error: " .. trace, {
+                                    traceback = trace,
+                                    tool = tostring(nextCommand.tool),
+                                    commandId = commandId,
+                                })
+                            end
+                            commandFinished = true
+                        end)
+                        executorState.commandThread = commandThread
+                        local heartbeatActive = true
+                        local heartbeatThread = task.spawn(function()
+                            while heartbeatActive and not commandFinished and running do
+                                task.wait(5)
+                                if not heartbeatActive or commandFinished or not running then break end
+                                local beat = commandStateRequest(nextCommand, "heartbeat")
+                                if beat and beat.cancelled == true then cancelRequests[commandId] = true end
+                            end
+                        end)
+                        executorState.heartbeatThread = heartbeatThread
+                        local startedClock = os.clock()
+                        local timedOut = false
+                        while not commandFinished and running do
+                            executorState.lastTick = os.time()
+                            local elapsed = os.clock() - startedClock
+                            if cancelRequests[commandId] == true then
+                                timedOut = true
+                                pcall(task.cancel, commandThread)
+                                pcall(commandStateRequest, nextCommand, "cancel_ack")
+                                commandResult = failCode("COMMAND_CANCELLED", "The running command was cancelled by the bridge.", {
+                                    commandId = commandId,
+                                    tool = tostring(nextCommand.tool),
+                                })
+                                break
+                            elseif elapsed >= budget then
+                                timedOut = true
+                                pcall(task.cancel, commandThread)
+                                commandResult = failCode("STUDIO_ABANDONED", "The command exceeded its safety budget and was stopped so the Studio queue can continue. Inspect the Place before retrying; partial changes may have occurred.", {
+                                    commandId = commandId,
+                                    tool = tostring(nextCommand.tool),
+                                    budgetSeconds = budget,
+                                    ranFor = math.floor(elapsed * 10) / 10,
+                                })
+                                break
+                            end
+                            task.wait(0.2)
+                        end
+                        heartbeatActive = false
+                        pcall(task.cancel, heartbeatThread)
+                        executorState.commandThread = nil
+                        executorState.heartbeatThread = nil
+                        bridgeCommandActive = false
+                        cancelRequests[commandId] = nil
+                        if timedOut then commandFinished = true end
+                        commandResult = commandResult or failCode("RUNTIME_ERROR", "Executor ended without a result.", { commandId = commandId })
+                        commandResult.commandId = commandId
+                        local sendOk, delivered = pcall(postResult, commandId, commandResult)
+                        if not sendOk or delivered ~= true then
+                            executorState.resultOutbox[commandId] = {
+                                payload = commandResult,
+                                nextTry = os.clock() + 2,
+                                backoff = 2,
+                            }
+                        end
+                        executorState.runningCommandId = nil
+                        executorState.runningTool = nil
+                        executorState.startedAt = 0
+                        executorState.lastTick = os.time()
+                    end
+                end
             end
+        end, debug.traceback)
+
+        if not loopOk then
+            bridgeCommandActive = false
+            local failedId = executorState.runningCommandId
+            if failedId then
+                pcall(task.cancel, executorState.commandThread)
+                pcall(task.cancel, executorState.heartbeatThread)
+                local trace = tostring(loopError)
+                local failure = failCode("RUNTIME_ERROR", "Executor loop recovered from an error: " .. trace, {
+                    traceback = trace,
+                    commandId = failedId,
+                    tool = executorState.runningTool,
+                    partialChangesPossible = true,
+                })
+                local sendOk, delivered = pcall(postResult, failedId, failure)
+                if not sendOk or delivered ~= true then
+                    executorState.resultOutbox[failedId] = {
+                        payload = failure,
+                        nextTry = os.clock() + 2,
+                        backoff = 2,
+                    }
+                end
+            end
+            executorState.commandThread = nil
+            executorState.heartbeatThread = nil
+            executorState.runningCommandId = nil
+            executorState.runningTool = nil
+            executorState.startedAt = 0
         end
-        dispatcherBusy = false
+        executorState.dispatcherBusy = false
+        executorState.queueDepth = #commandQueue
+        executorState.lastTick = os.time()
+        if running and #commandQueue > 0 then task.defer(pumpCommandQueue) end
     end)
 end
 
 local function enqueueCommand(command)
+    if type(command) ~= "table" or command.id == nil then return end
+    local commandId = tostring(command.id)
+    if seenCommandIds[commandId] then return end
+    seenCommandIds[commandId] = os.time()
+    local seenCount = 0
+    local oldestId = nil
+    local oldestAt = math.huge
+    for id, at in pairs(seenCommandIds) do
+        seenCount = seenCount + 1
+        if at < oldestAt then oldestAt = at; oldestId = id end
+    end
+    if seenCount > 256 and oldestId then seenCommandIds[oldestId] = nil end
     table.insert(commandQueue, command)
+    executorState.queueDepth = #commandQueue
     pumpCommandQueue()
 end
+
+-- Executor liveness is deliberately independent from the connection/poll loop.
+task.spawn(function()
+    while running do
+        executorState.lastTick = os.time()
+        executorState.queueDepth = #commandQueue
+        task.wait(1)
+    end
+end)
+
+-- A result that could not be delivered stays in memory and is retried with
+-- bounded exponential backoff; a broken response connection cannot lose it.
+task.spawn(function()
+    while running do
+        for commandId, item in pairs(executorState.resultOutbox) do
+            if os.clock() >= (tonumber(item.nextTry) or 0) and sessionId then
+                local okSend, delivered = pcall(postResult, commandId, item.payload)
+                if okSend and delivered == true then
+                    executorState.resultOutbox[commandId] = nil
+                else
+                    local backoff = math.min(tonumber(item.backoff) or 2, 30)
+                    item.nextTry = os.clock() + backoff
+                    item.backoff = math.min(backoff * 2, 30)
+                end
+                break
+            end
+        end
+        task.wait(1)
+    end
+end)
 
 -- ---------------------------------------------------------------------------
 -- VERBINDUNG
@@ -10303,6 +10707,19 @@ local function statePayload()
     }
     local okState, stateValue = pcall(playState)
     if okState then payload.state = stateValue end
+    local queuedCommandIds = {}
+    for _, queuedCommand in ipairs(commandQueue) do
+        if queuedCommand and queuedCommand.id then table.insert(queuedCommandIds, tostring(queuedCommand.id)) end
+    end
+    payload.executor = {
+        lastTick = executorState.lastTick,
+        runningCommandId = executorState.runningCommandId,
+        runningTool = executorState.runningTool,
+        startedAt = executorState.startedAt,
+        queueDepth = #commandQueue,
+        queuedCommandIds = queuedCommandIds,
+        dispatcherBusy = executorState.dispatcherBusy,
+    }
     return payload
 end
 
@@ -10446,7 +10863,10 @@ task.spawn(function()
             if handshake() then
                 backoff = 0.5
                 lastHeartbeat = os.clock()
-                addNotice("connected", "Bridge connected. Place '" .. tostring(game.Name) .. "' is ready.", { placeId = game.PlaceId })
+                if connectedEventSessionId ~= sessionId then
+                    connectedEventSessionId = sessionId
+                    addNotice("connected", "Bridge connected. Place '" .. tostring(game.Name) .. "' is ready.", { placeId = game.PlaceId })
+                end
             else
                 task.wait(backoff)
                 backoff = math.min(backoff * 1.6, 5)
@@ -10472,19 +10892,49 @@ task.spawn(function()
                 task.wait(0.5)
             elseif response.unknownSession == true then
                 sessionId = nil
+                quiet = false
+                emptyPolls = 0
+                task.wait(backoff)
+                backoff = math.min(backoff * 1.6, 5)
             else
                 backoff = 0.5
                 lastHeartbeat = os.clock()
                 if response.accessMode then accessMode = response.accessMode end
                 perfWanted = (response.perf == true)
-                if response.commands ~= nil then
+                if response.cancelledCommands ~= nil then
+                    for _, commandId in ipairs(response.cancelledCommands) do
+                        local cancelledId = tostring(commandId)
+                        cancelRequests[cancelledId] = true
+                        pcall(post, "/plugin/command_state", {
+                            sessionId = sessionId,
+                            commandId = cancelledId,
+                            phase = "cancel_ack",
+                        })
+                    end
+                end
+                if response.resetExecutor == true then
+                    commandQueue = {}
+                    if executorState.runningCommandId then
+                        cancelRequests[tostring(executorState.runningCommandId)] = true
+                    end
+                    pcall(post, "/plugin/command_state", { sessionId = sessionId, phase = "reset_ack" })
+                end
+                if response.commands ~= nil and response.resetExecutor ~= true then
+                    local receivedIds = {}
                     for _, command in ipairs(response.commands) do
                         delivered = delivered + 1
                         enqueueCommand(command)
+                        if command and command.id then table.insert(receivedIds, tostring(command.id)) end
                     end
-                elseif response.command ~= nil then
+                    if #receivedIds > 0 then
+                        pcall(post, "/plugin/command_state", { sessionId = sessionId, phase = "received_batch", commandIds = receivedIds })
+                    end
+                elseif response.command ~= nil and response.resetExecutor ~= true then
                     delivered = 1
                     enqueueCommand(response.command)
+                    if response.command.id then
+                        pcall(post, "/plugin/command_state", { sessionId = sessionId, phase = "received_batch", commandIds = { tostring(response.command.id) } })
+                    end
                 end
             end
             if delivered > 0 then
@@ -11329,6 +11779,14 @@ $script:BridgeHandlerScript = {
         $state.calls = [int]$state.calls + 1
         $state.lastCallAt = $now
         $state.lastTool = [string]$tool
+        if (-not $isDone) {
+            if ([string]$state.state -eq 'done') {
+                $state.percent = 0.0
+                $state.message = ''
+                $state.autoSet = $false
+            }
+            $state.state = 'working'
+        }
         if ($reported) {
             $state.callsWithProgress = [int]$state.callsWithProgress + 1
             $state.percent = Clamp-ProgressPercent $percent
@@ -11456,7 +11914,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.0.3 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.0.4 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -11810,6 +12268,17 @@ $script:BridgeHandlerScript = {
         return , $queue
     }
 
+    function Enqueue-Command($sessionId, $queue, [string]$commandJson) {
+        [System.Threading.Monitor]::Enter($Shared.CommandQueueLock)
+        try {
+            if ($queue.Count -ge 64) { return @{ ok=$false; queueDepth=[int]$queue.Count } }
+            $queue.Enqueue($commandJson)
+            return @{ ok=$true; queueDepth=[int]$queue.Count }
+        } finally {
+            [System.Threading.Monitor]::Exit($Shared.CommandQueueLock)
+        }
+    }
+
     function Ensure-AgentQueue($sessionId) {
         $queue = $null
         if (-not $Shared.AgentQueues.TryGetValue($sessionId, [ref]$queue)) {
@@ -11973,10 +12442,10 @@ $script:BridgeHandlerScript = {
     }
 
     # ------------------------------------------------------------------
-    # LAUFENDE BEFEHLE: Ein Timeout tötet keinen Befehl im Studio.
-    # Der Befehl läuft zu Ende, das Ergebnis kommt später an. Diese
-    # Funktionen merken pro Sitzung, was gerade in Studio läuft, und
-    # liefern späte Ergebnisse wieder aus (im _bridge-Envelope).
+    # STUDIO-COMMAND-LIFECYCLE: Ein HTTP-Timeout beendet Arbeit nicht sofort.
+    # Plugin-Budget und Server-Watchdog geben die Queue jedoch frei, falls der
+    # Executor hängt oder keine Heartbeats mehr sendet. Späte Resultate werden
+    # per commandId dedupliziert und im _bridge-Envelope ausgeliefert.
     # ------------------------------------------------------------------
     function Ensure-PendingBag($sessionId) {
         $bag = $null
@@ -11998,10 +12467,28 @@ $script:BridgeHandlerScript = {
         return , $queue
     }
 
-    function Add-PendingCommand($sessionId, $commandId, $tool) {
-        $bag = Ensure-PendingBag $sessionId
-        # Numeric UTC epoch avoids locale/clock parsing and negative zombie ages.
-        $bag[[string]$commandId] = (To-Json @{ tool=[string]$tool; startedAt=(Get-UnixSeconds) } 5)
+    function Add-PendingCommand($sessionId, $commandId, $tool, [int]$budgetSeconds = 90, [long]$queuedAt = 0) {
+        $sid = [string]$sessionId
+        $id = [string]$commandId
+        $now = Get-UnixSeconds
+        if ($queuedAt -le 0) { $queuedAt = $now }
+        $budgetSeconds = [Math]::Max(5, [Math]::Min(300, $budgetSeconds))
+        $record = @{
+            sessionId = $sid
+            commandId = $id
+            tool = [string]$tool
+            status = 'queued'
+            createdAt = $now
+            queuedAt = $queuedAt
+            startedAt = 0
+            heartbeatAt = 0
+            budgetSeconds = $budgetSeconds
+            executor = $null
+        }
+        $bag = Ensure-PendingBag $sid
+        $bag[$id] = (To-Json $record 8)
+        $Shared.CommandOwners[$id] = $sid
+        $Shared.CommandStates[$id] = (To-Json $record 8)
     }
 
     function Remove-PendingCommand($sessionId, $commandId) {
@@ -12020,26 +12507,75 @@ $script:BridgeHandlerScript = {
         return $null
     }
 
-    function Get-PendingCommands($sessionId) {
-        $bag = Ensure-PendingBag $sessionId
-        $now = Get-UnixSeconds
-        $items = New-Object System.Collections.Generic.List[object]
-        foreach ($pair in $bag.GetEnumerator()) {
-            try {
-                $info = $pair.Value | ConvertFrom-Json
-                $started = [int64]$info.startedAt
-                $ageSeconds = [int][Math]::Max(0, $now - $started)
-                if ($ageSeconds -gt 900) {
-                    $removed = $null; [void]$bag.TryRemove([string]$pair.Key, [ref]$removed)
-                    continue
-                }
-                $items.Add(@{ commandId=[string]$pair.Key; tool=[string]$info.tool; seconds=$ageSeconds; startedAt=$started })
-            } catch {
-                # Legacy malformed values cannot poison all following calls.
-                $removed = $null; [void]$bag.TryRemove([string]$pair.Key, [ref]$removed)
+    function Save-PendingInfo($sessionId, $commandId, $info) {
+        if (-not $info) { return $false }
+        $sid = [string]$sessionId
+        $id = [string]$commandId
+        $bag = Ensure-PendingBag $sid
+        $json = To-Json $info 10
+        $bag[$id] = $json
+        $Shared.CommandStates[$id] = $json
+        return $true
+    }
+
+    function Get-CommandControlKey($sessionId, $commandId) {
+        return ([string]$sessionId + ':' + [string]$commandId)
+    }
+
+    function Get-CommandOwner([string]$commandId) {
+        $owner = $null
+        if ($Shared.CommandOwners.TryGetValue([string]$commandId, [ref]$owner)) { return [string]$owner }
+        return $null
+    }
+
+    function Save-SessionExecutorState($sessionId, $executor) {
+        if (-not $executor) { return }
+        try {
+            $state = @{
+                lastTick = [int64]$executor.lastTick
+                runningCommandId = [string]$executor.runningCommandId
+                runningTool = [string]$executor.runningTool
+                startedAt = [int64]$executor.startedAt
+                queueDepth = [int]$executor.queueDepth
+                dispatcherBusy = [bool]$executor.dispatcherBusy
+                queuedCommandIds = @($executor.queuedCommandIds)
+                receivedAt = (Get-UnixSeconds)
             }
+            $Shared.ExecutorStates[[string]$sessionId] = (To-Json $state 6)
+        } catch {}
+    }
+
+    function Get-SessionExecutorSnapshot($sessionId) {
+        $now = Get-UnixSeconds
+        $state = $null
+        $raw = $null
+        if ($Shared.ExecutorStates.TryGetValue([string]$sessionId, [ref]$raw)) {
+            try { $state = $raw | ConvertFrom-Json } catch {}
         }
-        return , $items
+        $entry = Get-SessionEntry $sessionId
+        $lastSeen = 0
+        if ($entry) { try { $lastSeen = [int64]$entry.lastSeen } catch {} }
+        $lastTick = 0
+        $receivedAt = 0
+        if ($state) {
+            try { $lastTick = [int64]$state.lastTick } catch {}
+            try { $receivedAt = [int64]$state.receivedAt } catch {}
+        }
+        $sessionAlive = ($lastSeen -gt 0 -and ($now - $lastSeen) -le 30)
+        $executorFresh = ($state -and $lastTick -gt 0 -and ($now - $lastTick) -le 12 -and ($now - $receivedAt) -le 30)
+        return @{
+            alive = [bool]($sessionAlive -and $executorFresh)
+            sessionAlive = [bool]$sessionAlive
+            lastSeen = $lastSeen
+            lastTick = $lastTick
+            stateReceivedAt = $receivedAt
+            runningCommandId = if ($state) { [string]$state.runningCommandId } else { '' }
+            runningTool = if ($state) { [string]$state.runningTool } else { '' }
+            startedAt = if ($state) { [int64]$state.startedAt } else { 0 }
+            queueDepth = if ($state) { [int]$state.queueDepth } else { 0 }
+            dispatcherBusy = if ($state) { [bool]$state.dispatcherBusy } else { $false }
+            queuedCommandIds = if ($state -and $state.queuedCommandIds) { @($state.queuedCommandIds) } else { @() }
+        }
     }
 
     function Queue-LateResult($sessionId, $commandId, [string]$json, $pendingInfo) {
@@ -12047,8 +12583,12 @@ $script:BridgeHandlerScript = {
         $result = $null
         try { $result = $json | ConvertFrom-Json } catch { $result = @{ rawResult=$json } }
         $age = 0
-        if ($pendingInfo -and $pendingInfo.startedAt) { $age = [int][Math]::Max(0, (Get-UnixSeconds) - [int64]$pendingInfo.startedAt) }
-        $queue.Enqueue((To-Json @{ tool=if($pendingInfo){[string]$pendingInfo.tool}else{$null}; commandId=[string]$commandId; seconds=$age; result=$result } 40))
+        $tool = $null
+        if ($pendingInfo) {
+            try { $tool = [string]$pendingInfo.tool } catch {}
+            try { if ($pendingInfo.createdAt) { $age = [int][Math]::Max(0, (Get-UnixSeconds) - [int64]$pendingInfo.createdAt) } elseif ($pendingInfo.startedAt) { $age = [int][Math]::Max(0, (Get-UnixSeconds) - [int64]$pendingInfo.startedAt) } } catch {}
+        }
+        $queue.Enqueue((To-Json @{ tool=$tool; commandId=[string]$commandId; seconds=$age; result=$result } 40))
         while ($queue.Count -gt 60) { $discard=$null; [void]$queue.TryDequeue([ref]$discard) }
     }
 
@@ -12060,6 +12600,459 @@ $script:BridgeHandlerScript = {
             try { $items.Add(($raw | ConvertFrom-Json)) } catch {}
         }
         return , $items
+    }
+
+    function Remove-CommandFromQueue($sessionId, $commandId) {
+        $queue = Ensure-Queue $sessionId
+        $kept = New-Object System.Collections.Generic.List[string]
+        [System.Threading.Monitor]::Enter($Shared.CommandQueueLock)
+        try {
+            $raw = $null
+            while ($queue.TryDequeue([ref]$raw)) {
+                $drop = $false
+                try {
+                    $item = $raw | ConvertFrom-Json
+                    if ([string]$item.id -eq [string]$commandId) { $drop = $true }
+                } catch {}
+                if (-not $drop) { $kept.Add([string]$raw) }
+            }
+            foreach ($itemJson in $kept) { $queue.Enqueue($itemJson) }
+        } finally {
+            [System.Threading.Monitor]::Exit($Shared.CommandQueueLock)
+        }
+    }
+
+    function Complete-CommandResult($sessionId, $commandId, [string]$resultJson, [string]$source = 'plugin') {
+        $sid = [string]$sessionId
+        $id = [string]$commandId
+        $owner = Get-CommandOwner $id
+        if ([string]::IsNullOrWhiteSpace($owner) -or $owner -ne $sid) { return $false }
+        $dedupeKey = Get-CommandControlKey $sid $id
+        $completedAt = Get-UnixSeconds
+        $pendingInfo = Get-PendingInfo $sid $id
+        try {
+            $parsed = $resultJson | ConvertFrom-Json
+            if ($parsed -and $parsed.PSObject.Properties['commandId'] -and [string]$parsed.commandId -ne $id) {
+                return $false
+            }
+            if ($parsed -and -not $parsed.PSObject.Properties['commandId']) {
+                $parsed | Add-Member -NotePropertyName 'commandId' -NotePropertyValue $id -Force
+                $resultJson = To-Json $parsed 40
+            }
+        } catch {
+            $parsed = @{ ok=$false; code='RUNTIME_ERROR'; error='The Studio result was not valid JSON.'; commandId=$id }
+            $resultJson = To-Json $parsed 8
+        }
+        if (-not $Shared.CompletedCommandIds.TryAdd($dedupeKey, $completedAt)) { return $false }
+
+        $tool = ''
+        if ($pendingInfo) { try { $tool = [string]$pendingInfo.tool } catch {} }
+        $finalState = @{
+            sessionId = $sid
+            commandId = $id
+            tool = $tool
+            status = if ($parsed -and $parsed.ok -eq $true) { 'completed' } elseif ($source -eq 'cancelled' -or ($parsed -and [string]$parsed.code -eq 'COMMAND_CANCELLED')) { 'cancelled' } elseif ($source -ne 'plugin' -or ($parsed -and [string]$parsed.code -in @('STUDIO_ABANDONED','EXECUTOR_UNRESPONSIVE','EXECUTOR_UNAVAILABLE','EXECUTOR_DROPPED_COMMAND','COMMAND_DELIVERY_UNCONFIRMED','QUEUE_EXPIRED'))) { 'abandoned' } else { 'failed' }
+            createdAt = if ($pendingInfo -and $pendingInfo.createdAt) { [int64]$pendingInfo.createdAt } else { $completedAt }
+            queuedAt = if ($pendingInfo -and $pendingInfo.queuedAt) { [int64]$pendingInfo.queuedAt } else { 0 }
+            startedAt = if ($pendingInfo -and $pendingInfo.startedAt) { [int64]$pendingInfo.startedAt } else { 0 }
+            finishedAt = $completedAt
+            durationSeconds = if ($pendingInfo -and $pendingInfo.startedAt) { [Math]::Max(0, $completedAt - [int64]$pendingInfo.startedAt) } else { 0 }
+            source = $source
+            resultCode = if ($parsed -and $parsed.code) { [string]$parsed.code } else { '' }
+        }
+        $Shared.CommandStates[$id] = (To-Json $finalState 8)
+        # Keep any outstanding cancellation request until the plugin acknowledges
+        # it; removing it here would make queue cancel/reset a no-op in Studio.
+
+        $activityMapJson = $null
+        if ($Shared.ActivityCommandMap.TryRemove($id, [ref]$activityMapJson)) {
+            try {
+                $activityMap = $activityMapJson | ConvertFrom-Json
+                Complete-ArenaActivity ([string]$activityMap.sessionId) ([string]$activityMap.activityId) ([string]$activityMap.tool) $activityMap.args $resultJson
+            } catch {}
+        }
+
+        $signal = $null
+        [System.Threading.Monitor]::Enter($Shared.CommandResultLock)
+        try {
+            $hasWaiter = $Shared.ResultSignals.TryGetValue($id, [ref]$signal)
+            if ($hasWaiter) {
+                $Shared.CommandResults[$id] = $resultJson
+                try { [void]$signal.Set() } catch {}
+            } else {
+                Queue-LateResult $sid $id $resultJson $pendingInfo
+            }
+        } finally {
+            [System.Threading.Monitor]::Exit($Shared.CommandResultLock)
+        }
+        Remove-PendingCommand $sid $id | Out-Null
+        return $true
+    }
+
+    function Mark-CommandAbandoned($sessionId, $commandId, [string]$reasonCode, [string]$reason) {
+        $sid = [string]$sessionId
+        $id = [string]$commandId
+        $info = Get-PendingInfo $sid $id
+        if (-not $info) { return $false }
+        $cancelKey = Get-CommandControlKey $sid $id
+        $Shared.CancelRequests[$cancelKey] = Get-UnixSeconds
+        $info.status = 'abandoned'
+        $info | Add-Member -NotePropertyName 'abandonedAt' -NotePropertyValue (Get-UnixSeconds) -Force
+        $info | Add-Member -NotePropertyName 'abandonReason' -NotePropertyValue $reasonCode -Force
+        Save-PendingInfo $sid $id $info | Out-Null
+        Remove-CommandFromQueue $sid $id
+        $seconds = 0
+        try {
+            $start = [int64]$info.startedAt
+            if ($start -le 0) { $start = [int64]$info.queuedAt }
+            if ($start -gt 0) { $seconds = [int][Math]::Max(0, (Get-UnixSeconds) - $start) }
+        } catch {}
+        $failure = @{
+            ok = $false
+            code = $reasonCode
+            commandId = $id
+            tool = [string]$info.tool
+            error = $reason
+            workIsLost = $false
+            partialChangesPossible = ($info.startedAt -gt 0)
+            retrySafe = $false
+            elapsedSeconds = $seconds
+            budgetSeconds = [int]$info.budgetSeconds
+            status = 'abandoned'
+            hint = 'The executor was released so the Studio queue can continue. Inspect the Place before retrying because partial changes may have been applied.'
+        }
+        return (Complete-CommandResult $sid $id (To-Json $failure 10) $reasonCode)
+    }
+
+    function Request-CommandCancel($sessionId, $commandId, [string]$reason = 'Cancelled by the client.') {
+        $sid = [string]$sessionId
+        $id = [string]$commandId
+        $info = Get-PendingInfo $sid $id
+        if (-not $info) { return $false }
+        $cancelKey = Get-CommandControlKey $sid $id
+        $Shared.CancelRequests[$cancelKey] = Get-UnixSeconds
+        Remove-CommandFromQueue $sid $id
+        $wake = Ensure-Signal $sid
+        [void]$wake.Set()
+        $failure = @{
+            ok = $false
+            code = 'COMMAND_CANCELLED'
+            commandId = $id
+            tool = [string]$info.tool
+            error = $reason
+            workIsLost = $false
+            partialChangesPossible = ($info.startedAt -gt 0)
+            retrySafe = $false
+            status = 'cancelled'
+            hint = 'Cancellation is best-effort and may leave partial changes. Inspect the Place before retrying.'
+        }
+        return (Complete-CommandResult $sid $id (To-Json $failure 10) 'cancelled')
+    }
+
+    function Reset-SessionQueue($sessionId, [string]$reason = 'The Studio executor queue was manually reset.', [string]$pendingCode = 'COMMAND_CANCELLED') {
+        $sid = [string]$sessionId
+        [System.Threading.Monitor]::Enter($Shared.CommandQueueLock)
+        try {
+            $pending = @(Get-PendingCommands $sid)
+            foreach ($item in $pending) {
+                if ($pendingCode -eq 'COMMAND_CANCELLED') {
+                    Request-CommandCancel $sid ([string]$item.commandId) $reason | Out-Null
+                } else {
+                    Mark-CommandAbandoned $sid ([string]$item.commandId) $pendingCode $reason | Out-Null
+                }
+            }
+            $queue = Ensure-Queue $sid
+            $raw = $null
+            while ($queue.TryDequeue([ref]$raw)) { $raw = $null }
+            $Shared.ExecutorResetRequests[$sid] = Get-UnixSeconds
+            $wake = Ensure-Signal $sid
+            [void]$wake.Set()
+            return $pending.Count
+        } finally {
+            [System.Threading.Monitor]::Exit($Shared.CommandQueueLock)
+        }
+    }
+
+    function Mark-CommandDelivered($sessionId, $commandId) {
+        $info = Get-PendingInfo $sessionId $commandId
+        if (-not $info -or [string]$info.status -ne 'queued') { return $false }
+        $info.status = 'delivered'
+        $info | Add-Member -NotePropertyName 'deliveredAt' -NotePropertyValue (Get-UnixSeconds) -Force
+        Save-PendingInfo $sessionId $commandId $info | Out-Null
+        return $true
+    }
+
+    function Invoke-SessionExecutorWatchdog($sessionId) {
+        $sid = [string]$sessionId
+        if ([string]::IsNullOrWhiteSpace($sid)) { return }
+        $bag = Ensure-PendingBag $sid
+        $now = Get-UnixSeconds
+        foreach ($cancelPair in $Shared.CancelRequests.GetEnumerator()) {
+            if (($now - [int64]$cancelPair.Value) -gt 1800) {
+                $discardCancel = [long]0
+                [void]$Shared.CancelRequests.TryRemove([string]$cancelPair.Key, [ref]$discardCancel)
+            }
+        }
+        foreach ($chunkPair in $Shared.ResultChunkAt.GetEnumerator()) {
+            if (($now - [int64]$chunkPair.Value) -gt 1800) {
+                $discardChunk = $null
+                [void]$Shared.ResultChunkAt.TryRemove([string]$chunkPair.Key, [ref]$discardChunk)
+                [void]$Shared.ResultChunks.TryRemove([string]$chunkPair.Key, [ref]$discardChunk)
+            }
+        }
+        if ($Shared.CompletedCommandIds.Count -gt 1024) {
+            foreach ($completedPair in $Shared.CompletedCommandIds.GetEnumerator()) {
+                if (($now - [int64]$completedPair.Value) -gt 1800) {
+                    $discardCompleted = [long]0
+                    [void]$Shared.CompletedCommandIds.TryRemove([string]$completedPair.Key, [ref]$discardCompleted)
+                    $separator = ([string]$completedPair.Key).LastIndexOf(':')
+                    if ($separator -ge 0) {
+                        $completedSid = ([string]$completedPair.Key).Substring(0, $separator)
+                        $completedId = ([string]$completedPair.Key).Substring($separator + 1)
+                        $discardState = $null
+                        [void]$Shared.CommandStates.TryRemove($completedId, [ref]$discardState)
+                        $ownerValue = $null
+                        if ($Shared.CommandOwners.TryGetValue($completedId, [ref]$ownerValue) -and [string]$ownerValue -eq $completedSid) {
+                            [void]$Shared.CommandOwners.TryRemove($completedId, [ref]$discardState)
+                        }
+                    }
+                }
+            }
+        }
+        $entry = Get-SessionEntry $sid
+        $lastSeen = 0
+        if ($entry) { try { $lastSeen = [int64]$entry.lastSeen } catch {} }
+        $executorSnapshot = Get-SessionExecutorSnapshot $sid
+        foreach ($pair in $bag.GetEnumerator()) {
+            $info = $null
+            try { $info = $pair.Value | ConvertFrom-Json } catch {}
+            if (-not $info) { continue }
+            $id = [string]$pair.Key
+            $status = [string]$info.status
+            if ([string]::IsNullOrWhiteSpace($status)) { $status = 'queued' }
+            $queuedAt = 0; $startedAt = 0; $heartbeatAt = 0; $budget = 90
+            try { $queuedAt = [int64]$info.queuedAt } catch {}
+            try { $startedAt = [int64]$info.startedAt } catch {}
+            try { $heartbeatAt = [int64]$info.heartbeatAt } catch {}
+            try { $budget = [int]$info.budgetSeconds } catch {}
+            if ($status -eq 'delivered') {
+                $deliveredAt = 0
+                try { $deliveredAt = [int64]$info.deliveredAt } catch {}
+                if ($executorSnapshot.alive) {
+                    if ([string]$executorSnapshot.runningCommandId -eq $id) {
+                        # The batch-receipt or start POST may have been lost even
+                        # though the independent executor snapshot proves work began.
+                        $executorStartedAt = 0
+                        try { $executorStartedAt = [int64]$executorSnapshot.startedAt } catch {}
+                        if ($executorStartedAt -le 0) { $executorStartedAt = $now }
+                        $info.status = 'started'
+                        $info.startedAt = $executorStartedAt
+                        $info.heartbeatAt = $now
+                        Save-PendingInfo $sid $id $info | Out-Null
+                        if (($now - $executorStartedAt) -gt ($budget + 15)) {
+                            Mark-CommandAbandoned $sid $id 'STUDIO_ABANDONED' ("The Studio command exceeded its $budget-second execution budget. The queue watchdog released it; inspect for partial changes before retrying.") | Out-Null
+                        }
+                        continue
+                    }
+                    if (@($executorSnapshot.queuedCommandIds) -contains $id) {
+                        # Reconcile the receipt from the plugin's local FIFO.
+                        $info.status = 'received'
+                        $info | Add-Member -NotePropertyName 'receivedAt' -NotePropertyValue $now -Force
+                        Save-PendingInfo $sid $id $info | Out-Null
+                        continue
+                    }
+                }
+                if ($deliveredAt -gt 0 -and (($now - $deliveredAt) -gt 30)) {
+                    Mark-CommandAbandoned $sid $id 'COMMAND_DELIVERY_UNCONFIRMED' 'The plugin did not acknowledge receiving this command within 30 seconds and its executor snapshot does not contain it. It was abandoned rather than left stuck or replayed.' | Out-Null
+                    continue
+                }
+            } elseif ($status -eq 'received') {
+                $receivedAt = 0
+                try { $receivedAt = [int64]$info.receivedAt } catch {}
+                if ($receivedAt -gt 0 -and $lastSeen -gt 0 -and (($now - $lastSeen) -gt 60) -and (($now - $receivedAt) -gt 60)) {
+                    Mark-CommandAbandoned $sid $id 'EXECUTOR_UNAVAILABLE' 'The Studio plugin disconnected after receiving this command but before starting it. It was not replayed automatically.' | Out-Null
+                    continue
+                }
+                $isRunning = ([string]$executorSnapshot.runningCommandId -eq $id)
+                if ($isRunning -and $executorSnapshot.alive) {
+                    # Reconcile from the independently reported local executor
+                    # slot if the per-command started/heartbeat POST was lost.
+                    $executorStartedAt = 0
+                    try { $executorStartedAt = [int64]$executorSnapshot.startedAt } catch {}
+                    if ($executorStartedAt -le 0) { $executorStartedAt = $now }
+                    if ($startedAt -le 0) { $startedAt = $executorStartedAt; $info.startedAt = $startedAt }
+                    $info.status = 'started'
+                    $info.heartbeatAt = $now
+                    Save-PendingInfo $sid $id $info | Out-Null
+                    if (($now - $startedAt) -gt ($budget + 15)) {
+                        Mark-CommandAbandoned $sid $id 'STUDIO_ABANDONED' ("The Studio command exceeded its $budget-second execution budget. The queue watchdog released it; inspect for partial changes before retrying.") | Out-Null
+                        continue
+                    }
+                } elseif ($receivedAt -gt 0 -and (($now - $receivedAt) -gt 30) -and $executorSnapshot.sessionAlive) {
+                    if (-not $executorSnapshot.alive) {
+                        Mark-CommandAbandoned $sid $id 'EXECUTOR_UNRESPONSIVE' 'The Studio session is still connected, but its executor liveness snapshot stopped advancing after command receipt. The command was abandoned to release the queue.' | Out-Null
+                        continue
+                    }
+                    $inLocalQueue = (@($executorSnapshot.queuedCommandIds) -contains $id)
+                    $dispatcherStalled = ([string]::IsNullOrWhiteSpace([string]$executorSnapshot.runningCommandId) -and [int]$executorSnapshot.queueDepth -gt 0)
+                    if (-not $inLocalQueue -or $dispatcherStalled) {
+                        Mark-CommandAbandoned $sid $id 'EXECUTOR_DROPPED_COMMAND' 'The plugin acknowledged receiving this command, but it is no longer present in the local executor queue or running slot. It was abandoned to prevent a permanent queue blockage.' | Out-Null
+                        continue
+                    }
+                }
+            } elseif ($status -eq 'started' -or $status -eq 'running') {
+                if ($startedAt -gt 0 -and (($now - $startedAt) -gt ($budget + 15))) {
+                    Mark-CommandAbandoned $sid $id 'STUDIO_ABANDONED' ("The Studio command exceeded its $budget-second execution budget. The queue watchdog released it; inspect for partial changes before retrying.") | Out-Null
+                    continue
+                }
+                if ($heartbeatAt -gt 0 -and (($now - $heartbeatAt) -gt 45)) {
+                    Mark-CommandAbandoned $sid $id 'EXECUTOR_UNRESPONSIVE' 'Studio stopped sending executor heartbeats for more than 45 seconds. The command was abandoned so the queue can recover; inspect for partial changes before retrying.' | Out-Null
+                    continue
+                }
+            } elseif ($status -eq 'queued' -and $queuedAt -gt 0 -and $lastSeen -gt 0) {
+                if (($now - $lastSeen) -gt 60 -and ($now - $queuedAt) -gt 60) {
+                    Mark-CommandAbandoned $sid $id 'EXECUTOR_UNAVAILABLE' 'The Studio plugin has not been seen for more than 60 seconds while this command was queued. The command was removed from the queue; reconnect Studio before retrying.' | Out-Null
+                }
+            }
+        }
+    }
+
+    function Get-PendingCommands($sessionId) {
+        Invoke-SessionExecutorWatchdog $sessionId
+        $bag = Ensure-PendingBag $sessionId
+        $now = Get-UnixSeconds
+        $items = New-Object System.Collections.Generic.List[object]
+        foreach ($pair in $bag.GetEnumerator()) {
+            try {
+                $info = $pair.Value | ConvertFrom-Json
+                $createdAt = [int64]$info.createdAt
+                $queuedAt = [int64]$info.queuedAt
+                $startedAt = [int64]$info.startedAt
+                $heartbeatAt = [int64]$info.heartbeatAt
+                $ageSeconds = [int][Math]::Max(0, $now - $createdAt)
+                if ($ageSeconds -gt 1800) {
+                    Mark-CommandAbandoned $sessionId ([string]$pair.Key) 'QUEUE_EXPIRED' 'The command exceeded the maximum queue-retention time and was removed.' | Out-Null
+                    continue
+                }
+                $items.Add(@{
+                    commandId = [string]$pair.Key
+                    tool = [string]$info.tool
+                    status = if ($info.status) { [string]$info.status } else { 'queued' }
+                    seconds = $ageSeconds
+                    queuedAt = $queuedAt
+                    startedAt = $startedAt
+                    heartbeatAt = $heartbeatAt
+                    deliveredAt = if ($info.deliveredAt) { [int64]$info.deliveredAt } else { 0 }
+                    receivedAt = if ($info.receivedAt) { [int64]$info.receivedAt } else { 0 }
+                    runningSeconds = if ($startedAt -gt 0) { [int][Math]::Max(0, $now - $startedAt) } else { 0 }
+                    budgetSeconds = [int]$info.budgetSeconds
+                    abandonReason = if ($info.abandonReason) { [string]$info.abandonReason } else { '' }
+                })
+            } catch {
+                # A malformed legacy value cannot poison following requests.
+                $removed = $null; [void]$bag.TryRemove([string]$pair.Key, [ref]$removed)
+            }
+        }
+        return , $items
+    }
+
+    function Invoke-PluginCommandState($body) {
+        $sid = [string]$body.sessionId
+        $id = [string]$body.commandId
+        $phase = [string]$body.phase
+        if ([string]::IsNullOrWhiteSpace($sid)) { return @{ ok=$false; accepted=$false; error='sessionId is required' } }
+
+        if ($phase -eq 'reset_ack') {
+            $resetStamp = [long]0
+            [void]$Shared.ExecutorResetRequests.TryRemove($sid, [ref]$resetStamp)
+            return @{ ok=$true; accepted=$true; resetPending=$false }
+        }
+        if ($phase -eq 'cancel_ack') {
+            if ([string]::IsNullOrWhiteSpace($id)) { return @{ ok=$false; accepted=$false } }
+            $cancelStamp = [long]0
+            $cancelled = $Shared.CancelRequests.TryRemove((Get-CommandControlKey $sid $id), [ref]$cancelStamp)
+            return @{ ok=$true; accepted=[bool]$cancelled; commandId=$id }
+        }
+        if ($phase -eq 'received_batch') {
+            $received = 0
+            foreach ($receivedIdValue in @($body.commandIds)) {
+                $receivedId = [string]$receivedIdValue
+                if ([string]::IsNullOrWhiteSpace($receivedId) -or (Get-CommandOwner $receivedId) -ne $sid) { continue }
+                $receivedInfo = Get-PendingInfo $sid $receivedId
+                if (-not $receivedInfo) { continue }
+                if ([string]$receivedInfo.status -eq 'delivered' -or [string]$receivedInfo.status -eq 'queued') {
+                    $receivedInfo.status = 'received'
+                    $receivedInfo | Add-Member -NotePropertyName 'receivedAt' -NotePropertyValue (Get-UnixSeconds) -Force
+                    Save-PendingInfo $sid $receivedId $receivedInfo | Out-Null
+                    $received = $received + 1
+                }
+            }
+            return @{ ok=$true; accepted=$true; received=$received }
+        }
+        if ([string]::IsNullOrWhiteSpace($id)) { return @{ ok=$false; accepted=$false; error='commandId is required' } }
+        if ((Get-CommandOwner $id) -ne $sid) { return @{ ok=$false; accepted=$false; cancelled=$true; commandId=$id } }
+
+        $dedupeKey = Get-CommandControlKey $sid $id
+        if ($Shared.CompletedCommandIds.ContainsKey($dedupeKey)) {
+            return @{ ok=$true; accepted=$false; cancelled=$true; commandId=$id; state='finished' }
+        }
+        $info = Get-PendingInfo $sid $id
+        if (-not $info) { return @{ ok=$true; accepted=$false; cancelled=$true; commandId=$id; state='not_pending' } }
+        $cancelStamp = [long]0
+        $cancelled = $Shared.CancelRequests.TryGetValue($dedupeKey, [ref]$cancelStamp)
+
+        if ($phase -eq 'started') {
+            if ($cancelled) { return @{ ok=$true; accepted=$false; cancelled=$true; commandId=$id; state='cancel_requested' } }
+            if ([string]$info.status -in @('queued','delivered','received')) {
+                $now = Get-UnixSeconds
+                $info.status = 'started'
+                $info.startedAt = $now
+                $info.heartbeatAt = $now
+                $info | Add-Member -NotePropertyName 'startedTool' -NotePropertyValue ([string]$body.tool) -Force
+                Save-PendingInfo $sid $id $info | Out-Null
+            }
+            return @{ ok=$true; accepted=$true; cancelled=$false; commandId=$id; startedAt=[int64]$info.startedAt }
+        }
+        if ($phase -eq 'heartbeat') {
+            if ($cancelled) { return @{ ok=$true; accepted=$true; cancelled=$true; commandId=$id } }
+            $info.heartbeatAt = Get-UnixSeconds
+            if ([string]$info.status -in @('queued','delivered','received')) { $info.status = 'started'; $info.startedAt = Get-UnixSeconds }
+            Save-PendingInfo $sid $id $info | Out-Null
+            return @{ ok=$true; accepted=$true; cancelled=$false; commandId=$id; heartbeatAt=[int64]$info.heartbeatAt }
+        }
+        return @{ ok=$false; accepted=$false; commandId=$id; error='Unknown command phase.' }
+    }
+
+    function Get-SessionCancellationIds($sessionId) {
+        $prefix = [string]$sessionId + ':'
+        $items = New-Object System.Collections.Generic.List[string]
+        foreach ($pair in $Shared.CancelRequests.GetEnumerator()) {
+            if ([string]$pair.Key -like ($prefix + '*')) {
+                $items.Add(([string]$pair.Key).Substring($prefix.Length))
+            }
+        }
+        return $items.ToArray()
+    }
+
+    function Get-QueueSnapshot($sessionId) {
+        $pending = Get-PendingCommands $sessionId
+        $queue = Ensure-Queue $sessionId
+        $executor = Get-SessionExecutorSnapshot $sessionId
+        $queued = @($pending | Where-Object { $_.status -eq 'queued' })
+        $delivered = @($pending | Where-Object { $_.status -eq 'delivered' -or $_.status -eq 'received' })
+        $running = @($pending | Where-Object { $_.status -eq 'started' -or $_.status -eq 'running' -or $_.status -eq 'cancel_requested' })
+        return @{
+            ok = $true
+            sessionId = [string]$sessionId
+            queueDepth = [int]$queue.Count
+            queued = $queued
+            delivered = $delivered
+            running = $running
+            pending = $pending
+            executor = $executor
+            cancelledCommandIds = @(Get-SessionCancellationIds $sessionId)
+            resetRequested = $Shared.ExecutorResetRequests.ContainsKey([string]$sessionId)
+        }
     }
 
     function Get-SessionEntry($sessionId) {
@@ -12231,10 +13224,12 @@ $script:BridgeHandlerScript = {
                 orphan        = $false
             }
             Save-SessionEntry $entry
-            $Shared.Presence[$sessionId] = $now
             if ($reuseReason -eq 'reconnect') {
-                Add-BridgeEvent $sessionId 'studio_reconnected' 'The Studio plugin reconnected after Studio reloaded it. Nothing crashed and your token stays valid.' @{ placeName = $placeName }
+                Reset-SessionQueue $sessionId 'The Studio plugin instance restarted. Previous in-flight commands were abandoned rather than replayed because they may have partially changed the Place.' 'EXECUTOR_UNAVAILABLE' | Out-Null
+                Add-BridgeEvent $sessionId 'studio_reconnected' 'The Studio plugin reconnected after Studio reloaded it. Previous in-flight commands were marked abandoned rather than replayed.' @{ placeName = $placeName }
             }
+            Save-SessionExecutorState $sessionId $body.executor
+            $Shared.Presence[$sessionId] = $now
             return $entry
         }
 
@@ -12265,6 +13260,7 @@ $script:BridgeHandlerScript = {
             orphan        = $false
         }
         Save-SessionEntry $entry
+        Save-SessionExecutorState $sessionId $body.executor
         $Shared.Presence[$sessionId] = $now
         [void](Ensure-Queue $sessionId)
         [void](Ensure-Signal $sessionId)
@@ -12335,6 +13331,7 @@ $script:BridgeHandlerScript = {
             orphan        = $false
         }
         Save-SessionEntry $updated
+        Save-SessionExecutorState $sessionId $body.executor
         $Shared.Presence[$sessionId] = $now
 
         return $updated
@@ -12947,19 +13944,253 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         return $Shared.PlayRetryDedupe.TryAdd($key, $reservation)
     }
 
+    function Get-CommandArgumentValue($arguments, [string]$name) {
+        if ($null -eq $arguments) { return @{ found=$false; value=$null } }
+        try {
+            if ($arguments -is [System.Collections.IDictionary]) {
+                if ($arguments.Contains($name)) { return @{ found=$true; value=$arguments[$name] } }
+            } elseif ($arguments.PSObject.Properties[$name]) {
+                return @{ found=$true; value=$arguments.PSObject.Properties[$name].Value }
+            }
+        } catch {}
+        return @{ found=$false; value=$null }
+    }
+
+    function ConvertTo-CommandNumber($value, [double]$default = 0) {
+        if ($null -eq $value) { return $default }
+        if ($value -is [ValueType]) { try { return [double]$value } catch { return $default } }
+        $parsed = 0.0
+        $styles = [System.Globalization.NumberStyles]::Float
+        $culture = [System.Globalization.CultureInfo]::InvariantCulture
+        if ([double]::TryParse([string]$value, $styles, $culture, [ref]$parsed)) { return $parsed }
+        return $default
+    }
+
+    function Get-CommandNumber($arguments, [string]$name, [double]$default = 0) {
+        $candidate = Get-CommandArgumentValue $arguments $name
+        if (-not $candidate.found) { return $default }
+        return (ConvertTo-CommandNumber $candidate.value $default)
+    }
+
+    function Test-CommandArgumentPresent($arguments, [string]$name) {
+        $candidate = Get-CommandArgumentValue $arguments $name
+        if (-not $candidate.found -or $null -eq $candidate.value) { return $false }
+        if ($candidate.value -is [string] -and [string]::IsNullOrWhiteSpace($candidate.value)) { return $false }
+        if ($candidate.value -is [System.Array] -and $candidate.value.Count -eq 0) { return $false }
+        return $true
+    }
+
+    function Get-CommandSchemaIndex {
+        $index = $Shared.ToolSchemaIndex
+        if ($null -ne $index) { return ,$index }
+        $lock = $Shared.ToolSchemaLock
+        [System.Threading.Monitor]::Enter($lock)
+        try {
+            $index = $Shared.ToolSchemaIndex
+            if ($null -eq $index) {
+                $index = @{}
+                foreach ($doc in (Get-ToolDocs)) {
+                    if ($doc -and $doc.name) { $index[[string]$doc.name] = $doc }
+                }
+                $Shared.ToolSchemaIndex = $index
+            }
+        } finally {
+            [System.Threading.Monitor]::Exit($lock)
+        }
+        return ,$index
+    }
+
+    function Test-CommandArguments([string]$tool, $toolArgs) {
+        if ([string]::IsNullOrWhiteSpace($tool)) {
+            return @{ ok=$false; code='BAD_ARGS'; error='tool is required.' }
+        }
+        if ($null -eq $toolArgs) { $toolArgs = New-Object PSObject }
+        if ($toolArgs -is [string] -or $toolArgs -is [System.Array] -or $toolArgs -is [ValueType]) {
+            return @{ ok=$false; code='BAD_ARGS'; error='args must be a JSON object (for example {"ref":"game.Workspace"}), not a scalar or array.' }
+        }
+        $schemaIndex = Get-CommandSchemaIndex
+        $schema = $null
+        if ($schemaIndex.ContainsKey($tool)) { $schema = $schemaIndex[$tool] }
+        if (-not $schema) {
+            return @{ ok=$false; code='UNKNOWN_TOOL'; error="Unknown tool '$tool'."; hint='Call list_tools or GET /api/docs for the current tool list.' }
+        }
+        $params = $schema.params
+        if ($null -eq $params -or -not ($params -is [System.Collections.IDictionary])) { return @{ ok=$true } }
+        $missing = New-Object System.Collections.Generic.List[string]
+        foreach ($name in $params.Keys) {
+            $spec = $params[$name]
+            if ($spec.required -ne $true) { continue }
+            $found = Get-CommandArgumentValue $toolArgs ([string]$name)
+            $value = $found.value
+            $empty = (-not $found.found -or $null -eq $value)
+            if (-not $empty -and $value -is [string] -and [string]::IsNullOrWhiteSpace($value)) { $empty = $true }
+            if (-not $empty -and $value -is [System.Array] -and $value.Count -eq 0) { $empty = $true }
+            # These source-taking tools also accept the uploaded-text handle.
+            if ($empty -and [string]$name -eq 'source' -and $tool -in @('compile_check','run_lua')) {
+                $sourceRef = Get-CommandArgumentValue $toolArgs 'sourceRef'
+                if ($sourceRef.found -and -not [string]::IsNullOrWhiteSpace([string]$sourceRef.value)) { $empty = $false }
+            }
+            if ($empty) { $missing.Add([string]$name) }
+        }
+        if ($missing.Count -gt 0) {
+            return @{
+                ok=$false
+                code='BAD_ARGS'
+                error=('Missing required argument(s): ' + ($missing -join ', ') + '.')
+                missing=@($missing)
+                tool=$tool
+                hint='Arguments were rejected before queueing; fix them and retry. No Studio command was sent.'
+            }
+        }
+        $argumentError = $null
+        switch ($tool) {
+            'ground_height' {
+                $hasPositions = (Test-CommandArgumentPresent $toolArgs 'points') -or (Test-CommandArgumentPresent $toolArgs 'positions')
+                $hasGrid = (Test-CommandArgumentPresent $toolArgs 'min') -and (Test-CommandArgumentPresent $toolArgs 'max')
+                if (-not $hasPositions -and -not $hasGrid) { $argumentError = 'ground_height needs points/positions or both min and max.' }
+            }
+            'raycast_many' {
+                if (-not (Test-CommandArgumentPresent $toolArgs 'rays') -and -not (Test-CommandArgumentPresent $toolArgs 'casts')) { $argumentError = 'raycast_many needs rays (or the casts alias).' }
+            }
+            'measure' {
+                $hasFrom = (Test-CommandArgumentPresent $toolArgs 'refA') -or (Test-CommandArgumentPresent $toolArgs 'ref')
+                $hasTo = (Test-CommandArgumentPresent $toolArgs 'refB') -or (Test-CommandArgumentPresent $toolArgs 'targetRef')
+                if (-not $hasFrom -or -not $hasTo) { $argumentError = 'measure needs refA/refB or the ref/targetRef aliases.' }
+            }
+            'measure_height' {
+                if (-not (Test-CommandArgumentPresent $toolArgs 'ref') -and -not (Test-CommandArgumentPresent $toolArgs 'point')) { $argumentError = 'measure_height needs either ref or point={x,y,z}.' }
+            }
+            'snap_to_ground' {
+                if (-not (Test-CommandArgumentPresent $toolArgs 'refs') -and -not (Test-CommandArgumentPresent $toolArgs 'ref')) { $argumentError = 'snap_to_ground needs refs or one ref.' }
+            }
+            'verify_measurable' {
+                if (-not (Test-CommandArgumentPresent $toolArgs 'refs') -and -not (Test-CommandArgumentPresent $toolArgs 'ref')) { $argumentError = 'verify_measurable needs refs or one ref.' }
+            }
+            'parts_in_box' {
+                $hasMinMax = (Test-CommandArgumentPresent $toolArgs 'min') -and (Test-CommandArgumentPresent $toolArgs 'max')
+                $hasCenterSize = (Test-CommandArgumentPresent $toolArgs 'center') -and (Test-CommandArgumentPresent $toolArgs 'size')
+                $hasRefs = (Test-CommandArgumentPresent $toolArgs 'refA') -and (Test-CommandArgumentPresent $toolArgs 'refB')
+                if (-not $hasMinMax -and -not $hasCenterSize -and -not $hasRefs) { $argumentError = 'parts_in_box needs min+max, center+size, or refA+refB.' }
+            }
+            'parts_in_sphere' {
+                if (-not (Test-CommandArgumentPresent $toolArgs 'center') -and -not (Test-CommandArgumentPresent $toolArgs 'ref')) { $argumentError = 'parts_in_sphere needs center or ref.' }
+            }
+            'overlap_check' {
+                if (-not (Test-CommandArgumentPresent $toolArgs 'refs') -and -not (Test-CommandArgumentPresent $toolArgs 'ref')) { $argumentError = 'overlap_check needs refs or one ref.' }
+            }
+            'nearest_parts' {
+                $hasOrigin = (Test-CommandArgumentPresent $toolArgs 'origin') -or (Test-CommandArgumentPresent $toolArgs 'position')
+                $hasRef = (Test-CommandArgumentPresent $toolArgs 'ref') -or (Test-CommandArgumentPresent $toolArgs 'fromRef')
+                if (-not $hasOrigin -and -not $hasRef) { $argumentError = 'nearest_parts needs origin/position or ref/fromRef.' }
+            }
+            'what_is_in_the_way' {
+                $hasFrom = (Test-CommandArgumentPresent $toolArgs 'from') -or (Test-CommandArgumentPresent $toolArgs 'origin') -or (Test-CommandArgumentPresent $toolArgs 'fromRef')
+                $hasTo = (Test-CommandArgumentPresent $toolArgs 'to') -or (Test-CommandArgumentPresent $toolArgs 'target') -or (Test-CommandArgumentPresent $toolArgs 'toRef')
+                if (-not $hasFrom -or -not $hasTo) { $argumentError = 'what_is_in_the_way needs from/to, origin/target, or fromRef/toRef.' }
+            }
+        }
+        if ($argumentError) {
+            return @{ ok=$false; code='BAD_ARGS'; error=$argumentError; tool=$tool; hint='Arguments were rejected before queueing; no Studio command was sent.' }
+        }
+        if ($tool -eq 'probe_world') {
+            $radius = Get-CommandNumber $toolArgs 'radius' 40
+            $step = Get-CommandNumber $toolArgs 'step' 10
+            if ($radius -lt 0 -or $step -le 0) {
+                return @{ ok=$false; code='BAD_ARGS'; error='probe_world requires radius >= 0 and step > 0.'; tool=$tool; hint='Arguments were rejected before queueing; no Studio scan was started.' }
+            }
+            if ($step -lt 1) { $step = 1 }
+            $axisCount = [Math]::Floor((2 * $radius + 0.001) / $step) + 1
+            $estimatedSquare = $axisCount * $axisCount
+            if ($estimatedSquare -gt 4000) {
+                return @{ ok=$false; code='REGION_LIMIT'; error=('probe_world grid would contain about ' + $estimatedSquare + ' samples (max 4000); increase step or reduce radius.'); tool=$tool; sampleLimit=4000; estimatedSquare=$estimatedSquare; hint='Rejected before queueing; no Studio raycasts were started.' }
+            }
+        }
+        if ($tool -eq 'ground_height') {
+            $hasPositions = (Test-CommandArgumentPresent $toolArgs 'points') -or (Test-CommandArgumentPresent $toolArgs 'positions')
+            if (-not $hasPositions -and (Test-CommandArgumentPresent $toolArgs 'min') -and (Test-CommandArgumentPresent $toolArgs 'max')) {
+                $minArg = (Get-CommandArgumentValue $toolArgs 'min').value
+                $maxArg = (Get-CommandArgumentValue $toolArgs 'max').value
+                $minXArg = Get-CommandArgumentValue $minArg 'x'; $minZArg = Get-CommandArgumentValue $minArg 'z'
+                $maxXArg = Get-CommandArgumentValue $maxArg 'x'; $maxZArg = Get-CommandArgumentValue $maxArg 'z'
+                if ($minXArg.found -and $minZArg.found -and $maxXArg.found -and $maxZArg.found) {
+                    $minX = ConvertTo-CommandNumber $minXArg.value [double]::NaN
+                    $minZ = ConvertTo-CommandNumber $minZArg.value [double]::NaN
+                    $maxX = ConvertTo-CommandNumber $maxXArg.value [double]::NaN
+                    $maxZ = ConvertTo-CommandNumber $maxZArg.value [double]::NaN
+                    if (-not [double]::IsNaN($minX) -and -not [double]::IsNaN($minZ) -and -not [double]::IsNaN($maxX) -and -not [double]::IsNaN($maxZ)) {
+                        $step = [Math]::Max(0.5, (Get-CommandNumber $toolArgs 'step' 4))
+                        $countX = [Math]::Floor(([Math]::Abs($maxX - $minX) + 0.001) / $step) + 1
+                        $countZ = [Math]::Floor(([Math]::Abs($maxZ - $minZ) + 0.001) / $step) + 1
+                        $estimatedSamples = $countX * $countZ
+                        if ($estimatedSamples -gt 4000) {
+                            return @{ ok=$false; code='REGION_LIMIT'; error=('ground_height grid would contain ' + $estimatedSamples + ' samples (max 4000); increase step or split the area.'); tool=$tool; sampleLimit=4000; estimatedSamples=$estimatedSamples; hint='Rejected before queueing; no Studio raycasts were started.' }
+                        }
+                    }
+                }
+            }
+            foreach ($listName in @('points','positions')) {
+                $listValue = Get-CommandArgumentValue $toolArgs $listName
+                if ($listValue.found -and $listValue.value -is [System.Array] -and $listValue.value.Count -gt 4000) {
+                    return @{ ok=$false; code='REGION_LIMIT'; error=($listName + ' contains ' + $listValue.value.Count + ' points (max 4000). Split the measurement.'); tool=$tool; argument=$listName; sampleLimit=4000; hint='Rejected before queueing; no Studio raycasts were started.' }
+                }
+            }
+        }
+        foreach ($name in $params.Keys) {
+            $spec = $params[$name]
+            $provided = Get-CommandArgumentValue $toolArgs ([string]$name)
+            if (-not $provided.found -or $null -eq $provided.value) { continue }
+            $typeName = [string]$spec.type
+            if ($typeName -match '(^|\|)\s*array(\b|\[)' -or $typeName -match '\[\]') {
+                $isSequence = ($provided.value -is [System.Collections.IEnumerable] -and $provided.value -isnot [string] -and $provided.value -isnot [System.Collections.IDictionary])
+                # resolveMany intentionally accepts either ref[] or one ref /
+                # selector table; do not reject that supported shorthand here.
+                $isReferenceList = ($typeName -match '(?i)^\s*ref\[\]')
+                $isSingleRef = ($isReferenceList -and ($provided.value -is [string] -or $provided.value -is [System.Collections.IDictionary] -or ($provided.value -isnot [ValueType] -and $provided.value -isnot [System.Collections.IEnumerable])))
+                $isSinglePoint = $false
+                if ($tool -eq 'ground_height' -and ([string]$name -eq 'points' -or [string]$name -eq 'positions')) {
+                    $hasX = Test-CommandArgumentPresent $provided.value 'x'
+                    $hasY = Test-CommandArgumentPresent $provided.value 'y'
+                    $hasZ = Test-CommandArgumentPresent $provided.value 'z'
+                    $isSinglePoint = ($hasX -and $hasY -and $hasZ)
+                }
+                if (-not $isSequence -and -not $isSingleRef -and -not $isSinglePoint) {
+                    return @{ ok=$false; code='BAD_ARGS'; error=("Argument '$name' must be an array or a single ref/selector value."); tool=$tool; argument=[string]$name; expected=$typeName; hint='Arguments were rejected before queueing; no Studio command was sent.' }
+                }
+            }
+        }
+        return @{ ok=$true }
+    }
+
     function Invoke-PluginTool($sessionId, $tool, $toolArgs, [int]$timeoutSeconds, [string]$activityId = '') {
+        $argumentCheck = Test-CommandArguments ([string]$tool) $toolArgs
+        if (-not $argumentCheck.ok) { return (To-Json $argumentCheck 12) }
+        $queue = Ensure-Queue $sessionId
+        if ($queue.Count -ge 64) {
+            return (To-Json @{ ok=$false; code='QUEUE_FULL'; error='The Studio command queue is full (64 queued commands). Wait for the current work or reset the queue through /api/queue.'; queueDepth=[int]$queue.Count; commandSent=$false } 8)
+        }
+
         $commandId = [guid]::NewGuid().ToString('N')
+        $commandBudget = [Math]::Max(90, [Math]::Min(300, $timeoutSeconds + 30))
+        $queuedAt = Get-UnixSeconds
         if (-not [string]::IsNullOrWhiteSpace($activityId)) {
             $Shared.ActivityCommandMap[$commandId] = (To-Json @{ sessionId=$sessionId; activityId=$activityId; tool=$tool; args=$toolArgs } 20)
         }
         $signal = New-Object System.Threading.ManualResetEventSlim($false)
         [void]$Shared.ResultSignals.TryAdd($commandId, $signal)
 
-        $command = @{ id = $commandId; tool = $tool; args = $toolArgs }
-        $queue = Ensure-Queue $sessionId
-        $queue.Enqueue((To-Json $command 40))
-        # Als "im Studio laeuft" erfassen - ueberlebt ein Timeout (es wird nichts getoetet).
-        Add-PendingCommand $sessionId $commandId $tool
+        $command = @{ id=$commandId; tool=$tool; args=$toolArgs; queuedAt=$queuedAt; budgetSeconds=$commandBudget }
+        Add-PendingCommand $sessionId $commandId $tool $commandBudget $queuedAt
+        $enqueue = Enqueue-Command $sessionId $queue (To-Json $command 40)
+        if (-not $enqueue.ok) {
+            Remove-PendingCommand $sessionId $commandId | Out-Null
+            $discard = $null
+            [void]$Shared.CommandOwners.TryRemove($commandId, [ref]$discard)
+            [void]$Shared.CommandStates.TryRemove($commandId, [ref]$discard)
+            [void]$Shared.ActivityCommandMap.TryRemove($commandId, [ref]$discard)
+            [void]$Shared.ResultSignals.TryRemove($commandId, [ref]$discard)
+            try { $signal.Dispose() } catch {}
+            return (To-Json @{ ok=$false; code='QUEUE_FULL'; error='The Studio command queue is full (64 queued commands). The command was rejected before queueing.'; queueDepth=[int]$enqueue.queueDepth; commandSent=$false } 8)
+        }
         $wake = Ensure-Signal $sessionId
         [void]$wake.Set()
 
@@ -12973,8 +14204,14 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         }
 
         $removed = $null
-        [void]$Shared.ResultSignals.TryRemove($commandId, [ref]$removed)
-        [void]$Shared.ResultChunks.TryRemove($commandId, [ref]$removed)
+        [System.Threading.Monitor]::Enter($Shared.CommandResultLock)
+        try {
+            [void]$Shared.ResultSignals.TryRemove($commandId, [ref]$removed)
+            if (-not $got -and $Shared.CommandResults.TryRemove($commandId, [ref]$resultJson)) { $got = $true }
+        } finally {
+            [System.Threading.Monitor]::Exit($Shared.CommandResultLock)
+        }
+        if ($got) { [void]$Shared.ResultChunks.TryRemove($commandId, [ref]$removed) }
         try { $signal.Dispose() } catch {}
 
         if (-not $got) { return $null }
@@ -13074,7 +14311,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         $t.Add(@{ name = 'bridge_status'; category = 'info'; summary = 'Zustand der Bridge.';
             description = 'Version, Place, Warteschlange, was grade in Studio laeuft (ueberlebte Timeouts), Asset-Cache-Groesse.';
             params = @{};
-            returns = '{ bridgeVersion, docsVersion, place, studio, queuedCommands, runningInStudio, connectedPlaces, assetCacheEntries }';
+            returns = '{ bridgeVersion, docsVersion, place, studio, queuedCommands, runningInStudio, executor: { alive, lastTick, runningCommandId, queueDepth }, connectedPlaces, assetCacheEntries }';
             example = @{};
             errors = @() })
 
@@ -13086,26 +14323,26 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             example = @{ origin = @{ x = 0; y = 50; z = 0 }; direction = @{ x = 0; y = -100; z = 0 } };
             errors = @('REF_NOT_FOUND: ignore-Id unbekannt.') })
         $t.Add(@{ name = 'raycast_many'; category = 'spatial'; summary = 'Batch: viele Strahlen in einem Call.';
-            description = 'Bis zu 200 Rays gleichzeitig - damit kein 60-mal-einzelner-Call mehr.';
-            params = @{ rays = @{ type = 'array of { origin, direction, length? }'; required = $true; default = '-'; description = 'length (default 1000) wird auf direction gewirkt.' }; ignore = @{ type = 'ref[]'; required = $false; default = 'null'; description = '' } };
-            returns = '{ results: [ { index, hit, instance?, position?, distance?, normal? } ], hitCount }';
+            description = 'Bis zu 500 Rays gleichzeitig; length ist optional und standardmaessig 1000 Studs. Bei langen Batches wird regelmaessig an Studio abgegeben. rays ist der dokumentierte Name; casts bleibt als Kompatibilitaetsalias erhalten.';
+            params = @{ rays = @{ type = 'array of { origin, direction, length? }'; required = $false; default = 'null'; description = 'Bis zu 500 Rays; alternativ casts.' }; casts = @{ type = 'array of { origin, direction, length? }'; required = $false; default = 'null'; description = 'Alias fuer rays.' }; ignore = @{ type = 'ref[]'; required = $false; default = 'null'; description = 'Objekte ignorieren.' }; exclude = @{ type = 'ref[]'; required = $false; default = 'null'; description = 'Alias fuer ignore.' }; asJob = @{ type = 'bool'; required = $false; default = 'false'; description = 'Optional als Hintergrundjob ausfuehren.' } };
+            returns = '{ results: [ { index, hit, instance?, position?, distance?, normal? } ], count, hitCount }';
             example = @{ rays = @(@{ origin = @{ x = 0; y = 20; z = 0 }; direction = @{ x = 0; y = -1; z = 0 }; length = 40 }, @{ origin = @{ x = 5; y = 20; z = 0 }; direction = @{ x = 0; y = -1; z = 0 }; length = 40 }) };
-            errors = @('TOO_MANY: mehr als 200 Rays - in Runden aufteilen.') })
+            errors = @('REGION_LIMIT: max. 500 Rays pro Call - in Runden aufteilen.', 'BAD_ARGS: rays/casts fehlt.') })
         $t.Add(@{ name = 'ground_height'; category = 'spatial'; summary = 'Höhen per Raycast (Batch).';
-            description = 'Fuer jeden Punkt: nach unten raycasten und die Boden-Höhe (Welt-Y) zurueckgeben. DAS ist die einzige erlaubte Art, Hoehenzu bestimmen.';
-            params = @{ points = @{ type = 'array of {x,y,z}'; required = $true; default = '-'; description = 'Ausgangspunkte (muenueber dem Boden sein).' }; ignore = @{ type = 'ref[]'; required = $false; default = 'null'; description = '' } };
-            returns = '{ results: [ { point, hit, y?, distance?, instance? } ] }';
+            description = 'Misst Bodenhoehen per Raycast. Nutze points/positions ODER min+max+step fuer ein Raster. Hoechstens 4000 Messpunkte pro Call; grosse Raster werden VOR den Raycasts abgewiesen, und die Schleife gibt Studio regelmaessig Zeit zum Atmen. Fuer lange Messungen asJob=true setzen und job_status/job_result verwenden.';
+            params = @{ points = @{ type = 'array of {x,y,z}'; required = $false; default = 'null'; description = 'Liste von Ausgangspunkten (jeweils ueber dem Boden); alternativ positions.' }; positions = @{ type = 'array of {x,y,z}'; required = $false; default = 'null'; description = 'Alias fuer points.' }; min = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Untere Ecke fuer ein Raster (zusammen mit max).' }; max = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Obere Ecke fuer ein Raster.' }; step = @{ type = 'number'; required = $false; default = '4'; description = 'Rasterabstand, mindestens 0.5; das Raster darf hoechstens 4000 Punkte haben.' }; ignore = @{ type = 'ref[]'; required = $false; default = 'null'; description = 'Zu ignorierende Objekte.' }; exclude = @{ type = 'ref[]'; required = $false; default = 'null'; description = 'Alias fuer ignore.' }; asJob = @{ type = 'bool'; required = $false; default = 'false'; description = 'Bei groesseren Messungen true setzen; Jobfortschritt mit job_status abfragen.' } };
+            returns = '{ heights/results: [ { position, groundY?, ground?, material?, waterLike? } ], count, hint }';
             example = @{ points = @(@{ x = 0; y = 30; z = 0 }, @{ x = 4; y = 30; z = 4 }) };
-            errors = @() })
+            errors = @('REGION_LIMIT: max. 4000 Messpunkte - step erhoehen oder Gebiet teilen.', 'BAD_ARGS: points oder min/max fehlen.') })
         $t.Add(@{ name = 'measure'; category = 'spatial'; summary = 'Distanz zwischen zwei Objekten.';
-            params = @{ refA = @{ type = 'ref'; required = $true; default = '-'; description = '' }; refB = @{ type = 'ref'; required = $true; default = '-'; description = '' } };
+            params = @{ refA = @{ type = 'ref'; required = $false; default = 'null'; description = 'Erster Ref; alternativ ref.' }; refB = @{ type = 'ref'; required = $false; default = 'null'; description = 'Zweiter Ref; alternativ targetRef.' }; ref = @{ type = 'ref'; required = $false; default = 'null'; description = 'Alias fuer refA.' }; targetRef = @{ type = 'ref'; required = $false; default = 'null'; description = 'Alias fuer refB.' } };
             returns = '{ distance, delta: {x,y,z}, from, to }';
             example = @{ refA = '#42'; refB = '#43' };
             errors = @('REF_NOT_FOUND') })
         $t.Add(@{ name = 'measure_height'; category = 'spatial'; summary = 'Distanz zu Boden/Himmel.';
             description = 'Raycast ab einem Punkt/Objekt nach unten (Boden) oder oben (Himmel) - die freie Hoehe.';
-            params = @{ ref = @{ type = 'ref'; required = $false; default = 'null'; description = 'Oder point.' }; point = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Oder ref.' }; direction = @{ type = "'down'|'up'"; required = $false; default = "'down'"; description = '' }; ignore = @{ type = 'ref[]'; required = $false; default = 'null'; description = '' } };
-            returns = '{ from, hit, y?, distance?, instance? }';
+            params = @{ ref = @{ type = 'ref'; required = $false; default = 'null'; description = 'Optionales Objekt; die Messung startet an dessen Unter-/Oberkante.' }; point = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Oder ein expliziter Messpunkt.' }; direction = @{ type = "'down'|'up'"; required = $false; default = "'down'"; description = 'Boden oder freie Hoehe nach oben.' }; ignore = @{ type = 'ref[]'; required = $false; default = 'null'; description = 'Zu ignorierende Objekte.' }; exclude = @{ type = 'ref[]'; required = $false; default = 'null'; description = 'Alias fuer ignore.' } };
+            returns = '{ instance?, direction, origin, hit, y?, groundY?, skyY?, distance?, hitInstance? }';
             example = @{ point = @{ x = 0; y = 10; z = 0 }; direction = 'down' };
             errors = @('REF_NOT_FOUND') })
         $t.Add(@{ name = 'parts_in_box'; category = 'spatial'; summary = 'Alle Teile in einer Box.';
@@ -13121,32 +14358,32 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             errors = @('REF_NOT_FOUND', 'BAD_ARGS: center oder ref erforderlich.') })
         $t.Add(@{ name = 'nearest_parts'; category = 'spatial'; summary = 'Nächste Objekte (sortiert nach Distanz).';
             description = '"Was ist in 10 Studs?" - Kugel-Abfrage, aufsteigend nach Distanz sortiert.';
-            params = @{ origin = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Oder ref.' }; ref = @{ type = 'ref'; required = $false; default = 'null'; description = 'Oder origin.' }; radius = @{ type = 'number'; required = $true; default = '-'; description = '' }; limit = @{ type = 'int'; required = $false; default = '20'; description = '' }; className = @{ type = 'string'; required = $false; default = 'null'; description = '' }; tag = @{ type = 'string'; required = $false; default = 'null'; description = '' } };
+            params = @{ origin = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Oder position/ref.' }; position = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Alias fuer origin.' }; ref = @{ type = 'ref'; required = $false; default = 'null'; description = 'Oder origin.' }; radius = @{ type = 'number'; required = $true; default = '-'; description = '' }; limit = @{ type = 'int'; required = $false; default = '20'; description = '' }; className = @{ type = 'string'; required = $false; default = 'null'; description = '' }; tag = @{ type = 'string'; required = $false; default = 'null'; description = '' }; exclude = @{ type = 'ref[]'; required = $false; default = 'null'; description = 'Ausgeschlossene Objekte.' } };
             returns = '{ items: [ { id, name, className, position, distance, size } ], count, empty, nearest: (erstes Item oder null) }';
             example = @{ ref = '#42'; radius = 10; limit = 5 };
             errors = @('REF_NOT_FOUND') })
         $t.Add(@{ name = 'what_is_in_the_way'; category = 'spatial'; summary = 'Was steht zwischen A und B?';
-            description = 'Baumt eine Box entlang der Strecke zwischen zwei Punkten/Objekten und listet alles, was drin liegt (A und B selbst werden ausgeschlossen).';
-            params = @{ fromRef = @{ type = 'ref'; required = $false; default = 'null'; description = 'Oder origin.' }; toRef = @{ type = 'ref'; required = $false; default = 'null'; description = 'Oder target.' }; origin = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = '' }; target = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = '' }; width = @{ type = 'number'; required = $false; default = '2'; description = 'Box-Breite/Höhe um die Linie.' } };
+            description = 'Baut eine Box entlang der Strecke zwischen zwei Punkten/Objekten und listet alles, was drin liegt (A und B selbst werden ausgeschlossen). Akzeptiert from/to und die dokumentierten origin/target-Aliase.';
+            params = @{ fromRef = @{ type = 'ref'; required = $false; default = 'null'; description = 'Oder origin/from.' }; toRef = @{ type = 'ref'; required = $false; default = 'null'; description = 'Oder target/to.' }; origin = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Startpunkt; Alias fuer from.' }; target = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Endpunkt; Alias fuer to.' }; from = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Startpunkt.' }; to = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Endpunkt.' }; width = @{ type = 'number'; required = $false; default = '2'; description = 'Box-Breite/Hoehe um die Linie.' }; className = @{ type = 'string'; required = $false; default = 'null'; description = 'Nur diese Klasse.' }; tag = @{ type = 'string'; required = $false; default = 'null'; description = 'Nur Objekte mit Tag.' }; exclude = @{ type = 'ref[]'; required = $false; default = 'null'; description = 'Ausgeschlossene Objekte.' }; limit = @{ type = 'int'; required = $false; default = '50'; description = 'Maximal 500 Treffer.' } };
             returns = '{ items: [ { id, name, className, position, distanceFromLine } ], count, clear (true = nichts im Weg) }';
             example = @{ fromRef = '#42'; toRef = '#43'; width = 2 };
             errors = @('REF_NOT_FOUND', 'BAD_ARGS: von+nach angeben.') })
         $t.Add(@{ name = 'overlap_check'; category = 'spatial'; summary = 'Stosst ein Objekt mit etwas zusammen?';
-            description = 'Prueft die Bounds eines Objekts (mit Toleranz aufgeweitet) gegen die Welt.';
-            params = @{ ref = @{ type = 'ref'; required = $true; default = '-'; description = '' }; tolerance = @{ type = 'number'; required = $false; default = '0'; description = 'Box aufwaechsen (Studs).' }; excludeRefs = @{ type = 'ref[]'; required = $false; default = 'null'; description = '' }; className = @{ type = 'string'; required = $false; default = 'null'; description = '' }; limit = @{ type = 'int'; required = $false; default = '50'; description = '' } };
+            description = 'Prueft Bounds mit optionaler Toleranz, Klassenfilter und Ausschlussliste. Akzeptiert ref oder refs; bei grossen Gruppen asJob=true.';
+            params = @{ ref = @{ type = 'ref'; required = $false; default = 'null'; description = 'Ein Objekt; alternativ refs.' }; refs = @{ type = 'ref[]'; required = $false; default = 'null'; description = 'Liste von Objekten.' }; tolerance = @{ type = 'number'; required = $false; default = '0'; description = 'Box aufwaechsen (Studs).' }; excludeRefs = @{ type = 'ref[]'; required = $false; default = 'null'; description = 'Ausgeschlossene Objekte.' }; ignore = @{ type = 'ref[]'; required = $false; default = 'null'; description = 'Alias fuer excludeRefs.' }; className = @{ type = 'string'; required = $false; default = 'null'; description = 'Nur diese Klasse.' }; limit = @{ type = 'int'; required = $false; default = '50'; description = 'Maximal 500 Treffer pro Objekt.' }; asJob = @{ type = 'bool'; required = $false; default = 'false'; description = 'Optional als Hintergrundjob ausfuehren.' } };
             returns = '{ overlapping: [ { id, name, className, position } ], count, clear }';
             example = @{ ref = '#42'; tolerance = 0.5 };
             errors = @('REF_NOT_FOUND') })
         $t.Add(@{ name = 'snap_to_ground'; category = 'spatial'; summary = 'Auf das legen, was darunter ist.';
-            description = 'Raycast nach unten pro Objekt und hinuntersetzen. Wartet automatisch, bis die Welt wieder antwortet, und verifiziert per Gegen-Raycast.';
-            params = @{ refs = @{ type = 'ref[]'; required = $true; default = '-'; description = '' }; offset = @{ type = 'number'; required = $false; default = '0'; description = 'Zusaetzlicher Abstand ueber dem Boden.' }; maxFall = @{ type = 'number'; required = $false; default = '2000'; description = 'Toleranz: hoechstens so tief fallen; darueber = nicht bewegen + Hinweis.' }; ignore = @{ type = 'ref[]'; required = $false; default = 'null'; description = '' }; waitForMeasurable = @{ type = 'bool'; required = $false; default = 'true'; description = 'Nach dem Setzen per Raycast verifizieren.' } };
-            returns = '{ results: [ { instance, y, ground, verified } ], count, geometry }';
+            description = 'Raycast nach unten pro Objekt und setzt es auf die gemessene Flaeche. Ein Fall ueber maxDrop/maxFall wird zum Schutz vor unerwuenschten Verschiebungen abgelehnt; die Geometrie kann optional danach per Raycast verifiziert werden.';
+            params = @{ refs = @{ type = 'ref[]'; required = $false; default = 'null'; description = 'Liste; alternativ ein einzelnes ref.' }; ref = @{ type = 'ref'; required = $false; default = 'null'; description = 'Einzelobjekt-Alias.' }; offset = @{ type = 'number'; required = $false; default = '0'; description = 'Zusaetzlicher Abstand ueber dem Boden.' }; maxFall = @{ type = 'number'; required = $false; default = '2000'; description = 'Alias fuer maxDrop: hoechstens so tief fallen; darueber = nicht bewegen + Hinweis.' }; maxDrop = @{ type = 'number'; required = $false; default = '2000'; description = 'Maximal erlaubte Fallhoehe.' }; ignore = @{ type = 'ref[]'; required = $false; default = 'null'; description = 'Zu ignorierende Objekte.' }; exclude = @{ type = 'ref[]'; required = $false; default = 'null'; description = 'Alias fuer ignore.' }; waitForMeasurable = @{ type = 'bool'; required = $false; default = 'true'; description = 'Nach dem Setzen per Raycast verifizieren.' }; waitSeconds = @{ type = 'number'; required = $false; default = '2'; description = 'Maximal 10 Sekunden auf Messbarkeit warten.' }; asJob = @{ type = 'bool'; required = $false; default = 'false'; description = 'Bei vielen Objekten im Hintergrund ausfuehren.' } };
+            returns = '{ results: [ { instance, y?, ground?, note? } ], count, measurable? }';
             example = @{ refs = @('#42','#43'); offset = 0.1 };
             errors = @('REF_NOT_FOUND', 'GEOMETRY_NOT_READY (Warning): Welt nach dem Setzen nicht sofort messbar.') })
         $t.Add(@{ name = 'verify_measurable'; category = 'spatial'; summary = 'Warten, bis Geometrie raycastbar ist.';
-            description = 'Nach create/fill ist neue Geometrie manchemal erst ab dem naechsten Frame messbar. Dieses Tool wartet aktiv, bis alle refs per Raycast antworten (oder die Zeit abgelaufen ist).';
-            params = @{ refs = @{ type = 'ref[]'; required = $true; default = '-'; description = '' }; maxSeconds = @{ type = 'number'; required = $false; default = '5'; description = '' } };
-            returns = '{ ready, frames, waitedSeconds, notReady: [ { id, name } ] (wenn nicht ready) }';
+            description = 'Nach create/fill ist neue Geometrie manchmal erst ab dem naechsten Frame messbar. Dieses Tool prueft bis zu 10 refs per Raycast; maxSeconds ist auf hoechstens 30 begrenzt.';
+            params = @{ refs = @{ type = 'ref[]'; required = $false; default = 'null'; description = 'Liste von refs; alternativ ein einzelnes ref.' }; ref = @{ type = 'ref'; required = $false; default = 'null'; description = 'Alias fuer genau ein Objekt.' }; maxSeconds = @{ type = 'number'; required = $false; default = '5'; description = 'Maximale Wartezeit, hoechstens 30 Sekunden.' }; seconds = @{ type = 'number'; required = $false; default = 'null'; description = 'Kompatibilitaetsalias fuer maxSeconds.' } };
+            returns = '{ checked, geometry: { ready, frames, waitedMs, note? }, maxSeconds }';
             example = @{ refs = @('#60','#61') };
             errors = @('REF_NOT_FOUND') })
 
@@ -13225,19 +14462,19 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
 
         # ---------------- CREATE ----------------
         $t.Add(@{ name = 'create_instance'; category = 'create'; summary = 'Ein (oder mehrere gleiche) Instanz(en).';
-            params = @{ parentRef = @{ type = 'ref'; required = $false; default = "'game.Workspace'"; description = '' }; className = @{ type = 'string'; required = $false; default = "'Part'"; description = 'Part, MeshPart, Model, Script, ScreenGui, ...' }; name = @{ type = 'string'; required = $false; default = 'className'; description = '' }; properties = @{ type = 'table'; required = $false; default = '{}'; description = 'z.B. { Size={x=4,y=8,z=1}, Anchored=true, Material="Neon", Color={255,80,0} }' }; count = @{ type = 'int'; required = $false; default = '1'; description = 'N x gleiches (mit offset).' }; offset = @{ type = '{x,y,z}'; required = $false; default = '0'; description = 'Versatz pro Nummer (bei count>1).' }; waitForMeasurable = @{ type = 'bool'; required = $false; default = 'true'; description = 'Warten, bis die neuen Teile raycastbar sind.' } };
+            params = @{ parentRef = @{ type = 'ref'; required = $false; default = "'game.Workspace'"; description = '' }; className = @{ type = 'string'; required = $false; default = "'Part'"; description = 'Part, MeshPart, Model, Script, ScreenGui, ...' }; name = @{ type = 'string'; required = $false; default = 'className'; description = '' }; properties = @{ type = 'table'; required = $false; default = '{}'; description = 'z.B. { Size={x=4,y=8,z=1}, Anchored=true, Material="Neon", Color={255,80,0} }' }; count = @{ type = 'int'; required = $false; default = '1'; description = '1 bis 400 gleiche Instanzen (mit offset).' }; offset = @{ type = '{x,y,z}'; required = $false; default = '0'; description = 'Versatz pro Nummer (bei count>1).' }; waitForMeasurable = @{ type = 'bool'; required = $false; default = 'true'; description = 'Warten, bis die neuen Teile raycastbar sind.' }; asJob = @{ type = 'bool'; required = $false; default = 'false'; description = 'Groessere Erstellungen im Hintergrund ausfuehren.' } };
             returns = 'einzel: { id, name, className, path, propertyProblems? }; mehrere: { created: [...], count, geometry }';
             example = @{ parentRef = 'game.Workspace'; className = 'Part'; name = 'Wall'; properties = @{ Size = @{ x = 4; y = 8; z = 1 }; Anchored = $true; Material = 'Neon' } };
             errors = @('REF_NOT_FOUND: parent fehlt.', 'BAD_ARGS: unbekannte className.') })
         $t.Add(@{ name = 'bulk_create'; category = 'create'; summary = 'Viele VERSCHIEDENE Instanzen in einem Call.';
             description = 'Entweder items=[...] (eine Spezifikation pro Teil) oder Template+Raster: template=... + count + grid erzeugt automatisch die Anordnung. Ersetzt jede Lua-Schleife zum Bauen.';
-            params = @{ items = @{ type = 'array of { parentRef, className, name, properties }'; required = $false; default = 'null'; description = 'Variante 1: explizite Liste.' }; template = @{ type = '{ className, properties, parentRef? }'; required = $false; default = 'null'; description = 'Variante 2: Vorlage (mit count+grid).' }; count = @{ type = 'int'; required = $false; default = 'null'; description = 'Anzahl bei template.' }; grid = @{ type = '{ rows, columns, spacingX, spacingZ, origin }'; required = $false; default = 'null'; description = 'Raster bei template. Ohne grid: nur count mit offset (origin + offset). grid.columns (= grid.cols) bestimmt die Spalten.' }; offset = @{ type = '{x,y,z}'; required = $false; default = '0'; description = 'Versatz pro Nummer (ohne grid).' }; nameTemplate = @{ type = "string mit {n}"; required = $false; default = 'Name{n}'; description = 'z.B. "Crate{n}".' } };
+            params = @{ items = @{ type = 'array of { parentRef, className, name, properties }'; required = $false; default = 'null'; description = 'Variante 1: explizite Liste, max. 400.' }; template = @{ type = '{ className, properties, parentRef? }'; required = $false; default = 'null'; description = 'Variante 2: Vorlage (mit count+grid).' }; count = @{ type = 'int'; required = $false; default = 'null'; description = 'Anzahl bei template, max. 400.' }; grid = @{ type = '{ rows, columns, spacingX, spacingZ, origin }'; required = $false; default = 'null'; description = 'Raster bei template, rows*columns max. 400. Ohne grid: nur count mit offset (origin + offset). grid.columns (= grid.cols) bestimmt die Spalten.' }; offset = @{ type = '{x,y,z}'; required = $false; default = '0'; description = 'Versatz pro Nummer (ohne grid).' }; nameTemplate = @{ type = "string mit {n}"; required = $false; default = 'Name{n}'; description = 'z.B. "Crate{n}".' }; asJob = @{ type = 'bool'; required = $false; default = 'false'; description = 'Groessere Erstellungen im Hintergrund ausfuehren.' } };
             returns = '{ created: [ { id, name, className, path, position? } ], count, errors: ["item 3: ..."], geometry }';
             example = @{ template = @{ className = 'Part'; properties = @{ Size = @{ x = 4; y = 4; z = 4 }; Anchored = $true } }; count = 20; grid = @{ columns = 10; spacingX = 6; spacingZ = 6; origin = @{ x = 0; y = 2; z = 0 } }; nameTemplate = 'Crate{n}' };
             errors = @('REF_NOT_FOUND', 'BAD_ARGS: items ODER template angeben.') })
         $t.Add(@{ name = 'clone_instance'; category = 'create'; summary = 'Klonen statt nachbauen.';
             description = 'Kopiert ein fertiges Objekt (mit Kindern, Farben, Skripten) n-mal, mit beliebigem Versatz und/oder Dreh-Schritt. Das schnellste Werkzeug fuer Wiederholungen.';
-            params = @{ ref = @{ type = 'ref'; required = $true; default = '-'; description = 'Vorlage.' }; count = @{ type = 'int'; required = $false; default = '1'; description = 'Max. 500.' }; parentRef = @{ type = 'ref'; required = $false; default = 'gleicher Parent'; description = '' }; offset = @{ type = '{x,y,z}'; required = $false; default = '0'; description = 'Versatz pro Kopie.' }; rotateStep = @{ type = 'number'; required = $false; default = '0'; description = 'Y-Drehung pro Kopie (Grad).' }; nameTemplate = @{ type = 'string'; required = $false; default = 'null'; description = 'z.B. "Crate{n}".' } };
+            params = @{ ref = @{ type = 'ref'; required = $true; default = '-'; description = 'Vorlage.' }; count = @{ type = 'int'; required = $false; default = '1'; description = 'Max. 500.' }; parentRef = @{ type = 'ref'; required = $false; default = 'gleicher Parent'; description = '' }; offset = @{ type = '{x,y,z}'; required = $false; default = '0'; description = 'Versatz pro Kopie.' }; rotateStep = @{ type = 'number'; required = $false; default = '0'; description = 'Y-Drehung pro Kopie (Grad).' }; nameTemplate = @{ type = 'string'; required = $false; default = 'null'; description = 'z.B. "Crate{n}".' }; asJob = @{ type = 'bool'; required = $false; default = 'false'; description = 'Groessere Klonvorgaenge im Hintergrund ausfuehren.' } };
             returns = '{ clones: [...], count, source, geometry }';
             example = @{ ref = '#42'; count = 60; offset = @{ x = 6; y = 0; z = 0 }; nameTemplate = 'Crate{n}' };
             errors = @('REF_NOT_FOUND', 'BAD_ARGS: max. 500 Kopien pro Call.') })
@@ -13366,8 +14603,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
 
         # ---------------- FILL (Voxel/Geometrie aufmassen + fuellen) ----------------
         $t.Add(@{ name = 'probe_world'; category = 'fill'; summary = 'WELT MESSEN: Raster-Schritt, Wasserhoehe, Füllhöhen-Regel.';
-            description = 'Raycast-Raster ueber den Boden (nie Index-Rechnung!), bestimmt den Raster-Schritt (z.B. 4 Studs), die Wasserhoehe und prüft die Füllhöhen-Regel gegen die gemessenen Oberflächen. Das Ergebnis (worldProfile) wird gespeichert und von fill_region verwandt. Nach grossen Terrain-Änderungen erneut aufrufen.';
-            params = @{ center = @{ type = '{x,y,z}'; required = $false; default = '{0,0,0}'; description = 'Mittelpunkt der Messung.' }; radius = @{ type = 'number'; required = $false; default = '40'; description = 'Messradius (Studs).' }; step = @{ type = 'number'; required = $false; default = '10'; description = 'Rasterabstand der Messpunkte.' } };
+            description = 'Raycast-Raster ueber den Boden (nie Index-Rechnung!), bestimmt den Raster-Schritt (z.B. 4 Studs) und Wasserhoehe. Das Profil wird gespeichert und von fill_region verwandt. Maximal 4000 Rasterpunkte: groessere Raster werden sofort abgewiesen; radius verkleinern oder step erhoehen. Fuer lange Messungen asJob=true setzen und job_status/job_result verwenden.';
+            params = @{ center = @{ type = '{x,y,z}'; required = $false; default = '{0,0,0}'; description = 'Mittelpunkt der Messung.' }; radius = @{ type = 'number'; required = $false; default = '40'; description = 'Messradius (Studs), mindestens 0.' }; step = @{ type = 'number'; required = $false; default = '10'; description = 'Rasterabstand (mindestens 1 Stud); maximal 4000 Rasterpunkte.' }; asJob = @{ type = 'bool'; required = $false; default = 'false'; description = 'Im Hintergrund ausfuehren und Jobfortschritt bereitstellen.' } };
             returns = '{ measuredAt, center, radius, sampleCount, gridStep, waterY, heights: [...], fillRule: { formula, matched, samples }, stored = true }';
             example = @{ center = @{ x = 0; y = 0; z = 0 }; radius = 40 };
             errors = @('BAD_ARGS: zu wenige Messpunkte gefunden (leerer Place?).') })
@@ -13675,9 +14912,9 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             example = @{ jobId = 'job_3' };
             errors = @('JOB_NOT_FOUND') })
         $t.Add(@{ name = 'get_pending'; category = 'jobs'; summary = 'Was laeuft noch in Studio? (ueberlebte Timeouts).';
-            description = 'Listet Befehle, die im Studio noch laufen (z.B. nach einem HTTP-Timeout) und späte Ergebnisse, die seitdem eingetroffen sind. Der naechste Tool-Call wartet automatisch darauf - nichts muss getoetet werden.';
+            description = 'Listet pro commandId ausstehende Befehle (queued/delivered/received/started), Executor-Heartbeats, Zeitbudget und späte Ergebnisse. Ein Folgeaufruf kann auf serialisierte Studio-Arbeit warten; bei Executor-Ausfall gibt der Watchdog die Queue frei und meldet, ob Teiländerungen möglich sind. Vor einem Retry Zustand prüfen.';
             params = @{};
-            returns = '{ runningInStudio: [ { commandId, tool, seconds } ], lateResults: [ { tool, commandId, result } ] }';
+            returns = '{ runningInStudio: [ { commandId, tool, status, seconds, queuedAt, deliveredAt, receivedAt, startedAt, heartbeatAt, budgetSeconds } ], lateResults: [ { tool, commandId, result } ] }';
             example = @{};
             errors = @() })
 
@@ -13767,8 +15004,9 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 'For ANY visual/GUI work, ALWAYS use build_interface (whole screen in one call) or build_surface unless the user explicitly asks for raw GuiObjects: the bridge owns AnchorPoint, Scale-only UDim2, aspect locking, corner-safe padding, layered shadows, scaled strokes, gradients on strokes, REAL raster textures, CanvasGroup discipline and the runtime motion script. Call ui_capabilities first (it probes this Studio build instead of trusting training data), ui_skin to pick or extract an art direction, ui_glow for glow (never hand-build it), ui_texture for the real-texture-first recipe, ui_radial for radial menus (one image id, both colours engine-owned), and ui_audit afterwards - it measures offsetRatio, contrast, per-device pixel sizes, glow/texture/radial usage and a blandness score. See uiEngineRules below for the hard rules.',
                 'Object ids such as #42 are stable within the current plugin session and avoid ambiguity when names repeat. Paths and selectors are also accepted where documented.',
                 'Several Places can be connected. With the Alle-Places token, GET /api/places returns targetPlace values; selecting one target keeps edits unambiguous.',
-                'GET and POST use the same bridge code path. Pick whichever transport your environment supports.',
-                'A timed-out Studio command keeps running and can return through _bridge.lateResults. Jobs are available when background progress is useful.',
+                'Queue recovery is explicit and diagnosable: GET /api/queue shows queued/delivered/running commandIds, delivery/start timestamps and executor liveness; POST /api/queue with action=cancel and commandId cancels one command, while action=reset abandons pending work and asks the plugin to reset its local queue. A reset/cancel can leave partial edits; inspect before retrying.',
+                'Normal GET and POST tool calls use the same bridge code path. Queue cancellation/reset are mutating controls and require POST.',
+                'After an HTTP timeout, a Studio command remains tracked by commandId and may return through _bridge.lateResults. A plugin execution budget and server heartbeat watchdog abandon stalled commands so they cannot block the serial queue forever; inspect the Place before retrying because partial changes may exist. Use asJob=true when a long task should deliberately continue in the background.',
                 'Asset search covers the Creator Store categories including 3D models, models, meshes/MeshParts, plugins, fonts, audio, images/decals, video and animation. Insertion still reports Roblox permission/privacy errors and warns before inserting scripts.',
                 'sim_start is disabled because the former official Studio Run simulation exits Edit mode (EditModeActive=false), and the documented Studio API has no supported true Edit-mode physics/script path. A USER-started Play/F5 test is separate, blocks building (USER_PLAYTEST_ACTIVE), and can only be ended by the user.',
                 'Windows finish notifications use report_done { title, message }. Arena writes a lively title (max 70 characters) and an inviting body (max 140); avoid dry changelog lists.',
@@ -13970,12 +15208,20 @@ end
             )
             jobsGuide = @(
                 'Any tool call can run in the background: pass asJob=true in args (or use start_job with source or tool+args). You get a jobId immediately - no 60-second wall.'
-                'An HTTP timeout NEVER kills the work: the command keeps running in Studio, the result arrives later in _bridge.lateResults, and every following call automatically waits for the running command to finish (you can never measure against a still-running script).'
+                'An HTTP timeout does not immediately cancel a Studio command. The plugin executor isolates each command, sends heartbeats and enforces a bounded safety budget; when the result arrives it is returned by commandId in _bridge.lateResults. If the executor stops heartbeating or the budget expires, a watchdog abandons that command so the queue recovers. Inspect the Place before retrying because partial changes may have occurred.'
                 'Inside job code: call job:progress(percent, message) for progress and check job:cancelled() in loops (cancel_job is cooperative - Lua threads cannot be killed hard).'
                 'fill_region is resumable: it returns a resumeToken - repeat the same call with resumeToken to continue where it stopped instead of starting over.'
             )
             errorCodes = @{
-                STUDIO_TIMEOUT = 'HTTP call timed out, but the command is STILL RUNNING in Studio - nothing is lost. The next call waits for it automatically. Long work should use asJob=true.'
+                STUDIO_TIMEOUT = 'The HTTP caller timed out; the command remains tracked by commandId and may still be running. Executor heartbeats and a hard safety budget prevent a dead command from blocking the queue forever. Check get_pending / GET /api/queue and inspect _bridge.lateResults; retry only after checking for partial changes.'
+                STUDIO_ABANDONED = 'The command exceeded its executor budget and was stopped/abandoned so the queue can continue. Partial changes may exist; inspect the Place before retrying.'
+                EXECUTOR_UNRESPONSIVE = 'Studio stopped sending command heartbeats. The server released this command; partial changes may exist. Check /api/queue and inspect Studio before retrying.'
+                EXECUTOR_UNAVAILABLE = 'The Studio plugin was disconnected while a command was queued or received. Reconnect Studio; the command was not replayed automatically.'
+                EXECUTOR_DROPPED_COMMAND = 'The plugin acknowledged a command but its local executor no longer reports it queued or running. It was abandoned to prevent a permanent blockage; inspect before retrying.'
+                COMMAND_DELIVERY_UNCONFIRMED = 'The plugin did not acknowledge delivery. The command was abandoned rather than replayed because execution state is uncertain.'
+                QUEUE_EXPIRED = 'The command exceeded the maximum queue-retention window and was removed. Check Studio before retrying.'
+                COMMAND_CANCELLED = 'A queue-control cancellation was requested. It is best-effort and can leave partial changes; inspect before retrying.'
+                QUEUE_FULL = 'The 64-command queue limit was reached. The rejected call was not sent to Studio; wait for the queue or reset it via POST /api/queue.'
                 MULTI_PLACE_SELECTION_REQUIRED = 'This is an Alle-Places token. Call GET /api/places and repeat the request with one exact targetPlace.'
                 MULTI_PLACE_TARGET_NOT_FOUND = 'The aggregate target is disconnected, unknown or ambiguous. Refresh GET /api/places and choose one exact targetPlace.'
                 READONLY_TOKEN = 'This place is set to read-only in the bridge window. The user can switch it back.'
@@ -14134,7 +15380,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.0.3'
+            version = '7.0.4'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -14153,13 +15399,14 @@ end
                 callToolGet = 'GET /api/tool?token=<token>&tool=<name>&args=<URL-encoded JSON>&timeoutSeconds=<n>  - IDENTICAL to POST /api/tool (same code path, same envelope, same _sessionStart, same chunking/blobs). Use this if your environment can only do GET requests.'
                 callMany    = 'POST /api/tools/parallel  { token, calls: [ { tool, args } ] }  - runs several tools at the same time'
                 callManyGet = 'GET /api/tools/parallel?token=<token>&calls=<URL-encoded JSON array>  - same as the POST version'
+                queue       = 'GET /api/queue?token=... - queue, pending commandIds and executor liveness; POST /api/queue { token, action="cancel", commandId } or { token, action="reset" } for controlled recovery'
                 places      = 'GET /api/places?token=... - list targetPlace values for an aggregate Alle-Places token';
                 events      = 'GET /api/events?token=...  - what the user did (started/stopped a playtest, plays in the game, ...)'
                 blob        = 'GET /api/blob?token=...&id=<blobId>&index=<n>  - fetch one chunk of a huge answer'
                 upload      = 'POST /api/upload  { token, text, uploadId?, chunkIndex?, chunkCount? }  - send a huge script in pieces, then use args.sourceRef = uploadId'
                 uploadGet   = 'GET /api/upload?token=<token>&uploadId=<id>&chunkIndex=<n>&chunkCount=<m>&text=<URL-encoded text>  - same as the POST version'
                 status      = 'GET /api/status'
-                getOnlyNote = 'EVERY endpoint above also works with a plain HTTP GET (Version 3.9). Method GET and method POST run through exactly the same code - nothing is missing, nothing behaves differently. Rule: what would be a JSON body field becomes a query parameter; the object fields args / calls / extra are passed as URL-encoded JSON. So an AI that can only fetch URLs can do absolutely everything.'
+                getOnlyNote = 'Normal tool and read endpoints work with plain HTTP GET (Version 3.9); POST /api/queue is intentionally required for cancel/reset because those controls mutate executor state. For GET tool calls, JSON fields args / calls / extra are URL-encoded query parameters.'
             }
             toolCount = $docs.Count
             toolsIndex = $toolIndex
@@ -14178,29 +15425,109 @@ end
     # ------------------------------------------------------------------
     # Mehrere Befehle gleichzeitig an das Plugin schicken
     # ------------------------------------------------------------------
-    function Invoke-PluginToolsParallel($sessionId, $calls, [int]$timeoutSeconds) {
+    function Invoke-PluginToolsParallel($sessionId, $calls, [int]$timeoutSeconds, $progressPayload = $null) {
         $pending = New-Object System.Collections.Generic.List[object]
         $queue = Ensure-Queue $sessionId
+        $commandBudget = [Math]::Max(90, [Math]::Min(300, $timeoutSeconds + 30))
+        $progressStarted = $false
         foreach ($call in $calls) {
             $callTool = [string]$call.tool
-            $activityId = New-ArenaActivity $sessionId $callTool $call.args
-            $cached = Get-DedupedPlayResult $sessionId $callTool $call.args
+            $callArgs = $call.args
+            if ($null -eq $callArgs) { $callArgs = New-Object PSObject }
+            $callProgress = $null
+            try {
+                if ($callArgs.PSObject.Properties['progress']) {
+                    $callProgress = $callArgs.progress
+                    $callArgs.PSObject.Properties.Remove('progress')
+                }
+            } catch {}
+            $sourceRefArg = Get-CommandArgumentValue $callArgs 'sourceRef'
+            if ($sourceRefArg.found -and -not [string]::IsNullOrWhiteSpace([string]$sourceRefArg.value)) {
+                $uploadedSource = $null
+                if ($Shared.Uploads.TryGetValue([string]$sourceRefArg.value, [ref]$uploadedSource)) {
+                    $callArgs | Add-Member -NotePropertyName 'source' -NotePropertyValue $uploadedSource -Force
+                } else {
+                    $missingUpload = To-Json @{ ok=$false; code='REF_NOT_FOUND'; tool=$callTool; error=("Unknown sourceRef '" + [string]$sourceRefArg.value + "'. Upload the text again with upload_text."); commandSent=$false } 8
+                    $activityId = New-ArenaActivity $sessionId $callTool $callArgs
+                    Complete-ArenaActivity $sessionId $activityId $callTool $callArgs $missingUpload
+                    $pending.Add(@{ id=$null; tool=$callTool; args=$callArgs; signal=$null; result=$missingUpload; deduplicated=$false; activityId=$activityId })
+                    continue
+                }
+            }
+            $activityId = New-ArenaActivity $sessionId $callTool $callArgs
+            $argumentCheck = Test-CommandArguments $callTool $callArgs
+            if (-not $argumentCheck.ok) {
+                $invalidJson = To-Json $argumentCheck 12
+                Complete-ArenaActivity $sessionId $activityId $callTool $callArgs $invalidJson
+                $pending.Add(@{ id=$null; tool=$callTool; args=$callArgs; signal=$null; result=$invalidJson; deduplicated=$false; activityId=$activityId })
+                continue
+            }
+            if ($queue.Count -ge 64) {
+                $fullJson = To-Json @{ ok=$false; code='QUEUE_FULL'; tool=$callTool; error='The Studio command queue is full (64 queued commands). This command was rejected before queueing.'; commandSent=$false; queueDepth=[int]$queue.Count } 8
+                Complete-ArenaActivity $sessionId $activityId $callTool $callArgs $fullJson
+                $pending.Add(@{ id=$null; tool=$callTool; args=$callArgs; signal=$null; result=$fullJson; deduplicated=$false; activityId=$activityId })
+                continue
+            }
+
+            $cached = Get-DedupedPlayResult $sessionId $callTool $callArgs
             $reserved = $false
-            if ($null -eq $cached) { $reserved = Reserve-PlayRetry $sessionId $callTool $call.args }
+            if ($null -eq $cached) { $reserved = Reserve-PlayRetry $sessionId $callTool $callArgs }
             if ($null -ne $cached -or -not $reserved) {
-                # Retried play command: never enqueue a second Studio action.
-                if ($null -eq $cached) { $cached = Get-DedupedPlayResult $sessionId $callTool $call.args }
-                if ($cached) { Complete-ArenaActivity $sessionId $activityId $callTool $call.args $cached }
-                $pending.Add(@{ id=$null; tool=$callTool; args=$call.args; signal=$null; result=$cached; deduplicated=$true; activityId=$activityId })
+                if ($null -eq $cached) { $cached = Get-DedupedPlayResult $sessionId $callTool $callArgs }
+                if ($cached) { Complete-ArenaActivity $sessionId $activityId $callTool $callArgs $cached }
+                $pending.Add(@{ id=$null; tool=$callTool; args=$callArgs; signal=$null; result=$cached; deduplicated=$true; activityId=$activityId })
             } else {
                 $commandId = [guid]::NewGuid().ToString('N')
+                $queuedAt = Get-UnixSeconds
                 $signal = New-Object System.Threading.ManualResetEventSlim($false)
                 [void]$Shared.ResultSignals.TryAdd($commandId, $signal)
-                $command = @{ id=$commandId; tool=$callTool; args=$call.args }
-                $Shared.ActivityCommandMap[$commandId] = (To-Json @{ sessionId=$sessionId; activityId=$activityId; tool=$callTool; args=$call.args } 20)
-                $queue.Enqueue((To-Json $command 40))
-                Add-PendingCommand $sessionId $commandId $callTool
-                $pending.Add(@{ id=$commandId; tool=$callTool; args=$call.args; signal=$signal; result=$null; deduplicated=$false })
+                $command = @{ id=$commandId; tool=$callTool; args=$callArgs; queuedAt=$queuedAt; budgetSeconds=$commandBudget }
+                $Shared.ActivityCommandMap[$commandId] = (To-Json @{ sessionId=$sessionId; activityId=$activityId; tool=$callTool; args=$callArgs } 20)
+                Add-PendingCommand $sessionId $commandId $callTool $commandBudget $queuedAt
+                $enqueue = Enqueue-Command $sessionId $queue (To-Json $command 40)
+                if (-not $enqueue.ok) {
+                    Remove-PendingCommand $sessionId $commandId | Out-Null
+                    $discard = $null
+                    [void]$Shared.CommandOwners.TryRemove($commandId, [ref]$discard)
+                    [void]$Shared.CommandStates.TryRemove($commandId, [ref]$discard)
+                    [void]$Shared.ActivityCommandMap.TryRemove($commandId, [ref]$discard)
+                    [void]$Shared.ResultSignals.TryRemove($commandId, [ref]$discard)
+                    try { $signal.Dispose() } catch {}
+                    if ($callTool -eq 'sim_stop') {
+                        $retryKey = [string]$sessionId + ':' + $callTool
+                        $retryRaw = $null
+                        if ($Shared.PlayRetryDedupe.TryGetValue($retryKey, [ref]$retryRaw)) {
+                            try {
+                                $retryEntry = $retryRaw | ConvertFrom-Json
+                                if ([string]$retryEntry.fingerprint -eq (Get-PlayRetryFingerprint $callTool $callArgs) -and [string]$retryEntry.resultJson -like '*"pending":true*') {
+                                    [void]$Shared.PlayRetryDedupe.TryRemove($retryKey, [ref]$discard)
+                                }
+                            } catch {}
+                        }
+                    }
+                    $fullJson = To-Json @{ ok=$false; code='QUEUE_FULL'; tool=$callTool; error='The Studio command queue is full (64 queued commands). This command was rejected before queueing.'; commandSent=$false; queueDepth=[int]$enqueue.queueDepth } 8
+                    Complete-ArenaActivity $sessionId $activityId $callTool $callArgs $fullJson
+                    $pending.Add(@{ id=$null; tool=$callTool; args=$callArgs; signal=$null; result=$fullJson; deduplicated=$false; activityId=$activityId })
+                } else {
+                    if (-not $progressStarted) {
+                        $progressNode = $progressPayload
+                        if ($null -eq $progressNode) { $progressNode = $callProgress }
+                        $progressReported = ($null -ne $progressNode)
+                        $progressPercent = 0.0
+                        $progressMessage = ''
+                        if ($progressReported) {
+                            if ($progressNode -is [ValueType] -or $progressNode -is [string]) {
+                                $progressPercent = Clamp-ProgressPercent $progressNode
+                            } else {
+                                try { if ($progressNode.PSObject.Properties['percent']) { $progressPercent = Clamp-ProgressPercent $progressNode.percent } } catch {}
+                                try { if ($progressNode.PSObject.Properties['message']) { $progressMessage = [string]$progressNode.message } } catch {}
+                            }
+                        }
+                        Update-ArenaProgressState $sessionId $callTool $progressPercent $progressMessage $progressReported $false $false | Out-Null
+                        $progressStarted = $true
+                    }
+                    $pending.Add(@{ id=$commandId; tool=$callTool; args=$callArgs; signal=$signal; result=$null; deduplicated=$false; activityId=$activityId })
+                }
             }
         }
         $wake = Ensure-Signal $sessionId
@@ -14229,15 +15556,31 @@ end
         foreach ($item in $pending) {
             if ($item.id) {
                 $removed = $null
-                [void]$Shared.ResultSignals.TryRemove($item.id, [ref]$removed)
-                [void]$Shared.ResultChunks.TryRemove($item.id, [ref]$removed)
+                $finalResultJson = $null
+                [System.Threading.Monitor]::Enter($Shared.CommandResultLock)
+                try {
+                    [void]$Shared.ResultSignals.TryRemove($item.id, [ref]$removed)
+                    if ($item.result -eq $null -and $Shared.CommandResults.TryRemove($item.id, [ref]$finalResultJson)) {
+                        $item.result = $finalResultJson
+                    }
+                } finally {
+                    [System.Threading.Monitor]::Exit($Shared.CommandResultLock)
+                }
+                if ($item.result -and $item.id -and $item.result -eq $finalResultJson) {
+                    Remove-PendingCommand $sessionId $item.id | Out-Null
+                    Save-DedupedPlayResult $sessionId $item.tool $item.args $item.result
+                }
+                if ($item.result) { [void]$Shared.ResultChunks.TryRemove($item.id, [ref]$removed) }
                 try { $item.signal.Dispose() } catch {}
             }
             if ($item.result) {
                 $suffix = if ($item.deduplicated) { ',"deduplicated":true' } else { '' }
                 $parts.Add('{"tool":' + (To-Json $item.tool 3) + ',"response":' + $item.result + $suffix + '}')
             } else {
-                $parts.Add('{"tool":' + (To-Json $item.tool 3) + ',"response":{"ok":false,"code":"STUDIO_TIMEOUT","error":"Roblox Studio did not answer in time. The command may still be running in Studio - nothing is lost. The next call waits for it to finish."}}')
+                $pendingState = $null
+                if ($item.id) { $pendingState = Get-PendingInfo $sessionId $item.id }
+                $stateJson = if ($pendingState) { To-Json @{ commandId=$item.id; status=$pendingState.status; queuedAt=$pendingState.queuedAt; startedAt=$pendingState.startedAt } 6 } else { 'null' }
+                $parts.Add('{"tool":' + (To-Json $item.tool 3) + ',"response":{"ok":false,"code":"STUDIO_TIMEOUT","commandId":' + (To-Json $item.id 3) + ',"error":"Roblox Studio did not answer before the HTTP deadline. The command remains tracked by commandId and the watchdog will abandon it if executor heartbeats stop.","pending":' + $stateJson + '}}')
             }
         }
         return '[' + ($parts -join ',') + ']'
@@ -14256,8 +15599,10 @@ end
         if ($Shared.ProgressStates.TryGetValue([string]$sessionId, [ref]$progressJson) -and -not [string]::IsNullOrWhiteSpace($progressJson)) {
             try { $progressView = $progressJson | ConvertFrom-Json } catch {}
         }
+        $executorSnapshot = Get-SessionExecutorSnapshot $sessionId
         $envelope = @{
-            bridgeVersion = '7.0.3'
+            bridgeVersion = '7.0.4'
+            executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent = 0, never an error. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
                 lastPercent = $(if ($progressView) { [double]$progressView.percent } else { 0 })
@@ -14362,7 +15707,7 @@ end
         $pending = Get-PendingCommands $sessionId
         if ($pending.Count -gt 0) {
             $envelope.studioBusy = $pending
-            $busyNote = 'One or more commands are still running inside Roblox Studio (they survived a timeout - the work is NOT lost). Studio executes commands strictly one after another, so this and every following call automatically wait for them to finish before doing anything - you can never measure against a still-running script. Results that already arrived in the meantime are in _bridge.lateResults.'
+            $busyNote = 'One or more commands are still tracked in Roblox Studio (a client HTTP timeout does not immediately kill work). The executor runs serially and sends liveness heartbeats; if a command exceeds its safety budget or heartbeats stop, the watchdog marks it STUDIO_ABANDONED / EXECUTOR_UNRESPONSIVE so the queue can recover. Inspect _bridge.studioBusy and _bridge.lateResults before retrying; partial changes may have occurred.'
             if ($envelope.attention) {
                 $envelope.attention = $envelope.attention + ' ' + $busyNote
             } else {
@@ -14410,7 +15755,7 @@ end
                         runningInStudio = $pending
                         lateResults     = $late
                         count           = $pending.Count
-                        note = 'Commands in runningInStudio are still executing inside Studio (they survive timeouts). Your next tool call automatically waits for them - nothing needs to be killed.'
+                        note = 'Commands in runningInStudio are tracked by commandId and execute serially. HTTP timeouts do not immediately discard them; an executor heartbeat/budget watchdog eventually abandons a dead or hung command and reports whether partial changes may have occurred.'
                     }
                 }
             }
@@ -14529,6 +15874,7 @@ end
                 $entry = Get-SessionEntry $sessionId
                 $queue = Ensure-Queue $sessionId
                 $pending = Get-PendingCommands $sessionId
+                $executorSnapshot = Get-SessionExecutorSnapshot $sessionId
                 $assetCacheEntries = 0
                 $bsSim = $true
                 $bsNotify = $false
@@ -14543,7 +15889,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.0.3'
+                        bridgeVersion = '7.0.4'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -14552,6 +15898,7 @@ end
                         accessMode = if ($entry) { $entry.accessMode } else { $null }
                         queuedCommands = $queue.Count
                         runningInStudio = $pending
+                        executor = $executorSnapshot
                         connectedPlaces = $Shared.Sessions.Count
                         storedBlobs = $Shared.Blobs.Count
                         assetCacheEntries = $assetCacheEntries
@@ -14796,7 +16143,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.0.3'
+                        serverVersion = '7.0.4'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -14825,35 +16172,36 @@ end
                 }
                 $sid = [string]$entry.sessionId
                 Test-PollRateSane $sid
-                # Version 7.0.3: Die vom Plugin gemeldeten Interval-Zaehler
-                # (Anfragen, Poll-Dauer, Pausen, Befehle) ablegen, damit die
-                # Diagnose sie zusammen mit den Bridge-Zahlen zeigt.
+                Invoke-SessionExecutorWatchdog $sid
                 if ($body.perf) { Record-PluginPerf $sid $body.perf }
                 $queue = Ensure-Queue $sid
                 $signal = Ensure-Signal $sid
 
-                # Version 7.0.3: HARTE OBERGRENZE. Eine Anfrage darf nie
-                # "long running" werden: Roblox Studio fuehrt nur 3 Anfragen
-                # gleichzeitig aus, und lange offene Anfragen stallen dort
-                # nachweislich die naechsten (Roblox-Staff). Das Plugin fragt
-                # ohnehin nur noch 4-6 Sekunden an; die Grenze schuetzt auch
-                # gegen ein altes Plugin im Ordner.
-                $waitSeconds = 20
-                if ($body.wait) {
-                    $waitSeconds = [Math]::Min([double]$body.wait, 25)
-                }
-                if ($waitSeconds -gt 8) { $waitSeconds = 8 }
+                $waitSeconds = 8
+                if ($body.wait) { $waitSeconds = [Math]::Min([double]$body.wait, 8) }
                 $deadline = [DateTime]::UtcNow.AddSeconds($waitSeconds)
                 $collected = New-Object System.Collections.Generic.List[string]
-
-                # Offene Long-Polls werden gezählt. Daran erkennt die Anmeldung,
-                # ob ein Studio-Fenster wirklich noch lebt.
                 [void]$Shared.Pollers.AddOrUpdate($sid, 1, { param($key, $old) $old + 1 })
                 try {
                     while ($true) {
+                        $resetStamp = [long]0
+                        $resetRequested = $Shared.ExecutorResetRequests.TryGetValue($sid, [ref]$resetStamp)
+                        $cancelledNow = @(Get-SessionCancellationIds $sid)
+                        if ($resetRequested -or $cancelledNow.Count -gt 0) { break }
                         $itemJson = $null
-                        while ($collected.Count -lt 16 -and $queue.TryDequeue([ref]$itemJson)) {
-                            $collected.Add($itemJson)
+                        [System.Threading.Monitor]::Enter($Shared.CommandQueueLock)
+                        try {
+                            while ($collected.Count -lt 16 -and $queue.TryDequeue([ref]$itemJson)) {
+                                try {
+                                    $candidate = $itemJson | ConvertFrom-Json
+                                    $pendingInfo = Get-PendingInfo $sid ([string]$candidate.id)
+                                    if ($candidate.id -and $pendingInfo -and [string]$pendingInfo.status -eq 'queued') {
+                                        $collected.Add([string]$itemJson)
+                                    }
+                                } catch {}
+                            }
+                        } finally {
+                            [System.Threading.Monitor]::Exit($Shared.CommandQueueLock)
                         }
                         if ($collected.Count -gt 0) { break }
                         if ([DateTime]::UtcNow -ge $deadline) { break }
@@ -14864,63 +16212,93 @@ end
                     [void]$Shared.Pollers.AddOrUpdate($sid, 0, { param($key, $old) [Math]::Max(0, $old - 1) })
                 }
 
+                $resetStamp = [long]0
+                $resetRequested = $Shared.ExecutorResetRequests.TryGetValue($sid, [ref]$resetStamp)
+                $cancelledIds = @(Get-SessionCancellationIds $sid)
+                if ($resetRequested) { $collected.Clear() }
+                if (-not $resetRequested) {
+                    foreach ($commandJson in $collected) {
+                        try { $deliveredCommand = $commandJson | ConvertFrom-Json; Mark-CommandDelivered $sid ([string]$deliveredCommand.id) | Out-Null } catch {}
+                    }
+                }
                 $mode = 'readwrite'
                 [void]$Shared.AccessModes.TryGetValue($sid, [ref]$mode)
-                # Version 7.0.3: Der Diagnosewunsch geht mit dem Poll-Ergebnis
-                # zurueck; das Plugin legt seine Zaehler dann an die NAECHSTE
-                # Anfrage - es wird KEINE zusaetzliche Anfrage gesendet.
                 $perfFlag = 'false'
                 if (Test-PerfEnabled) { $perfFlag = 'true' }
-                $json = '{"ok":true,"accessMode":' + (To-Json $mode 3) + ',"perf":' + $perfFlag + ',"commands":[' + ($collected -join ',') + ']}'
+                $commandJson = '[' + ($collected -join ',') + ']'
+                $json = '{"ok":true,"accessMode":' + (To-Json $mode 3) + ',"perf":' + $perfFlag + ',"commands":' + $commandJson + ',"cancelledCommands":' + (To-Json $cancelledIds 6) + ',"resetExecutor":' + $(if ($resetRequested) { 'true' } else { 'false' }) + ',"queueDepth":' + [string]$queue.Count + '}'
                 Send-RawJson $context 200 $json
                 continue
             }
 
             if ($path -eq '/plugin/result') {
-                if ($body -and $body.commandId) {
+                if ($body -and $body.commandId -and $body.sessionId) {
                     $commandId = [string]$body.commandId
                     $sidForResult = [string]$body.sessionId
-                    $pendingInfo = Get-PendingInfo $sidForResult $commandId
+                    if ((Get-CommandOwner $commandId) -ne $sidForResult) {
+                        Send-Json $context 403 @{ ok=$false; code='COMMAND_OWNER_MISMATCH'; error='This commandId does not belong to the supplied Studio session.' }
+                        continue
+                    }
+                    $dedupeKey = Get-CommandControlKey $sidForResult $commandId
+                    if ($Shared.CompletedCommandIds.ContainsKey($dedupeKey)) {
+                        Send-Json $context 200 @{ ok=$true; duplicate=$true; commandId=$commandId }
+                        continue
+                    }
                     $completeJson = $null
                     if ($body.chunkCount) {
+                        $expected = 0; $index = 0
+                        try { $expected = [int]$body.chunkCount; $index = [int]$body.chunkIndex } catch {}
+                        if ($expected -lt 1 -or $expected -gt 256 -or $index -lt 1 -or $index -gt $expected -or [string]::IsNullOrEmpty([string]$body.chunk)) {
+                            Send-Json $context 400 @{ ok=$false; code='BAD_ARGS'; error='Invalid result chunk coordinates.'; commandId=$commandId }
+                            continue
+                        }
                         $bag = $null
                         if (-not $Shared.ResultChunks.TryGetValue($commandId, [ref]$bag)) {
                             $bag = [System.Collections.Concurrent.ConcurrentDictionary[int,string]]::new()
                             [void]$Shared.ResultChunks.TryAdd($commandId, $bag)
                             [void]$Shared.ResultChunks.TryGetValue($commandId, [ref]$bag)
                         }
-                        $bag[[int]$body.chunkIndex] = [string]$body.chunk
-                        $expected = [int]$body.chunkCount
+                        $bag[$index] = [string]$body.chunk
+                        $Shared.ResultChunkAt[$commandId] = Get-UnixSeconds
                         if ($bag.Count -ge $expected) {
                             $builder = New-Object System.Text.StringBuilder
-                            for ($i=1; $i -le $expected; $i++) { $piece=$null; if ($bag.TryGetValue($i,[ref]$piece)) { [void]$builder.Append($piece) } }
-                            $completeJson = $builder.ToString()
+                            $complete = $true
+                            for ($i=1; $i -le $expected; $i++) {
+                                $piece = $null
+                                if ($bag.TryGetValue($i,[ref]$piece)) { [void]$builder.Append($piece) } else { $complete = $false; break }
+                            }
+                            if ($complete) { $completeJson = $builder.ToString() }
                         }
                     } elseif ($body.json) { $completeJson = [string]$body.json }
-                    elseif ($body.result) { $completeJson = (To-Json $body.result 40) }
+                    elseif ($body.result) { $completeJson = To-Json $body.result 40 }
+
                     if ($null -ne $completeJson) {
-                        $activityMapJson = $null
-                        if ($Shared.ActivityCommandMap.TryRemove($commandId, [ref]$activityMapJson)) {
-                            try {
-                                $activityMap = $activityMapJson | ConvertFrom-Json
-                                Complete-ArenaActivity ([string]$activityMap.sessionId) ([string]$activityMap.activityId) ([string]$activityMap.tool) $activityMap.args $completeJson
-                            } catch {}
-                        }
-                        $Shared.CommandResults[$commandId] = $completeJson
-                        $signal = $null
-                        if ($Shared.ResultSignals.TryGetValue($commandId, [ref]$signal)) {
-                            [void]$signal.Set()
+                        $accepted = Complete-CommandResult $sidForResult $commandId $completeJson 'plugin'
+                        if ($accepted) {
+                            $discardChunks = $null
+                            [void]$Shared.ResultChunks.TryRemove($commandId, [ref]$discardChunks)
+                            [void]$Shared.ResultChunkAt.TryRemove($commandId, [ref]$discardChunks)
+                            Send-Json $context 200 @{ ok=$true; accepted=$true; commandId=$commandId }
+                        } elseif ($Shared.CompletedCommandIds.ContainsKey($dedupeKey)) {
+                            Send-Json $context 200 @{ ok=$true; duplicate=$true; commandId=$commandId }
                         } else {
-                            # The HTTP waiter already left: deliver exactly once
-                            # through get_pending / the next envelope.
-                            Queue-LateResult $sidForResult $commandId $completeJson $pendingInfo
-                            $discardResult = $null
-                            [void]$Shared.CommandResults.TryRemove($commandId, [ref]$discardResult)
-                            Remove-PendingCommand $sidForResult $commandId | Out-Null
+                            Send-Json $context 409 @{ ok=$false; code='COMMAND_RESULT_REJECTED'; commandId=$commandId; error='The result payload did not match its commandId or command state.' }
                         }
+                    } else {
+                        Send-Json $context 200 @{ ok=$true; received=$true; complete=$false; commandId=$commandId }
                     }
+                } else {
+                    Send-Json $context 400 @{ ok=$false; code='BAD_ARGS'; error='sessionId and commandId are required for a Studio result.' }
                 }
-                Send-Json $context 200 @{ ok=$true }
+                continue
+            }
+
+            if ($path -eq '/plugin/command_state') {
+                if (-not $body) {
+                    Send-Json $context 400 @{ ok=$false; code='BAD_ARGS'; error='JSON body required.' }
+                } else {
+                    Send-Json $context 200 (Invoke-PluginCommandState $body)
+                }
                 continue
             }
 
@@ -14966,8 +16344,9 @@ end
                     $removed = $null
                     [void]$Shared.Presence.TryRemove($sid, [ref]$removed)
                     $Shared.Pollers[$sid] = 0
-                    # Studio ist weg: weiter "laufende" Befehle koennen nicht mehr
-                    # ausgefuehrt werden - also der KI nicht mehr als laufend melden.
+                    # Studio is gone: finish pending callers with a diagnostic result;
+                    # never strand them by silently deleting the tracking bag.
+                    Reset-SessionQueue $sid 'Roblox Studio disconnected while this command was pending. It was abandoned because the old plugin executor is no longer available.' 'EXECUTOR_UNAVAILABLE' | Out-Null
                     [void]$Shared.PendingCommands.TryRemove($sid, [ref]$removed)
                 }
                 Send-Json $context 200 @{ ok = $true }
@@ -15002,7 +16381,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.0.3'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.0.4'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -15025,14 +16404,15 @@ end
             }
 
             if ($path -eq '/api/status') {
+                $queueSnapshot = Get-QueueSnapshot $sessionId
                 $statusSim = $false
                 $statusNotify = $false
                 try { $statusSim = [bool]$Shared.BridgeSettings.simAllowed } catch {}
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.0.3'
-                    serverVersion = '7.0.3'
+                    bridgeVersion = '7.0.4'
+                    serverVersion = '7.0.4'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -15040,11 +16420,48 @@ end
                     pluginVersion = if ($sessionEntry) { [string]$sessionEntry.pluginVersion } else { $null }
                     pluginOutdated = if ($sessionEntry) { [bool]$sessionEntry.versionMismatch } else { $false }
                     restartStudioHint = if ($sessionEntry -and [bool]$sessionEntry.versionMismatch) { 'Studio neu starten: Plugin-Version ist veraltet; Simulationen warten.' } else { $null }
+                    queue = $queueSnapshot
+                    executor = $queueSnapshot.executor
                     settings = @{
                         simAllowed = $statusSim
                         notifyOnDone = $statusNotify
                     }
                 }
+                continue
+            }
+
+            if ($path -eq '/api/queue') {
+                if ($context.Request.HttpMethod -eq 'GET') {
+                    Send-Json $context 200 (Get-QueueSnapshot $sessionId)
+                    continue
+                }
+                if ($context.Request.HttpMethod -ne 'POST' -or -not $body) {
+                    Send-Json $context 405 @{ ok=$false; error='Use GET /api/queue for status or POST /api/queue with { action, commandId? }.' }
+                    continue
+                }
+                $action = ([string]$body.action).Trim().ToLowerInvariant()
+                if ($action -eq 'cancel') {
+                    $commandId = [string]$body.commandId
+                    if ([string]::IsNullOrWhiteSpace($commandId)) {
+                        Send-Json $context 400 @{ ok=$false; code='BAD_ARGS'; error='commandId is required for action=cancel.' }
+                        continue
+                    }
+                    $cancelled = Request-CommandCancel $sessionId $commandId 'The command was cancelled through the queue control endpoint.'
+                    if (-not $cancelled) {
+                        Send-Json $context 404 @{ ok=$false; code='PENDING_COMMAND_NOT_FOUND'; error='No pending command with this commandId belongs to the selected Place.'; commandId=$commandId }
+                        continue
+                    }
+                    Add-BridgeEvent $sessionId 'command_cancelled' 'A Studio command was cancelled through queue controls.' @{ commandId=$commandId }
+                    Send-Json $context 200 @{ ok=$true; action='cancel'; commandId=$commandId; queue=(Get-QueueSnapshot $sessionId) }
+                    continue
+                }
+                if ($action -eq 'reset' -or $action -eq 'clear') {
+                    $resetCount = Reset-SessionQueue $sessionId 'The Studio executor queue was manually reset through queue controls.'
+                    Add-BridgeEvent $sessionId 'executor_reset' 'The Studio executor queue was reset; pending commands were marked cancelled.' @{ abandonedCount=$resetCount }
+                    Send-Json $context 200 @{ ok=$true; action='reset'; cancelledCommands=$resetCount; queue=(Get-QueueSnapshot $sessionId) }
+                    continue
+                }
+                Send-Json $context 400 @{ ok=$false; code='BAD_ARGS'; error="Unknown queue action '$action'. Use cancel or reset." }
                 continue
             }
 
@@ -15107,7 +16524,9 @@ end
                 }
                 $timeout = 90
                 if ($body.timeoutSeconds) { $timeout = [Math]::Min([int]$body.timeoutSeconds, 180) }
-                $resultsJson = Invoke-PluginToolsParallel $sessionId $body.calls $timeout
+                $parallelProgress = $null
+                try { if ($body.PSObject.Properties['progress']) { $parallelProgress = $body.progress } } catch {}
+                $resultsJson = Invoke-PluginToolsParallel $sessionId $body.calls $timeout $parallelProgress
                 $envelope = New-Envelope $sessionId
                 Send-RawJson $context 200 ('{"_bridge":' + (To-Json $envelope 20) + ',"ok":true,"results":' + $resultsJson + '}')
                 continue
@@ -15173,6 +16592,13 @@ end
                 # request reaches the bridge. A Studio timeout deliberately
                 # stays blue/running until its late result arrives.
                 $activityId = New-ArenaActivity $sessionId $tool $toolArgs
+                $argumentCheck = Test-CommandArguments $tool $toolArgs
+                if (-not $argumentCheck.ok) {
+                    Complete-ArenaActivity $sessionId $activityId $tool $toolArgs (To-Json $argumentCheck 12)
+                    $argumentCheck._bridge = (New-Envelope $sessionId)
+                    Send-Json $context 400 $argumentCheck
+                    continue
+                }
 
                 # ---------------- ASSET-VORPRUEFUNG ------------------------
                 # Die Id muss zum Typ passen, BEVOR Studio angefasst wird.
@@ -15348,7 +16774,7 @@ end
                         code = 'STUDIO_TIMEOUT'
                         error = "Roblox Studio did not answer within $timeout seconds."
                         workIsLost = $false
-                        hint = 'The command is STILL RUNNING inside Studio - nothing was lost and nothing was killed. Studio executes commands strictly one after another: your next call automatically waits until this one finished (you will never measure against a still-running script). When the result arrives it is delivered in _bridge.lateResults of your next response.'
+                        hint = 'The command remains tracked by commandId and may still be running; the executor enforces a hard budget and heartbeat watchdog so a hung command cannot block the queue forever. Check GET /api/queue and _bridge.studioBusy / _bridge.lateResults. If it is abandoned, inspect for partial changes before retrying.'
                         studio = if ($entryNow) { $entryNow.state } else { $null }
                         betterWay = 'For work that takes longer than 60 seconds: repeat this call with args.asJob=true (or use the start_job tool). You get a jobId back immediately and poll it with job_status / job_result - there is no timeout to hit.'
                     }
@@ -15790,9 +17216,31 @@ function Remove-DeadSession {
         [void]$script:Shared.TokenSessions.TryRemove($token, [ref]$removedSession)
     }
     $junk = $null
-    foreach ($bagName in @('AccessModes','Pollers','Presence','PendingCommands','LateResults','PlayRetryDedupe','DocsSent','AiPlayIntents','LastPlayEvents','RunOwners','UserActiveAt','AgentKeys','AgentQueues','AgentResults','AgentStates','AgentLastSeen','CommandQueues','CommandSignals','ActivityLogs','ActivityCommandMap')) {
+    foreach ($bagName in @('AccessModes','Pollers','Presence','PendingCommands','LateResults','PlayRetryDedupe','DocsSent','AiPlayIntents','LastPlayEvents','RunOwners','UserActiveAt','AgentKeys','AgentQueues','AgentResults','AgentStates','AgentLastSeen','CommandQueues','CommandSignals','ActivityLogs','ActivityCommandMap','ExecutorStates','ExecutorResetRequests')) {
         try { [void]$script:Shared.$bagName.TryRemove($SessionId, [ref]$junk) } catch {}
     }
+    # Command-level records use commandId keys, so remove them through the
+    # explicit owner map rather than leaving result/signalling state behind.
+    try {
+        foreach ($ownerPair in @($script:Shared.CommandOwners.GetEnumerator())) {
+            if ([string]$ownerPair.Value -ne $SessionId) { continue }
+            $commandId = [string]$ownerPair.Key
+            [void]$script:Shared.CommandOwners.TryRemove($commandId, [ref]$junk)
+            [void]$script:Shared.CommandStates.TryRemove($commandId, [ref]$junk)
+            [void]$script:Shared.CommandResults.TryRemove($commandId, [ref]$junk)
+            [void]$script:Shared.ResultChunks.TryRemove($commandId, [ref]$junk)
+            [void]$script:Shared.ResultChunkAt.TryRemove($commandId, [ref]$junk)
+            $signal = $null
+            if ($script:Shared.ResultSignals.TryRemove($commandId, [ref]$signal)) { try { $signal.Dispose() } catch {} }
+        }
+        $prefix = $SessionId + ':'
+        foreach ($key in @($script:Shared.CancelRequests.Keys)) {
+            if ([string]$key -like ($prefix + '*')) { [void]$script:Shared.CancelRequests.TryRemove([string]$key, [ref]$junk) }
+        }
+        foreach ($key in @($script:Shared.CompletedCommandIds.Keys)) {
+            if ([string]$key -like ($prefix + '*')) { [void]$script:Shared.CompletedCommandIds.TryRemove([string]$key, [ref]$junk) }
+        }
+    } catch {}
     # Version 7.0.3: Auch die Diagnose-Eintraege dieser Sitzung entfernen,
     # damit wiederholtes Verbinden/Trennen nichts ansammelt.
     try {
@@ -17302,7 +18750,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.0.3)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.0.4)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -17411,6 +18859,7 @@ function Update-PlaceProgressVisual {
     $state = [string]$snapshot.State
     $color = '#FF4C9BFF'      # arbeitet = blau
     $label = 'Arena arbeitet gerade...'
+    if ($state -eq 'working') { $label = 'Arena arbeitet gerade...' }
     if ($state -eq 'done') { $color = '#FF38D16C'; $label = 'fertig' }
     elseif ($state -eq 'waiting') { $color = '#FF8A93A6'; $label = 'wartet auf Arena / keine Rueckmeldung' }
     elseif ($state -eq 'error') { $color = '#FFE11D48'; $label = 'Fehler' }
@@ -17425,34 +18874,13 @@ function Update-PlaceProgressVisual {
     $Row.ProgressPercent.Text = ($percent.ToString() + ' %')
     $Row.ProgressPercent.Foreground = Get-Brush $color
     $tooltip = Format-ProgressMessage $snapshot
-    if ($snapshot.AutoSet) { $tooltip = $tooltip + '  (Automatisch gesetzt)' }
-    if ($snapshot.CallsWithProgress -gt 0) {
-        $tooltip = $tooltip + ('  [Fortschrittsvertrag: {0} von {1} Aufrufen]' -f $snapshot.CallsWithProgress, $snapshot.Calls)
-    }
     $Row.ProgressBar.ToolTip = $tooltip
     $Row.ProgressText.ToolTip = $tooltip
     $Row.ProgressPanel.ToolTip = $tooltip
 }
 
-function Get-ProgressContractSummary {
-    # Dezente Befolgungsstatistik fuer Einstellungen und Diagnosebericht.
-    $calls = 0
-    $withProgress = 0
-    try {
-        foreach ($pair in $script:Shared.ProgressStates.GetEnumerator()) {
-            $state = $null
-            try { $state = ($pair.Value | ConvertFrom-Json) } catch { $state = $null }
-            if ($null -eq $state) { continue }
-            $calls += [int]$state.calls
-            $withProgress += [int]$state.callsWithProgress
-        }
-    } catch {}
-    return ('Fortschrittsvertrag: {0} von {1} Aufrufen' -f $withProgress, $calls)
-}
-
 function Get-ProgressDiagnoseLines {
     $lines = New-Object System.Collections.Generic.List[string]
-    $lines.Add((Get-ProgressContractSummary))
     try {
         foreach ($pair in $script:Shared.ProgressStates.GetEnumerator()) {
             $state = $null
@@ -17461,7 +18889,7 @@ function Get-ProgressDiagnoseLines {
             $name = ''
             try { $name = [string]$script:PlaceNames[[string]$pair.Key] } catch {}
             if ([string]::IsNullOrWhiteSpace($name)) { $name = [string]$pair.Key }
-            $lines.Add(('  {0}: {1} % / {2} - "{3}" (Aufrufe {4}, davon mit Fortschritt {5})' -f $name, [string]$state.percent, [string]$state.state, [string]$state.message, [string]$state.calls, [string]$state.callsWithProgress))
+            $lines.Add(('  {0}: {1} % / {2} - "{3}"' -f $name, [string]$state.percent, [string]$state.state, [string]$state.message))
             foreach ($h in @($state.history)) { $lines.Add('      ' + [string]$h) }
         }
     } catch {}
@@ -17602,58 +19030,6 @@ function Update-HandoffCard {
             break
         }
     } catch {}
-}
-
-function Get-SettingsNotificationLines {
-    # Version 7.0.0: Eine rote "1" allein sagt dem Nutzer nichts. Hier steht
-    # KONKRET, was los ist - mit Uhrzeit des letzten Checks bzw. der Sitzung.
-    $lines = New-Object System.Collections.Generic.List[string]
-    try {
-        if ($script:UpdateInfoState -and [bool]$script:UpdateInfoState.IsError) {
-            $when = 'unbekannt'
-            try { if ($script:UpdateDetails -and $script:UpdateDetails.at) { $when = ([DateTime]$script:UpdateDetails.at).ToString('HH:mm') } } catch {}
-            $detail = 'Update-Suche fehlgeschlagen'
-            $reason = ''
-            try { if ($script:UpdateDetails -and $script:UpdateDetails.error) { $reason = [string]$script:UpdateDetails.error } } catch {}
-            if ([string]::IsNullOrWhiteSpace($reason)) { $reason = 'version.json nicht erreichbar' }
-            $lines.Add(('{0} - {1}, letzter Check {2}' -f $detail, $reason, $when))
-        } else {
-            $lines.Add('Updates: alles aktuell, kein Handlungsbedarf.')
-        }
-    } catch {}
-    try {
-        foreach ($pair in $script:Shared.Sessions.GetEnumerator()) {
-            $item = $null
-            try { $item = $pair.Value | ConvertFrom-Json } catch { $item = $null }
-            if ($null -eq $item) { continue }
-            $name = ''
-            try { $name = [string]$script:PlaceNames[[string]$item.sessionId] } catch {}
-            if ([string]::IsNullOrWhiteSpace($name)) { $name = [string]$item.placeName }
-            if ($item.versionMismatch -eq $true) {
-                $lines.Add(('{0}: Plugin veraltet (Plugin {1}, Bridge 7.0.3) - Roblox Studio einmal neu starten, sonst warten neue Werkzeuge.' -f $name, [string]$item.pluginVersion))
-            }
-        }
-    } catch {}
-    try {
-        foreach ($pair in $script:Shared.ProgressStates.GetEnumerator()) {
-            $state = $null
-            try { $state = ($pair.Value | ConvertFrom-Json) } catch { $state = $null }
-            if ($null -eq $state) { continue }
-            $snapshot = Get-ProgressStateSnapshot ([string]$pair.Key)
-            if ($null -eq $snapshot) { continue }
-            if ([string]$snapshot.State -eq 'waiting') {
-                $name = ''
-                try { $name = [string]$script:PlaceNames[[string]$pair.Key] } catch {}
-                $lines.Add(('{0}: Arena wartet auf Rueckmeldung ({1} %) - "{2}"' -f $name, [string]$snapshot.Percent, (Format-ProgressMessage $snapshot)))
-            } elseif ([string]$snapshot.State -eq 'working') {
-                $name = ''
-                try { $name = [string]$script:PlaceNames[[string]$pair.Key] } catch {}
-                $lines.Add(('{0}: Arena arbeitet ({1} %) - "{2}"' -f $name, [string]$snapshot.Percent, (Format-ProgressMessage $snapshot)))
-            }
-        }
-    } catch {}
-    $lines.Add((Get-ProgressContractSummary))
-    return $lines
 }
 
 function Open-ArenaAiPage {
@@ -17834,7 +19210,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.0.3)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.0.4)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -19264,7 +20640,7 @@ function New-Row {
     $grid.ColumnDefinitions.Add($menuCol)
 
     $namePanel = [System.Windows.Controls.Grid]::new()
-    $namePanel.VerticalAlignment = 'Center'
+    $namePanel.VerticalAlignment = 'Top'
     $iconCol2 = [System.Windows.Controls.ColumnDefinition]::new(); $iconCol2.Width = [System.Windows.GridLength]::Auto
     $titleCol = [System.Windows.Controls.ColumnDefinition]::new()
     $namePanel.ColumnDefinitions.Add($iconCol2)
@@ -19305,6 +20681,7 @@ function New-Row {
     $staleText.TextTrimming = 'CharacterEllipsis'
     $titleStack = [System.Windows.Controls.StackPanel]::new()
     $titleStack.VerticalAlignment = 'Center'
+    $titleStack.Margin = [System.Windows.Thickness]::new(0, 5, 14, 0)
     $titleStack.Children.Add($title) | Out-Null
     $titleStack.Children.Add($staleText) | Out-Null
     [System.Windows.Controls.Grid]::SetColumn($titleStack, 1)
@@ -19323,14 +20700,16 @@ function New-Row {
     $progressText.Foreground = Get-Brush '#FF6FB6FF'
     $progressText.FontSize = 11.5
     $progressText.FontWeight = 'SemiBold'
+    $progressText.VerticalAlignment = 'Center'
     $progressText.Visibility = 'Collapsed'
     $progressBar = [System.Windows.Controls.ProgressBar]::new()
     $progressBar.Minimum = 0
     $progressBar.Maximum = 100
     $progressBar.Value = 0
-    $progressBar.Height = 5
+    $progressBar.Height = 6
+    $progressBar.VerticalAlignment = 'Center'
     $progressBar.Width = 150
-    $progressBar.Margin = [System.Windows.Thickness]::new(8, 4, 0, 0)
+    $progressBar.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
     $progressBar.Visibility = 'Collapsed'
     $progressBar.Foreground = Get-Brush '#FF4C9BFF'
     $progressBar.Background = Get-Brush '#33000000'
@@ -19339,18 +20718,23 @@ function New-Row {
     $progressPercent.Text = ''
     $progressPercent.Foreground = Get-Brush '#FF9CCBFF'
     $progressPercent.FontSize = 11
-    $progressPercent.Margin = [System.Windows.Thickness]::new(8, 0, 0, 0)
+    $progressPercent.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
     $progressPercent.VerticalAlignment = 'Center'
     $progressPercent.Visibility = 'Collapsed'
     $progressRow = [System.Windows.Controls.StackPanel]::new()
     $progressRow.Orientation = 'Horizontal'
     $progressRow.VerticalAlignment = 'Center'
+    $progressRow.Margin = [System.Windows.Thickness]::new(0, 3, 0, 5)
     $progressRow.Visibility = 'Collapsed'
     $progressRow.Children.Add($progressText) | Out-Null
     $progressRow.Children.Add($progressBar) | Out-Null
     $progressRow.Children.Add($progressPercent) | Out-Null
-    $namePanel.RowDefinitions.Add([System.Windows.Controls.RowDefinition]::new()) | Out-Null
-    $namePanel.RowDefinitions.Add([System.Windows.Controls.RowDefinition]::new()) | Out-Null
+    $titleRowDefinition = [System.Windows.Controls.RowDefinition]::new()
+    $titleRowDefinition.Height = [System.Windows.GridLength]::Auto
+    $progressRowDefinition = [System.Windows.Controls.RowDefinition]::new()
+    $progressRowDefinition.Height = [System.Windows.GridLength]::Auto
+    $namePanel.RowDefinitions.Add($titleRowDefinition) | Out-Null
+    $namePanel.RowDefinitions.Add($progressRowDefinition) | Out-Null
     [System.Windows.Controls.Grid]::SetRow($titleStack, 0)
     [System.Windows.Controls.Grid]::SetRow($progressRow, 1)
     $namePanel.Children.Add($progressRow) | Out-Null
@@ -19950,7 +21334,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.0.3)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.0.4)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -20276,7 +21660,7 @@ function New-MinimalPlaceRow {
     $content.ColumnDefinitions.Add($copyColumn) | Out-Null
 
     $namePanel = [System.Windows.Controls.StackPanel]::new()
-    $namePanel.VerticalAlignment = 'Center'
+    $namePanel.VerticalAlignment = 'Top'
     $title = [System.Windows.Controls.TextBlock]::new()
     $title.Text = Get-PlaceDisplayName $Studio $null
     $title.Foreground = Get-Brush '#F2F6FF'
@@ -20292,6 +21676,38 @@ function New-MinimalPlaceRow {
     $staleText.Visibility = if ($Studio.versionMismatch -eq $true) { 'Visible' } else { 'Collapsed' }
     $namePanel.Children.Add($title) | Out-Null
     $namePanel.Children.Add($staleText) | Out-Null
+    $progressText = [System.Windows.Controls.TextBlock]::new()
+    $progressText.Foreground = Get-Brush '#FF6FB6FF'
+    $progressText.FontSize = 11
+    $progressText.FontWeight = 'SemiBold'
+    $progressText.VerticalAlignment = 'Center'
+    $progressBar = [System.Windows.Controls.ProgressBar]::new()
+    $progressBar.Minimum = 0
+    $progressBar.Maximum = 100
+    $progressBar.Height = 6
+    $progressBar.Width = 120
+    $progressBar.VerticalAlignment = 'Center'
+    $progressBar.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
+    $progressBar.Foreground = Get-Brush '#FF4C9BFF'
+    $progressBar.Background = Get-Brush '#33000000'
+    $progressBar.BorderThickness = [System.Windows.Thickness]::new(0)
+    $progressPercent = [System.Windows.Controls.TextBlock]::new()
+    $progressPercent.Foreground = Get-Brush '#FF9CCBFF'
+    $progressPercent.FontSize = 10.5
+    $progressPercent.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
+    $progressPercent.VerticalAlignment = 'Center'
+    $progressPanel = [System.Windows.Controls.StackPanel]::new()
+    $progressPanel.Orientation = 'Horizontal'
+    $progressPanel.Margin = [System.Windows.Thickness]::new(0, 3, 0, 0)
+    $progressPanel.Visibility = 'Collapsed'
+    $progressPanel.Children.Add($progressText) | Out-Null
+    $progressPanel.Children.Add($progressBar) | Out-Null
+    $progressPanel.Children.Add($progressPercent) | Out-Null
+    $namePanel.Children.Add($progressPanel) | Out-Null
+    $row.ProgressPanel = $progressPanel
+    $row.ProgressBar = $progressBar
+    $row.ProgressText = $progressText
+    $row.ProgressPercent = $progressPercent
     [System.Windows.Controls.Grid]::SetColumn($namePanel, 0)
     $content.Children.Add($namePanel) | Out-Null
 
@@ -20592,7 +22008,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.0.3'
+    $versionText = '7.0.4'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -20920,11 +22336,9 @@ function Set-ArenaSwitchVisualState {
 
 function Open-SettingsWindow {
     $autoStartNow = Get-StartupEnabled
-    $notifyNow = $false
     $editorIconsNow = $true
     $progressNow = $true
     $perfNow = $false
-    try { $notifyNow = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch {}
     try { $editorIconsNow = [bool]$script:SettingsCache.editorIconsEnabled } catch {}
     try { $progressNow = [bool]$script:Shared.BridgeSettings.progressInPlaceList } catch {}
     try { $perfNow = [bool]$script:SettingsCache.perfDiagnostics } catch {}
@@ -21207,18 +22621,10 @@ function Open-SettingsWindow {
                                 <TextBlock Text="Der bisherige Studio-Run verlässt Edit Mode (EditModeActive=false). Die dokumentierte Roblox-Studio-API bietet keinen unterstützten Weg für Physik/Skripte bei aktivem Edit Mode. compile_check, run_lua und alle Bau-/Lesewerkzeuge bleiben verfügbar." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
                             </StackPanel>
                         </Border>
-                        <Border Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="14" Padding="16,12" Margin="0,10,0,0">
-                            <StackPanel>
-                                <CheckBox x:Name="NotifySwitch" Style="{StaticResource ArenaSwitch}" Content="Benachrichtigung, wenn Arena fertig ist"/>
-                                <CheckBox x:Name="ProgressSwitch" Style="{StaticResource ArenaSwitch}" Content="Fortschritt in der Place-Liste anzeigen" Margin="0,10,0,0"/>
-                            </StackPanel>
-                        </Border>
-
-                        <TextBlock Text="MITTEILUNGEN" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
+                        <TextBlock Text="PLACE-LISTE" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
                         <Border Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="14" Padding="16,12">
                             <StackPanel>
-                                <TextBlock x:Name="NotifyDetailText" Foreground="#DCE6FF" FontSize="11.5" TextWrapping="Wrap" LineHeight="19"/>
-                                <TextBlock x:Name="ProgressStatsText" Foreground="{StaticResource SwTextMuted}" FontSize="11" TextWrapping="Wrap" Margin="0,10,0,0"/>
+                                <CheckBox x:Name="ProgressSwitch" Style="{StaticResource ArenaSwitch}" Content="Fortschritt in der Place-Liste anzeigen"/>
                             </StackPanel>
                         </Border>
 
@@ -21226,7 +22632,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.0.3" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.0.4" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -21254,34 +22660,24 @@ function Open-SettingsWindow {
     $swTitleBar      = $settingsWindow.FindName('TitleBar')
     $swClose         = $settingsWindow.FindName('CloseButton')
     $startupSwitch   = $settingsWindow.FindName('StartupSwitch')
-    $notifySwitch    = $settingsWindow.FindName('NotifySwitch')
     $progressSwitch  = $settingsWindow.FindName('ProgressSwitch')
     $editorIconsSwitch = $settingsWindow.FindName('EditorIconsSwitch')
     $perfSwitch      = $settingsWindow.FindName('PerfSwitch')
     $updateText      = $settingsWindow.FindName('UpdateInfoText')
-    $notifyDetail    = $settingsWindow.FindName('NotifyDetailText')
-    $progressStats   = $settingsWindow.FindName('ProgressStatsText')
 
     $startupSwitch.IsChecked = $autoStartNow
-    $notifySwitch.IsChecked = $notifyNow
     $progressSwitch.IsChecked = $progressNow
     $editorIconsSwitch.IsChecked = $editorIconsNow
     $perfSwitch.IsChecked = $perfNow
-    foreach ($toggleSwitch in @($startupSwitch, $notifySwitch, $progressSwitch, $editorIconsSwitch, $perfSwitch)) {
+    foreach ($toggleSwitch in @($startupSwitch, $progressSwitch, $editorIconsSwitch, $perfSwitch)) {
         Set-ArenaSwitchVisualState $toggleSwitch
         $toggleSwitch.Add_Loaded({ param($s, $e) Set-ArenaSwitchVisualState $s })
     }
-    try {
-        $detailLines = @(Get-SettingsNotificationLines)
-        $notifyDetail.Text = ($detailLines -join "`n")
-        $progressStats.Text = Get-ProgressContractSummary
-    } catch {}
-
     if ($script:UpdateInfoState) {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.0.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.0.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -21332,16 +22728,6 @@ function Open-SettingsWindow {
         }
         Write-RuntimeLog "Leistungsdiagnose (Laufzeitmessung) $stateText."
     })
-    $notifySwitch.Add_Click({
-        param($s, $e)
-        $script:Shared.BridgeSettings.notifyOnDone = [bool]$s.IsChecked
-        $script:SettingsCache.notifyOnDone = [bool]$s.IsChecked
-        Save-BridgeSettingsFile
-        $stateText = 'deaktiviert'
-        if ($s.IsChecked) { $stateText = 'aktiviert' }
-        Write-RuntimeLog "Fertig-Benachrichtigung (report_done) $stateText."
-    })
-
     [void]$settingsWindow.ShowDialog()
 }
 
@@ -21350,7 +22736,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.0.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.0.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -21363,7 +22749,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.0.3'
+    $verText = '7.0.4'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

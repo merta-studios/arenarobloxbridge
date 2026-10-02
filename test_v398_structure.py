@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 7.0.3.
+"""Offline structure check for Arena Roblox Bridge 7.0.4.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.0.3"
+VERSION = "7.0.4"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -94,6 +94,9 @@ def main() -> int:
     source = raw.decode("utf-8-sig")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     require(version["version"] == VERSION, f"version.json is not {VERSION}")
+    release_notes = "\n".join(str(note) for note in version.get("notes", []))
+    require("Executor-Ausfallschutz" in release_notes and "7.0.4" in release_notes,
+            "version.json does not describe the 7.0.4 executor recovery release")
 
     # 6.1.1 shipped seven accidental fragments after the intended final exit,
     # including a bare closing parenthesis. Windows PowerShell parses the
@@ -705,22 +708,21 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '7.0.3'": 1,
-        'local ARENA_VERSION  = "7.0.3"': 1,
-        "version = '7.0.3'": 1,
-        "bridgeVersion = '7.0.3'": 3,
-        "bridgeVersion='7.0.3'": 1,
-        "serverVersion = '7.0.3'": 2,
-        "$versionText = '7.0.3'": 1,
-        "$verText = '7.0.3'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 7.0.3)": 1,
-        'Text="Arena Roblox Bridge - Version 7.0.3"': 1,
-        "Version 7.0.3 - aktuell. Beim naechsten Start": 2,
-        "Laufzeit-Identitaet: Bridge-Version=7.0.3": 1,
-        "Kurzbericht Fenster-Vorschau (Version 7.0.3)": 1,
-        "Arena Roblox Bridge - Leistungsbericht (Version 7.0.3)": 1,
-        "Arena Roblox Bridge - Place-Diagnose (Version 7.0.3)": 1,
-        "Plugin {1}, Bridge 7.0.3)": 1,
+        "DocsVersion     = '7.0.4'": 1,
+        'local ARENA_VERSION  = "7.0.4"': 1,
+        "version = '7.0.4'": 1,
+        "bridgeVersion = '7.0.4'": 3,
+        "bridgeVersion='7.0.4'": 1,
+        "serverVersion = '7.0.4'": 2,
+        "$versionText = '7.0.4'": 1,
+        "$verText = '7.0.4'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.0.4)": 1,
+        'Text="Arena Roblox Bridge - Version 7.0.4"': 1,
+        "Version 7.0.4 - aktuell. Beim naechsten Start": 2,
+        "Laufzeit-Identitaet: Bridge-Version=7.0.4": 1,
+        "Kurzbericht Fenster-Vorschau (Version 7.0.4)": 1,
+        "Arena Roblox Bridge - Leistungsbericht (Version 7.0.4)": 1,
+        "Arena Roblox Bridge - Place-Diagnose (Version 7.0.4)": 1,
     }
     for marker, expected_count in functional_version_counts.items():
         actual_count = source.count(marker)
@@ -756,7 +758,7 @@ def main() -> int:
             "Studio idle watcher returned to a 0.5-second polling cadence")
 
     # ------------------------------------------------------------------
-    # 7.0.3 regression guards: THE CAUSE OF THE IDLE LAG.
+    # 7.0.3 performance guards remain active in the 7.0.4 release.
     # The Studio plugin used to hold an HTTP request open permanently: a 12 s
     # long-poll that was immediately followed by the next request (100 % duty
     # cycle), plus a second permanent channel (a 5 s heartbeat). Roblox Studio
@@ -833,7 +835,7 @@ def main() -> int:
     require("$handlerBlock = $null\n        Write-BridgeLog" in source,
             "the fallback path must drop the unusable ScriptBlock before the "
             "worker falls back to the handler text")
-    require("if ($waitSeconds -gt 8) { $waitSeconds = 8 }" in source,
+    require("$waitSeconds = [Math]::Min([double]$body.wait, 8)" in source,
             "the server-side cap that keeps any poll request short is missing")
     perf_needle = '"perf":' + "' + $perfFlag"
     require(perf_needle in source,
@@ -907,6 +909,141 @@ def main() -> int:
     for marker in stale_702_functional:
         require(marker not in source, f"stale functional 7.0.2 literal remains: {marker}")
 
+    # 7.0.4 executor/queue recovery and Place-row presentation contract.
+    watchdog_start = source.index("function Invoke-SessionExecutorWatchdog")
+    watchdog_end = source.index("function Get-PendingCommands", watchdog_start)
+    watchdog = source[watchdog_start:watchdog_end]
+    for marker in (
+        "COMMAND_DELIVERY_UNCONFIRMED",
+        "EXECUTOR_UNAVAILABLE",
+        "EXECUTOR_DROPPED_COMMAND",
+        "STUDIO_ABANDONED",
+        "EXECUTOR_UNRESPONSIVE",
+        "$budget + 15",
+        "heartbeatAt -gt 0",
+        "queuedCommandIds",
+    ):
+        require(marker in watchdog, f"executor watchdog is missing recovery marker: {marker}")
+    require("function Mark-CommandDelivered" in source
+            and "phase -eq 'received_batch'" in source
+            and "phase -eq 'started'" in source
+            and "phase -eq 'heartbeat'" in source,
+            "command delivery/receipt/start/heartbeat state transitions are incomplete")
+    require("if ($executorSnapshot.alive)" in watchdog
+            and "if ($isRunning -and $executorSnapshot.alive)" in watchdog
+            and "after command receipt. The command was abandoned" in watchdog,
+            "lost acknowledgements are not reconciled against a fresh executor snapshot")
+    require("CompletedCommandIds.TryAdd($dedupeKey" in source
+            and "CommandOwners" in source
+            and "ResultChunkAt" in source,
+            "commandId-bound result ownership/deduplication/chunk cleanup is incomplete")
+    require("GET /api/queue" in source and "POST /api/queue" in source
+            and "if ($path -eq '/api/queue')" in source
+            and "action -eq 'cancel'" in source
+            and "action -eq 'reset'" in source,
+            "queue status/cancel/reset API controls are missing")
+    require("64 queued commands" in source and "function Test-CommandArguments" in source,
+            "queue limit or pre-queue argument validation is missing")
+    require("$isReferenceList = ($typeName -match '(?i)^\\s*ref\\[\\]')" in source
+            and "resolveMany intentionally accepts either ref[] or one ref" in source,
+            "argument validation rejects supported single-reference/selector forms")
+    require("function Enqueue-Command" in source and "CommandQueueLock" in source
+            and source.count("Enqueue-Command $sessionId $queue") >= 2,
+            "single/parallel queue insertion is not guarded by the atomic queue-cap helper")
+    require("Monitor]::Enter($Shared.CommandQueueLock)" in source
+            and "while ($queue.TryDequeue([ref]$raw))" in source
+            and "while ($collected.Count -lt 16 -and $queue.TryDequeue([ref]$itemJson))" in source,
+            "queue removal, reset and plugin dequeue are not serialized")
+    parallel_fn = source[source.index("function Invoke-PluginToolsParallel"):source.index("function New-Envelope", source.index("function Invoke-PluginToolsParallel"))]
+    require("progressPayload = $null" in parallel_fn
+            and "Update-ArenaProgressState $sessionId $callTool" in parallel_fn
+            and "PSObject.Properties.Remove('progress')" in parallel_fn,
+            "parallel calls do not report work/progress or strip metadata before queueing")
+    require("The plugin did not acknowledge receiving this command within 30 seconds" in source,
+            "a dropped plugin poll response can leave a command pending forever")
+
+    ground_start = source.index("tools.ground_height = function(args)")
+    ground_end = source.index("tools.measure_height = function(args)", ground_start)
+    ground_tool = source[ground_start:ground_end]
+    require("firstNonEmpty(args.positions, args.points)" in ground_tool
+            and "local z = minZ + iz * step" in ground_tool
+            and "estimate > 4000" in ground_tool
+            and "index % 128 == 0" in ground_tool,
+            "ground_height aliases/grid traversal/early sample cap/cooperative yield regressed")
+    probe_start = source.index("tools.probe_world = function(args)")
+    probe_end = source.index("tools.fill_region = function(args)", probe_start)
+    probe_tool = source[probe_start:probe_end]
+    require("estimatedSquare > 4000" in probe_tool
+            and "measuredRays % 128 == 0" in probe_tool
+            and "World probe job was cancelled" in probe_tool,
+            "probe_world can still run an unbounded, unresponsive ground scan")
+    measure_start = source.index("tools.measure_height = function(args)")
+    measure_end = source.index("tools.verify_measurable = function(args)", measure_start)
+    measure_tool = source[measure_start:measure_end]
+    require("decodeValue(args.point)" in measure_tool
+            and 'directionName == "up"' in measure_tool
+            and "resolveExcluded(firstNonEmpty(args.exclude, args.ignore))" in measure_tool,
+            "measure_height does not honor its documented point/direction/ignore arguments")
+    ray_many_start = source.index("tools.raycast_many = function(args)")
+    ray_many_end = source.index("tools.ground_height = function(args)", ray_many_start)
+    ray_many = source[ray_many_start:ray_many_end]
+    require("firstNonEmpty(args.rays, args.casts)" in ray_many
+            and "cast.length" in ray_many
+            and "max 500 per call" in ray_many,
+            "raycast_many ignores its documented rays/length contract or lacks a finite batch cap")
+    box_start = source.index("tools.parts_in_box = function(args)")
+    box_end = source.index("tools.what_is_in_the_way = function(args)", box_start)
+    spatial_queries = source[box_start:box_end]
+    require("args.center" in spatial_queries and "args.refA" in spatial_queries
+            and "spatialFilter(args)" in spatial_queries and "args.ref then" in spatial_queries
+            and "args.position or args.origin" in spatial_queries,
+            "documented spatial query aliases or filters are ignored by their handlers")
+    obstacle_start = source.index("tools.what_is_in_the_way = function(args)")
+    obstacle_end = source.index("tools.raycast_many = function(args)", obstacle_start)
+    require("args.from or args.origin" in source[obstacle_start:obstacle_end]
+            and "args.to or args.target" in source[obstacle_start:obstacle_end],
+            "what_is_in_the_way ignores its documented origin/target arguments")
+    require("function Test-CommandArgumentPresent" in source
+            and "probe_world grid would contain about" in source
+            and "ground_height grid would contain" in source
+            and "'measure_height'" in source,
+            "spatial one-of validation or pre-queue oversized-raster rejection is missing")
+    require("Keep any outstanding cancellation request until the plugin acknowledges" in source,
+            "cancel/reset requests would be removed before the plugin can act on them")
+    measurable_start = source.index("local function waitMeasurableCore")
+    measurable_end = source.index("local function waitMeasurable(", measurable_start)
+    measurable = source[measurable_start:measurable_end]
+    require("Enum.RaycastFilterType.Include" in measurable
+            and "hit.Instance:IsDescendantOf(inst)" in measurable,
+            "geometry verification excludes the object it is supposed to measure")
+    verify_start = source.index("tools.verify_measurable = function(args)")
+    verify_end = source.index("tools.", verify_start + len("tools.verify_measurable = function(args)"))
+    verify_tool = source[verify_start:verify_end]
+    snap_start = source.index("tools.snap_to_ground = function(args)")
+    snap_end = source.index("tools.look_at = function(args)", snap_start)
+    snap_tool = source[snap_start:snap_end]
+    require("args.maxSeconds or args.seconds" in verify_tool
+            and "math.min(tonumber(args.maxSeconds" in verify_tool
+            and "args.waitForMeasurable ~= false" in snap_tool
+            and "or 2000" in snap_tool,
+            "ground-tool timeout, verification, or documented fall-limit defaults regressed")
+
+    progress_visual = source[source.index("function Update-PlaceProgressVisual"):source.index("function Get-ProgressDiagnoseLines")]
+    require("'Arena arbeitet gerade...'" in progress_visual
+            and "ProgressBar.Foreground = Get-Brush $color" in progress_visual
+            and "ProgressPercent.Text = ($percent.ToString() + ' %')" in progress_visual,
+            "the Place row does not show the blue work state, bar and percent")
+    new_row = source[source.index("function New-Row {"):source.index("function New-MinimalPlaceRow")]
+    fallback_start = source.index("function New-MinimalPlaceRow {")
+    fallback_end = source.find("\nfunction ", fallback_start + 1)
+    fallback_row = source[fallback_start:fallback_end]
+    require("$namePanel.VerticalAlignment = 'Top'" in new_row
+            and "$namePanel.VerticalAlignment = 'Top'" in fallback_row,
+            "Place names are not top-aligned above their progress row in both row builders")
+    require("$progressText.Text = 'Arena arbeitet gerade...'" not in new_row
+            and "Fortschrittsvertrag" not in progress_visual,
+            "an implementation contract label leaked into the Place-row UI")
+
     # 7.0.1 UI contract: the link belongs to the main-list footer, settings
     # have padding, all four remaining toggles are initialized, and a broken rich Place
     # row has a visible minimal fallback.
@@ -924,14 +1061,19 @@ def main() -> int:
             "Settings content grid has no interior padding")
     require('Background="{StaticResource GreenBtnBg}"' in main_xaml,
             "Arena AI footer button does not use the green Prompt-copy design resource")
-    switch_names = ("StartupSwitch", "EditorIconsSwitch", "NotifySwitch", "ProgressSwitch")
+    switch_names = ("StartupSwitch", "EditorIconsSwitch", "ProgressSwitch", "PerfSwitch")
     open_settings = source[source.index("function Open-SettingsWindow"):source.index("# Version 3.8: Die Update-Infos")]
     switch_variables = {
         "StartupSwitch": "$startupSwitch",
         "EditorIconsSwitch": "$editorIconsSwitch",
-        "NotifySwitch": "$notifySwitch",
         "ProgressSwitch": "$progressSwitch",
+        "PerfSwitch": "$perfSwitch",
     }
+    require('NotifySwitch' not in settings_xaml and 'Mitteilungen' not in settings_xaml,
+            "the Mitteilungen section is still present in Settings")
+    require('NotifySwitch' not in open_settings and '$notifySwitch' not in open_settings
+            and '$notifyNow' not in open_settings,
+            "removed notification settings remain bound in Open-SettingsWindow")
     for name in switch_names:
         require(f'x:Name="{name}"' in settings_xaml, f"missing settings switch {name}")
         require(f"$settingsWindow.FindName('{name}')" in open_settings,
@@ -940,17 +1082,14 @@ def main() -> int:
                 f"settings switch {name} has no change handler")
     require("Set-StartupEnabled ([bool]$s.IsChecked)" in open_settings
             and "Set-EditorIconsEnabled ([bool]$s.IsChecked)" in open_settings
-            and "$script:Shared.BridgeSettings.notifyOnDone = [bool]$s.IsChecked" in open_settings
             and "$script:Shared.BridgeSettings.progressInPlaceList = [bool]$s.IsChecked" in open_settings
             and open_settings.count("Save-BridgeSettingsFile") >= 4,
             "settings switches do not persist their expected values")
     for marker in (
         "$autoStartNow = Get-StartupEnabled",
-        "$notifyNow = [bool]$script:Shared.BridgeSettings.notifyOnDone",
         "$editorIconsNow = [bool]$script:SettingsCache.editorIconsEnabled",
         "$progressNow = [bool]$script:Shared.BridgeSettings.progressInPlaceList",
         "$startupSwitch.IsChecked = $autoStartNow",
-        "$notifySwitch.IsChecked = $notifyNow",
         "$editorIconsSwitch.IsChecked = $editorIconsNow",
         "$progressSwitch.IsChecked = $progressNow",
     ):
@@ -1124,7 +1263,9 @@ def main() -> int:
             "sim_stop lost its RunService:Stop() + EditModeActive return")
     require("SIM_STOP_NEEDS_USER" in sim_stop,
             "sim_stop lost the bounded user handover instead of retrying forever")
-    guard = lua_text[lua_text.index("executeTool = function(tool"):lua_text.index("local okRun, result = pcall(handler, args)")]
+    execute_start = lua_text.index("executeTool = function(tool")
+    guard_end = lua_text.index("local okRun, result = xpcall(function()", execute_start)
+    guard = lua_text[execute_start:guard_end]
     require("USER_PLAYTEST_ACTIVE" in guard and "SIM_RUNNING" in guard and "allowInSimMode" in guard,
             "the persistent-edit guard no longer blocks with USER_PLAYTEST_ACTIVE/SIM_RUNNING")
     require("play_start" not in lua_text and "play_stop" not in lua_text and "play_here" not in lua_text,
@@ -1414,7 +1555,7 @@ def main() -> int:
             and "CLIENT_AGENT_SOURCE" not in source and "SESSION_REPORTER_SOURCE" not in source,
             "removed 7.0.0 playtest machinery is still present")
 
-    print("OK: 7.0.3 structure, channel and performance guards, Lua and XAML validation passed")
+    print("OK: 7.0.4 structure, channel, executor recovery, Lua and XAML validation passed")
     return 0
 
 
