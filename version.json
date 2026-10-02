@@ -1,10 +1,11 @@
 {
-  "version": "7.0.4",
+  "version": "7.0.5",
   "notes": [
-    "• Executor-Ausfallschutz: Studio-Befehle werden pro commandId isoliert, mit Traceback-Fehlerbehandlung, Heartbeats und festem Zeitbudget ausgefuehrt. Ein Watchdog beendet/markiert unresponsive Ausfuehrungen, damit die Queue nicht dauerhaft haengen bleibt; Teil-Aenderungen werden als moeglich gekennzeichnet.",
-    "• Zustell- und Ergebniszuverlaessigkeit: Queue-Zeitpunkte, Empfangs-/Startbestaetigungen, Deduplizierung und wiederholbare Ergebnis-Chunks sind commandId-gebunden. GET /api/queue zeigt Executor/Queue-Status; POST /api/queue kann einen Befehl abbrechen oder die Queue kontrolliert zuruecksetzen.",
-    "• Spatial-/Boden-Tools repariert und begrenzt: Schema-/Handler-Aliase fuer ground_height, measure_height, snap_to_ground, verify_measurable, raycast_many und weitere Raumabfragen abgeglichen. ground_height/probe_world begrenzen Raster vor dem Queueing und erneut im Plugin auf maximal 4000 Messpunkte; grosse Laeufe yielden und melden Jobfortschritt/Abbruch.",
-    "• Place-Liste: Bei aktiver Arena-Arbeit steht unter dem Place-Namen blau „Arena arbeitet gerade...“ mit Fortschrittsleiste und Prozent; die Mitteilungen-Kategorie in den Einstellungen ist entfernt.",
-    "• Roblox Studio einmal neu starten, damit Plugin 7.0.4 geladen wird."
+    "• HAENGENDE BEFEHLE: Ein unabhaengiger Server-Waechter laeuft jetzt in einem eigenen Runspace und prueft alle 2 Sekunden ALLE offenen Studio-Befehle - auch wenn das Plugin gar nicht mehr pollt. Er beendet haengende oder stumme Ausfuehrungen (STUDIO_ABANDONED, EXECUTOR_UNRESPONSIVE, EXECUTOR_UNAVAILABLE, EXECUTOR_DROPPED_COMMAND, COMMAND_DELIVERY_UNCONFIRMED, QUEUE_EXPIRED), weckt wartende Aufrufer oder legt das Ergebnis als lateResult ab und laesst die serielle Queue weiterlaufen. GET /api/queue zeigt mit queue.sweep (running, secondsSinceSweep, abandonedTotal) live, dass der Waechter arbeitet.",
+    "• RECONNECT-SICHER: Ergebnisse werden ueber die commandId und die Plugin-Instanz zugeordnet, nicht ueber die zufaellige Session-Id. Nach einem Studio-Reconnect gehen wartende Befehle an die neue Session ueber (nichts wird doppelt ausgefuehrt), Ergebnisse kommen weiter bei der aufrufenden Session an, und ein bereits ausgefuehrter commandId wird mit dem gespeicherten Ergebnis erneut zugestellt statt ein zweites Mal ausgefuehrt. Ein Plugin-Neustart verwirft die Warteschlange nicht mehr.",
+    "• CLOUDFLARE-SCHUTZ: Tool-Antworten sind auf 55 Sekunden begrenzt (maximal 85 Sekunden, auch bei timeoutSeconds), damit der ~100-s-524 des Tunnels nie mehr zuschlaegt. Laengere Studio-Arbeit laeuft weiter und kommt ueber _bridge.lateResults oder direkt per asJob=true zurueck.",
+    "• ADMIN-RESET: Neu sind die Tools force_fail und clear_pending (auch POST /api/queue { action:'force_fail' | 'clear_pending' }). Sie beantworten JEDEN offenen Befehl sofort mit einem endgueltigen FORCE_CLEARED-Ergebnis, leeren die Warteschlange und bitten Studio, seine lokale Queue zu verwerfen - ohne Studio-Neustart.",
+    "• PLACE-LISTE: Vorschau, Spieltitel und Hinweis sind wieder mittig zentriert und die Zeile ist kompakt (Vorschau laeuft ueber beide Zeilen, die Arbeitszeile sitzt unter dem Namen statt unter der Vorschau, symmetrisches Innen-Padding).",
+    "• Roblox Studio einmal neu starten, damit Plugin 7.0.5 geladen wird."
   ]
 }

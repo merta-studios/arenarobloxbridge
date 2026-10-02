@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 7.0.4.
+"""Offline structure check for Arena Roblox Bridge 7.0.5.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.0.4"
+VERSION = "7.0.5"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -95,8 +95,11 @@ def main() -> int:
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     require(version["version"] == VERSION, f"version.json is not {VERSION}")
     release_notes = "\n".join(str(note) for note in version.get("notes", []))
-    require("Executor-Ausfallschutz" in release_notes and "7.0.4" in release_notes,
-            "version.json does not describe the 7.0.4 executor recovery release")
+    require("7.0.5" in release_notes
+            and "Waechter" in release_notes
+            and "RECONNECT-SICHER" in release_notes
+            and "force_fail" in release_notes,
+            "version.json does not describe the 7.0.5 watchdog/reconnect/admin release")
 
     # 6.1.1 shipped seven accidental fragments after the intended final exit,
     # including a bare closing parenthesis. Windows PowerShell parses the
@@ -708,21 +711,21 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '7.0.4'": 1,
-        'local ARENA_VERSION  = "7.0.4"': 1,
-        "version = '7.0.4'": 1,
-        "bridgeVersion = '7.0.4'": 3,
-        "bridgeVersion='7.0.4'": 1,
-        "serverVersion = '7.0.4'": 2,
-        "$versionText = '7.0.4'": 1,
-        "$verText = '7.0.4'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 7.0.4)": 1,
-        'Text="Arena Roblox Bridge - Version 7.0.4"': 1,
-        "Version 7.0.4 - aktuell. Beim naechsten Start": 2,
-        "Laufzeit-Identitaet: Bridge-Version=7.0.4": 1,
-        "Kurzbericht Fenster-Vorschau (Version 7.0.4)": 1,
-        "Arena Roblox Bridge - Leistungsbericht (Version 7.0.4)": 1,
-        "Arena Roblox Bridge - Place-Diagnose (Version 7.0.4)": 1,
+        "DocsVersion     = '7.0.5'": 1,
+        'local ARENA_VERSION  = "7.0.5"': 1,
+        "version = '7.0.5'": 1,
+        "bridgeVersion = '7.0.5'": 3,
+        "bridgeVersion='7.0.5'": 1,
+        "serverVersion = '7.0.5'": 2,
+        "$versionText = '7.0.5'": 1,
+        "$verText = '7.0.5'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.0.5)": 1,
+        'Text="Arena Roblox Bridge - Version 7.0.5"': 1,
+        "Version 7.0.5 - aktuell. Beim naechsten Start": 2,
+        "Laufzeit-Identitaet: Bridge-Version=7.0.5": 1,
+        "Kurzbericht Fenster-Vorschau (Version 7.0.5)": 1,
+        "Arena Roblox Bridge - Leistungsbericht (Version 7.0.5)": 1,
+        "Arena Roblox Bridge - Place-Diagnose (Version 7.0.5)": 1,
     }
     for marker, expected_count in functional_version_counts.items():
         actual_count = source.count(marker)
@@ -1037,9 +1040,16 @@ def main() -> int:
     fallback_start = source.index("function New-MinimalPlaceRow {")
     fallback_end = source.find("\nfunction ", fallback_start + 1)
     fallback_row = source[fallback_start:fallback_end]
-    require("$namePanel.VerticalAlignment = 'Top'" in new_row
-            and "$namePanel.VerticalAlignment = 'Top'" in fallback_row,
-            "Place names are not top-aligned above their progress row in both row builders")
+    require("$namePanel.VerticalAlignment = 'Center'" in new_row
+            and "$namePanel.VerticalAlignment = 'Center'" in fallback_row,
+            "Place rows are not vertically centered again in both row builders (7.0.4 'Top' regression)")
+    require("[System.Windows.Controls.Grid]::SetColumn($progressRow, 1)" in new_row,
+            "the blue work row is not placed under the Place name (it lands under the preview and stretches the row)")
+    require("[System.Windows.Controls.Grid]::SetRowSpan($placeIcon.Frame, 2)" in new_row
+            and "$placeIcon.Frame.VerticalAlignment = 'Center'" in new_row,
+            "the preview does not span both rows / is not centered in the Place row")
+    require("$border.Padding = [System.Windows.Thickness]::new(16, 6, 16, 6)" in new_row,
+            "the Place row lost its symmetric compact interior padding (content sits too high)")
     require("$progressText.Text = 'Arena arbeitet gerade...'" not in new_row
             and "Fortschrittsvertrag" not in progress_visual,
             "an implementation contract label leaked into the Place-row UI")
@@ -1555,7 +1565,92 @@ def main() -> int:
             and "CLIENT_AGENT_SOURCE" not in source and "SESSION_REPORTER_SOURCE" not in source,
             "removed 7.0.0 playtest machinery is still present")
 
-    print("OK: 7.0.4 structure, channel, executor recovery, Lua and XAML validation passed")
+    # ------------------------------------------------------------------
+    # 7.0.5: independent server-side watchdog, reconnect-safe commandIds,
+    # Cloudflare-safe deadlines, admin reset and the centered Place row.
+    # ------------------------------------------------------------------
+    sweep_start = source.index("$script:BridgeSweepScript = {")
+    sweep_end = source.index("$script:BridgeListenerScript = {", sweep_start)
+    sweep = source[sweep_start:sweep_end]
+    for marker in (
+        "while ($true)",
+        "Start-Sleep -Seconds 2",
+        "STUDIO_ABANDONED",
+        "EXECUTOR_UNRESPONSIVE",
+        "EXECUTOR_UNAVAILABLE",
+        "EXECUTOR_DROPPED_COMMAND",
+        "COMMAND_DELIVERY_UNCONFIRMED",
+        "QUEUE_EXPIRED",
+        "abandonedBy = 'server-watchdog'",
+        "$Shared.CompletedCommandIds.TryAdd($dedupeKey, $now)",
+        "Queue-LateResult",  # never: the sweep is self-contained -> check the queue write instead
+    )[:-1]:
+        require(marker in sweep, f"independent server watchdog is missing: {marker}")
+    require("$Shared.LateResults.TryGetValue($origin, [ref]$lateQueue)" in sweep
+            and "$Shared.CommandResults[$id] = $failureJson" in sweep
+            and "$signal.Set()" in sweep,
+            "the watchdog cannot deliver its failure to a waiter or as a lateResult")
+    require("$Shared.SweepState.LastSweepAt" in sweep and "$Shared.SweepState.Abandoned" in sweep,
+            "the watchdog does not publish its liveness proof (SweepState)")
+    require("$sweepPs = [PowerShell]::Create()" in source
+            and "[void]$sweepPs.AddScript([string]$script:BridgeSweepScript).AddArgument($script:Shared)" in source
+            and "$script:SweepPowerShell = $sweepPs" in source,
+            "the independent watchdog is not started next to the listener")
+
+    # reconnect-safe routing
+    for marker in (
+        "CommandOrigins",
+        "CommandInstanceGuids",
+        "SessionSuccessors",
+        "function Get-CommandOrigin",
+        "function Test-CommandInstanceMatches",
+        "function Get-DeliverySession",
+        "function Register-SessionSuccessor",
+        "Queue-LateResult (Get-CommandOrigin $id) $id $resultJson $pendingInfo",
+        "Get-SessionInstanceGuid",
+    ):
+        require(marker in source, f"reconnect-safe result routing is missing: {marker}")
+    require("Get-CommandOrigin $id" in source
+            and "if (-not (Test-CommandInstanceMatches $sidForResult $commandId))" in source,
+            "the result endpoint still rejects results from the same plugin instance after a reconnect")
+    require("$Shared.SessionSuccessors[$old] = $new" in source
+            and "if ($Shared.PendingCommands.TryGetValue($old, [ref]$oldBag))" in source
+            and "$newBag[$id] = (To-Json $info 10)" in source,
+            "waiting commands are not handed over to the successor session")
+    require("Register-SessionSuccessor ([string]$predecessor.sessionId) $sessionId" in source
+            and "$candidatePolls -le 0 -and $candidateAge -gt 20 -and $candidatePending -gt 0" in source,
+            "a plugin restart does not adopt the waiting commands of the dead predecessor")
+    require("Reset-SessionQueue $sessionId 'The Studio plugin instance restarted." not in source,
+            "a plugin reconnect still throws the waiting queue away")
+
+    # Cloudflare-safe HTTP deadlines and the admin reset
+    require("$timeout = 55" in source and "[Math]::Min([int]$body.timeoutSeconds, 85)" in source
+            and "[Math]::Min([int]$toolArgs.timeoutSeconds + 25, 85)" in source,
+            "tool answers are not capped below the Cloudflare 524 limit")
+    require("function Force-FailSessionQueue" in source
+            and "action -eq 'force_fail'" in source
+            and "action -eq 'clear_pending'" in source
+            and "$tool -eq 'clear_pending' -or $tool -eq 'force_fail'" in source
+            and "FORCE_CLEARED" in source,
+            "the admin reset (force_fail / clear_pending) is missing")
+    require("Clear_pending" not in source and "clear_pending" in source,
+            "admin reset naming regressed")
+    require("$Shared.ExecutorResetRequests[$sid] = Get-UnixSeconds" in source
+            and "while ($queue.TryDequeue([ref]$raw)) { $raw = $null }" in source,
+            "the admin reset does not empty the FIFO and ask Studio to drop its local queue")
+
+    # plugin-side duplicate protection / result cache
+    require("local completedResults = {}" in source
+            and "local function rememberCompletedResult(commandId, result)" in source
+            and "rememberCompletedResult(commandId, commandResult)" in source,
+            "the plugin does not remember its results for a duplicate delivery")
+    require("local cached = completedResults[commandId]" in source
+            and "pcall(postResult, commandId, cached)" in source,
+            "a re-delivered commandId would be executed a second time instead of re-sending its result")
+    require("resultOutbox = outboxCount" in source and "cachedResults = completedCount" in source,
+            "the executor snapshot does not report cached results / outbox size")
+
+    print("OK: 7.0.5 structure, watchdog, reconnect routing, admin reset, Lua and XAML validation passed")
     return 0
 
 

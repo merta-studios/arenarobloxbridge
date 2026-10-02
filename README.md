@@ -20,7 +20,8 @@ sein.
 | `ArenaBridge.ps1` | Das komplette Programm |
 | `version.json` | Aktuelle Version + Neuigkeiten (wird im Update-Fenster angezeigt) |
 | `README.md` | Diese Datei |
-| `test_v398_structure.py` | Python-Strukturtest für 7.0.4 (Versionen, Performance-Guards, Kanal-Guards, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test_v398_structure.py` | Python-Strukturtest für 7.0.5 (Versionen, Watchdog-/Reconnect-Guards, Kanal-Guards, Lua via luaparser, XAML-XML; kein PowerShell nötig) |
+| `test_queue_model_705.py` | Python-Modelltest: reproduziert den Queue-Stillstand von 7.0.4 und prüft die 7.0.5-Regeln (unabhängiger Watchdog, lateResults, Reconnect-Übergabe, kein Doppel-Ausführen) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -35,6 +36,22 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 7.0.5
+- **Hängende Befehle: der Watchdog läuft jetzt unabhängig.** In 7.0.4 lief die Ausfallerkennung ausschließlich in der `/plugin/poll`-Anfrage. Genau dann, wenn ein Befehl die Lua-VM des Plugins blockiert (kein `yield`) oder die Verbindung abreißt, kommt aber kein Poll mehr – der Watchdog lief deshalb nie, der Befehl blieb für immer in `pendingInStudio`, `lateResults` kam nie an und die strikt serielle Queue blockierte alles (real: zwei hängende `list_jobs` = 15 Minuten Stillstand). Jetzt läuft ein **eigener Sweep-Runspace** neben dem Server: alle 2 s prüft er alle offenen Befehle und beendet tote/stumme Ausführungen mit klarem Code (`STUDIO_ABANDONED`, `EXECUTOR_UNRESPONSIVE`, `EXECUTOR_UNAVAILABLE`, `EXECUTOR_DROPPED_COMMAND`, `COMMAND_DELIVERY_UNCONFIRMED`, `QUEUE_EXPIRED`). Er weckt einen noch wartenden HTTP-Aufrufer oder legt das Ergebnis als `lateResults` der **Anrufer-Sitzung** ab und lässt die Queue weiterlaufen. `GET /api/queue` zeigt mit `queue.sweep.running` / `secondsSinceSweep` / `abandonedTotal` live, dass er arbeitet.
+- **Reconnect-sicher: kein doppeltes Ausführen, kein Verlieren.** Ergebnisse werden über die `commandId` **und** die Plugin-`instanceGuid` zugeordnet, nicht mehr über die zufällige Session-Id. Ein Plugin-Neustart verwirft die Warteschlange nicht mehr: nie zugestellte Befehle gehen auf die neue Session über (`SessionSuccessors` + `Get-DeliverySession`), die aufrufende Sitzung behält Token und `lateResults` (`CommandOrigins`), und ein bereits ausgeführter `commandId` wird im Plugin mit dem **gespeicherten Ergebnis** erneut zugestellt statt ein zweites Mal ausgeführt. Bereits laufende Befehle einer toten Instanz werden nie blind wiederholt, sondern mit ehrlichem Fehler und `partialChangesPossible` abgeschlossen.
+- **Cloudflare-Schutz.** Tool-Antworten enden nach **55 s** (maximal **85 s**, auch mit `timeoutSeconds`) – deutlich unter dem ~100-s-524 des Tunnels. Längere Studio-Arbeit läuft weiter und kommt über `_bridge.lateResults` zurück oder wird von Anfang an mit `asJob=true` als Job gestartet.
+- **Admin-Reset ohne Studio-Neustart.** Neu: `force_fail` und `clear_pending` (als Tool und als `POST /api/queue { action: "force_fail" | "clear_pending" }`). Jeder offene Befehl erhält sofort ein endgültiges `FORCE_CLEARED`-Ergebnis (Waiter oder `lateResults`), die Warteschlange wird geleert und Studio wird gebeten, seine lokale Queue zu verwerfen. Ein blockiertes Lua im Plugin kann weiterhin einen Studio-Neustart brauchen – die Antwort zeigt dann `executor.alive=false`.
+- **Place-Liste wieder mittig und kompakt.** Die blaue Arbeits-/Fortschrittszeile lag seit 7.0.4 in der **Vorschau-Spalte** (Grid-Spalte 0), zog die Zeile in die Höhe und riss die Mitte auseinander; der Inhalt war zusätzlich auf `Top` gestellt. Jetzt läuft die Vorschau über beide Zeilen und ist zentriert, die Arbeitszeile sitzt unter dem Place-Namen, die Zeile hat symmetrisches Innen-Padding.
+- **Nach dem Update Roblox Studio einmal neu starten**, damit Plugin **7.0.5** geladen wird.
+- **Live-Abnahme** (Ziel-PC, Bridge läuft, Studio verbunden):
+  1. `GET /api/status` → `pluginVersion`/`docsVersion` = 7.0.5, kein `versionMismatch`.
+  2. `GET /api/queue` → `queue.sweep.running: true`, `secondsSinceSweep` ≤ ~5.
+  3. Normaler Befehl (`get_tree`, `list_jobs`) kommt in < 5 s mit Ergebnis zurück.
+  4. **Hänger reproduzieren:** `run_lua` mit einem kooperativen Hänger, z. B. `args = { source: "local t = os.clock(); while os.clock() - t < 120 do end; return 'done'", timeoutSeconds: 30 }` (blockiert die Lua-VM ~120 s). Erwartung: die Bridge antwortet nach 30 s mit `STUDIO_TIMEOUT`, `GET /api/queue` zeigt den Befehl als `running`, nach ca. 45 s erscheint er als abgebrochen (`EXECUTOR_UNRESPONSIVE`/`STUDIO_ABANDONED`) und `abandonedTotal` steigt; nach dem Ende des Hängers läuft der nächste Befehl (`get_tree`) wieder normal. Kein Studio-Neustart nötig, solange das Lua irgendwann endet.
+  5. **Reconnect:** Studio-Plugin neu laden (oder kurz Verbindung trennen) und danach `list_jobs` rufen – Ergebnis muss ankommen, `queue_followed`-Event im Log, kein `403 COMMAND_OWNER_MISMATCH`.
+  6. **Admin-Reset:** `POST /api/queue { token, action: "force_fail" }` → `clearedCommands` > 0, alle offenen Befehle erhalten `FORCE_CLEARED`, danach läuft ein neuer Befehl sofort.
+- **Offline-Prüfung:** `python -m pip install luaparser` und `python test_v398_structure.py`; zusätzlich `python test_queue_model_705.py` (Modelltest, kein PowerShell/Studio nötig).
 
 ## 7.0.4
 - **Executor und Queue erholen sich nach Ausfällen.** Jeder Studio-Befehl erhält eine eindeutige `commandId`, wird mit geschützter Fehlerbehandlung/Traceback und einem festen Zeitbudget ausgeführt und sendet Start-/Liveness-Heartbeats. Ein Plugin-Watchdog markiert hängende Befehle als `STUDIO_ABANDONED`; der Server-Watchdog erkennt fehlende Heartbeats, nicht bestätigte Zustellung und verlorene Executor-Einträge. Abgebrochene Schreibbefehle können Teiländerungen hinterlassen – vor einem Retry den Place prüfen.
