@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Live-Abnahme der Arena Roblox Bridge 7.1.1 (laeuft gegen die echte Bridge).
+"""Live-Abnahme der Arena Roblox Bridge 7.1.3 (laeuft gegen die echte Bridge).
 
 Aufruf (URL + Token aus der Place-Zeile im Bridge-Fenster):
 
@@ -12,7 +12,7 @@ Geprueft wird, was in 7.0.4-7.1.0 live kaputt war (und in 7.0.5 / 7.1.1 behoben 
                              counters.revivedSessions bleibt bei pollendem Studio
                              KONSTANT (Plugin schickt sessionId; kein Reconnect je Poll),
                              nach dem normalen Befehl: delivery.undeliveredCommands == 0
-  1. /api/status          -> Version 7.1.1 + queue.sweep.running == true
+  1. /api/status          -> Version 7.1.3 + queue.sweep.running == true
   2. normaler Befehl      -> kommt in wenigen Sekunden mit Ergebnis zurueck
   3. Haenger-Reproduktion -> run_lua blockiert ~150 s; die Bridge muss WEIT vor
                              Cloudflares ~100-s-524 antworten (< 90 s), der
@@ -39,7 +39,7 @@ import urllib.error
 import urllib.request
 
 FAILURES: list[str] = []
-EXPECTED_VERSION = "7.1.1"
+EXPECTED_VERSION = "7.1.3"
 
 
 def check(condition: bool, message: str) -> None:

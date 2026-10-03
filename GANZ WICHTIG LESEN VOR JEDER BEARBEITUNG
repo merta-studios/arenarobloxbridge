@@ -1,7 +1,7 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 7.1.2 - 03.10.2026)                                #
+#   (Stand: Version 7.1.3 - 03.10.2026)                                #
 #                                                                      #
 ##########################################################################
 
@@ -131,6 +131,36 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
   report_done-Befehl der KI ("Arena ist fertig"). Sie ist an die
   Einstellung "Benachrichtigung, wenn Arena fertig ist" gebunden
   (Standard: AUS) und darf fuer nichts anderes verwendet werden.
+  SEIT v7.1.3 liegt dieser Schalter wieder sichtbar in den Einstellungen,
+  direkt unter "Fortschritt in der Place-Liste anzeigen" (der Nutzer hat
+  ihn ausdruecklich dort verlangt). An/Aus wirkt SOFORT: Clear-NotifyQueue
+  verwirft wartende Meldungen, der Anzeige-Takt ueberspringt sie und
+  Show-ArenaDoneNotification prueft den Schalter unmittelbar vor dem
+  Anzeigen. NICHT entfernen und NICHT an eine andere Stelle verschieben.
+- DER SIMULATIONS-WARNKASTEN BLEIBT WEG (v7.1.3): Der Abschnitt
+  "SIMULATION" mit dem sim_start-Hinweis ist aus dem Einstellungsfenster
+  ENTFERNT (Nutzerwunsch). sim_start bleibt trotzdem deaktiviert - die
+  Begruendung gehoert in die Doku/Manifest/Antworten, NICHT als
+  Dauerwarnung ins Fenster. Nicht wieder einbauen.
+- ORGANISCHER BAUVERTRAG (seit v7.1.3 feste Regel, in Get-BridgeGuides ->
+  organicBuildRules, erreicht jede neue Session ueber Sessionstart/
+  get_docs/api-docs): Kreaturen, Tiere, Pflanzen und Props werden NIEMALS
+  aus Primitiven zusammengesetzt. Kein Tier aus Kugeln, kein Baum aus
+  Cylinder+Kugel, keine unverjuengten Glieder aus einem Block. Erst die
+  Silhouette mit build_polygon_model (Taper, Rumpf/Hals/Schaedel/Fang,
+  Ober-/Unterschenkel, Schwanzkette), dann Gelenke, dann Details (Fell,
+  Augen mit Pupille, Nase, Schnurrhaare, Farbaufteilung), dann Bewegung.
+  Roblox-CYLINDER-REGEL: die Achse eines CylinderPart ist seine LOKALE
+  X-ACHSE, also ist Size.X die Laenge und Size.Y=Size.Z der Durchmesser;
+  stehende Stamm/Bein/Saeule nur mit CFrame.Angles(0, 0, math.rad(90)),
+  beliebige Richtung ueber die Referenzfunktion cylinderBetween aus
+  organicBuildRules - "Orientation = (0, 90, 0)" ist der klassische
+  Fehler. Organische Bewegung = mehrere kleine Schleifen mit UNTERSCHIED-
+  LICHEN Perioden (Atmung, Kopf, Ohren, Schwanz mit Versatz, Gewichts-
+  verlagerung, Blinzeln), niemals eine einzelne Endlos-Rotation.
+  model_audit MISST das (buildQuality: primitiveGroups, discLikeCylinder,
+  axisSkewDeg) und report_done antwortet bei Verstoss DETAIL_REQUIRED
+  (Ausweg: nachbauen oder ehrlich handoff) - diese Wache NICHT aufweichen.
 - TOOLBOX IST NICHT DIE ABKUERZUNG (seit 7.1.2 feste Regel, auch in
   Get-BridgeGuides -> toolboxRules, erreicht jede neue KI-Session):
   Tiere, Kreaturen, Pflanzen, Props und organische Freiformen werden
@@ -244,9 +274,30 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
   (seit 7.0.0 bis 7.1.0 so passiert). Update-Session loest seit 7.1.1
   zusaetzlich ueber die instanceGuid auf, und jede Poll-/Heartbeat-
   Antwort nennt die gueltige sessionId (das Plugin uebernimmt sie).
+- HANDLER-RUNSPACE (v7.1.3 live relevant): $script:BridgeHandlerScript
+  laeuft in EIGENEN Runspaces (CreateRunspacePool). $script:-Variablen des
+  Hauptskripts sind dort NICHT vorhanden - alles, was der Handler braucht,
+  muss ueber $Shared gehen (Beispiel: SessionPayloadHardBudgetBytes liegt
+  deshalb in $Shared, nicht als $script:-Variable). Bestehende
+  $script:PreviewCaptureMode-Zugriffe dort sind absichtlich defensiv
+  (try/catch mit Rueckfallwert).
+- SESSIONSTART-NUTZLAST (v7.1.3): Die erste Antwort traegt NICHT mehr die
+  volle Doku aller 129 Werkzeuge. Kernwerkzeuge kommen vollstaendig, der
+  Rest als Index; der Kern darf nur bei Bedarf erweitert werden, sonst
+  waechst das Paket wieder in den Bereich, der abgelehnte KI-Anfragen
+  ausgeloest hat. Neue Felder: packageBytes (echt gemessen), budgetBytes,
+  docsPolicy (core-full/index-only), toolsIndex + toolsIndexNote.
+- WERKZEUG-DOKU-INDEX UND PROMPT-KOPIE: Der Prompt/Place-Text nennt die
+  Kernwerkzeug-Idee absichtlich nicht mehr als "komplette Doku" - wer die
+  Parameter eines Index-Werkzeugs braucht, ruft get_docs { tool = "..." }.
+- NACHBARSCHAFTSDOKU: ORGANIC_BUILD_CONTRACT.md (Repo-Wurzel) beschreibt
+  den 7.1.3-Qualitaetsvertrag im Klartext - wer eine Regel im Programm
+  aendert (Get-BridgeGuides/organicBuildRules, WORLD_ENGINE.
+  auditBuildQuality, report_done-Wache), muss dieses Dokument mitziehen.
 - Offline-Pruefung ohne Windows: python test_v398_structure.py,
   python test_v710_delivery.py, python test_v711_delivery.py,
-  python test_v712_toolbox.py, python test_queue_model_707.py
+  python test_v712_toolbox.py, python test_v713_quality.py,
+  python test_queue_model_707.py
   (luaparser aus requirements-test.txt). PowerShell/.NET laesst sich in
   der KI-Sandbox NICHT installieren - Semantik per Quelltext (PowerShell-
   Repository auf GitHub) nachlesen statt raten.
@@ -258,6 +309,36 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v7.1.3 (03.10.2026): MINI-UPDATE - QUALITAETSVERTRAG, MESSUNG,
+  EINSTELLUNGEN. Nutzerbericht: Tiere nur aus Kugeln, Baeume aus
+  Cylinder+Kugel, ALLE Cylinder um 90 Grad falsch, Sitzung brach mit
+  "The AI service rejected this request" ab, Fertig-Schalter fehlte, der
+  sim_start-Warnkasten stand noch in den Einstellungen. Antwort darauf:
+  (1) Get-BridgeGuides liefert organicBuildRules in JEDER Session
+  (verbotene Abkuerzungen, Mindest-Anatomie, Cylinder-Achsenregel mit
+  Referenz-Lua uprightCylinder/cylinderBetween/taperedSegment, Pflicht zu
+  organischer Bewegung, Selbsttest) und importantRules zeigt darauf.
+  (2) model_audit misst buildQuality: Zahlen je Form, primitiveGroups
+  (Gruppen aus NUR Kugeln), discLikeCylinder (Achse waagerecht, Teil quer
+  >= 1,5x laenger als lang = klassischer 90-Grad-Dreher), axisSkewDeg als
+  Info; verdict clean|primitive_abuse|cylinder_rotation|
+  primitive_abuse_and_cylinder_rotation. Ergebnis in jeder Antwort unter
+  _bridge.buildQuality. (3) report_done antwortet bei Verstoss
+  DETAIL_REQUIRED (Ausweg: nachbauen oder handoff), Platzhalter behalten
+  Vorrang (HANDOFF_REQUIRED). (4) Sessionstart-Paket gedeckelt: 47
+  Kernwerkzeuge voll, Rest als Index, harte Grenze
+  $Shared.SessionPayloadHardBudgetBytes = 300000, packageBytes/
+  budgetBytes/docsPolicy in jeder Sitzung. (5) Neuer Schalter
+  "Benachrichtigung, wenn Arena fertig ist" direkt unter "Fortschritt in
+  der Place-Liste anzeigen" (Standard AUS, wirkt sofort inkl.
+  Clear-NotifyQueue); SIMULATION-Warnkasten komplett entfernt.
+  Tests: test_v713_quality.py neu; test_v398_structure.py auf 7.1.3
+  gezogen; test_v712_toolbox.py prueft nur noch "mindestens 7.1.2"
+  (Versionsnagel liegt beim Struktur- und beim neuesten Test).
+  WINDOWS-LIVE-ABNAHME OFFEN: /api/version 7.1.3, Modelleinstieg ohne
+  Ball-only (model_audit buildQuality clean), report_done ohne
+  DETAIL_REQUIRED bei sauberer Arbeit, Sitzungsstart nennt packageBytes/
+  docsPolicy, Schalter in den Einstellungen an/aus.
 - v7.1.2 (03.10.2026): MINI-HOTFIX - TOOLBOX-/ASSET-BEFEHLE HAENGEN NICHT
   MEHR. Live-Befund mit 7.1.1: nach mehreren Katalogsuchen liefen
   Detail-/Folgeaufrufe in Timeouts, ein insert_asset (14124432577) kehrte

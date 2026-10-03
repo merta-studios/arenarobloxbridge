@@ -1,4 +1,54 @@
 ﻿# ============================================================================
+# Arena Roblox Bridge  -  Version 7.1.3
+#
+# MINI-UPDATE 7.1.3 - QUALITAETSVERTRAG, ECHTE MESSUNG, EINSTELLUNGEN (2026-10-03):
+#   Anlass (Nutzerbericht ueber die letzte Bau-Session ueber die Bridge):
+#   Tiere wurden nur aus Kugel-Parts zusammengesetzt, Baeume aus einem
+#   Cylinder-Stamm plus einer Kugel-Krone, und die Cylinder standen alle um
+#   90 Grad falsch. Genau das, was der Nutzer selbst in einer Minute baut -
+#   also kein Modell, sondern ein Entwurf. Ausserdem brach die Sitzung mitten
+#   in der Arbeit mit "The AI service rejected this request" ab, in den
+#   Einstellungen fehlte der Schalter fuer die Fertig-Benachrichtigung und der
+#   deaktivierte sim_start wurde noch als Warnkasten angezeigt.
+#   Dieses Mini-Update behebt nicht "einen" Fehler, sondern macht die drei
+#   Ursachen dauerhaft unmoeglich:
+#   1) ORGANIC-BUILD-VERTRAG IN JEDER SESSION: Get-BridgeGuides liefert den
+#      neuen Block organicBuildRules (wie polygonEngineRules seit 6.1.4).
+#      Enthalten: verbotene Abkuerzungen (Kugel-Tier, Cylinder+Kugel-Baum),
+#      Mindest-Anatomie fuer Kreaturen, die gemessene Cylinder-Achsenregel
+#      (Roblox-Zylinderachse = LOKAL X, Size.X = Laenge, Size.Y = Size.Z =
+#      Durchmesser) samt fertiger Referenz-Lua-Funktion cylinderBetween
+#      (A nach B, immun gegen 90-Grad-Dreher) und die Pflicht zu organischer
+#      Bewegung (Atmung, Ohren, Schwanz, Gewichtsverlagerung - nie eine
+#      einzelne Endlos-Rotation).
+#   2) GEMESSEN STATT BEHAUPTET: model_audit bekommt eine echte Bauqualitaets-
+#      Messung (buildQuality). Sie zaehlt Baelle, Bloecke, Zylinder, Keile,
+#      Mesh-/Union-/Polygon-Teile und ArenaDetail-Teile, findet Gruppen, die
+#      NUR aus Kugeln bestehen (primitiveOnly/primitiveGroups), und prueft
+#      jeden Zylinder auf die zwei typischen Achsenfehler
+#      (heightInYAxisHorizontal - "Hoehe in Y eingetragen, Rotation vergessen"
+#      - und axisSkewDeg - Achse schief zu jeder Weltachse). Das Ergebnis ist
+#      maschinenlesbar und wird in JEDER Antwort mitgefuehrt.
+#   3) report_done SAGT NEIN: Liegt fuer die Sitzung eine solche Messung vor,
+#      antwortet report_done mit DETAIL_REQUIRED statt "fertig" - die KI muss
+#      entweder nachbauen (build_polygon_model) oder ehrlich uebergeben
+#      (handoff). Kein stilles Durchwinken eines Kugel-Modells mehr.
+#   4) EINSTELLUNGEN: neuer An/Aus-Schalter "Benachrichtigung, wenn Arena
+#      fertig ist" direkt unter "Fortschritt in der Place-Liste anzeigen"
+#      (Standard AUS; steuert die Windows-Meldung von report_done, Ausschalten
+#      raeumt wartende Meldungen sofort aus der Warteschlange). Der Kasten
+#      "SIMULATION" mit dem sim_start-Warnhinweis ist komplett entfernt -
+#      sim_start bleibt deaktiviert, aber ohne Dauerwarnung im Fenster.
+#   5) KLEINERE SITZUNGS-NUTZLAST: Der Sessionstart schickte bisher JEDE
+#      Werkzeug-Doku (130+ Eintraege, ~130 KB) in die erste Antwort. Grosse
+#      Nutzlasten genau dieser Art sind ein bekannter Ausloeser fuer
+#      abgelehnte KI-Anfragen. Jetzt: volle Doku fuer die Kernwerkzeuge
+#      (Bauen/Audit/Lesen/Sitzung), fuer alle uebrigen nur noch Name,
+#      Kategorie und Kurztext plus der Hinweis, die Parameter mit
+#      get_docs { tool = "..." } zu holen. Zusaetzlich nennt die Antwort
+#      packageBytes, budgetBytes und docsPolicy - ehrlich und messbar.
+#
+# ============================================================================
 # Arena Roblox Bridge  -  Version 7.1.2
 #
 # MINI-HOTFIX 7.1.2 - TOOLBOX-/ASSET-BEFEHLE HAENGEN NICHT MEHR (2026-10-03):
@@ -2091,6 +2141,19 @@ function Save-BridgeSettingsFile {
 
 $script:SettingsCache = Get-BridgeSettingsFile
 
+# Version 7.1.3: HARTE OBERGRENZE fuer das Sessionstart-Paket (Bytes, JSON).
+# Die erste Antwort einer Sitzung trug bis 7.1.2 die vollstaendige Doku aller
+# 129 Werkzeuge mit - zusammen mit den Regelbloecken weit ueber 120 KB in EINEM
+# Paket. Genau solche Riesenpakete sind ein bekannter Ausloeser fuer abgelehnte
+# KI-Anfragen ("The AI service rejected this request"), und nach so einer
+# Ablehnung war die Sitzung mitten in der Arbeit zu Ende. Get-SessionStartPackage
+# liefert daher nur noch die Kernwerkzeuge vollstaendig, alles andere als Index
+# (Name/Kategorie/Kurztext) und reduziert im Notfall auch den Kern auf den
+# Index. Gemessen wird das echte serialisierte Paket; die Antwort nennt
+# packageBytes, budgetBytes und docsPolicy. Der Wert liegt bewusst in $Shared:
+# der HTTP-Handler laeuft in einem EIGENEN Runspace und sieht $script:-Variablen
+# des Hauptskripts nicht (dieselbe Falle wie bei $script:PreviewCaptureMode).
+
 # ----------------------------------------------------------------------------
 # GEMEINSAMER ZUSTAND
 # Alle Threads (HTTP-Server, Oberfläche) arbeiten auf diesen Sammlungen.
@@ -2202,7 +2265,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.1.2'
+    DocsVersion     = '7.1.3'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -2238,7 +2301,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Version 7.0.6: Laufzeit-Identitaet der LAUFENDEN Datei (Version, Pfad,
     # SHA-256, Sprachmodus, Startzeit) fuer GET /api/version.
     RuntimeInfo = [hashtable]::Synchronized(@{
-        Version = '7.1.2'
+        Version = '7.1.3'
         File = ''
         Sha256 = ''
         LanguageMode = ''
@@ -2259,6 +2322,10 @@ $script:Shared = [hashtable]::Synchronized(@{
     })
     # report_done-Meldungen: der Server legt sie ab, die Oberflaeche zeigt sie an
     NotifyQueue     = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+    # Version 7.1.3: harte Obergrenze des Sessionstart-Pakets (Bytes, JSON).
+    # Liegt hier - und nicht als $script:-Variable - damit der HTTP-Handler in
+    # seinem eigenen Runspace denselben Wert liest (siehe Kommentar oben).
+    SessionPayloadHardBudgetBytes = 300000
     # sessionId -> @{ action='start'/'stop'; at=<unix> } - Play-Absicht der KI
     AiPlayIntents   = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
     # sessionId -> @{ kind='play_started'/'play_stopped'; at=<unix> } - Dedupe
@@ -2399,12 +2466,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.1.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.1.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.1.3, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.1.3, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.1.2'
+$script:Shared.RuntimeInfo.Version = '7.1.3'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -2507,7 +2574,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.1.2)
+  Arena Studio Bridge - Studio Plugin  (Version 7.1.3)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -2580,7 +2647,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.1.2"
+local ARENA_VERSION  = "7.1.3"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -10763,6 +10830,157 @@ tools.prop_list = function(args)
     return ok({ props = list, count = #list, folder = WORLD_ENGINE.PROPS })
 end
 
+-- Version 7.1.3: BAUQUALITAET MESSEN STATT BEHAUPTEN.
+-- Ein Tier aus sieben Kugeln und ein Baum aus einem Zylinder plus einer Kugel
+-- sind keine Modelle, sondern Entwuerfe. Diese Messung nennt sie beim Namen -
+-- und prueft jeden Zylinder auf den klassischen 90-Grad-Drehfehler: die Achse
+-- eines CylinderPart ist LOKAL X, Size.X ist also die Laenge.
+WORLD_ENGINE.auditBuildQuality = function(parts, root)
+    local counts = { parts = #parts, balls = 0, blocks = 0, cylinders = 0, wedges = 0,
+        meshes = 0, unions = 0, polygonParts = 0, detailParts = 0 }
+    local shapes = {}
+    local kindOf = {}
+    local solidOf = {}
+    local cylinderProblems, tiltedCylinders = {}, {}
+    local cylinderProblemCount, tiltedCylinderCount = 0, 0
+    local function isSolid(part, shapeName)
+        if shapeName == "WedgePart" then return true end
+        if part:IsA("MeshPart") or part:IsA("UnionOperation") or part:IsA("IntersectOperation") then return true end
+        if part:GetAttribute("ArenaDetail") == true then return true end
+        if part:GetAttribute("ArenaMasterBuild") == true or part:GetAttribute("ArenaPolygonTriangle") ~= nil then return true end
+        if part:GetAttribute("ArenaPolygonSubmodel") == true or part:GetAttribute("ArenaAssembly") ~= nil then return true end
+        if shapeName == "Wedge" then return true end
+        return false
+    end
+    for _, part in ipairs(parts) do
+        if part:IsA("MeshPart") then counts.meshes = counts.meshes + 1 end
+        if part:IsA("UnionOperation") or part:IsA("IntersectOperation") then counts.unions = counts.unions + 1 end
+        if part:IsA("WedgePart") then counts.wedges = counts.wedges + 1 end
+        if part:GetAttribute("ArenaDetail") == true then counts.detailParts = counts.detailParts + 1 end
+        if part:GetAttribute("ArenaMasterBuild") == true or part:GetAttribute("ArenaPolygonTriangle") ~= nil
+            or part:GetAttribute("ArenaPolygonSubmodel") == true or part:GetAttribute("ArenaAssembly") ~= nil then
+            counts.polygonParts = counts.polygonParts + 1
+        end
+        local shapeName = nil
+        pcall(function() shapeName = part.Shape.Name end)
+        if shapeName then
+            shapes[shapeName] = true
+            if shapeName == "Ball" then counts.balls = counts.balls + 1 end
+            if shapeName == "Block" then counts.blocks = counts.blocks + 1 end
+        end
+        kindOf[part] = shapeName or part.ClassName
+        solidOf[part] = isSolid(part, shapeName)
+        if shapeName == "Cylinder" then
+            counts.cylinders = counts.cylinders + 1
+            local size = part.Size
+            local xAxis, yAxis = part.CFrame.RightVector, part.CFrame.UpVector
+            local align = math.max(math.abs(xAxis.X), math.abs(xAxis.Y), math.abs(xAxis.Z))
+            local axisSkewDeg = math.deg(math.acos(math.clamp(align, 0, 1)))
+            local round = math.floor(axisSkewDeg * 10 + 0.5) / 10
+            -- Harter Fehler: die Achse zeigt waagerecht, obwohl das Teil quer
+            -- viel groesser ist als lang - es steht also als Scheibe/Platte auf
+            -- der Kante. Genau so sieht der klassische 90-Grad-Dreher aus:
+            -- die Laenge wurde in Size.Y oder Size.Z eingetragen, eine
+            -- Rotation fehlt. Die Messung sagt ehrlich, WAS sie sieht ("wenn
+            -- das ein Rohr/Stamm sein soll ...") und blockiert nur diesen Fall.
+            if math.abs(xAxis.Y) < 0.3 and math.max(size.Y, size.Z) >= 1.5 * size.X then
+                cylinderProblemCount = cylinderProblemCount + 1
+                if #cylinderProblems < 8 then
+                    table.insert(cylinderProblems, {
+                        id = idOf(part), path = part:GetFullName(), issue = "discLikeCylinder",
+                        axisHorizontal = true, axisSkewDeg = round, size = { size.X, size.Y, size.Z },
+                        hint = "A CylinderPart runs along its LOCAL X axis, so Size.X is the length. This one is wide across its round axis and its axis lies horizontally: it renders as a disc standing on its edge. If it should be a trunk, column, leg, tube or bone, build CFrame.Angles(0, 0, math.rad(90)) with Size = Vector3.new(length, diameter, diameter), or use cylinderBetween from organicBuildRules.",
+                    })
+                end
+            elseif round > 5 then
+                tiltedCylinderCount = tiltedCylinderCount + 1
+                if #tiltedCylinders < 8 then
+                    table.insert(tiltedCylinders, { id = idOf(part), path = part:GetFullName(),
+                        axisSkewDeg = round, size = { size.X, size.Y, size.Z },
+                        note = "The tube axis is not parallel to any world axis. Correct for a diagonal branch or strut, wrong for a trunk, column or upright leg." })
+                end
+            end
+        end
+    end
+    -- Gruppen unterhalb des Ziels einzeln bewerten: eine Gruppe, die NUR aus
+    -- Kugeln besteht, ist ein Entwurf - egal wie viele Teile sie hat.
+    local function topGroup(part)
+        local node, parent = part, part.Parent
+        while parent and parent ~= root do
+            node = parent
+            parent = node.Parent
+        end
+        if node == part then return nil end
+        if node:IsA("Model") or node:IsA("Folder") then return node end
+        return nil
+    end
+    local groups = {}
+    local loose = { parts = 0, balls = 0, solid = 0 }
+    for _, part in ipairs(parts) do
+        local group = topGroup(part)
+        local entry = nil
+        if group then
+            entry = groups[group]
+            if not entry then entry = { parts = 0, balls = 0, solid = 0 }; groups[group] = entry end
+        else
+            entry = loose
+        end
+        entry.parts = entry.parts + 1
+        if kindOf[part] == "Ball" then entry.balls = entry.balls + 1 end
+        if solidOf[part] then entry.solid = entry.solid + 1 end
+    end
+    local primitiveGroups = {}
+    local function judge(entry, name, path)
+        if entry.parts >= 6 and entry.balls >= 6 and entry.balls >= 0.5 * entry.parts and entry.solid == 0 then
+            if #primitiveGroups < 5 then
+                table.insert(primitiveGroups, { name = name, path = path, parts = entry.parts, balls = entry.balls,
+                    ballShare = math.floor((entry.balls / entry.parts) * 100 + 0.5) / 100,
+                    detailParts = 0 })
+            end
+            return true
+        end
+        return false
+    end
+    local groupOrder = {}
+    for group in pairs(groups) do table.insert(groupOrder, group) end
+    table.sort(groupOrder, function(a, b) return a:GetFullName() < b:GetFullName() end)
+    for _, group in ipairs(groupOrder) do
+        judge(groups[group], group.Name, group:GetFullName())
+    end
+    if loose.parts >= 6 then
+        judge(loose, "loose parts", root:GetFullName() .. " (directly)")
+    end
+    local variety = 0
+    for _ in pairs(shapes) do variety = variety + 1 end
+    local ballShare = 0
+    if counts.parts > 0 then ballShare = math.floor((counts.balls / counts.parts) * 100 + 0.5) / 100 end
+    local verdict = "clean"
+    if #primitiveGroups > 0 and cylinderProblemCount > 0 then verdict = "primitive_abuse_and_cylinder_rotation"
+    elseif #primitiveGroups > 0 then verdict = "primitive_abuse"
+    elseif cylinderProblemCount > 0 then verdict = "cylinder_rotation" end
+    local advice = "Clean: the geometry is varied and no cylinder looks rotated wrong."
+    if verdict == "primitive_abuse" then
+        advice = "Rebuild the flagged group as a silhouette with build_polygon_model (tapering volumes, limb segments, joints, detail) - see organicBuildRules. Ball-only groups are drafts, not models."
+    elseif verdict == "cylinder_rotation" then
+        advice = "The flagged cylinders stand as discs because their tube axis lies horizontally and the length sits in Size.Y or Size.Z. Rebuild them with CFrame.Angles(0, 0, math.rad(90)) and Size = Vector3.new(length, diameter, diameter), or use cylinderBetween from organicBuildRules."
+    elseif verdict == "primitive_abuse_and_cylinder_rotation" then
+        advice = "Two independent defects: primitive-only groups AND wrongly rotated cylinders. Fix both (organicBuildRules has the anatomy contract and the cylinder helpers), then run model_audit again."
+    end
+    return {
+        counts = counts,
+        shapeVariety = variety,
+        ballShare = ballShare,
+        primitiveOnly = (#primitiveGroups > 0),
+        primitiveGroups = primitiveGroups,
+        cylinderProblems = cylinderProblems,
+        cylinderProblemCount = cylinderProblemCount,
+        tiltedCylinders = tiltedCylinders,
+        tiltedCylinderCount = tiltedCylinderCount,
+        verdict = verdict,
+        advice = advice,
+    }
+end
+
 tools.model_audit = function(args)
     local root, err = targetFrom(args, false)
     if not root then
@@ -10788,15 +11006,42 @@ tools.model_audit = function(args)
         materials[matName] = (materials[matName] or 0) + 1
         if part:IsA("BasePart") and part:FindFirstChildOfClass("Decal") == nil and part:IsA("Part") then untextured = untextured + 1 end
     end
+    -- Version 7.1.3: Bauqualitaet messen (Kugel-Gruppen, Zylinder-Achsen).
+    local quality = WORLD_ENGINE.auditBuildQuality(parts, root)
+    local qualityWarnings = {}
+    if quality.primitiveOnly then
+        table.insert(qualityWarnings, "PRIMITIVE_ONLY_BUILD: " .. tostring(#quality.primitiveGroups)
+            .. " group(s) consist only of Ball parts (no polygon, assembly, mesh, union or ArenaDetail part). That is a draft, not a model - rebuild the silhouette with build_polygon_model and follow organicBuildRules. report_done answers DETAIL_REQUIRED until this is fixed or honestly handed off.")
+    end
+    if quality.cylinderProblemCount > 0 then
+        table.insert(qualityWarnings, "CYLINDER_ROTATION: " .. tostring(quality.cylinderProblemCount)
+            .. " cylinder(s) have a horizontal axis while being far wider across their round axis than long - they stand as discs on their edge instead of forming a tube. That is the classic 90-degree error: the length was typed into Size.Y or Size.Z. A CylinderPart runs along its LOCAL X axis (Size.X = length): use CFrame.Angles(0, 0, math.rad(90)) with Size = Vector3.new(length, diameter, diameter), or cylinderBetween from organicBuildRules.")
+    end
+    if quality.tiltedCylinderCount > 0 then
+        table.insert(qualityWarnings, "CYLINDER_TILT (info): " .. tostring(quality.tiltedCylinderCount)
+            .. " cylinder(s) are not parallel to any world axis. Fine for diagonal branches and struts, wrong for trunks, columns and upright legs.")
+    end
     local phase, verdict
     if #placeholders > 0 then
         phase, verdict = "blockout", "NOT done: " .. tostring(#placeholders) .. " placeholder(s) are still in the place."
     elseif #blockouts > 0 then
         phase, verdict = "blockout", "Blockout: " .. tostring(#blockouts) .. " part(s) still carry the default grey plastic look."
-    elseif meshes + unions == 0 then
-        phase, verdict = "modelled", "Modelled, but nothing is a mesh/union - check whether detail is missing."
+    elseif quality.primitiveOnly then
+        phase, verdict = "modelled", "NOT done: the build is primitive-only (" .. tostring(#quality.primitiveGroups) .. " ball-only group(s), no polygon/assembly/mesh/detail part)."
+    elseif quality.cylinderProblemCount > 0 then
+        phase, verdict = "modelled", "NOT done: " .. tostring(quality.cylinderProblemCount) .. " cylinder(s) stand as discs on their edge - the axis lies horizontally because the length was typed into Size.Y or Size.Z instead of Size.X."
+    elseif meshes + unions + quality.counts.polygonParts == 0 then
+        phase, verdict = "modelled", "Modelled, but nothing is a mesh, union or polygon model - check whether detail is missing."
+    elseif quality.counts.detailParts > 0 then
+        phase, verdict = "refined", "Clean: detailed geometry (ArenaDetail parts) and no placeholders, blockouts or measured build defects."
     else
-        phase, verdict = "modelled", "Clean: no placeholders, no blockouts found in the checked scope."
+        phase, verdict = "modelled", "Clean: no placeholders, blockouts or measured build defects found in the checked scope."
+    end
+    local nextStep = "Run world_audit for style/lighting, then continue."
+    if (#placeholders + #blockouts) > 0 then
+        nextStep = "refine the flagged parts or replace them, then run model_audit again."
+    elseif quality.primitiveOnly or quality.cylinderProblemCount > 0 then
+        nextStep = quality.advice
     end
     return ok({
         scope = root:GetFullName(),
@@ -10811,8 +11056,11 @@ tools.model_audit = function(args)
         materials = materials,
         phase = phase,
         verdict = verdict,
-        nextStep = (#placeholders + #blockouts) > 0 and "refine the flagged parts or replace them, then run model_audit again." or "Run world_audit for style/lighting, then continue.",
-    })
+        buildQuality = quality,
+        primitiveAbuse = quality.primitiveOnly,
+        cylinderProblemCount = quality.cylinderProblemCount,
+        nextStep = nextStep,
+    }, qualityWarnings)
 end
 
 tools.world_audit = function(args)
@@ -12933,7 +13181,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.1.2 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.1.3 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -16880,7 +17128,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             example = @{ source = 'local x = 1 + ' };
             errors = @('COMPILE_ERROR: mit Zeilennummer.') })
         $t.Add(@{ name = 'run_lua'; category = 'scripts'; summary = 'Lua im Server-/Edit-Kontext ausfuehren (persistent!).';
-            description = 'Fuehrt Lua aus und gibt Rueckgabe + alles, was gedruckt wurde, zurueck. WICHTIG: Die Umgebung ist PERSISTENT - ein Helfer aus einem frueheren Call (z.B. "M = {...}" ohne local) ist im naechsten Call weiter da (lua_state zeigt alle persiste Variablen). Fuer Läufe ueber 60s: asJob=true oder start_job. Fuer Polygon-/WedgePart-Geometrie erst build_polygon_model pruefen - schreibst du trotzdem eigene Dreieck-/Wedge-Logik hier, gilt die harte Achsen-Regel aus polygonEngineRules (get_docs / Sessionstart): lokal X=Dicke/Normale, Y=Hoehe, Z=Basiskante - sonst drohen 90-Grad-Drehfehler und Nahtspalten.';
+            description = 'Fuehrt Lua aus und gibt Rueckgabe + alles, was gedruckt wurde, zurueck. WICHTIG: Die Umgebung ist PERSISTENT - ein Helfer aus einem frueheren Call (z.B. "M = {...}" ohne local) ist im naechsten Call weiter da (lua_state zeigt alle persiste Variablen). Fuer Läufe ueber 60s: asJob=true oder start_job. Fuer Polygon-/WedgePart-Geometrie erst build_polygon_model pruefen - schreibst du trotzdem eigene Dreieck-/Wedge-Logik hier, gilt die harte Achsen-Regel aus polygonEngineRules (get_docs / Sessionstart): lokal X=Dicke/Normale, Y=Hoehe, Z=Basiskante - sonst drohen 90-Grad-Drehfehler und Nahtspalten. Fuer organische Koerper (Tiere/Pflanzen) gilt zusaetzlich organicBuildRules - inklusive Cylinder-Achsenregel: die Achse eines CylinderPart ist LOKAL X, also ist Size.X die Laenge; die fertige Referenzfunktion cylinderBetween steht dort. Reine Kugel-Konstruktionen und ein Zylinder mit Kugel als Baum sind ausdruecklich verboten.';
             params = @{ source = @{ type = 'string'; required = $true; default = '-'; description = 'Oder sourceRef.' }; context = @{ type = "'server'|'auto'"; required = $false; default = "'auto'"; description = 'Client existiert seit 7.0.0 nicht mehr (kein Playtest, kein Client-Agent) - "client" antwortet CONTEXT_UNAVAILABLE.' }; asJob = @{ type = 'bool'; required = $false; default = 'false'; description = 'Im Hintergrund als Job laufen lassen (rueckgibt jobId).' } };
             returns = '{ returned, output: [ { seq, message, type } ], context, environment="persistent", persistentKeys } oder (asJob) { ok, jobId, status="running" }';
             example = @{ source = 'local p = workspace:FindFirstChild("Part"); return p and p.Position' };
@@ -16918,7 +17166,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             example = @{ modelName='Saeulenring'; items=@(@{className='Part';name='Saeule{n}';properties=@{Size=@{x=2;y=12;z=2};Anchored=$true};repeat=@{count=12;radius=20}}) };
             errors = @('BUDGET_EXCEEDED: mehr als 2000 Teile.', 'BAD_ARGS: nichts erstellt.') })
         $t.Add(@{ name = 'build_polygon_model'; category = 'create'; summary = 'STARK EMPFOHLENES MODELLING-TOOL: fast wie Blender, nur direkt aus Polygonpunkten.';
-            description = 'FUER MODELLING AUSDRUECKLICH STARK EMPFOHLEN: build_polygon_model ist Arenas schnellster Weg zu freien, grossen 3D-Modellen und funktioniert vom Prinzip fast wie Polygon-Modelling in Blender. Arena beschreibt Flaechen und Untermodelle, die Bridge erledigt Newell-Normalen, Projektion, Ear-Clipping, Triangulation sowie nahtlose, seitengerechte Wedge-CFrames. Ein einziger Call kann ein riesiges Modell mit mehreren untergeordneten Foldern bauen, z.B. einen Baum mit Stamm und drei getrennten Kronen. Jedes Untermodell besitzt eigene normale Part-Eigenschaften wie Farbe, Material, MaterialVariant, Transparenz, Kollision und Schatten. autoWeld ist standardmaessig aktiv und verbindet alle Dreiecke je Untermodell; animierbare klassische mainWelds verbinden Untermodelle, sodass ein Script z.B. Kronen realistisch am Stamm wackeln lassen kann. closeOpenings schliesst vergessene Randloecher wie die offene Oberseite eines Stamms automatisch. Die Standard-Dickenplatzierung berechnet die Wedges von der sichtbaren Polygonseite statt von der Mitte: auch stark gedrehte Nachbarflaechen treffen ohne die bisherigen Rillen aufeinander.';
+            description = 'FUER MODELLING AUSDRUECKLICH STARK EMPFOHLEN: build_polygon_model ist Arenas schnellster Weg zu freien, grossen 3D-Modellen und funktioniert vom Prinzip fast wie Polygon-Modelling in Blender. Arena beschreibt Flaechen und Untermodelle, die Bridge erledigt Newell-Normalen, Projektion, Ear-Clipping, Triangulation sowie nahtlose, seitengerechte Wedge-CFrames. Ein einziger Call kann ein riesiges Modell mit mehreren untergeordneten Foldern bauen, z.B. einen Baum mit Stamm und drei getrennten Kronen. Jedes Untermodell besitzt eigene normale Part-Eigenschaften wie Farbe, Material, MaterialVariant, Transparenz, Kollision und Schatten. autoWeld ist standardmaessig aktiv und verbindet alle Dreiecke je Untermodell; animierbare klassische mainWelds verbinden Untermodelle, sodass ein Script z.B. Kronen realistisch am Stamm wackeln lassen kann. closeOpenings schliesst vergessene Randloecher wie die offene Oberseite eines Stamms automatisch. Die Standard-Dickenplatzierung berechnet die Wedges von der sichtbaren Polygonseite statt von der Mitte: auch stark gedrehte Nachbarflaechen treffen ohne die bisherigen Rillen aufeinander. ORGANISCH/REALISTISCH (Version 7.1.3): Fuer Tiere, Kreaturen, Baeume und Props ist DIESES Werkzeug der erste Schritt - vorher organicBuildRules lesen (get_docs / Sessionstart). Silhouette mit Taper, danach Gelenke, Details und Bewegung. Ein Zusammenbau aus Kugeln oder ein Zylinder-Stamm mit Kugel-Krone gilt als Entwurf und wird von model_audit gemessen und benannt.';
             params = @{ modelName=@{type='string';required=$false;default="'ArenaPolygonModel'";description='Oberstes fertiges Model.'}; submodels=@{type='array';required=$false;default='[]';description='EMPFOHLEN: [{name,containerClass="Folder|Model",polygons:[...],style:{...},autoWeld,closeOpenings,capStyle}]. Alles bleibt dem Hauptmodel untergeordnet.'}; polygons=@{type='array';required=$false;default='[]';description='Einfache Flaechen [{name,points,color,material,thickness,...,style}]. Fuer grosse Modelle besser submodels verwenden.'}; points=@{type='Vector3[]';required=$false;default='null';description='Kurzform fuer ein Polygon.'}; script=@{type='string';required=$false;default='null';description='Mehrere Bloecke: POLYGON name=Roof color=#884422 material=Slate thickness=0.03, Punkte, END.'}; style=@{type='table';required=$false;default='{}';description='Globale Part-Defaults: color, material, materialVariant, collisionGroup, thickness, thicknessPlacement (inside Standard|center|positive|negative), anchored, canCollide, canQuery, canTouch, castShadow, transparency, reflectance, properties. Geometrie bleibt Builder-eigen: Position/Orientation/Rotation/CFrame/Size/PivotOffset in properties werden ignoriert, damit keine Flaeche verdreht wird.'}; autoWeld=@{type='bool';required=$false;default='true';description='Standard AN: WeldConstraint-Kette innerhalb jedes Untermodells, damit Polygon-Wedges auch bei anchored=false als ein Objekt verbunden bleiben. Nur autoWeld=false erzeugt bewusst getrennte Teile.'}; mainWeld=@{type='bool';required=$false;default='false';description='Verbindet alle Untermodelle automatisch mit dem ersten.'}; mainWelds=@{type='array';required=$false;default='[]';description='Animierbare Verbindungen [{name,from,to}] zwischen benannten Untermodellen. Erzeugt klassische Welds mit C0/C1 fuer Script-Animation.'}; closeOpenings=@{type='bool';required=$false;default='false';description='Erkennt offene Rand-Loops pro Untermodell und verschliesst sie automatisch mit triangulierten AutoCap-Flaechen.'}; capStyle=@{type='table';required=$false;default='{}';description='Eigener Style fuer automatisch geschlossene Oeffnungen.'}; origin=@{type='Vector3';required=$false;default='{0,0,0}';description='Gesamt-Offset.'}; rotation=@{type='Vector3 degrees';required=$false;default='{0,0,0}';description='Gesamtrotation.'}; scale=@{type='number';required=$false;default='1';description='Gesamtskalierung.'}; maxWedges=@{type='int';required=$false;default='4000';description='Budget, maximal 10000.'}; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'} };
             returns = '{ model, submodels, polygons, triangles, wedges, autoCaps, welds, weldedSubmodels, autoWeldDefault, mainWelds, skipped, ignoredGeometryProperties, geometryInvariant, geometry, method, editable }';
             example = @{ modelName='RiesigerBaum'; submodels=@(@{name='Stamm';containerClass='Folder';style=@{color='#704020';material='Wood';anchored=$false};autoWeld=$true;closeOpenings=$true;polygons=@('... Seitenflaechen ...')},@{name='Krone1';style=@{color='#3E8B3E';material='Grass';anchored=$false};autoWeld=$true;polygons=@('...')},@{name='Krone2';style=@{color='#438F43';material='Grass';anchored=$false};autoWeld=$true;polygons=@('...')},@{name='Krone3';style=@{color='#397F39';material='Grass';anchored=$false};autoWeld=$true;polygons=@('...')}); mainWelds=@(@{name='Krone1AmStamm';from='Stamm';to='Krone1'},@{name='Krone2AmStamm';from='Stamm';to='Krone2'},@{name='Krone3AmStamm';from='Stamm';to='Krone3'}) };
@@ -17069,7 +17317,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             example = @{};
             errors = @() })
         $t.Add(@{ name = 'model_audit'; category = 'world'; summary = 'Modell-Audit: Platzhalter, Blockouts, Phase, Urteil.';
-            description = 'Zaehlt im Ziel (ref oder ganzer Workspace) Platzhalter (Name oder Attribut ArenaPlaceholder), Blockouts (Default-Grau 163/162/165 + Material Plastic, kein Mesh), Meshes, Unions und Materialien. Liefert phase (blockout|modelled|refined), verdict und die Liste der Platzhalter mit Id/Pfad. Solange Platzhalter oder Blockouts existieren, darf ohne Handoff kein "fertig" behauptet werden (die Bridge liest genau diese Zahlen fuer HANDOFF_REQUIRED).';
+            description = 'Zaehlt im Ziel (ref oder ganzer Workspace) Platzhalter (Name oder Attribut ArenaPlaceholder), Blockouts (Default-Grau 163/162/165 + Material Plastic, kein Mesh), Meshes, Unions und Materialien. Liefert phase (blockout|modelled|refined), verdict und die Liste der Platzhalter mit Id/Pfad. Solange Platzhalter oder Blockouts existieren, darf ohne Handoff kein "fertig" behauptet werden (die Bridge liest genau diese Zahlen fuer HANDOFF_REQUIRED). Version 7.1.3: Zusaetzlich misst das Audit die BAUQUALITAET (buildQuality) - gezaehlt werden Kugeln, Bloecke, Zylinder, Keile, Meshes, Unions, Polygon-/Assembly-Teile (Attribute ArenaMasterBuild/ArenaPolygonTriangle/ArenaAssembly) und ArenaDetail-Teile. primitiveOnly/primitiveGroups melden Gruppen, die NUR aus Kugeln bestehen (z. B. ein Tier aus sieben Baellen); cylinderProblems meldet je Zylinder discLikeCylinder (Achse liegt waagerecht, obwohl das Teil quer viel groesser ist als lang - es steht als Scheibe auf der Kante, genau der klassische 90-Grad-Dreher mit der Laenge in Size.Y/Size.Z) und axisSkewDeg als Info (Achse schief zu jeder Weltachse). report_done verweigert bei einem solchen Ergebnis mit DETAIL_REQUIRED. Regeln: organicBuildRules.';
             params = @{ ref = @{ type = 'string'; required = $false; default = 'game.Workspace'; description = '' } };
             returns = '{ ok, scope, parts, placeholderCount, placeholders, blockoutCount, meshes, unions, materials, phase, verdict, nextStep }';
             example = @{ ref = 'game.Workspace.Stadt' };
@@ -17280,7 +17528,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             example = @{ text = 'local M = {}'; chunkIndex = 1; chunkCount = 3; uploadId = 'myScript' };
             errors = @() })
         $t.Add(@{ name = 'get_docs'; category = 'system'; summary = 'Doku holen: pro Tool, pro Kategorie oder komplett.';
-            description = 'Dasselbe wie GET /api/docs - als Tool. Ohne Argumente: komplett.';
+            description = 'Dasselbe wie GET /api/docs - als Tool. Ohne Argumente: komplett. Version 7.1.3: Der Sessionstart liefert nur noch die Kernwerkzeuge vollstaendig (Bauen, Audit, Lesen, Sitzung) und alle uebrigen als Index mit Name/Kategorie/Kurztext. Vor dem ersten Einsatz eines Index-Werkzeugs hier die Parameter holen - die Doku ist hier IMMER vollstaendig.';
             params = @{ tool = @{ type = 'string'; required = $false; default = 'null'; description = 'Einzelnes Tool (z.B. "union").' }; category = @{ type = 'string'; required = $false; default = 'null'; description = 'info, spatial, orientation, create, properties, scripts, fill, union, assets, output, play, gui, jobs, system.' }; full = @{ type = 'bool'; required = $false; default = 'false'; description = 'Komplette Doku.' } };
             returns = 'Doku-JSON (siehe /api/docs)';
             example = @{ tool = 'fill_region' };
@@ -17318,7 +17566,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 'sim_start is disabled because the former official Studio Run simulation exits Edit mode (EditModeActive=false), and the documented Studio API has no supported true Edit-mode physics/script path. A USER-started Play/F5 test is separate, blocks building (USER_PLAYTEST_ACTIVE), and can only be ended by the user.',
                 'Windows finish notifications use report_done { title, message }. Arena writes a lively title (max 70 characters) and an inviting body (max 140); avoid dry changelog lists.',
                 'Responses include typed error codes and concrete diagnostics. Use those details to decide the next step.',
-                'HARD CONSTRAINT for any hand-written WedgePart/triangle geometry (build_polygon_model already does this correctly - this rule is for genuinely custom run_lua geometry code only): see polygonEngineRules below for the mandatory WedgePart axis convention and the canonical seamless-triangle formula. Getting the axis order wrong is the single most common cause of 90-degree rotation errors and gaping seams in procedural low-poly builds.'
+                'HARD CONSTRAINT for any hand-written WedgePart/triangle geometry (build_polygon_model already does this correctly - this rule is for genuinely custom run_lua geometry code only): see polygonEngineRules below for the mandatory WedgePart axis convention and the canonical seamless-triangle formula. Getting the axis order wrong is the single most common cause of 90-degree rotation errors and gaping seams in procedural low-poly builds.',
+                'HARD CONSTRAINT for EVERY creature, animal, plant, prop and organic free-form model: never deliver an assembly of primitives. A ball-only animal and a cylinder+ball tree are the two most common worthless results - see organicBuildRules below for the mandatory anatomy, the cylinder axis rule (a Roblox CylinderPart runs along its LOCAL X axis, so Size.X is the length), the canonical cylinderBetween reference Lua, the organic-motion rule and the measured self-check. model_audit reports buildQuality (primitiveOnly, cylinderProblems, primitiveGroups) and report_done refuses a primitive-only result with DETAIL_REQUIRED.'
             )
             worldEngineRules = @{
                 title = 'World Engine 1.0 - the world is a place with rules, not a pile of parts'
@@ -17330,7 +17579,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 props = 'prop_save stores a selection under workspace.ArenaProps; prop_place clones it with deterministic variation and ground snap. Prefer saved props over rebuilding the same tree ten times by hand.'
             }
             toolboxRules = @{
-                title = 'Toolbox Engine 1.0 (Version 7.1.2) - procedural first, catalog last, never in parallel'
+                title = 'Toolbox Engine 1.0 (Version 7.1.3) - procedural first, catalog last, never in parallel'
                 default = 'BUILD IT YOURSELF. For creatures, animals, plants, props and any organic free-form shape the DEFAULT is procedural: build_polygon_model for free-form bodies and sub-models, build_assembly or plain parts where that is simpler or more stable, and your own welds/joints plus a small run_lua animation (breathing, head/ear motion, tail swing, small weight shifts) for organic movement. Do NOT open with search_assets / asset_details / validate_asset / insert_asset, and never use a toolbox import as a shortcut for a shape you can build.'
                 beforeUsingTheCatalog = 'If a procedural shape is genuinely not realistic enough or technically out of reach, say so and OFFER a limited, transparent fallback FIRST. Let the user decide. Do not start catalog calls on your own initiative.'
                 hardLimits = 'Per place the bridge allows at most 2 catalog requests at a time and EXACTLY ONE active asset import. Anything beyond that answers immediately with TOOLBOX_BUSY or TOOLBOX_IMPORT_IN_FLIGHT. Never run asset searches in parallel, never poll in a loop, and never retry automatically after a timeout.'
@@ -17391,6 +17640,77 @@ local function drawSeamlessTriangle(p1, p2, p3, parent, props)
     end
 end
 '@
+            }
+            organicBuildRules = @{
+                title = 'Organic Build Engine 1.0 (Version 7.1.3) - no ball animals, no cylinder trees, no sideways cylinders'
+                whenThisApplies = 'EVERY creature, animal, humanoid, plant, tree, rock, prop and organic free-form model. This is not advice: model_audit MEASURES it afterwards (result.buildQuality) and report_done answers DETAIL_REQUIRED instead of accepting a primitive-only result. A user asked for a highly detailed, realistic model built over the bridge - a pile of primitives is the one thing that must never come out of it.'
+                theOneIdea = 'A body is a SILHOUETTE, not a pile of primitives. Build the volume first (build_polygon_model: tapering torso, chest, neck, skull), then the limbs as real segments, then the joints (welds/Motor6D), then the details (ears, muzzle, eyes, claws, fur plates), and only then the motion. Every primitive needs a REASON: a Ball is an eye or a joint cover, a Cylinder is a pivot, pipe or bone - never a torso, never a leg and never a tree trunk.'
+                forbidden = @(
+                    'FORBIDDEN - BALL ANIMAL: an animal assembled only from Ball parts (body ball + head ball + four leg balls + tail ball). That is the first-minute draft the user can build himself. model_audit reports it as primitiveOnly with primitiveGroups and report_done refuses to accept it.',
+                    'FORBIDDEN - CYLINDER TREE: one CylinderPart as trunk plus one Ball as crown. A real trunk is a tapered polygon column with a root flare and 3-6 real branches; a real crown is 3+ irregular polygon clumps with different sizes, colours and rotation, never a single sphere.',
+                    'FORBIDDEN - UNTAPERED LIMBS: one stretched block per leg. Every limb has an upper and a lower segment that taper toward the paw/hoof, plus a shoulder/hip connection that overlaps the torso so no gap and no floating part remains.',
+                    'FORBIDDEN - ONE SINGLE ROTATION AS ANIMATION: a model that spins or a limb that swings on one constant loop is not animated, it is a turntable.',
+                    'FORBIDDEN - CLAIMING DONE WHILE IT IS A BLOCKOUT: if the shape is still primitive or placeholder-like, either keep building or hand off honestly. report_done returns DETAIL_REQUIRED.'
+                )
+                anatomyMinimum = 'Working order for a creature: (1) torso and chest as tapering polygon volumes, (2) neck + skull + muzzle, (3) four limbs with upper/lower segments and paw/hoof, plus shoulder/hip overlap into the torso, (4) tail as a chain of 4-8 shrinking segments, (5) ears (bent, thick, asymmetric), (6) face detail: eyes (ball + dark pupil + highlight), nose, mouth line, whiskers as thin cylinders, (7) surface character: layered fur/feather/scale plates, colour split between back, belly, muzzle and paws. A finished creature is normally 30-80 parts depending on style - fewer than 15 parts is a draft unless the user explicitly asked for a stylised low-poly toy.'
+                cylinderRule = 'ROBLOX CYLINDER AXIS: a CylinderPart runs along its LOCAL X AXIS. Size.X is the LENGTH, Size.Y and Size.Z are the diameter. An unrotated CylinderPart is a barrel lying sideways (axis = world X) - that is the "all cylinders are 90 degrees wrong" error. Upright trunk/leg/column: CFrame.new(pos) * CFrame.Angles(0, 0, math.rad(90)) rotates the local X axis onto world Y. Never try to fix an upright cylinder with Orientation = Vector3.new(0, 90, 0) or with Size = Vector3.new(diameter, height, diameter) - that keeps the axis in X and renders a flat coin instead of a tube.'
+                cylinderDetection = 'model_audit checks every cylinder for you. Hard error (discLikeCylinder): the tube axis lies horizontally while the part is at least 1.5x wider across its round axis than long - it shows up as a disc standing on its edge, which is exactly how the classic 90-degree error looks after the length was typed into Size.Y or Size.Z. Informational (axisSkewDeg): the angle between the X axis and the nearest world axis - a diagonal branch is fine and expected, a trunk at 90 degrees is not. Fix by rebuilding the CFrame, never by nudging Orientation until it looks right.'
+                referenceLua = @'
+-- Canonical cylinder + limb helpers for hand-written run_lua organic builds.
+-- applyProps(part, props, parent) is your own helper (Color/Material/Anchored/
+-- CanCollide/Parent). Geometry rule of this block: a CylinderPart axis is its
+-- LOCAL X axis, so Size.X is the length and Size.Y = Size.Z is the diameter.
+local function uprightCylinder(parent, pos, height, diameter, props)
+    local p = Instance.new("Part")
+    p.Shape = Enum.PartType.Cylinder
+    p.Size = Vector3.new(height, diameter, diameter)          -- X = length!
+    p.CFrame = CFrame.new(pos) * CFrame.Angles(0, 0, math.rad(90))
+    applyProps(p, props, parent)
+    return p
+end
+
+-- Any direction, always correct: build the basis FROM the direction itself.
+local function cylinderBetween(parent, a, b, diameter, props)
+    local delta = b - a
+    local length = delta.Magnitude
+    if length < 0.01 then return nil end
+    local axis = delta.Unit                                   -- local X
+    local ref = (math.abs(axis.Y) > 0.99) and Vector3.new(0, 0, 1) or Vector3.new(0, 1, 0)
+    local z = axis:Cross(ref).Unit                            -- local Z
+    local y = z:Cross(axis).Unit                              -- local Y (X cross Y = Z)
+    local p = Instance.new("Part")
+    p.Shape = Enum.PartType.Cylinder
+    p.Size = Vector3.new(length, diameter, diameter)
+    p.CFrame = CFrame.fromMatrix((a + b) * 0.5, axis, y, z)
+    applyProps(p, props, parent)
+    return p
+end
+
+-- Tapered limb/tail segment: two welded cylinders of different diameter.
+local function taperedSegment(parent, a, b, d1, d2, props)
+    local mid = a:Lerp(b, 0.5)
+    local lower = cylinderBetween(parent, a, mid, (d1 + d2) * 0.5, props)
+    local upper = cylinderBetween(parent, mid:Lerp(b, 0.02), b, d2, props)
+    if lower and upper then
+        local weld = Instance.new("WeldConstraint")
+        weld.Part0 = lower
+        weld.Part1 = upper
+        weld.Parent = lower
+    end
+    return lower, upper
+end
+'@
+                animationRule = 'Organic means: several small motions with DIFFERENT periods, never one rotation. Breathing (torso scale +-2-3 %, 3-4 s), head look/bob (+-4-8 degrees, 2.7 s), ear flicks (short, irregular), tail chain where each segment lags the previous by ~0.1 s and the tip swings furthest, weight shift/sway (+-1.5 degrees, ~6 s), blink every 3-6 s (eye scale to 0.05 for ~0.12 s). Build real joints (Motor6D for animated limbs, WeldConstraint for rigid parts) and drive them with TweenService in a small Script (insert_script) or with run_lua while building. Delete nothing that moves: anchored parts may be tweened directly, unanchored rigs need Motor6D + a Script.'
+                detailBudget = 'Detail is measured, not claimed: build_polygon_model/build_assembly for the volumes, refine for trim/ArenaDetail parts, then model_audit. Add real surface structure (fur plates, feather rows, bark strips, scale rows) in large-to-small order, and give back, belly, muzzle and paws their own colour or material - a single flat colour over 40 parts still reads as a draft.'
+                workflow = 'measure (raycast/ground_height/probe_world) -> build the silhouette with build_polygon_model -> joints and anatomy -> detail (refine, colours, material split) -> motion (Small Script/TweenService) -> model_audit and read result.buildQuality -> fix what it names -> report_done. For several animals use build_assembly or prop_save/prop_place with a style seed, never ten hand-copied clones.'
+                selfCheck = @(
+                    'No Ball is used as a torso or a whole animal; balls are eyes, joints, berries or accents.',
+                    'No CylinderPart stands as a disc on its edge: upright tubes use CFrame.Angles(0, 0, math.rad(90)) and Size = (length, diameter, diameter), never the length in Size.Y or Size.Z.',
+                    'Every limb has at least two tapering segments plus a paw/hoof, overlapping the torso.',
+                    'The tree has a tapered trunk with root flare and branches - not one cylinder and not one ball crown.',
+                    'At least three different motion loops with different periods exist, or the model is explicitly static by request.',
+                    'model_audit buildQuality says primitiveOnly=false and cylinderProblems=0 before report_done.'
+                )
             }
             uiEngineRules = @{
                 title = 'UI Engine 2.0 - canonical rules for every GUI (anchor/scale/corner/CanvasGroup bugs, glow, real textures, radial menus and the generic dark-dashboard look)'
@@ -17681,7 +18001,61 @@ end
         if ($startNotify) {
             $out.finishNotification = 'FINISH NOTIFICATION IS ON: when ALL your changes are complete and you are about to end your answer, call report_done { title, message } as your VERY LAST tool call - the user receives a Windows notification with your German message (e.g. title="✅ Arena hat den Bug behoben!", message="Der Fehler ist weg – komm und teste das Spiel!"). After that call: no more tools, no more changes - end your answer immediately.'
         }
-        $out.tools = (Get-ToolDocs)
+        # Version 7.1.3: NUTZLAST-BUDGET DES SESSIONSTARTS.
+        # Bis 7.1.2 lieferte die ERSTE Antwort die vollstaendige Doku ALLER
+        # Werkzeuge mit (129 Eintraege mit Parametern, Beispielen und
+        # Fehlerfaellen) - zusammen mit den Regelbloecken weit ueber 120 KB in
+        # einem einzigen Paket. Solche Riesenpakete sind ein bekannter Ausloeser
+        # fuer abgelehnte KI-Anfragen ("The AI service rejected this request").
+        # Jetzt: Kernwerkzeuge voll, alle uebrigen als Index (Name, Kategorie,
+        # Kurztext) mit dem ausdruecklichen Hinweis, die Parameter mit
+        # get_docs { tool = "..." } zu holen. Zusaetzlich eine harte Obergrenze:
+        # waechst das Paket trotzdem darueber, wird auch der Kern nur noch als
+        # Index verschickt - der Sessionstart kann also nie wieder unbegrenzt
+        # wachsen. Die Antwort nennt packageBytes, budgetBytes und docsPolicy.
+        $coreToolNames = @(
+            'get_place_info','get_tree','get_instance','get_properties','get_selection','describe_scene','resolve_ref','probe_world',
+            'raycast','ground_height','create_instance','bulk_create','set_property','set_properties','move_instance','clone_instance',
+            'delete_instance','build_polygon_model','build_assembly','build_interface','build_surface','ui_capabilities','ui_skin','ui_audit',
+            'run_lua','insert_script','set_script_source','compile_check','model_audit','world_audit','site_survey','world_style','style_lock',
+            'refine','prop_place','prop_save','report_done','get_docs','get_chunk','list_tools','bridge_status','start_job','job_status',
+            'job_result','get_output','get_errors','wait'
+        )
+        $coreDocs = New-Object System.Collections.Generic.List[object]
+        $indexDocs = New-Object System.Collections.Generic.List[object]
+        foreach ($doc in (Get-ToolDocs)) {
+            if ($coreToolNames -contains [string]$doc.name) {
+                $coreDocs.Add($doc)
+            } else {
+                $indexDocs.Add(@{ name = [string]$doc.name; category = [string]$doc.category; summary = [string]$doc.summary })
+            }
+        }
+        $out.tools = $coreDocs.ToArray()
+        $out.toolsIndex = $indexDocs.ToArray()
+        $out.toolsIndexNote = ('The tool index lists ' + [string]$indexDocs.Count + ' further tools with name, category and summary only. Before using one of them, fetch its exact parameters, defaults, return value and examples with get_docs { tool = "<name>" } (or GET /api/docs?tool=<name>) - the full documentation is always complete there. The core building, audit, read and session tools above are already documented in full.')
+        $packageBudget = 300000
+        try { $packageBudget = [int]$Shared.SessionPayloadHardBudgetBytes } catch {}
+        if ($packageBudget -le 0) { $packageBudget = 300000 }
+        $out.budgetBytes = $packageBudget
+        $out.packageBytes = 0
+        $out.docsPolicy = 'core-full'
+        $measuredBytes = 0
+        try { $measuredBytes = ($out | ConvertTo-Json -Depth 12 -Compress).Length } catch { $measuredBytes = 0 }
+        if ($measuredBytes -gt $packageBudget) {
+            # Notbremse: selbst der Kern passt nicht mehr ins Budget. Dann
+            # bleibt nur der Index - nie ein unbegrenztes Paket.
+            $allIndex = New-Object System.Collections.Generic.List[object]
+            foreach ($doc in (Get-ToolDocs)) {
+                $allIndex.Add(@{ name = [string]$doc.name; category = [string]$doc.category; summary = [string]$doc.summary })
+            }
+            $out.tools = @()
+            $out.toolsIndex = $allIndex.ToArray()
+            $out.docsPolicy = 'index-only'
+            $out.toolsIndexNote = ('Payload budget exceeded - the full per-tool documentation was left out completely (' + [string]$measuredBytes + ' bytes before this cut). Fetch what you need with get_docs { tool = "<name>" } or GET /api/docs?tool=<name>.')
+            $measuredBytes = 0
+            try { $measuredBytes = ($out | ConvertTo-Json -Depth 12 -Compress).Length } catch { $measuredBytes = 0 }
+        }
+        $out.packageBytes = [int]$measuredBytes
         return $out
     }
 
@@ -17701,13 +18075,13 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.1.2'
+            version = '7.1.3'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
             docsVersion = [string]$Shared.DocsVersion
             role = 'A normal token controls exactly one live Roblox Studio place. The special aggregate token copied from Alle Places controls several places: call GET /api/places first and pass one exact targetPlace in every request; the bridge refuses to guess. This makes switching safe and explicit. Send every request as POST /api/tool with JSON body { "token": "...", "targetPlace": "...", "tool": "...", "args": { ... } }.'
-            firstCallBehavior = 'The complete documentation (every tool: description, all parameters with type+default, return value, runnable example, error cases) is delivered automatically with the FIRST tool response of this session as _sessionStart. You do not need any extra call to get it. On demand: GET /api/docs (no param = everything, ?tool=<name>, ?category=<name>) or the get_docs tool.'
+            firstCallBehavior = 'The FIRST tool response of this session automatically carries _sessionStart: the complete rules (including organicBuildRules), the progress/quality contracts and the full documentation of the core building, audit, read and session tools. The remaining tools are listed there as an index (name, category, summary) because a payload with every single tool documentation would be unnecessarily huge - fetch the exact parameters, defaults, examples and error cases with get_docs { tool = "<name>" } or GET /api/docs?tool=<name> (GET /api/docs with no parameter still returns everything). The session start names the measured size as packageBytes, the limit as budgetBytes and the policy as docsPolicy.'
             authentication = @{
                 headers = @('Authorization: Bearer <token>', 'X-Arena-Token: <token>')
                 query = '?token=<token>'
@@ -17931,7 +18305,7 @@ end
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.1.2'
+            bridgeVersion = '7.1.3'
             executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent = 0, never an error. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
@@ -17950,7 +18324,7 @@ end
                 simAllowed = $simAllowed
                 notifyOnDone    = $notifyOnDone
             }
-            docs          = 'Full tool documentation (parameters, types, defaults, returns, examples, error codes): GET /api/docs, or ?tool=<name>, or ?category=<name>. It was also delivered automatically with the first tool call of this session (_sessionStart).'
+            docs          = 'Full tool documentation (parameters, types, defaults, returns, examples, error codes): GET /api/docs, or ?tool=<name>, or ?category=<name>. The first tool call of this session (_sessionStart) already carried the rules, the contracts and the full documentation of the core building/audit/read/session tools; every other tool is listed there as an index - fetch its parameters with get_docs or GET /api/docs?tool=<name>.'
         }
         if ($Shared.Sessions.Count -ge 2) {
             $envelope.multiPlace = @{
@@ -18043,6 +18417,35 @@ end
             } else {
                 $envelope.attention = $busyNote
             }
+        }
+        # Version 7.1.3: Der zuletzt GEMESSENE Bauzustand gehoert in jede
+        # Antwort. Ein Kugel-Modell oder ein falsch gedrehter Zylinder darf
+        # nicht erst bei report_done auffallen, sondern muss waehrend der
+        # Arbeit sichtbar sein (model_audit -> buildQuality).
+        $qualityJson = ''
+        if ($Shared.AuditFlags.TryGetValue([string]$sessionId, [ref]$qualityJson) -and -not [string]::IsNullOrWhiteSpace($qualityJson)) {
+            try {
+                $qualityView = $qualityJson | ConvertFrom-Json
+                $qualityAbuse = $false
+                $qualityCylinders = 0
+                try { if ($qualityView.PSObject.Properties['primitiveAbuse']) { $qualityAbuse = [bool]$qualityView.primitiveAbuse } } catch {}
+                try { if ($qualityView.PSObject.Properties['cylinderProblemCount']) { $qualityCylinders = [int]$qualityView.cylinderProblemCount } } catch {}
+                if ($qualityAbuse -or $qualityCylinders -gt 0) {
+                    $envelope.buildQuality = @{
+                        verdict = $(try { [string]$qualityView.buildQualityVerdict } catch { '' })
+                        primitiveAbuse = $qualityAbuse
+                        primitiveGroups = $(if ($qualityView.PSObject.Properties['primitiveGroups']) { $qualityView.primitiveGroups } else { @() })
+                        cylinderProblemCount = $qualityCylinders
+                        source = 'model_audit buildQuality (measured in Studio, not an estimate)'
+                    }
+                    $qualityNote = 'BUILD QUALITY: the last model_audit still reports '
+                    if ($qualityAbuse) { $qualityNote = $qualityNote + 'a primitive-only (Ball-only) group ' }
+                    if ($qualityAbuse -and $qualityCylinders -gt 0) { $qualityNote = $qualityNote + 'and ' }
+                    if ($qualityCylinders -gt 0) { $qualityNote = $qualityNote + ([string]$qualityCylinders + ' cylinder(s) standing as discs on their edge (90-degree error) ') }
+                    $qualityNote = $qualityNote + '- see organicBuildRules, rebuild with build_polygon_model and the cylinder helper, then run model_audit again. report_done answers DETAIL_REQUIRED until this is fixed or handed off.'
+                    if ($envelope.attention) { $envelope.attention = $envelope.attention + ' ' + $qualityNote } else { $envelope.attention = $qualityNote }
+                }
+            } catch {}
         }
         $late = Take-LateResults $sessionId
         if ($late.Count -gt 0) {
@@ -18187,17 +18590,56 @@ end
                     $auditJson = ''
                     if ($Shared.AuditFlags.TryGetValue([string]$sessionId, [ref]$auditJson) -and -not [string]::IsNullOrWhiteSpace($auditJson)) {
                         $audit = $auditJson | ConvertFrom-Json
-                        if ([int]$audit.placeholderCount -gt 0) {
-                            $handoffState = ''
-                            [void]$Shared.Handoffs.TryGetValue([string]$sessionId, [ref]$handoffState)
-                            if ([string]::IsNullOrWhiteSpace($handoffState)) {
-                                return @{
-                                    ok = $false
-                                    code = 'HANDOFF_REQUIRED'
-                                    error = ('This place still contains ' + [string]$audit.placeholderCount + ' marked placeholder(s). Do not report "done" yet - write the handoff now: call handoff { scope="game", ... } with the completed stage, the exact next steps and the open placeholders.')
-                                    placeholders = $audit.placeholders
-                                    howToFix = 'Finish the current stage completely, then call handoff. That is an invitation, not a punishment.'
+                        $handoffState = ''
+                        [void]$Shared.Handoffs.TryGetValue([string]$sessionId, [ref]$handoffState)
+                        if ([int]$audit.placeholderCount -gt 0 -and [string]::IsNullOrWhiteSpace($handoffState)) {
+                            return @{
+                                ok = $false
+                                code = 'HANDOFF_REQUIRED'
+                                error = ('This place still contains ' + [string]$audit.placeholderCount + ' marked placeholder(s). Do not report "done" yet - write the handoff now: call handoff { scope="game", ... } with the completed stage, the exact next steps and the open placeholders.')
+                                placeholders = $audit.placeholders
+                                howToFix = 'Finish the current stage completely, then call handoff. That is an invitation, not a punishment.'
+                            }
+                        }
+                        # Version 7.1.3: Bauqualitaet. Ein Kugel-Tier oder ein
+                        # falsch gedrehter Zylinder ist kein fertiges Modell -
+                        # die Bridge sagt das jetzt selbst, statt es
+                        # durchzuwinken. Ausweg: nachbauen ODER ehrlich
+                        # uebergeben (handoff).
+                        $primitiveAbuseNow = $false
+                        $cylinderProblemsNow = 0
+                        try { if ($audit.PSObject.Properties['primitiveAbuse']) { $primitiveAbuseNow = [bool]$audit.primitiveAbuse } } catch {}
+                        try { if ($audit.PSObject.Properties['cylinderProblemCount']) { $cylinderProblemsNow = [int]$audit.cylinderProblemCount } } catch {}
+                        if (($primitiveAbuseNow -or $cylinderProblemsNow -gt 0) -and [string]::IsNullOrWhiteSpace($handoffState)) {
+                            $groupNames = New-Object System.Collections.Generic.List[string]
+                            try {
+                                foreach ($group in $audit.primitiveGroups) {
+                                    $label = [string]$group.name
+                                    if ([string]::IsNullOrWhiteSpace($label)) { $label = [string]$group.path }
+                                    if (-not [string]::IsNullOrWhiteSpace($label)) { $groupNames.Add(('"' + $label + '" (' + [string]$group.balls + ' balls)')) }
                                 }
+                            } catch {}
+                            $qualityReason = ''
+                            if ($primitiveAbuseNow) {
+                                $qualityReason = 'model_audit measured a PRIMITIVE-ONLY build: ' + [string]$groupNames.Count + ' group(s) consist only of Ball parts'
+                                if ($groupNames.Count -gt 0) { $qualityReason = $qualityReason + ' - ' + ($groupNames.ToArray() -join ', ') }
+                                $qualityReason = $qualityReason + '.'
+                            }
+                            if ($cylinderProblemsNow -gt 0) {
+                                if ($qualityReason) { $qualityReason = $qualityReason + ' ' }
+                                $qualityReason = $qualityReason + ('model_audit measured ' + [string]$cylinderProblemsNow + ' cylinder(s) whose tube axis lies horizontally while the part is far wider than long - they stand as discs on their edge, the classic 90-degree error. A Roblox CylinderPart runs along its LOCAL X axis, so Size.X must be the length (CFrame.Angles(0, 0, math.rad(90)) for upright, or cylinderBetween from organicBuildRules).')
+                            }
+                            return @{
+                                ok = $false
+                                code = 'DETAIL_REQUIRED'
+                                error = ($qualityReason + ' report_done does not accept this as finished work - a ball-only animal or a sideways cylinder is a draft, not a model.')
+                                buildQuality = @{
+                                    verdict = [string]$audit.buildQualityVerdict
+                                    primitiveAbuse = $primitiveAbuseNow
+                                    primitiveGroups = $audit.primitiveGroups
+                                    cylinderProblemCount = $cylinderProblemsNow
+                                }
+                                howToFix = 'Either rebuild it (build the silhouette with build_polygon_model, use the cylinder rule and the reference helpers from organicBuildRules, then run model_audit again) OR - if this really is a deliberate blockout or the user asked for primitives - call handoff { scope="object"/"scene"/"game", ... } saying exactly that. That is an invitation, not a punishment.'
                             }
                         }
                     }
@@ -18278,7 +18720,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.1.2'
+                        bridgeVersion = '7.1.3'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -18537,7 +18979,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.1.2'
+                        serverVersion = '7.1.3'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -18896,7 +19338,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.1.2'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.1.3'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -18980,8 +19422,8 @@ end
                 }
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.1.2'
-                    serverVersion = '7.1.2'
+                    bridgeVersion = '7.1.3'
+                    serverVersion = '7.1.3'
                     toolbox = $statusToolbox
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
@@ -19414,16 +19856,35 @@ end
                                 # auch ui_audit/Report-Felder beruecksichtigen
                                 try { if ($auditResult.PSObject.Properties['counts'] -and $auditResult.counts.PSObject.Properties['placeholders']) { $placeholderCount = [int]$auditResult.counts.placeholders } } catch {}
                             }
+                            # Version 7.1.3: Bauqualitaet aus dem Modell-Audit
+                            # mitschreiben. report_done verweigert damit ein
+                            # Kugel-Modell (DETAIL_REQUIRED), statt es
+                            # durchzuwinken.
+                            $primitiveAbuse = $false
+                            $primitiveGroups = @()
+                            $cylinderProblemCount = 0
+                            try { if ($auditResult.PSObject.Properties['primitiveAbuse']) { $primitiveAbuse = [bool]$auditResult.primitiveAbuse } } catch {}
+                            try { if ($auditResult.PSObject.Properties['buildQuality'] -and $auditResult.buildQuality.PSObject.Properties['primitiveGroups']) { $primitiveGroups = @($auditResult.buildQuality.primitiveGroups) } } catch {}
+                            try { if ($auditResult.PSObject.Properties['cylinderProblemCount']) { $cylinderProblemCount = [int]$auditResult.cylinderProblemCount } } catch {}
+                            $buildVerdict = ''
+                            try { if ($auditResult.PSObject.Properties['buildQuality'] -and $auditResult.buildQuality.PSObject.Properties['verdict']) { $buildVerdict = [string]$auditResult.buildQuality.verdict } } catch {}
                             $summary = ''
                             try {
                                 if ($tool -eq 'ui_audit') { $summary = 'ui_audit: blandness ' + [string]$auditResult.blandnessScore + ', techniqueScore ' + [string]$auditResult.techniqueScore }
                                 else { $summary = $tool + ': ' + [string]$auditResult.verdict + ' (' + [string]$auditResult.phase + ')' }
                             } catch {}
+                            if ($primitiveAbuse -or $cylinderProblemCount -gt 0) {
+                                $summary = $summary + ' | buildQuality ' + $buildVerdict
+                            }
                             $flag = [pscustomobject]@{
                                 placeholderCount = $placeholderCount
                                 placeholders = $placeholders
                                 summary = $summary
                                 phase = $(try { [string]$auditResult.phase } catch { '' })
+                                primitiveAbuse = $primitiveAbuse
+                                primitiveGroups = $primitiveGroups
+                                cylinderProblemCount = $cylinderProblemCount
+                                buildQualityVerdict = $buildVerdict
                                 at = (Get-UnixSeconds)
                             }
                             $Shared.AuditFlags[[string]$sessionId] = ($flag | ConvertTo-Json -Depth 5 -Compress)
@@ -20975,7 +21436,7 @@ $xaml = @'
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="Arena Roblox Bridge" Foreground="{StaticResource TextMain}" FontSize="18.5" FontWeight="Bold"/>
                             <TextBlock x:Name="SubtitleText" Text="Bereit für verbundene Places" Foreground="{StaticResource TextMuted}" FontSize="11.5" Margin="0,3,0,0"/>
-                            <TextBlock x:Name="RuntimeLine" Text="Bridge 7.1.2" Foreground="{StaticResource TextFaint}" FontSize="9.5" Margin="0,2,0,0"/>
+                            <TextBlock x:Name="RuntimeLine" Text="Bridge 7.1.3" Foreground="{StaticResource TextFaint}" FontSize="9.5" Margin="0,2,0,0"/>
                         </StackPanel>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -21766,7 +22227,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.1.2)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.1.3)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -22371,7 +22832,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.1.2)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.1.3)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -24538,7 +24999,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.1.2)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.1.3)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -25289,7 +25750,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.1.2'
+    $versionText = '7.1.3'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -25534,12 +25995,39 @@ function ConvertTo-XmlSafeText {
     return ([string]$Text).Replace('&', '&amp;').Replace('<', '&lt;').Replace('>', '&gt;')
 }
 
+function Clear-NotifyQueue {
+    # Version 7.1.3: wartende Fertig-Meldungen verwerfen. Das Ausschalten des
+    # Schalters "Benachrichtigung, wenn Arena fertig ist" muss SOFORT wirken,
+    # nicht erst nach dem naechsten Anzeige-Takt.
+    param()
+    $drained = 0
+    try {
+        while ($true) {
+            $item = $null
+            if (-not $script:Shared.NotifyQueue.TryDequeue([ref]$item)) { break }
+            $drained = $drained + 1
+        }
+    } catch {}
+    if ($drained -gt 0) { Write-RuntimeLog "Fertig-Benachrichtigung aus: $drained wartende Meldung(en) verworfen." }
+    return $drained
+}
+
 function Show-ArenaDoneNotification {
     # Version 3.8: Windows-Benachrichtigung "Arena ist fertig" - ausschliesslich
     # fuer die report_done-Meldung der KI (der Nutzer hat diese Benachrichtigung
     # dafuer explizit in den Einstellungen aktiviert; sie ist standardmaessig
     # AUS). Die alten stummen Toast-Stummel bleiben unangetastet.
+    # Version 7.1.3: Der Schalter "Benachrichtigung, wenn Arena fertig ist"
+    # steht direkt unter "Fortschritt in der Place-Liste anzeigen" und wird
+    # hier ZUSAETZLICH unmittelbar vor dem Anzeigen geprueft - ein Ausschalten
+    # wirkt damit auch fuer Meldungen, die schon in der Warteschlange lagen.
     param([string]$Place, [string]$Title, [string]$Message)
+    $allowed = $false
+    try { $allowed = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch {}
+    if (-not $allowed) {
+        Write-RuntimeLog 'Fertig-Meldung verworfen: der Schalter "Benachrichtigung, wenn Arena fertig ist" ist aus.'
+        return
+    }
     # Windows 11 ToastGeneric hat laut Microsoft kein festes Zeichenlimit je
     # Textfeld (Darstellung wird nach Breite/Skalierung abgeschnitten; Gesamt-XML
     # max. 5 KB). Fuer verlaesslich voll sichtbare Meldungen erzwingt die Bridge
@@ -25619,9 +26107,11 @@ function Open-SettingsWindow {
     $autoStartNow = Get-StartupEnabled
     $editorIconsNow = $true
     $progressNow = $true
+    $doneNotifyNow = $false
     $perfNow = $false
     try { $editorIconsNow = [bool]$script:SettingsCache.editorIconsEnabled } catch {}
     try { $progressNow = [bool]$script:Shared.BridgeSettings.progressInPlaceList } catch {}
+    try { $doneNotifyNow = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch {}
     try { $perfNow = [bool]$script:SettingsCache.perfDiagnostics } catch {}
 
     $settingsXaml = @'
@@ -25895,17 +26385,14 @@ function Open-SettingsWindow {
                             </StackPanel>
                         </Border>
 
-                        <TextBlock Text="SIMULATION" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
-                        <Border Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="14" Padding="16,12">
-                            <StackPanel>
-                                <TextBlock Text="sim_start ist deaktiviert" Foreground="#FFFFC95E" FontSize="12.5" FontWeight="SemiBold"/>
-                                <TextBlock Text="Der bisherige Studio-Run verlässt Edit Mode (EditModeActive=false). Die dokumentierte Roblox-Studio-API bietet keinen unterstützten Weg für Physik/Skripte bei aktivem Edit Mode. compile_check, run_lua und alle Bau-/Lesewerkzeuge bleiben verfügbar." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
-                            </StackPanel>
-                        </Border>
                         <TextBlock Text="PLACE-LISTE" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
                         <Border Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="14" Padding="16,12">
                             <StackPanel>
                                 <CheckBox x:Name="ProgressSwitch" Style="{StaticResource ArenaSwitch}" Content="Fortschritt in der Place-Liste anzeigen"/>
+                                <!-- Version 7.1.3: Fertig-Benachrichtigung als eigener
+                                     Schalter direkt unter der Fortschrittsanzeige. -->
+                                <CheckBox x:Name="DoneNotifySwitch" Style="{StaticResource ArenaSwitch}" Content="Benachrichtigung, wenn Arena fertig ist" Margin="0,14,0,0"/>
+                                <TextBlock Text="Zeigt am Ende der Arbeit die Windows-Meldung von Arena (Titel und kurzer Text). Standard: aus." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,7,0,0"/>
                             </StackPanel>
                         </Border>
 
@@ -25913,7 +26400,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.1.2" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.1.3" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -25942,15 +26429,17 @@ function Open-SettingsWindow {
     $swClose         = $settingsWindow.FindName('CloseButton')
     $startupSwitch   = $settingsWindow.FindName('StartupSwitch')
     $progressSwitch  = $settingsWindow.FindName('ProgressSwitch')
+    $doneNotifySwitch = $settingsWindow.FindName('DoneNotifySwitch')
     $editorIconsSwitch = $settingsWindow.FindName('EditorIconsSwitch')
     $perfSwitch      = $settingsWindow.FindName('PerfSwitch')
     $updateText      = $settingsWindow.FindName('UpdateInfoText')
 
     $startupSwitch.IsChecked = $autoStartNow
     $progressSwitch.IsChecked = $progressNow
+    $doneNotifySwitch.IsChecked = $doneNotifyNow
     $editorIconsSwitch.IsChecked = $editorIconsNow
     $perfSwitch.IsChecked = $perfNow
-    foreach ($toggleSwitch in @($startupSwitch, $progressSwitch, $editorIconsSwitch, $perfSwitch)) {
+    foreach ($toggleSwitch in @($startupSwitch, $progressSwitch, $doneNotifySwitch, $editorIconsSwitch, $perfSwitch)) {
         Set-ArenaSwitchVisualState $toggleSwitch
         $toggleSwitch.Add_Loaded({ param($s, $e) Set-ArenaSwitchVisualState $s })
     }
@@ -25958,7 +26447,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.1.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.1.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -25990,6 +26479,21 @@ function Open-SettingsWindow {
         if ($s.IsChecked) { $stateText = 'sichtbar' }
         Write-RuntimeLog "Fortschrittsanzeige in der Place-Liste $stateText (Verlauf und Diagnose bleiben vollstaendig)."
     })
+    $doneNotifySwitch.Add_Click({
+        param($s, $e)
+        # Version 7.1.3: An/Aus der Windows-Meldung "Arena ist fertig"
+        # (report_done). Aus wirkt SOFORT: eine schon gemeldete Meldung wird
+        # aus der Warteschlange verworfen und der Anzeige-Takt ueberspringt
+        # sie; die KI erfaehrt denselben Stand in jeder Antwort.
+        $enabled = [bool]$s.IsChecked
+        $script:Shared.BridgeSettings.notifyOnDone = $enabled
+        $script:SettingsCache.notifyOnDone = $enabled
+        Save-BridgeSettingsFile
+        if (-not $enabled) { Clear-NotifyQueue }
+        $stateText = 'aus'
+        if ($enabled) { $stateText = 'an' }
+        Write-RuntimeLog "Fertig-Benachrichtigung (report_done) ist jetzt $stateText."
+    })
     $editorIconsSwitch.Add_Click({
         param($s, $e)
         Set-EditorIconsEnabled ([bool]$s.IsChecked)
@@ -26017,7 +26521,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.1.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.1.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -26030,7 +26534,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.1.2'
+    $verText = '7.1.3'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
@@ -26164,7 +26668,12 @@ $notifyTimer = [System.Windows.Threading.DispatcherTimer]::new()
 $notifyTimer.Interval = [TimeSpan]::FromMilliseconds(800)
 $notifyTimer.Add_Tick({
     try {
-        while ($true) {
+        # Version 7.1.3: Ist der Schalter aus, wird nicht nur nicht angezeigt -
+        # die Warteschlange wird geleert, damit spaeter nichts nachploppt.
+        $notifyAllowed = $false
+        try { $notifyAllowed = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch {}
+        if (-not $notifyAllowed) { [void](Clear-NotifyQueue) }
+        while ($notifyAllowed) {
             $item = $null
             if (-not $script:Shared.NotifyQueue.TryDequeue([ref]$item)) { break }
             try {
@@ -26173,6 +26682,7 @@ $notifyTimer.Add_Tick({
             } catch {
                 Write-RuntimeLog "Fertig-Meldung konnte nicht angezeigt werden: $($_.Exception.Message)"
             }
+            try { $notifyAllowed = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch { $notifyAllowed = $false }
         }
     } catch {}
 })
