@@ -72,9 +72,12 @@ SESSION_ALIVE = read_int(r"sessionAge -le (\d+)", "Sweep: Sitzung lebendig")
 HTTP_DEFAULT = read_int(r"\$timeout = (\d+)\n", "HTTP-Default")
 HTTP_CAP = read_int(r"\[Math\]::Min\(\[int\]\$body\.timeoutSeconds, (\d+)\)", "HTTP-Cap")
 SWEEP_INTERVAL = read_int(r"Start-Sleep -Seconds (\d+)\n\s*\}\n\}", "Sweep-Intervall")
-HEALTH_FRESH = read_int(r"elseif \(\$age -le (\d+)\) \{ \$state = 'ok' \}", "Health: frisches Lebenszeichen")
+# Version 7.1.2: Get-StudioDeliveryHealth prueft executorAlive jetzt ZUERST
+# (delivery.state = ok durfte nicht mehr allein von einem frischen HTTP-Kontakt
+# kommen). Die Zeitfenster 15 s / 45 s sind unveraendert.
+HEALTH_FRESH = read_int(r"\$openPolls -gt 0 -or \$age -le (\d+)\)", "Health: frisches Lebenszeichen")
 HEALTH_WAIT = read_int(r"\$waiting -gt 0 -and \$oldestWaiting -gt (\d+)", "Health: wartende Arbeit")
-HEALTH_DEAD = read_int(r"-not \[bool\]\$executor\.alive -and \$age -gt (\d+)", "Health: stummer Executor")
+HEALTH_DEAD = read_int(r"-not \$executorAlive -and \$age -gt (\d+)", "Health: stummer Executor")
 CF_524 = 100
 
 require("$script:BridgeSweepScript = {" in SOURCE, "Der unabhaengige Sweep-Runspace fehlt.")
