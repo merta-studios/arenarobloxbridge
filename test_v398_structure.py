@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """Offline structure check for Arena Roblox Bridge 7.1.0.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.1.4"
+VERSION = "7.1.5"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -95,16 +95,13 @@ def main() -> int:
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     require(version["version"] == VERSION, f"version.json is not {VERSION}")
     release_notes = "\n".join(str(note) for note in version.get("notes", []))
-    require("7.1.4" in release_notes
-            and "ORGANIC_POLYGON_REQUIRED" in release_notes
-            and "ORGANIC_COLORS_REQUIRED" in release_notes
+    require("7.1.5" in release_notes
+            and "report_done" in release_notes
             and "ORGANIC_AUDIT_REQUIRED" in release_notes
-            and "ArenaPolygonTriangle" in release_notes
-            and "DETAIL_REQUIRED" in release_notes
-            and "bereit für verbundene Places" in release_notes
-            and "Token-Reset" in release_notes
+            and "ORGANIC_POLYGON_REQUIRED" in release_notes
+            and "Klammer" in release_notes
             and "Roblox Studio" in release_notes,
-            "version.json does not describe the 7.1.4 organic-build/proof and UI update")
+            "version.json does not describe the 7.1.5 startup fix")
 
     # 6.1.1 shipped seven accidental fragments after the intended final exit,
     # including a bare closing parenthesis. Windows PowerShell parses the
@@ -716,21 +713,21 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '7.1.4'": 1,
-        'local ARENA_VERSION  = "7.1.4"': 1,
-        "version = '7.1.4'": 1,
-        "bridgeVersion = '7.1.4'": 3,
-        "bridgeVersion='7.1.4'": 1,
-        "serverVersion = '7.1.4'": 2,
-        "$versionText = '7.1.4'": 1,
-        "$verText = '7.1.4'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 7.1.4)": 1,
-        'Text="Arena Roblox Bridge - Version 7.1.4"': 1,
-        "Version 7.1.4 - aktuell. Beim naechsten Start": 2,
-        "Laufzeit-Identitaet: Bridge-Version=7.1.4": 1,
-        "Kurzbericht Fenster-Vorschau (Version 7.1.4)": 1,
-        "Arena Roblox Bridge - Leistungsbericht (Version 7.1.4)": 1,
-        "Arena Roblox Bridge - Place-Diagnose (Version 7.1.4)": 1,
+        "DocsVersion     = '7.1.5'": 1,
+        'local ARENA_VERSION  = "7.1.5"': 1,
+        "version = '7.1.5'": 1,
+        "bridgeVersion = '7.1.5'": 3,
+        "bridgeVersion='7.1.5'": 1,
+        "serverVersion = '7.1.5'": 2,
+        "$versionText = '7.1.5'": 1,
+        "$verText = '7.1.5'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.1.5)": 1,
+        'Text="Arena Roblox Bridge - Version 7.1.5"': 1,
+        "Version 7.1.5 - aktuell. Beim naechsten Start": 2,
+        "Laufzeit-Identitaet: Bridge-Version=7.1.5": 1,
+        "Kurzbericht Fenster-Vorschau (Version 7.1.5)": 1,
+        "Arena Roblox Bridge - Leistungsbericht (Version 7.1.5)": 1,
+        "Arena Roblox Bridge - Place-Diagnose (Version 7.1.5)": 1,
     }
     for marker, expected_count in functional_version_counts.items():
         actual_count = source.count(marker)

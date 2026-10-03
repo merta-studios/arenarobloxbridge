@@ -1,6 +1,6 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Verifikationstest fuer Arena Roblox Bridge 7.1.4 (Mini-Update: organischer Place-Build, frischer Auditbeleg, UI).
+"""Verifikationstest fuer Arena Roblox Bridge 7.1.5 (Start-Fix; prueft weiterhin den 7.1.3/7.1.4-Quaetatsvertrag).
 
 NUTZERBERICHT UEBER DIE LETZTE BAU-SESSION (Bridge, Roblox Studio, Edit-Modus):
 Tiere wurden nur aus Kugel-Parts zusammengesetzt (Koerper, Kopf, vier Beine,
@@ -43,7 +43,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.1.4"
+VERSION = "7.1.5"
 
 SESSION_BUDGET_BYTES = 300000
 PRIMITIVE_MIN_PARTS = 6
@@ -395,14 +395,14 @@ def main() -> int:
           and "Fertig-Meldung verworfen: der Schalter" in source,
           "Clear-NotifyQueue existiert und die Anzeige prueft den Schalter unmittelbar vor dem Anzeigen")
 
-    for marker in ("# Arena Roblox Bridge  -  Version 7.1.4", "MINI-UPDATE 7.1.4",
-                   "DocsVersion     = '7.1.4'", 'local ARENA_VERSION  = "7.1.4"'):
+    for marker in ("# Arena Roblox Bridge  -  Version 7.1.5", "KRITISCHER START-HOTFIX 7.1.5",
+                   "DocsVersion     = '7.1.5'", 'local ARENA_VERSION  = "7.1.5"'):
         check(marker in source, f"Versionsmarker ist vorhanden: {marker}")
 
     if FAILURES:
         print(f"\nFEHLGESCHLAGEN: {len(FAILURES)} Pruefung(en) rot.")
         return 1
-    print("\nOK: alle 7.1.4-Pruefungen gruen (Zylinderregel, Kugel-Erkennung, organischer Auditbeleg, "
+    print("\nOK: alle 7.1.5-Pruefungen gruen (Start-Fix plus Zylinderregel, Kugel-Erkennung, organischer Auditbeleg, "
           "Fertig-Schalter, Nutzlast-Budget, Quellcode-Abnahme).")
     return 0
 

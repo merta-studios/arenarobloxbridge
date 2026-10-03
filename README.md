@@ -45,6 +45,11 @@ heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestarte
 
 ## Versionsverlauf
 
+## 7.1.5
+- **Kritischer Start-Fix.** 7.1.4 enthielt im HTTP-Handler (`report_done`, Organic-Prüfung) eine überzählige schließende Klammer am Ende des try-Blocks, direkt vor `catch`. PowerShell parst das gesamte Skript, bevor irgendetwas sichtbar wird — die Datei war dadurch nicht parsebar, und die Bridge startete nicht mehr (kein Fenster, kein Server, kein Laufzeitprotokoll). Die Klammer ist entfernt; das Skript ist wieder von Ende zu Ende parsebar.
+- **Keine Logik-Aenderung.** Alle 7.1.4-Funktionen bleiben unverändert: globaler 3D-Baustandard (`modelBuildRules`), expliziter Organic-Vertrag (`organic=true`, `ORGANIC_POLYGON_REQUIRED`/`ORGANIC_COLORS_REQUIRED`), frische per-Modell-Audit-Belege mit fail-closed `report_done` (`ORGANIC_AUDIT_REQUIRED`/`DETAIL_REQUIRED`), Place-Zeilen-UI und Kopfzeile.
+- **Prüfung:** `python test_v714_organic.py`, `python test_v713_quality.py` und `python test_v398_structure.py` (Klammer-/String-Balance, Lua-Syntax via `luaparser`, XAML/XML und Release-Marker). Offline-Prüfung; die Abnahme mit laufendem Roblox Studio auf Windows muss separat erfolgen. Studio nach dem Update vollständig neu starten, damit Plugin **7.1.5** geladen wird.
+
 ## 7.1.4
 - **Global höherer 3D-Baustandard, nicht beispiel- oder namensgebunden.** Bei nichttrivialen Modellen aller Kategorien soll `build_polygon_model` die Hauptsilhouette und individuellen Formen bevorzugt bauen; `build_assembly` ergänzt wiederholte Module. Die Standarderwartung ist ein durchdachtes, geschichtetes und verfeinertes Ergebnis statt eines Primitive-Blockouts. Einfache Parts und ausdrücklich primitive/low-poly Aufgaben bleiben einfach.
 - **Organische Builds separat abgesichert.** `organic=true` markiert den Modellbau explizit, verlangt beim Polygonbau mindestens drei kontrastierende Farben und aktiviert den frischen per-Modell-Nachweis. Ein falscher Builder bei explizitem Organic-Flag wird vor dem Studio-Aufruf mit `ORGANIC_POLYGON_REQUIRED` abgewiesen; fehlende Farben geben `ORGANIC_COLORS_REQUIRED`. Der Builder wird nicht anhand eines Tier-/Baum-Modellnamens erzwungen.
