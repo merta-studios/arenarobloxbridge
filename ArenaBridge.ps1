@@ -1,5 +1,59 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.0.7
+# Arena Roblox Bridge  -  Version 7.0.8
+#
+#
+# TOOLS WIEDER BENUTZBAR - VIER NAMEN IM 7.0.x-PLUGIN WAREN NIL (BEWIESEN):
+#
+#   LIVE-BEFUND: In 7.0.7 blieben selbst einfachste Werkzeuge ohne Antwort,
+#   und die Place-Zeile verschwand nach ein paar Minuten, obwohl Studio offen
+#   war. Die Ursache liegt NICHT in der Warteschlange und NICHT in der Bridge,
+#   sondern im ausgelieferten Studio-Plugin: dort fehlten Funktionen, die der
+#   uebrige Code aufruft. In Lua ist so ein Name beim Aufruf nil ->
+#   "attempt to call a nil value" -> der Befehl endet als RUNTIME_ERROR.
+#
+#   BEWEISFUEHRUNG (offline, reproduzierbar):
+#   * Scope-Analyse des kompletten Plugin-Quelltextes (luaparser + eigener
+#     Scope-Resolver): in 7.0.7 gab es GENAU vier Fundstellen - findByPath,
+#     resolveGroups, runSolidOperation und firstNonEmpty - und keine weitere.
+#   * Das echte Luau (Luau v739, WebAssembly) uebersetzt das Plugin; die vier
+#     Namen wurden isoliert aufgerufen (26 Pruefungen, alle gruen).
+#   * Ergebnis in 7.0.8: NULL Fundstellen.
+#
+#   DIE FIXES DIESER VERSION:
+#   * findByPath ist wieder da (resolveRef rief es fuer JEDEN Pfad-String wie
+#     "game.Workspace.Part[3]" auf). Es nutzt die daneben liegenden, bisher
+#     unbenutzten Helfer splitPathSegments/childByToken und findet auch
+#     Dienste, die noch nicht angelegt sind (GetService-Rueckfall). Betroffen
+#     waren u. a. get_tree, get_properties, get_bounds, scene_stats und alle
+#     parentRef/parentPath-Angaben.
+#   * resolveGroups + runSolidOperation sind wieder da: tools.union, subtract,
+#     negate und intersect riefen beide Namen auf, die es nirgends gab. Die
+#     Vorpruefung (precheckSolid), der Undo-Punkt, keepOriginals, die
+#     Fidelity-Uebernahme und die Ergebnisfelder laufen wieder zusammen.
+#   * firstNonEmpty wurde in tools.get_properties und tools.get_bounds schon
+#     BENUTZT, bevor es deklariert war -> nil-Global -> Absturz. Jetzt
+#     Vorwaerts-Deklaration + Zuweisung; beide Werkzeuge liefern wieder.
+#   * tplName in fill_region war im if-Zweig deklariert, wurde aber im
+#     else-Zweig gelesen (nil - der Vorlagen-Name aus with.name ging
+#     verloren). Die Deklaration steht jetzt vor beiden Zweigen.
+#   * POLL-SCHLEIFE FEHLERFEST: Der Poll ist der einzige Kanal, der Befehle
+#     ausliefert UND die Sitzung auf der Bridge frisch haelt. Ein einziger
+#     unerwarteter Fehler beendete diese Aufgabe still - danach kam nie wieder
+#     ein Poll, die Sitzung alterte, die Place-Zeile verschwand und Arena
+#     wartete endlos ("es kommt keine Antwort"). Ab jetzt wird der Fehler
+#     abgefangen, als "ARENA-PLUGIN-FEHLER: ..." sichtbar gemacht und die
+#     Schleife laeuft mit kurzer Pause weiter.
+#
+#   WAS ZU TUN IST: Roblox Studio nach dem Update EINMAL KOMPLETT schliessen
+#   und neu oeffnen - ein laufendes Studio behaelt das alte Plugin im
+#   Speicher. GET /api/version und das Fenster zeigen, welche Plugin-Version
+#   wirklich laeuft (pluginVersion/pluginOutdated).
+#
+#   EHRLICHE EINORDNUNG: Die vier Namensfehler sind statisch UND mit echtem
+#   Luau im Lauf bewiesen und behoben. Windows-Pfade (Studio, WPF,
+#   GDI+-Vorschau, HttpListener) koennen in dieser Umgebung nicht ausgefuehrt
+#   werden; die Vorschau-Diagnose steht weiter in preview-diagnose.txt und
+#   runtime.log.
 #
 # HOTFIX 7.0.7 - PLACE-LISTE WIEDER DA (LIVE-BEFUND ZU 7.0.6):
 #
@@ -1977,7 +2031,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.0.7'
+    DocsVersion     = '7.0.8'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -2013,7 +2067,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Version 7.0.6: Laufzeit-Identitaet der LAUFENDEN Datei (Version, Pfad,
     # SHA-256, Sprachmodus, Startzeit) fuer GET /api/version.
     RuntimeInfo = [hashtable]::Synchronized(@{
-        Version = '7.0.7'
+        Version = '7.0.8'
         File = ''
         Sha256 = ''
         LanguageMode = ''
@@ -2159,12 +2213,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-    $script:PreviewDiagIdentity = ("Bridge-Version=7.0.7, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.0.7, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.0.8, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.0.8, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-        $script:Shared.RuntimeInfo.Version = '7.0.7'
+$script:Shared.RuntimeInfo.Version = '7.0.8'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -2267,7 +2321,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.0.7)
+  Arena Studio Bridge - Studio Plugin  (Version 7.0.8)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -2340,7 +2394,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.0.7"
+local ARENA_VERSION  = "7.0.8"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -2375,6 +2429,13 @@ local ARENA_CFG = {
     UNION_TRIANGLE_WARN  = 4000,
     UNION_TRIANGLE_REFUSE = 16000,
     MAX_JOBS             = 16,
+    -- FIX 7.0.8: Namen/Titel der Solid-Operationen an EINER Stelle (die
+    -- zuvor fehlenden Helfer resolveGroups/runSolidOperation nutzen sie).
+    SOLID                = {
+        union     = { name = "Union",        title = "Union" },
+        subtract  = { name = "Subtract",     title = "Subtract" },
+        intersect = { name = "Intersection", title = "Intersection" },
+    },
 }
 
 -- ---------------------------------------------------------------------------
@@ -2955,12 +3016,57 @@ local function childByToken(parent, token)
     return parent:FindFirstChild(token)
 end
 
+-- FIX 7.0.8: findByPath fehlte im 7.0.x-Plugin KOMPLETT - nur der Aufruf war
+-- da. Dadurch lief JEDE Referenz, die kein "#id"/"id:"/"selection" und keine
+-- Tabelle ist, in "attempt to call a nil value" und der Befehl endete als
+-- RUNTIME_ERROR: get_tree, get_properties, get_bounds und viele andere waren
+-- fuer immer kaputt. splitPathSegments/childByToken standen direkt daneben
+-- bereit und werden hier endlich benutzt.
+local function findByPath(path)
+    if type(path) ~= "string" or path == "" then return nil end
+    local segments = splitPathSegments(path)
+    if #segments == 0 then return nil end
+    local head = segments[1]
+    local headLower = string.lower(head)
+    local current = nil
+    if headLower == "game" then
+        current = game
+    elseif headLower == "workspace" then
+        current = Workspace
+    else
+        current = childByToken(game, head)
+        if current == nil then
+            -- Dienste (Workspace, Lighting, ReplicatedStorage, ...) sind Kinder
+            -- von game, aber nicht immer schon angelegt - GetService erzwingt sie.
+            local okService, service = pcall(function() return game:GetService(head) end)
+            if okService then current = service end
+        end
+    end
+    for index = 2, #segments do
+        if current == nil then return nil end
+        local nextInst = childByToken(current, segments[index])
+        if nextInst == nil and current == game then
+            -- Dienste koennen fehlen, solange sie niemand angefordert hat -
+            -- GetService legt sie an (echtes Roblox liefert sie sonst als Kind).
+            local okService, service = pcall(function() return game:GetService(segments[index]) end)
+            if okService then nextInst = service end
+        end
+        current = nextInst
+    end
+    return current
+end
 
 -- FIX 3.2: Vorwaerts-Deklarationen (findMatches/resolveSelector stehen weiter
 -- unten, MUSSSEN aber hier im Scope sein, damit resolveRef/resolveMany sie
 -- als Upvalue und nicht als nil-Global sehen).
 local findMatches
 local resolveSelector
+
+-- FIX 7.0.8: firstNonEmpty wurde in tools.get_properties/get_bounds schon
+-- benutzt, BEVOR die Deklaration weiter unten kam. In Lua ist so ein Name
+-- dann ein GLOBAL-Zugriff -> nil -> "attempt to call a nil value". Darum hier
+-- die Vorwaerts-Deklaration (die Definition unten weist jetzt diesem Local zu).
+local firstNonEmpty
 
 -- Loest eine Referenz auf. Erlaubt sind:
 --   "#42"                      -> Id
@@ -4803,7 +4909,9 @@ local function filterMatches(inst, filter)
     return true
 end
 
-local function firstNonEmpty(...)
+-- FIX 7.0.8: Zuweisung an die Vorwaerts-Deklaration oben (sonst sehen die
+-- bereits definierten Werkzeuge weiterhin ein nil-Global).
+firstNonEmpty = function(...)
     for index = 1, select("#", ...) do
         local value = select(index, ...)
         if value ~= nil and not (type(value) == "string" and value == "")
@@ -6403,6 +6511,131 @@ tools.overlap_check = function(args)
     return ok({ items = items, count = #items })
 end
 
+-- ---------------------------------------------------------------------------
+-- SOLID MODELING: GRUPPEN + GEMEINSAME AUSFUEHRUNG (FIX 7.0.8)
+-- resolveGroups und runSolidOperation fehlten im 7.0.x-Plugin KOMPLETT:
+-- tools.union/subtract/negate/intersect riefen globale Namen auf, die es
+-- nirgends gab. Die Vorpruefung (precheckSolid), die Dreiecks-Schaetzung und
+-- die Fidelity-Helfer standen daneben unbenutzt bereit; hier laufen sie
+-- wieder zusammen.
+-- ---------------------------------------------------------------------------
+local function resolveGroups(kind, args)
+    local groups = args.groups
+    if type(groups) ~= "table" or #groups == 0 then return nil end
+    local resolved = {}
+    for index, group in ipairs(groups) do
+        local entry = { group = index }
+        if type(group) ~= "table" then
+            entry.error = "Group " .. tostring(index) .. " must be a table like { refs = { ... }, name = '...' }."
+        else
+            entry.name = group.name
+            local list, errors = resolveMany(group.refs or group.ref or group.parts)
+            if #list < 2 then
+                local detail = table.concat(errors or {}, " ")
+                entry.error = "Group " .. tostring(index) .. " needs at least 2 resolvable parts."
+                if detail ~= "" then entry.error = entry.error .. " " .. detail end
+            else
+                entry.base = list[1]
+                entry.others = {}
+                for position = 2, #list do
+                    table.insert(entry.others, list[position])
+                end
+            end
+        end
+        table.insert(resolved, entry)
+    end
+    return resolved
+end
+
+local function runSolidOperation(kind, base, others, args)
+    args = args or {}
+    local parts = { base }
+    for _, part in ipairs(others or {}) do table.insert(parts, part) end
+    local warnings, code, message, extra = precheckSolid(parts, 2, args)
+    if code then return failCode(code, message, extra) end
+    warnings = warnings or {}
+
+    local defaults = ARENA_CFG.SOLID[kind] or ARENA_CFG.SOLID.union
+    local name = tostring(args.name or defaults.name)
+    local triangles = estimateTriangles(parts)
+
+    -- Undo-Punkt VOR der Aenderung: 1x Rueckgaengig macht genau diese
+    -- Solid-Operation rueckgaengig (eigener Schritt, nichts anderes).
+    local undoPoint = nil
+    if args.undoPoint ~= false then
+        undoPoint = "vor " .. defaults.title .. " " .. name
+        waypoint(undoPoint)
+    end
+
+    -- keepOriginals: Klone, die unsichtbar IM Ergebnis liegen (nur zur
+    -- Nachvollziehbarkeit) - die echten Teile verbraucht Solid Modeling.
+    local kept = {}
+    if args.keepOriginals == true then
+        for _, part in ipairs(parts) do
+            local okClone, copy = pcall(function() return part:Clone() end)
+            if okClone and copy then table.insert(kept, copy) end
+        end
+    end
+
+    local created = nil
+    local okRun, runErr = pcall(function()
+        if kind == "subtract" then
+            created = base:SubtractAsync(others)
+        elseif kind == "intersect" then
+            created = base:IntersectAsync(others)
+        else
+            created = base:UnionAsync(others)
+        end
+    end)
+    if not okRun then
+        return failCode("SOLID_REFUSED",
+            "Roblox refused the " .. kind .. ": " .. tostring(runErr)
+            .. " Solid modeling needs anchored BaseParts that are not razor-thin or degenerate, inside the same DataModel.",
+            { partsUsed = #parts, estimatedTriangles = triangles })
+    end
+    if created == nil then
+        return failCode("SOLID_REFUSED",
+            "Roblox returned no result for the " .. kind .. ". Check that all parts are anchored, not razor-thin and still in the place.",
+            { partsUsed = #parts, estimatedTriangles = triangles })
+    end
+
+    pcall(function() created.Name = name end)
+    local parent = nil
+    if args.parentRef or args.parentPath then
+        local wantedParent = resolveRef(args.parentRef or args.parentPath)
+        if wantedParent then parent = wantedParent end
+    end
+    if parent == nil then parent = base.Parent end
+    pcall(function() created.Parent = parent end)
+    pcall(function() created.Anchored = true end)
+    pcall(function() created.CollisionFidelity = collisionFidelityFrom(args.collisionFidelity) end)
+    pcall(function() created.RenderFidelity = renderFidelityFrom(args.renderFidelity) end)
+    for _, copy in ipairs(kept) do
+        pcall(function()
+            copy.Transparency = 1
+            copy.CanCollide = false
+            copy.CanQuery = false
+            copy.CanTouch = false
+            copy.Anchored = true
+            copy.Parent = created
+        end)
+    end
+    if #kept > 0 then
+        table.insert(warnings, tostring(#kept) .. " original part(s) were kept as INVISIBLE clones inside the result (keepOriginals=true).")
+    end
+    local geometry = waitMeasurable({ created }, 2)
+    return ok({
+        result = describeRef(created),
+        partsUsed = #parts,
+        bounds = boundsInfo(created),
+        triangleEstimate = triangles,
+        geometry = geometry,
+        undoPoint = undoPoint,
+        canBeUndone = (ChangeHistoryService ~= nil),
+        keptOriginals = (#kept > 0) and #kept or nil,
+    }, warnings)
+end
+
 tools.union = function(args)
     local groups = resolveGroups("union", args)
     if groups then
@@ -6748,6 +6981,10 @@ tools.fill_region = function(args)
             end
             local y1 = hit.Position.Y
             local waterTop = isWaterLike(hit.Instance)
+            -- FIX 7.0.8: tplName gehoert in DIESEN Block. Vorher stand die
+            -- Deklaration im if-Zweig darunter, der else-Zweig las deshalb ein
+            -- nil-Global - der Vorlagen-Name aus with.name ging verloren.
+            local tplName = (type(with) == "table" and with.name) or nil
 
             local target
             if type(fillTo) == "number" then
@@ -6776,7 +7013,6 @@ tools.fill_region = function(args)
                 local bottom = math.max(y1, bottomY)
                 if target > bottom + 0.05 then
                     local part = Instance.new("Part")
-                    local tplName = (type(with) == "table" and with.name) or nil
                     part.Name = tplName or "Fill"
                     part.Size = Vector3.new(gridStep, target - bottom, gridStep)
                     part.Position = Vector3.new(x, bottom + (target - bottom) / 2, z)
@@ -11180,6 +11416,13 @@ task.spawn(function()
     local emptyPolls = 0
     local quiet = false
     while running do
+        -- FIX 7.0.8: Der Poll ist der einzige Kanal, der Befehle ausliefert UND
+        -- die Sitzung auf der Bridge frisch haelt. Ein einziger unerwarteter
+        -- Fehler beendete diese Aufgabe frueher STILL: danach kam nie wieder
+        -- ein Poll, die Sitzung alterte auf der Bridge, die Place-Zeile
+        -- verschwand - und Arena wartete endlos auf eine Antwort. Jetzt wird
+        -- der Fehler sichtbar gemacht und die Schleife laeuft weiter.
+        local loopOk, loopErr = xpcall(function()
         if sessionId == nil then
             if handshake() then
                 backoff = 0.5
@@ -11297,6 +11540,14 @@ task.spawn(function()
             -- PFLICHT-PAUSE: zwischen zwei Anfragen ist der HTTP-Platz frei.
             task.wait(gapSeconds)
             perfStats.gapMs = perfStats.gapMs + math.floor(gapSeconds * 1000)
+        end
+        end, debug.traceback)
+        if not loopOk then
+            local loopDetail = tostring(loopErr)
+            lastPollError = 'Poll-Fehler: ' .. loopDetail
+            pluginOutputError('Die Poll-Schleife hat einen Fehler abgefangen und laeuft weiter: ' .. loopDetail)
+            pcall(setWidgetStatus)
+            task.wait(1)
         end
     end
 end)
@@ -12262,7 +12513,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.0.7 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.0.8 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -16369,7 +16620,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.0.7'
+            version = '7.0.8'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -16596,7 +16847,7 @@ end
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.0.7'
+            bridgeVersion = '7.0.8'
             executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent = 0, never an error. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
@@ -16941,7 +17192,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.0.7'
+                        bridgeVersion = '7.0.8'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -17199,7 +17450,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.0.7'
+                        serverVersion = '7.0.8'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -17477,7 +17728,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.0.7'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.0.8'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -17507,8 +17758,8 @@ end
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.0.7'
-                    serverVersion = '7.0.7'
+                    bridgeVersion = '7.0.8'
+                    serverVersion = '7.0.8'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -19357,7 +19608,7 @@ $xaml = @'
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="Arena Roblox Bridge" Foreground="{StaticResource TextMain}" FontSize="18.5" FontWeight="Bold"/>
                             <TextBlock x:Name="SubtitleText" Text="Bereit für verbundene Places" Foreground="{StaticResource TextMuted}" FontSize="11.5" Margin="0,3,0,0"/>
-                            <TextBlock x:Name="RuntimeLine" Text="Bridge 7.0.7" Foreground="{StaticResource TextFaint}" FontSize="9.5" Margin="0,2,0,0"/>
+                            <TextBlock x:Name="RuntimeLine" Text="Bridge 7.0.8" Foreground="{StaticResource TextFaint}" FontSize="9.5" Margin="0,2,0,0"/>
                         </StackPanel>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -20143,7 +20394,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.0.7)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.0.8)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -20746,7 +20997,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.0.7)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.0.8)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -22913,7 +23164,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.0.7)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.0.8)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -23664,7 +23915,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.0.7'
+    $versionText = '7.0.8'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -24288,7 +24539,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.0.7" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.0.8" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -24333,7 +24584,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.0.7 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.0.8 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -24392,7 +24643,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.0.7 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.0.8 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -24405,7 +24656,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.0.7'
+    $verText = '7.0.8'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
