@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 7.0.8.
+"""Offline structure check for Arena Roblox Bridge 7.1.0.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.0.8"
+VERSION = "7.1.0"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -95,13 +95,12 @@ def main() -> int:
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     require(version["version"] == VERSION, f"version.json is not {VERSION}")
     release_notes = "\n".join(str(note) for note in version.get("notes", []))
-    require("7.0.8" in release_notes
-            and "findByPath" in release_notes
-            and "resolveGroups" in release_notes
-            and "runSolidOperation" in release_notes
-            and "firstNonEmpty" in release_notes
-            and "POLL-SCHLEIFE" in release_notes,
-            "version.json does not describe the 7.0.8 plugin repair")
+    require("7.1.0" in release_notes
+            and "COMMAND_DELIVERY_UNCONFIRMED" in release_notes
+            and "BindReason" in release_notes
+            and "sendOrQueueAckBatch" in release_notes
+            and "Roblox Studio" in release_notes,
+            "version.json does not describe the 7.1.0 delivery & preview repair")
 
     # 6.1.1 shipped seven accidental fragments after the intended final exit,
     # including a bare closing parenthesis. Windows PowerShell parses the
@@ -713,21 +712,21 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '7.0.8'": 1,
-        'local ARENA_VERSION  = "7.0.8"': 1,
-        "version = '7.0.8'": 1,
-        "bridgeVersion = '7.0.8'": 3,
-        "bridgeVersion='7.0.8'": 1,
-        "serverVersion = '7.0.8'": 2,
-        "$versionText = '7.0.8'": 1,
-        "$verText = '7.0.8'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 7.0.8)": 1,
-        'Text="Arena Roblox Bridge - Version 7.0.8"': 1,
-        "Version 7.0.8 - aktuell. Beim naechsten Start": 2,
-        "Laufzeit-Identitaet: Bridge-Version=7.0.8": 1,
-        "Kurzbericht Fenster-Vorschau (Version 7.0.8)": 1,
-        "Arena Roblox Bridge - Leistungsbericht (Version 7.0.8)": 1,
-        "Arena Roblox Bridge - Place-Diagnose (Version 7.0.8)": 1,
+        "DocsVersion     = '7.1.0'": 1,
+        'local ARENA_VERSION  = "7.1.0"': 1,
+        "version = '7.1.0'": 1,
+        "bridgeVersion = '7.1.0'": 3,
+        "bridgeVersion='7.1.0'": 1,
+        "serverVersion = '7.1.0'": 2,
+        "$versionText = '7.1.0'": 1,
+        "$verText = '7.1.0'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.1.0)": 1,
+        'Text="Arena Roblox Bridge - Version 7.1.0"': 1,
+        "Version 7.1.0 - aktuell. Beim naechsten Start": 2,
+        "Laufzeit-Identitaet: Bridge-Version=7.1.0": 1,
+        "Kurzbericht Fenster-Vorschau (Version 7.1.0)": 1,
+        "Arena Roblox Bridge - Leistungsbericht (Version 7.1.0)": 1,
+        "Arena Roblox Bridge - Place-Diagnose (Version 7.1.0)": 1,
     }
     for marker, expected_count in functional_version_counts.items():
         actual_count = source.count(marker)
@@ -1667,7 +1666,7 @@ def main() -> int:
         "timelineRule",
         "'get_bridge_log' {",
         "function Update-RuntimeLine",
-        'Text="Bridge 7.0.8"',
+        'Text="Bridge 7.1.0"',
         "local function setWidgetStatus(extra)",
         "ARENA-PLUGIN-FEHLER",
         "function Invoke-PlaceRowCancel",
@@ -1742,8 +1741,19 @@ def main() -> int:
     require("local tplName = (type(with) == \"table\" and with.name) or nil" in plugin_lua,
             "tplName wird weiterhin ausserhalb seines Gueltigkeitsbereichs gelesen")
 
-    print("OK: 7.0.8 structure, plugin tool repair (findByPath/resolveGroups/"
-          "runSolidOperation/firstNonEmpty), robust poll loop, place-row hotfix, "
+    # 7.1.0 LIVE FIX: BindReason in Get-PlaceIdentity, safe To-Json array
+    # serialization, Ack-Outbox + Result-Outbox, and Re-Delivery.
+    require("BindReason = ''" in source and "function Write-PreviewCaptureError" in source,
+            "7.1.0 BindReason declaration or preview error throttle is missing")
+    require("executorState.sendOrQueueAckBatch" in plugin_lua
+            and "executorState.deliverOrQueueResult" in plugin_lua
+            and "ackOutbox = {}" in plugin_lua,
+            "7.1.0 plugin Ack-Outbox / deliverOrQueueResult missing")
+    require("CommandPayloads" in source and "Update-PollerCount" in source,
+            "7.1.0 CommandPayloads re-delivery or Update-PollerCount missing")
+
+    print("OK: 7.1.0 structure, reliable command delivery, BindReason preview fix, "
+          "plugin tool repair, robust poll loop, place-row hotfix, "
           "self-report, session identity, delivery timeline, Lua and XAML validation passed")
     return 0
 

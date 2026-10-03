@@ -1,6 +1,32 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.0.8
+# Arena Roblox Bridge  -  Version 7.1.0
 #
+# ZUVERLAESSIGE BEFEHLSZUSTELLUNG & VORSCHAU-REPARATUR (7.1.0):
+#   1) Get-PlaceIdentity enthaelt jetzt BindReason='', und Save-PlaceIdentity
+#      setzt Eigenschaften absturzsicher (behebt den alle 2 s wiederholten
+#      UI-Fehler "Die Eigenschaft BindReason wurde fuer dieses Objekt nicht
+#      gefunden" und stellt die Live-Fenstervorschau wieder her). Vorschau-
+#      Aufnahmefehler werden gedrosselt protokolliert (Write-PreviewCaptureError).
+#   2) To-Json serialisiert leere (@()) und 1-elementige Arrays in PowerShell 5.1
+#      immer als gueltiges JSON-Array ('[]' bzw. '[...]'), und
+#      Get-SessionCancellationIds nutzt den Komma-Operator gegen Pipeline-
+#      Unrolling. Behebt kaputtes JSON ("cancelledCommands":,) in /plugin/poll
+#      sowie den Folgefehler "table expected, got string" bei 1 Storno-ID.
+#   3) Plugin sendet received_batch VOR enqueueCommand ueber eine Ack-Outbox
+#      mit Retry (sendOrQueueAckBatch) und stellt jedes Ergebnis ueber
+#      deliverOrQueueResult zu. Kaputte Befehle ohne Tool-Namen werden sofort
+#      mit INVALID_COMMAND beantwortet statt stillschweigend verworfen.
+#   4) Bridge haelt CommandPayloads vor und liefert unbestaetigte 'delivered'-
+#      Befehle bei nachfolgenden Polls bis zu 3-mal erneut aus (unackedCount).
+#      Eingehende /plugin/result-Antworten heilen fehlende Zwischen-Acks
+#      automatisch (Selbstheilung).
+#   5) Watchdog-Abbrueche enthalten jetzt die letzten Plugin-Diagnosedaten
+#      (lastPollError, lastPluginError, lastAckAt, unackedCount) und schreiben
+#      klare deutsche Meldungen in die Arena-Verlaufskarte sowie jeden Schritt
+#      des Befehls-Lebenszyklus in runtime.log.
+#   6) Behebt "Server Anfrage Fehler: Die Argumenttypen stimmen nicht ueberein."
+#      durch delegatfreie Poller-Zaehlung (Update-PollerCount) und exakt
+#      typisierte [ref]-Variablen auf ConcurrentDictionary-Aufrufen.
 #
 # TOOLS WIEDER BENUTZBAR - VIER NAMEN IM 7.0.x-PLUGIN WAREN NIL (BEWIESEN):
 #
@@ -1963,6 +1989,9 @@ $script:Shared = [hashtable]::Synchronized(@{
     CommandQueueLock = [System.Object]::new()
     # sessionId -> Signal: weckt den wartenden Long-Poll sofort auf
     CommandSignals  = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
+    # Version 7.1.0: commandId -> JSON-Payload des Befehls fuer Re-Delivery,
+    # solange das Plugin den Empfang noch nicht bestaetigt hat.
+    CommandPayloads = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     # commandId -> Ergebnis (JSON-Text)
     CommandResults  = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     # commandId -> owning session; a result can only complete its original command.
@@ -2031,7 +2060,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.0.8'
+    DocsVersion     = '7.1.0'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -2067,7 +2096,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Version 7.0.6: Laufzeit-Identitaet der LAUFENDEN Datei (Version, Pfad,
     # SHA-256, Sprachmodus, Startzeit) fuer GET /api/version.
     RuntimeInfo = [hashtable]::Synchronized(@{
-        Version = '7.0.8'
+        Version = '7.1.0'
         File = ''
         Sha256 = ''
         LanguageMode = ''
@@ -2191,6 +2220,21 @@ function Write-PlaceRowFailure {
     Write-UiErrorLog ("$Context (sid=$sid)") $ErrorRecord
 }
 
+$script:PreviewFailureLogAt = @{}
+function Write-PreviewCaptureError {
+    param([string]$SessionId, $ErrorRecord)
+    $sid = if ([string]::IsNullOrWhiteSpace($SessionId)) { '(unknown)' } else { $SessionId }
+    $msg = ''
+    try { if ($ErrorRecord -and $ErrorRecord.Exception) { $msg = [string]$ErrorRecord.Exception.Message } } catch {}
+    $key = $sid + '|' + $msg
+    $now = Get-Date
+    if ($script:PreviewFailureLogAt.ContainsKey($key)) {
+        if (($now - [DateTime]$script:PreviewFailureLogAt[$key]).TotalSeconds -lt 30) { return }
+    }
+    $script:PreviewFailureLogAt[$key] = $now
+    Write-UiErrorLog ("Vorschau-Aufnahme fehlgeschlagen (sid=$sid)") $ErrorRecord
+}
+
 $runModeText = if ($script:IsExeMode) { "EXE-Modus ($script:ExePath)" } else { "Skript-Modus ($script:ScriptPath)" }
 Write-RuntimeLog "=== Programmstart (PID $PID, PowerShell $($PSVersionTable.PSVersion), $runModeText) ==="
 Write-RuntimeLog "Codierung: Umlaute korrekt gelesen = $script:EncodingOk (Marker-Laenge $($script:EncodingMarker.Length))"
@@ -2213,12 +2257,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.0.8, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.0.8, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.1.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.1.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.0.8'
+$script:Shared.RuntimeInfo.Version = '7.1.0'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -2321,7 +2365,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.0.8)
+  Arena Studio Bridge - Studio Plugin  (Version 7.1.0)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -2394,7 +2438,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.0.8"
+local ARENA_VERSION  = "7.1.0"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -2456,6 +2500,8 @@ local executorState  = {
     dispatcherBusy = false,
     queueDepth = 0,
     resultOutbox = {},
+    ackOutbox = {},
+    lastAckAt = 0,
 }
 local cancelRequests = {}
 local seenCommandIds = {}
@@ -2709,6 +2755,10 @@ local function post(path, payload)
                 return HttpService:JSONDecode(response.Body)
             end)
             if decodedOk then return decoded end
+            lastPollError = "JSON-Dekodierfehler (" .. tostring(path) .. ")"
+            pluginOutputError("Antwort von " .. tostring(path) .. " war kein gueltiges JSON: " .. tostring(decoded))
+        elseif ok and response and not response.Success then
+            lastPollError = "HTTP " .. tostring(response.StatusCode) .. " (" .. tostring(path) .. ")"
         end
         if attempt == 1 then task.wait(0.08) end
     end
@@ -10995,12 +11045,88 @@ local function handleCommand(command)
 end
 
 local function commandStateRequest(command, phase)
-    return post("/plugin/command_state", {
+    local resp = post("/plugin/command_state", {
         sessionId = sessionId,
         commandId = command and command.id or nil,
         tool = command and command.tool or nil,
         phase = phase,
     })
+    if type(resp) == "table" and resp.ok == true then
+        executorState.lastAckAt = os.time()
+    end
+    return resp
+end
+
+-- Version 7.1.0: Einheitliche Zustellung fuer Empfangsbestaetigungen (Ack-Outbox)
+-- und Befehls-Ergebnisse (Result-Outbox). Beide liegen als Methoden auf
+-- executorState, damit im Haupt-Chunk keine weiteren top-level Locals verbraucht
+-- werden (Luau-Grenze: 200 Register).
+executorState.sendOrQueueAckBatch = function(commandIds)
+    if type(commandIds) ~= "table" or #commandIds == 0 then return true end
+    local batch = {}
+    for _, rawId in ipairs(commandIds) do
+        local cid = tostring(rawId or "")
+        if cid ~= "" then
+            table.insert(batch, cid)
+            if executorState.ackOutbox[cid] == nil then
+                executorState.ackOutbox[cid] = {
+                    commandId = cid,
+                    phase = "received_batch",
+                    nextTry = os.clock() + 1,
+                    backoff = 1,
+                    attempts = 0,
+                }
+            end
+        end
+    end
+    if #batch == 0 then return true end
+    if not sessionId then return false end
+    local okSend, ackResp = pcall(post, "/plugin/command_state", {
+        sessionId = sessionId,
+        phase = "received_batch",
+        commandIds = batch,
+    })
+    if okSend and type(ackResp) == "table" and ackResp.ok == true and ackResp.accepted ~= false then
+        executorState.lastAckAt = os.time()
+        for _, cid in ipairs(batch) do
+            executorState.ackOutbox[cid] = nil
+        end
+        return true
+    end
+    local nowClock = os.clock()
+    for _, cid in ipairs(batch) do
+        local entry = executorState.ackOutbox[cid]
+        if entry then
+            entry.attempts = (tonumber(entry.attempts) or 0) + 1
+            local backoff = math.min(tonumber(entry.backoff) or 1, 15)
+            entry.nextTry = nowClock + backoff
+            entry.backoff = math.min(backoff * 2, 15)
+        end
+    end
+    return false
+end
+
+executorState.deliverOrQueueResult = function(commandId, resultPayload)
+    local cid = tostring(commandId or "")
+    if cid == "" then return false end
+    if type(resultPayload) ~= "table" then
+        resultPayload = failCode("RUNTIME_ERROR", tostring(resultPayload), { commandId = cid })
+    end
+    resultPayload.commandId = cid
+    rememberCompletedResult(cid, resultPayload)
+    executorState.ackOutbox[cid] = nil
+    local sendOk, delivered = pcall(postResult, cid, resultPayload)
+    if sendOk and delivered == true then
+        executorState.lastAckAt = os.time()
+        executorState.resultOutbox[cid] = nil
+        return true
+    end
+    executorState.resultOutbox[cid] = {
+        payload = resultPayload,
+        nextTry = os.clock() + 2,
+        backoff = 2,
+    }
+    return false
 end
 
 local function pumpCommandQueue()
@@ -11022,15 +11148,22 @@ local function pumpCommandQueue()
                     executorState.runningTool = tostring(nextCommand.tool or "unknown")
                     executorState.startedAt = os.time()
                     local startAck = commandStateRequest(nextCommand, "started")
-                    if startAck and startAck.accepted == false then
+                    if startAck and type(startAck) == "table" then
+                        executorState.ackOutbox[commandId] = nil
+                    end
+                    if startAck and startAck.accepted == false and startAck.cancelled == true then
                         cancelRequests[commandId] = nil
+                        if startAck.state ~= "finished" then
+                            local cancelledEarly = failCode("COMMAND_CANCELLED", "The command was cancelled or already closed on the bridge before execution started.", { commandId = commandId })
+                            executorState.deliverOrQueueResult(commandId, cancelledEarly)
+                        end
                         executorState.runningCommandId = nil
                         executorState.runningTool = nil
                         executorState.startedAt = 0
                     elseif cancelRequests[commandId] then
                         cancelRequests[commandId] = nil
                         local cancelled = failCode("COMMAND_CANCELLED", "The command was cancelled before execution.", { commandId = commandId })
-                        pcall(postResult, commandId, cancelled)
+                        executorState.deliverOrQueueResult(commandId, cancelled)
                         executorState.runningCommandId = nil
                         executorState.runningTool = nil
                         executorState.startedAt = 0
@@ -11101,14 +11234,7 @@ local function pumpCommandQueue()
                         commandResult = commandResult or failCode("RUNTIME_ERROR", "Executor ended without a result.", { commandId = commandId })
                         commandResult.commandId = commandId
                         rememberCompletedResult(commandId, commandResult)
-                        local sendOk, delivered = pcall(postResult, commandId, commandResult)
-                        if not sendOk or delivered ~= true then
-                            executorState.resultOutbox[commandId] = {
-                                payload = commandResult,
-                                nextTry = os.clock() + 2,
-                                backoff = 2,
-                            }
-                        end
+                        executorState.deliverOrQueueResult(commandId, commandResult)
                         executorState.runningCommandId = nil
                         executorState.runningTool = nil
                         executorState.startedAt = 0
@@ -11132,15 +11258,7 @@ local function pumpCommandQueue()
                     tool = executorState.runningTool,
                     partialChangesPossible = true,
                 })
-                rememberCompletedResult(failedId, failure)
-                local sendOk, delivered = pcall(postResult, failedId, failure)
-                if not sendOk or delivered ~= true then
-                    executorState.resultOutbox[failedId] = {
-                        payload = failure,
-                        nextTry = os.clock() + 2,
-                        backoff = 2,
-                    }
-                end
+                executorState.deliverOrQueueResult(failedId, failure)
             end
             executorState.commandThread = nil
             executorState.heartbeatThread = nil
@@ -11156,30 +11274,51 @@ local function pumpCommandQueue()
 end
 
 local function enqueueCommand(command)
-    if type(command) ~= "table" or command.id == nil then return end
+    if type(command) ~= "table" or command.id == nil or tostring(command.id) == "" then
+        pluginOutputError("Ungueltiger Befehl ohne commandId empfangen.")
+        return false
+    end
     local commandId = tostring(command.id)
+    -- Version 7.1.0: Empfang sicherstellen, falls enqueueCommand einzeln gerufen wird.
+    if executorState.ackOutbox[commandId] ~= nil then
+        executorState.sendOrQueueAckBatch({ commandId })
+    end
+    if command.tool == nil or tostring(command.tool) == "" then
+        local invalidRes = failCode("INVALID_COMMAND", "Der empfangene Befehl enthaelt keinen gueltigen Tool-Namen (tool fehlt).", {
+            commandId = commandId,
+        })
+        executorState.deliverOrQueueResult(commandId, invalidRes)
+        return false
+    end
+    local cached = completedResults[commandId]
+    if cached ~= nil then
+        seenCommandIds[commandId] = os.time()
+        task.spawn(function()
+            local okSend, delivered = pcall(postResult, commandId, cached)
+            if not okSend or delivered ~= true then
+                executorState.deliverOrQueueResult(commandId, cached)
+            end
+        end)
+        return true
+    end
     if seenCommandIds[commandId] then
-        -- Version 7.0.5: schon einmal ausgeführt -> Ergebnis erneut zustellen
-        -- (der Server hat es verloren, z. B. durch einen Reconnect mid-Result).
-        local cached = completedResults[commandId]
-        if cached ~= nil then
+        -- Bereits gesehen, aber noch kein fertiges Ergebnis: pruefen, ob der
+        -- Befehl gerade laeuft oder noch in der lokalen Warteschlange liegt.
+        if executorState.runningCommandId == commandId then
             task.spawn(function()
-                pcall(postResult, commandId, cached)
+                pcall(commandStateRequest, command, "heartbeat")
             end)
+            return true
         end
-        return
+        for _, queuedCmd in ipairs(commandQueue) do
+            if type(queuedCmd) == "table" and tostring(queuedCmd.id or "") == commandId then
+                return true
+            end
+        end
+        -- Weder fertig noch laufend noch in der Queue -> erneut einreihen,
+        -- damit kein Befehl jemals stillschweigend ohne Antwort bleibt!
     end
     seenCommandIds[commandId] = os.time()
-    local cachedResult = completedResults[commandId]
-    if cachedResult ~= nil then
-        -- Erst nach einem Plugin-Neuladen möglich (seenCommandIds ist weg, der
-        -- Ergebnisspeicher aber auch) - Schutz für einen zweiten Zustellversuch
-        -- desselben Servers innerhalb derselben VM.
-        task.spawn(function()
-            pcall(postResult, commandId, cachedResult)
-        end)
-        return
-    end
     local seenCount = 0
     local oldestId = nil
     local oldestAt = math.huge
@@ -11191,6 +11330,7 @@ local function enqueueCommand(command)
     table.insert(commandQueue, command)
     executorState.queueDepth = #commandQueue
     pumpCommandQueue()
+    return true
 end
 
 -- Executor liveness is deliberately independent from the connection/poll loop.
@@ -11202,14 +11342,28 @@ task.spawn(function()
     end
 end)
 
--- A result that could not be delivered stays in memory and is retried with
--- bounded exponential backoff; a broken response connection cannot lose it.
+-- Version 7.1.0: Sowohl Empfangsbestaetigungen (ackOutbox) als auch fertige
+-- Ergebnisse (resultOutbox) werden im Hintergrund mit exponentiellem Backoff
+-- nachgeliefert, bis die Bridge den Erhalt bestaetigt.
 task.spawn(function()
     while running do
+        if sessionId then
+            local dueAckIds = {}
+            local nowClock = os.clock()
+            for cid, ackItem in pairs(executorState.ackOutbox) do
+                if nowClock >= (tonumber(ackItem.nextTry) or 0) then
+                    table.insert(dueAckIds, cid)
+                end
+            end
+            if #dueAckIds > 0 then
+                executorState.sendOrQueueAckBatch(dueAckIds)
+            end
+        end
         for commandId, item in pairs(executorState.resultOutbox) do
             if os.clock() >= (tonumber(item.nextTry) or 0) and sessionId then
                 local okSend, delivered = pcall(postResult, commandId, item.payload)
                 if okSend and delivered == true then
+                    executorState.lastAckAt = os.time()
                     executorState.resultOutbox[commandId] = nil
                 else
                     local backoff = math.min(tonumber(item.backoff) or 2, 30)
@@ -11253,6 +11407,8 @@ local function statePayload()
     end
     local outboxCount = 0
     for _ in pairs(executorState.resultOutbox) do outboxCount = outboxCount + 1 end
+    local ackOutboxCount = 0
+    for _ in pairs(executorState.ackOutbox) do ackOutboxCount = ackOutboxCount + 1 end
     local completedCount = 0
     for _ in pairs(completedResults) do completedCount = completedCount + 1 end
     payload.executor = {
@@ -11264,7 +11420,11 @@ local function statePayload()
         queuedCommandIds = queuedCommandIds,
         dispatcherBusy = executorState.dispatcherBusy,
         resultOutbox = outboxCount,
+        ackOutbox = ackOutboxCount,
         cachedResults = completedCount,
+        lastAckAt = executorState.lastAckAt,
+        lastPollError = lastPollError,
+        lastPluginError = lastPluginErrorText,
     }
     return payload
 end
@@ -11285,13 +11445,22 @@ local function handshake()
         end
         setWidgetStatus('verbunden')
         connected = true
-        -- Version 7.0.5: Nach einem Reconnect sofort alles nachliefern, was noch
-        -- im Ausgangskorb liegt - die Ergebnisse gehören zum commandId, nicht zur
-        -- alten Session.
+        -- Version 7.1.0: Nach einem Reconnect sofort offene Empfangsbestaetigungen
+        -- und Ergebnisse aus den Ausgangskoerben nachliefern.
         task.spawn(function()
+            local pendingAckIds = {}
+            for cid in pairs(executorState.ackOutbox) do
+                table.insert(pendingAckIds, cid)
+            end
+            if #pendingAckIds > 0 then
+                executorState.sendOrQueueAckBatch(pendingAckIds)
+            end
             for commandId, item in pairs(executorState.resultOutbox) do
                 local okSend, delivered = pcall(postResult, commandId, item.payload)
-                if okSend and delivered == true then executorState.resultOutbox[commandId] = nil end
+                if okSend and delivered == true then
+                    executorState.lastAckAt = os.time()
+                    executorState.resultOutbox[commandId] = nil
+                end
             end
         end)
         return true
@@ -11490,9 +11659,12 @@ task.spawn(function()
                 if response.accessMode then accessMode = response.accessMode end
                 perfWanted = (response.perf == true)
                 if response.cancelledCommands ~= nil then
-                    for _, commandId in ipairs(response.cancelledCommands) do
+                    local cancelList = type(response.cancelledCommands) == "table" and response.cancelledCommands
+                        or (type(response.cancelledCommands) == "string" and response.cancelledCommands ~= "" and { response.cancelledCommands } or {})
+                    for _, commandId in ipairs(cancelList) do
                         local cancelledId = tostring(commandId)
                         cancelRequests[cancelledId] = true
+                        executorState.ackOutbox[cancelledId] = nil
                         pcall(post, "/plugin/command_state", {
                             sessionId = sessionId,
                             commandId = cancelledId,
@@ -11502,28 +11674,37 @@ task.spawn(function()
                 end
                 if response.resetExecutor == true then
                     commandQueue = {}
+                    executorState.ackOutbox = {}
                     if executorState.runningCommandId then
                         cancelRequests[tostring(executorState.runningCommandId)] = true
                     end
                     pcall(post, "/plugin/command_state", { sessionId = sessionId, phase = "reset_ack" })
                 end
                 if response.commands ~= nil and response.resetExecutor ~= true then
+                    local cmdList = type(response.commands) == "table" and response.commands or {}
                     local receivedIds = {}
-                    for _, command in ipairs(response.commands) do
-                        delivered = delivered + 1
-                        lastToolName = tostring(command and command.tool or '?')
-                        enqueueCommand(command)
-                        if command and command.id then table.insert(receivedIds, tostring(command.id)) end
+                    for _, command in ipairs(cmdList) do
+                        if type(command) == "table" and command.id ~= nil and tostring(command.id) ~= "" then
+                            table.insert(receivedIds, tostring(command.id))
+                        end
                     end
+                    -- Version 7.1.0: Empfang VOR dem Einreihen bestaetigen (und bei
+                    -- Fehlern ueber die Ack-Outbox nachliefern), damit kein Befehl
+                    -- nach 30 s als COMMAND_DELIVERY_UNCONFIRMED stirbt.
                     if #receivedIds > 0 then
-                        pcall(post, "/plugin/command_state", { sessionId = sessionId, phase = "received_batch", commandIds = receivedIds })
+                        executorState.sendOrQueueAckBatch(receivedIds)
+                    end
+                    for _, command in ipairs(cmdList) do
+                        delivered = delivered + 1
+                        lastToolName = tostring(type(command) == "table" and command.tool or '?')
+                        enqueueCommand(command)
                     end
                 elseif response.command ~= nil and response.resetExecutor ~= true then
                     delivered = 1
-                    enqueueCommand(response.command)
-                    if response.command.id then
-                        pcall(post, "/plugin/command_state", { sessionId = sessionId, phase = "received_batch", commandIds = { tostring(response.command.id) } })
+                    if type(response.command) == "table" and response.command.id ~= nil then
+                        executorState.sendOrQueueAckBatch({ tostring(response.command.id) })
                     end
+                    enqueueCommand(response.command)
                 end
             end
             if delivered > 0 then
@@ -12138,7 +12319,30 @@ $script:BridgeHandlerScript = {
     }
 
     function To-Json($obj, [int]$Depth = 30) {
-        $obj | ConvertTo-Json -Depth $Depth -Compress
+        if ($null -eq $obj) { return 'null' }
+        if (($obj -is [System.Array]) -or ($obj -is [System.Collections.IList])) {
+            if ($obj.Count -eq 0) { return '[]' }
+            if ($obj.Count -eq 1) {
+                return ('[' + (To-Json $obj[0] ([Math]::Max(1, $Depth - 1))) + ']')
+            }
+        }
+        $json = $obj | ConvertTo-Json -Depth $Depth -Compress
+        if ([string]::IsNullOrEmpty($json)) { return 'null' }
+        return [string]$json
+    }
+
+    function Update-PollerCount([string]$SessionId, [int]$Delta) {
+        if ([string]::IsNullOrWhiteSpace($SessionId)) { return }
+        for ($spin = 0; $spin -lt 16; $spin++) {
+            $oldVal = [int]0
+            if ($Shared.Pollers.TryGetValue($SessionId, [ref]$oldVal)) {
+                $newVal = [Math]::Max(0, ([int]$oldVal + $Delta))
+                if ($Shared.Pollers.TryUpdate($SessionId, [int]$newVal, [int]$oldVal)) { return }
+            } else {
+                $initVal = [Math]::Max(0, $Delta)
+                if ($Shared.Pollers.TryAdd($SessionId, [int]$initVal)) { return }
+            }
+        }
     }
 
     function Get-UnixSeconds {
@@ -12169,6 +12373,7 @@ $script:BridgeHandlerScript = {
     }
 
     function Send-RawJson($context, [int]$status, [string]$json) {
+        $safeJson = if ([string]::IsNullOrEmpty($json)) { 'null' } else { [string]$json }
         $response = $context.Response
         $response.StatusCode = $status
         $response.ContentType = 'application/json; charset=utf-8'
@@ -12176,10 +12381,14 @@ $script:BridgeHandlerScript = {
         $response.Headers['Access-Control-Allow-Headers'] = 'content-type, authorization, x-arena-token'
         $response.Headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
         $response.Headers['Cache-Control'] = 'no-store'
-        $buffer = [System.Text.Encoding]::UTF8.GetBytes($json)
+        $buffer = [System.Text.Encoding]::UTF8.GetBytes($safeJson)
         $response.ContentLength64 = $buffer.Length
-        $response.OutputStream.Write($buffer, 0, $buffer.Length)
-        $response.OutputStream.Close()
+        try {
+            if ($context.Request.HttpMethod -ne 'HEAD' -and $buffer.Length -gt 0) {
+                $response.OutputStream.Write($buffer, 0, $buffer.Length)
+            }
+        } catch {}
+        try { $response.OutputStream.Close() } catch {}
     }
 
     function Send-Json($context, [int]$status, $obj) {
@@ -12513,7 +12722,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.0.8 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.1.0 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -12843,10 +13052,22 @@ $script:BridgeHandlerScript = {
         $phase = if ($ok) { 'completed' } else { 'failed' }
         $text = Get-ArenaActivityText $tool $args $phase $result
         if (-not $ok) {
+            $code = ''
             $reason = ''
+            try { $code = [string]$result.code } catch {}
             try { $reason = [string]$result.error } catch {}
-            if ([string]::IsNullOrWhiteSpace($reason)) { try { $reason = [string]$result.code } catch {} }
-            if (-not [string]::IsNullOrWhiteSpace($reason)) { $text = '⚠ ' + $text + ' Fehler: ' + $reason }
+            $germanReason = switch ($code) {
+                'COMMAND_DELIVERY_UNCONFIRMED' { 'Das Studio-Plugin hat den Empfang des Befehls innerhalb von 30 s nicht bestätigt.' }
+                'EXECUTOR_UNRESPONSIVE'        { 'Das Studio-Plugin sendet keine Lebenszeichen mehr während der Ausführung.' }
+                'EXECUTOR_UNAVAILABLE'         { 'Das Studio-Plugin ist derzeit nicht erreichbar.' }
+                'EXECUTOR_DROPPED_COMMAND'     { 'Der Befehl ging in der lokalen Plugin-Warteschlange verloren.' }
+                'STUDIO_ABANDONED'             { 'Der Befehl hat das Sicherheits-Zeitbudget überschritten und wurde beendet.' }
+                'COMMAND_CANCELLED'            { 'Der Befehl wurde abgebrochen.' }
+                'INVALID_COMMAND'              { 'Ungültiger Befehl (Tool-Name fehlt oder ist leer).' }
+                default                        { $reason }
+            }
+            if ([string]::IsNullOrWhiteSpace($germanReason)) { $germanReason = $code }
+            if (-not [string]::IsNullOrWhiteSpace($germanReason)) { $text = '⚠ ' + $text + ' Fehler: ' + $germanReason }
             else { $text = '⚠ ' + $text + ' ist fehlgeschlagen.' }
         }
         $entry = @{ id=$activityId; tool=$tool; phase=$phase; kind=(Get-ArenaActivityKind $tool $phase $result); text=$text; updatedAt=(Get-UnixSeconds) }
@@ -13081,8 +13302,13 @@ $script:BridgeHandlerScript = {
             status = 'queued'
             createdAt = $now
             queuedAt = $queuedAt
+            deliveredAt = 0
+            lastDeliveryAt = 0
+            receivedAt = 0
             startedAt = 0
             heartbeatAt = 0
+            unackedCount = 0
+            deliveryAttempts = 0
             budgetSeconds = $budgetSeconds
             executor = $null
         }
@@ -13093,6 +13319,7 @@ $script:BridgeHandlerScript = {
         $guid = Get-SessionInstanceGuid $sid
         if (-not [string]::IsNullOrWhiteSpace($guid)) { $Shared.CommandInstanceGuids[$id] = $guid }
         $Shared.CommandStates[$id] = (To-Json $record 8)
+        Write-BridgeLog ('Befehl eingereiht: tool=' + [string]$tool + ', commandId=' + $id + ', sid=' + $sid + ', budget=' + $budgetSeconds + 's')
     }
 
     function Remove-PendingCommand($sessionId, $commandId) {
@@ -13249,6 +13476,11 @@ $script:BridgeHandlerScript = {
                 queueDepth = [int]$executor.queueDepth
                 dispatcherBusy = [bool]$executor.dispatcherBusy
                 queuedCommandIds = @($executor.queuedCommandIds)
+                resultOutbox = if ($null -ne $executor.resultOutbox) { [int]$executor.resultOutbox } else { 0 }
+                ackOutbox = if ($null -ne $executor.ackOutbox) { [int]$executor.ackOutbox } else { 0 }
+                lastAckAt = if ($null -ne $executor.lastAckAt) { [int64]$executor.lastAckAt } else { 0 }
+                lastPollError = if ($null -ne $executor.lastPollError) { [string]$executor.lastPollError } else { '' }
+                lastPluginError = if ($null -ne $executor.lastPluginError) { [string]$executor.lastPluginError } else { '' }
                 receivedAt = (Get-UnixSeconds)
             }
             $Shared.ExecutorStates[[string]$sessionId] = (To-Json $state 6)
@@ -13285,6 +13517,11 @@ $script:BridgeHandlerScript = {
             queueDepth = if ($state) { [int]$state.queueDepth } else { 0 }
             dispatcherBusy = if ($state) { [bool]$state.dispatcherBusy } else { $false }
             queuedCommandIds = if ($state -and $state.queuedCommandIds) { @($state.queuedCommandIds) } else { @() }
+            resultOutbox = if ($state -and $null -ne $state.resultOutbox) { [int]$state.resultOutbox } else { 0 }
+            ackOutbox = if ($state -and $null -ne $state.ackOutbox) { [int]$state.ackOutbox } else { 0 }
+            lastAckAt = if ($state -and $null -ne $state.lastAckAt) { [int64]$state.lastAckAt } else { 0 }
+            lastPollError = if ($state -and $null -ne $state.lastPollError) { [string]$state.lastPollError } else { '' }
+            lastPluginError = if ($state -and $null -ne $state.lastPluginError) { [string]$state.lastPluginError } else { '' }
         }
     }
 
@@ -13340,6 +13577,8 @@ $script:BridgeHandlerScript = {
         $dedupeKey = Get-CommandControlKey $sid $id
         $completedAt = Get-UnixSeconds
         $pendingInfo = Get-PendingInfo $sid $id
+        $discardPayload = $null
+        [void]$Shared.CommandPayloads.TryRemove($id, [ref]$discardPayload)
         try {
             $parsed = $resultJson | ConvertFrom-Json
             if ($parsed -and $parsed.PSObject.Properties['commandId'] -and [string]$parsed.commandId -ne $id) {
@@ -13353,10 +13592,51 @@ $script:BridgeHandlerScript = {
             $parsed = @{ ok=$false; code='RUNTIME_ERROR'; error='The Studio result was not valid JSON.'; commandId=$id }
             $resultJson = To-Json $parsed 8
         }
-        if (-not $Shared.CompletedCommandIds.TryAdd($dedupeKey, $completedAt)) { return $false }
+        # Version 7.1.0: Selbstheilung bei Verlust von received_batch / started.
+        # Wenn das Plugin ein Ergebnis liefert, ist der Empfang und die Ausfuehrung
+        # damit bewiesen - fehlende Zwischen-Zeitstempel werden geheilt.
+        if ($source -eq 'plugin' -and $pendingInfo) {
+            try {
+                if (-not $pendingInfo.deliveredAt -or [int64]$pendingInfo.deliveredAt -le 0) {
+                    $pendingInfo | Add-Member -NotePropertyName 'deliveredAt' -NotePropertyValue $completedAt -Force
+                }
+                if (-not $pendingInfo.receivedAt -or [int64]$pendingInfo.receivedAt -le 0) {
+                    $pendingInfo | Add-Member -NotePropertyName 'receivedAt' -NotePropertyValue $completedAt -Force
+                }
+                if (-not $pendingInfo.startedAt -or [int64]$pendingInfo.startedAt -le 0) {
+                    $pendingInfo.startedAt = $completedAt
+                }
+                $pendingInfo | Add-Member -NotePropertyName 'unackedCount' -NotePropertyValue 0 -Force
+            } catch {}
+        }
+        if (-not $Shared.CompletedCommandIds.TryAdd($dedupeKey, $completedAt)) {
+            # Falls der Befehl zuvor vom Waechter als COMMAND_DELIVERY_UNCONFIRMED
+            # abgebrochen wurde und das echte Plugin-Ergebnis verspaetet eintrifft,
+            # stellen wir es trotzdem als LateResult zu (Selbstheilung).
+            if ($source -eq 'plugin') {
+                $priorStateRaw = $null
+                if ($Shared.CommandStates.TryGetValue($id, [ref]$priorStateRaw)) {
+                    try {
+                        $priorState = $priorStateRaw | ConvertFrom-Json
+                        if ([string]$priorState.status -eq 'abandoned') {
+                            Queue-LateResult (Get-CommandOrigin $id) $id $resultJson $priorState
+                            Write-BridgeLog ('Befehl nachtraeglich vom Plugin beantwortet (Selbstheilung nach Abbruch): commandId=' + $id + ', tool=' + [string]$priorState.tool)
+                            return $true
+                        }
+                    } catch {}
+                }
+            }
+            return $false
+        }
 
         $tool = ''
         if ($pendingInfo) { try { $tool = [string]$pendingInfo.tool } catch {} }
+        if ([string]::IsNullOrWhiteSpace($tool) -and $parsed -and $parsed.PSObject.Properties['tool']) {
+            $tool = [string]$parsed.tool
+        }
+        $deliveredStamp = if ($pendingInfo -and $pendingInfo.deliveredAt) { [int64]$pendingInfo.deliveredAt } elseif ($source -eq 'plugin') { $completedAt } else { 0 }
+        $receivedStamp  = if ($pendingInfo -and $pendingInfo.receivedAt) { [int64]$pendingInfo.receivedAt } elseif ($source -eq 'plugin') { $completedAt } else { 0 }
+        $startedStamp   = if ($pendingInfo -and $pendingInfo.startedAt) { [int64]$pendingInfo.startedAt } elseif ($source -eq 'plugin') { $completedAt } else { 0 }
         $finalState = @{
             sessionId = $sid
             commandId = $id
@@ -13364,13 +13644,16 @@ $script:BridgeHandlerScript = {
             status = if ($parsed -and $parsed.ok -eq $true) { 'completed' } elseif ($source -eq 'cancelled' -or ($parsed -and [string]$parsed.code -eq 'COMMAND_CANCELLED')) { 'cancelled' } elseif ($source -ne 'plugin' -or ($parsed -and [string]$parsed.code -in @('STUDIO_ABANDONED','EXECUTOR_UNRESPONSIVE','EXECUTOR_UNAVAILABLE','EXECUTOR_DROPPED_COMMAND','COMMAND_DELIVERY_UNCONFIRMED','QUEUE_EXPIRED'))) { 'abandoned' } else { 'failed' }
             createdAt = if ($pendingInfo -and $pendingInfo.createdAt) { [int64]$pendingInfo.createdAt } else { $completedAt }
             queuedAt = if ($pendingInfo -and $pendingInfo.queuedAt) { [int64]$pendingInfo.queuedAt } else { 0 }
-            startedAt = if ($pendingInfo -and $pendingInfo.startedAt) { [int64]$pendingInfo.startedAt } else { 0 }
+            deliveredAt = $deliveredStamp
+            receivedAt = $receivedStamp
+            startedAt = $startedStamp
             finishedAt = $completedAt
-            durationSeconds = if ($pendingInfo -and $pendingInfo.startedAt) { [Math]::Max(0, $completedAt - [int64]$pendingInfo.startedAt) } else { 0 }
+            durationSeconds = if ($startedStamp -gt 0) { [Math]::Max(0, $completedAt - $startedStamp) } else { 0 }
             source = $source
             resultCode = if ($parsed -and $parsed.code) { [string]$parsed.code } else { '' }
         }
         $Shared.CommandStates[$id] = (To-Json $finalState 8)
+        Write-BridgeLog ('Befehl abgeschlossen: tool=' + $tool + ', commandId=' + $id + ', status=' + [string]$finalState.status + ', code=' + [string]$finalState.resultCode + ', quelle=' + $source + ', dauer=' + [string]$finalState.durationSeconds + 's')
         # Version 7.0.6: Die Historie haelt das Endergebnis fest, damit
         # GET /api/queue auch nach dem Entfernen des offenen Eintrags zeigt,
         # wie der Befehl geendet hat (finishedAt/abandonedAt + Code).
@@ -13413,6 +13696,8 @@ $script:BridgeHandlerScript = {
         $id = [string]$commandId
         $info = Get-PendingInfo $sid $id
         if (-not $info) { return $false }
+        $discardPayload = $null
+        [void]$Shared.CommandPayloads.TryRemove($id, [ref]$discardPayload)
         # The command must not keep running in Studio either: request a cancel for
         # every session on the reconnect chain that may be executing it.
         $cancelSid = $sid
@@ -13439,6 +13724,21 @@ $script:BridgeHandlerScript = {
             if ($start -le 0) { $start = [int64]$info.queuedAt }
             if ($start -gt 0) { $seconds = [int][Math]::Max(0, (Get-UnixSeconds) - $start) }
         } catch {}
+        $unackedCount = 0
+        $deliveryAttempts = 0
+        try { if ($null -ne $info.unackedCount) { $unackedCount = [int]$info.unackedCount } } catch {}
+        try { if ($null -ne $info.deliveryAttempts) { $deliveryAttempts = [int]$info.deliveryAttempts } } catch {}
+        $execSnap = Get-SessionExecutorSnapshot $ownerSid
+        $pluginDiagnostics = @{
+            lastPollError    = [string]$execSnap.lastPollError
+            lastPluginError  = [string]$execSnap.lastPluginError
+            lastAckAt        = [int64]$execSnap.lastAckAt
+            ackOutbox        = [int]$execSnap.ackOutbox
+            resultOutbox     = [int]$execSnap.resultOutbox
+            unackedCount     = $unackedCount
+            deliveryAttempts = $deliveryAttempts
+        }
+        Write-BridgeLog ('Befehl vom Waechter abgebrochen: tool=' + [string]$info.tool + ', commandId=' + $id + ', code=' + $reasonCode + ', unacked=' + $unackedCount + ', versuche=' + $deliveryAttempts + ', lastPollError=' + [string]$execSnap.lastPollError + ', lastPluginError=' + [string]$execSnap.lastPluginError + ', lastAckAt=' + [int64]$execSnap.lastAckAt + ' | ' + $reason)
         $failure = @{
             ok = $false
             code = $reasonCode
@@ -13451,6 +13751,7 @@ $script:BridgeHandlerScript = {
             elapsedSeconds = $seconds
             budgetSeconds = [int]$info.budgetSeconds
             status = 'abandoned'
+            pluginDiagnostics = $pluginDiagnostics
             hint = 'The executor was released so the Studio queue can continue. Inspect the Place before retrying because partial changes may have been applied.'
         }
         return (Complete-CommandResult $ownerSid $id (To-Json $failure 10) $reasonCode)
@@ -13461,6 +13762,8 @@ $script:BridgeHandlerScript = {
         $id = [string]$commandId
         $info = Get-PendingInfo $sid $id
         if (-not $info) { return $false }
+        $discardPayload = $null
+        [void]$Shared.CommandPayloads.TryRemove($id, [ref]$discardPayload)
         $cancelKey = Get-CommandControlKey $sid $id
         $Shared.CancelRequests[$cancelKey] = Get-UnixSeconds
         Remove-CommandFromQueue $sid $id
@@ -13541,9 +13844,14 @@ $script:BridgeHandlerScript = {
     function Mark-CommandDelivered($sessionId, $commandId) {
         $info = Get-PendingInfo $sessionId $commandId
         if (-not $info -or [string]$info.status -ne 'queued') { return $false }
+        $now = Get-UnixSeconds
         $info.status = 'delivered'
-        $info | Add-Member -NotePropertyName 'deliveredAt' -NotePropertyValue (Get-UnixSeconds) -Force
+        $info | Add-Member -NotePropertyName 'deliveredAt' -NotePropertyValue $now -Force
+        $info | Add-Member -NotePropertyName 'lastDeliveryAt' -NotePropertyValue $now -Force
+        $info | Add-Member -NotePropertyName 'unackedCount' -NotePropertyValue 0 -Force
+        $info | Add-Member -NotePropertyName 'deliveryAttempts' -NotePropertyValue 1 -Force
         Save-PendingInfo $sessionId $commandId $info | Out-Null
+        Write-BridgeLog ('Befehl ans Plugin ausgeliefert (Versuch 1/3): tool=' + [string]$info.tool + ', commandId=' + [string]$commandId + ', sid=' + [string]$sessionId)
         return $true
     }
 
@@ -13560,8 +13868,9 @@ $script:BridgeHandlerScript = {
         }
         foreach ($chunkPair in $Shared.ResultChunkAt.GetEnumerator()) {
             if (($now - [int64]$chunkPair.Value) -gt 1800) {
+                $discardChunkAt = [long]0
                 $discardChunk = $null
-                [void]$Shared.ResultChunkAt.TryRemove([string]$chunkPair.Key, [ref]$discardChunk)
+                [void]$Shared.ResultChunkAt.TryRemove([string]$chunkPair.Key, [ref]$discardChunkAt)
                 [void]$Shared.ResultChunks.TryRemove([string]$chunkPair.Key, [ref]$discardChunk)
             }
         }
@@ -13576,6 +13885,7 @@ $script:BridgeHandlerScript = {
                         $completedId = ([string]$completedPair.Key).Substring($separator + 1)
                         $discardState = $null
                         [void]$Shared.CommandStates.TryRemove($completedId, [ref]$discardState)
+                        [void]$Shared.CommandPayloads.TryRemove($completedId, [ref]$discardState)
                         $ownerValue = $null
                         if ($Shared.CommandOwners.TryGetValue($completedId, [ref]$ownerValue) -and [string]$ownerValue -eq $completedSid) {
                             [void]$Shared.CommandOwners.TryRemove($completedId, [ref]$discardState)
@@ -13613,6 +13923,12 @@ $script:BridgeHandlerScript = {
                         $info.status = 'started'
                         $info.startedAt = $executorStartedAt
                         $info.heartbeatAt = $now
+                        if (-not $info.receivedAt -or [int64]$info.receivedAt -le 0) {
+                            $info | Add-Member -NotePropertyName 'receivedAt' -NotePropertyValue $now -Force
+                        }
+                        $info | Add-Member -NotePropertyName 'unackedCount' -NotePropertyValue 0 -Force
+                        $discardPayload = $null
+                        [void]$Shared.CommandPayloads.TryRemove($id, [ref]$discardPayload)
                         Save-PendingInfo $sid $id $info | Out-Null
                         if (($now - $executorStartedAt) -gt ($budget + 15)) {
                             Mark-CommandAbandoned $sid $id 'STUDIO_ABANDONED' ("The Studio command exceeded its $budget-second execution budget. The queue watchdog released it; inspect for partial changes before retrying.") | Out-Null
@@ -13623,6 +13939,9 @@ $script:BridgeHandlerScript = {
                         # Reconcile the receipt from the plugin's local FIFO.
                         $info.status = 'received'
                         $info | Add-Member -NotePropertyName 'receivedAt' -NotePropertyValue $now -Force
+                        $info | Add-Member -NotePropertyName 'unackedCount' -NotePropertyValue 0 -Force
+                        $discardPayload = $null
+                        [void]$Shared.CommandPayloads.TryRemove($id, [ref]$discardPayload)
                         Save-PendingInfo $sid $id $info | Out-Null
                         continue
                     }
@@ -13725,6 +14044,8 @@ $script:BridgeHandlerScript = {
                     heartbeatAt = $heartbeatAt
                     deliveredAt = if ($info.deliveredAt) { [int64]$info.deliveredAt } else { 0 }
                     receivedAt = if ($info.receivedAt) { [int64]$info.receivedAt } else { 0 }
+                    unackedCount = if ($null -ne $info.unackedCount) { [int]$info.unackedCount } else { 0 }
+                    deliveryAttempts = if ($null -ne $info.deliveryAttempts) { [int]$info.deliveryAttempts } else { 0 }
                     runningSeconds = if ($startedAt -gt 0) { [int][Math]::Max(0, $now - $startedAt) } else { 0 }
                     budgetSeconds = [int]$info.budgetSeconds
                     abandonReason = if ($info.abandonReason) { [string]$info.abandonReason } else { '' }
@@ -13758,20 +14079,26 @@ $script:BridgeHandlerScript = {
         }
         if ($phase -eq 'received_batch') {
             $received = 0
+            $nowAck = Get-UnixSeconds
             foreach ($receivedIdValue in @($body.commandIds)) {
                 $receivedId = [string]$receivedIdValue
                 if ([string]::IsNullOrWhiteSpace($receivedId)) { continue }
+                $discardPayload = $null
+                [void]$Shared.CommandPayloads.TryRemove($receivedId, [ref]$discardPayload)
                 $receivedOwner = Get-CommandOwner $receivedId
-                if ($receivedOwner -ne $sid) {
-                    if (-not (Test-CommandInstanceMatches $sid $receivedId)) { continue }
-                    $sid = $receivedOwner
+                $targetSid = $sid
+                if ($receivedOwner -ne $targetSid) {
+                    if (-not (Test-CommandInstanceMatches $targetSid $receivedId)) { continue }
+                    $targetSid = $receivedOwner
                 }
-                $receivedInfo = Get-PendingInfo $sid $receivedId
+                $receivedInfo = Get-PendingInfo $targetSid $receivedId
                 if (-not $receivedInfo) { continue }
                 if ([string]$receivedInfo.status -eq 'delivered' -or [string]$receivedInfo.status -eq 'queued') {
                     $receivedInfo.status = 'received'
-                    $receivedInfo | Add-Member -NotePropertyName 'receivedAt' -NotePropertyValue (Get-UnixSeconds) -Force
-                    Save-PendingInfo $sid $receivedId $receivedInfo | Out-Null
+                    $receivedInfo | Add-Member -NotePropertyName 'receivedAt' -NotePropertyValue $nowAck -Force
+                    $receivedInfo | Add-Member -NotePropertyName 'unackedCount' -NotePropertyValue 0 -Force
+                    Save-PendingInfo $targetSid $receivedId $receivedInfo | Out-Null
+                    Write-BridgeLog ('Befehl vom Plugin bestaetigt (received_batch): tool=' + [string]$receivedInfo.tool + ', commandId=' + $receivedId + ', sid=' + $targetSid)
                     $received = $received + 1
                 }
             }
@@ -13799,20 +14126,37 @@ $script:BridgeHandlerScript = {
 
         if ($phase -eq 'started') {
             if ($cancelled) { return @{ ok=$true; accepted=$false; cancelled=$true; commandId=$id; state='cancel_requested' } }
+            $discardPayload = $null
+            [void]$Shared.CommandPayloads.TryRemove($id, [ref]$discardPayload)
             if ([string]$info.status -in @('queued','delivered','received')) {
                 $now = Get-UnixSeconds
                 $info.status = 'started'
                 $info.startedAt = $now
                 $info.heartbeatAt = $now
+                if (-not $info.receivedAt -or [int64]$info.receivedAt -le 0) {
+                    $info | Add-Member -NotePropertyName 'receivedAt' -NotePropertyValue $now -Force
+                }
+                $info | Add-Member -NotePropertyName 'unackedCount' -NotePropertyValue 0 -Force
                 $info | Add-Member -NotePropertyName 'startedTool' -NotePropertyValue ([string]$body.tool) -Force
                 Save-PendingInfo $sid $id $info | Out-Null
+                Write-BridgeLog ('Befehl im Plugin gestartet (started): tool=' + [string]$info.tool + ', commandId=' + $id + ', sid=' + $sid)
             }
             return @{ ok=$true; accepted=$true; cancelled=$false; commandId=$id; startedAt=[int64]$info.startedAt }
         }
         if ($phase -eq 'heartbeat') {
             if ($cancelled) { return @{ ok=$true; accepted=$true; cancelled=$true; commandId=$id } }
-            $info.heartbeatAt = Get-UnixSeconds
-            if ([string]$info.status -in @('queued','delivered','received')) { $info.status = 'started'; $info.startedAt = Get-UnixSeconds }
+            $discardPayload = $null
+            [void]$Shared.CommandPayloads.TryRemove($id, [ref]$discardPayload)
+            $nowHb = Get-UnixSeconds
+            $info.heartbeatAt = $nowHb
+            if ([string]$info.status -in @('queued','delivered','received')) {
+                $info.status = 'started'
+                if (-not $info.startedAt -or [int64]$info.startedAt -le 0) { $info.startedAt = $nowHb }
+                if (-not $info.receivedAt -or [int64]$info.receivedAt -le 0) {
+                    $info | Add-Member -NotePropertyName 'receivedAt' -NotePropertyValue $nowHb -Force
+                }
+                $info | Add-Member -NotePropertyName 'unackedCount' -NotePropertyValue 0 -Force
+            }
             Save-PendingInfo $sid $id $info | Out-Null
             return @{ ok=$true; accepted=$true; cancelled=$false; commandId=$id; heartbeatAt=[int64]$info.heartbeatAt }
         }
@@ -13998,8 +14342,8 @@ $script:BridgeHandlerScript = {
                 activeCaptures = @($script:PlacePreviewJobs.Keys).Count
                 intervalSeconds = [double]$script:PlacePreviewIntervalSeconds
                 targetHeight = [int]$script:PlacePreviewCaptureHeight
-                diagnoseFile = (Join-Path $script:AppDataRoot 'preview-diagnose.txt')
-                cacheFolder = (Join-Path $script:AppDataRoot 'preview-cache')
+                diagnoseFile = $(try { $root = if ([string]$rt.AppDataRoot) { [string]$rt.AppDataRoot } else { [string]$Shared.AppDataRoot }; if ($root) { Join-Path $root 'preview-diagnose.txt' } else { '' } } catch { '' })
+                cacheFolder = $(try { $root = if ([string]$rt.AppDataRoot) { [string]$rt.AppDataRoot } else { [string]$Shared.AppDataRoot }; if ($root) { Join-Path $root 'preview-cache' } else { '' } } catch { '' })
                 note = 'The window preview never spins silently: the last outcome (ok with pixel size and method, or the exact reason) is reported here and in preview-diagnose.txt. If mode is ps-fallback, the C# helper could not be compiled - modeReason says why.'
             }
             connectedPlaces = $Shared.Sessions.Count
@@ -14023,7 +14367,7 @@ $script:BridgeHandlerScript = {
                 $items.Add(([string]$pair.Key).Substring($prefix.Length))
             }
         }
-        return $items.ToArray()
+        return , $items.ToArray()
     }
 
     function Get-QueueSnapshot($sessionId) {
@@ -14057,6 +14401,8 @@ $script:BridgeHandlerScript = {
                 queuedAt = [int64]$item.queuedAt
                 deliveredAt = [int64]$item.deliveredAt
                 receivedAt = [int64]$item.receivedAt
+                unackedCount = [int]$item.unackedCount
+                deliveryAttempts = [int]$item.deliveryAttempts
                 startedAt = [int64]$item.startedAt
                 heartbeatAt = [int64]$item.heartbeatAt
                 runningSeconds = [int]$item.runningSeconds
@@ -14071,8 +14417,8 @@ $script:BridgeHandlerScript = {
                 foreach ($historyRaw in @($historyQueue.ToArray())) {
                     try { $recentCommands.Add(($historyRaw | ConvertFrom-Json)) } catch {}
                 }
-                if ($recentCommands.Count -gt 12) {
-                    $recentCommands = @($recentCommands | Select-Object -Last 12)
+                while ($recentCommands.Count -gt 12) {
+                    $recentCommands.RemoveAt(0)
                 }
             }
         } catch {}
@@ -14258,8 +14604,9 @@ $script:BridgeHandlerScript = {
                 # Lebenszeichen aus Presence (Edit-Heartbeat) schuetzt ebenso.
                 try {
                     $presence = [int64]0
+                    $visibleSecs = if ($script:PlaceVisibleSeconds) { [int]$script:PlaceVisibleSeconds } else { 20 }
                     if ($Shared.Presence.TryGetValue([string]$entry.sessionId, [ref]$presence)) {
-                        if (($now - [int64]$presence) -lt $script:PlaceVisibleSeconds) { continue }
+                        if (($now - [int64]$presence) -lt $visibleSecs) { continue }
                     }
                 } catch {}
                 if ($samePlace -and ($isOrphan -or $looksDead) -and $age -le 900) {
@@ -15401,11 +15748,14 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         [void]$Shared.ResultSignals.TryAdd($commandId, $signal)
 
         $command = @{ id=$commandId; tool=$tool; args=$toolArgs; queuedAt=$queuedAt; budgetSeconds=$commandBudget }
+        $commandJson = (To-Json $command 40)
+        $Shared.CommandPayloads[$commandId] = $commandJson
         Add-PendingCommand $sessionId $commandId $tool $commandBudget $queuedAt $callerSession
-        $enqueue = Enqueue-Command $sessionId $queue (To-Json $command 40)
+        $enqueue = Enqueue-Command $sessionId $queue $commandJson
         if (-not $enqueue.ok) {
             Remove-PendingCommand $sessionId $commandId | Out-Null
             $discard = $null
+            [void]$Shared.CommandPayloads.TryRemove($commandId, [ref]$discard)
             [void]$Shared.CommandOwners.TryRemove($commandId, [ref]$discard)
             [void]$Shared.CommandStates.TryRemove($commandId, [ref]$discard)
             [void]$Shared.ActivityCommandMap.TryRemove($commandId, [ref]$discard)
@@ -16620,7 +16970,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.0.8'
+            version = '7.1.0'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -16726,12 +17076,15 @@ end
                 $signal = New-Object System.Threading.ManualResetEventSlim($false)
                 [void]$Shared.ResultSignals.TryAdd($commandId, $signal)
                 $command = @{ id=$commandId; tool=$callTool; args=$callArgs; queuedAt=$queuedAt; budgetSeconds=$commandBudget }
+                $commandJson = (To-Json $command 40)
+                $Shared.CommandPayloads[$commandId] = $commandJson
                 $Shared.ActivityCommandMap[$commandId] = (To-Json @{ sessionId=$sessionId; activityId=$activityId; tool=$callTool; args=$callArgs } 20)
                 Add-PendingCommand $sessionId $commandId $callTool $commandBudget $queuedAt $callerSession
-                $enqueue = Enqueue-Command $sessionId $queue (To-Json $command 40)
+                $enqueue = Enqueue-Command $sessionId $queue $commandJson
                 if (-not $enqueue.ok) {
                     Remove-PendingCommand $sessionId $commandId | Out-Null
                     $discard = $null
+                    [void]$Shared.CommandPayloads.TryRemove($commandId, [ref]$discard)
                     [void]$Shared.CommandOwners.TryRemove($commandId, [ref]$discard)
                     [void]$Shared.CommandStates.TryRemove($commandId, [ref]$discard)
                     [void]$Shared.ActivityCommandMap.TryRemove($commandId, [ref]$discard)
@@ -16847,7 +17200,7 @@ end
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.0.8'
+            bridgeVersion = '7.1.0'
             executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent = 0, never an error. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
@@ -17192,7 +17545,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.0.8'
+                        bridgeVersion = '7.1.0'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -17365,7 +17718,7 @@ end
                 if ($action -eq 'reporter_state') {
                     # Das Edit-Plugin fragt den Zustand des Session-Reporters ab.
                     $stateJson = $null
-                    $seen = 0
+                    $seen = [long]0
                     [void]$Shared.AgentLastSeen.TryGetValue($sid, [ref]$seen)
                     $fresh = ((Get-UnixSeconds) - $seen) -le 6
                     if ($fresh -and $Shared.AgentStates.TryGetValue($sid, [ref]$stateJson)) {
@@ -17450,7 +17803,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.0.8'
+                        serverVersion = '7.1.0'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -17508,7 +17861,8 @@ end
                 if ($body.wait) { $waitSeconds = [Math]::Min([double]$body.wait, 8) }
                 $deadline = [DateTime]::UtcNow.AddSeconds($waitSeconds)
                 $collected = New-Object System.Collections.Generic.List[string]
-                [void]$Shared.Pollers.AddOrUpdate($sid, 1, { param($key, $old) $old + 1 })
+                $redeliveredIds = New-Object System.Collections.Generic.HashSet[string]
+                Update-PollerCount $sid 1
                 try {
                     while ($true) {
                         $resetStamp = [long]0
@@ -17518,11 +17872,48 @@ end
                         $itemJson = $null
                         [System.Threading.Monitor]::Enter($Shared.CommandQueueLock)
                         try {
+                            # Version 7.1.0: Unbestaetigte 'delivered'-Befehle (fuer die noch
+                            # kein received_batch / started / result ankam) bis zu 3-mal
+                            # erneut ausliefern. Das Plugin dedupliziert per commandId.
+                            $nowPoll = Get-UnixSeconds
+                            $pendingBag = Ensure-PendingBag $sid
+                            foreach ($pendingPair in @($pendingBag.GetEnumerator())) {
+                                if ($collected.Count -ge 16) { break }
+                                $pendingId = [string]$pendingPair.Key
+                                if ([string]::IsNullOrWhiteSpace($pendingId) -or $redeliveredIds.Contains($pendingId)) { continue }
+                                $pendingInfo = $null
+                                try { $pendingInfo = $pendingPair.Value | ConvertFrom-Json } catch { continue }
+                                if (-not $pendingInfo -or [string]$pendingInfo.status -ne 'delivered') { continue }
+                                $lastDel = 0
+                                try {
+                                    if ($pendingInfo.lastDeliveryAt) { $lastDel = [int64]$pendingInfo.lastDeliveryAt }
+                                    elseif ($pendingInfo.deliveredAt) { $lastDel = [int64]$pendingInfo.deliveredAt }
+                                } catch {}
+                                $unacked = 0
+                                try { if ($null -ne $pendingInfo.unackedCount) { $unacked = [int]$pendingInfo.unackedCount } } catch {}
+                                if (($nowPoll - $lastDel) -ge 1 -and $unacked -lt 3) {
+                                    $payloadRaw = $null
+                                    if ($Shared.CommandPayloads.TryGetValue($pendingId, [ref]$payloadRaw) -and -not [string]::IsNullOrWhiteSpace($payloadRaw)) {
+                                        $unacked = $unacked + 1
+                                        $attempts = 1
+                                        try { if ($null -ne $pendingInfo.deliveryAttempts) { $attempts = [int]$pendingInfo.deliveryAttempts } } catch {}
+                                        $attempts = $attempts + 1
+                                        $pendingInfo | Add-Member -NotePropertyName 'unackedCount' -NotePropertyValue $unacked -Force
+                                        $pendingInfo | Add-Member -NotePropertyName 'lastDeliveryAt' -NotePropertyValue $nowPoll -Force
+                                        $pendingInfo | Add-Member -NotePropertyName 'deliveryAttempts' -NotePropertyValue $attempts -Force
+                                        Save-PendingInfo $sid $pendingId $pendingInfo | Out-Null
+                                        Write-BridgeLog ('Befehl erneut zugestellt (unbestaetigt ' + $unacked + '/3): tool=' + [string]$pendingInfo.tool + ', commandId=' + $pendingId + ', sid=' + $sid)
+                                        [void]$redeliveredIds.Add($pendingId)
+                                        $collected.Add([string]$payloadRaw)
+                                    }
+                                }
+                            }
                             while ($collected.Count -lt 16 -and $queue.TryDequeue([ref]$itemJson)) {
                                 try {
                                     $candidate = $itemJson | ConvertFrom-Json
                                     $pendingInfo = Get-PendingInfo $sid ([string]$candidate.id)
                                     if ($candidate.id -and $pendingInfo -and [string]$pendingInfo.status -eq 'queued') {
+                                        $Shared.CommandPayloads[[string]$candidate.id] = [string]$itemJson
                                         $collected.Add([string]$itemJson)
                                     }
                                 } catch {}
@@ -17536,7 +17927,7 @@ end
                         $signal.Reset()
                     }
                 } finally {
-                    [void]$Shared.Pollers.AddOrUpdate($sid, 0, { param($key, $old) [Math]::Max(0, $old - 1) })
+                    Update-PollerCount $sid -1
                 }
 
                 $resetStamp = [long]0
@@ -17545,7 +17936,13 @@ end
                 if ($resetRequested) { $collected.Clear() }
                 if (-not $resetRequested) {
                     foreach ($commandJson in $collected) {
-                        try { $deliveredCommand = $commandJson | ConvertFrom-Json; Mark-CommandDelivered $sid ([string]$deliveredCommand.id) | Out-Null } catch {}
+                        try {
+                            $deliveredCommand = $commandJson | ConvertFrom-Json
+                            $cid = [string]$deliveredCommand.id
+                            if (-not $redeliveredIds.Contains($cid)) {
+                                Mark-CommandDelivered $sid $cid | Out-Null
+                            }
+                        } catch {}
                     }
                 }
                 $mode = 'readwrite'
@@ -17578,10 +17975,6 @@ end
                         $sidForResult = $ownerSession
                     }
                     $dedupeKey = Get-CommandControlKey $sidForResult $commandId
-                    if ($Shared.CompletedCommandIds.ContainsKey($dedupeKey)) {
-                        Send-Json $context 200 @{ ok=$true; duplicate=$true; commandId=$commandId }
-                        continue
-                    }
                     $completeJson = $null
                     if ($body.chunkCount) {
                         $expected = 0; $index = 0
@@ -17590,6 +17983,25 @@ end
                             Send-Json $context 400 @{ ok=$false; code='BAD_ARGS'; error='Invalid result chunk coordinates.'; commandId=$commandId }
                             continue
                         }
+                        # Version 7.1.0: Jeder Ergebnis-Chunk gilt als Lebenszeichen und
+                        # Empfangsbeweis, damit grosse Antworten nicht waehrend der
+                        # Uebertragung vom Watchdog abgebrochen werden.
+                        try {
+                            $chunkPending = Get-PendingInfo $sidForResult $commandId
+                            if ($chunkPending) {
+                                $nowChunk = Get-UnixSeconds
+                                if ([string]$chunkPending.status -in @('queued','delivered','received')) {
+                                    $chunkPending.status = 'started'
+                                    if (-not $chunkPending.startedAt -or [int64]$chunkPending.startedAt -le 0) { $chunkPending.startedAt = $nowChunk }
+                                }
+                                if (-not $chunkPending.receivedAt -or [int64]$chunkPending.receivedAt -le 0) {
+                                    $chunkPending | Add-Member -NotePropertyName 'receivedAt' -NotePropertyValue $nowChunk -Force
+                                }
+                                $chunkPending | Add-Member -NotePropertyName 'unackedCount' -NotePropertyValue 0 -Force
+                                $chunkPending.heartbeatAt = $nowChunk
+                                Save-PendingInfo $sidForResult $commandId $chunkPending | Out-Null
+                            }
+                        } catch {}
                         $bag = $null
                         if (-not $Shared.ResultChunks.TryGetValue($commandId, [ref]$bag)) {
                             $bag = [System.Collections.Concurrent.ConcurrentDictionary[int,string]]::new()
@@ -17614,8 +18026,9 @@ end
                         $accepted = Complete-CommandResult $sidForResult $commandId $completeJson 'plugin'
                         if ($accepted) {
                             $discardChunks = $null
+                            $discardChunkAt = [long]0
                             [void]$Shared.ResultChunks.TryRemove($commandId, [ref]$discardChunks)
-                            [void]$Shared.ResultChunkAt.TryRemove($commandId, [ref]$discardChunks)
+                            [void]$Shared.ResultChunkAt.TryRemove($commandId, [ref]$discardChunkAt)
                             Send-Json $context 200 @{ ok=$true; accepted=$true; commandId=$commandId }
                         } elseif ($Shared.CompletedCommandIds.ContainsKey($dedupeKey)) {
                             Send-Json $context 200 @{ ok=$true; duplicate=$true; commandId=$commandId }
@@ -17680,7 +18093,8 @@ end
                         Save-SessionEntry $entry
                     }
                     $removed = $null
-                    [void]$Shared.Presence.TryRemove($sid, [ref]$removed)
+                    $removedPresence = [long]0
+                    [void]$Shared.Presence.TryRemove($sid, [ref]$removedPresence)
                     $Shared.Pollers[$sid] = 0
                     # Studio is gone: finish pending callers with a diagnostic result;
                     # never strand them by silently deleting the tracking bag.
@@ -17728,7 +18142,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.0.8'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.1.0'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -17756,10 +18170,17 @@ end
                 $statusNotify = $false
                 try { $statusSim = [bool]$Shared.BridgeSettings.simAllowed } catch {}
                 try { $statusNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
+                $recentNewSessions = 0
+                try {
+                    $nowStat = Get-UnixSeconds
+                    foreach ($cStamp in @($Shared.SessionCreations.ToArray())) {
+                        if ([int64]$cStamp -ge ($nowStat - 60)) { $recentNewSessions = $recentNewSessions + 1 }
+                    }
+                } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.0.8'
-                    serverVersion = '7.0.8'
+                    bridgeVersion = '7.1.0'
+                    serverVersion = '7.1.0'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -17776,7 +18197,7 @@ end
                     timeline = $queueSnapshot.timeline
                     recentCommands = $queueSnapshot.recent
                     counters = @{
-                        newSessionsLast60s = $(try { [int](($Shared.SessionCreations.ToArray() | Where-Object { [int64]$_ -ge ((Get-UnixSeconds) - 60) }).Count) } catch { 0 })
+                        newSessionsLast60s = [int]$recentNewSessions
                         newSessionsTotal = [int64]$Shared.Telemetry.NewSessions
                         reusedSessions = [int64]$Shared.Telemetry.ReusedSessions
                         revivedSessions = [int64]$Shared.Telemetry.RevivedSessions
@@ -18227,11 +18648,21 @@ end
 
             Send-Json $context 404 @{ ok = $false; error = 'Route nicht gefunden.' }
         } catch {
+            $errMsg = ''
+            $errId = ''
+            $errLine = ''
+            $errTrace = ''
+            $reqPath = ''
+            try { $errMsg = [string]$_.Exception.Message } catch {}
+            try { $errId = [string]$_.FullyQualifiedErrorId } catch {}
+            try { if ($_.InvocationInfo) { $errLine = [string]$_.InvocationInfo.ScriptLineNumber } } catch {}
+            try { $errTrace = ([string]$_.ScriptStackTrace -replace '\r?\n', ' <- ') } catch {}
+            try { if ($context -and $context.Request -and $context.Request.Url) { $reqPath = [string]$context.Request.Url.AbsolutePath } } catch {}
             try {
-                Send-Json $context 500 @{ ok = $false; error = $_.Exception.Message }
+                Send-Json $context 500 @{ ok = $false; error = $errMsg }
             } catch {}
             try {
-                Add-Content -LiteralPath $LogFile -Value ('{0:u} Server Anfrage Fehler: {1}' -f (Get-Date), $_.Exception.Message) -Encoding UTF8
+                Add-Content -LiteralPath $LogFile -Value ('{0:u} Server Anfrage Fehler: {1} (Pfad={2}, ErrorId={3}, Zeile={4}, Trace={5})' -f (Get-Date), $errMsg, $reqPath, $errId, $errLine, $errTrace) -Encoding UTF8
             } catch {}
         }
     } while ($false)
@@ -18394,12 +18825,30 @@ $script:BridgeSweepScript = {
                         if ([string]::IsNullOrWhiteSpace($abandonCode)) { continue }
 
                         $dedupeKey = $sid + ':' + $id
+                        $discardPayload = $null
+                        [void]$Shared.CommandPayloads.TryRemove($id, [ref]$discardPayload)
                         if ($Shared.CompletedCommandIds.ContainsKey($dedupeKey)) {
                             $discard = $null
                             [void]$bag.TryRemove($id, [ref]$discard)
                             continue
                         }
                         [void]$Shared.CompletedCommandIds.TryAdd($dedupeKey, $now)
+                        $unackedVal = 0
+                        $attemptsVal = 0
+                        try { if ($null -ne $info.unackedCount) { $unackedVal = [int]$info.unackedCount } } catch {}
+                        try { if ($null -ne $info.deliveryAttempts) { $attemptsVal = [int]$info.deliveryAttempts } } catch {}
+                        $pluginDiagnostics = @{
+                            lastPollError    = if ($snap -and $null -ne $snap.lastPollError) { [string]$snap.lastPollError } else { '' }
+                            lastPluginError  = if ($snap -and $null -ne $snap.lastPluginError) { [string]$snap.lastPluginError } else { '' }
+                            lastAckAt        = if ($snap -and $null -ne $snap.lastAckAt) { [int64]$snap.lastAckAt } else { [int64]0 }
+                            ackOutbox        = if ($snap -and $null -ne $snap.ackOutbox) { [int]$snap.ackOutbox } else { 0 }
+                            resultOutbox     = if ($snap -and $null -ne $snap.resultOutbox) { [int]$snap.resultOutbox } else { 0 }
+                            unackedCount     = $unackedVal
+                            deliveryAttempts = $attemptsVal
+                        }
+                        try {
+                            Add-Content -LiteralPath $Shared.LogFile -Value ('{0:u} Befehl vom Waechter abgebrochen: tool={1}, commandId={2}, code={3}, unacked={4}, versuche={5}, lastPollError={6}, lastPluginError={7}, lastAckAt={8} | {9}' -f (Get-Date), [string]$info.tool, $id, $abandonCode, $unackedVal, $attemptsVal, [string]$pluginDiagnostics.lastPollError, [string]$pluginDiagnostics.lastPluginError, [int64]$pluginDiagnostics.lastAckAt, $abandonReason) -Encoding UTF8
+                        } catch {}
                         $failure = @{
                             ok = $false
                             code = $abandonCode
@@ -18413,10 +18862,48 @@ $script:BridgeSweepScript = {
                             elapsedSeconds = $age
                             budgetSeconds = $budget
                             abandonedBy = 'server-watchdog'
+                            pluginDiagnostics = $pluginDiagnostics
                             hint = 'The queue was released automatically. Check the Place for partial changes before retrying; the watchdog runs even when Studio stops answering.'
                         }
                         $failureJson = ($failure | ConvertTo-Json -Depth 10 -Compress)
                         $Shared.CommandStates[$id] = $failureJson
+                        # Version 7.1.0: Auch die sichtbare Arena-Verlaufskarte aktualisieren,
+                        # wenn der Hintergrund-Waechter einen Befehl abbricht.
+                        try {
+                            $actMapJson = $null
+                            if ($Shared.ActivityCommandMap.TryRemove($id, [ref]$actMapJson) -and $actMapJson) {
+                                $actMap = $actMapJson | ConvertFrom-Json
+                                $actSid = [string]$actMap.sessionId
+                                $actId = [string]$actMap.activityId
+                                $actTool = [string]$actMap.tool
+                                $actBag = $null
+                                if ($Shared.ActivityLogs.TryGetValue($actSid, [ref]$actBag) -and $actBag) {
+                                    $deReason = switch ($abandonCode) {
+                                        'COMMAND_DELIVERY_UNCONFIRMED' { 'Das Studio-Plugin hat den Empfang des Befehls nicht bestätigt.' }
+                                        'EXECUTOR_UNRESPONSIVE'        { 'Das Studio-Plugin sendet keine Lebenszeichen mehr während der Ausführung.' }
+                                        'EXECUTOR_UNAVAILABLE'         { 'Das Studio-Plugin ist derzeit nicht erreichbar.' }
+                                        'EXECUTOR_DROPPED_COMMAND'     { 'Der Befehl ging in der lokalen Plugin-Warteschlange verloren.' }
+                                        'STUDIO_ABANDONED'             { 'Der Befehl hat das Sicherheits-Zeitbudget überschritten und wurde beendet.' }
+                                        default                        { $abandonReason }
+                                    }
+                                    $priorActRaw = $null
+                                    $actStartedAt = $now
+                                    if ($actBag.TryGetValue($actId, [ref]$priorActRaw) -and $priorActRaw) {
+                                        try { $actStartedAt = [int64](($priorActRaw | ConvertFrom-Json).startedAt) } catch {}
+                                    }
+                                    $actEntry = @{
+                                        id = $actId
+                                        tool = $actTool
+                                        phase = 'failed'
+                                        kind = 'failed'
+                                        text = ('⚠ Befehl „' + $actTool + '“ abgebrochen: ' + $deReason)
+                                        startedAt = $actStartedAt
+                                        updatedAt = $now
+                                    }
+                                    $actBag[$actId] = ($actEntry | ConvertTo-Json -Depth 8 -Compress)
+                                }
+                            }
+                        } catch {}
                         # Version 7.0.6: Der Waechter laeuft in einem EIGENEN
                         # Runspace ohne Handler-Funktionen - die Historie wird
                         # hier deshalb direkt geschrieben.
@@ -18858,9 +19345,17 @@ function Remove-DeadSession {
         [void]$script:Shared.TokenSessions.TryRemove($token, [ref]$removedSession)
     }
     $junk = $null
-    foreach ($bagName in @('AccessModes','Pollers','Presence','PendingCommands','LateResults','PlayRetryDedupe','DocsSent','AiPlayIntents','LastPlayEvents','RunOwners','UserActiveAt','AgentKeys','AgentQueues','AgentResults','AgentStates','AgentLastSeen','CommandQueues','CommandSignals','ActivityLogs','ActivityCommandMap','ExecutorStates','ExecutorResetRequests')) {
+    $junkInt = [int]0
+    $junkLong = [long]0
+    $junkBool = $false
+    foreach ($bagName in @('AccessModes','PendingCommands','LateResults','PlayRetryDedupe','AiPlayIntents','LastPlayEvents','RunOwners','AgentKeys','AgentQueues','AgentResults','AgentStates','CommandQueues','CommandSignals','ActivityLogs','ActivityCommandMap','ExecutorStates')) {
         try { [void]$script:Shared.$bagName.TryRemove($SessionId, [ref]$junk) } catch {}
     }
+    try { [void]$script:Shared.Pollers.TryRemove($SessionId, [ref]$junkInt) } catch {}
+    foreach ($longBag in @('Presence','UserActiveAt','AgentLastSeen','ExecutorResetRequests')) {
+        try { [void]$script:Shared.$longBag.TryRemove($SessionId, [ref]$junkLong) } catch {}
+    }
+    try { [void]$script:Shared.DocsSent.TryRemove($SessionId, [ref]$junkBool) } catch {}
     # Command-level records use commandId keys, so remove them through the
     # explicit owner map rather than leaving result/signalling state behind.
     try {
@@ -18869,18 +19364,19 @@ function Remove-DeadSession {
             $commandId = [string]$ownerPair.Key
             [void]$script:Shared.CommandOwners.TryRemove($commandId, [ref]$junk)
             [void]$script:Shared.CommandStates.TryRemove($commandId, [ref]$junk)
+            [void]$script:Shared.CommandPayloads.TryRemove($commandId, [ref]$junk)
             [void]$script:Shared.CommandResults.TryRemove($commandId, [ref]$junk)
             [void]$script:Shared.ResultChunks.TryRemove($commandId, [ref]$junk)
-            [void]$script:Shared.ResultChunkAt.TryRemove($commandId, [ref]$junk)
+            [void]$script:Shared.ResultChunkAt.TryRemove($commandId, [ref]$junkLong)
             $signal = $null
             if ($script:Shared.ResultSignals.TryRemove($commandId, [ref]$signal)) { try { $signal.Dispose() } catch {} }
         }
         $prefix = $SessionId + ':'
         foreach ($key in @($script:Shared.CancelRequests.Keys)) {
-            if ([string]$key -like ($prefix + '*')) { [void]$script:Shared.CancelRequests.TryRemove([string]$key, [ref]$junk) }
+            if ([string]$key -like ($prefix + '*')) { [void]$script:Shared.CancelRequests.TryRemove([string]$key, [ref]$junkLong) }
         }
         foreach ($key in @($script:Shared.CompletedCommandIds.Keys)) {
-            if ([string]$key -like ($prefix + '*')) { [void]$script:Shared.CompletedCommandIds.TryRemove([string]$key, [ref]$junk) }
+            if ([string]$key -like ($prefix + '*')) { [void]$script:Shared.CompletedCommandIds.TryRemove([string]$key, [ref]$junkLong) }
         }
     } catch {}
     # Version 7.0.3: Auch die Diagnose-Eintraege dieser Sitzung entfernen,
@@ -19608,7 +20104,7 @@ $xaml = @'
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="Arena Roblox Bridge" Foreground="{StaticResource TextMain}" FontSize="18.5" FontWeight="Bold"/>
                             <TextBlock x:Name="SubtitleText" Text="Bereit für verbundene Places" Foreground="{StaticResource TextMuted}" FontSize="11.5" Margin="0,3,0,0"/>
-                            <TextBlock x:Name="RuntimeLine" Text="Bridge 7.0.8" Foreground="{StaticResource TextFaint}" FontSize="9.5" Margin="0,2,0,0"/>
+                            <TextBlock x:Name="RuntimeLine" Text="Bridge 7.1.0" Foreground="{StaticResource TextFaint}" FontSize="9.5" Margin="0,2,0,0"/>
                         </StackPanel>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -20293,6 +20789,7 @@ function Get-PlaceIdentity {
             Name       = ''
             NameSource = ''
             BoundAt    = [DateTime]::MinValue
+            BindReason = ''
         }
         $script:PlaceIdentities[$SessionId] = $identity
     }
@@ -20314,7 +20811,11 @@ function Save-PlaceIdentity {
     }
     $identity.Name = [string]$script:PlaceNames[$SessionId]
     if ($script:PlaceNameSources.ContainsKey($SessionId)) { $identity.NameSource = [string]$script:PlaceNameSources[$SessionId] }
-    $identity.BindReason = [string]$Reason
+    if ($null -ne $identity.PSObject.Properties['BindReason']) {
+        $identity.BindReason = [string]$Reason
+    } else {
+        $identity | Add-Member -NotePropertyName 'BindReason' -NotePropertyValue ([string]$Reason) -Force
+    }
     return $identity
 }
 
@@ -20394,7 +20895,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.0.8)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.1.0)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -20563,16 +21064,18 @@ function Invoke-PlaceRowCancel {
         } catch {}
         # Den wartenden Aufrufer sofort beantworten (kein 55-s-Warten mehr).
         try {
-            $resultJson = (To-Json @{
+            $removedPayload = $null
+            [void]$script:Shared.CommandPayloads.TryRemove($commandId, [ref]$removedPayload)
+            $resultJson = (@{
                 ok = $false
                 code = 'COMMAND_CANCELLED'
                 commandId = $commandId
                 tool = $toolName
-                error = 'Cancelled by the user from the place row.'
+                error = 'Vom Nutzer in der Place-Zeile abgebrochen.'
                 workIsLost = $false
                 partialChangesPossible = ([int64]$cmd.startedAt -gt 0)
                 retrySafe = $false
-            } 8)
+            } | ConvertTo-Json -Depth 8 -Compress)
             $script:Shared.CommandResults[$commandId] = $resultJson
             $script:Shared.CompletedCommandIds[$cancelKey] = $now
             $waiter = $null
@@ -20997,7 +21500,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.0.8)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.1.0)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -22877,7 +23380,7 @@ function Update-Row {
     # Version 6.0.1: Start-PlacePreviewCapture ist selbst gedrosselt (siehe
     # dort) - ein Aufruf pro Tick ist billig (nur Dictionary-Lookups, solange
     # kein neuer Screenshot faellig ist).
-    try { Start-PlacePreviewCapture $Studio $Row } catch { Write-UiErrorLog 'Place-Zeile: Vorschau-Aufnahme fehlgeschlagen' $_ }
+    try { Start-PlacePreviewCapture $Studio $Row } catch { Write-PreviewCaptureError ([string]$Studio.sessionId) $_ }
 
     $mode = if ([string]$Studio.accessMode -eq 'readonly') { 'readonly' } else { 'readwrite' }
     # Kurz nach einem Klick hat der lokale Wert Vorrang (verhindert Flackern)
@@ -23164,7 +23667,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.0.8)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.1.0)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -23915,7 +24418,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.0.8'
+    $versionText = '7.1.0'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -24539,7 +25042,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.0.8" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.1.0" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -24584,7 +25087,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.0.8 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.1.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -24643,7 +25146,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.0.8 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.1.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -24656,7 +25159,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.0.8'
+    $verText = '7.1.0'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
