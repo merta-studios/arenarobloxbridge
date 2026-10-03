@@ -379,14 +379,22 @@ def test_6_places_watchdog_version(source: str, lua: str) -> None:
     )
     health = extract_ps_function(source, "Get-StudioDeliveryHealth")
     assert "undeliveredCommands = $undelivered" in health
-    # Versionsstand
-    assert f'local ARENA_VERSION  = "{VERSION}"' in lua
-    assert f"DocsVersion     = '{VERSION}'" in source
-    assert source.count(f"bridgeVersion = '{VERSION}'") == 3 and source.count(f"serverVersion = '{VERSION}'") == 2
-    assert f"# Arena Roblox Bridge  -  Version {VERSION}" in source
+    # Versionsstand: Dieser Test ist der REGRESSIONSWAECHTER fuer 7.1.1 und
+    # darf die laufende Version nicht festnageln (den Versionsstempel pruefen
+    # test_v398_structure.py und der jeweils neueste Versionstest). Geprueft
+    # wird nur, dass die Auslieferung mindestens 7.1.1 ist und dass alle
+    # Versionsliterale weiterhin konsistent sind.
+    header = re.search(r"# Arena Roblox Bridge  -  Version (\d+\.\d+\.\d+)", source)
+    assert header, "Der Versionskopf fehlt"
+    shipped = header.group(1)
+    assert tuple(int(part) for part in shipped.split(".")) >= tuple(int(part) for part in VERSION.split(".")), (
+        f"Die Auslieferung {shipped} liegt vor dem 7.1.1-Hotfix"
+    )
+    assert f'local ARENA_VERSION  = "{shipped}"' in lua
+    assert f"DocsVersion     = '{shipped}'" in source
+    assert source.count(f"bridgeVersion = '{shipped}'") == 3 and source.count(f"serverVersion = '{shipped}'") == 2
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    assert version["version"] == VERSION, f"version.json ist nicht {VERSION}"
-    assert any("Get-SessionCancellationIds" in note for note in version["notes"]), "version.json erklaert die 7.1.0-Blockade nicht"
+    assert version["version"] == shipped, f"version.json ist nicht {shipped}"
 
 
 def main() -> int:

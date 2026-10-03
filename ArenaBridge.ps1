@@ -1,5 +1,75 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.1.1
+# Arena Roblox Bridge  -  Version 7.1.2
+#
+# MINI-HOTFIX 7.1.2 - TOOLBOX-/ASSET-BEFEHLE HAENGEN NICHT MEHR (2026-10-03):
+#   Live-Befund mit 7.1.1: nach mehreren Katalogsuchen (Katze/Hund/Fuchs/
+#   Hirsch/Kaninchen) liefen Detail-/Folgeaufrufe in Timeouts; ein
+#   insert_asset (assetId 14124432577) kehrte nie zurueck und der POST auf
+#   /api/tool endete nach ~125,8 s im Cloudflare-524. Danach: executor.alive
+#   =false bei gleichzeitig delivery.state='ok', Toolbox-Karten blieben in
+#   der Oberflaeche dauerhaft auf "Macht gerade", Studio wurde mit jedem
+#   weiteren Toolbox-Aufruf traeger (Nutzerbeobachtung aus den Studio-/
+#   Bridge-Logs: RAM gegen Ende ~70 % - KEIN von der Bridge gemessener Wert).
+#   Belegte Ursachen im Quellcode - KEINE einzelne, sondern vier, die sich
+#   gegenseitig verstaerkt haben:
+#   1) UNBEGRENZTE KATALOGZEIT AUF DER HTTP-ANFRAGE. search_assets/
+#      asset_details/validate_asset laufen SYNCHRON im HTTP-Runspace
+#      (Invoke-ServerTool). Invoke-AssetSearch hatte eine EIGENE
+#      Wiederholungsschleife (2 x Invoke-RestMethod -TimeoutSec 20 + 1,5 s
+#      Pause) und danach noch einen 20-s-Detailaufruf = bis zu 61,5 s fuer
+#      EINEN Aufruf; Invoke-AssetDetails fragte im 404-Fall JEDE Asset-Id
+#      einzeln mit 20 s ab (bei 20 Ids 400 s, voellig unbegrenzt); und vor
+#      jedem insert_asset lief zusaetzlich Invoke-AssetValidation (20 s) auf
+#      DERSELBEN Anfrage, bevor ueberhaupt die 55 s Studio-Wartezeit begannen.
+#      20 + 55 s liegen bereits ueber der ~100-s-Grenze des Tunnels - der 524
+#      war damit erreichbar, ohne dass Studio etwas falsch gemacht haette.
+#      JETZT: ein einziger Weg in den Katalog (Invoke-CatalogHttp) mit hartem
+#      Zeitlimit (12 s, Validierung 8 s), hartem Gesamtbudget je Werkzeug
+#      (25 s), KEINER automatischen Wiederholung und typisierten Fehlern
+#      (CATALOG_TIMEOUT/CATALOG_UNAVAILABLE).
+#   2) KEINE OBERGRENZE FUER GLEICHZEITIGE TOOLBOX-ARBEIT. Der Server nimmt
+#      bis zu 32 Anfragen parallel an; fuenf parallele Tiersuchen bedeuteten
+#      fuenf gleichzeitige Katalogaufrufe, die zusaetzlich dieselbe
+#      Cache-Datei lasen und neu schrieben. JETZT: hoechstens 2 laufende
+#      Katalogaufrufe und GENAU EIN aktiver Asset-Import je Place
+#      (Enter-ToolboxSlot / Enter-ToolboxImport, Freigabe immer in finally).
+#      Alles darueber kommt SOFORT mit TOOLBOX_BUSY bzw.
+#      TOOLBOX_IMPORT_IN_FLIGHT zurueck statt sich aufzustauen.
+#   3) delivery.state LOG EINEN GESUNDEN ZUSTAND VOR. Get-StudioDeliveryHealth
+#      setzte $state = 'ok', sobald irgendein HTTP-Kontakt juenger als 15 s
+#      war, und prueft executorAlive erst ab 45 s Funkstille. Genau deshalb
+#      stand im Live-Befund delivery.state='ok' neben executorAlive=false.
+#      JETZT fliesst executorAlive zuerst ein; es gibt den eigenen Zustand
+#      'executor_down' (Sitzung antwortet, Executor-Tick steht) und 'wedged',
+#      sobald wartende Arbeit auf einen toten Executor trifft.
+#   4) "MACHT GERADE" OHNE ENDE. Der STUDIO_TIMEOUT-Pfad in /api/tool hat den
+#      Verlaufseintrag bewusst auf phase='running' stehen lassen und auf ein
+#      spaeteres Ergebnis gewartet. Kommt keines (toter Executor), blieb die
+#      Karte fuer immer auf "Macht gerade". JETZT bekommt jeder Aufruf einen
+#      Endzustand (completed / failed / timed_out / cancelled); ein spaeter
+#      doch eintreffendes Ergebnis ueberschreibt ihn mit dem echten Ausgang.
+#   DAZU (Speicher/Traegheit, zum gemeldeten RAM-Anstieg passend):
+#   5) Der Asset-Cache war UNBEGRENZT (asset_cache.json, nie etwas geloescht)
+#      und Add-CacheEntry las/schrieb die GANZE Datei JE EINTRAG - bei 20
+#      Detail-Ids 20 vollstaendige Serialisierungen einer immer groesseren
+#      Datei. Jetzt: Mehrfacheintraege in EINEM Schreibvorgang, Schreibzugriff
+#      serialisiert (AssetCacheLock), harte Obergrenze 400 Eintraege / 2 MB
+#      mit Verdraengung der aeltesten, grosse Zwischenantworten werden sofort
+#      freigegeben. Zusaetzlich war Get-CacheEntry falsch geklammert
+#      ('-not $x -contains $y') und lief bei jedem Fehltreffer in eine
+#      Ausnahme statt in den Schnellausstieg.
+#   6) IDEMPOTENZ: Ein insert_asset, das nach einem Client-Timeout wiederholt
+#      wird, fuegt nicht mehr doppelt ein (requestId bzw. Fingerabdruck aus
+#      assetId/parentRef/name, 120-s-Fenster, allowDuplicate=true hebt es auf).
+#   7) InsertService:LoadAsset IST NICHT ABBRECHBAR - und die Bridge tut jetzt
+#      auch nicht mehr so. task.cancel beendet nur den Luau-Thread, der native
+#      Ladevorgang laeuft weiter. Das Plugin haelt deshalb eine ehrliche
+#      Einzelbelegung (assetImportState): haengt ein Import laenger als 45 s,
+#      wird KEIN zweiter gestartet, der Zustand heisst TOOLBOX_IMPORT_WEDGED
+#      und die Antwort nennt die sichere Erholung (Studio komplett neu
+#      starten, Place pruefen, danach prozedural bauen).
+#   NICHT GEAENDERT: Befehlszustellung, Queue-Waechter, Sitzungsidentitaet,
+#   Oberflaeche und alle Nicht-Toolbox-Werkzeuge.
 #
 # HOTFIX 7.1.1 - STUDIO FUEHRT WIEDER BEFEHLE AUS (LIVE BELEGT, 2026-10-03):
 #   Live-Befund mit 7.1.0: JEDES Studio-Werkzeug endete in STUDIO_TIMEOUT,
@@ -2105,11 +2175,34 @@ $script:Shared = [hashtable]::Synchronized(@{
     DocsSent        = [System.Collections.Concurrent.ConcurrentDictionary[string,bool]]::new()
     # Pfad des lokalen Asset-Caches (Suche/Details, damit pro Session nichts neu geladen wird)
     AssetCachePath  = Join-Path $script:AppDataRoot 'asset_cache.json'
+    # Version 7.1.2: TOOLBOX-DROSSEL je Place. Ohne sie lief jeder Katalog-/
+    # Asset-Aufruf unbegrenzt parallel im HTTP-Runspace, schrieb dieselbe
+    # Cache-Datei und konnte den Cloudflare-524 erreichen.
+    #   ToolboxSlots         sessionId -> Anzahl gerade laufender Katalogaufrufe
+    #   ToolboxImportLocks   sessionId -> JSON des EINEN aktiven Asset-Imports
+    #   ToolboxInsertResults requestKey -> fertiges Ergebnis (Idempotenz)
+    ToolboxSlots         = [System.Collections.Concurrent.ConcurrentDictionary[string,int]]::new()
+    ToolboxSlotLock      = [System.Object]::new()
+    ToolboxImportLocks   = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    ToolboxInsertResults = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    ToolboxInsertAt      = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
+    AssetCacheLock       = [System.Object]::new()
+    # Harte Obergrenzen (bewusst klein - ein Mini-Fix, kein neues Subsystem).
+    ToolboxLimits = [hashtable]::Synchronized(@{
+        MaxPendingPerPlace   = 2     # gleichzeitige Katalogaufrufe je Place
+        CatalogTimeoutSec    = 12    # hartes Zeitlimit je HTTP-Aufruf
+        CatalogBudgetSec     = 25    # hartes Gesamtbudget je Werkzeugaufruf
+        MaxDetailIdsPerCall  = 24    # Obergrenze fuer Einzelabfragen (404-Faelle)
+        ImportWedgedAfterSec = 45    # danach gilt ein Import als haengend
+        IdempotencyWindowSec = 120   # gleiche Einfuegung in diesem Fenster = Wiederholung
+        MaxCacheEntries      = 400   # Asset-Cache haert begrenzt (RAM/Disk)
+        MaxCacheBytes        = 2097152
+    })
     AppDataRoot     = $script:AppDataRoot
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.1.1'
+    DocsVersion     = '7.1.2'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -2145,7 +2238,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Version 7.0.6: Laufzeit-Identitaet der LAUFENDEN Datei (Version, Pfad,
     # SHA-256, Sprachmodus, Startzeit) fuer GET /api/version.
     RuntimeInfo = [hashtable]::Synchronized(@{
-        Version = '7.1.1'
+        Version = '7.1.2'
         File = ''
         Sha256 = ''
         LanguageMode = ''
@@ -2306,12 +2399,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.1.1, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.1.1, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.1.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.1.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.1.1'
+$script:Shared.RuntimeInfo.Version = '7.1.2'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -2414,7 +2507,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.1.1)
+  Arena Studio Bridge - Studio Plugin  (Version 7.1.2)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -2487,7 +2580,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.1.1"
+local ARENA_VERSION  = "7.1.2"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -9507,13 +9600,18 @@ tools.ui_audit = function(args)
 end
 
 
-tools.insert_asset = function(args)
-    if InsertService == nil then return fail("InsertService is not available.") end
-    local assetId = tonumber(args.assetId)
-    if assetId == nil then return fail("assetId must be a number.") end
-    local parent, err = resolveRef(args.parentRef or "game.Workspace")
-    if not parent then return fail(err) end
+-- Version 7.1.2: InsertService:LoadAsset ist ein NATIVER, yieldender Aufruf.
+-- Roblox stellt KEINEN Weg bereit, ihn abzubrechen: der Sicherheits-Watchdog
+-- des Dispatchers ruft zwar task.cancel auf, das beendet aber nur den
+-- Luau-Thread - der native Ladevorgang laeuft im Hintergrund weiter. Genau
+-- deshalb bleibt assetImportState.active nach einem abgebrochenen Thread
+-- stehen: dieser Zustand ist der ehrliche Beweis "haengt noch" und sperrt
+-- jeden weiteren Import, statt Studio mit einem zweiten Ladevorgang
+-- zusaetzlich zu belasten oder dasselbe Modell doppelt einzufuegen.
+local assetImportState = { active = false, assetId = nil, startedAt = 0 }
+local ASSET_IMPORT_WEDGED_AFTER = 45
 
+local function runAssetImport(args, assetId, parent)
     local model = nil
     local okLoad, loadErr = pcall(function()
         model = InsertService:LoadAsset(assetId)
@@ -9558,6 +9656,52 @@ tools.insert_asset = function(args)
     end
     waypoint("insert asset")
     return ok({ inserted = inserted, assetId = assetId, count = #inserted, sanitized = (removeScripts or removeEvents), removed = removed, removedCount = #removed })
+end
+
+tools.insert_asset = function(args)
+    if InsertService == nil then return fail("InsertService is not available.") end
+    local assetId = tonumber(args.assetId)
+    if assetId == nil then return fail("assetId must be a number.") end
+    local parent, err = resolveRef(args.parentRef or "game.Workspace")
+    if not parent then return fail(err) end
+
+    -- Einzelbelegung pruefen, BEVOR irgendetwas geladen wird.
+    if assetImportState.active then
+        local runningFor = math.floor(os.clock() - assetImportState.startedAt)
+        if runningFor >= ASSET_IMPORT_WEDGED_AFTER then
+            return failCode("TOOLBOX_IMPORT_WEDGED",
+                "A previous InsertService:LoadAsset (assetId " .. tostring(assetImportState.assetId) ..
+                ") has been stuck for " .. tostring(runningFor) .. " seconds. Roblox cannot abort a running native asset load, " ..
+                "so no second import is started and this place stays locked for imports.", {
+                stuckAssetId = assetImportState.assetId,
+                stuckForSeconds = runningFor,
+                cancellable = false,
+                howToFix = "Tell the user (in German) to close Roblox Studio COMPLETELY and open the place again - only a Studio restart frees a hung native asset load. Do not retry. Check the place for a partially inserted model, then build it procedurally (build_polygon_model / build_assembly).",
+            })
+        end
+        return failCode("TOOLBOX_IMPORT_IN_FLIGHT",
+            "This place is already importing assetId " .. tostring(assetImportState.assetId) ..
+            " (" .. tostring(runningFor) .. " s). Only ONE asset import at a time is allowed; this call was not started.", {
+            runningAssetId = assetImportState.assetId,
+            runningSeconds = runningFor,
+            howToFix = "Wait for the running import to answer, then send this call again. Never import assets in parallel.",
+        })
+    end
+
+    assetImportState.active = true
+    assetImportState.assetId = assetId
+    assetImportState.startedAt = os.clock()
+    local okRun, resultOrError = pcall(runAssetImport, args, assetId, parent)
+    -- Diese Zeilen werden NUR erreicht, wenn LoadAsset wirklich
+    -- zurueckgekehrt ist. Wird der Thread im nativen Aufruf abgebrochen,
+    -- bleibt active = true (gewollt: siehe Kommentar oben).
+    assetImportState.active = false
+    assetImportState.assetId = nil
+    assetImportState.startedAt = 0
+    if not okRun then
+        return failCode("RUNTIME_ERROR", "insert_asset failed: " .. tostring(resultOrError), { assetId = assetId })
+    end
+    return resultOrError
 end
 
 tools.apply_asset = function(args)
@@ -12789,7 +12933,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.1.1 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.1.2 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -13089,7 +13233,9 @@ $script:BridgeHandlerScript = {
 
     function Get-ArenaActivityKind([string]$tool, [string]$phase, $result) {
         if ($phase -eq 'running') { return 'running' }
-        if ($phase -eq 'failed') { return 'failed' }
+        # Version 7.1.2: timed_out/cancelled sind ENDZUSTAENDE und duerfen in
+        # der Oberflaeche nie als "Macht gerade" stehen bleiben.
+        if ($phase -eq 'failed' -or $phase -eq 'timed_out' -or $phase -eq 'cancelled') { return 'failed' }
         if ($tool -eq 'run_lua') { return 'console' }
         $sets = Get-ActivityToolSets
         if ($sets.read -contains $tool) { return 'read' }
@@ -13110,13 +13256,16 @@ $script:BridgeHandlerScript = {
         return $id
     }
 
-    function Complete-ArenaActivity([string]$sessionId, [string]$activityId, [string]$tool, $args, [string]$resultJson) {
+    function Complete-ArenaActivity([string]$sessionId, [string]$activityId, [string]$tool, $args, [string]$resultJson, [string]$terminalPhase = '') {
         if ([string]::IsNullOrWhiteSpace($activityId)) { return }
         $result = $null
         try { if ($resultJson) { $result = $resultJson | ConvertFrom-Json } } catch {}
         $ok = $true
         if ($result -and $result.PSObject.Properties['ok']) { $ok = ([bool]$result.ok) }
         $phase = if ($ok) { 'completed' } else { 'failed' }
+        # Version 7.1.2: ein abgelaufener oder abgebrochener Aufruf bekommt
+        # einen EIGENEN Endzustand - niemals weiter 'running'.
+        if (-not [string]::IsNullOrWhiteSpace($terminalPhase)) { $phase = $terminalPhase; $ok = $false }
         $text = Get-ArenaActivityText $tool $args $phase $result
         if (-not $ok) {
             $code = ''
@@ -13131,6 +13280,12 @@ $script:BridgeHandlerScript = {
                 'STUDIO_ABANDONED'             { 'Der Befehl hat das Sicherheits-Zeitbudget überschritten und wurde beendet.' }
                 'COMMAND_CANCELLED'            { 'Der Befehl wurde abgebrochen.' }
                 'INVALID_COMMAND'              { 'Ungültiger Befehl (Tool-Name fehlt oder ist leer).' }
+                'STUDIO_TIMEOUT'               { 'Zeitüberschreitung: Studio hat vor Ablauf der HTTP-Frist nicht geantwortet.' }
+                'CATALOG_TIMEOUT'              { 'Zeitüberschreitung: Der Roblox-Katalog hat nicht rechtzeitig geantwortet.' }
+                'CATALOG_UNAVAILABLE'          { 'Der Roblox-Katalog ist nicht erreichbar.' }
+                'TOOLBOX_BUSY'                 { 'Es laufen bereits so viele Katalog-/Asset-Aufrufe wie erlaubt.' }
+                'TOOLBOX_IMPORT_IN_FLIGHT'     { 'Es läuft bereits ein Asset-Import für diesen Place.' }
+                'TOOLBOX_IMPORT_WEDGED'        { 'Ein Asset-Import hängt in Roblox fest - weitere Importe sind gesperrt. Studio bitte einmal komplett neu starten.' }
                 default                        { $reason }
             }
             if ([string]::IsNullOrWhiteSpace($germanReason)) { $germanReason = $code }
@@ -14324,12 +14479,38 @@ $script:BridgeHandlerScript = {
                 } catch {}
             }
         }
+        # Version 7.1.2: executorAlive MUSS in den Zustand einfliessen.
+        # Vorher stand $state auf 'ok', sobald IRGENDEIN HTTP-Kontakt juenger
+        # als 15 s war (ein sich oeffnender Poll, ein Heartbeat, ein Ereignis,
+        # eine Outbox-Nachlieferung) - und executorAlive wurde ueberhaupt erst
+        # ab 45 s Funkstille geprueft. Genau diese Kombination stand im
+        # Live-Befund: /api/status meldete delivery.state = ok, waehrend
+        # executor.alive = false war. Die Bridge hat damit Gesundheit
+        # vorgetaeuscht. Jetzt gibt es dafuer einen eigenen, ehrlichen
+        # Zustand 'executor_down'.
+        $executorAlive = [bool]$executor.alive
+        $executorEverReported = $false
+        try { $executorEverReported = ([int64]$executor.stateReceivedAt -gt 0) } catch {}
         $state = 'ok'
-        if ($openPolls -gt 0) { $state = 'ok' }
-        elseif ($age -le 15) { $state = 'ok' }
-        elseif ($waiting -gt 0 -and $oldestWaiting -gt 25) { $state = 'wedged' }
-        elseif (-not [bool]$executor.alive -and $age -gt 45) { $state = 'wedged' }
-        elseif ($age -gt 45) { $state = 'quiet' }
+        $stateReason = 'open poll or fresh sign of life'
+        if (-not $executorAlive -and $waiting -gt 0 -and $oldestWaiting -gt 25) {
+            $state = 'wedged'
+            $stateReason = 'executor liveness stopped while commands are waiting'
+        } elseif (-not $executorAlive -and $age -gt 45) {
+            $state = 'wedged'
+            $stateReason = 'no sign of life and no executor liveness'
+        } elseif (-not $executorAlive -and $executorEverReported) {
+            $state = 'executor_down'
+            $stateReason = 'the Studio session still talks to the bridge, but its executor liveness tick stopped - do NOT report this place as healthy'
+        } elseif ($openPolls -gt 0 -or $age -le 15) {
+            $state = 'ok'
+        } elseif ($waiting -gt 0 -and $oldestWaiting -gt 25) {
+            $state = 'wedged'
+            $stateReason = 'no poll and waiting work'
+        } elseif ($age -gt 45) {
+            $state = 'quiet'
+            $stateReason = 'simply no activity'
+        }
         $runningTool = ''
         try { $runningTool = [string]$executor.runningTool } catch {}
         $runningSeconds = 0
@@ -14346,7 +14527,8 @@ $script:BridgeHandlerScript = {
             runningSeconds = $runningSeconds
             busy = ($runningSeconds -gt 0 -and -not [string]::IsNullOrWhiteSpace($runningTool))
             executorAlive = [bool]$executor.alive
-            rule = 'ok = open poll or fresh sign of life; busy = a tool is running with fresh heartbeats; wedged = no poll, no sign of life and waiting work (a blocked Lua VM only a Studio restart frees); quiet = simply no activity.'
+            stateReason = $stateReason
+            rule = 'ok = fresh sign of life AND a living executor; executor_down = the session still answers HTTP but the executor liveness tick stopped (never report this as healthy); busy = a tool is running with fresh heartbeats; wedged = no executor liveness plus waiting work or long silence (a blocked Lua VM only a Studio restart frees); quiet = simply no activity.'
         }
     }
 
@@ -15082,10 +15264,51 @@ $script:BridgeHandlerScript = {
         return $null
     }
 
+    # Version 7.1.2: Der Asset-Cache war UNBEGRENZT. Jede Suche legte einen
+    # Eintrag plus bis zu 50 Detail-Eintraege ab, nichts wurde je entfernt
+    # (die 7/30-Tage-Pruefung galt nur beim Lesen). Jeder Add-CacheEntry las
+    # die KOMPLETTE Datei nach PSObject, schrieb sie komplett neu - mit
+    # wachsender Datei wurde jeder Toolbox-Aufruf langsamer und belegte mehr
+    # Speicher im HTTP-Runspace. Jetzt: harte Obergrenze an Eintraegen und
+    # Bytes, aelteste Eintraege fliegen zuerst raus.
+    function Limit-AssetCache($cache) {
+        if ($null -eq $cache) { return $null }
+        try {
+            $maxEntries = [int]$Shared.ToolboxLimits.MaxCacheEntries
+            # Hausregel: KEIN @() um eine Sammlung legen (PowerShell-5.1-
+            # Binderfehler "Die Argumenttypen stimmen nicht ueberein.").
+            # Deshalb wird direkt aufgezaehlt statt verpackt.
+            $names = New-Object System.Collections.Generic.List[string]
+            foreach ($prop in $cache.PSObject.Properties) { $names.Add([string]$prop.Name) }
+            if ($names.Count -le $maxEntries) { return $cache }
+            $aged = New-Object System.Collections.Generic.List[object]
+            foreach ($name in $names) {
+                $stamp = [DateTime]::MinValue
+                try { $stamp = [DateTime]::Parse([string]$cache.PSObject.Properties[$name].Value.fetchedAt) } catch {}
+                $aged.Add([pscustomobject]@{ Name = [string]$name; At = $stamp })
+            }
+            $sorted = $aged.ToArray() | Sort-Object -Property At
+            $removeCount = $names.Count - $maxEntries
+            for ($i = 0; $i -lt $removeCount; $i++) {
+                try { $cache.PSObject.Properties.Remove([string]$sorted[$i].Name) } catch {}
+            }
+        } catch {
+            Write-BridgeLog "Asset-Cache begrenzen fehlgeschlagen: $($_.Exception.Message)"
+        }
+        return $cache
+    }
+
     function Save-AssetCache($cache) {
         try {
             $path = [string]$Shared.AssetCachePath
+            $cache = Limit-AssetCache $cache
             $json = $cache | ConvertTo-Json -Depth 14 -Compress
+            if ($null -ne $json -and $json.Length -gt [int]$Shared.ToolboxLimits.MaxCacheBytes) {
+                # Notbremse: lieber einen leeren Cache als eine Datei, die jeden
+                # Aufruf teurer macht (sie wird bei jedem Zugriff komplett geparst).
+                Write-BridgeLog ('Asset-Cache ueberschreitet ' + [string]$Shared.ToolboxLimits.MaxCacheBytes + ' Bytes und wird geleert.')
+                $json = '{}'
+            }
             [System.IO.File]::WriteAllText($path, $json, (New-Object System.Text.UTF8Encoding($false)))
         } catch {
             Write-BridgeLog "Asset-Cache speichern fehlgeschlagen: $($_.Exception.Message)"
@@ -15094,7 +15317,11 @@ $script:BridgeHandlerScript = {
 
     function Get-CacheEntry($cache, [string]$key, [double]$maxAgeDays) {
         if ($null -eq $cache) { return $null }
-        if (-not $cache.PSObject.Properties.Name -contains $key) { return $null }
+        # Version 7.1.2: Klammerung repariert - '-not $x -contains $y' wertet
+        # '(-not $x) -contains $y' aus und war damit IMMER $false; der
+        # Schnellausstieg lief nie und jeder Fehltreffer ging ueber eine
+        # Ausnahme im try-Block.
+        if (-not ($cache.PSObject.Properties.Name -contains $key)) { return $null }
         try {
             $cached = $cache.PSObject.Properties[$key].Value
             $age = (Get-Date) - [DateTime]::Parse([string]$cached.fetchedAt)
@@ -15103,14 +15330,36 @@ $script:BridgeHandlerScript = {
         return $null
     }
 
+    # Version 7.1.2: Schreibzugriffe laufen serialisiert (vorher konnten
+    # mehrere HTTP-Runspaces dieselbe Datei gleichzeitig lesen und neu
+    # schreiben) und MEHRERE Eintraege gehen in EINEM Lese-/Schreibvorgang
+    # raus. Invoke-AssetDetails hat vorher je Asset-Id die ganze Datei neu
+    # geschrieben - bei 20 Ids 20 volle Serialisierungen.
+    function Add-CacheEntries($pairs) {
+        if ($null -eq $pairs -or $pairs.Count -eq 0) { return }
+        [System.Threading.Monitor]::Enter($Shared.AssetCacheLock)
+        try {
+            $cache = Read-AssetCache
+            if ($null -eq $cache) { $cache = New-Object psobject }
+            $stamp = (Get-Date).ToUniversalTime().ToString('o')
+            foreach ($cacheKey in @($pairs.Keys)) {
+                $cache | Add-Member -NotePropertyName ([string]$cacheKey) -NotePropertyValue (@{
+                    fetchedAt = $stamp
+                    result    = $pairs[$cacheKey]
+                }) -Force
+            }
+            Save-AssetCache $cache
+        } catch {
+            Write-BridgeLog "Asset-Cache schreiben fehlgeschlagen: $($_.Exception.Message)"
+        } finally {
+            [System.Threading.Monitor]::Exit($Shared.AssetCacheLock)
+        }
+    }
+
     function Add-CacheEntry([string]$key, $value) {
-        $cache = Read-AssetCache
-        if ($null -eq $cache) { $cache = @{} }
-        $cache | Add-Member -NotePropertyName $key -NotePropertyValue (@{
-            fetchedAt = (Get-Date).ToUniversalTime().ToString('o')
-            result    = $value
-        }) -Force
-        Save-AssetCache $cache
+        $single = @{}
+        $single[$key] = $value
+        Add-CacheEntries $single
     }
 
     # typeId -> wofuer man es verwenden kann (fuer die Tyvalidierung)
@@ -15127,6 +15376,257 @@ $script:BridgeHandlerScript = {
             62 { return @{ typeName = 'Video';     usableAs = 'VideoFrame';                     properties = @('VideoId') } }
             default { return @{ typeName = ('Unknown(' + [string]$typeId + ')'); usableAs = ''; properties = @() } }
         }
+    }
+
+    # ==================================================================
+    # Version 7.1.2: EIN einziger, HART BEGRENZTER Weg in den Roblox-Katalog.
+    # Vorher rief jede Asset-Funktion direkt Invoke-RestMethod auf:
+    #   - Invoke-AssetSearch mit einer EIGENEN Wiederholungsschleife
+    #     (2 x 20 s + 1,5 s Pause) und danach noch einem 20-s-Detailaufruf
+    #     = bis zu 61,5 s fuer EINEN search_assets-Aufruf,
+    #   - Invoke-AssetDetails im 404-Fall mit EINER Anfrage JE Asset-Id
+    #     (20 s x N, voellig unbegrenzt),
+    #   - Invoke-AssetValidation zusaetzlich VOR jedem insert_asset.
+    # Zusammen mit den 55 s Studio-Wartezeit konnte ein einzelner
+    # /api/tool-Aufruf die ~100-s-Grenze des Cloudflare-Tunnels reissen (524).
+    # Jetzt gilt: ein Versuch, hartes Zeitlimit, KEINE automatische
+    # Wiederholung, typisierter Fehler.
+    # ==================================================================
+    function Invoke-CatalogHttp([string]$url, [int]$timeoutSeconds = 0) {
+        if ($timeoutSeconds -le 0) { $timeoutSeconds = [int]$Shared.ToolboxLimits.CatalogTimeoutSec }
+        $timeoutSeconds = [Math]::Max(3, [Math]::Min(20, $timeoutSeconds))
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        try {
+            $data = Invoke-RestMethod -Uri $url -Method Get -TimeoutSec $timeoutSeconds -UseBasicParsing -ErrorAction Stop
+            $sw.Stop()
+            return @{ ok = $true; data = $data; elapsedMs = [int]$sw.ElapsedMilliseconds; timedOut = $false; notFound = $false; error = '' }
+        } catch {
+            $sw.Stop()
+            $message = [string]$_.Exception.Message
+            $notFound = ($message -match '404')
+            $timedOut = $false
+            if (-not $notFound) {
+                $timedOut = (($sw.Elapsed.TotalSeconds * 1.0) -ge ($timeoutSeconds - 0.5)) -or ($message -match 'timed out|timeout|Zeitlimit|Vorgangstimeout')
+            }
+            return @{ ok = $false; data = $null; elapsedMs = [int]$sw.ElapsedMilliseconds; timedOut = $timedOut; notFound = $notFound; error = $message }
+        }
+    }
+
+    function New-CatalogErrorResult($call, [string]$what) {
+        # Typisierte, verstaendliche Fehler statt "haengt einfach".
+        if ($call.timedOut) {
+            return @{
+                ok = $false
+                code = 'CATALOG_TIMEOUT'
+                catalogAvailable = $false
+                timedOutAfterMs = [int]$call.elapsedMs
+                error = ("The Roblox catalog did not answer within the hard time limit while " + $what + " (" + [string]$call.elapsedMs + " ms). The call was ABORTED - nothing is still running in the background.")
+                protocol = 'Do NOT retry in a loop. Tell the user "Katalog antwortet nicht" and continue PROCEDURALLY (build_polygon_model / build_assembly / create_instance). Never guess asset ids.'
+                checkAgain = 'catalog_status is a cheap single probe if you want to know whether the catalog is back.'
+                retryAdvice = 'At most ONE manual retry, and only after catalog_status reports catalogAvailable=true.'
+            }
+        }
+        return @{
+            ok = $false
+            code = 'CATALOG_UNAVAILABLE'
+            catalogAvailable = $false
+            error = ("The Roblox catalog is NOT available right now while " + $what + " (" + [string]$call.error + ").")
+            protocol = 'Say this clearly to the user right away: "Katalog nicht verfuegbar". Then continue PROCEDURALLY: textures = colored parts / SurfaceGui, sounds = a short procedural beep in a script (or skip), models = build them with build_polygon_model / build_assembly / create_instance. Do NOT guess asset ids and do NOT stay silent.'
+            checkAgain = 'Call the catalog_status tool whenever you want to know if the catalog is back.'
+        }
+    }
+
+    # ------------------------------------------------------------------
+    # Version 7.1.2: TOOLBOX-DROSSEL. Pro Place darf nur eine streng
+    # begrenzte Zahl Katalogaufrufe GLEICHZEITIG laufen. Weitere Aufrufe
+    # kommen SOFORT mit TOOLBOX_BUSY zurueck statt sich aufzustauen -
+    # genau das liess die Bridge im Live-Befund immer traeger werden.
+    # ------------------------------------------------------------------
+    function Enter-ToolboxSlot([string]$sessionId, [string]$tool) {
+        $sid = [string]$sessionId
+        if ([string]::IsNullOrWhiteSpace($sid)) { $sid = '__anon__' }
+        $maxPending = [int]$Shared.ToolboxLimits.MaxPendingPerPlace
+        [System.Threading.Monitor]::Enter($Shared.ToolboxSlotLock)
+        try {
+            $current = 0
+            [void]$Shared.ToolboxSlots.TryGetValue($sid, [ref]$current)
+            if ($current -ge $maxPending) {
+                return @{
+                    ok = $false
+                    sessionKey = $sid
+                    result = @{
+                        ok = $false
+                        code = 'TOOLBOX_BUSY'
+                        toolboxBusy = $true
+                        error = ("This place already has " + [string]$current + " catalog/asset request(s) in flight (limit " + [string]$maxPending + "). '" + [string]$tool + "' was NOT started.")
+                        activeRequests = [int]$current
+                        limit = [int]$maxPending
+                        howToFix = 'Run toolbox calls strictly one after another and WAIT for each answer. Do not start parallel asset searches and do not poll in a loop - every extra call makes Studio slower without delivering anything.'
+                        workIsLost = $false
+                    }
+                }
+            }
+            $Shared.ToolboxSlots[$sid] = ($current + 1)
+            return @{ ok = $true; sessionKey = $sid; result = $null }
+        } finally {
+            [System.Threading.Monitor]::Exit($Shared.ToolboxSlotLock)
+        }
+    }
+
+    function Exit-ToolboxSlot([string]$sessionKey) {
+        if ([string]::IsNullOrWhiteSpace($sessionKey)) { return }
+        [System.Threading.Monitor]::Enter($Shared.ToolboxSlotLock)
+        try {
+            $current = 0
+            if ($Shared.ToolboxSlots.TryGetValue([string]$sessionKey, [ref]$current)) {
+                $Shared.ToolboxSlots[[string]$sessionKey] = [Math]::Max(0, $current - 1)
+            }
+        } finally {
+            [System.Threading.Monitor]::Exit($Shared.ToolboxSlotLock)
+        }
+    }
+
+    # ------------------------------------------------------------------
+    # Version 7.1.2: GENAU EIN aktiver Asset-Import je Place.
+    # InsertService:LoadAsset ist ein NATIVER, yieldender Roblox-Aufruf.
+    # task.cancel beendet nur den Luau-Thread - der native Ladevorgang laeuft
+    # im Hintergrund weiter und kann spaeter zurueckkommen. Ein zweiter
+    # Import waehrend eines haengenden ersten belastet Studio zusaetzlich und
+    # kann dasselbe Modell doppelt einfuegen. Deshalb: harte Einzelbelegung,
+    # ehrliche Meldung statt vorgetaeuschtem Abbruch, Idempotenz gegen
+    # Wiederholungen nach einem Client-Timeout.
+    # ------------------------------------------------------------------
+    function Get-ToolboxInsertKey([string]$sessionId, $toolArgs) {
+        $explicit = ''
+        try { if ($toolArgs -and $toolArgs.requestId) { $explicit = ([string]$toolArgs.requestId).Trim() } } catch {}
+        if (-not [string]::IsNullOrWhiteSpace($explicit)) { return ([string]$sessionId + '|rid|' + $explicit) }
+        $parent = 'game.Workspace'
+        try { if ($toolArgs -and $toolArgs.parentRef) { $parent = [string]$toolArgs.parentRef } } catch {}
+        $name = ''
+        try { if ($toolArgs -and $toolArgs.name) { $name = [string]$toolArgs.name } } catch {}
+        $assetId = ''
+        try { if ($toolArgs -and $toolArgs.assetId) { $assetId = [string]$toolArgs.assetId } } catch {}
+        return ([string]$sessionId + '|fp|' + $assetId + '|' + $parent + '|' + $name)
+    }
+
+    function Get-ToolboxInsertReplay([string]$insertKey, $toolArgs) {
+        try { if ($toolArgs -and $toolArgs.allowDuplicate -eq $true) { return $null } } catch {}
+        $stamp = [long]0
+        if (-not $Shared.ToolboxInsertAt.TryGetValue($insertKey, [ref]$stamp)) { return $null }
+        $age = (Get-UnixSeconds) - [long]$stamp
+        if ($age -gt [int]$Shared.ToolboxLimits.IdempotencyWindowSec) {
+            $discard = $null
+            [void]$Shared.ToolboxInsertResults.TryRemove($insertKey, [ref]$discard)
+            $discardAt = [long]0
+            [void]$Shared.ToolboxInsertAt.TryRemove($insertKey, [ref]$discardAt)
+            return $null
+        }
+        $stored = $null
+        if (-not $Shared.ToolboxInsertResults.TryGetValue($insertKey, [ref]$stored)) { return $null }
+        return [string]$stored
+    }
+
+    function Save-ToolboxInsertResult([string]$insertKey, [string]$resultJson) {
+        if ([string]::IsNullOrWhiteSpace($insertKey) -or [string]::IsNullOrWhiteSpace($resultJson)) { return }
+        $Shared.ToolboxInsertResults[$insertKey] = [string]$resultJson
+        $Shared.ToolboxInsertAt[$insertKey] = (Get-UnixSeconds)
+        # Obergrenze: der Idempotenz-Speicher darf nicht mitwachsen. Zuerst
+        # alles ausserhalb des Fensters, danach - falls es IMMER NOCH zu viele
+        # sind (viele verschiedene Assets in kurzer Zeit) - die aeltesten
+        # Eintraege, bis die harte Grenze wieder eingehalten ist.
+        if ($Shared.ToolboxInsertAt.Count -gt 64) {
+            $cutoff = (Get-UnixSeconds) - [int]$Shared.ToolboxLimits.IdempotencyWindowSec
+            foreach ($pair in $Shared.ToolboxInsertAt.GetEnumerator()) {
+                if ([long]$pair.Value -lt $cutoff) {
+                    $discard = $null
+                    [void]$Shared.ToolboxInsertResults.TryRemove([string]$pair.Key, [ref]$discard)
+                    $discardAt = [long]0
+                    [void]$Shared.ToolboxInsertAt.TryRemove([string]$pair.Key, [ref]$discardAt)
+                }
+            }
+            while ($Shared.ToolboxInsertAt.Count -gt 64) {
+                $oldestKey = $null
+                $oldestAt = [long]::MaxValue
+                foreach ($pair in $Shared.ToolboxInsertAt.GetEnumerator()) {
+                    if ([long]$pair.Value -lt $oldestAt) { $oldestAt = [long]$pair.Value; $oldestKey = [string]$pair.Key }
+                }
+                if ($null -eq $oldestKey) { break }
+                $discard = $null
+                [void]$Shared.ToolboxInsertResults.TryRemove($oldestKey, [ref]$discard)
+                $discardAt = [long]0
+                [void]$Shared.ToolboxInsertAt.TryRemove($oldestKey, [ref]$discardAt)
+            }
+        }
+    }
+
+    function Get-ToolboxImportLock([string]$sessionId) {
+        $raw = $null
+        if (-not $Shared.ToolboxImportLocks.TryGetValue([string]$sessionId, [ref]$raw)) { return $null }
+        try { return ($raw | ConvertFrom-Json) } catch { return $null }
+    }
+
+    function Enter-ToolboxImport([string]$sessionId, [string]$insertKey, $toolArgs) {
+        $sid = [string]$sessionId
+        $now = Get-UnixSeconds
+        $wedgedAfter = [int]$Shared.ToolboxLimits.ImportWedgedAfterSec
+        $recovery = 'SAFE RECOVERY: tell the user (in German) to close Roblox Studio COMPLETELY (all Studio windows) and open the place again. A native InsertService:LoadAsset that never returns can only be freed by a Studio restart - Roblox offers no way to abort it. Do NOT retry the import and do NOT start a second one; check the place for a partially inserted model first. When Studio is back, build the model procedurally (build_polygon_model / build_assembly) instead of importing it.'
+        [System.Threading.Monitor]::Enter($Shared.ToolboxSlotLock)
+        try {
+            $existing = Get-ToolboxImportLock $sid
+            if ($null -ne $existing) {
+                $startedAt = 0
+                try { $startedAt = [long]$existing.startedAt } catch {}
+                $runningFor = [int][Math]::Max(0, $now - $startedAt)
+                $wedged = $false
+                try { $wedged = [bool]$existing.wedged } catch {}
+                if ($wedged -or $runningFor -ge $wedgedAfter) {
+                    $existing | Add-Member -NotePropertyName 'wedged' -NotePropertyValue $true -Force
+                    $Shared.ToolboxImportLocks[$sid] = (To-Json $existing 8)
+                    return @{ ok = $false; result = @{
+                        ok = $false
+                        code = 'TOOLBOX_IMPORT_WEDGED'
+                        importWedged = $true
+                        error = ("A previous insert_asset (assetId " + [string]$existing.assetId + ") has been stuck inside the native InsertService:LoadAsset call for " + [string]$runningFor + " seconds. Further imports are BLOCKED for this place so Studio is not loaded up further.")
+                        stuckAssetId = [string]$existing.assetId
+                        stuckForSeconds = $runningFor
+                        cancellable = $false
+                        whyNotCancellable = 'Roblox cannot abort a running InsertService:LoadAsset. The bridge does not pretend to cancel it.'
+                        howToFix = $recovery
+                        workIsLost = $false
+                    } }
+                }
+                return @{ ok = $false; result = @{
+                    ok = $false
+                    code = 'TOOLBOX_IMPORT_IN_FLIGHT'
+                    toolboxBusy = $true
+                    error = ("This place is already importing assetId " + [string]$existing.assetId + " (" + [string]$runningFor + " s). Only ONE asset import per place is allowed, so this call was NOT started.")
+                    runningAssetId = [string]$existing.assetId
+                    runningSeconds = $runningFor
+                    howToFix = 'Wait for the running import to answer and then send this call again. Never run asset imports in parallel and never poll in a loop.'
+                    workIsLost = $false
+                } }
+            }
+            $lock = @{ assetId = [string]$toolArgs.assetId; insertKey = [string]$insertKey; startedAt = $now; wedged = $false }
+            $Shared.ToolboxImportLocks[$sid] = (To-Json $lock 8)
+            return @{ ok = $true; result = $null }
+        } finally {
+            [System.Threading.Monitor]::Exit($Shared.ToolboxSlotLock)
+        }
+    }
+
+    function Exit-ToolboxImport([string]$sessionId) {
+        $discard = $null
+        [void]$Shared.ToolboxImportLocks.TryRemove([string]$sessionId, [ref]$discard)
+    }
+
+    function Set-ToolboxImportUnconfirmed([string]$sessionId) {
+        # Kein Ergebnis vor der HTTP-Frist: die Sperre bleibt ABSICHTLICH
+        # stehen. Der native Ladevorgang kann noch laufen; ein zweiter Import
+        # wuerde doppelt einfuegen und Studio zusaetzlich belasten.
+        $existing = Get-ToolboxImportLock $sessionId
+        if ($null -eq $existing) { return }
+        $existing | Add-Member -NotePropertyName 'unconfirmed' -NotePropertyValue $true -Force
+        $Shared.ToolboxImportLocks[[string]$sessionId] = (To-Json $existing 8)
     }
 
     function Invoke-AssetSearch($toolArgs) {
@@ -15203,27 +15703,14 @@ $script:BridgeHandlerScript = {
             '?keyword=' + [uri]::EscapeDataString($keyword) +
             '&limit=' + $limit + '&pageNumber=' + $page + '&sortType=' + $sortType
 
-        $searchResult = $null
-        $lastError = $null
-        for ($attempt = 1; $attempt -le 2; $attempt++) {
-            try {
-                $searchResult = Invoke-RestMethod -Uri $searchUrl -Method Get -TimeoutSec 20 -UseBasicParsing
-                break
-            } catch {
-                $lastError = $_.Exception.Message
-                Start-Sleep -Milliseconds 1500
-            }
-        }
-        if ($null -eq $searchResult) {
-            return @{
-                ok = $false
-                code = 'CATALOG_UNAVAILABLE'
-                catalogAvailable = $false
-                error = "The Roblox catalog is NOT available right now ($lastError)."
-                protocol = 'Say this clearly to the user right away: "Katalog nicht verfuegbar". Then continue PROCEDURALLY: textures = colored parts / SurfaceGui / decal-less design, sounds = a short procedural beep in a script (or skip), models = build them with create_instance / clone_instance / unions. Do NOT guess asset ids and do NOT stay silent.'
-                checkAgain = 'Call the catalog_status tool whenever you want to know if the catalog is back.'
-            }
-        }
+        # Version 7.1.2: EIN Versuch mit hartem Zeitlimit. Die alte Schleife
+        # wiederholte nach einem Timeout automatisch (2 x 20 s + 1,5 s Pause) -
+        # genau das verbot sich, weil ein nicht antwortender Katalog dadurch
+        # die HTTP-Anfrage ueber eine Minute festhielt.
+        $budget = [System.Diagnostics.Stopwatch]::StartNew()
+        $searchCall = Invoke-CatalogHttp $searchUrl
+        if (-not $searchCall.ok) { return (New-CatalogErrorResult $searchCall 'searching the catalog') }
+        $searchResult = $searchCall.data
 
         $ids = @()
         foreach ($item in @($searchResult.data)) {
@@ -15232,10 +15719,22 @@ $script:BridgeHandlerScript = {
 
         $assets = @()
         $detailsFailed = $false
-        if ($ids.Count -gt 0) {
-            try {
-                $detailUrl = 'https://apis.roblox.com/toolbox-service/v1/items/details?assetIds=' + ($ids -join ',')
-                $details = Invoke-RestMethod -Uri $detailUrl -Method Get -TimeoutSec 20 -UseBasicParsing
+        $detailsTimedOut = $false
+        # Version 7.1.2: Der Detailabruf bekommt nur noch das, was vom
+        # Gesamtbudget uebrig ist - der Aufruf kann die 100-s-Tunnelgrenze
+        # damit nicht mehr reissen.
+        $remaining = [int]([int]$Shared.ToolboxLimits.CatalogBudgetSec - [int]$budget.Elapsed.TotalSeconds)
+        if ($ids.Count -gt 0 -and $remaining -lt 3) {
+            $detailsFailed = $true
+            $detailsTimedOut = $true
+            foreach ($id in $ids) {
+                $assets += @{ assetId = $id; useAs = 'rbxassetid://' + $id; note = 'Details were skipped because the catalog budget for this call was already used up - verify with validate_asset before applying.' }
+            }
+        } elseif ($ids.Count -gt 0) {
+            $detailUrl = 'https://apis.roblox.com/toolbox-service/v1/items/details?assetIds=' + ($ids -join ',')
+            $detailCall = Invoke-CatalogHttp $detailUrl $remaining
+            if ($detailCall.ok) {
+                $details = $detailCall.data
                 $freshDetails = @{}
                 foreach ($entry in @($details.data)) {
                     $asset = $entry.asset
@@ -15263,21 +15762,20 @@ $script:BridgeHandlerScript = {
                     $freshDetails[[string]$asset.id] = $entry
                 }
                 # Details in EINEM Zug cachen (eine Datei, kein Schreibsturm)
-                $cache = Read-AssetCache
-                if ($null -eq $cache) { $cache = @{} }
-                foreach ($key in $freshDetails.Keys) {
-                    $cache | Add-Member -NotePropertyName ('detail|' + $key) -NotePropertyValue (@{
-                        fetchedAt = (Get-Date).ToUniversalTime().ToString('o')
-                        result    = $freshDetails[$key]
-                    }) -Force
-                }
-                Save-AssetCache $cache
-            } catch {
+                $detailPairs = @{}
+                foreach ($key in $freshDetails.Keys) { $detailPairs['detail|' + [string]$key] = $freshDetails[$key] }
+                Add-CacheEntries $detailPairs
+                $freshDetails = $null
+                $detailPairs = $null
+            } else {
                 $detailsFailed = $true
+                $detailsTimedOut = [bool]$detailCall.timedOut
                 foreach ($id in $ids) {
                     $assets += @{ assetId = $id; useAs = 'rbxassetid://' + $id; note = 'Details could not be loaded - verify with validate_asset before applying.' }
                 }
             }
+            $detailCall = $null
+            $details = $null
         }
 
         $note = 'Apply an asset with apply_asset (sets Texture/SoundId/Image/MeshId automatically and validates the type BEFORE applying) or set the property to the useAs value. Meshes/MeshParts/Models need insert_asset.'
@@ -15293,23 +15791,33 @@ $script:BridgeHandlerScript = {
             page        = $page
             sortType    = $sortType
             sortName    = $sortNames[[int]$sortType]
-            totalResults = if ($searchResult.totalResults) { [int]$searchResult.totalResults } else { $null }
+            totalResults = if ($searchResult -and $searchResult.totalResults) { [int]$searchResult.totalResults } else { $null }
             typeNote    = $typeNote
             note        = $note
         }
         if ($detailsFailed) {
             $resultObject.detailsWarning = 'The detail lookup failed, so names/types above are incomplete. Verify ids with validate_asset before applying them.'
+            if ($detailsTimedOut) {
+                $resultObject.detailsTimedOut = $true
+                $resultObject.detailsWarning = 'The detail lookup hit the hard catalog time limit and was ABORTED (nothing is still running). The ids above are usable, the names/types are not. Do not retry in a loop.'
+            }
         }
         if ($ids.Count -eq 0) {
             $resultObject.note = "No results for '$keyword'. Try a shorter or more common (English) keyword, or another sort type (sortType 3 = recently updated)."
         }
 
         Add-CacheEntry $cacheKey $resultObject
+        # Version 7.1.2: grosse Zwischenantworten sofort freigeben, damit sie
+        # nicht bis zum Ende des Runspace-Aufrufs im Speicher stehen.
+        $searchResult = $null
+        $searchCall = $null
+        $budget.Stop()
         return @{
             ok = $true
             catalogAvailable = $true
             cached = $false
             result = $resultObject
+            catalogMs = [int]$budget.ElapsedMilliseconds
         }
     }
 
@@ -15319,59 +15827,93 @@ $script:BridgeHandlerScript = {
         if ($toolArgs.assetId) { $ids += [string]$toolArgs.assetId }
         if ($ids.Count -eq 0) { return @{ ok = $false; code = 'REF_NOT_FOUND'; error = 'assetIds missing.' } }
         $uniqueIds = @($ids | Select-Object -Unique)
+        # Version 7.1.2: Obergrenze fuer eine einzelne Abfrage. Vorher konnte
+        # eine Liste beliebiger Laenge im 404-Fall je Id eine eigene
+        # 20-Sekunden-Anfrage ausloesen (unbegrenzte Gesamtlaufzeit).
+        $maxIds = [int]$Shared.ToolboxLimits.MaxDetailIdsPerCall
+        $idsTruncated = $false
+        if ($uniqueIds.Count -gt $maxIds) {
+            $uniqueIds = @($uniqueIds[0..($maxIds - 1)])
+            $idsTruncated = $true
+        }
         $results = @()
         $missing = @()
+        # Den Cache EINMAL lesen - nicht je Id die ganze Datei neu parsen.
+        $cacheSnapshot = Read-AssetCache
         foreach ($id in $uniqueIds) {
-            $cached = Get-CacheEntry (Read-AssetCache) ('detail|' + $id) 30
+            $cached = Get-CacheEntry $cacheSnapshot ('detail|' + $id) 30
             if ($null -ne $cached) {
                 $results += $cached
             } else {
                 $missing += $id
             }
         }
+        $cacheSnapshot = $null
+        $budget = [System.Diagnostics.Stopwatch]::StartNew()
         if ($missing.Count -gt 0) {
-            try {
-                $detailUrl = 'https://apis.roblox.com/toolbox-service/v1/items/details?assetIds=' + ($missing -join ',')
-                $details = Invoke-RestMethod -Uri $detailUrl -Method Get -TimeoutSec 20 -UseBasicParsing
-                foreach ($entry in @($details.data)) {
+            $detailUrl = 'https://apis.roblox.com/toolbox-service/v1/items/details?assetIds=' + ($missing -join ',')
+            $batchCall = Invoke-CatalogHttp $detailUrl
+            if ($batchCall.ok) {
+                $freshPairs = @{}
+                foreach ($entry in @($batchCall.data.data)) {
                     $results += $entry
-                    Add-CacheEntry ('detail|' + [string]$entry.asset.id) $entry
+                    $freshPairs['detail|' + [string]$entry.asset.id] = $entry
                 }
-            } catch {
-                if ($_.Exception.Message -match '404') {
-                    # Batch fehlgeschlagen, weil MINDESTENS eine Id unbekannt ist:
-                    # einzeln nachfragen und klar melden, welche.
-                    $unknown = @()
-                    foreach ($id in $missing) {
-                        try {
-                            $single = Invoke-RestMethod -Uri ('https://apis.roblox.com/toolbox-service/v1/items/details?assetIds=' + $id) -Method Get -TimeoutSec 20 -UseBasicParsing
-                            $results += @($single.data)
-                            Add-CacheEntry ('detail|' + $id) (@($single.data))[0]
-                        } catch {
+                Add-CacheEntries $freshPairs
+                $freshPairs = $null
+            } elseif ($batchCall.notFound) {
+                # Batch fehlgeschlagen, weil MINDESTENS eine Id unbekannt ist:
+                # einzeln nachfragen - aber mit HARTEM Gesamtbudget, damit ein
+                # langsamer Katalog die Anfrage nicht endlos festhaelt.
+                $unknown = @()
+                $skipped = @()
+                $singlePairs = @{}
+                foreach ($id in $missing) {
+                    $left = [int]([int]$Shared.ToolboxLimits.CatalogBudgetSec - [int]$budget.Elapsed.TotalSeconds)
+                    if ($left -lt 3) { $skipped += $id; continue }
+                    $singleCall = Invoke-CatalogHttp ('https://apis.roblox.com/toolbox-service/v1/items/details?assetIds=' + $id) ([Math]::Min(6, $left))
+                    if ($singleCall.ok) {
+                        $singleData = @($singleCall.data.data)
+                        if ($singleData.Count -gt 0) {
+                            $results += $singleData
+                            $singlePairs['detail|' + $id] = $singleData[0]
+                        } else {
                             $unknown += $id
                         }
-                    }
-                    $unknownNote = @()
-                    foreach ($id in $unknown) {
-                        $unknownNote += "Asset $id does NOT exist or is not public (404) - do not use it."
-                    }
-                    return @{
-                        ok = $true
-                        catalogAvailable = $true
-                        result = @{ assets = $results; unknownAssets = $unknown }
-                        warnings = $unknownNote
+                    } elseif ($singleCall.notFound) {
+                        $unknown += $id
+                    } else {
+                        $skipped += $id
                     }
                 }
+                Add-CacheEntries $singlePairs
+                $singlePairs = $null
+                $unknownNote = @()
+                foreach ($id in $unknown) {
+                    $unknownNote += "Asset $id does NOT exist or is not public (404) - do not use it."
+                }
+                foreach ($id in $skipped) {
+                    $unknownNote += "Asset $id was NOT checked: the hard catalog time budget for this call ran out. Do not retry in a loop."
+                }
+                if ($idsTruncated) { $unknownNote += "Only the first $maxIds asset ids were looked up; ask for the rest in a SEPARATE call." }
+                $budget.Stop()
                 return @{
-                    ok = $false
-                    code = 'CATALOG_UNAVAILABLE'
-                    catalogAvailable = $false
-                    error = "Details could not be loaded: $($_.Exception.Message)"
-                    protocol = 'The catalog is not reachable right now. Say so clearly to the user and do not guess asset ids - build procedurally or retry later (catalog_status).'
+                    ok = $true
+                    catalogAvailable = $true
+                    result = @{ assets = $results; unknownAssets = $unknown; uncheckedAssets = $skipped; idsTruncated = $idsTruncated }
+                    warnings = $unknownNote
+                    catalogMs = [int]$budget.ElapsedMilliseconds
                 }
+            } else {
+                $budget.Stop()
+                return (New-CatalogErrorResult $batchCall 'loading asset details')
             }
+            $batchCall = $null
         }
-        return @{ ok = $true; catalogAvailable = $true; result = @{ assets = $results } }
+        $budget.Stop()
+        $detailsResult = @{ ok = $true; catalogAvailable = $true; result = @{ assets = $results; idsTruncated = $idsTruncated }; catalogMs = [int]$budget.ElapsedMilliseconds }
+        if ($idsTruncated) { $detailsResult.warnings = @("Only the first $maxIds asset ids were looked up; ask for the rest in a SEPARATE call.") }
+        return $detailsResult
     }
 
     # ------------------------------------------------------------------
@@ -15388,30 +15930,33 @@ $script:BridgeHandlerScript = {
 
         $entry = Get-CacheEntry (Read-AssetCache) ('detail|' + $id) 30
         if ($null -eq $entry) {
-            try {
-                $detailUrl = 'https://apis.roblox.com/toolbox-service/v1/items/details?assetIds=' + $id
-                $details = Invoke-RestMethod -Uri $detailUrl -Method Get -TimeoutSec 20 -UseBasicParsing
-                $entry = @($details.data)[0]
-                Add-CacheEntry ('detail|' + $id) $entry
-            } catch {
-                if ($_.Exception.Message -match '404') {
-                    return @{
-                        ok = $false
-                        code = 'ASSET_NOT_FOUND'
-                        verified = $false
-                        assetId = $id
-                        error = "Asset $id does not exist or is not public (catalog answered 404). This id MUST NOT be used - it would fail at runtime."
-                    }
+            # Version 7.1.2: ein Versuch, hartes Zeitlimit, keine Wiederholung.
+            # Diese Pruefung laeuft VOR jedem insert_asset auf DERSELBEN
+            # HTTP-Anfrage - sie darf das Tunnel-Zeitfenster nicht aufbrauchen.
+            $validateCall = Invoke-CatalogHttp ('https://apis.roblox.com/toolbox-service/v1/items/details?assetIds=' + $id) 8
+            if ($validateCall.ok) {
+                $entry = @($validateCall.data.data)[0]
+                if ($null -ne $entry) { Add-CacheEntry ('detail|' + $id) $entry }
+            } elseif ($validateCall.notFound) {
+                return @{
+                    ok = $false
+                    code = 'ASSET_NOT_FOUND'
+                    verified = $false
+                    assetId = $id
+                    error = "Asset $id does not exist or is not public (catalog answered 404). This id MUST NOT be used - it would fail at runtime."
                 }
+            } else {
                 return @{
                     ok = $true
                     verified = $false
                     assetId = $id
-                    code = 'CATALOG_UNAVAILABLE'
+                    code = $(if ($validateCall.timedOut) { 'CATALOG_TIMEOUT' } else { 'CATALOG_UNAVAILABLE' })
                     catalogAvailable = $false
-                    note = 'Could not verify the asset because the catalog is not reachable. Applying is still allowed, but it may fail at runtime - prefer verified ids or build procedurally.'
+                    timedOutAfterMs = [int]$validateCall.elapsedMs
+                    note = 'Could not verify the asset because the catalog did not answer inside the hard time limit. The check was ABORTED. Applying is still allowed, but it may fail at runtime - prefer verified ids or build procedurally. Do not retry in a loop.'
                 }
             }
+            $validateCall = $null
         }
         if ($null -eq $entry) {
             return @{ ok = $false; code = 'ASSET_NOT_FOUND'; verified = $false; assetId = $id; error = "Asset $id was not found in the catalog. This id MUST NOT be used." }
@@ -15463,21 +16008,50 @@ $script:BridgeHandlerScript = {
     # KATALOG-ERREICHBARKEIT (Schnelltest)
     # ------------------------------------------------------------------
     function Invoke-CatalogStatus($toolArgs) {
-        $sw = [System.Diagnostics.Stopwatch]::StartNew()
-        try {
-            Invoke-RestMethod -Uri 'https://apis.roblox.com/toolbox-service/v1/items/details?assetIds=155016084' -Method Get -TimeoutSec 15 -UseBasicParsing | Out-Null
-            $sw.Stop()
-            return @{ ok = $true; result = @{ catalogAvailable = $true; latencyMs = [int]$sw.ElapsedMilliseconds } }
-        } catch {
-            $sw.Stop()
-            return @{
-                ok = $true
-                result = @{
-                    catalogAvailable = $false
-                    latencyMs = [int]$sw.ElapsedMilliseconds
-                    protocol = 'The catalog is NOT reachable. Say so clearly to the user ("Katalog nicht verfuegbar") and build assets procedurally instead of guessing ids. Retry later - this test is cheap.'
-                }
+        # Version 7.1.2: EIN kurzer Sondierungsaufruf mit hartem Zeitlimit.
+        $probe = Invoke-CatalogHttp 'https://apis.roblox.com/toolbox-service/v1/items/details?assetIds=155016084' 8
+        if ($probe.ok) {
+            return @{ ok = $true; result = @{ catalogAvailable = $true; latencyMs = [int]$probe.elapsedMs } }
+        }
+        return @{
+            ok = $true
+            result = @{
+                catalogAvailable = $false
+                timedOut = [bool]$probe.timedOut
+                latencyMs = [int]$probe.elapsedMs
+                protocol = 'The catalog is NOT reachable. Say so clearly to the user ("Katalog nicht verfuegbar") and build assets procedurally instead of guessing ids. Retry later - this test is cheap.'
             }
+        }
+    }
+
+    # ------------------------------------------------------------------
+    # Version 7.1.2: ALLE Katalog-/Asset-Werkzeuge laufen durch EIN Tor.
+    # Der Slot wird in finally IMMER freigegeben - auch bei Ausnahme,
+    # Timeout oder abgebrochenem Client. Vorher konnte ein Fehler im
+    # Katalogpfad den Place dauerhaft als "beschaeftigt" hinterlassen.
+    # ------------------------------------------------------------------
+    function Invoke-ToolboxServerTool($sessionId, [string]$tool, $toolArgs) {
+        $slot = Enter-ToolboxSlot $sessionId $tool
+        if (-not $slot.ok) { return $slot.result }
+        try {
+            switch ($tool) {
+                'search_assets'  { return (Invoke-AssetSearch $toolArgs) }
+                'asset_details'  { return (Invoke-AssetDetails $toolArgs) }
+                'validate_asset' { return (Invoke-AssetValidation $toolArgs) }
+                'catalog_status' { return (Invoke-CatalogStatus $toolArgs) }
+            }
+            return $null
+        } catch {
+            Write-BridgeLog ("Toolbox-Werkzeug '" + [string]$tool + "' ist mit einer Ausnahme beendet worden: " + $_.Exception.Message)
+            return @{
+                ok = $false
+                code = 'TOOLBOX_FAILED'
+                error = ("The catalog tool '" + [string]$tool + "' failed with an internal error: " + $_.Exception.Message)
+                howToFix = 'This is a final answer, not a hang. Continue procedurally or try catalog_status once.'
+                workIsLost = $false
+            }
+        } finally {
+            Exit-ToolboxSlot $slot.sessionKey
         }
     }
 
@@ -16755,6 +17329,15 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 phases = 'model_audit phases: blockout (placeholders/blockouts exist) -> modelled (clean geometry, no mesh/union yet) -> refined (ArenaDetail parts exist) -> polished (details + light + atmosphere). report_done is only honest in refined/polished; blockout means handoff or keep working.'
                 props = 'prop_save stores a selection under workspace.ArenaProps; prop_place clones it with deterministic variation and ground snap. Prefer saved props over rebuilding the same tree ten times by hand.'
             }
+            toolboxRules = @{
+                title = 'Toolbox Engine 1.0 (Version 7.1.2) - procedural first, catalog last, never in parallel'
+                default = 'BUILD IT YOURSELF. For creatures, animals, plants, props and any organic free-form shape the DEFAULT is procedural: build_polygon_model for free-form bodies and sub-models, build_assembly or plain parts where that is simpler or more stable, and your own welds/joints plus a small run_lua animation (breathing, head/ear motion, tail swing, small weight shifts) for organic movement. Do NOT open with search_assets / asset_details / validate_asset / insert_asset, and never use a toolbox import as a shortcut for a shape you can build.'
+                beforeUsingTheCatalog = 'If a procedural shape is genuinely not realistic enough or technically out of reach, say so and OFFER a limited, transparent fallback FIRST. Let the user decide. Do not start catalog calls on your own initiative.'
+                hardLimits = 'Per place the bridge allows at most 2 catalog requests at a time and EXACTLY ONE active asset import. Anything beyond that answers immediately with TOOLBOX_BUSY or TOOLBOX_IMPORT_IN_FLIGHT. Never run asset searches in parallel, never poll in a loop, and never retry automatically after a timeout.'
+                timeouts = 'Every catalog request has a hard time limit (12 s, 8 s for the pre-insert validation) and a 25 s budget per tool call. A failure is FINAL and typed: CATALOG_TIMEOUT or CATALOG_UNAVAILABLE. Say "Katalog nicht verfuegbar" to the user and continue procedurally instead of retrying.'
+                insertIsNotCancellable = 'InsertService:LoadAsset is a native yielding Roblox call that CANNOT be aborted. If an import hangs you get TOOLBOX_IMPORT_UNCONFIRMED and then TOOLBOX_IMPORT_WEDGED; imports stay locked for that place. Do NOT retry - ask the user to close Roblox Studio completely and reopen the place, check for a half-inserted model, then build procedurally.'
+                idempotency = 'Repeating the same insert_asset (same assetId/parentRef/name) inside 120 s returns the stored result with idempotentReplay=true and inserts NOTHING a second time. Pass a fresh requestId or allowDuplicate=true when a second copy is really wanted.'
+            }
             polygonEngineRules = @{
                 title = 'Polygon Engine 2.0 - canonical WedgePart rule (prevents 90-degree rotation errors and seam gaps forever)'
                 whenThisApplies = 'build_polygon_model already implements this correctly (longest-edge base, side-corrected inward skin offset, retry/fallback triangulation, vertex welding) - always STRONGLY prefer it for modelling. Only read on if you are writing bespoke geometry directly with run_lua/Instance.new("WedgePart") because the task needs logic the tool does not cover.'
@@ -16978,6 +17561,11 @@ end
                 ASSET_TYPE_MISMATCH = 'The asset id does not match the expected type (actual type is reported). Nothing was applied.'
                 ASSET_NOT_FOUND = 'The id does not exist or is not public (404). Do not use it.'
                 CATALOG_UNAVAILABLE = 'The Roblox catalog is not reachable right now. Say clearly to the user: "Katalog nicht verfügbar" - then build procedurally. Do not guess ids, do not stay silent. Retry later with catalog_status.'
+                CATALOG_TIMEOUT = 'The catalog did not answer inside the bridge hard time limit and the request was ABORTED (nothing keeps running). Do NOT retry in a loop - say so and build procedurally.'
+                TOOLBOX_BUSY = 'This place already has the maximum number of catalog requests in flight. Run toolbox calls strictly one after another; never start parallel asset searches.'
+                TOOLBOX_IMPORT_IN_FLIGHT = 'An asset import is already running for this place. Only ONE import at a time. Wait for its answer instead of retrying.'
+                TOOLBOX_IMPORT_WEDGED = 'A native InsertService:LoadAsset is stuck. Roblox cannot abort it, so imports are LOCKED for this place. Ask the user to restart Roblox Studio completely, do not retry, and build the model procedurally instead.'
+                TOOLBOX_IMPORT_UNCONFIRMED = 'The import did not answer before the HTTP deadline and cannot be cancelled. Further imports are blocked. Never retry - a retry can insert the model twice.'
                 CATALOG_TYPE_NOT_SUPPORTED = 'That asset type cannot be searched in the catalog (list of supported types included).'
                 JOB_NOT_FOUND = 'Unknown jobId (it may have been removed after job_result).'
                 JOB_RUNNING = 'The job is not finished yet - poll job_status and fetch the result later.'
@@ -17113,7 +17701,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.1.1'
+            version = '7.1.2'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -17343,7 +17931,7 @@ end
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.1.1'
+            bridgeVersion = '7.1.2'
             executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent = 0, never an error. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
@@ -17478,10 +18066,12 @@ end
     # ------------------------------------------------------------------
     function Invoke-ServerTool($sessionId, [string]$tool, $toolArgs) {
         switch ($tool) {
-            'search_assets'      { return (Invoke-AssetSearch $toolArgs) }
-            'asset_details'      { return (Invoke-AssetDetails $toolArgs) }
-            'validate_asset'     { return (Invoke-AssetValidation $toolArgs) }
-            'catalog_status'     { return (Invoke-CatalogStatus $toolArgs) }
+            # Version 7.1.2: nicht mehr direkt - immer ueber das Toolbox-Tor
+            # (Begrenzung gleichzeitiger Aufrufe, garantierte Freigabe).
+            'search_assets'      { return (Invoke-ToolboxServerTool $sessionId $tool $toolArgs) }
+            'asset_details'      { return (Invoke-ToolboxServerTool $sessionId $tool $toolArgs) }
+            'validate_asset'     { return (Invoke-ToolboxServerTool $sessionId $tool $toolArgs) }
+            'catalog_status'     { return (Invoke-ToolboxServerTool $sessionId $tool $toolArgs) }
             'get_docs' {
                 $qTool = if ($toolArgs.tool) { [string]$toolArgs.tool } else { $null }
                 $qCategory = if ($toolArgs.category) { [string]$toolArgs.category } else { $null }
@@ -17688,7 +18278,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.1.1'
+                        bridgeVersion = '7.1.2'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -17947,7 +18537,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.1.1'
+                        serverVersion = '7.1.2'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -18253,6 +18843,13 @@ end
                     $removedPresence = [long]0
                     [void]$Shared.Presence.TryRemove($sid, [ref]$removedPresence)
                     $Shared.Pollers[$sid] = 0
+                    # Version 7.1.2: Studio ist weg - damit ist auch ein
+                    # haengender nativer InsertService:LoadAsset beendet. Die
+                    # Import-Sperre und die Toolbox-Drossel werden freigegeben,
+                    # damit der Place nach dem Neustart sofort wieder arbeitet.
+                    $Shared.ToolboxSlots[$sid] = 0
+                    $discardLock = ''
+                    [void]$Shared.ToolboxImportLocks.TryRemove($sid, [ref]$discardLock)
                     # Studio is gone: finish pending callers with a diagnostic result;
                     # never strand them by silently deleting the tracking bag.
                     Reset-SessionQueue $sid 'Roblox Studio disconnected while this command was pending. It was abandoned because the old plugin executor is no longer available.' 'EXECUTOR_UNAVAILABLE' | Out-Null
@@ -18299,7 +18896,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.1.1'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.1.2'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -18368,10 +18965,24 @@ end
                         if ([int64]$cStamp -ge ($nowStat - 60)) { $recentNewSessions = $recentNewSessions + 1 }
                     }
                 } catch {}
+                # Version 7.1.2: Der Toolbox-Zustand gehoert sichtbar in den
+                # Status - bewusst VOR dem Hashtable-Literal berechnet
+                # (PowerShell 5.1 ist bei Ausdruecken in Literalen empfindlich).
+                $statusToolboxSlots = 0
+                try { $slotCount = 0; if ($Shared.ToolboxSlots.TryGetValue([string]$sessionId, [ref]$slotCount)) { $statusToolboxSlots = [int]$slotCount } } catch {}
+                $statusToolboxImport = $null
+                try { $statusToolboxImport = Get-ToolboxImportLock ([string]$sessionId) } catch {}
+                $statusToolbox = @{
+                    activeCatalogRequests = [int]$statusToolboxSlots
+                    maxCatalogRequests = [int]$Shared.ToolboxLimits.MaxPendingPerPlace
+                    activeImport = $statusToolboxImport
+                    rule = 'At most one asset import and a strictly limited number of catalog requests per place. Extra calls answer immediately with TOOLBOX_BUSY / TOOLBOX_IMPORT_IN_FLIGHT instead of queueing up.'
+                }
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.1.1'
-                    serverVersion = '7.1.1'
+                    bridgeVersion = '7.1.2'
+                    serverVersion = '7.1.2'
+                    toolbox = $statusToolbox
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -18606,7 +19217,11 @@ end
                         elseif ($prop -eq 'videoid') { $expectType = 'video' }
                     }
                     if ($expectType) {
-                        $validation = Invoke-AssetValidation @{ assetId = [string]$toolArgs.assetId; expectType = $expectType }
+                        # Version 7.1.2: auch die Vorpruefung laeuft durch das
+                        # Toolbox-Tor (Begrenzung + garantierte Freigabe) und hat
+                        # ein hartes Zeitlimit - sie darf das Tunnel-Zeitfenster
+                        # von insert_asset nicht aufbrauchen.
+                        $validation = Invoke-ToolboxServerTool $sessionId 'validate_asset' @{ assetId = [string]$toolArgs.assetId; expectType = $expectType }
                         if ($validation.ok -eq $false) {
                             Complete-ArenaActivity $sessionId $activityId $tool $toolArgs (To-Json $validation 40)
                             $validation._bridge = (New-Envelope $sessionId)
@@ -18717,6 +19332,36 @@ end
                     continue
                 }
 
+                # ---------------- TOOLBOX-IMPORT-TOR (Version 7.1.2) -------
+                # Hoechstens EIN aktiver Asset-Import je Place, Idempotenz gegen
+                # Wiederholungen nach einem Client-Timeout, und bei einem
+                # haengenden nativen Import KEIN zweiter Versuch.
+                $insertGateKey = $null
+                if ($tool -eq 'insert_asset') {
+                    $insertKey = Get-ToolboxInsertKey $sessionId $toolArgs
+                    $replayJson = Get-ToolboxInsertReplay $insertKey $toolArgs
+                    if ($null -ne $replayJson) {
+                        $replay = $null
+                        try { $replay = $replayJson | ConvertFrom-Json } catch {}
+                        if ($null -eq $replay) { $replay = [pscustomobject]@{ ok = $true } }
+                        $replay | Add-Member -NotePropertyName 'idempotentReplay' -NotePropertyValue $true -Force
+                        $replay | Add-Member -NotePropertyName 'note' -NotePropertyValue ('This exact insert_asset already succeeded less than ' + [string]$Shared.ToolboxLimits.IdempotencyWindowSec + ' s ago. The stored result is returned AGAIN - nothing was inserted a second time. Pass allowDuplicate=true (or a new requestId) if you really want another copy.') -Force
+                        Complete-ArenaActivity $sessionId $activityId $tool $toolArgs $replayJson
+                        $replay | Add-Member -NotePropertyName '_bridge' -NotePropertyValue (New-Envelope $sessionId) -Force
+                        Send-Json $context 200 $replay
+                        continue
+                    }
+                    $importGate = Enter-ToolboxImport $sessionId $insertKey $toolArgs
+                    if (-not $importGate.ok) {
+                        $gateResult = $importGate.result
+                        Complete-ArenaActivity $sessionId $activityId $tool $toolArgs (To-Json $gateResult 12)
+                        $gateResult._bridge = (New-Envelope $sessionId)
+                        Send-Json $context 200 $gateResult
+                        continue
+                    }
+                    $insertGateKey = $insertKey
+                }
+
                 # Version 7.0.5: never hold a Cloudflare-proxied request long enough
                 # for the ~100 s 524 to hit. A longer Studio job keeps running and is
                 # picked up as a lateResult (or asJob=true from the start).
@@ -18743,6 +19388,16 @@ end
                 if ($null -eq $resultJson) { $reservedPlay = Reserve-PlayRetry $sessionId $tool $toolArgs }
                 if ($null -eq $resultJson -and $reservedPlay) { $resultJson = Invoke-PluginTool $sessionId $tool $toolArgs $timeout $activityId }
                 if ($null -eq $resultJson -and -not $reservedPlay) { $resultJson = Get-DedupedPlayResult $sessionId $tool $toolArgs }
+                if ($null -ne $resultJson -and $insertGateKey) {
+                    # Endzustand erreicht -> Sperre IMMER freigeben. Nur ein
+                    # wirklich erfolgreicher Import wird fuer die Idempotenz
+                    # gemerkt (ein BUSY/Fehler darf nicht wiedergespielt werden).
+                    Exit-ToolboxImport $sessionId
+                    $insertSucceeded = $false
+                    try { $insertSucceeded = [bool](($resultJson | ConvertFrom-Json).ok) } catch {}
+                    if ($insertSucceeded) { Save-ToolboxInsertResult $insertGateKey $resultJson }
+                    $insertGateKey = $null
+                }
                 if ($null -ne $resultJson) {
                     Save-DedupedPlayResult $sessionId $tool $toolArgs $resultJson
                     Complete-ArenaActivity $sessionId $activityId $tool $toolArgs $resultJson
@@ -18794,6 +19449,26 @@ end
                     if ($isJobCall) {
                         $timeoutBody.note = 'This call was a job call. If it was accepted before the timeout the job is running - use list_jobs / job_status to find it.'
                     }
+                    if ($insertGateKey) {
+                        # Version 7.1.2: Die Import-Sperre bleibt ABSICHTLICH
+                        # stehen. Der native InsertService:LoadAsset kann noch
+                        # laufen - ein zweiter Import wuerde doppelt einfuegen
+                        # und Studio weiter belasten. Hier wird NICHT so getan,
+                        # als waere der Aufruf abgebrochen worden.
+                        Set-ToolboxImportUnconfirmed $sessionId
+                        $timeoutBody.code = 'TOOLBOX_IMPORT_UNCONFIRMED'
+                        $timeoutBody.importLocked = $true
+                        $timeoutBody.cancellable = $false
+                        $timeoutBody.error = "Roblox Studio did not answer the asset import within $timeout seconds. Roblox cannot abort a running InsertService:LoadAsset, so the bridge does NOT pretend to cancel it."
+                        $timeoutBody.hint = 'Further imports for this place are BLOCKED until the result arrives or Studio is restarted. Do NOT retry - a retry can insert the model twice.'
+                        $timeoutBody.howToFix = 'Check GET /api/queue and _bridge.lateResults once. If nothing arrives, tell the user (in German) to close Roblox Studio COMPLETELY and reopen the place, then check the place for a half-inserted model. Build the model procedurally instead of importing it again.'
+                        $insertGateKey = $null
+                    }
+                    # Version 7.1.2: Der Verlaufseintrag darf NICHT weiter auf
+                    # "Macht gerade" stehen bleiben. Kommt spaeter doch ein
+                    # echtes Ergebnis, ueberschreibt Complete-Command diesen
+                    # Endzustand wieder mit dem tatsaechlichen Ausgang.
+                    Complete-ArenaActivity $sessionId $activityId $tool $toolArgs (To-Json $timeoutBody 12) 'timed_out'
                     Send-Json $context 200 $timeoutBody
                     continue
                 }
@@ -19544,6 +20219,10 @@ function Remove-DeadSession {
         try { [void]$script:Shared.$bagName.TryRemove($SessionId, [ref]$junk) } catch {}
     }
     try { [void]$script:Shared.Pollers.TryRemove($SessionId, [ref]$junkInt) } catch {}
+    # Version 7.1.2: Toolbox-Drossel und Import-Sperre duerfen eine beendete
+    # Sitzung NIE ueberleben - sonst bliebe der Place dauerhaft "beschaeftigt".
+    try { [void]$script:Shared.ToolboxSlots.TryRemove($SessionId, [ref]$junkInt) } catch {}
+    try { $junkString = ''; [void]$script:Shared.ToolboxImportLocks.TryRemove($SessionId, [ref]$junkString) } catch {}
     foreach ($longBag in @('Presence','UserActiveAt','AgentLastSeen','ExecutorResetRequests')) {
         try { [void]$script:Shared.$longBag.TryRemove($SessionId, [ref]$junkLong) } catch {}
     }
@@ -20296,7 +20975,7 @@ $xaml = @'
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="Arena Roblox Bridge" Foreground="{StaticResource TextMain}" FontSize="18.5" FontWeight="Bold"/>
                             <TextBlock x:Name="SubtitleText" Text="Bereit für verbundene Places" Foreground="{StaticResource TextMuted}" FontSize="11.5" Margin="0,3,0,0"/>
-                            <TextBlock x:Name="RuntimeLine" Text="Bridge 7.1.1" Foreground="{StaticResource TextFaint}" FontSize="9.5" Margin="0,2,0,0"/>
+                            <TextBlock x:Name="RuntimeLine" Text="Bridge 7.1.2" Foreground="{StaticResource TextFaint}" FontSize="9.5" Margin="0,2,0,0"/>
                         </StackPanel>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -21087,7 +21766,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.1.1)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.1.2)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -21692,7 +22371,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.1.1)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.1.2)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -23859,7 +24538,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.1.1)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.1.2)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -24610,7 +25289,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.1.1'
+    $versionText = '7.1.2'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -25234,7 +25913,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.1.1" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.1.2" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -25279,7 +25958,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.1.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.1.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -25338,7 +26017,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.1.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.1.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -25351,7 +26030,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.1.1'
+    $verText = '7.1.2'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

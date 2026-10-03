@@ -1,7 +1,7 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 7.1.1 - 03.10.2026)                                #
+#   (Stand: Version 7.1.2 - 03.10.2026)                                #
 #                                                                      #
 ##########################################################################
 
@@ -131,6 +131,19 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
   report_done-Befehl der KI ("Arena ist fertig"). Sie ist an die
   Einstellung "Benachrichtigung, wenn Arena fertig ist" gebunden
   (Standard: AUS) und darf fuer nichts anderes verwendet werden.
+- TOOLBOX IST NICHT DIE ABKUERZUNG (seit 7.1.2 feste Regel, auch in
+  Get-BridgeGuides -> toolboxRules, erreicht jede neue KI-Session):
+  Tiere, Kreaturen, Pflanzen, Props und organische Freiformen werden
+  PROZEDURAL gebaut - bevorzugt build_polygon_model fuer freie
+  Koerperformen und Untermodelle, ergaenzt durch build_assembly bzw.
+  normale Parts, wo das einfacher/stabiler ist. Organische Bewegung
+  ueber selbst erstellte Gelenke/Welds und eine kleine Lua-Animation
+  (Atmung, Kopf-/Ohrenbewegung, Schwanzschwingen, Gewichtsverlagerung).
+  KEIN search_assets / asset_details / validate_asset / insert_asset als
+  Abkuerzung. Reicht eine prozedurale Form nicht, erst einen begrenzten,
+  transparenten Fallback VORSCHLAGEN - nie selbststaendig Toolbox-Aufrufe
+  starten. Beim Debuggen gilt dasselbe: keine Live-Toolbox-Aufrufe, nur
+  Quellcode, Unit-/Modelltests und gemockte Netzwerk-/Asset-Aufrufe.
 - "..."-Auswahlmenue: erneuter Klick auf den Menue-Button schliesst
   das Menue (echtes Toggle). Klick auf "Nur Lesezugriff" laesst das
   Menue OFFEN (schliesst es NICHT).
@@ -179,6 +192,30 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 - Groessere Code-Aenderungen lieber per Python-String-Replacement
   machen und Ersetzungen danach per grep gegenpruefen (direkte
   Editier-Werkzeuge waren unzuverlaessig).
+- TOOLBOX-/KATALOG-FALLEN (7.1.2, live aufgetreten):
+  a) Katalogaufrufe laufen SYNCHRON im HTTP-Runspace. Jede Sekunde dort
+     geht vom ~100-s-Fenster des Cloudflare-Tunnels ab. Deshalb gibt es
+     seit 7.1.2 nur noch EINEN Weg in den Katalog: Invoke-CatalogHttp mit
+     hartem -TimeoutSec, ohne automatische Wiederholung. NIE wieder
+     Invoke-RestMethod direkt in einer Asset-Funktion aufrufen und NIE
+     eine Retry-Schleife mit Start-Sleep einbauen.
+  b) Eine Schleife "je Asset-Id eine eigene Anfrage" ist unbegrenzt.
+     Immer eine Id-Obergrenze UND ein Gesamtbudget setzen.
+  c) InsertService:LoadAsset ist ein nativer, yieldender Aufruf. task.cancel
+     beendet nur den Luau-Thread - der Ladevorgang laeuft weiter und kann
+     spaeter zurueckkommen. Niemals einen Abbruch vortaeuschen, nie einen
+     zweiten Import starten, Zustand ehrlich als TOOLBOX_IMPORT_WEDGED
+     melden und den Nutzer um einen kompletten Studio-Neustart bitten.
+  d) delivery.state darf nie 'ok' melden, wenn executorAlive false ist
+     (das war der Live-Widerspruch in 7.1.1). Dafuer gibt es jetzt den
+     eigenen Zustand 'executor_down'.
+  e) Jeder Werkzeugaufruf MUSS in der Oberflaeche terminal werden
+     (completed/failed/timed_out/cancelled). Complete-ArenaActivity hat
+     dafuer den Parameter -terminalPhase.
+  f) asset_cache.json hat harte Grenzen (400 Eintraege / 2 MB,
+     Limit-AssetCache). Mehrere Eintraege IMMER mit Add-CacheEntries in
+     EINEM Schreibvorgang ablegen, nie in einer Schleife mit
+     Add-CacheEntry (das schreibt die ganze Datei je Eintrag).
 - POWERSHELL-5.1-FALLEN (beide haben in 7.0.6-7.1.0 LIVE Schaden
   angerichtet, Strukturtest wacht darueber):
   a) NIE @($var) um eine Variable legen, die eine
@@ -208,7 +245,8 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
   zusaetzlich ueber die instanceGuid auf, und jede Poll-/Heartbeat-
   Antwort nennt die gueltige sessionId (das Plugin uebernimmt sie).
 - Offline-Pruefung ohne Windows: python test_v398_structure.py,
-  python test_v710_delivery.py, python test_v711_delivery.py
+  python test_v710_delivery.py, python test_v711_delivery.py,
+  python test_v712_toolbox.py, python test_queue_model_707.py
   (luaparser aus requirements-test.txt). PowerShell/.NET laesst sich in
   der KI-Sandbox NICHT installieren - Semantik per Quelltext (PowerShell-
   Repository auf GitHub) nachlesen statt raten.
@@ -220,6 +258,31 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v7.1.2 (03.10.2026): MINI-HOTFIX - TOOLBOX-/ASSET-BEFEHLE HAENGEN NICHT
+  MEHR. Live-Befund mit 7.1.1: nach mehreren Katalogsuchen liefen
+  Detail-/Folgeaufrufe in Timeouts, ein insert_asset (14124432577) kehrte
+  nie zurueck, /api/tool endete nach ca. 125,8 s im Cloudflare-524, danach
+  executor.alive=false bei gleichzeitig delivery.state='ok', Toolbox-Karten
+  dauerhaft auf "Macht gerade", Studio mit jedem weiteren Toolbox-Aufruf
+  traeger (Nutzerbeobachtung RAM ~70 % - KEIN Bridge-Messwert). Vier
+  Ursachen, alle am Quellcode belegt: (1) unbegrenzte Katalogzeit auf der
+  HTTP-Anfrage (eigene Retry-Schleife 2x20 s+1,5 s, dann 20 s Details; im
+  404-Fall 20 s JE Id; vor jedem insert_asset zusaetzlich 20 s Validierung
+  VOR den 55 s Studio-Wartezeit). (2) keine Obergrenze fuer gleichzeitige
+  Toolbox-Arbeit. (3) Get-StudioDeliveryHealth prueft executorAlive erst ab
+  45 s Funkstille -> 'ok' trotz totem Executor. (4) der STUDIO_TIMEOUT-Pfad
+  liess den Verlaufseintrag absichtlich auf 'running'. Fix: Invoke-CatalogHttp
+  (12 s / 8 s, Budget 25 s, keine Wiederholung, CATALOG_TIMEOUT),
+  Enter-ToolboxSlot (max. 2) + Enter-ToolboxImport (genau 1, Freigabe in
+  finally), ehrlicher Zustand 'executor_down', terminale UI-Zustaende,
+  Idempotenz gegen doppelte Einfuegung (120 s), Plugin-Einzelbelegung
+  assetImportState mit TOOLBOX_IMPORT_WEDGED (nativer LoadAsset ist NICHT
+  abbrechbar), Asset-Cache auf 400 Eintraege / 2 MB begrenzt und
+  Sammel-Schreiben statt Schreibsturm. Neuer Test test_v712_toolbox.py
+  (gemockter Katalog + Executor, 7.1.1 reproduziert, 7.1.2 gruen).
+  WINDOWS-LIVE-ABNAHME OFFEN: /api/version 7.1.2, toolbox-Block im Status,
+  search_assets < 25 s oder CATALOG_TIMEOUT, zweiter paralleler Aufruf
+  TOOLBOX_BUSY, keine Karte bleibt auf "Macht gerade".
 - v7.1.1 (03.10.2026): HOTFIX - STUDIO FUEHRT WIEDER BEFEHLE AUS. Live-Test
   gegen 7.1.0 (Tunnel + Token): jedes Studio-Werkzeug STUDIO_TIMEOUT, obwohl
   das Plugin alle 2 s pollte (poll=279, result=0, deliveryAttempts=0,
