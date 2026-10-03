@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 7.0.7.
+"""Offline structure check for Arena Roblox Bridge 7.0.8.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.0.7"
+VERSION = "7.0.8"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -95,12 +95,13 @@ def main() -> int:
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     require(version["version"] == VERSION, f"version.json is not {VERSION}")
     release_notes = "\n".join(str(note) for note in version.get("notes", []))
-    require("7.0.7" in release_notes
-            and "HOTFIX" in release_notes
-            and "PLACE-LISTE" in release_notes
-            and "CommandCancelButton" in release_notes
-            and "COMMAND_CANCELLED" in release_notes,
-            "version.json does not describe the 7.0.7 place-row hotfix")
+    require("7.0.8" in release_notes
+            and "findByPath" in release_notes
+            and "resolveGroups" in release_notes
+            and "runSolidOperation" in release_notes
+            and "firstNonEmpty" in release_notes
+            and "POLL-SCHLEIFE" in release_notes,
+            "version.json does not describe the 7.0.8 plugin repair")
 
     # 6.1.1 shipped seven accidental fragments after the intended final exit,
     # including a bare closing parenthesis. Windows PowerShell parses the
@@ -712,21 +713,21 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '7.0.7'": 1,
-        'local ARENA_VERSION  = "7.0.7"': 1,
-        "version = '7.0.7'": 1,
-        "bridgeVersion = '7.0.7'": 3,
-        "bridgeVersion='7.0.7'": 1,
-        "serverVersion = '7.0.7'": 2,
-        "$versionText = '7.0.7'": 1,
-        "$verText = '7.0.7'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 7.0.7)": 1,
-        'Text="Arena Roblox Bridge - Version 7.0.7"': 1,
-        "Version 7.0.7 - aktuell. Beim naechsten Start": 2,
-        "Laufzeit-Identitaet: Bridge-Version=7.0.7": 1,
-        "Kurzbericht Fenster-Vorschau (Version 7.0.7)": 1,
-        "Arena Roblox Bridge - Leistungsbericht (Version 7.0.7)": 1,
-        "Arena Roblox Bridge - Place-Diagnose (Version 7.0.7)": 1,
+        "DocsVersion     = '7.0.8'": 1,
+        'local ARENA_VERSION  = "7.0.8"': 1,
+        "version = '7.0.8'": 1,
+        "bridgeVersion = '7.0.8'": 3,
+        "bridgeVersion='7.0.8'": 1,
+        "serverVersion = '7.0.8'": 2,
+        "$versionText = '7.0.8'": 1,
+        "$verText = '7.0.8'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.0.8)": 1,
+        'Text="Arena Roblox Bridge - Version 7.0.8"': 1,
+        "Version 7.0.8 - aktuell. Beim naechsten Start": 2,
+        "Laufzeit-Identitaet: Bridge-Version=7.0.8": 1,
+        "Kurzbericht Fenster-Vorschau (Version 7.0.8)": 1,
+        "Arena Roblox Bridge - Leistungsbericht (Version 7.0.8)": 1,
+        "Arena Roblox Bridge - Place-Diagnose (Version 7.0.8)": 1,
     }
     for marker, expected_count in functional_version_counts.items():
         actual_count = source.count(marker)
@@ -1666,7 +1667,7 @@ def main() -> int:
         "timelineRule",
         "'get_bridge_log' {",
         "function Update-RuntimeLine",
-        'Text="Bridge 7.0.7"',
+        'Text="Bridge 7.0.8"',
         "local function setWidgetStatus(extra)",
         "ARENA-PLUGIN-FEHLER",
         "function Invoke-PlaceRowCancel",
@@ -1716,7 +1717,34 @@ def main() -> int:
             and "'Ursache: ' + [string]$script:LastPlaceRowError" in source,
             "the repair notice does not show the real row error")
 
-    print("OK: 7.0.7 structure, place-row hotfix, self-report, session identity, delivery timeline, Lua and XAML validation passed")
+    # 7.0.8 LIVE FIX: Im 7.0.x-Plugin fehlten drei Funktionen KOMPLETT, und
+    # firstNonEmpty wurde VOR seiner Deklaration benutzt. In Lua ist so ein
+    # Name beim Aufruf ein GLOBAL-Zugriff -> nil -> "attempt to call a nil
+    # value" -> der Befehl endet als RUNTIME_ERROR (live: "fast alle Werkzeuge
+    # kaputt"). Gefunden mit einer Scope-Analyse (luaparser + Scope-Resolver),
+    # bestaetigt mit echtem Luau (v739, WebAssembly) im Lauf.
+    plugin_lua = plugin_source(source)
+    require(plugin_lua.count("local function findByPath(path)") == 1,
+            "findByPath fehlt im Plugin - jede Pfad-Referenz stirbt mit RUNTIME_ERROR")
+    require(plugin_lua.count("local function resolveGroups(kind, args)") == 1,
+            "resolveGroups fehlt im Plugin - union/intersect sterben mit RUNTIME_ERROR")
+    require(plugin_lua.count("local function runSolidOperation(kind, base, others, args)") == 1,
+            "runSolidOperation fehlt im Plugin - union/subtract/negate/intersect sind tot")
+    require("local firstNonEmpty\n" in plugin_lua
+            and "firstNonEmpty = function(...)" in plugin_lua,
+            "firstNonEmpty wird weiterhin vor seiner Deklaration benutzt (nil-Global)")
+    require("local nextInst = childByToken(current, segments[index])" in plugin_lua
+            and "game:GetService(segments[index])" in plugin_lua,
+            "findByPath findet Dienste nicht (GetService-Rueckfall fehlt)")
+    require("local loopOk, loopErr = xpcall(function()" in plugin_lua
+            and "Die Poll-Schleife hat einen Fehler abgefangen" in plugin_lua,
+            "die Poll-Schleife ist nicht fehlerfest (still beendete Aufgabe = keine Befehle)")
+    require("local tplName = (type(with) == \"table\" and with.name) or nil" in plugin_lua,
+            "tplName wird weiterhin ausserhalb seines Gueltigkeitsbereichs gelesen")
+
+    print("OK: 7.0.8 structure, plugin tool repair (findByPath/resolveGroups/"
+          "runSolidOperation/firstNonEmpty), robust poll loop, place-row hotfix, "
+          "self-report, session identity, delivery timeline, Lua and XAML validation passed")
     return 0
 
 
