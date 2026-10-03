@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.1.3"
+VERSION = "7.1.4"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -95,15 +95,16 @@ def main() -> int:
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     require(version["version"] == VERSION, f"version.json is not {VERSION}")
     release_notes = "\n".join(str(note) for note in version.get("notes", []))
-    require("7.1.3" in release_notes
-            and "organicBuildRules" in release_notes
-            and "CylinderPart" in release_notes
-            and "buildQuality" in release_notes
+    require("7.1.4" in release_notes
+            and "ORGANIC_POLYGON_REQUIRED" in release_notes
+            and "ORGANIC_COLORS_REQUIRED" in release_notes
+            and "ORGANIC_AUDIT_REQUIRED" in release_notes
+            and "ArenaPolygonTriangle" in release_notes
             and "DETAIL_REQUIRED" in release_notes
-            and "packageBytes" in release_notes
-            and "Benachrichtigung" in release_notes
+            and "bereit für verbundene Places" in release_notes
+            and "Token-Reset" in release_notes
             and "Roblox Studio" in release_notes,
-            "version.json does not describe the 7.1.3 quality/settings update")
+            "version.json does not describe the 7.1.4 organic-build/proof and UI update")
 
     # 6.1.1 shipped seven accidental fragments after the intended final exit,
     # including a bare closing parenthesis. Windows PowerShell parses the
@@ -715,21 +716,21 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '7.1.3'": 1,
-        'local ARENA_VERSION  = "7.1.3"': 1,
-        "version = '7.1.3'": 1,
-        "bridgeVersion = '7.1.3'": 3,
-        "bridgeVersion='7.1.3'": 1,
-        "serverVersion = '7.1.3'": 2,
-        "$versionText = '7.1.3'": 1,
-        "$verText = '7.1.3'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 7.1.3)": 1,
-        'Text="Arena Roblox Bridge - Version 7.1.3"': 1,
-        "Version 7.1.3 - aktuell. Beim naechsten Start": 2,
-        "Laufzeit-Identitaet: Bridge-Version=7.1.3": 1,
-        "Kurzbericht Fenster-Vorschau (Version 7.1.3)": 1,
-        "Arena Roblox Bridge - Leistungsbericht (Version 7.1.3)": 1,
-        "Arena Roblox Bridge - Place-Diagnose (Version 7.1.3)": 1,
+        "DocsVersion     = '7.1.4'": 1,
+        'local ARENA_VERSION  = "7.1.4"': 1,
+        "version = '7.1.4'": 1,
+        "bridgeVersion = '7.1.4'": 3,
+        "bridgeVersion='7.1.4'": 1,
+        "serverVersion = '7.1.4'": 2,
+        "$versionText = '7.1.4'": 1,
+        "$verText = '7.1.4'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.1.4)": 1,
+        'Text="Arena Roblox Bridge - Version 7.1.4"': 1,
+        "Version 7.1.4 - aktuell. Beim naechsten Start": 2,
+        "Laufzeit-Identitaet: Bridge-Version=7.1.4": 1,
+        "Kurzbericht Fenster-Vorschau (Version 7.1.4)": 1,
+        "Arena Roblox Bridge - Leistungsbericht (Version 7.1.4)": 1,
+        "Arena Roblox Bridge - Place-Diagnose (Version 7.1.4)": 1,
     }
     for marker, expected_count in functional_version_counts.items():
         actual_count = source.count(marker)
@@ -1037,21 +1038,26 @@ def main() -> int:
 
     progress_visual = source[source.index("function Update-PlaceProgressVisual"):source.index("function Get-ProgressDiagnoseLines")]
     require("'Arena arbeitet gerade...'" in progress_visual
+            and "'Fertig!'" in progress_visual
+            and "'Seit über einer Minute kein Bridge Aufruf mehr'" in progress_visual
             and "ProgressBar.Foreground = Get-Brush $color" in progress_visual
-            and "ProgressPercent.Text = ($percent.ToString() + ' %')" in progress_visual,
-            "the Place row does not show the blue work state, bar and percent")
+            and "ProgressPercent.Text = ($percent.ToString() + ' % • ' + $label)" in progress_visual
+            and "SilentSeconds -ge 60" in progress_visual,
+            "the Place row progress states, labels, colors, or 60-second completion expiry regressed")
     new_row = source[source.index("function New-Row {"):source.index("function New-MinimalPlaceRow")]
     fallback_start = source.index("function New-MinimalPlaceRow {")
     fallback_end = source.find("\nfunction ", fallback_start + 1)
     fallback_row = source[fallback_start:fallback_end]
-    require("$namePanel.VerticalAlignment = 'Center'" in new_row
+    require("$namePanel.VerticalAlignment = 'Stretch'" in new_row
+            and "$topCenterSpacer.Height = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)" in new_row
+            and "$bottomCenterSpacer.Height = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)" in new_row
             and "$namePanel.VerticalAlignment = 'Center'" in fallback_row,
-            "Place rows are not vertically centered again in both row builders (7.0.4 'Top' regression)")
+            "empty Place titles are not centered by symmetric star rows in both rich and fallback builders")
     require("[System.Windows.Controls.Grid]::SetColumn($progressRow, 1)" in new_row,
             "the blue work row is not placed under the Place name (it lands under the preview and stretches the row)")
-    require("[System.Windows.Controls.Grid]::SetRowSpan($placeIcon.Frame, 2)" in new_row
+    require("[System.Windows.Controls.Grid]::SetRowSpan($placeIcon.Frame, 4)" in new_row
             and "$placeIcon.Frame.VerticalAlignment = 'Center'" in new_row,
-            "the preview does not span both rows / is not centered in the Place row")
+            "the preview does not span all four centered name/status grid rows")
     require("$border.Padding = [System.Windows.Thickness]::new(16, 6, 16, 6)" in new_row,
             "the Place row lost its symmetric compact interior padding (content sits too high)")
     require("$progressText.Text = 'Arena arbeitet gerade...'" not in new_row
@@ -1067,6 +1073,10 @@ def main() -> int:
             "main/settings XAML here-strings were not found")
     main_xaml = main_xaml_match.group(1)
     settings_xaml = settings_xaml_match.group(1)
+    require('Text="Arena Roblox Bridge"' in main_xaml
+            and 'Text="bereit für verbundene Places"' in main_xaml
+            and 'RuntimeLine' not in source,
+            "the title bar must show only the product title and the fixed requested subtitle")
     require('x:Name="ArenaAiButton"' in main_xaml and 'Grid.Row="1"' in main_xaml,
             "Arena AI button is not in the main-list footer")
     require('ArenaAiButton' not in settings_xaml,
@@ -1423,8 +1433,9 @@ def main() -> int:
     ):
         require(marker in source, f"required Polygon Engine 2.0 marker missing: {marker}")
 
-    # 6.1.5 regression guards: polygon pieces are connected by default and
-    # generic style properties can no longer overwrite computed transforms.
+    # 6.1.5/7.1.4 regression guards: polygon pieces are connected by default,
+    # transforms stay immutable, and the global nontrivial-model preference
+    # applies across names/categories while preserving simple-Part exceptions.
     for marker in (
         'local shouldWeld=args.autoWeld~=false',
         'if spec.autoWeld~=nil then shouldWeld=spec.autoWeld~=false end',
@@ -1436,10 +1447,14 @@ def main() -> int:
         'ignoredGeometryProperties=ignoredGeometryProperties',
         'geometryInvariant="Size/CFrame applied after safe style properties"',
         "autoWeld=@{type='bool';required=$false;default='true'",
-        'ALWAYS use build_polygon_model unless the user explicitly requires custom low-level WedgeParts',
-        'NEVER set autoWeld=false unless the user explicitly asks for physically independent polygon pieces',
+        "modelBuildRules = @{",
+        "regardless of subject, model name or whether it is organic",
+        "Prefer build_polygon_model for the main silhouette and any custom, freeform, tapered, curved, irregular or hero surface in ANY category",
+        "The builder is preferred, not mandatory for every simple Part.",
+        "NEVER set autoWeld=false unless physically independent polygon pieces are requested.",
+        "organic=true, not by the model name",
     ):
-        require(marker in source, f"required Polygon 6.1.5 marker missing: {marker}")
+        require(marker in source, f"required Polygon/build-policy marker missing: {marker}")
     require('local shouldWeld=args.autoWeld==true' not in source,
             'polygon autoWeld silently defaulted back to false')
 
@@ -1683,8 +1698,6 @@ def main() -> int:
         "STUDIO_BUSY",
         "timelineRule",
         "'get_bridge_log' {",
-        "function Update-RuntimeLine",
-        'Text="Bridge 7.1.3"',
         "local function setWidgetStatus(extra)",
         "ARENA-PLUGIN-FEHLER",
         "function Invoke-PlaceRowCancel",
@@ -1828,16 +1841,24 @@ def main() -> int:
     require("COMMAND_NEVER_DELIVERED" in source and "undeliveredCommands = $undelivered" in source,
             "watchdog safety net / undeliveredCommands counter missing")
 
-    # 7.1.3 MINI-UPDATE: organischer Bauvertrag, GEMESSENE Bauqualitaet,
-    # DETAIL_REQUIRED statt stillschweigend akzeptiertem Kugel-Modell,
-    # Nutzlast-Budget des Sessionstarts und der neue Fertig-Schalter.
+    # 7.1.4 MINI-UPDATE: polygon-first organic builds, explicit palettes,
+    # installed motion, and measured proof before report_done.
     require("function Get-BridgeGuides" in source, "Get-BridgeGuides is missing")
     guides_block = source[source.index("function Get-BridgeGuides"):source.index("function Get-SessionStartPackage")]
     for marker in (
         "organicBuildRules = @{",
-        "no ball animals, no cylinder trees, no sideways cylinders",
-        "FORBIDDEN - BALL ANIMAL",
-        "FORBIDDEN - CYLINDER TREE",
+        "Version 7.1.4) - polygon-first, explicit palette, installed motion, measured before done",
+        "the FIRST write targeting that model is build_polygon_model { organic=true }",
+        "explicit contrasting palette",
+        "enabled motion Script under that same model",
+        "FORBIDDEN - BYPASSING THE POLYGON BUILDER",
+        "ORGANIC_POLYGON_REQUIRED",
+        "FORBIDDEN - FORGOTTEN COLOUR OR MOTION",
+        "FORBIDDEN - CLAIMING DONE WITHOUT A FRESH PROOF",
+        "ArenaPolygonTriangle wedges",
+        "uniqueColors>=3",
+        "nearWhiteShare<=0.90",
+        "auditAt is after the latest write before report_done",
         "ROBLOX CYLINDER AXIS: a CylinderPart runs along its LOCAL X AXIS",
         "Size.X is the LENGTH",
         "CFrame.new(pos) * CFrame.Angles(0, 0, math.rad(90))",
@@ -1847,10 +1868,8 @@ def main() -> int:
         "p.CFrame = CFrame.fromMatrix((a + b) * 0.5, axis, y, z)",
         "p.Size = Vector3.new(height, diameter, diameter)",
         "discLikeCylinder",
-        "primitiveOnly=false and cylinderProblems=0 before report_done",
-        "HARD CONSTRAINT for EVERY creature, animal, plant, prop and organic free-form model",
     ):
-        require(marker in guides_block, f"7.1.3 organic/cylinder guidance missing: {marker}")
+        require(marker in guides_block, f"7.1.4 organic/cylinder guidance missing: {marker}")
     # The rule must be reachable from the tool descriptions, not only from
     # the guides block.
     for marker in ("organicBuildRules", "buildQuality", "DETAIL_REQUIRED"):

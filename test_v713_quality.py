@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Verifikationstest fuer Arena Roblox Bridge 7.1.3 (Mini-Update: Qualitaet, Messung, Einstellungen).
+"""Verifikationstest fuer Arena Roblox Bridge 7.1.4 (Mini-Update: organischer Place-Build, frischer Auditbeleg, UI).
 
 NUTZERBERICHT UEBER DIE LETZTE BAU-SESSION (Bridge, Roblox Studio, Edit-Modus):
 Tiere wurden nur aus Kugel-Parts zusammengesetzt (Koerper, Kopf, vier Beine,
@@ -43,7 +43,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.1.3"
+VERSION = "7.1.4"
 
 SESSION_BUDGET_BYTES = 300000
 PRIMITIVE_MIN_PARTS = 6
@@ -347,15 +347,15 @@ def main() -> int:
                    "CFrame.new(pos) * CFrame.Angles(0, 0, math.rad(90))",
                    "local function cylinderBetween(parent, a, b, diameter, props)",
                    "p.CFrame = CFrame.fromMatrix((a + b) * 0.5, axis, y, z)",
-                   "discLikeCylinder", "model_audit buildQuality says primitiveOnly=false"):
-        check(marker in guides, f"organicBuildRules im Sessionstart fehlt: {marker}")
+                   "discLikeCylinder", "model_audit reports it as primitiveOnly with primitiveGroups"):
+        check(marker in guides, f"Sessionstart-Regelblock enthaelt: {marker}")
 
     for marker in ("WORLD_ENGINE.auditBuildQuality = function(parts, root)",
                    'issue = "discLikeCylinder"',
                    "primitiveGroups", "cylinderProblems", "tiltedCylinders",
                    "buildQuality = quality", "primitiveAbuse = quality.primitiveOnly",
                    "cylinderProblemCount = quality.cylinderProblemCount"):
-        check(marker in plugin_lua, f"Messung im Plugin fehlt: {marker}")
+        check(marker in plugin_lua, f"Plugin-Messung enthaelt: {marker}")
     check("local function topGroup(part)" in plugin_lua
           and "table.sort(groupOrder, function(a, b) return a:GetFullName() < b:GetFullName() end)" in plugin_lua,
           "die Gruppen-Analyse ist vorhanden und deterministisch sortiert")
@@ -363,7 +363,7 @@ def main() -> int:
     gate = region(source, "'report_done' {", "$doneTitle = ''")
     for marker in ("code = 'DETAIL_REQUIRED'", "primitiveAbuseNow", "cylinderProblemsNow",
                    "PRIMITIVE-ONLY build", "call handoff { scope="):
-        check(marker in gate, f"report_done-Wache unvollstaendig: {marker}")
+        check(marker in gate, f"report_done-Qualitaetswache enthaelt: {marker}")
     check(source.count("DETAIL_REQUIRED") >= 3 and "$envelope.buildQuality" in source,
           "DETAIL_REQUIRED steht in Plugin, Server und Regelwerk; die Messung erscheint in jeder Antwort")
 
@@ -395,14 +395,14 @@ def main() -> int:
           and "Fertig-Meldung verworfen: der Schalter" in source,
           "Clear-NotifyQueue existiert und die Anzeige prueft den Schalter unmittelbar vor dem Anzeigen")
 
-    for marker in ("# Arena Roblox Bridge  -  Version 7.1.3", "MINI-UPDATE 7.1.3",
-                   "DocsVersion     = '7.1.3'", 'local ARENA_VERSION  = "7.1.3"'):
-        check(marker in source, f"Versionsstand unvollstaendig: {marker}")
+    for marker in ("# Arena Roblox Bridge  -  Version 7.1.4", "MINI-UPDATE 7.1.4",
+                   "DocsVersion     = '7.1.4'", 'local ARENA_VERSION  = "7.1.4"'):
+        check(marker in source, f"Versionsmarker ist vorhanden: {marker}")
 
     if FAILURES:
         print(f"\nFEHLGESCHLAGEN: {len(FAILURES)} Pruefung(en) rot.")
         return 1
-    print("\nOK: alle 7.1.3-Pruefungen gruen (Zylinderregel, Kugel-Erkennung, DETAIL_REQUIRED, "
+    print("\nOK: alle 7.1.4-Pruefungen gruen (Zylinderregel, Kugel-Erkennung, organischer Auditbeleg, "
           "Fertig-Schalter, Nutzlast-Budget, Quellcode-Abnahme).")
     return 0
 

@@ -1,10 +1,10 @@
-# Mini-Update 7.1.3 – Organischer Bauvertrag, echte Messung, aufgeräumte Einstellungen
+# 7.1.4 – Globaler Polygon-Vorrang und organischer Qualitätsnachweis
 
 Dieses Update beantwortet einen konkreten Nutzerbericht über eine Bau-Session
 über die Bridge. Es behebt nicht „einen Fehler“, sondern macht die drei
 Ursachen dauerhaft unmöglich – und räumt die Einstellungen auf.
 
-> **Ausgeliefert als Version 7.1.3.**
+> **Aktueller Vertrag: Version 7.1.4.** Der Polygon-Vorrang gilt jetzt für alle nichttrivialen 3D-Aufgaben, unabhängig vom Modellnamen oder Beispiel. Die strenge serverseitige Proof-Sperre bleibt eine separate Zusatzregel für organische Modelle.
 
 ## Der Befund
 
@@ -19,6 +19,82 @@ Ursachen dauerhaft unmöglich – und räumt die Einstellungen auf.
   fertig ist“**, und der deaktivierte `sim_start` stand dort noch als
   Warnkasten.
 
+## 0. 7.1.4: globaler Modellierungsstandard und organischer Auditbeleg
+
+### Globaler Polygon-Vorrang — für alle 3D-Kategorien
+
+`modelBuildRules` wird mit jeder neuen Session ausgeliefert. Es gilt für
+**jedes nichttriviale 3D-Modell**, nicht nur für Tiere, Bäume oder ein erkanntes
+Beispiel: `build_polygon_model` ist die bevorzugte Wahl für die Hauptsilhouette
+und individuelle, freie, gekrümmte oder verjüngte Formen in Figuren, Props,
+Architektur, Fahrzeugen, Maschinen, Landmarken, Terrain und Kulissen.
+`build_assembly` ergänzt wiederholte oder modulare Struktur; Standard-Parts
+bleiben für einfache Formen, Stützen, Gelenke und Details passend.
+
+Der Qualitätsmaßstab ist absichtlich höher als ein erster Primitive-Blockout:
+klare Hauptsilhouette, sekundäre Funktionsformen, sorgfältige Details,
+absichtsvolle Farb-/Materialrollen und korrekt verbundene/platzierte Teile.
+Mehr Teile ohne gestalterischen Zweck sind keine zusätzliche Qualität. Einfache
+Objekte und ausdrücklich gewünschte Primitive-/Low-Poly-Aufgaben bleiben
+angemessen einfach. Die allgemeine Werkzeugwahl wird **nicht** durch Tier-,
+Baum- oder sonstige Modellnamen erzwungen.
+
+### Organischer Qualitätsvertrag — separate, explizite Markierung
+
+Die strenge Organic-Sperre greift, wenn ein Build ausdrücklich mit
+`organic=true` markiert ist; sie basiert nicht auf einem Tier-/Baum-Keyword im
+Namen. Mit diesem Flag ist `build_polygon_model` der Pflichtweg. Der
+HTTP-Guard verlangt mindestens drei explizite `color`-Zuweisungen im Aufruf
+(`ORGANIC_COLORS_REQUIRED`) und blockiert einen anderen Builder vor dem
+Studio-Aufruf mit `ORGANIC_POLYGON_REQUIRED`. Parallele oder asynchrone
+organische Builds werden mit `ORGANIC_SEQUENCE_REQUIRED` abgewiesen. Für
+unmarkierte Aufgaben bleibt der allgemeine, nicht blockierende Polygon-Vorrang
+oben maßgeblich.
+
+Das Plugin-Ergebnis kommt als `{ ok, result, warnings }`. Die Bridge entpackt
+`result` und führt jedes während der organischen Bauarbeit für dieses Place
+registrierte Modell als eigenen Nachweisdatensatz — einschließlich seiner
+zurückgegebenen Modell-ID, sofern vorhanden. Jeder erfolgreiche spätere
+Place-Schreibaufruf entwertet die Audit-Belege **aller** registrierten Modelle;
+nach dem letzten Edit müssen sie daher alle erneut geprüft werden.
+
+Ein einzelner, eigenständiger `model_audit` erneuert nur Belege für organische
+Modelle, die in seinen per-model Ergebnissen exakt ausgewiesen sind. Ein
+Workspace-Audit kann mehrere Modelle belegen, aber nur soweit jedes Modell
+separat mit seinen Metriken zurückkommt. Erkennt das Plugin mehr organische
+Modelle, als es per-model Details liefert, wird der fehlende Anteil ausdrücklich
+als unvollständig gespeichert — ein Aggregat oder die Prüfung eines Geschwister-
+modells zählt nicht als Nachweis. Parallel-/Batch-/Job-Antworten gelten nicht als
+Audit-Beleg, weil ihre Schreib- und Prüfreihenfolge nicht sicher feststeht.
+
+`report_done` akzeptiert organische Bauarbeit nur, wenn **jeder registrierte
+Modell-Datensatz** einen frischen Audit nach dem letzten erfolgreichen
+Place-Schreibaufruf, einen exakt passenden Modell-Eintrag und bestandene
+Metriken hat. Es prüft unabhängig vom allgemeinen `buildQuality` für jedes
+Modell einzeln:
+
+- `polygonTriangles > 0` für tatsächliche `ArenaPolygonTriangle`-Wedges;
+- mindestens drei gemessene Part-Farben, höchstens 90 % dominante Farbe und
+  höchstens 90 % near-white/defaultartige Teile;
+- mindestens ein erkanntes, aktiviertes Bewegungs-Script als Nachfahre genau
+  dieses Zielmodells;
+- keine vom Plugin-Audit gemeldeten `organicQuality.issues`.
+
+Fehlt auch nur ein frischer oder exakter Modellnachweis oder ist der registrierte
+Organic-Zustand unvollständig/unlesbar, kommt `ORGANIC_AUDIT_REQUIRED` (fail
+closed); scheitern die Metriken eines Modells, `DETAIL_REQUIRED`. Ein
+stiller Validierungsfehler oder erfolgreicher Audit eines einzelnen Modells
+reicht also nicht für einen Place mit mehreren registrierten organischen Modellen.
+`handoff` überspringt diese separate Organic-Prüfung nicht. Die Entscheidung
+basiert auf dem entpackten Plugin-`result`, nicht auf einem selbst formulierten
+Qualitätsbericht.
+
+Die Hauptkopfzeile zeigt nun statisch nur noch „Arena Roblox Bridge“ und
+„bereit für verbundene Places“. Versions-/SHA-/Wächterdetails bleiben über die
+API und das Runtime-Log erreichbar. Die Place-Fortschrittsanzeige behält die
+gewünschten Grün/Blau/Grau-Texte und blendet 100 % nach 60 Sekunden aus; ein
+Token-Reset zeigt eine kurze In-Fenster-Bestätigung.
+
 ## 1. `organicBuildRules` – ein harter Regelblock in jeder Session
 
 `Get-BridgeGuides` liefert den neuen Block `organicBuildRules` (genau wie
@@ -29,7 +105,7 @@ Enthalten:
 
 | Feld | Inhalt |
 |---|---|
-| `forbidden` | `FORBIDDEN – BALL ANIMAL` (Tier nur aus Kugeln), `FORBIDDEN – CYLINDER TREE` (Stamm + Kugelkrone), `FORBIDDEN – UNTAPERED LIMBS`, `FORBIDDEN – ONE SINGLE ROTATION AS ANIMATION`, `FORBIDDEN – CLAIMING DONE WHILE IT IS A BLOCKOUT` |
+| `forbidden` | `FORBIDDEN – BYPASSING THE POLYGON BUILDER` (kein anderes Erstbau-Tool), `FORBIDDEN – BALL ANIMAL` (Tier nur aus Kugeln), `FORBIDDEN – CYLINDER TREE` (Stamm + Kugelkrone), `FORBIDDEN – UNTAPERED LIMBS`, `FORBIDDEN – ONE SINGLE ROTATION AS ANIMATION`, `FORGOTTEN COLOUR OR MOTION`, `CLAIMING DONE WITHOUT A FRESH PROOF` |
 | `anatomyMinimum` | Rumpf → Hals → Schädel → Fang → vier Beine mit Ober-/Unterschenkel und Pfote (überlappend in den Rumpf) → Schwanzkette aus 4–8 kleineren Segmenten → Ohren → Augen (Ball + dunkle Pupille + Lichtpunkt), Nase, Mundlinie, Schnurrhaare → Fell-/Plattenstruktur und eigene Farben für Rücken, Bauch, Fang und Pfoten. **30–80 Teile sind normal, unter 15 ist ein Entwurf.** |
 | `cylinderRule` | Die Achse eines Roblox-`CylinderPart` ist seine **lokale X-Achse**: `Size.X` = Länge, `Size.Y` = `Size.Z` = Durchmesser. Ohne Rotation liegt der Zylinder quer wie ein Fass. Stehend nur mit `CFrame.new(pos) * CFrame.Angles(0, 0, math.rad(90))`. |
 | `cylinderDetection` | Was `model_audit` dazu misst (siehe Abschnitt 3). |
@@ -75,7 +151,7 @@ end
 `CFrame.Angles(0, 0, math.rad(90))` dreht die lokale X-Achse exakt auf
 Welt-Y; `cylinderBetween` erzeugt für **jede** Richtung eine rechtshändige,
 orthonormale Basis (`X × Y = Z`), die `CFrame.fromMatrix` akzeptiert.
-Beides wird in `test_v713_quality.py` numerisch nachgerechnet.
+Beides wird in `test_v713_quality.py` numerisch nachgerechnet; die organischen Erstbau-/Auditregeln prüft `test_v714_organic.py`.
 
 ## 2. Warum die 90-Grad-Dreher passieren
 
@@ -124,7 +200,9 @@ blockout - call handoff { ... }. That is an invitation, not a punishment.
 ```
 
 Platzhalter behalten wie bisher Vorrang: existieren welche und fehlt der
-Handoff, kommt weiterhin `HANDOFF_REQUIRED`.
+Handoff, kommt weiterhin `HANDOFF_REQUIRED`. Dieser ältere `buildQuality`-Pfad
+ändert nichts am separaten 7.1.4-Organic-Gate aus Abschnitt 0: ein Handoff kann
+fehlende Modell-Audits oder nicht bestandene Organic-Metriken nicht übergehen.
 
 ## 5. Kleinere Sitzungs-Nutzlast
 
@@ -168,8 +246,9 @@ messbar.
 ## 7. Prüfung
 
 ```text
-python3 test_v713_quality.py      # neu: 7 Gruppen (Mathematik, Messung, Gate, Schalter, Budget, Quellcode)
-python3 test_v398_structure.py    # 7.1.3-Marker, Lua via luaparser, XAML als XML
+python3 test_v714_organic.py      # Mehrmodell-Belege, frischer Audit, fail-closed report_done und UI
+python3 test_v713_quality.py      # Mathematik, Messung, historisches Gate, Schalter und Sessionbudget
+python3 test_v398_structure.py    # 7.1.4-Funktionsversionen, Lua via luaparser, XAML als XML
 python3 test_v710_delivery.py
 python3 test_v711_delivery.py
 python3 test_v712_toolbox.py      # prueft nur noch "mindestens 7.1.2"
