@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.1.2"
+VERSION = "7.1.3"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -95,13 +95,15 @@ def main() -> int:
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     require(version["version"] == VERSION, f"version.json is not {VERSION}")
     release_notes = "\n".join(str(note) for note in version.get("notes", []))
-    require("7.1.2" in release_notes
-            and "TOOLBOX" in release_notes.upper()
-            and "insert_asset" in release_notes
-            and "CATALOG_TIMEOUT" in release_notes
-            and "executor" in release_notes.lower()
+    require("7.1.3" in release_notes
+            and "organicBuildRules" in release_notes
+            and "CylinderPart" in release_notes
+            and "buildQuality" in release_notes
+            and "DETAIL_REQUIRED" in release_notes
+            and "packageBytes" in release_notes
+            and "Benachrichtigung" in release_notes
             and "Roblox Studio" in release_notes,
-            "version.json does not describe the 7.1.2 toolbox hotfix")
+            "version.json does not describe the 7.1.3 quality/settings update")
 
     # 6.1.1 shipped seven accidental fragments after the intended final exit,
     # including a bare closing parenthesis. Windows PowerShell parses the
@@ -713,21 +715,21 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '7.1.2'": 1,
-        'local ARENA_VERSION  = "7.1.2"': 1,
-        "version = '7.1.2'": 1,
-        "bridgeVersion = '7.1.2'": 3,
-        "bridgeVersion='7.1.2'": 1,
-        "serverVersion = '7.1.2'": 2,
-        "$versionText = '7.1.2'": 1,
-        "$verText = '7.1.2'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 7.1.2)": 1,
-        'Text="Arena Roblox Bridge - Version 7.1.2"': 1,
-        "Version 7.1.2 - aktuell. Beim naechsten Start": 2,
-        "Laufzeit-Identitaet: Bridge-Version=7.1.2": 1,
-        "Kurzbericht Fenster-Vorschau (Version 7.1.2)": 1,
-        "Arena Roblox Bridge - Leistungsbericht (Version 7.1.2)": 1,
-        "Arena Roblox Bridge - Place-Diagnose (Version 7.1.2)": 1,
+        "DocsVersion     = '7.1.3'": 1,
+        'local ARENA_VERSION  = "7.1.3"': 1,
+        "version = '7.1.3'": 1,
+        "bridgeVersion = '7.1.3'": 3,
+        "bridgeVersion='7.1.3'": 1,
+        "serverVersion = '7.1.3'": 2,
+        "$versionText = '7.1.3'": 1,
+        "$verText = '7.1.3'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.1.3)": 1,
+        'Text="Arena Roblox Bridge - Version 7.1.3"': 1,
+        "Version 7.1.3 - aktuell. Beim naechsten Start": 2,
+        "Laufzeit-Identitaet: Bridge-Version=7.1.3": 1,
+        "Kurzbericht Fenster-Vorschau (Version 7.1.3)": 1,
+        "Arena Roblox Bridge - Leistungsbericht (Version 7.1.3)": 1,
+        "Arena Roblox Bridge - Place-Diagnose (Version 7.1.3)": 1,
     }
     for marker, expected_count in functional_version_counts.items():
         actual_count = source.count(marker)
@@ -1073,17 +1075,20 @@ def main() -> int:
             "Settings content grid has no interior padding")
     require('Background="{StaticResource GreenBtnBg}"' in main_xaml,
             "Arena AI footer button does not use the green Prompt-copy design resource")
-    switch_names = ("StartupSwitch", "EditorIconsSwitch", "ProgressSwitch", "PerfSwitch")
+    switch_names = ("StartupSwitch", "EditorIconsSwitch", "ProgressSwitch", "DoneNotifySwitch", "PerfSwitch")
     open_settings = source[source.index("function Open-SettingsWindow"):source.index("# Version 3.8: Die Update-Infos")]
     switch_variables = {
         "StartupSwitch": "$startupSwitch",
         "EditorIconsSwitch": "$editorIconsSwitch",
         "ProgressSwitch": "$progressSwitch",
+        "DoneNotifySwitch": "$doneNotifySwitch",
         "PerfSwitch": "$perfSwitch",
     }
-    require('NotifySwitch' not in settings_xaml and 'Mitteilungen' not in settings_xaml,
+    # 7.1.3 keeps the old "Mitteilungen" section gone but adds the requested
+    # DoneNotifySwitch, so only the EXACT legacy names may reappear.
+    require('x:Name="NotifySwitch"' not in settings_xaml and 'Mitteilungen' not in settings_xaml,
             "the Mitteilungen section is still present in Settings")
-    require('NotifySwitch' not in open_settings and '$notifySwitch' not in open_settings
+    require("FindName('NotifySwitch')" not in open_settings and '$notifySwitch' not in open_settings
             and '$notifyNow' not in open_settings,
             "removed notification settings remain bound in Open-SettingsWindow")
     for name in switch_names:
@@ -1095,19 +1100,31 @@ def main() -> int:
     require("Set-StartupEnabled ([bool]$s.IsChecked)" in open_settings
             and "Set-EditorIconsEnabled ([bool]$s.IsChecked)" in open_settings
             and "$script:Shared.BridgeSettings.progressInPlaceList = [bool]$s.IsChecked" in open_settings
-            and open_settings.count("Save-BridgeSettingsFile") >= 4,
+            and "$script:Shared.BridgeSettings.notifyOnDone = $enabled" in open_settings
+            and open_settings.count("Save-BridgeSettingsFile") >= 5,
             "settings switches do not persist their expected values")
     for marker in (
         "$autoStartNow = Get-StartupEnabled",
         "$editorIconsNow = [bool]$script:SettingsCache.editorIconsEnabled",
         "$progressNow = [bool]$script:Shared.BridgeSettings.progressInPlaceList",
+        "$doneNotifyNow = [bool]$script:Shared.BridgeSettings.notifyOnDone",
         "$startupSwitch.IsChecked = $autoStartNow",
         "$editorIconsSwitch.IsChecked = $editorIconsNow",
         "$progressSwitch.IsChecked = $progressNow",
+        "$doneNotifySwitch.IsChecked = $doneNotifyNow",
     ):
         require(marker in open_settings, f"settings switch does not initialize from its persisted value: {marker}")
-    require('SimSwitch' not in settings_xaml and 'sim_start ist deaktiviert' in settings_xaml,
-            "disabled sim_start is still presented as an enable switch")
+    # 7.1.3: the notification switch sits directly under the progress switch
+    # (user request) and the SIMULATION warning card is gone completely.
+    progress_card = settings_xaml[settings_xaml.index('x:Name="ProgressSwitch"'):]
+    require('x:Name="DoneNotifySwitch"' in progress_card
+            and progress_card.index('x:Name="DoneNotifySwitch"') < progress_card.index("</Border>"),
+            "the finish-notification switch is not in the PLACE-LISTE card under the progress switch")
+    require('Content="Benachrichtigung, wenn Arena fertig ist"' in settings_xaml,
+            "the finish-notification switch is not labelled as requested")
+    require('SimSwitch' not in settings_xaml, "disabled sim_start is still presented as an enable switch")
+    require('SIMULATION' not in settings_xaml and 'sim_start ist deaktiviert' not in settings_xaml,
+            "the removed SIMULATION warning card is still in the settings window")
     require("Set-ArenaSwitchVisualState $toggleSwitch" in open_settings
             and "$toggleSwitch.Add_Loaded" in open_settings,
             "switch visual state is not synchronized after loading")
@@ -1667,7 +1684,7 @@ def main() -> int:
         "timelineRule",
         "'get_bridge_log' {",
         "function Update-RuntimeLine",
-        'Text="Bridge 7.1.2"',
+        'Text="Bridge 7.1.3"',
         "local function setWidgetStatus(extra)",
         "ARENA-PLUGIN-FEHLER",
         "function Invoke-PlaceRowCancel",
@@ -1811,10 +1828,107 @@ def main() -> int:
     require("COMMAND_NEVER_DELIVERED" in source and "undeliveredCommands = $undelivered" in source,
             "watchdog safety net / undeliveredCommands counter missing")
 
+    # 7.1.3 MINI-UPDATE: organischer Bauvertrag, GEMESSENE Bauqualitaet,
+    # DETAIL_REQUIRED statt stillschweigend akzeptiertem Kugel-Modell,
+    # Nutzlast-Budget des Sessionstarts und der neue Fertig-Schalter.
+    require("function Get-BridgeGuides" in source, "Get-BridgeGuides is missing")
+    guides_block = source[source.index("function Get-BridgeGuides"):source.index("function Get-SessionStartPackage")]
+    for marker in (
+        "organicBuildRules = @{",
+        "no ball animals, no cylinder trees, no sideways cylinders",
+        "FORBIDDEN - BALL ANIMAL",
+        "FORBIDDEN - CYLINDER TREE",
+        "ROBLOX CYLINDER AXIS: a CylinderPart runs along its LOCAL X AXIS",
+        "Size.X is the LENGTH",
+        "CFrame.new(pos) * CFrame.Angles(0, 0, math.rad(90))",
+        "local function uprightCylinder(parent, pos, height, diameter, props)",
+        "local function cylinderBetween(parent, a, b, diameter, props)",
+        "local function taperedSegment(parent, a, b, d1, d2, props)",
+        "p.CFrame = CFrame.fromMatrix((a + b) * 0.5, axis, y, z)",
+        "p.Size = Vector3.new(height, diameter, diameter)",
+        "discLikeCylinder",
+        "primitiveOnly=false and cylinderProblems=0 before report_done",
+        "HARD CONSTRAINT for EVERY creature, animal, plant, prop and organic free-form model",
+    ):
+        require(marker in guides_block, f"7.1.3 organic/cylinder guidance missing: {marker}")
+    # The rule must be reachable from the tool descriptions, not only from
+    # the guides block.
+    for marker in ("organicBuildRules", "buildQuality", "DETAIL_REQUIRED"):
+        require(source.count(marker) >= 3, f"{marker} is not referenced from how and where the tools are used")
+
+    # Measured build quality in the plugin (Luau) - real detection instead of
+    # a promise: ball-only groups and the two classic cylinder defects.
+    for marker in (
+        "WORLD_ENGINE.auditBuildQuality = function(parts, root)",
+        'verdict = "clean"',
+        'verdict = "primitive_abuse"',
+        'verdict = "cylinder_rotation"',
+        'verdict = "primitive_abuse_and_cylinder_rotation"',
+        'issue = "discLikeCylinder"',
+        "local align = math.max(math.abs(xAxis.X), math.abs(xAxis.Y), math.abs(xAxis.Z))",
+        "local axisSkewDeg = math.deg(math.acos(math.clamp(align, 0, 1)))",
+        "math.max(size.Y, size.Z) >= 1.5 * size.X",
+        "primitiveGroups",
+        "cylinderProblems",
+        "tiltedCylinders",
+        "ballShare",
+        "buildQuality = quality",
+        "primitiveAbuse = quality.primitiveOnly",
+        "cylinderProblemCount = quality.cylinderProblemCount",
+        "PRIMITIVE_ONLY_BUILD",
+        "CYLINDER_ROTATION",
+        "CYLINDER_TILT",
+    ):
+        require(marker in plugin_lua, f"7.1.3 build-quality measurement missing in the plugin: {marker}")
+    require("local function topGroup(part)" in plugin_lua
+            and "table.sort(groupOrder, function(a, b) return a:GetFullName() < b:GetFullName() end)" in plugin_lua,
+            "the per-group primitive analysis is missing or no longer deterministic")
+
+    # report_done refuses a measured primitive-only build / wrongly rotated
+    # cylinders and offers both honest ways out.
+    require("code = 'DETAIL_REQUIRED'" in source and "DETAIL_REQUIRED" in plugin_lua,
+            "report_done does not refuse a primitive-only or misrotated build")
+    report_done_block = source[source.index("'report_done' {"):source.index("$doneTitle = ''")]
+    for marker in ("primitiveAbuseNow", "cylinderProblemsNow", "PRIMITIVE-ONLY build", "buildQualityVerdict",
+                   "call handoff { scope=", "Roblox CylinderPart runs along its LOCAL X axis"):
+        require(marker in report_done_block, f"report_done quality gate is incomplete: {marker}")
+    require("primitiveAbuse = $primitiveAbuse" in source and "cylinderProblemCount = $cylinderProblemCount" in source,
+            "the audit result does not carry the measured build quality into the session flags")
+    require("$envelope.buildQuality" in source and "BUILD QUALITY: the last model_audit still reports" in source,
+            "the measured build quality is not surfaced with every response")
+
+    # Session payload budget: core tools in full, everything else as an index,
+    # a hard byte limit and an honest measurement in every session start.
+    require("SessionPayloadHardBudgetBytes = 300000" in source
+            and "$Shared.SessionPayloadHardBudgetBytes" in source,
+            "the hard session payload budget is not defined in $Shared (handler runspace)")
+    core_list = source[source.index("$coreToolNames = @("):source.index("$coreDocs = New-Object")]
+    for tool in ("build_polygon_model", "build_assembly", "model_audit", "world_audit", "run_lua",
+                 "report_done", "get_docs", "refine", "insert_script"):
+        require(f"'{tool}'" in core_list, f"core tool {tool} is missing from the session start core list")
+    for deferred in ("search_assets", "insert_asset", "fill_region", "sim_start"):
+        require(f"'{deferred}'" not in core_list, f"{deferred} must stay in the compact index, not in the core list")
+    for marker in ("$out.toolsIndex = $indexDocs.ToArray()", "'core-full'", "'index-only'",
+                   "$out.packageBytes = [int]$measuredBytes", "$out.budgetBytes = $packageBudget",
+                   'get_docs { tool = "<name>" }'):
+        require(marker in source, f"session payload policy marker missing: {marker}")
+
+    # The finish-notification switch: bound to the setting, persisted, effective
+    # immediately and honoured by the notification path itself.
+    require("function Clear-NotifyQueue" in source, "Clear-NotifyQueue is missing")
+    require("if (-not $enabled) { Clear-NotifyQueue }" in source,
+            "switching the finish notification off does not clear pending messages")
+    require("Fertig-Meldung verworfen: der Schalter" in source,
+            "the notification path does not check the switch right before showing")
+    require("$notifyAllowed = [bool]$script:Shared.BridgeSettings.notifyOnDone" in source
+            and "if (-not $notifyAllowed) { [void](Clear-NotifyQueue) }" in source,
+            "the notification timer does not honour/clear on the switch state")
+
     print("OK: 7.1.1 hotfix (flat cancellation ids, no @() on List[object], real admin reset, "
           "plugin sessionId, /api/places), 7.1.0 structure, reliable command delivery, BindReason preview fix, "
           "plugin tool repair, robust poll loop, place-row hotfix, "
-          "self-report, session identity, delivery timeline, Lua and XAML validation passed")
+          "self-report, session identity, delivery timeline, organic build contract, measured build quality, "
+          "session payload budget, finish-notification switch, Lua and XAML validation passed")
     return 0
 
 

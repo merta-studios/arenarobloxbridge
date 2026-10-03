@@ -828,17 +828,33 @@ def test_8_source(source: str, lua: str):
         "assetImportState.active = true"), "Die Pruefung muss VOR dem Laden stehen"
 
     # -- 10) Versionsstand ---------------------------------------------------
-    assert f'local ARENA_VERSION  = "{VERSION}"' in lua
-    assert f"DocsVersion     = '{VERSION}'" in source
-    assert source.count(f"bridgeVersion = '{VERSION}'") == 3
-    assert source.count(f"serverVersion = '{VERSION}'") == 2
-    assert f"# Arena Roblox Bridge  -  Version {VERSION}" in source
+    # Dieser Test ist der REGRESSIONSWAECHTER fuer 7.1.2 und darf die laufende
+    # Version nicht festnageln (das machen test_v398_structure.py und der
+    # jeweils neueste Versionstest). Geprueft wird, dass die Auslieferung
+    # mindestens 7.1.2 ist und alle Versionsliterale konsistent sind.
+    header = re.search(r"# Arena Roblox Bridge  -  Version (\d+\.\d+\.\d+)", source)
+    assert header, "Der Versionskopf fehlt"
+    shipped = header.group(1)
+    assert tuple(int(part) for part in shipped.split(".")) >= tuple(int(part) for part in VERSION.split(".")), (
+        f"Die Auslieferung {shipped} liegt vor dem 7.1.2-Toolbox-Hotfix")
+    assert f'local ARENA_VERSION  = "{shipped}"' in lua
+    assert f"DocsVersion     = '{shipped}'" in source
+    assert source.count(f"bridgeVersion = '{shipped}'") == 3
+    assert source.count(f"serverVersion = '{shipped}'") == 2
+    assert f"# Arena Roblox Bridge  -  Version {shipped}" in source
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    assert version["version"] == VERSION, f"version.json ist nicht {VERSION}"
+    assert version["version"] == shipped, f"version.json ist nicht {shipped}"
     notes = "\n".join(str(note) for note in version["notes"])
-    for needle in ("insert_asset", "CATALOG_TIMEOUT", "TOOLBOX_BUSY",
-                   "InsertService:LoadAsset", "executorAlive"):
-        assert needle in notes, f"version.json erklaert '{needle}' nicht"
+    if shipped == VERSION:
+        for needle in ("insert_asset", "CATALOG_TIMEOUT", "TOOLBOX_BUSY",
+                       "InsertService:LoadAsset", "executorAlive"):
+            assert needle in notes, f"version.json erklaert '{needle}' nicht"
+    else:
+        # Ein spaeteres Update hat die 7.1.2-Notizen ersetzt (version.json
+        # traegt immer nur die Neuigkeiten der AKTUELLEN Version). Der Fix
+        # selbst bleibt oben im Quellcode belegt; hier wird nur noch geprueft,
+        # dass version.json zur laufenden Auslieferung passt.
+        assert shipped in notes, "version.json nennt die laufende Version nicht"
 
 
 def main() -> int:
