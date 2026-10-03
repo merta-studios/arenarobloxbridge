@@ -114,8 +114,17 @@ def test_2_command_delivery_unconfirmed_repro_and_healing(source: str, lua: str)
     assert "$obj.Count -eq 1" in to_json_fn, (
         "Test 2 FEHLGESCHLAGEN: To-Json behandelt 1-elementige Arrays nicht explizit als '[...]'"
     )
-    assert "return , $items.ToArray()" in cancel_ids_fn, (
-        "Test 2 FEHLGESCHLAGEN: Get-SessionCancellationIds gibt Array ohne Komma-Operator zurueck (PowerShell-Unrolling)"
+    # 7.1.1: Der Komma-Operator war hier FALSCH. Jeder Aufrufer schreibt
+    # @(Get-SessionCancellationIds $sid); aus ", $array" wird in @(...) IMMER
+    # ein 1-elementiges Array (das leere Array als Element) -> "$cancelledNow.Count
+    # -gt 0" war in /plugin/poll immer wahr und die Schleife brach vor dem
+    # Dequeue ab (live: kein einziger Befehl erreichte Studio). Die Funktion
+    # liefert jetzt FLACH; die 0/1-Element-Faelle regelt To-Json.
+    assert "return , $items.ToArray()" not in cancel_ids_fn, (
+        "Test 2 FEHLGESCHLAGEN: Get-SessionCancellationIds nutzt wieder den Komma-Operator (7.1.0-Regression: Poll liefert nie Befehle)"
+    )
+    assert "return $items.ToArray()" in cancel_ids_fn, (
+        "Test 2 FEHLGESCHLAGEN: Get-SessionCancellationIds gibt kein flaches Array zurueck"
     )
 
     # 2) Plugin muss received_batch VOR enqueueCommand senden und eine Ack-Outbox

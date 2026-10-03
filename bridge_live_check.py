@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
-"""Live-Abnahme der Arena Roblox Bridge 7.0.5 (laeuft gegen die echte Bridge).
+"""Live-Abnahme der Arena Roblox Bridge 7.1.1 (laeuft gegen die echte Bridge).
 
 Aufruf (URL + Token aus der Place-Zeile im Bridge-Fenster):
 
     python bridge_live_check.py --url https://xxxx.trycloudflare.com --token DEIN_TOKEN
 
-Geprueft wird genau das, was in 7.0.4 live kaputt war (und in 7.0.5 behoben ist):
+Geprueft wird, was in 7.0.4-7.1.0 live kaputt war (und in 7.0.5 / 7.1.1 behoben ist):
 
-  1. /api/status          -> Version 7.0.5 + queue.sweep.running == true
+  0. 7.1.1-Hotfix         -> /api/status antwortet 200 (kein "Argumenttypen"-500),
+                             /api/places antwortet 200 fuer das Place-Token,
+                             counters.revivedSessions bleibt bei pollendem Studio
+                             KONSTANT (Plugin schickt sessionId; kein Reconnect je Poll),
+                             nach dem normalen Befehl: delivery.undeliveredCommands == 0
+  1. /api/status          -> Version 7.1.1 + queue.sweep.running == true
   2. normaler Befehl      -> kommt in wenigen Sekunden mit Ergebnis zurueck
   3. Haenger-Reproduktion -> run_lua blockiert ~150 s; die Bridge muss WEIT vor
                              Cloudflares ~100-s-524 antworten (< 90 s), der
@@ -16,6 +21,9 @@ Geprueft wird genau das, was in 7.0.4 live kaputt war (und in 7.0.5 behoben ist)
                              und danach muss ein normaler Befehl wieder laufen
   4. Reconnect-Hinweis    -> was im Studio zu tun ist (nicht automatisierbar)
   5. optional --force-fail-> Admin-Reset raeumt die Queue sofort
+  6. optional --reset-test-> zwei wartende Befehle (run_lua mit task.wait) + POST /api/queue
+                             action=reset -> cancelledCommands == 2 und pending leer
+                             (7.1.0: reset traf ab 2 Befehlen keinen einzigen)
 
 Das Skript schreibt nichts in den Place (nur list_jobs/status/queue) und bricht
 den Haenger-Test NICHT ab - der Lua-Haenger laeuft von selbst aus.
@@ -31,6 +39,7 @@ import urllib.error
 import urllib.request
 
 FAILURES: list[str] = []
+EXPECTED_VERSION = "7.1.1"
 
 
 def check(condition: bool, message: str) -> None:
@@ -43,7 +52,7 @@ def check(condition: bool, message: str) -> None:
 def api(url: str, path: str, payload: dict | None = None, timeout: float = 120.0) -> tuple[int, dict, float]:
     target = url.rstrip("/") + path
     data = None
-    headers = {"User-Agent": "ArenaBridge-LiveCheck/7.0.5"}
+    headers = {"User-Agent": "ArenaBridge-LiveCheck/" + EXPECTED_VERSION}
     if payload is not None:
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = "application/json"
@@ -92,7 +101,7 @@ def show_late(body: dict) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Live-Abnahme der Arena Roblox Bridge 7.0.5")
+    parser = argparse.ArgumentParser(description="Live-Abnahme der Arena Roblox Bridge " + EXPECTED_VERSION)
     parser.add_argument("--url", required=True, help="Tunnel-URL, z. B. https://xxx.trycloudflare.com")
     parser.add_argument("--token", required=True, help="Place-Token aus der Place-Zeile")
     parser.add_argument("--tool", default="list_jobs", help="normaler Testbefehl (Default: list_jobs)")
@@ -100,22 +109,46 @@ def main() -> int:
     parser.add_argument("--hang-budget", type=int, default=30, help="timeoutSeconds fuer den Haenger-Test")
     parser.add_argument("--skip-hang", action="store_true", help="Haenger-Test ueberspringen")
     parser.add_argument("--force-fail", action="store_true", help="am Ende force_fail ausfuehren")
+    parser.add_argument("--reset-test", action="store_true",
+                        help="zwei wartende Befehle anlegen und POST /api/queue action=reset pruefen (7.1.1)")
     args = parser.parse_args()
 
     print(f"Bridge: {args.url}")
     print()
 
+    # 0) 7.1.1-Hotfix: Deployment + Sitzungsidentitaet -------------------------
+    code, version_a, _ = api(args.url, "/api/version")
+    deployment = (version_a.get("deployment") or {}) if isinstance(version_a, dict) else {}
+    check(code == 200 and deployment.get("version") == EXPECTED_VERSION,
+          f"GET /api/version: deployment.version ist {EXPECTED_VERSION} (gefunden: {deployment.get('version')}, HTTP {code})")
+    telemetry_a = (version_a.get("counters") or {}) if isinstance(version_a, dict) else {}
+    time.sleep(6)
+    _, version_b, _ = api(args.url, "/api/version")
+    telemetry_b = (version_b.get("counters") or {}) if isinstance(version_b, dict) else {}
+    polls_a, polls_b = telemetry_a.get("poll"), telemetry_b.get("poll")
+    revived_a, revived_b = telemetry_a.get("revivedSessions"), telemetry_b.get("revivedSessions")
+    if isinstance(polls_a, int) and isinstance(polls_b, int):
+        check(polls_b > polls_a, f"Studio pollt (counters.poll {polls_a} -> {polls_b})")
+        check(revived_a == revived_b,
+              f"revivedSessions bleibt konstant bei pollendem Studio ({revived_a} -> {revived_b}); "
+              f"7.1.0 zaehlte hier +1 pro Poll (Plugin ohne sessionId)")
+    code, places, _ = api(args.url, f"/api/places?token={args.token}")
+    check(code == 200 and places.get("ok") is True and int(places.get("count") or 0) >= 1,
+          f"GET /api/places antwortet fuer das Place-Token (HTTP {code}, count={places.get('count')}; 7.1.0: 404)")
+
     # 1) Status + Waechter ----------------------------------------------------
-    body = status(args.url, args.token)
+    code, body, _ = api(args.url, f"/api/status?token={args.token}")
+    check(code == 200, f"GET /api/status antwortet HTTP 200 (gefunden: {code}; 7.0.6-7.1.0: 500 'Die Argumenttypen stimmen nicht ueberein.')")
     if not body.get("ok"):
         print("Antwort:", json.dumps(body, ensure_ascii=False)[:400])
         check(False, "GET /api/status liefert kein ok (Token/URL falsch? Place verbunden?)")
         return 1
-    check(body.get("bridgeVersion") == "7.0.5",
-          f"bridgeVersion ist 7.0.5 (gefunden: {body.get('bridgeVersion')})")
+    check(body.get("queueError") in (None, ""), f"Status ohne degradierten Queue-Schnappschuss (queueError={body.get('queueError')})")
+    check(body.get("bridgeVersion") == EXPECTED_VERSION,
+          f"bridgeVersion ist {EXPECTED_VERSION} (gefunden: {body.get('bridgeVersion')})")
     plugin_version = body.get("pluginVersion")
-    check(plugin_version == "7.0.5",
-          f"Plugin-Version ist 7.0.5 (gefunden: {plugin_version}) - 'Studio neu starten' beachten")
+    check(plugin_version == EXPECTED_VERSION,
+          f"Plugin-Version ist {EXPECTED_VERSION} (gefunden: {plugin_version}) - 'Studio neu starten' beachten")
     queue = body.get("queue") or {}
     sweep = queue.get("sweep") or {}
     check(sweep.get("running") is True,
@@ -129,6 +162,29 @@ def main() -> int:
     show_late(body)
     if not (code == 200 and body.get("ok")):
         print("Antwort:", json.dumps(body, ensure_ascii=False)[:600])
+    after = status(args.url, args.token)
+    delivery = after.get("delivery") or {}
+    check(int(delivery.get("undeliveredCommands") or 0) == 0,
+          f"keine nie abgeholten Befehle (delivery.undeliveredCommands={delivery.get('undeliveredCommands')}, "
+          f"state={delivery.get('state')})")
+
+    # 2b) Admin-Reset mit ZWEI wartenden Befehlen (7.1.0: traf keinen) -----------
+    if args.reset_test:
+        print("\nReset-Test: zwei run_lua-Befehle mit task.wait(25) (timeoutSeconds=3) anlegen...")
+        for _ in range(2):
+            tool(args.url, args.token, "run_lua", {"source": "task.wait(25); return 'reset-test'", "timeoutSeconds": 3})
+        before = status(args.url, args.token)
+        pending_before = (before.get("queue") or {}).get("pending") or []
+        check(len(pending_before) >= 2, f"zwei Befehle warten vor dem Reset (pending={len(pending_before)})")
+        code, body, _ = api(args.url, "/api/queue", {"token": args.token, "action": "reset"})
+        check(code == 200 and body.get("ok") is True,
+              f"POST /api/queue action=reset antwortet 200 (HTTP {code}, code={body.get('code') or body.get('error') or '-'})")
+        cancelled = body.get("cancelledCommands")
+        check(isinstance(cancelled, int) and cancelled >= 2 and cancelled >= len(pending_before),
+              f"reset hat ALLE wartenden Befehle getroffen (cancelledCommands={cancelled}, vorher pending={len(pending_before)})")
+        pending_after = ((body.get("queue") or {}).get("pending")) or []
+        check(len(pending_after) == 0, f"nach dem Reset ist pending leer (pending={len(pending_after)})")
+        time.sleep(3)
 
     # 3) Haenger-Reproduktion ------------------------------------------------
     if not args.skip_hang:
@@ -191,7 +247,7 @@ def main() -> int:
         for failure in FAILURES:
             print("  -", failure)
         return 1
-    print("OK: Live-Abnahme bestanden (Bridge 7.0.5).")
+    print(f"OK: Live-Abnahme bestanden (Bridge {EXPECTED_VERSION}).")
     return 0
 
 

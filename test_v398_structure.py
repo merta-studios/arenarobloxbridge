@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.1.0"
+VERSION = "7.1.1"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -95,12 +95,13 @@ def main() -> int:
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     require(version["version"] == VERSION, f"version.json is not {VERSION}")
     release_notes = "\n".join(str(note) for note in version.get("notes", []))
-    require("7.1.0" in release_notes
-            and "COMMAND_DELIVERY_UNCONFIRMED" in release_notes
-            and "BindReason" in release_notes
-            and "sendOrQueueAckBatch" in release_notes
+    require("7.1.1" in release_notes
+            and "Get-SessionCancellationIds" in release_notes
+            and "Argumenttypen" in release_notes
+            and "/api/places" in release_notes
+            and "sessionId" in release_notes
             and "Roblox Studio" in release_notes,
-            "version.json does not describe the 7.1.0 delivery & preview repair")
+            "version.json does not describe the 7.1.1 delivery hotfix")
 
     # 6.1.1 shipped seven accidental fragments after the intended final exit,
     # including a bare closing parenthesis. Windows PowerShell parses the
@@ -712,21 +713,21 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '7.1.0'": 1,
-        'local ARENA_VERSION  = "7.1.0"': 1,
-        "version = '7.1.0'": 1,
-        "bridgeVersion = '7.1.0'": 3,
-        "bridgeVersion='7.1.0'": 1,
-        "serverVersion = '7.1.0'": 2,
-        "$versionText = '7.1.0'": 1,
-        "$verText = '7.1.0'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 7.1.0)": 1,
-        'Text="Arena Roblox Bridge - Version 7.1.0"': 1,
-        "Version 7.1.0 - aktuell. Beim naechsten Start": 2,
-        "Laufzeit-Identitaet: Bridge-Version=7.1.0": 1,
-        "Kurzbericht Fenster-Vorschau (Version 7.1.0)": 1,
-        "Arena Roblox Bridge - Leistungsbericht (Version 7.1.0)": 1,
-        "Arena Roblox Bridge - Place-Diagnose (Version 7.1.0)": 1,
+        "DocsVersion     = '7.1.1'": 1,
+        'local ARENA_VERSION  = "7.1.1"': 1,
+        "version = '7.1.1'": 1,
+        "bridgeVersion = '7.1.1'": 3,
+        "bridgeVersion='7.1.1'": 1,
+        "serverVersion = '7.1.1'": 2,
+        "$versionText = '7.1.1'": 1,
+        "$verText = '7.1.1'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.1.1)": 1,
+        'Text="Arena Roblox Bridge - Version 7.1.1"': 1,
+        "Version 7.1.1 - aktuell. Beim naechsten Start": 2,
+        "Laufzeit-Identitaet: Bridge-Version=7.1.1": 1,
+        "Kurzbericht Fenster-Vorschau (Version 7.1.1)": 1,
+        "Arena Roblox Bridge - Leistungsbericht (Version 7.1.1)": 1,
+        "Arena Roblox Bridge - Place-Diagnose (Version 7.1.1)": 1,
     }
     for marker, expected_count in functional_version_counts.items():
         actual_count = source.count(marker)
@@ -1666,7 +1667,7 @@ def main() -> int:
         "timelineRule",
         "'get_bridge_log' {",
         "function Update-RuntimeLine",
-        'Text="Bridge 7.1.0"',
+        'Text="Bridge 7.1.1"',
         "local function setWidgetStatus(extra)",
         "ARENA-PLUGIN-FEHLER",
         "function Invoke-PlaceRowCancel",
@@ -1752,7 +1753,66 @@ def main() -> int:
     require("CommandPayloads" in source and "Update-PollerCount" in source,
             "7.1.0 CommandPayloads re-delivery or Update-PollerCount missing")
 
-    print("OK: 7.1.0 structure, reliable command delivery, BindReason preview fix, "
+    # 7.1.1 LIVE HOTFIX: Studio executes commands again.
+    #  a) Get-SessionCancellationIds must return a FLAT array. With the 7.1.0
+    #     comma operator every @(Get-SessionCancellationIds ...) caller saw a
+    #     1-element array (the empty array as element), so the /plugin/poll
+    #     loop broke before the dequeue and no command ever reached Studio.
+    cancel_ids_fn = source[source.index("function Get-SessionCancellationIds"):source.index("function Get-QueueSnapshot")]
+    require("return , $items.ToArray()" not in cancel_ids_fn and "return $items.ToArray()" in cancel_ids_fn,
+            "Get-SessionCancellationIds nests its array again (7.1.0 regression: poll never delivers)")
+    poll_block = source[source.index("if ($path -eq '/plugin/poll') {"):source.index("if ($path -eq '/plugin/result') {")]
+    require("$cancelledNow = @(Get-SessionCancellationIds $sid)" in poll_block
+            and "'{\"ok\":true,\"sessionId\":' + (To-Json $sid 3)" in poll_block,
+            "/plugin/poll must keep the @() cancellation check and announce sessionId in every answer")
+    #  b) Windows PowerShell 5.1 throws "Die Argumenttypen stimmen nicht
+    #     ueberein." for @($var) when $var holds a List[object]. Never wrap a
+    #     List[object] variable in @(); use .ToArray() / [object[]] instead.
+    snapshot_fn = source[source.index("function Get-QueueSnapshot"):source.index("function Get-SessionEntry")]
+    require("@($pending)" not in snapshot_fn and "@($recentCommands)" not in snapshot_fn
+            and "foreach ($item in $pending)" in snapshot_fn and "recent = $recentCommands.ToArray()" in snapshot_fn,
+            "Get-QueueSnapshot wraps a List[object] in @() again (/api/status and /api/queue answer 500 on PowerShell 5.1)")
+    require("commands=@($items)" not in source and "commands=$items.ToArray()" in source,
+            "/plugin/agent heartbeat wraps a List[object] in @() again")
+    list_object_vars = set(re.findall(r"\$(\w+)\s*=\s*New-Object System\.Collections\.Generic\.List\[object\]", source))
+    list_object_vars |= {"pending", "events", "late"}  # returned by Get-PendingCommands / Take-Events / Take-LateResults
+    offenders = sorted(name for name in list_object_vars if re.search(r"@\(\s*\$" + re.escape(name) + r"\s*\)", source))
+    require(not offenders, f"@($var) around List[object] variables (PowerShell 5.1 ArgumentException): {offenders}")
+    #  c) Get-PendingCommands returns ", $list"; wrapping the CALL in @() turns
+    #     the whole list into one element, so reset/clear_pending missed every
+    #     command once two were pending.
+    require("@(Get-PendingCommands" not in source,
+            "a caller wraps Get-PendingCommands in @() again (admin reset/clear_pending become no-ops)")
+    force_fn = source[source.index("function Force-FailSessionQueue"):source.index("function Reset-SessionQueue")]
+    reset_fn = source[source.index("function Reset-SessionQueue"):source.index("function Mark-CommandDelivered")]
+    require("$pendingItems = Get-PendingCommands $sid" in force_fn and "foreach ($item in $pendingItems)" in force_fn,
+            "Force-FailSessionQueue does not iterate the real pending list")
+    require("$pending = Get-PendingCommands $sid" in reset_fn and "return $resetCount" in reset_fn,
+            "Reset-SessionQueue does not iterate the real pending list / report the real count")
+    #  d) Plugin identity: statePayload carries sessionId (lost since 7.0.0) and
+    #     the bridge resolves polls/heartbeats by instanceGuid as a fallback.
+    state_fn = plugin_lua[plugin_lua.index("local function statePayload()"):plugin_lua.index("local function handshake()")]
+    require("sessionId = sessionId," in state_fn and "payload.gameId = tostring(game.GameId)" in state_fn,
+            "plugin statePayload() lacks sessionId/gameId (every poll becomes a reconnect, heartbeat says 'Sitzung unbekannt')")
+    require(plugin_lua.index("local sessionId") < plugin_lua.index("local function statePayload()"),
+            "sessionId must be declared before statePayload() (Lua upvalue order)")
+    update_fn = source[source.index("function Update-Session"):source.index("function New-Blob")]
+    require("$Shared.InstanceSessions.TryGetValue($instanceGuidForUpdate" in update_fn
+            and "$Shared.Sessions.ContainsKey($mappedSessionId)" in update_fn,
+            "Update-Session has no instanceGuid fallback for polls without sessionId")
+    require('if type(response.sessionId) == "string" and response.sessionId ~= "" and response.sessionId ~= sessionId then' in plugin_lua,
+            "plugin does not adopt the sessionId announced in poll answers")
+    #  e) GET /api/places for a normal token, degraded /api/status, watchdog
+    #     safety net for never-delivered commands.
+    require("if ($path -eq '/api/places') {" in source and "multiPlace=$false; places=$ownPlaces" in source,
+            "per-place /api/places route missing (404 for normal tokens)")
+    require("queueError = $queueError" in source and "Status: Queue-Schnappschuss fehlgeschlagen (degradiert)" in source,
+            "/api/status does not degrade gracefully when the queue snapshot fails")
+    require("COMMAND_NEVER_DELIVERED" in source and "undeliveredCommands = $undelivered" in source,
+            "watchdog safety net / undeliveredCommands counter missing")
+
+    print("OK: 7.1.1 hotfix (flat cancellation ids, no @() on List[object], real admin reset, "
+          "plugin sessionId, /api/places), 7.1.0 structure, reliable command delivery, BindReason preview fix, "
           "plugin tool repair, robust poll loop, place-row hotfix, "
           "self-report, session identity, delivery timeline, Lua and XAML validation passed")
     return 0

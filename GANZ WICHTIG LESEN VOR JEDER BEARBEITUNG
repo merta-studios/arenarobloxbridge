@@ -1,7 +1,7 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 7.0.2 - 02.10.2026)                                #
+#   (Stand: Version 7.1.1 - 03.10.2026)                                #
 #                                                                      #
 ##########################################################################
 
@@ -179,6 +179,39 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 - Groessere Code-Aenderungen lieber per Python-String-Replacement
   machen und Ersetzungen danach per grep gegenpruefen (direkte
   Editier-Werkzeuge waren unzuverlaessig).
+- POWERSHELL-5.1-FALLEN (beide haben in 7.0.6-7.1.0 LIVE Schaden
+  angerichtet, Strukturtest wacht darueber):
+  a) NIE @($var) um eine Variable legen, die eine
+     System.Collections.Generic.List[object] haelt (leer oder gefuellt).
+     Windows PowerShell 5.1 wirft dafuer "Die Argumenttypen stimmen nicht
+     ueberein." (ArgumentException im PSToObjectArrayBinder; der Fehler
+     taucht eine Ebene hoeher auf, z. B. am Anfang eines Hashtable-
+     Literals). Das war der 500 von /api/status und /api/queue seit
+     7.0.6. Richtig: $liste.ToArray(), [object[]]$liste, direktes
+     foreach ($x in $liste) oder eine Pipeline. List[string] ist nicht
+     betroffen, @(Befehl) und @($liste.ToArray()) auch nicht.
+  b) Komma-Operator + @(): Gibt eine Funktion ", $array" oder ", $liste"
+     zurueck (Get-PendingCommands, Take-Events, Take-LateResults), dann
+     ergibt @(Funktion ...) beim Aufrufer IMMER ein 1-elementiges Array
+     mit dem (auch leeren) Array/der Liste als Element. .Count ist dann
+     1, foreach laeuft einmal ueber die ganze Liste, [string]$item.id
+     wird die leerzeichen-verbundene ID-Liste. Das hat in 7.1.0 JEDE
+     Befehlszustellung blockiert (Get-SessionCancellationIds) und den
+     Admin-Reset wirkungslos gemacht (Force-FailSessionQueue /
+     Reset-SessionQueue). Richtig: erst zuweisen ($x = Funktion ...),
+     dann $x direkt benutzen - oder die Funktion flach zurueckgeben lassen,
+     wenn ALLE Aufrufer @() verwenden (so jetzt Get-SessionCancellationIds).
+     Faustregel: Komma-Rueckgabe und @() am Aufrufer schliessen sich aus.
+- Lua-Plugin: statePayload() MUSS sessionId (und instanceGuid) tragen;
+  ohne sessionId laeuft jeder Poll als Reconnect durch Register-Session
+  (seit 7.0.0 bis 7.1.0 so passiert). Update-Session loest seit 7.1.1
+  zusaetzlich ueber die instanceGuid auf, und jede Poll-/Heartbeat-
+  Antwort nennt die gueltige sessionId (das Plugin uebernimmt sie).
+- Offline-Pruefung ohne Windows: python test_v398_structure.py,
+  python test_v710_delivery.py, python test_v711_delivery.py
+  (luaparser aus requirements-test.txt). PowerShell/.NET laesst sich in
+  der KI-Sandbox NICHT installieren - Semantik per Quelltext (PowerShell-
+  Repository auf GitHub) nachlesen statt raten.
 - Tests mit PowerShell-Mocks: Mock-Status als $global:-Variablen
   anlegen (Dynamic Scoping!), Tests als eigene .ps1-Datei schreiben
   (nicht inline quoten), $env:TEMP setzen, Szenario-Verzeichnisse
@@ -187,6 +220,41 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v7.1.1 (03.10.2026): HOTFIX - STUDIO FUEHRT WIEDER BEFEHLE AUS. Live-Test
+  gegen 7.1.0 (Tunnel + Token): jedes Studio-Werkzeug STUDIO_TIMEOUT, obwohl
+  das Plugin alle 2 s pollte (poll=279, result=0, deliveryAttempts=0,
+  openPolls=0, revivedSessions=278 bei EINER Sitzung), /api/status und
+  /api/queue 500 "Die Argumenttypen stimmen nicht ueberein.", /api/places
+  404, clear_pending/reset liessen 5 Befehle stehen. Vier Ursachen, alle am
+  Quellcode bewiesen: (1) Get-SessionCancellationIds gab in 7.1.0
+  ", $items.ToArray()" zurueck -> @(...) an allen Aufrufern = IMMER
+  1-elementig -> Poll-Schleife brach vor dem Dequeue ab (jetzt flaches
+  Array). (2) @($pending)/@($recentCommands) in Get-QueueSnapshot und
+  commands=@($items) im Agent-Heartbeat = PowerShell-5.1-Binderfehler
+  (jetzt .ToArray()/direktes foreach; /api/status degradiert statt 500).
+  (3) Force-FailSessionQueue/Reset-SessionQueue mit @(Get-PendingCommands)
+  trafen ab 2 Befehlen keinen (jetzt echte Liste, echte Anzahl).
+  (4) Plugin-statePayload() ohne sessionId seit 7.0.0 -> jeder Poll ein
+  "Reconnect", Ersatz-Heartbeat "Sitzung unbekannt" (jetzt sessionId+gameId
+  im Payload, Update-Session loest ueber instanceGuid auf, Poll-/Heartbeat-
+  Antwort nennt sessionId, Plugin uebernimmt sie, Register-Session
+  same-instance <= 30 s behaelt den Lesemodus). Dazu: GET /api/places fuer
+  normale Tokens, Waechter COMMAND_NEVER_DELIVERED (120 s queued trotz
+  Polls), delivery.undeliveredCommands, neuer Modelltest
+  test_v711_delivery.py. WINDOWS-LIVE-ABNAHME OFFEN: revivedSessions muss
+  bei laufendem Studio konstant bleiben, /api/status 200, normaler Befehl
+  < 5 s, reset mit 2+ Befehlen = echte Anzahl.
+- v7.1.0: Ack-Outbox (received_batch vor enqueue), Re-Delivery bis 3x,
+  Selbstheilung bei verlorenen Acks, To-Json fuer 0/1-Element-Arrays,
+  BindReason-Vorschaufehler behoben. ENTHIELT die 7.1.1-Regression
+  (Komma-Operator in Get-SessionCancellationIds).
+- v7.0.8: Vier fehlende Lua-Namen (findByPath, resolveGroups,
+  runSolidOperation, firstNonEmpty) wieder da, tplName-Scope, Poll-
+  Schleife mit xpcall fehlerfest.
+- v7.0.3-7.0.7: kurze Polls mit Pause (7.0.3), unabhaengiger Server-
+  Waechter + lateResults + Admin-Reset (7.0.5), Sitzungsidentitaet ueber
+  instanceGuid + Fast-Fail + Zustell-Timeline + /api/version (7.0.6),
+  Place-Zeilen-Hotfix CommandCancelButton (7.0.7).
 - v7.0.2: LEERLAUF-LAG REDUZIERT. Im transparenten Hauptfenster liefen neun
   dauerhaft wiederholte XAML-Loaded-Storyboards (Aurora/Glanz/Splash) plus
   zwei endlose Punkt-Pulse; sie sind entfernt bzw. statisch, Farbgestaltung

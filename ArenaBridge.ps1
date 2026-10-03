@@ -1,5 +1,53 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.1.0
+# Arena Roblox Bridge  -  Version 7.1.1
+#
+# HOTFIX 7.1.1 - STUDIO FUEHRT WIEDER BEFEHLE AUS (LIVE BELEGT, 2026-10-03):
+#   Live-Befund mit 7.1.0: JEDES Studio-Werkzeug endete in STUDIO_TIMEOUT,
+#   obwohl das Plugin alle 2 s pollte (Poll=279, result=0, deliveryAttempts=0,
+#   openPolls=0, revivedSessions=278 bei EINER Sitzung); /api/status und
+#   /api/queue antworteten 500 "Die Argumenttypen stimmen nicht ueberein.",
+#   /api/places 404, und clear_pending/reset liessen 5 Befehle stehen.
+#   1) Get-SessionCancellationIds gab in 7.1.0 ", $items.ToArray()" zurueck.
+#      Alle Aufrufer verpacken das Ergebnis in @(...): aus dem Komma-Operator
+#      wird so IMMER ein 1-elementiges Array (das leere Array als Element).
+#      Folge: "$cancelledNow.Count -gt 0" war in /plugin/poll IMMER wahr, die
+#      Schleife brach VOR dem Dequeue ab - kein Befehl erreichte je Studio und
+#      cancelledCommands war [[]]. Jetzt liefert die Funktion ein flaches
+#      Array (0..n Strings); @(...) an den Aufrufern ist damit korrekt.
+#   2) Windows PowerShell 5.1 wirft fuer @($liste) mit einer
+#      System.Collections.Generic.List[object] "Die Argumenttypen stimmen
+#      nicht ueberein." (Binder-Fehler; leer oder gefuellt). Get-QueueSnapshot
+#      (foreach @( pending ), recent = @( recentCommands )) und der Agent-
+#      Heartbeat (commands = @( Liste )) tun das nicht mehr: Listen werden direkt
+#      aufgezaehlt bzw. per .ToArray() uebergeben. Regel ab jetzt: NIE @()
+#      um eine List[object]-Variable legen - .ToArray() oder [object[]].
+#   3) Force-FailSessionQueue/Reset-SessionQueue liefen ueber
+#      @( Get-PendingCommands ... ) - Get-PendingCommands gibt ", $liste"
+#      zurueck, @() machte daraus EIN Element (die ganze Liste): ab zwei
+#      offenen Befehlen traf clear_pending/reset/force_fail KEINEN einzigen
+#      (Storno-Ziel war die mit Leerzeichen verbundene ID-Liste). Beide
+#      iterieren jetzt die echte Befehlsliste; reset meldet die echte Anzahl.
+#   4) Plugin: statePayload() traegt wieder sessionId (seit 7.0.0 verloren)
+#      und gameId. Ohne sessionId scheiterte Update-Session bei JEDEM Poll,
+#      jeder Poll lief durch Register-Session (reconnects+1, Lesemodus auf
+#      readwrite zurueckgesetzt, revivedSessions im Sekundentakt) und der
+#      Ersatz-Heartbeat meldete "Sitzung unbekannt" -> Plugin verwarf die
+#      Sitzung, re-hello, "Bridge connected"-Sturm. Die Bridge loest zudem
+#      Poll/Heartbeat ohne (oder mit veralteter) sessionId ueber die
+#      instanceGuid auf und schickt die gueltige sessionId in jeder
+#      Poll-Antwort mit; das Plugin uebernimmt sie.
+#   5) GET /api/places antwortet auch fuer ein normales Place-Token (eigenes
+#      Place als einziger Eintrag) statt 404 - die Root-Dokumentation nannte
+#      die Route bereits.
+#   6) Waechter: ein Befehl, der trotz nachweislich pollendem Plugin 120 s
+#      lang nie abgeholt wurde (deliveryAttempts=0), endet mit
+#      COMMAND_NEVER_DELIVERED statt 30 Minuten als Zombie zu stehen.
+#      Get-StudioDeliveryHealth zaehlt solche Befehle (undeliveredCommands).
+#   7) /api/status liefert bei einem Diagnosefehler ein degradiertes Bild
+#      (queueError) statt 500; /plugin/heartbeat nennt bei unbekannter
+#      Sitzung die bekannte sessionId der Instanz wie /plugin/poll.
+#   8) Register-Session (same-instance innerhalb 30 s) setzt den Lesemodus
+#      nicht mehr auf readwrite zurueck.
 #
 # ZUVERLAESSIGE BEFEHLSZUSTELLUNG & VORSCHAU-REPARATUR (7.1.0):
 #   1) Get-PlaceIdentity enthaelt jetzt BindReason='', und Save-PlaceIdentity
@@ -8,10 +56,11 @@
 #      gefunden" und stellt die Live-Fenstervorschau wieder her). Vorschau-
 #      Aufnahmefehler werden gedrosselt protokolliert (Write-PreviewCaptureError).
 #   2) To-Json serialisiert leere (@()) und 1-elementige Arrays in PowerShell 5.1
-#      immer als gueltiges JSON-Array ('[]' bzw. '[...]'), und
-#      Get-SessionCancellationIds nutzt den Komma-Operator gegen Pipeline-
-#      Unrolling. Behebt kaputtes JSON ("cancelledCommands":,) in /plugin/poll
-#      sowie den Folgefehler "table expected, got string" bei 1 Storno-ID.
+#      immer als gueltiges JSON-Array ('[]' bzw. '[...]'). Behebt kaputtes
+#      JSON ("cancelledCommands":,) in /plugin/poll sowie den Folgefehler
+#      "table expected, got string" bei 1 Storno-ID. (Der in 7.1.0 zusaetzlich
+#      eingefuehrte Komma-Operator in Get-SessionCancellationIds war FALSCH -
+#      siehe 7.1.1 Punkt 1 - und ist wieder entfernt.)
 #   3) Plugin sendet received_batch VOR enqueueCommand ueber eine Ack-Outbox
 #      mit Retry (sendOrQueueAckBatch) und stellt jedes Ergebnis ueber
 #      deliverOrQueueResult zu. Kaputte Befehle ohne Tool-Namen werden sofort
@@ -2060,7 +2109,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.1.0'
+    DocsVersion     = '7.1.1'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -2096,7 +2145,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Version 7.0.6: Laufzeit-Identitaet der LAUFENDEN Datei (Version, Pfad,
     # SHA-256, Sprachmodus, Startzeit) fuer GET /api/version.
     RuntimeInfo = [hashtable]::Synchronized(@{
-        Version = '7.1.0'
+        Version = '7.1.1'
         File = ''
         Sha256 = ''
         LanguageMode = ''
@@ -2257,12 +2306,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.1.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.1.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.1.1, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.1.1, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.1.0'
+$script:Shared.RuntimeInfo.Version = '7.1.1'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -2365,7 +2414,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.1.0)
+  Arena Studio Bridge - Studio Plugin  (Version 7.1.1)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -2438,7 +2487,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.1.0"
+local ARENA_VERSION  = "7.1.1"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -11390,8 +11439,13 @@ end)
 -- ---------------------------------------------------------------------------
 
 local function statePayload()
+    -- Version 7.1.1: sessionId (seit 7.0.0 verloren) und gameId wieder im
+    -- Poll-/Heartbeat-Payload. Ohne sessionId kannte Update-Session die
+    -- Sitzung nie: jeder Poll lief als "Reconnect" (reconnects+1, Lesemodus
+    -- zurueckgesetzt), der Ersatz-Heartbeat meldete "Sitzung unbekannt".
     local payload = {
         instanceGuid = instanceGuid,
+        sessionId = sessionId,
         placeId = tostring(game.PlaceId),
         placeName = tostring(game.Name),
         mode = currentMode(),
@@ -11399,6 +11453,7 @@ local function statePayload()
         capabilities = capabilities,
         pluginVersion = ARENA_VERSION,
     }
+    pcall(function() payload.gameId = tostring(game.GameId) end)
     local okState, stateValue = pcall(playState)
     if okState then payload.state = stateValue end
     local queuedCommandIds = {}
@@ -11553,7 +11608,13 @@ task.spawn(function()
             local response = post("/plugin/heartbeat", statePayload())
             if response then
                 if response.unknownSession == true then
-                    sessionId = nil
+                    -- Version 7.1.1: Kennt die Bridge die Instanz noch, kommt die
+                    -- gueltige sessionId mit - uebernehmen statt neu anmelden.
+                    if type(response.sessionId) == "string" and response.sessionId ~= "" then
+                        sessionId = response.sessionId
+                    else
+                        sessionId = nil
+                    end
                 elseif response.accessMode then
                     accessMode = response.accessMode
                 end
@@ -11656,6 +11717,12 @@ task.spawn(function()
             else
                 backoff = 0.5
                 lastHeartbeat = os.clock()
+                -- Version 7.1.1: Die Bridge nennt in jeder Poll-Antwort die
+                -- gueltige sessionId der Instanz; eine abweichende eigene
+                -- Kennung wird still uebernommen (Ergebnisse landen richtig).
+                if type(response.sessionId) == "string" and response.sessionId ~= "" and response.sessionId ~= sessionId then
+                    sessionId = response.sessionId
+                end
                 if response.accessMode then accessMode = response.accessMode end
                 perfWanted = (response.perf == true)
                 if response.cancelledCommands ~= nil then
@@ -12722,7 +12789,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.1.0 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.1.1 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -13791,7 +13858,13 @@ $script:BridgeHandlerScript = {
     function Force-FailSessionQueue($sessionId, [string]$reason = 'The pending Studio queue was cleared through the admin control.', [string]$reasonCode = 'FORCE_CLEARED', [string]$source = 'force_fail') {
         $sid = [string]$sessionId
         $failed = 0
-        foreach ($item in @(Get-PendingCommands $sid)) {
+        # Version 7.1.1: Get-PendingCommands gibt ", $liste" zurueck. In
+        # @( Get-PendingCommands ... ) wurde die GANZE Liste zu EINEM Element,
+        # [string]$item.commandId zur leerzeichen-verbundenen ID-Liste und kein
+        # einziger Befehl wurde getroffen (live: 5 Befehle ueberlebten
+        # clear_pending). Erst zuweisen, dann die echte Liste iterieren.
+        $pendingItems = Get-PendingCommands $sid
+        foreach ($item in $pendingItems) {
             $id = [string]$item.commandId
             if ([string]::IsNullOrWhiteSpace($id)) { continue }
             if (Mark-CommandAbandoned $sid $id $reasonCode $reason) { $failed = $failed + 1 }
@@ -13821,13 +13894,20 @@ $script:BridgeHandlerScript = {
         $sid = [string]$sessionId
         [System.Threading.Monitor]::Enter($Shared.CommandQueueLock)
         try {
-            $pending = @(Get-PendingCommands $sid)
+            # Version 7.1.1: siehe Force-FailSessionQueue - kein @() um den
+            # Aufruf, sonst ist $pending ein 1-elementiges Array mit der Liste.
+            $pending = Get-PendingCommands $sid
+            $resetCount = 0
             foreach ($item in $pending) {
+                $resetId = [string]$item.commandId
+                if ([string]::IsNullOrWhiteSpace($resetId)) { continue }
+                $resetDone = $false
                 if ($pendingCode -eq 'COMMAND_CANCELLED') {
-                    Request-CommandCancel $sid ([string]$item.commandId) $reason | Out-Null
+                    $resetDone = [bool](Request-CommandCancel $sid $resetId $reason)
                 } else {
-                    Mark-CommandAbandoned $sid ([string]$item.commandId) $pendingCode $reason | Out-Null
+                    $resetDone = [bool](Mark-CommandAbandoned $sid $resetId $pendingCode $reason)
                 }
+                if ($resetDone) { $resetCount = $resetCount + 1 }
             }
             $queue = Ensure-Queue $sid
             $raw = $null
@@ -13835,7 +13915,7 @@ $script:BridgeHandlerScript = {
             $Shared.ExecutorResetRequests[$sid] = Get-UnixSeconds
             $wake = Ensure-Signal $sid
             [void]$wake.Set()
-            return $pending.Count
+            return $resetCount
         } finally {
             [System.Threading.Monitor]::Exit($Shared.CommandQueueLock)
         }
@@ -13996,6 +14076,18 @@ $script:BridgeHandlerScript = {
             } elseif ($status -eq 'queued' -and $queuedAt -gt 0 -and $lastSeen -gt 0) {
                 if (($now - $lastSeen) -gt 60 -and ($now - $queuedAt) -gt 60) {
                     Mark-CommandAbandoned $sid $id 'EXECUTOR_UNAVAILABLE' 'The Studio plugin has not been seen for more than 60 seconds while this command was queued. The command was removed from the queue; reconnect Studio before retrying.' | Out-Null
+                } elseif (($now - $lastSeen) -le 15 -and ($now - $queuedAt) -gt 120) {
+                    # Version 7.1.1: Das Plugin pollt NACHWEISLICH (lastSeen frisch),
+                    # hat den Befehl aber in 120 s nie abgeholt (deliveryAttempts=0).
+                    # Das ist kein beschaeftigtes Studio, sondern ein Zustellfehler
+                    # (7.1.0: Poll-Schleife brach vor dem Dequeue ab). Statt eines
+                    # Zombies fuer 30 Minuten gibt es eine klare Antwort mit Diagnose.
+                    $neverAttempts = 0
+                    try { if ($null -ne $info.deliveryAttempts) { $neverAttempts = [int]$info.deliveryAttempts } } catch {}
+                    if ($neverAttempts -le 0) {
+                        Mark-CommandAbandoned $sid $id 'COMMAND_NEVER_DELIVERED' 'The Studio plugin kept polling for more than 120 seconds but never took this command out of the bridge queue (deliveryAttempts=0). The command was released instead of staying queued forever. Check GET /api/queue (timeline.deliveryAttempts) and restart the bridge if this repeats.' | Out-Null
+                        continue
+                    }
                 }
             }
         }
@@ -14205,6 +14297,7 @@ $script:BridgeHandlerScript = {
         $age = $(if ($lastSign -gt 0) { [int][Math]::Max(0, $now - $lastSign) } else { 999999 })
         $waiting = 0
         $oldestWaiting = 0
+        $undelivered = 0
         $bag = $null
         if ($Shared.PendingCommands.TryGetValue($delivery, [ref]$bag)) {
             foreach ($pair in @($bag.GetEnumerator())) {
@@ -14218,6 +14311,14 @@ $script:BridgeHandlerScript = {
                         if ($queuedAt -gt 0) {
                             $waitAge = [int][Math]::Max(0, $now - $queuedAt)
                             if ($waitAge -gt $oldestWaiting) { $oldestWaiting = $waitAge }
+                            # Version 7.1.1: 'queued' seit > 30 s ohne einen einzigen
+                            # Zustellversuch, obwohl das Plugin pollt = Zustellfehler
+                            # (nicht "Studio beschaeftigt"). Wird im Status sichtbar.
+                            if ($status -eq 'queued' -and $waitAge -gt 30 -and $age -le 15) {
+                                $attemptCount = 0
+                                try { if ($null -ne $info.deliveryAttempts) { $attemptCount = [int]$info.deliveryAttempts } } catch {}
+                                if ($attemptCount -le 0) { $undelivered = $undelivered + 1 }
+                            }
                         }
                     }
                 } catch {}
@@ -14240,6 +14341,7 @@ $script:BridgeHandlerScript = {
             openPolls = [int]$openPolls
             waitingCommands = $waiting
             oldestWaitingSeconds = $oldestWaiting
+            undeliveredCommands = $undelivered
             runningTool = $runningTool
             runningSeconds = $runningSeconds
             busy = ($runningSeconds -gt 0 -and -not [string]::IsNullOrWhiteSpace($runningTool))
@@ -14359,6 +14461,12 @@ $script:BridgeHandlerScript = {
         }
     }
 
+    # Version 7.1.1: Liefert 0..n Strings FLACH (kein Komma-Operator!). Jeder
+    # Aufrufer schreibt @(Get-SessionCancellationIds $sid); mit ", $array"
+    # (7.1.0) wurde daraus IMMER ein 1-elementiges Array mit dem (auch leeren)
+    # Array als Element -> "$cancelledNow.Count -gt 0" war in /plugin/poll immer
+    # wahr, die Schleife brach vor dem Dequeue ab und Studio bekam NIE einen
+    # Befehl (live: deliveryAttempts=0, result=0, cancelledCommands=[[]]).
     function Get-SessionCancellationIds($sessionId) {
         $prefix = [string]$sessionId + ':'
         $items = New-Object System.Collections.Generic.List[string]
@@ -14367,7 +14475,8 @@ $script:BridgeHandlerScript = {
                 $items.Add(([string]$pair.Key).Substring($prefix.Length))
             }
         }
-        return , $items.ToArray()
+        if ($items.Count -eq 0) { return @() }
+        return $items.ToArray()
     }
 
     function Get-QueueSnapshot($sessionId) {
@@ -14392,7 +14501,10 @@ $script:BridgeHandlerScript = {
         # -> heartbeatAt -> finishedAt. Ohne diese Zeiten war jede Diagnose
         # geraten (H7: kommt der Befehl ueberhaupt an?).
         $timeline = New-Object System.Collections.Generic.List[object]
-        foreach ($item in @($pending)) {
+        # Version 7.1.1: NIE @($liste) um eine List[object] legen - Windows
+        # PowerShell 5.1 wirft dafuer "Die Argumenttypen stimmen nicht
+        # ueberein." (das war der 500 von /api/status und /api/queue).
+        foreach ($item in $pending) {
             $timeline.Add(@{
                 commandId = [string]$item.commandId
                 tool = [string]$item.tool
@@ -14432,7 +14544,7 @@ $script:BridgeHandlerScript = {
             running = $running
             pending = $pending
             timeline = $timeline
-            recent = @($recentCommands)
+            recent = $recentCommands.ToArray()
             delivery = (Get-StudioDeliveryHealth $sessionId)
             executor = $executor
             sweep = $sweep
@@ -14634,7 +14746,15 @@ $script:BridgeHandlerScript = {
             }
             # Version 5: every fresh/re-registered Place starts with write
             # access. Read-only is never restored from disk.
-            $mode = 'readwrite'
+            # Version 7.1.1: Ausnahme - dieselbe LEBENDE Instanz (zuletzt vor
+            # <= 30 s gesehen) meldet sich erneut an (z. B. verlorene sessionId
+            # im Plugin). Das ist kein neues Place; ein im Fenster gesetzter
+            # Lesemodus bleibt erhalten statt still auf readwrite zu kippen.
+            $reusableAge = 999999
+            try { $reusableAge = [int][Math]::Max(0, $now - [int64]$reusable.lastSeen) } catch {}
+            if (-not ($reuseReason -eq 'same-instance' -and $reusableAge -le 30 -and -not [string]::IsNullOrWhiteSpace([string]$mode))) {
+                $mode = 'readwrite'
+            }
             $Shared.AccessModes[$sessionId] = $mode
             # Version 3.8: Play-Wechsel erkennen - auch wenn das Plugin beim
             # Start/Stop des Tests neu geladen wurde und neu registriert.
@@ -14798,6 +14918,25 @@ $script:BridgeHandlerScript = {
     function Update-Session($body) {
         if (-not $body) { return $null }
         $sessionId = [string]$body.sessionId
+        # Version 7.1.1: Poll/Heartbeat ohne sessionId (das 7.0.0-7.1.0-Plugin
+        # schickte sie nie mit) oder mit veralteter sessionId -> die Identitaet
+        # der Plugin-Instanz (instanceGuid) entscheidet. Vorher lief JEDER Poll
+        # durch Register-Session (reconnects+1, Lesemodus zurueckgesetzt,
+        # revivedSessions im Sekundentakt) und der Ersatz-Heartbeat meldete
+        # "Sitzung unbekannt" -> Plugin verwarf die Sitzung, re-hello, Sturm.
+        if ([string]::IsNullOrWhiteSpace($sessionId) -or -not $Shared.Sessions.ContainsKey($sessionId)) {
+            $instanceGuidForUpdate = ''
+            try { $instanceGuidForUpdate = [string]$body.instanceGuid } catch {}
+            if (-not [string]::IsNullOrWhiteSpace($instanceGuidForUpdate)) {
+                $mappedSessionId = ''
+                if ($Shared.InstanceSessions.TryGetValue($instanceGuidForUpdate, [ref]$mappedSessionId)) {
+                    $mappedSessionId = [string]$mappedSessionId
+                    if (-not [string]::IsNullOrWhiteSpace($mappedSessionId) -and $Shared.Sessions.ContainsKey($mappedSessionId)) {
+                        $sessionId = $mappedSessionId
+                    }
+                }
+            }
+        }
         if ([string]::IsNullOrWhiteSpace($sessionId)) { return $null }
         $entry = Get-SessionEntry $sessionId
         if (-not $entry) { return $null }
@@ -14837,12 +14976,16 @@ $script:BridgeHandlerScript = {
             $newState | Add-Member -NotePropertyName 'agentConnected' -NotePropertyValue $true -Force
         }
 
+        $newPlaceId = [string]$body.placeId
+        if ([string]::IsNullOrWhiteSpace($newPlaceId)) { $newPlaceId = [string]$entry.placeId }
+        $newGameId = [string]$body.gameId
+        if ([string]::IsNullOrWhiteSpace($newGameId)) { $newGameId = [string]$entry.gameId }
         $updated = @{
             sessionId     = $sessionId
             instanceGuid  = [string]$entry.instanceGuid
             placeName     = $newName
-            placeId       = [string]$body.placeId
-            gameId        = [string]$body.gameId
+            placeId       = $newPlaceId
+            gameId        = $newGameId
             token         = $token
             accessMode    = $mode
             lastSeen      = $now
@@ -16970,7 +17113,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.1.0'
+            version = '7.1.1'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -17200,7 +17343,7 @@ end
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.1.0'
+            bridgeVersion = '7.1.1'
             executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent = 0, never an error. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
@@ -17545,7 +17688,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.1.0'
+                        bridgeVersion = '7.1.1'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -17772,7 +17915,8 @@ end
                     $items = New-Object System.Collections.Generic.List[object]
                     $itemJson = $null
                     while ($items.Count -lt 6 -and $queue.TryDequeue([ref]$itemJson)) { try { $items.Add(($itemJson | ConvertFrom-Json)) } catch {} }
-                    Send-Json $context 200 @{ok=$true;commands=@($items)}
+                    # Version 7.1.1: .ToArray() statt @( Liste ) - siehe Get-QueueSnapshot.
+                    Send-Json $context 200 @{ok=$true;commands=$items.ToArray()}
                     continue
                 }
                 # Result polling uses action=query; all other authenticated
@@ -17803,7 +17947,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.1.0'
+                        serverVersion = '7.1.1'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -17816,9 +17960,20 @@ end
                 Add-PerfCount 'Heartbeats'
                 $entry = Update-Session $body
                 if (-not $entry) {
-                    Send-Json $context 200 @{ ok = $false; unknownSession = $true }
+                    # Version 7.1.1: wie /plugin/poll - kennt die Bridge die Instanz
+                    # noch, bekommt das Plugin die gueltige sessionId statt seine
+                    # Sitzung zu verwerfen (kein re-hello, kein connected-Sturm).
+                    $knownHeartbeatSessionId = ''
+                    try {
+                        $heartbeatGuid = [string]$body.instanceGuid
+                        if (-not [string]::IsNullOrWhiteSpace($heartbeatGuid)) {
+                            $knownHeartbeatRaw = ''
+                            if ($Shared.InstanceSessions.TryGetValue($heartbeatGuid, [ref]$knownHeartbeatRaw)) { $knownHeartbeatSessionId = [string]$knownHeartbeatRaw }
+                        }
+                    } catch {}
+                    Send-Json $context 200 @{ ok = $false; unknownSession = $true; sessionId = $(if ([string]::IsNullOrWhiteSpace($knownHeartbeatSessionId)) { $null } else { $knownHeartbeatSessionId }) }
                 } else {
-                    Send-Json $context 200 @{ ok = $true; token = $entry.token; accessMode = $entry.accessMode }
+                    Send-Json $context 200 @{ ok = $true; sessionId = [string]$entry.sessionId; token = $entry.token; accessMode = $entry.accessMode }
                 }
                 continue
             }
@@ -17950,7 +18105,9 @@ end
                 $perfFlag = 'false'
                 if (Test-PerfEnabled) { $perfFlag = 'true' }
                 $commandJson = '[' + ($collected -join ',') + ']'
-                $json = '{"ok":true,"accessMode":' + (To-Json $mode 3) + ',"perf":' + $perfFlag + ',"commands":' + $commandJson + ',"cancelledCommands":' + (To-Json $cancelledIds 6) + ',"resetExecutor":' + $(if ($resetRequested) { 'true' } else { 'false' }) + ',"queueDepth":' + [string]$queue.Count + '}'
+                # Version 7.1.1: sessionId in jeder Poll-Antwort - das Plugin
+                # uebernimmt sie, falls seine eigene fehlt oder veraltet ist.
+                $json = '{"ok":true,"sessionId":' + (To-Json $sid 3) + ',"accessMode":' + (To-Json $mode 3) + ',"perf":' + $perfFlag + ',"commands":' + $commandJson + ',"cancelledCommands":' + (To-Json $cancelledIds 6) + ',"resetExecutor":' + $(if ($resetRequested) { 'true' } else { 'false' }) + ',"queueDepth":' + [string]$queue.Count + '}'
                 Send-RawJson $context 200 $json
                 continue
             }
@@ -18142,7 +18299,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.1.0'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.1.1'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -18164,8 +18321,42 @@ end
                 continue
             }
 
+            if ($path -eq '/api/places') {
+                # Version 7.1.1: Die Root-Dokumentation nennt GET /api/places; mit
+                # einem normalen Place-Token antwortete die Bridge bisher 404.
+                # Jetzt: das eigene Place als einziger Eintrag (gleiche Form wie
+                # beim Alle-Places-Token), damit Clients nicht raten muessen.
+                $ownPlaces = @()
+                if ($sessionEntry) {
+                    $ownPlaces = @(@{
+                        targetPlace = [string]$sessionEntry.sessionId
+                        placeName = [string]$sessionEntry.placeName
+                        placeId = [string]$sessionEntry.placeId
+                        gameId = [string]$sessionEntry.gameId
+                        accessMode = $accessMode
+                        studio = $sessionEntry.state
+                        pluginVersion = [string]$sessionEntry.pluginVersion
+                    })
+                }
+                Send-Json $context 200 @{
+                    ok=$true; multiPlace=$false; places=$ownPlaces; count=$ownPlaces.Count
+                    instruction='This token controls exactly one Place; targetPlace is optional here. The aggregate Alle-Places token lists several places and requires targetPlace in every request.'
+                }
+                continue
+            }
+
             if ($path -eq '/api/status') {
-                $queueSnapshot = Get-QueueSnapshot $sessionId
+                $queueSnapshot = $null
+                $queueError = $null
+                try {
+                    $queueSnapshot = Get-QueueSnapshot $sessionId
+                } catch {
+                    # Version 7.1.1: Ein Diagnosefehler darf den Status nie zu
+                    # einem 500 machen - degradiert antworten und den Grund nennen.
+                    $queueError = [string]$_.Exception.Message
+                    try { Write-BridgeLog ('Status: Queue-Schnappschuss fehlgeschlagen (degradiert): ' + $queueError) } catch {}
+                    $queueSnapshot = @{ ok = $false; error = $queueError; executor = $null; delivery = $null; timeline = @(); recent = @() }
+                }
                 $statusSim = $false
                 $statusNotify = $false
                 try { $statusSim = [bool]$Shared.BridgeSettings.simAllowed } catch {}
@@ -18179,8 +18370,8 @@ end
                 } catch {}
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.1.0'
-                    serverVersion = '7.1.0'
+                    bridgeVersion = '7.1.1'
+                    serverVersion = '7.1.1'
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
                     connectedPlaces = $Shared.Sessions.Count
@@ -18189,6 +18380,7 @@ end
                     pluginOutdated = if ($sessionEntry) { [bool]$sessionEntry.versionMismatch } else { $false }
                     restartStudioHint = if ($sessionEntry -and [bool]$sessionEntry.versionMismatch) { 'Studio neu starten: Plugin-Version ist veraltet; Simulationen warten.' } else { $null }
                     queue = $queueSnapshot
+                    queueError = $queueError
                     executor = $queueSnapshot.executor
                     # Version 7.0.6: Zustell-Zustand und Sturm-Kennzahlen direkt
                     # im Status - damit ist "hängt es oder ist es tot?" in EINER
@@ -20104,7 +20296,7 @@ $xaml = @'
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="Arena Roblox Bridge" Foreground="{StaticResource TextMain}" FontSize="18.5" FontWeight="Bold"/>
                             <TextBlock x:Name="SubtitleText" Text="Bereit für verbundene Places" Foreground="{StaticResource TextMuted}" FontSize="11.5" Margin="0,3,0,0"/>
-                            <TextBlock x:Name="RuntimeLine" Text="Bridge 7.1.0" Foreground="{StaticResource TextFaint}" FontSize="9.5" Margin="0,2,0,0"/>
+                            <TextBlock x:Name="RuntimeLine" Text="Bridge 7.1.1" Foreground="{StaticResource TextFaint}" FontSize="9.5" Margin="0,2,0,0"/>
                         </StackPanel>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -20895,7 +21087,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.1.0)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.1.1)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -21500,7 +21692,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.1.0)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.1.1)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -23667,7 +23859,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.1.0)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.1.1)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -24418,7 +24610,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.1.0'
+    $versionText = '7.1.1'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -25042,7 +25234,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.1.0" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.1.1" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -25087,7 +25279,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.1.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.1.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -25146,7 +25338,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.1.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.1.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -25159,7 +25351,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.1.0'
+    $verText = '7.1.1'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
