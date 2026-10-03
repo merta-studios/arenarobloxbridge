@@ -1,4 +1,27 @@
 ﻿# ============================================================================
+# Arena Roblox Bridge  -  Version 7.1.4
+#
+# MINI-UPDATE 7.1.4 - GLOBALER 3D-BAUSTANDARD UND ORGANIC-PROOF (2026-10-03):
+#   Anlass war ein Tier-Beispiel, aber der Modellierungsstandard gilt bewusst
+#   fuer ALLE 3D-Kategorien und wird nicht durch Objekt-/Tiernamen ausgeloest.
+#   1) Sessionweite modelBuildRules: nichttriviale 3D-Modelle erhalten eine
+#      klare Silhouette, sekundaere Struktur, Details und eine bewusste Palette;
+#      build_polygon_model fuer die Hauptform bevorzugen, assembly/Parts passend
+#      ergaenzen. Einfache oder explizit primitive Aufgaben bleiben einfach.
+#   2) organic=true aktiviert getrennt davon den strengen Organic-Vertrag:
+#      echte ArenaPolygonTriangle-Geometrie, mindestens drei kontrastierende
+#      Farben, aktivierte Bewegung und frische per-model Audits fuer jedes
+#      registrierte organische Modell. report_done schliesst fail-closed.
+#   3) Keine externen Generator-Dateien oder run_lua-Primitiv-Shortcuts als
+#      Ersatz fuer einen tatsaechlichen Place-Build; model_audit prueft reale
+#      Geometrie und Finish statt ArenaMasterBuild nur als Polygon-Beleg zu werten.
+#   4) Place-Zeile: leere Titelbereiche werden mit symmetrischen Sternzeilen
+#      vertikal zentriert. Fortschritt zeigt den Zustand direkt neben Prozent;
+#      stille Arbeit wird nach 60 s grau, abgeschlossene 100 % verschwinden nach
+#      weiteren 60 s. Token-Reset zeigt die vorhandene In-Fenster-Kurzmeldung.
+#   5) Kopfzeile zeigt nur noch Titel + statischen Place-Hinweis; Deployment-
+#      SHA und Watchdog-Takt bleiben in /api/version und runtime.log verfuegbar.
+# ============================================================================
 # Arena Roblox Bridge  -  Version 7.1.3
 #
 # MINI-UPDATE 7.1.3 - QUALITAETSVERTRAG, ECHTE MESSUNG, EINSTELLUNGEN (2026-10-03):
@@ -2265,7 +2288,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.1.3'
+    DocsVersion     = '7.1.4'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -2301,7 +2324,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Version 7.0.6: Laufzeit-Identitaet der LAUFENDEN Datei (Version, Pfad,
     # SHA-256, Sprachmodus, Startzeit) fuer GET /api/version.
     RuntimeInfo = [hashtable]::Synchronized(@{
-        Version = '7.1.3'
+        Version = '7.1.4'
         File = ''
         Sha256 = ''
         LanguageMode = ''
@@ -2353,6 +2376,9 @@ $script:Shared = [hashtable]::Synchronized(@{
     Handoffs        = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     # Version 7.0.0: Audit-Kennzahlen (Platzhalter/Blockout) fuer HANDOFF_REQUIRED.
     AuditFlags      = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    # sessionId -> getrennte Datensaetze aller registrierten organischen Modelle.
+    # report_done verlangt frische, bestandene per-model Audits fuer jedes Modell.
+    OrganicBuilds   = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     # Version 7.0.3: LAUFZEITDIAGNOSTIK (Leistung). Zaehler fuer die Bereiche,
     # die im Leerlauf Arbeit verursachen koennen: HTTP-Anfragen der Plugins,
     # UI-Abgleich (DispatcherTimer) und die vom Plugin gemeldeten Poll-Zahlen.
@@ -2466,12 +2492,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.1.3, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.1.3, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.1.4, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.1.4, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.1.3'
+$script:Shared.RuntimeInfo.Version = '7.1.4'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -2574,7 +2600,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.1.3)
+  Arena Studio Bridge - Studio Plugin  (Version 7.1.4)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -2647,7 +2673,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.1.3"
+local ARENA_VERSION  = "7.1.4"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -7821,6 +7847,11 @@ tools.build_polygon_model = function(args)
 
     local model=Instance.new("Model"); model.Name=tostring(args.modelName or args.name or "ArenaPolygonModel"); model.Parent=parent
     model:SetAttribute("ArenaMasterBuild",true)
+    local organicBuild=args.organic==true
+    if organicBuild then
+        model:SetAttribute("ArenaOrganicBuild",true)
+        model:SetAttribute("ArenaOrganicBuildVersion",2)
+    end
     local defaults=args.style or {}
     local origin=MASTER_BUILD.vec3(args.origin) or Vector3.zero
     local scale=tonumber(args.scale) or 1
@@ -7952,7 +7983,7 @@ tools.build_polygon_model = function(args)
         local note="Ignored geometry-owned style.properties ("..table.concat(ignoredGeometryProperties,", ")..") so polygon Size/CFrame cannot be overwritten."
         warningsText=warningsText and (warningsText.." "..note) or note
     end
-    return ok({model=describeRef(model),submodels=#specs,polygons=#rawPolygons,triangles=triCount,wedges=wedgeCount,autoCaps=capCount,welds=weldCount,weldedSubmodels=weldedSubmodels,autoWeldDefault=true,mainWelds=mainWeldCount,facesTotal=facesTotal,facesBuilt=facesTotal-facesSkipped,facesSkipped=facesSkipped,incomplete=incomplete,skipped=skipped,fallbackFaces=fallbackFaces,ignoredGeometryProperties=ignoredGeometryProperties,geometryInvariant="Size/CFrame applied after safe style properties",geometry=waitMeasurable(sample,2),method="connected geometry-safe, side-corrected skin placement + ear-clipping + two WedgeParts per triangle (auto-welded by default; computed Size/CFrame cannot be overridden)",editable=true},warningsText)
+    return ok({model=describeRef(model),organic=organicBuild,submodels=#specs,polygons=#rawPolygons,triangles=triCount,wedges=wedgeCount,autoCaps=capCount,welds=weldCount,weldedSubmodels=weldedSubmodels,autoWeldDefault=true,mainWelds=mainWeldCount,facesTotal=facesTotal,facesBuilt=facesTotal-facesSkipped,facesSkipped=facesSkipped,incomplete=incomplete,skipped=skipped,fallbackFaces=fallbackFaces,ignoredGeometryProperties=ignoredGeometryProperties,geometryInvariant="Size/CFrame applied after safe style properties",geometry=waitMeasurable(sample,2),method="connected geometry-safe, side-corrected skin placement + ear-clipping + two WedgeParts per triangle (auto-welded by default; computed Size/CFrame cannot be overridden)",editable=true},warningsText)
 end
 
 tools.build_assembly = function(args)
@@ -10836,18 +10867,22 @@ end
 -- und prueft jeden Zylinder auf den klassischen 90-Grad-Drehfehler: die Achse
 -- eines CylinderPart ist LOKAL X, Size.X ist also die Laenge.
 WORLD_ENGINE.auditBuildQuality = function(parts, root)
-    local counts = { parts = #parts, balls = 0, blocks = 0, cylinders = 0, wedges = 0,
-        meshes = 0, unions = 0, polygonParts = 0, detailParts = 0 }
+    local counts = { parts = #parts, balls = 0, sphereMeshes = 0, blocks = 0, cylinders = 0, wedges = 0,
+        meshes = 0, unions = 0, polygonParts = 0, polygonTriangles = 0, detailParts = 0 }
     local shapes = {}
     local kindOf = {}
     local solidOf = {}
+    local colorCounts = {}
+    local nearWhiteParts = 0
     local cylinderProblems, tiltedCylinders = {}, {}
     local cylinderProblemCount, tiltedCylinderCount = 0, 0
     local function isSolid(part, shapeName)
         if shapeName == "WedgePart" then return true end
         if part:IsA("MeshPart") or part:IsA("UnionOperation") or part:IsA("IntersectOperation") then return true end
         if part:GetAttribute("ArenaDetail") == true then return true end
-        if part:GetAttribute("ArenaMasterBuild") == true or part:GetAttribute("ArenaPolygonTriangle") ~= nil then return true end
+        -- ArenaMasterBuild is a broad model marker, not proof of polygon geometry.
+        -- Only the builder's per-wedge tag proves that real polygon triangles exist.
+        if part:GetAttribute("ArenaPolygonTriangle") ~= nil then return true end
         if part:GetAttribute("ArenaPolygonSubmodel") == true or part:GetAttribute("ArenaAssembly") ~= nil then return true end
         if shapeName == "Wedge" then return true end
         return false
@@ -10861,6 +10896,26 @@ WORLD_ENGINE.auditBuildQuality = function(parts, root)
             or part:GetAttribute("ArenaPolygonSubmodel") == true or part:GetAttribute("ArenaAssembly") ~= nil then
             counts.polygonParts = counts.polygonParts + 1
         end
+        if part:GetAttribute("ArenaPolygonTriangle") ~= nil then counts.polygonTriangles = counts.polygonTriangles + 1 end
+        local sphereMesh = false
+        if part:IsA("Part") then
+            local special = part:FindFirstChildOfClass("SpecialMesh")
+            if special then
+                pcall(function() sphereMesh = special.MeshType == Enum.MeshType.Sphere end)
+                if sphereMesh then counts.sphereMeshes = counts.sphereMeshes + 1 end
+            end
+        end
+        local color = part.Color
+        local r = math.floor(color.R * 255 + 0.5)
+        local g = math.floor(color.G * 255 + 0.5)
+        local b = math.floor(color.B * 255 + 0.5)
+        local colorKey = tostring(r) .. "," .. tostring(g) .. "," .. tostring(b)
+        colorCounts[colorKey] = (colorCounts[colorKey] or 0) + 1
+        local hi = math.max(color.R, color.G, color.B)
+        local lo = math.min(color.R, color.G, color.B)
+        if color.R >= 0.90 and color.G >= 0.90 and color.B >= 0.90 and (hi - lo) <= 0.08 then
+            nearWhiteParts = nearWhiteParts + 1
+        end
         local shapeName = nil
         pcall(function() shapeName = part.Shape.Name end)
         if shapeName then
@@ -10868,7 +10923,7 @@ WORLD_ENGINE.auditBuildQuality = function(parts, root)
             if shapeName == "Ball" then counts.balls = counts.balls + 1 end
             if shapeName == "Block" then counts.blocks = counts.blocks + 1 end
         end
-        kindOf[part] = shapeName or part.ClassName
+        if sphereMesh then kindOf[part] = "SphereMesh" else kindOf[part] = shapeName or part.ClassName end
         solidOf[part] = isSolid(part, shapeName)
         if shapeName == "Cylinder" then
             counts.cylinders = counts.cylinders + 1
@@ -10877,12 +10932,6 @@ WORLD_ENGINE.auditBuildQuality = function(parts, root)
             local align = math.max(math.abs(xAxis.X), math.abs(xAxis.Y), math.abs(xAxis.Z))
             local axisSkewDeg = math.deg(math.acos(math.clamp(align, 0, 1)))
             local round = math.floor(axisSkewDeg * 10 + 0.5) / 10
-            -- Harter Fehler: die Achse zeigt waagerecht, obwohl das Teil quer
-            -- viel groesser ist als lang - es steht also als Scheibe/Platte auf
-            -- der Kante. Genau so sieht der klassische 90-Grad-Dreher aus:
-            -- die Laenge wurde in Size.Y oder Size.Z eingetragen, eine
-            -- Rotation fehlt. Die Messung sagt ehrlich, WAS sie sieht ("wenn
-            -- das ein Rohr/Stamm sein soll ...") und blockiert nur diesen Fall.
             if math.abs(xAxis.Y) < 0.3 and math.max(size.Y, size.Z) >= 1.5 * size.X then
                 cylinderProblemCount = cylinderProblemCount + 1
                 if #cylinderProblems < 8 then
@@ -10902,8 +10951,150 @@ WORLD_ENGINE.auditBuildQuality = function(parts, root)
             end
         end
     end
-    -- Gruppen unterhalb des Ziels einzeln bewerten: eine Gruppe, die NUR aus
-    -- Kugeln besteht, ist ein Entwurf - egal wie viele Teile sie hat.
+    local uniqueColors, dominantColorCount = 0, 0
+    for _, amount in pairs(colorCounts) do
+        uniqueColors = uniqueColors + 1
+        if amount > dominantColorCount then dominantColorCount = amount end
+    end
+    local dominantColorShare = #parts > 0 and dominantColorCount / #parts or 0
+    local nearWhiteShare = #parts > 0 and nearWhiteParts / #parts or 0
+
+    -- Recognize and measure each organic model independently. Auditing the
+    -- whole Workspace must never let an unrelated polygon, colour palette or
+    -- animator make a primitive animal look complete.
+    local function isOrganicModel(node)
+        if not node or not node:IsA("Model") then return false end
+        if node:GetAttribute("ArenaOrganicBuild") == true or node:GetAttribute("ArenaAnimal") == true then return true end
+        local species = nil
+        pcall(function() species = node:GetAttribute("Species") end)
+        if species ~= nil and tostring(species) ~= "" then return true end
+        local name = string.lower(node.Name)
+        local words = { "wildlife", "animal", "animals", "creature", "creatures", "pet", "pets", "tier", "tiere", "kreatur", "katze", "hund", "fuchs", "wolf", "baer", "hirsch", "kaninchen", "eule", "schmetterling", "vogel", "pferd", "fisch", "schlange", "drache", "baum", "pflanze", "rabbit", "hare", "owl", "butterfly", "butterflies", "deer", "fox", "wolf", "cat", "dog", "bear", "horse", "bird", "fish", "snake", "dragon", "lion", "tiger", "otter", "squirrel", "frog", "turtle", "eagle", "hawk", "raven", "crow", "parrot", "penguin", "goat", "cow", "sheep", "pig", "duck", "chicken", "elephant", "giraffe", "zebra", "monkey", "ape", "gorilla", "dolphin", "whale", "shark", "seal", "panda", "koala", "badger", "mole", "beaver", "moose", "elk", "boar", "camel", "llama", "alpaca", "bison", "buffalo", "crab", "lobster", "octopus", "jellyfish", "spider", "snail", "bee", "wasp", "ant", "moth", "insect", "phoenix", "griffin", "unicorn", "monster", "dinosaur", "reptile", "amphibian", "tree", "plant" }
+        for _, word in ipairs(words) do
+            local atStart = string.sub(name, 1, #word) == word
+            local atEnd = string.sub(name, -#word) == word
+            local token = string.find(name, "%f[%w]" .. word .. "%f[^%w]") ~= nil
+            if token or atStart or atEnd then return true end
+        end
+        return false
+    end
+    local candidates = {}
+    local function addOrganicCandidate(node)
+        if not isOrganicModel(node) then return end
+        local ancestor = node.Parent
+        while ancestor and ancestor ~= root.Parent do
+            if isOrganicModel(ancestor) then return end
+            ancestor = ancestor.Parent
+        end
+        table.insert(candidates, node)
+    end
+    addOrganicCandidate(root)
+    local descendants = root:GetDescendants()
+    for _, node in ipairs(descendants) do addOrganicCandidate(node) end
+
+    local organicModels, organicIssues = {}, {}
+    local organicPolygonTriangles, organicSphereMeshes, organicMotionScripts = 0, 0, 0
+    local organicUniqueColors, organicDominantShare, organicNearWhiteShare = 0, 0, 0
+    local organicScriptsScanned = 0
+    for _, organicModel in ipairs(candidates) do
+        local modelParts = collectParts(organicModel, {}, 8000)
+        local modelColors, modelNearWhite = {}, 0
+        local modelPolygonTriangles, modelSphereMeshes = 0, 0
+        for _, part in ipairs(modelParts) do
+            if part:GetAttribute("ArenaPolygonTriangle") ~= nil then modelPolygonTriangles = modelPolygonTriangles + 1 end
+            local isSphereMesh = false
+            if part:IsA("Part") then
+                local special = part:FindFirstChildOfClass("SpecialMesh")
+                if special then pcall(function() isSphereMesh = special.MeshType == Enum.MeshType.Sphere end) end
+            end
+            if isSphereMesh then modelSphereMeshes = modelSphereMeshes + 1 end
+            local color = part.Color
+            local r = math.floor(color.R * 255 + 0.5)
+            local g = math.floor(color.G * 255 + 0.5)
+            local b = math.floor(color.B * 255 + 0.5)
+            local colorKey = tostring(r) .. "," .. tostring(g) .. "," .. tostring(b)
+            modelColors[colorKey] = (modelColors[colorKey] or 0) + 1
+            local hi = math.max(color.R, color.G, color.B)
+            local lo = math.min(color.R, color.G, color.B)
+            if color.R >= 0.90 and color.G >= 0.90 and color.B >= 0.90 and (hi - lo) <= 0.08 then
+                modelNearWhite = modelNearWhite + 1
+            end
+        end
+        local modelUniqueColors, modelDominantCount = 0, 0
+        for _, amount in pairs(modelColors) do
+            modelUniqueColors = modelUniqueColors + 1
+            if amount > modelDominantCount then modelDominantCount = amount end
+        end
+        local modelDominantShare = #modelParts > 0 and modelDominantCount / #modelParts or 0
+        local modelNearWhiteShare = #modelParts > 0 and modelNearWhite / #modelParts or 0
+
+        local modelMotionScripts, modelScriptsScanned = 0, 0
+        local function inspectMotionScript(node)
+            if modelScriptsScanned >= 200 then return end
+            if not (node:IsA("Script") or node:IsA("LocalScript")) then return end
+            modelScriptsScanned = modelScriptsScanned + 1
+            local disabled = false
+            pcall(function() disabled = node.Disabled end)
+            if disabled then return end
+            local source = ""
+            pcall(function() source = string.lower(node.Source) end)
+            if source == "" then return end
+            local loopEvidence = string.find(source, "heartbeat", 1, true) or string.find(source, "stepped", 1, true)
+                or string.find(source, "tweenservice", 1, true) or string.find(source, "animationtrack", 1, true)
+                or string.find(source, "motor6d", 1, true) or string.find(source, "renderstepped", 1, true)
+            local motionEvidence = string.find(source, "cframe", 1, true) or string.find(source, "transform", 1, true)
+                or string.find(source, "motor6d", 1, true) or string.find(source, "animationtrack", 1, true)
+                or string.find(source, ":play(", 1, true) or string.find(source, "tween", 1, true)
+            if loopEvidence and motionEvidence then modelMotionScripts = modelMotionScripts + 1 end
+        end
+        for _, node in ipairs(organicModel:GetDescendants()) do inspectMotionScript(node) end
+
+        local modelIssues = {}
+        if modelPolygonTriangles <= 0 then
+            table.insert(modelIssues, "NO_POLYGON_GEOMETRY: build the silhouette with build_polygon_model { organic=true }; primitive parts or SpecialMesh spheres are not polygon modelling.")
+        end
+        if modelUniqueColors < 3 or modelDominantShare > 0.90 or modelNearWhiteShare > 0.90 then
+            table.insert(modelIssues, "PALETTE_TOO_FLAT: assign explicit contrasting colours to the polygon submodels (back/body, belly, muzzle/paws and details); this model is uniform or at least 90% near-white.")
+        end
+        if modelMotionScripts <= 0 then
+            table.insert(modelIssues, "ANIMATION_NOT_INSTALLED: add an enabled Script/LocalScript inside this model with real motion loops (breathing, head/limb/tail/wing); a generated source file outside Studio is not installed animation.")
+        end
+        for _, issue in ipairs(modelIssues) do
+            table.insert(organicIssues, organicModel:GetFullName() .. ": " .. issue)
+        end
+        organicPolygonTriangles = organicPolygonTriangles + modelPolygonTriangles
+        organicSphereMeshes = organicSphereMeshes + modelSphereMeshes
+        organicMotionScripts = organicMotionScripts + modelMotionScripts
+        organicScriptsScanned = organicScriptsScanned + modelScriptsScanned
+        organicUniqueColors = organicUniqueColors + modelUniqueColors
+        if modelDominantShare > organicDominantShare then organicDominantShare = modelDominantShare end
+        if modelNearWhiteShare > organicNearWhiteShare then organicNearWhiteShare = modelNearWhiteShare end
+        if #organicModels < 20 then
+            table.insert(organicModels, {
+                id = idOf(organicModel), name = organicModel.Name, path = organicModel:GetFullName(),
+                parts = #modelParts, polygonTriangles = modelPolygonTriangles, sphereMeshes = modelSphereMeshes,
+                uniqueColors = modelUniqueColors,
+                dominantColorShare = math.floor(modelDominantShare * 100 + 0.5) / 100,
+                nearWhiteShare = math.floor(modelNearWhiteShare * 100 + 0.5) / 100,
+                motionScripts = modelMotionScripts, scriptsScanned = modelScriptsScanned,
+                issues = modelIssues,
+            })
+        end
+    end
+    local organicQuality = {
+        detected = (#candidates > 0),
+        modelCount = #candidates,
+        polygonTriangles = organicPolygonTriangles,
+        sphereMeshes = organicSphereMeshes,
+        uniqueColors = organicUniqueColors,
+        dominantColorShare = math.floor(organicDominantShare * 100 + 0.5) / 100,
+        nearWhiteShare = math.floor(organicNearWhiteShare * 100 + 0.5) / 100,
+        motionScripts = organicMotionScripts,
+        scriptsScanned = organicScriptsScanned,
+        models = organicModels,
+        issues = organicIssues,
+    }
+
     local function topGroup(part)
         local node, parent = part, part.Parent
         while parent and parent ~= root do
@@ -10915,26 +11106,28 @@ WORLD_ENGINE.auditBuildQuality = function(parts, root)
         return nil
     end
     local groups = {}
-    local loose = { parts = 0, balls = 0, solid = 0 }
+    local loose = { parts = 0, balls = 0, sphereMeshes = 0, solid = 0 }
     for _, part in ipairs(parts) do
         local group = topGroup(part)
         local entry = nil
         if group then
             entry = groups[group]
-            if not entry then entry = { parts = 0, balls = 0, solid = 0 }; groups[group] = entry end
+            if not entry then entry = { parts = 0, balls = 0, sphereMeshes = 0, solid = 0 }; groups[group] = entry end
         else
             entry = loose
         end
         entry.parts = entry.parts + 1
         if kindOf[part] == "Ball" then entry.balls = entry.balls + 1 end
+        if kindOf[part] == "SphereMesh" then entry.sphereMeshes = entry.sphereMeshes + 1 end
         if solidOf[part] then entry.solid = entry.solid + 1 end
     end
     local primitiveGroups = {}
     local function judge(entry, name, path)
-        if entry.parts >= 6 and entry.balls >= 6 and entry.balls >= 0.5 * entry.parts and entry.solid == 0 then
+        local sphereCount = entry.balls + entry.sphereMeshes
+        if entry.parts >= 6 and sphereCount >= 6 and sphereCount >= 0.5 * entry.parts and entry.solid == 0 then
             if #primitiveGroups < 5 then
                 table.insert(primitiveGroups, { name = name, path = path, parts = entry.parts, balls = entry.balls,
-                    ballShare = math.floor((entry.balls / entry.parts) * 100 + 0.5) / 100,
+                    sphereMeshes = entry.sphereMeshes, sphereShare = math.floor((sphereCount / entry.parts) * 100 + 0.5) / 100,
                     detailParts = 0 })
             end
             return true
@@ -10944,27 +11137,26 @@ WORLD_ENGINE.auditBuildQuality = function(parts, root)
     local groupOrder = {}
     for group in pairs(groups) do table.insert(groupOrder, group) end
     table.sort(groupOrder, function(a, b) return a:GetFullName() < b:GetFullName() end)
-    for _, group in ipairs(groupOrder) do
-        judge(groups[group], group.Name, group:GetFullName())
-    end
-    if loose.parts >= 6 then
-        judge(loose, "loose parts", root:GetFullName() .. " (directly)")
-    end
+    for _, group in ipairs(groupOrder) do judge(groups[group], group.Name, group:GetFullName()) end
+    if loose.parts >= 6 then judge(loose, "loose parts", root:GetFullName() .. " (directly)") end
     local variety = 0
     for _ in pairs(shapes) do variety = variety + 1 end
     local ballShare = 0
-    if counts.parts > 0 then ballShare = math.floor((counts.balls / counts.parts) * 100 + 0.5) / 100 end
+    if #parts > 0 then ballShare = math.floor((counts.balls / #parts) * 100 + 0.5) / 100 end
     local verdict = "clean"
     if #primitiveGroups > 0 and cylinderProblemCount > 0 then verdict = "primitive_abuse_and_cylinder_rotation"
     elseif #primitiveGroups > 0 then verdict = "primitive_abuse"
-    elseif cylinderProblemCount > 0 then verdict = "cylinder_rotation" end
+    elseif cylinderProblemCount > 0 then verdict = "cylinder_rotation"
+    elseif #organicIssues > 0 then verdict = "organic_build_incomplete" end
     local advice = "Clean: the geometry is varied and no cylinder looks rotated wrong."
     if verdict == "primitive_abuse" then
-        advice = "Rebuild the flagged group as a silhouette with build_polygon_model (tapering volumes, limb segments, joints, detail) - see organicBuildRules. Ball-only groups are drafts, not models."
+        advice = "Rebuild the flagged group as a silhouette with build_polygon_model (tapering volumes, limb segments, joints, detail) - see organicBuildRules. Primitive-only groups are drafts, not models."
     elseif verdict == "cylinder_rotation" then
         advice = "The flagged cylinders stand as discs because their tube axis lies horizontally and the length sits in Size.Y or Size.Z. Rebuild them with CFrame.Angles(0, 0, math.rad(90)) and Size = Vector3.new(length, diameter, diameter), or use cylinderBetween from organicBuildRules."
     elseif verdict == "primitive_abuse_and_cylinder_rotation" then
         advice = "Two independent defects: primitive-only groups AND wrongly rotated cylinders. Fix both (organicBuildRules has the anatomy contract and the cylinder helpers), then run model_audit again."
+    elseif #organicIssues > 0 then
+        advice = table.concat(organicIssues, " ")
     end
     return {
         counts = counts,
@@ -10976,10 +11168,12 @@ WORLD_ENGINE.auditBuildQuality = function(parts, root)
         cylinderProblemCount = cylinderProblemCount,
         tiltedCylinders = tiltedCylinders,
         tiltedCylinderCount = tiltedCylinderCount,
+        organicQuality = organicQuality,
         verdict = verdict,
         advice = advice,
     }
 end
+
 
 tools.model_audit = function(args)
     local root, err = targetFrom(args, false)
@@ -11021,6 +11215,9 @@ tools.model_audit = function(args)
         table.insert(qualityWarnings, "CYLINDER_TILT (info): " .. tostring(quality.tiltedCylinderCount)
             .. " cylinder(s) are not parallel to any world axis. Fine for diagonal branches and struts, wrong for trunks, columns and upright legs.")
     end
+    if quality.organicQuality and #quality.organicQuality.issues > 0 then
+        table.insert(qualityWarnings, "ORGANIC_BUILD_INCOMPLETE: " .. table.concat(quality.organicQuality.issues, " "))
+    end
     local phase, verdict
     if #placeholders > 0 then
         phase, verdict = "blockout", "NOT done: " .. tostring(#placeholders) .. " placeholder(s) are still in the place."
@@ -11030,6 +11227,8 @@ tools.model_audit = function(args)
         phase, verdict = "modelled", "NOT done: the build is primitive-only (" .. tostring(#quality.primitiveGroups) .. " ball-only group(s), no polygon/assembly/mesh/detail part)."
     elseif quality.cylinderProblemCount > 0 then
         phase, verdict = "modelled", "NOT done: " .. tostring(quality.cylinderProblemCount) .. " cylinder(s) stand as discs on their edge - the axis lies horizontally because the length was typed into Size.Y or Size.Z instead of Size.X."
+    elseif quality.organicQuality and #quality.organicQuality.issues > 0 then
+        phase, verdict = "modelled", "NOT done: organic build quality is incomplete - " .. table.concat(quality.organicQuality.issues, " ")
     elseif meshes + unions + quality.counts.polygonParts == 0 then
         phase, verdict = "modelled", "Modelled, but nothing is a mesh, union or polygon model - check whether detail is missing."
     elseif quality.counts.detailParts > 0 then
@@ -11040,7 +11239,7 @@ tools.model_audit = function(args)
     local nextStep = "Run world_audit for style/lighting, then continue."
     if (#placeholders + #blockouts) > 0 then
         nextStep = "refine the flagged parts or replace them, then run model_audit again."
-    elseif quality.primitiveOnly or quality.cylinderProblemCount > 0 then
+    elseif quality.primitiveOnly or quality.cylinderProblemCount > 0 or (quality.organicQuality and #quality.organicQuality.issues > 0) then
         nextStep = quality.advice
     end
     return ok({
@@ -13181,7 +13380,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.1.3 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.1.4 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -17128,7 +17327,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             example = @{ source = 'local x = 1 + ' };
             errors = @('COMPILE_ERROR: mit Zeilennummer.') })
         $t.Add(@{ name = 'run_lua'; category = 'scripts'; summary = 'Lua im Server-/Edit-Kontext ausfuehren (persistent!).';
-            description = 'Fuehrt Lua aus und gibt Rueckgabe + alles, was gedruckt wurde, zurueck. WICHTIG: Die Umgebung ist PERSISTENT - ein Helfer aus einem frueheren Call (z.B. "M = {...}" ohne local) ist im naechsten Call weiter da (lua_state zeigt alle persiste Variablen). Fuer Läufe ueber 60s: asJob=true oder start_job. Fuer Polygon-/WedgePart-Geometrie erst build_polygon_model pruefen - schreibst du trotzdem eigene Dreieck-/Wedge-Logik hier, gilt die harte Achsen-Regel aus polygonEngineRules (get_docs / Sessionstart): lokal X=Dicke/Normale, Y=Hoehe, Z=Basiskante - sonst drohen 90-Grad-Drehfehler und Nahtspalten. Fuer organische Koerper (Tiere/Pflanzen) gilt zusaetzlich organicBuildRules - inklusive Cylinder-Achsenregel: die Achse eines CylinderPart ist LOKAL X, also ist Size.X die Laenge; die fertige Referenzfunktion cylinderBetween steht dort. Reine Kugel-Konstruktionen und ein Zylinder mit Kugel als Baum sind ausdruecklich verboten.';
+            description = 'Fuehrt Lua aus und gibt Rueckgabe + alles, was gedruckt wurde, zurueck. WICHTIG: Die Umgebung ist PERSISTENT - ein Helfer aus einem frueheren Call (z.B. "M = {...}" ohne local) ist im naechsten Call weiter da (lua_state zeigt alle persiste Variablen). Fuer Laeufe ueber 60s: asJob=true oder start_job. Fuer jedes nichttriviale sichtbare 3D-Modell zuerst build_polygon_model fuer Hauptsilhouette und freie/gekruemmte Formen bevorzugen; build_assembly fuer repetitive Module und native Parts fuer einfache Stuetz-/Detailteile kombinieren (modelBuildRules). run_lua ist kein Ersatz fuer die dedizierten Modellbauer; nutze es fuer Logik, Animation oder echte Sonderfaelle. Wenn eigenes Dreieck/WedgePart-Lua noetig ist, gilt polygonEngineRules (get_docs/Sessionstart): lokal X=Dicke/Normale, Y=Hoehe, Z=Basiskante. Fuer organische Modelle organic=true am Polygonbau setzen; danach model_audit auf jedes zurueckgegebene Modell nach dem letzten Schreibaufruf und alle organicQuality.issues beheben. report_done verlangt pro registriertem organischem Modell echte ArenaPolygonTriangle-Geometrie, eine bestandene Palette, ein aktiviertes Bewegungs-Script und einen frischen Audit. Externe Generator-Dateien oder ungemessene Qualitaetsbehauptungen sind kein Place-Build.';
             params = @{ source = @{ type = 'string'; required = $true; default = '-'; description = 'Oder sourceRef.' }; context = @{ type = "'server'|'auto'"; required = $false; default = "'auto'"; description = 'Client existiert seit 7.0.0 nicht mehr (kein Playtest, kein Client-Agent) - "client" antwortet CONTEXT_UNAVAILABLE.' }; asJob = @{ type = 'bool'; required = $false; default = 'false'; description = 'Im Hintergrund als Job laufen lassen (rueckgibt jobId).' } };
             returns = '{ returned, output: [ { seq, message, type } ], context, environment="persistent", persistentKeys } oder (asJob) { ok, jobId, status="running" }';
             example = @{ source = 'local p = workspace:FindFirstChild("Part"); return p and p.Position' };
@@ -17159,18 +17358,18 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             errors = @('WORLD_NOT_PROBED: probe_world zuerst.', 'REGION_LIMIT: Box zu gross - kleiner aufteilen (empirische Obergrenze im Fehler).', 'BAD_ARGS: min/max fehlt.') })
 
         # ---------------- MASTER BUILD ----------------
-        $t.Add(@{ name = 'build_assembly'; category = 'create'; summary = 'Komplette professionelle Baugruppe in EINEM Call.';
-            description = 'Erstellt bis zu 2000 Parts/Instanzen, wendet Properties an, erzeugt lineare oder radiale Wiederholungen und gruppiert alles direkt in ein Model. Fuer Gebaeude, Treppen, Zaeune, Saeulenringe, Fassaden und modulare Sets. Die Bridge berechnet Wiederholungen/Positionen; Arena muss weder Lua-Schleifen noch hunderte Einzelcalls schreiben.';
+        $t.Add(@{ name = 'build_assembly'; category = 'create'; summary = 'Modulare/wiederholte Baugruppe in EINEM Call; mit Polygon-Silhouetten kombinieren.';
+            description = 'Erstellt bis zu 2000 Parts/Instanzen, wendet Properties an, erzeugt lineare oder radiale Wiederholungen und gruppiert alles direkt in ein Model. Ideal fuer Gebaeude-Rahmen, Treppen, Zaeune, Saeulenringe, Fassaden und wiederholte Module. Kombiniere die Baugruppe mit build_polygon_model fuer die praegende Hauptsilhouette oder individuelle Formen; build_assembly ersetzt bei einem nichttrivialen Hero-Modell nicht die polygonale Hauptform. Die Bridge berechnet Wiederholungen/Positionen; Arena muss weder Lua-Schleifen noch hunderte Einzelcalls schreiben.';
             params = @{ modelName = @{ type='string'; required=$false; default="'ArenaAssembly'"; description='Name des fertigen Models.' }; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'}; items=@{type='array';required=$true;default='-';description='[{className,name,properties,repeat:{count,offset}|{count,radius,startAngle,angleStep,heightStep}}]. {n} im Namen wird ersetzt.'}; pivot=@{type='Vector3|CFrame';required=$false;default='null';description='Optional das ganze Model am Ende versetzen.'} };
             returns = '{ model, created, count, errors, geometry }';
             example = @{ modelName='Saeulenring'; items=@(@{className='Part';name='Saeule{n}';properties=@{Size=@{x=2;y=12;z=2};Anchored=$true};repeat=@{count=12;radius=20}}) };
             errors = @('BUDGET_EXCEEDED: mehr als 2000 Teile.', 'BAD_ARGS: nichts erstellt.') })
-        $t.Add(@{ name = 'build_polygon_model'; category = 'create'; summary = 'STARK EMPFOHLENES MODELLING-TOOL: fast wie Blender, nur direkt aus Polygonpunkten.';
-            description = 'FUER MODELLING AUSDRUECKLICH STARK EMPFOHLEN: build_polygon_model ist Arenas schnellster Weg zu freien, grossen 3D-Modellen und funktioniert vom Prinzip fast wie Polygon-Modelling in Blender. Arena beschreibt Flaechen und Untermodelle, die Bridge erledigt Newell-Normalen, Projektion, Ear-Clipping, Triangulation sowie nahtlose, seitengerechte Wedge-CFrames. Ein einziger Call kann ein riesiges Modell mit mehreren untergeordneten Foldern bauen, z.B. einen Baum mit Stamm und drei getrennten Kronen. Jedes Untermodell besitzt eigene normale Part-Eigenschaften wie Farbe, Material, MaterialVariant, Transparenz, Kollision und Schatten. autoWeld ist standardmaessig aktiv und verbindet alle Dreiecke je Untermodell; animierbare klassische mainWelds verbinden Untermodelle, sodass ein Script z.B. Kronen realistisch am Stamm wackeln lassen kann. closeOpenings schliesst vergessene Randloecher wie die offene Oberseite eines Stamms automatisch. Die Standard-Dickenplatzierung berechnet die Wedges von der sichtbaren Polygonseite statt von der Mitte: auch stark gedrehte Nachbarflaechen treffen ohne die bisherigen Rillen aufeinander. ORGANISCH/REALISTISCH (Version 7.1.3): Fuer Tiere, Kreaturen, Baeume und Props ist DIESES Werkzeug der erste Schritt - vorher organicBuildRules lesen (get_docs / Sessionstart). Silhouette mit Taper, danach Gelenke, Details und Bewegung. Ein Zusammenbau aus Kugeln oder ein Zylinder-Stamm mit Kugel-Krone gilt als Entwurf und wird von model_audit gemessen und benannt.';
-            params = @{ modelName=@{type='string';required=$false;default="'ArenaPolygonModel'";description='Oberstes fertiges Model.'}; submodels=@{type='array';required=$false;default='[]';description='EMPFOHLEN: [{name,containerClass="Folder|Model",polygons:[...],style:{...},autoWeld,closeOpenings,capStyle}]. Alles bleibt dem Hauptmodel untergeordnet.'}; polygons=@{type='array';required=$false;default='[]';description='Einfache Flaechen [{name,points,color,material,thickness,...,style}]. Fuer grosse Modelle besser submodels verwenden.'}; points=@{type='Vector3[]';required=$false;default='null';description='Kurzform fuer ein Polygon.'}; script=@{type='string';required=$false;default='null';description='Mehrere Bloecke: POLYGON name=Roof color=#884422 material=Slate thickness=0.03, Punkte, END.'}; style=@{type='table';required=$false;default='{}';description='Globale Part-Defaults: color, material, materialVariant, collisionGroup, thickness, thicknessPlacement (inside Standard|center|positive|negative), anchored, canCollide, canQuery, canTouch, castShadow, transparency, reflectance, properties. Geometrie bleibt Builder-eigen: Position/Orientation/Rotation/CFrame/Size/PivotOffset in properties werden ignoriert, damit keine Flaeche verdreht wird.'}; autoWeld=@{type='bool';required=$false;default='true';description='Standard AN: WeldConstraint-Kette innerhalb jedes Untermodells, damit Polygon-Wedges auch bei anchored=false als ein Objekt verbunden bleiben. Nur autoWeld=false erzeugt bewusst getrennte Teile.'}; mainWeld=@{type='bool';required=$false;default='false';description='Verbindet alle Untermodelle automatisch mit dem ersten.'}; mainWelds=@{type='array';required=$false;default='[]';description='Animierbare Verbindungen [{name,from,to}] zwischen benannten Untermodellen. Erzeugt klassische Welds mit C0/C1 fuer Script-Animation.'}; closeOpenings=@{type='bool';required=$false;default='false';description='Erkennt offene Rand-Loops pro Untermodell und verschliesst sie automatisch mit triangulierten AutoCap-Flaechen.'}; capStyle=@{type='table';required=$false;default='{}';description='Eigener Style fuer automatisch geschlossene Oeffnungen.'}; origin=@{type='Vector3';required=$false;default='{0,0,0}';description='Gesamt-Offset.'}; rotation=@{type='Vector3 degrees';required=$false;default='{0,0,0}';description='Gesamtrotation.'}; scale=@{type='number';required=$false;default='1';description='Gesamtskalierung.'}; maxWedges=@{type='int';required=$false;default='4000';description='Budget, maximal 10000.'}; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'} };
+        $t.Add(@{ name = 'build_polygon_model'; category = 'create'; summary = 'BEVORZUGT fuer nichttriviale Custom-3D-Modelle: Hauptsilhouette als Polygon direkt im Place bauen.';
+            description = 'GLOBALER 3D-BAUSTANDARD: Fuer nichttriviale Custom-Modelle aller Kategorien - Figuren, Props, Architektur, Fahrzeuge, Maschinen, Landschaften und Kulissen - build_polygon_model fuer die praegende Hauptsilhouette sowie freie, gekruemmte, verjuengte oder unregelmaessige Formen BEVORZUGEN. Mit benannten Submodels, eigener Part-Farbe/Material je Rolle, mainWelds und refine entsteht ein absichtlich detailliertes Ergebnis statt eines Blockouts. build_assembly ist der passende Partner fuer Wiederholungen/Module; native Parts bleiben fuer einfache Standardformen, Stuetzen und Akzente. Der Builder erstellt echte ArenaPolygonTriangle-Wedges direkt im Place und sorgt fuer Triangulation, Wedge-Orientierung, AutoCaps und Welds. Fuer organische Modelle organic=true setzen; dann sind drei explizite kontrastierende Farben bereits beim Bau Pflicht und der frische per-model Audit mit Polygongeometrie, Palette und aktiviertem Bewegungs-Script ist Voraussetzung fuer report_done. Die Modellwahl ist eine globale Praeferenz, kein anhand von Namen ausgeloester Zwang fuer einfache Parts.';
+            params = @{ modelName=@{type='string';required=$false;default="'ArenaPolygonModel'";description='Oberstes fertiges Model.'}; organic=@{type='bool';required=$false;default='false';description='Fuer jedes bewusst organische Modell true setzen: markiert es im Place, verlangt mindestens drei explizite kontrastierende submodel.style.color-Werte und aktiviert den frischen per-model Geometry/Palette/Enabled-Motion-Audit vor report_done. Kein Modellname loest diese Schreibsperre aus.'}; submodels=@{type='array';required=$false;default='[]';description='EMPFOHLEN: [{name,containerClass="Folder|Model",polygons:[...],style:{...},autoWeld,closeOpenings,capStyle}]. Alles bleibt dem Hauptmodel untergeordnet.'}; polygons=@{type='array';required=$false;default='[]';description='Einfache Flaechen [{name,points,color,material,thickness,...,style}]. Fuer grosse Modelle besser submodels verwenden.'}; points=@{type='Vector3[]';required=$false;default='null';description='Kurzform fuer ein Polygon.'}; script=@{type='string';required=$false;default='null';description='Mehrere Bloecke: POLYGON name=Roof color=#884422 material=Slate thickness=0.03, Punkte, END.'}; style=@{type='table';required=$false;default='{}';description='Globale Part-Defaults: color, material, materialVariant, collisionGroup, thickness, thicknessPlacement (inside Standard|center|positive|negative), anchored, canCollide, canQuery, canTouch, castShadow, transparency, reflectance, properties. Geometrie bleibt Builder-eigen: Position/Orientation/Rotation/CFrame/Size/PivotOffset in properties werden ignoriert, damit keine Flaeche verdreht wird.'}; autoWeld=@{type='bool';required=$false;default='true';description='Standard AN: WeldConstraint-Kette innerhalb jedes Untermodells, damit Polygon-Wedges auch bei anchored=false als ein Objekt verbunden bleiben. Nur autoWeld=false erzeugt bewusst getrennte Teile.'}; mainWeld=@{type='bool';required=$false;default='false';description='Verbindet alle Untermodelle automatisch mit dem ersten.'}; mainWelds=@{type='array';required=$false;default='[]';description='Animierbare Verbindungen [{name,from,to}] zwischen benannten Untermodellen. Erzeugt klassische Welds mit C0/C1 fuer Script-Animation.'}; closeOpenings=@{type='bool';required=$false;default='false';description='Erkennt offene Rand-Loops pro Untermodell und verschliesst sie automatisch mit triangulierten AutoCap-Flaechen.'}; capStyle=@{type='table';required=$false;default='{}';description='Eigener Style fuer automatisch geschlossene Oeffnungen.'}; origin=@{type='Vector3';required=$false;default='{0,0,0}';description='Gesamt-Offset.'}; rotation=@{type='Vector3 degrees';required=$false;default='{0,0,0}';description='Gesamtrotation.'}; scale=@{type='number';required=$false;default='1';description='Gesamtskalierung.'}; maxWedges=@{type='int';required=$false;default='4000';description='Budget, maximal 10000.'}; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'} };
             returns = '{ model, submodels, polygons, triangles, wedges, autoCaps, welds, weldedSubmodels, autoWeldDefault, mainWelds, skipped, ignoredGeometryProperties, geometryInvariant, geometry, method, editable }';
-            example = @{ modelName='RiesigerBaum'; submodels=@(@{name='Stamm';containerClass='Folder';style=@{color='#704020';material='Wood';anchored=$false};autoWeld=$true;closeOpenings=$true;polygons=@('... Seitenflaechen ...')},@{name='Krone1';style=@{color='#3E8B3E';material='Grass';anchored=$false};autoWeld=$true;polygons=@('...')},@{name='Krone2';style=@{color='#438F43';material='Grass';anchored=$false};autoWeld=$true;polygons=@('...')},@{name='Krone3';style=@{color='#397F39';material='Grass';anchored=$false};autoWeld=$true;polygons=@('...')}); mainWelds=@(@{name='Krone1AmStamm';from='Stamm';to='Krone1'},@{name='Krone2AmStamm';from='Stamm';to='Krone2'},@{name='Krone3AmStamm';from='Stamm';to='Krone3'}) };
-            errors = @('POLYGON_INVALID: kein gueltiges Polygon.', 'BUDGET_EXCEEDED', 'BAD_ARGS', 'REF_NOT_FOUND') })
+            example = @{ modelName='Clocktower'; submodels=@(@{name='StoneBody';style=@{color='#777B80';material='Slate'};polygons=@('... tapered silhouette, buttresses and arches ...')},@{name='CopperRoof';style=@{color='#A65F35';material='Metal'};polygons=@('... roof, eaves and finial ...')},@{name='ClockFace';style=@{color='#E8D9B5';material='SmoothPlastic'};polygons=@('... inset rim and clock face ...')}); mainWelds=@(@{name='RoofToStone';from='StoneBody';to='CopperRoof'}) };
+            errors = @('ORGANIC_COLORS_REQUIRED: organic=true needs at least three explicit colour assignments.', 'ORGANIC_POLYGON_REQUIRED: an explicitly organic build must use this polygon builder with organic=true.', 'POLYGON_INVALID: kein gueltiges Polygon.', 'BUDGET_EXCEEDED', 'BAD_ARGS', 'REF_NOT_FOUND') })
 
         # ---------------- UI ENGINE 1.0 (6.2) ----------------
         $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN: misst, welche modernen UI-Instanzen dieses Studio wirklich kann.';
@@ -17317,9 +17516,9 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             example = @{};
             errors = @() })
         $t.Add(@{ name = 'model_audit'; category = 'world'; summary = 'Modell-Audit: Platzhalter, Blockouts, Phase, Urteil.';
-            description = 'Zaehlt im Ziel (ref oder ganzer Workspace) Platzhalter (Name oder Attribut ArenaPlaceholder), Blockouts (Default-Grau 163/162/165 + Material Plastic, kein Mesh), Meshes, Unions und Materialien. Liefert phase (blockout|modelled|refined), verdict und die Liste der Platzhalter mit Id/Pfad. Solange Platzhalter oder Blockouts existieren, darf ohne Handoff kein "fertig" behauptet werden (die Bridge liest genau diese Zahlen fuer HANDOFF_REQUIRED). Version 7.1.3: Zusaetzlich misst das Audit die BAUQUALITAET (buildQuality) - gezaehlt werden Kugeln, Bloecke, Zylinder, Keile, Meshes, Unions, Polygon-/Assembly-Teile (Attribute ArenaMasterBuild/ArenaPolygonTriangle/ArenaAssembly) und ArenaDetail-Teile. primitiveOnly/primitiveGroups melden Gruppen, die NUR aus Kugeln bestehen (z. B. ein Tier aus sieben Baellen); cylinderProblems meldet je Zylinder discLikeCylinder (Achse liegt waagerecht, obwohl das Teil quer viel groesser ist als lang - es steht als Scheibe auf der Kante, genau der klassische 90-Grad-Dreher mit der Laenge in Size.Y/Size.Z) und axisSkewDeg als Info (Achse schief zu jeder Weltachse). report_done verweigert bei einem solchen Ergebnis mit DETAIL_REQUIRED. Regeln: organicBuildRules.';
+            description = 'Auditiert jedes 3D-Build: Platzhalter, Blockouts, Modellphase, Meshes/Unions, Materialien, Polygon-/Primitive-Verhaeltnis, echte ArenaPolygonTriangle-Wedges, Zylinderachsen und ArenaDetail. Liefert konkrete Pfade/Messwerte statt einer unbelegten Qualitaetsbehauptung. Fuer organische Modelle (explizit markiert oder als organisch erkannt) wird organicQuality ZUSAETZLICH pro Modell berechnet, damit kein fremdes Polygon oder Script im Workspace die Metriken erfuellt: polygonTriangles, eindeutige Farben, dominanter Farbanteil, nearWhiteShare und enabled motionScripts mit issues je Modell. Fuer mit organic=true gebaute Modelle muss der Audit jedes exakt zurueckgegebene Modell NACH dem letzten Schreibaufruf enthalten; report_done gibt bei fehlendem/stalem Beleg ORGANIC_AUDIT_REQUIRED und bei nicht bestandenen Metriken DETAIL_REQUIRED zurueck. Dieser Messpfad waehlt nicht anhand des Modellnamens das bevorzugte Build-Tool. Regeln: modelBuildRules und organicBuildRules.';
             params = @{ ref = @{ type = 'string'; required = $false; default = 'game.Workspace'; description = '' } };
-            returns = '{ ok, scope, parts, placeholderCount, placeholders, blockoutCount, meshes, unions, materials, phase, verdict, nextStep }';
+            returns = '{ ok, result: { scope, placeholderCount, phase, verdict, buildQuality: { verdict, organicQuality: { detected, models: [{ id, path, polygonTriangles, uniqueColors, dominantColorShare, nearWhiteShare, motionScripts, issues }] } }, nextStep }, warnings }';
             example = @{ ref = 'game.Workspace.Stadt' };
             errors = @('REF_NOT_FOUND') })
         $t.Add(@{ name = 'world_audit'; category = 'world'; summary = 'Welt-Audit: Stil-Treue, Licht, Atmosphaere, Phase.';
@@ -17528,7 +17727,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             example = @{ text = 'local M = {}'; chunkIndex = 1; chunkCount = 3; uploadId = 'myScript' };
             errors = @() })
         $t.Add(@{ name = 'get_docs'; category = 'system'; summary = 'Doku holen: pro Tool, pro Kategorie oder komplett.';
-            description = 'Dasselbe wie GET /api/docs - als Tool. Ohne Argumente: komplett. Version 7.1.3: Der Sessionstart liefert nur noch die Kernwerkzeuge vollstaendig (Bauen, Audit, Lesen, Sitzung) und alle uebrigen als Index mit Name/Kategorie/Kurztext. Vor dem ersten Einsatz eines Index-Werkzeugs hier die Parameter holen - die Doku ist hier IMMER vollstaendig.';
+            description = 'Dasselbe wie GET /api/docs - als Tool. Ohne Argumente: komplett. Version 7.1.4: Der Sessionstart liefert nur noch die Kernwerkzeuge vollstaendig (Bauen, Audit, Lesen, Sitzung) und alle uebrigen als Index mit Name/Kategorie/Kurztext. Vor dem ersten Einsatz eines Index-Werkzeugs hier die Parameter holen - die Doku ist hier IMMER vollstaendig.';
             params = @{ tool = @{ type = 'string'; required = $false; default = 'null'; description = 'Einzelnes Tool (z.B. "union").' }; category = @{ type = 'string'; required = $false; default = 'null'; description = 'info, spatial, orientation, create, properties, scripts, fill, union, assets, output, play, gui, jobs, system.' }; full = @{ type = 'bool'; required = $false; default = 'false'; description = 'Komplette Doku.' } };
             returns = 'Doku-JSON (siehe /api/docs)';
             example = @{ tool = 'fill_region' };
@@ -17555,7 +17754,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         return @{
             importantRules = @(
                 'Choose the tools and workflow that best fit the task. The bridge exposes precise read, build, script, asset, playtest and batch tools; these are capabilities, not a mandatory checklist.',
-                'For polygon or freeform surface modelling, ALWAYS use build_polygon_model unless the user explicitly requires custom low-level WedgeParts: it works much like Blender polygon modelling while the bridge handles triangulation, side-corrected seamless Wedges, nested submodels, per-submodel Part properties, automatic hole caps and default-on WeldConstraints. NEVER set autoWeld=false unless the user explicitly asks for physically independent polygon pieces; otherwise unanchored Wedges can scatter and rotate separately. It can create one huge model (for example a tree split into trunk plus three crown folders) in a single call, including animatable main Welds between submodels. build_assembly is excellent for repeated modular construction. bulk_create, unions and normal tools remain freely mixable; use run_lua only for genuinely custom logic.',
+                'For ANY nontrivial custom 3D model, prefer build_polygon_model for the main silhouette and major freeform/curved/tapered surfaces - across characters, props, architecture, vehicles, landmarks, terrain and set pieces, not only organic examples. It works much like polygon modelling while the bridge handles triangulation, seamless Wedges, named submodels, per-submodel style, hole caps and default-on WeldConstraints. Use build_assembly as a complement for repeated or modular structure, and native Parts for truly simple, repeated, functional or explicitly primitive/low-poly geometry; do not reduce a hero/custom model to primitive blocks. NEVER set autoWeld=false unless physically independent polygon pieces are requested. See modelBuildRules for the universal complexity and finish bar.',
+                'For any visual/3D deliverable, make the result intentionally layered and finished: clear primary silhouette, secondary functional forms, tertiary trim/details, coherent palette/materials, and correct joins/placement. Complexity must be purposeful, not random part count. A simple object may remain simple; an unrequested blockout/primitive-only first draft is not a finished build. This standard is global and does not depend on model names or animal/tree examples.',
                 'For ANY visual/GUI work, ALWAYS use build_interface (whole screen in one call) or build_surface unless the user explicitly asks for raw GuiObjects: the bridge owns AnchorPoint, Scale-only UDim2, aspect locking, corner-safe padding, layered shadows, scaled strokes, gradients on strokes, REAL raster textures, CanvasGroup discipline and the runtime motion script. Call ui_capabilities first (it probes this Studio build instead of trusting training data), ui_skin to pick or extract an art direction, ui_glow for glow (never hand-build it), ui_texture for the real-texture-first recipe, ui_radial for radial menus (one image id, both colours engine-owned), and ui_audit afterwards - it measures offsetRatio, contrast, per-device pixel sizes, glow/texture/radial usage and a blandness score. See uiEngineRules below for the hard rules.',
                 'Object ids such as #42 are stable within the current plugin session and avoid ambiguity when names repeat. Paths and selectors are also accepted where documented.',
                 'Several Places can be connected. With the Alle-Places token, GET /api/places returns targetPlace values; selecting one target keeps edits unambiguous.',
@@ -17567,7 +17767,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 'Windows finish notifications use report_done { title, message }. Arena writes a lively title (max 70 characters) and an inviting body (max 140); avoid dry changelog lists.',
                 'Responses include typed error codes and concrete diagnostics. Use those details to decide the next step.',
                 'HARD CONSTRAINT for any hand-written WedgePart/triangle geometry (build_polygon_model already does this correctly - this rule is for genuinely custom run_lua geometry code only): see polygonEngineRules below for the mandatory WedgePart axis convention and the canonical seamless-triangle formula. Getting the axis order wrong is the single most common cause of 90-degree rotation errors and gaping seams in procedural low-poly builds.',
-                'HARD CONSTRAINT for EVERY creature, animal, plant, prop and organic free-form model: never deliver an assembly of primitives. A ball-only animal and a cylinder+ball tree are the two most common worthless results - see organicBuildRules below for the mandatory anatomy, the cylinder axis rule (a Roblox CylinderPart runs along its LOCAL X axis, so Size.X is the length), the canonical cylinderBetween reference Lua, the organic-motion rule and the measured self-check. model_audit reports buildQuality (primitiveOnly, cylinderProblems, primitiveGroups) and report_done refuses a primitive-only result with DETAIL_REQUIRED.'
+                'HARD ORGANIC EVIDENCE CONTRACT (separate from the global builder preference): when an organic model is explicitly built with organic=true or is registered from per-model model_audit evidence, build and audit the real model in Studio, use a deliberate palette, install motion under that model, and fix its organicQuality issues. report_done requires fresh passing evidence for every registered organic model, even after a handoff. This is not selected or enforced from animal/tree names; see organicBuildRules for the stricter per-organic-model evidence contract.'
             )
             worldEngineRules = @{
                 title = 'World Engine 1.0 - the world is a place with rules, not a pile of parts'
@@ -17579,8 +17779,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 props = 'prop_save stores a selection under workspace.ArenaProps; prop_place clones it with deterministic variation and ground snap. Prefer saved props over rebuilding the same tree ten times by hand.'
             }
             toolboxRules = @{
-                title = 'Toolbox Engine 1.0 (Version 7.1.3) - procedural first, catalog last, never in parallel'
-                default = 'BUILD IT YOURSELF. For creatures, animals, plants, props and any organic free-form shape the DEFAULT is procedural: build_polygon_model for free-form bodies and sub-models, build_assembly or plain parts where that is simpler or more stable, and your own welds/joints plus a small run_lua animation (breathing, head/ear motion, tail swing, small weight shifts) for organic movement. Do NOT open with search_assets / asset_details / validate_asset / insert_asset, and never use a toolbox import as a shortcut for a shape you can build.'
+                title = 'Toolbox Engine 1.0 (Version 7.1.4) - procedural first, catalog last, never in parallel'
+                default = 'BUILD PROCEDURALLY BY DEFAULT. For every nontrivial user-visible 3D build, prefer build_polygon_model for the distinctive main silhouette in any category, and use build_assembly/native Parts for repeated or supporting geometry. Deliver secondary structure, purposeful details and a coherent palette; do not start with a primitive-only placeholder or search_assets/insert_asset unless the user requests an asset or approves a fallback. Keep simple tasks simple. For any organic model, explicitly set organic=true and install enabled motion under that model; fresh per-model geometry, palette and motion evidence is required before report_done.'
                 beforeUsingTheCatalog = 'If a procedural shape is genuinely not realistic enough or technically out of reach, say so and OFFER a limited, transparent fallback FIRST. Let the user decide. Do not start catalog calls on your own initiative.'
                 hardLimits = 'Per place the bridge allows at most 2 catalog requests at a time and EXACTLY ONE active asset import. Anything beyond that answers immediately with TOOLBOX_BUSY or TOOLBOX_IMPORT_IN_FLIGHT. Never run asset searches in parallel, never poll in a loop, and never retry automatically after a timeout.'
                 timeouts = 'Every catalog request has a hard time limit (12 s, 8 s for the pre-insert validation) and a 25 s budget per tool call. A failure is FINAL and typed: CATALOG_TIMEOUT or CATALOG_UNAVAILABLE. Say "Katalog nicht verfuegbar" to the user and continue procedurally instead of retrying.'
@@ -17641,16 +17841,29 @@ local function drawSeamlessTriangle(p1, p2, p3, parent, props)
 end
 '@
             }
+            modelBuildRules = @{
+                title = 'Model Build Engine 1.0 - universal complexity, polygon-first preference, finished geometry'
+                whenThisApplies = 'Every task that creates or materially remodels visible 3D geometry, regardless of subject, model name or whether it is organic. This is a global build preference, not an animal/tree-only rule.'
+                default = 'For every nontrivial custom model, aim materially beyond a first-pass primitive sketch. Design a readable primary silhouette, add secondary forms that explain function and proportion, then add restrained tertiary details, trim, joints and surface structure. Use explicit, coherent color/material roles and correct attachment/placement. More parts without design purpose is not more quality.'
+                polygonPreference = 'Prefer build_polygon_model for the main silhouette and any custom, freeform, tapered, curved, irregular or hero surface in ANY category: characters, props, furniture, architecture, vehicles, weapons, machinery, landmarks, terrain and set pieces. Organize the call into named submodels with per-submodel colors/materials; use autoWeld by default and mainWelds for intended animation. The builder is preferred, not mandatory for every simple Part.'
+                complementaryTools = 'Use build_assembly for repeated structural or modular pieces (frames, stairs, rails, facades, ribs, supports) and combine it with a polygon-built hero silhouette when both are useful. Use native Parts for genuinely simple standard shapes, structural supports, joints, pivots and small accents; bulk_create/grid/clone are for repetition, not for replacing the distinctive centerpiece with blocks.'
+                finishBar = 'A nontrivial standalone asset is not complete as one box/cylinder or a primitive-only placeholder: complete the main form, its supporting components, visual details, coherent palette/materials, welds/collision and grounding as relevant. For scenes, add purposeful variation, depth, readable pathways and consistent style. Low-poly is a style, not permission to stop at a primitive blockout.'
+                exceptions = 'Keep inherently simple tasks simple and follow explicit user requests for primitives, blockouts, low part counts or a deliberately plain style. Scale scope to time/tool/part limits; reduce how many assets are built instead of degrading the finish of each delivered asset.'
+                workflow = 'inspect/select/measure -> choose art direction or world_style -> polygon-build the primary custom silhouette -> assembly/native support geometry -> detail/refine -> model_audit (and world_audit for scenes) -> fix measured issues -> report_done. Build directly in the target Place; a generated source file or later unsupported quality claim is not a model.'
+                motion = 'Add animation only when the task requests motion or the object is inherently living/moving. For organic models, explicitly use organic=true so per-model geometry, palette, enabled-motion and fresh-audit evidence is enforced; see organicBuildRules.'
+            }
             organicBuildRules = @{
-                title = 'Organic Build Engine 1.0 (Version 7.1.3) - no ball animals, no cylinder trees, no sideways cylinders'
-                whenThisApplies = 'EVERY creature, animal, humanoid, plant, tree, rock, prop and organic free-form model. This is not advice: model_audit MEASURES it afterwards (result.buildQuality) and report_done answers DETAIL_REQUIRED instead of accepting a primitive-only result. A user asked for a highly detailed, realistic model built over the bridge - a pile of primitives is the one thing that must never come out of it.'
-                theOneIdea = 'A body is a SILHOUETTE, not a pile of primitives. Build the volume first (build_polygon_model: tapering torso, chest, neck, skull), then the limbs as real segments, then the joints (welds/Motor6D), then the details (ears, muzzle, eyes, claws, fur plates), and only then the motion. Every primitive needs a REASON: a Ball is an eye or a joint cover, a Cylinder is a pivot, pipe or bone - never a torso, never a leg and never a tree trunk.'
+                title = 'Organic Build Engine 1.0 (Version 7.1.4) - polygon-first, explicit palette, installed motion, measured before done'
+                whenThisApplies = 'For any model intentionally built as organic (character, creature, plant, tree, prop or other organic free-form shape), this is a hard sequence independent of its name: the FIRST write targeting that model is build_polygon_model { organic=true } and builds its real silhouette in Studio with an explicit contrasting palette. Do not start with run_lua, build_assembly, loose primitives, or an external generator file. Then install an enabled motion Script under that same model, run model_audit on every returned organic model after the final edit, and fix every organicQuality issue. report_done is rejected with ORGANIC_AUDIT_REQUIRED/DETAIL_REQUIRED until every registered model passes.'
+                theOneIdea = 'For an organic model, build_polygon_model { organic=true } must be the FIRST write targeting that model and must create its silhouette directly in Studio. Put anatomy/structure into separately coloured polygon submodels (for example body/back, belly and face, or trunk, foliage and accents); never let the all-default white/grey palette through. Then add joints/details, install the enabled motion Script beneath the model, and audit the exact model. An external source file, an assembly of primitives or a later quality claim is not evidence.'
                 forbidden = @(
+                    'FORBIDDEN - BYPASSING THE POLYGON BUILDER: the first write targeting any explicitly organic model must be build_polygon_model { organic=true }. A build_assembly/run_lua/create_instance organic model first, a local generator script, or an unmarked polygon call is rejected with ORGANIC_POLYGON_REQUIRED; this gate is controlled by organic=true, not by the model name.',
                     'FORBIDDEN - BALL ANIMAL: an animal assembled only from Ball parts (body ball + head ball + four leg balls + tail ball). That is the first-minute draft the user can build himself. model_audit reports it as primitiveOnly with primitiveGroups and report_done refuses to accept it.',
                     'FORBIDDEN - CYLINDER TREE: one CylinderPart as trunk plus one Ball as crown. A real trunk is a tapered polygon column with a root flare and 3-6 real branches; a real crown is 3+ irregular polygon clumps with different sizes, colours and rotation, never a single sphere.',
                     'FORBIDDEN - UNTAPERED LIMBS: one stretched block per leg. Every limb has an upper and a lower segment that taper toward the paw/hoof, plus a shoulder/hip connection that overlaps the torso so no gap and no floating part remains.',
                     'FORBIDDEN - ONE SINGLE ROTATION AS ANIMATION: a model that spins or a limb that swings on one constant loop is not animated, it is a turntable.',
-                    'FORBIDDEN - CLAIMING DONE WHILE IT IS A BLOCKOUT: if the shape is still primitive or placeholder-like, either keep building or hand off honestly. report_done returns DETAIL_REQUIRED.'
+                    'FORBIDDEN - FORGOTTEN COLOUR OR MOTION: every organic model has an explicit contrasting palette and an enabled motion Script under its model; a generated file elsewhere or source-only animation does not count.',
+                    'FORBIDDEN - CLAIMING DONE WITHOUT A FRESH PROOF: after the last build/script/property edit, run model_audit on the returned model. report_done returns ORGANIC_AUDIT_REQUIRED or DETAIL_REQUIRED for stale/missing audit, no polygon triangles, flat/default-white colours, or missing installed motion.'
                 )
                 anatomyMinimum = 'Working order for a creature: (1) torso and chest as tapering polygon volumes, (2) neck + skull + muzzle, (3) four limbs with upper/lower segments and paw/hoof, plus shoulder/hip overlap into the torso, (4) tail as a chain of 4-8 shrinking segments, (5) ears (bent, thick, asymmetric), (6) face detail: eyes (ball + dark pupil + highlight), nose, mouth line, whiskers as thin cylinders, (7) surface character: layered fur/feather/scale plates, colour split between back, belly, muzzle and paws. A finished creature is normally 30-80 parts depending on style - fewer than 15 parts is a draft unless the user explicitly asked for a stylised low-poly toy.'
                 cylinderRule = 'ROBLOX CYLINDER AXIS: a CylinderPart runs along its LOCAL X AXIS. Size.X is the LENGTH, Size.Y and Size.Z are the diameter. An unrotated CylinderPart is a barrel lying sideways (axis = world X) - that is the "all cylinders are 90 degrees wrong" error. Upright trunk/leg/column: CFrame.new(pos) * CFrame.Angles(0, 0, math.rad(90)) rotates the local X axis onto world Y. Never try to fix an upright cylinder with Orientation = Vector3.new(0, 90, 0) or with Size = Vector3.new(diameter, height, diameter) - that keeps the axis in X and renders a flat coin instead of a tube.'
@@ -17702,14 +17915,15 @@ end
 '@
                 animationRule = 'Organic means: several small motions with DIFFERENT periods, never one rotation. Breathing (torso scale +-2-3 %, 3-4 s), head look/bob (+-4-8 degrees, 2.7 s), ear flicks (short, irregular), tail chain where each segment lags the previous by ~0.1 s and the tip swings furthest, weight shift/sway (+-1.5 degrees, ~6 s), blink every 3-6 s (eye scale to 0.05 for ~0.12 s). Build real joints (Motor6D for animated limbs, WeldConstraint for rigid parts) and drive them with TweenService in a small Script (insert_script) or with run_lua while building. Delete nothing that moves: anchored parts may be tweened directly, unanchored rigs need Motor6D + a Script.'
                 detailBudget = 'Detail is measured, not claimed: build_polygon_model/build_assembly for the volumes, refine for trim/ArenaDetail parts, then model_audit. Add real surface structure (fur plates, feather rows, bark strips, scale rows) in large-to-small order, and give back, belly, muzzle and paws their own colour or material - a single flat colour over 40 parts still reads as a draft.'
-                workflow = 'measure (raycast/ground_height/probe_world) -> build the silhouette with build_polygon_model -> joints and anatomy -> detail (refine, colours, material split) -> motion (Small Script/TweenService) -> model_audit and read result.buildQuality -> fix what it names -> report_done. For several animals use build_assembly or prop_save/prop_place with a style seed, never ten hand-copied clones.'
+                workflow = 'measure -> FIRST write targeting the organic model: build_polygon_model { organic=true, submodels=[... at least three explicit contrasting style.color values ...] } -> joints/anatomy/details -> install enabled motion Script as a descendant of that model -> model_audit { ref=<returned model id> } AFTER the final edit -> fix every organicQuality.issues -> only then report_done. For repeated animals, save/clone an already-audited organic model; do not create the first animal with build_assembly.'
                 selfCheck = @(
                     'No Ball is used as a torso or a whole animal; balls are eyes, joints, berries or accents.',
                     'No CylinderPart stands as a disc on its edge: upright tubes use CFrame.Angles(0, 0, math.rad(90)) and Size = (length, diameter, diameter), never the length in Size.Y or Size.Z.',
                     'Every limb has at least two tapering segments plus a paw/hoof, overlapping the torso.',
                     'The tree has a tapered trunk with root flare and branches - not one cylinder and not one ball crown.',
                     'At least three different motion loops with different periods exist, or the model is explicitly static by request.',
-                    'model_audit buildQuality says primitiveOnly=false and cylinderProblems=0 before report_done.'
+                    'The exact organic model has ArenaPolygonTriangle wedges, at least three contrasting non-default colours and an enabled motion Script under the model.',
+                    'model_audit organicQuality.detected=true, polygonTriangles>0, uniqueColors>=3, nearWhiteShare<=0.90, motionScripts>0, issues=[]; auditAt is after the latest write before report_done.'
                 )
             }
             uiEngineRules = @{
@@ -17984,11 +18198,13 @@ end
         }
         $out.qualityContract = @(
             'No turn has to end with "done". It ends with report_done OR with a handoff - both are complete finishes.',
-            'Classify first: single object, scene, or full game. The class decides the minimum depth.',
-            'Single object and scene (including decoration and animations): no shortcuts, finished completely in this session - polygons, refinement, audit.',
+            'Classify first: single object, scene, or full game. The class decides the minimum scope, never an excuse for primitive-only first drafts.',
+            'GLOBAL 3D BUILD BAR, independent of names/examples: make every nontrivial object or scene deliberately layered and finished (primary silhouette, secondary structure, tertiary details, purposeful color/material design, correct joins and placement). Prefer build_polygon_model for the main custom silhouette across every category; pair with build_assembly for repeated/modular structure and Parts for supports/details.',
+            'Do not force polygons onto a truly simple object, repeated standard geometry or an explicit primitive/low-poly request. Low-poly still means intentional silhouette and finish. Do not call a blockout, placeholder or one-box/one-cylinder stand-in complete unless that is what the user asked for.',
+            'Single objects and scenes must be completed in this session: inspect/measure, build with the best-fit Bridge tools, refine, model_audit and world_audit where applicable, then fix the reported issues.',
             'Only a full game gets stages: deliver stage 1 completely, then hand off; never hand off in the middle of a stage.',
             'Never claim "done" while placeholders, blockouts or open audit points exist.',
-            'Good is the standard, not a luxury. If time is short, build less - not worse.'
+            'Good is the standard, not a luxury. If time/tool budget is short, reduce scope or number of assets - not the geometry quality of what is delivered.'
         )
         $handoffJson = ''
         if ($Shared.Handoffs.TryGetValue([string]$sessionId, [ref]$handoffJson) -and -not [string]::IsNullOrWhiteSpace($handoffJson)) {
@@ -18075,7 +18291,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.1.3'
+            version = '7.1.4'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -18305,7 +18521,7 @@ end
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.1.3'
+            bridgeVersion = '7.1.4'
             executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent = 0, never an error. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
@@ -18643,7 +18859,148 @@ end
                             }
                         }
                     }
-                } catch {}
+                    # Organic quality is a separate, per-model proof. It is
+                    # required even when AuditFlags is empty, and any later
+                    # successful write invalidates the proof until re-audited.
+                    $organicJson = ''
+                    $hasOrganicState = $false
+                    try { $hasOrganicState = $Shared.OrganicBuilds.TryGetValue([string]$sessionId, [ref]$organicJson) } catch {
+                        return @{
+                            ok = $false
+                            code = 'ORGANIC_AUDIT_REQUIRED'
+                            error = 'Organic completion state could not be read safely; report_done fails closed.'
+                            howToFix = 'Keep working and rerun model_audit for every registered organic model before trying report_done again.'
+                        }
+                    }
+                    if ($hasOrganicState) {
+                        if ([string]::IsNullOrWhiteSpace($organicJson)) {
+                            return @{
+                                ok = $false
+                                code = 'ORGANIC_AUDIT_REQUIRED'
+                                error = 'Organic completion state exists but is empty; report_done fails closed.'
+                                howToFix = 'Rerun model_audit for every registered organic model before trying report_done again.'
+                            }
+                        }
+                        $organicState = $null
+                        try { $organicState = $organicJson | ConvertFrom-Json } catch {
+                            return @{
+                                ok = $false
+                                code = 'ORGANIC_AUDIT_REQUIRED'
+                                error = 'Organic completion state could not be decoded; report_done fails closed.'
+                                howToFix = 'Rerun model_audit for every registered organic model before trying report_done again.'
+                            }
+                        }
+                        if ($null -eq $organicState -or $organicState.required -ne $true) {
+                            return @{
+                                ok = $false
+                                code = 'ORGANIC_AUDIT_REQUIRED'
+                                error = 'Organic work is registered but its required per-model state is incomplete; report_done fails closed.'
+                                howToFix = 'Rerun model_audit for every registered organic model before trying report_done again.'
+                            }
+                        }
+                            $organicRecords = @()
+                            try { $organicRecords = @($organicState.models) } catch {}
+                            if ($organicRecords.Count -eq 0 -and $organicState.PSObject.Properties['modelId']) { $organicRecords = @($organicState) }
+                            if ($organicRecords.Count -eq 0) {
+                                return @{
+                                    ok = $false; code = 'ORGANIC_AUDIT_REQUIRED'
+                                    error = 'Organic work is registered for this Place, but no per-model audit record is available.'
+                                    howToFix = 'Run model_audit by itself on each returned organic model id after its final edit.'
+                                }
+                            }
+                            foreach ($organicRecord in $organicRecords) {
+                                $lastWriteAtTicks = 0L
+                                $auditAtTicks = 0L
+                                try { $lastWriteAtTicks = [int64]$organicRecord.lastWriteAtTicks } catch {}
+                                try { $auditAtTicks = [int64]$organicRecord.auditAtTicks } catch {}
+                                if ($auditAtTicks -le 0 -or $auditAtTicks -lt $lastWriteAtTicks) {
+                                    return @{
+                                        ok = $false
+                                        code = 'ORGANIC_AUDIT_REQUIRED'
+                                        error = 'At least one organic model has no fresh model_audit after the latest successful Place write. report_done cannot verify all organic geometry, palettes or installed animations.'
+                                        expectedModel = @{ id = [string]$organicRecord.modelId; path = [string]$organicRecord.modelPath; name = [string]$organicRecord.modelName }
+                                        howToFix = 'Run model_audit { ref = <this model id> } after the final Place write for every returned organic model. If any later Place write succeeds, audit every registered organic model again.'
+                                        lastWriteAtTicks = $lastWriteAtTicks
+                                        auditAtTicks = $auditAtTicks
+                                    }
+                                }
+                                $organicQuality = $organicRecord.auditQuality
+                                if ($null -eq $organicQuality -or $organicQuality.detected -ne $true) {
+                                    return @{
+                                        ok = $false
+                                        code = 'ORGANIC_AUDIT_REQUIRED'
+                                        error = 'A fresh audit did not find a required organic model. A generated source file, unrelated model or audit without per-model evidence is not proof.'
+                                        expectedModel = @{ id = [string]$organicRecord.modelId; path = [string]$organicRecord.modelPath; name = [string]$organicRecord.modelName }
+                                        auditedScope = [string]$organicRecord.auditScope
+                                        howToFix = 'Audit the exact returned model id and confirm organicQuality.detected=true with a matching model entry.'
+                                    }
+                                }
+                                $expectedModelId = [string]$organicRecord.modelId
+                                $expectedModelPath = [string]$organicRecord.modelPath
+                                $matchingOrganicModel = $null
+                                foreach ($candidate in @($organicRecord.auditModels)) {
+                                    if (-not [string]::IsNullOrWhiteSpace($expectedModelId) -and [string]$candidate.id -eq $expectedModelId) { $matchingOrganicModel = $candidate; break }
+                                    if ([string]::IsNullOrWhiteSpace($expectedModelId) -and -not [string]::IsNullOrWhiteSpace($expectedModelPath) -and [string]$candidate.path -eq $expectedModelPath) { $matchingOrganicModel = $candidate; break }
+                                }
+                                if ($null -eq $matchingOrganicModel) {
+                                    return @{
+                                        ok = $false
+                                        code = 'ORGANIC_AUDIT_REQUIRED'
+                                        error = 'The fresh audit does not contain per-model evidence for the exact organic model.'
+                                        expectedModel = @{ id = $expectedModelId; path = $expectedModelPath; name = [string]$organicRecord.modelName }
+                                        howToFix = 'Run model_audit by itself with this exact model id; a workspace-level aggregate without a matching model entry is insufficient.'
+                                    }
+                                }
+                                $organicIssues = @($organicQuality.issues)
+                                $modelTriangles = 0
+                                $modelUniqueColors = 0
+                                $modelDominantShare = 0.0
+                                $modelNearWhiteShare = 0.0
+                                $modelMotionScripts = 0
+                                try { $modelTriangles = [int]$matchingOrganicModel.polygonTriangles } catch {}
+                                try { $modelUniqueColors = [int]$matchingOrganicModel.uniqueColors } catch {}
+                                try { $modelDominantShare = [double]$matchingOrganicModel.dominantColorShare } catch {}
+                                try { $modelNearWhiteShare = [double]$matchingOrganicModel.nearWhiteShare } catch {}
+                                try { $modelMotionScripts = [int]$matchingOrganicModel.motionScripts } catch {}
+                                $organicIssues += @($matchingOrganicModel.issues)
+                                if ($modelTriangles -le 0) { $organicIssues += 'NO_POLYGON_GEOMETRY: the exact organic model has no actual ArenaPolygonTriangle wedges.' }
+                                if ($modelUniqueColors -lt 3) { $organicIssues += 'PALETTE_TOO_FLAT: the exact organic model has fewer than three measured colours.' }
+                                if ($modelDominantShare -gt 0.90) { $organicIssues += 'PALETTE_TOO_FLAT: one measured colour covers more than 90% of the exact organic model.' }
+                                if ($modelNearWhiteShare -gt 0.90) { $organicIssues += 'PALETTE_TOO_FLAT: more than 90% of the exact organic model is near-white/default-looking.' }
+                                if ($modelMotionScripts -le 0) { $organicIssues += 'ANIMATION_NOT_INSTALLED: the exact organic model has no enabled motion Script detected beneath it.' }
+                                if ($organicIssues.Count -gt 0) {
+                                    return @{
+                                        ok = $false
+                                        code = 'DETAIL_REQUIRED'
+                                        error = ('Organic quality is not verified as complete: ' + (($organicIssues | Select-Object -Unique) -join ' '))
+                                        organicQuality = $organicQuality
+                                        expectedModel = @{ id = $expectedModelId; path = $expectedModelPath; name = [string]$organicRecord.modelName }
+                                        measuredModel = @{ polygonTriangles = $modelTriangles; uniqueColors = $modelUniqueColors; dominantColorShare = $modelDominantShare; nearWhiteShare = $modelNearWhiteShare; motionScripts = $modelMotionScripts }
+                                        howToFix = 'Build the silhouette directly with build_polygon_model { organic=true }, assign at least three contrasting polygon submodel colours, install an enabled motion Script under each model, fix every organicQuality issue, then model_audit again.'
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } catch {
+                    # Fail closed if any completion-proof validation failed while
+                    # this Place has registered organic work. The old catch was
+                    # intentionally quiet for legacy checks, but must never turn
+                    # a malformed organic record into an unsupported done claim.
+                    $validationError = [string]$_.Exception.Message
+                    $registeredOrganicJson = ''
+                    $registeredOrganic = $false
+                    try { $registeredOrganic = $Shared.OrganicBuilds.TryGetValue([string]$sessionId, [ref]$registeredOrganicJson) } catch {}
+                    if ($registeredOrganic) {
+                        return @{
+                            ok = $false
+                            code = 'ORGANIC_AUDIT_REQUIRED'
+                            error = 'Organic completion validation failed; report_done fails closed and does not accept an unsupported completion claim.'
+                            validationError = $validationError
+                            howToFix = 'Inspect the reported validation error, then run model_audit by itself for every registered organic model after the final Place write.'
+                        }
+                    }
+                }
                 $doneProgress = Read-ProgressState $sessionId
                 if ($null -eq $doneProgress -or [double]$doneProgress.percent -lt 100) {
                     Update-ArenaProgressState $sessionId 'report_done' 100.0 'Automatisch gesetzt (report_done)' $false $true $true | Out-Null
@@ -18720,7 +19077,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.1.3'
+                        bridgeVersion = '7.1.4'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -18744,6 +19101,86 @@ end
             }
         }
         return $null
+    }
+
+    # Explicit organic-build contract at the HTTP boundary. It is activated by
+    # organic=true, never by a species/model-name keyword: the global 3D build
+    # preference lives in modelBuildRules for every category and remains a
+    # preference rather than forcing every simple Part into polygon geometry.
+    # Follow-up writes to registered organic models stay ordered until audited.
+    function Get-OrganicBuildGuardResult([string]$tool, $toolArgs, [switch]$ParallelCall) {
+        $organicGuardTools = @('set_property','set_properties','bulk_set_properties','set_attribute',
+            'create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance',
+            'set_script_source','patch_script','insert_script','bulk_insert_scripts','run_lua','batch','parallel',
+            'union','subtract','negate','intersect','separate','insert_asset','apply_asset','group_instances','ungroup',
+            'add_tag','remove_tag','place_on','align','stack','grid_arrange','distribute','snap_to_ground','look_at',
+            'rotate_around','move_relative','resize_part','fit_between','point_at','fill_region','build_polygon_model',
+            'build_assembly','build_surface','build_interface','start_job','model_audit','prop_place','prop_save',
+            'refine','world_style','style_lock','world_glow','ui_glow','ui_radial','ui_texture','undo','redo')
+        if ($tool -notin $organicGuardTools) { return $null }
+        if ($null -eq $toolArgs) { return $null }
+        $argsJson = ''
+        try { $argsJson = ConvertTo-Json -InputObject $toolArgs -Depth 24 -Compress } catch { return $null }
+        $organicFlag = $false
+        try { $organicFlag = ($toolArgs.organic -eq $true) } catch {}
+        $isAsyncWrite = ($tool -eq 'start_job' -or $toolArgs.asJob -eq $true)
+
+        $stateJson = ''
+        $organicState = $null
+        $hasOrganicState = $Shared.OrganicBuilds.TryGetValue([string]$sessionId, [ref]$stateJson)
+        if ($hasOrganicState -and -not [string]::IsNullOrWhiteSpace($stateJson)) {
+            try { $organicState = $stateJson | ConvertFrom-Json } catch { $organicState = $null }
+        }
+
+        # Parallel and background calls cannot establish a reliable last-write
+        # order, and nested model_audit results are not persisted by the HTTP
+        # boundary. Require one direct call per edit and one standalone audit.
+        if ($tool -eq 'model_audit' -and ($ParallelCall -or $isAsyncWrite)) {
+            return @{
+                ok = $false; code = 'ORGANIC_SEQUENCE_REQUIRED'
+                error = 'model_audit must be a standalone, foreground call so its exact per-model result can be stored as fresh evidence.'
+                howToFix = 'Call model_audit by itself (without batch/parallel/asJob), after every final write. The bridge records the returned organicQuality result for report_done.'
+            }
+        }
+        if ($organicState -and [bool]$organicState.required) {
+            if ($ParallelCall -or $isAsyncWrite -or $tool -eq 'batch' -or $tool -eq 'parallel') {
+                return @{
+                    ok = $false; code = 'ORGANIC_SEQUENCE_REQUIRED'
+                    error = 'This Place has a registered organic model. Parallel, batch or background writes cannot be ordered against its audit evidence; the write was NOT sent to Studio.'
+                    howToFix = 'Make each edit as a direct foreground tool call. After the final edit, run model_audit by itself on the returned model id, then call report_done.'
+                }
+            }
+            return $null
+        }
+        if (-not $organicFlag) { return $null }
+
+        $isOrganicPolygonBuild = ($tool -eq 'build_polygon_model' -and $organicFlag)
+        if ($isOrganicPolygonBuild) {
+            if ($ParallelCall -or $isAsyncWrite) {
+                return @{
+                    ok = $false; code = 'ORGANIC_SEQUENCE_REQUIRED'
+                    error = 'An organic model must be built, animated and audited in separate ordered foreground calls; parallel/background execution cannot prove that order.'
+                    howToFix = 'Call build_polygon_model { organic=true } by itself first, use the returned model id, install the enabled motion Script, then run model_audit after the final edit.'
+                }
+            }
+            $colorAssignments = ([regex]::Matches($argsJson, '(?i)"color"\s*:')).Count
+            $colorAssignments += ([regex]::Matches($argsJson, '(?i)\bcolor\s*=')).Count
+            if ($colorAssignments -lt 3) {
+                return @{
+                    ok = $false; code = 'ORGANIC_COLORS_REQUIRED'
+                    error = 'organic=true requires at least three explicit, contrasting colour assignments across meaningful regions (for example body/back, belly and face/paws or trunk, foliage and accents). The build was NOT sent to Studio.'
+                    howToFix = 'Pass at least three distinct style.color values in submodels (or at least three color= values in the polygon script), then build again. model_audit verifies the actual palette.'
+                    colorAssignments = $colorAssignments
+                }
+            }
+            return $null
+        }
+        return @{
+            ok = $false; code = 'ORGANIC_POLYGON_REQUIRED'
+            error = 'This write explicitly declares an organic build, but organic models must be created with build_polygon_model { organic=true }. The write was NOT sent to Studio; no model-name or species keyword is used to choose the builder.'
+            howToFix = 'Call build_polygon_model { organic=true, modelName, submodels=[{name="Primary",style={color="#..."},polygons=[...]},{name="Secondary",style={color="#..."},polygons=[...]},{name="Accent",style={color="#..."},polygons=[...]}] } as one non-parallel foreground call. Then add an enabled motion Script under the returned model, run model_audit on that id after the last edit and fix every organicQuality issue.'
+            blockedTool = $tool
+        }
     }
 
     $context = $Context
@@ -18979,7 +19416,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.1.3'
+                        serverVersion = '7.1.4'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -19338,7 +19775,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.1.3'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.1.4'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -19422,8 +19859,8 @@ end
                 }
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.1.3'
-                    serverVersion = '7.1.3'
+                    bridgeVersion = '7.1.4'
+                    serverVersion = '7.1.4'
                     toolbox = $statusToolbox
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
@@ -19556,6 +19993,20 @@ end
                     Send-Json $context 200 $blockedSimPar
                     continue
                 }
+                $organicParallelBlocked = $null
+                foreach ($call in @($body.calls)) {
+                    $candidateTool = [string]$call.tool
+                    $candidateArgs = $call.args
+                    if ($null -eq $candidateArgs) { $candidateArgs = New-Object PSObject }
+                    $organicParallelBlocked = Get-OrganicBuildGuardResult $candidateTool $candidateArgs -ParallelCall
+                    if ($null -ne $organicParallelBlocked) {
+                        $organicParallelBlocked.tool = $candidateTool
+                        $organicParallelBlocked._bridge = (New-Envelope $sessionId)
+                        Send-Json $context 200 $organicParallelBlocked
+                        break
+                    }
+                }
+                if ($null -ne $organicParallelBlocked) { continue }
                 foreach ($call in @($body.calls)) {
                     $callTool = [string]$call.tool
                     if ($callTool -eq 'sim_stop') {
@@ -19735,7 +20186,14 @@ end
                     'clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','set_script_source','patch_script',
                     'insert_script','bulk_insert_scripts','run_lua','batch','parallel','union','subtract','negate','intersect','separate',
                     'insert_asset','apply_asset','group_instances','ungroup','add_tag','remove_tag','place_on','align','stack','grid_arrange',
-                    'distribute','snap_to_ground','look_at','rotate_around','move_relative','resize_part','fit_between','point_at','fill_region','build_polygon_model','build_assembly','build_surface','build_interface')
+                    'distribute','snap_to_ground','look_at','rotate_around','move_relative','resize_part','fit_between','point_at','fill_region','build_polygon_model','build_assembly','build_surface','build_interface','start_job','prop_place','prop_save','refine','world_style','style_lock','world_glow','ui_glow','ui_radial','ui_texture','undo','redo')
+                $organicGuard = Get-OrganicBuildGuardResult $tool $toolArgs
+                if ($null -ne $organicGuard) {
+                    Complete-ArenaActivity $sessionId $activityId $tool $toolArgs (To-Json $organicGuard 20)
+                    $organicGuard._bridge = (New-Envelope $sessionId)
+                    Send-Json $context 200 $organicGuard
+                    continue
+                }
                 if ($sessionEntry -and $sessionEntry.state -and [bool]$sessionEntry.state.running -and [bool]$sessionEntry.state.userPlaytestActive -and $persistentEditTools -contains $tool) {
                     $blocked = @{
                         ok = $false
@@ -19843,37 +20301,127 @@ end
                 if ($null -ne $resultJson) {
                     Save-DedupedPlayResult $sessionId $tool $toolArgs $resultJson
                     Complete-ArenaActivity $sessionId $activityId $tool $toolArgs $resultJson
-                    # Version 7.0.0: Audit-Kennzahlen mitschreiben. Der Handoff-
-                    # Rahmen und HANDOFF_REQUIRED lesen sie spaeter aus.
-                    if ($tool -eq 'ui_audit' -or $tool -eq 'model_audit' -or $tool -eq 'world_audit' -or $tool -eq 'site_survey' -or $tool -eq 'lag_doctor') {
+                    $resultEnvelope = $null
+                    $pluginPayload = $null
+                    $resultSucceeded = $false
+                    try {
+                        $resultEnvelope = $resultJson | ConvertFrom-Json
+                        if ($null -ne $resultEnvelope) {
+                            $resultSucceeded = ([bool]$resultEnvelope.ok -eq $true)
+                            $pluginPayload = $resultEnvelope
+                            if ($resultEnvelope.PSObject.Properties['result'] -and $null -ne $resultEnvelope.result) {
+                                $pluginPayload = $resultEnvelope.result
+                            }
+                        }
+                    } catch {}
+                    $resultAtTicks = [DateTime]::UtcNow.Ticks
+
+                    # Remember the actual returned model so report_done can demand
+                    # an audit of this precise organic build even when the build
+                    # request timed out/reconnected before any later audit arrives.
+                    if ($resultSucceeded -and $tool -eq 'build_polygon_model' -and $pluginPayload.organic -eq $true) {
+                        $builtModel = $null
+                        try { $builtModel = $pluginPayload.model } catch {}
+                        $organicJson = ''
+                        $organicState = $null
+                        if ($Shared.OrganicBuilds.TryGetValue([string]$sessionId, [ref]$organicJson) -and -not [string]::IsNullOrWhiteSpace($organicJson)) {
+                            try { $organicState = $organicJson | ConvertFrom-Json } catch { $organicState = $null }
+                        }
+                        $organicRecords = @()
+                        if ($organicState) {
+                            try { $organicRecords = @($organicState.models) } catch {}
+                            if ($organicRecords.Count -eq 0 -and $organicState.PSObject.Properties['modelId']) { $organicRecords = @($organicState) }
+                        }
+                        foreach ($priorOrganicRecord in $organicRecords) {
+                            if (-not $priorOrganicRecord.PSObject.Properties['lastWriteAtTicks']) { $priorOrganicRecord | Add-Member -NotePropertyName lastWriteAtTicks -NotePropertyValue 0L }
+                            if (-not $priorOrganicRecord.PSObject.Properties['auditAtTicks']) { $priorOrganicRecord | Add-Member -NotePropertyName auditAtTicks -NotePropertyValue 0L }
+                            $priorOrganicRecord.lastWriteAtTicks = $resultAtTicks
+                            $priorOrganicRecord.auditAtTicks = 0L
+                            $priorOrganicRecord.auditScope = ''
+                            $priorOrganicRecord.auditQuality = $null
+                            $priorOrganicRecord.auditModels = @()
+                            $priorOrganicRecord.detected = $false
+                        }
+                        $organicRecords += @(@{
+                            required = $true
+                            detected = $false
+                            modelId = $(if ($builtModel) { [string]$builtModel.id } else { '' })
+                            modelPath = $(if ($builtModel) { [string]$builtModel.path } else { '' })
+                            modelName = $(if ($builtModel) { [string]$builtModel.name } else { [string]$toolArgs.modelName })
+                            buildAtTicks = $resultAtTicks
+                            lastWriteAtTicks = $resultAtTicks
+                            auditAtTicks = 0L
+                            auditScope = ''
+                            auditQuality = $null
+                            auditModels = @()
+                        })
+                        $organicState = [pscustomobject]@{ required = $true; models = $organicRecords }
+                        $Shared.OrganicBuilds[[string]$sessionId] = ($organicState | ConvertTo-Json -Depth 12 -Compress)
+                    } elseif ($resultSucceeded -and $persistentEditTools -contains $tool) {
+                        $organicJson = ''
+                        if ($Shared.OrganicBuilds.TryGetValue([string]$sessionId, [ref]$organicJson) -and -not [string]::IsNullOrWhiteSpace($organicJson)) {
+                            try {
+                                $organicState = $organicJson | ConvertFrom-Json
+                                $organicRecords = @()
+                                try { $organicRecords = @($organicState.models) } catch {}
+                                if ($organicRecords.Count -eq 0 -and $organicState.PSObject.Properties['modelId']) { $organicRecords = @($organicState) }
+                                foreach ($organicRecord in $organicRecords) {
+                                    if (-not $organicRecord.PSObject.Properties['lastWriteAtTicks']) { $organicRecord | Add-Member -NotePropertyName lastWriteAtTicks -NotePropertyValue 0L }
+                                    if (-not $organicRecord.PSObject.Properties['auditAtTicks']) { $organicRecord | Add-Member -NotePropertyName auditAtTicks -NotePropertyValue 0L }
+                                    $organicRecord.lastWriteAtTicks = $resultAtTicks
+                                    $organicRecord.auditAtTicks = 0L
+                                    $organicRecord.auditScope = ''
+                                    $organicRecord.auditQuality = $null
+                                    $organicRecord.auditModels = @()
+                                    $organicRecord.detected = $false
+                                }
+                                $organicState.required = $true
+                                $organicState.models = $organicRecords
+                                $Shared.OrganicBuilds[[string]$sessionId] = ($organicState | ConvertTo-Json -Depth 12 -Compress)
+                            } catch {}
+                        }
+                    }
+
+                    # Version 7.0.0: Audit-Kennzahlen mitschreiben. The plugin
+                    # response is { ok, result, warnings }; unwrap it before
+                    # reading fields so report_done never reasons from empty data.
+                    if ($resultSucceeded -and ($tool -eq 'ui_audit' -or $tool -eq 'model_audit' -or $tool -eq 'world_audit' -or $tool -eq 'site_survey' -or $tool -eq 'lag_doctor')) {
                         try {
-                            $auditResult = $resultJson | ConvertFrom-Json
+                            $auditResult = $pluginPayload
                             $placeholderCount = 0
                             $placeholders = @()
                             try { if ($auditResult.PSObject.Properties['placeholderCount']) { $placeholderCount = [int]$auditResult.placeholderCount } } catch {}
                             try { if ($auditResult.PSObject.Properties['placeholders']) { $placeholders = @($auditResult.placeholders) } } catch {}
                             if ($placeholderCount -le 0) {
-                                # auch ui_audit/Report-Felder beruecksichtigen
+                                # Also account for ui_audit/report-style nested counts.
                                 try { if ($auditResult.PSObject.Properties['counts'] -and $auditResult.counts.PSObject.Properties['placeholders']) { $placeholderCount = [int]$auditResult.counts.placeholders } } catch {}
                             }
-                            # Version 7.1.3: Bauqualitaet aus dem Modell-Audit
-                            # mitschreiben. report_done verweigert damit ein
-                            # Kugel-Modell (DETAIL_REQUIRED), statt es
-                            # durchzuwinken.
                             $primitiveAbuse = $false
                             $primitiveGroups = @()
                             $cylinderProblemCount = 0
+                            $buildQuality = $null
+                            $organicQuality = $null
                             try { if ($auditResult.PSObject.Properties['primitiveAbuse']) { $primitiveAbuse = [bool]$auditResult.primitiveAbuse } } catch {}
-                            try { if ($auditResult.PSObject.Properties['buildQuality'] -and $auditResult.buildQuality.PSObject.Properties['primitiveGroups']) { $primitiveGroups = @($auditResult.buildQuality.primitiveGroups) } } catch {}
+                            try { if ($auditResult.PSObject.Properties['buildQuality']) { $buildQuality = $auditResult.buildQuality } } catch {}
+                            try { if ($buildQuality -and $buildQuality.PSObject.Properties['primitiveGroups']) { $primitiveGroups = @($buildQuality.primitiveGroups) } } catch {}
                             try { if ($auditResult.PSObject.Properties['cylinderProblemCount']) { $cylinderProblemCount = [int]$auditResult.cylinderProblemCount } } catch {}
+                            try { if ($buildQuality -and $buildQuality.PSObject.Properties['organicQuality']) { $organicQuality = $buildQuality.organicQuality } } catch {}
                             $buildVerdict = ''
-                            try { if ($auditResult.PSObject.Properties['buildQuality'] -and $auditResult.buildQuality.PSObject.Properties['verdict']) { $buildVerdict = [string]$auditResult.buildQuality.verdict } } catch {}
+                            try { if ($buildQuality -and $buildQuality.PSObject.Properties['verdict']) { $buildVerdict = [string]$buildQuality.verdict } } catch {}
+                            $organicDetected = $false
+                            $organicIssues = @()
+                            $organicPolygonTriangles = 0
+                            $organicModelCount = 0
+                            try { if ($organicQuality) { $organicDetected = [bool]$organicQuality.detected } } catch {}
+                            try { if ($organicQuality) { $organicIssues = @($organicQuality.issues) } } catch {}
+                            try { if ($organicQuality) { $organicPolygonTriangles = [int]$organicQuality.polygonTriangles } } catch {}
+                            try { if ($organicQuality) { $organicModelCount = [int]$organicQuality.modelCount } } catch {}
                             $summary = ''
                             try {
                                 if ($tool -eq 'ui_audit') { $summary = 'ui_audit: blandness ' + [string]$auditResult.blandnessScore + ', techniqueScore ' + [string]$auditResult.techniqueScore }
                                 else { $summary = $tool + ': ' + [string]$auditResult.verdict + ' (' + [string]$auditResult.phase + ')' }
                             } catch {}
-                            if ($primitiveAbuse -or $cylinderProblemCount -gt 0) {
+                            if ($primitiveAbuse -or $cylinderProblemCount -gt 0 -or $organicIssues.Count -gt 0) {
                                 $summary = $summary + ' | buildQuality ' + $buildVerdict
                             }
                             $flag = [pscustomobject]@{
@@ -19885,9 +20433,94 @@ end
                                 primitiveGroups = $primitiveGroups
                                 cylinderProblemCount = $cylinderProblemCount
                                 buildQualityVerdict = $buildVerdict
+                                organicDetected = $organicDetected
+                                organicIssues = $organicIssues
+                                organicPolygonTriangles = $organicPolygonTriangles
+                                organicModelCount = $organicModelCount
+                                organicQuality = $organicQuality
                                 at = (Get-UnixSeconds)
+                                atTicks = $resultAtTicks
                             }
-                            $Shared.AuditFlags[[string]$sessionId] = ($flag | ConvertTo-Json -Depth 5 -Compress)
+                            $Shared.AuditFlags[[string]$sessionId] = ($flag | ConvertTo-Json -Depth 10 -Compress)
+
+                            # Persist each organic model independently. A Workspace
+                            # audit can refresh all returned candidates; an audit of
+                            # one ref refreshes only that exact model.
+                            if ($tool -eq 'model_audit') {
+                                $organicJson = ''
+                                $organicState = $null
+                                if ($Shared.OrganicBuilds.TryGetValue([string]$sessionId, [ref]$organicJson) -and -not [string]::IsNullOrWhiteSpace($organicJson)) {
+                                    try { $organicState = $organicJson | ConvertFrom-Json } catch { $organicState = $null }
+                                }
+                                $organicRecords = @()
+                                if ($organicState) {
+                                    try { $organicRecords = @($organicState.models) } catch {}
+                                    if ($organicRecords.Count -eq 0 -and $organicState.PSObject.Properties['modelId']) { $organicRecords = @($organicState) }
+                                }
+                                $qualityModels = @()
+                                try { if ($organicQuality) { $qualityModels = @($organicQuality.models) } } catch {}
+                                foreach ($modelEvidence in $qualityModels) {
+                                    $evidenceId = [string]$modelEvidence.id
+                                    $evidencePath = [string]$modelEvidence.path
+                                    $organicRecord = $null
+                                    foreach ($candidateRecord in $organicRecords) {
+                                        if (-not [string]::IsNullOrWhiteSpace($evidenceId) -and [string]$candidateRecord.modelId -eq $evidenceId) { $organicRecord = $candidateRecord; break }
+                                        if ([string]::IsNullOrWhiteSpace([string]$candidateRecord.modelId) -and -not [string]::IsNullOrWhiteSpace($evidencePath) -and [string]$candidateRecord.modelPath -eq $evidencePath) { $organicRecord = $candidateRecord; break }
+                                        if ([string]::IsNullOrWhiteSpace([string]$candidateRecord.modelId) -and [string]::IsNullOrWhiteSpace([string]$candidateRecord.modelPath) -and -not [string]::IsNullOrWhiteSpace([string]$candidateRecord.modelName) -and [string]$candidateRecord.modelName -eq [string]$modelEvidence.name) { $organicRecord = $candidateRecord; break }
+                                    }
+                                    if ($null -eq $organicRecord) {
+                                        $organicRecord = [pscustomobject]@{
+                                            required = $true; detected = $false; modelId = $evidenceId; modelPath = $evidencePath; modelName = [string]$modelEvidence.name
+                                            buildAtTicks = 0L; lastWriteAtTicks = 0L; auditAtTicks = 0L; auditScope = ''
+                                            auditQuality = $null; auditModels = @()
+                                        }
+                                        $organicRecords += @($organicRecord)
+                                    }
+                                    $modelIssues = @($modelEvidence.issues)
+                                    $perModelQuality = [pscustomobject]@{
+                                        detected = $true
+                                        modelCount = 1
+                                        polygonTriangles = [int]$modelEvidence.polygonTriangles
+                                        uniqueColors = [int]$modelEvidence.uniqueColors
+                                        dominantColorShare = [double]$modelEvidence.dominantColorShare
+                                        nearWhiteShare = [double]$modelEvidence.nearWhiteShare
+                                        motionScripts = [int]$modelEvidence.motionScripts
+                                        issues = $modelIssues
+                                        models = @($modelEvidence)
+                                    }
+                                    $organicRecord.required = $true
+                                    $organicRecord.detected = $true
+                                    $organicRecord.modelId = $evidenceId
+                                    $organicRecord.modelPath = $evidencePath
+                                    $organicRecord.modelName = [string]$modelEvidence.name
+                                    $organicRecord.auditAtTicks = $resultAtTicks
+                                    $organicRecord.auditScope = [string]$auditResult.scope
+                                    $organicRecord.auditQuality = $perModelQuality
+                                    $organicRecord.auditModels = @($modelEvidence)
+                                }
+                                if ($organicDetected -and $qualityModels.Count -eq 0 -and $organicRecords.Count -eq 0) {
+                                    # Detection without the promised per-model detail
+                                    # is an explicit incomplete record, never a pass.
+                                    $organicRecords = @([pscustomobject]@{
+                                        required = $true; detected = $false; modelId = ''; modelPath = ''; modelName = ''
+                                        buildAtTicks = 0L; lastWriteAtTicks = 0L; auditAtTicks = 0L; auditScope = [string]$auditResult.scope
+                                        auditQuality = $organicQuality; auditModels = @()
+                                    })
+                                }
+                                $reportedOrganicCount = 0
+                                try { if ($organicQuality) { $reportedOrganicCount = [int]$organicQuality.modelCount } } catch {}
+                                if ($organicDetected -and $reportedOrganicCount -gt $qualityModels.Count) {
+                                    $organicRecords += @([pscustomobject]@{
+                                        required = $true; detected = $false; modelId = ''; modelPath = ''; modelName = 'unreported organic model(s)'
+                                        buildAtTicks = 0L; lastWriteAtTicks = 0L; auditAtTicks = 0L; auditScope = [string]$auditResult.scope
+                                        auditQuality = $null; auditModels = @()
+                                    })
+                                }
+                                if ($organicRecords.Count -gt 0) {
+                                    $organicState = [pscustomobject]@{ required = $true; models = $organicRecords }
+                                    $Shared.OrganicBuilds[[string]$sessionId] = ($organicState | ConvertTo-Json -Depth 14 -Compress)
+                                }
+                            }
                         } catch {}
                     }
                 }
@@ -20850,6 +21483,7 @@ function Reset-SessionToken {
     $script:Shared.SessionTokens[$SessionId] = $new
     $script:Shared.TokenSessions[$new] = $SessionId
     Write-RuntimeLog "Token fuer Sitzung $SessionId neu vergeben."
+    Show-CopyConfirm -Message 'Token wurde zurückgesetzt.' -Seconds 4
 }
 
 function Set-SessionMode {
@@ -21435,8 +22069,7 @@ $xaml = @'
                         </Grid>
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="Arena Roblox Bridge" Foreground="{StaticResource TextMain}" FontSize="18.5" FontWeight="Bold"/>
-                            <TextBlock x:Name="SubtitleText" Text="Bereit für verbundene Places" Foreground="{StaticResource TextMuted}" FontSize="11.5" Margin="0,3,0,0"/>
-                            <TextBlock x:Name="RuntimeLine" Text="Bridge 7.1.3" Foreground="{StaticResource TextFaint}" FontSize="9.5" Margin="0,2,0,0"/>
+                            <TextBlock x:Name="SubtitleText" Text="bereit für verbundene Places" Foreground="{StaticResource TextMuted}" FontSize="11.5" Margin="0,3,0,0"/>
                         </StackPanel>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -21652,8 +22285,6 @@ $window.Dispatcher.add_UnhandledException({
 })
 
 $TitleBar        = $window.FindName('TitleBar')
-$SubtitleText    = $window.FindName('SubtitleText')
-$RuntimeLine     = $window.FindName('RuntimeLine')
 $SplashScreen    = $window.FindName('SplashScreen')
 $CopyConfirm     = $window.FindName('CopyConfirm')
 $CopyConfirmText = $window.FindName('CopyConfirmText')
@@ -22227,7 +22858,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.1.3)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.1.4)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -22301,11 +22932,12 @@ function Get-ProgressStateSnapshot {
         Calls = [int]$state.calls
         CallsWithProgress = [int]$state.callsWithProgress
     }
-    # Zwei Minuten keine Rueckmeldung: ehrlich "wartet auf Arena" und die
-    # Leiste FRIERT EIN, statt weiterzulaufen.
-    if ($silent -gt 120 -and $view.State -ne 'done') {
+    # Nach einer Minute ohne Bridge-Aufruf: Fortschritt ehrlich einfrieren
+    # und grau markieren. Eine abgeschlossene 100-%-Meldung bleibt separat
+    # noch eine Minute gruen sichtbar und wird danach in der UI ausgeblendet.
+    if ($silent -ge 60 -and $view.State -ne 'done') {
         $view.State = 'waiting'
-        if ([string]::IsNullOrWhiteSpace($view.Message)) { $view.Message = 'wartet auf Arena / keine Rueckmeldung' }
+        $view.Message = 'Seit über einer Minute kein Bridge Aufruf mehr'
     }
     return $view
 }
@@ -22313,6 +22945,7 @@ function Get-ProgressStateSnapshot {
 function Format-ProgressMessage {
     param($Snapshot)
     if ($null -eq $Snapshot) { return '' }
+    if ([string]$Snapshot.State -eq 'waiting') { return 'Seit über einer Minute kein Bridge Aufruf mehr' }
     $msg = [string]$Snapshot.Message
     if ([string]::IsNullOrWhiteSpace($msg)) { $msg = 'Arena arbeitet gerade...' }
     if ($Snapshot.State -eq 'waiting' -and $msg -notmatch '(?i)wartet') { $msg = 'wartet auf Arena / keine Rueckmeldung - ' + $msg }
@@ -22457,6 +23090,7 @@ function Update-PlaceProgressVisual {
         if ($show) { $Row.ProgressPanel.Visibility = 'Visible' } else { $Row.ProgressPanel.Visibility = 'Collapsed' }
         $Row.ProgressState = 'command'
         Set-Text $Row.ProgressText $label
+        $Row.ProgressText.Visibility = 'Visible'
         $Row.ProgressText.Foreground = Get-Brush $color
         $Row.ProgressBar.Visibility = 'Collapsed'
         Set-Text $Row.ProgressPercent ''
@@ -22477,22 +23111,32 @@ function Update-PlaceProgressVisual {
     $state = [string]$snapshot.State
     $color = '#FF4C9BFF'      # arbeitet = blau
     $label = 'Arena arbeitet gerade...'
-    if ($state -eq 'working') { $label = 'Arena arbeitet gerade...' }
-    if ($state -eq 'done') { $color = '#FF38D16C'; $label = 'fertig' }
-    elseif ($state -eq 'waiting') { $color = '#FF8A93A6'; $label = 'wartet auf Arena / keine Rueckmeldung' }
+    if ($state -eq 'done') { $color = '#FF38D16C'; $label = 'Fertig!' }
+    elseif ($state -eq 'waiting') { $color = '#FF8A93A6'; $label = 'Seit über einer Minute kein Bridge Aufruf mehr' }
     elseif ($state -eq 'error') { $color = '#FFE11D48'; $label = 'Fehler' }
     $percent = [math]::Round([double]$snapshot.Percent, 0)
     if ($percent -lt 0) { $percent = 0 }
     if ($percent -gt 100) { $percent = 100 }
+
+    # 100% bleibt nach report_done exakt 60 s sichtbar, danach verschwindet
+    # nur die Zeilenanzeige; der Verlauf bleibt fuer Diagnose/Prompt erhalten.
+    if ($state -eq 'done' -and $percent -ge 100 -and $snapshot.SilentSeconds -ge 60) {
+        $Row.ProgressPanel.Visibility = 'Collapsed'
+        $Row.ProgressState = 'idle'
+        try { if ($Row.CommandCancelButton) { $Row.CommandCancelButton.Visibility = 'Collapsed' } } catch {}
+        return
+    }
+
     $Row.ProgressPanel.Visibility = 'Visible'
     $Row.ProgressState = $state
     Set-Text $Row.ProgressText $label
-    $Row.ProgressText.Foreground = Get-Brush '#FF6FB6FF'
+    $Row.ProgressText.Visibility = 'Collapsed'
+    $Row.ProgressText.Foreground = Get-Brush $color
     $Row.ProgressBar.Visibility = 'Visible'
     $Row.ProgressPercent.Visibility = 'Visible'
-    $Row.ProgressBar.Value = $(if ($state -eq 'waiting') { $Row.ProgressBar.Value } else { $percent })
+    $Row.ProgressBar.Value = $percent
     $Row.ProgressBar.Foreground = Get-Brush $color
-    $Row.ProgressPercent.Text = ($percent.ToString() + ' %')
+    $Row.ProgressPercent.Text = ($percent.ToString() + ' % • ' + $label)
     $Row.ProgressPercent.Foreground = Get-Brush $color
     try { if ($Row.CommandCancelButton) { $Row.CommandCancelButton.Visibility = 'Collapsed' } } catch {}
     $tooltip = Format-ProgressMessage $snapshot
@@ -22832,7 +23476,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.1.3)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.1.4)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -24278,10 +24922,10 @@ function New-Row {
     $grid.ColumnDefinitions.Add($menuCol)
 
     $namePanel = [System.Windows.Controls.Grid]::new()
-    # Version 7.0.5: Inhalt wieder MITTIG in der Zeile (7.0.4 hatte auf 'Top'
-    # gestellt - Vorschau/Titel/Hinweis standen dadurch oben und die Zeile wirkte
-    # zu hoch). Die Vorschau läuft über BEIDE Zeilen und wird selbst zentriert.
-    $namePanel.VerticalAlignment = 'Center'
+    # Version 7.1.4: Name + optionale Statuszeile sitzen zwischen zwei gleich
+    # grossen Sternzeilen. Sind Plugin-Warnung und Fortschritt eingeklappt,
+    # bleibt der einzelne Place-Name mathematisch in der Kartenmitte.
+    $namePanel.VerticalAlignment = 'Stretch'
     $iconCol2 = [System.Windows.Controls.ColumnDefinition]::new(); $iconCol2.Width = [System.Windows.GridLength]::Auto
     $titleCol = [System.Windows.Controls.ColumnDefinition]::new()
     $namePanel.ColumnDefinitions.Add($iconCol2)
@@ -24297,8 +24941,8 @@ function New-Row {
     try {
         $placeIcon = New-PlacePreviewVisual
         [System.Windows.Controls.Grid]::SetColumn($placeIcon.Frame, 0)
-        # Vorschau mittig über Titel UND Fortschrittszeile (kein Höhentreiben).
-        [System.Windows.Controls.Grid]::SetRowSpan($placeIcon.Frame, 2)
+        # Vorschau mittig über den gesamten vierzeiligen Namensbereich.
+        [System.Windows.Controls.Grid]::SetRowSpan($placeIcon.Frame, 4)
         $placeIcon.Frame.VerticalAlignment = 'Center'
     } catch {
         $placeIcon = $null
@@ -24390,14 +25034,20 @@ function New-Row {
     } catch {
         Write-UiErrorLog 'Abbrechen-Knopf konnte nicht gebaut werden (Zeile bleibt nutzbar)' $_
     }
+    $topCenterSpacer = [System.Windows.Controls.RowDefinition]::new()
+    $topCenterSpacer.Height = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
     $titleRowDefinition = [System.Windows.Controls.RowDefinition]::new()
     $titleRowDefinition.Height = [System.Windows.GridLength]::Auto
     $progressRowDefinition = [System.Windows.Controls.RowDefinition]::new()
     $progressRowDefinition.Height = [System.Windows.GridLength]::Auto
+    $bottomCenterSpacer = [System.Windows.Controls.RowDefinition]::new()
+    $bottomCenterSpacer.Height = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
+    $namePanel.RowDefinitions.Add($topCenterSpacer) | Out-Null
     $namePanel.RowDefinitions.Add($titleRowDefinition) | Out-Null
     $namePanel.RowDefinitions.Add($progressRowDefinition) | Out-Null
-    [System.Windows.Controls.Grid]::SetRow($titleStack, 0)
-    [System.Windows.Controls.Grid]::SetRow($progressRow, 1)
+    $namePanel.RowDefinitions.Add($bottomCenterSpacer) | Out-Null
+    [System.Windows.Controls.Grid]::SetRow($titleStack, 1)
+    [System.Windows.Controls.Grid]::SetRow($progressRow, 2)
     # Version 7.0.5: Die Arbeitszeile gehoert UNTER den Place-Namen (Spalte 1),
     # nicht unter die Vorschau (Standardspalte 0). Genau das machte die Place-
     # Zeile hoch und zog die Mitte auseinander.
@@ -24585,7 +25235,6 @@ function New-Row {
             $info = $s.Tag
             $info.Popup.IsOpen = $false
             Reset-SessionToken $info.SessionId
-            Show-Toast -Message 'Token wurde zurückgesetzt.' -Kind 'Success'
         })
         $historyItem.Root.Add_MouseLeftButtonUp({
             param($s, $e)
@@ -24999,7 +25648,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.1.3)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.1.4)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -25076,60 +25725,7 @@ function Write-PerfReport {
     }
 }
 
-function Update-RuntimeLine {
-    # Version 7.0.6: dauerhaft sichtbarer Deployment-Beweis. Ohne diese Zeile
-    # war nicht unterscheidbar, ob 7.0.6 beim Nutzer ueberhaupt laeuft (H1) und
-    # ob das Studio-Plugin zur Bridge passt (H2).
-    try {
-        if ($null -eq $RuntimeLine) { return }
-        $info = $script:Shared.RuntimeInfo
-        $version = [string]$info.Version
-        if ([string]::IsNullOrWhiteSpace($version)) { $version = [string]$script:Shared.DocsVersion }
-        $shaText = 'unbekannt'
-        try {
-            $sha = [string]$info.Sha256
-            if (-not [string]::IsNullOrWhiteSpace($sha) -and $sha.Length -ge 8) { $shaText = $sha.Substring(0, 8).ToLowerInvariant() }
-        } catch {}
-        $sweepText = 'Wächter startet'
-        try {
-            if ([int64]$script:Shared.SweepState.StartedAt -gt 0 -and [int64]$script:Shared.SweepState.LastSweepAt -gt 0) {
-                $sinceSweep = [int][Math]::Max(0, ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - [int64]$script:Shared.SweepState.LastSweepAt))
-                $sweepText = 'Wächter aktiv (vor ' + [string]$sinceSweep + ' s)'
-            }
-        } catch {}
-        $recent = 0
-        try {
-            $nowStamp = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-            foreach ($creationStamp in @($script:Shared.SessionCreations.ToArray())) {
-                if ([int64]$creationStamp -ge ($nowStamp - 60)) { $recent = $recent + 1 }
-            }
-        } catch {}
-        $line = 'Bridge ' + $version + ' · SHA ' + $shaText + ' · ' + $sweepText
-        if ($recent -gt 0) { $line += ' · neue Sitzungen (60 s): ' + [string]$recent }
-        $outdated = ''
-        try {
-            foreach ($pair in $script:Shared.Sessions.GetEnumerator()) {
-                $entry = $pair.Value | ConvertFrom-Json
-                $pluginVersion = [string]$entry.pluginVersion
-                if (-not [string]::IsNullOrWhiteSpace($pluginVersion) -and $pluginVersion -ne [string]$script:Shared.DocsVersion) {
-                    $outdated = '⚠ Studio einmal komplett schließen und neu öffnen - laedt Plugin ' + [string]$script:Shared.DocsVersion + ' (laueft noch ' + $pluginVersion + ')'
-                    $logKey = [string]$pair.Key
-                    if (-not $script:PluginOutdatedLogged.ContainsKey($logKey)) {
-                        $script:PluginOutdatedLogged[$logKey] = $true
-                        Write-RuntimeLog ('Plugin veraltet: Studio meldet ' + $pluginVersion + ', die Bridge erwartet ' + [string]$script:Shared.DocsVersion + ' (session ' + $logKey + '). Ein laufendes Studio behaelt das alte Plugin im Speicher - Studio einmal komplett neu oeffnen.')
-                    }
-                    break
-                }
-            }
-        } catch {}
-        if (-not [string]::IsNullOrWhiteSpace($outdated)) { $line += ' · ' + $outdated }
-        Set-Text $RuntimeLine $line
-        try { $RuntimeLine.Foreground = Get-Brush $(if ($outdated) { '#FFFFC95E' } else { '#8CA3C8' }) } catch {}
-    } catch {}
-}
-
 function Refresh-Ui {
-    Update-RuntimeLine
     $line = $null
     while ($script:TunnelLines.TryDequeue([ref]$line)) {
         $script:LastTunnelMessage = $line
@@ -25151,7 +25747,6 @@ function Refresh-Ui {
     Update-SplashScreen
 
     if (-not $script:RobloxStudioPath) {
-        Set-Text $SubtitleText 'Bitte installiere Roblox Studio und öffne dieses Programm danach neu.'
         Set-LiveBadge 'OFFLINE' $script:ColorRed '#33E11D48' '#66FF5C77'
         Set-Text $EmptyTitle 'Roblox Studio wurde nicht gefunden'
         Set-Text $EmptyBody 'Installiere Roblox Studio, schließe dieses Fenster und öffne Arena Roblox Bridge danach erneut.'
@@ -25161,7 +25756,6 @@ function Refresh-Ui {
     }
 
     if ($script:TunnelUrl) {
-        Set-Text $SubtitleText 'Bereit für verbundene Places'
         Set-LiveBadge 'LIVE' $script:ColorGreen '#331FA34A' '#662FCB6C'
     } elseif ($script:TunnelInstalling) {
         # Cloudflared wird gerade automatisch heruntergeladen bzw. installiert.
@@ -25201,11 +25795,9 @@ function Refresh-Ui {
         } else {
             $installSeconds = 0
             if ($script:TunnelInstallStartedAt) { $installSeconds = [int](((Get-Date) - $script:TunnelInstallStartedAt).TotalSeconds) }
-            Set-Text $SubtitleText "Cloudflared wird automatisch heruntergeladen (dauert je nach Verbindung 1-3 Minuten, seit $installSeconds Sekunden)"
             Set-LiveBadge 'INSTALL' $script:ColorAmber '#33C77F14' '#66FFC95E'
         }
     } elseif ($script:TunnelInstallFailed) {
-        Set-Text $SubtitleText 'Cloudflared konnte nicht automatisch installiert werden'
         Set-LiveBadge 'FEHLER' $script:ColorRed '#33E11D48' '#66FF5C77'
         if (-not $script:TunnelInstallErrorNotified) {
             $script:TunnelInstallErrorNotified = $true
@@ -25215,14 +25807,12 @@ function Refresh-Ui {
             Show-Toast -Message "Cloudflared konnte nicht automatisch installiert werden: $message" -Kind 'Error' -Seconds 12
         }
     } elseif ($script:TunnelMissing) {
-        Set-Text $SubtitleText 'Cloudflared fehlt: winget install --id Cloudflare.cloudflared -e'
         Set-LiveBadge 'FEHLT' $script:ColorRed '#33E11D48' '#66FF5C77'
         if ($script:LastTunnelMessage -and -not $script:TunnelMissingNotified) {
             $script:TunnelMissingNotified = $true
             Show-Toast -Message $script:LastTunnelMessage -Kind 'Warn' -Seconds 7
         }
     } elseif ($script:TunnelFailed -or ($script:TunnelProcess -and $script:TunnelProcess.HasExited)) {
-        Set-Text $SubtitleText 'Cloudflare-Tunnel konnte nicht gestartet werden'
         Set-LiveBadge 'FEHLER' $script:ColorRed '#33E11D48' '#66FF5C77'
         if (-not $script:TunnelErrorNotified) {
             $script:TunnelErrorNotified = $true
@@ -25233,7 +25823,6 @@ function Refresh-Ui {
     } else {
         $seconds = 0
         if ($script:TunnelStartedAt) { $seconds = [int](((Get-Date) - $script:TunnelStartedAt).TotalSeconds) }
-        Set-Text $SubtitleText "Cloudflare-Tunnel wird aufgebaut (seit $seconds Sekunden)"
         Set-LiveBadge 'VERBINDEN' $script:ColorAmber '#33C77F14' '#66FFC95E'
 
         if ($script:TunnelProcess -and -not $script:TunnelHttp2Tried -and $seconds -gt 20) {
@@ -25750,7 +26339,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.1.3'
+    $versionText = '7.1.4'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -26400,7 +26989,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.1.3" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.1.4" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -26447,7 +27036,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.1.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.1.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -26521,7 +27110,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.1.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.1.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -26534,7 +27123,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.1.3'
+    $verText = '7.1.4'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
