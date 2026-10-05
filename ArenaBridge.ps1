@@ -2366,6 +2366,78 @@ $script:Shared = [hashtable]::Synchronized(@{
     })
     # report_done-Meldungen: der Server legt sie ab, die Oberflaeche zeigt sie an
     NotifyQueue     = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+
+    # ==================================================================
+    # Version 7.2.0: NUTZER-KANAL, FRAGEN, BUILD-REGISTER, KANAL-ZAEHLER.
+    # Alles liegt in $Shared (nicht als $script:-Variable), weil der
+    # HTTP-Handler in EIGENEN Runspaces laeuft und $script: dort nicht kennt
+    # (dieselbe Regel wie bei SessionPayloadHardBudgetBytes seit 7.1.3).
+    # ==================================================================
+    # NUTZER-KANAL ("Zwischen-Prompt"): sessionId -> JSON
+    #   { messages = [ { id, text, kind, createdAt, state, attempts,
+    #                    deliveredAt, deliveredWith, ackAt, withdrawnAt } ],
+    #     updatedAt }
+    # Die Oberflaeche stellt ein, der Umschlag JEDER HTTP-Antwort liefert aus
+    # (at-least-once, maximal 3 Versuche). state: queued -> delivered ->
+    # acked | delivered_unacked | withdrawn.
+    UserMessages    = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    UserMessageLock = [System.Object]::new()
+    # sessionId -> ManualResetEvent: weckt wait_for_user, sobald der Nutzer
+    # schreibt (sonst wuerde die KI bis zum Ende ihrer Wartezeit schlafen).
+    UserSignals     = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
+    # FRAGEN AN DEN NUTZER (ask_user/confirm_action): askId -> JSON
+    #   { askId, sessionId, kind, title, questions = [ { id, text, options,
+    #     allowCustomResponse, required, multi, when } ], state, createdAt,
+    #     expiresAt, answeredAt, answers, path, notShown, deliveredTo }
+    AskRequests     = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    AskLock         = [System.Object]::new()
+    AskSignals      = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
+    # sessionId -> JSON-Liste mit Antworten, die erst NACH dem Ende der
+    # wartenden Anfrage ankamen. Sie gehen nie verloren: der naechste Umschlag
+    # liefert sie als _bridge.userAnswers nach.
+    LateAskAnswers  = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    # BUILD-REGISTER: sessionId -> JSON { models = [ { id, path, name, kind,
+    #   declaredGrade, firstWriteAtTicks, lastWriteAtTicks, auditAtTicks,
+    #   auditGrade, auditFinishScore, auditVerdict } ] }
+    SessionBuilds    = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    SessionBuildLock = [System.Object]::new()
+    # STATIONEN-Puffer (Ring) fuer die kleinen Diagnose-Dateien der
+    # Oberflaeche (progress-diagnose.txt / notify-diagnose.txt).
+    FlowTrace       = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+    FlowTraceCap    = 500
+    # KANAL-ZAEHLER: laufen IMMER mit (wie Telemetry seit 7.0.6). Sie
+    # verwandeln "die Meldung kam nicht an" und "der Balken blieb bei 0 %"
+    # in Zahlen, die man zwischen zwei Laeufen vergleichen kann.
+    Channel = [hashtable]::Synchronized(@{
+        ProgressCalls            = 0L
+        ProgressWithPercent      = 0L
+        ProgressMissingPercent   = 0L
+        ProgressPaintedPercent   = 0L
+        ProgressPaintedNoPercent = 0L
+        ProgressNotDisplaced     = 0L
+        NotifyEnqueued           = 0L
+        NotifyShown              = 0L
+        NotifySuppressed         = 0L
+        NotifyFailed             = 0L
+        NotifyPlatformBlocked    = 0L
+        NotifyLastVerdict        = ''
+        NotifyLastReason         = ''
+        NotifyLastAt             = 0L
+        UserMessagesQueued       = 0L
+        UserMessagesDelivered    = 0L
+        UserMessagesAcked        = 0L
+        UserMessagesUnacked      = 0L
+        UserMessagesWithdrawn    = 0L
+        AskOpened                = 0L
+        AskAnswered              = 0L
+        AskExpired               = 0L
+        AskAgentGone             = 0L
+        AskLateAnswers           = 0L
+        QualityDraftFlags        = 0L
+        QualityAuditDemands      = 0L
+        UiMonolithFlags          = 0L
+        UiStructureDemands       = 0L
+    })
     # Version 7.1.3: harte Obergrenze des Sessionstart-Pakets (Bytes, JSON).
     # Liegt hier - und nicht als $script:-Variable - damit der HTTP-Handler in
     # seinem eigenen Runspace denselben Wert liest (siehe Kommentar oben).
@@ -12969,6 +13041,351 @@ $script:BridgeHandlerScript = {
         } catch {}
     }
 
+    # ------------------------------------------------------------------
+    # Version 7.2.0: STATIONEN + KANAL-ZAEHLER.
+    # Format wie die bewaehrten PREVIEW-Stationen aus 6.0.4:
+    #   <BEREICH> [<flowId>] <STATION> feld=wert feld=wert
+    # Ohne diese Zeilen war "der Balken blieb bei 0 %" und "die Meldung kam
+    # nicht an" nicht beweisbar - beides wurde in 7.1.x nur vermutet.
+    # ------------------------------------------------------------------
+    function Format-FlowFields {
+        param($Fields)
+        $parts = New-Object System.Collections.Generic.List[string]
+        try {
+            if ($Fields -is [System.Collections.IDictionary]) {
+                foreach ($key in $Fields.Keys) {
+                    $value = $Fields[$key]
+                    if ($null -eq $value) { $value = '-' }
+                    $text = ([string]$value) -replace '[\r\n\t]+', ' '
+                    if ($text.Length -gt 200) { $text = $text.Substring(0, 199) + '...' }
+                    $parts.Add(([string]$key + '=' + $text))
+                }
+            }
+        } catch {}
+        if ($parts.Count -eq 0) { return '' }
+        return (' ' + ($parts.ToArray() -join ' '))
+    }
+
+    function Add-FlowTraceLine {
+        param([string]$Line)
+        try {
+            if ([string]::IsNullOrWhiteSpace($Line)) { return }
+            $cap = 500
+            try { $cap = [int]$Shared.FlowTraceCap } catch {}
+            if ($cap -lt 20) { $cap = 20 }
+            $Shared.FlowTrace.Enqueue(('{0:u} ' -f (Get-Date)) + $Line)
+            $discard = $null
+            while ($Shared.FlowTrace.Count -gt $cap) {
+                if (-not $Shared.FlowTrace.TryDequeue([ref]$discard)) { break }
+            }
+        } catch {}
+    }
+
+    function Write-FlowStation {
+        param([string]$Area, [string]$FlowId, [string]$Station, $Fields = $null)
+        $line = ''
+        try {
+            $line = ([string]$Area).ToUpperInvariant() + ' [' + [string]$FlowId + '] ' + ([string]$Station).ToUpperInvariant() + (Format-FlowFields $Fields)
+            Write-BridgeLog $line
+            Add-FlowTraceLine $line
+        } catch {}
+        return $line
+    }
+
+    function Add-ChannelCount {
+        param([string]$Name, [long]$Delta = 1)
+        try {
+            $channel = $Shared.Channel
+            if ($null -eq $channel) { return }
+            if ([string]::IsNullOrWhiteSpace($Name)) { return }
+            $existing = $null
+            if ($channel.ContainsKey($Name)) { $existing = $channel[$Name] }
+            if ($existing -is [long] -or $existing -is [int]) { $channel[$Name] = ([long]$existing + [long]$Delta) }
+            else { $channel[$Name] = [long]$Delta }
+        } catch {}
+    }
+
+    function Set-ChannelText {
+        param([string]$Name, [string]$Value)
+        try {
+            $channel = $Shared.Channel
+            if ($null -eq $channel) { return }
+            $channel[$Name] = [string]$Value
+        } catch {}
+    }
+
+    # Ein Feld an einem aus JSON gelesenen Objekt schreiben, ohne in die
+    # PowerShell-5.1-Falle "The property cannot be found" zu laufen.
+    function Set-FlowField {
+        param($Object, [string]$Name, $Value)
+        try {
+            if ($null -eq $Object) { return }
+            if ($Object.PSObject.Properties[$Name]) { $Object.$Name = $Value }
+            else { $Object | Add-Member -NotePropertyName $Name -NotePropertyValue $Value -Force }
+        } catch {}
+    }
+
+    # ------------------------------------------------------------------
+    # Version 7.2.0: NUTZER-KANAL ("Zwischen-Prompt").
+    # Die Bridge kann NICHT in den Arena-Chat schreiben - es gibt keinen
+    # Push-Kanal zur KI. Deshalb traegt JEDER Umschlag wartende
+    # Nutzernachrichten mit (at-least-once), und wait_for_user erlaubt der KI,
+    # an einer Entscheidungsstelle aktiv auf den Nutzer zu warten.
+    # ------------------------------------------------------------------
+    function Read-UserMessageState {
+        param([string]$SessionId)
+        $json = ''
+        if (-not $Shared.UserMessages.TryGetValue([string]$SessionId, [ref]$json)) { return $null }
+        if ([string]::IsNullOrWhiteSpace($json)) { return $null }
+        try { return ($json | ConvertFrom-Json) } catch { return $null }
+    }
+
+    function Save-UserMessageState {
+        param([string]$SessionId, $State)
+        try { $Shared.UserMessages[[string]$SessionId] = (To-Json $State 12) } catch {}
+    }
+
+    # Gibt IMMER eine echte List[object] zurueck. Kein ", $array" und kein
+    # @() am Aufrufer - genau die Kombination hat in 7.1.0 jede
+    # Befehlszustellung blockiert.
+    function Get-UserMessageList {
+        param($State)
+        $items = New-Object System.Collections.Generic.List[object]
+        try {
+            if ($null -ne $State -and $State.PSObject.Properties['messages']) {
+                foreach ($entry in $State.messages) { $items.Add($entry) }
+            }
+        } catch {}
+        return $items
+    }
+
+    function Get-PendingUserMessageViews {
+        param([string]$SessionId, [int]$Max = 3)
+        $views = New-Object System.Collections.Generic.List[object]
+        $now = Get-UnixSeconds
+        try {
+            [System.Threading.Monitor]::Enter($Shared.UserMessageLock)
+            $list = Get-UserMessageList (Read-UserMessageState $SessionId)
+            foreach ($message in $list) {
+                if ($views.Count -ge $Max) { break }
+                $messageState = ''
+                try { $messageState = [string]$message.state } catch {}
+                $attempts = 0
+                try { $attempts = [int]$message.attempts } catch {}
+                $deliveredAt = [int64]0
+                try { $deliveredAt = [int64]$message.deliveredAt } catch {}
+                $repeatable = ($messageState -eq 'delivered' -and $attempts -lt 3 -and ($now - $deliveredAt) -ge 20)
+                if ($messageState -ne 'queued' -and -not $repeatable) { continue }
+                $text = ''
+                try { $text = [string]$message.text } catch {}
+                if ($text.Length -gt 2000) { $text = $text.Substring(0, 1999) + '...' }
+                $sentAt = [int64]0
+                try { $sentAt = [int64]$message.createdAt } catch {}
+                $age = 0
+                if ($sentAt -gt 0 -and $now -ge $sentAt) { $age = [int]($now - $sentAt) }
+                $views.Add([pscustomobject]@{
+                    id           = $(try { [string]$message.id } catch { '' })
+                    text         = $text
+                    kind         = $(try { [string]$message.kind } catch { 'note' })
+                    sentAt       = $sentAt
+                    ageSeconds   = $age
+                    attempt      = ($attempts + 1)
+                })
+            }
+        } catch {}
+        finally { try { [System.Threading.Monitor]::Exit($Shared.UserMessageLock) } catch {} }
+        return $views
+    }
+
+    function Mark-UserMessagesDelivered {
+        param([string]$SessionId, $Ids, [string]$ToolName)
+        $marked = 0
+        $now = Get-UnixSeconds
+        try {
+            [System.Threading.Monitor]::Enter($Shared.UserMessageLock)
+            $state = Read-UserMessageState $SessionId
+            if ($null -ne $state) {
+                $list = Get-UserMessageList $state
+                foreach ($message in $list) {
+                    $id = ''
+                    try { $id = [string]$message.id } catch {}
+                    if ([string]::IsNullOrWhiteSpace($id)) { continue }
+                    $hit = $false
+                    foreach ($wanted in $Ids) { if ([string]$wanted -eq $id) { $hit = $true; break } }
+                    if (-not $hit) { continue }
+                    $attempts = 0
+                    try { $attempts = [int]$message.attempts } catch {}
+                    Set-FlowField $message 'attempts' ($attempts + 1)
+                    Set-FlowField $message 'state' 'delivered'
+                    Set-FlowField $message 'deliveredAt' $now
+                    Set-FlowField $message 'deliveredWith' ([string]$ToolName)
+                    $marked = $marked + 1
+                    Write-FlowStation 'USERMSG' $id 'DELIVERED' @{ sid = $SessionId; attempt = ($attempts + 1); tool = $ToolName }
+                }
+                if ($marked -gt 0) {
+                    Set-FlowField $state 'updatedAt' $now
+                    Save-UserMessageState $SessionId $state
+                    Add-ChannelCount 'UserMessagesDelivered' ([long]$marked)
+                }
+            }
+        } catch {}
+        finally { try { [System.Threading.Monitor]::Exit($Shared.UserMessageLock) } catch {} }
+        return $marked
+    }
+
+    function Invoke-AckUserMessage {
+        param([string]$SessionId, $ToolArgs)
+        $wanted = New-Object System.Collections.Generic.List[string]
+        try {
+            if ($null -ne $ToolArgs) {
+                if ($ToolArgs.PSObject.Properties['ids']) {
+                    foreach ($entry in $ToolArgs.ids) {
+                        $value = ([string]$entry).Trim()
+                        if (-not [string]::IsNullOrWhiteSpace($value)) { $wanted.Add($value) }
+                    }
+                }
+                if ($wanted.Count -eq 0 -and $ToolArgs.PSObject.Properties['id']) {
+                    $value = ([string]$ToolArgs.id).Trim()
+                    if (-not [string]::IsNullOrWhiteSpace($value)) { $wanted.Add($value) }
+                }
+                if ($wanted.Count -eq 0 -and $ToolArgs.PSObject.Properties['all'] -and $ToolArgs.all -eq $true) {
+                    $list = Get-UserMessageList (Read-UserMessageState $SessionId)
+                    foreach ($message in $list) {
+                        $state = ''
+                        try { $state = [string]$message.state } catch {}
+                        if ($state -eq 'queued' -or $state -eq 'delivered') {
+                            try { $wanted.Add([string]$message.id) } catch {}
+                        }
+                    }
+                }
+            }
+        } catch {}
+        if ($wanted.Count -eq 0) {
+            return @{
+                ok = $false
+                code = 'BAD_ARGS'
+                error = 'ack_user_message needs id, ids or all=true.'
+                hint = 'The message ids are in _bridge.userMessages of every response.'
+            }
+        }
+        $acked = 0
+        $reply = ''
+        $now = Get-UnixSeconds
+        $knownIds = New-Object System.Collections.Generic.List[string]
+        try {
+            [System.Threading.Monitor]::Enter($Shared.UserMessageLock)
+            $state = Read-UserMessageState $SessionId
+            $list = Get-UserMessageList $state
+            foreach ($message in $list) {
+                $id = ''
+                try { $id = [string]$message.id } catch {}
+                if (-not [string]::IsNullOrWhiteSpace($id)) { $knownIds.Add($id) }
+            }
+            if ($null -ne $state) {
+                foreach ($message in $list) {
+                    $id = ''
+                    try { $id = [string]$message.id } catch {}
+                    $hit = $false
+                    foreach ($entry in $wanted) { if ([string]$entry -eq $id) { $hit = $true; break } }
+                    if (-not $hit) { continue }
+                    $messageState = ''
+                    try { $messageState = [string]$message.state } catch {}
+                    if ($messageState -eq 'acked' -or $messageState -eq 'withdrawn') { continue }
+                    Set-FlowField $message 'state' 'acked'
+                    Set-FlowField $message 'ackAt' $now
+                    $acked = $acked + 1
+                    Write-FlowStation 'USERMSG' $id 'ACKED' @{ sid = $SessionId }
+                }
+                if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['reply']) {
+                    $reply = ([string]$ToolArgs.reply).Trim()
+                    if ($reply.Length -gt 300) { $reply = $reply.Substring(0, 299) + '...' }
+                }
+                if ($acked -gt 0 -or -not [string]::IsNullOrWhiteSpace($reply)) {
+                    Set-FlowField $state 'updatedAt' $now
+                    if (-not [string]::IsNullOrWhiteSpace($reply)) { Set-FlowField $state 'lastAckReply' $reply }
+                    Save-UserMessageState $SessionId $state
+                    Add-ChannelCount 'UserMessagesAcked' ([long]$acked)
+                }
+            }
+        } catch {}
+        finally { try { [System.Threading.Monitor]::Exit($Shared.UserMessageLock) } catch {} }
+        if ($acked -eq 0) {
+            return @{
+                ok = $false
+                code = 'ACK_UNKNOWN_MESSAGE'
+                error = 'No open user message matched that id.'
+                knownMessageIds = @($knownIds.ToArray())
+                hint = 'Only messages listed in _bridge.userMessages can be acknowledged.'
+            }
+        }
+        return @{
+            ok = $true
+            result = @{
+                acked = $acked
+                replyShownToUser = $reply
+                note = 'The bridge shows the user that their message arrived and was read. Now act on it.'
+            }
+        }
+    }
+
+    function Ensure-UserSignal {
+        param([string]$SessionId)
+        $existing = $null
+        try {
+            if ($Shared.UserSignals.TryGetValue([string]$SessionId, [ref]$existing) -and $null -ne $existing) { return $existing }
+        } catch {}
+        $created = [System.Threading.ManualResetEvent]::new($false)
+        try { $existing = $Shared.UserSignals.GetOrAdd([string]$SessionId, $created) } catch { $existing = $created }
+        if ($null -eq $existing) { $existing = $created }
+        if (-not [object]::ReferenceEquals($existing, $created)) { try { $created.Dispose() } catch {} }
+        return $existing
+    }
+
+    function Invoke-WaitForUser {
+        param([string]$SessionId, $ToolArgs)
+        $maxSeconds = 30
+        try { if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['maxSeconds']) { $maxSeconds = [int]$ToolArgs.maxSeconds } } catch {}
+        if ($maxSeconds -lt 1) { $maxSeconds = 1 }
+        if ($maxSeconds -gt 50) { $maxSeconds = 50 }
+        $flowId = 'wait_' + ([guid]::NewGuid().ToString('N').Substring(0, 8))
+        $signal = Ensure-UserSignal $SessionId
+        $started = [System.Diagnostics.Stopwatch]::StartNew()
+        $reason = 'timeout'
+        $views = Get-PendingUserMessageViews $SessionId 3
+        if ($views.Count -eq 0) {
+            Write-FlowStation 'USERMSG' $flowId 'WAIT_START' @{ sid = $SessionId; maxSeconds = $maxSeconds }
+            while ($started.Elapsed.TotalSeconds -lt $maxSeconds) {
+                $remaining = [int][Math]::Ceiling($maxSeconds - $started.Elapsed.TotalSeconds)
+                $slice = 250
+                if (($remaining * 1000) -lt $slice) { $slice = [Math]::Max(20, ($remaining * 1000)) }
+                try { [void]$signal.WaitOne($slice) } catch { break }
+                $views = Get-PendingUserMessageViews $SessionId 3
+                if ($views.Count -gt 0) { $reason = 'user_message'; break }
+            }
+            try { [void]$signal.Reset() } catch {}
+        } else {
+            $reason = 'user_message'
+        }
+        $waited = [int][Math]::Round($started.Elapsed.TotalSeconds, 1)
+        Write-FlowStation 'USERMSG' $flowId 'WAIT_END' @{ sid = $SessionId; reason = $reason; waitedSeconds = $waited; messages = $views.Count }
+        if ($views.Count -gt 0) {
+            $ids = New-Object System.Collections.Generic.List[string]
+            foreach ($view in $views) { $ids.Add([string]$view.id) }
+            [void](Mark-UserMessagesDelivered $SessionId $ids 'wait_for_user')
+        }
+        return @{
+            ok = $true
+            result = @{
+                state = $(if ($views.Count -gt 0) { 'messages_waiting' } else { 'timeout' })
+                reason = $reason
+                waitedSeconds = $waited
+                messageCount = $views.Count
+                maxSeconds = $maxSeconds
+                note = $(if ($views.Count -gt 0) { 'The user messages themselves are in _bridge.userMessages of THIS response. Read them, act on them and acknowledge with ack_user_message.' } else { 'No user message arrived. Continue your work; do not call wait_for_user in a loop.' })
+            }
+        }
+    }
+
     # Beweis statt Vermutung: Ein Plugin, das deutlich haeufiger pollt als
     # seine eigene Richtlinie erlaubt (> 30 Anfragen je 60 s), wird EINMAL
     # pro 5 Minuten protokolliert. Das kostet pro Anfrage nur wenige
@@ -13490,7 +13907,7 @@ $script:BridgeHandlerScript = {
     }
 
     function Get-ActivityToolSets {
-        $read = @('get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','sim_status','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait','ui_capabilities','ui_skin','ui_audit','ui_texture','world_style','site_survey','variation','model_audit','world_audit','prop_list')
+        $read = @('get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','sim_status','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait','ui_capabilities','ui_skin','ui_audit','ui_texture','world_style','site_survey','variation','model_audit','world_audit','prop_list','wait_for_user','ack_user_message')
         $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','build_polygon_model','build_assembly','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','sim_start','set_context','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute','build_surface','build_interface','ui_glow','ui_radial','prop_place','prop_save','refine','style_lock','world_glow')
         return @{ read = $read; write = $write }
     }
@@ -17735,6 +18152,18 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             returns = '{ events: [...], count }';
             example = @{};
             errors = @() })
+        $t.Add(@{ name = 'wait_for_user'; category = 'session'; summary = 'Aktiv auf eine Nachricht des Nutzers warten (max. 50 s).';
+            description = 'Blockiert, bis der Nutzer ueber die Bridge schreibt ("Nachricht an Arena senden" im Menue der Place-Zeile) oder die Zeit ablaeuft. Die Nachrichten selbst stehen im Umschlag DERSELBEN Antwort unter _bridge.userMessages. Nur an einer echten Entscheidungsstelle benutzen, nie als Dauer-Polling. Der harte HTTP-Deckel liegt bei 55/85 s, deshalb ist maxSeconds auf 50 begrenzt.';
+            params = @{ maxSeconds = @{ type = 'int'; required = $false; default = '30'; description = '1..50.' } };
+            returns = '{ state: messages_waiting|timeout, reason, waitedSeconds, messageCount, maxSeconds, note }';
+            example = @{ maxSeconds = 25 };
+            errors = @() })
+        $t.Add(@{ name = 'ack_user_message'; category = 'session'; summary = 'Nachricht des Nutzers als gelesen bestaetigen (Pflicht).';
+            description = 'Beendet die Wiederholung einer Nutzernachricht und zeigt dem Nutzer im Fenster "von Arena bestaetigt" plus deine optionale Kurzantwort. Ohne Bestaetigung wird dieselbe Nachricht in bis zu drei Antworten wiederholt und die Oberflaeche meldet ehrlich "angekommen, nicht bestaetigt".';
+            params = @{ id = @{ type = 'string'; required = $false; default = 'null'; description = 'Eine Nachrichten-Id aus _bridge.userMessages.' }; ids = @{ type = 'string[]'; required = $false; default = 'null'; description = 'Mehrere Ids.' }; all = @{ type = 'bool'; required = $false; default = 'false'; description = 'true = alle offenen Nachrichten.' }; reply = @{ type = 'string'; required = $false; default = 'null'; description = 'Kurze Antwort an den Nutzer (max. 300 Zeichen).' } };
+            returns = '{ acked, replyShownToUser, note }';
+            example = @{ id = 'msg_ab12cd34ef56'; reply = 'Verstanden - ich baue den Baum neu.' };
+            errors = @('BAD_ARGS: weder id, ids noch all=true.', 'ACK_UNKNOWN_MESSAGE: keine offene Nachricht mit dieser Id (knownMessageIds nennt die gueltigen).') })
         $t.Add(@{ name = 'get_chunk'; category = 'system'; summary = 'Stueck eines grossen Ergebnisses holen.';
             description = 'Wenn eine Antwort zu gross ist, liegt sie im Programm: blobId + chunkCount. Alle Chunks in Reihe holen und zusammenfuegen = komplettes Ergebnis (nie abgeschnitten).';
             params = @{ blobId = @{ type = 'string'; required = $true; default = '-'; description = '' }; index = @{ type = 'int'; required = $true; default = '-'; description = '1..chunkCount.' } };
@@ -17788,6 +18217,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 'Windows finish notifications use report_done { title, message }. Arena writes a lively title (max 70 characters) and an inviting body (max 140); avoid dry changelog lists.',
                 'Responses include typed error codes and concrete diagnostics. Use those details to decide the next step.',
                 'HARD CONSTRAINT for any hand-written WedgePart/triangle geometry (build_polygon_model already does this correctly - this rule is for genuinely custom run_lua geometry code only): see polygonEngineRules below for the mandatory WedgePart axis convention and the canonical seamless-triangle formula. Getting the axis order wrong is the single most common cause of 90-degree rotation errors and gaping seams in procedural low-poly builds.',
+                'USER CHANNEL (7.2.0): the user can message you WHILE you work ("Nachricht an Arena senden" in the bridge place row). Every response then carries _bridge.userMessages plus _bridge.userMessageContract. Read it first, apply it, tell the user what you changed, and acknowledge with ack_user_message { id } - an unacknowledged message repeats in up to three responses. wait_for_user { maxSeconds <= 50 } blocks until a message arrives; use it only at a real decision point, never as polling. The user can also switch the place to read-only from the same menu, which is reported as WRITE_LOCKED_BY_USER.'
                 'HARD ORGANIC EVIDENCE CONTRACT (separate from the global builder preference): when an organic model is explicitly built with organic=true or is registered from per-model model_audit evidence, build and audit the real model in Studio, use a deliberate palette, install motion under that model, and fix its organicQuality issues. report_done requires fresh passing evidence for every registered organic model, even after a handoff. This is not selected or enforced from animal/tree names; see organicBuildRules for the stricter per-organic-model evidence contract.'
             )
             worldEngineRules = @{
@@ -18684,6 +19114,26 @@ end
                 }
             } catch {}
         }
+        # Version 7.2.0: NUTZER-KANAL. JEDER Umschlag traegt wartende
+        # Nutzernachrichten mit - das ist die einzige Stelle, an der eine
+        # Korrektur des Nutzers die KI ueberhaupt erreichen kann (die Bridge
+        # kann nicht in den Arena-Chat schreiben, es gibt keinen Push-Kanal).
+        $pendingUserMessages = Get-PendingUserMessageViews $sessionId 3
+        if ($pendingUserMessages.Count -gt 0) {
+            $deliveredIds = New-Object System.Collections.Generic.List[string]
+            foreach ($messageView in $pendingUserMessages) { $deliveredIds.Add([string]$messageView.id) }
+            [void](Mark-UserMessagesDelivered $sessionId $deliveredIds 'envelope')
+            $envelope.userMessages = $pendingUserMessages.ToArray()
+            $envelope.userMessageContract = @{
+                code = 'USER_MESSAGE_PENDING'
+                priority = 'highest'
+                instruction = 'The user sent this WHILE you were working. Stop executing your previous plan, apply the instruction, and tell the user in your reply what you changed. Then acknowledge with ack_user_message { id }.'
+                doNotIgnore = 'These messages outrank your own assumptions and any earlier plan. Never tell the user you received nothing while this field is present.'
+                repeatRule = 'An unacknowledged message is repeated in up to three responses, so ignoring it does not make it disappear - it only makes the bridge show the user "angekommen, nicht bestaetigt".'
+            }
+            $userNote = 'USER MESSAGE PENDING: the user interrupted your work - read _bridge.userMessages FIRST, act on it, then ack_user_message.'
+            if ($envelope.attention) { $envelope.attention = $userNote + ' ' + $envelope.attention } else { $envelope.attention = $userNote }
+        }
         $late = Take-LateResults $sessionId
         if ($late.Count -gt 0) {
             $envelope.lateResults = $late
@@ -19119,6 +19569,11 @@ end
                     }
                 }
             }
+            # Version 7.2.0: NUTZER-KANAL. Beides sind reine Server-Werkzeuge
+            # (kein Studio-Umlauf), damit eine Korrektur des Nutzers die KI auch
+            # dann sofort erreicht, wenn die Studio-Queue gerade belegt ist.
+            'ack_user_message' { return (Invoke-AckUserMessage $sessionId $toolArgs) }
+            'wait_for_user'    { return (Invoke-WaitForUser $sessionId $toolArgs) }
         }
         return $null
     }
@@ -22989,6 +23444,288 @@ function Get-UiDeliverySession {
         $current = $next
     }
     return $current
+}
+
+function Write-FlowTrace {
+    # Version 7.2.0: dieselbe Stations-Schreibweise wie auf der Server-Seite
+    # (Write-FlowStation im Handler-Runspace), aber fuer die Oberflaeche. Beide
+    # Seiten schreiben bewusst dasselbe Zeilenformat:
+    #   <BEREICH> [<flowId>] <STATION> feld=wert feld=wert
+    # Vorbild sind die PREVIEW-Stationen aus 6.0.4, die das Raten beendet haben.
+    param([string]$Area, [string]$FlowId, [string]$Station, $Fields = $null)
+    $line = ''
+    try {
+        $parts = New-Object System.Collections.Generic.List[string]
+        if ($Fields -is [System.Collections.IDictionary]) {
+            foreach ($key in $Fields.Keys) {
+                $value = $Fields[$key]
+                if ($null -eq $value) { $value = '-' }
+                $text = ([string]$value) -replace '[\r\n\t]+', ' '
+                if ($text.Length -gt 200) { $text = $text.Substring(0, 199) + '...' }
+                $parts.Add(([string]$key + '=' + $text))
+            }
+        }
+        $line = ([string]$Area).ToUpperInvariant() + ' [' + [string]$FlowId + '] ' + ([string]$Station).ToUpperInvariant()
+        if ($parts.Count -gt 0) { $line = $line + ' ' + ($parts.ToArray() -join ' ') }
+        Write-RuntimeLog $line
+        $cap = 500
+        try { $cap = [int]$script:Shared.FlowTraceCap } catch {}
+        if ($cap -lt 20) { $cap = 20 }
+        try {
+            $script:Shared.FlowTrace.Enqueue(('{0:u} ' -f (Get-Date)) + $line)
+            $discard = $null
+            while ($script:Shared.FlowTrace.Count -gt $cap) {
+                if (-not $script:Shared.FlowTrace.TryDequeue([ref]$discard)) { break }
+            }
+        } catch {}
+    } catch {}
+    return $line
+}
+
+function Add-UiChannelCount {
+    # Version 7.2.0: Zaehler im gemeinsamen Zustand, von der Oberflaeche aus.
+    param([string]$Name, [long]$Delta = 1)
+    try {
+        $channel = $script:Shared.Channel
+        if ($null -eq $channel -or [string]::IsNullOrWhiteSpace($Name)) { return }
+        $existing = $null
+        if ($channel.ContainsKey($Name)) { $existing = $channel[$Name] }
+        if ($existing -is [long] -or $existing -is [int]) { $channel[$Name] = ([long]$existing + [long]$Delta) }
+        else { $channel[$Name] = [long]$Delta }
+    } catch {}
+}
+
+function Set-UiChannelText {
+    param([string]$Name, [string]$Value)
+    try {
+        $channel = $script:Shared.Channel
+        if ($null -eq $channel) { return }
+        $channel[$Name] = [string]$Value
+    } catch {}
+}
+
+function Set-UiMessageField {
+    # Feld an einem aus JSON gelesenen Objekt schreiben, ohne in die
+    # PowerShell-5.1-Falle "The property cannot be found on this object" zu laufen.
+    param($Object, [string]$Name, $Value)
+    try {
+        if ($null -eq $Object) { return }
+        if ($Object.PSObject.Properties[$Name]) { $Object.$Name = $Value }
+        else { $Object | Add-Member -NotePropertyName $Name -NotePropertyValue $Value -Force }
+    } catch {}
+}
+
+function Get-UserMessageStateForUi {
+    # Version 7.2.0: liest denselben JSON-Zustand wie der Server
+    # (Read-UserMessageState im Handler-Runspace). Die Oberflaeche hat keinen
+    # Zugriff auf Server-Funktionen, deshalb dieselbe Regel hier noch einmal -
+    # exakt wie bei Get-UiDeliverySession/Get-PlaceOpenCommand seit 7.0.6/7.0.7.
+    param([string]$SessionId)
+    $json = ''
+    try {
+        if (-not $script:Shared.UserMessages.TryGetValue([string]$SessionId, [ref]$json)) { return $null }
+    } catch { return $null }
+    if ([string]::IsNullOrWhiteSpace($json)) { return $null }
+    try { return ($json | ConvertFrom-Json) } catch { return $null }
+}
+
+function Get-UserMessageUiList {
+    param($State)
+    $items = New-Object System.Collections.Generic.List[object]
+    try {
+        if ($null -ne $State -and $State.PSObject.Properties['messages']) {
+            foreach ($entry in $State.messages) { $items.Add($entry) }
+        }
+    } catch {}
+    return $items
+}
+
+function Add-UiBridgeEvent {
+    # Version 7.2.0: dieselbe Ereignis-Queue wie Add-BridgeEvent im
+    # Handler-Runspace ($Shared.Events), von der Oberflaeche aus befuellt - die
+    # UI hat keinen Zugriff auf Server-Funktionen, wohl aber auf $Shared.
+    param([string]$SessionId, [string]$Kind, [string]$Message, $Data = $null)
+    try {
+        if ([string]::IsNullOrWhiteSpace($SessionId)) { return }
+        $queue = $null
+        if (-not $script:Shared.Events.TryGetValue([string]$SessionId, [ref]$queue) -or $null -eq $queue) {
+            $created = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+            [void]$script:Shared.Events.TryAdd([string]$SessionId, $created)
+            $queue = $null
+            [void]$script:Shared.Events.TryGetValue([string]$SessionId, [ref]$queue)
+            if ($null -eq $queue) { $queue = $created }
+        }
+        $event = @{
+            kind    = [string]$Kind
+            message = [string]$Message
+            time    = (Get-Date).ToString('u')
+            data    = $Data
+        }
+        $queue.Enqueue(($event | ConvertTo-Json -Depth 12 -Compress))
+        $dropped = $null
+        while ($queue.Count -gt 60) {
+            if (-not $queue.TryDequeue([ref]$dropped)) { break }
+        }
+    } catch {}
+}
+
+function Add-UserMessage {
+    # Version 7.2.0: "Nachricht an Arena senden" (Menuepunkt in der Place-Zeile).
+    # Legt die Nachricht in den gemeinsamen Zustand; ausgeliefert wird sie mit
+    # dem Umschlag der NAECHSTEN Arena-Anfrage (at-least-once, max. 3 Versuche).
+    # Rueckgabe: die Nachrichten-Id, oder $null bei Ablehnung.
+    param([string]$SessionId, [string]$Text, [string]$Kind = 'note')
+    if ([string]::IsNullOrWhiteSpace($SessionId)) { return $null }
+    $clean = ([string]$Text).Trim()
+    if ([string]::IsNullOrWhiteSpace($clean)) { return $null }
+    if ($clean.Length -gt 4000) { $clean = $clean.Substring(0, 4000) }
+    $kindValue = ([string]$Kind).Trim().ToLowerInvariant()
+    if ($kindValue -notin @('note', 'correction', 'stop', 'question')) { $kindValue = 'note' }
+    $messageId = 'msg_' + ([guid]::NewGuid().ToString('N').Substring(0, 12))
+    $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    try {
+        [System.Threading.Monitor]::Enter($script:Shared.UserMessageLock)
+        $state = Get-UserMessageStateForUi $SessionId
+        if ($null -eq $state) {
+            $state = [pscustomobject]@{ messages = @(); updatedAt = $now }
+        }
+        $list = Get-UserMessageUiList $state
+        $entry = [pscustomobject]@{
+            id            = $messageId
+            text          = $clean
+            kind          = $kindValue
+            createdAt     = $now
+            state         = 'queued'
+            attempts      = 0
+            deliveredAt   = 0
+            deliveredWith = ''
+            ackAt         = 0
+            withdrawnAt   = 0
+        }
+        $list.Add($entry)
+        # Begrenzen: die letzten 20 Nachrichten, erledigte aelter als 30 Minuten
+        # fallen raus. Sonst waechst der Zustand unbegrenzt (Lehre aus 7.1.2).
+        $kept = New-Object System.Collections.Generic.List[object]
+        $cutoff = $now - 1800
+        foreach ($message in $list) {
+            $messageState = ''
+            try { $messageState = [string]$message.state } catch {}
+            $messageAt = [int64]0
+            try { $messageAt = [int64]$message.createdAt } catch {}
+            if (($messageState -eq 'acked' -or $messageState -eq 'withdrawn') -and $messageAt -lt $cutoff) { continue }
+            $kept.Add($message)
+        }
+        while ($kept.Count -gt 20) { $kept.RemoveAt(0) }
+        Set-UiMessageField $state 'messages' $kept.ToArray()
+        Set-UiMessageField $state 'updatedAt' $now
+        $script:Shared.UserMessages[[string]$SessionId] = ($state | ConvertTo-Json -Depth 12 -Compress)
+    } catch {
+        Write-UiErrorLog 'Nachricht an Arena konnte nicht gespeichert werden' $_
+        return $null
+    }
+    finally { try { [System.Threading.Monitor]::Exit($script:Shared.UserMessageLock) } catch {} }
+    Add-UiChannelCount 'UserMessagesQueued' 1
+    Write-FlowTrace 'USERMSG' $messageId 'QUEUED' @{ sid = $SessionId; kind = $kindValue; chars = $clean.Length }
+    # wait_for_user wecken: wartet die KI gerade, kommt die Nachricht sofort an.
+    try {
+        $signal = $null
+        if ($script:Shared.UserSignals.TryGetValue([string]$SessionId, [ref]$signal) -and $null -ne $signal) {
+            try { [void]$signal.Set() } catch {}
+        }
+    } catch {}
+    Add-UiBridgeEvent $SessionId 'user_message' ('The user sent a message during the session: ' + $clean) @{ kind = $kindValue; messageId = $messageId }
+    return $messageId
+}
+
+function Withdraw-UserMessage {
+    # "Abbrechen" im Nachricht-Fenster. Ehrlich: zurueckziehen geht NUR, solange
+    # die Nachricht noch in der Queue liegt (state=queued). Hat eine
+    # Arena-Anfrage sie bereits mitgenommen, ist sie technisch unterwegs - dann
+    # liefert diese Funktion $false und das Fenster sagt das auch.
+    param([string]$SessionId, [string]$MessageId)
+    if ([string]::IsNullOrWhiteSpace($SessionId) -or [string]::IsNullOrWhiteSpace($MessageId)) { return $false }
+    $withdrawn = $false
+    $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    try {
+        [System.Threading.Monitor]::Enter($script:Shared.UserMessageLock)
+        $state = Get-UserMessageStateForUi $SessionId
+        if ($null -ne $state) {
+            $list = Get-UserMessageUiList $state
+            foreach ($message in $list) {
+                $id = ''
+                try { $id = [string]$message.id } catch {}
+                if ($id -ne [string]$MessageId) { continue }
+                $messageState = ''
+                try { $messageState = [string]$message.state } catch {}
+                if ($messageState -ne 'queued') { break }
+                Set-UiMessageField $message 'state' 'withdrawn'
+                Set-UiMessageField $message 'withdrawnAt' $now
+                $withdrawn = $true
+                break
+            }
+            if ($withdrawn) {
+                Set-UiMessageField $state 'updatedAt' $now
+                $script:Shared.UserMessages[[string]$SessionId] = ($state | ConvertTo-Json -Depth 12 -Compress)
+            }
+        }
+    } catch {
+        Write-UiErrorLog 'Nachricht konnte nicht zurueckgezogen werden' $_
+    }
+    finally { try { [System.Threading.Monitor]::Exit($script:Shared.UserMessageLock) } catch {} }
+    if ($withdrawn) {
+        Add-UiChannelCount 'UserMessagesWithdrawn' 1
+        Write-FlowTrace 'USERMSG' $MessageId 'WITHDRAWN' @{ sid = $SessionId }
+    } else {
+        Write-FlowTrace 'USERMSG' $MessageId 'WITHDRAW_TOO_LATE' @{ sid = $SessionId }
+    }
+    return $withdrawn
+}
+
+function Get-UserMessageUiViews {
+    # Alle Nachrichten einer Sitzung fuer das Nachricht-Fenster und die Zeile.
+    # Gibt eine echte List[object] zurueck (kein @() am Aufrufer noetig).
+    param([string]$SessionId)
+    $views = New-Object System.Collections.Generic.List[object]
+    if ([string]::IsNullOrWhiteSpace($SessionId)) { return $views }
+    $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    $list = Get-UserMessageUiList (Get-UserMessageStateForUi $SessionId)
+    foreach ($message in $list) {
+        $messageState = ''
+        try { $messageState = [string]$message.state } catch {}
+        if ($messageState -eq 'withdrawn') { continue }
+        $createdAt = [int64]0
+        try { $createdAt = [int64]$message.createdAt } catch {}
+        $deliveredAt = [int64]0
+        try { $deliveredAt = [int64]$message.deliveredAt } catch {}
+        $attempts = 0
+        try { $attempts = [int]$message.attempts } catch {}
+        $deliveredWith = ''
+        try { $deliveredWith = [string]$message.deliveredWith } catch {}
+        $statusText = 'wird gesendet'
+        $statusCode = 'queued'
+        if ($messageState -eq 'acked') { $statusText = 'von Arena bestaetigt'; $statusCode = 'acked' }
+        elseif ($messageState -eq 'delivered') {
+            if ($attempts -ge 3) { $statusText = 'angekommen, nicht bestaetigt'; $statusCode = 'delivered_unacked' }
+            else { $statusText = 'angekommen'; $statusCode = 'delivered' }
+        }
+        $ageSeconds = 0
+        if ($createdAt -gt 0 -and $now -ge $createdAt) { $ageSeconds = [int]($now - $createdAt) }
+        $views.Add([pscustomobject]@{
+            id            = $(try { [string]$message.id } catch { '' })
+            text          = $(try { [string]$message.text } catch { '' })
+            kind          = $(try { [string]$message.kind } catch { 'note' })
+            createdAt     = $createdAt
+            ageSeconds    = $ageSeconds
+            state         = $messageState
+            statusCode    = $statusCode
+            statusText    = $statusText
+            attempts      = $attempts
+            deliveredAt   = $deliveredAt
+            deliveredWith = $deliveredWith
+            canWithdraw   = ($messageState -eq 'queued')
+        })
+    }
+    return $views
 }
 
 function Get-PlaceOpenCommand {
