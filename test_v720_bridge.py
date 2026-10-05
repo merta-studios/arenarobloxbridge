@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline-Abnahme fuer Arena Roblox Bridge 7.2.1.
+"""Offline-Abnahme fuer Arena Roblox Bridge 7.2.2.
 
 Dieser Test braucht KEIN Windows und keinen PowerShell-Prozess. Er prueft genau
 die fuenf Themen des Owners plus das Fundament:
@@ -27,7 +27,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.2.1"
+VERSION = "7.2.2"
 
 failures: list[str] = []
 
@@ -225,6 +225,26 @@ def main() -> int:
           "Abbrechen zieht die Nachricht wirklich zurueck (kein vorgetaeuschter Widerruf)")
     check("Zu spaet zum Zurueckziehen" in source,
           "Das Fenster sagt ehrlich, wenn Zurueckziehen nicht mehr geht")
+    message_window = region(source, "function Open-UserMessageWindow", "function Get-AskStateForUi")
+    check('Width="460" Height="440"' in message_window,
+          "Das Nachricht-Fenster startet deutlich kompakter (460 x 440)")
+    check('Background="#FF252529"' in message_window
+          and 'Setter Property="Background" Value="#FF19191D"' in message_window
+          and 'Setter Property="Background" Value="#FFE84B6C"' in message_window,
+          "Fenster, Texteingabe und Senden-Knopf verwenden Anthrazit/Grau/Pink")
+    check("$titleBar.Add_MouseLeftButtonDown" in message_window
+          and "$s.Tag.DragMove()" in message_window
+          and 'x:Name="CloseButton"' in message_window
+          and '$closeButton.Add_Click' in message_window,
+          "Das Fenster ist per Titelleiste verschiebbar und hat einen X-Schliesser")
+    check("$win.Owner = $window" in message_window
+          and "$win.ShowDialog()" in message_window
+          and "$win.Show()" not in message_window,
+          "Das modale ShowDialog sperrt das Hauptfenster waehrend der Eingabe")
+    place_row_ui = region(source, "function New-Row {", "function New-MinimalPlaceRow {")
+    check("-Title 'Laufenden Befehl abbrechen'" not in place_row_ui
+          and "$cancelCmdItem" not in place_row_ui,
+          "Das Place-Menue bietet keinen Abbruch eines laufenden Befehls mehr an")
 
     print("\n2) Fortschritt: nichts erfunden, nichts verdraengt (D5-D7)")
     check("function Get-ProgressPercentProvided" in source,
@@ -246,7 +266,7 @@ def main() -> int:
     check("$label = 'Befehl: ' + [string]$openCmd.tool" not in source,
           "Ein offener Befehl verdraengt die Anzeige nicht mehr (D7)")
     check("$Row.CommandCancelButton.Visibility = 'Collapsed'" in visual,
-          "Der Zeilen-Knopf bleibt unsichtbar - abgebrochen wird ueber das Menue")
+          "Der optionale Zeilen-Knopf bleibt unsichtbar")
     check("Get-PlaceOpenCommand (Get-UiDeliverySession $sessionId)" in visual,
           "Die Zeile liest die Zustellung der richtigen (Nachfolger-)Sitzung")
     snapshot = region(source, "function Get-ProgressStateSnapshot {", "function Format-ProgressMessage")
@@ -282,8 +302,25 @@ def main() -> int:
           "notify-diagnose.txt nennt Plattform, Zaehler und die letzten Meldungen")
     check("function Open-NotifySeenWindow" in show or "function Open-NotifySeenWindow" in source,
           "Es gibt die ehrliche Rueckfrage 'Hast du die Meldung gesehen?'")
-    check("Test-Meldung anzeigen" in source and "NotifyTestButton" in source,
-          "Die Einstellungen haben einen Testknopf fuer die Fertig-Meldung")
+    settings_ui = region(source, "function Open-SettingsWindow", "# Version 3.8: Die Update-Infos")
+    settings_xaml = region(settings_ui, "$settingsXaml = @'", "'@")
+    check('Text="DIAGNOSE"' not in settings_xaml
+          and 'x:Name="PerfSwitch"' not in settings_xaml
+          and "NotifyTestStatus" not in settings_ui,
+          "Der Diagnosebereich und die Leistungsdiagnose-Steuerung sind aus den Einstellungen entfernt")
+    place_card_start = settings_xaml.index('x:Name="ProgressSwitch"')
+    place_card_end = settings_xaml.index("</Border>", place_card_start)
+    place_card = settings_xaml[place_card_start:place_card_end]
+    check('x:Name="DoneNotifySwitch"' in place_card
+          and 'x:Name="NotifyTestButton"' in place_card,
+          "Der Fertig-Meldungs-Test bleibt in der PLACE-LISTE-Karte beim Schalter")
+    check("Test-Meldung anzeigen" in settings_xaml and "NotifyTestButton" in settings_ui,
+          "Die Einstellungen behalten den Testknopf fuer die Fertig-Meldung")
+    settings_loader = region(source, "function Get-BridgeSettingsFile", "function Save-BridgeSettingsFile")
+    check("perfDiagnostics = $false" in settings_loader
+          and "$loaded.perfDiagnostics" not in settings_loader
+          and "alte opt-ins werden ignoriert" in settings_loader,
+          "Ein alter Performance-Diagnose-Opt-in wird nicht still wieder aktiviert")
     check("NotifySeenYes" in source and "NotifySeenNo" in source,
           "Ja/Nein wird gezaehlt und in der Diagnose-Datei ausgewiesen")
     done_start = source.index("                $notifyFlowId = 'n-' + [string]$notifyFlowSeq")
@@ -377,12 +414,13 @@ def main() -> int:
     ):
         check(marker in source, f"Fundament-Marker vorhanden: {marker}")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    check(version["version"] == VERSION, "version.json identifiziert 7.2.1")
+    check(version["version"] == VERSION, "version.json identifiziert 7.2.2")
     notes = "\n".join(str(note) for note in version.get("notes", []))
-    for word in ("7.2.1", "NUTZER-KANAL", "FORTSCHRITT", "FERTIG-MELDUNG", "FRAGEN", "QUALITÄT"):
+    for word in ("7.2.2", "NUTZER-KANAL", "FORTSCHRITT", "FERTIG-MELDUNG", "FRAGEN", "QUALITÄT",
+                 "Diagnosebereich", "perfDiagnostics", "Laufenden Befehl abbrechen", "460 × 440", "ShowDialog"):
         check(word in notes, f"version.json beschreibt: {word}")
-    check("DocsVersion     = '7.2.1'" in source and 'local ARENA_VERSION  = "7.2.1"' in source,
-          "Alle funktionalen Versionsstellen stehen auf 7.2.1")
+    check("DocsVersion     = '7.2.2'" in source and 'local ARENA_VERSION  = "7.2.2"' in source,
+          "Alle funktionalen Versionsstellen stehen auf 7.2.2")
     final_lines = source.rstrip().splitlines()[-4:]
     check(final_lines[0].startswith("# Sicherheitsnetz") and final_lines[-1] == "[System.Environment]::Exit(0)",
           "Der absichtliche Not-Aus am Dateiende ist unveraendert")
@@ -410,7 +448,7 @@ def main() -> int:
         for entry in failures:
             print(f"  - {entry}")
         return 1
-    print("OK: 7.2.1 - Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene "
+    print("OK: 7.2.2 - Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene "
           "Fertig-Meldung, Fragen-Baum, Qualitaets- und GUI-Vertrag sind vollstaendig; "
           "die Datei ist ausbalanciert und der echte PowerShell-Parser ist gruen.")
     return 0

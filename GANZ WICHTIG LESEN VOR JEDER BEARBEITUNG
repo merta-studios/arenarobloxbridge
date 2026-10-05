@@ -1,7 +1,7 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 7.2.1 - 05.10.2026)                                #
+#   (Stand: Version 7.2.2 - 05.10.2026)                                #
 #                                                                      #
 ##########################################################################
 
@@ -149,10 +149,14 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
   Owners): (1) "Nachricht an Arena senden" aus dem Menue (…) der Place-Zeile
   (Add-UserMessage/Open-UserMessageWindow) und (2) "Arena fragt" fuer
   ask_user/confirm_action (Open-AskWindow, erscheint mit Versatz am
-  Mauszeiger). Beide sind echte Fenster im Anthrazit-Stil, KEINE Toasts, und
-  sie ersetzen NICHT die Place-Liste. Die alte Regel "keine Popups" bezog sich
-  auf die haesslichen Toast-Meldungen aus ~v3 - diese beiden Fenster sind vom
-  Nutzer gewollt.
+  Mauszeiger). Seit v7.2.2 ist das Nachrichtenfenster kompakt (460x440), im
+  Anthrazit/Grau/Pink-Stil, an der Titelleiste verschiebbar, hat oben rechts
+  einen X-Knopf und ist modal (ShowDialog sperrt die Hauptoberflaeche). Der
+  Abbrechen-Knopf in diesem Fenster zieht NUR die Nachricht zurueck, solange
+  sie noch queued ist. Die Place-Option "Laufenden Befehl abbrechen" gibt es
+  seit v7.2.2 nicht mehr. Beide Fenster sind KEINE Toasts und ersetzen NICHT
+  die Place-Liste. Die alte Regel "keine Popups" bezog sich auf die haesslichen
+  Toast-Meldungen aus ~v3 - diese Fenster sind vom Nutzer gewollt.
 - DER SIMULATIONS-WARNKASTEN BLEIBT WEG (v7.1.3): Der Abschnitt
   "SIMULATION" mit dem sim_start-Hinweis ist aus dem Einstellungsfenster
   ENTFERNT (Nutzerwunsch). sim_start bleibt trotzdem deaktiviert - die
@@ -169,9 +173,15 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
   einer echt mitgeschickten Zahl geschrieben (percentKnown); Clamp-
   ProgressPercent parst invariant (de-DE machte aus "45.5" -> 455 -> 100 %);
   Get-ProgressStateSnapshot loest Vorgaenger/Nachfolger auf. Ein offener
-  Studio-Befehl VERDRAENGT die Anzeige nicht mehr - er steht im Tooltip, und
-  "Laufenden Befehl abbrechen" ist ein Menuepunkt (D7). PERCENT_MISSING steht
-  als Warnung in jeder Antwort. Diese Regeln nicht aufweichen.
+  Studio-Befehl VERDRAENGT die Anzeige nicht mehr - er steht im Tooltip.
+  "Laufenden Befehl abbrechen" wurde in v7.2.2 aus dem Place-Menue entfernt;
+  interne Queue-/Wiederherstellungswege bleiben davon unberuehrt.
+  PERCENT_MISSING steht als Warnung in jeder Antwort. Diese Regeln nicht
+  aufweichen.
+- EINSTELLUNGEN (v7.2.2): Der Abschnitt "DIAGNOSE" ist entfernt. Alte
+  perfDiagnostics-Opt-ins werden ignoriert, die Leistungsaufzeichnung bleibt
+  AUS. Der Fertig-Meldungs-Test sitzt direkt beim zugehoerigen Schalter unter
+  PLACE-LISTE. Den Diagnosebereich nicht wieder einbauen.
 - QUALITAET WIRD BENOTET (v7.2.0): auditBuildQuality liefert finishScore
   (0..100) und grade (draft/simple/detailed/sculpted). draft = mindestens 4
   Teile, KEIN Polygon/Mesh/Union/ArenaDetail, ueber 60 % primitive; dann
@@ -375,6 +385,17 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v7.2.2 (05.10.2026): MINI-UPDATE - DIAGNOSEBEREICH ENTFERNT,
+  PLACE-MENUE BEREINIGT, NACHRICHTENFENSTER UEBERARBEITET. Das Diagnosepanel
+  ist aus den Einstellungen entfernt; alte perfDiagnostics-Werte werden
+  ignoriert und die Leistungsaufzeichnung bleibt aus. Der Fertig-Meldungs-Test
+  bleibt beim passenden Schalter unter PLACE-LISTE. "Laufenden Befehl
+  abbrechen" wurde aus Place-Optionen und Fortschritts-Tooltip entfernt
+  (interne Queue-/Recovery-Wege bleiben erhalten). "Nachricht an Arena senden"
+  ist kompakter (460x440), Anthrazit/Grau/Pink statt Liquid Glass, per Titelzeile
+  verschiebbar, mit X oben rechts und modal via ShowDialog. Offline-Abnahme:
+  test_v720_bridge.py (Message-UI, Modalitaet, Place-Menue, Diagnosepanel),
+  test_v398_structure.py sowie die bisherigen Regressionen.
 - v7.2.1 (05.10.2026): KRITISCHER START-/PARSER-HOTFIX fuer 7.2.0.
   In der report_done-Werkzeugdokumentation war der errors-Array nicht
   geschlossen und ein doppeltes notes2-Feld stand daneben; ausserdem beendeten
