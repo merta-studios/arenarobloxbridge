@@ -2460,6 +2460,8 @@ $script:Shared = [hashtable]::Synchronized(@{
         AskExpired               = 0L
         AskAgentGone             = 0L
         AskLateAnswers           = 0L
+        BuildsRegistered         = 0L
+        BuildAuditDemands        = 0L
         QualityDraftFlags        = 0L
         QualityAuditDemands      = 0L
         UiMonolithFlags          = 0L
@@ -7967,6 +7969,12 @@ tools.build_polygon_model = function(args)
 
     local model=Instance.new("Model"); model.Name=tostring(args.modelName or args.name or "ArenaPolygonModel"); model.Parent=parent
     model:SetAttribute("ArenaMasterBuild",true)
+    -- Version 7.2.0: Wenn der Aufrufer die Einfachheit AUSDRUECKLICH erklaert
+    -- (grade = simple/lowpoly/blockout), wird sie als Attribut gespeichert.
+    -- model_audit liest sie und nennt das Ergebnis dann nicht mehr Entwurf.
+    if args.grade == "simple" or args.grade == "lowpoly" or args.grade == "blockout" or args.grade == "detailed" then
+        model:SetAttribute("ArenaDeclaredGrade", tostring(args.grade))
+    end
     local organicBuild=args.organic==true
     if organicBuild then
         model:SetAttribute("ArenaOrganicBuild",true)
@@ -8109,6 +8117,7 @@ end
 tools.build_assembly = function(args)
     local parent,err=resolveRef(args.parentRef or "game.Workspace"); if not parent then return failCode("REF_NOT_FOUND",err) end
     local model=Instance.new("Model"); model.Name=tostring(args.modelName or args.name or "ArenaAssembly"); model.Parent=parent; model:SetAttribute("ArenaMasterBuild",true)
+    if args.grade == "simple" or args.grade == "lowpoly" or args.grade == "blockout" or args.grade == "detailed" then model:SetAttribute("ArenaDeclaredGrade", tostring(args.grade)) end
     local items=args.items or args.parts or {}; local expanded={}
     for _,spec in ipairs(items) do
         local repeatSpec=spec.repeatSpec or spec["repeat"] or {}; local count=math.max(1,math.floor(tonumber(repeatSpec.count) or 1))
@@ -11262,6 +11271,59 @@ WORLD_ENGINE.auditBuildQuality = function(parts, root)
     local variety = 0
     for _ in pairs(shapes) do variety = variety + 1 end
     local ballShare = 0
+    -- Version 7.2.0: FERTIG-GRAD STATT NUR "KEIN FEHLER GEFUNDEN".
+    -- Ein Baum aus zwei Zylindern und drei Kugeln war bis 7.1.5 "clean", weil
+    -- die Pruefung nur extreme Faelle kannte (mindestens 6 Teile, davon
+    -- mindestens 6 Kugeln). Jetzt wird gezaehlt und benotet: Teilzahl, echte
+    -- Gestaltung (Polygon/Mesh/Union/Detail), Formenvielfalt, Farbvielfalt -
+    -- abzueglich der gemessenen Fehler. Note 'draft' faengt genau den Fall des
+    -- Owners ab: wenige Teile, keine Gestaltung, fast alles primitive.
+    local declaredGrade = nil
+    pcall(function() declaredGrade = root:GetAttribute("ArenaDeclaredGrade") end)
+    if declaredGrade == nil then
+        for _, part in ipairs(parts) do
+            local value = nil
+            pcall(function() value = part:GetAttribute("ArenaDeclaredGrade") end)
+            if value ~= nil then declaredGrade = value break end
+        end
+    end
+    if declaredGrade ~= nil then declaredGrade = string.lower(tostring(declaredGrade)) end
+    if declaredGrade ~= "simple" and declaredGrade ~= "lowpoly" and declaredGrade ~= "blockout" and declaredGrade ~= "detailed" then
+        declaredGrade = nil
+    end
+    local colorVariety = 0
+    for _ in pairs(colorCounts) do colorVariety = colorVariety + 1 end
+    local intentional = counts.meshes + counts.unions + counts.polygonParts + counts.detailParts
+    local primitiveShare = 0
+    if #parts > 0 then primitiveShare = math.floor(((#parts - math.min(intentional, #parts)) / #parts) * 100 + 0.5) / 100 end
+    local finishScore = 0
+    if #parts >= 4 then finishScore = finishScore + 10 end
+    if #parts >= 12 then finishScore = finishScore + 10 end
+    if #parts >= 30 then finishScore = finishScore + 10 end
+    if counts.polygonParts > 0 then finishScore = finishScore + 20 end
+    if counts.meshes > 0 then finishScore = finishScore + 10 end
+    if counts.unions > 0 then finishScore = finishScore + 5 end
+    if counts.detailParts > 0 then finishScore = finishScore + 15 end
+    if counts.wedges > 0 then finishScore = finishScore + 5 end
+    finishScore = finishScore + math.min(10, 5 * math.max(0, variety - 1))
+    finishScore = finishScore + math.min(10, 5 * math.max(0, colorVariety - 1))
+    finishScore = finishScore - math.min(12, 3 * #primitiveGroups)
+    finishScore = finishScore - math.min(9, 3 * cylinderProblemCount)
+    if finishScore < 0 then finishScore = 0 end
+    if finishScore > 100 then finishScore = 100 end
+    local grade = "simple"
+    if finishScore >= 85 then grade = "sculpted"
+    elseif finishScore >= 60 then grade = "detailed"
+    elseif finishScore >= 35 then grade = "simple" end
+    local draftRisk = false
+    if #parts >= 4 and intentional == 0 and primitiveShare > 0.6 then
+        grade = "draft"
+        draftRisk = true
+    end
+    if declaredGrade ~= nil then
+        grade = declaredGrade
+        draftRisk = false
+    end
     if #parts > 0 then ballShare = math.floor((counts.balls / #parts) * 100 + 0.5) / 100 end
     local verdict = "clean"
     if #primitiveGroups > 0 and cylinderProblemCount > 0 then verdict = "primitive_abuse_and_cylinder_rotation"
@@ -11282,6 +11344,14 @@ WORLD_ENGINE.auditBuildQuality = function(parts, root)
         counts = counts,
         shapeVariety = variety,
         ballShare = ballShare,
+        -- Version 7.2.0: dieselbe Messung, aber als Note statt nur als Urteil.
+        finishScore = finishScore,
+        grade = grade,
+        declaredGrade = declaredGrade,
+        draftRisk = draftRisk,
+        primitiveShare = primitiveShare,
+        intentionalParts = intentional,
+        colorVariety = colorVariety,
         primitiveOnly = (#primitiveGroups > 0),
         primitiveGroups = primitiveGroups,
         cylinderProblems = cylinderProblems,
@@ -11338,6 +11408,12 @@ tools.model_audit = function(args)
     if quality.organicQuality and #quality.organicQuality.issues > 0 then
         table.insert(qualityWarnings, "ORGANIC_BUILD_INCOMPLETE: " .. table.concat(quality.organicQuality.issues, " "))
     end
+    if quality.draftRisk then
+        table.insert(qualityWarnings, "DRAFT_GRADE_RISK (grade '" .. tostring(quality.grade) .. "', " .. tostring(quality.finishScore)
+            .. "/100): " .. tostring(#parts) .. " part(s), davon " .. tostring(quality.intentionalParts)
+            .. " gestaltete(s) (Polygon/Mesh/Union/ArenaDetail), Primitive-Anteil " .. tostring(math.floor(quality.primitiveShare * 100 + 0.5))
+            .. "%. Das ist ein Entwurf, kein Modell. Baue die Silhouette mit build_polygon_model und echten Details nach (organicBuildRules/modelBuildRules) - oder erklaere die Einfachheit AUSDRUECKLICH beim Bauen (grade = \"simple\"/\"lowpoly\"/\"blockout\"), wenn sie so gewollt ist. report_done antwortet bis dahin DRAFT_GRADE_RISK.")
+    end
     local phase, verdict
     if #placeholders > 0 then
         phase, verdict = "blockout", "NOT done: " .. tostring(#placeholders) .. " placeholder(s) are still in the place."
@@ -11349,6 +11425,9 @@ tools.model_audit = function(args)
         phase, verdict = "modelled", "NOT done: " .. tostring(quality.cylinderProblemCount) .. " cylinder(s) stand as discs on their edge - the axis lies horizontally because the length was typed into Size.Y or Size.Z instead of Size.X."
     elseif quality.organicQuality and #quality.organicQuality.issues > 0 then
         phase, verdict = "modelled", "NOT done: organic build quality is incomplete - " .. table.concat(quality.organicQuality.issues, " ")
+    elseif quality.draftRisk then
+        phase, verdict = "modelled", "Draft (grade '" .. tostring(quality.grade) .. "', " .. tostring(quality.finishScore) .. "/100): " .. tostring(#parts) .. " part(s) without polygon, mesh, union or detail geometry. Rebuild it with real structure or declare the intended simplicity with the grade argument."
+
     elseif meshes + unions + quality.counts.polygonParts == 0 then
         phase, verdict = "modelled", "Modelled, but nothing is a mesh, union or polygon model - check whether detail is missing."
     elseif quality.counts.detailParts > 0 then
@@ -11359,7 +11438,7 @@ tools.model_audit = function(args)
     local nextStep = "Run world_audit for style/lighting, then continue."
     if (#placeholders + #blockouts) > 0 then
         nextStep = "refine the flagged parts or replace them, then run model_audit again."
-    elseif quality.primitiveOnly or quality.cylinderProblemCount > 0 or (quality.organicQuality and #quality.organicQuality.issues > 0) then
+    elseif quality.primitiveOnly or quality.cylinderProblemCount > 0 or quality.draftRisk or (quality.organicQuality and #quality.organicQuality.issues > 0) then
         nextStep = quality.advice
     end
     return ok({
@@ -13719,6 +13798,235 @@ $script:BridgeHandlerScript = {
             }
         } catch {}
         return $items
+    }
+
+    # ------------------------------------------------------------------
+    # Version 7.2.0 (AP6): BAU-REGISTER.
+    # Bis 7.1.5 fuehrte die Bridge nur fuer ORGANISCHE Modelle Buch. Alles
+    # andere konnte unbemerkt und ungeprueft entstehen - genau so wurde aus
+    # einem Baum ein Zylinder mit zwei Kugeln. Jetzt wird jeder Modell-Bau
+    # registriert; report_done nennt, was gebaut und was davon geprueft wurde.
+    # ------------------------------------------------------------------
+    function Read-SessionBuilds {
+        param([string]$SessionId)
+        $json = ''
+        if (-not $Shared.SessionBuilds.TryGetValue([string]$SessionId, [ref]$json)) { return $null }
+        if ([string]::IsNullOrWhiteSpace($json)) { return $null }
+        try { return ($json | ConvertFrom-Json) } catch { return $null }
+    }
+
+    function Save-SessionBuilds {
+        param([string]$SessionId, $State)
+        try { $Shared.SessionBuilds[[string]$SessionId] = (To-Json $State 12) } catch {}
+    }
+
+    function Get-SessionBuildRecords {
+        param($State)
+        $items = New-Object System.Collections.Generic.List[object]
+        try {
+            if ($null -ne $State -and $State.PSObject.Properties['models']) {
+                foreach ($entry in $State.models) { $items.Add($entry) }
+            }
+        } catch {}
+        return $items
+    }
+
+    function Register-SessionBuild {
+        param([string]$SessionId, [string]$Tool, $ToolArgs, $Payload, [int64]$AtTicks = 0)
+        try {
+            $eligible = $Tool -in @('build_polygon_model', 'build_assembly', 'build_surface', 'build_interface',
+                'union', 'subtract', 'negate', 'intersect', 'insert_asset', 'apply_asset', 'clone_instance', 'group_instances')
+            if (-not $eligible -and $Tool -in @('create_instance', 'bulk_create')) {
+                $className = ''
+                try { $className = [string]$ToolArgs.className } catch {}
+                if ($className -eq 'Model') { $eligible = $true }
+            }
+            if (-not $eligible) { return }
+            if ($null -eq $Payload) { return }
+            if ($AtTicks -le 0) { $AtTicks = [DateTime]::UtcNow.Ticks }
+            $modelId = ''
+            $modelPath = ''
+            $modelName = ''
+            try { if ($Payload.PSObject.Properties['model'] -and $null -ne $Payload.model) { $modelId = [string]$Payload.model.id; $modelPath = [string]$Payload.model.path; $modelName = [string]$Payload.model.name } } catch {}
+            if ([string]::IsNullOrWhiteSpace($modelId)) { try { if ($Payload.PSObject.Properties['id']) { $modelId = [string]$Payload.id } } catch {} }
+            if ([string]::IsNullOrWhiteSpace($modelPath)) { try { if ($Payload.PSObject.Properties['path']) { $modelPath = [string]$Payload.path } } catch {} }
+            if ([string]::IsNullOrWhiteSpace($modelName)) { try { if ($Payload.PSObject.Properties['name']) { $modelName = [string]$Payload.name } } catch {} }
+            if ([string]::IsNullOrWhiteSpace($modelId) -and [string]::IsNullOrWhiteSpace($modelPath)) { return }
+            $declaredGrade = ''
+            try { if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['grade']) { $declaredGrade = ([string]$ToolArgs.grade).ToLowerInvariant() } } catch {}
+            if ($declaredGrade -notin @('simple', 'lowpoly', 'blockout', 'detailed')) { $declaredGrade = '' }
+            $state = Read-SessionBuilds $SessionId
+            if ($null -eq $state) { $state = [pscustomobject]@{ models = @(); updatedAt = 0 } }
+            $records = Get-SessionBuildRecords $state
+            $existing = $null
+            foreach ($record in $records) {
+                $recordId = ''
+                $recordPath = ''
+                try { $recordId = [string]$record.id } catch {}
+                try { $recordPath = [string]$record.path } catch {}
+                if (-not [string]::IsNullOrWhiteSpace($modelId) -and $recordId -eq $modelId) { $existing = $record; break }
+                if ([string]::IsNullOrWhiteSpace($modelId) -and -not [string]::IsNullOrWhiteSpace($modelPath) -and $recordPath -eq $modelPath) { $existing = $record; break }
+            }
+            if ($null -eq $existing) {
+                $record = [pscustomobject]@{
+                    tool = [string]$Tool
+                    id = $modelId
+                    path = $modelPath
+                    name = $modelName
+                    declaredGrade = $declaredGrade
+                    firstWriteAtTicks = $AtTicks
+                    lastWriteAtTicks = $AtTicks
+                    writes = 1
+                    auditAtTicks = [int64]0
+                    auditGrade = ''
+                    auditFinishScore = -1
+                    auditVerdict = ''
+                    auditDraftRisk = $false
+                }
+                $records.Add($record)
+                Write-FlowStation 'BUILD' ([string]$Tool) 'REGISTERED' @{ sid = $SessionId; path = $modelPath; name = $modelName; declaredGrade = $declaredGrade }
+            } else {
+                Set-FlowField $existing 'lastWriteAtTicks' $AtTicks
+                $writes = 0
+                try { $writes = [int]$existing.writes } catch {}
+                Set-FlowField $existing 'writes' ($writes + 1)
+                if (-not [string]::IsNullOrWhiteSpace($declaredGrade)) { Set-FlowField $existing 'declaredGrade' $declaredGrade }
+                if (-not [string]::IsNullOrWhiteSpace($modelPath)) { Set-FlowField $existing 'path' $modelPath }
+                if (-not [string]::IsNullOrWhiteSpace($modelName)) { Set-FlowField $existing 'name' $modelName }
+                # Ein neuer Schreibvorgang macht den alten Audit ungueltig.
+                Set-FlowField $existing 'auditAtTicks' ([int64]0)
+                Set-FlowField $existing 'auditGrade' ''
+                Set-FlowField $existing 'auditFinishScore' (-1)
+                Set-FlowField $existing 'auditVerdict' ''
+                Set-FlowField $existing 'auditDraftRisk' $false
+            }
+            while ($records.Count -gt 40) { $records.RemoveAt(0) }
+            Set-FlowField $state 'models' @($records.ToArray())
+            Set-FlowField $state 'updatedAt' (Get-UnixSeconds)
+            Save-SessionBuilds $SessionId $state
+            Add-ChannelCount 'BuildsRegistered' 1
+        } catch {}
+    }
+
+    function Update-SessionBuildAudit {
+        param([string]$SessionId, $AuditPayload, [int64]$AtTicks = 0)
+        try {
+            if ($null -eq $AuditPayload) { return }
+            if ($AtTicks -le 0) { $AtTicks = [DateTime]::UtcNow.Ticks }
+            $quality = $null
+            try { if ($AuditPayload.PSObject.Properties['buildQuality']) { $quality = $AuditPayload.buildQuality } } catch {}
+            if ($null -eq $quality) { return }
+            $grade = ''
+            try { if ($quality.PSObject.Properties['grade']) { $grade = [string]$quality.grade } } catch {}
+            $finishScore = -1
+            try { if ($quality.PSObject.Properties['finishScore']) { $finishScore = [int]$quality.finishScore } } catch {}
+            $draftRisk = $false
+            try { if ($quality.PSObject.Properties['draftRisk']) { $draftRisk = [bool]$quality.draftRisk } } catch {}
+            $verdict = ''
+            try { if ($quality.PSObject.Properties['verdict']) { $verdict = [string]$quality.verdict } } catch {}
+            $scope = ''
+            try { if ($AuditPayload.PSObject.Properties['scope']) { $scope = [string]$AuditPayload.scope } } catch {}
+            $modelIds = New-Object System.Collections.Generic.List[string]
+            try {
+                if ($quality.PSObject.Properties['organicQuality'] -and $null -ne $quality.organicQuality) {
+                    foreach ($evidence in @($quality.organicQuality.models)) {
+                        $evidenceId = ''
+                        try { $evidenceId = [string]$evidence.id } catch {}
+                        if (-not [string]::IsNullOrWhiteSpace($evidenceId)) { $modelIds.Add($evidenceId) }
+                    }
+                }
+            } catch {}
+            $state = Read-SessionBuilds $SessionId
+            if ($null -eq $state) { return }
+            $records = Get-SessionBuildRecords $state
+            $touched = 0
+            foreach ($record in $records) {
+                $recordId = ''
+                $recordPath = ''
+                try { $recordId = [string]$record.id } catch {}
+                try { $recordPath = [string]$record.path } catch {}
+                $matches = $false
+                if (-not [string]::IsNullOrWhiteSpace($recordId) -and $modelIds.Contains($recordId)) { $matches = $true }
+                if (-not $matches -and -not [string]::IsNullOrWhiteSpace($recordPath) -and -not [string]::IsNullOrWhiteSpace($scope)) {
+                    if ($recordPath -eq $scope -or $recordPath.StartsWith($scope + '.')) { $matches = $true }
+                }
+                if (-not $matches) { continue }
+                Set-FlowField $record 'auditAtTicks' $AtTicks
+                Set-FlowField $record 'auditGrade' $grade
+                Set-FlowField $record 'auditFinishScore' $finishScore
+                Set-FlowField $record 'auditVerdict' $verdict
+                Set-FlowField $record 'auditDraftRisk' $draftRisk
+                $touched = $touched + 1
+            }
+            if ($touched -gt 0) {
+                Set-FlowField $state 'models' @($records.ToArray())
+                Set-FlowField $state 'updatedAt' (Get-UnixSeconds)
+                Save-SessionBuilds $SessionId $state
+                Write-FlowStation 'BUILD' ([string]$SessionId) 'AUDITED' @{ models = $touched; grade = $grade; finishScore = $finishScore; draftRisk = $draftRisk }
+            }
+        } catch {}
+    }
+
+    function Get-SessionBuildSummary {
+        # Was wurde gebaut, was davon ist geprueft, was ist ein Entwurf?
+        param([string]$SessionId)
+        $summary = [pscustomobject]@{
+            models = 0
+            audited = 0
+            unaudited = @()
+            drafts = @()
+            declared = @()
+            averageFinishScore = -1
+        }
+        try {
+            $state = Read-SessionBuilds $SessionId
+            $records = Get-SessionBuildRecords $state
+            if ($records.Count -eq 0) { return $summary }
+            $unaudited = New-Object System.Collections.Generic.List[object]
+            $drafts = New-Object System.Collections.Generic.List[object]
+            $declared = New-Object System.Collections.Generic.List[string]
+            $audited = 0
+            $scoreSum = 0
+            $scoreCount = 0
+            $now = Get-UnixSeconds
+            foreach ($record in $records) {
+                $auditAt = [int64]0
+                try { $auditAt = [int64]$record.auditAtTicks } catch {}
+                $lastWrite = [int64]0
+                try { $lastWrite = [int64]$record.lastWriteAtTicks } catch {}
+                $name = ''
+                $path = ''
+                $tool = ''
+                $declaredGrade = ''
+                try { $name = [string]$record.name } catch {}
+                try { $path = [string]$record.path } catch {}
+                try { $tool = [string]$record.tool } catch {}
+                try { $declaredGrade = [string]$record.declaredGrade } catch {}
+                if (-not [string]::IsNullOrWhiteSpace($declaredGrade)) { $declared.Add($name + ' (' + $declaredGrade + ')') }
+                if ($auditAt -gt 0 -and $auditAt -ge $lastWrite) {
+                    $audited = $audited + 1
+                    $score = -1
+                    try { $score = [int]$record.auditFinishScore } catch {}
+                    if ($score -ge 0) { $scoreSum = $scoreSum + $score; $scoreCount = $scoreCount + 1 }
+                    $draft = $false
+                    try { $draft = [bool]$record.auditDraftRisk } catch {}
+                    if ($draft) {
+                        $drafts.Add([pscustomobject]@{ name = $name; path = $path; tool = $tool; grade = $(try { [string]$record.auditGrade } catch { '' }); finishScore = $score })
+                    }
+                } else {
+                    $age = 0
+                    try { if ($lastWrite -gt 0) { $age = [int][Math]::Max(0, ($now - [int64](($lastWrite - 621355968000000000) / 10000000))) } } catch {}
+                    $unaudited.Add([pscustomobject]@{ name = $name; path = $path; tool = $tool; declaredGrade = $declaredGrade; ageSeconds = $age })
+                }
+            }
+            $summary.models = $records.Count
+            $summary.audited = $audited
+            $summary.unaudited = @($unaudited.ToArray())
+            $summary.drafts = @($drafts.ToArray())
+            $summary.declared = @($declared.ToArray())
+            if ($scoreCount -gt 0) { $summary.averageFinishScore = [int][Math]::Round($scoreSum / $scoreCount) }
+        } catch {}
+        return $summary
     }
 
     # ------------------------------------------------------------------
@@ -18574,13 +18882,13 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         # ---------------- MASTER BUILD ----------------
         $t.Add(@{ name = 'build_assembly'; category = 'create'; summary = 'Modulare/wiederholte Baugruppe in EINEM Call; mit Polygon-Silhouetten kombinieren.';
             description = 'Erstellt bis zu 2000 Parts/Instanzen, wendet Properties an, erzeugt lineare oder radiale Wiederholungen und gruppiert alles direkt in ein Model. Ideal fuer Gebaeude-Rahmen, Treppen, Zaeune, Saeulenringe, Fassaden und wiederholte Module. Kombiniere die Baugruppe mit build_polygon_model fuer die praegende Hauptsilhouette oder individuelle Formen; build_assembly ersetzt bei einem nichttrivialen Hero-Modell nicht die polygonale Hauptform. Die Bridge berechnet Wiederholungen/Positionen; Arena muss weder Lua-Schleifen noch hunderte Einzelcalls schreiben.';
-            params = @{ modelName = @{ type='string'; required=$false; default="'ArenaAssembly'"; description='Name des fertigen Models.' }; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'}; items=@{type='array';required=$true;default='-';description='[{className,name,properties,repeat:{count,offset}|{count,radius,startAngle,angleStep,heightStep}}]. {n} im Namen wird ersetzt.'}; pivot=@{type='Vector3|CFrame';required=$false;default='null';description='Optional das ganze Model am Ende versetzen.'} };
+            params = @{ grade = @{ type='string'; required=$false; default='null'; description='Version 7.2.0: \'simple\' | \'lowpoly\' | \'blockout\' - Erklaert die Einfachheit AUSDRUECKLICH (Attribut ArenaDeclaredGrade). model_audit benotet das Ergebnis dann nicht mehr als Entwurf und report_done antwortet nicht mit DRAFT_GRADE_RISK.' }; modelName = @{ type='string'; required=$false; default="'ArenaAssembly'"; description='Name des fertigen Models.' }; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'}; items=@{type='array';required=$true;default='-';description='[{className,name,properties,repeat:{count,offset}|{count,radius,startAngle,angleStep,heightStep}}]. {n} im Namen wird ersetzt.'}; pivot=@{type='Vector3|CFrame';required=$false;default='null';description='Optional das ganze Model am Ende versetzen.'} };
             returns = '{ model, created, count, errors, geometry }';
             example = @{ modelName='Saeulenring'; items=@(@{className='Part';name='Saeule{n}';properties=@{Size=@{x=2;y=12;z=2};Anchored=$true};repeat=@{count=12;radius=20}}) };
             errors = @('BUDGET_EXCEEDED: mehr als 2000 Teile.', 'BAD_ARGS: nichts erstellt.') })
         $t.Add(@{ name = 'build_polygon_model'; category = 'create'; summary = 'BEVORZUGT fuer nichttriviale Custom-3D-Modelle: Hauptsilhouette als Polygon direkt im Place bauen.';
             description = 'GLOBALER 3D-BAUSTANDARD: Fuer nichttriviale Custom-Modelle aller Kategorien - Figuren, Props, Architektur, Fahrzeuge, Maschinen, Landschaften und Kulissen - build_polygon_model fuer die praegende Hauptsilhouette sowie freie, gekruemmte, verjuengte oder unregelmaessige Formen BEVORZUGEN. Mit benannten Submodels, eigener Part-Farbe/Material je Rolle, mainWelds und refine entsteht ein absichtlich detailliertes Ergebnis statt eines Blockouts. build_assembly ist der passende Partner fuer Wiederholungen/Module; native Parts bleiben fuer einfache Standardformen, Stuetzen und Akzente. Der Builder erstellt echte ArenaPolygonTriangle-Wedges direkt im Place und sorgt fuer Triangulation, Wedge-Orientierung, AutoCaps und Welds. Fuer organische Modelle organic=true setzen; dann sind drei explizite kontrastierende Farben bereits beim Bau Pflicht und der frische per-model Audit mit Polygongeometrie, Palette und aktiviertem Bewegungs-Script ist Voraussetzung fuer report_done. Die Modellwahl ist eine globale Praeferenz, kein anhand von Namen ausgeloester Zwang fuer einfache Parts.';
-            params = @{ modelName=@{type='string';required=$false;default="'ArenaPolygonModel'";description='Oberstes fertiges Model.'}; organic=@{type='bool';required=$false;default='false';description='Fuer jedes bewusst organische Modell true setzen: markiert es im Place, verlangt mindestens drei explizite kontrastierende submodel.style.color-Werte und aktiviert den frischen per-model Geometry/Palette/Enabled-Motion-Audit vor report_done. Kein Modellname loest diese Schreibsperre aus.'}; submodels=@{type='array';required=$false;default='[]';description='EMPFOHLEN: [{name,containerClass="Folder|Model",polygons:[...],style:{...},autoWeld,closeOpenings,capStyle}]. Alles bleibt dem Hauptmodel untergeordnet.'}; polygons=@{type='array';required=$false;default='[]';description='Einfache Flaechen [{name,points,color,material,thickness,...,style}]. Fuer grosse Modelle besser submodels verwenden.'}; points=@{type='Vector3[]';required=$false;default='null';description='Kurzform fuer ein Polygon.'}; script=@{type='string';required=$false;default='null';description='Mehrere Bloecke: POLYGON name=Roof color=#884422 material=Slate thickness=0.03, Punkte, END.'}; style=@{type='table';required=$false;default='{}';description='Globale Part-Defaults: color, material, materialVariant, collisionGroup, thickness, thicknessPlacement (inside Standard|center|positive|negative), anchored, canCollide, canQuery, canTouch, castShadow, transparency, reflectance, properties. Geometrie bleibt Builder-eigen: Position/Orientation/Rotation/CFrame/Size/PivotOffset in properties werden ignoriert, damit keine Flaeche verdreht wird.'}; autoWeld=@{type='bool';required=$false;default='true';description='Standard AN: WeldConstraint-Kette innerhalb jedes Untermodells, damit Polygon-Wedges auch bei anchored=false als ein Objekt verbunden bleiben. Nur autoWeld=false erzeugt bewusst getrennte Teile.'}; mainWeld=@{type='bool';required=$false;default='false';description='Verbindet alle Untermodelle automatisch mit dem ersten.'}; mainWelds=@{type='array';required=$false;default='[]';description='Animierbare Verbindungen [{name,from,to}] zwischen benannten Untermodellen. Erzeugt klassische Welds mit C0/C1 fuer Script-Animation.'}; closeOpenings=@{type='bool';required=$false;default='false';description='Erkennt offene Rand-Loops pro Untermodell und verschliesst sie automatisch mit triangulierten AutoCap-Flaechen.'}; capStyle=@{type='table';required=$false;default='{}';description='Eigener Style fuer automatisch geschlossene Oeffnungen.'}; origin=@{type='Vector3';required=$false;default='{0,0,0}';description='Gesamt-Offset.'}; rotation=@{type='Vector3 degrees';required=$false;default='{0,0,0}';description='Gesamtrotation.'}; scale=@{type='number';required=$false;default='1';description='Gesamtskalierung.'}; maxWedges=@{type='int';required=$false;default='4000';description='Budget, maximal 10000.'}; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'} };
+            params = @{ grade=@{type='string';required=$false;default='null';description='Version 7.2.0: \'simple\' | \'lowpoly\' | \'blockout\' - Erklaert die Einfachheit AUSDRUECKLICH (Attribut ArenaDeclaredGrade). Ohne das gilt ein Bau mit wenigen Teilen ohne Polygon-/Mesh-/Union-/Detail-Geometrie als Entwurf (DRAFT_GRADE_RISK).'}; modelName=@{type='string';required=$false;default="'ArenaPolygonModel'";description='Oberstes fertiges Model.'}; organic=@{type='bool';required=$false;default='false';description='Fuer jedes bewusst organische Modell true setzen: markiert es im Place, verlangt mindestens drei explizite kontrastierende submodel.style.color-Werte und aktiviert den frischen per-model Geometry/Palette/Enabled-Motion-Audit vor report_done. Kein Modellname loest diese Schreibsperre aus.'}; submodels=@{type='array';required=$false;default='[]';description='EMPFOHLEN: [{name,containerClass="Folder|Model",polygons:[...],style:{...},autoWeld,closeOpenings,capStyle}]. Alles bleibt dem Hauptmodel untergeordnet.'}; polygons=@{type='array';required=$false;default='[]';description='Einfache Flaechen [{name,points,color,material,thickness,...,style}]. Fuer grosse Modelle besser submodels verwenden.'}; points=@{type='Vector3[]';required=$false;default='null';description='Kurzform fuer ein Polygon.'}; script=@{type='string';required=$false;default='null';description='Mehrere Bloecke: POLYGON name=Roof color=#884422 material=Slate thickness=0.03, Punkte, END.'}; style=@{type='table';required=$false;default='{}';description='Globale Part-Defaults: color, material, materialVariant, collisionGroup, thickness, thicknessPlacement (inside Standard|center|positive|negative), anchored, canCollide, canQuery, canTouch, castShadow, transparency, reflectance, properties. Geometrie bleibt Builder-eigen: Position/Orientation/Rotation/CFrame/Size/PivotOffset in properties werden ignoriert, damit keine Flaeche verdreht wird.'}; autoWeld=@{type='bool';required=$false;default='true';description='Standard AN: WeldConstraint-Kette innerhalb jedes Untermodells, damit Polygon-Wedges auch bei anchored=false als ein Objekt verbunden bleiben. Nur autoWeld=false erzeugt bewusst getrennte Teile.'}; mainWeld=@{type='bool';required=$false;default='false';description='Verbindet alle Untermodelle automatisch mit dem ersten.'}; mainWelds=@{type='array';required=$false;default='[]';description='Animierbare Verbindungen [{name,from,to}] zwischen benannten Untermodellen. Erzeugt klassische Welds mit C0/C1 fuer Script-Animation.'}; closeOpenings=@{type='bool';required=$false;default='false';description='Erkennt offene Rand-Loops pro Untermodell und verschliesst sie automatisch mit triangulierten AutoCap-Flaechen.'}; capStyle=@{type='table';required=$false;default='{}';description='Eigener Style fuer automatisch geschlossene Oeffnungen.'}; origin=@{type='Vector3';required=$false;default='{0,0,0}';description='Gesamt-Offset.'}; rotation=@{type='Vector3 degrees';required=$false;default='{0,0,0}';description='Gesamtrotation.'}; scale=@{type='number';required=$false;default='1';description='Gesamtskalierung.'}; maxWedges=@{type='int';required=$false;default='4000';description='Budget, maximal 10000.'}; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'} };
             returns = '{ model, submodels, polygons, triangles, wedges, autoCaps, welds, weldedSubmodels, autoWeldDefault, mainWelds, skipped, ignoredGeometryProperties, geometryInvariant, geometry, method, editable }';
             example = @{ modelName='Clocktower'; submodels=@(@{name='StoneBody';style=@{color='#777B80';material='Slate'};polygons=@('... tapered silhouette, buttresses and arches ...')},@{name='CopperRoof';style=@{color='#A65F35';material='Metal'};polygons=@('... roof, eaves and finial ...')},@{name='ClockFace';style=@{color='#E8D9B5';material='SmoothPlastic'};polygons=@('... inset rim and clock face ...')}); mainWelds=@(@{name='RoofToStone';from='StoneBody';to='CopperRoof'}) };
             errors = @('ORGANIC_COLORS_REQUIRED: organic=true needs at least three explicit colour assignments.', 'ORGANIC_POLYGON_REQUIRED: an explicitly organic build must use this polygon builder with organic=true.', 'POLYGON_INVALID: kein gueltiges Polygon.', 'BUDGET_EXCEEDED', 'BAD_ARGS', 'REF_NOT_FOUND') })
@@ -18730,7 +19038,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             example = @{};
             errors = @() })
         $t.Add(@{ name = 'model_audit'; category = 'world'; summary = 'Modell-Audit: Platzhalter, Blockouts, Phase, Urteil.';
-            description = 'Auditiert jedes 3D-Build: Platzhalter, Blockouts, Modellphase, Meshes/Unions, Materialien, Polygon-/Primitive-Verhaeltnis, echte ArenaPolygonTriangle-Wedges, Zylinderachsen und ArenaDetail. Liefert konkrete Pfade/Messwerte statt einer unbelegten Qualitaetsbehauptung. Fuer organische Modelle (explizit markiert oder als organisch erkannt) wird organicQuality ZUSAETZLICH pro Modell berechnet, damit kein fremdes Polygon oder Script im Workspace die Metriken erfuellt: polygonTriangles, eindeutige Farben, dominanter Farbanteil, nearWhiteShare und enabled motionScripts mit issues je Modell. Fuer mit organic=true gebaute Modelle muss der Audit jedes exakt zurueckgegebene Modell NACH dem letzten Schreibaufruf enthalten; report_done gibt bei fehlendem/stalem Beleg ORGANIC_AUDIT_REQUIRED und bei nicht bestandenen Metriken DETAIL_REQUIRED zurueck. Dieser Messpfad waehlt nicht anhand des Modellnamens das bevorzugte Build-Tool. Regeln: modelBuildRules und organicBuildRules.';
+            description = 'Auditiert jedes 3D-Build: Platzhalter, Blockouts, Modellphase, Meshes/Unions, Materialien, Polygon-/Primitive-Verhaeltnis, echte ArenaPolygonTriangle-Wedges, Zylinderachsen und ArenaDetail. Liefert konkrete Pfade/Messwerte statt einer unbelegten Qualitaetsbehauptung. Fuer organische Modelle (explizit markiert oder als organisch erkannt) wird organicQuality ZUSAETZLICH pro Modell berechnet, damit kein fremdes Polygon oder Script im Workspace die Metriken erfuellt: polygonTriangles, eindeutige Farben, dominanter Farbanteil, nearWhiteShare und enabled motionScripts mit issues je Modell. Fuer mit organic=true gebaute Modelle muss der Audit jedes exakt zurueckgegebene Modell NACH dem letzten Schreibaufruf enthalten; report_done gibt bei fehlendem/stalem Beleg ORGANIC_AUDIT_REQUIRED und bei nicht bestandenen Metriken DETAIL_REQUIRED zurueck. Dieser Messpfad waehlt nicht anhand des Modellnamens das bevorzugte Build-Tool. Version 7.2.0: Das Ergebnis traegt zusaetzlich finishScore (0..100) und grade ("draft", "simple", "detailed", "sculpted" oder die beim Bauen erklaerte Note). grade "draft" heisst: mindestens 4 Teile, KEIN Polygon/Mesh/Union/ArenaDetail und ueber 60 % primitive - also ein Entwurf (genau der Fall "Baum = ein Zylinder plus drei Kugeln"). report_done antwortet dann DRAFT_GRADE_RISK. Ausweg: nachbauen ODER die Einfachheit beim Bauen ausdruecklich erklaeren - build_polygon_model/build_assembly { grade = "simple" | "lowpoly" | "blockout" } setzt das Attribut ArenaDeclaredGrade, und der Audit nennt das Ergebnis dann nicht mehr Entwurf. Regeln: modelBuildRules und organicBuildRules.';
             params = @{ ref = @{ type = 'string'; required = $false; default = 'game.Workspace'; description = '' } };
             returns = '{ ok, result: { scope, placeholderCount, phase, verdict, buildQuality: { verdict, organicQuality: { detected, models: [{ id, path, polygonTriangles, uniqueColors, dominantColorShare, nearWhiteShare, motionScripts, issues }] } }, nextStep }, warnings }';
             example = @{ ref = 'game.Workspace.Stadt' };
@@ -18803,8 +19111,9 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             params = @{ title = @{ type = 'string'; required = $true; default = '-'; description = 'Von Arena formulierter lebendiger Titel, maximal 70 Zeichen.' }; message = @{ type = 'string'; required = $true; default = '-'; description = 'Ein natuerlicher, einladender Satz, maximal 140 Zeichen; keine Auflistung.' } };
             returns = '{ delivered, title, message, limits: { titleCharacters=70, messageCharacters=140 } }';
             example = @{ title = '✅ Arena hat den Lauf-Bug behoben!'; message = 'Der Lauf-Bug ist weg – komm ins Spiel und probiere es aus!' };
-            errors = @('NOTIFICATIONS_DISABLED', 'BAD_ARGS: title/message fehlen oder ueberschreiten 70/140 Zeichen.');
-            notes = @('Version 7.2.0: Die Antwort enthaelt notification { flowId, platformVerdict, platformReason, verified }. Steht dort NOTIFICATION_UNVERIFIED, hat Windows die Meldung vermutlich unterdrueckt (Grund im Feld platformReason) - behaupte dann NICHT, der Nutzer sei benachrichtigt, sondern sage im Antworttext, was fertig ist und dass die Windows-Meldung moeglicherweise nicht erscheint.') })
+            errors = @('NOTIFICATIONS_DISABLED', 'DRAFT_GRADE_RISK: model_audit hat die Arbeit als Entwurf benotet (wenige Teile, keine Polygon-/Mesh-/Union-/Detail-Geometrie) - nachbauen oder die Einfachheit mit grade erklaeren.', 'BAD_ARGS: title/message fehlen oder ueberschreiten 70/140 Zeichen.'),
+            notes2 = 'Das Ergebnis traegt buildRegister und buildRegisterNote: was wurde gebaut, was davon ist mit model_audit gemessen, was ist noch Entwurf.';
+            notes = @('Version 7.2.0: Die Antwort enthaelt notification { flowId, platformVerdict, platformReason, verified }. Steht dort NOTIFICATION_UNVERIFIED, hat Windows die Meldung vermutlich unterdrueckt (Grund im Feld platformReason) - behaupte dann NICHT, der Nutzer sei benachrichtigt, sondern sage im Antworttext, was fertig ist und dass die Windows-Meldung moeglicherweise nicht erscheint.', 'Version 7.2.0: Die Antwort enthaelt buildRegister { models, audited, unaudited, drafts, declared, averageFinishScore } und buildRegisterNote. Steht dort ein ungeprueftes Modell, hat model_audit diese Geometrie nie gemessen - hole das nach oder sage ehrlich, was ungeprueft ist.') })
                         $t.Add(@{ name = 'set_context'; category = 'session'; summary = 'Seite wechseln: server oder client.';
             description = 'Bestimmt, welche Seite Laufzeit-Werkzeuge (run_lua) treffen. run_lua selbst laeuft IMMER nur auf der Server/Seite - fuer den Client die client_-Werkzeuge.';
             params = @{ context = @{ type = "'server'|'client'"; required = $true; default = '-'; description = '' } };
@@ -19007,6 +19316,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 'Responses include typed error codes and concrete diagnostics. Use those details to decide the next step.',
                 'HARD CONSTRAINT for any hand-written WedgePart/triangle geometry (build_polygon_model already does this correctly - this rule is for genuinely custom run_lua geometry code only): see polygonEngineRules below for the mandatory WedgePart axis convention and the canonical seamless-triangle formula. Getting the axis order wrong is the single most common cause of 90-degree rotation errors and gaping seams in procedural low-poly builds.',
                 'ASK THE USER (7.2.0): when you need a real decision, use ask_user (decision tree, window appears at the user''s mouse cursor) or confirm_action (plain yes/no) instead of only asking in chat - the user is often away and misses chat questions. The WHOLE tree goes into ONE ask_user call; conditions use when = [ { questionId = "<earlier question id>", anyOf = ["optionId"] } ] and may nest several levels. Pass waitSeconds (max 50) to wait actively; if nothing arrives you get { state = "waiting", askId, nextCall } - resume later with ask_user { askId, resume: true }. Late answers arrive as _bridge.userAnswers. Never guess while an openQuestions field is present.',
+                'FINISH GRADE (7.2.0): model_audit now grades every build (finishScore 0..100, grade draft/simple/detailed/sculpted). grade "draft" means at least 4 parts, no polygon/mesh/union/detail geometry and more than 60 % primitives - report_done answers DRAFT_GRADE_RISK until you rebuild the silhouette with real structure. If the simplicity IS what the user asked for, declare it while building: build_polygon_model/build_assembly { grade = "simple" | "lowpoly" | "blockout" } writes the attribute ArenaDeclaredGrade and the audit stops calling it a draft. report_done also returns buildRegister: it lists what you built and what model_audit has not measured yet.',
                 'USER CHANNEL (7.2.0): the user can message you WHILE you work ("Nachricht an Arena senden" in the bridge place row). Every response then carries _bridge.userMessages plus _bridge.userMessageContract. Read it first, apply it, tell the user what you changed, and acknowledge with ack_user_message { id } - an unacknowledged message repeats in up to three responses. wait_for_user { maxSeconds <= 50 } blocks until a message arrives; use it only at a real decision point, never as polling. The user can also switch the place to read-only from the same menu, which is reported as WRITE_LOCKED_BY_USER.'
                 'HARD ORGANIC EVIDENCE CONTRACT (separate from the global builder preference): when an organic model is explicitly built with organic=true or is registered from per-model model_audit evidence, build and audit the real model in Studio, use a deliberate palette, install motion under that model, and fix its organicQuality issues. report_done requires fresh passing evidence for every registered organic model, even after a handoff. This is not selected or enforced from animal/tree names; see organicBuildRules for the stricter per-organic-model evidence contract.'
             )
@@ -19902,6 +20212,17 @@ end
                     if ($qualityAbuse -and $qualityCylinders -gt 0) { $qualityNote = $qualityNote + 'and ' }
                     if ($qualityCylinders -gt 0) { $qualityNote = $qualityNote + ([string]$qualityCylinders + ' cylinder(s) standing as discs on their edge (90-degree error) ') }
                     $qualityNote = $qualityNote + '- see organicBuildRules, rebuild with build_polygon_model and the cylinder helper, then run model_audit again. report_done answers DETAIL_REQUIRED until this is fixed or handed off.'
+                    $draftRiskView = $false
+                    $draftGradeView = ''
+                    $draftScoreView = -1
+                    try { if ($qualityView.PSObject.Properties['draftRisk']) { $draftRiskView = [bool]$qualityView.draftRisk } } catch {}
+                    try { if ($qualityView.PSObject.Properties['buildGrade']) { $draftGradeView = [string]$qualityView.buildGrade } } catch {}
+                    try { if ($qualityView.PSObject.Properties['finishScore']) { $draftScoreView = [int]$qualityView.finishScore } } catch {}
+                    if ($draftRiskView) {
+                        $envelope.qualityWarning = 'DRAFT_GRADE_RISK'
+                        $draftNote = ('DRAFT_GRADE_RISK: the last model_audit graded this build "' + $draftGradeView + '" (' + [string]$draftScoreView + '/100) - few parts, no polygon/mesh/union/detail geometry. report_done answers DRAFT_GRADE_RISK. Rebuild it with real structure, or declare the intended simplicity while building (grade = "simple"/"lowpoly"/"blockout") and audit again.')
+                        if ($envelope.attention) { $envelope.attention = $envelope.attention + ' ' + $draftNote } else { $envelope.attention = $draftNote }
+                    }
                     if ($envelope.attention) { $envelope.attention = $envelope.attention + ' ' + $qualityNote } else { $envelope.attention = $qualityNote }
                 }
             } catch {}
@@ -20163,6 +20484,37 @@ end
                             }
                         }
                     }
+                    # Version 7.2.0 (AP6): ENTWURFS-SPERRE. Der Audit nennt seit
+                    # 7.2.0 eine Note. Ist sie 'draft' (wenige Teile, kein Polygon/
+                    # Mesh/Union/Detail, ueber 60 % primitive), ist das kein
+                    # fertiges Modell - genau der Fall "Baum = Zylinder + Kugeln".
+                    # Ausweg: nachbauen ODER die Einfachheit beim Bauen erklaeren
+                    # (grade = simple/lowpoly/blockout) und erneut auditieren.
+                    if ($audit) {
+                        $draftRiskNow = $false
+                        $draftGradeNow = ''
+                        $draftScoreNow = -1
+                        try { if ($audit.PSObject.Properties['draftRisk']) { $draftRiskNow = [bool]$audit.draftRisk } } catch {}
+                        try { if ($audit.PSObject.Properties['buildGrade']) { $draftGradeNow = [string]$audit.buildGrade } } catch {}
+                        try { if ($audit.PSObject.Properties['finishScore']) { $draftScoreNow = [int]$audit.finishScore } } catch {}
+                        if ($draftRiskNow -and [string]::IsNullOrWhiteSpace($handoffState)) {
+                            Add-ChannelCount 'BuildAuditDemands' 1
+                            Add-ChannelCount 'QualityDraftFlags' 1
+                            Write-FlowStation 'BUILD' $sessionId 'DRAFT_BLOCKED' @{ grade = $draftGradeNow; finishScore = $draftScoreNow }
+                            return @{
+                                ok = $false
+                                code = 'DRAFT_GRADE_RISK'
+                                error = ('model_audit graded this build as a DRAFT (grade "' + $draftGradeNow + '", ' + [string]$draftScoreNow + '/100): few parts, no polygon/mesh/union/detail geometry, almost everything primitive. That is not finished work.')
+                                buildQuality = @{
+                                    verdict = [string]$audit.buildQualityVerdict
+                                    grade = $draftGradeNow
+                                    finishScore = $draftScoreNow
+                                    draftRisk = $true
+                                }
+                                howToFix = 'Either rebuild it (real silhouette with build_polygon_model, details, palette - see modelBuildRules/organicBuildRules, then model_audit again) OR - if the simplicity is what the user asked for - declare it while building (build_polygon_model/build_assembly { grade = "simple" | "lowpoly" | "blockout" }) and run model_audit again. Or hand off honestly with handoff {...}.'
+                            }
+                        }
+                    }
                     # Organic quality is a separate, per-model proof. It is
                     # required even when AuditFlags is empty, and any later
                     # successful write invalidates the proof until re-audited.
@@ -20312,12 +20664,36 @@ end
                 }
                 # Version 3.8: Arena meldet "fertig" - der Nutzer bekommt eine
                 # Windows-Benachrichtigung (nur wenn er das aktiviert hat).
+                # Version 7.2.0 (AP6): Das Bau-Register gehoert in JEDE
+                # report_done-Antwort - auch wenn die Fertig-Meldung aus ist.
+                # Es sagt ehrlich, was gebaut und was davon geprueft wurde.
+                $buildRegister = Get-SessionBuildSummary $sessionId
+                $buildRegisterNote = ''
+                if ($buildRegister.models -gt 0) {
+                    $buildRegisterNote = ('Build register: ' + [string]$buildRegister.models + ' model(s) built in this session, ' + [string]$buildRegister.audited + ' audited.')
+                    if (@($buildRegister.unaudited).Count -gt 0) {
+                        $names = New-Object System.Collections.Generic.List[string]
+                        foreach ($entry in @($buildRegister.unaudited)) {
+                            $label = [string]$entry.name
+                            if ([string]::IsNullOrWhiteSpace($label)) { $label = [string]$entry.path }
+                            if (-not [string]::IsNullOrWhiteSpace($label)) { $names.Add('"' + $label + '"') }
+                        }
+                        $buildRegisterNote = $buildRegisterNote + ' NOT verified by model_audit: ' + ($names.ToArray() -join ', ') + '. Nothing measured this geometry - run model_audit on it.'
+                        Add-ChannelCount 'BuildAuditDemands' 1
+                        Write-FlowStation 'BUILD' $sessionId 'UNAUDITED' @{ models = $buildRegister.models; unaudited = @($buildRegister.unaudited).Count }
+                    }
+                    if (@($buildRegister.drafts).Count -gt 0) {
+                        Add-ChannelCount 'QualityDraftFlags' 1
+                    }
+                }
                 $notifyOn = $false
                 try { $notifyOn = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 if (-not $notifyOn) {
                     return @{
                         ok = $false
                         code = 'NOTIFICATIONS_DISABLED'
+                        buildRegister = $buildRegister
+                        buildRegisterNote = $buildRegisterNote
                         error = 'report_done is not active: the user has NOT enabled finish notifications in the Arena Roblox Bridge settings.'
                         hint = 'Nothing is wrong - simply finish your answer normally. Do not call report_done again in this session.'
                     }
@@ -20376,6 +20752,8 @@ end
                 $notifyResult = @{
                     queued = $true
                     delivered = $notifyVerified
+                    buildRegister = $buildRegister
+                    buildRegisterNote = $buildRegisterNote
                     flowId = $notifyFlowId
                     title = $doneTitle
                     message = $doneMessage
@@ -21675,6 +22053,15 @@ end
                     # Remember the actual returned model so report_done can demand
                     # an audit of this precise organic build even when the build
                     # request timed out/reconnected before any later audit arrives.
+                    # Version 7.2.0 (AP6): Jeder erfolgreiche Modell-Bau wird
+                    # registriert (unabhaengig von organisch). Ein Audit traegt
+                    # Note und Entwurfs-Kennzeichen nach.
+                    if ($resultSucceeded -and $pluginPayload) {
+                        try { Register-SessionBuild $sessionId $tool $toolArgs $pluginPayload $resultAtTicks } catch {}
+                        if ($tool -eq 'model_audit') {
+                            try { Update-SessionBuildAudit $sessionId $pluginPayload $resultAtTicks } catch {}
+                        }
+                    }
                     if ($resultSucceeded -and $tool -eq 'build_polygon_model' -and $pluginPayload.organic -eq $true) {
                         $builtModel = $null
                         try { $builtModel = $pluginPayload.model } catch {}
@@ -21780,6 +22167,15 @@ end
                             if ($primitiveAbuse -or $cylinderProblemCount -gt 0 -or $organicIssues.Count -gt 0) {
                                 $summary = $summary + ' | buildQuality ' + $buildVerdict
                             }
+                            # Version 7.2.0 (AP6): Note und Fertig-Punktzahl gehoeren
+                            # in jede Antwort, damit ein Entwurf auffaellt, BEVOR die
+                            # Arbeit als fertig gemeldet wird.
+                            $buildGrade = ''
+                            $buildFinishScore = -1
+                            $buildDraftRisk = $false
+                            try { if ($buildQuality -and $buildQuality.PSObject.Properties['grade']) { $buildGrade = [string]$buildQuality.grade } } catch {}
+                            try { if ($buildQuality -and $buildQuality.PSObject.Properties['finishScore']) { $buildFinishScore = [int]$buildQuality.finishScore } } catch {}
+                            try { if ($buildQuality -and $buildQuality.PSObject.Properties['draftRisk']) { $buildDraftRisk = [bool]$buildQuality.draftRisk } } catch {}
                             $flag = [pscustomobject]@{
                                 placeholderCount = $placeholderCount
                                 placeholders = $placeholders
@@ -21789,6 +22185,9 @@ end
                                 primitiveGroups = $primitiveGroups
                                 cylinderProblemCount = $cylinderProblemCount
                                 buildQualityVerdict = $buildVerdict
+                                buildGrade = $buildGrade
+                                finishScore = $buildFinishScore
+                                draftRisk = $buildDraftRisk
                                 organicDetected = $organicDetected
                                 organicIssues = $organicIssues
                                 organicPolygonTriangles = $organicPolygonTriangles
