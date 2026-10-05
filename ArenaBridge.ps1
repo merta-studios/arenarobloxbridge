@@ -16,6 +16,9 @@
 #      unterstuetzt Strg+Enter/Esc und nutzt dieselbe dunkle Fenstersprache.
 #      Der zusaetzliche Test-Popup fuer Fertig-Meldungen ist aus den
 #      Einstellungen entfernt; report_done, Registrierung und Messung bleiben.
+#   4) Eine nach Prozessende tote Quick-Tunnel-URL wird sofort verworfen statt
+#      weiter als LIVE kopiert. cloudflared startet gedrosselt neu und wechselt
+#      nach einem Auto/QUIC-Abbruch auf HTTP/2.
 #
 # Version 7.2.2 (2026-10-05) - MINI-UPDATE: EINSTELLUNGEN, PLACE-MENUE, NACHRICHTENFENSTER
 #
@@ -1828,6 +1831,15 @@ $script:TunnelSlowNotified = $false
 $script:TunnelErrorNotified = $false
 $script:TunnelReadyNotified = $false
 $script:TunnelMissingNotified = $false
+# Ein Quick-Tunnel kann seine URL ausgeben und danach (z. B. nach einem
+# blockierten QUIC-Pfad) sterben. Die URL darf dann nicht weiter als LIVE
+# angeboten werden: der Prozess wird beobachtet und mit begrenztem Backoff,
+# beim ersten Abbruch bevorzugt per HTTP/2, selbst geheilt.
+$script:TunnelProtocol = 'auto'
+$script:TunnelRecoveryAttempts = 0
+$script:TunnelNextRestartAt = [DateTime]::MinValue
+$script:TunnelLiveSince = [DateTime]::MinValue
+$script:TunnelLastExitCode = ''
 $script:TunnelReaders = @()
 # Automatische cloudflared-Installation (Version 3.3)
 $script:TunnelInstalling = $false
@@ -23209,7 +23221,12 @@ $script:TunnelStreamReaderScript = {
         while ($true) {
             $line = $stream.ReadLine()
             if ($null -eq $line) { break }
-            $Queue.Enqueue($line)
+            # Alte Reader duerfen nach einem Neustart noch gepufferte Zeilen
+            # schreiben. Die Prozess-ID macht sie im UI eindeutig filterbar,
+            # damit eine alte Quick-Tunnel-URL keinen neuen Prozess uebermalt.
+            $processId = 0
+            try { $processId = [int]$Process.Id } catch {}
+            $Queue.Enqueue(('[pid=' + [string]$processId + '] ' + $line))
             try {
                 Add-Content -LiteralPath $LogFile -Value ('{0:u} cloudflared: {1}' -f (Get-Date), $line) -Encoding UTF8
             } catch {}
@@ -23342,8 +23359,19 @@ function Start-CloudflareTunnel {
             return
         }
 
+        # Kein zweiter Prozess fuer dieselbe Bridge: sonst koennte eine alte
+        # Quick-Tunnel-URL weiter im UI stehen, obwohl ein anderer Prozess die
+        # neue Verbindung verwaltet.
+        $alreadyRunning = $false
+        try { $alreadyRunning = ($null -ne $script:TunnelProcess -and -not [bool]$script:TunnelProcess.HasExited) } catch {}
+        if ($alreadyRunning) {
+            Write-RuntimeLog 'Cloudflare-Tunnel ist bereits aktiv; kein zweiter Prozess wird gestartet.'
+            return
+        }
+
+        $effectiveProtocol = if ([string]::IsNullOrWhiteSpace($Protocol)) { 'auto' } else { [string]$Protocol }
         $arguments = "tunnel --url $script:LocalBaseUrl --no-autoupdate"
-        if ($Protocol -and $Protocol -ne 'auto') { $arguments = "$arguments --protocol $Protocol" }
+        if ($effectiveProtocol -ne 'auto') { $arguments = "$arguments --protocol $effectiveProtocol" }
 
         $psi = [System.Diagnostics.ProcessStartInfo]::new()
         $psi.FileName = $cloudflaredPath
@@ -23365,7 +23393,12 @@ function Start-CloudflareTunnel {
             $script:TunnelReaders += $reader
         }
         $script:TunnelProcess = $process
+        $script:TunnelUrl = $null
+        $script:TunnelLiveSince = [DateTime]::MinValue
+        $script:TunnelProtocol = $effectiveProtocol
         $script:TunnelStartedAt = Get-Date
+        $script:TunnelHttp2Tried = ($effectiveProtocol -eq 'http2')
+        $script:TunnelSlowNotified = $false
         $script:TunnelFailed = $false
         Write-RuntimeLog "Cloudflare-Tunnel-Prozess gestartet (PID $($process.Id), Datei: $cloudflaredPath, Argumente: $arguments)."
     } catch {
@@ -29968,14 +30001,81 @@ function Write-PerfReport {
 function Refresh-Ui {
     $line = $null
     while ($script:TunnelLines.TryDequeue([ref]$line)) {
-        $script:LastTunnelMessage = $line
-        if ($line -match 'https?://[A-Za-z0-9._-]+\.trycloudflare\.com') {
+        $lineText = [string]$line
+        $lineProcessId = 0
+        if ($lineText -match '^\[pid=(\d+)\]\s*(.*)$') {
+            try { $lineProcessId = [int]$matches[1] } catch {}
+            $lineText = [string]$matches[2]
+        }
+        $activeProcessId = 0
+        try { if ($null -ne $script:TunnelProcess) { $activeProcessId = [int]$script:TunnelProcess.Id } } catch {}
+        # Nach Restart nur die Ausgabe des aktuellen cloudflared-Prozesses
+        # akzeptieren. Unmarkierte Altzeilen bleiben fuer Kompatibilitaet lesbar.
+        if ($lineProcessId -gt 0 -and $activeProcessId -gt 0 -and $lineProcessId -ne $activeProcessId) { continue }
+        $script:LastTunnelMessage = $lineText
+        if ($lineText -match 'https?://[A-Za-z0-9._-]+\.trycloudflare\.com') {
+            $isNewTunnelUrl = ([string]$script:TunnelUrl -ne [string]$matches[0])
             $script:TunnelUrl = $matches[0]
+            if ($isNewTunnelUrl) { $script:TunnelLiveSince = Get-Date }
+            $script:TunnelNextRestartAt = [DateTime]::MinValue
+            $script:TunnelLastExitCode = ''
             Write-RuntimeLog "Tunnel URL erkannt: $script:TunnelUrl"
             if (-not $script:TunnelReadyNotified) {
                 $script:TunnelReadyNotified = $true
                 Show-Toast -Message 'Tunnel ist bereit. Places können sich jetzt verbinden.' -Kind 'Success'
             }
+        }
+    }
+
+    # Eine ausgegebene trycloudflare-URL ist nur gueltig, solange der zugehoerige
+    # cloudflared-Prozess lebt. Vorher gewann `$TunnelUrl` die UI-Abfrage auch
+    # nach einem Prozessende und verteilte dadurch eine tote TLS-Adresse.
+    # Ein nur kurz ausgegebener Link darf den Backoff nicht wieder auf drei
+    # Sekunden setzen; erst eine stabile Minute gilt als erfolgreiche Heilung.
+    try {
+        if ($script:TunnelUrl -and -not $script:TunnelFailed -and [int]$script:TunnelRecoveryAttempts -gt 0 -and
+            $script:TunnelLiveSince -ne [DateTime]::MinValue -and ((Get-Date) - $script:TunnelLiveSince).TotalSeconds -ge 60) {
+            $script:TunnelRecoveryAttempts = 0
+            $script:TunnelNextRestartAt = [DateTime]::MinValue
+            Write-RuntimeLog 'Cloudflare-Tunnel lief 60 Sekunden stabil; Wiederherstellungs-Backoff ist zurueckgesetzt.'
+        }
+    } catch {}
+    $tunnelEnded = $false
+    $exitCode = ''
+    try {
+        if ($null -ne $script:TunnelProcess -and [bool]$script:TunnelProcess.HasExited) {
+            $tunnelEnded = $true
+            try { $exitCode = [string]$script:TunnelProcess.ExitCode } catch {}
+        }
+    } catch {}
+    if ($tunnelEnded) {
+        $oldTunnelUrl = [string]$script:TunnelUrl
+        $script:TunnelProcess = $null
+        $script:TunnelUrl = $null
+        $script:TunnelLiveSince = [DateTime]::MinValue
+        $script:TunnelFailed = $true
+        $script:TunnelLastExitCode = $exitCode
+        $script:LastTunnelMessage = 'Cloudflared wurde beendet' + $(if ($exitCode) { ' (Exit ' + $exitCode + ')' } else { '' }) + '. Die alte Tunnel-Adresse wurde verworfen.'
+        Write-RuntimeLog ($script:LastTunnelMessage + $(if ($oldTunnelUrl) { ' Alte URL war ' + $oldTunnelUrl + '.' } else { '' }))
+    }
+
+    # Begrenzte Selbstheilung: Ein frischer Quick Tunnel ist die einzige
+    # moegliche Reparatur fuer eine nach Prozessende tote Cloudflare-TLS-Adresse.
+    # Nach einem Auto/QUIC-Abbruch wechselt der erste Retry zu HTTP/2; weitere
+    # Versuche bleiben gedrosselt (3, 6, 12, 24, maximal 45 Sekunden).
+    if (($script:TunnelFailed -eq $true) -and -not $script:TunnelInstalling) {
+        $recoveryNow = Get-Date
+        if ($script:TunnelNextRestartAt -eq [DateTime]::MinValue) {
+            $script:TunnelRecoveryAttempts = [Math]::Min(5, ([int]$script:TunnelRecoveryAttempts + 1))
+            $backoffPower = [Math]::Max(0, ([int]$script:TunnelRecoveryAttempts - 1))
+            $delaySeconds = [int][Math]::Min(45, (3 * [Math]::Pow(2, $backoffPower)))
+            $script:TunnelNextRestartAt = $recoveryNow.AddSeconds($delaySeconds)
+            Write-RuntimeLog ('Cloudflare-Tunnel-Wiederherstellung geplant in ' + [string]$delaySeconds + ' s (Versuch ' + [string]$script:TunnelRecoveryAttempts + ').')
+        } elseif ($recoveryNow -ge $script:TunnelNextRestartAt) {
+            $recoveryProtocol = if ([string]$script:TunnelProtocol -eq 'auto') { 'http2' } else { [string]$script:TunnelProtocol }
+            $script:TunnelNextRestartAt = [DateTime]::MinValue
+            Write-RuntimeLog ('Cloudflare-Tunnel wird selbst geheilt (Protokoll ' + $recoveryProtocol + ', Versuch ' + [string]$script:TunnelRecoveryAttempts + ').')
+            Restart-CloudflareTunnel -Protocol $recoveryProtocol
         }
     }
 
@@ -29995,7 +30095,7 @@ function Refresh-Ui {
         return
     }
 
-    if ($script:TunnelUrl) {
+    if ($script:TunnelUrl -and -not $script:TunnelFailed) {
         Set-LiveBadge 'LIVE' $script:ColorGreen '#331FA34A' '#662FCB6C'
     } elseif ($script:TunnelInstalling) {
         # Cloudflared wird gerade automatisch heruntergeladen bzw. installiert.
@@ -30053,11 +30153,21 @@ function Refresh-Ui {
             Show-Toast -Message $script:LastTunnelMessage -Kind 'Warn' -Seconds 7
         }
     } elseif ($script:TunnelFailed -or ($script:TunnelProcess -and $script:TunnelProcess.HasExited)) {
-        Set-LiveBadge 'FEHLER' $script:ColorRed '#33E11D48' '#66FF5C77'
+        $recoverySeconds = 0
+        try {
+            if ($script:TunnelNextRestartAt -gt (Get-Date)) { $recoverySeconds = [int][Math]::Ceiling(($script:TunnelNextRestartAt - (Get-Date)).TotalSeconds) }
+        } catch {}
+        if ($recoverySeconds -gt 0) {
+            Set-LiveBadge 'HEILT' $script:ColorAmber '#33C77F14' '#66FFC95E'
+        } else {
+            Set-LiveBadge 'FEHLER' $script:ColorRed '#33E11D48' '#66FF5C77'
+        }
         if (-not $script:TunnelErrorNotified) {
             $script:TunnelErrorNotified = $true
             $message = if ($script:LastTunnelMessage) { $script:LastTunnelMessage } else { 'Cloudflared hat sich sofort wieder beendet.' }
+            if ($recoverySeconds -gt 0) { $message = $message + ' Wiederherstellung in ' + [string]$recoverySeconds + ' s.' }
             Write-RuntimeLog "Tunnel ohne Adresse beendet: $message"
+            # Bestehende Fehleranzeige; kein neuer Benachrichtigungskanal.
             Show-Toast -Message $message -Kind 'Error' -Seconds 8
         }
     } else {

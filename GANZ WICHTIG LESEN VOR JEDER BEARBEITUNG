@@ -394,6 +394,8 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
   ASK_CANCELLED. Nachricht an Arena nennt kurze Fehler direkt, Strg+Enter
   sendet. Die Test-Benachrichtigung ist aus den Einstellungen entfernt;
   report_done/NOTIFICATION_UNVERIFIED/notify-diagnose bleiben unveraendert.
+  Eine nach Prozessende tote Quick-Tunnel-URL wird verworfen; cloudflared
+  heilt sich gedrosselt und faellt nach Auto/QUIC auf HTTP/2 zurueck.
 - v7.2.2 (05.10.2026): MINI-UPDATE - DIAGNOSEBEREICH ENTFERNT,
   PLACE-MENUE BEREINIGT, NACHRICHTENFENSTER UEBERARBEITET. Das Diagnosepanel
   ist aus den Einstellungen entfernt; alte perfDiagnostics-Werte werden

@@ -52,6 +52,7 @@ heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestarte
 - **Abbruch kommt ehrlich bei Arena an.** `_bridge.userAnswers` liefert `cancelled: true` samt Zusammenfassung; `ask_user { askId, resume: true }` antwortet `ASK_CANCELLED`, und `confirm_action` ist dabei eindeutig nein.
 - **Nachricht an Arena robuster.** Speichern funktioniert auch bei genau einer Nachricht; Strg+Enter sendet, Esc schließt, der Text bleibt bei Fehlern erhalten und das Fenster zeigt den kurzen echten Grund statt nur auf `runtime.log` zu verweisen.
 - **Kein Test-Popup in Einstellungen.** Die künstliche Test-Benachrichtigung samt Rückfrage ist entfernt. Der echte `report_done`-Kanal, seine Registrierung, Messung, `NOTIFICATION_UNVERIFIED` und `notify-diagnose.txt` bleiben unverändert.
+- **Quick-Tunnel bleibt ehrlich und erholt sich.** Endet `cloudflared`, nachdem es bereits eine `trycloudflare.com`-Adresse ausgegeben hat, wird die tote URL sofort verworfen statt weiter als **LIVE** kopiert. Die Bridge startet gedrosselt neu und verwendet nach einem Auto/QUIC-Abbruch HTTP/2 als robusten Fallback.
 - **Prüfung:** `python test_v720_bridge.py`, `python test_v398_structure.py`, `python test_v713_quality.py`, `python test_v714_organic.py`, `python test_v710_delivery.py`, `python test_v711_delivery.py`, `python test_v712_toolbox.py`, `python test_queue_model_707.py`. Studio nach dem Update vollständig neu starten, damit Plugin **7.2.3** geladen wird; die optische Live-Abnahme erfolgt auf Windows.
 
 ## 7.2.2

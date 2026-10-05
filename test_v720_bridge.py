@@ -480,6 +480,24 @@ def main() -> int:
     check("ANSWER_DISCARDED" in source and "reason = 'back'" in open_ask,
           "Zurueck verwirft Folgeantworten nachvollziehbar")
 
+    print("\n4b) Quick-Tunnel: tote URL niemals als LIVE weitergeben")
+    tunnel_start = region(source, "function Start-CloudflareTunnel", "function Restart-CloudflareTunnel")
+    tunnel_refresh = region(source, "function Refresh-Ui", "function Add-PlaceRowToPlaceList")
+    check("$script:TunnelUrl = $null" in tunnel_start
+          and "$script:TunnelProtocol = $effectiveProtocol" in tunnel_start,
+          "Jeder neue cloudflared-Prozess verwirft die alte URL und merkt sein Protokoll")
+    check("$tunnelEnded" in tunnel_refresh
+          and "$script:TunnelUrl = $null" in tunnel_refresh
+          and "tote TLS-Adresse" in tunnel_refresh,
+          "Ein beendeter cloudflared-Prozess kann keine stale trycloudflare-URL als LIVE hinterlassen")
+    check("$recoveryProtocol = if ([string]$script:TunnelProtocol -eq 'auto') { 'http2' }" in tunnel_refresh
+          and "Restart-CloudflareTunnel -Protocol $recoveryProtocol" in tunnel_refresh
+          and "TunnelNextRestartAt" in tunnel_refresh,
+          "Tunnel-Wiederherstellung ist gedrosselt und wechselt nach Auto/QUIC auf HTTP/2")
+    check("lineProcessId" in tunnel_refresh and "lineProcessId -ne $activeProcessId" in tunnel_refresh
+          and "TunnelLiveSince" in tunnel_refresh,
+          "Gepufferte Ausgabe alter Prozesse kann keine neue URL ueberschreiben und ein Kurzstart umgeht den Backoff nicht")
+
     print("\n5) Qualitaet und GUI")
     check("finishScore = finishScore" in source and "grade = grade" in source,
           "auditBuildQuality liefert finishScore und grade")
