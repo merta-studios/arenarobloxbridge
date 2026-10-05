@@ -1809,6 +1809,8 @@ $script:NotifyPlatformCache = $null
 $script:NotifyPlatformCacheAt = $null
 $script:NotifyRecords = New-Object System.Collections.Generic.List[object]
 $script:NotifySeenWindow = $null
+# Version 7.2.0 (D8): Fenster "Nachricht an Arena senden".
+$script:UserMessageWindow = $null
 $script:PreviewFlowCounter = [long]0
 $script:PreviewFlowContexts = @{}
 $script:PreviewHandleInfos = @{}
@@ -24111,6 +24113,393 @@ function Get-UserMessageUiViews {
     return $views
 }
 
+function Format-UserMessageAge {
+    # Kleine, ehrliche Zeitangabe fuer das Nachricht-Fenster.
+    param([int]$Seconds)
+    if ($Seconds -lt 0) { $Seconds = 0 }
+    if ($Seconds -lt 60) { return ([string]$Seconds + ' s') }
+    $minutes = [int][Math]::Floor($Seconds / 60)
+    if ($minutes -lt 60) { return ([string]$minutes + ' min') }
+    return ([string][int][Math]::Floor($minutes / 60) + ' h')
+}
+
+function Get-UserMessageAckReply {
+    # Die Kurzantwort, die Arena beim Bestaetigen mitgeschickt hat
+    # (ack_user_message { reply = '...' }).
+    param([string]$SessionId)
+    try {
+        $state = Get-UserMessageStateForUi $SessionId
+        if ($null -ne $state -and $state.PSObject.Properties['lastAckReply']) { return [string]$state.lastAckReply }
+    } catch {}
+    return ''
+}
+
+function Get-UserMessageBadgeText {
+    # Version 7.2.0: unauffaelliger Zaehler fuer die Place-Zeile (D8). Kein
+    # neues Feld in der Zeile, keine Farbe, kein Blinken - die Zahl steht im
+    # Tooltip des Fortschritts und im Menue.
+    param([string]$SessionId)
+    try {
+        $views = Get-UserMessageUiViews $SessionId
+        $waiting = 0
+        $acked = 0
+        foreach ($view in $views) {
+            $code = [string]$view.statusCode
+            if ($code -eq 'queued') { $waiting = $waiting + 1 }
+            elseif ($code -eq 'delivered' -or $code -eq 'delivered_unacked') { $waiting = $waiting + 1 }
+            elseif ($code -eq 'acked') { $acked = $acked + 1 }
+        }
+        if ($waiting -eq 0 -and $acked -eq 0) { return '' }
+        if ($waiting -gt 0) {
+            if ($waiting -eq 1) { return '1 Nachricht liegt fuer Arena bereit' }
+            return ([string]$waiting + ' Nachrichten liegen fuer Arena bereit')
+        }
+        if ($acked -eq 1) { return '1 Nachricht von Arena bestaetigt' }
+        return ([string]$acked + ' Nachrichten von Arena bestaetigt')
+    } catch { return '' }
+}
+
+function Update-UserMessageWindow {
+    # Zustand des Fensters aus dem gemeinsamen JSON ziehen (D8):
+    #   wird gesendet -> angekommen -> von Arena bestaetigt
+    # und ehrlich sagen, wann Arena gar nichts abholt.
+    param($Info)
+    try {
+        if ($null -eq $Info) { return }
+        $sessionId = [string]$Info.SessionId
+        $messageId = [string]$Info.MessageId
+        $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+
+        # Verlauf der bisherigen Nachrichten dieser Sitzung.
+        $historyLines = New-Object System.Collections.Generic.List[string]
+        $views = Get-UserMessageUiViews $sessionId
+        foreach ($view in $views) {
+            $text = [string]$view.text
+            if ($text.Length -gt 90) { $text = $text.Substring(0, 89) + '...' }
+            $when = ''
+            try { $when = ([DateTimeOffset]::FromUnixTimeSeconds([int64]$view.createdAt).LocalDateTime.ToString('HH:mm:ss')) } catch {}
+            $historyLines.Add(([string]$view.statusCode + '  ' + $when + '  ' + $text))
+        }
+        if ($historyLines.Count -eq 0) { $Info.History.Text = 'Noch keine Nachricht in dieser Sitzung.' }
+        else { $Info.History.Text = ($historyLines.ToArray() -join [Environment]::NewLine) }
+
+        # Wie lange hat Arena ueberhaupt nichts mehr gefragt?
+        $silentSeconds = 0
+        try {
+            $snapshot = Get-ProgressStateSnapshot $sessionId
+            if ($null -ne $snapshot) { $silentSeconds = [int]$snapshot.SilentSeconds }
+        } catch {}
+
+        if ([string]::IsNullOrWhiteSpace($messageId)) {
+            $Info.Status.Text = 'Noch nicht gesendet. Arena bekommt die Nachricht mit ihrer naechsten Anfrage - die Bridge kann nicht in den Arena-Chat schreiben.'
+            $Info.Status.Foreground = Get-Brush '#9AA9CE'
+            $Info.SendButton.IsEnabled = ($Info.TextBox.Text.Trim().Length -gt 0)
+            $Info.CancelButton.IsEnabled = $false
+            $Info.CancelButton.Content = 'Abbrechen'
+            return
+        }
+
+        $current = $null
+        foreach ($view in $views) { if ([string]$view.id -eq $messageId) { $current = $view } }
+        # Zurueckgezogene Nachrichten erscheinen nicht mehr im Verlauf.
+        if ($null -eq $current) {
+            if ([string]$Info.LastState -eq 'withdrawn') {
+                $Info.Status.Text = 'ZURUECKGEZOGEN - Arena hat die Nachricht nie bekommen.'
+                $Info.Status.Foreground = Get-Brush '#FFB4C4'
+                $Info.SendButton.IsEnabled = ($Info.TextBox.Text.Trim().Length -gt 0)
+                $Info.CancelButton.IsEnabled = $false
+                $Info.CancelButton.Content = 'Abbrechen'
+            } else {
+                $Info.Status.Text = 'Die Nachricht ist nicht mehr auffindbar (Sitzung zurueckgesetzt?).'
+                $Info.Status.Foreground = Get-Brush '#9AA9CE'
+            }
+            return
+        }
+
+        $age = 0
+        try { $age = [int]$current.ageSeconds } catch {}
+        $code = [string]$current.statusCode
+        $clock = ''
+        try { $clock = ([DateTimeOffset]::FromUnixTimeSeconds([int64]$current.createdAt).LocalDateTime.ToString('HH:mm:ss')) } catch {}
+        $text = ''
+        if ($code -eq 'queued') {
+            $text = ('wird gesendet - liegt seit ' + (Format-UserMessageAge $age) + ' bereit (gesendet ' + $clock + ').')
+            if ($silentSeconds -ge 45) {
+                $text = $text + ' Arena hat seit ' + (Format-UserMessageAge $silentSeconds) + ' keine Anfrage gestellt - die Nachricht kommt mit der naechsten.'
+            }
+            $Info.Status.Foreground = Get-Brush '#FFD9A0'
+            $Info.SendButton.IsEnabled = $false
+            $Info.CancelButton.IsEnabled = $true
+            $Info.CancelButton.Content = 'Abbrechen'
+        } elseif ($code -eq 'delivered') {
+            $tool = [string]$current.deliveredWith
+            if ([string]::IsNullOrWhiteSpace($tool)) { $tool = 'einer Arena-Anfrage' }
+            $text = ('angekommen - mitgenommen von ' + $tool + '. Du kannst das Fenster jetzt schliessen.')
+            $Info.Status.Foreground = Get-Brush '#9FDCFF'
+            $Info.SendButton.IsEnabled = $false
+            $Info.CancelButton.IsEnabled = $true
+            $Info.CancelButton.Content = 'Schliessen'
+        } elseif ($code -eq 'delivered_unacked') {
+            $text = 'angekommen, aber von Arena nicht bestaetigt - sie wird noch bis zu drei Antworten wiederholt.'
+            $Info.Status.Foreground = Get-Brush '#FFD9A0'
+            $Info.SendButton.IsEnabled = $false
+            $Info.CancelButton.IsEnabled = $true
+            $Info.CancelButton.Content = 'Schliessen'
+        } elseif ($code -eq 'acked') {
+            $reply = Get-UserMessageAckReply $sessionId
+            $text = 'von Arena bestaetigt.'
+            if (-not [string]::IsNullOrWhiteSpace($reply)) { $text = $text + ' Antwort: ' + $reply }
+            $Info.Status.Foreground = Get-Brush '#38D16C'
+            $Info.SendButton.IsEnabled = ($Info.TextBox.Text.Trim().Length -gt 0)
+            $Info.CancelButton.IsEnabled = $true
+            $Info.CancelButton.Content = 'Schliessen'
+        } else {
+            $text = ('Zustand: ' + $code)
+            $Info.Status.Foreground = Get-Brush '#9AA9CE'
+        }
+        $Info.LastState = $code
+        $Info.Status.Text = $text
+        if ($code -eq 'acked' -and $Info.TextBox.Text.Trim().Length -gt 0) {
+            $Info.MessageId = ''
+        }
+    } catch {}
+}
+
+function Open-UserMessageWindow {
+    # Version 7.2.0 (D8): "Nachricht an Arena senden" aus dem Menue der
+    # Place-Zeile. Eigenes Fenster mit ehrlichen Zustaenden statt eines
+    # Eingabefelds, das still verschluckt, was der Nutzer geschrieben hat.
+    param([string]$SessionId, [string]$PlaceName = '')
+    try {
+        if ([string]::IsNullOrWhiteSpace($SessionId)) { return }
+        if ($null -ne $script:UserMessageWindow) {
+            try { $script:UserMessageWindow.Close() } catch {}
+            $script:UserMessageWindow = $null
+        }
+        $win = [System.Windows.Window]::new()
+        $win.Title = 'Nachricht an Arena'
+        $win.Width = 560
+        $win.Height = 470
+        $win.MinWidth = 560; $win.MinHeight = 470
+        $win.WindowStartupLocation = 'CenterOwner'
+        $win.WindowStyle = 'None'
+        $win.AllowsTransparency = $true
+        $win.Background = [System.Windows.Media.Brushes]::Transparent
+        $win.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe UI')
+        $win.ResizeMode = 'CanResize'
+        try { $win.Owner = $window } catch {}
+
+        $shell = [System.Windows.Controls.Border]::new()
+        $shell.CornerRadius = [System.Windows.CornerRadius]::new(16)
+        $shell.Background = Get-Brush '#F50B1030'
+        $shell.BorderBrush = Get-Brush '#33FFFFFF'
+        $shell.BorderThickness = [System.Windows.Thickness]::new(1)
+        $shell.Padding = [System.Windows.Thickness]::new(18)
+
+        $grid = [System.Windows.Controls.Grid]::new()
+        foreach ($h in @('Auto', 'Auto', 'Auto', '*', 'Auto', 'Auto')) {
+            $rd = [System.Windows.Controls.RowDefinition]::new()
+            if ($h -ne 'Auto') { $rd.Height = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star) }
+            [void]$grid.RowDefinitions.Add($rd)
+        }
+
+        $headline = [System.Windows.Controls.TextBlock]::new()
+        $headline.Text = $(if ([string]::IsNullOrWhiteSpace($PlaceName)) { 'Nachricht an Arena' } else { 'Nachricht an Arena · ' + $PlaceName })
+        $headline.FontSize = 15
+        $headline.FontWeight = 'SemiBold'
+        $headline.Foreground = Get-Brush '#F4F8FF'
+        [System.Windows.Controls.Grid]::SetRow($headline, 0)
+        [void]$grid.Children.Add($headline)
+
+        $hint = [System.Windows.Controls.TextBlock]::new()
+        $hint.Text = 'Schreib deine Korrektur hier auf ("halt - mach das so nicht"). Arena bekommt sie mit ihrer naechsten Anfrage und muss sie bestaetigen. Die Bridge kann nicht selbst in den Arena-Chat schreiben.'
+        $hint.FontSize = 11
+        $hint.TextWrapping = 'Wrap'
+        $hint.Margin = [System.Windows.Thickness]::new(0, 8, 0, 12)
+        $hint.Foreground = Get-Brush '#9AA9CE'
+        [System.Windows.Controls.Grid]::SetRow($hint, 1)
+        [void]$grid.Children.Add($hint)
+
+        $textBox = [System.Windows.Controls.TextBox]::new()
+        $textBox.AcceptsReturn = $true
+        $textBox.TextWrapping = 'Wrap'
+        $textBox.VerticalScrollBarVisibility = 'Auto'
+        $textBox.MinHeight = 86
+        $textBox.FontSize = 12.5
+        $textBox.Foreground = Get-Brush '#F4F8FF'
+        $textBox.Background = Get-Brush '#141B33'
+        $textBox.BorderBrush = Get-Brush '#33FFFFFF'
+        $textBox.BorderThickness = [System.Windows.Thickness]::new(1)
+        $textBox.Padding = [System.Windows.Thickness]::new(9, 7, 9, 7)
+        $textBox.CaretBrush = Get-Brush '#F4F8FF'
+        $textBox.MaxLength = 4000
+        [System.Windows.Controls.Grid]::SetRow($textBox, 2)
+        [void]$grid.Children.Add($textBox)
+
+        $historyBox = [System.Windows.Controls.TextBox]::new()
+        $historyBox.IsReadOnly = $true
+        $historyBox.TextWrapping = 'Wrap'
+        $historyBox.VerticalScrollBarVisibility = 'Auto'
+        $historyBox.FontSize = 10.5
+        $historyBox.FontFamily = [System.Windows.Media.FontFamily]::new('Consolas')
+        $historyBox.Foreground = Get-Brush '#9AA9CE'
+        $historyBox.Background = Get-Brush '#0E1428'
+        $historyBox.BorderBrush = Get-Brush '#22FFFFFF'
+        $historyBox.BorderThickness = [System.Windows.Thickness]::new(1)
+        $historyBox.Padding = [System.Windows.Thickness]::new(9, 7, 9, 7)
+        $historyBox.Margin = [System.Windows.Thickness]::new(0, 12, 0, 0)
+        $historyBox.Text = 'Noch keine Nachricht in dieser Sitzung.'
+        [System.Windows.Controls.Grid]::SetRow($historyBox, 3)
+        [void]$grid.Children.Add($historyBox)
+
+        $statusText = [System.Windows.Controls.TextBlock]::new()
+        $statusText.Text = 'Noch nicht gesendet.'
+        $statusText.FontSize = 11.5
+        $statusText.TextWrapping = 'Wrap'
+        $statusText.Margin = [System.Windows.Thickness]::new(0, 12, 0, 0)
+        $statusText.Foreground = Get-Brush '#9AA9CE'
+        [System.Windows.Controls.Grid]::SetRow($statusText, 4)
+        [void]$grid.Children.Add($statusText)
+
+        $buttonRow = [System.Windows.Controls.StackPanel]::new()
+        $buttonRow.Orientation = 'Horizontal'
+        $buttonRow.HorizontalAlignment = 'Right'
+        $buttonRow.Margin = [System.Windows.Thickness]::new(0, 14, 0, 0)
+        $sendButton = [System.Windows.Controls.Button]::new()
+        $sendButton.Content = 'Senden'
+        $sendButton.Padding = [System.Windows.Thickness]::new(16, 8, 16, 8)
+        $sendButton.Margin = [System.Windows.Thickness]::new(0, 0, 10, 0)
+        $sendButton.Background = Get-Brush '#5CFFEF'
+        $sendButton.Foreground = Get-Brush '#08111F'
+        $sendButton.BorderThickness = [System.Windows.Thickness]::new(0)
+        $sendButton.FontWeight = 'SemiBold'
+        $sendButton.Cursor = 'Hand'
+        $sendButton.IsEnabled = $false
+        $cancelButton = [System.Windows.Controls.Button]::new()
+        $cancelButton.Content = 'Abbrechen'
+        $cancelButton.Padding = [System.Windows.Thickness]::new(16, 8, 16, 8)
+        $cancelButton.Background = Get-Brush '#1B2440'
+        $cancelButton.Foreground = Get-Brush '#F4F8FF'
+        $cancelButton.BorderBrush = Get-Brush '#3AFFFFFF'
+        $cancelButton.BorderThickness = [System.Windows.Thickness]::new(1)
+        $cancelButton.Cursor = 'Hand'
+        $cancelButton.IsEnabled = $false
+        [void]$buttonRow.Children.Add($sendButton)
+        [void]$buttonRow.Children.Add($cancelButton)
+        [System.Windows.Controls.Grid]::SetRow($buttonRow, 5)
+        [void]$grid.Children.Add($buttonRow)
+
+        $shell.Child = $grid
+        $win.Content = $shell
+
+        # Alle Daten haengen am Element selbst (Tag) - dieselbe Regel wie in
+        # New-Row: lokale Variablen einer Funktion sind in Event-Handlern nicht
+        # zuverlaessig verfuegbar.
+        $info = [pscustomobject]@{
+            Window      = $win
+            SessionId   = [string]$SessionId
+            PlaceName   = [string]$PlaceName
+            MessageId   = ''
+            LastState   = ''
+            TextBox     = $textBox
+            History     = $historyBox
+            Status      = $statusText
+            SendButton  = $sendButton
+            CancelButton = $cancelButton
+            Timer       = $null
+        }
+        $win.Tag = $info
+        $textBox.Tag = $info
+        $sendButton.Tag = $info
+        $cancelButton.Tag = $info
+
+        $textBox.Add_TextChanged({
+            param($s, $e)
+            $data = $s.Tag
+            try { $data.SendButton.IsEnabled = ($s.Text.Trim().Length -gt 0 -and [string]$data.MessageId -eq '') } catch {}
+        })
+        $sendButton.Add_Click({
+            param($s, $e)
+            $data = $s.Tag
+            try {
+                $text = [string]$data.TextBox.Text
+                if ([string]::IsNullOrWhiteSpace($text)) { return }
+                $newId = Add-UserMessage $data.SessionId $text 'correction'
+                if ([string]::IsNullOrWhiteSpace([string]$newId)) {
+                    $data.Status.Text = 'Die Nachricht konnte nicht gespeichert werden (siehe runtime.log).'
+                    $data.Status.Foreground = Get-Brush '#FFB4C4'
+                    return
+                }
+                $data.MessageId = [string]$newId
+                $data.LastState = 'queued'
+                $data.TextBox.Clear()
+                $data.SendButton.IsEnabled = $false
+                Update-UserMessageWindow $data
+            } catch {
+                Write-UiErrorLog 'Nachricht konnte nicht gesendet werden' $_
+            }
+        })
+        $cancelButton.Add_Click({
+            param($s, $e)
+            $data = $s.Tag
+            try {
+                $id = [string]$data.MessageId
+                if ([string]::IsNullOrWhiteSpace($id)) {
+                    try { $data.Window.Close() } catch {}
+                    return
+                }
+                $state = [string]$data.LastState
+                if ($state -eq 'queued') {
+                    # Ehrliches Abbrechen: zurueckziehen geht nur, solange die
+                    # Nachricht noch in der Queue liegt.
+                    $withdrawn = Withdraw-UserMessage $data.SessionId $id
+                    if ($withdrawn) {
+                        $data.LastState = 'withdrawn'
+                        $data.MessageId = ''
+                        $data.Status.Text = 'ZURUECKGEZOGEN - Arena hat die Nachricht nie bekommen.'
+                        $data.Status.Foreground = Get-Brush '#FFB4C4'
+                        $data.SendButton.IsEnabled = ($data.TextBox.Text.Trim().Length -gt 0)
+                        $data.CancelButton.IsEnabled = $false
+                        $data.CancelButton.Content = 'Abbrechen'
+                        Write-FlowTrace 'USERMSG' $id 'WITHDRAWN_BY_USER' @{ sid = $data.SessionId }
+                    } else {
+                        $data.Status.Text = 'Zu spaet zum Zurueckziehen: Eine Arena-Anfrage hat die Nachricht bereits mitgenommen. Sie ist jetzt unterwegs.'
+                        $data.Status.Foreground = Get-Brush '#FFD9A0'
+                        $data.CancelButton.Content = 'Schliessen'
+                        $data.LastState = 'delivered'
+                    }
+                    return
+                }
+                try { $data.Window.Close() } catch {}
+            } catch {
+                Write-UiErrorLog 'Abbrechen der Nachricht fehlgeschlagen' $_
+            }
+        })
+
+        $timer = [System.Windows.Threading.DispatcherTimer]::new()
+        $timer.Interval = [TimeSpan]::FromMilliseconds(500)
+        $timer.Tag = $info
+        $timer.Add_Tick({
+            param($s, $e)
+            try { Update-UserMessageWindow $s.Tag } catch {}
+        })
+        $info.Timer = $timer
+        $win.Add_Closed({
+            param($s, $e)
+            try { $s.Tag.Timer.Stop() } catch {}
+            try { $script:UserMessageWindow = $null } catch {}
+        })
+        $script:UserMessageWindow = $win
+        Update-UserMessageWindow $info
+        [void]$win.Show()
+        try { $win.Activate() } catch {}
+        try { $textBox.Focus() } catch {}
+        $timer.Start()
+    } catch {
+        Write-UiErrorLog 'Nachricht-Fenster konnte nicht geoeffnet werden' $_
+    }
+}
+
 function Get-PlaceOpenCommand {
     # Version 7.0.6: der aelteste noch offene Befehl dieser Sitzung - genau
     # der, der die strikt serielle Studio-Queue blockiert. Er wird in der
@@ -24280,6 +24669,12 @@ function Update-PlaceProgressVisual {
         Add-UiChannelCount 'ProgressNotDisplaced' 1
     }
 
+    # Version 7.2.0 (D8): unauffaelliger Hinweis auf wartende Nutzernachrichten.
+    # Kein neues Feld in der Zeile, keine Farbe, kein Blinken - die Zahl steht
+    # im Tooltip und im Menue.
+    $userBadgeText = ''
+    try { $userBadgeText = Get-UserMessageBadgeText $sessionId } catch {}
+
     $color = '#FF4C9BFF'      # arbeitet = blau
     $label = 'Arena arbeitet gerade...'
     if ($state -eq 'done') { $color = '#FF38D16C'; $label = 'Fertig!' }
@@ -24302,6 +24697,7 @@ function Update-PlaceProgressVisual {
     $Row.ProgressState = $state
     $tooltip = Format-ProgressMessage $snapshot
     if (-not [string]::IsNullOrWhiteSpace($commandText)) { $tooltip = $tooltip + [Environment]::NewLine + $commandText }
+    if (-not [string]::IsNullOrWhiteSpace($userBadgeText)) { $tooltip = $tooltip + [Environment]::NewLine + $userBadgeText + ' - Menue (...) der Place-Zeile: "Nachricht an Arena senden".' }
 
     if ($percentKnown -or $state -eq 'done') {
         # ECHTE Zahl gemeldet: Balken + Prozent wie gewohnt.
@@ -26543,6 +26939,11 @@ function New-Row {
         $menuStack.Children.Add($menuHeader) | Out-Null
         $menuStack.Children.Add((New-Separator)) | Out-Null
 
+        # Version 7.2.0 (D8): Korrektur waehrend der Arbeit, ohne die Antwort
+        # abzubrechen - und (D7) der harte Befehls-Abbruch im Menue statt als
+        # Knopf, der die Fortschrittsanzeige verdraengt.
+        $messageItem = New-MenuRow -Glyph ([char]0xE724) -Title 'Nachricht an Arena senden' -Subtitle 'Korrektur während der Arbeit' -Accent '#FFD9A0'
+        $cancelCmdItem = New-MenuRow -Glyph ([char]0xE711) -Title 'Laufenden Befehl abbrechen' -Subtitle 'Gibt die Studio-Queue sofort frei' -Accent '#FF9AA8'
         $copyItem = New-MenuRow -Glyph ([char]0xE8C8) -Title 'Prompt kopieren' -Subtitle 'URL und Token für Arena' -Accent '#5CFFEF'
         $resetItem = New-MenuRow -Glyph ([char]0xE72C) -Title 'Token zurücksetzen' -Subtitle 'Neuen Zugang für dieses Place' -Accent '#C9B7FF'
         $toggleItem = New-MenuRow -Glyph ([char]0xE72E) -Title 'Nur Lesezugriff' -Subtitle 'Inaktiv - Änderungen sind erlaubt' -Accent '#FFC1CE' -Checkable $true -Checked $false
@@ -26554,12 +26955,43 @@ function New-Row {
             Popup     = $popup
             SessionId = $sessionId
             Row       = $row
+            # Version 7.2.0 (D8): Der Place-Name gehoert ins Fenster
+            # "Nachricht an Arena senden" - und Daten haengen am Element (Tag),
+            # weil lokale Variablen in Event-Handlern nicht zuverlaessig sind.
+            PlaceName = [string]$Studio.placeName
         }
+        $messageItem.Root.Tag = $itemTag
+        $cancelCmdItem.Root.Tag = $itemTag
         $copyItem.Root.Tag = $itemTag
         $resetItem.Root.Tag = $itemTag
         $toggleItem.Root.Tag = $itemTag
         $historyItem.Root.Tag = $itemTag
 
+        $messageItem.Root.Add_MouseLeftButtonUp({
+            param($s, $e)
+            $info = $s.Tag
+            try { $info.Popup.IsOpen = $false } catch {}
+            try {
+                $placeTitle = ''
+                try { $placeTitle = [string]$info.PlaceName } catch {}
+                if ([string]::IsNullOrWhiteSpace($placeTitle)) {
+                    try { $placeTitle = [string]$script:PlaceNames[[string]$info.SessionId] } catch {}
+                }
+                Open-UserMessageWindow -SessionId ([string]$info.SessionId) -PlaceName $placeTitle
+            } catch {
+                Write-UiErrorLog 'Nachricht-Fenster konnte nicht geoeffnet werden' $_
+            }
+        })
+        $cancelCmdItem.Root.Add_MouseLeftButtonUp({
+            param($s, $e)
+            $info = $s.Tag
+            # Version 7.2.0 (D7): Abbrechen bleibt im Menue und schliesst es
+            # danach - die Fortschrittsanzeige wird nie ersetzt.
+            try { $info.Popup.IsOpen = $false } catch {}
+            try { Invoke-PlaceRowCancel ([string]$info.SessionId) } catch {
+                Write-UiErrorLog 'Laufender Befehl konnte nicht abgebrochen werden' $_
+            }
+        })
         $copyItem.Root.Add_MouseLeftButtonUp({
             param($s, $e)
             $info = $s.Tag
@@ -26598,10 +27030,13 @@ function New-Row {
             Set-RowMode $targetRow $newMode
         })
 
+        $menuStack.Children.Add($messageItem.Root) | Out-Null
+        $menuStack.Children.Add((New-Separator)) | Out-Null
         $menuStack.Children.Add($copyItem.Root) | Out-Null
         $menuStack.Children.Add($resetItem.Root) | Out-Null
         $menuStack.Children.Add($historyItem.Root) | Out-Null
         $menuStack.Children.Add((New-Separator)) | Out-Null
+        $menuStack.Children.Add($cancelCmdItem.Root) | Out-Null
         $menuStack.Children.Add($toggleItem.Root) | Out-Null
 
         $menuShell.Child = $menuStack
