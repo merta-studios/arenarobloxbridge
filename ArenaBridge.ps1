@@ -1,6 +1,56 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.2.3
+# Arena Roblox Bridge  -  Version 7.2.4
 #
+#
+# Version 7.2.4 (2026-10-05) - P0-BLOCKER BEHOBEN + ECHTES PROGRAMM-DESIGN
+#
+#   1) P0-BLOCKER (live belegt mit 7.2.3, Place1): ask_user legte die Frage an,
+#      antwortete aber mit {"error":"Die Argumenttypen stimmen nicht
+#      ueberein.","ok":false} - danach scheiterte JEDES Werkzeug (get_place_info,
+#      get_children, ask_user) mit demselben Fehler. Ursache: New-Envelope legte
+#      @() um drei List[object]-Werte (userAnswers, openQuestions,
+#      userMessages), die ihre Helfer korrekt per "return ,$liste" lieferten.
+#      Windows PowerShell 5.1 wirft fuer @( List[object] ) einen Binderfehler -
+#      leer wie gefuellt. Der Komma-Operator in den Helfern war richtig, das
+#      @() an den Umschlagstellen war falsch.
+#      Fix: alle drei schreiben jetzt ".ToArray()" (List[object].ToArray() ist
+#      erlaubt und ergibt auch leer ein Array, nie $null), und JEDER
+#      Umschlagblock liegt zusaetzlich in try/catch - ein Fehler in einem
+#      Zierfeld kostet nie wieder die ganze Werkzeugantwort. Dieselbe
+#      Fehlerklasse ist an drei weiteren Stellen entfernt (Update-Branch-Kette,
+#      fehlende Pflichtargumente, Log-Zeilen).
+#   2) REGEL GESICHERT: Die Hausregel "nie @() um eine Sammlung" (seit 7.1.1
+#      zweimal im Repo dokumentiert, aber nie geprueft) ist jetzt ein
+#      Parse-Gate in test_v720_bridge.py: collection_return_problems findet
+#      BOTH Fallen - "return $liste" ohne Komma UND "@($var)" um eine Variable,
+#      die aus New-Object Generic.List/Queue/Stack/Dictionary stammt oder aus
+#      dem Aufruf einer Funktion mit "return ,$...".
+#   3) FRAGEN-FENSTER IM PROGRAMM-DESIGN: XAML-basiert statt per Code
+#      zusammengesetzt, gebaut aus EINEM gemeinsamen Ressourcenblock
+#      ($script:ArenaDialogStyles) mit SwAppBg-Verlauf (#060A1A -> #0A1128 ->
+#      #0C1533), SwCardBg, SwTextMain/Muted/Faint, SwLine und dem
+#      Crimson-Verlauf (#F2FF5C77 -> #E6E11D48). Kein halbtransparentes
+#      #F50B1030-Shell und kein Mint #5CFFEF mehr. Pro Frage gibt es IMMER ein
+#      tippbares Feld "Eigene Antwort" (nicht nur bei allowCustomResponse), das
+#      Fenster blendet in 180 ms ruhig ein und baut den Fragenbereich nur noch
+#      bei echter Strukturänderung neu auf - bis 7.2.3 lief Children.Clear()
+#      im Takt und liess das Fenster sichtbar zusammensacken und wieder
+#      aufploppen. Kein Auto-Schliessen: Es bleibt offen bis geantwortet,
+#      abgebrochen oder abgelaufen, fuer dieselbe askId wird es nie erneut
+#      geoeffnet, eine zweite Anfrage stellt dasselbe Fenster um, die Restzeit
+#      steht in der Fusszeile. Nach "Fertig" bleibt es mit gruenem Endzustand
+#      ("Alle N Antworten sind gespeichert - Arena holt sie ab") und einem
+#      Knopf "Schliessen" offen. Unten stehen genau Zurueck (grau), Abbrechen
+#      (rot) und Weiter/Fertig (gruen); Kreuz oben rechts (32 x 32 px) und Esc
+#      brechen ab, der Kopierknopf erscheint nur bei Ablauf oder offline.
+#      Ziehbar an der Titelzeile, modal solange die Frage offen ist,
+#      Startgroesse 480 x 420 mit MaxHeight 70 % der Bildschirmhoehe.
+#   4) NACHRICHTEN-FENSTER: derselbe gemeinsame Ressourcenblock, dieselbe
+#      Fenstersprache. Strg+Enter sendet, Esc und das Kreuz schliessen, die
+#      Zustaende "wird gesendet" -> "angekommen" -> "von Arena bestaetigt"
+#      bleiben. Speicherfehler nennen den kurzen echten Grund im Fenster und
+#      schreiben den vollen Grund zusaetzlich nach runtime.log. Add-UserMessage
+#      legt eine fehlende Nachrichtenliste an, statt auf $null zu schreiben.
 #
 # Version 7.2.3 (2026-10-05) - FRAGENFENSTER, NUTZER-KANAL, LIVE-SAMMLUNGEN
 #
@@ -2070,7 +2120,11 @@ function Get-UpdateBranchChain {
     foreach ($fallback in $script:RepoBranchFallbacks) {
         if ($chain -notcontains $fallback) { [void]$chain.Add($fallback) }
     }
-    return , @($chain)
+    # Version 7.2.4: NIE @() um eine Generic.List - Windows PowerShell 5.1
+    # wirft dafuer den Binderfehler "Die Argumenttypen stimmen nicht
+    # ueberein." (Hausregel aus 7.1.1, seit 7.2.4 durch ein Parse-Gate
+    # gesichert). .ToArray() ergibt auch leer ein Array, nie $null.
+    return ,$chain.ToArray()
 }
 
 function Compare-BridgeVersion {
@@ -2424,7 +2478,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.2.3'
+    DocsVersion     = '7.2.4'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -2460,7 +2514,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Version 7.0.6: Laufzeit-Identitaet der LAUFENDEN Datei (Version, Pfad,
     # SHA-256, Sprachmodus, Startzeit) fuer GET /api/version.
     RuntimeInfo = [hashtable]::Synchronized(@{
-        Version = '7.2.3'
+        Version = '7.2.4'
         File = ''
         Sha256 = ''
         LanguageMode = ''
@@ -2716,12 +2770,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.2.3, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.2.3, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.2.4, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.2.4, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.2.3'
+$script:Shared.RuntimeInfo.Version = '7.2.4'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -2824,7 +2878,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.2.3)
+  Arena Studio Bridge - Studio Plugin  (Version 7.2.4)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -2897,7 +2951,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.2.3"
+local ARENA_VERSION  = "7.2.4"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -15139,7 +15193,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.2.3 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.2.4 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -18485,7 +18539,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 ok=$false
                 code='BAD_ARGS'
                 error=('Missing required argument(s): ' + ($missing -join ', ') + '.')
-                missing=@($missing)
+                missing=$missing.ToArray()
                 tool=$tool
                 hint='Arguments were rejected before queueing; fix them and retry. No Studio command was sent.'
             }
@@ -20100,7 +20154,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.2.3'
+            version = '7.2.4'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -20331,7 +20385,7 @@ end
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.2.3'
+            bridgeVersion = '7.2.4'
             executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent is never an error, but the user then sees NO bar and NO percentage at all - only your message as text. Send a real number every few calls. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
@@ -20517,11 +20571,23 @@ end
         # Version 7.2.0 (D3): Antworten aus dem Fragenfenster, die noch nicht
         # gezeigt wurden. Eine Antwort darf nie verloren gehen, nur weil die KI
         # gerade nicht gewartet hat.
-        $lateAnswers = Get-LateAskAnswers $sessionId 4
-        if ($lateAnswers.Count -gt 0) {
-            $envelope.userAnswers = @($lateAnswers)
-            $answerNote = 'USER ANSWERS (ask_user/confirm_action): the user answered or cancelled. Read _bridge.userAnswers, honor cancelled: true without asking again, and mention the decision in your reply.'
-            if ($envelope.attention) { $envelope.attention = $answerNote + ' ' + $envelope.attention } else { $envelope.attention = $answerNote }
+        # Version 7.2.4 (P0): Get-LateAskAnswers liefert eine echte
+        # List[object] (return ,$items). NIE @() darum legen - Windows
+        # PowerShell 5.1 wirft fuer @( List[object] ) den Binderfehler
+        # "Die Argumenttypen stimmen nicht ueberein." Dieser Fehler toetete
+        # in 7.2.3 JEDEN Werkzeugaufruf, sobald eine Frage offen war.
+        # .ToArray() ist erlaubt und ergibt auch leer ein Array, nie $null.
+        # Jeder Umschlagblock liegt zusaetzlich in try/catch: Der Umschlag
+        # ist Zierde und darf niemals die Werkzeugantwort kosten.
+        try {
+            $lateAnswers = Get-LateAskAnswers $sessionId 4
+            if ($lateAnswers.Count -gt 0) {
+                $envelope.userAnswers = $lateAnswers.ToArray()
+                $answerNote = 'USER ANSWERS (ask_user/confirm_action): the user answered or cancelled. Read _bridge.userAnswers, honor cancelled: true without asking again, and mention the decision in your reply.'
+                if ($envelope.attention) { $envelope.attention = $answerNote + ' ' + $envelope.attention } else { $envelope.attention = $answerNote }
+            }
+        } catch {
+            Write-FlowStation 'ENVELOPE' ([string]$sessionId) 'USER_ANSWERS_SKIPPED' @{ reason = 'envelope_field_failed' }
         }
         # Version 7.2.0 (AP7): Die Code-Struktur-Messung wiederholt sich in
         # jeder Antwort, bis das Skript aufgeteilt ist - einmal lesen und
@@ -20540,18 +20606,25 @@ end
                 }
             }
         } catch {}
-        $openAsks = Get-PendingAskViews $sessionId 1
-        if ($openAsks.Count -gt 0) {
-            $envelope.openQuestions = @($openAsks)
-            $askNote = 'OPEN QUESTION: the user still sees a question window (' + [string]$openAsks[0].askId + ': ' + [string]$openAsks[0].title + '). Do not guess - wait with ask_user { askId, resume: true } or continue with work that does not depend on the answer.'
-            if ($envelope.attention) { $envelope.attention = $askNote + ' ' + $envelope.attention } else { $envelope.attention = $askNote }
+        # Version 7.2.4 (P0): .ToArray() statt @( List[object] ) - siehe oben.
+        try {
+            $openAsks = Get-PendingAskViews $sessionId 1
+            if ($openAsks.Count -gt 0) {
+                $envelope.openQuestions = $openAsks.ToArray()
+                $askNote = 'OPEN QUESTION: the user still sees a question window (' + [string]$openAsks[0].askId + ': ' + [string]$openAsks[0].title + '). Do not guess - wait with ask_user { askId, resume: true } or continue with work that does not depend on the answer.'
+                if ($envelope.attention) { $envelope.attention = $askNote + ' ' + $envelope.attention } else { $envelope.attention = $askNote }
+            }
+        } catch {
+            Write-FlowStation 'ENVELOPE' ([string]$sessionId) 'OPEN_QUESTIONS_SKIPPED' @{ reason = 'envelope_field_failed' }
         }
+        # Version 7.2.4 (P0): .ToArray() statt @( List[object] ) - siehe oben.
+        try {
         $pendingUserMessages = Get-PendingUserMessageViews $sessionId 3
         if ($pendingUserMessages.Count -gt 0) {
             $deliveredIds = New-Object System.Collections.Generic.List[string]
             foreach ($messageView in $pendingUserMessages) { $deliveredIds.Add([string]$messageView.id) }
             [void](Mark-UserMessagesDelivered $sessionId $deliveredIds 'envelope')
-            $envelope.userMessages = @($pendingUserMessages)
+            $envelope.userMessages = $pendingUserMessages.ToArray()
             $envelope.userMessageContract = @{
                 code = 'USER_MESSAGE_PENDING'
                 priority = 'highest'
@@ -20561,6 +20634,9 @@ end
             }
             $userNote = 'USER MESSAGE PENDING: the user interrupted your work - read _bridge.userMessages FIRST, act on it, then ack_user_message.'
             if ($envelope.attention) { $envelope.attention = $userNote + ' ' + $envelope.attention } else { $envelope.attention = $userNote }
+        }
+        } catch {
+            Write-FlowStation 'ENVELOPE' ([string]$sessionId) 'USER_MESSAGES_SKIPPED' @{ reason = 'envelope_field_failed' }
         }
         $late = Take-LateResults $sessionId
         if ($late.Count -gt 0) {
@@ -20636,7 +20712,7 @@ end
                         error = $fileError
                         requestedLines = $logLines
                         returnedLines = $linesOut.Count
-                        lines = @($linesOut)
+                        lines = $linesOut.ToArray()
                         deployment = @{
                             version = [string]$Shared.RuntimeInfo.Version
                             file = [string]$Shared.RuntimeInfo.File
@@ -21075,7 +21151,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.2.3'
+                        bridgeVersion = '7.2.4'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -21519,7 +21595,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.2.3'
+                        serverVersion = '7.2.4'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -21878,7 +21954,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.2.3'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.2.4'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -21962,8 +22038,8 @@ end
                 }
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.2.3'
-                    serverVersion = '7.2.3'
+                    bridgeVersion = '7.2.4'
+                    serverVersion = '7.2.4'
                     toolbox = $statusToolbox
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
@@ -25020,7 +25096,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.2.3)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.2.4)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -25355,6 +25431,10 @@ function Add-UserMessage {
             $state = [pscustomobject]@{ messages = @(); updatedAt = $now }
         }
         $list = Get-UserMessageUiList $state
+        # 7.2.4 (3d): fehlende Liste anlegen statt $list.Add() auf $null. Ein
+        # $null hier wuerde die Nachricht still verschlucken und dem Nutzer nur
+        # "konnte nicht gespeichert werden" sagen.
+        if ($null -eq $list) { $list = New-Object System.Collections.Generic.List[object] }
         $entry = [pscustomobject]@{
             id            = $messageId
             text          = $clean
@@ -25646,62 +25726,72 @@ function Update-UserMessageWindow {
     } catch {}
 }
 
-function Open-UserMessageWindow {
-    # Version 7.2.3: Nachrichtenfenster im selben dunklen Dialogstil wie Fragen.
-    # Das echte ShowDialog sperrt die Hauptoberflaeche, bis der Nutzer das
-    # Fenster schliesst; die Titelleiste bleibt frei verschiebbar.
-    param([string]$SessionId, [string]$PlaceName = '')
-    try {
-        if ([string]::IsNullOrWhiteSpace($SessionId)) { return }
-        if ($null -ne $script:UserMessageWindow) {
-            try { $script:UserMessageWindow.Close() } catch {}
-            $script:UserMessageWindow = $null
-        }
+# ----------------------------------------------------------------------------
+# Version 7.2.4: GEMEINSAME DIALOG-RESSOURCEN (EIN Block fuer alle Fenster)
+# ----------------------------------------------------------------------------
+# Anlass (Owner-Beobachtung 7.2.3): Das Fragen-Fenster und das Nachrichten-
+# Fenster sahen nicht aus wie das Programm. Beide waren per Code aufgebaut
+# (Border/StackPanel/Button einzeln zusammengesetzt) und nutzten eine eigene
+# halbtransparente Shell (#F50B1030) sowie Mint-Toene (#5CFFEF), die es im
+# Haupt- und Einstellungsfenster nirgends gibt.
+#
+# Referenz ist deshalb NICHT das alte Fragen-Fenster, sondern das Haupt- und
+# das Einstellungsfenster: XAML-basiert, WindowStyle=None,
+# AllowsTransparency=True, Background=Transparent, abgerundete Karte auf dem
+# SwAppBg-Verlauf (#060A1A -> #0A1128 -> #0C1533), Karten aus SwCardBg, Text
+# in SwTextMain/SwTextMuted/SwTextFaint, Trennlinien in SwLine, gefaehrliche
+# Aktionen auf dem Crimson-Verlauf (#F2FF5C77 -> #E6E11D48).
+#
+# Dieser Block ist der EINSZIGE Ort, an dem die Dialog-Optik definiert wird.
+# Das Fragen-Fenster (Open-AskWindow) und das Nachrichten-Fenster
+# (Open-UserMessageWindow) fuegen ihn unveraendert in ihre
+# <Window.Resources> ein (Platzhalter <!--ARENA_DIALOG_STYLES-->). Eine neue
+# Farbe oder ein neuer Knopf wird hier geaendert - nicht in zwei Fenstern.
+#
+# Das grosse Einstellungsfenster bleibt davon bewusst unberuehrt: Es steht auf
+# der Nicht-Anfassen-Liste des Owners (feste Regel 4). Seine Palette ist
+# dieselbe und bleibt die Referenz.
+# ----------------------------------------------------------------------------
+$script:ArenaDialogStyles = @'
+        <!-- ===== Arena Roblox Bridge: gemeinsame Dialog-Ressourcen (7.2.4) ===== -->
+        <SolidColorBrush x:Key="SwTextMain" Color="#F4F8FF"/>
+        <SolidColorBrush x:Key="SwTextMuted" Color="#9AA9CE"/>
+        <SolidColorBrush x:Key="SwTextFaint" Color="#6E7FA8"/>
+        <SolidColorBrush x:Key="SwLine" Color="#1FFFFFFF"/>
+        <LinearGradientBrush x:Key="SwAppBg" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#060A1A" Offset="0"/>
+            <GradientStop Color="#0A1128" Offset="0.55"/>
+            <GradientStop Color="#0C1533" Offset="1"/>
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="SwCardBg" StartPoint="0,0" EndPoint="0.25,1">
+            <GradientStop Color="#66101838" Offset="0"/>
+            <GradientStop Color="#3D0C1228" Offset="1"/>
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="SwCrimsonBtnBg" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#F2FF5C77" Offset="0"/>
+            <GradientStop Color="#E6E11D48" Offset="1"/>
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="SwGreenBtnBg" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#F238D16C" Offset="0"/>
+            <GradientStop Color="#E61F9A4C" Offset="1"/>
+        </LinearGradientBrush>
+        <SolidColorBrush x:Key="SwQuietBtnBg" Color="#0E1428"/>
 
-        $windowXaml = @'
-<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Nachricht an Arena"
-        Width="460" Height="440" MinWidth="420" MinHeight="400"
-        ResizeMode="CanResize" WindowStyle="None" AllowsTransparency="True"
-        Background="Transparent" WindowStartupLocation="CenterOwner"
-        ShowInTaskbar="False" FontFamily="Segoe UI">
-    <Window.Resources>
-        <Style x:Key="MessageTextField" TargetType="TextBox">
-            <Setter Property="Foreground" Value="#F4F8FF"/>
-            <Setter Property="Background" Value="#141B33"/>
+        <!-- Grundknopf: abgerundet, mit Hover/Druck/Aus - wie im Hauptfenster. -->
+        <Style x:Key="ArenaDialogButton" TargetType="Button">
+            <Setter Property="Foreground" Value="{StaticResource SwTextMain}"/>
+            <Setter Property="Background" Value="{StaticResource SwQuietBtnBg}"/>
             <Setter Property="BorderBrush" Value="#33FFFFFF"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="10,8"/>
             <Setter Property="FontSize" Value="12"/>
-            <Setter Property="CaretBrush" Value="#FF5C77"/>
-            <Setter Property="SelectionBrush" Value="#66FF5C77"/>
-            <Setter Property="SelectionOpacity" Value="0.45"/>
-            <Style.Triggers>
-                <Trigger Property="IsKeyboardFocused" Value="True">
-                    <Setter Property="BorderBrush" Value="#FF5C77"/>
-                </Trigger>
-            </Style.Triggers>
-        </Style>
-        <Style x:Key="MessageHistoryField" TargetType="TextBox" BasedOn="{StaticResource MessageTextField}">
-            <Setter Property="Foreground" Value="#9AA9CE"/>
-            <Setter Property="Background" Value="#141B33"/>
-            <Setter Property="FontSize" Value="10.5"/>
-            <Setter Property="Padding" Value="9,7"/>
-        </Style>
-        <Style x:Key="MessageButton" TargetType="Button">
-            <Setter Property="Foreground" Value="#F4F8FF"/>
-            <Setter Property="Background" Value="#0E1428"/>
-            <Setter Property="BorderBrush" Value="#33FFFFFF"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="14,7"/>
-            <Setter Property="FontSize" Value="11.5"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Focusable" Value="True"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="ButtonBorder" CornerRadius="7"
+                        <Border x:Name="bd" CornerRadius="9"
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}">
@@ -25710,43 +25800,311 @@ function Open-UserMessageWindow {
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.88"/>
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#66FFFFFF"/>
+                                <Setter TargetName="bd" Property="Opacity" Value="0.92"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.72"/>
+                                <Setter TargetName="bd" Property="Opacity" Value="0.75"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#B3FFFFFF"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.42"/>
+                                <Setter TargetName="bd" Property="Opacity" Value="0.38"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
-        <Style x:Key="MessagePrimaryButton" TargetType="Button" BasedOn="{StaticResource MessageButton}">
-            <Setter Property="Foreground" Value="#08111F"/>
-            <Setter Property="Background" Value="#38D16C"/>
-            <Setter Property="BorderBrush" Value="#38D16C"/>
+        <!-- Weiter / Fertig / Senden: gruen (#38D16C). -->
+        <Style x:Key="ArenaPrimaryButton" TargetType="Button" BasedOn="{StaticResource ArenaDialogButton}">
+            <Setter Property="Foreground" Value="#08131A"/>
+            <Setter Property="Background" Value="{StaticResource SwGreenBtnBg}"/>
+            <Setter Property="BorderBrush" Value="#662FCB6C"/>
         </Style>
-        <Style x:Key="MessageCloseButton" TargetType="Button" BasedOn="{StaticResource MessageButton}">
-            <Setter Property="Foreground" Value="#F4F8FF"/>
-            <Setter Property="Background" Value="#0E1428"/>
+        <!-- Abbrechen: Crimson-Verlauf (#FF5C77), dieselbe Sprache wie das X
+             im Einstellungsfenster. -->
+        <Style x:Key="ArenaDangerButton" TargetType="Button" BasedOn="{StaticResource ArenaDialogButton}">
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="Background" Value="{StaticResource SwCrimsonBtnBg}"/>
+            <Setter Property="BorderBrush" Value="#4DFFFFFF"/>
+        </Style>
+        <!-- Zurueck / neutrale Aktionen: grau (#0E1428 / #9AA9CE). -->
+        <Style x:Key="ArenaQuietButton" TargetType="Button" BasedOn="{StaticResource ArenaDialogButton}">
+            <Setter Property="Foreground" Value="{StaticResource SwTextMuted}"/>
+            <Setter Property="Background" Value="{StaticResource SwQuietBtnBg}"/>
+        </Style>
+        <!-- Kreuz oben rechts: rund, Crimson, mit Hover - wie im
+             Einstellungsfenster, hier 32 x 32 px (gefordert: >= 28 x 28). -->
+        <Style x:Key="ArenaCloseButton" TargetType="Button">
+            <Setter Property="Width" Value="32"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="Background" Value="{StaticResource SwCrimsonBtnBg}"/>
+            <Setter Property="BorderBrush" Value="#4DFFFFFF"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Focusable" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" CornerRadius="16"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#F2FF7A8C"/>
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#7FFFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#D9C0103A"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Textfelder: dunkle Karte, sichtbarer Caret, Fokusrahmen. -->
+        <Style x:Key="ArenaTextField" TargetType="TextBox">
+            <Setter Property="Foreground" Value="{StaticResource SwTextMain}"/>
+            <Setter Property="Background" Value="#1A101838"/>
             <Setter Property="BorderBrush" Value="#33FFFFFF"/>
-            <Setter Property="Padding" Value="0"/>
-            <Style.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter Property="Background" Value="#263252"/>
-                    <Setter Property="Foreground" Value="#FF5C77"/>
-                </Trigger>
-            </Style.Triggers>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="CaretBrush" Value="#38D16C"/>
+            <Setter Property="SelectionBrush" Value="#6638D16C"/>
+            <Setter Property="SelectionOpacity" Value="0.5"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="bd" CornerRadius="9"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                                          VerticalScrollBarVisibility="Auto" Background="Transparent"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#4DFFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#B338D16C"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
+        <Style x:Key="ArenaReadOnlyField" TargetType="TextBox" BasedOn="{StaticResource ArenaTextField}">
+            <Setter Property="Foreground" Value="{StaticResource SwTextMuted}"/>
+            <Setter Property="FontSize" Value="10.5"/>
+            <Setter Property="IsReadOnly" Value="True"/>
+            <Setter Property="CaretBrush" Value="Transparent"/>
+        </Style>
+
+        <!-- Optionen: ganze Zeile ist Treffflaeche, Auswahl ist sichtbar
+             gefuellt (kein nacktes WPF-Radio auf dunklem Grund). -->
+        <Style x:Key="ArenaOptionRadio" TargetType="RadioButton">
+            <Setter Property="Foreground" Value="{StaticResource SwTextMain}"/>
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Margin" Value="0,3,0,3"/>
+            <Setter Property="Focusable" Value="True"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="bd" CornerRadius="9" Background="#14FFFFFF"
+                                BorderBrush="#1FFFFFFF" BorderThickness="1" Padding="10,8">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid Width="18" Height="18" VerticalAlignment="Center">
+                                    <Ellipse x:Name="ring" Width="18" Height="18" Fill="Transparent"
+                                             Stroke="#6E7FA8" StrokeThickness="1.6"/>
+                                    <Ellipse x:Name="dot" Width="9" Height="9" Fill="#38D16C" Opacity="0"/>
+                                </Grid>
+                                <ContentPresenter Grid.Column="1" Margin="10,0,0,0"
+                                                  VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#1FFFFFFF"/>
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#33FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#261FA34A"/>
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#662FCB6C"/>
+                                <Setter TargetName="ring" Property="Stroke" Value="#38D16C"/>
+                                <Setter TargetName="dot" Property="Opacity" Value="1"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#B3FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="ArenaOptionCheck" TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{StaticResource SwTextMain}"/>
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Margin" Value="0,3,0,3"/>
+            <Setter Property="Focusable" Value="True"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Border x:Name="bd" CornerRadius="9" Background="#14FFFFFF"
+                                BorderBrush="#1FFFFFFF" BorderThickness="1" Padding="10,8">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid Width="18" Height="18" VerticalAlignment="Center">
+                                    <Border x:Name="box" Width="18" Height="18" CornerRadius="5"
+                                            Background="Transparent" BorderBrush="#6E7FA8" BorderThickness="1.6"/>
+                                    <Path x:Name="check" Data="M 3.6,8.6 L 7,12 L 14,4.4" Stroke="#08131A"
+                                          StrokeThickness="2.2" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
+                                </Grid>
+                                <ContentPresenter Grid.Column="1" Margin="10,0,0,0"
+                                                  VerticalAlignment="Center" RecognizesAccessKey="True"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#1FFFFFFF"/>
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#33FFFFFF"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#261FA34A"/>
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#662FCB6C"/>
+                                <Setter TargetName="box" Property="Background" Value="#38D16C"/>
+                                <Setter TargetName="box" Property="BorderBrush" Value="#38D16C"/>
+                                <Setter TargetName="check" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#B3FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Schlanke Scrollbalken: exakt die Vorlage aus den Einstellungen,
+             damit lange Frage-/Nachrichtentexte gleich aussehen. -->
+        <Style TargetType="ScrollBar">
+            <Setter Property="Width" Value="10"/>
+            <Setter Property="MinWidth" Value="10"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Margin="2,3,2,3">
+                            <Border CornerRadius="5" Background="#14FFFFFF"/>
+                            <Track x:Name="PART_Track" IsDirectionReversed="True" Focusable="False">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageUpCommand">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Background="Transparent"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageDownCommand">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Background="Transparent"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb>
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border x:Name="thumbBg" CornerRadius="4" Background="#38FFFFFF" Margin="1,0,1,0"/>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="thumbBg" Property="Background" Value="#5CFFFFFF"/>
+                                                    </Trigger>
+                                                    <Trigger Property="IsDragging" Value="True">
+                                                        <Setter TargetName="thumbBg" Property="Background" Value="#8CFFFFFF"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+'@
+
+function Get-UserMessageWindowXaml {
+    # Version 7.2.4 (3a): Das Nachrichten-Fenster nutzt denselben gemeinsamen
+    # XAML-Ressourcenblock wie das Fragen-Fenster ($script:ArenaDialogStyles).
+    # Der Owner hatte ausdruecklich gemeldet, dieses Fenster habe "IMMER NOCH
+    # NICHT das typische Design": Es sass auf einem halbtransparenten
+    # #F50B1030-Shell statt auf dem SwAppBg-Verlauf des Programms.
+    $template = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Nachricht an Arena"
+        Width="480" Height="470" MinWidth="440" MinHeight="420"
+        ResizeMode="NoResize" WindowStyle="None" AllowsTransparency="True"
+        Background="Transparent" WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False" FontFamily="Segoe UI"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display">
+    <Window.Resources>
+<!--ARENA_DIALOG_STYLES-->
     </Window.Resources>
-    <Border CornerRadius="12" Background="#F50B1030" BorderBrush="#33FFFFFF"
-            BorderThickness="1" ClipToBounds="True">
+    <Border CornerRadius="20" Background="{StaticResource SwAppBg}"
+            BorderBrush="#33FFFFFF" BorderThickness="1" ClipToBounds="True">
         <Grid>
-            <Border Height="3" VerticalAlignment="Top" Background="#FF5C77"
-                    CornerRadius="12,12,0,0" IsHitTestVisible="False"/>
-            <Grid Margin="18,16,18,16">
+            <Grid IsHitTestVisible="False">
+                <Ellipse Width="420" Height="420" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-150,-190,0,0">
+                    <Ellipse.Fill>
+                        <RadialGradientBrush>
+                            <GradientStop Color="#407B5CFF" Offset="0"/>
+                            <GradientStop Color="#007B5CFF" Offset="1"/>
+                        </RadialGradientBrush>
+                    </Ellipse.Fill>
+                </Ellipse>
+                <Ellipse Width="360" Height="360" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-120,-140">
+                    <Ellipse.Fill>
+                        <RadialGradientBrush>
+                            <GradientStop Color="#2E00CFC0" Offset="0"/>
+                            <GradientStop Color="#0000CFC0" Offset="1"/>
+                        </RadialGradientBrush>
+                    </Ellipse.Fill>
+                </Ellipse>
+            </Grid>
+
+            <Grid Margin="22">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
@@ -25756,65 +26114,89 @@ function Open-UserMessageWindow {
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
+                <!-- Titelzeile: ziehbar, Kreuz oben rechts (32 x 32 px). -->
                 <Grid x:Name="TitleBar" Grid.Row="0" Background="Transparent" Cursor="SizeAll">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Nachricht an Arena" Foreground="#F4F8FF"
-                                   FontSize="16" FontWeight="SemiBold"/>
-                        <TextBlock x:Name="PlaceNameText" Text="Place" Foreground="#9AA9CE"
+                        <TextBlock Text="Nachricht an Arena" Foreground="{StaticResource SwTextMain}"
+                                   FontSize="16" FontWeight="Bold"/>
+                        <TextBlock x:Name="PlaceNameText" Text="Place" Foreground="{StaticResource SwTextFaint}"
                                    FontSize="10.5" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
                     </StackPanel>
-                    <Button x:Name="CloseButton" Grid.Column="1" Width="32" Height="32"
-                            Content="×" FontFamily="Segoe UI" FontSize="18" FontWeight="Normal"
-                            Style="{StaticResource MessageCloseButton}" ToolTip="Schliessen"/>
+                    <Button x:Name="CloseButton" Grid.Column="1" Style="{StaticResource ArenaCloseButton}"
+                            Content="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="11"
+                            ToolTip="Schließen (Esc)"/>
                 </Grid>
 
-                <TextBlock Grid.Row="1" Margin="0,9,0,0"
+                <TextBlock Grid.Row="1" Margin="0,12,0,0"
                            Text="Deine Nachricht geht mit Arenas naechster Anfrage weiter und muss von Arena bestaetigt werden. Die Bridge schreibt nicht direkt in den Arena-Chat."
-                           Foreground="#9AA9CE" FontSize="10.5" TextWrapping="Wrap"/>
+                           Foreground="{StaticResource SwTextMuted}" FontSize="10.5" TextWrapping="Wrap"/>
 
-                <StackPanel Grid.Row="2" Margin="0,12,0,0">
-                    <TextBlock Text="DEINE NACHRICHT" Foreground="#9AA9CE" FontSize="9.5"
-                               FontWeight="Bold" Margin="0,0,0,5"/>
-                    <TextBox x:Name="MessageTextBox" Height="80" MinHeight="72" MaxLength="4000"
-                             AcceptsReturn="True" TextWrapping="Wrap"
-                             VerticalScrollBarVisibility="Auto" Style="{StaticResource MessageTextField}"/>
+                <StackPanel Grid.Row="2" Margin="0,14,0,0">
+                    <TextBlock Text="DEINE NACHRICHT" Foreground="{StaticResource SwTextMuted}" FontSize="9.5"
+                               FontWeight="Bold" Margin="0,0,0,6"/>
+                    <TextBox x:Name="MessageTextBox" Height="84" MinHeight="72" MaxLength="4000"
+                             AcceptsReturn="True" TextWrapping="Wrap" TabIndex="1"
+                             VerticalScrollBarVisibility="Auto" Style="{StaticResource ArenaTextField}"/>
+                    <TextBlock Text="Strg+Enter sendet · Esc schließt" Foreground="{StaticResource SwTextFaint}"
+                               FontSize="10" Margin="0,5,0,0"/>
                 </StackPanel>
 
-                <Grid Grid.Row="3" Margin="0,12,0,0">
+                <Grid Grid.Row="3" Margin="0,14,0,0">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <TextBlock Text="LETZTE NACHRICHTEN" Foreground="#9AA9CE" FontSize="9.5"
-                               FontWeight="Bold" Margin="0,0,0,5"/>
-                    <TextBox x:Name="HistoryTextBox" Grid.Row="1" MinHeight="70"
+                    <TextBlock Text="LETZTE NACHRICHTEN" Foreground="{StaticResource SwTextMuted}" FontSize="9.5"
+                               FontWeight="Bold" Margin="0,0,0,6"/>
+                    <TextBox x:Name="HistoryTextBox" Grid.Row="1" MinHeight="70" TabIndex="4"
                              IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
                              Text="Noch keine Nachricht in dieser Sitzung."
-                             Style="{StaticResource MessageHistoryField}"/>
+                             Style="{StaticResource ArenaReadOnlyField}"/>
                 </Grid>
 
-                <Border Grid.Row="4" Margin="0,10,0,0" Background="#141B33"
-                        BorderBrush="#22FFFFFF" BorderThickness="1" CornerRadius="7" Padding="9,7">
+                <!-- 3c: ECHTER Fehlergrund im Fenster, nicht nur ein Verweis
+                     auf runtime.log. Der volle Grund steht zusaetzlich im Log. -->
+                <Border x:Name="StatusBorder" Grid.Row="4" Margin="0,12,0,0"
+                        Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF"
+                        BorderThickness="1" CornerRadius="10" Padding="11,8">
                     <TextBlock x:Name="StatusText" Text="Noch nicht gesendet."
-                               Foreground="#9AA9CE" FontSize="10.5" TextWrapping="Wrap"/>
+                               Foreground="{StaticResource SwTextMuted}" FontSize="11" TextWrapping="Wrap"/>
                 </Border>
 
                 <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right"
-                            Margin="0,12,0,0">
-                    <Button x:Name="SendButton" Content="Senden" MinWidth="88" Height="34"
-                            Margin="0,0,8,0" Style="{StaticResource MessagePrimaryButton}" IsEnabled="False"/>
-                    <Button x:Name="CancelButton" Content="Abbrechen" MinWidth="96" Height="34"
-                            Style="{StaticResource MessageButton}" IsEnabled="False"/>
+                            Margin="0,14,0,0">
+                    <Button x:Name="SendButton" Content="Senden" MinWidth="92" MinHeight="32" TabIndex="2"
+                            Padding="15,6" Margin="0,0,8,0" Style="{StaticResource ArenaPrimaryButton}"
+                            IsEnabled="False"/>
+                    <Button x:Name="CancelButton" Content="Abbrechen" MinWidth="98" MinHeight="32" TabIndex="3"
+                            Padding="14,6" Style="{StaticResource ArenaQuietButton}" IsEnabled="False"/>
                 </StackPanel>
             </Grid>
         </Grid>
     </Border>
 </Window>
 '@
+    return $template.Replace('<!--ARENA_DIALOG_STYLES-->', [string]$script:ArenaDialogStyles)
+}
+
+function Open-UserMessageWindow {
+    # Version 7.2.4: Nachrichtenfenster im echten Programm-Design (gemeinsamer
+    # XAML-Ressourcenblock mit dem Fragen-Fenster). Das echte ShowDialog sperrt
+    # die Hauptoberflaeche, bis der Nutzer das Fenster schliesst; die
+    # Titelleiste bleibt frei verschiebbar.
+    param([string]$SessionId, [string]$PlaceName = '')
+    try {
+        if ([string]::IsNullOrWhiteSpace($SessionId)) { return }
+        if ($null -ne $script:UserMessageWindow) {
+            try { $script:UserMessageWindow.Close() } catch {}
+            $script:UserMessageWindow = $null
+        }
+
+        $windowXaml = Get-UserMessageWindowXaml
         $reader = [System.Xml.XmlNodeReader]::new([xml]$windowXaml)
         $win = [Windows.Markup.XamlReader]::Load($reader)
         try { $win.Owner = $window } catch {}
@@ -25838,6 +26220,7 @@ function Open-UserMessageWindow {
             PlaceName    = [string]$PlaceName
             MessageId    = ''
             LastState    = ''
+            FadeStarted  = $false
             TextBox      = $textBox
             History      = $historyBox
             Status       = $statusText
@@ -25852,6 +26235,25 @@ function Open-UserMessageWindow {
         $cancelButton.Tag = $info
         $closeButton.Tag = $win
 
+        # Ruhiges Einblenden (180 ms) wie im Rest des Programms - erst nachdem
+        # der Inhalt einmal vollstaendig gerendert ist.
+        try {
+            $win.Opacity = 0
+            $win.Add_ContentRendered({
+                param($s, $e)
+                try {
+                    if ([bool]$s.Tag.FadeStarted) { return }
+                    $s.Tag.FadeStarted = $true
+                    $fade = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 1, [TimeSpan]::FromMilliseconds(180))
+                    $ease = [System.Windows.Media.Animation.CubicEase]::new()
+                    $ease.EasingMode = [System.Windows.Media.Animation.EasingMode]::EaseOut
+                    $fade.EasingFunction = $ease
+                    $s.BeginAnimation([System.Windows.Window]::OpacityProperty, $fade)
+                } catch { try { $s.Opacity = 1 } catch {} }
+                try { [void]$s.FindName('MessageTextBox').Focus() } catch {}
+            })
+        } catch { try { $win.Opacity = 1 } catch {} }
+
         $titleBar.Add_MouseLeftButtonDown({
             param($s, $e)
             if ($e.ButtonState -eq [System.Windows.Input.MouseButtonState]::Pressed) {
@@ -25862,6 +26264,7 @@ function Open-UserMessageWindow {
             param($s, $e)
             try { $s.Tag.Close() } catch {}
         })
+        # 3b: Strg+Enter sendet, Esc schliesst.
         $win.Add_PreviewKeyDown({
             param($s, $e)
             try {
@@ -25873,17 +26276,13 @@ function Open-UserMessageWindow {
                 $isCtrlEnter = ($e.Key -eq [System.Windows.Input.Key]::Enter -and
                     (([System.Windows.Input.Keyboard]::Modifiers -band [System.Windows.Input.ModifierKeys]::Control) -ne 0))
                 if ($isCtrlEnter -and $s.Tag.SendButton.IsEnabled) {
-                    $args = [System.Windows.RoutedEventArgs]::new([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent)
-                    $s.Tag.SendButton.RaiseEvent($args)
+                    $clickArgs = [System.Windows.RoutedEventArgs]::new([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent)
+                    $s.Tag.SendButton.RaiseEvent($clickArgs)
                     $e.Handled = $true
                 }
             } catch {
                 Write-UiErrorLog 'Tastatur im Nachricht-Fenster fehlgeschlagen' $_
             }
-        })
-        $win.Add_ContentRendered({
-            param($s, $e)
-            try { [void]$s.FindName('MessageTextBox').Focus() } catch {}
         })
 
         $textBox.Add_TextChanged({
@@ -25899,11 +26298,13 @@ function Open-UserMessageWindow {
                 if ([string]::IsNullOrWhiteSpace($text)) { return }
                 $newId = Add-UserMessage $data.SessionId $text 'correction'
                 if ([string]::IsNullOrWhiteSpace([string]$newId)) {
+                    # 3c: kurzer echter Grund im Fenster, voller Grund im Log.
                     $reason = ''
                     try { $reason = [string]$script:UserMessageUiLastError } catch {}
                     if ([string]::IsNullOrWhiteSpace($reason)) { $reason = 'Die Bridge hat keine Nachrichten-ID zurueckgegeben.' }
                     $data.Status.Text = 'Die Nachricht konnte nicht gespeichert werden: ' + $reason
                     $data.Status.Foreground = Get-Brush '#FF5C77'
+                    try { Write-RuntimeLog ('Nachricht-Fenster: Speichern abgelehnt - ' + $reason) } catch {}
                     return
                 }
                 $data.MessageId = [string]$newId
@@ -25917,6 +26318,7 @@ function Open-UserMessageWindow {
                     $data.Status.Text = 'Die Nachricht konnte nicht gesendet werden: ' + $reason
                     $data.Status.Foreground = Get-Brush '#FF5C77'
                 } catch {}
+                # 3c: Der VOLLE Grund (Typ, Meldung,StackTrace) geht ins Log.
                 Write-UiErrorLog 'Nachricht konnte nicht gesendet werden' $_
             }
         })
@@ -26246,10 +26648,271 @@ function Cancel-AskForUi {
     }
 }
 
+function Get-AskWindowXaml {
+    # Version 7.2.4 (2a): Das Fragen-Fenster ist jetzt XAML-basiert und teilt
+    # sich EINEN Ressourcenblock mit dem Nachrichten-Fenster
+    # ($script:ArenaDialogStyles). Referenz ist das Haupt-/Einstellungsfenster:
+    # WindowStyle=None, AllowsTransparency=True, Background=Transparent,
+    # abgerundete Karte auf dem SwAppBg-Verlauf, Karten aus SwCardBg, Text in
+    # SwTextMain/SwTextMuted/SwTextFaint, Crimson fuer gefaehrliche Aktionen.
+    # Kein halbtransparentes #F50B1030-Shell und kein Mint #5CFFEF mehr.
+    $template = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Arena fragt"
+        Width="480" Height="420" MinWidth="440" MinHeight="320"
+        SizeToContent="Height" ResizeMode="NoResize"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        WindowStartupLocation="Manual" ShowInTaskbar="False" FontFamily="Segoe UI"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display">
+    <Window.Resources>
+<!--ARENA_DIALOG_STYLES-->
+    </Window.Resources>
+    <Border CornerRadius="20" Background="{StaticResource SwAppBg}"
+            BorderBrush="#33FFFFFF" BorderThickness="1" ClipToBounds="True">
+        <Grid>
+            <!-- Ruhiger Hintergrundglanz: dieselben Farben wie im Haupt- und
+                 Einstellungsfenster, aber OHNE Daueranimation. Eine forever
+                 laufende Storyboard-Animation war mit ein Grund fuer das
+                 unruhige Bild des alten Fensters. -->
+            <Grid IsHitTestVisible="False">
+                <Ellipse Width="420" Height="420" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-150,-190,0,0">
+                    <Ellipse.Fill>
+                        <RadialGradientBrush>
+                            <GradientStop Color="#407B5CFF" Offset="0"/>
+                            <GradientStop Color="#007B5CFF" Offset="1"/>
+                        </RadialGradientBrush>
+                    </Ellipse.Fill>
+                </Ellipse>
+                <Ellipse Width="360" Height="360" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-120,-140">
+                    <Ellipse.Fill>
+                        <RadialGradientBrush>
+                            <GradientStop Color="#2E00CFC0" Offset="0"/>
+                            <GradientStop Color="#0000CFC0" Offset="1"/>
+                        </RadialGradientBrush>
+                    </Ellipse.Fill>
+                </Ellipse>
+            </Grid>
+
+            <Grid Margin="22">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Titelzeile: ziehbar (DragMove), Kreuz oben rechts. -->
+                <Grid x:Name="TitleBar" Grid.Row="0" Background="Transparent" Cursor="SizeAll">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Arena fragt" Foreground="{StaticResource SwTextMain}"
+                                   FontSize="16" FontWeight="Bold"/>
+                        <TextBlock x:Name="AskPlaceText" Text="" Foreground="{StaticResource SwTextFaint}"
+                                   FontSize="10.5" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                    <!-- Kreuz = Abbrechen, 32 x 32 px (gefordert: >= 28 x 28),
+                         mit Hover. Esc tut dasselbe. -->
+                    <Button x:Name="CloseButton" Grid.Column="1" Style="{StaticResource ArenaCloseButton}"
+                            Content="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="11"
+                            ToolTip="Abbrechen (Esc)"/>
+                </Grid>
+
+                <!-- Kopf: Titel, Einleitung, Frage x von y. -->
+                <StackPanel Grid.Row="1" Margin="0,12,0,0">
+                    <TextBlock x:Name="AskTitleText" Foreground="{StaticResource SwTextMain}"
+                               FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="AskMessageText" Foreground="{StaticResource SwTextMuted}"
+                               FontSize="11.5" TextWrapping="Wrap" Margin="0,5,0,0"/>
+                    <TextBlock x:Name="AskProgressText" Foreground="{StaticResource SwTextFaint}"
+                               FontSize="10.5" Margin="0,7,0,0"/>
+                </StackPanel>
+
+                <!-- Frage: lange Texte scrollen IN der Karte, nicht das Fenster. -->
+                <ScrollViewer x:Name="QuestionScroll" Grid.Row="2" Margin="0,12,0,0"
+                              VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <Border x:Name="QuestionCard" Background="{StaticResource SwCardBg}"
+                            BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="14" Padding="14,12">
+                        <StackPanel x:Name="QuestionStack"/>
+                    </Border>
+                </ScrollViewer>
+
+                <!-- Statuszeile. -->
+                <Border x:Name="StatusBorder" Grid.Row="3" Margin="0,10,0,0"
+                        Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF"
+                        BorderThickness="1" CornerRadius="10" Padding="11,8">
+                    <TextBlock x:Name="StatusText" Foreground="{StaticResource SwTextMuted}"
+                               FontSize="11" TextWrapping="Wrap"/>
+                </Border>
+
+                <!-- Kopier-Knopf NUR im Ausnahmezustand (Ablauf / Agent
+                     offline). Im normalen Ablauf ist er unsichtbar. -->
+                <StackPanel x:Name="CopyPanel" Grid.Row="4" Orientation="Horizontal"
+                            HorizontalAlignment="Left" Margin="0,10,0,0" Visibility="Collapsed">
+                    <Button x:Name="CopyButton" Content="Antwort als Text kopieren"
+                            Style="{StaticResource ArenaQuietButton}" Padding="12,7" MinHeight="30"/>
+                </StackPanel>
+
+                <!-- Endzustand nach "Fertig": Das Fenster schliesst sich NICHT
+                     von allein. Gruener Endzustand + ein Knopf "Schliessen". -->
+                <Border x:Name="DonePanel" Grid.Row="5" Margin="0,10,0,0" Visibility="Collapsed"
+                        Background="#261FA34A" BorderBrush="#662FCB6C" BorderThickness="1"
+                        CornerRadius="12" Padding="14,12">
+                    <StackPanel>
+                        <TextBlock x:Name="DoneText" Foreground="#B9F5D2" FontSize="12.5"
+                                   FontWeight="SemiBold" TextWrapping="Wrap"/>
+                        <Button x:Name="DoneCloseButton" Content="Schließen" HorizontalAlignment="Right"
+                                Margin="0,10,0,0" MinWidth="96" MinHeight="32" Padding="14,6"
+                                Style="{StaticResource ArenaPrimaryButton}"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Fusszeile: Restzeit links, genau drei Aktionen rechts. -->
+                <Grid Grid.Row="6" Margin="0,12,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="AskCountdownText" Grid.Column="0" VerticalAlignment="Center"
+                               Foreground="{StaticResource SwTextFaint}" FontSize="10.5"
+                               TextWrapping="Wrap"/>
+                    <StackPanel x:Name="ButtonRow" Grid.Column="1" Orientation="Horizontal"
+                                HorizontalAlignment="Right">
+                        <Button x:Name="BackButton" Content="Zurück" MinWidth="80" MinHeight="32"
+                                Padding="13,6" Style="{StaticResource ArenaQuietButton}"/>
+                        <Button x:Name="CancelButton" Content="Abbrechen" MinWidth="92" MinHeight="32"
+                                Padding="13,6" Margin="8,0,0,0" Style="{StaticResource ArenaDangerButton}"/>
+                        <Button x:Name="NextButton" Content="Weiter" MinWidth="86" MinHeight="32"
+                                Padding="15,6" Margin="8,0,0,0" Style="{StaticResource ArenaPrimaryButton}"/>
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>
+'@
+    return $template.Replace('<!--ARENA_DIALOG_STYLES-->', [string]$script:ArenaDialogStyles)
+}
+
+function New-AskWindowInfo {
+    # Gemeinsamer Zustandsbehälter des Fragen-Fensters. Alle Event-Handler
+    # haengen an $win.Tag: lokale Funktionsvariablen sind in WPF-Handlern
+    # nicht zuverlaessig sichtbar.
+    param($Win, [string]$AskId, [string]$SessionId)
+    return [pscustomobject]@{
+        Window             = $Win
+        AskId              = $AskId
+        SessionId          = $SessionId
+        Answers            = @{}
+        Visible            = (New-Object System.Collections.Generic.List[object])
+        Step               = 0
+        Dirty              = $false
+        OwnerWindow        = $null
+        OwnerDisabled      = $false
+        TerminalClosing    = $false
+        EmptyQuestionLogged = $false
+        LastRenderedAt     = [int64]0
+        RenderSignature    = ''
+        FadeStarted        = $false
+        DoneShown          = $false
+        TitleText          = $Win.FindName('AskTitleText')
+        MessageText        = $Win.FindName('AskMessageText')
+        ProgressText       = $Win.FindName('AskProgressText')
+        CountdownText      = $Win.FindName('AskCountdownText')
+        PlaceText          = $Win.FindName('AskPlaceText')
+        QuestionScroll     = $Win.FindName('QuestionScroll')
+        QuestionCard       = $Win.FindName('QuestionCard')
+        QuestionStack      = $Win.FindName('QuestionStack')
+        StatusBorder       = $Win.FindName('StatusBorder')
+        StatusText         = $Win.FindName('StatusText')
+        ButtonRow          = $Win.FindName('ButtonRow')
+        CopyPanel          = $Win.FindName('CopyPanel')
+        DonePanel          = $Win.FindName('DonePanel')
+        DoneText           = $Win.FindName('DoneText')
+        DoneCloseButton    = $Win.FindName('DoneCloseButton')
+        BackButton         = $Win.FindName('BackButton')
+        CancelButton       = $Win.FindName('CancelButton')
+        NextButton         = $Win.FindName('NextButton')
+        CopyButton         = $Win.FindName('CopyButton')
+        CloseButton        = $Win.FindName('CloseButton')
+        Timer              = $null
+    }
+}
+
+function Set-AskCountdownText {
+    # Restzeit in der Fusszeile - der Nutzer muss sehen koennen, wie lange die
+    # Frage noch offen bleibt (2d).
+    param($Info, [int]$SecondsLeft, [string]$AskState)
+    try {
+        if ($null -eq $Info -or $null -eq $Info.CountdownText) { return }
+        if ($AskState -ne 'waiting') {
+            Set-Text $Info.CountdownText ''
+            return
+        }
+        if ($SecondsLeft -le 0) {
+            Set-Text $Info.CountdownText 'Antwortzeit abgelaufen'
+            return
+        }
+        $minutes = [int][Math]::Floor($SecondsLeft / 60)
+        $seconds = [int]($SecondsLeft % 60)
+        if ($minutes -gt 0) {
+            Set-Text $Info.CountdownText ('Noch ' + [string]$minutes + ' min ' + [string]$seconds + ' s Zeit')
+        } else {
+            Set-Text $Info.CountdownText ('Noch ' + [string]$seconds + ' s Zeit')
+        }
+    } catch {}
+}
+
+function Show-AskDoneState {
+    # 2f: Nach "Fertig" verschwindet nichts still. Das Fenster bleibt offen und
+    # zeigt einen gruenen Endzustand mit einem Knopf "Schliessen".
+    param($Info, [int]$AnswerCount)
+    try {
+        if ($null -eq $Info) { return }
+        if ($AnswerCount -lt 0) { $AnswerCount = 0 }
+        $label = $(if ($AnswerCount -eq 1) { 'Antwort ist' } else { 'Antworten sind' })
+        Set-Text $Info.DoneText ('Alle ' + [string]$AnswerCount + ' ' + $label + ' gespeichert - Arena holt sie ab.')
+        $Info.DonePanel.Visibility = 'Visible'
+        $Info.QuestionScroll.Visibility = 'Collapsed'
+        $Info.QuestionCard.Visibility = 'Collapsed'
+        $Info.ButtonRow.Visibility = 'Collapsed'
+        $Info.CopyPanel.Visibility = 'Collapsed'
+        $Info.StatusBorder.Visibility = 'Collapsed'
+        $Info.NextButton.IsEnabled = $false
+        $Info.BackButton.IsEnabled = $false
+        $Info.CancelButton.IsEnabled = $false
+        $Info.DoneShown = $true
+        # Die Frage ist beantwortet: Die Hauptoberflaeche wird sofort frei,
+        # waehrend die Bestaetigung sichtbar bleibt.
+        Stop-AskModal $Info
+        Set-AskCountdownText $Info 0 'answered'
+        Set-Text $Info.ProgressText ''
+        try { $Info.Timer.Stop() } catch {}
+        Write-FlowTrace 'ASK' ([string]$Info.AskId) 'DONE_STATE_SHOWN' @{ answers = $AnswerCount }
+    } catch {
+        Write-UiErrorLog 'Endzustand des Frage-Fensters konnte nicht angezeigt werden' $_
+    }
+}
+
 function Update-AskWindow {
-    # Zeichnet Kopf, aktuelle Frage, Fortschritt und die wenigen erlaubten
+    # Zeichnet Kopf, aktuelle Frage, Restzeit und die wenigen erlaubten
     # Ausnahmezustaende. Im Normalfall gibt es unten genau Zurueck, Abbrechen,
-    # Weiter/Fertig - kein Kopier- oder Schliessen-Knopf.
+    # Weiter/Fertig - kein Kopier- und kein Schliessen-Knopf (2e).
+    #
+    # Version 7.2.4 (2c/2d): Der Fragenbereich wird NUR noch neu aufgebaut,
+    # wenn sich wirklich etwas Strukturelles geaendert hat (Frage, sichtbarer
+    # Satz, Antwortschluessel, Zustand). Bis 7.2.3 lief der Aufbau bei jedem
+    # Takt und spaetestens alle 5 Sekunden komplett durch: Children.Clear()
+    # liess das Fenster bei SizeToContent=Height sichtbar zusammensacken und
+    # wieder aufploppen - genau das vom Owner gemeldete "schlecht animiert /
+    # tauchte neu auf".
     param($Info)
     try {
         if ($null -eq $Info) { return }
@@ -26289,8 +26952,8 @@ function Update-AskWindow {
         # Direkt nach dem Oeffnen kann noch kein Heartbeat im gemeinsamen
         # Zustand stehen. Diese kurze, klar begrenzte Schonfrist verhindert,
         # dass ein ganz normales frisches Fragenfenster faelschlich als offline
-        # erscheint; nach 90 Sekunden ohne Sensor wird der Zustand wieder ehrlich
-        # als offline gezeigt.
+        # erscheint; nach 90 Sekunden ohne Sensor wird der Zustand wieder
+        # ehrlich als offline gezeigt.
         $createdAt = [int64]0
         try { $createdAt = [int64]$state.createdAt } catch {}
         $freshWithoutSensor = ($aliveAt -le 0 -and $createdAt -gt 0 -and ($now - $createdAt) -le 90)
@@ -26302,11 +26965,25 @@ function Update-AskWindow {
         try { $subtitle = [string]$state.message } catch {}
         Set-Text $Info.MessageText $subtitle
         if ([string]::IsNullOrWhiteSpace($subtitle)) { $Info.MessageText.Visibility = 'Collapsed' } else { $Info.MessageText.Visibility = 'Visible' }
+        Set-AskCountdownText $Info $secondsLeft $askState
 
-        # Jede terminale Lage MUSS die manuelle Modalitaet freigeben. Das ist
-        # auch der Notausgang, falls der Server den Zustand ausserhalb der UI
-        # auf answered/cancelled/expired gesetzt hat.
-        if ($askState -eq 'answered' -or $askState -eq 'cancelled') {
+        # 2f: Beantwortet heisst NICHT "Fenster zu". Der grüne Endzustand
+        # bleibt stehen, bis der Nutzer auf "Schliessen" klickt.
+        if ($askState -eq 'answered') {
+            if (-not [bool]$Info.DoneShown) {
+                $answeredCount = 0
+                try {
+                    foreach ($pathEntry in @($state.path)) {
+                        if (-not [string]::IsNullOrWhiteSpace([string]$pathEntry)) { $answeredCount = $answeredCount + 1 }
+                    }
+                } catch {}
+                Show-AskDoneState $Info $answeredCount
+            }
+            return
+        }
+        if ($askState -eq 'cancelled') {
+            # Abbrechen ist der einzige Zustand, in dem das Fenster wirklich
+            # zugeht (2g). Es kommt fuer diese askId nie wieder.
             Stop-AskModal $Info
             if (-not [bool]$Info.TerminalClosing) {
                 $Info.TerminalClosing = $true
@@ -26318,7 +26995,7 @@ function Update-AskWindow {
         if ($askState -eq 'expired') {
             Stop-AskModal $Info
             $Info.QuestionScroll.Visibility = 'Collapsed'
-            $Info.QuestionPanel.Visibility = 'Collapsed'
+            $Info.QuestionCard.Visibility = 'Collapsed'
             $Info.ButtonRow.Visibility = 'Collapsed'
             $Info.CopyPanel.Visibility = 'Visible'
             Set-Text $Info.ProgressText 'Antwortzeit abgelaufen'
@@ -26327,19 +27004,14 @@ function Update-AskWindow {
             } else {
                 $Info.StatusText.Text = 'Agent ist offline … Die Antwortzeit ist abgelaufen. Du kannst die Fragen und deine Auswahl als Text kopieren und im Arena-Chat senden.'
             }
-            $Info.StatusText.Foreground = Get-Brush '#9AA9CE'
-            return
-        }
-        if ($askState -ne 'waiting') {
-            Stop-AskModal $Info
-            try { $Info.Window.Close() } catch {}
+            $Info.StatusText.Foreground = Get-Brush '#FFB4C4'
             return
         }
 
-        # Normaler Fragenablauf.
         $Info.QuestionScroll.Visibility = 'Visible'
-        $Info.QuestionPanel.Visibility = 'Visible'
+        $Info.QuestionCard.Visibility = 'Visible'
         $Info.ButtonRow.Visibility = 'Visible'
+        $Info.DonePanel.Visibility = 'Collapsed'
         if ($agentAlive) {
             $Info.StatusText.Text = 'Arena wartet auf deine Antwort.'
             $Info.StatusText.Foreground = Get-Brush '#9AA9CE'
@@ -26356,18 +27028,42 @@ function Update-AskWindow {
         $Info.Visible = $visible
         if ($Info.Step -ge $visible.Count) { $Info.Step = [Math]::Max(0, $visible.Count - 1) }
         if ($Info.Step -lt 0) { $Info.Step = 0 }
-        Set-Text $Info.ProgressText ('Frage ' + [string]([Math]::Min($Info.Step + 1, [Math]::Max(1, $visible.Count))) + ' von ' + [string][Math]::Max(1, $visible.Count) + ' · ' + [string]$secondsLeft + ' s')
+        Set-Text $Info.ProgressText ('Frage ' + [string]([Math]::Min($Info.Step + 1, [Math]::Max(1, $visible.Count))) + ' von ' + [string][Math]::Max(1, $visible.Count))
 
         # Antworten auf nicht mehr sichtbare Folgefragen koennen nach Zurueck
         # oder einer when-Verzweigung nicht heimlich weitergelten.
         $liveIds = @{}
-        foreach ($entry in $visible) { $liveIds[[string]$entry.Question.id] = $true }
+        $visibleIds = New-Object System.Collections.Generic.List[string]
+        foreach ($entry in $visible) {
+            $liveIds[[string]$entry.Question.id] = $true
+            $visibleIds.Add([string]$entry.Question.id)
+        }
+        $discarded = $false
         foreach ($key in @($Info.Answers.Keys)) {
             if (-not $liveIds.ContainsKey([string]$key)) {
                 $Info.Answers.Remove([string]$key)
+                $discarded = $true
                 Write-FlowTrace 'ASK' ([string]$Info.AskId) 'ANSWER_DISCARDED' @{ questionId = [string]$key; reason = 'not_visible' }
             }
         }
+
+        # 2c/2d: Nur bei echter Strukturänderung neu aufbauen. Sonst bleibt der
+        # Baum stehen - kein Flackern, kein Springen, kein Fokusverlust beim
+        # Tippen in "Eigene Antwort".
+        $answeredKeys = New-Object System.Collections.Generic.List[string]
+        foreach ($key in $Info.Answers.Keys) { $answeredKeys.Add([string]$key) }
+        $signature = ([string]$Info.AskId + '|step=' + [string]$Info.Step
+            + '|visible=' + ($visibleIds.ToArray() -join ',')
+            + '|answered=' + (($answeredKeys.ToArray() | Sort-Object) -join ',')
+            + '|state=' + $askState + '|alive=' + [string]$agentAlive
+            + '|discarded=' + [string]$discarded)
+        if ($signature -eq [string]$Info.RenderSignature) {
+            $Info.BackButton.IsEnabled = ($Info.Step -gt 0)
+            $Info.NextButton.IsEnabled = $true
+            $Info.NextButton.Content = $(if ($Info.Step -ge ($visible.Count - 1)) { 'Fertig' } else { 'Weiter' })
+            return
+        }
+        $Info.RenderSignature = $signature
 
         $questionStack = $Info.QuestionStack
         $questionStack.Children.Clear()
@@ -26375,13 +27071,20 @@ function Update-AskWindow {
         if ($visible.Count -gt 0) { $question = $visible[[Math]::Min($Info.Step, $visible.Count - 1)].Question }
         if ($null -eq $question) {
             $missing = [System.Windows.Controls.TextBlock]::new()
-            $missing.Text = 'Diese Frage kam ohne Optionen an'
+            $missing.Text = 'Diese Frage kam ohne Inhalt an - bitte abbrechen und Arena neu fragen lassen.'
             $missing.TextWrapping = 'Wrap'
             $missing.FontSize = 12
             $missing.FontWeight = 'SemiBold'
             $missing.Foreground = Get-Brush '#FF5C77'
             [void]$questionStack.Children.Add($missing)
             $Info.NextButton.IsEnabled = $false
+            if (-not [bool]$Info.EmptyQuestionLogged) {
+                $Info.EmptyQuestionLogged = $true
+                try { throw [System.InvalidOperationException]::new('Frage ohne Inhalt gerendert') } catch {
+                    Write-UiErrorLog ('ASK EMPTY_QUESTION askId=' + [string]$Info.AskId) $_
+                }
+                Write-FlowTrace 'ASK' ([string]$Info.AskId) 'EMPTY_QUESTION' @{ questionId = '-'; allowCustomResponse = $false }
+            }
             return
         }
 
@@ -26397,141 +27100,152 @@ function Update-AskWindow {
         $questionText = [System.Windows.Controls.TextBlock]::new()
         $questionText.Text = [string]$question.text
         $questionText.TextWrapping = 'Wrap'
-        $questionText.FontSize = 13
+        $questionText.FontSize = 13.5
         $questionText.FontWeight = 'SemiBold'
         $questionText.Foreground = Get-Brush '#F4F8FF'
-        $questionText.Margin = [System.Windows.Thickness]::new(0, 0, 0, 8)
+        $questionText.Margin = [System.Windows.Thickness]::new(0, 0, 0, 9)
         [void]$questionStack.Children.Add($questionText)
 
         $allowCustom = $false
         try { if ($question.PSObject.Properties['allowCustomResponse']) { $allowCustom = ([bool]$question.allowCustomResponse) } } catch {}
         $optionCount = 0
         try { foreach ($optionProbe in $question.options) { $optionCount = $optionCount + 1 } } catch {}
-        if ($optionCount -eq 0 -and -not $allowCustom) {
-            # Dieser Zustand sollte Test-AskTree nie passieren lassen. Alte oder
-            # extern beschaedigte Zustandsdaten duerfen aber niemals als leere
-            # Flaeche erscheinen.
+
+        $multi = $false
+        try { if ($question.PSObject.Properties['multi']) { $multi = ([bool]$question.multi) } } catch {}
+        if ($optionCount -gt 0) {
+            if ($multi) {
+                $hintRow = [System.Windows.Controls.TextBlock]::new()
+                $hintRow.Text = 'Mehrfachauswahl möglich.'
+                $hintRow.FontSize = 10.5
+                $hintRow.Foreground = Get-Brush '#6E7FA8'
+                $hintRow.Margin = [System.Windows.Thickness]::new(0, 0, 0, 7)
+                [void]$questionStack.Children.Add($hintRow)
+            }
+            foreach ($option in @($question.options)) {
+                $oid = [string]$option.id
+                if ($multi) { $item = [System.Windows.Controls.CheckBox]::new() } else { $item = [System.Windows.Controls.RadioButton]::new() }
+                if ($multi) { $item.Style = $Info.Window.FindResource('ArenaOptionCheck') }
+                else { $item.Style = $Info.Window.FindResource('ArenaOptionRadio') }
+                $item.Content = [string]$option.label
+                $item.Margin = [System.Windows.Thickness]::new(0, 3, 0, 3)
+                $item.Tag = [pscustomobject]@{ Info = $Info; QuestionId = $qid; OptionId = $oid; Label = [string]$option.label; Multi = $multi }
+                $item.IsChecked = ($selected -contains $oid)
+                if ($multi) {
+                    $item.Add_Click({
+                        param($s, $e)
+                        $data = $s.Tag
+                        try {
+                            $entry = $data.Info.Answers[$data.QuestionId]
+                            if ($null -eq $entry) { $entry = @{ optionIds = @(); custom = ''; labels = @() } }
+                            $ids = New-Object System.Collections.Generic.List[string]
+                            foreach ($value in @($entry.optionIds)) { $ids.Add([string]$value) }
+                            $labels = New-Object System.Collections.Generic.List[string]
+                            foreach ($value in @($entry.labels)) { $labels.Add([string]$value) }
+                            if ([bool]$s.IsChecked) {
+                                if (-not $ids.Contains([string]$data.OptionId)) { $ids.Add([string]$data.OptionId); $labels.Add([string]$data.Label) }
+                            } else {
+                                $ids.Remove([string]$data.OptionId) | Out-Null
+                                $labels.Remove([string]$data.Label) | Out-Null
+                            }
+                            $entry.optionIds = @($ids.ToArray())
+                            $entry.labels = @($labels.ToArray())
+                            $data.Info.Answers[$data.QuestionId] = $entry
+                            $data.Info.Dirty = $true
+                        } catch {}
+                    })
+                } else {
+                    $item.Add_Click({
+                        param($s, $e)
+                        $data = $s.Tag
+                        try {
+                            $entry = @{ optionIds = @([string]$data.OptionId); labels = @([string]$data.Label); custom = '' }
+                            try { if ($data.Info.Answers.ContainsKey([string]$data.QuestionId)) { $entry.custom = [string]$data.Info.Answers[[string]$data.QuestionId].custom } } catch {}
+                            $data.Info.Answers[$data.QuestionId] = $entry
+                            $data.Info.Dirty = $true
+                        } catch {}
+                    })
+                }
+                if (-not [string]::IsNullOrWhiteSpace([string]$option.description)) {
+                    $vbox = [System.Windows.Controls.StackPanel]::new()
+                    [void]$vbox.Children.Add($item)
+                    $desc = [System.Windows.Controls.TextBlock]::new()
+                    $desc.Text = [string]$option.description
+                    $desc.FontSize = 10.5
+                    $desc.TextWrapping = 'Wrap'
+                    $desc.Foreground = Get-Brush '#6E7FA8'
+                    $desc.Margin = [System.Windows.Thickness]::new(30, 2, 0, 4)
+                    [void]$vbox.Children.Add($desc)
+                    [void]$questionStack.Children.Add($vbox)
+                } else {
+                    [void]$questionStack.Children.Add($item)
+                }
+            }
+        } else {
+            # 2b/7.2.2-Fund: Eine Frage ohne Optionen darf NIE leer rendern.
+            # Sie bekommt eine sichtbare Fehlerzeile UND das immer vorhandene
+            # Textfeld, damit der Nutzer trotzdem antworten kann.
             $emptyLine = [System.Windows.Controls.TextBlock]::new()
-            $emptyLine.Text = 'Diese Frage kam ohne Optionen an'
+            $emptyLine.Text = 'Diese Frage kam ohne Optionen an - du kannst unten frei antworten.'
             $emptyLine.TextWrapping = 'Wrap'
             $emptyLine.FontSize = 12
             $emptyLine.FontWeight = 'SemiBold'
             $emptyLine.Foreground = Get-Brush '#FF5C77'
+            $emptyLine.Margin = [System.Windows.Thickness]::new(0, 0, 0, 4)
             [void]$questionStack.Children.Add($emptyLine)
             if (-not [bool]$Info.EmptyQuestionLogged) {
                 $Info.EmptyQuestionLogged = $true
                 try { throw [System.InvalidOperationException]::new('Diese Frage kam ohne Optionen an') } catch {
                     Write-UiErrorLog ('ASK EMPTY_QUESTION askId=' + [string]$Info.AskId + ' questionId=' + $qid) $_
                 }
-                Write-FlowTrace 'ASK' ([string]$Info.AskId) 'EMPTY_QUESTION' @{ questionId = $qid; allowCustomResponse = $false }
+                Write-FlowTrace 'ASK' ([string]$Info.AskId) 'EMPTY_QUESTION' @{ questionId = $qid; allowCustomResponse = $allowCustom }
             }
-            $Info.BackButton.IsEnabled = ($Info.Step -gt 0)
-            $Info.NextButton.IsEnabled = $false
-            return
         }
 
-        $multi = $false
-        try { if ($question.PSObject.Properties['multi']) { $multi = ([bool]$question.multi) } } catch {}
-        if ($multi) {
-            $hintRow = [System.Windows.Controls.TextBlock]::new()
-            $hintRow.Text = 'Mehrfachauswahl möglich.'
-            $hintRow.FontSize = 10.5
-            $hintRow.Foreground = Get-Brush '#6E7FA8'
-            $hintRow.Margin = [System.Windows.Thickness]::new(0, 0, 0, 6)
-            [void]$questionStack.Children.Add($hintRow)
-        }
-        foreach ($option in @($question.options)) {
-            $oid = [string]$option.id
-            if ($multi) { $item = [System.Windows.Controls.CheckBox]::new() } else { $item = [System.Windows.Controls.RadioButton]::new() }
-            $item.Content = [string]$option.label
-            $item.Foreground = Get-Brush '#F4F8FF'
-            $item.FontSize = 12
-            $item.Margin = [System.Windows.Thickness]::new(0, 3, 0, 3)
-            $item.Tag = [pscustomobject]@{ Info = $Info; QuestionId = $qid; OptionId = $oid; Label = [string]$option.label; Multi = $multi }
-            $item.IsChecked = ($selected -contains $oid)
-            if ($multi) {
-                $item.Add_Click({
-                    param($s, $e)
-                    $data = $s.Tag
-                    try {
-                        $entry = $data.Info.Answers[$data.QuestionId]
-                        if ($null -eq $entry) { $entry = @{ optionIds = @(); custom = ''; labels = @() } }
-                        $ids = New-Object System.Collections.Generic.List[string]
-                        foreach ($value in @($entry.optionIds)) { $ids.Add([string]$value) }
-                        $labels = New-Object System.Collections.Generic.List[string]
-                        foreach ($value in @($entry.labels)) { $labels.Add([string]$value) }
-                        if ([bool]$s.IsChecked) {
-                            if (-not $ids.Contains([string]$data.OptionId)) { $ids.Add([string]$data.OptionId); $labels.Add([string]$data.Label) }
-                        } else {
-                            $ids.Remove([string]$data.OptionId) | Out-Null
-                            $labels.Remove([string]$data.Label) | Out-Null
-                        }
-                        $entry.optionIds = @($ids.ToArray())
-                        $entry.labels = @($labels.ToArray())
-                        $data.Info.Answers[$data.QuestionId] = $entry
-                        $data.Info.Dirty = $true
-                    } catch {}
-                })
-            } else {
-                $item.Add_Click({
-                    param($s, $e)
-                    $data = $s.Tag
-                    try {
-                        $entry = @{ optionIds = @([string]$data.OptionId); labels = @([string]$data.Label); custom = '' }
-                        try { if ($data.Info.Answers.ContainsKey([string]$data.QuestionId)) { $entry.custom = [string]$data.Info.Answers[[string]$data.QuestionId].custom } } catch {}
-                        $data.Info.Answers[$data.QuestionId] = $entry
-                        $data.Info.Dirty = $true
-                    } catch {}
-                })
-            }
-            if (-not [string]::IsNullOrWhiteSpace([string]$option.description)) {
-                $vbox = [System.Windows.Controls.StackPanel]::new()
-                [void]$vbox.Children.Add($item)
-                $desc = [System.Windows.Controls.TextBlock]::new()
-                $desc.Text = [string]$option.description
-                $desc.FontSize = 10.5
-                $desc.TextWrapping = 'Wrap'
-                $desc.Foreground = Get-Brush '#6E7FA8'
-                $desc.Margin = [System.Windows.Thickness]::new(20, 0, 0, 4)
-                [void]$vbox.Children.Add($desc)
-                [void]$questionStack.Children.Add($vbox)
-            } else {
-                [void]$questionStack.Children.Add($item)
-            }
-        }
-        if ($allowCustom) {
-            $customLabel = [System.Windows.Controls.TextBlock]::new()
-            $customLabel.Text = 'Eigene Antwort (optional):'
-            $customLabel.FontSize = 10.5
-            $customLabel.Foreground = Get-Brush '#6E7FA8'
-            $customLabel.Margin = [System.Windows.Thickness]::new(0, 8, 0, 3)
-            [void]$questionStack.Children.Add($customLabel)
-            $customBox = [System.Windows.Controls.TextBox]::new()
-            $customBox.Text = $custom
-            $customBox.MinHeight = 52
-            $customBox.AcceptsReturn = $true
-            $customBox.TextWrapping = 'Wrap'
-            $customBox.VerticalScrollBarVisibility = 'Auto'
-            $customBox.FontSize = 12
-            $customBox.Foreground = Get-Brush '#F4F8FF'
-            $customBox.Background = Get-Brush '#141B33'
-            $customBox.BorderBrush = Get-Brush '#33FFFFFF'
-            $customBox.BorderThickness = [System.Windows.Thickness]::new(1)
-            $customBox.Padding = [System.Windows.Thickness]::new(8, 6, 8, 6)
-            $customBox.Tag = [pscustomobject]@{ Info = $Info; QuestionId = $qid }
-            $customBox.Add_TextChanged({
-                param($s, $e)
-                $data = $s.Tag
-                try {
-                    $entry = $data.Info.Answers[$data.QuestionId]
-                    if ($null -eq $entry) { $entry = @{ optionIds = @(); labels = @(); custom = '' } }
-                    $entry.custom = [string]$s.Text
-                    $data.Info.Answers[$data.QuestionId] = $entry
-                    $data.Info.Dirty = $true
-                } catch {}
-            })
-            [void]$questionStack.Children.Add($customBox)
-        }
+        # 2b: "Eigene Antwort" ist IMMER sichtbar und immer tippbar - nicht nur
+        # bei allowCustomResponse. Der Owner konnte in 7.2.3 ueberhaupt keine
+        # eigene Antwort eingeben; ein Textfeld, das nur manchmal erscheint,
+        # ist als Bedienweg unbrauchbar.
+        $customLabel = [System.Windows.Controls.TextBlock]::new()
+        if ($optionCount -gt 0 -and $allowCustom) { $customLabel.Text = 'Eigene Antwort (optional, ergänzt deine Auswahl):' }
+        elseif ($optionCount -gt 0) { $customLabel.Text = 'Eigene Antwort (optional, ergänzt deine Auswahl):' }
+        else { $customLabel.Text = 'Eigene Antwort:' }
+        $customLabel.FontSize = 10.5
+        $customLabel.Foreground = Get-Brush '#9AA9CE'
+        $customLabel.TextWrapping = 'Wrap'
+        $customLabel.Margin = [System.Windows.Thickness]::new(0, 11, 0, 5)
+        [void]$questionStack.Children.Add($customLabel)
+
+        $customBox = [System.Windows.Controls.TextBox]::new()
+        $customBox.Style = $Info.Window.FindResource('ArenaTextField')
+        $customBox.Text = $custom
+        $customBox.MinHeight = 58
+        $customBox.MaxLength = 4000
+        $customBox.AcceptsReturn = $true
+        $customBox.AcceptsTab = $false
+        $customBox.TextWrapping = 'Wrap'
+        $customBox.VerticalScrollBarVisibility = 'Auto'
+        # Bewusst KEIN expliziter TabIndex: WPF vergibt sonst int.MaxValue an
+        # alle uebrigen Elemente, und das Textfeld laege VOR den Optionen in
+        # der Tab-Reihenfolge. Ohne Index gilt die visuelle Reihenfolge.
+        $customBox.ToolTip = 'Eigene Antwort - tippen oder einfuegen (Strg+V). Wird zusaetzlich zu den angekreuzten Optionen uebergeben.'
+        $customBox.Tag = [pscustomobject]@{ Info = $Info; QuestionId = $qid }
+        $customBox.Add_TextChanged({
+            param($s, $e)
+            $data = $s.Tag
+            try {
+                $entry = $data.Info.Answers[$data.QuestionId]
+                if ($null -eq $entry) { $entry = @{ optionIds = @(); labels = @(); custom = '' } }
+                $entry.custom = [string]$s.Text
+                $data.Info.Answers[$data.QuestionId] = $entry
+                $data.Info.Dirty = $true
+                # Wichtig: hier darf KEIN Neuzeichnen angestossen werden - das
+                # Textfeld wuerde sonst beim Tippen neu gebaut und der Caret
+                # waere weg.
+            } catch {}
+        })
+        [void]$questionStack.Children.Add($customBox)
+
         $Info.BackButton.IsEnabled = ($Info.Step -gt 0)
         $Info.NextButton.IsEnabled = $true
         $Info.NextButton.Content = $(if ($Info.Step -ge ($visible.Count - 1)) { 'Fertig' } else { 'Weiter' })
@@ -26540,275 +27254,163 @@ function Update-AskWindow {
     }
 }
 
+function Retarget-AskWindow {
+    # 2d: Ersetzt eine zweite Anfrage das Fenster, wird dasselbe Fenster
+    # aktualisiert - NICHT geschlossen und neu aufgeploppt.
+    param($Info, [string]$AskId, [string]$SessionId)
+    try {
+        if ($null -eq $Info -or [string]::IsNullOrWhiteSpace($AskId)) { return $false }
+        if ([string]$Info.AskId -eq $AskId) { return $true }
+        $previousAskId = [string]$Info.AskId
+        $Info.AskId = $AskId
+        if (-not [string]::IsNullOrWhiteSpace($SessionId)) { $Info.SessionId = $SessionId }
+        $Info.Answers = @{}
+        $Info.Step = 0
+        $Info.Dirty = $false
+        $Info.RenderSignature = ''
+        $Info.EmptyQuestionLogged = $false
+        $Info.DoneShown = $false
+        $Info.TerminalClosing = $false
+        $Info.DonePanel.Visibility = 'Collapsed'
+        $Info.StatusBorder.Visibility = 'Visible'
+        $Info.CancelButton.IsEnabled = $true
+        Load-AskAnswersIntoInfo $Info
+        Start-AskModal $Info
+        [void](Update-AskWindow $Info)
+        try { if ($null -ne $Info.Timer) { $Info.Timer.Start() } } catch {}
+        Write-FlowTrace 'ASK' $AskId 'WINDOW_RETARGETED' @{ from = $previousAskId }
+        return $true
+    } catch {
+        Write-UiErrorLog 'Frage-Fenster konnte nicht auf eine neue Frage umgestellt werden' $_
+        return $false
+    }
+}
+
+function Load-AskAnswersIntoInfo {
+    # Bereits gespeicherte Antworten dieser askId uebernehmen, damit ein
+    # wieder geoeffnetes/umgestelltes Fenster nicht leer wirkt.
+    param($Info)
+    try {
+        if ($null -eq $Info) { return }
+        $stateForRender = Get-AskStateForUi ([string]$Info.AskId)
+        if ($null -eq $stateForRender) { return }
+        if ($null -eq $stateForRender.answers) { return }
+        foreach ($property in $stateForRender.answers.PSObject.Properties) {
+            $saved = $stateForRender.answers.$($property.Name)
+            $entry = @{ optionIds = @(); labels = @(); custom = '' }
+            try { $entry.optionIds = @($saved.optionIds) } catch {}
+            try { $entry.labels = @($saved.labels) } catch {}
+            try { $entry.custom = [string]$saved.custom } catch {}
+            $Info.Answers[$property.Name] = $entry
+        }
+    } catch {
+        Write-UiErrorLog 'Vorherige Antworten konnten nicht geladen werden' $_
+    }
+}
+
 function Open-AskWindow {
-    # 7.2.3: kompaktes, ziehbares Fragenfenster mit eigener sicheren Modalitaet.
-    # Der ScrollViewer liegt in der einzigen *-Zeile; Status, Ausnahme-Kopie und
-    # Navigation haben jeweils getrennte Zeilen und ueberlappen nie.
+    # 7.2.4: XAML-Fenster im Programm-Design, ziehbar, sicher modal, mit
+    # immer sichtbarer eigener Antwort, ruhigem Einblenden und ohne jedes
+    # Auto-Schliessen. Es bleibt offen bis geantwortet, abgebrochen oder
+    # abgelaufen - und fuer dieselbe askId wird es nie erneut geoeffnet.
     param($AskState)
     try {
         if ($null -eq $AskState) { return }
         $askId = [string]$AskState.askId
         if ([string]::IsNullOrWhiteSpace($askId)) { return }
         if ([string]$AskState.state -eq 'cancelled') { return }
-        if ($null -ne $script:AskWindow -and [string]$script:AskWindow.Tag.AskId -eq $askId) {
-            [void](Update-AskWindow $script:AskWindow.Tag)
-            return
-        }
-        if ($null -ne $script:AskWindow) {
-            try { $script:AskWindow.Close() } catch {}
-            $script:AskWindow = $null
-        }
+        # 2d: Fuer eine askId, fuer die dieses Fenster schon einmal offen war,
+        # wird es nie erneut geoeffnet - auch nicht nach dem Schliessen.
+        try {
+            if ($null -eq $script:AskWindowShownIds) { $script:AskWindowShownIds = [System.Collections.Generic.HashSet[string]]::new() }
+            # Lehre aus 7.1.2: nichts darf unbegrenzt wachsen.
+            if ($script:AskWindowShownIds.Count -gt 200) { $script:AskWindowShownIds.Clear() }
+            if ($null -ne $script:AskWindow -and [string]$script:AskWindow.Tag.AskId -ne $askId) {
+                [void](Retarget-AskWindow $script:AskWindow.Tag $askId ([string]$AskState.sessionId))
+                return
+            }
+            if ($script:AskWindowShownIds.Contains($askId)) { return }
+        } catch {}
 
-        $win = [System.Windows.Window]::new()
-        $win.Title = 'Arena fragt'
-        $win.Width = 460
-        # Breite fest und Hoehe inhaltsbasiert: selbst bei vielen Optionen darf
-        # der Dialog weder groesser als ca. 460 x 340 noch groesser als 70 % des
-        # jeweiligen Bildschirms werden.
-        $win.MinWidth = 400
-        $win.MinHeight = 250
-        $win.MaxWidth = 460
-        $win.MaxHeight = 340
-        $win.SizeToContent = [System.Windows.SizeToContent]::Height
-        $win.WindowStyle = 'None'
-        $win.AllowsTransparency = $true
-        $win.Background = [System.Windows.Media.Brushes]::Transparent
-        $win.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe UI')
-        $win.ResizeMode = 'NoResize'
+        $askXaml = Get-AskWindowXaml
+        $reader = [System.Xml.XmlNodeReader]::new([xml]$askXaml)
+        $win = [Windows.Markup.XamlReader]::Load($reader)
         $win.Topmost = $true
         try { $win.Owner = $window } catch {}
 
-        # Mit Versatz am Mauszeiger, auf dem jeweiligen Monitor. Die Hoehe
-        # bleibt kompakt; bei langem Inhalt wird nur der Fragenbereich gescrollt.
+        # Mit Versatz am Mauszeiger, auf dem jeweiligen Monitor. Hoehe max.
+        # 70 % des Bildschirms; bei langem Inhalt scrollt nur die Karte.
         $screenHeight = 800
-        $windowMaxHeight = 340
+        $windowMaxHeight = 420
         try {
             $cursor = [System.Windows.Forms.Cursor]::Position
             $screen = [System.Windows.Forms.Screen]::FromPoint($cursor)
             $area = $screen.WorkingArea
             $screenHeight = [int]$area.Height
-            $windowMaxHeight = [Math]::Min(340, [Math]::Floor($area.Height * 0.70))
+            $windowMaxHeight = [Math]::Min(560, [Math]::Floor($area.Height * 0.70))
             $win.MaxHeight = $windowMaxHeight
             $x = [int]$cursor.X + 24
             $y = [int]$cursor.Y + 20
-            if (($x + 460) -gt ($area.X + $area.Width)) { $x = [int]$cursor.X - 24 - 460 }
-            if (($y + 340) -gt ($area.Y + $area.Height)) { $y = [int]$cursor.Y - 20 - 340 }
+            if (($x + 480) -gt ($area.X + $area.Width)) { $x = [int]$cursor.X - 24 - 480 }
+            if (($y + 420) -gt ($area.Y + $area.Height)) { $y = [int]$cursor.Y - 20 - 420 }
             if ($x -lt $area.X) { $x = $area.X + 8 }
             if ($y -lt $area.Y) { $y = $area.Y + 8 }
             $win.WindowStartupLocation = 'Manual'
             $win.Left = $x
             $win.Top = $y
         } catch {
-            $windowMaxHeight = [Math]::Min(340, [Math]::Floor($screenHeight * 0.70))
+            $windowMaxHeight = [Math]::Min(560, [Math]::Floor($screenHeight * 0.70))
             $win.MaxHeight = $windowMaxHeight
             $win.WindowStartupLocation = 'CenterOwner'
         }
 
-        $shell = [System.Windows.Controls.Border]::new()
-        $shell.CornerRadius = [System.Windows.CornerRadius]::new(14)
-        $shell.Background = Get-Brush '#F50B1030'
-        $shell.BorderBrush = Get-Brush '#33FFFFFF'
-        $shell.BorderThickness = [System.Windows.Thickness]::new(1)
-        $shell.Padding = [System.Windows.Thickness]::new(14)
-        $grid = [System.Windows.Controls.Grid]::new()
-        foreach ($rowKind in @('Auto', 'Auto', '*', 'Auto', 'Auto', 'Auto')) {
-            $rd = [System.Windows.Controls.RowDefinition]::new()
-            if ($rowKind -eq '*') { $rd.Height = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star) }
-            [void]$grid.RowDefinitions.Add($rd)
-        }
-
-        $titleBar = [System.Windows.Controls.Grid]::new()
-        $titleBar.Background = [System.Windows.Media.Brushes]::Transparent
-        $titleBar.Cursor = 'SizeAll'
-        $c0 = [System.Windows.Controls.ColumnDefinition]::new(); $c0.Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
-        $c1 = [System.Windows.Controls.ColumnDefinition]::new(); $c1.Width = [System.Windows.GridLength]::new(30)
-        [void]$titleBar.ColumnDefinitions.Add($c0); [void]$titleBar.ColumnDefinitions.Add($c1)
-        $caption = [System.Windows.Controls.TextBlock]::new()
-        $caption.Text = 'Arena fragt'
-        $caption.FontSize = 11
-        $caption.FontWeight = 'SemiBold'
-        $caption.Foreground = Get-Brush '#9AA9CE'
-        $caption.VerticalAlignment = 'Center'
-        [void]$titleBar.Children.Add($caption)
-        $closeButton = [System.Windows.Controls.Button]::new()
-        $closeButton.Content = '×'
-        $closeButton.Width = 30
-        $closeButton.Height = 30
-        $closeButton.FontSize = 18
-        $closeButton.FontWeight = 'SemiBold'
-        $closeButton.Foreground = Get-Brush '#F4F8FF'
-        $closeButton.Background = Get-Brush '#0E1428'
-        $closeButton.BorderBrush = Get-Brush '#33FFFFFF'
-        $closeButton.BorderThickness = [System.Windows.Thickness]::new(1)
-        $closeButton.Cursor = 'Hand'
-        $closeButton.ToolTip = 'Abbrechen'
-        [System.Windows.Controls.Grid]::SetColumn($closeButton, 1)
-        [void]$titleBar.Children.Add($closeButton)
-        [System.Windows.Controls.Grid]::SetRow($titleBar, 0)
-        [void]$grid.Children.Add($titleBar)
-
-        $headPanel = [System.Windows.Controls.StackPanel]::new()
-        $headPanel.Margin = [System.Windows.Thickness]::new(0, 6, 0, 0)
-        $titleText = [System.Windows.Controls.TextBlock]::new()
-        $titleText.FontSize = 15
-        $titleText.FontWeight = 'SemiBold'
-        $titleText.TextWrapping = 'Wrap'
-        $titleText.Foreground = Get-Brush '#F4F8FF'
-        [void]$headPanel.Children.Add($titleText)
-        $messageText = [System.Windows.Controls.TextBlock]::new()
-        $messageText.FontSize = 11.5
-        $messageText.TextWrapping = 'Wrap'
-        $messageText.Margin = [System.Windows.Thickness]::new(0, 5, 0, 0)
-        $messageText.Foreground = Get-Brush '#9AA9CE'
-        [void]$headPanel.Children.Add($messageText)
-        $progressText = [System.Windows.Controls.TextBlock]::new()
-        $progressText.FontSize = 10.5
-        $progressText.Margin = [System.Windows.Thickness]::new(0, 7, 0, 0)
-        $progressText.Foreground = Get-Brush '#6E7FA8'
-        [void]$headPanel.Children.Add($progressText)
-        [System.Windows.Controls.Grid]::SetRow($headPanel, 1)
-        [void]$grid.Children.Add($headPanel)
-
-        $scroll = [System.Windows.Controls.ScrollViewer]::new()
-        $scroll.VerticalScrollBarVisibility = 'Auto'
-        $scroll.HorizontalScrollBarVisibility = 'Disabled'
-        $scroll.Margin = [System.Windows.Thickness]::new(0, 10, 0, 0)
-        $scroll.MaxHeight = [Math]::Max(100, [Math]::Min(145, ($windowMaxHeight - 190)))
-        $questionPanel = [System.Windows.Controls.Border]::new()
-        $questionPanel.Background = Get-Brush '#141B33'
-        $questionPanel.BorderBrush = Get-Brush '#22FFFFFF'
-        $questionPanel.BorderThickness = [System.Windows.Thickness]::new(1)
-        $questionPanel.CornerRadius = [System.Windows.CornerRadius]::new(10)
-        $questionPanel.Padding = [System.Windows.Thickness]::new(12)
-        $questionStack = [System.Windows.Controls.StackPanel]::new()
-        $questionPanel.Child = $questionStack
-        $scroll.Content = $questionPanel
-        [System.Windows.Controls.Grid]::SetRow($scroll, 2)
-        [void]$grid.Children.Add($scroll)
-
-        $statusPanel = [System.Windows.Controls.Border]::new()
-        $statusPanel.Background = Get-Brush '#141B33'
-        $statusPanel.BorderBrush = Get-Brush '#22FFFFFF'
-        $statusPanel.BorderThickness = [System.Windows.Thickness]::new(1)
-        $statusPanel.CornerRadius = [System.Windows.CornerRadius]::new(8)
-        $statusPanel.Padding = [System.Windows.Thickness]::new(9, 7, 9, 7)
-        $statusPanel.Margin = [System.Windows.Thickness]::new(0, 9, 0, 0)
-        $statusText = [System.Windows.Controls.TextBlock]::new()
-        $statusText.FontSize = 11
-        $statusText.TextWrapping = 'Wrap'
-        $statusText.Foreground = Get-Brush '#9AA9CE'
-        $statusPanel.Child = $statusText
-        [System.Windows.Controls.Grid]::SetRow($statusPanel, 3)
-        [void]$grid.Children.Add($statusPanel)
-
-        $copyPanel = [System.Windows.Controls.StackPanel]::new()
-        $copyPanel.Orientation = 'Horizontal'
-        $copyPanel.HorizontalAlignment = 'Left'
-        $copyPanel.Margin = [System.Windows.Thickness]::new(0, 9, 0, 0)
-        $copyPanel.Visibility = 'Collapsed'
-        $copyButton = [System.Windows.Controls.Button]::new()
-        $copyButton.Content = 'Antwort als Text kopieren'
-        $copyButton.Padding = [System.Windows.Thickness]::new(11, 6, 11, 6)
-        $copyButton.Background = Get-Brush '#0E1428'
-        $copyButton.Foreground = Get-Brush '#9AA9CE'
-        $copyButton.BorderBrush = Get-Brush '#33FFFFFF'
-        $copyButton.BorderThickness = [System.Windows.Thickness]::new(1)
-        $copyButton.Cursor = 'Hand'
-        [void]$copyPanel.Children.Add($copyButton)
-        [System.Windows.Controls.Grid]::SetRow($copyPanel, 4)
-        [void]$grid.Children.Add($copyPanel)
-
-        $buttonRow = [System.Windows.Controls.StackPanel]::new()
-        $buttonRow.Orientation = 'Horizontal'
-        $buttonRow.HorizontalAlignment = 'Right'
-        $buttonRow.Margin = [System.Windows.Thickness]::new(0, 11, 0, 0)
-        $backButton = [System.Windows.Controls.Button]::new()
-        $backButton.Content = 'Zurück'
-        $backButton.MinWidth = 76
-        $backButton.Height = 32
-        $backButton.Padding = [System.Windows.Thickness]::new(12, 5, 12, 5)
-        $backButton.Background = Get-Brush '#0E1428'
-        $backButton.Foreground = Get-Brush '#9AA9CE'
-        $backButton.BorderBrush = Get-Brush '#33FFFFFF'
-        $backButton.BorderThickness = [System.Windows.Thickness]::new(1)
-        $backButton.Cursor = 'Hand'
-        $cancelButton = [System.Windows.Controls.Button]::new()
-        $cancelButton.Content = 'Abbrechen'
-        $cancelButton.MinWidth = 88
-        $cancelButton.Height = 32
-        $cancelButton.Padding = [System.Windows.Thickness]::new(12, 5, 12, 5)
-        $cancelButton.Margin = [System.Windows.Thickness]::new(8, 0, 0, 0)
-        $cancelButton.Background = Get-Brush '#FF5C77'
-        $cancelButton.Foreground = Get-Brush '#08111F'
-        $cancelButton.BorderThickness = [System.Windows.Thickness]::new(0)
-        $cancelButton.FontWeight = 'SemiBold'
-        $cancelButton.Cursor = 'Hand'
-        $nextButton = [System.Windows.Controls.Button]::new()
-        $nextButton.Content = 'Weiter'
-        $nextButton.MinWidth = 76
-        $nextButton.Height = 32
-        $nextButton.Padding = [System.Windows.Thickness]::new(13, 5, 13, 5)
-        $nextButton.Margin = [System.Windows.Thickness]::new(8, 0, 0, 0)
-        $nextButton.Background = Get-Brush '#38D16C'
-        $nextButton.Foreground = Get-Brush '#08111F'
-        $nextButton.BorderThickness = [System.Windows.Thickness]::new(0)
-        $nextButton.FontWeight = 'SemiBold'
-        $nextButton.Cursor = 'Hand'
-        [void]$buttonRow.Children.Add($backButton)
-        [void]$buttonRow.Children.Add($cancelButton)
-        [void]$buttonRow.Children.Add($nextButton)
-        [System.Windows.Controls.Grid]::SetRow($buttonRow, 5)
-        [void]$grid.Children.Add($buttonRow)
-
-        $shell.Child = $grid
-        $win.Content = $shell
-        $info = [pscustomobject]@{
-            Window = $win
-            AskId = $askId
-            SessionId = [string]$AskState.sessionId
-            Answers = @{}
-            Visible = New-Object System.Collections.Generic.List[object]
-            Step = 0
-            Dirty = $false
-            OwnerWindow = $null
-            OwnerDisabled = $false
-            TerminalClosing = $false
-            EmptyQuestionLogged = $false
-            LastRenderedAt = [int64]0
-            TitleText = $titleText
-            MessageText = $messageText
-            ProgressText = $progressText
-            QuestionScroll = $scroll
-            QuestionPanel = $questionPanel
-            QuestionStack = $questionStack
-            StatusText = $statusText
-            ButtonRow = $buttonRow
-            CopyPanel = $copyPanel
-            BackButton = $backButton
-            CancelButton = $cancelButton
-            NextButton = $nextButton
-            CopyButton = $copyButton
-            CloseButton = $closeButton
-            Timer = $null
-        }
+        $info = New-AskWindowInfo $win $askId ([string]$AskState.sessionId)
         $win.Tag = $info
-        foreach ($control in @($titleBar, $backButton, $cancelButton, $nextButton, $copyButton, $closeButton)) { $control.Tag = $info }
+        $titleBar = $win.FindName('TitleBar')
+        $titleBar.Tag = $info
+        foreach ($control in @($info.BackButton, $info.CancelButton, $info.NextButton, $info.CopyButton, $info.CloseButton, $info.DoneCloseButton)) {
+            $control.Tag = $info
+        }
+        $placeName = ''
+        try { $placeName = [string]$AskState.place } catch {}
+        if (-not [string]::IsNullOrWhiteSpace($placeName)) { Set-Text $info.PlaceText ('Place · ' + $placeName) }
+        else { $info.PlaceText.Visibility = 'Collapsed' }
 
+        # 2c: ruhiges, kurzes Einblenden (180 ms, Opacity 0 -> 1) wie im Rest
+        # des Programms - und zwar ERST nachdem der Inhalt einmal vollstaendig
+        # gerendert ist. Dadurch erscheint das Fenster komplett, nicht halb.
+        try {
+            $win.Opacity = 0
+            $win.Add_ContentRendered({
+                param($s, $e)
+                try {
+                    if ([bool]$s.Tag.FadeStarted) { return }
+                    $s.Tag.FadeStarted = $true
+                    $fade = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 1, [TimeSpan]::FromMilliseconds(180))
+                    $ease = [System.Windows.Media.Animation.CubicEase]::new()
+                    $ease.EasingMode = [System.Windows.Media.Animation.EasingMode]::EaseOut
+                    $fade.EasingFunction = $ease
+                    $s.BeginAnimation([System.Windows.Window]::OpacityProperty, $fade)
+                } catch { try { $s.Opacity = 1 } catch {} }
+            })
+        } catch { try { $win.Opacity = 1 } catch {} }
+
+        # 2h: Titelzeile zieht das Fenster.
         $titleBar.Add_MouseLeftButtonDown({
             param($s, $e)
             if ($e.ButtonState -eq [System.Windows.Input.MouseButtonState]::Pressed) {
                 try { $s.Tag.Window.DragMove() } catch {}
             }
         })
-        $closeButton.Add_MouseEnter({ param($s, $e) $s.Background = Get-Brush '#263252'; $s.Foreground = Get-Brush '#FF5C77' })
-        $closeButton.Add_MouseLeave({ param($s, $e) $s.Background = Get-Brush '#0E1428'; $s.Foreground = Get-Brush '#F4F8FF' })
-        $closeButton.Add_Click({
+        # 2e: Kreuz oben rechts = Abbrechen (Notausgang, immer moeglich).
+        $info.CloseButton.Add_Click({
             param($s, $e)
             $data = $s.Tag
             [void](Cancel-AskForUi $data 'close_button')
             Stop-AskModal $data
             try { $data.Window.Close() } catch {}
         })
+        # Esc = Abbrechen, derselbe Weg wie das Kreuz.
         $win.Add_PreviewKeyDown({
             param($s, $e)
             if ($e.Key -eq [System.Windows.Input.Key]::Escape) {
@@ -26820,7 +27422,7 @@ function Open-AskWindow {
             }
         })
 
-        $backButton.Add_Click({
+        $info.BackButton.Add_Click({
             param($s, $e)
             $data = $s.Tag
             try {
@@ -26844,14 +27446,14 @@ function Open-AskWindow {
                 Write-UiErrorLog 'Zurueck im Frage-Fenster fehlgeschlagen' $_
             }
         })
-        $cancelButton.Add_Click({
+        $info.CancelButton.Add_Click({
             param($s, $e)
             $data = $s.Tag
             [void](Cancel-AskForUi $data 'cancel_button')
             Stop-AskModal $data
             try { $data.Window.Close() } catch {}
         })
-        $nextButton.Add_Click({
+        $info.NextButton.Add_Click({
             param($s, $e)
             $data = $s.Tag
             try {
@@ -26870,7 +27472,7 @@ function Open-AskWindow {
                     try { if (-not [string]::IsNullOrWhiteSpace([string]$entry.custom)) { $hasAnswer = $true } } catch {}
                 }
                 if ($required -and -not $hasAnswer) {
-                    $data.StatusText.Text = 'Bitte waehle eine Antwort (oder schreibe eine eigene), bevor es weitergeht.'
+                    $data.StatusText.Text = 'Bitte waehle eine Antwort oder schreibe unten eine eigene, bevor es weitergeht.'
                     $data.StatusText.Foreground = Get-Brush '#FF5C77'
                     return
                 }
@@ -26884,8 +27486,9 @@ function Open-AskWindow {
                     foreach ($candidate in $allShown) { if (-not $path.Contains($candidate)) { $notShown.Add($candidate) } }
                     $submitted = Submit-AskAnswers ([string]$data.AskId) $data.Answers $path.ToArray() $notShown.ToArray()
                     if ($submitted) {
-                        Stop-AskModal $data
-                        try { $data.Window.Close() } catch {}
+                        # 2f: Fenster bleibt offen und zeigt den gruenen
+                        # Endzustand - nichts verschwindet still.
+                        Show-AskDoneState $data $path.Count
                     } else {
                         $data.StatusText.Text = 'Die Antworten konnten nicht gespeichert werden. Bitte versuche es erneut.'
                         $data.StatusText.Foreground = Get-Brush '#FF5C77'
@@ -26903,7 +27506,7 @@ function Open-AskWindow {
                 } catch {}
             }
         })
-        $copyButton.Add_Click({
+        $info.CopyButton.Add_Click({
             param($s, $e)
             $data = $s.Tag
             try {
@@ -26916,6 +27519,13 @@ function Open-AskWindow {
             } catch {
                 Write-UiErrorLog 'Antworttext konnte nicht kopiert werden' $_
             }
+        })
+        # 2f: Der einzige Schliessen-Knopf im Ablauf - im gruenen Endzustand.
+        $info.DoneCloseButton.Add_Click({
+            param($s, $e)
+            $data = $s.Tag
+            Stop-AskModal $data
+            try { $data.Window.Close() } catch {}
         })
 
         $timer = [System.Windows.Threading.DispatcherTimer]::new()
@@ -26934,12 +27544,13 @@ function Open-AskWindow {
                 }
                 $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
                 $left = [int][Math]::Max(0, ([int64]$state.expiresAt - $now))
+                # Nur Restzeit und Status werden im Takt aktualisiert; der
+                # Fragenbaum bleibt stehen, solange sich strukturell nichts
+                # aendert (Update-AskWindow prueft die Signatur selbst).
+                Set-AskCountdownText $data $left 'waiting'
                 if ($left -le 0 -or [bool]$data.Dirty -or ($now - [int64]$data.LastRenderedAt) -ge 5) {
                     $data.Dirty = $false
                     [void](Update-AskWindow $data)
-                } else {
-                    $total = [Math]::Max(1, $data.Visible.Count)
-                    Set-Text $data.ProgressText (([string]::Format('Frage {0} von {1} · {2} s', ([Math]::Min($data.Step + 1, $total)), $total, $left)))
                 }
             } catch {
                 # Ein Timerfehler darf keine tote Modalitaet hinterlassen.
@@ -26965,23 +27576,8 @@ function Open-AskWindow {
         })
 
         $script:AskWindow = $win
-        $stateForRender = Get-AskStateForUi $askId
-        if ($null -ne $stateForRender) {
-            try {
-                if ($null -ne $stateForRender.answers) {
-                    foreach ($property in $stateForRender.answers.PSObject.Properties) {
-                        $saved = $stateForRender.answers.$($property.Name)
-                        $entry = @{ optionIds = @(); labels = @(); custom = '' }
-                        try { $entry.optionIds = @($saved.optionIds) } catch {}
-                        try { $entry.labels = @($saved.labels) } catch {}
-                        try { $entry.custom = [string]$saved.custom } catch {}
-                        $info.Answers[$property.Name] = $entry
-                    }
-                }
-            } catch {
-                Write-UiErrorLog 'Vorherige Antworten konnten nicht geladen werden' $_
-            }
-        }
+        try { [void]$script:AskWindowShownIds.Add($askId) } catch {}
+        Load-AskAnswersIntoInfo $info
         Start-AskModal $info
         [void](Update-AskWindow $info)
         $timer.Start()
@@ -27321,7 +27917,7 @@ function Write-ChannelDiagnoseFile {
 
         $progressPath = Join-Path $script:AppDataRoot 'progress-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.2.3)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.2.4)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -27356,7 +27952,7 @@ function Write-ChannelDiagnoseFile {
 
         $notifyPath = Join-Path $script:AppDataRoot 'notify-diagnose.txt'
         $sb2 = New-Object System.Text.StringBuilder
-        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.2.3)')
+        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.2.4)')
         [void]$sb2.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb2.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb2.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -27724,7 +28320,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.2.3)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.2.4)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -29921,7 +30517,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.2.3)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.2.4)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -30692,7 +31288,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.2.3'
+    $versionText = '7.2.4'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -31675,7 +32271,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.2.3" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.2.4" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -31723,7 +32319,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.2.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.2.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -31788,7 +32384,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.2.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.2.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -31801,7 +32397,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.2.3'
+    $verText = '7.2.4'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

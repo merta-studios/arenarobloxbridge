@@ -25,12 +25,12 @@ sein.
 | `test_v711_delivery.py` | Python-Modelltest 7.1.1: stellt die 7.1.0-Zustellblockade exakt nach (PowerShell-`@()`-Semantik mit Komma-Operator → Poll-Schleife bricht vor dem Dequeue ab), beweist die Reparatur, den wirksamen Admin-Reset und die Sitzungsauflösung über `instanceGuid` |
 | `test_v712_toolbox.py` | Python-Modelltest 7.1.2 (Toolbox-Hotfix): gemockter Katalog + gemockter Studio-Executor. Stellt die 7.1.1-Symptome exakt nach (automatische Katalog-Wiederholung 2×20 s+1,5 s, 20 s Validierung + 55 s Studio auf **einer** HTTP-Anfrage, `delivery.state='ok'` bei `executorAlive=false`, Verlaufskarte bleibt auf „Macht gerade“, Cache-Schreibsturm) und beweist den Fix: harter Timeout, keine Wiederholung, `TOOLBOX_BUSY`/`TOOLBOX_IMPORT_IN_FLIGHT`/`TOOLBOX_IMPORT_WEDGED`, kein zweiter nativer `LoadAsset`, keine doppelte Einfügung, terminale UI-Zustände, begrenzte Caches |
 | `test_v713_quality.py` | Regressionen aus 7.1.3 (Zylinder-Mathematik, primitive Gruppen, `buildQuality`, Benachrichtigungsschalter und Sessionstart-Budget), weiterhin gegen die aktuelle Bridge ausführbar |
-| `test_v720_bridge.py` | Offline-Abnahme 7.2.3: Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene Fertig-Meldung, robustes `ask_user`-Fenster samt Abbruchsemantik und Rückgabe-Gate für PowerShell-Sammlungen – mit echtem Tree-sitter-PowerShell-Parse-Gate (zusätzlich zur Klammer-/String-Balance). |
+| `test_v720_bridge.py` | Offline-Abnahme 7.2.4: Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene Fertig-Meldung, robustes `ask_user`-Fenster samt Abbruchsemantik und Rückgabe-Gate für PowerShell-Sammlungen – mit echtem Tree-sitter-PowerShell-Parse-Gate (zusätzlich zur Klammer-/String-Balance). |
 | `test_v714_organic.py` | 7.1.4-Gegenprüfungen: globaler Polygon-/Finish-Standard ohne Namens-Trigger, explizites `organic=true`-Gate, Farb-/Reihenfolge-Sperren, frische Belege für jedes registrierte Modell (auch Multi-Modell/Stale-Fälle), fail-closed `report_done` und UI |
 
 | `ORGANIC_BUILD_CONTRACT.md` | Der 7.1.4-Bauvertrag zum Nachlesen: globaler Polygon-Vorrang für nichttriviale 3D-Modelle, bewusst höherer Finish-Standard, organischer per-Modell-Nachweis, Zylinder-Achsen-Regel mit Referenz-Lua, `buildQuality`-Messung und UI |
 | `test_queue_model_707.py` | Python-Modelltest: reproduziert den Queue-Stillstand von 7.0.4 und prüft die 7.0.5-Regeln (unabhängiger Watchdog, lateResults, Reconnect-Übergabe) **plus** 7.0.6 (Sitzungs-Identität, Fast-Fail, Zustell-Timeline) und 7.0.7 (Place-Zeile: fehlende Eigenschaft bricht den Zeilenaufbau ab) |
-| `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Versions-Checks (`/api/version` 7.2.3, `counters.revivedSessions` konstant, `/api/places` 200, `/api/status` 200), Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `--reset-test` (Reset mit 2 wartenden Befehlen) und `--force-fail` |
+| `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Versions-Checks (`/api/version` 7.2.4, `counters.revivedSessions` konstant, `/api/places` 200, `/api/status` 200), Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `--reset-test` (Reset mit 2 wartenden Befehlen), `--force-fail`, `--ask-sweep` (7.2.4 P0-Abnahme: alle Werkzeuge bei **offener** Frage) und `--message-round` (Nachricht → `_bridge.userMessages` → `ack_user_message`) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -45,6 +45,81 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 7.2.4
+
+**P0-Blocker behoben + Fragen- und Nachrichtenfenster im echten Programmdesign.**
+
+- **P0: „Die Argumenttypen stimmen nicht überein." bei JEDEM Werkzeugaufruf.**
+  Ursache: hinter den drei Sammlungen in `New-Envelope` stand `@($List)`. Das
+  sieht harmlos aus, ist aber falsch – `@()` erwartet einen *Enumerable*, und
+  `List[object]` ist keiner. Der PowerShell-Binder wirft
+  `MethodException: Die Argumenttypen stimmen nicht überein.` Da `New-Envelope`
+  in *jede* Werkzeugantwort eingebaut wird, war damit jede Brücke tot, sobald
+  eine Frage offen war. Repariert über `.ToArray()` (explizit Enumerable) und
+  ein `try`/`catch` pro Feld: fällt ein Feld aus, wird es als
+  `<FELD>_SKIPPED` gemeldet, statt die ganze Antwort zu kosten. Die übrigen
+  drei `@()`-Stellen über Sammlungen sind ebenfalls beseitigt
+  (`Get-UpdateBranchChain`, `Test-CommandArguments`, `Invoke-ServerTool`).
+  `ConvertTo-Json` liefert für `object[]` und `string[]` dasselbe JSON – die
+  API ändert sich nicht.
+  **Wichtig:** die Übergabenotiz empfahl `@()` um Sammlungen ausdrücklich. Das
+  war genau der falsche Rat; die Regel lautet jetzt „nie `@()` um eine
+  Sammlung" und ist durch ein Gate gesichert.
+- **Gate verschärft:** `collection_return_problems` verbietet `@($var)` jetzt
+  auch dann, wenn `$var` aus `New-Object ...Generic.List[...]` oder aus einer
+  Funktion mit `return ,$...` stammt. 16 solcher Funktionen sind katalogisiert.
+  Der Test baut den 7.2.3-Stand mit dem Fehler exakt nach und beweist, dass das
+  Gate rot wird – und dass es im aktuellen Stand leer ist.
+- **Fragenfenster im Programmdesign.** Es war ein PowerShell-gezeichneter
+  Dialog (dunkler Kasten `#F50B1030`, Mint `#5CFFEF`, Dauer-Storyboard) und
+  passte nicht zum Rest des Programms. Beide Dialoge werden jetzt aus **einem**
+  gemeinsamen XAML-Ressourcenblock gebaut (`$script:ArenaDialogStyles`,
+  dieselben Tokens wie das Einstellungsfenster: `SwAppBg`, `SwCardBg`,
+  `SwTextMain/Muted/Faint`, `SwLine`, Crimson-Verlauf).
+- **Ursache für „schlecht animiert / keine eigene Antwort eingebbar":**
+  `Update-AskWindow` hat den Fragenbereich bisher bei **jedem Tick (5 s)** und
+  bei **jedem Tastendruck** komplett neu aufgebaut (`Children.Clear()`). Mit
+  `SizeToContent=Height` kollabiert das Fenster dabei sichtbar, und das
+  Textfeld, in das man gerade tippt, wird zerstört. Jetzt verhindert eine
+  `RenderSignature`, dass unveränderter Inhalt neu gezeichnet wird; der
+  Tastendruck-Handler merkt sich nur den Text. Die Aurora-Daueranimation ist
+  ersatzlos raus (statische Verlaufsglows bleiben).
+- **„Eigene Antwort" immer sichtbar** (auch ohne `allowCustomResponse`), mit
+  Caret, Einfügen und korrekter Tab-Reihenfolge. Eine Frage ohne Optionen und
+  ohne Textfeld rendert nie leer: rote Fehlerzeile + `Write-UiErrorLog`.
+- **Ruhiges Einblenden:** `Opacity` 0 → 1 in 180 ms nach `ContentRendered`,
+  also erst wenn das Fenster fertig gezeichnet ist. Kein Flackern, kein
+  Nachspringen.
+- **Kein Schließen/Neuaufploppen:** für dieselbe `askId` öffnet sich das
+  Fenster nie zweimal (Merkmenge `AskWindowShownIds`); eine zweite Anfrage
+  stellt **dasselbe** Fenster um (`Retarget-AskWindow`). Restzeit steht in der
+  Fußzeile.
+- **Nur drei Knöpfe:** Weiter (grün, auf der letzten Frage „Fertig"),
+  Abbrechen (rot), Zurück (grau). „Antwort als Text kopieren" und „Schließen"
+  sind aus dem Normalfall raus; der Kopierknopf erscheint **nur** in den
+  Ausnahmezuständen „Agent arbeitet weiter", „Agent ist offline" und Zeitablauf.
+  Kreuz oben rechts (32×32) und Esc brechen ab.
+- **Endzustand nach „Fertig":** das Fenster schließt sich **nicht** mehr
+  sang- und klanglos. Grüner Endzustand „Alle N Antworten sind gespeichert –
+  Arena holt sie ab." plus „Schließen".
+- **Nachrichtenfenster** „Nachricht an Arena senden" auf dasselbe Design
+  umgestellt; Fehler zeigen jetzt einen **echten Kurzgrund** im Fenster
+  (vollständiger Grund in `runtime.log`), nicht mehr nur „siehe runtime.log".
+- **`Add-UserMessage` gehärtet:** `Get-UserMessageUiList` legt eine fehlende
+  Liste jetzt an, statt `.Add()` auf `$null` zu rufen – dieselbe Fehlerklasse.
+- **Größe/Modalität:** Start 480 px breit, Höhe nach Inhalt, `MaxHeight`
+  ≤ 70 % der Bildschirmhöhe, lange Texte scrollen in der Karte. Titelzeile
+  ziehbar (`DragMove()`); das Hauptfenster ist solange deaktiviert und wird bei
+  Antwort, Abbruch, Ablauf und Timer wieder freigegeben.
+- **Prüfung:** `python test_v720_bridge.py`, `python test_v398_structure.py`,
+  `python test_v710_delivery.py`, `python test_v711_delivery.py`,
+  `python test_v712_toolbox.py`, `python test_v713_quality.py`,
+  `python test_v714_organic.py`, `python test_queue_model_707.py`. Beide XAML-
+  Dialoge werden als XML geparst und auf ihre `StaticResource`-Schlüssel
+  geprüft. Studio nach dem Update vollständig neu starten, damit Plugin
+  **7.2.4** geladen wird. Live-Abnahme auf Windows:
+  `python bridge_live_check.py --url <TUNNEL> --token <TOKEN> --ask-sweep --message-round`.
 
 ## 7.2.3
 - **Einzelne Sammlungen bleiben Sammlungen.** Die 13 Listen-/Queue-/Stack-/Dictionary-Helfer geben ihre Sammlung mit `return ,$liste` zurück. Damit brechen eine einzelne Option, Antwort, Nutzernachricht oder ein einzelnes Bau-Register nicht mehr als entpackte Hashtable im Aufrufer. `test_v720_bridge.py` blockiert künftig jede neue unsichere Sammlung-Rückgabe.
