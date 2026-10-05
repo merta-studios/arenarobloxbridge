@@ -48,11 +48,24 @@ def region(source: str, start: str, end: str) -> str:
 
 
 def collection_return_problems(source: str) -> list[str]:
-    """Find generic collections returned through PowerShell's unpacking pipeline.
+    """Zwei PowerShell-5.1-Sammlungsfallen auf einmal finden.
 
-    `return $list` maps 0/1/n elements to null/a single object/an array. The
-    callers need the List instance itself, so every matching return must use
-    `return ,$list` instead.
+    Falle 1 (seit 7.2.3): `return $list` entpackt 0/1/n Elemente in die
+    Pipeline (null / ein Objekt / ein Array). Der Aufrufer braucht aber die
+    Liste selbst, also muss dort `return ,$list` stehen.
+
+    Falle 2 (P0-Blocker 7.2.4, live belegt): `@($list)` um eine
+    System.Collections.Generic.List wirft in Windows PowerShell 5.1 den
+    Binderfehler "Die Argumenttypen stimmen nicht ueberein." - egal ob die
+    Liste leer oder gefuellt ist. In 7.2.3 stand hinter einem korrekten
+    `return ,$items` trotzdem `@($items)` am Umschlag; dadurch scheiterte
+    JEDER Werkzeugaufruf, solange eine Frage offen war. Richtig ist
+    `$list.ToArray()` (ergibt auch leer ein Array, nie $null).
+
+    Beide Regeln werden ueber dieselbe Zuordnungstabelle geprueft: eine
+    Variable gilt als Sammlung, wenn sie direkt aus `New-Object
+    ...Generic.List/Queue/Stack/Dictionary[...]` stammt ODER aus dem Aufruf
+    einer Funktion, die ihrerseits `return ,$...` auf so eine Sammlung macht.
     """
     lines = source.split("\n")
     starts = [(i, m.group(1)) for i, line in enumerate(lines)
@@ -71,22 +84,65 @@ def collection_return_problems(source: str) -> list[str]:
         r"New-Object\s+System\.Collections\.Generic\.(List|Queue|Stack|Dictionary)\[",
         re.I,
     )
-    assigns: dict[tuple[str, str], list[str]] = {}
+    assigns: dict[tuple[str, str], list[tuple[int, str]]] = {}
     for i, line in enumerate(lines):
         who = owner_of(i)
         for match in re.finditer(r"([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)", line):
-            assigns.setdefault((who, match.group(1)), []).append(match.group(2))
-    problems: list[str] = []
+            assigns.setdefault((who, match.group(1)), []).append((i, match.group(2)))
+
+    # Funktionen, die eine Generic-Sammlung per Komma-Operator zurueckgeben.
+    collection_funcs: set[str] = set()
     for i, line in enumerate(lines):
-        match = re.match(r"\s*return\s+\$([A-Za-z_][A-Za-z0-9_]*)\s*$", line.rstrip())
+        match = re.match(r"\s*return\s+,?\s*\$([A-Za-z_][A-Za-z0-9_]*)\s*(\}.*)?$", line.rstrip())
         if not match:
             continue
         who, var = owner_of(i), match.group(1)
-        if any(collection.search(value) for value in assigns.get((who, var), [])):
-            problems.append(
-                f"Zeile {i + 1}: {who}() gibt ${var} entpackbar zurueck - richtig ist ,${var}"
-            )
+        if any(collection.search(value) for _, value in assigns.get((who, var), [])):
+            collection_funcs.add(who)
+
+    def origins(who: str, var: str) -> list[str]:
+        found: list[str] = []
+        for line_no, value in assigns.get((who, var), []):
+            if collection.search(value):
+                found.append(f"Zeile {line_no + 1} (New-Object Generic-Sammlung)")
+                continue
+            call = re.match(r"\s*([A-Za-z_][A-Za-z0-9_\-]+)\b", value)
+            if call and call.group(1) in collection_funcs:
+                found.append(f"Zeile {line_no + 1} ({call.group(1)}() liefert ,${var})")
+        return found
+
+    problems: list[str] = []
+    for i, line in enumerate(lines):
+        who = owner_of(i)
+        bare = re.match(r"\s*return\s+\$([A-Za-z_][A-Za-z0-9_]*)\s*$", line.rstrip())
+        if bare:
+            var = bare.group(1)
+            if any(collection.search(value) for _, value in assigns.get((who, var), [])):
+                problems.append(
+                    f"Zeile {i + 1}: {who}() gibt ${var} entpackbar zurueck - richtig ist ,${var}"
+                )
+        # Falle 2: @($var) um eine Sammlung.
+        for wrapped in re.finditer(r"@\(\s*\$([A-Za-z_][A-Za-z0-9_]*)\s*\)", line):
+            var = wrapped.group(1)
+            why = origins(who, var)
+            if why:
+                problems.append(
+                    f"Zeile {i + 1}: {who}() legt @() um ${var} "
+                    f"({'; '.join(why)}) - PowerShell-5.1-Binderfehler; "
+                    f"richtig ist ${var}.ToArray()"
+                )
     return problems
+
+
+
+def without_comments(text: str) -> str:
+    """PowerShell-Kommentarzeilen entfernen.
+
+    Erklaerende Kommentare duerfen die verbotenen Altfarben beim Namen nennen
+    ("kein #F50B1030 mehr"); geprueft werden muss der echte XAML-/Code-Anteil.
+    """
+    return "\n".join(line for line in text.split("\n")
+                      if not line.lstrip().startswith("#"))
 
 
 def balanced(source: str) -> tuple[bool, str]:
@@ -244,9 +300,12 @@ def main() -> int:
         check(marker in source, f"Marker vorhanden: {marker}")
 
     envelope_rules = region(source, "function New-Envelope", "\n    # ------------------------------------------------------------------\n    # Werkzeuge, die das Programm selbst beantwortet")
-    check("$envelope.userMessages = @($pendingUserMessages)" in envelope_rules
-          and "$envelope.userMessageContract" in envelope_rules,
-          "Jede Antwort normalisiert die wartenden Nutzernachrichten samt Vertrag")
+    # 7.2.4 (P0): .ToArray() statt @() - @( List[object] ) ist der
+    # PowerShell-5.1-Binderfehler, der in 7.2.3 jeden Werkzeugaufruf toetete.
+    check("$envelope.userMessages = $pendingUserMessages.ToArray()" in envelope_rules
+          and "$envelope.userMessageContract" in envelope_rules
+          and "@($pendingUserMessages)" not in envelope_rules,
+          "Jede Antwort normalisiert die wartenden Nutzernachrichten samt Vertrag (ohne @())")
     check("_bridge.userMessages" in source and "ack_user_message" in source
           and "userMessageContract" in source,
           "Die KI wird auf _bridge.userMessages und ack_user_message hingewiesen")
@@ -268,13 +327,20 @@ def main() -> int:
           "Abbrechen zieht die Nachricht wirklich zurueck (kein vorgetaeuschter Widerruf)")
     check("Zu spaet zum Zurueckziehen" in source,
           "Das Fenster sagt ehrlich, wenn Zurueckziehen nicht mehr geht")
-    message_window = region(source, "function Open-UserMessageWindow", "function Get-AskStateForUi")
-    check('Width="460" Height="440"' in message_window,
-          "Das Nachricht-Fenster startet deutlich kompakter (460 x 440)")
-    check('Background="#F50B1030"' in message_window
-          and 'Setter Property="Background" Value="#141B33"' in message_window
-          and 'Setter Property="Background" Value="#38D16C"' in message_window,
-          "Fenster, Texteingabe und Senden-Knopf verwenden die dunkle Fragenfenster-Sprache")
+    # 7.2.4 (3a): Das Nachrichten-Fenster ist aus dem gemeinsamen XAML-
+    # Ressourcenblock gebaut - dasselbe Design wie Haupt-/Einstellungsfenster.
+    message_window = region(source, "function Get-UserMessageWindowXaml", "function Get-AskStateForUi")
+    check('Width="480" Height="470"' in message_window,
+          "Das Nachricht-Fenster startet kompakt (480 x 470)")
+    message_markup = without_comments(message_window)
+    check('Background="{StaticResource SwAppBg}"' in message_markup
+          and '#F50B1030' not in message_markup
+          and '#5CFFEF' not in message_markup,
+          "Das Fenster sitzt auf dem SwAppBg-Verlauf des Programms (kein #F50B1030, kein Mint)")
+    check('Style="{StaticResource ArenaTextField}"' in message_window
+          and 'Style="{StaticResource ArenaPrimaryButton}"' in message_window
+          and 'Style="{StaticResource ArenaCloseButton}"' in message_window,
+          "Textfeld, Senden-Knopf und Kreuz kommen aus dem gemeinsamen Ressourcenblock")
     check("$titleBar.Add_MouseLeftButtonDown" in message_window
           and "$s.Tag.DragMove()" in message_window
           and 'x:Name="CloseButton"' in message_window
@@ -292,6 +358,14 @@ def main() -> int:
           and "ModifierKeys]::Control" in message_window
           and "Key]::Escape" in message_window,
           "Nachricht-Fenster unterstuetzt Strg+Enter zum Senden und Esc zum Schliessen")
+    # 3c: kurzer echter Grund im Fenster, VOLLER Grund im runtime.log.
+    check("Write-RuntimeLog ('Nachricht-Fenster: Speichern abgelehnt - ' + $reason)" in message_window
+          and "Write-UiErrorLog 'Nachricht konnte nicht gesendet werden' $_" in message_window,
+          "Der volle Fehlergrund wird zusaetzlich ins runtime.log geschrieben")
+    # 3d: Add-UserMessage darf nie $list.Add() auf $null ausfuehren.
+    add_msg = region(source, "function Add-UserMessage", "function Withdraw-UserMessage")
+    check("if ($null -eq $list) { $list = New-Object System.Collections.Generic.List[object] }" in add_msg,
+          "Add-UserMessage legt eine fehlende Nachrichtenliste an, statt auf $null zu schreiben")
     place_row_ui = region(source, "function New-Row {", "function New-MinimalPlaceRow {")
     check("-Title 'Laufenden Befehl abbrechen'" not in place_row_ui
           and "$cancelCmdItem" not in place_row_ui,
@@ -418,49 +492,82 @@ def main() -> int:
           "Spaete Nutzerantworten liefern cancelled:true samt ehrlicher Zusammenfassung")
     check("$answer.confirmed = $false" in source and "ASK_CANCELLED" in region(source, "function Invoke-ConfirmAction", "function Get-LateAskAnswers"),
           "confirm_action behandelt ASK_CANCELLED eindeutig als Nein")
-    check("$envelope.userAnswers = @($lateAnswers)" in envelope_rules
-          and "$envelope.openQuestions = @($openAsks)" in envelope_rules,
-          "Antworten und offene Fragen werden am Umschlag als echte Arrays normalisiert")
+    check("$envelope.userAnswers = $lateAnswers.ToArray()" in envelope_rules
+          and "$envelope.openQuestions = $openAsks.ToArray()" in envelope_rules
+          and "@($lateAnswers)" not in envelope_rules
+          and "@($openAsks)" not in envelope_rules,
+          "Antworten und offene Fragen werden am Umschlag per .ToArray() normalisiert (nie @())")
 
-    ui = region(source, "function Update-AskWindow", "function Get-PlaceOpenCommand")
+    ui = region(source, "function Update-AskWindow", "function Retarget-AskWindow")
+    ask_xaml = region(source, "function Get-AskWindowXaml", "function New-AskWindowInfo")
     open_ask = region(source, "function Open-AskWindow", "function Sync-AskWindows")
     check("function Open-AskWindow" in source and "function Sync-AskWindows" in source,
           "Das Fragenfenster oeffnet sich aus dem Anzeige-Takt")
+    # 2a: Design = Programm-Design (XAML + gemeinsamer Ressourcenblock).
+    check('Width="480" Height="420"' in ask_xaml
+          and 'SizeToContent="Height"' in ask_xaml
+          and 'WindowStyle="None"' in ask_xaml
+          and 'AllowsTransparency="True"' in ask_xaml
+          and 'Background="Transparent"' in ask_xaml,
+          "Fragen-Fenster ist XAML-basiert, rahmenlos, transparent und hoehenbasiert (480 x 420)")
+    ask_markup = without_comments(ask_xaml)
+    check('Background="{StaticResource SwAppBg}"' in ask_markup
+          and '{StaticResource SwCardBg}' in ask_markup
+          and '{StaticResource SwTextMain}' in ask_markup
+          and '#F50B1030' not in ask_markup
+          and '#5CFFEF' not in ask_markup,
+          "Fragen-Fenster nutzt SwAppBg/SwCardBg/SwTextMain - kein #F50B1030-Shell, kein Mint")
+    # Der Platzhalter steht einmal in der Vorlage und einmal im Replace-Aufruf.
+    # Der Platzhalter steht zweimal: einmal als Luecke in der Vorlage, einmal
+    # als Suchbegriff im Replace-Aufruf. Beides muss da sein - und der
+    # Ressourcenblock selbst genau einmal definiert.
+    check("$script:ArenaDialogStyles" in source
+          and ask_markup.count('<!--ARENA_DIALOG_STYLES-->') == 2
+          and "Replace('<!--ARENA_DIALOG_STYLES-->', [string]$script:ArenaDialogStyles)" in ask_xaml
+          and source.count("$script:ArenaDialogStyles = @'") == 1
+          and message_window.count("Replace('<!--ARENA_DIALOG_STYLES-->', [string]$script:ArenaDialogStyles)") == 1,
+          "EIN gemeinsamer XAML-Ressourcenblock versorgt Fragen- UND Nachrichten-Fenster")
     check("[System.Windows.Forms.Cursor]::Position" in open_ask
           and "[System.Windows.Forms.Screen]::FromPoint" in open_ask
-          and "$win.SizeToContent = [System.Windows.SizeToContent]::Height" in open_ask
-          and "$windowMaxHeight = [Math]::Min(340, [Math]::Floor($area.Height * 0.70))" in open_ask,
-          "Fenster startet kompakt am Mauszeiger, hoehenbasiert, maximal 460 x 340 und innerhalb von 70 % des Bildschirms")
-    check("$scroll, 2" in open_ask and "GridUnitType]::Star" in open_ask,
+          and "$windowMaxHeight = [Math]::Min(560, [Math]::Floor($area.Height * 0.70))" in open_ask,
+          "Fenster startet am Mauszeiger und bleibt innerhalb von 70 % der Bildschirmhoehe")
+    check('x:Name="QuestionScroll"' in ask_xaml and '<RowDefinition Height="*"/>' in ask_xaml,
           "Der ScrollViewer liegt in der eigenen *-Zeile")
-    check("SetRow($copyPanel, 4)" in open_ask and "SetRow($buttonRow, 5)" in open_ask,
-          "CopyPanel und ButtonRow haben getrennte Grid-Zeilen und ueberlappen nicht")
-    check("$backButton.Content = 'Zurück'" in open_ask
-          and "$cancelButton.Content = 'Abbrechen'" in open_ask
-          and "$nextButton.Content = 'Weiter'" in open_ask
-          and "$nextButton.Background = Get-Brush '#38D16C'" in open_ask
-          and "$cancelButton.Background = Get-Brush '#FF5C77'" in open_ask
-          and "$backButton.Background = Get-Brush '#0E1428'" in open_ask,
-          "Unten stehen genau die drei farblich eindeutigen Aktionen Zurueck/Abbrechen/Weiter")
-    check("Antwort als Text kopieren" in open_ask
-          and "$copyPanel.Visibility = 'Collapsed'" in ui
+    check('x:Name="CopyPanel"' in ask_xaml and 'x:Name="DonePanel"' in ask_xaml
+          and 'x:Name="ButtonRow"' in ask_xaml,
+          "Kopier-, Endzustand- und Knopfzeile sind getrennte Bereiche und ueberlappen nicht")
+    # 2e: genau drei Aktionen, farblich eindeutig.
+    check('x:Name="BackButton" Content="Zurück"' in ask_xaml
+          and 'x:Name="CancelButton" Content="Abbrechen"' in ask_xaml
+          and 'x:Name="NextButton" Content="Weiter"' in ask_xaml
+          and 'Style="{StaticResource ArenaQuietButton}"' in ask_xaml
+          and 'Style="{StaticResource ArenaDangerButton}"' in ask_xaml
+          and 'Style="{StaticResource ArenaPrimaryButton}"' in ask_xaml,
+          "Unten stehen genau Zurueck (grau), Abbrechen (rot) und Weiter/Fertig (gruen)")
+    check('Color="#F238D16C"' in source and 'Color="#F2FF5C77"' in source
+          and 'Color="#0E1428"' in source,
+          "Gruen #38D16C, Crimson #FF5C77 und Grau #0E1428 sind die einzigen Aktionsfarben")
+    check("$nextButton.Content" not in open_ask and "$cancelButton.Background" not in open_ask,
+          "Die Knopffarben stehen nicht mehr als Code, sondern im gemeinsamen XAML")
+    check('Visibility="Collapsed"' in ask_xaml
+          and 'Content="Antwort als Text kopieren"' in ask_xaml
+          and "$Info.CopyPanel.Visibility = 'Visible'" in ui
           and "Agent arbeitet weiter …" in ui
           and "Agent ist offline …" in ui,
-          "Der Kopierknopf erscheint nur als Ausnahme bei Offline oder Ablauf")
+          "Der Kopierknopf ist standardmaessig unsichtbar und erscheint nur bei Offline oder Ablauf")
     check("Diese Frage kam ohne Optionen an" in ui
           and "EMPTY_QUESTION" in ui
           and "Write-UiErrorLog ('ASK EMPTY_QUESTION" in ui,
           "Fehlgeformte Altfragen zeigen sichtbar einen Fehler und werden protokolliert")
-    check("#5CFFEF" not in open_ask
-          and "#F50B1030" in open_ask
-          and "#141B33" in open_ask
-          and "#F4F8FF" in open_ask,
-          "Fragenfenster nutzt die dunkle Shell-/Panel-/Text-Palette ohne Mint")
+    # 2h: ziehbar, Kreuz oben rechts als eigener Hover-Knopf.
     check("$titleBar.Add_MouseLeftButtonDown" in open_ask
           and "DragMove()" in open_ask
-          and "$closeButton.Width = 30" in open_ask
-          and "$closeButton.Add_MouseEnter" in open_ask,
-          "Titelzeile ist ziehbar und das X ist ein eigener Hover-Schliesser")
+          and 'x:Name="CloseButton"' in ask_xaml
+          and 'x:Key="ArenaCloseButton"' in source
+          and '<Setter Property="Width" Value="32"/>' in source
+          and '<Setter Property="Height" Value="32"/>' in source
+          and 'Trigger Property="IsMouseOver"' in source,
+          "Titelzeile ist ziehbar und das Kreuz ist ein 32x32-Knopf mit Hover (>= 28x28)")
     check("$window.IsEnabled = $false" in source
           and "Stop-AskModal $Info" in ui
           and "state.state -ne 'waiting'" in open_ask,
@@ -525,6 +632,102 @@ def main() -> int:
     check("monolithRisk" in source and "uiStructureWarning" in source,
           "MONOLITH_RISK wiederholt sich in jeder Antwort")
 
+
+    print("\n5b) P0-Blocker 7.2.4: Sammlungen toeten keinen Werkzeugaufruf mehr")
+    # Live belegt mit 7.2.3: ask_user legte die Frage an, antwortete aber mit
+    # {"error":"Die Argumenttypen stimmen nicht ueberein."} - danach scheiterte
+    # JEDES Werkzeug. Ursache: @() um eine List[object] hinter einem korrekten
+    # "return ,$items".
+    envelope_fn = region(source, "function New-Envelope",
+                         "\n    # ------------------------------------------------------------------\n    # Werkzeuge, die das Programm selbst beantwortet")
+    for field, getter in (("userAnswers", "Get-LateAskAnswers"),
+                          ("openQuestions", "Get-PendingAskViews"),
+                          ("userMessages", "Get-PendingUserMessageViews")):
+        check(f"$envelope.{field} = $" in envelope_fn
+              and f"@($" not in envelope_fn.split(f"$envelope.{field} = $")[1].split("\n")[0],
+              f"Umschlagfeld {field} wird per .ToArray() und nie per @() geschrieben")
+        check(getter in envelope_fn, f"Umschlagfeld {field} liest {getter}")
+    check("`.ToArray()`" not in envelope_fn
+          and envelope_fn.count(".ToArray()") >= 3,
+          "Alle drei Umschlagfelder nutzen .ToArray() (List[object].ToArray() ist erlaubt)")
+    # c) Ein Fehler in einem Umschlagfeld darf nie die Werkzeugantwort kosten.
+    for station in ("USER_ANSWERS_SKIPPED", "OPEN_QUESTIONS_SKIPPED", "USER_MESSAGES_SKIPPED"):
+        check(station in envelope_fn,
+              f"Umschlagfeld ist defensiv gekapselt und meldet {station} statt zu scheitern")
+    check(envelope_fn.count("} catch {") >= 3
+          and "return $envelope" in envelope_fn,
+          "New-Envelope liefert den Umschlag auch dann, wenn ein Zierfeld fehlschlaegt")
+    # d) Das Gate muss die alte Fehlerklasse wirklich finden (Selbsttest).
+    reconstructed = source.replace("$envelope.userAnswers = $lateAnswers.ToArray()",
+                                   "$envelope.userAnswers = @($lateAnswers)")
+    check(len(collection_return_problems(reconstructed)) == 1
+          and not collection_return_problems(source),
+          "Das Gate findet @( List[object] ) im nachgebauten 7.2.3-Stand und ist im 7.2.4-Stand leer")
+
+    print("\n5c) Fragen-Fenster 7.2.4: Muss-Kriterien des Owners")
+    # 2b: eigene Antwort immer sichtbar und tippbar.
+    check("$customBox = [System.Windows.Controls.TextBox]::new()" in ui
+          and "$customBox.Style = $Info.Window.FindResource('ArenaTextField')" in ui
+          and "$customBox.AcceptsReturn = $true" in ui
+          and "$customBox.TabIndex = 40" in ui,
+          "Eigene Antwort ist ein echtes Textfeld mit Stil, Caret und Tab-Platz")
+    check("if ($allowCustom) {" not in ui,
+          "Das Textfeld haengt nicht mehr an allowCustomResponse - es ist immer da")
+    check("$customBox.Add_TextChanged" in ui
+          and "hier darf KEIN Neuzeichnen angestossen werden" in ui,
+          "Tippen schreibt in die Antwort, ohne das Feld neu aufzubauen (Caret bleibt)")
+    # 2c: ruhiges Einblenden.
+    check("[TimeSpan]::FromMilliseconds(180)" in open_ask
+          and "$win.Opacity = 0" in open_ask
+          and "$win.Add_ContentRendered" in open_ask,
+          "Das Fenster blendet in 180 ms ein, erst nachdem der Inhalt gerendert ist")
+    # 2c/2d: kein Flackern - der Fragenbaum wird nur bei Strukturwechsel gebaut.
+    check("$Info.RenderSignature = $signature" in ui
+          and "if ($signature -eq [string]$Info.RenderSignature) {" in ui,
+          "Der Fragenbereich wird nur bei echter Strukturänderung neu aufgebaut")
+    # 2d: kein Auto-Schliessen, Restzeit sichtbar, zweite Anfrage aktualisiert.
+    check("function Set-AskCountdownText" in source
+          and "Set-AskCountdownText $Info $secondsLeft $askState" in ui
+          and "Noch " in source,
+          "Die Restzeit steht sichtbar in der Fusszeile")
+    check("function Retarget-AskWindow" in source
+          and "[void](Retarget-AskWindow $script:AskWindow.Tag $askId" in open_ask,
+          "Eine zweite Anfrage aktualisiert dasselbe Fenster statt es zu schliessen")
+    check("$script:AskWindowShownIds" in source
+          and "if ($script:AskWindowShownIds.Contains($askId)) { return }" in open_ask,
+          "Fuer dieselbe askId wird das Fenster nie erneut geoeffnet")
+    # 2f: gruener Endzustand statt stillem Verschwinden.
+    check("function Show-AskDoneState" in source
+          and "Show-AskDoneState $data $path.Count" in open_ask
+          and "Show-AskDoneState $Info $answeredCount" in ui,
+          "Nach Fertig bleibt das Fenster offen und zeigt den gruenen Endzustand")
+    done_fn = region(source, "function Show-AskDoneState", "function Update-AskWindow")
+    check("gespeichert - Arena holt sie ab." in done_fn
+          and "Stop-AskModal $Info" in done_fn
+          and "Content=\"Schließen\"" in ask_xaml
+          and "$info.DoneCloseButton.Add_Click" in open_ask,
+          "Der Endzustand nennt die Zahl der Antworten, gibt die Oberflaeche frei und hat Schliessen")
+    check("$Info.Window.Close()" not in done_fn,
+          "Der Endzustand schliesst das Fenster nicht von allein")
+    # 2e: kein Schliessen/Kopieren im normalen Ablauf.
+    check("$Info.CopyPanel.Visibility = 'Collapsed'" in ui
+          and "$Info.DonePanel.Visibility = 'Collapsed'" in ui,
+          "Im normalen Ablauf sind Kopier- und Endzustandbereich unsichtbar")
+    # 2h: modal mit Notausgaengen.
+    check("Start-AskModal $info" in open_ask
+          and "$window.IsEnabled = $false" in source
+          and "Stop-AskModal $data" in open_ask,
+          "Das Fenster sperrt die Hauptoberflaeche und gibt sie bei Antwort/Abbruch/Ablauf frei")
+    check("$titleBar.Add_MouseLeftButtonDown" in open_ask and "DragMove()" in open_ask,
+          "Die Titelzeile zieht das Fenster (DragMove)")
+    # 2i: Groesse.
+    check('Width="480" Height="420"' in ask_xaml
+          and 'SizeToContent="Height"' in ask_xaml
+          and "$win.MaxHeight = $windowMaxHeight" in open_ask,
+          "Startgroesse 480 x 420, hoehenbasiert, gedeckelt auf 70 % der Bildschirmhoehe")
+    check('x:Name="QuestionScroll"' in ask_xaml
+          and 'VerticalScrollBarVisibility="Auto"' in ask_xaml,
+          "Lange Texte scrollen in der Karte, nicht das Fenster")
     print("\n6) Fundament, Version und Parse-Sicherheit")
     for marker in (
         "FlowTrace       = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()",
@@ -548,7 +751,8 @@ def main() -> int:
     for problem in problems:
         print(f"    {problem}")
     check(not problems,
-          "Keine Generic List/Queue/Stack/Dictionary wird entpackbar zurueckgegeben (return ,$liste)")
+          "Keine Generic-Sammlung wird entpackbar zurueckgegeben (return ,$liste) "
+          "und keine wird in @() gelegt (Binderfehler - .ToArray() statt @())")
     final_lines = source.rstrip().splitlines()[-4:]
     check(final_lines[0].startswith("# Sicherheitsnetz") and final_lines[-1] == "[System.Environment]::Exit(0)",
           "Der absichtliche Not-Aus am Dateiende ist unveraendert")
