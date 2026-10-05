@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline-Abnahme fuer Arena Roblox Bridge 7.2.4.
+"""Offline-Abnahme fuer Arena Roblox Bridge 7.2.5.
 
 Dieser Test braucht KEIN Windows und keinen PowerShell-Prozess. Er prueft genau
 die fuenf Themen des Owners plus das Fundament:
@@ -28,7 +28,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.2.4"
+VERSION = "7.2.5"
 
 failures: list[str] = []
 
@@ -746,7 +746,7 @@ def main() -> int:
     ):
         check(marker in source, f"Fundament-Marker vorhanden: {marker}")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    check(version["version"] == VERSION, "version.json identifiziert 7.2.4")
+    check(version["version"] == VERSION, "version.json identifiziert 7.2.5")
     notes = "\n".join(str(note) for note in version.get("notes", []))
     for word in ("7.2.4", "P0-BLOCKER", ".ToArray()",
                  "gemeinsamen XAML-Ressourcenblock",
@@ -754,8 +754,8 @@ def main() -> int:
                  "7.2.3", "LIVE-SAMMLUNGEN", "ASK_CANCELLED", "Strg+Enter",
                  "NOTIFICATION_UNVERIFIED", "notify-diagnose.txt"):
         check(word in notes, f"version.json beschreibt: {word}")
-    check("DocsVersion     = '7.2.4'" in source and 'local ARENA_VERSION  = "7.2.4"' in source,
-          "Alle funktionalen Versionsstellen stehen auf 7.2.4")
+    check("DocsVersion     = '7.2.5'" in source and 'local ARENA_VERSION  = "7.2.5"' in source,
+          "Alle funktionalen Versionsstellen stehen auf 7.2.5")
     problems = collection_return_problems(source)
     for problem in problems:
         print(f"    {problem}")
@@ -789,7 +789,7 @@ def main() -> int:
         for entry in failures:
             print(f"  - {entry}")
         return 1
-    print("OK: 7.2.4 - Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene "
+    print("OK: 7.2.5 - Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene "
           "Fertig-Meldung, Fragen-Baum, Qualitaets- und GUI-Vertrag sind vollstaendig; "
           "die Datei ist ausbalanciert und der echte PowerShell-Parser ist gruen.")
     return 0
