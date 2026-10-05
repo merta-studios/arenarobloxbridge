@@ -1,3 +1,40 @@
+# Update-Plan 7.2.0
+
+**Stand: umgesetzt (05.10.2026).** Alle sieben Arbeitspakete AP1–AP7 sind auf
+dem Branch `arena/01a10aec-arenarobloxbridge` implementiert, je Paket ein
+Commit:
+
+| AP | Commit-Inhalt | Zustand |
+|---|---|---|
+| AP1 | Fundament: `$Shared`-Zustaende, Umschlag-Injektion, Stationen, Kanal-Zaehler, `ack_user_message`/`wait_for_user` | umgesetzt |
+| AP2 | Fortschritt: keine erfundene 0 %, keine Verdraengung, invariant geparst, Nachfolger-Aufloesung, `progress-diagnose.txt` | umgesetzt |
+| AP3 | Fertig-Meldung: Plattform-Messung, App-Id-Registrierung, `notify.sweep`, Testknopf, ehrliche Antwort, `notify-diagnose.txt` | umgesetzt |
+| AP4 | Zwischen-Prompt: Menuepunkt + eigenes Fenster mit ehrlichen Zustaenden, „Laufenden Befehl abbrechen" im Menue | umgesetzt |
+| AP5 | `ask_user`-Entscheidungsbaum + `confirm_action` + Fenster am Mauszeiger, Zurueck, Copy-Prompt | umgesetzt |
+| AP6 | Qualitaet: `finishScore`/`grade`/`draftRisk`, erklaerte Einfachheit, Bau-Register, `DRAFT_GRADE_RISK` | umgesetzt |
+| AP7 | GUI-Vertrag: `codeLayoutReport`, `MONOLITH_RISK`, `uiStructureRules`, `scaffold_ui_scripts` | umgesetzt |
+
+**Abweichungen vom Plan (bewusst und begruendet):**
+
+- **Kein harter Block ab 400 Zeilen.** Der Plan wollte das groesste Skript
+  blockieren; ein Block haette auch legitime lange Skripte getroffen und war
+  ohne Live-Test nicht abzusichern. Stattdessen: harte Warnung `MONOLITH_RISK`
+  mit Zahlen in jeder Antwort plus `scaffold_ui_scripts`. Die Entwurfs-Sperre
+  (`DRAFT_GRADE_RISK`) ist dagegen ein harter Block - dort haengt die Qualitaet
+  des Ergebnisses direkt daran.
+- **Audit-Pflicht als Hinweis, nicht als Block.** `report_done` nennt jedes
+  gebaute, aber ungemessene Modell (`buildRegister`/`buildRegisterNote`) und
+  verweigert die Arbeit NICHT allein deshalb. Ein harter Zwang haette auch
+  einfache, gewollte Bauten blockiert; die Entwurfs-Sperre greift dort, wo eine
+  Messung tatsaechlich stattgefunden hat.
+- **`build_surface mode='extend'`** aus AP7 wurde nicht umgesetzt (der
+  bestehende Builder wird dafuer in Lua umgebaut und braucht einen Live-Test).
+  Als 7.2.1 nachziehbar; `uiStructureRules` beschreibt die Regel schon jetzt,
+  und der Menuepunkt „Nachricht an Arena senden" erlaubt dem Nutzer, das
+  waehrend der Arbeit einzufordern.
+
+Alles Weitere unten ist der Plan, wie er am 05.10.2026 abgestimmt wurde.
+
 # Update-Plan 7.2.x – Arbeitsdokument (Stand 05.10.2026)
 
 Diskussionsgrundlage für das nächste Update der Arena Roblox Bridge.

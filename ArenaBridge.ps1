@@ -1,5 +1,58 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.1.5
+# Arena Roblox Bridge  -  Version 7.2.0
+#
+#
+# Version 7.2.0 (2026-10-05) - NUTZER-KANAL, FRAGEN, EHRLICHE MESSUNG, QUALITAET
+#
+#   Der Owner hat fuenf Dinge gemeldet; alle fuenf sind in diesem Release
+#   geloest - jeweils mit Messung statt Behauptung:
+#
+#   1) ZWISCHENNACHRICHT (D8): Das Menue (...) der Place-Zeile hat den Punkt
+#      "Nachricht an Arena senden". Er oeffnet ein eigenes Fenster mit ehrlichen
+#      Zustaenden: "wird gesendet" (Abbrechen zieht die Nachricht WIRKLICH
+#      zurueck) -> "angekommen" (mit Uhrzeit und Werkzeug) -> "von Arena
+#      bestaetigt" (ack_user_message). Jede Antwort traegt _bridge.userMessages;
+#      ohne Bestaetigung wiederholt sie sich in bis zu drei Antworten.
+#      "Laufenden Befehl abbrechen" ist ebenfalls ein Menuepunkt.
+#
+#   2) FORTSCHRITT (D5/D6/D7): Ohne Prozentzahl zeigt die Zeile KEINEN Balken
+#      und KEINE erfundene 0 %, sondern eine Textzeile. Eine Nachricht ohne Zahl
+#      setzt den Fortschritt nicht mehr auf 0 zurueck, der Clamp parst invariant
+#      (aus "45.5" wurde unter de-DE 455 und damit 100 %), die Zeile liest die
+#      Nachfolger-Sitzung mit, PERCENT_MISSING steht in jeder Antwort, und ein
+#      offener Studio-Befehl verdraengt die Anzeige nicht mehr.
+#
+#   3) FERTIG-MELDUNG (D4): Show() ohne Ausnahme galt bisher als "angezeigt" -
+#      Windows verwirft Toasts aber still (App-Id nicht registriert, global aus,
+#      Fokus-Assistent, Vollbild). Jetzt: App-Id wird bei Bedarf registriert,
+#      Test-NotifyPlatform misst und nennt das Urteil, NOTIFY-Stationen
+#      (ENQUEUED/PLATFORM/CALL/SWEEP/SEEN) verbinden eine Meldung, notify.sweep
+#      misst nach, die Einstellungen haben einen Testknopf mit der ehrlichen
+#      Rueckfrage "Hast du die Meldung gesehen?", report_done antwortet ohne
+#      Blindvertrauen (NOTIFICATION_UNVERIFIED) und notify-diagnose.txt sagt,
+#      was wirklich geschah.
+#
+#   4) FRAGEN (D3): ask_user stellt den GANZEN Entscheidungsbaum in einer
+#      Anfrage (bis 12 Fragen, Bedingungen auf fruehere Fragen, beliebig tief),
+#      das Fenster erscheint mit Versatz am Mauszeiger, "Zurueck" wertet die
+#      Sichtbarkeit neu aus und verwirft ungueltig gewordene Antworten sichtbar.
+#      Warten ist wiederaufnehmbar (max. 50 s je Aufruf); spaete Antworten
+#      kommen als _bridge.userAnswers. confirm_action ist die Ja/Nein-Abkuerzung.
+#      Zeitablauf und Offline-Zustand sind ehrlich beschriftet, inklusive
+#      Knopf "Antwort als Text kopieren" fuer den Arena-Chat.
+#
+#   5) QUALITAET UND GUI: model_audit benotet jetzt jeden Bau (finishScore,
+#      grade draft/simple/detailed/sculpted). "draft" = mindestens 4 Teile,
+#      keine Polygon-/Mesh-/Union-/Detail-Geometrie, ueber 60 % primitive -
+#      genau der Baum aus einem Zylinder und drei Kugeln, der bis 7.1.5 "clean"
+#      war. report_done antwortet dann DRAFT_GRADE_RISK; wer Einfachheit wirklich
+#      will, erklaert sie beim Bauen (grade). Jedes Skript wird beim Schreiben
+#      gemessen (UI_ENGINE.codeLayoutReport: Zeilen, Instance.new);
+#      MONOLITH_RISK steht als Warnung in jeder Antwort, scaffold_ui_scripts
+#      liefert die Aufteilung in kleine Skripte mit je einer Verantwortung.
+#
+#   Diagnose-Dateien (klein, vollstaendig weitergebbar):
+#     progress-diagnose.txt, notify-diagnose.txt, places-diagnose.txt
 #
 # KRITISCHER START-HOTFIX 7.1.5 - DIE BRIDGE STARTET WIEDER (2026-10-03):
 #   7.1.4 enthielt im HTTP-Handler (report_done, Organic-Pruefung) eine
@@ -2323,7 +2376,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.1.5'
+    DocsVersion     = '7.2.0'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -2359,7 +2412,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Version 7.0.6: Laufzeit-Identitaet der LAUFENDEN Datei (Version, Pfad,
     # SHA-256, Sprachmodus, Startzeit) fuer GET /api/version.
     RuntimeInfo = [hashtable]::Synchronized(@{
-        Version = '7.1.5'
+        Version = '7.2.0'
         File = ''
         Sha256 = ''
         LanguageMode = ''
@@ -2618,12 +2671,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.1.5, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.1.5, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.2.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.2.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.1.5'
+$script:Shared.RuntimeInfo.Version = '7.2.0'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -2726,7 +2779,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.1.5)
+  Arena Studio Bridge - Studio Plugin  (Version 7.2.0)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -2799,7 +2852,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.1.5"
+local ARENA_VERSION  = "7.2.0"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -14997,7 +15050,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.1.5 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.2.0 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -19959,7 +20012,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.1.5'
+            version = '7.2.0'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -20190,7 +20243,7 @@ end
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.1.5'
+            bridgeVersion = '7.2.0'
             executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent is never an error, but the user then sees NO bar and NO percentage at all - only your message as text. Send a real number every few calls. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
@@ -20934,7 +20987,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.1.5'
+                        bridgeVersion = '7.2.0'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -21378,7 +21431,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.1.5'
+                        serverVersion = '7.2.0'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -21737,7 +21790,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.1.5'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.2.0'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -21821,8 +21874,8 @@ end
                 }
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.1.5'
-                    serverVersion = '7.1.5'
+                    bridgeVersion = '7.2.0'
+                    serverVersion = '7.2.0'
                     toolbox = $statusToolbox
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
@@ -24858,7 +24911,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.1.5)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.2.0)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -27165,7 +27218,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.1.5)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.2.0)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -29376,7 +29429,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.1.5)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.2.0)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -30070,7 +30123,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.1.5'
+    $versionText = '7.2.0'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -31249,7 +31302,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.1.5" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.2.0" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -31319,7 +31372,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.1.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.2.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -31398,7 +31451,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.1.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.2.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -31411,7 +31464,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.1.5'
+    $verText = '7.2.0'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
