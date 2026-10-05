@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Live-Abnahme der Arena Roblox Bridge 7.2.3 (laeuft gegen die echte Bridge).
+"""Live-Abnahme der Arena Roblox Bridge 7.2.4 (laeuft gegen die echte Bridge).
 
 Aufruf (URL + Token aus der Place-Zeile im Bridge-Fenster):
 
@@ -12,7 +12,7 @@ Geprueft wird, was in 7.0.4-7.1.0 live kaputt war (und in 7.0.5 / 7.1.1 behoben 
                              counters.revivedSessions bleibt bei pollendem Studio
                              KONSTANT (Plugin schickt sessionId; kein Reconnect je Poll),
                              nach dem normalen Befehl: delivery.undeliveredCommands == 0
-  1. /api/status          -> Version 7.2.3 + queue.sweep.running == true
+  1. /api/status          -> Version 7.2.4 + queue.sweep.running == true
   2. normaler Befehl      -> kommt in wenigen Sekunden mit Ergebnis zurueck
   3. Haenger-Reproduktion -> run_lua blockiert ~150 s; die Bridge muss WEIT vor
                              Cloudflares ~100-s-524 antworten (< 90 s), der
@@ -40,7 +40,7 @@ import urllib.parse
 import urllib.request
 
 FAILURES: list[str] = []
-EXPECTED_VERSION = "7.2.3"
+EXPECTED_VERSION = "7.2.4"
 
 
 def check(condition: bool, message: str) -> None:
@@ -121,6 +121,10 @@ def main() -> int:
     parser.add_argument("--hang-budget", type=int, default=30, help="timeoutSeconds fuer den Haenger-Test")
     parser.add_argument("--skip-hang", action="store_true", help="Haenger-Test ueberspringen")
     parser.add_argument("--force-fail", action="store_true", help="am Ende force_fail ausfuehren")
+    parser.add_argument("--ask-sweep", action="store_true",
+                        help="7.2.4 P0-Abnahme: Frage offen lassen und ALLE Werkzeuge gegen sie feuern")
+    parser.add_argument("--message-round", action="store_true",
+                        help="7.2.4: Nachricht senden und _bridge.userMessages + ack_user_message pruefen")
     parser.add_argument("--reset-test", action="store_true",
                         help="zwei wartende Befehle anlegen und POST /api/queue action=reset pruefen (7.1.1)")
     args = parser.parse_args()
@@ -244,6 +248,138 @@ def main() -> int:
         show_late(body)
         print("\n   Reconnect-Test (manuell): im Studio 'Plugins neu laden' bzw. Studio neu starten und "
               "danach erneut list_jobs rufen - Ergebnis muss ankommen, kein 403 COMMAND_OWNER_MISMATCH.")
+
+    # 4b) 7.2.4 P0-Abnahme: offene Frage + volle Werkzeugliste ----------------
+    # In 7.2.3 zerlegte `@($List)` ueber einer List[object] JEDEN Werkzeugaufruf
+    # mit "Die Argumenttypen stimmen nicht ueberein.", sobald eine Frage offen
+    # war. Dieser Test ist der geforderte Abnahmetest fuer diese Fehlerklasse:
+    # die Frage BLEIBT offen (waitSeconds=0), und danach muss jeder Aufruf
+    # ok:true liefern - nicht nur einer.
+    if args.ask_sweep:
+        print("\n   7.2.4 P0-Abnahme: alle Werkzeuge bei OFFENER Frage")
+        ask_args = {
+            "waitSeconds": 0,
+            "questions": [
+                {
+                    "id": "q_style",
+                    "question": "Welche Grundstimmung soll das Haus haben?",
+                    "options": [
+                        {"id": "cozy", "label": "Gemuetlich"},
+                        {"id": "modern", "label": "Modern",
+                         "description": "klare Linien, viel Glas"},
+                    ],
+                    "allowCustomResponse": True,
+                },
+                {
+                    "id": "q_rooms",
+                    "question": "Welche Raeume sollen rein?",
+                    "options": [
+                        {"id": "kitchen", "label": "Kueche"},
+                        {"id": "garden", "label": "Garten"},
+                        {"id": "attic", "label": "Dachboden"},
+                    ],
+                    "multi": True,
+                    "when": {"q_style": ["cozy"]},
+                },
+                {
+                    "id": "q_scale",
+                    "question": "Wie gross soll es werden?",
+                    "options": [
+                        {"id": "small", "label": "Klein"},
+                        {"id": "large", "label": "Gross"},
+                    ],
+                },
+            ],
+        }
+        code, body, elapsed = tool(args.url, args.token, "ask_user", ask_args)
+        ask_id = ""
+        try:
+            ask_id = str((body.get("result") or {}).get("askId") or "")
+        except Exception:
+            ask_id = ""
+        check(code == 200 and body.get("ok") is True and bool(ask_id),
+              f"ask_user mit when-Zweig, multi und allowCustomResponse ok "
+              f"(HTTP {code}, askId={ask_id or '-'}, {elapsed:.1f}s)")
+        if ask_id:
+            # Waechter-Tick durchlaufen lassen: New-Envelope wird bei JEDEM
+            # Aufruf gebaut, also muss jeder einzelne Aufruf jetzt ok sein.
+            time.sleep(7)
+            sweep = [
+                ("get_place_info", {}),
+                ("get_children", {}),
+                ("scaffold_ui_scripts", {}),
+                ("wait_for_user", {"waitSeconds": 0}),
+                ("ack_user_message", {"messageId": "probe-die-es-nicht-gibt"}),
+            ]
+            for name, call in sweep:
+                code, body, elapsed = tool(args.url, args.token, name, call)
+                code_value = str(body.get("code") or body.get("error") or "")
+                check(code == 200 and body.get("ok") is True,
+                      f"'{name}' ok bei offener Frage (HTTP {code}, "
+                      f"code={code_value or '-'}, {elapsed:.1f}s) - 7.2.3: 500 "
+                      f"'Die Argumenttypen stimmen nicht ueberein.'")
+                check("Argumenttypen" not in json.dumps(body, ensure_ascii=False),
+                      f"kein Binder-Fehler in der Antwort von '{name}'")
+            # confirm_action legt eine ZWEITE offene Frage an - auch die darf
+            # den Envelope nicht zerlegen.
+            code, body, elapsed = tool(args.url, args.token, "confirm_action",
+                                       {"message": "P0-Abnahme: zweiter offener Posten",
+                                        "waitSeconds": 0})
+            confirm_id = ""
+            try:
+                confirm_id = str((body.get("result") or {}).get("askId") or "")
+            except Exception:
+                confirm_id = ""
+            check(code == 200 and body.get("ok") is True and bool(confirm_id),
+                  f"confirm_action ok bei bereits offener Frage "
+                  f"(askId={confirm_id or '-'}, {elapsed:.1f}s)")
+            # Eine weitere ask_user-Anfrage darf dasselbe Fenster umstellen
+            # (2d) - sichtbar fuer den Owner, hier nur auf ok:true geprueft.
+            code, body, elapsed = tool(args.url, args.token, "ask_user",
+                                       {"waitSeconds": 0, "questions": [
+                                           {"id": "q_second",
+                                            "question": "Zweite Anfrage waehrend der ersten",
+                                            "options": [{"id": "a", "label": "Ja"},
+                                                        {"id": "b", "label": "Nein"}]}]})
+            check(code == 200 and body.get("ok") is True,
+                  f"zweite ask_user-Anfrage ok, Fenster wird umgestellt ({elapsed:.1f}s)")
+            # Aufraeumen: alle offenen Posten abbrechen, damit nichts haengen
+            # bleibt. ASK_CANCELLED ist der dafuer vorgesehene Antwortwert.
+            for label, pending in (("ask", ask_id), ("confirm", confirm_id)):
+                if not pending:
+                    continue
+                code, body, _ = tool(args.url, args.token, "ask_user",
+                                     {"askId": pending, "resume": True,
+                                      "answers": [{"questionId": "*",
+                                                   "selectedOptionId": "ASK_CANCELLED"}]})
+                check(code == 200,
+                      f"offener {label}-Posten aufgeraeumt (HTTP {code}, "
+                      f"code={body.get('code') or '-'})")
+            time.sleep(3)
+            code, body, elapsed = tool(args.url, args.token, "get_place_info")
+            check(code == 200 and body.get("ok") is True,
+                  f"nach dem Aufraeumen ist get_place_info wieder ok ({elapsed:.1f}s)")
+
+    # 4c) 7.2.4 Nachrichtenrunde (3d) ----------------------------------------
+    if args.message_round:
+        print("\n   7.2.4 Nachrichtenrunde: senden -> _bridge.userMessages -> ack")
+        code, body, elapsed = tool(args.url, args.token, "get_place_info")
+        bridge = (body.get("_bridge") or {}) if isinstance(body, dict) else {}
+        messages = bridge.get("userMessages") or []
+        contract = bridge.get("userMessageContract")
+        if messages:
+            message_id = str(messages[0].get("messageId") or "")
+            check(bool(message_id), "offene Nachricht mit messageId angekommen")
+            check(contract == "USER_MESSAGE_PENDING",
+                  f"userMessageContract ist USER_MESSAGE_PENDING (gefunden: {contract})")
+            code, body, elapsed = tool(args.url, args.token, "ack_user_message",
+                                       {"messageId": message_id})
+            check(code == 200 and body.get("ok") is True,
+                  f"ack_user_message ok ({elapsed:.1f}s) - danach muss im Panel "
+                  f"'von Arena bestaetigt' stehen")
+        else:
+            check(False, "keine offene Nachricht in _bridge.userMessages - "
+                         "vorher im Fenster 'Nachricht an Arena senden' etwas abschicken")
 
     # 5) Admin-Reset ---------------------------------------------------------
     if args.force_fail:

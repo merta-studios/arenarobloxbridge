@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline-Abnahme fuer Arena Roblox Bridge 7.2.3.
+"""Offline-Abnahme fuer Arena Roblox Bridge 7.2.4.
 
 Dieser Test braucht KEIN Windows und keinen PowerShell-Prozess. Er prueft genau
 die fuenf Themen des Owners plus das Fundament:
@@ -28,7 +28,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.2.3"
+VERSION = "7.2.4"
 
 failures: list[str] = []
 
@@ -669,8 +669,14 @@ def main() -> int:
     check("$customBox = [System.Windows.Controls.TextBox]::new()" in ui
           and "$customBox.Style = $Info.Window.FindResource('ArenaTextField')" in ui
           and "$customBox.AcceptsReturn = $true" in ui
-          and "$customBox.TabIndex = 40" in ui,
-          "Eigene Antwort ist ein echtes Textfeld mit Stil, Caret und Tab-Platz")
+          and "$customBox.AcceptsTab = $false" in ui
+          and "$customBox.MaxLength = 4000" in ui,
+          "Eigene Antwort ist ein echtes Textfeld mit Stil, Caret und Tab-Weitergabe")
+    # WPF vergibt ohne expliziten TabIndex int.MaxValue; ein einzelner fester
+    # Index wuerde das Feld VOR die Optionen legen. Visuelle Reihenfolge ist
+    # hier die richtige - und Tab muss den Fokus weitergeben, nicht einruecken.
+    check("$customBox.TabIndex" not in ui,
+          "Kein fester TabIndex bricht die visuelle Tab-Reihenfolge der Optionen")
     check("if ($allowCustom) {" not in ui,
           "Das Textfeld haengt nicht mehr an allowCustomResponse - es ist immer da")
     check("$customBox.Add_TextChanged" in ui
@@ -740,13 +746,16 @@ def main() -> int:
     ):
         check(marker in source, f"Fundament-Marker vorhanden: {marker}")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    check(version["version"] == VERSION, "version.json identifiziert 7.2.3")
+    check(version["version"] == VERSION, "version.json identifiziert 7.2.4")
     notes = "\n".join(str(note) for note in version.get("notes", []))
-    for word in ("7.2.3", "LIVE-SAMMLUNGEN", "ASK_CANCELLED", "Strg+Enter",
-                 "Test-Benachrichtigung", "NOTIFICATION_UNVERIFIED", "notify-diagnose.txt"):
+    for word in ("7.2.4", "P0-BLOCKER", ".ToArray()",
+                 "gemeinsamen XAML-Ressourcenblock",
+                 "Eigene Antwort", "runtime.log",
+                 "7.2.3", "LIVE-SAMMLUNGEN", "ASK_CANCELLED", "Strg+Enter",
+                 "NOTIFICATION_UNVERIFIED", "notify-diagnose.txt"):
         check(word in notes, f"version.json beschreibt: {word}")
-    check("DocsVersion     = '7.2.3'" in source and 'local ARENA_VERSION  = "7.2.3"' in source,
-          "Alle funktionalen Versionsstellen stehen auf 7.2.3")
+    check("DocsVersion     = '7.2.4'" in source and 'local ARENA_VERSION  = "7.2.4"' in source,
+          "Alle funktionalen Versionsstellen stehen auf 7.2.4")
     problems = collection_return_problems(source)
     for problem in problems:
         print(f"    {problem}")
@@ -780,7 +789,7 @@ def main() -> int:
         for entry in failures:
             print(f"  - {entry}")
         return 1
-    print("OK: 7.2.3 - Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene "
+    print("OK: 7.2.4 - Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene "
           "Fertig-Meldung, Fragen-Baum, Qualitaets- und GUI-Vertrag sind vollstaendig; "
           "die Datei ist ausbalanciert und der echte PowerShell-Parser ist gruen.")
     return 0

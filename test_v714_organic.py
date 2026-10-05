@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.2.3"
+VERSION = "7.2.4"
 FAILURES: list[str] = []
 
 
@@ -114,13 +114,13 @@ def main() -> int:
     release_notes = "\n".join(meta.get("notes", []))
 
     # Release identity and release notes.
-    check(meta.get("version") == VERSION, "version.json identifiziert 7.2.3")
+    check(meta.get("version") == VERSION, "version.json identifiziert 7.2.4")
     # 7.2.3 dokumentiert das UI-Mini-Update; 7.2.1 behaelt den Start-/Parser-
     # Fix, und 7.2.0 beschreibt Nutzer-Kanal, Meldungsmessung und Qualitaet.
     # Der organische Vertrag selbst wird weiter unten DIREKT
     # im Quellcode geprueft (und darf dort nicht fehlen).
-    for marker in ("7.2.3", "report_done", "DRAFT_GRADE_RISK", "NOTIFICATION_UNVERIFIED"):
-        check(marker in release_notes, f"7.2.3-Release-Notiz nennt {marker}")
+    for marker in ("7.2.4", "7.2.3", "report_done", "DRAFT_GRADE_RISK", "NOTIFICATION_UNVERIFIED"):
+        check(marker in release_notes, f"Release-Notiz nennt {marker}")
 
     # The server guard only enforces explicitly marked organic builds; the
     # broad polygon-first preference is delivered for every model category.
@@ -266,7 +266,7 @@ def main() -> int:
     if FAILURES:
         print(f"\nFEHLGESCHLAGEN: {len(FAILURES)} Pruefung(en) rot.")
         return 1
-    print("\nOK: 7.2.3: 7.1.4-Organic-Build-, Audit-Frische-, report_done- und UI-Regressionspruefungen bestanden.")
+    print("\nOK: 7.2.4: 7.1.4-Organic-Build-, Audit-Frische-, report_done- und UI-Regressionspruefungen bestanden.")
     return 0
 
 

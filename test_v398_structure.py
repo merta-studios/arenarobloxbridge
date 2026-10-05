@@ -1,5 +1,5 @@
 ﻿#!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 7.2.3.
+"""Offline structure check for Arena Roblox Bridge 7.2.4.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.2.3"
+VERSION = "7.2.4"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -95,7 +95,7 @@ def main() -> int:
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     require(version["version"] == VERSION, f"version.json is not {VERSION}")
     release_notes = "\n".join(str(note) for note in version.get("notes", []))
-    require("7.2.3" in release_notes
+    require("7.2.4" in release_notes
             and "report_done" in release_notes
             and "NOTIFICATION_UNVERIFIED" in release_notes
             and "ask_user" in release_notes
@@ -103,7 +103,7 @@ def main() -> int:
             and "MONOLITH_RISK" in release_notes
             and "StarterGui" in release_notes
             and "progress-diagnose.txt" in release_notes,
-            "version.json does not describe the 7.2.3 release")
+            "version.json does not describe the 7.2.4 release")
 
     # 6.1.1 shipped seven accidental fragments after the intended final exit,
     # including a bare closing parenthesis. Windows PowerShell parses the
@@ -715,21 +715,21 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '7.2.3'": 1,
-        'local ARENA_VERSION  = "7.2.3"': 1,
-        "version = '7.2.3'": 1,
-        "bridgeVersion = '7.2.3'": 3,
-        "bridgeVersion='7.2.3'": 1,
-        "serverVersion = '7.2.3'": 2,
-        "$versionText = '7.2.3'": 1,
-        "$verText = '7.2.3'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 7.2.3)": 1,
-        'Text="Arena Roblox Bridge - Version 7.2.3"': 1,
-        "Version 7.2.3 - aktuell. Beim naechsten Start": 2,
-        "Laufzeit-Identitaet: Bridge-Version=7.2.3": 1,
-        "Kurzbericht Fenster-Vorschau (Version 7.2.3)": 1,
-        "Arena Roblox Bridge - Leistungsbericht (Version 7.2.3)": 1,
-        "Arena Roblox Bridge - Place-Diagnose (Version 7.2.3)": 1,
+        "DocsVersion     = '7.2.4'": 1,
+        'local ARENA_VERSION  = "7.2.4"': 1,
+        "version = '7.2.4'": 1,
+        "bridgeVersion = '7.2.4'": 3,
+        "bridgeVersion='7.2.4'": 1,
+        "serverVersion = '7.2.4'": 2,
+        "$versionText = '7.2.4'": 1,
+        "$verText = '7.2.4'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.2.4)": 1,
+        'Text="Arena Roblox Bridge - Version 7.2.4"': 1,
+        "Version 7.2.4 - aktuell. Beim naechsten Start": 2,
+        "Laufzeit-Identitaet: Bridge-Version=7.2.4": 1,
+        "Kurzbericht Fenster-Vorschau (Version 7.2.4)": 1,
+        "Arena Roblox Bridge - Leistungsbericht (Version 7.2.4)": 1,
+        "Arena Roblox Bridge - Place-Diagnose (Version 7.2.4)": 1,
     }
     for marker, expected_count in functional_version_counts.items():
         actual_count = source.count(marker)
@@ -1399,13 +1399,32 @@ def main() -> int:
                  "SharedTableRegistry", "reporterEndTest"):
         require(gone not in lua, f"removed 7.0.0 reporter/session marker is back: {gone}")
 
+    # 7.2.4: the question window became XAML-based too, so the bridge now
+    # ships five Window here-strings (main, settings, handoff, user message,
+    # question). Every one of them is parsed here - that is what catches a
+    # broken dialog before PowerShell ever sees the file.
     blocks = xaml_blocks(source)
-    require(len(blocks) == 4, f"expected 4 XAML Window blocks, found {len(blocks)}")
+    require(len(blocks) == 5, f"expected 5 XAML Window blocks, found {len(blocks)}")
     for index, block in enumerate(blocks, 1):
         try:
             ET.fromstring(block)
         except ET.ParseError as exc:
             raise AssertionError(f"XAML block {index} is not XML: {exc}") from exc
+    # The two dialogs must resolve every StaticResource from the one shared
+    # block; an unresolved key would throw at XamlReader.Load, i.e. the window
+    # would simply never appear.
+    shared = re.search(r"\$script:ArenaDialogStyles = @'\n([\s\S]*?)\n'@", source)
+    require(shared is not None, "shared dialog resource block is missing")
+    shared_keys = set(re.findall(r'x:Key="([A-Za-z0-9_]+)"', shared.group(1)))
+    for name, func in (("question", "function Get-AskWindowXaml"),
+                       ("user message", "function Get-UserMessageWindowXaml")):
+        start = source.index(func)
+        tpl = re.search(r"@'\n([\s\S]*?)\n'@", source[start:start + 12000]).group(1)
+        used = set(re.findall(r"\{StaticResource ([A-Za-z0-9_]+)\}", tpl))
+        require(not (used - shared_keys),
+                f"{name} window references unknown resources: {sorted(used - shared_keys)}")
+        require("<!--ARENA_DIALOG_STYLES-->" in tpl,
+                f"{name} window does not embed the shared resource block")
 
     # 6.1.3 mini-update guards: modelling hierarchy/seams/caps/welds,
     # detached asset sanitation and the opt-in performance gate stay present.
