@@ -1799,6 +1799,10 @@ $script:PreviewDiagLines = New-Object System.Collections.Generic.List[string]
 $script:PreviewDiagIdentity = ''
 $script:PreviewSelfTestVerdict = ''
 $script:PreviewDiagLastWrite = [DateTime]::MinValue
+# Version 7.2.0: Drossel-Zustaende fuer die Kanal-Stationen der Oberflaeche und
+# fuer die kleinen Kurzberichte progress-diagnose.txt / notify-diagnose.txt.
+$script:ChannelDiagLastWrite = [DateTime]::MinValue
+$script:UiStationLogAt = @{}
 $script:PreviewFlowCounter = [long]0
 $script:PreviewFlowContexts = @{}
 $script:PreviewHandleInfos = @{}
@@ -2405,6 +2409,9 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Oberflaeche (progress-diagnose.txt / notify-diagnose.txt).
     FlowTrace       = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
     FlowTraceCap    = 500
+    # Zuletzt geschriebene Station je Schluessel (Drosselung gegen vollaufende
+    # runtime.log: Fortschritt kaeme sonst bei JEDEM Werkzeugaufruf).
+    ProgressLogAt   = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
     # KANAL-ZAEHLER: laufen IMMER mit (wie Telemetry seit 7.0.6). Sie
     # verwandeln "die Meldung kam nicht an" und "der Balken blieb bei 0 %"
     # in Zahlen, die man zwischen zwei Laeufen vergleichen kann.
@@ -13089,7 +13096,8 @@ $script:BridgeHandlerScript = {
             Write-BridgeLog $line
             Add-FlowTraceLine $line
         } catch {}
-        return $line
+        # Bewusst KEIN return: eine Ausgabe hier wuerde den Rueckgabewert jedes
+        # Aufrufers verschmutzen (Invoke-AckUserMessage, Update-ArenaProgressState).
     }
 
     function Add-ChannelCount {
@@ -13651,12 +13659,78 @@ $script:BridgeHandlerScript = {
     # Fehler. Die Bridge fuehrt je Sitzung Buch und zeigt das ehrlich an.
     # ------------------------------------------------------------------
     function Clamp-ProgressPercent($value) {
+        # Version 7.2.0: INVARIANT parsen. Unter deutscher Kultur wurde aus dem
+        # String "45.5" die Zahl 455 (Punkt = Tausendertrennzeichen) und der
+        # Balken sprang auf 100 %. Zahlen aus JSON bleiben unveraendert sicher.
         $number = 0.0
-        try { $number = [double]$value } catch { $number = 0.0 }
+        try {
+            if ($value -is [string]) {
+                $text = ([string]$value).Trim().Replace(',', '.')
+                if ($text.Length -gt 0) {
+                    $parsed = 0.0
+                    if ([double]::TryParse($text, [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$parsed)) { $number = $parsed }
+                }
+            } else {
+                $number = [double]$value
+            }
+        } catch { $number = 0.0 }
         if ($number -ne $number) { $number = 0.0 }
         if ($number -lt 0) { $number = 0 }
         if ($number -gt 100) { $number = 100 }
         return [math]::Round($number, 1)
+    }
+
+    function Get-ProgressPercentProvided($node) {
+        # Version 7.2.0: "Die KI hat eine Zahl geschickt" ist etwas ANDERES als
+        # "die Zahl ist 0". Nur eine wirklich mitgeschickte Zahl darf den Balken
+        # erscheinen lassen - sonst zeigt die Zeile Klartext ohne erfundene 0 %.
+        try {
+            if ($null -eq $node) { return $false }
+            if ($node -is [string]) {
+                $text = ([string]$node).Trim()
+                if ($text.Length -eq 0) { return $false }
+                $parsed = 0.0
+                return [double]::TryParse($text.Replace(',', '.'), [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$parsed)
+            }
+            if ($node -is [ValueType]) { return $true }
+            if ($node.PSObject.Properties['percent']) {
+                $value = $node.percent
+                if ($null -eq $value) { return $false }
+                if ($value -is [string] -and [string]::IsNullOrWhiteSpace([string]$value)) { return $false }
+                return $true
+            }
+        } catch {}
+        return $false
+    }
+
+    function Get-ShortSid([string]$sessionId) {
+        $text = ([string]$sessionId).Trim()
+        if ($text.Length -le 8) { return $text }
+        return $text.Substring(0, 8)
+    }
+
+    function Set-ProgressField {
+        param($Object, [string]$Name, $Value)
+        try {
+            if ($null -eq $Object) { return }
+            if ($Object.PSObject.Properties[$Name]) { $Object.$Name = $Value }
+            else { $Object | Add-Member -NotePropertyName $Name -NotePropertyValue $Value -Force }
+        } catch {}
+    }
+
+    function Write-ProgressStationThrottled {
+        # Stationen fuer den Fortschritt, gedrosselt: eine Zeile je Sitzung und
+        # 30 s fuer "keine Prozentzahl", damit runtime.log nicht vollaeuft
+        # (PREVIEW schreibt pro Aufnahmeversuch - Fortschritt kaeme pro Call).
+        param([string]$sessionId, [string]$Station, $Fields, [int]$EverySeconds = 30)
+        try {
+            $key = (Get-ShortSid $sessionId) + ':' + $Station
+            $now = Get-UnixSeconds
+            $last = [long]0
+            if ($Shared.ProgressLogAt.TryGetValue($key, [ref]$last) -and ($now - $last) -lt $EverySeconds) { return }
+            $Shared.ProgressLogAt[$key] = $now
+            Write-FlowStation 'PROGRESS' (Get-ShortSid $sessionId) $Station $Fields
+        } catch {}
     }
 
     function Read-ProgressState([string]$sessionId) {
@@ -13671,29 +13745,55 @@ $script:BridgeHandlerScript = {
     }
 
     function Update-ArenaProgressState {
-        param([string]$sessionId, [string]$tool, $percent, [string]$message, [bool]$reported, [bool]$isDone, [bool]$autoSet)
+        # Version 7.2.0: Die Ursache fuer "der Balken bleibt bei 0 %" war, dass
+        # percent NUR bei expliziter Zahl gesetzt wurde, eine Nachricht OHNE
+        # Zahl percent aber auf 0 ZURUECKgesetzt hat - ein einmal gemeldeter
+        # Stand fiel damit bei der naechsten Nachricht wieder auf 0 %. Jetzt
+        # wird percent ausschliesslich bei wirklich mitgeschickter Zahl
+        # geschrieben ($percentProvided), und der Zustand merkt sich, ob
+        # ueberhaupt schon eine Zahl kam (percentKnown). Ohne Zahl zeigt die
+        # Oberflaeche keinen Balken und keine erfundene 0 %.
+        param([string]$sessionId, [string]$tool, $percent, [string]$message, [bool]$reported, [bool]$isDone, [bool]$autoSet, [bool]$percentProvided = $false)
         $state = Read-ProgressState $sessionId
         if ($null -eq $state) {
             $state = [pscustomobject]@{
                 percent = 0.0; message = ''; state = 'working'; updatedAt = 0; lastCallAt = 0
                 calls = 0; callsWithProgress = 0; autoSet = $false; history = @(); lastTool = ''
+                percentKnown = $false; callsWithPercent = 0; callsWithoutPercent = 0; lastPercentAt = 0
             }
         }
         $now = Get-UnixSeconds
         $state.calls = [int]$state.calls + 1
         $state.lastCallAt = $now
         $state.lastTool = [string]$tool
+        Add-ChannelCount 'ProgressCalls' 1
         if (-not $isDone) {
             if ([string]$state.state -eq 'done') {
                 $state.percent = 0.0
                 $state.message = ''
                 $state.autoSet = $false
+                Set-ProgressField $state 'percentKnown' $false
             }
             $state.state = 'working'
         }
         if ($reported) {
             $state.callsWithProgress = [int]$state.callsWithProgress + 1
-            $state.percent = Clamp-ProgressPercent $percent
+            if ($percentProvided) {
+                $state.percent = Clamp-ProgressPercent $percent
+                Set-ProgressField $state 'percentKnown' $true
+                Set-ProgressField $state 'lastPercentAt' $now
+                $withPercent = 0
+                try { $withPercent = [int]$state.callsWithPercent } catch {}
+                Set-ProgressField $state 'callsWithPercent' ($withPercent + 1)
+                Add-ChannelCount 'ProgressWithPercent' 1
+                Write-FlowStation 'PROGRESS' (Get-ShortSid $sessionId) 'REPORTED' @{ percent = $state.percent; tool = [string]$tool; message = ([string]$message); callsWithPercent = ($withPercent + 1) }
+            } else {
+                $withoutPercent = 0
+                try { $withoutPercent = [int]$state.callsWithoutPercent } catch {}
+                Set-ProgressField $state 'callsWithoutPercent' ($withoutPercent + 1)
+                Add-ChannelCount 'ProgressMissingPercent' 1
+                Write-ProgressStationThrottled $sessionId 'PERCENT_MISSING' @{ tool = [string]$tool; callsWithoutPercent = ($withoutPercent + 1); message = ([string]$message) } 30
+            }
             if (-not [string]::IsNullOrWhiteSpace($message)) { $state.message = $message.Trim() }
             $state.updatedAt = $now
             $state.state = 'working'
@@ -13709,6 +13809,9 @@ $script:BridgeHandlerScript = {
             }
             $state.percent = 100.0
             $state.state = 'done'
+            Set-ProgressField $state 'percentKnown' $true
+            Set-ProgressField $state 'lastPercentAt' $now
+            Write-FlowStation 'PROGRESS' (Get-ShortSid $sessionId) 'DONE' @{ percent = 100.0; autoSet = [bool]$state.autoSet; tool = [string]$tool }
         }
         $state.updatedAt = $now
         $line = ('{0}% {1} {2}' -f [string]$state.percent, [string]$tool, [string]$state.message).Trim()
@@ -18642,10 +18745,11 @@ end
         # JEDE Sitzung - kurz, hart, maschinenlesbar.
         $out.progressContract = @{
             field = 'Every API call carries progress = { percent = 43, message = "kurze, konkrete Nachricht" } on the same level as token/targetPlace/tool. Inside args works too: the bridge pulls it out and NEVER forwards it to the plugin.'
-            missing = 'A missing percent is 0 percent (the normal case on the first call) and is NEVER an error - a missing progress field must never block building.'
+            missing = 'Missing percent is NEVER an error and never blocks building - but since 7.2.0 the user then sees NO bar and NO percentage at all (only a text line with your message and your last tool), and every response carries progressWarning PERCENT_MISSING until you send a real number. Send percent: it is the only thing that makes your progress visible.'
+            neverReset = 'A call with only a message no longer resets the bar to 0. percent is written exclusively when you actually send a number, so reported progress survives message-only calls.'
             last = 'The last call of a completed task is report_done; it fills in 100 itself and marks "Automatisch gesetzt".'
-            display = 'The bridge shows percent + message in the place row (blue = working, green = done only after report_done, grey = waiting/no feedback for ~2 minutes, red = error). Every message is logged in the Arena history and in places-diagnose.txt.'
-            rewind = 'Rewinds are allowed. From more than 20 points of drop the row says "neuer Versuch".'
+            display = 'The bridge shows percent + your message in the place row (blue = working, green = done only after report_done, grey = waiting/no feedback for 60 s, red = error). An open Studio command no longer replaces the bar - it is additional tooltip information. Everything is logged in the Arena history, in progress-diagnose.txt and as PROGRESS stations in runtime.log.'
+            rewind = 'Rewinds are allowed and stay visible; the bridge never invents a higher percentage than you reported.'
         }
         $out.qualityContract = @(
             'No turn has to end with "done". It ends with report_done OR with a handoff - both are complete finishes.',
@@ -18884,6 +18988,7 @@ end
                         $progressReported = ($null -ne $progressNode)
                         $progressPercent = 0.0
                         $progressMessage = ''
+                        $progressPercentProvided = (Get-ProgressPercentProvided $progressNode)
                         if ($progressReported) {
                             if ($progressNode -is [ValueType] -or $progressNode -is [string]) {
                                 $progressPercent = Clamp-ProgressPercent $progressNode
@@ -18892,7 +18997,7 @@ end
                                 try { if ($progressNode.PSObject.Properties['message']) { $progressMessage = [string]$progressNode.message } } catch {}
                             }
                         }
-                        Update-ArenaProgressState $sessionId $callTool $progressPercent $progressMessage $progressReported $false $false | Out-Null
+                        Update-ArenaProgressState $sessionId $callTool $progressPercent $progressMessage $progressReported $false $false $progressPercentProvided | Out-Null
                         $progressStarted = $true
                     }
                     $pending.Add(@{ id=$commandId; tool=$callTool; args=$callArgs; signal=$signal; result=$null; deduplicated=$false; activityId=$activityId })
@@ -18975,7 +19080,7 @@ end
             bridgeVersion = '7.1.5'
             executor = $executorSnapshot
             progressContract = @{
-                rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent = 0, never an error. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
+                rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent is never an error, but the user then sees NO bar and NO percentage at all - only your message as text. Send a real number every few calls. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
                 lastPercent = $(if ($progressView) { [double]$progressView.percent } else { 0 })
                 lastMessage = $(if ($progressView) { [string]$progressView.message } else { '' })
                 state = $(if ($progressView) { [string]$progressView.state } else { 'idle' })
@@ -19118,6 +19223,32 @@ end
         # Nutzernachrichten mit - das ist die einzige Stelle, an der eine
         # Korrektur des Nutzers die KI ueberhaupt erreichen kann (die Bridge
         # kann nicht in den Arena-Chat schreiben, es gibt keinen Push-Kanal).
+        # Version 7.2.0: PERCENT_MISSING als Nudge in JEDER Antwort, solange die
+        # KI keine Zahl schickt. Ohne Zahl zeigt die Oberflaeche bewusst keinen
+        # Balken (D5/D6) - die KI muss also erfahren, warum der Nutzer nichts
+        # sieht, statt es zu raten.
+        try {
+            $progressWarnJson = ''
+            if ($Shared.ProgressStates.TryGetValue([string]$sessionId, [ref]$progressWarnJson) -and -not [string]::IsNullOrWhiteSpace($progressWarnJson)) {
+                $progressWarnState = $progressWarnJson | ConvertFrom-Json
+                $warnCalls = 0
+                $warnWithPercent = 0
+                $warnKnown = $false
+                try { $warnCalls = [int]$progressWarnState.calls } catch {}
+                try { if ($progressWarnState.PSObject.Properties['callsWithPercent']) { $warnWithPercent = [int]$progressWarnState.callsWithPercent } } catch {}
+                try { if ($progressWarnState.PSObject.Properties['percentKnown']) { $warnKnown = [bool]$progressWarnState.percentKnown } } catch {}
+                if ($warnCalls -ge 2 -and -not $warnKnown -and [string]$progressWarnState.state -ne 'done') {
+                    $envelope.progressWarning = @{
+                        code = 'PERCENT_MISSING'
+                        callsWithoutPercent = $warnCalls
+                        effect = 'The user sees NO progress bar and NO percentage for this place - only a text line with your message and your last tool. They cannot tell how far you are.'
+                        fix = 'Add progress = { percent = <0-100>, message = "<what you are doing>" } to your next call. A rough honest number is worth more than no number.'
+                    }
+                    $percentNote = 'PERCENT_MISSING: send progress.percent - the user currently sees no bar at all.'
+                    if ($envelope.attention) { $envelope.attention = $percentNote + ' ' + $envelope.attention } else { $envelope.attention = $percentNote }
+                }
+            }
+        } catch {}
         $pendingUserMessages = Get-PendingUserMessageViews $sessionId 3
         if ($pendingUserMessages.Count -gt 0) {
             $deliveredIds = New-Object System.Collections.Generic.List[string]
@@ -20541,8 +20672,10 @@ end
                         try { $toolArgs.PSObject.Properties.Remove('progress') } catch {}
                     }
                 } catch {}
+                $progressPercentProvided = $false
                 if ($null -ne $progressNode) {
                     $progressReported = $true
+                    $progressPercentProvided = (Get-ProgressPercentProvided $progressNode)
                     if ($progressNode -is [ValueType] -or $progressNode -is [string]) {
                         $progressPercent = Clamp-ProgressPercent $progressNode
                     } else {
@@ -20551,7 +20684,7 @@ end
                     }
                 }
                 $isDoneTool = ($tool -eq 'report_done')
-                $progressState = Update-ArenaProgressState $sessionId $tool $progressPercent $progressMessage $progressReported $isDoneTool $false
+                $progressState = Update-ArenaProgressState $sessionId $tool $progressPercent $progressMessage $progressReported $isDoneTool $false $progressPercentProvided
                 if ($progressReported -and -not [string]::IsNullOrWhiteSpace($progressMessage)) {
                     try { Add-BridgeEvent $sessionId 'progress' $progressMessage @{ percent = $progressPercent; tool = [string]$tool } } catch {}
                 }
@@ -23384,7 +23517,11 @@ function Write-PlacesDiagnoseFile {
 # GRUEN = fertig (nur nach report_done), GRAU = wartet/keine Rueckmeldung,
 # ROT = Fehler. Alles nur in der Zeile - keine Toasts, keine Popups.
 # ----------------------------------------------------------------------------
-function Get-ProgressStateSnapshot {
+function Get-ProgressStateSnapshotForId {
+    # Version 7.2.0: dieselbe Auswertung wie bisher, aber um die Felder
+    # erweitert, die fuer "keine erfundene 0 %" noetig sind: PercentKnown
+    # (hat die KI ueberhaupt schon eine Zahl geschickt?), CallsWithPercent und
+    # LastTool.
     param([string]$SessionId)
     $json = ''
     if (-not $script:Shared.ProgressStates.TryGetValue([string]$SessionId, [ref]$json)) { return $null }
@@ -23396,8 +23533,21 @@ function Get-ProgressStateSnapshot {
     $lastCall = [int64]$state.lastCallAt
     if ($lastCall -le 0) { $lastCall = [int64]$state.updatedAt }
     $silent = ($now - $lastCall)
+    $percentKnown = $false
+    try { if ($state.PSObject.Properties['percentKnown']) { $percentKnown = [bool]$state.percentKnown } } catch {}
+    if (-not $percentKnown) {
+        try { if ([double]$state.percent -gt 0) { $percentKnown = $true } } catch {}
+    }
+    $callsWithPercent = 0
+    try { if ($state.PSObject.Properties['callsWithPercent']) { $callsWithPercent = [int]$state.callsWithPercent } } catch {}
+    $callsWithoutPercent = 0
+    try { if ($state.PSObject.Properties['callsWithoutPercent']) { $callsWithoutPercent = [int]$state.callsWithoutPercent } } catch {}
+    $lastTool = ''
+    try { if ($state.PSObject.Properties['lastTool']) { $lastTool = [string]$state.lastTool } } catch {}
     $view = [pscustomobject]@{
+        SessionId = [string]$SessionId
         Percent = [double]$state.percent
+        PercentKnown = $percentKnown
         Message = [string]$state.message
         State   = [string]$state.state
         AutoSet = [bool]$state.autoSet
@@ -23406,6 +23556,9 @@ function Get-ProgressStateSnapshot {
         SilentSeconds = $silent
         Calls = [int]$state.calls
         CallsWithProgress = [int]$state.callsWithProgress
+        CallsWithPercent = $callsWithPercent
+        CallsWithoutPercent = $callsWithoutPercent
+        LastTool = $lastTool
     }
     # Nach einer Minute ohne Bridge-Aufruf: Fortschritt ehrlich einfrieren
     # und grau markieren. Eine abgeschlossene 100-%-Meldung bleibt separat
@@ -23415,6 +23568,42 @@ function Get-ProgressStateSnapshot {
         $view.Message = 'Seit über einer Minute kein Bridge Aufruf mehr'
     }
     return $view
+}
+
+function Get-ProgressStateSnapshot {
+    # Version 7.2.0: Die Zeile traegt die Sitzung aus der Fensterliste, der
+    # Fortschritt wird aber unter der Token-Sitzung geschrieben. Nach einer
+    # Sitzungsuebergabe (Reconnect/Nachfolger) las die Zeile deshalb eine andere
+    # Id als die, unter der die Arbeit laeuft - der Balken blieb leer, waehrend
+    # Arena baute. Jetzt werden alle Kandidaten geprueft (eigene Id, Nachfolger
+    # und jede Id, die auf diese Zeile zeigt) und der FRISCHESTE Zustand gewinnt.
+    param([string]$SessionId)
+    $sid = [string]$SessionId
+    if ([string]::IsNullOrWhiteSpace($sid)) { return $null }
+    $candidates = New-Object System.Collections.Generic.List[string]
+    $candidates.Add($sid)
+    try {
+        $delivery = Get-UiDeliverySession $sid
+        if (-not [string]::IsNullOrWhiteSpace($delivery) -and -not $candidates.Contains($delivery)) { $candidates.Add($delivery) }
+    } catch {}
+    try {
+        foreach ($pair in $script:Shared.ProgressStates.GetEnumerator()) {
+            $other = [string]$pair.Key
+            if ([string]::IsNullOrWhiteSpace($other) -or $candidates.Contains($other)) { continue }
+            $resolved = ''
+            try { $resolved = Get-UiDeliverySession $other } catch {}
+            if ($resolved -eq $sid) { $candidates.Add($other) }
+        }
+    } catch {}
+    $best = $null
+    $bestCall = [int64](-1)
+    foreach ($candidate in $candidates) {
+        $view = Get-ProgressStateSnapshotForId $candidate
+        if ($null -eq $view) { continue }
+        $callAt = [int64]$view.LastCallAt
+        if ($null -eq $best -or $callAt -gt $bestCall) { $best = $view; $bestCall = $callAt }
+    }
+    return $best
 }
 
 function Format-ProgressMessage {
@@ -23479,7 +23668,8 @@ function Write-FlowTrace {
             }
         } catch {}
     } catch {}
-    return $line
+    # Bewusst KEIN return: eine Ausgabe hier wuerde z. B. Add-UserMessage einen
+    # Array statt der Nachrichten-Id zurueckgeben lassen.
 }
 
 function Add-UiChannelCount {
@@ -23817,6 +24007,23 @@ function Invoke-PlaceRowCancel {
     }
 }
 
+function Write-UiStationThrottled {
+    # Version 7.2.0: Stationen der Oberflaeche, gedrosselt (eine Zeile je
+    # Schluessel und Intervall). Der UI-Tick laeuft alle 250 ms - ohne Drosselung
+    # wuerde runtime.log vollaufen (Lehre aus 6.0.4: Stationen ja, aber bezahlt).
+    param([string]$Area, [string]$FlowId, [string]$Station, $Fields = $null, [int]$EverySeconds = 5)
+    try {
+        if ($null -eq $script:UiStationLogAt) { $script:UiStationLogAt = @{} }
+        $key = $Area + ':' + $FlowId + ':' + $Station
+        $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        $last = [int64]0
+        try { if ($script:UiStationLogAt.ContainsKey($key)) { $last = [int64]$script:UiStationLogAt[$key] } } catch {}
+        if (($now - $last) -lt $EverySeconds) { return }
+        $script:UiStationLogAt[$key] = $now
+        Write-FlowTrace $Area $FlowId $Station $Fields
+    } catch {}
+}
+
 function Update-PlaceProgressVisual {
     param($Row, $Studio)
     if ($null -eq $Row -or $null -eq $Row.ProgressPanel) { return }
@@ -23824,9 +24031,13 @@ function Update-PlaceProgressVisual {
     try { $show = [bool]$script:Shared.BridgeSettings.progressInPlaceList } catch {}
     $sessionId = [string]$Studio.sessionId
     $snapshot = Get-ProgressStateSnapshot $sessionId
-    # Version 7.0.6: Die Bridge zeigt den ECHTEN Befehlszustand, nicht nur den
-    # vom Aufrufer gemeldeten Fortschritt. Der offene Befehl ist die Ursache
-    # jeder Haenge-Zeit und stand bisher nirgends in der Zeile.
+    # Version 7.0.6: Die Bridge kennt den ECHTEN Befehlszustand. Version 7.2.0
+    # (D7): er VERDRAENGT den Fortschritt aber nicht mehr - bis 7.1.5 wurde der
+    # Balken ausgeblendet und durch "Befehl: <tool> - <status> seit X s" plus
+    # einen Abbrechen-Knopf ersetzt. Genau das hat der Owner als Stoerung
+    # gemeldet ("der schoene Balken wird durch irgendeine Abbrechen-Taste
+    # ersetzt"). Der Befehl ist jetzt Zusatzinformation im Tooltip, und
+    # abgebrochen wird ueber das Menue der Place-Zeile.
     $openCmd = Get-PlaceOpenCommand (Get-UiDeliverySession $sessionId)
     if (-not $show -or ($null -eq $snapshot -and $null -eq $openCmd)) {
         $Row.ProgressPanel.Visibility = 'Collapsed'
@@ -23834,46 +24045,56 @@ function Update-PlaceProgressVisual {
         try { if ($Row.CommandCancelButton) { $Row.CommandCancelButton.Visibility = 'Collapsed' } } catch {}
         return
     }
+
+    $state = 'working'
+    $percent = 0
+    $percentKnown = $false
+    $silent = 0
+    $lastTool = ''
+    $message = ''
+    $callsWithoutPercent = 0
+    $sourceSid = ''
+    if ($null -ne $snapshot) {
+        $state = [string]$snapshot.State
+        $percent = [int][math]::Round([double]$snapshot.Percent, 0)
+        if ($percent -lt 0) { $percent = 0 }
+        if ($percent -gt 100) { $percent = 100 }
+        $percentKnown = [bool]$snapshot.PercentKnown
+        $silent = [int]$snapshot.SilentSeconds
+        $lastTool = [string]$snapshot.LastTool
+        $message = [string]$snapshot.Message
+        $callsWithoutPercent = [int]$snapshot.CallsWithoutPercent
+        $sourceSid = [string]$snapshot.SessionId
+    }
+
+    # Offener Studio-Befehl: zusaetzliche Information, kein Ersatz.
+    $commandText = ''
     if ($null -ne $openCmd) {
         $status = [string]$openCmd.status
         $ageBase = [int64]$openCmd.startedAt
         if ($ageBase -le 0) { $ageBase = [int64]$openCmd.queuedAt }
         $age = 0
         try { if ($ageBase -gt 0) { $age = [int][Math]::Max(0, ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - $ageBase)) } } catch {}
-        $color = '#FF4C9BFF'
-        if ($status -eq 'cancel_requested') { $color = '#FFFFC95E' }
-        elseif ($status -eq 'delivered' -or $status -eq 'received') { $color = '#FF8A93A6' }
-        $label = 'Befehl: ' + [string]$openCmd.tool + ' - ' + $status + ' seit ' + [string]$age + ' s'
-        if ($show) { $Row.ProgressPanel.Visibility = 'Visible' } else { $Row.ProgressPanel.Visibility = 'Collapsed' }
-        $Row.ProgressState = 'command'
-        Set-Text $Row.ProgressText $label
-        $Row.ProgressText.Visibility = 'Visible'
-        $Row.ProgressText.Foreground = Get-Brush $color
-        $Row.ProgressBar.Visibility = 'Collapsed'
-        Set-Text $Row.ProgressPercent ''
-        $Row.ProgressPercent.Visibility = 'Collapsed'
+        $commandText = ('Studio-Befehl: ' + [string]$openCmd.tool + ' - ' + $status + ' seit ' + [string]$age + ' s. Abbrechen ueber das Menue der Place-Zeile (COMMAND_CANCELLED, gibt die Studio-Queue sofort frei).')
         try {
             if ($Row.CommandCancelButton) {
                 $Row.CommandCancelButton.Tag = $sessionId
-                $Row.CommandCancelButton.Visibility = 'Visible'
+                # Der Knopf bleibt unsichtbar: Er ersetzt seit 7.2.0 nicht mehr
+                # die Fortschrittsanzeige (D7). Die Funktion liegt im Menue.
+                $Row.CommandCancelButton.Visibility = 'Collapsed'
             }
         } catch {}
-        $tip = 'commandId=' + [string]$openCmd.commandId + ' tool=' + [string]$openCmd.tool + ' status=' + $status + ' sichtbar seit ' + [string]$age + ' s. Abbrechen loest den Befehl sauber auf (COMMAND_CANCELLED) und gibt die Studio-Queue sofort wieder frei.'
-        $Row.ProgressText.ToolTip = $tip
-        $Row.ProgressPanel.ToolTip = $tip
-        return
+        Add-UiChannelCount 'ProgressNotDisplaced' 1
     }
-    # AUS: Die Bridge zeigt nichts, speichert aber alles weiter - beim
-    # Wiedereinschalten ist der Verlauf vollstaendig da.
-    $state = [string]$snapshot.State
+
     $color = '#FF4C9BFF'      # arbeitet = blau
     $label = 'Arena arbeitet gerade...'
     if ($state -eq 'done') { $color = '#FF38D16C'; $label = 'Fertig!' }
     elseif ($state -eq 'waiting') { $color = '#FF8A93A6'; $label = 'Seit über einer Minute kein Bridge Aufruf mehr' }
     elseif ($state -eq 'error') { $color = '#FFE11D48'; $label = 'Fehler' }
-    $percent = [math]::Round([double]$snapshot.Percent, 0)
-    if ($percent -lt 0) { $percent = 0 }
-    if ($percent -gt 100) { $percent = 100 }
+    # Version 7.2.0: Die Nachricht der KI wird SICHTBAR (sie stand bis hier nur
+    # im Tooltip, deshalb sah die Zeile aus, als ob nichts passiert).
+    if ($state -ne 'done' -and $state -ne 'waiting' -and -not [string]::IsNullOrWhiteSpace($message)) { $label = $message }
 
     # 100% bleibt nach report_done exakt 60 s sichtbar, danach verschwindet
     # nur die Zeilenanzeige; der Verlauf bleibt fuer Diagnose/Prompt erhalten.
@@ -23886,20 +24107,42 @@ function Update-PlaceProgressVisual {
 
     $Row.ProgressPanel.Visibility = 'Visible'
     $Row.ProgressState = $state
-    Set-Text $Row.ProgressText $label
-    $Row.ProgressText.Visibility = 'Collapsed'
-    $Row.ProgressText.Foreground = Get-Brush $color
-    $Row.ProgressBar.Visibility = 'Visible'
-    $Row.ProgressPercent.Visibility = 'Visible'
-    $Row.ProgressBar.Value = $percent
-    $Row.ProgressBar.Foreground = Get-Brush $color
-    $Row.ProgressPercent.Text = ($percent.ToString() + ' % • ' + $label)
-    $Row.ProgressPercent.Foreground = Get-Brush $color
-    try { if ($Row.CommandCancelButton) { $Row.CommandCancelButton.Visibility = 'Collapsed' } } catch {}
     $tooltip = Format-ProgressMessage $snapshot
-    $Row.ProgressBar.ToolTip = $tooltip
+    if (-not [string]::IsNullOrWhiteSpace($commandText)) { $tooltip = $tooltip + [Environment]::NewLine + $commandText }
+
+    if ($percentKnown -or $state -eq 'done') {
+        # ECHTE Zahl gemeldet: Balken + Prozent wie gewohnt.
+        Set-Text $Row.ProgressText $label
+        $Row.ProgressText.Visibility = 'Collapsed'
+        $Row.ProgressText.Foreground = Get-Brush $color
+        $Row.ProgressBar.Visibility = 'Visible'
+        $Row.ProgressPercent.Visibility = 'Visible'
+        $Row.ProgressBar.Value = $percent
+        $Row.ProgressBar.Foreground = Get-Brush $color
+        $Row.ProgressPercent.Text = ($percent.ToString() + ' % • ' + $label)
+        $Row.ProgressPercent.Foreground = Get-Brush $color
+        Add-UiChannelCount 'ProgressPaintedPercent' 1
+        Write-UiStationThrottled 'PROGRESS' ($sessionId.Substring(0, [Math]::Min(8, $sessionId.Length))) 'UI_PAINTED' @{ mode = 'percent'; percent = $percent; state = $state; tool = $lastTool; sidSource = $sourceSid; command = $(if ($null -ne $openCmd) { [string]$openCmd.tool + ':' + [string]$openCmd.status } else { '-' }) } 5
+    } else {
+        # KEINE Zahl gemeldet (D5/D6): kein Balken und keine erfundene 0 %,
+        # sondern Klartext darueber, was messbar passiert.
+        $textLine = $label
+        if (-not [string]::IsNullOrWhiteSpace($lastTool)) { $textLine = $textLine + ' - ' + $lastTool }
+        if ($silent -gt 0) { $textLine = $textLine + ' - vor ' + [string]$silent + ' s' }
+        Set-Text $Row.ProgressText $textLine
+        $Row.ProgressText.Visibility = 'Visible'
+        $Row.ProgressText.Foreground = Get-Brush $color
+        $Row.ProgressBar.Visibility = 'Collapsed'
+        $Row.ProgressPercent.Visibility = 'Collapsed'
+        if ($null -ne $snapshot) { $tooltip = $tooltip + [Environment]::NewLine + ('Kein Prozent gemeldet (' + [string]$callsWithoutPercent + ' Aufruf(e) ohne Zahl) - deshalb zeigt die Zeile keinen Balken und keine erfundene 0 %. Arena bekommt in jeder Antwort PERCENT_MISSING.') }
+        Add-UiChannelCount 'ProgressPaintedNoPercent' 1
+        Write-UiStationThrottled 'PROGRESS' ($sessionId.Substring(0, [Math]::Min(8, $sessionId.Length))) 'UI_PAINTED' @{ mode = 'text_no_percent'; percent = '-'; state = $state; tool = $lastTool; callsWithoutPercent = $callsWithoutPercent; sidSource = $sourceSid } 5
+    }
+    try { if ($Row.CommandCancelButton) { if ($null -eq $openCmd) { $Row.CommandCancelButton.Visibility = 'Collapsed' } } } catch {}
     $Row.ProgressText.ToolTip = $tooltip
     $Row.ProgressPanel.ToolTip = $tooltip
+    try { $Row.ProgressBar.ToolTip = $tooltip } catch {}
+    try { $Row.ProgressPercent.ToolTip = $tooltip } catch {}
 }
 
 function Get-ProgressDiagnoseLines {
@@ -23912,7 +24155,14 @@ function Get-ProgressDiagnoseLines {
             $name = ''
             try { $name = [string]$script:PlaceNames[[string]$pair.Key] } catch {}
             if ([string]::IsNullOrWhiteSpace($name)) { $name = [string]$pair.Key }
+            $knownText = 'nein'
+            try { if ($state.PSObject.Properties['percentKnown'] -and [bool]$state.percentKnown) { $knownText = 'ja' } } catch {}
+            $withPercent = 0
+            try { if ($state.PSObject.Properties['callsWithPercent']) { $withPercent = [int]$state.callsWithPercent } } catch {}
+            $lastTool = ''
+            try { if ($state.PSObject.Properties['lastTool']) { $lastTool = [string]$state.lastTool } } catch {}
             $lines.Add(('  {0}: {1} % / {2} - "{3}"' -f $name, [string]$state.percent, [string]$state.state, [string]$state.message))
+            $lines.Add(('      Prozent von Arena gemeldet: {0} (Aufrufe mit Zahl: {1}, letztes Werkzeug: {2})' -f $knownText, [string]$withPercent, $(if ($lastTool) { $lastTool } else { '-' })))
             foreach ($h in @($state.history)) { $lines.Add('      ' + [string]$h) }
         }
     } catch {}
@@ -23920,6 +24170,112 @@ function Get-ProgressDiagnoseLines {
 }
 
 
+
+function Get-ChannelStations {
+    # Stationen eines Bereichs aus dem Ringpuffer (neueste zuerst, begrenzt).
+    param([string]$Area, [int]$Max = 40)
+    $lines = New-Object System.Collections.Generic.List[string]
+    try {
+        $all = $script:Shared.FlowTrace.ToArray()
+        for ($i = $all.Length - 1; $i -ge 0; $i--) {
+            $line = [string]$all[$i]
+            if ($line -notmatch (' ' + [regex]::Escape(([string]$Area).ToUpperInvariant()) + ' \[')) { continue }
+            $lines.Add($line)
+            if ($lines.Count -ge $Max) { break }
+        }
+    } catch {}
+    return $lines
+}
+
+function Get-ChannelCountText {
+    param([string]$Name)
+    try {
+        $channel = $script:Shared.Channel
+        if ($null -ne $channel -and $channel.ContainsKey($Name)) { return [string]$channel[$Name] }
+    } catch {}
+    return '-'
+}
+
+function Write-ChannelDiagnoseFile {
+    # Version 7.2.0: kleine, vollstaendig weitergebbare Kurzberichte fuer die
+    # beiden Kanaele, die bis 7.1.5 nicht messbar waren (Vorbild:
+    # preview-diagnose.txt aus 6.0.4). Ohne -Force hoechstens alle 10 Sekunden.
+    param([switch]$Force)
+    try {
+        $now = Get-Date
+        if (-not $Force -and ($now - $script:ChannelDiagLastWrite).TotalSeconds -lt 10) { return }
+        $script:ChannelDiagLastWrite = $now
+        $identity = ''
+        try { $identity = [string]$script:PreviewDiagIdentity } catch {}
+        $notifyOn = $false
+        try { $notifyOn = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch {}
+        $progressOn = $true
+        try { $progressOn = [bool]$script:Shared.BridgeSettings.progressInPlaceList } catch {}
+
+        $progressPath = Join-Path $script:AppDataRoot 'progress-diagnose.txt'
+        $sb = New-Object System.Text.StringBuilder
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.2.0)')
+        [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
+        [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
+        [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
+        [void]$sb.AppendLine(('Schalter "Fortschritt in der Place-Liste anzeigen": {0}' -f $(if ($progressOn) { 'AN' } else { 'AUS' })))
+        [void]$sb.AppendLine('')
+        [void]$sb.AppendLine('Zaehler (laufen immer mit):')
+        [void]$sb.AppendLine(('  Arena-Aufrufe gesamt:            {0}' -f (Get-ChannelCountText 'ProgressCalls')))
+        [void]$sb.AppendLine(('  Aufrufe MIT Prozentzahl:         {0}' -f (Get-ChannelCountText 'ProgressWithPercent')))
+        [void]$sb.AppendLine(('  Aufrufe OHNE Prozentzahl:        {0}' -f (Get-ChannelCountText 'ProgressMissingPercent')))
+        [void]$sb.AppendLine(('  Zeile mit Balken gezeichnet:     {0}' -f (Get-ChannelCountText 'ProgressPaintedPercent')))
+        [void]$sb.AppendLine(('  Zeile als Text gezeichnet:       {0}' -f (Get-ChannelCountText 'ProgressPaintedNoPercent')))
+        [void]$sb.AppendLine(('  Fortschritt nicht verdraengt:    {0}' -f (Get-ChannelCountText 'ProgressNotDisplaced')))
+        [void]$sb.AppendLine('')
+        [void]$sb.AppendLine('Zustand je Sitzung:')
+        $progressLines = Get-ProgressDiagnoseLines
+        if ($progressLines.Count -gt 0) {
+            foreach ($diagLine in $progressLines) { [void]$sb.AppendLine([string]$diagLine) }
+        } else {
+            [void]$sb.AppendLine('  (kein Fortschrittszustand gespeichert)')
+        }
+        [void]$sb.AppendLine('')
+        [void]$sb.AppendLine('Letzte PROGRESS-Stationen (neueste zuerst):')
+        $stations = Get-ChannelStations 'PROGRESS' 40
+        if ($stations.Count -gt 0) {
+            foreach ($station in $stations) { [void]$sb.AppendLine('  ' + [string]$station) }
+        } else {
+            [void]$sb.AppendLine('  (noch keine PROGRESS-Station protokolliert)')
+        }
+        [void]$sb.AppendLine('')
+        [void]$sb.AppendLine(('Vollstaendiges Protokoll: {0}' -f [string]$script:RuntimeLog))
+        [System.IO.File]::WriteAllText($progressPath, $sb.ToString(), (New-Object System.Text.UTF8Encoding($true)))
+
+        $notifyPath = Join-Path $script:AppDataRoot 'notify-diagnose.txt'
+        $sb2 = New-Object System.Text.StringBuilder
+        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.2.0)')
+        [void]$sb2.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
+        [void]$sb2.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
+        [void]$sb2.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
+        [void]$sb2.AppendLine(('Schalter "Benachrichtigung, wenn Arena fertig ist": {0}' -f $(if ($notifyOn) { 'AN' } else { 'AUS - report_done antwortet NOTIFICATIONS_DISABLED und es erscheint keine Meldung' })))
+        [void]$sb2.AppendLine('')
+        [void]$sb2.AppendLine('Zaehler (laufen immer mit):')
+        [void]$sb2.AppendLine(('  Meldungen eingereiht:            {0}' -f (Get-ChannelCountText 'NotifyEnqueued')))
+        [void]$sb2.AppendLine(('  Meldungen angezeigt:             {0}' -f (Get-ChannelCountText 'NotifyShown')))
+        [void]$sb2.AppendLine(('  von Windows unterdrueckt:        {0}' -f (Get-ChannelCountText 'NotifySuppressed')))
+        [void]$sb2.AppendLine(('  Aufruf fehlgeschlagen:           {0}' -f (Get-ChannelCountText 'NotifyFailed')))
+        [void]$sb2.AppendLine(('  Plattform-Check blockiert:       {0}' -f (Get-ChannelCountText 'NotifyPlatformBlocked')))
+        [void]$sb2.AppendLine(('  letztes Urteil:                  {0}' -f (Get-ChannelCountText 'NotifyLastVerdict')))
+        [void]$sb2.AppendLine(('  letzter Grund:                   {0}' -f (Get-ChannelCountText 'NotifyLastReason')))
+        [void]$sb2.AppendLine('')
+        [void]$sb2.AppendLine('Letzte NOTIFY-Stationen (neueste zuerst):')
+        $notifyStations = Get-ChannelStations 'NOTIFY' 40
+        if ($notifyStations.Count -gt 0) {
+            foreach ($station in $notifyStations) { [void]$sb2.AppendLine('  ' + [string]$station) }
+        } else {
+            [void]$sb2.AppendLine('  (noch keine NOTIFY-Station protokolliert)')
+        }
+        [void]$sb2.AppendLine('')
+        [void]$sb2.AppendLine(('Vollstaendiges Protokoll: {0}' -f [string]$script:RuntimeLog))
+        [System.IO.File]::WriteAllText($notifyPath, $sb2.ToString(), (New-Object System.Text.UTF8Encoding($true)))
+    } catch {}
+}
 
 # ----------------------------------------------------------------------------
 # Version 7.0.0: UEBERGABE ALS KARTE IM BRIDGE-FENSTER
@@ -26606,6 +26962,7 @@ function Refresh-Ui {
         }
     }
 
+    Write-ChannelDiagnoseFile
     Update-PlacePreviewCaptures
     $activeStudios = @(Get-ActiveStudios)
     Update-HandoffCard
