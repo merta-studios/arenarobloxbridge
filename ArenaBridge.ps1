@@ -1811,6 +1811,8 @@ $script:NotifyRecords = New-Object System.Collections.Generic.List[object]
 $script:NotifySeenWindow = $null
 # Version 7.2.0 (D8): Fenster "Nachricht an Arena senden".
 $script:UserMessageWindow = $null
+# Version 7.2.0 (D3): Fenster "Arena fragt" (Entscheidungsbaum am Mauszeiger).
+$script:AskWindow = $null
 $script:PreviewFlowCounter = [long]0
 $script:PreviewFlowContexts = @{}
 $script:PreviewHandleInfos = @{}
@@ -13199,6 +13201,526 @@ $script:BridgeHandlerScript = {
         } catch {}
     }
 
+    # ==================================================================
+    # Version 7.2.0 (D3): ask_user mit ENTSCHEIDUNGSBAUM.
+    # Der ganze Baum kommt in EINER Anfrage. Bedingungen sind erlaubt
+    # (when auf eine FRUEHERE Frage), deshalb darf eine Frage von der Antwort
+    # einer anderen abhaengen - auch mehrere Ebenen tief und mit mehreren
+    # Zweigen. Das Fenster beim Nutzer verzweigt mit; die Antwort enthaelt
+    # answers, path (wirklich gestellte Fragen) und notShown (uebersprungene).
+    #
+    # Wartezeit: Der harte HTTP-Deckel liegt bei 55 s (max. 85 s). ask_user
+    # blockiert deshalb hoechstens 50 s und ist WIEDERAUFNEHMBAR: kommt keine
+    # Antwort, liefert es { state='waiting', askId, nextCall } zurueck, und die
+    # KI ruft spaeter mit resume=true erneut auf. Antworten gehen nie verloren:
+    # sie liegen im gemeinsamen Zustand und kommen notfalls als
+    # _bridge.userAnswers mit der naechsten Antwort.
+    # ==================================================================
+    function Get-AskOptionList {
+        param($Question)
+        $options = New-Object System.Collections.Generic.List[object]
+        try {
+            if ($null -ne $Question -and $Question.PSObject.Properties['options']) {
+                foreach ($option in $Question.options) { $options.Add($option) }
+            }
+        } catch {}
+        return $options
+    }
+
+    function Test-AskTree {
+        # Prueft den Baum VOR dem ersten Fenster. Ein ungueltiger Baum darf
+        # niemals eine halbe Frage beim Nutzer zeigen.
+        param($ToolArgs)
+        $maxQuestions = 12
+        $maxOptions = 6
+        $maxChars = 400
+        $rawQuestions = $null
+        try { if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['questions']) { $rawQuestions = @($ToolArgs.questions) } } catch {}
+        if ($null -eq $rawQuestions -or $rawQuestions.Count -eq 0) {
+            return @{ ok = $false; code = 'BAD_ARGS'; error = 'questions is required and must contain 1..12 questions.'; hint = 'Each question: { id, text, options: [ { id, label } ], allowCustomResponse, required, multi, when: [ { questionId, anyOf: [..] } ] }.' }
+        }
+        if ($rawQuestions.Count -gt $maxQuestions) {
+            return @{ ok = $false; code = 'ASK_TOO_MANY_QUESTIONS'; error = ('Too many questions: ' + [string]$rawQuestions.Count + ' (max ' + [string]$maxQuestions + ').'); max = $maxQuestions; actual = $rawQuestions.Count; hint = 'Split the request or ask only what you really need to continue.' }
+        }
+        $questions = New-Object System.Collections.Generic.List[object]
+        $seen = New-Object System.Collections.Generic.HashSet[string]
+        $optionMap = @{}
+        $index = 0
+        foreach ($raw in $rawQuestions) {
+            $qid = ''
+            $qtext = ''
+            try { $qid = ([string]$raw.id).Trim() } catch {}
+            try { $qtext = ([string]$raw.text).Trim() } catch {}
+            if ([string]::IsNullOrWhiteSpace($qid)) {
+                return @{ ok = $false; code = 'BAD_ARGS'; error = ('Question ' + [string]($index + 1) + ' has no id.'); hint = 'Give every question a short unique id (for example "style"), so the answer can be matched.' }
+            }
+            if ($seen.Contains($qid)) {
+                return @{ ok = $false; code = 'ASK_GRAPH_INVALID'; error = ('Duplicate question id "' + $qid + '".'); duplicateId = $qid; hint = 'Question ids must be unique.' }
+            }
+            if ([string]::IsNullOrWhiteSpace($qtext)) {
+                return @{ ok = $false; code = 'BAD_ARGS'; error = ('Question "' + $qid + '" has no text.'); hint = 'Write the question as the user should read it.' }
+            }
+            if ($qtext.Length -gt $maxChars) {
+                return @{ ok = $false; code = 'ASK_TOO_LONG'; error = ('Question "' + $qid + '" is too long (' + [string]$qtext.Length + ' characters, max ' + [string]$maxChars + ').'); max = $maxChars; actual = $qtext.Length }
+            }
+            $options = Get-AskOptionList $raw
+            if ($options.Count -lt 2) {
+                return @{ ok = $false; code = 'ASK_GRAPH_INVALID'; error = ('Question "' + $qid + '" needs at least 2 options.'); questionId = $qid; hint = 'Give the user real choices (labels, not numbers). Use confirm_action for a plain yes/no.' }
+            }
+            if ($options.Count -gt $maxOptions) {
+                return @{ ok = $false; code = 'ASK_TOO_MANY_QUESTIONS'; error = ('Question "' + $qid + '" has ' + [string]$options.Count + ' options (max ' + [string]$maxOptions + ').'); max = $maxOptions; actual = $options.Count; questionId = $qid }
+            }
+            $optionIds = New-Object System.Collections.Generic.List[string]
+            $optionViews = New-Object System.Collections.Generic.List[object]
+            foreach ($option in $options) {
+                $oid = ''
+                $olabel = ''
+                try { $oid = ([string]$option.id).Trim() } catch {}
+                try { $olabel = ([string]$option.label).Trim() } catch {}
+                if ([string]::IsNullOrWhiteSpace($oid) -or [string]::IsNullOrWhiteSpace($olabel)) {
+                    return @{ ok = $false; code = 'ASK_GRAPH_INVALID'; error = ('Question "' + $qid + '" has an option without id or label.'); questionId = $qid }
+                }
+                if ($optionIds.Contains($oid)) {
+                    return @{ ok = $false; code = 'ASK_GRAPH_INVALID'; error = ('Question "' + $qid + '" uses the option id "' + $oid + '" twice.'); questionId = $qid; duplicateId = $oid }
+                }
+                if ($olabel.Length -gt $maxChars) {
+                    return @{ ok = $false; code = 'ASK_TOO_LONG'; error = ('Option "' + $oid + '" is too long (max ' + [string]$maxChars + ' characters).'); max = $maxChars; actual = $olabel.Length }
+                }
+                $optionIds.Add($oid)
+                $optionView = @{ id = $oid; label = $olabel }
+                try { if ($option.PSObject.Properties['description'] -and -not [string]::IsNullOrWhiteSpace([string]$option.description)) { $optionView.description = [string]$option.description } } catch {}
+                $optionViews.Add($optionView)
+            }
+            $whenViews = New-Object System.Collections.Generic.List[object]
+            $whenRaw = $null
+            try { if ($raw.PSObject.Properties['when']) { $whenRaw = @($raw.when) } } catch {}
+            if ($null -ne $whenRaw) {
+                foreach ($condition in $whenRaw) {
+                    $refId = ''
+                    try { $refId = ([string]$condition.questionId).Trim() } catch {}
+                    if ([string]::IsNullOrWhiteSpace($refId)) {
+                        return @{ ok = $false; code = 'ASK_GRAPH_INVALID'; error = ('Question "' + $qid + '" has a when entry without questionId.'); questionId = $qid; hint = 'when entries reference an EARLIER question id.' }
+                    }
+                    if ($refId -eq $qid) {
+                        return @{ ok = $false; code = 'ASK_CYCLE'; error = ('Question "' + $qid + '" depends on itself.'); questionId = $qid; cycleWith = $refId; hint = 'A question may only depend on a question that comes BEFORE it in the payload.' }
+                    }
+                    if (-not $seen.Contains($refId)) {
+                        if ($optionMap.ContainsKey($refId)) {
+                            return @{ ok = $false; code = 'ASK_CYCLE'; error = ('Question "' + $qid + '" depends on the LATER question "' + $refId + '".'); questionId = $qid; cycleWith = $refId; hint = 'Order matters: a question may only depend on earlier questions. Reorder the payload.' }
+                        }
+                        return @{ ok = $false; code = 'ASK_GRAPH_INVALID'; error = ('Question "' + $qid + '" depends on the unknown question "' + $refId + '".'); questionId = $qid; unknownQuestionId = $refId; knownQuestionIds = @($seen | Sort-Object) }
+                    }
+                    $conditionView = @{ questionId = $refId }
+                    foreach ($key in @('anyOf', 'allOf')) {
+                        $values = New-Object System.Collections.Generic.List[string]
+                        try {
+                            if ($condition.PSObject.Properties[$key]) { foreach ($value in @($condition.$key)) { $values.Add([string]$value) } }
+                        } catch {}
+                        if ($values.Count -gt 0) { $conditionView[$key] = @($values.ToArray()) }
+                    }
+                    try { if ($condition.PSObject.Properties['custom'] -and $condition.custom -eq $true) { $conditionView.custom = $true } } catch {}
+                    $whenViews.Add($conditionView)
+                }
+            }
+            $questionView = @{
+                id = $qid
+                text = $qtext
+                index = $index
+                options = @($optionViews.ToArray())
+                allowCustomResponse = $false
+                required = $true
+                multi = $false
+                when = @($whenViews.ToArray())
+            }
+            try { if ($raw.PSObject.Properties['allowCustomResponse'] -and $raw.allowCustomResponse -eq $true) { $questionView.allowCustomResponse = $true } } catch {}
+            try { if ($raw.PSObject.Properties['required'] -and $raw.required -eq $false) { $questionView.required = $false } } catch {}
+            try { if ($raw.PSObject.Properties['multi'] -and $raw.multi -eq $true) { $questionView.multi = $true } } catch {}
+            $questions.Add($questionView)
+            [void]$seen.Add($qid)
+            $optionMap[$qid] = $optionIds
+            $index = $index + 1
+        }
+        # Warnungen: eine Bedingung, die auf eine Option zeigt, die es nicht
+        # gibt, macht die Frage unerreichbar - das ist erlaubt, wird aber
+        # gesagt (ASK_UNREACHABLE), damit die KI es korrigieren kann.
+        $unreachable = New-Object System.Collections.Generic.List[string]
+        foreach ($question in $questions) {
+            foreach ($condition in @($question.when)) {
+                $refId = [string]$condition.questionId
+                $validIds = $null
+                if ($optionMap.ContainsKey($refId)) { $validIds = $optionMap[$refId] }
+                if ($null -eq $validIds) { continue }
+                foreach ($key in @('anyOf', 'allOf')) {
+                    if ($null -eq $condition[$key]) { continue }
+                    foreach ($value in @($condition[$key])) {
+                        if (-not $validIds.Contains([string]$value)) {
+                            $unreachable.Add(('Frage "' + [string]$question.id + '" wartet auf die Option "' + [string]$value + '", die es in "' + $refId + '" nicht gibt.'))
+                        }
+                    }
+                }
+            }
+        }
+        return @{ ok = $true; questions = $questions; warnings = $unreachable }
+    }
+
+    function Read-AskState {
+        param([string]$AskId)
+        $json = ''
+        if (-not $Shared.AskRequests.TryGetValue([string]$AskId, [ref]$json)) { return $null }
+        if ([string]::IsNullOrWhiteSpace($json)) { return $null }
+        try { return ($json | ConvertFrom-Json) } catch { return $null }
+    }
+
+    function Save-AskState {
+        param([string]$AskId, $State)
+        try { $Shared.AskRequests[[string]$AskId] = (To-Json $State 14) } catch {}
+    }
+
+    function Ensure-AskSignal {
+        param([string]$AskId)
+        $existing = $null
+        try {
+            if ($Shared.AskSignals.TryGetValue([string]$AskId, [ref]$existing) -and $null -ne $existing) { return $existing }
+        } catch {}
+        $created = [System.Threading.ManualResetEvent]::new($false)
+        try { $existing = $Shared.AskSignals.GetOrAdd([string]$AskId, $created) } catch { $existing = $created }
+        if ($null -eq $existing) { $existing = $created }
+        if (-not [object]::ReferenceEquals($existing, $created)) { try { $created.Dispose() } catch {} }
+        return $existing
+    }
+
+    function Get-AskView {
+        # Nur das, was der Nutzer sehen soll - ohne Server-Interna.
+        param($State)
+        $view = $null
+        try {
+            $view = @{
+                askId = [string]$State.askId
+                kind = [string]$State.kind
+                title = [string]$State.title
+                message = [string]$State.message
+                questions = $State.questions
+                createdAt = [int64]$State.createdAt
+                expiresAt = [int64]$State.expiresAt
+                state = [string]$State.state
+                secondsLeft = [int][Math]::Max(0, ([int64]$State.expiresAt - (Get-UnixSeconds)))
+            }
+        } catch {}
+        return $view
+    }
+
+    function Get-AskSummary {
+        param($State)
+        $parts = New-Object System.Collections.Generic.List[string]
+        try {
+            foreach ($question in @($State.questions)) {
+                $qid = [string]$question.id
+                $answer = $null
+                try { if ($null -ne $State.answers -and $State.answers.PSObject.Properties[$qid]) { $answer = $State.answers.$qid } } catch {}
+                if ($null -eq $answer) { continue }
+                $labels = New-Object System.Collections.Generic.List[string]
+                try { foreach ($label in @($answer.labels)) { $labels.Add([string]$label) } } catch {}
+                $text = [string]$question.text
+                if ($text.Length -gt 80) { $text = $text.Substring(0, 79) + '...' }
+                $value = ''
+                if ($labels.Count -gt 0) { $value = ($labels.ToArray() -join ', ') }
+                $custom = ''
+                try { $custom = [string]$answer.custom } catch {}
+                if (-not [string]::IsNullOrWhiteSpace($custom)) {
+                    if ($value) { $value = $value + ' (eigene Antwort: ' + $custom + ')' } else { $value = $custom }
+                }
+                if ([string]::IsNullOrWhiteSpace($value)) { $value = '(keine Angabe)' }
+                $parts.Add($text + ' -> ' + $value)
+            }
+        } catch {}
+        return ($parts.ToArray() -join ' | ')
+    }
+
+    function Get-AskResult {
+        param([string]$AskId, $State)
+        $answers = @{}
+        try { if ($null -ne $State.answers) { $answers = $State.answers } } catch {}
+        return @{
+            ok = $true
+            result = @{
+                state = [string]$State.state
+                askId = [string]$AskId
+                kind = [string]$State.kind
+                answeredAt = [int64]$State.answeredAt
+                answers = $answers
+                path = @($State.path)
+                notShown = @($State.notShown)
+                summary = (Get-AskSummary $State)
+                note = 'path lists the questions the user actually saw; notShown lists the questions that were skipped because their condition did not match. Act on the answers exactly as given.'
+            }
+        }
+    }
+
+    function Get-AskExpirySeconds {
+        param($ToolArgs, [int]$Default = 180)
+        $seconds = $Default
+        try { if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['expiresInSeconds']) { $seconds = [int]$ToolArgs.expiresInSeconds } } catch {}
+        if ($seconds -lt 30) { $seconds = 30 }
+        if ($seconds -gt 1800) { $seconds = 1800 }
+        return $seconds
+    }
+
+    function Get-AskWaitSeconds {
+        param($ToolArgs, [int]$Default = 0)
+        $seconds = $Default
+        try { if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['waitSeconds']) { $seconds = [int]$ToolArgs.waitSeconds } } catch {}
+        if ($seconds -lt 0) { $seconds = 0 }
+        if ($seconds -gt 50) { $seconds = 50 }
+        return $seconds
+    }
+
+    function New-AskRequest {
+        param([string]$SessionId, $ToolArgs, [string]$Kind = 'ask')
+        $tree = Test-AskTree $ToolArgs
+        if (-not $tree.ok) { return $tree }
+        $title = ''
+        try { if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['title']) { $title = ([string]$ToolArgs.title).Trim() } } catch {}
+        if ([string]::IsNullOrWhiteSpace($title)) { $title = 'Arena braucht eine Entscheidung' }
+        if ($title.Length -gt 90) { $title = $title.Substring(0, 89) + '...' }
+        $message = ''
+        try { if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['message']) { $message = ([string]$ToolArgs.message).Trim() } } catch {}
+        if ($message.Length -gt 600) { $message = $message.Substring(0, 599) + '...' }
+        $askId = 'ask_' + ([guid]::NewGuid().ToString('N').Substring(0, 12))
+        $now = Get-UnixSeconds
+        $expiresIn = Get-AskExpirySeconds $ToolArgs
+        $entry = $SessionId
+        $place = ''
+        try {
+            $entryInfo = Get-SessionEntry $SessionId
+            if ($entryInfo) { $place = [string]$entryInfo.placeName }
+        } catch {}
+        $state = [pscustomobject]@{
+            askId = $askId
+            sessionId = [string]$SessionId
+            kind = [string]$Kind
+            title = $title
+            message = $message
+            place = $place
+            questions = @($tree.questions.ToArray())
+            state = 'waiting'
+            createdAt = $now
+            expiresAt = ($now + $expiresIn)
+            answeredAt = 0
+            answers = $null
+            path = @()
+            notShown = @()
+            deliveredAt = 0
+            lastCallAt = $now
+        }
+        Save-AskState $askId $state
+        [void](Ensure-AskSignal $askId)
+        Add-ChannelCount 'AskOpened' 1
+        Write-FlowStation 'ASK' $askId 'OPENED' @{ sid = $SessionId; kind = $Kind; questions = $tree.questions.Count; expiresInSeconds = $expiresIn; title = $title }
+        foreach ($warning in @($tree.warnings)) { Write-FlowStation 'ASK' $askId 'UNREACHABLE' @{ detail = [string]$warning } }
+        Add-BridgeEvent $SessionId 'ask_opened' ('Arena fragt: ' + $title) @{ askId = $askId; questions = $tree.questions.Count }
+        $result = @{
+            ok = $true
+            result = (Get-AskView $state)
+        }
+        $result.result.nextCall = 'ask_user { askId: "' + $askId + '", resume: true, waitSeconds: 45 }'
+        $result.result.hint = 'The question window is open at the user''s mouse cursor. It stays open for ' + [string]$expiresIn + ' seconds. Do NOT guess: call ask_user again with askId and resume=true to wait for the answers (max 50 seconds per call), or continue with other work and resume later. Answers also arrive automatically as _bridge.userAnswers.'
+        if ($tree.warnings.Count -gt 0) { $result.result.askWarning = 'ASK_UNREACHABLE'; $result.result.warnings = @($tree.warnings) }
+        return $result
+    }
+
+    function Wait-AskAnswer {
+        param([string]$AskId, [int]$MaxSeconds)
+        $signal = Ensure-AskSignal $AskId
+        $started = [System.Diagnostics.Stopwatch]::StartNew()
+        $reason = 'timeout'
+        $state = Read-AskState $AskId
+        if ($null -ne $state -and [string]$state.state -eq 'answered') { return $state }
+        if ($MaxSeconds -lt 1) { return $state }
+        while ($started.Elapsed.TotalSeconds -lt $MaxSeconds) {
+            $remaining = [int][Math]::Ceiling($MaxSeconds - $started.Elapsed.TotalSeconds)
+            $slice = 250
+            if (($remaining * 1000) -lt $slice) { $slice = [Math]::Max(20, ($remaining * 1000)) }
+            try { [void]$signal.WaitOne($slice) } catch { break }
+            $state = Read-AskState $AskId
+            if ($null -eq $state) { break }
+            if ([string]$state.state -eq 'answered') { $reason = 'answered'; break }
+            if ([string]$state.state -eq 'expired') { $reason = 'expired'; break }
+            if ((Get-UnixSeconds) -gt [int64]$state.expiresAt) { $reason = 'expired'; break }
+        }
+        try { [void]$signal.Reset() } catch {}
+        $state = Read-AskState $AskId
+        if ($null -eq $state) { return $null }
+        if ([string]$state.state -eq 'waiting' -and (Get-UnixSeconds) -gt [int64]$state.expiresAt) {
+            $state.state = 'expired'
+            Save-AskState $AskId $state
+            Add-ChannelCount 'AskExpired' 1
+            Write-FlowStation 'ASK' $AskId 'EXPIRED' @{ sid = [string]$state.sessionId; waitedSeconds = [int][Math]::Round($started.Elapsed.TotalSeconds, 1) }
+        }
+        Write-FlowStation 'ASK' $AskId 'WAIT_END' @{ reason = $reason; waitedSeconds = [int][Math]::Round($started.Elapsed.TotalSeconds, 1); state = [string]$state.state }
+        return $state
+    }
+
+    function Invoke-AskUser {
+        param([string]$SessionId, $ToolArgs)
+        $resumeId = ''
+        try { if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['askId']) { $resumeId = ([string]$ToolArgs.askId).Trim() } } catch {}
+        $resume = $false
+        try { if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['resume']) { $resume = ($ToolArgs.resume -eq $true) } } catch {}
+        if ([string]::IsNullOrWhiteSpace($resumeId)) {
+            $created = New-AskRequest $SessionId $ToolArgs 'ask'
+            if ($null -eq $created -or -not $created.ok) { return $created }
+            $askId = [string]$created.result.askId
+            $waitSeconds = Get-AskWaitSeconds $ToolArgs 0
+            if ($waitSeconds -le 0) { return $created }
+            $state = Wait-AskAnswer $askId $waitSeconds
+            if ($null -ne $state -and [string]$state.state -eq 'answered') { return (Get-AskResult $askId $state) }
+            if ($null -ne $state -and [string]$state.state -eq 'expired') {
+                return @{ ok = $false; code = 'ASK_EXPIRED'; error = 'The question window expired before the user answered.'; hint = 'Ask again only if you really need it, or continue with your best assumption and say so in your answer.'; askId = $askId }
+            }
+            $waiting = Get-AskView $state
+            $waiting.nextCall = 'ask_user { askId: "' + $askId + '", resume: true, waitSeconds: 45 }'
+            return @{ ok = $true; result = $waiting }
+        }
+        $state = Read-AskState $resumeId
+        if ($null -eq $state) {
+            return @{ ok = $false; code = 'ASK_UNKNOWN'; error = ('No question request with id "' + $resumeId + '".'); hint = 'Use the askId from the previous ask_user answer.' }
+        }
+        if ([string]$state.state -eq 'answered') { return (Get-AskResult $resumeId $state) }
+        if ([string]$state.state -eq 'expired' -or (Get-UnixSeconds) -gt [int64]$state.expiresAt) {
+            if ([string]$state.state -ne 'expired') {
+                $state.state = 'expired'
+                Save-AskState $resumeId $state
+                Add-ChannelCount 'AskExpired' 1
+            }
+            return @{ ok = $false; code = 'ASK_EXPIRED'; error = 'The question window expired before the user answered.'; hint = 'Continue with your best assumption, say clearly what you assumed, and let the user correct you with a message.'; askId = $resumeId }
+        }
+        if (-not $resume) {
+            $view = Get-AskView $state
+            $view.nextCall = 'ask_user { askId: "' + $resumeId + '", resume: true, waitSeconds: 45 }'
+            return @{ ok = $true; result = $view }
+        }
+        $waitSeconds = Get-AskWaitSeconds $ToolArgs 45
+        if ($waitSeconds -le 0) { $waitSeconds = 45 }
+        $waited = Wait-AskAnswer $resumeId $waitSeconds
+        if ($null -ne $waited -and [string]$waited.state -eq 'answered') { return (Get-AskResult $resumeId $waited) }
+        if ($null -ne $waited -and [string]$waited.state -eq 'expired') {
+            return @{ ok = $false; code = 'ASK_EXPIRED'; error = 'The question window expired before the user answered.'; hint = 'Continue with your best assumption and say so.'; askId = $resumeId }
+        }
+        $view = Get-AskView $waited
+        $view.nextCall = 'ask_user { askId: "' + $resumeId + '", resume: true, waitSeconds: 45 }'
+        $view.hint = 'Still no answer. The window is still open. Do useful work you can do without the answer, then resume.'
+        return @{ ok = $true; result = $view }
+    }
+
+    function Invoke-ConfirmAction {
+        param([string]$SessionId, $ToolArgs)
+        $title = ''
+        $message = ''
+        $confirmLabel = 'Ja, mach das'
+        $cancelLabel = 'Nein, nicht'
+        try {
+            if ($null -ne $ToolArgs) {
+                if ($ToolArgs.PSObject.Properties['title']) { $title = ([string]$ToolArgs.title).Trim() }
+                if ($ToolArgs.PSObject.Properties['message']) { $message = ([string]$ToolArgs.message).Trim() }
+                if ($ToolArgs.PSObject.Properties['confirmLabel'] -and -not [string]::IsNullOrWhiteSpace([string]$ToolArgs.confirmLabel)) { $confirmLabel = ([string]$ToolArgs.confirmLabel).Trim() }
+                if ($ToolArgs.PSObject.Properties['cancelLabel'] -and -not [string]::IsNullOrWhiteSpace([string]$ToolArgs.cancelLabel)) { $cancelLabel = ([string]$ToolArgs.cancelLabel).Trim() }
+            }
+        } catch {}
+        if ([string]::IsNullOrWhiteSpace($title)) { $title = 'Soll Arena das wirklich tun?' }
+        $question = [pscustomobject]@{
+            id = 'confirm'
+            text = $(if ([string]::IsNullOrWhiteSpace($message)) { $title } else { $message })
+            options = @(
+                @{ id = 'yes'; label = $confirmLabel; description = 'Arena macht so weiter, wie beschrieben.' },
+                @{ id = 'no'; label = $cancelLabel; description = 'Arena laesst es und fragt nach einer anderen Loesung.' }
+            )
+            allowCustomResponse = $true
+            required = $true
+            multi = $false
+            when = @()
+        }
+        $payload = [pscustomobject]@{
+            title = $title
+            message = $message
+            questions = @($question)
+            expiresInSeconds = $(if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['expiresInSeconds']) { [int]$ToolArgs.expiresInSeconds } else { 120 })
+            waitSeconds = $(if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['waitSeconds']) { [int]$ToolArgs.waitSeconds } else { 0 })
+        }
+        $answer = Invoke-AskUser $SessionId $payload
+        $answer.kind = 'confirm'
+        if ($answer.ContainsKey('result')) {
+            $answer.result.kind = 'confirm'
+            $confirmed = $false
+            $custom = ''
+            try {
+                $yes = $answer.result.answers.confirm
+                if ($null -ne $yes) {
+                    foreach ($optionId in @($yes.optionIds)) { if ([string]$optionId -eq 'yes') { $confirmed = $true } }
+                    $custom = [string]$yes.custom
+                }
+            } catch {}
+            $answer.result.confirmed = $confirmed
+            $answer.result.customResponse = $custom
+            if ([string]$answer.result.state -eq 'answered') {
+                Write-FlowStation 'ASK' ([string]$answer.result.askId) 'CONFIRMED' @{ confirmed = $confirmed; sid = $SessionId }
+            }
+        }
+        return $answer
+    }
+
+    function Get-LateAskAnswers {
+        # Antworten, die der KI noch NICHT gezeigt wurden. Sie gehen als
+        # _bridge.userAnswers mit der naechsten Antwort - eine Antwort darf
+        # niemals verloren gehen, nur weil die KI gerade nicht gewartet hat.
+        param([string]$SessionId, [int]$Max = 4)
+        $items = New-Object System.Collections.Generic.List[object]
+        try {
+            foreach ($pair in $Shared.AskRequests.GetEnumerator()) {
+                if ($items.Count -ge $Max) { break }
+                $state = $null
+                try { $state = ($pair.Value | ConvertFrom-Json) } catch { $state = $null }
+                if ($null -eq $state) { continue }
+                if ([string]$state.sessionId -ne [string]$SessionId) { continue }
+                if ([string]$state.state -ne 'answered') { continue }
+                if ([int64]$state.deliveredAt -gt 0) { continue }
+                $state.deliveredAt = Get-UnixSeconds
+                Save-AskState ([string]$state.askId) $state
+                $items.Add([pscustomobject]@{
+                    askId = [string]$state.askId
+                    kind = [string]$state.kind
+                    title = [string]$state.title
+                    answers = $state.answers
+                    path = @($state.path)
+                    notShown = @($state.notShown)
+                    summary = (Get-AskSummary $state)
+                    answeredAt = [int64]$state.answeredAt
+                })
+                Add-ChannelCount 'AskLateAnswers' 1
+                Write-FlowStation 'ASK' ([string]$state.askId) 'LATE_DELIVERED' @{ sid = $SessionId }
+            }
+        } catch {}
+        return $items
+    }
+
+    function Get-PendingAskViews {
+        # Offene Fragen einer Sitzung fuer die Oberflaeche (neueste zuerst).
+        param([string]$SessionId, [int]$Max = 3)
+        $items = New-Object System.Collections.Generic.List[object]
+        try {
+            foreach ($pair in $Shared.AskRequests.GetEnumerator()) {
+                $state = $null
+                try { $state = ($pair.Value | ConvertFrom-Json) } catch { $state = $null }
+                if ($null -eq $state) { continue }
+                if ([string]$state.sessionId -ne [string]$SessionId) { continue }
+                if ([string]$state.state -ne 'waiting') { continue }
+                if ((Get-UnixSeconds) -gt [int64]$state.expiresAt) { continue }
+                $items.Add((Get-AskView $state))
+                if ($items.Count -ge $Max) { break }
+            }
+        } catch {}
+        return $items
+    }
+
     # ------------------------------------------------------------------
     # Version 7.2.0: STATIONEN + KANAL-ZAEHLER.
     # Format wie die bewaehrten PREVIEW-Stationen aus 6.0.4:
@@ -14161,7 +14683,7 @@ $script:BridgeHandlerScript = {
     }
 
     function Get-ActivityToolSets {
-        $read = @('get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','sim_status','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait','ui_capabilities','ui_skin','ui_audit','ui_texture','world_style','site_survey','variation','model_audit','world_audit','prop_list','wait_for_user','ack_user_message')
+        $read = @('get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','sim_status','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait','ui_capabilities','ui_skin','ui_audit','ui_texture','world_style','site_survey','variation','model_audit','world_audit','prop_list','wait_for_user','ack_user_message','ask_user','confirm_action')
         $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','build_polygon_model','build_assembly','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','sim_start','set_context','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute','build_surface','build_interface','ui_glow','ui_radial','prop_place','prop_save','refine','style_lock','world_glow')
         return @{ read = $read; write = $write }
     }
@@ -18407,6 +18929,18 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             returns = '{ events: [...], count }';
             example = @{};
             errors = @() })
+        $t.Add(@{ name = 'ask_user'; category = 'session'; summary = 'Den Nutzer etwas fragen - mit Entscheidungsbaum, Fenster am Mauszeiger.';
+            description = 'Statt im Chat zu fragen (der Nutzer ist oft weg und uebersieht es): ein Fenster erscheint in der Naehe des Mauszeigers mit Haekchen/Knopf-Optionen und eigener Antwort. Der ganze Baum kommt in EINER Anfrage. Bedingungen erlaubt: when = [ { questionId = "fruehererId", anyOf = ["optionA"], allOf = [...], custom = true } ] auf eine FRUEHERE Frage (mehrere Ebenen tief). Der gesamte Baum zaehlt: max 12 Fragen, max 6 Optionen je Frage, max 400 Zeichen je Text, Ids eindeutig. Du kannst dabei schlafen: waitSeconds (max 50) blockiert; kommt keine Antwort, liefert der Aufruf { state: "waiting", askId, nextCall } und du rufst spaeter mit resume=true erneut auf. Antworten kommen notfalls als _bridge.userAnswers mit.';
+            params = @{ title = @{ type = 'string'; required = $true; default = '-'; description = 'Kurze Ueberschrift (max 90 Zeichen).' }; message = @{ type = 'string'; required = $false; default = 'null'; description = 'Einleitungssatz (max 600 Zeichen).' }; questions = @{ type = 'object[]'; required = $true; default = '-'; description = 'Je Frage: { id, text, options: [ { id, label, description? } ], allowCustomResponse?, required?, multi?, when? }.' }; expiresInSeconds = @{ type = 'int'; required = $false; default = '180'; description = '30..1800: so lange bleibt das Fenster offen.' }; waitSeconds = @{ type = 'int'; required = $false; default = '0'; description = '0..50: aktiv auf die Antwort warten (0 = sofort zurueck und spaeter mit resume=true fortsetzen).' }; askId = @{ type = 'string'; required = $false; default = 'null'; description = 'Zum Fortsetzen einer offenen Frage.' }; resume = @{ type = 'bool'; required = $false; default = 'false'; description = 'true = erneut auf diese Frage warten.' } };
+            returns = '{ state: waiting|answered, askId, answers: { frageId: { optionIds, labels, custom } }, path, notShown, summary, secondsLeft, nextCall }';
+            example = @{ title = 'Welcher Baumstil?'; waitSeconds = 45; questions = @( @{ id = 'style'; text = 'Welchen Stil willst du?'; options = @( @{ id = 'organic'; label = 'Organisch' }, @{ id = 'lowpoly'; label = 'Low-Poly' } ) }, @{ id = 'detail'; text = 'Welche Details?'; multi = $true; when = @( @{ questionId = 'style'; anyOf = @('organic') } ); options = @( @{ id = 'leaves'; label = 'Laub' }, @{ id = 'branches'; label = 'Zweige' } ) } ) };
+            errors = @('ASK_TOO_MANY_QUESTIONS: mehr als 12 Fragen oder mehr als 6 Optionen je Frage.', 'ASK_GRAPH_INVALID: doppelte/fehlende Ids, unbekannte Bedingung, weniger als 2 Optionen.', 'ASK_CYCLE: eine Frage haengt von sich selbst oder einer SPAETEREN Frage ab.', 'ASK_EXPIRED: das Fenster lief ab, ohne dass geantwortet wurde.', 'ASK_UNKNOWN: unbekannte askId.') })
+        $t.Add(@{ name = 'confirm_action'; category = 'session'; summary = 'Kurz nachfragen: soll Arena das wirklich tun? (Ja/Nein)';
+            description = 'Abkuerzung fuer ask_user mit genau einer Frage und zwei Optionen. Fuer Loeschungen, Umbauten, Ueberschreiben von Nutzerarbeit oder teure Schritte. Der Nutzer kann auch eine eigene Antwort schreiben.';
+            params = @{ title = @{ type = 'string'; required = $true; default = '-'; description = 'Was bestaetigt werden soll.' }; message = @{ type = 'string'; required = $false; default = 'null'; description = 'Was passiert, wenn der Nutzer zustimmt.' }; confirmLabel = @{ type = 'string'; required = $false; default = 'Ja, mach das'; description = '' }; cancelLabel = @{ type = 'string'; required = $false; default = 'Nein, nicht'; description = '' }; expiresInSeconds = @{ type = 'int'; required = $false; default = '120'; description = '' }; waitSeconds = @{ type = 'int'; required = $false; default = '0'; description = '0..50, wie ask_user.' } };
+            returns = '{ state, askId, confirmed: true/false, customResponse, answers, path, notShown, summary }';
+            example = @{ title = 'Darf ich das bestehende Gebaeude ersetzen?'; message = 'Alle Teile des alten Hauses werden geloescht und neu gebaut.'; waitSeconds = 45 };
+            errors = @('ASK_EXPIRED: keine Antwort im Zeitfenster.', 'ASK_UNKNOWN: unbekannte askId.') })
         $t.Add(@{ name = 'wait_for_user'; category = 'session'; summary = 'Aktiv auf eine Nachricht des Nutzers warten (max. 50 s).';
             description = 'Blockiert, bis der Nutzer ueber die Bridge schreibt ("Nachricht an Arena senden" im Menue der Place-Zeile) oder die Zeit ablaeuft. Die Nachrichten selbst stehen im Umschlag DERSELBEN Antwort unter _bridge.userMessages. Nur an einer echten Entscheidungsstelle benutzen, nie als Dauer-Polling. Der harte HTTP-Deckel liegt bei 55/85 s, deshalb ist maxSeconds auf 50 begrenzt.';
             params = @{ maxSeconds = @{ type = 'int'; required = $false; default = '30'; description = '1..50.' } };
@@ -18472,6 +19006,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 'Windows finish notifications use report_done { title, message }. Arena writes a lively title (max 70 characters) and an inviting body (max 140); avoid dry changelog lists.',
                 'Responses include typed error codes and concrete diagnostics. Use those details to decide the next step.',
                 'HARD CONSTRAINT for any hand-written WedgePart/triangle geometry (build_polygon_model already does this correctly - this rule is for genuinely custom run_lua geometry code only): see polygonEngineRules below for the mandatory WedgePart axis convention and the canonical seamless-triangle formula. Getting the axis order wrong is the single most common cause of 90-degree rotation errors and gaping seams in procedural low-poly builds.',
+                'ASK THE USER (7.2.0): when you need a real decision, use ask_user (decision tree, window appears at the user''s mouse cursor) or confirm_action (plain yes/no) instead of only asking in chat - the user is often away and misses chat questions. The WHOLE tree goes into ONE ask_user call; conditions use when = [ { questionId = "<earlier question id>", anyOf = ["optionId"] } ] and may nest several levels. Pass waitSeconds (max 50) to wait actively; if nothing arrives you get { state = "waiting", askId, nextCall } - resume later with ask_user { askId, resume: true }. Late answers arrive as _bridge.userAnswers. Never guess while an openQuestions field is present.',
                 'USER CHANNEL (7.2.0): the user can message you WHILE you work ("Nachricht an Arena senden" in the bridge place row). Every response then carries _bridge.userMessages plus _bridge.userMessageContract. Read it first, apply it, tell the user what you changed, and acknowledge with ack_user_message { id } - an unacknowledged message repeats in up to three responses. wait_for_user { maxSeconds <= 50 } blocks until a message arrives; use it only at a real decision point, never as polling. The user can also switch the place to read-only from the same menu, which is reported as WRITE_LOCKED_BY_USER.'
                 'HARD ORGANIC EVIDENCE CONTRACT (separate from the global builder preference): when an organic model is explicitly built with organic=true or is registered from per-model model_audit evidence, build and audit the real model in Studio, use a deliberate palette, install motion under that model, and fix its organicQuality issues. report_done requires fresh passing evidence for every registered organic model, even after a handoff. This is not selected or enforced from animal/tree names; see organicBuildRules for the stricter per-organic-model evidence contract.'
             )
@@ -19401,6 +19936,21 @@ end
                 }
             }
         } catch {}
+        # Version 7.2.0 (D3): Antworten aus dem Fragenfenster, die noch nicht
+        # gezeigt wurden. Eine Antwort darf nie verloren gehen, nur weil die KI
+        # gerade nicht gewartet hat.
+        $lateAnswers = Get-LateAskAnswers $sessionId 4
+        if ($lateAnswers.Count -gt 0) {
+            $envelope.userAnswers = $lateAnswers.ToArray()
+            $answerNote = 'USER ANSWERS (ask_user/confirm_action): the user answered. Read _bridge.userAnswers, act exactly on it and mention the decision in your reply.'
+            if ($envelope.attention) { $envelope.attention = $answerNote + ' ' + $envelope.attention } else { $envelope.attention = $answerNote }
+        }
+        $openAsks = Get-PendingAskViews $sessionId 1
+        if ($openAsks.Count -gt 0) {
+            $envelope.openQuestions = $openAsks.ToArray()
+            $askNote = 'OPEN QUESTION: the user still sees a question window (' + [string]$openAsks[0].askId + ': ' + [string]$openAsks[0].title + '). Do not guess - wait with ask_user { askId, resume: true } or continue with work that does not depend on the answer.'
+            if ($envelope.attention) { $envelope.attention = $askNote + ' ' + $envelope.attention } else { $envelope.attention = $askNote }
+        }
         $pendingUserMessages = Get-PendingUserMessageViews $sessionId 3
         if ($pendingUserMessages.Count -gt 0) {
             $deliveredIds = New-Object System.Collections.Generic.List[string]
@@ -19900,6 +20450,9 @@ end
             # dann sofort erreicht, wenn die Studio-Queue gerade belegt ist.
             'ack_user_message' { return (Invoke-AckUserMessage $sessionId $toolArgs) }
             'wait_for_user'    { return (Invoke-WaitForUser $sessionId $toolArgs) }
+            # Version 7.2.0 (D3): Fragen mit Entscheidungsbaum + Ja/Nein-Bestaetigung.
+            'ask_user'         { return (Invoke-AskUser $sessionId $toolArgs) }
+            'confirm_action'   { return (Invoke-ConfirmAction $sessionId $toolArgs) }
         }
         return $null
     }
@@ -24500,6 +25053,766 @@ function Open-UserMessageWindow {
     }
 }
 
+function Get-AskStateForUi {
+    # Version 7.2.0 (D3): dieselbe Ablage wie auf der Server-Seite
+    # ($Shared.AskRequests, askId -> JSON) - die Oberflaeche hat keinen Zugriff
+    # auf Handler-Funktionen, wohl aber auf den gemeinsamen Zustand.
+    param([string]$AskId)
+    $json = ''
+    try {
+        if (-not $script:Shared.AskRequests.TryGetValue([string]$AskId, [ref]$json)) { return $null }
+    } catch { return $null }
+    if ([string]::IsNullOrWhiteSpace($json)) { return $null }
+    try { return ($json | ConvertFrom-Json) } catch { return $null }
+}
+
+function Save-AskStateForUi {
+    param([string]$AskId, $State)
+    try { $script:Shared.AskRequests[[string]$AskId] = ($State | ConvertTo-Json -Depth 14 -Compress) } catch {}
+}
+
+function Get-AskPendingForUi {
+    # Offene Frage einer Sitzung: entweder noch unbeantwortet (Fenster zeigen)
+    # oder beantwortet und von Arena noch nicht abgeholt (Fenster offen lassen).
+    param([string]$SessionId)
+    $best = $null
+    $bestCreated = [int64](-1)
+    try {
+        foreach ($pair in $script:Shared.AskRequests.GetEnumerator()) {
+            $state = $null
+            try { $state = ($pair.Value | ConvertFrom-Json) } catch { $state = $null }
+            if ($null -eq $state) { continue }
+            if ([string]$state.sessionId -ne [string]$SessionId) { continue }
+            $askState = [string]$state.state
+            if ($askState -ne 'waiting' -and $askState -ne 'answered') { continue }
+            if ($askState -eq 'answered' -and [int64]$state.deliveredAt -gt 0) { continue }
+            $created = [int64]$state.createdAt
+            if ($created -gt $bestCreated) { $bestCreated = $created; $best = $state }
+        }
+    } catch {}
+    return $best
+}
+
+function Test-AskCondition {
+    # Bedingungen: mehrere when-Eintraege muessen ALLE zutreffen; anyOf = eine
+    # der Optionen, allOf = alle, custom = es muss eine eigene Antwort geben.
+    param($Question, $Answers)
+    try {
+        if ($null -eq $Question) { return $false }
+        $when = @()
+        try { if ($Question.PSObject.Properties['when']) { $when = @($Question.when) } } catch {}
+        if ($when.Count -eq 0) { return $true }
+        foreach ($condition in $when) {
+            $refId = ''
+            try { $refId = [string]$condition.questionId } catch {}
+            if ([string]::IsNullOrWhiteSpace($refId)) { return $false }
+            $answer = $null
+            try { if ($null -ne $Answers -and $Answers.ContainsKey($refId)) { $answer = $Answers[$refId] } } catch {}
+            if ($null -eq $answer) { return $false }
+            $selected = New-Object System.Collections.Generic.List[string]
+            try { foreach ($id in @($answer.optionIds)) { $selected.Add([string]$id) } } catch {}
+            $custom = ''
+            try { $custom = [string]$answer.custom } catch {}
+            foreach ($key in @('anyOf', 'allOf')) {
+                $wanted = @()
+                try { if ($condition.PSObject.Properties[$key]) { $wanted = @($condition.$key) } } catch {}
+                if ($wanted.Count -eq 0) { continue }
+                if ($key -eq 'anyOf') {
+                    $hit = $false
+                    foreach ($value in $wanted) { if ($selected.Contains([string]$value)) { $hit = $true; break } }
+                    if (-not $hit) { return $false }
+                } else {
+                    foreach ($value in $wanted) { if (-not $selected.Contains([string]$value)) { return $false } }
+                }
+            }
+            $wantsCustom = $false
+            try { if ($condition.PSObject.Properties['custom'] -and $condition.custom -eq $true) { $wantsCustom = $true } } catch {}
+            if ($wantsCustom -and [string]::IsNullOrWhiteSpace($custom)) { return $false }
+        }
+        return $true
+    } catch {}
+    return $false
+}
+
+function Get-AskVisibleQuestions {
+    # Welche Fragen der Nutzer JETZT sieht - und fuer welche es schon eine
+    # Antwort gibt. Genau diese Auswertung passiert auch beim Zurueckgehen neu.
+    param($Questions, $Answers)
+    $result = New-Object System.Collections.Generic.List[object]
+    $live = @{}
+    try {
+        foreach ($question in @($Questions)) {
+            $visible = $true
+            try { $visible = (Test-AskCondition $question $live) } catch { $visible = $false }
+            if (-not $visible) { continue }
+            $has = $false
+            try { $has = ($null -ne $Answers -and $Answers.ContainsKey([string]$question.id)) } catch {}
+            $result.Add([pscustomobject]@{ Question = $question; Answered = $has })
+            if ($has) { $live[[string]$question.id] = $Answers[[string]$question.id] }
+        }
+    } catch {}
+    return $result
+}
+
+function Submit-AskAnswers {
+    # Antworten des Nutzers ablegen. Das weckt einen wartenden Arena-Aufruf
+    # (AskSignals) ODER liegt bereit und geht als _bridge.userAnswers mit der
+    # naechsten Antwort - beides ist richtig, nichts geht verloren.
+    param([string]$AskId, $Answers, $Path, $NotShown)
+    try {
+        $state = Get-AskStateForUi $AskId
+        if ($null -eq $state) { return $false }
+        Set-UiMessageField $state 'state' 'answered'
+        Set-UiMessageField $state 'answers' $Answers
+        Set-UiMessageField $state 'path' @($Path)
+        Set-UiMessageField $state 'notShown' @($NotShown)
+        Set-UiMessageField $state 'answeredAt' ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+        $stateJson = ''
+        try { $stateJson = ($state | ConvertTo-Json -Depth 14 -Compress) } catch {}
+        $script:Shared.AskRequests[[string]$AskId] = $stateJson
+        Add-UiChannelCount 'AskAnswered' 1
+        Write-FlowTrace 'ASK' $AskId 'ANSWERED' @{ sid = [string]$state.sessionId; questions = @($Path).Count; notShown = @($NotShown).Count }
+        $signal = $null
+        try {
+            if ($script:Shared.AskSignals.TryGetValue([string]$AskId, [ref]$signal) -and $null -ne $signal) { [void]$signal.Set() }
+        } catch {}
+        Add-UiBridgeEvent ([string]$state.sessionId) 'ask_answered' ('Der Nutzer hat geantwortet: ' + [string]$state.title) @{ askId = $AskId }
+        return $true
+    } catch {
+        Write-UiErrorLog 'Antworten konnten nicht gespeichert werden' $_
+        return $false
+    }
+}
+
+function Get-AskCopyPrompt {
+    # Paste-fertiger Text fuer den Arena-Chat, wenn der Agent nicht mehr wartet
+    # oder offline ist. Enthaelt Titel, alle Fragen mit ihren Bedingungen, die
+    # Antworten und den Platz.
+    param($Info)
+    $lines = New-Object System.Collections.Generic.List[string]
+    try {
+        $state = Get-AskStateForUi ([string]$Info.AskId)
+        if ($null -eq $state) { return '' }
+        $lines.Add('Antworten auf deine Frage (Arena Roblox Bridge)')
+        $place = ''
+        try { $place = [string]$state.place } catch {}
+        if (-not [string]::IsNullOrWhiteSpace($place)) { $lines.Add('Platz: ' + $place) }
+        $lines.Add('Titel: ' + [string]$state.title)
+        $message = ''
+        try { $message = [string]$state.message } catch {}
+        if (-not [string]::IsNullOrWhiteSpace($message)) { $lines.Add('Kontext: ' + $message) }
+        $lines.Add('')
+        foreach ($question in @($state.questions)) {
+            $qid = [string]$question.id
+            $conditionText = ''
+            try {
+                $when = @($question.when)
+                if ($when.Count -gt 0) {
+                    $parts = New-Object System.Collections.Generic.List[string]
+                    foreach ($condition in $when) {
+                        $bits = New-Object System.Collections.Generic.List[string]
+                        foreach ($key in @('anyOf', 'allOf')) {
+                            try {
+                                if ($condition.PSObject.Properties[$key]) {
+                                    $values = @($condition.$key)
+                                    if ($values.Count -gt 0) { $bits.Add($key + '=' + ($values -join '/')) }
+                                }
+                            } catch {}
+                        }
+                        try { if ($condition.PSObject.Properties['custom'] -and $condition.custom -eq $true) { $bits.Add('custom') } } catch {}
+                        $parts.Add([string]$condition.questionId + ' (' + ($bits.ToArray() -join ', ') + ')')
+                    }
+                    $conditionText = ' [nur wenn ' + ($parts.ToArray() -join ' und ') + ']'
+                }
+            } catch {}
+            $answerText = '(nicht beantwortet)'
+            try {
+                if (null -ne $Info.Answers -and $Info.Answers.ContainsKey($qid)) {
+                    $entry = $Info.Answers[$qid]
+                    $labels = @($entry.labels)
+                    $custom = [string]$entry.custom
+                    $combo = ''
+                    if ($labels.Count -gt 0) { $combo = ($labels -join ', ') }
+                    if (-not [string]::IsNullOrWhiteSpace($custom)) {
+                        if ($combo) { $combo = $combo + ' | eigene Antwort: ' + $custom } else { $combo = 'eigene Antwort: ' + $custom }
+                    }
+                    if ($combo) { $answerText = $combo }
+                }
+            } catch {}
+            $lines.Add('- ' + [string]$question.text + $conditionText)
+            $lines.Add('  Antwort: ' + $answerText)
+        }
+        $lines.Add('')
+        $lines.Add('Bitte arbeite mit diesen Antworten weiter.')
+    } catch {}
+    return ($lines.ToArray() -join [Environment]::NewLine)
+}
+
+function Update-AskWindow {
+    # Zeichnet Kopf, aktuelle Frage, Fortschritt und den ehrlichen Zustand.
+    param($Info)
+    try {
+        if ($null -eq $Info) { return }
+        $state = Get-AskStateForUi ([string]$Info.AskId)
+        if ($null -eq $state) { return }
+        $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+
+        # Wie lebendig ist Arena? Fortschritt (jeder Werkzeugaufruf) und
+        # Instanz-Heartbeat sind die beiden einzigen Messpunkte.
+        $lastCall = [int64]0
+        try {
+            $snapshot = Get-ProgressStateSnapshot ([string]$state.sessionId)
+            if ($null -ne $snapshot) { $lastCall = [int64]$snapshot.LastCallAt }
+        } catch {}
+        $instanceSeen = [int64]0
+        try { [void]$script:Shared.InstanceLastSeen.TryGetValue([string]$state.sessionId, [ref]$instanceSeen) } catch {}
+        $aliveAt = [Math]::Max($lastCall, $instanceSeen)
+        $agentSilent = 0
+        if ($aliveAt -gt 0) { $agentSilent = [int][Math]::Max(0, ($now - $aliveAt)) }
+        $agentAlive = ($aliveAt -gt 0 -and $agentSilent -le 90)
+
+        $askState = [string]$state.state
+        $secondsLeft = [int][Math]::Max(0, ([int64]$state.expiresAt - $now))
+        if ($askState -eq 'waiting' -and $secondsLeft -le 0) { $askState = 'expired' }
+
+        Set-Text $Info.ProgressText ('Frage ' + [string]([Math]::Min($Info.Step + 1, [Math]::Max(1, $Info.Visible.Count))) + ' von ' + [string][Math]::Max(1, $Info.Visible.Count) + ' · ' + [string]$secondsLeft + ' s')
+
+        if ($askState -eq 'answered') {
+            $delivered = ([int64]$state.deliveredAt -gt 0)
+            $headline = 'Deine Antworten sind gespeichert.'
+            $detail = 'Arena holt sie mit seiner naechsten Anfrage ab.'
+            $color = '#FFD9A0'
+            if ($delivered -or -not $agentAlive) {
+                $headline = 'Deine Antworten sind bei Arena angekommen.'
+                $detail = 'Arena arbeitet weiter - du kannst dieses Fenster schliessen.'
+                $color = '#38D16C'
+            }
+            $Info.StatusText.Text = $headline + ' ' + $detail
+            $Info.StatusText.Foreground = Get-Brush $color
+            $Info.QuestionPanel.Visibility = 'Collapsed'
+            $Info.ButtonRow.Visibility = 'Collapsed'
+            $Info.CopyPanel.Visibility = 'Visible'
+            return
+        }
+
+        if ($askState -eq 'expired') {
+            $Info.StatusText.Text = 'Arena wartet nicht mehr aktiv auf eine Antwort' + $(if ($agentAlive) { ' - arbeitet aber weiter.' } else { ' - der Agent ist mittlerweile offline.' }) + ' Wenn du antwortest, bekommt Arena es mit der naechsten Anfrage. Du kannst auch den fertigen Text kopieren und in den Arena-Chat einfuegen.'
+            $Info.StatusText.Foreground = Get-Brush '#FFD9A0'
+        } elseif ($agentAlive) {
+            $Info.StatusText.Text = 'Arena wartet auf deine Antwort.'
+            $Info.StatusText.Foreground = Get-Brush '#9FDCFF'
+        } else {
+            $Info.StatusText.Text = 'Agent ist mittlerweile offline - deine Antwort kommt an, sobald Arena wieder fragt. Du kannst den Text auch direkt in den Arena-Chat einfuegen.'
+            $Info.StatusText.Foreground = Get-Brush '#FFD9A0'
+        }
+        $Info.QuestionPanel.Visibility = 'Visible'
+        $Info.ButtonRow.Visibility = 'Visible'
+        $Info.CopyPanel.Visibility = 'Visible'
+
+        # Sichtbare Fragen neu auswerten (Zurueck verwirft ungueltig gewordene
+        # Antworten sichtbar - genau wie in der Antwort an die KI).
+        $visible = Get-AskVisibleQuestions $state.questions $Info.Answers
+        $Info.Visible = $visible
+        if ($Info.Step -ge $visible.Count) { $Info.Step = [Math]::Max(0, $visible.Count - 1) }
+        # Fragen, die unsichtbar geworden sind, duerfen keine Antwort behalten.
+        $liveIds = @{}
+        foreach ($entry in $visible) { $liveIds[[string]$entry.Question.id] = $true }
+        foreach ($key in @($Info.Answers.Keys)) {
+            if (-not $liveIds.ContainsKey([string]$key)) {
+                $Info.Answers.Remove([string]$key)
+                # Sichtbar machen, dass eine Antwort weg ist: sie trifft auf die
+                # neue Antwort auf die vorherige Frage nicht mehr zu.
+                Write-FlowTrace 'ASK' ([string]$Info.AskId) 'ANSWER_DISCARDED' @{ questionId = [string]$key }
+            }
+        }
+
+        # Kopf
+        Set-Text $Info.TitleText ([string]$state.title)
+        $subtitle = ''
+        try { $subtitle = [string]$state.message } catch {}
+        Set-Text $Info.MessageText $subtitle
+        if ([string]::IsNullOrWhiteSpace($subtitle)) { $Info.MessageText.Visibility = 'Collapsed' } else { $Info.MessageText.Visibility = 'Visible' }
+
+        $questionStack = $Info.QuestionStack
+        $questionStack.Children.Clear()
+        $question = $null
+        if ($visible.Count -gt 0) { $question = $visible[[Math]::Min($Info.Step, $visible.Count - 1)].Question }
+        if ($null -ne $question) {
+            $qid = [string]$question.id
+            $answer = $null
+            try { if ($Info.Answers.ContainsKey($qid)) { $answer = $Info.Answers[$qid] } } catch {}
+            $selected = @()
+            $custom = ''
+            if ($null -ne $answer) {
+                try { $selected = @($answer.optionIds) } catch {}
+                try { $custom = [string]$answer.custom } catch {}
+            }
+            $questionText = [System.Windows.Controls.TextBlock]::new()
+            $questionText.Text = [string]$question.text
+            $questionText.TextWrapping = 'Wrap'
+            $questionText.FontSize = 13
+            $questionText.FontWeight = 'SemiBold'
+            $questionText.Foreground = Get-Brush '#F4F8FF'
+            $questionText.Margin = [System.Windows.Thickness]::new(0, 0, 0, 8)
+            [void]$questionStack.Children.Add($questionText)
+            $multi = $false
+            try { if ($question.PSObject.Properties['multi']) { $multi = ([bool]$question.multi) } } catch {}
+            if ($multi) {
+                $hintRow = [System.Windows.Controls.TextBlock]::new()
+                $hintRow.Text = 'Mehrfachauswahl möglich.'
+                $hintRow.FontSize = 10.5
+                $hintRow.Foreground = Get-Brush '#6E7FA8'
+                $hintRow.Margin = [System.Windows.Thickness]::new(0, 0, 0, 6)
+                [void]$questionStack.Children.Add($hintRow)
+            }
+            foreach ($option in @($question.options)) {
+                $oid = [string]$option.id
+                if ($multi) { $item = [System.Windows.Controls.CheckBox]::new() } else { $item = [System.Windows.Controls.RadioButton]::new() }
+                $item.Content = [string]$option.label
+                $item.Foreground = Get-Brush '#F4F8FF'
+                $item.FontSize = 12
+                $item.Margin = [System.Windows.Thickness]::new(0, 3, 0, 3)
+                $item.Tag = [pscustomobject]@{ Info = $Info; QuestionId = $qid; OptionId = $oid; Label = [string]$option.label; Multi = $multi }
+                $item.IsChecked = ($selected -contains $oid)
+                if ($multi) {
+                    $item.Add_Click({
+                        param($s, $e)
+                        $data = $s.Tag
+                        try {
+                            $entry = $data.Info.Answers[$data.QuestionId]
+                            if ($null -eq $entry) { $entry = @{ optionIds = @(); custom = ''; labels = @() } }
+                            $ids = New-Object System.Collections.Generic.List[string]
+                            foreach ($value in @($entry.optionIds)) { $ids.Add([string]$value) }
+                            $labels = New-Object System.Collections.Generic.List[string]
+                            foreach ($value in @($entry.labels)) { $labels.Add([string]$value) }
+                            if ([bool]$s.IsChecked) {
+                                if (-not $ids.Contains([string]$data.OptionId)) { $ids.Add([string]$data.OptionId); $labels.Add([string]$data.Label) }
+                            } else {
+                                $ids.Remove([string]$data.OptionId) | Out-Null
+                                $labels.Remove([string]$data.Label) | Out-Null
+                            }
+                            $entry.optionIds = @($ids.ToArray())
+                            $entry.labels = @($labels.ToArray())
+                            $data.Info.Answers[$data.QuestionId] = $entry
+                            $data.Info.Dirty = $true
+                        } catch {}
+                    })
+                } else {
+                    $item.Add_Click({
+                        param($s, $e)
+                        $data = $s.Tag
+                        try {
+                            $entry = @{ optionIds = @([string]$data.OptionId); labels = @([string]$data.Label); custom = '' }
+                            try { if ($data.Info.Answers.ContainsKey([string]$data.QuestionId)) { $entry.custom = [string]$data.Info.Answers[[string]$data.QuestionId].custom } } catch {}
+                            $data.Info.Answers[$data.QuestionId] = $entry
+                            $data.Info.Dirty = $true
+                        } catch {}
+                    })
+                }
+                if (-not [string]::IsNullOrWhiteSpace([string]$option.description)) {
+                    $vbox = [System.Windows.Controls.StackPanel]::new()
+                    [void]$vbox.Children.Add($item)
+                    $desc = [System.Windows.Controls.TextBlock]::new()
+                    $desc.Text = [string]$option.description
+                    $desc.FontSize = 10.5
+                    $desc.TextWrapping = 'Wrap'
+                    $desc.Foreground = Get-Brush '#6E7FA8'
+                    $desc.Margin = [System.Windows.Thickness]::new(20, 0, 0, 4)
+                    [void]$vbox.Children.Add($desc)
+                    [void]$questionStack.Children.Add($vbox)
+                } else {
+                    [void]$questionStack.Children.Add($item)
+                }
+            }
+            $allowCustom = $false
+            try { if ($question.PSObject.Properties['allowCustomResponse']) { $allowCustom = ([bool]$question.allowCustomResponse) } } catch {}
+            if ($allowCustom) {
+                $customLabel = [System.Windows.Controls.TextBlock]::new()
+                $customLabel.Text = 'Eigene Antwort (optional):'
+                $customLabel.FontSize = 10.5
+                $customLabel.Foreground = Get-Brush '#6E7FA8'
+                $customLabel.Margin = [System.Windows.Thickness]::new(0, 8, 0, 3)
+                [void]$questionStack.Children.Add($customLabel)
+                $customBox = [System.Windows.Controls.TextBox]::new()
+                $customBox.Text = $custom
+                $customBox.FontSize = 12
+                $customBox.Foreground = Get-Brush '#F4F8FF'
+                $customBox.Background = Get-Brush '#141B33'
+                $customBox.BorderBrush = Get-Brush '#33FFFFFF'
+                $customBox.BorderThickness = [System.Windows.Thickness]::new(1)
+                $customBox.Padding = [System.Windows.Thickness]::new(8, 6, 8, 6)
+                $customBox.Tag = [pscustomobject]@{ Info = $Info; QuestionId = $qid }
+                $customBox.Add_TextChanged({
+                    param($s, $e)
+                    $data = $s.Tag
+                    try {
+                        $entry = $data.Info.Answers[$data.QuestionId]
+                        if ($null -eq $entry) { $entry = @{ optionIds = @(); labels = @(); custom = '' } }
+                        $entry.custom = [string]$s.Text
+                        $data.Info.Answers[$data.QuestionId] = $entry
+                        $data.Info.Dirty = $true
+                    } catch {}
+                })
+                [void]$questionStack.Children.Add($customBox)
+            }
+        }
+        $Info.BackButton.IsEnabled = ($Info.Step -gt 0)
+        $Info.NextButton.Content = $(if ($Info.Step -ge ($visible.Count - 1)) { 'Fertig' } else { 'Weiter' })
+    } catch {
+        Write-UiErrorLog 'Frage-Fenster konnte nicht aktualisiert werden' $_
+    }
+}
+
+function Open-AskWindow {
+    # Version 7.2.0 (D3): Fragenfenster in der Naehe des Mauszeigers - mit
+    # Versatz, damit ein Klick auf "Senden" nicht versehentlich etwas ausloest
+    # (der Cursor steht beim Oeffnen genau dort, wo der Nutzer gerade klickt).
+    param($AskState)
+    try {
+        if ($null -eq $AskState) { return }
+        $askId = [string]$AskState.askId
+        if ([string]::IsNullOrWhiteSpace($askId)) { return }
+        if ($null -ne $script:AskWindow -and [string]$script:AskWindow.Tag.AskId -eq $askId) {
+            [void](Update-AskWindow $script:AskWindow.Tag)
+            return
+        }
+        if ($null -ne $script:AskWindow) {
+            try { $script:AskWindow.Close() } catch {}
+            $script:AskWindow = $null
+        }
+        $win = [System.Windows.Window]::new()
+        $win.Title = 'Arena fragt'
+        $win.Width = 520
+        $win.Height = 430
+        $win.MinWidth = 460; $win.MinHeight = 320
+        $win.WindowStyle = 'None'
+        $win.AllowsTransparency = $true
+        $win.Background = [System.Windows.Media.Brushes]::Transparent
+        $win.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe UI')
+        $win.ResizeMode = 'CanResize'
+        $win.Topmost = $true
+        try { $win.Owner = $window } catch {}
+
+        # Position: Naehe Mauszeiger + Versatz, immer im sichtbaren Bereich
+        # (auch auf dem zweiten Monitor - Screen.FromPoint liefert dessen
+        # Arbeitsflaeche).
+        try {
+            $cursor = [System.Windows.Forms.Cursor]::Position
+            $screen = [System.Windows.Forms.Screen]::FromPoint($cursor)
+            $area = $screen.WorkingArea
+            $x = [int]$cursor.X + 28
+            $y = [int]$cursor.Y + 24
+            if (($x + $win.Width) -gt ($area.X + $area.Width)) { $x = [int]$cursor.X - 28 - [int]$win.Width }
+            if (($y + $win.Height) -gt ($area.Y + $area.Height)) { $y = [int]$cursor.Y - 24 - [int]$win.Height }
+            if ($x -lt $area.X) { $x = $area.X + 8 }
+            if ($y -lt $area.Y) { $y = $area.Y + 8 }
+            $win.WindowStartupLocation = 'Manual'
+            $win.Left = $x
+            $win.Top = $y
+        } catch {
+            $win.WindowStartupLocation = 'CenterOwner'
+        }
+
+        $shell = [System.Windows.Controls.Border]::new()
+        $shell.CornerRadius = [System.Windows.CornerRadius]::new(16)
+        $shell.Background = Get-Brush '#F50B1030'
+        $shell.BorderBrush = Get-Brush '#33FFFFFF'
+        $shell.BorderThickness = [System.Windows.Thickness]::new(1)
+        $shell.Padding = [System.Windows.Thickness]::new(18)
+        $grid = [System.Windows.Controls.Grid]::new()
+        foreach ($h in @('Auto', 'Auto', '*', 'Auto')) {
+            $rd = [System.Windows.Controls.RowDefinition]::new()
+            if ($h -ne 'Auto') { $rd.Height = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star) }
+            [void]$grid.RowDefinitions.Add($rd)
+        }
+        $headPanel = [System.Windows.Controls.StackPanel]::new()
+        $titleText = [System.Windows.Controls.TextBlock]::new()
+        $titleText.FontSize = 15
+        $titleText.FontWeight = 'SemiBold'
+        $titleText.TextWrapping = 'Wrap'
+        $titleText.Foreground = Get-Brush '#F4F8FF'
+        [void]$headPanel.Children.Add($titleText)
+        $messageText = [System.Windows.Controls.TextBlock]::new()
+        $messageText.FontSize = 11.5
+        $messageText.TextWrapping = 'Wrap'
+        $messageText.Margin = [System.Windows.Thickness]::new(0, 6, 0, 0)
+        $messageText.Foreground = Get-Brush '#9AA9CE'
+        [void]$headPanel.Children.Add($messageText)
+        $progressText = [System.Windows.Controls.TextBlock]::new()
+        $progressText.FontSize = 10.5
+        $progressText.Margin = [System.Windows.Thickness]::new(0, 8, 0, 0)
+        $progressText.Foreground = Get-Brush '#6E7FA8'
+        [void]$headPanel.Children.Add($progressText)
+        [System.Windows.Controls.Grid]::SetRow($headPanel, 0)
+        [void]$grid.Children.Add($headPanel)
+
+        $scroll = [System.Windows.Controls.ScrollViewer]::new()
+        $scroll.VerticalScrollBarVisibility = 'Auto'
+        $scroll.Margin = [System.Windows.Thickness]::new(0, 12, 0, 0)
+        $questionPanel = [System.Windows.Controls.Border]::new()
+        $questionPanel.Background = Get-Brush '#141B33'
+        $questionPanel.BorderBrush = Get-Brush '#22FFFFFF'
+        $questionPanel.BorderThickness = [System.Windows.Thickness]::new(1)
+        $questionPanel.CornerRadius = [System.Windows.CornerRadius]::new(12)
+        $questionPanel.Padding = [System.Windows.Thickness]::new(14, 12, 14, 12)
+        $questionStack = [System.Windows.Controls.StackPanel]::new()
+        $questionPanel.Child = $questionStack
+        $scroll.Content = $questionPanel
+        [System.Windows.Controls.Grid]::SetRow($scroll, 1)
+        [void]$grid.Children.Add($scroll)
+
+        $copyPanel = [System.Windows.Controls.StackPanel]::new()
+        $copyRow = [System.Windows.Controls.StackPanel]::new()
+        $copyRow.Orientation = 'Horizontal'
+        $copyButton = [System.Windows.Controls.Button]::new()
+        $copyButton.Content = 'Antwort als Text kopieren'
+        $copyButton.Padding = [System.Windows.Thickness]::new(14, 7, 14, 7)
+        $copyButton.Background = Get-Brush '#1B2440'
+        $copyButton.Foreground = Get-Brush '#F4F8FF'
+        $copyButton.BorderBrush = Get-Brush '#3AFFFFFF'
+        $copyButton.BorderThickness = [System.Windows.Thickness]::new(1)
+        $copyButton.Cursor = 'Hand'
+        [void]$copyRow.Children.Add($copyButton)
+        $closeButton = [System.Windows.Controls.Button]::new()
+        $closeButton.Content = 'Schließen'
+        $closeButton.Padding = [System.Windows.Thickness]::new(14, 7, 14, 7)
+        $closeButton.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
+        $closeButton.Background = Get-Brush '#0E1428'
+        $closeButton.Foreground = Get-Brush '#9AA9CE'
+        $closeButton.BorderBrush = Get-Brush '#22FFFFFF'
+        $closeButton.BorderThickness = [System.Windows.Thickness]::new(1)
+        $closeButton.Cursor = 'Hand'
+        [void]$copyRow.Children.Add($closeButton)
+        [void]$copyPanel.Children.Add($copyRow)
+        [System.Windows.Controls.Grid]::SetRow($copyPanel, 3)
+        [void]$grid.Children.Add($copyPanel)
+
+        $statusText = [System.Windows.Controls.TextBlock]::new()
+        $statusText.FontSize = 11.5
+        $statusText.TextWrapping = 'Wrap'
+        $statusText.Margin = [System.Windows.Thickness]::new(0, 12, 0, 0)
+        $statusText.Foreground = Get-Brush '#9FDCFF'
+        [System.Windows.Controls.Grid]::SetRow($statusText, 2)
+        [void]$grid.Children.Add($statusText)
+
+        $buttonRow = [System.Windows.Controls.StackPanel]::new()
+        $buttonRow.Orientation = 'Horizontal'
+        $buttonRow.HorizontalAlignment = 'Right'
+        $backButton = [System.Windows.Controls.Button]::new()
+        $backButton.Content = 'Zurück'
+        $backButton.Padding = [System.Windows.Thickness]::new(14, 7, 14, 7)
+        $backButton.Background = Get-Brush '#0E1428'
+        $backButton.Foreground = Get-Brush '#9AA9CE'
+        $backButton.BorderBrush = Get-Brush '#22FFFFFF'
+        $backButton.BorderThickness = [System.Windows.Thickness]::new(1)
+        $backButton.Cursor = 'Hand'
+        $nextButton = [System.Windows.Controls.Button]::new()
+        $nextButton.Content = 'Weiter'
+        $nextButton.Padding = [System.Windows.Thickness]::new(16, 7, 16, 7)
+        $nextButton.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
+        $nextButton.Background = Get-Brush '#5CFFEF'
+        $nextButton.Foreground = Get-Brush '#08111F'
+        $nextButton.BorderThickness = [System.Windows.Thickness]::new(0)
+        $nextButton.FontWeight = 'SemiBold'
+        $nextButton.Cursor = 'Hand'
+        [void]$buttonRow.Children.Add($backButton)
+        [void]$buttonRow.Children.Add($nextButton)
+        [System.Windows.Controls.Grid]::SetRow($buttonRow, 3)
+        [void]$grid.Children.Add($buttonRow)
+
+        $shell.Child = $grid
+        $win.Content = $shell
+
+        # Daten am Element (Tag) - dieselbe Regel wie in New-Row.
+        $info = [pscustomobject]@{
+            Window       = $win
+            AskId        = $askId
+            SessionId    = [string]$AskState.sessionId
+            Answers      = @{}
+            Visible      = New-Object System.Collections.Generic.List[object]
+            Step         = 0
+            Dirty        = $false
+            TitleText    = $titleText
+            MessageText  = $messageText
+            ProgressText = $progressText
+            QuestionPanel = $questionPanel
+            QuestionStack = $questionStack
+            StatusText   = $statusText
+            ButtonRow    = $buttonRow
+            CopyPanel    = $copyPanel
+            BackButton   = $backButton
+            NextButton   = $nextButton
+            CopyButton   = $copyButton
+            CloseButton  = $closeButton
+            Timer        = $null
+            LastDelivered = $false
+        }
+        $win.Tag = $info
+        $backButton.Tag = $info
+        $nextButton.Tag = $info
+        $copyButton.Tag = $info
+        $closeButton.Tag = $info
+
+        $backButton.Add_Click({
+            param($s, $e)
+            $data = $s.Tag
+            try {
+                $visible = $data.Visible
+                if ($data.Step -le 0) { return }
+                $current = $null
+                if ($visible.Count -gt $data.Step) { $current = [string]$visible[$data.Step].Question.id }
+                $data.Step = $data.Step - 1
+                if (-not [string]::IsNullOrWhiteSpace($current)) {
+                    # Zurueck = die Antwort auf diese Frage zuruecknehmen. Fragen,
+                    # die dadurch nicht mehr zutreffen, verlieren ihre Antwort
+                    # sichtbar (Hinweis unten im Fenster).
+                    try { $data.Answers.Remove($current) } catch {}
+                }
+                $data.Dirty = $true
+                Write-FlowTrace 'ASK' ([string]$data.AskId) 'BACK' @{ step = $data.Step }
+            } catch {}
+        })
+        $nextButton.Add_Click({
+            param($s, $e)
+            $data = $s.Tag
+            try {
+                $visible = $data.Visible
+                if ($visible.Count -eq 0) { return }
+                $index = [Math]::Min($data.Step, $visible.Count - 1)
+                $question = $visible[$index].Question
+                $qid = [string]$question.id
+                $required = $true
+                try { if ($question.PSObject.Properties['required']) { $required = [bool]$question.required } } catch {}
+                $entry = $null
+                try { if ($data.Answers.ContainsKey($qid)) { $entry = $data.Answers[$qid] } } catch {}
+                $hasAnswer = $false
+                if ($null -ne $entry) {
+                    try { if (@($entry.optionIds).Count -gt 0) { $hasAnswer = $true } } catch {}
+                    try { if (-not [string]::IsNullOrWhiteSpace([string]$entry.custom)) { $hasAnswer = $true } } catch {}
+                }
+                if ($required -and -not $hasAnswer) {
+                    $data.StatusText.Text = 'Bitte waehle eine Antwort (oder schreibe eine eigene), bevor es weitergeht.'
+                    $data.StatusText.Foreground = Get-Brush '#FFB4C4'
+                    return
+                }
+                if (-not $data.Answers.ContainsKey($qid)) { $data.Answers[$qid] = @{ optionIds = @(); labels = @(); custom = '' } }
+                if ($index -ge ($visible.Count - 1)) {
+                    # Fertig: Antworten abgeben. Pfad = alle tatsaechlich
+                    # gestellten Fragen, notShown = uebersprungene.
+                    $path = New-Object System.Collections.Generic.List[string]
+                    $allShown = New-Object System.Collections.Generic.List[string]
+                    foreach ($entry2 in $visible) { $path.Add([string]$entry2.Question.id) }
+                    foreach ($questionAll in @((Get-AskStateForUi ([string]$data.AskId)).questions)) { $allShown.Add([string]$questionAll.id) }
+                    $notShown = New-Object System.Collections.Generic.List[string]
+                    foreach ($candidate in $allShown) { if (-not $path.Contains($candidate)) { $notShown.Add($candidate) } }
+                    [void](Submit-AskAnswers ([string]$data.AskId) $data.Answers $path.ToArray() $notShown.ToArray())
+                    $data.StatusText.Text = 'Danke! Deine Antworten sind gespeichert und gehen an Arena.'
+                    $data.StatusText.Foreground = Get-Brush '#38D16C'
+                    return
+                }
+                $data.Step = $index + 1
+                $data.Dirty = $true
+            } catch {
+                Write-UiErrorLog 'Antwort konnte nicht uebernommen werden' $_
+            }
+        })
+        $copyButton.Add_Click({
+            param($s, $e)
+            $data = $s.Tag
+            try {
+                $text = Get-AskCopyPrompt $data
+                if ([string]::IsNullOrWhiteSpace($text)) { return }
+                [System.Windows.Clipboard]::SetText($text)
+                $data.StatusText.Text = 'Text in der Zwischenablage - jetzt im Arena-Chat einfuegen (Strg+V).'
+                $data.StatusText.Foreground = Get-Brush '#38D16C'
+                Write-FlowTrace 'ASK' ([string]$data.AskId) 'COPY_PROMPT' @{ chars = $text.Length }
+            } catch {
+                Write-UiErrorLog 'Antworttext konnte nicht kopiert werden' $_
+            }
+        })
+        $closeButton.Add_Click({ param($s, $e) try { $s.Tag.Window.Close() } catch {} })
+
+        $timer = [System.Windows.Threading.DispatcherTimer]::new()
+        $timer.Interval = [TimeSpan]::FromMilliseconds(1000)
+        $timer.Tag = $info
+        $timer.Add_Tick({
+            param($s, $e)
+            try {
+                $data = $s.Tag
+                if ([bool]$data.Dirty) {
+                    $data.Dirty = $false
+                    [void](Update-AskWindow $data)
+                } else {
+                    # Nur die Uhr/den Agent-Zustand aktualisieren.
+                    $state = Get-AskStateForUi ([string]$data.AskId)
+                    if ($null -ne $state) {
+                        $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+                        $left = [int][Math]::Max(0, ([int64]$state.expiresAt - $now))
+                        $total = [Math]::Max(1, @($data.Visible).Count)
+                        if ([string]$state.state -eq 'waiting') {
+                            Set-Text $data.ProgressText (([string]::Format('Frage {0} von {1} · {2} s', ([Math]::Min($data.Step + 1, $total)), $total, $left)))
+                        } else {
+                            [void](Update-AskWindow $data)
+                        }
+                    }
+                }
+            } catch {}
+        })
+        $info.Timer = $timer
+        $win.Add_Closed({
+            param($s, $e)
+            try { $s.Tag.Timer.Stop() } catch {}
+            try { $script:AskWindow = $null } catch {}
+        })
+
+        $script:AskWindow = $win
+        $stateForRender = Get-AskStateForUi $askId
+        if ($null -ne $stateForRender) {
+            # Bereits beantwortete Fragen (z. B. nach einem Fenster-Neustart)
+            # in das Fenster uebernehmen.
+            try {
+                if ($null -ne $stateForRender.answers) {
+                    foreach ($property in $stateForRender.answers.PSObject.Properties) {
+                        $data = $stateForRender.answers.$($property.Name)
+                        $entry = @{ optionIds = @(); labels = @(); custom = '' }
+                        try { $entry.optionIds = @($data.optionIds) } catch {}
+                        try { $entry.labels = @($data.labels) } catch {}
+                        try { $entry.custom = [string]$data.custom } catch {}
+                        $info.Answers[$property.Name] = $entry
+                    }
+                }
+            } catch {}
+            [void](Update-AskWindow $info)
+        }
+        [void]$win.Show()
+        try { $win.Activate() } catch {}
+        $timer.Start()
+    } catch {
+        Write-UiErrorLog 'Frage-Fenster konnte nicht geoeffnet werden' $_
+    }
+}
+
+function Sync-AskWindows {
+    # Version 7.2.0 (D3): Der Anzeige-Takt oeffnet das Fragenfenster, sobald
+    # eine Frage anliegt - ohne Zutun des Nutzers und ohne Toast.
+    try {
+        $currentAskId = ''
+        if ($null -ne $script:AskWindow) {
+            try { $currentAskId = [string]$script:AskWindow.Tag.AskId } catch {}
+        }
+        foreach ($studio in @(Get-ActiveStudios)) {
+            $sid = [string]$studio.sessionId
+            if ([string]::IsNullOrWhiteSpace($sid)) { continue }
+            $pending = Get-AskPendingForUi $sid
+            if ($null -eq $pending) { continue }
+            $askId = [string]$pending.askId
+            if ($askId -eq $currentAskId) { continue }
+            Open-AskWindow $pending
+            break
+        }
+    } catch {}
+}
+
 function Get-PlaceOpenCommand {
     # Version 7.0.6: der aelteste noch offene Befehl dieser Sitzung - genau
     # der, der die strikt serielle Studio-Queue blockiert. Er wird in der
@@ -27621,6 +28934,8 @@ function Refresh-Ui {
     }
 
     Write-ChannelDiagnoseFile
+    # Version 7.2.0 (D3): Fragenfenster oeffnen, sobald eine Frage anliegt.
+    Sync-AskWindows
     Update-PlacePreviewCaptures
     $activeStudios = @(Get-ActiveStudios)
     Update-HandoffCard
