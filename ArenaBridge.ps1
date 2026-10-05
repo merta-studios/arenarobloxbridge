@@ -1803,6 +1803,12 @@ $script:PreviewDiagLastWrite = [DateTime]::MinValue
 # fuer die kleinen Kurzberichte progress-diagnose.txt / notify-diagnose.txt.
 $script:ChannelDiagLastWrite = [DateTime]::MinValue
 $script:UiStationLogAt = @{}
+# Version 7.2.0 (D4): Zustand der Benachrichtigungs-Messung.
+$script:NotifyAumidState = $null
+$script:NotifyPlatformCache = $null
+$script:NotifyPlatformCacheAt = $null
+$script:NotifyRecords = New-Object System.Collections.Generic.List[object]
+$script:NotifySeenWindow = $null
 $script:PreviewFlowCounter = [long]0
 $script:PreviewFlowContexts = @{}
 $script:PreviewHandleInfos = @{}
@@ -2409,6 +2415,11 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Oberflaeche (progress-diagnose.txt / notify-diagnose.txt).
     FlowTrace       = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
     FlowTraceCap    = 500
+    # Version 7.2.0 (D4): Das von der Oberflaeche GEMESSENE Plattform-Urteil als
+    # JSON. Der Handler-Runspace kann keine UI-Funktionen aufrufen, braucht das
+    # Urteil aber, damit report_done ehrlich antwortet (NOTIFICATION_UNVERIFIED).
+    NotifyPlatformJson = ''
+    NotifyLastJson     = ''
     # Zuletzt geschriebene Station je Schluessel (Drosselung gegen vollaufende
     # runtime.log: Fortschritt kaeme sonst bei JEDEM Werkzeugaufruf).
     ProgressLogAt   = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
@@ -2422,11 +2433,16 @@ $script:Shared = [hashtable]::Synchronized(@{
         ProgressPaintedPercent   = 0L
         ProgressPaintedNoPercent = 0L
         ProgressNotDisplaced     = 0L
+        NotifyFlowSeq            = 0L
         NotifyEnqueued           = 0L
         NotifyShown              = 0L
+        NotifyUnverified         = 0L
+        NotifyTestRuns           = 0L
+        NotifySeenYes            = 0L
+        NotifySeenNo             = 0L
+        NotifyLastSeen           = ''
         NotifySuppressed         = 0L
         NotifyFailed             = 0L
-        NotifyPlatformBlocked    = 0L
         NotifyLastVerdict        = ''
         NotifyLastReason         = ''
         NotifyLastAt             = 0L
@@ -12724,6 +12740,139 @@ namespace Arena {
 }
 
 # ----------------------------------------------------------------------------
+# Version 7.2.0 (D4): Helfer fuer die Benachrichtigungs-Messung und fuer die
+# Registrierung der App-Id (AUMID).
+#
+# Warum: Windows zeigt einen Toast nur fuer eine REGISTRIERTE App-Id. Die
+# Bridge benutzte bis 7.1.5 die feste PowerShell-Id
+# '{1AC14E77-...}\WindowsPowerShell\v1.0\powershell.exe'. Ohne dazu gehoerigen
+# Startmenue-Eintrag verwirft Windows die Meldung still oder zeigt sie ohne
+# Zuordnung - CreateToastNotifier().Show() kehrt dabei OHNE Ausnahme zurueck.
+# Genau das steht im 7.1.4-Protokoll zweimal als "Arena-Fertig-Meldung
+# angezeigt", waehrend der Nutzer nichts gesehen hat.
+#
+# Add-Type gilt fuer den ganzen Prozess, also auch fuer die Server-Runspaces.
+# Scheitert das Kompilieren (z. B. Sprachmodus ConstrainedLanguage), faellt die
+# Bridge auf das bisherige Verhalten zurueck und sagt das ehrlich.
+# ----------------------------------------------------------------------------
+try {
+    if (-not ('Arena.NotifyLink' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+using System.Text;
+
+namespace Arena {
+    [ComImport]
+    [Guid("000214F9-0000-0000-C000-000000000046")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface IShellLinkW {
+        void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszFile, int cchMaxPath, IntPtr pfd, uint fFlags);
+        void GetIDList(out IntPtr ppidl);
+        void SetIDList(IntPtr pidl);
+        void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszName, int cchMaxName);
+        void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string pszName);
+        void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszDir, int cchMaxPath);
+        void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string pszDir);
+        void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszArgs, int cchMaxPath);
+        void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string pszArgs);
+        void GetHotkey(out short pwHotkey);
+        void SetHotkey(short wHotkey);
+        void GetShowCmd(out int piShowCmd);
+        void SetShowCmd(int iShowCmd);
+        void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszIconPath, int cchMaxPath, out int piIcon);
+        void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string pszIconPath, int iIcon);
+        void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string pszPathRel, uint dwReserved);
+        void Resolve(IntPtr hwnd, uint fFlags);
+        void SetPath([MarshalAs(UnmanagedType.LPWStr)] string pszFile);
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    internal struct NOTIFYPROPERTYKEY { public Guid fmtid; public int pid; }
+
+    [ComImport]
+    [Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface INotifyPropertyStore {
+        [PreserveSig] int GetCount(out uint cProps);
+        [PreserveSig] int GetAt(uint iProp, out NOTIFYPROPERTYKEY pkey);
+        [PreserveSig] int GetValue(ref NOTIFYPROPERTYKEY key, [Out, MarshalAs(UnmanagedType.Struct)] out object pv);
+        [PreserveSig] int SetValue(ref NOTIFYPROPERTYKEY key, [In, MarshalAs(UnmanagedType.Struct)] ref object pv);
+        [PreserveSig] int Commit();
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct NOTIFYRECT { public int Left; public int Top; public int Right; public int Bottom; }
+
+    public static class NotifyLink {
+        [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out NOTIFYRECT lpRect);
+        [DllImport("user32.dll")] public static extern int GetSystemMetrics(int nIndex);
+
+        // Legt eine Startmenue-Verknuepfung mit System.AppUserModel.ID an.
+        // Rueckgabe: "ok" oder der Grund - die Bridge zeigt beides ehrlich an.
+        public static string Register(string lnkPath, string targetPath, string arguments, string workingDir, string aumid, string description, string iconPath, int iconIndex) {
+            object shellLink = null;
+            try {
+                Type shellLinkType = Type.GetTypeFromCLSID(new Guid("00021401-0000-0000-C000-000000000046"));
+                if (shellLinkType == null) { return "failed: CLSID_ShellLink nicht verfuegbar" }
+                shellLink = Activator.CreateInstance(shellLinkType);
+                IShellLinkW link = (IShellLinkW)shellLink;
+                link.SetPath(targetPath);
+                if (!string.IsNullOrEmpty(arguments)) { link.SetArguments(arguments); }
+                if (!string.IsNullOrEmpty(workingDir)) { link.SetWorkingDirectory(workingDir); }
+                if (!string.IsNullOrEmpty(description)) { link.SetDescription(description); }
+                if (!string.IsNullOrEmpty(iconPath)) { link.SetIconLocation(iconPath, iconIndex); }
+                link.SetShowCmd(1);
+                INotifyPropertyStore store = (INotifyPropertyStore)shellLink;
+                NOTIFYPROPERTYKEY key = new NOTIFYPROPERTYKEY();
+                key.fmtid = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3");
+                key.pid = 5;
+                object value = aumid;
+                int setHr = store.SetValue(ref key, ref value);
+                store.Commit();
+                IPersistFile file = (IPersistFile)shellLink;
+                file.Save(lnkPath, false);
+                Marshal.ReleaseComObject(file);
+                Marshal.ReleaseComObject(store);
+                if (setHr != 0) { return "saved_but_aumid_hr_" + setHr.ToString(); }
+                return "ok";
+            } catch (Exception ex) {
+                return "failed: " + ex.Message;
+            } finally {
+                if (shellLink != null) { try { Marshal.ReleaseComObject(shellLink); } catch {} }
+            }
+        }
+
+        // Misst, ob eine Vollbild-Anwendung den Vordergrund hat (Windows
+        // unterdrueckt Toasts dann von sich aus). "unknown" statt Raten.
+        public static string ForegroundFullscreen() {
+            try {
+                IntPtr hwnd = GetForegroundWindow();
+                if (hwnd == IntPtr.Zero) { return "no_foreground_window"; }
+                NOTIFYRECT rect;
+                if (!GetWindowRect(hwnd, out rect)) { return "unknown"; }
+                int screenW = GetSystemMetrics(0);
+                int screenH = GetSystemMetrics(1);
+                if (screenW <= 0 || screenH <= 0) { return "unknown"; }
+                int width = rect.Right - rect.Left;
+                int height = rect.Bottom - rect.Top;
+                if (width >= screenW && height >= screenH && rect.Left <= 0 && rect.Top <= 0) { return "fullscreen"; }
+                return "windowed";
+            } catch (Exception ex) {
+                return "unknown: " + ex.Message;
+            }
+        }
+    }
+}
+'@ -ErrorAction Stop
+    }
+} catch {
+    Write-RuntimeLog "Benachrichtigungs-Helfertyp konnte nicht geladen werden (Fallback auf bisheriges Verhalten): $($_.Exception.Message)"
+}
+
+# ----------------------------------------------------------------------------
 # Version 6.0.4: Kompilierter Aufnahme-Helfer fuer die Fenster-Vorschau.
 # Laueft IM Hauptprozess: Das Ergebnis ist ein CLR-Objekt mit echtem,
 # unveraenderlichem byte[] und durchquert keine PowerShell-Runspace-Grenze
@@ -18130,7 +18279,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             params = @{ title = @{ type = 'string'; required = $true; default = '-'; description = 'Von Arena formulierter lebendiger Titel, maximal 70 Zeichen.' }; message = @{ type = 'string'; required = $true; default = '-'; description = 'Ein natuerlicher, einladender Satz, maximal 140 Zeichen; keine Auflistung.' } };
             returns = '{ delivered, title, message, limits: { titleCharacters=70, messageCharacters=140 } }';
             example = @{ title = '✅ Arena hat den Lauf-Bug behoben!'; message = 'Der Lauf-Bug ist weg – komm ins Spiel und probiere es aus!' };
-            errors = @('NOTIFICATIONS_DISABLED', 'BAD_ARGS: title/message fehlen oder ueberschreiten 70/140 Zeichen.') })
+            errors = @('NOTIFICATIONS_DISABLED', 'BAD_ARGS: title/message fehlen oder ueberschreiten 70/140 Zeichen.');
+            notes = @('Version 7.2.0: Die Antwort enthaelt notification { flowId, platformVerdict, platformReason, verified }. Steht dort NOTIFICATION_UNVERIFIED, hat Windows die Meldung vermutlich unterdrueckt (Grund im Feld platformReason) - behaupte dann NICHT, der Nutzer sei benachrichtigt, sondern sage im Antworttext, was fertig ist und dass die Windows-Meldung moeglicherweise nicht erscheint.') })
                         $t.Add(@{ name = 'set_context'; category = 'session'; summary = 'Seite wechseln: server oder client.';
             description = 'Bestimmt, welche Seite Laufzeit-Werkzeuge (run_lua) treffen. run_lua selbst laeuft IMMER nur auf der Server/Seite - fuer den Client die client_-Werkzeuge.';
             params = @{ context = @{ type = "'server'|'client'"; required = $true; default = '-'; description = '' } };
@@ -19636,24 +19786,67 @@ end
                 $doneEntry = Get-SessionEntry $sessionId
                 $donePlace = 'Place'
                 if ($doneEntry) { $donePlace = [string]$doneEntry.placeName }
+                # Version 7.2.0 (D4): Jede Meldung bekommt eine Flow-Id, die
+                # ENQUEUED -> PLATFORM -> CALL -> SWEEP verbindet. Vorher stand
+                # im Protokoll "Arena-Fertig-Meldung angezeigt", ohne dass
+                # irgendjemand wusste, ob Windows sie wirklich gezeichnet hat.
+                $notifyFlowSeq = [long]0
+                try {
+                    $notifyFlowSeq = [long]$Shared.Channel['NotifyFlowSeq'] + 1
+                    $Shared.Channel['NotifyFlowSeq'] = $notifyFlowSeq
+                } catch {}
+                $notifyFlowId = 'n-' + [string]$notifyFlowSeq
+                $platformVerdict = 'UNKNOWN'
+                $platformReason = 'Die Oberflaeche hat die Plattform noch nicht gemessen.'
+                $platformAppId = $false
+                try {
+                    $platformJson = [string]$Shared.NotifyPlatformJson
+                    if (-not [string]::IsNullOrWhiteSpace($platformJson)) {
+                        $platformView = $platformJson | ConvertFrom-Json
+                        $platformVerdict = [string]$platformView.verdict
+                        $platformReason = [string]$platformView.reason
+                        $platformAppId = [bool]$platformView.appUserModelIdRegistered
+                    }
+                } catch {}
                 $donePayload = @{
+                    flowId = $notifyFlowId
                     place = $donePlace
                     title = $doneTitle
                     message = $doneMessage
                     time = (Get-Date).ToString('u')
+                    queuedAt = (Get-UnixSeconds)
                 }
                 $Shared.NotifyQueue.Enqueue((To-Json $donePayload 8))
+                Add-ChannelCount 'NotifyEnqueued' 1
+                Write-FlowStation 'NOTIFY' $notifyFlowId 'ENQUEUED' @{ place = $donePlace; platform = $platformVerdict; aumidRegistered = $platformAppId; title = $doneTitle }
                 Add-BridgeEvent $sessionId 'arena_done' ("The assistant reported it is done: " + $doneMessage) @{ place = $donePlace }
-                return @{
-                    ok = $true
-                    result = @{
-                        delivered = $true
-                        title = $doneTitle
-                        message = $doneMessage
-                        limits = @{ titleCharacters = 70; messageCharacters = 140 }
-                        note = 'The user is being notified on their PC right now. This was your LAST action: make no further changes and no further tool calls - end your response now with your final summary.'
+                $notifyVerified = ($platformVerdict -eq 'READY')
+                $notifyResult = @{
+                    queued = $true
+                    delivered = $notifyVerified
+                    flowId = $notifyFlowId
+                    title = $doneTitle
+                    message = $doneMessage
+                    limits = @{ titleCharacters = 70; messageCharacters = 140 }
+                    notification = @{
+                        flowId = $notifyFlowId
+                        state = 'QUEUED'
+                        settingEnabled = $true
+                        platformVerdict = $platformVerdict
+                        platformReason = $platformReason
+                        appUserModelIdRegistered = $platformAppId
+                        verified = $false
+                        verification = 'notify.sweep re-measures the platform a few seconds after the call and writes the verdict (SHOWN or SHOWN_UNVERIFIED plus reason) to notify-diagnose.txt. Windows has no API that confirms a toast was drawn, so "verified" here means: no suppression was measurable.'
+                        diagnoseFile = '%LOCALAPPDATA%\ArenaRobloxBridge\notify-diagnose.txt'
                     }
+                    note = 'The user is being notified on their PC right now. This was your LAST action: make no further changes and no further tool calls - end your response now with your final summary.'
                 }
+                if (-not $notifyVerified) {
+                    $notifyResult.notificationWarning = 'NOTIFICATION_UNVERIFIED'
+                    $notifyResult.honest = ('The finish notification was queued, but Windows may suppress it right now: ' + $platformVerdict + ' - ' + $platformReason + ' Do NOT claim the user was notified. Say in your reply what you finished and that the Windows notification may not appear.')
+                    Write-FlowStation 'NOTIFY' $notifyFlowId 'UNVERIFIED' @{ verdict = $platformVerdict; reason = $platformReason }
+                }
+                return @{ ok = $true; result = $notifyResult }
             }
             'get_events' {
                 $events = Take-Events $sessionId 40
@@ -24260,9 +24453,39 @@ function Write-ChannelDiagnoseFile {
         [void]$sb2.AppendLine(('  Meldungen angezeigt:             {0}' -f (Get-ChannelCountText 'NotifyShown')))
         [void]$sb2.AppendLine(('  von Windows unterdrueckt:        {0}' -f (Get-ChannelCountText 'NotifySuppressed')))
         [void]$sb2.AppendLine(('  Aufruf fehlgeschlagen:           {0}' -f (Get-ChannelCountText 'NotifyFailed')))
-        [void]$sb2.AppendLine(('  Plattform-Check blockiert:       {0}' -f (Get-ChannelCountText 'NotifyPlatformBlocked')))
+        [void]$sb2.AppendLine(('  nach Aufruf nicht bestaetigt:    {0}' -f (Get-ChannelCountText 'NotifyUnverified')))
+        [void]$sb2.AppendLine(('  Testlaeufe:                      {0}' -f (Get-ChannelCountText 'NotifyTestRuns')))
+        [void]$sb2.AppendLine(('  vom Nutzer gesehen (ja/nein):    {0} / {1}' -f (Get-ChannelCountText 'NotifySeenYes'), (Get-ChannelCountText 'NotifySeenNo')))
         [void]$sb2.AppendLine(('  letztes Urteil:                  {0}' -f (Get-ChannelCountText 'NotifyLastVerdict')))
         [void]$sb2.AppendLine(('  letzter Grund:                   {0}' -f (Get-ChannelCountText 'NotifyLastReason')))
+        [void]$sb2.AppendLine('')
+        [void]$sb2.AppendLine('Windows-Plattform (gemessen, nicht geraten):')
+        try {
+            $platformNow = Update-NotifyPlatformCache -Force
+            if ($null -ne $platformNow) {
+                [void]$sb2.AppendLine(('  Urteil:                          {0}' -f [string]$platformNow.verdict))
+                [void]$sb2.AppendLine(('  Grund:                           {0}' -f [string]$platformNow.reason))
+                [void]$sb2.AppendLine(('  Benachrichtigungen global:       {0}' -f $(if ($null -eq $platformNow.globalToastsEnabled) { 'unbekannt' } elseif ($platformNow.globalToastsEnabled) { 'an' } else { 'AUS' })))
+                [void]$sb2.AppendLine(('  Benachrichtigungen fuer die App: {0}' -f $(if ($null -eq $platformNow.appNotificationsEnabled) { 'unbekannt' } elseif ($platformNow.appNotificationsEnabled) { 'an' } else { 'AUS' })))
+                [void]$sb2.AppendLine(('  Fokus-Assistent:                 {0}' -f [string]$platformNow.focusAssist))
+                [void]$sb2.AppendLine(('  Vordergrund:                     {0}' -f [string]$platformNow.foreground))
+                [void]$sb2.AppendLine(('  App-Id registriert:              {0}' -f $(if ($platformNow.appUserModelIdRegistered) { 'ja' } else { 'nein' })))
+                [void]$sb2.AppendLine(('  Startmenue-Verknuepfung:         {0}' -f $(if ($platformNow.startMenuShortcut) { 'ja' } else { 'nein' })))
+                [void]$sb2.AppendLine(('  Windows-Build:                   {0}' -f [string]$platformNow.windowsBuild))
+            } else {
+                [void]$sb2.AppendLine('  (Plattform-Check nicht verfuegbar)')
+            }
+        } catch {}
+        try {
+            if ($null -ne $script:NotifyAumidState) {
+                [void]$sb2.AppendLine(('  Registrierung:                   {0} - {1}' -f [string]$script:NotifyAumidState.verdict, [string]$script:NotifyAumidState.reason))
+                [void]$sb2.AppendLine(('  Verknuepfung:                    {0}' -f [string]$script:NotifyAumidState.shortcutPath))
+            }
+        } catch {}
+        [void]$sb2.AppendLine('')
+        [void]$sb2.AppendLine('Letzte Meldungen:')
+        $notifyRecords = Get-NotifyDiagnoseLines
+        foreach ($recordLine in $notifyRecords) { [void]$sb2.AppendLine([string]$recordLine) }
         [void]$sb2.AppendLine('')
         [void]$sb2.AppendLine('Letzte NOTIFY-Stationen (neueste zuerst):')
         $notifyStations = Get-ChannelStations 'NOTIFY' 40
@@ -27698,6 +27921,265 @@ function ConvertTo-XmlSafeText {
     return ([string]$Text).Replace('&', '&amp;').Replace('<', '&lt;').Replace('>', '&gt;')
 }
 
+function Get-NotifyRegistryValue {
+    # Liefert $null, wenn der Schluessel oder der Wert nicht existiert -
+    # "nicht gesetzt" ist etwas anderes als "aus".
+    param([string]$Path, [string]$Name)
+    try {
+        if ([string]::IsNullOrWhiteSpace($Path) -or [string]::IsNullOrWhiteSpace($Name)) { return $null }
+        if (-not (Test-Path -LiteralPath $Path)) { return $null }
+        $item = Get-ItemProperty -LiteralPath $Path -ErrorAction Stop
+        if ($null -eq $item) { return $null }
+        if (-not ($item.PSObject.Properties.Name -contains $Name)) { return $null }
+        return $item.$Name
+    } catch { return $null }
+}
+
+function Register-NotifyAumid {
+    # Version 7.2.0 (D4): Windows zeigt einen Toast nur fuer eine REGISTRIERTE
+    # App-Id. Registriert werden (a) HKCU\Software\Classes\AppUserModelId\<AUMID>
+    # mit Anzeigename und (b) eine Startmenue-Verknuepfung, die genau diese
+    # App-Id traegt. Beides liegt im Benutzerprofil, nichts im System, und
+    # beides ist idempotent. Ohne diesen Schritt verwirft Windows die Meldung
+    # still - Show() kehrt trotzdem ohne Ausnahme zurueck.
+    param([switch]$Force)
+    $aumid = 'Arena.ArenaRobloxBridge'
+    $result = [pscustomobject]@{
+        aumid = $aumid
+        registered = $false
+        registryKey = $false
+        shortcutPath = ''
+        shortcutExists = $false
+        verdict = 'NOT_REGISTERED'
+        reason = ''
+        checkedAt = (Get-Date).ToString('u')
+    }
+    try {
+        if ($null -ne $script:NotifyAumidState -and -not $Force) {
+            if ([bool]$script:NotifyAumidState.registered) { return $script:NotifyAumidState }
+        }
+        $startMenu = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
+        $shortcut = Join-Path $startMenu 'Arena Roblox Bridge.lnk'
+        $result.shortcutPath = $shortcut
+        $result.shortcutExists = (Test-Path -LiteralPath $shortcut)
+
+        # (a) Registrierungsdatenbank: Anzeigename der App fuer die Meldung.
+        $keyPath = 'HKCU:\Software\Classes\AppUserModelId\' + $aumid
+        try {
+            if (-not (Test-Path -LiteralPath $keyPath)) { New-Item -Path $keyPath -Force | Out-Null }
+            Set-ItemProperty -LiteralPath $keyPath -Name 'DisplayName' -Value 'Arena Roblox Bridge' -Type String -ErrorAction Stop
+            Set-ItemProperty -LiteralPath $keyPath -Name 'ShowInSettings' -Value 1 -Type DWord -ErrorAction Stop
+            $result.registryKey = $true
+        } catch {
+            $result.reason = 'Registry: ' + $_.Exception.Message
+        }
+
+        # (b) Startmenue-Verknuepfung mit System.AppUserModel.ID.
+        if ($Force -or -not $result.shortcutExists) {
+            if (-not ('Arena.NotifyLink' -as [type])) {
+                $result.verdict = 'HELPER_UNAVAILABLE'
+                $result.reason = 'Arena.NotifyLink konnte nicht kompiliert werden (siehe runtime.log) - die Verknuepfung fehlt, Windows kann die Meldung verwerfen.'
+                $script:NotifyAumidState = $result
+                return $result
+            }
+            $target = ''
+            try { $target = [string][System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName } catch {}
+            if ([string]::IsNullOrWhiteSpace($target)) { $target = (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') }
+            $scriptPath = ''
+            try { $scriptPath = [string]$script:ScriptPath } catch {}
+            $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden'
+            if (-not [string]::IsNullOrWhiteSpace($scriptPath)) { $arguments = $arguments + ' -File "' + $scriptPath + '"' }
+            $workingDir = ''
+            try { if (-not [string]::IsNullOrWhiteSpace($scriptPath)) { $workingDir = [string](Split-Path -Parent $scriptPath) } } catch {}
+            $registerVerdict = ''
+            try {
+                $registerVerdict = [string][Arena.NotifyLink]::Register($shortcut, $target, $arguments, $workingDir, $aumid, 'Arena Roblox Bridge', '', 0)
+            } catch {
+                $registerVerdict = 'failed: ' + $_.Exception.Message
+            }
+            $result.shortcutExists = (Test-Path -LiteralPath $shortcut)
+            if ($registerVerdict -eq 'ok' -and $result.shortcutExists) {
+                $result.registered = $true
+                $result.verdict = 'REGISTERED'
+                $result.reason = 'Startmenue-Verknuepfung mit App-Id angelegt.'
+            } else {
+                $result.verdict = 'SHORTCUT_FAILED'
+                $result.reason = ('Verknuepfung: ' + $registerVerdict)
+            }
+        } elseif ($result.shortcutExists -and $result.registryKey) {
+            $result.registered = $true
+            $result.verdict = 'ALREADY_REGISTERED'
+            $result.reason = 'Verknuepfung und App-Id waren bereits vorhanden.'
+        }
+    } catch {
+        $result.verdict = 'FAILED'
+        $result.reason = $_.Exception.Message
+    }
+    $script:NotifyAumidState = $result
+    try { Write-FlowTrace 'NOTIFY' 'aumid' 'REGISTER' @{ verdict = $result.verdict; registryKey = $result.registryKey; shortcut = $result.shortcutExists; reason = $result.reason } } catch {}
+    return $result
+}
+
+function Test-NotifyPlatform {
+    # Version 7.2.0 (D4): MESSEN statt behaupten. Bis hierher galt
+    # "Toast.Show() ohne Ausnahme = angezeigt". Windows unterdrueckt Toasts
+    # aber still. Diese Funktion liefert das Urteil UND den Grund.
+    param()
+    $platform = [pscustomobject]@{
+        checkedAt = (Get-Date).ToString('u')
+        settingEnabled = $false
+        globalToastsEnabled = $null
+        appNotificationsEnabled = $null
+        appUserModelId = 'Arena.ArenaRobloxBridge'
+        appUserModelIdRegistered = $false
+        startMenuShortcut = $false
+        focusAssist = 'unknown'
+        foreground = 'unknown'
+        windowsBuild = 0
+        helperAvailable = $false
+        verdict = 'UNKNOWN'
+        reason = ''
+    }
+    try { $platform.settingEnabled = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch {}
+    try { $platform.windowsBuild = [int][Environment]::OSVersion.Version.Build } catch {}
+    try { $platform.helperAvailable = [bool]('Arena.NotifyLink' -as [type]) } catch {}
+    $settingsRoot = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings'
+    $globalToasts = Get-NotifyRegistryValue $settingsRoot 'NOC_GLOBAL_SETTING_TOASTS_ENABLED'
+    if ($null -ne $globalToasts) { try { $platform.globalToastsEnabled = ([int]$globalToasts -ne 0) } catch {} }
+    $appEnabled = Get-NotifyRegistryValue ($settingsRoot + '\' + $platform.appUserModelId) 'ENABLED'
+    if ($null -ne $appEnabled) { try { $platform.appNotificationsEnabled = ([int]$appEnabled -ne 0) } catch {} }
+    # App-Id des PowerShell-Hosts (Fallback-Pfad der Meldung) ebenfalls pruefen.
+    $legacyId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
+    if ($null -eq $appEnabled) {
+        $legacyEnabled = Get-NotifyRegistryValue ($settingsRoot + '\' + $legacyId) 'ENABLED'
+        if ($null -ne $legacyEnabled) { try { $platform.appNotificationsEnabled = ([int]$legacyEnabled -ne 0) } catch {} }
+    }
+    try {
+        if ($null -ne $script:NotifyAumidState) {
+            $platform.appUserModelIdRegistered = [bool]$script:NotifyAumidState.registered
+            $platform.startMenuShortcut = [bool]$script:NotifyAumidState.shortcutExists
+        }
+    } catch {}
+    # Fokus-Assistent / "Benachrichtigungen nicht stoeren".
+    $profileValue = Get-NotifyRegistryValue 'HKCU:\Software\Microsoft\Windows\CurrentVersion\QuietHours' 'Profile'
+    if ($null -ne $profileValue -and -not [string]::IsNullOrWhiteSpace([string]$profileValue)) {
+        $platform.focusAssist = ([string]$profileValue).ToLowerInvariant()
+    }
+    # Vollbild-App im Vordergrund: Windows zeigt dann von sich aus keine Toasts.
+    if ($platform.helperAvailable) {
+        try { $platform.foreground = [string][Arena.NotifyLink]::ForegroundFullscreen() } catch { $platform.foreground = 'unknown' }
+    }
+    # Urteil - in der Reihenfolge, in der Windows selbst unterdrueckt.
+    if (-not $platform.settingEnabled) {
+        $platform.verdict = 'SUPPRESSED_APP_DISABLED'
+        $platform.reason = 'Der Schalter "Benachrichtigung, wenn Arena fertig ist" ist AUS.'
+    } elseif ($platform.globalToastsEnabled -eq $false) {
+        $platform.verdict = 'SUPPRESSED_WINDOWS_DISABLED'
+        $platform.reason = 'Benachrichtigungen sind in Windows global ausgeschaltet (NOC_GLOBAL_SETTING_TOASTS_ENABLED = 0).'
+    } elseif ($platform.appNotificationsEnabled -eq $false) {
+        $platform.verdict = 'SUPPRESSED_APP_NOTIFICATIONS_OFF'
+        $platform.reason = 'Benachrichtigungen sind fuer diese App in Windows ausgeschaltet (Einstellungen > System > Benachrichtigungen).'
+    } elseif ($platform.focusAssist -eq 'priorityonly' -or $platform.focusAssist -eq 'alarmsonly') {
+        $platform.verdict = 'SUPPRESSED_QUIET_HOURS'
+        $platform.reason = ('Der Fokus-Assistent steht auf "' + $platform.focusAssist + '" - Windows legt die Meldung ins Info-Center statt sie zu zeigen.')
+    } elseif ($platform.foreground -eq 'fullscreen') {
+        $platform.verdict = 'SUPPRESSED_FULLSCREEN_RULE'
+        $platform.reason = 'Eine Vollbild-Anwendung hat den Vordergrund - Windows unterdrueckt Toasts dann von sich aus.'
+    } elseif (-not $platform.appUserModelIdRegistered -and -not $platform.startMenuShortcut) {
+        $platform.verdict = 'AUMID_UNREGISTERED'
+        $platform.reason = 'Die App-Id ist nicht registriert (keine Startmenue-Verknuepfung) - Windows kann die Meldung verwerfen, ohne dass Show() eine Ausnahme wirft.'
+    } else {
+        $platform.verdict = 'READY'
+        $platform.reason = 'Keine Unterdrueckung messbar: Windows darf die Meldung zeigen.'
+    }
+    return $platform
+}
+
+function Get-NotifyPlatformLine {
+    param($Platform)
+    if ($null -eq $Platform) { return 'Plattform-Check nicht verfuegbar' }
+    return ([string]$Platform.verdict + ' - ' + [string]$Platform.reason)
+}
+
+function Update-NotifyPlatformCache {
+    # Haelt das Urteil fuer den HTTP-Handler bereit: Der Server-Runspace kann
+    # keine UI-Funktionen aufrufen, liest aber genau dieses JSON, damit
+    # report_done ehrlich antworten kann (NOTIFICATION_UNVERIFIED).
+    param([switch]$Force)
+    try {
+        $now = Get-Date
+        if (-not $Force -and $null -ne $script:NotifyPlatformCacheAt -and ($now - $script:NotifyPlatformCacheAt).TotalSeconds -lt 30) { return $script:NotifyPlatformCache }
+        $script:NotifyPlatformCacheAt = $now
+        $platform = Test-NotifyPlatform
+        $script:NotifyPlatformCache = $platform
+        $json = ''
+        try { $json = ($platform | ConvertTo-Json -Depth 6 -Compress) } catch {}
+        try { $script:Shared.NotifyPlatformJson = [string]$json } catch {}
+        try { Set-UiChannelText 'NotifyLastVerdict' ([string]$platform.verdict) } catch {}
+        try { Set-UiChannelText 'NotifyLastReason' ([string]$platform.reason) } catch {}
+        return $platform
+    } catch { return $null }
+}
+
+function Add-NotifyRecord {
+    # Letzten Meldungen der Oberflaeche (maximal 20) - fuer notify.sweep und
+    # notify-diagnose.txt.
+    param($Record)
+    try {
+        if ($null -eq $Record) { return }
+        if ($null -eq $script:NotifyRecords) { $script:NotifyRecords = New-Object System.Collections.Generic.List[object] }
+        $script:NotifyRecords.Add($Record)
+        while ($script:NotifyRecords.Count -gt 20) { $script:NotifyRecords.RemoveAt(0) }
+        $json = ''
+        try { $json = ($Record | ConvertTo-Json -Depth 6 -Compress) } catch {}
+        try { $script:Shared.NotifyLastJson = [string]$json } catch {}
+    } catch {}
+}
+
+function Invoke-NotifySweep {
+    # Version 7.2.0: Nachsicht statt Blindheit. Windows bietet keine API, die
+    # das Anzeigen eines Toasts bestaetigt - also wird NACH dem Aufruf erneut
+    # gemessen und ehrlich verbucht: SHOWN (keine Unterdrueckung messbar) oder
+    # SHOWN_UNVERIFIED (Grund steht dabei). Genau dieser Unterschied fehlte
+    # 7.1.x, wo "delivered = true" blind zurueckgegeben wurde.
+    param()
+    try {
+        if ($null -eq $script:NotifyRecords -or $script:NotifyRecords.Count -eq 0) { return }
+        $nowSeconds = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        foreach ($record in $script:NotifyRecords.ToArray()) {
+            try {
+                if ([bool]$record.swept) { continue }
+                $shownAt = [int64]$record.shownAt
+                if ($shownAt -le 0) { continue }
+                if (($nowSeconds - $shownAt) -lt 4) { continue }
+                $platform = Update-NotifyPlatformCache -Force
+                $verdict = 'SHOWN_UNVERIFIED'
+                $reason = 'Windows bestaetigt das Anzeigen eines Toasts nicht; nach dem Aufruf war keine Unterdrueckung messbar.'
+                if ($null -ne $platform) {
+                    if ([string]$platform.verdict -eq 'READY') {
+                        $verdict = 'SHOWN'
+                        $reason = [string]$platform.reason
+                    } else {
+                        $verdict = 'SHOWN_UNVERIFIED'
+                        $reason = ('Nach dem Aufruf gemessen: ' + (Get-NotifyPlatformLine $platform))
+                    }
+                }
+                Set-UiMessageField $record 'swept' $true
+                Set-UiMessageField $record 'sweptAt' $nowSeconds
+                Set-UiMessageField $record 'verdict' $verdict
+                Set-UiMessageField $record 'sweepReason' $reason
+                if ($verdict -eq 'SHOWN') { Add-UiChannelCount 'NotifyShown' 1 } else { Add-UiChannelCount 'NotifyUnverified' 1 }
+                Set-UiChannelText 'NotifyLastVerdict' $verdict
+                Set-UiChannelText 'NotifyLastReason' $reason
+                Write-FlowTrace 'NOTIFY' ([string]$record.flowId) 'SWEEP' @{ verdict = $verdict; ageSeconds = ($nowSeconds - $shownAt); method = ([string]$record.method); reason = $reason }
+                # Nicht erneut einreihen (das wuerde duplizieren) - nur die
+                # gemeinsame Ablage fuer Diagnose/HTTP aktualisieren.
+                try { $script:Shared.NotifyLastJson = [string]($record | ConvertTo-Json -Depth 6 -Compress) } catch {}
+            } catch {}
+        }
+    } catch {}
+}
+
 function Clear-NotifyQueue {
     # Version 7.1.3: wartende Fertig-Meldungen verwerfen. Das Ausschalten des
     # Schalters "Benachrichtigung, wenn Arena fertig ist" muss SOFORT wirken,
@@ -27724,12 +28206,44 @@ function Show-ArenaDoneNotification {
     # steht direkt unter "Fortschritt in der Place-Liste anzeigen" und wird
     # hier ZUSAETZLICH unmittelbar vor dem Anzeigen geprueft - ein Ausschalten
     # wirkt damit auch fuer Meldungen, die schon in der Warteschlange lagen.
-    param([string]$Place, [string]$Title, [string]$Message)
+    # Version 7.2.0 (D4): Es wird GEMESSEN, nicht behauptet. Vor dem Aufruf
+    # laeuft Test-NotifyPlatform, der Aufruf selbst bekommt eine Station, und
+    # notify.sweep misst danach erneut. Ein Toast, den Windows still verworfen
+    # hat, steht jetzt als SHOWN_UNVERIFIED mit Grund im Protokoll und in
+    # notify-diagnose.txt - statt "Arena-Fertig-Meldung angezeigt".
+    param([string]$Place, [string]$Title, [string]$Message, [string]$FlowId = '', [int64]$QueuedAt = 0)
+    $flowId = [string]$FlowId
+    if ([string]::IsNullOrWhiteSpace($flowId)) { $flowId = 'n-' + [string]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) }
+    $record = [pscustomobject]@{
+        flowId     = $flowId
+        place      = [string]$Place
+        title      = [string]$Title
+        message    = [string]$Message
+        queuedAt   = $QueuedAt
+        shownAt    = [int64]0
+        method     = ''
+        verdict    = 'PENDING'
+        reason     = ''
+        swept      = $false
+        seenByUser = ''
+    }
     $allowed = $false
     try { $allowed = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch {}
     if (-not $allowed) {
+        Set-UiMessageField $record 'verdict' 'SUPPRESSED_APP_DISABLED'
+        Set-UiMessageField $record 'reason' 'Der Schalter "Benachrichtigung, wenn Arena fertig ist" ist aus.'
+        Add-UiChannelCount 'NotifySuppressed' 1
+        Set-UiChannelText 'NotifyLastVerdict' 'SUPPRESSED_APP_DISABLED'
+        Set-UiChannelText 'NotifyLastReason' ([string]$record.reason)
+        Write-FlowTrace 'NOTIFY' $flowId 'SUPPRESSED' @{ reason = 'setting_off'; place = ([string]$Place) }
+        Add-NotifyRecord $record
         Write-RuntimeLog 'Fertig-Meldung verworfen: der Schalter "Benachrichtigung, wenn Arena fertig ist" ist aus.'
-        return
+        return $record
+    }
+    # Plattform VOR dem Aufruf messen: das Urteil gehoert zur Meldung.
+    $platform = Update-NotifyPlatformCache -Force
+    if ($null -ne $platform) {
+        Write-FlowTrace 'NOTIFY' $flowId 'PLATFORM' @{ verdict = ([string]$platform.verdict); globalToasts = $(if ($null -eq $platform.globalToastsEnabled) { 'unknown' } else { [string]$platform.globalToastsEnabled }); appEnabled = $(if ($null -eq $platform.appNotificationsEnabled) { 'unknown' } else { [string]$platform.appNotificationsEnabled }); focusAssist = ([string]$platform.focusAssist); foreground = ([string]$platform.foreground); aumidRegistered = ([string]$platform.appUserModelIdRegistered); build = ([string]$platform.windowsBuild) }
     }
     # Windows 11 ToastGeneric hat laut Microsoft kein festes Zeichenlimit je
     # Textfeld (Darstellung wird nach Breite/Skalierung abgeschnitten; Gesamt-XML
@@ -27743,19 +28257,29 @@ function Show-ArenaDoneNotification {
     if ($text.Length -gt 140) { $text = $text.Substring(0, 139).TrimEnd() + '…' }
     if ([string]::IsNullOrWhiteSpace($text)) { $text = 'Ich bin fertig.' }
     $shown = $false
-    # 1) Moderner Windows-Toast (WinRT) - erscheint wie eine echte App-Meldung.
+    $method = ''
+    # 1) Moderner Windows-Toast (WinRT) - mit der REGISTRIERTEN App-Id, damit
+    #    Windows die Meldung nicht still verwirft und sie "Arena Roblox Bridge"
+    #    heisst statt "Windows PowerShell".
     try {
         [void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
         [void][Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime]
         $appId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
+        try {
+            if ($null -ne $script:NotifyAumidState -and ([bool]$script:NotifyAumidState.registered -or [bool]$script:NotifyAumidState.shortcutExists)) {
+                $appId = [string]$script:NotifyAumidState.aumid
+            }
+        } catch {}
         $toastXml = '<toast duration="long"><visual><binding template="ToastGeneric"><text>' + (ConvertTo-XmlSafeText $title) + '</text><text>' + (ConvertTo-XmlSafeText $text) + '</text></binding></visual><audio src="ms-winsoundevent:Notification.Default"/></toast>'
         $xmlDoc = New-Object Windows.Data.Xml.Dom.XmlDocument
         $xmlDoc.LoadXml($toastXml)
         $toast = New-Object Windows.UI.Notifications.ToastNotification $xmlDoc
         [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId).Show($toast)
         $shown = $true
+        $method = 'winrt:' + $appId
     } catch {
         Write-RuntimeLog "Windows-Toast fehlgeschlagen: $($_.Exception.Message)"
+        Write-FlowTrace 'NOTIFY' $flowId 'CALL_FAILED' @{ channel = 'winrt'; error = $_.Exception.Message }
     }
     # 2) Fallback: klassischer Balloon-Hinweis ueber ein Tray-Symbol.
     if (-not $shown) {
@@ -27779,8 +28303,10 @@ function Show-ArenaDoneNotification {
             })
             $niTimer.Start()
             $shown = $true
+            $method = 'balloon'
         } catch {
             Write-RuntimeLog "Balloon-Hinweis fehlgeschlagen: $($_.Exception.Message)"
+            Write-FlowTrace 'NOTIFY' $flowId 'CALL_FAILED' @{ channel = 'balloon'; error = $_.Exception.Message }
         }
     }
     # 3) Letzter Fallback: Hauptfenster holen und aktivieren.
@@ -27788,9 +28314,227 @@ function Show-ArenaDoneNotification {
         try {
             $window.Activate()
             [void]$window.Focus()
+            $method = 'window'
         } catch {}
     }
-    Write-RuntimeLog "Arena-Fertig-Meldung angezeigt: $text"
+    Set-UiMessageField $record 'shownAt' ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+    Set-UiMessageField $record 'method' $method
+    if ($shown) {
+        Set-UiMessageField $record 'verdict' 'CALL_RETURNED'
+        Set-UiMessageField $record 'reason' 'Show() kam ohne Ausnahme zurueck - ob Windows die Meldung wirklich gezeichnet hat, misst notify.sweep.'
+        Write-FlowTrace 'NOTIFY' $flowId 'CALL' @{ channel = $method; verdict = 'CALL_RETURNED'; platform = $(if ($null -ne $platform) { [string]$platform.verdict } else { '-' }) }
+    } else {
+        Set-UiMessageField $record 'verdict' 'CALL_FAILED'
+        Set-UiMessageField $record 'reason' 'Kein Kanal (WinRT, Balloon, Fenster) konnte aufgerufen werden.'
+        Add-UiChannelCount 'NotifyFailed' 1
+        Set-UiChannelText 'NotifyLastVerdict' 'CALL_FAILED'
+        Write-FlowTrace 'NOTIFY' $flowId 'CALL_FAILED' @{ channel = 'none' }
+    }
+    Add-NotifyRecord $record
+    Write-RuntimeLog ("Arena-Fertig-Meldung angezeigt: " + $text + " (Kanal: " + $(if ($method) { $method } else { 'keiner' }) + ", Urteil: " + [string]$record.verdict + ", wird von notify.sweep nachgemessen)")
+    return $record
+}
+
+function Send-NotifyTestMessage {
+    # Version 7.2.0 (D4): Test-Meldung aus den Einstellungen. Sie zeigt das
+    # gemessene Urteil und fragt danach ehrlich nach, ob der Nutzer die Meldung
+    # GESEHEN hat - der einzige Sensor, den es fuer einen Toast gibt.
+    param()
+    $flowId = 'test-' + [string]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+    Add-UiChannelCount 'NotifyTestRuns' 1
+    $aumidState = Register-NotifyAumid -Force
+    $wasAllowed = $false
+    try { $wasAllowed = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch {}
+    $record = $null
+    if ($wasAllowed) {
+        $record = Show-ArenaDoneNotification -Place 'Test' -Title '✅ Test-Meldung der Bridge' -Message 'Wenn du das siehst, kommt auch Arenas Fertig-Meldung an.' -FlowId $flowId
+    } else {
+        # Der Test darf die Einstellung nicht veraendern: kurz erlauben, zeigen,
+        # zurueckstellen - und ehrlich sagen, dass der Schalter aus war.
+        try { $script:Shared.BridgeSettings.notifyOnDone = $true } catch {}
+        $record = Show-ArenaDoneNotification -Place 'Test' -Title '✅ Test-Meldung der Bridge' -Message 'Wenn du das siehst, kommt auch Arenas Fertig-Meldung an.' -FlowId $flowId
+        try { $script:Shared.BridgeSettings.notifyOnDone = $wasAllowed } catch {}
+    }
+    $platform = Update-NotifyPlatformCache -Force
+    return [pscustomobject]@{
+        flowId = $flowId
+        record = $record
+        platform = $platform
+        aumid = $aumidState
+        settingWasOff = (-not $wasAllowed)
+    }
+}
+
+function Format-NotifyTestSummary {
+    param($TestResult)
+    $lines = New-Object System.Collections.Generic.List[string]
+    try {
+        if ($null -eq $TestResult) { return 'Test ohne Ergebnis.' }
+        $platform = $null
+        try { $platform = $TestResult.platform } catch {}
+        if ($null -ne $platform) {
+            $lines.Add(('Urteil: ' + [string]$platform.verdict))
+            $lines.Add([string]$platform.reason)
+        } else {
+            $lines.Add('Urteil: UNKNOWN - die Plattform konnte nicht gemessen werden.')
+        }
+        $aumid = $null
+        try { $aumid = $TestResult.aumid } catch {}
+        if ($null -ne $aumid) {
+            $lines.Add(('App-Id: ' + [string]$aumid.verdict + $(if ([string]$aumid.reason) { ' - ' + [string]$aumid.reason } else { '' })))
+        }
+        $record = $null
+        try { $record = $TestResult.record } catch {}
+        if ($null -ne $record) {
+            $lines.Add(('Kanal: ' + $(if ([string]$record.method) { [string]$record.method } else { 'keiner erreichbar' })))
+        }
+        $settingWasOff = $false
+        try { $settingWasOff = [bool]$TestResult.settingWasOff } catch {}
+        if ($settingWasOff) { $lines.Add('Der Schalter war AUS - fuer den Test kurz erlaubt und danach wieder zurueckgestellt.') }
+    } catch {}
+    if ($lines.Count -eq 0) { return 'Test ohne Ergebnis.' }
+    return ($lines.ToArray() -join [Environment]::NewLine)
+}
+
+function Open-NotifySeenWindow {
+    # Version 7.2.0 (D4): Der einzige Sensor fuer einen Windows-Toast ist der
+    # Nutzer selbst. Dieses Fenster fragt nach dem Test ehrlich nach und
+    # verbucht die Antwort als Station und Zaehler - damit "ich habe nichts
+    # gesehen" endlich ein Messwert ist und keine Erinnerung.
+    param($TestResult)
+    try {
+        if ($null -ne $script:NotifySeenWindow) {
+            try { $script:NotifySeenWindow.Close() } catch {}
+            $script:NotifySeenWindow = $null
+        }
+        $flowId = ''
+        $platformLine = 'Urteil: UNKNOWN'
+        try {
+            if ($null -ne $TestResult) {
+                $flowId = [string]$TestResult.flowId
+                if ($null -ne $TestResult.platform) { $platformLine = ('Urteil: ' + (Get-NotifyPlatformLine $TestResult.platform)) }
+            }
+        } catch {}
+        $win = [System.Windows.Window]::new()
+        $win.Title = 'Meldung gesehen?'
+        $win.Width = 460
+        $win.Height = 250
+        $win.MinWidth = 460; $win.MinHeight = 250; $win.MaxWidth = 460; $win.MaxHeight = 250
+        $win.WindowStartupLocation = 'CenterOwner'
+        $win.WindowStyle = 'None'
+        $win.AllowsTransparency = $true
+        $win.Background = [System.Windows.Media.Brushes]::Transparent
+        $win.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe UI')
+        $win.ResizeMode = 'NoResize'
+        $win.Topmost = $true
+        try { $win.Owner = $window } catch {}
+        $shell = [System.Windows.Controls.Border]::new()
+        $shell.CornerRadius = [System.Windows.CornerRadius]::new(16)
+        $shell.Background = Get-Brush '#F50B1030'
+        $shell.BorderBrush = Get-Brush '#33FFFFFF'
+        $shell.BorderThickness = [System.Windows.Thickness]::new(1)
+        $shell.Padding = [System.Windows.Thickness]::new(18)
+        $stack = [System.Windows.Controls.StackPanel]::new()
+        $headline = [System.Windows.Controls.TextBlock]::new()
+        $headline.Text = 'Hast du die Test-Meldung gesehen?'
+        $headline.FontSize = 15
+        $headline.FontWeight = 'SemiBold'
+        $headline.Foreground = Get-Brush '#F4F8FF'
+        [void]$stack.Children.Add($headline)
+        $hint = [System.Windows.Controls.TextBlock]::new()
+        $hint.Text = $platformLine
+        $hint.FontSize = 11
+        $hint.TextWrapping = 'Wrap'
+        $hint.Margin = [System.Windows.Thickness]::new(0, 8, 0, 0)
+        $hint.Foreground = Get-Brush '#9AA9CE'
+        [void]$stack.Children.Add($hint)
+        $buttonRow = [System.Windows.Controls.StackPanel]::new()
+        $buttonRow.Orientation = 'Horizontal'
+        $buttonRow.Margin = [System.Windows.Thickness]::new(0, 16, 0, 0)
+        $yesButton = [System.Windows.Controls.Button]::new()
+        $yesButton.Content = 'Ja, gesehen'
+        $yesButton.Padding = [System.Windows.Thickness]::new(14, 7, 14, 7)
+        $yesButton.Margin = [System.Windows.Thickness]::new(0, 0, 10, 0)
+        $yesButton.Background = Get-Brush '#22C55E'
+        $yesButton.Foreground = Get-Brush '#08111F'
+        $yesButton.BorderThickness = [System.Windows.Thickness]::new(0)
+        $yesButton.FontWeight = 'SemiBold'
+        $yesButton.Cursor = 'Hand'
+        $noButton = [System.Windows.Controls.Button]::new()
+        $noButton.Content = 'Nein, nichts gesehen'
+        $noButton.Padding = [System.Windows.Thickness]::new(14, 7, 14, 7)
+        $noButton.Background = Get-Brush '#1B2440'
+        $noButton.Foreground = Get-Brush '#F4F8FF'
+        $noButton.BorderBrush = Get-Brush '#3AFFFFFF'
+        $noButton.BorderThickness = [System.Windows.Thickness]::new(1)
+        $noButton.Cursor = 'Hand'
+        [void]$buttonRow.Children.Add($yesButton)
+        [void]$buttonRow.Children.Add($noButton)
+        [void]$stack.Children.Add($buttonRow)
+        $answerText = [System.Windows.Controls.TextBlock]::new()
+        $answerText.FontSize = 11
+        $answerText.TextWrapping = 'Wrap'
+        $answerText.Margin = [System.Windows.Thickness]::new(0, 12, 0, 0)
+        $answerText.Foreground = Get-Brush '#6E7FA8'
+        [void]$stack.Children.Add($answerText)
+        $shell.Child = $stack
+        $win.Content = $shell
+        $seenFlowId = $flowId
+        $yesButton.Add_Click({
+            param($s, $e)
+            try {
+                Add-UiChannelCount 'NotifySeenYes' 1
+                Set-UiChannelText 'NotifyLastSeen' 'yes'
+                Write-FlowTrace 'NOTIFY' $seenFlowId 'SEEN' @{ answer = 'yes' }
+                $answerText.Text = 'Danke - der Kanal funktioniert. Dieses Fenster kannst du schliessen.'
+                $answerText.Foreground = Get-Brush '#38D16C'
+                $yesButton.IsEnabled = $false
+                $noButton.IsEnabled = $false
+            } catch {}
+        })
+        $noButton.Add_Click({
+            param($s, $e)
+            try {
+                Add-UiChannelCount 'NotifySeenNo' 1
+                Set-UiChannelText 'NotifyLastSeen' 'no'
+                Write-FlowTrace 'NOTIFY' $seenFlowId 'SEEN' @{ answer = 'no' }
+                $diagPath = Join-Path $script:AppDataRoot 'notify-diagnose.txt'
+                $answerText.Text = ('Verstanden - Windows hat die Meldung unterdrueckt. Grund und Gegenmittel stehen in ' + $diagPath + ' (klein, vollstaendig weitergebbar).')
+                $answerText.Foreground = Get-Brush '#FFB4C4'
+                $yesButton.IsEnabled = $false
+                $noButton.IsEnabled = $false
+                [void](Write-ChannelDiagnoseFile -Force)
+            } catch {}
+        })
+        $script:NotifySeenWindow = $win
+        [void]$win.Show()
+    } catch {
+        Write-UiErrorLog 'Fenster "Meldung gesehen?" konnte nicht geoeffnet werden' $_
+    }
+}
+
+function Get-NotifyDiagnoseLines {
+    # Letzte Meldungen mit Kanal und Urteil - fuer notify-diagnose.txt.
+    param()
+    $lines = New-Object System.Collections.Generic.List[string]
+    try {
+        if ($null -eq $script:NotifyRecords -or $script:NotifyRecords.Count -eq 0) {
+            $lines.Add('  (noch keine Fertig-Meldung in dieser Laufzeit)')
+            return $lines
+        }
+        $records = $script:NotifyRecords.ToArray()
+        for ($i = $records.Length - 1; $i -ge 0; $i--) {
+            $record = $records[$i]
+            $seen = ''
+            try { $seen = [string]$record.seenByUser } catch {}
+            $lines.Add(('  {0}  Place="{1}"  Kanal={2}  Urteil={3}{4}' -f [string]$record.flowId, [string]$record.place, $(if ([string]$record.method) { [string]$record.method } else { '-' }), [string]$record.verdict, $(if ($seen) { '  vom Nutzer gesehen: ' + $seen } else { '' })))
+            $reason = ''
+            try { $reason = [string]$record.sweepReason } catch {}
+            if ([string]::IsNullOrWhiteSpace($reason)) { try { $reason = [string]$record.reason } catch {} }
+            if (-not [string]::IsNullOrWhiteSpace($reason)) { $lines.Add(('      ' + $reason)) }
+        }
+    } catch {}
+    return $lines
 }
 
 function Set-ArenaSwitchVisualState {
@@ -28085,6 +28829,14 @@ function Open-SettingsWindow {
                             <StackPanel>
                                 <CheckBox x:Name="PerfSwitch" Style="{StaticResource ArenaSwitch}" Content="Leistungsdiagnose aufzeichnen"/>
                                 <TextBlock Text="Schreibt höchstens alle 30 Sekunden einen kompakten Bericht nach %LOCALAPPDATA%\ArenaRobloxBridge\performance.txt: Anfragen pro Minute, Dauer und Pausen des Studio-Kanals, UI-Zeit und HTTP-Zeit. Standard: aus." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,7,0,0"/>
+                                <Border Height="1" Background="{StaticResource SwLine}" Margin="0,14,0,14"/>
+                                <!-- Version 7.2.0 (D4): Die Fertig-Meldung wird
+                                     messbar. Der Test zeigt eine echte Meldung,
+                                     misst die Windows-Plattform und fragt danach
+                                     ehrlich nach, ob sie gesehen wurde. -->
+                                <TextBlock Text="FERTIG-MELDUNG TESTEN" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <Button x:Name="NotifyTestButton" Content="Test-Meldung anzeigen" Background="{StaticResource SwCardBg}" Foreground="{StaticResource SwTextMain}" BorderBrush="#3AFFFFFF" BorderThickness="1" Padding="14,7" FontSize="11.5" HorizontalAlignment="Left" Cursor="Hand"/>
+                                <TextBlock x:Name="NotifyTestStatus" Text="Noch nicht getestet. Der Test misst, ob Windows die Meldung zeigen darf, und legt bei Bedarf die App-Id im Startmenue an." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,9,0,0"/>
                             </StackPanel>
                         </Border>
 
@@ -28136,6 +28888,29 @@ function Open-SettingsWindow {
     $editorIconsSwitch = $settingsWindow.FindName('EditorIconsSwitch')
     $perfSwitch      = $settingsWindow.FindName('PerfSwitch')
     $updateText      = $settingsWindow.FindName('UpdateInfoText')
+    # Version 7.2.0 (D4): Test-Knopf + Urteil fuer die Fertig-Meldung.
+    $notifyTestButton = $settingsWindow.FindName('NotifyTestButton')
+    $notifyTestStatus = $settingsWindow.FindName('NotifyTestStatus')
+    if ($null -ne $notifyTestButton) {
+        $notifyTestButton.Add_Click({
+            param($s, $e)
+            try {
+                $notifyTestStatus.Text = 'Test laeuft - Meldung wird angezeigt und Windows-Plattform gemessen...'
+                $testResult = Send-NotifyTestMessage
+                $notifyTestStatus.Text = [string](Format-NotifyTestSummary $testResult)
+                Open-NotifySeenWindow $testResult
+            } catch {
+                $notifyTestStatus.Text = 'Test fehlgeschlagen: ' + $_.Exception.Message
+                Write-UiErrorLog 'Test der Fertig-Meldung fehlgeschlagen' $_
+            }
+        })
+    }
+    try {
+        $cachedPlatform = Update-NotifyPlatformCache -Force
+        if ($null -ne $cachedPlatform -and $null -ne $notifyTestStatus) {
+            $notifyTestStatus.Text = ('Letztes Urteil: ' + (Get-NotifyPlatformLine $cachedPlatform))
+        }
+    } catch {}
 
     $startupSwitch.IsChecked = $autoStartNow
     $progressSwitch.IsChecked = $progressNow
@@ -28193,6 +28968,11 @@ function Open-SettingsWindow {
         $script:SettingsCache.notifyOnDone = $enabled
         Save-BridgeSettingsFile
         if (-not $enabled) { Clear-NotifyQueue }
+        # Version 7.2.0 (D4): Beim Einschalten die App-Id registrieren, sonst
+        # verwirft Windows die Meldung still - und beim Ausschalten das Urteil
+        # sofort neu messen (SUPPRESSED_APP_DISABLED).
+        if ($enabled) { [void](Register-NotifyAumid -Force) }
+        [void](Update-NotifyPlatformCache -Force)
         $stateText = 'aus'
         if ($enabled) { $stateText = 'an' }
         Write-RuntimeLog "Fertig-Benachrichtigung (report_done) ist jetzt $stateText."
@@ -28381,14 +29161,35 @@ $notifyTimer.Add_Tick({
             if (-not $script:Shared.NotifyQueue.TryDequeue([ref]$item)) { break }
             try {
                 $payload = $item | ConvertFrom-Json
-                Show-ArenaDoneNotification -Place ([string]$payload.place) -Title ([string]$payload.title) -Message ([string]$payload.message)
+                $payloadFlow = ''
+                try { if ($payload.PSObject.Properties['flowId']) { $payloadFlow = [string]$payload.flowId } } catch {}
+                $payloadQueued = [int64]0
+                try { if ($payload.PSObject.Properties['queuedAt']) { $payloadQueued = [int64]$payload.queuedAt } } catch {}
+                [void](Show-ArenaDoneNotification -Place ([string]$payload.place) -Title ([string]$payload.title) -Message ([string]$payload.message) -FlowId $payloadFlow -QueuedAt $payloadQueued)
             } catch {
                 Write-RuntimeLog "Fertig-Meldung konnte nicht angezeigt werden: $($_.Exception.Message)"
+                Write-FlowTrace 'NOTIFY' 'n-?' 'CALL_FAILED' @{ channel = 'tick'; error = $_.Exception.Message }
             }
             try { $notifyAllowed = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch { $notifyAllowed = $false }
         }
+        # Version 7.2.0 (D4): notify.sweep misst NACH dem Anzeigen erneut und
+        # verbucht ehrlich SHOWN oder SHOWN_UNVERIFIED mit Grund. Windows bietet
+        # keine Bestaetigungs-API fuer einen Toast - deshalb Messung plus
+        # Nutzerfrage ("Gesehen? Ja/Nein") statt blindem delivered = true.
+        Invoke-NotifySweep
+        [void](Update-NotifyPlatformCache)
     } catch {}
 })
+# Version 7.2.0 (D4): Ohne registrierte App-Id verwirft Windows den Toast still,
+# obwohl Show() ohne Ausnahme zurueckkehrt. Registriert wird nur, wenn der
+# Nutzer Fertig-Meldungen ueberhaupt eingeschaltet hat - und nur im
+# Benutzerprofil (HKCU + Startmenue), idempotent.
+try {
+    $notifyWantedAtStart = $false
+    try { $notifyWantedAtStart = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch {}
+    if ($notifyWantedAtStart) { [void](Register-NotifyAumid) }
+    [void](Update-NotifyPlatformCache -Force)
+} catch {}
 $notifyTimer.Start()
 
 Refresh-Ui
