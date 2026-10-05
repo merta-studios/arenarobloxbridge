@@ -25,7 +25,7 @@ sein.
 | `test_v711_delivery.py` | Python-Modelltest 7.1.1: stellt die 7.1.0-Zustellblockade exakt nach (PowerShell-`@()`-Semantik mit Komma-Operator → Poll-Schleife bricht vor dem Dequeue ab), beweist die Reparatur, den wirksamen Admin-Reset und die Sitzungsauflösung über `instanceGuid` |
 | `test_v712_toolbox.py` | Python-Modelltest 7.1.2 (Toolbox-Hotfix): gemockter Katalog + gemockter Studio-Executor. Stellt die 7.1.1-Symptome exakt nach (automatische Katalog-Wiederholung 2×20 s+1,5 s, 20 s Validierung + 55 s Studio auf **einer** HTTP-Anfrage, `delivery.state='ok'` bei `executorAlive=false`, Verlaufskarte bleibt auf „Macht gerade“, Cache-Schreibsturm) und beweist den Fix: harter Timeout, keine Wiederholung, `TOOLBOX_BUSY`/`TOOLBOX_IMPORT_IN_FLIGHT`/`TOOLBOX_IMPORT_WEDGED`, kein zweiter nativer `LoadAsset`, keine doppelte Einfügung, terminale UI-Zustände, begrenzte Caches |
 | `test_v713_quality.py` | Regressionen aus 7.1.3 (Zylinder-Mathematik, primitive Gruppen, `buildQuality`, Benachrichtigungsschalter und Sessionstart-Budget), weiterhin gegen die aktuelle Bridge ausführbar |
-| `test_v720_bridge.py` | Offline-Abnahme 7.2.1: Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene Fertig-Meldung, `ask_user`-Entscheidungsbaum, Qualitäts- und GUI-Vertrag – mit echtem Tree-sitter-PowerShell-Parse-Gate (zusätzlich zur Klammer-/String-Balance). |
+| `test_v720_bridge.py` | Offline-Abnahme 7.2.2: Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene Fertig-Meldung, `ask_user`-Entscheidungsbaum, Qualitäts- und GUI-Vertrag – mit echtem Tree-sitter-PowerShell-Parse-Gate (zusätzlich zur Klammer-/String-Balance). |
 | `test_v714_organic.py` | 7.1.4-Gegenprüfungen: globaler Polygon-/Finish-Standard ohne Namens-Trigger, explizites `organic=true`-Gate, Farb-/Reihenfolge-Sperren, frische Belege für jedes registrierte Modell (auch Multi-Modell/Stale-Fälle), fail-closed `report_done` und UI |
 
 | `ORGANIC_BUILD_CONTRACT.md` | Der 7.1.4-Bauvertrag zum Nachlesen: globaler Polygon-Vorrang für nichttriviale 3D-Modelle, bewusst höherer Finish-Standard, organischer per-Modell-Nachweis, Zylinder-Achsen-Regel mit Referenz-Lua, `buildQuality`-Messung und UI |
@@ -45,6 +45,12 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 7.2.2
+- **Einstellungen aufgeräumt.** Der separate Bereich **DIAGNOSE** ist entfernt. Der alte `perfDiagnostics`-Wert wird ignoriert und die Leistungsaufzeichnung bleibt aus; der Fertig-Meldungs-Test sitzt weiterhin direkt beim zugehörigen Schalter unter **PLACE-LISTE**.
+- **Place-Menü vereinfacht.** **„Laufenden Befehl abbrechen"** wird nicht mehr angeboten. Interne Queue-/Wiederherstellungs- und API-Abbruchpfade bleiben unverändert.
+- **Nachricht an Arena – kompakter und modal.** Das Startmaß ist 460 × 440 statt 560 × 470. Anthrazit, Grau und Pink ersetzen den Liquid-Glass/Cyan-Look für Fenster, Eingabefelder und Buttons. Die Titelleiste lässt sich frei ziehen, oben rechts schließt ein X-Knopf, und `ShowDialog()` sperrt die Hauptoberfläche, bis das Fenster geschlossen wird.
+- **Prüfung:** `python test_v720_bridge.py`, `python test_v398_structure.py`, `python test_v713_quality.py`, `python test_v714_organic.py`, `python test_v710_delivery.py`, `python test_v711_delivery.py`, `python test_v712_toolbox.py`, `python test_queue_model_707.py`. Studio nach dem Update vollständig neu starten, damit Plugin **7.2.2** geladen wird; die Abnahme mit laufendem Studio auf Windows bleibt separat.
 
 ## 7.2.1
 - **Kritischer Start-/Parser-Hotfix.** Die `report_done`-Werkzeugdokumentation schloss ihren `errors`-Array nicht und enthielt zusätzlich ein doppeltes Feld `notes2`; dadurch konnte PowerShell die gesamte Datei nicht parsen. Die Dokumentation schließt den Array jetzt korrekt und beschreibt `buildRegisterNote` an einer Stelle vollständig: was gebaut, mit `model_audit` gemessen oder noch Entwurf ist.

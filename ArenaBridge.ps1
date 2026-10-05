@@ -1,6 +1,19 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.2.1
+# Arena Roblox Bridge  -  Version 7.2.2
 #
+#
+# Version 7.2.2 (2026-10-05) - MINI-UPDATE: EINSTELLUNGEN, PLACE-MENUE, NACHRICHTENFENSTER
+#
+#   1) Der Diagnosebereich wurde aus den Einstellungen entfernt. Der alte
+#      perfDiagnostics-Wert wird nicht mehr geladen; die Leistungsaufzeichnung
+#      bleibt damit aus. Der Fertig-Meldungs-Test sitzt beim passenden Schalter
+#      unter PLACE-LISTE.
+#   2) "Laufenden Befehl abbrechen" ist kein Punkt mehr im Place-Menue. Interne
+#      Queue-/Wiederherstellungswege bleiben davon unberuehrt.
+#   3) Das Fenster "Nachricht an Arena" ist kompakter (460 x 440), verwendet
+#      wieder Anthrazit/Grau/Pink statt Liquid Glass, laesst sich an der
+#      Titelleiste verschieben und hat oben rechts einen X-Knopf. ShowDialog()
+#      sperrt die Hauptoberflaeche, solange die Nachricht offen ist.
 #
 # Version 7.2.1 (2026-10-05) - KRITISCHER START-/PARSER-HOTFIX
 #
@@ -2234,7 +2247,7 @@ function Get-BridgeSettingsFile {
             if ($loaded.PSObject.Properties.Name -contains 'progressInPlaceList') { $settings.progressInPlaceList = [bool]$loaded.progressInPlaceList }
             if ($loaded.PSObject.Properties.Name -contains 'notifyOnDone') { $settings.notifyOnDone = [bool]$loaded.notifyOnDone }
             if ($loaded.PSObject.Properties.Name -contains 'editorIconsEnabled') { $settings.editorIconsEnabled = [bool]$loaded.editorIconsEnabled }
-            if ($loaded.PSObject.Properties.Name -contains 'perfDiagnostics') { $settings.perfDiagnostics = [bool]$loaded.perfDiagnostics }
+            # Version 7.2.2: Der Diagnosebereich ist entfernt; alte opt-ins werden ignoriert.
             # Legacy accessModes are deliberately ignored (Version 5): the
             # per-place read-only switch is temporary and never survives a registration.
         }
@@ -2385,7 +2398,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.2.1'
+    DocsVersion     = '7.2.2'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -2421,7 +2434,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Version 7.0.6: Laufzeit-Identitaet der LAUFENDEN Datei (Version, Pfad,
     # SHA-256, Sprachmodus, Startzeit) fuer GET /api/version.
     RuntimeInfo = [hashtable]::Synchronized(@{
-        Version = '7.2.1'
+        Version = '7.2.2'
         File = ''
         Sha256 = ''
         LanguageMode = ''
@@ -2680,12 +2693,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.2.1, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.2.1, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.2.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.2.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.2.1'
+$script:Shared.RuntimeInfo.Version = '7.2.2'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -2788,7 +2801,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.2.1)
+  Arena Studio Bridge - Studio Plugin  (Version 7.2.2)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -2861,7 +2874,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.2.1"
+local ARENA_VERSION  = "7.2.2"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -15068,7 +15081,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.2.1 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.2.2 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -20029,7 +20042,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.2.1'
+            version = '7.2.2'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -20260,7 +20273,7 @@ end
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.2.1'
+            bridgeVersion = '7.2.2'
             executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent is never an error, but the user then sees NO bar and NO percentage at all - only your message as text. Send a real number every few calls. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
@@ -21004,7 +21017,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.2.1'
+                        bridgeVersion = '7.2.2'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -21448,7 +21461,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.2.1'
+                        serverVersion = '7.2.2'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -21807,7 +21820,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.2.1'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.2.2'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -21891,8 +21904,8 @@ end
                 }
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.2.1'
-                    serverVersion = '7.2.1'
+                    bridgeVersion = '7.2.2'
+                    serverVersion = '7.2.2'
                     toolbox = $statusToolbox
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
@@ -24928,7 +24941,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.2.1)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.2.2)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -25533,9 +25546,9 @@ function Update-UserMessageWindow {
 }
 
 function Open-UserMessageWindow {
-    # Version 7.2.0 (D8): "Nachricht an Arena senden" aus dem Menue der
-    # Place-Zeile. Eigenes Fenster mit ehrlichen Zustaenden statt eines
-    # Eingabefelds, das still verschluckt, was der Nutzer geschrieben hat.
+    # Version 7.2.2: Kompaktes Anthrazit/Grau/Pink-Fenster statt Liquid Glass.
+    # Das echte ShowDialog sperrt die Hauptoberflaeche, bis der Nutzer das
+    # Fenster schliesst; die Titelleiste bleibt frei verschiebbar.
     param([string]$SessionId, [string]$PlaceName = '')
     try {
         if ([string]::IsNullOrWhiteSpace($SessionId)) { return }
@@ -25543,142 +25556,209 @@ function Open-UserMessageWindow {
             try { $script:UserMessageWindow.Close() } catch {}
             $script:UserMessageWindow = $null
         }
-        $win = [System.Windows.Window]::new()
-        $win.Title = 'Nachricht an Arena'
-        $win.Width = 560
-        $win.Height = 470
-        $win.MinWidth = 560; $win.MinHeight = 470
-        $win.WindowStartupLocation = 'CenterOwner'
-        $win.WindowStyle = 'None'
-        $win.AllowsTransparency = $true
-        $win.Background = [System.Windows.Media.Brushes]::Transparent
-        $win.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe UI')
-        $win.ResizeMode = 'CanResize'
+
+        $windowXaml = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Nachricht an Arena"
+        Width="460" Height="440" MinWidth="420" MinHeight="400"
+        ResizeMode="CanResize" WindowStyle="None" AllowsTransparency="True"
+        Background="Transparent" WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False" FontFamily="Segoe UI">
+    <Window.Resources>
+        <Style x:Key="MessageTextField" TargetType="TextBox">
+            <Setter Property="Foreground" Value="#FFF3F3F5"/>
+            <Setter Property="Background" Value="#FF19191D"/>
+            <Setter Property="BorderBrush" Value="#FF48484F"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="CaretBrush" Value="#FFFF5C77"/>
+            <Setter Property="SelectionBrush" Value="#AAFF5C77"/>
+            <Setter Property="SelectionOpacity" Value="0.45"/>
+            <Style.Triggers>
+                <Trigger Property="IsKeyboardFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="#FFFF5C77"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="MessageHistoryField" TargetType="TextBox" BasedOn="{StaticResource MessageTextField}">
+            <Setter Property="Foreground" Value="#FFC4C4CA"/>
+            <Setter Property="Background" Value="#FF29292E"/>
+            <Setter Property="FontSize" Value="10.5"/>
+            <Setter Property="Padding" Value="9,7"/>
+        </Style>
+        <Style x:Key="MessageButton" TargetType="Button">
+            <Setter Property="Foreground" Value="#FFF4F4F6"/>
+            <Setter Property="Background" Value="#FF37373D"/>
+            <Setter Property="BorderBrush" Value="#FF55555D"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="14,7"/>
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonBorder" CornerRadius="7"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}" RecognizesAccessKey="True"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.88"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.72"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.42"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="MessagePrimaryButton" TargetType="Button" BasedOn="{StaticResource MessageButton}">
+            <Setter Property="Foreground" Value="#FFFFFFFF"/>
+            <Setter Property="Background" Value="#FFE84B6C"/>
+            <Setter Property="BorderBrush" Value="#FFFF6B86"/>
+        </Style>
+        <Style x:Key="MessageCloseButton" TargetType="Button" BasedOn="{StaticResource MessageButton}">
+            <Setter Property="Foreground" Value="#FFFF8296"/>
+            <Setter Property="Background" Value="#FF343438"/>
+            <Setter Property="BorderBrush" Value="#FF55555D"/>
+            <Setter Property="Padding" Value="0"/>
+        </Style>
+    </Window.Resources>
+    <Border CornerRadius="12" Background="#FF252529" BorderBrush="#FF48484F"
+            BorderThickness="1" ClipToBounds="True">
+        <Grid>
+            <Border Height="3" VerticalAlignment="Top" Background="#FFFF5C77"
+                    CornerRadius="12,12,0,0" IsHitTestVisible="False"/>
+            <Grid Margin="18,16,18,16">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <Grid x:Name="TitleBar" Grid.Row="0" Background="Transparent" Cursor="SizeAll">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Nachricht an Arena" Foreground="#FFF4F4F6"
+                                   FontSize="16" FontWeight="SemiBold"/>
+                        <TextBlock x:Name="PlaceNameText" Text="Place" Foreground="#FFB8B8C0"
+                                   FontSize="10.5" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                    <Button x:Name="CloseButton" Grid.Column="1" Width="32" Height="32"
+                            Content="×" FontFamily="Segoe UI" FontSize="18" FontWeight="Normal"
+                            Style="{StaticResource MessageCloseButton}" ToolTip="Schliessen"/>
+                </Grid>
+
+                <TextBlock Grid.Row="1" Margin="0,9,0,0"
+                           Text="Deine Nachricht geht mit Arenas naechster Anfrage weiter und muss von Arena bestaetigt werden. Die Bridge schreibt nicht direkt in den Arena-Chat."
+                           Foreground="#FFB8B8C0" FontSize="10.5" TextWrapping="Wrap"/>
+
+                <StackPanel Grid.Row="2" Margin="0,12,0,0">
+                    <TextBlock Text="DEINE NACHRICHT" Foreground="#FFFF8296" FontSize="9.5"
+                               FontWeight="Bold" Margin="0,0,0,5"/>
+                    <TextBox x:Name="MessageTextBox" Height="80" MinHeight="72" MaxLength="4000"
+                             AcceptsReturn="True" TextWrapping="Wrap"
+                             VerticalScrollBarVisibility="Auto" Style="{StaticResource MessageTextField}"/>
+                </StackPanel>
+
+                <Grid Grid.Row="3" Margin="0,12,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="LETZTE NACHRICHTEN" Foreground="#FFFF8296" FontSize="9.5"
+                               FontWeight="Bold" Margin="0,0,0,5"/>
+                    <TextBox x:Name="HistoryTextBox" Grid.Row="1" MinHeight="70"
+                             IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                             Text="Noch keine Nachricht in dieser Sitzung."
+                             Style="{StaticResource MessageHistoryField}"/>
+                </Grid>
+
+                <Border Grid.Row="4" Margin="0,10,0,0" Background="#FF2D2D32"
+                        BorderBrush="#FF424249" BorderThickness="1" CornerRadius="7" Padding="9,7">
+                    <TextBlock x:Name="StatusText" Text="Noch nicht gesendet."
+                               Foreground="#FFB8B8C0" FontSize="10.5" TextWrapping="Wrap"/>
+                </Border>
+
+                <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right"
+                            Margin="0,12,0,0">
+                    <Button x:Name="SendButton" Content="Senden" MinWidth="88" Height="34"
+                            Margin="0,0,8,0" Style="{StaticResource MessagePrimaryButton}" IsEnabled="False"/>
+                    <Button x:Name="CancelButton" Content="Abbrechen" MinWidth="96" Height="34"
+                            Style="{StaticResource MessageButton}" IsEnabled="False"/>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>
+'@
+        $reader = [System.Xml.XmlNodeReader]::new([xml]$windowXaml)
+        $win = [Windows.Markup.XamlReader]::Load($reader)
         try { $win.Owner = $window } catch {}
 
-        $shell = [System.Windows.Controls.Border]::new()
-        $shell.CornerRadius = [System.Windows.CornerRadius]::new(16)
-        $shell.Background = Get-Brush '#F50B1030'
-        $shell.BorderBrush = Get-Brush '#33FFFFFF'
-        $shell.BorderThickness = [System.Windows.Thickness]::new(1)
-        $shell.Padding = [System.Windows.Thickness]::new(18)
+        $titleBar = $win.FindName('TitleBar')
+        $placeLabel = $win.FindName('PlaceNameText')
+        $textBox = $win.FindName('MessageTextBox')
+        $historyBox = $win.FindName('HistoryTextBox')
+        $statusText = $win.FindName('StatusText')
+        $sendButton = $win.FindName('SendButton')
+        $cancelButton = $win.FindName('CancelButton')
+        $closeButton = $win.FindName('CloseButton')
+        if ([string]::IsNullOrWhiteSpace($PlaceName)) { $placeLabel.Text = 'Verbundenes Place' }
+        else { $placeLabel.Text = 'Place · ' + [string]$PlaceName }
 
-        $grid = [System.Windows.Controls.Grid]::new()
-        foreach ($h in @('Auto', 'Auto', 'Auto', '*', 'Auto', 'Auto')) {
-            $rd = [System.Windows.Controls.RowDefinition]::new()
-            if ($h -ne 'Auto') { $rd.Height = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star) }
-            [void]$grid.RowDefinitions.Add($rd)
-        }
-
-        $headline = [System.Windows.Controls.TextBlock]::new()
-        $headline.Text = $(if ([string]::IsNullOrWhiteSpace($PlaceName)) { 'Nachricht an Arena' } else { 'Nachricht an Arena · ' + $PlaceName })
-        $headline.FontSize = 15
-        $headline.FontWeight = 'SemiBold'
-        $headline.Foreground = Get-Brush '#F4F8FF'
-        [System.Windows.Controls.Grid]::SetRow($headline, 0)
-        [void]$grid.Children.Add($headline)
-
-        $hint = [System.Windows.Controls.TextBlock]::new()
-        $hint.Text = 'Schreib deine Korrektur hier auf ("halt - mach das so nicht"). Arena bekommt sie mit ihrer naechsten Anfrage und muss sie bestaetigen. Die Bridge kann nicht selbst in den Arena-Chat schreiben.'
-        $hint.FontSize = 11
-        $hint.TextWrapping = 'Wrap'
-        $hint.Margin = [System.Windows.Thickness]::new(0, 8, 0, 12)
-        $hint.Foreground = Get-Brush '#9AA9CE'
-        [System.Windows.Controls.Grid]::SetRow($hint, 1)
-        [void]$grid.Children.Add($hint)
-
-        $textBox = [System.Windows.Controls.TextBox]::new()
-        $textBox.AcceptsReturn = $true
-        $textBox.TextWrapping = 'Wrap'
-        $textBox.VerticalScrollBarVisibility = 'Auto'
-        $textBox.MinHeight = 86
-        $textBox.FontSize = 12.5
-        $textBox.Foreground = Get-Brush '#F4F8FF'
-        $textBox.Background = Get-Brush '#141B33'
-        $textBox.BorderBrush = Get-Brush '#33FFFFFF'
-        $textBox.BorderThickness = [System.Windows.Thickness]::new(1)
-        $textBox.Padding = [System.Windows.Thickness]::new(9, 7, 9, 7)
-        $textBox.CaretBrush = Get-Brush '#F4F8FF'
-        $textBox.MaxLength = 4000
-        [System.Windows.Controls.Grid]::SetRow($textBox, 2)
-        [void]$grid.Children.Add($textBox)
-
-        $historyBox = [System.Windows.Controls.TextBox]::new()
-        $historyBox.IsReadOnly = $true
-        $historyBox.TextWrapping = 'Wrap'
-        $historyBox.VerticalScrollBarVisibility = 'Auto'
-        $historyBox.FontSize = 10.5
-        $historyBox.FontFamily = [System.Windows.Media.FontFamily]::new('Consolas')
-        $historyBox.Foreground = Get-Brush '#9AA9CE'
-        $historyBox.Background = Get-Brush '#0E1428'
-        $historyBox.BorderBrush = Get-Brush '#22FFFFFF'
-        $historyBox.BorderThickness = [System.Windows.Thickness]::new(1)
-        $historyBox.Padding = [System.Windows.Thickness]::new(9, 7, 9, 7)
-        $historyBox.Margin = [System.Windows.Thickness]::new(0, 12, 0, 0)
-        $historyBox.Text = 'Noch keine Nachricht in dieser Sitzung.'
-        [System.Windows.Controls.Grid]::SetRow($historyBox, 3)
-        [void]$grid.Children.Add($historyBox)
-
-        $statusText = [System.Windows.Controls.TextBlock]::new()
-        $statusText.Text = 'Noch nicht gesendet.'
-        $statusText.FontSize = 11.5
-        $statusText.TextWrapping = 'Wrap'
-        $statusText.Margin = [System.Windows.Thickness]::new(0, 12, 0, 0)
-        $statusText.Foreground = Get-Brush '#9AA9CE'
-        [System.Windows.Controls.Grid]::SetRow($statusText, 4)
-        [void]$grid.Children.Add($statusText)
-
-        $buttonRow = [System.Windows.Controls.StackPanel]::new()
-        $buttonRow.Orientation = 'Horizontal'
-        $buttonRow.HorizontalAlignment = 'Right'
-        $buttonRow.Margin = [System.Windows.Thickness]::new(0, 14, 0, 0)
-        $sendButton = [System.Windows.Controls.Button]::new()
-        $sendButton.Content = 'Senden'
-        $sendButton.Padding = [System.Windows.Thickness]::new(16, 8, 16, 8)
-        $sendButton.Margin = [System.Windows.Thickness]::new(0, 0, 10, 0)
-        $sendButton.Background = Get-Brush '#5CFFEF'
-        $sendButton.Foreground = Get-Brush '#08111F'
-        $sendButton.BorderThickness = [System.Windows.Thickness]::new(0)
-        $sendButton.FontWeight = 'SemiBold'
-        $sendButton.Cursor = 'Hand'
-        $sendButton.IsEnabled = $false
-        $cancelButton = [System.Windows.Controls.Button]::new()
-        $cancelButton.Content = 'Abbrechen'
-        $cancelButton.Padding = [System.Windows.Thickness]::new(16, 8, 16, 8)
-        $cancelButton.Background = Get-Brush '#1B2440'
-        $cancelButton.Foreground = Get-Brush '#F4F8FF'
-        $cancelButton.BorderBrush = Get-Brush '#3AFFFFFF'
-        $cancelButton.BorderThickness = [System.Windows.Thickness]::new(1)
-        $cancelButton.Cursor = 'Hand'
-        $cancelButton.IsEnabled = $false
-        [void]$buttonRow.Children.Add($sendButton)
-        [void]$buttonRow.Children.Add($cancelButton)
-        [System.Windows.Controls.Grid]::SetRow($buttonRow, 5)
-        [void]$grid.Children.Add($buttonRow)
-
-        $shell.Child = $grid
-        $win.Content = $shell
-
-        # Alle Daten haengen am Element selbst (Tag) - dieselbe Regel wie in
-        # New-Row: lokale Variablen einer Funktion sind in Event-Handlern nicht
-        # zuverlaessig verfuegbar.
+        # Alle Daten haengen am Element selbst (Tag) - lokale Variablen einer
+        # Funktion sind in Event-Handlern nicht zuverlaessig verfuegbar.
         $info = [pscustomobject]@{
-            Window      = $win
-            SessionId   = [string]$SessionId
-            PlaceName   = [string]$PlaceName
-            MessageId   = ''
-            LastState   = ''
-            TextBox     = $textBox
-            History     = $historyBox
-            Status      = $statusText
-            SendButton  = $sendButton
+            Window       = $win
+            SessionId    = [string]$SessionId
+            PlaceName    = [string]$PlaceName
+            MessageId    = ''
+            LastState    = ''
+            TextBox      = $textBox
+            History      = $historyBox
+            Status       = $statusText
+            SendButton   = $sendButton
             CancelButton = $cancelButton
-            Timer       = $null
+            Timer        = $null
         }
         $win.Tag = $info
+        $titleBar.Tag = $win
         $textBox.Tag = $info
         $sendButton.Tag = $info
         $cancelButton.Tag = $info
+        $closeButton.Tag = $win
+
+        $titleBar.Add_MouseLeftButtonDown({
+            param($s, $e)
+            if ($e.ButtonState -eq [System.Windows.Input.MouseButtonState]::Pressed) {
+                try { $s.Tag.DragMove() } catch {}
+            }
+        })
+        $closeButton.Add_Click({
+            param($s, $e)
+            try { $s.Tag.Close() } catch {}
+        })
+        $win.Add_ContentRendered({
+            param($s, $e)
+            try { [void]$s.FindName('MessageTextBox').Focus() } catch {}
+        })
 
         $textBox.Add_TextChanged({
             param($s, $e)
@@ -25694,7 +25774,7 @@ function Open-UserMessageWindow {
                 $newId = Add-UserMessage $data.SessionId $text 'correction'
                 if ([string]::IsNullOrWhiteSpace([string]$newId)) {
                     $data.Status.Text = 'Die Nachricht konnte nicht gespeichert werden (siehe runtime.log).'
-                    $data.Status.Foreground = Get-Brush '#FFB4C4'
+                    $data.Status.Foreground = Get-Brush '#FFFF8296'
                     return
                 }
                 $data.MessageId = [string]$newId
@@ -25724,14 +25804,14 @@ function Open-UserMessageWindow {
                         $data.LastState = 'withdrawn'
                         $data.MessageId = ''
                         $data.Status.Text = 'ZURUECKGEZOGEN - Arena hat die Nachricht nie bekommen.'
-                        $data.Status.Foreground = Get-Brush '#FFB4C4'
+                        $data.Status.Foreground = Get-Brush '#FFFF8296'
                         $data.SendButton.IsEnabled = ($data.TextBox.Text.Trim().Length -gt 0)
                         $data.CancelButton.IsEnabled = $false
                         $data.CancelButton.Content = 'Abbrechen'
                         Write-FlowTrace 'USERMSG' $id 'WITHDRAWN_BY_USER' @{ sid = $data.SessionId }
                     } else {
                         $data.Status.Text = 'Zu spaet zum Zurueckziehen: Eine Arena-Anfrage hat die Nachricht bereits mitgenommen. Sie ist jetzt unterwegs.'
-                        $data.Status.Foreground = Get-Brush '#FFD9A0'
+                        $data.Status.Foreground = Get-Brush '#FFD36D7F'
                         $data.CancelButton.Content = 'Schliessen'
                         $data.LastState = 'delivered'
                     }
@@ -25758,10 +25838,9 @@ function Open-UserMessageWindow {
         })
         $script:UserMessageWindow = $win
         Update-UserMessageWindow $info
-        [void]$win.Show()
-        try { $win.Activate() } catch {}
-        try { $textBox.Focus() } catch {}
         $timer.Start()
+        # ShowDialog disables the owner window for the lifetime of this dialog.
+        [void]$win.ShowDialog()
     } catch {
         Write-UiErrorLog 'Nachricht-Fenster konnte nicht geoeffnet werden' $_
     }
@@ -26684,7 +26763,7 @@ function Update-PlaceProgressVisual {
         if ($ageBase -le 0) { $ageBase = [int64]$openCmd.queuedAt }
         $age = 0
         try { if ($ageBase -gt 0) { $age = [int][Math]::Max(0, ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - $ageBase)) } } catch {}
-        $commandText = ('Studio-Befehl: ' + [string]$openCmd.tool + ' - ' + $status + ' seit ' + [string]$age + ' s. Abbrechen ueber das Menue der Place-Zeile (COMMAND_CANCELLED, gibt die Studio-Queue sofort frei).')
+        $commandText = ('Studio-Befehl: ' + [string]$openCmd.tool + ' - ' + $status + ' seit ' + [string]$age + ' s.')
         try {
             if ($Row.CommandCancelButton) {
                 $Row.CommandCancelButton.Tag = $sessionId
@@ -26830,7 +26909,7 @@ function Write-ChannelDiagnoseFile {
 
         $progressPath = Join-Path $script:AppDataRoot 'progress-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.2.1)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.2.2)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -26865,7 +26944,7 @@ function Write-ChannelDiagnoseFile {
 
         $notifyPath = Join-Path $script:AppDataRoot 'notify-diagnose.txt'
         $sb2 = New-Object System.Text.StringBuilder
-        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.2.1)')
+        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.2.2)')
         [void]$sb2.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb2.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb2.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -27235,7 +27314,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.2.1)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.2.2)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -28966,11 +29045,9 @@ function New-Row {
         $menuStack.Children.Add($menuHeader) | Out-Null
         $menuStack.Children.Add((New-Separator)) | Out-Null
 
-        # Version 7.2.0 (D8): Korrektur waehrend der Arbeit, ohne die Antwort
-        # abzubrechen - und (D7) der harte Befehls-Abbruch im Menue statt als
-        # Knopf, der die Fortschrittsanzeige verdraengt.
+        # Version 7.2.2: Nutzernachrichten bleiben verfuegbar; der Befehl
+        # "Laufenden Befehl abbrechen" wird im Place-Menue nicht angeboten.
         $messageItem = New-MenuRow -Glyph ([char]0xE724) -Title 'Nachricht an Arena senden' -Subtitle 'Korrektur während der Arbeit' -Accent '#FFD9A0'
-        $cancelCmdItem = New-MenuRow -Glyph ([char]0xE711) -Title 'Laufenden Befehl abbrechen' -Subtitle 'Gibt die Studio-Queue sofort frei' -Accent '#FF9AA8'
         $copyItem = New-MenuRow -Glyph ([char]0xE8C8) -Title 'Prompt kopieren' -Subtitle 'URL und Token für Arena' -Accent '#5CFFEF'
         $resetItem = New-MenuRow -Glyph ([char]0xE72C) -Title 'Token zurücksetzen' -Subtitle 'Neuen Zugang für dieses Place' -Accent '#C9B7FF'
         $toggleItem = New-MenuRow -Glyph ([char]0xE72E) -Title 'Nur Lesezugriff' -Subtitle 'Inaktiv - Änderungen sind erlaubt' -Accent '#FFC1CE' -Checkable $true -Checked $false
@@ -28988,7 +29065,6 @@ function New-Row {
             PlaceName = [string]$Studio.placeName
         }
         $messageItem.Root.Tag = $itemTag
-        $cancelCmdItem.Root.Tag = $itemTag
         $copyItem.Root.Tag = $itemTag
         $resetItem.Root.Tag = $itemTag
         $toggleItem.Root.Tag = $itemTag
@@ -29007,16 +29083,6 @@ function New-Row {
                 Open-UserMessageWindow -SessionId ([string]$info.SessionId) -PlaceName $placeTitle
             } catch {
                 Write-UiErrorLog 'Nachricht-Fenster konnte nicht geoeffnet werden' $_
-            }
-        })
-        $cancelCmdItem.Root.Add_MouseLeftButtonUp({
-            param($s, $e)
-            $info = $s.Tag
-            # Version 7.2.0 (D7): Abbrechen bleibt im Menue und schliesst es
-            # danach - die Fortschrittsanzeige wird nie ersetzt.
-            try { $info.Popup.IsOpen = $false } catch {}
-            try { Invoke-PlaceRowCancel ([string]$info.SessionId) } catch {
-                Write-UiErrorLog 'Laufender Befehl konnte nicht abgebrochen werden' $_
             }
         })
         $copyItem.Root.Add_MouseLeftButtonUp({
@@ -29063,7 +29129,6 @@ function New-Row {
         $menuStack.Children.Add($resetItem.Root) | Out-Null
         $menuStack.Children.Add($historyItem.Root) | Out-Null
         $menuStack.Children.Add((New-Separator)) | Out-Null
-        $menuStack.Children.Add($cancelCmdItem.Root) | Out-Null
         $menuStack.Children.Add($toggleItem.Root) | Out-Null
 
         $menuShell.Child = $menuStack
@@ -29446,7 +29511,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.2.1)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.2.2)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -30140,7 +30205,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.2.1'
+    $versionText = '7.2.2'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -31019,11 +31084,9 @@ function Open-SettingsWindow {
     $editorIconsNow = $true
     $progressNow = $true
     $doneNotifyNow = $false
-    $perfNow = $false
     try { $editorIconsNow = [bool]$script:SettingsCache.editorIconsEnabled } catch {}
     try { $progressNow = [bool]$script:Shared.BridgeSettings.progressInPlaceList } catch {}
     try { $doneNotifyNow = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch {}
-    try { $perfNow = [bool]$script:SettingsCache.perfDiagnostics } catch {}
 
     $settingsXaml = @'
 <?xml version="1.0" encoding="utf-8"?>
@@ -31288,22 +31351,6 @@ function Open-SettingsWindow {
                             </StackPanel>
                         </Border>
 
-                        <TextBlock Text="DIAGNOSE" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
-                        <Border Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="14" Padding="16,12">
-                            <StackPanel>
-                                <CheckBox x:Name="PerfSwitch" Style="{StaticResource ArenaSwitch}" Content="Leistungsdiagnose aufzeichnen"/>
-                                <TextBlock Text="Schreibt höchstens alle 30 Sekunden einen kompakten Bericht nach %LOCALAPPDATA%\ArenaRobloxBridge\performance.txt: Anfragen pro Minute, Dauer und Pausen des Studio-Kanals, UI-Zeit und HTTP-Zeit. Standard: aus." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,7,0,0"/>
-                                <Border Height="1" Background="{StaticResource SwLine}" Margin="0,14,0,14"/>
-                                <!-- Version 7.2.0 (D4): Die Fertig-Meldung wird
-                                     messbar. Der Test zeigt eine echte Meldung,
-                                     misst die Windows-Plattform und fragt danach
-                                     ehrlich nach, ob sie gesehen wurde. -->
-                                <TextBlock Text="FERTIG-MELDUNG TESTEN" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="0,0,0,8"/>
-                                <Button x:Name="NotifyTestButton" Content="Test-Meldung anzeigen" Background="{StaticResource SwCardBg}" Foreground="{StaticResource SwTextMain}" BorderBrush="#3AFFFFFF" BorderThickness="1" Padding="14,7" FontSize="11.5" HorizontalAlignment="Left" Cursor="Hand"/>
-                                <TextBlock x:Name="NotifyTestStatus" Text="Noch nicht getestet. Der Test misst, ob Windows die Meldung zeigen darf, und legt bei Bedarf die App-Id im Startmenue an." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,9,0,0"/>
-                            </StackPanel>
-                        </Border>
-
                         <TextBlock Text="PLACE-LISTE" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
                         <Border Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="14" Padding="16,12">
                             <StackPanel>
@@ -31312,6 +31359,9 @@ function Open-SettingsWindow {
                                      Schalter direkt unter der Fortschrittsanzeige. -->
                                 <CheckBox x:Name="DoneNotifySwitch" Style="{StaticResource ArenaSwitch}" Content="Benachrichtigung, wenn Arena fertig ist" Margin="0,14,0,0"/>
                                 <TextBlock Text="Zeigt am Ende der Arbeit die Windows-Meldung von Arena (Titel und kurzer Text). Standard: aus." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,7,0,0"/>
+                                <Border Height="1" Background="{StaticResource SwLine}" Margin="0,14,0,12"/>
+                                <Button x:Name="NotifyTestButton" Content="Test-Meldung anzeigen" Background="{StaticResource SwCardBg}" Foreground="{StaticResource SwTextMain}" BorderBrush="#3AFFFFFF" BorderThickness="1" Padding="14,7" FontSize="11.5" HorizontalAlignment="Left" Cursor="Hand"/>
+                                <TextBlock Text="Zeigt eine Test-Meldung und fragt danach, ob du sie gesehen hast." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,8,0,0"/>
                             </StackPanel>
                         </Border>
 
@@ -31319,7 +31369,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.2.1" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.2.2" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -31350,38 +31400,28 @@ function Open-SettingsWindow {
     $progressSwitch  = $settingsWindow.FindName('ProgressSwitch')
     $doneNotifySwitch = $settingsWindow.FindName('DoneNotifySwitch')
     $editorIconsSwitch = $settingsWindow.FindName('EditorIconsSwitch')
-    $perfSwitch      = $settingsWindow.FindName('PerfSwitch')
     $updateText      = $settingsWindow.FindName('UpdateInfoText')
     # Version 7.2.0 (D4): Test-Knopf + Urteil fuer die Fertig-Meldung.
     $notifyTestButton = $settingsWindow.FindName('NotifyTestButton')
-    $notifyTestStatus = $settingsWindow.FindName('NotifyTestStatus')
+    # Version 7.2.2: Der Meldungstest gehoert jetzt direkt zum passenden
+    # Fertig-Meldungs-Schalter, nicht mehr in einen eigenen Diagnosebereich.
     if ($null -ne $notifyTestButton) {
         $notifyTestButton.Add_Click({
             param($s, $e)
             try {
-                $notifyTestStatus.Text = 'Test laeuft - Meldung wird angezeigt und Windows-Plattform gemessen...'
                 $testResult = Send-NotifyTestMessage
-                $notifyTestStatus.Text = [string](Format-NotifyTestSummary $testResult)
                 Open-NotifySeenWindow $testResult
             } catch {
-                $notifyTestStatus.Text = 'Test fehlgeschlagen: ' + $_.Exception.Message
                 Write-UiErrorLog 'Test der Fertig-Meldung fehlgeschlagen' $_
             }
         })
     }
-    try {
-        $cachedPlatform = Update-NotifyPlatformCache -Force
-        if ($null -ne $cachedPlatform -and $null -ne $notifyTestStatus) {
-            $notifyTestStatus.Text = ('Letztes Urteil: ' + (Get-NotifyPlatformLine $cachedPlatform))
-        }
-    } catch {}
 
     $startupSwitch.IsChecked = $autoStartNow
     $progressSwitch.IsChecked = $progressNow
     $doneNotifySwitch.IsChecked = $doneNotifyNow
     $editorIconsSwitch.IsChecked = $editorIconsNow
-    $perfSwitch.IsChecked = $perfNow
-    foreach ($toggleSwitch in @($startupSwitch, $progressSwitch, $doneNotifySwitch, $editorIconsSwitch, $perfSwitch)) {
+    foreach ($toggleSwitch in @($startupSwitch, $progressSwitch, $doneNotifySwitch, $editorIconsSwitch)) {
         Set-ArenaSwitchVisualState $toggleSwitch
         $toggleSwitch.Add_Loaded({ param($s, $e) Set-ArenaSwitchVisualState $s })
     }
@@ -31389,7 +31429,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.2.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.2.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -31446,20 +31486,6 @@ function Open-SettingsWindow {
         Set-EditorIconsEnabled ([bool]$s.IsChecked)
         Save-BridgeSettingsFile
     })
-    $perfSwitch.Add_Click({
-        param($s, $e)
-        # Version 7.0.3: Laufzeitdiagnostik. Beim Einschalten wird sofort ein
-        # erster Bericht erzeugt, damit die Datei ohne Warten existiert.
-        $script:SettingsCache.perfDiagnostics = [bool]$s.IsChecked
-        $script:Shared.BridgeSettings.perfDiagnostics = [bool]$s.IsChecked
-        Save-BridgeSettingsFile
-        $stateText = 'aus'
-        if ($s.IsChecked) {
-            $stateText = 'an'
-            try { Write-PerfReport -Force } catch {}
-        }
-        Write-RuntimeLog "Leistungsdiagnose (Laufzeitmessung) $stateText."
-    })
     [void]$settingsWindow.ShowDialog()
 }
 
@@ -31468,7 +31494,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.2.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.2.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -31481,7 +31507,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.2.1'
+    $verText = '7.2.2'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

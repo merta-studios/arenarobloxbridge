@@ -1,12 +1,12 @@
 ﻿#!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 7.1.0.
+"""Offline structure check for Arena Roblox Bridge 7.2.2.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
 markers are checked directly in the PowerShell source.
 
 Run:
-    python -m pip install luaparser
+    python -m pip install -r requirements-test.txt
     python test_v398_structure.py
 """
 from __future__ import annotations
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.2.1"
+VERSION = "7.2.2"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -95,7 +95,7 @@ def main() -> int:
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     require(version["version"] == VERSION, f"version.json is not {VERSION}")
     release_notes = "\n".join(str(note) for note in version.get("notes", []))
-    require("7.2.1" in release_notes
+    require("7.2.2" in release_notes
             and "report_done" in release_notes
             and "NOTIFICATION_UNVERIFIED" in release_notes
             and "ask_user" in release_notes
@@ -103,7 +103,7 @@ def main() -> int:
             and "MONOLITH_RISK" in release_notes
             and "StarterGui" in release_notes
             and "progress-diagnose.txt" in release_notes,
-            "version.json does not describe the 7.2.1 release")
+            "version.json does not describe the 7.2.2 release")
 
     # 6.1.1 shipped seven accidental fragments after the intended final exit,
     # including a bare closing parenthesis. Windows PowerShell parses the
@@ -715,21 +715,21 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '7.2.1'": 1,
-        'local ARENA_VERSION  = "7.2.1"': 1,
-        "version = '7.2.1'": 1,
-        "bridgeVersion = '7.2.1'": 3,
-        "bridgeVersion='7.2.1'": 1,
-        "serverVersion = '7.2.1'": 2,
-        "$versionText = '7.2.1'": 1,
-        "$verText = '7.2.1'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 7.2.1)": 1,
-        'Text="Arena Roblox Bridge - Version 7.2.1"': 1,
-        "Version 7.2.1 - aktuell. Beim naechsten Start": 2,
-        "Laufzeit-Identitaet: Bridge-Version=7.2.1": 1,
-        "Kurzbericht Fenster-Vorschau (Version 7.2.1)": 1,
-        "Arena Roblox Bridge - Leistungsbericht (Version 7.2.1)": 1,
-        "Arena Roblox Bridge - Place-Diagnose (Version 7.2.1)": 1,
+        "DocsVersion     = '7.2.2'": 1,
+        'local ARENA_VERSION  = "7.2.2"': 1,
+        "version = '7.2.2'": 1,
+        "bridgeVersion = '7.2.2'": 3,
+        "bridgeVersion='7.2.2'": 1,
+        "serverVersion = '7.2.2'": 2,
+        "$versionText = '7.2.2'": 1,
+        "$verText = '7.2.2'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.2.2)": 1,
+        'Text="Arena Roblox Bridge - Version 7.2.2"': 1,
+        "Version 7.2.2 - aktuell. Beim naechsten Start": 2,
+        "Laufzeit-Identitaet: Bridge-Version=7.2.2": 1,
+        "Kurzbericht Fenster-Vorschau (Version 7.2.2)": 1,
+        "Arena Roblox Bridge - Leistungsbericht (Version 7.2.2)": 1,
+        "Arena Roblox Bridge - Place-Diagnose (Version 7.2.2)": 1,
     }
     for marker, expected_count in functional_version_counts.items():
         actual_count = source.count(marker)
@@ -871,8 +871,23 @@ def main() -> int:
             "the UI tick timer measures even when diagnostics are off")
     require("Update-PerfUiTick $perfWatch.Elapsed.TotalMilliseconds" in source,
             "the UI tick timing is not reported through the throttled writer")
-    require("x:Name=\"PerfSwitch\"" in source and "$perfSwitch.Add_Click(" in source,
-            "the settings switch for the performance diagnostics is missing")
+    settings_start = source.index("function Open-SettingsWindow")
+    settings_end = source.index("# Version 3.8: Die Update-Infos", settings_start)
+    settings_ui = source[settings_start:settings_end]
+    settings_xaml_start = settings_ui.index("$settingsXaml = @'\n") + len("$settingsXaml = @'\n")
+    settings_xaml_end = settings_ui.index("\n'@", settings_xaml_start)
+    settings_xaml = settings_ui[settings_xaml_start:settings_xaml_end]
+    require('Text="DIAGNOSE"' not in settings_xaml
+            and 'x:Name="PerfSwitch"' not in settings_xaml
+            and "$perfSwitch.Add_Click(" not in settings_ui,
+            "the removed settings Diagnose area or performance switch has returned")
+    settings_loader_start = source.index("function Get-BridgeSettingsFile")
+    settings_loader_end = source.index("function Save-BridgeSettingsFile", settings_loader_start)
+    settings_loader = source[settings_loader_start:settings_loader_end]
+    require("perfDiagnostics = $false" in settings_loader
+            and "$loaded.perfDiagnostics" not in settings_loader
+            and "alte opt-ins werden ignoriert" in settings_loader,
+            "a legacy performance-diagnostics opt-in would be restored silently")
     require("Set-PlacePreviewSpinnerAnimation" in source,
             "preview handling was removed while fixing the channel")
 
@@ -1084,14 +1099,13 @@ def main() -> int:
             "Settings content grid has no interior padding")
     require('Background="{StaticResource GreenBtnBg}"' in main_xaml,
             "Arena AI footer button does not use the green Prompt-copy design resource")
-    switch_names = ("StartupSwitch", "EditorIconsSwitch", "ProgressSwitch", "DoneNotifySwitch", "PerfSwitch")
+    switch_names = ("StartupSwitch", "EditorIconsSwitch", "ProgressSwitch", "DoneNotifySwitch")
     open_settings = source[source.index("function Open-SettingsWindow"):source.index("# Version 3.8: Die Update-Infos")]
     switch_variables = {
         "StartupSwitch": "$startupSwitch",
         "EditorIconsSwitch": "$editorIconsSwitch",
         "ProgressSwitch": "$progressSwitch",
         "DoneNotifySwitch": "$doneNotifySwitch",
-        "PerfSwitch": "$perfSwitch",
     }
     # 7.1.3 keeps the old "Mitteilungen" section gone but adds the requested
     # DoneNotifySwitch, so only the EXACT legacy names may reappear.
@@ -1110,7 +1124,7 @@ def main() -> int:
             and "Set-EditorIconsEnabled ([bool]$s.IsChecked)" in open_settings
             and "$script:Shared.BridgeSettings.progressInPlaceList = [bool]$s.IsChecked" in open_settings
             and "$script:Shared.BridgeSettings.notifyOnDone = $enabled" in open_settings
-            and open_settings.count("Save-BridgeSettingsFile") >= 5,
+            and open_settings.count("Save-BridgeSettingsFile") >= 4,
             "settings switches do not persist their expected values")
     for marker in (
         "$autoStartNow = Get-StartupEnabled",
@@ -1386,7 +1400,7 @@ def main() -> int:
         require(gone not in lua, f"removed 7.0.0 reporter/session marker is back: {gone}")
 
     blocks = xaml_blocks(source)
-    require(len(blocks) == 3, f"expected 3 XAML Window blocks, found {len(blocks)}")
+    require(len(blocks) == 4, f"expected 4 XAML Window blocks, found {len(blocks)}")
     for index, block in enumerate(blocks, 1):
         try:
             ET.fromstring(block)
@@ -1394,7 +1408,7 @@ def main() -> int:
             raise AssertionError(f"XAML block {index} is not XML: {exc}") from exc
 
     # 6.1.3 mini-update guards: modelling hierarchy/seams/caps/welds,
-    # detached asset sanitation and the performance switch all stay present.
+    # detached asset sanitation and the opt-in performance gate stay present.
     for marker in (
         "tools.build_polygon_model = function(args)",
         "tools.build_assembly = function(args)",
