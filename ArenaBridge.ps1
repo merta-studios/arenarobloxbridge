@@ -1,6 +1,15 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.2.0
+# Arena Roblox Bridge  -  Version 7.2.1
 #
+#
+# Version 7.2.1 (2026-10-05) - KRITISCHER START-/PARSER-HOTFIX
+#
+#   Die Werkzeugdokumentation fuer report_done hatte einen offenen errors-Array-
+#   Abschluss und ein doppeltes notes2-Feld. Zudem verwendeten die grade-
+#   Beschreibungen fuer build_assembly/build_polygon_model Backslash-Quotes in
+#   einfachen PowerShell-Strings. Beide Fehler verhinderten das Parsen vor dem
+#   Start. Arrays und Quotes sind korrigiert; ein echter Tree-sitter-Parse-Gate
+#   sichert den Startpfad jetzt offline ab.
 #
 # Version 7.2.0 (2026-10-05) - NUTZER-KANAL, FRAGEN, EHRLICHE MESSUNG, QUALITAET
 #
@@ -2376,7 +2385,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.2.0'
+    DocsVersion     = '7.2.1'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -2412,7 +2421,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Version 7.0.6: Laufzeit-Identitaet der LAUFENDEN Datei (Version, Pfad,
     # SHA-256, Sprachmodus, Startzeit) fuer GET /api/version.
     RuntimeInfo = [hashtable]::Synchronized(@{
-        Version = '7.2.0'
+        Version = '7.2.1'
         File = ''
         Sha256 = ''
         LanguageMode = ''
@@ -2671,12 +2680,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.2.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.2.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.2.1, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.2.1, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.2.0'
+$script:Shared.RuntimeInfo.Version = '7.2.1'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -2779,7 +2788,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.2.0)
+  Arena Studio Bridge - Studio Plugin  (Version 7.2.1)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -2852,7 +2861,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.2.0"
+local ARENA_VERSION  = "7.2.1"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -15059,7 +15068,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.2.0 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.2.1 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -19039,13 +19048,13 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         # ---------------- MASTER BUILD ----------------
         $t.Add(@{ name = 'build_assembly'; category = 'create'; summary = 'Modulare/wiederholte Baugruppe in EINEM Call; mit Polygon-Silhouetten kombinieren.';
             description = 'Erstellt bis zu 2000 Parts/Instanzen, wendet Properties an, erzeugt lineare oder radiale Wiederholungen und gruppiert alles direkt in ein Model. Ideal fuer Gebaeude-Rahmen, Treppen, Zaeune, Saeulenringe, Fassaden und wiederholte Module. Kombiniere die Baugruppe mit build_polygon_model fuer die praegende Hauptsilhouette oder individuelle Formen; build_assembly ersetzt bei einem nichttrivialen Hero-Modell nicht die polygonale Hauptform. Die Bridge berechnet Wiederholungen/Positionen; Arena muss weder Lua-Schleifen noch hunderte Einzelcalls schreiben.';
-            params = @{ grade = @{ type='string'; required=$false; default='null'; description='Version 7.2.0: \'simple\' | \'lowpoly\' | \'blockout\' - Erklaert die Einfachheit AUSDRUECKLICH (Attribut ArenaDeclaredGrade). model_audit benotet das Ergebnis dann nicht mehr als Entwurf und report_done antwortet nicht mit DRAFT_GRADE_RISK.' }; modelName = @{ type='string'; required=$false; default="'ArenaAssembly'"; description='Name des fertigen Models.' }; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'}; items=@{type='array';required=$true;default='-';description='[{className,name,properties,repeat:{count,offset}|{count,radius,startAngle,angleStep,heightStep}}]. {n} im Namen wird ersetzt.'}; pivot=@{type='Vector3|CFrame';required=$false;default='null';description='Optional das ganze Model am Ende versetzen.'} };
+            params = @{ grade = @{ type='string'; required=$false; default='null'; description='Version 7.2.0: ''simple'' | ''lowpoly'' | ''blockout'' - Erklaert die Einfachheit AUSDRUECKLICH (Attribut ArenaDeclaredGrade). model_audit benotet das Ergebnis dann nicht mehr als Entwurf und report_done antwortet nicht mit DRAFT_GRADE_RISK.' }; modelName = @{ type='string'; required=$false; default="'ArenaAssembly'"; description='Name des fertigen Models.' }; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'}; items=@{type='array';required=$true;default='-';description='[{className,name,properties,repeat:{count,offset}|{count,radius,startAngle,angleStep,heightStep}}]. {n} im Namen wird ersetzt.'}; pivot=@{type='Vector3|CFrame';required=$false;default='null';description='Optional das ganze Model am Ende versetzen.'} };
             returns = '{ model, created, count, errors, geometry }';
             example = @{ modelName='Saeulenring'; items=@(@{className='Part';name='Saeule{n}';properties=@{Size=@{x=2;y=12;z=2};Anchored=$true};repeat=@{count=12;radius=20}}) };
             errors = @('BUDGET_EXCEEDED: mehr als 2000 Teile.', 'BAD_ARGS: nichts erstellt.') })
         $t.Add(@{ name = 'build_polygon_model'; category = 'create'; summary = 'BEVORZUGT fuer nichttriviale Custom-3D-Modelle: Hauptsilhouette als Polygon direkt im Place bauen.';
             description = 'GLOBALER 3D-BAUSTANDARD: Fuer nichttriviale Custom-Modelle aller Kategorien - Figuren, Props, Architektur, Fahrzeuge, Maschinen, Landschaften und Kulissen - build_polygon_model fuer die praegende Hauptsilhouette sowie freie, gekruemmte, verjuengte oder unregelmaessige Formen BEVORZUGEN. Mit benannten Submodels, eigener Part-Farbe/Material je Rolle, mainWelds und refine entsteht ein absichtlich detailliertes Ergebnis statt eines Blockouts. build_assembly ist der passende Partner fuer Wiederholungen/Module; native Parts bleiben fuer einfache Standardformen, Stuetzen und Akzente. Der Builder erstellt echte ArenaPolygonTriangle-Wedges direkt im Place und sorgt fuer Triangulation, Wedge-Orientierung, AutoCaps und Welds. Fuer organische Modelle organic=true setzen; dann sind drei explizite kontrastierende Farben bereits beim Bau Pflicht und der frische per-model Audit mit Polygongeometrie, Palette und aktiviertem Bewegungs-Script ist Voraussetzung fuer report_done. Die Modellwahl ist eine globale Praeferenz, kein anhand von Namen ausgeloester Zwang fuer einfache Parts.';
-            params = @{ grade=@{type='string';required=$false;default='null';description='Version 7.2.0: \'simple\' | \'lowpoly\' | \'blockout\' - Erklaert die Einfachheit AUSDRUECKLICH (Attribut ArenaDeclaredGrade). Ohne das gilt ein Bau mit wenigen Teilen ohne Polygon-/Mesh-/Union-/Detail-Geometrie als Entwurf (DRAFT_GRADE_RISK).'}; modelName=@{type='string';required=$false;default="'ArenaPolygonModel'";description='Oberstes fertiges Model.'}; organic=@{type='bool';required=$false;default='false';description='Fuer jedes bewusst organische Modell true setzen: markiert es im Place, verlangt mindestens drei explizite kontrastierende submodel.style.color-Werte und aktiviert den frischen per-model Geometry/Palette/Enabled-Motion-Audit vor report_done. Kein Modellname loest diese Schreibsperre aus.'}; submodels=@{type='array';required=$false;default='[]';description='EMPFOHLEN: [{name,containerClass="Folder|Model",polygons:[...],style:{...},autoWeld,closeOpenings,capStyle}]. Alles bleibt dem Hauptmodel untergeordnet.'}; polygons=@{type='array';required=$false;default='[]';description='Einfache Flaechen [{name,points,color,material,thickness,...,style}]. Fuer grosse Modelle besser submodels verwenden.'}; points=@{type='Vector3[]';required=$false;default='null';description='Kurzform fuer ein Polygon.'}; script=@{type='string';required=$false;default='null';description='Mehrere Bloecke: POLYGON name=Roof color=#884422 material=Slate thickness=0.03, Punkte, END.'}; style=@{type='table';required=$false;default='{}';description='Globale Part-Defaults: color, material, materialVariant, collisionGroup, thickness, thicknessPlacement (inside Standard|center|positive|negative), anchored, canCollide, canQuery, canTouch, castShadow, transparency, reflectance, properties. Geometrie bleibt Builder-eigen: Position/Orientation/Rotation/CFrame/Size/PivotOffset in properties werden ignoriert, damit keine Flaeche verdreht wird.'}; autoWeld=@{type='bool';required=$false;default='true';description='Standard AN: WeldConstraint-Kette innerhalb jedes Untermodells, damit Polygon-Wedges auch bei anchored=false als ein Objekt verbunden bleiben. Nur autoWeld=false erzeugt bewusst getrennte Teile.'}; mainWeld=@{type='bool';required=$false;default='false';description='Verbindet alle Untermodelle automatisch mit dem ersten.'}; mainWelds=@{type='array';required=$false;default='[]';description='Animierbare Verbindungen [{name,from,to}] zwischen benannten Untermodellen. Erzeugt klassische Welds mit C0/C1 fuer Script-Animation.'}; closeOpenings=@{type='bool';required=$false;default='false';description='Erkennt offene Rand-Loops pro Untermodell und verschliesst sie automatisch mit triangulierten AutoCap-Flaechen.'}; capStyle=@{type='table';required=$false;default='{}';description='Eigener Style fuer automatisch geschlossene Oeffnungen.'}; origin=@{type='Vector3';required=$false;default='{0,0,0}';description='Gesamt-Offset.'}; rotation=@{type='Vector3 degrees';required=$false;default='{0,0,0}';description='Gesamtrotation.'}; scale=@{type='number';required=$false;default='1';description='Gesamtskalierung.'}; maxWedges=@{type='int';required=$false;default='4000';description='Budget, maximal 10000.'}; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'} };
+            params = @{ grade=@{type='string';required=$false;default='null';description='Version 7.2.0: ''simple'' | ''lowpoly'' | ''blockout'' - Erklaert die Einfachheit AUSDRUECKLICH (Attribut ArenaDeclaredGrade). Ohne das gilt ein Bau mit wenigen Teilen ohne Polygon-/Mesh-/Union-/Detail-Geometrie als Entwurf (DRAFT_GRADE_RISK).'}; modelName=@{type='string';required=$false;default="'ArenaPolygonModel'";description='Oberstes fertiges Model.'}; organic=@{type='bool';required=$false;default='false';description='Fuer jedes bewusst organische Modell true setzen: markiert es im Place, verlangt mindestens drei explizite kontrastierende submodel.style.color-Werte und aktiviert den frischen per-model Geometry/Palette/Enabled-Motion-Audit vor report_done. Kein Modellname loest diese Schreibsperre aus.'}; submodels=@{type='array';required=$false;default='[]';description='EMPFOHLEN: [{name,containerClass="Folder|Model",polygons:[...],style:{...},autoWeld,closeOpenings,capStyle}]. Alles bleibt dem Hauptmodel untergeordnet.'}; polygons=@{type='array';required=$false;default='[]';description='Einfache Flaechen [{name,points,color,material,thickness,...,style}]. Fuer grosse Modelle besser submodels verwenden.'}; points=@{type='Vector3[]';required=$false;default='null';description='Kurzform fuer ein Polygon.'}; script=@{type='string';required=$false;default='null';description='Mehrere Bloecke: POLYGON name=Roof color=#884422 material=Slate thickness=0.03, Punkte, END.'}; style=@{type='table';required=$false;default='{}';description='Globale Part-Defaults: color, material, materialVariant, collisionGroup, thickness, thicknessPlacement (inside Standard|center|positive|negative), anchored, canCollide, canQuery, canTouch, castShadow, transparency, reflectance, properties. Geometrie bleibt Builder-eigen: Position/Orientation/Rotation/CFrame/Size/PivotOffset in properties werden ignoriert, damit keine Flaeche verdreht wird.'}; autoWeld=@{type='bool';required=$false;default='true';description='Standard AN: WeldConstraint-Kette innerhalb jedes Untermodells, damit Polygon-Wedges auch bei anchored=false als ein Objekt verbunden bleiben. Nur autoWeld=false erzeugt bewusst getrennte Teile.'}; mainWeld=@{type='bool';required=$false;default='false';description='Verbindet alle Untermodelle automatisch mit dem ersten.'}; mainWelds=@{type='array';required=$false;default='[]';description='Animierbare Verbindungen [{name,from,to}] zwischen benannten Untermodellen. Erzeugt klassische Welds mit C0/C1 fuer Script-Animation.'}; closeOpenings=@{type='bool';required=$false;default='false';description='Erkennt offene Rand-Loops pro Untermodell und verschliesst sie automatisch mit triangulierten AutoCap-Flaechen.'}; capStyle=@{type='table';required=$false;default='{}';description='Eigener Style fuer automatisch geschlossene Oeffnungen.'}; origin=@{type='Vector3';required=$false;default='{0,0,0}';description='Gesamt-Offset.'}; rotation=@{type='Vector3 degrees';required=$false;default='{0,0,0}';description='Gesamtrotation.'}; scale=@{type='number';required=$false;default='1';description='Gesamtskalierung.'}; maxWedges=@{type='int';required=$false;default='4000';description='Budget, maximal 10000.'}; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'} };
             returns = '{ model, submodels, polygons, triangles, wedges, autoCaps, welds, weldedSubmodels, autoWeldDefault, mainWelds, skipped, ignoredGeometryProperties, geometryInvariant, geometry, method, editable }';
             example = @{ modelName='Clocktower'; submodels=@(@{name='StoneBody';style=@{color='#777B80';material='Slate'};polygons=@('... tapered silhouette, buttresses and arches ...')},@{name='CopperRoof';style=@{color='#A65F35';material='Metal'};polygons=@('... roof, eaves and finial ...')},@{name='ClockFace';style=@{color='#E8D9B5';material='SmoothPlastic'};polygons=@('... inset rim and clock face ...')}); mainWelds=@(@{name='RoofToStone';from='StoneBody';to='CopperRoof'}) };
             errors = @('ORGANIC_COLORS_REQUIRED: organic=true needs at least three explicit colour assignments.', 'ORGANIC_POLYGON_REQUIRED: an explicitly organic build must use this polygon builder with organic=true.', 'POLYGON_INVALID: kein gueltiges Polygon.', 'BUDGET_EXCEEDED', 'BAD_ARGS', 'REF_NOT_FOUND') })
@@ -19268,9 +19277,8 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             params = @{ title = @{ type = 'string'; required = $true; default = '-'; description = 'Von Arena formulierter lebendiger Titel, maximal 70 Zeichen.' }; message = @{ type = 'string'; required = $true; default = '-'; description = 'Ein natuerlicher, einladender Satz, maximal 140 Zeichen; keine Auflistung.' } };
             returns = '{ delivered, title, message, limits: { titleCharacters=70, messageCharacters=140 } }';
             example = @{ title = '✅ Arena hat den Lauf-Bug behoben!'; message = 'Der Lauf-Bug ist weg – komm ins Spiel und probiere es aus!' };
-            errors = @('NOTIFICATIONS_DISABLED', 'DRAFT_GRADE_RISK: model_audit hat die Arbeit als Entwurf benotet (wenige Teile, keine Polygon-/Mesh-/Union-/Detail-Geometrie) - nachbauen oder die Einfachheit mit grade erklaeren.', 'BAD_ARGS: title/message fehlen oder ueberschreiten 70/140 Zeichen.'),
-            notes2 = 'Das Ergebnis traegt buildRegister und buildRegisterNote: was wurde gebaut, was davon ist mit model_audit gemessen, was ist noch Entwurf.';
-            notes = @('Version 7.2.0: Die Antwort enthaelt notification { flowId, platformVerdict, platformReason, verified }. Steht dort NOTIFICATION_UNVERIFIED, hat Windows die Meldung vermutlich unterdrueckt (Grund im Feld platformReason) - behaupte dann NICHT, der Nutzer sei benachrichtigt, sondern sage im Antworttext, was fertig ist und dass die Windows-Meldung moeglicherweise nicht erscheint.', 'Version 7.2.0: Die Antwort enthaelt buildRegister { models, audited, unaudited, drafts, declared, averageFinishScore } und buildRegisterNote. Steht dort ein ungeprueftes Modell, hat model_audit diese Geometrie nie gemessen - hole das nach oder sage ehrlich, was ungeprueft ist.') })
+            errors = @('NOTIFICATIONS_DISABLED', 'DRAFT_GRADE_RISK: model_audit hat die Arbeit als Entwurf benotet (wenige Teile, keine Polygon-/Mesh-/Union-/Detail-Geometrie) - nachbauen oder die Einfachheit mit grade erklaeren.', 'BAD_ARGS: title/message fehlen oder ueberschreiten 70/140 Zeichen.');
+            notes = @('Version 7.2.0: Die Antwort enthaelt notification { flowId, platformVerdict, platformReason, verified }. Steht dort NOTIFICATION_UNVERIFIED, hat Windows die Meldung vermutlich unterdrueckt (Grund im Feld platformReason) - behaupte dann NICHT, der Nutzer sei benachrichtigt, sondern sage im Antworttext, was fertig ist und dass die Windows-Meldung moeglicherweise nicht erscheint.', 'Version 7.2.0: Die Antwort enthaelt buildRegister { models, audited, unaudited, drafts, declared, averageFinishScore } und buildRegisterNote: was wurde gebaut, was davon ist mit model_audit gemessen, was ist noch Entwurf. Steht dort ein ungeprueftes Modell, hat model_audit diese Geometrie nie gemessen - hole das nach oder sage ehrlich, was ungeprueft ist.') })
                         $t.Add(@{ name = 'set_context'; category = 'session'; summary = 'Seite wechseln: server oder client.';
             description = 'Bestimmt, welche Seite Laufzeit-Werkzeuge (run_lua) treffen. run_lua selbst laeuft IMMER nur auf der Server/Seite - fuer den Client die client_-Werkzeuge.';
             params = @{ context = @{ type = "'server'|'client'"; required = $true; default = '-'; description = '' } };
@@ -20021,7 +20029,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.2.0'
+            version = '7.2.1'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -20252,7 +20260,7 @@ end
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.2.0'
+            bridgeVersion = '7.2.1'
             executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent is never an error, but the user then sees NO bar and NO percentage at all - only your message as text. Send a real number every few calls. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
@@ -20996,7 +21004,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.2.0'
+                        bridgeVersion = '7.2.1'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -21440,7 +21448,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.2.0'
+                        serverVersion = '7.2.1'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -21799,7 +21807,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.2.0'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.2.1'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -21883,8 +21891,8 @@ end
                 }
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.2.0'
-                    serverVersion = '7.2.0'
+                    bridgeVersion = '7.2.1'
+                    serverVersion = '7.2.1'
                     toolbox = $statusToolbox
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
@@ -24920,7 +24928,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.2.0)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.2.1)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -26822,7 +26830,7 @@ function Write-ChannelDiagnoseFile {
 
         $progressPath = Join-Path $script:AppDataRoot 'progress-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.2.0)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.2.1)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -26857,7 +26865,7 @@ function Write-ChannelDiagnoseFile {
 
         $notifyPath = Join-Path $script:AppDataRoot 'notify-diagnose.txt'
         $sb2 = New-Object System.Text.StringBuilder
-        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.2.0)')
+        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.2.1)')
         [void]$sb2.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb2.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb2.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -27227,7 +27235,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.2.0)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.2.1)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -29438,7 +29446,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.2.0)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.2.1)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -30132,7 +30140,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.2.0'
+    $versionText = '7.2.1'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -31311,7 +31319,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.2.0" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.2.1" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -31381,7 +31389,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.2.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.2.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -31460,7 +31468,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.2.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.2.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -31473,7 +31481,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.2.0'
+    $verText = '7.2.1'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

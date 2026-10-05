@@ -1,7 +1,7 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 7.2.0 - 05.10.2026)                                #
+#   (Stand: Version 7.2.1 - 05.10.2026)                                #
 #                                                                      #
 ##########################################################################
 
@@ -362,8 +362,9 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 - Offline-Pruefung ohne Windows: python test_v398_structure.py,
   python test_v710_delivery.py, python test_v711_delivery.py,
   python test_v712_toolbox.py, python test_v713_quality.py,
+  python test_v714_organic.py, python test_v720_bridge.py,
   python test_queue_model_707.py
-  (luaparser aus requirements-test.txt). PowerShell/.NET laesst sich in
+  (luaparser, tree_sitter und tree_sitter_powershell aus requirements-test.txt). PowerShell/.NET laesst sich in
   der KI-Sandbox NICHT installieren - Semantik per Quelltext (PowerShell-
   Repository auf GitHub) nachlesen statt raten.
 - Tests mit PowerShell-Mocks: Mock-Status als $global:-Variablen
@@ -374,6 +375,21 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v7.2.1 (05.10.2026): KRITISCHER START-/PARSER-HOTFIX fuer 7.2.0.
+  In der report_done-Werkzeugdokumentation war der errors-Array nicht
+  geschlossen und ein doppeltes notes2-Feld stand daneben; ausserdem beendeten
+  Backslashes vor einfachen Quotes die grade-Beschreibungen von
+  build_assembly/build_polygon_model zu frueh. Die Bridge konnte dadurch vor
+  dem Start nicht geparst werden. Fix: Array mit `);` schliessen, notes2 in
+  den vorhandenen buildRegisterNote-Text integrieren und einfache Quotes als
+  `''simple'' | ''lowpoly'' | ''blockout''` schreiben. VERSIONSTAND: Bridge,
+  Plugin, Manifest, Endpunkte, Einstellungen und Diagnose-Kopfzeilen sind
+  7.2.1. `test_v720_bridge.py` hat jetzt zusaetzlich zum Balance-Check einen
+  echten Tree-sitter-PowerShell-Parse-Gate; tree_sitter/tree_sitter_powershell
+  stehen in requirements-test.txt.
+- v7.2.0 (05.10.2026): NUTZER-KANAL, ehrlicher Fortschritt ohne erfundene
+  Zahl, gemessene Fertig-Meldung, Fragen-Baum sowie Qualitaets-/GUI-Vertrag
+  sind umgesetzt; die detaillierten festen Regeln stehen oben in Abschnitt 4.
 - v7.1.3 (03.10.2026): MINI-UPDATE - QUALITAETSVERTRAG, MESSUNG,
   EINSTELLUNGEN. Nutzerbericht: Tiere nur aus Kugeln, Baeume aus
   Cylinder+Kugel, ALLE Cylinder um 90 Grad falsch, Sitzung brach mit
@@ -878,7 +894,9 @@ TEST- UND DATEI-REGELN FUER 3.9.8
 - In dieser Sandbox KEIN pwsh/PowerShell fuer Tests benutzen. Stattdessen
   `python test_v398_structure.py`: Versions-/Strukturpruefung, Lua mit
   `luaparser` (Plugin UND alle eingebetteten Reporter-/Agent-Sources), XAML
-  als XML. Python muss luaparser installiert haben (requirements-test.txt).
+  als XML und in test_v720 einen echten PowerShell-Parse mit `tree_sitter` +
+  `tree_sitter_powershell`. Python muss diese Abhaengigkeiten aus
+  requirements-test.txt installiert haben.
   HINWEIS: pip --user-Installationen landen in ~/.local und ueberleben
   Sandbox-Snapshots NICHT - in einer frischen Sandbox luaparser einfach
   neu installieren.

@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
-"""Offline-Abnahme fuer Arena Roblox Bridge 7.2.0.
+"""Offline-Abnahme fuer Arena Roblox Bridge 7.2.1.
 
-Dieser Test braucht KEIN Windows und kein PowerShell. Er prueft genau die
-fuenf Themen des Owners plus das Fundament:
+Dieser Test braucht KEIN Windows und keinen PowerShell-Prozess. Er prueft genau
+die fuenf Themen des Owners plus das Fundament:
 
   1. Nutzer-Kanal (Zwischennachricht) .......... _bridge.userMessages + ack/wait
   2. Fortschritt ohne erfundene Zahl (D5-D7) ... Textzeile statt 0 %, nichts verdeckt
   3. Fertig-Meldung mit Messung (D4) ........... Urteile, sweep, Test, ehrliche Antwort
   4. Fragen ueber die Bridge (D3) .............. ask_user-Baum + Fenster + Resume
   5. Qualitaet und GUI ......................... finishScore/grade/draft, codeLayout
-  6. Fundament ................................. Stationen, Zaehler, Klammer-Balance
+  6. Fundament ................................. Stationen, Zaehler, echter PowerShell-Parser
 
-Der Klammer-/String-Check am Ende ist der Ersatz fuer das fehlende Parse-Gate:
-7.1.4 ist an EINER ueberzaehligen schliessenden Klammer gestorben, weil
+Der Klammer-/String-Check bleibt als schneller Zusatzschutz erhalten. Das
+verbindliche Parse-Gate nutzt tree_sitter + tree_sitter_powershell und laesst
+nur die sieben bekannten Grammatik-Rauschstellen zu. Das ist wichtig, weil
 PowerShell die ganze Datei parst, bevor irgendetwas sichtbar wird.
 
 Aufruf:
@@ -26,7 +27,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.2.0"
+VERSION = "7.2.1"
 
 failures: list[str] = []
 
@@ -136,6 +137,43 @@ def balanced(source: str) -> tuple[bool, str]:
         opener, opener_line = stack[-1]
         raise ValueError(f"{len(stack)} Klammer(n) offen, zuletzt '{opener}' aus Zeile {opener_line}")
     return True, ""
+
+
+# Tree-sitter's PowerShell grammar reports seven pre-existing parser-noise
+# fragments in this large, mixed PowerShell/Lua/XAML source. New ERROR nodes
+# are release blockers; keep this allow-list deliberately narrow.
+PARSER_NOISE_PREFIXES = (
+    "MB",
+    "param($Raw) if ([string]::IsNullOrWhiteSpace([string]$Raw))",
+    "param($Value)",
+    "$deduped | Sort-Object placeName, sessionId",
+    ", ContentType",
+    "[Windows.UI.Notifications",
+    "[Windows.Data.Xml.Dom",
+)
+
+
+def new_powershell_parse_errors(raw: bytes) -> list[tuple[int, str]]:
+    """Return non-baseline Tree-sitter ERROR/missing nodes with line numbers."""
+    from tree_sitter import Language, Parser
+    import tree_sitter_powershell as tsp
+
+    tree = Parser(Language(tsp.language())).parse(raw)
+    bad: list[tuple[int, str]] = []
+
+    def walk(node: object) -> None:
+        # The parser node API is intentionally used exactly like the standalone
+        # release gate so local and CI diagnostics cannot drift apart.
+        if node.type == "ERROR" or node.is_missing:
+            text = raw[node.start_byte:node.end_byte].decode("utf-8", "replace")
+            if not any(text.startswith(prefix) for prefix in PARSER_NOISE_PREFIXES):
+                bad.append((raw.count(b"\n", 0, node.start_byte) + 1, text[:70]))
+            return
+        for child in node.children:
+            walk(child)
+
+    walk(tree.root_node)
+    return bad
 
 
 def main() -> int:
@@ -339,12 +377,12 @@ def main() -> int:
     ):
         check(marker in source, f"Fundament-Marker vorhanden: {marker}")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    check(version["version"] == VERSION, "version.json identifiziert 7.2.0")
+    check(version["version"] == VERSION, "version.json identifiziert 7.2.1")
     notes = "\n".join(str(note) for note in version.get("notes", []))
-    for word in ("NUTZER-KANAL", "FORTSCHRITT", "FERTIG-MELDUNG", "FRAGEN", "QUALITÄT"):
+    for word in ("7.2.1", "NUTZER-KANAL", "FORTSCHRITT", "FERTIG-MELDUNG", "FRAGEN", "QUALITÄT"):
         check(word in notes, f"version.json beschreibt: {word}")
-    check("DocsVersion     = '7.2.0'" in source and 'local ARENA_VERSION  = "7.2.0"' in source,
-          "Alle funktionalen Versionsstellen stehen auf 7.2.0")
+    check("DocsVersion     = '7.2.1'" in source and 'local ARENA_VERSION  = "7.2.1"' in source,
+          "Alle funktionalen Versionsstellen stehen auf 7.2.1")
     final_lines = source.rstrip().splitlines()[-4:]
     check(final_lines[0].startswith("# Sicherheitsnetz") and final_lines[-1] == "[System.Environment]::Exit(0)",
           "Der absichtliche Not-Aus am Dateiende ist unveraendert")
@@ -355,15 +393,26 @@ def main() -> int:
     except ValueError as exc:
         check(False, f"Klammer-/String-Balance: {exc}")
 
+    try:
+        parse_errors = new_powershell_parse_errors(raw)
+    except ImportError as exc:
+        check(False, f"Tree-sitter-Parse-Gate fehlt ({exc}); requirements-test.txt installieren")
+    else:
+        print(f"  Tree-sitter: Neue ERROR-Stellen: {len(parse_errors)}")
+        for line, text in parse_errors:
+            print(f"    Zeile {line}: {text!r}")
+        check(not parse_errors,
+              "Tree-sitter-PowerShell-Parse-Gate meldet keine neuen ERROR-Stellen")
+
     print()
     if failures:
         print(f"ROT: {len(failures)} Pruefung(en) fehlgeschlagen:")
         for entry in failures:
             print(f"  - {entry}")
         return 1
-    print("OK: 7.2.0 - Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene "
-          "Fertig-Meldung, Fragen-Baum, Qualitaets- und GUI-Vertrag sind vollstaendig "
-          "und die Datei ist von Ende zu Ende ausbalanciert.")
+    print("OK: 7.2.1 - Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene "
+          "Fertig-Meldung, Fragen-Baum, Qualitaets- und GUI-Vertrag sind vollstaendig; "
+          "die Datei ist ausbalanciert und der echte PowerShell-Parser ist gruen.")
     return 0
 
 

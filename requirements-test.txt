@@ -1,2 +1,4 @@
-# Offline structure test dependency (test_v398_structure.py)
+# Offline structure and parser test dependencies
 luaparser>=4.0,<5
+tree_sitter>=0.25,<0.27
+tree_sitter_powershell>=0.25,<0.27
