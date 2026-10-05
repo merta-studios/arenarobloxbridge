@@ -1,7 +1,7 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 7.2.2 - 05.10.2026)                                #
+#   (Stand: Version 7.2.3 - 05.10.2026)                                #
 #                                                                      #
 ##########################################################################
 
@@ -142,9 +142,9 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
   (Arena.ArenaRobloxBridge, Startmenue-Verknuepfung + HKCU, NUR wenn der
   Schalter an ist), jede Meldung laeuft ueber NOTIFY-Stationen, notify.sweep
   misst danach erneut und report_done antwortet ohne Blindvertrauen
-  (NOTIFICATION_UNVERIFIED statt delivered = true). Die Einstellungen haben
-  dafuer einen Testknopf mit der Rueckfrage "Hast du die Meldung gesehen?".
-  Es bleibt bei GENAU DIESEM EINEN Kanal - kein neuer Meldeweg (D4).
+  (NOTIFICATION_UNVERIFIED statt delivered = true). Seit v7.2.3 gibt es KEINEN
+  kuenstlichen Test-Popup mehr in den Einstellungen. Es bleibt bei GENAU
+  DIESEM EINEN report_done-Kanal - kein neuer Meldeweg (D4).
 - ZWEI NEUE FENSTER SIND AUSDRUECKLICH ERLAUBT (v7.2.0, Entscheidung D2 des
   Owners): (1) "Nachricht an Arena senden" aus dem Menue (…) der Place-Zeile
   (Add-UserMessage/Open-UserMessageWindow) und (2) "Arena fragt" fuer
@@ -385,6 +385,15 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v7.2.3 (05.10.2026): FRAGENFENSTER, NUTZER-KANAL, LIVE-SAMMLUNGEN.
+  Generic List/Queue/Stack/Dictionary-Helfer geben ihre Sammlung als EINEN
+  Wert (`return ,$liste`) zurueck, sodass der 0/1/n-Pipelinefehler keine
+  Optionen, Antworten, Nutzernachrichten oder Bau-Register mehr in Hashtables
+  verwandelt. ask_user ist kompakt, ziehbar und nur waehrend waiting modal;
+  X/Esc/Abbrechen schreibt cancelled, die KI bekommt cancelled:true und
+  ASK_CANCELLED. Nachricht an Arena nennt kurze Fehler direkt, Strg+Enter
+  sendet. Die Test-Benachrichtigung ist aus den Einstellungen entfernt;
+  report_done/NOTIFICATION_UNVERIFIED/notify-diagnose bleiben unveraendert.
 - v7.2.2 (05.10.2026): MINI-UPDATE - DIAGNOSEBEREICH ENTFERNT,
   PLACE-MENUE BEREINIGT, NACHRICHTENFENSTER UEBERARBEITET. Das Diagnosepanel
   ist aus den Einstellungen entfernt; alte perfDiagnostics-Werte werden

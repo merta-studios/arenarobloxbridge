@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Offline-Abnahme fuer Arena Roblox Bridge 7.2.2.
+"""Offline-Abnahme fuer Arena Roblox Bridge 7.2.3.
 
 Dieser Test braucht KEIN Windows und keinen PowerShell-Prozess. Er prueft genau
 die fuenf Themen des Owners plus das Fundament:
 
   1. Nutzer-Kanal (Zwischennachricht) .......... _bridge.userMessages + ack/wait
   2. Fortschritt ohne erfundene Zahl (D5-D7) ... Textzeile statt 0 %, nichts verdeckt
-  3. Fertig-Meldung mit Messung (D4) ........... Urteile, sweep, Test, ehrliche Antwort
+  3. Fertig-Meldung mit Messung (D4) ........... Urteile, sweep, ehrliche Antwort ohne Test-Popup
   4. Fragen ueber die Bridge (D3) .............. ask_user-Baum + Fenster + Resume
   5. Qualitaet und GUI ......................... finishScore/grade/draft, codeLayout
   6. Fundament ................................. Stationen, Zaehler, echter PowerShell-Parser
@@ -22,12 +22,13 @@ Aufruf:
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.2.2"
+VERSION = "7.2.3"
 
 failures: list[str] = []
 
@@ -44,6 +45,48 @@ def region(source: str, start: str, end: str) -> str:
     begin = source.index(start)
     stop = source.index(end, begin)
     return source[begin:stop]
+
+
+def collection_return_problems(source: str) -> list[str]:
+    """Find generic collections returned through PowerShell's unpacking pipeline.
+
+    `return $list` maps 0/1/n elements to null/a single object/an array. The
+    callers need the List instance itself, so every matching return must use
+    `return ,$list` instead.
+    """
+    lines = source.split("\n")
+    starts = [(i, m.group(1)) for i, line in enumerate(lines)
+              if (m := re.match(r"\s*function\s+([A-Za-z0-9_\-]+)", line))]
+
+    def owner_of(n: int) -> str:
+        current = "?"
+        for start, name in starts:
+            if start <= n:
+                current = name
+            else:
+                break
+        return current
+
+    collection = re.compile(
+        r"New-Object\s+System\.Collections\.Generic\.(List|Queue|Stack|Dictionary)\[",
+        re.I,
+    )
+    assigns: dict[tuple[str, str], list[str]] = {}
+    for i, line in enumerate(lines):
+        who = owner_of(i)
+        for match in re.finditer(r"([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)", line):
+            assigns.setdefault((who, match.group(1)), []).append(match.group(2))
+    problems: list[str] = []
+    for i, line in enumerate(lines):
+        match = re.match(r"\s*return\s+\$([A-Za-z_][A-Za-z0-9_]*)\s*$", line.rstrip())
+        if not match:
+            continue
+        who, var = owner_of(i), match.group(1)
+        if any(collection.search(value) for value in assigns.get((who, var), [])):
+            problems.append(
+                f"Zeile {i + 1}: {who}() gibt ${var} entpackbar zurueck - richtig ist ,${var}"
+            )
+    return problems
 
 
 def balanced(source: str) -> tuple[bool, str]:
@@ -201,9 +244,9 @@ def main() -> int:
         check(marker in source, f"Marker vorhanden: {marker}")
 
     envelope_rules = region(source, "function New-Envelope", "\n    # ------------------------------------------------------------------\n    # Werkzeuge, die das Programm selbst beantwortet")
-    check("$envelope.userMessages = $pendingUserMessages.ToArray()" in envelope_rules
+    check("$envelope.userMessages = @($pendingUserMessages)" in envelope_rules
           and "$envelope.userMessageContract" in envelope_rules,
-          "Jede Antwort traegt die wartenden Nutzernachrichten samt Vertrag")
+          "Jede Antwort normalisiert die wartenden Nutzernachrichten samt Vertrag")
     check("_bridge.userMessages" in source and "ack_user_message" in source
           and "userMessageContract" in source,
           "Die KI wird auf _bridge.userMessages und ack_user_message hingewiesen")
@@ -228,10 +271,10 @@ def main() -> int:
     message_window = region(source, "function Open-UserMessageWindow", "function Get-AskStateForUi")
     check('Width="460" Height="440"' in message_window,
           "Das Nachricht-Fenster startet deutlich kompakter (460 x 440)")
-    check('Background="#FF252529"' in message_window
-          and 'Setter Property="Background" Value="#FF19191D"' in message_window
-          and 'Setter Property="Background" Value="#FFE84B6C"' in message_window,
-          "Fenster, Texteingabe und Senden-Knopf verwenden Anthrazit/Grau/Pink")
+    check('Background="#F50B1030"' in message_window
+          and 'Setter Property="Background" Value="#141B33"' in message_window
+          and 'Setter Property="Background" Value="#38D16C"' in message_window,
+          "Fenster, Texteingabe und Senden-Knopf verwenden die dunkle Fragenfenster-Sprache")
     check("$titleBar.Add_MouseLeftButtonDown" in message_window
           and "$s.Tag.DragMove()" in message_window
           and 'x:Name="CloseButton"' in message_window
@@ -241,6 +284,14 @@ def main() -> int:
           and "$win.ShowDialog()" in message_window
           and "$win.Show()" not in message_window,
           "Das modale ShowDialog sperrt das Hauptfenster waehrend der Eingabe")
+    check("Get-UiShortErrorReason" in source
+          and "Die Nachricht konnte nicht gespeichert werden: " in message_window
+          and "siehe runtime.log" not in message_window,
+          "Speicherfehler nennen den kurzen echten Grund direkt im Fenster")
+    check("Add_PreviewKeyDown" in message_window
+          and "ModifierKeys]::Control" in message_window
+          and "Key]::Escape" in message_window,
+          "Nachricht-Fenster unterstuetzt Strg+Enter zum Senden und Esc zum Schliessen")
     place_row_ui = region(source, "function New-Row {", "function New-MinimalPlaceRow {")
     check("-Title 'Laufenden Befehl abbrechen'" not in place_row_ui
           and "$cancelCmdItem" not in place_row_ui,
@@ -300,8 +351,9 @@ def main() -> int:
           "Der Anzeigeaufruf wird als Station verbucht (CALL/CALL_FAILED)")
     check("notify-diagnose.txt" in source and "function Get-NotifyDiagnoseLines" in source,
           "notify-diagnose.txt nennt Plattform, Zaehler und die letzten Meldungen")
-    check("function Open-NotifySeenWindow" in show or "function Open-NotifySeenWindow" in source,
-          "Es gibt die ehrliche Rueckfrage 'Hast du die Meldung gesehen?'")
+    check("function Open-NotifySeenWindow" not in source
+          and "function Send-NotifyTestMessage" not in source,
+          "Die kuenstliche Test-Benachrichtigung und ihre Rueckfrage sind entfernt")
     settings_ui = region(source, "function Open-SettingsWindow", "# Version 3.8: Die Update-Infos")
     settings_xaml = region(settings_ui, "$settingsXaml = @'", "'@")
     check('Text="DIAGNOSE"' not in settings_xaml
@@ -312,17 +364,16 @@ def main() -> int:
     place_card_end = settings_xaml.index("</Border>", place_card_start)
     place_card = settings_xaml[place_card_start:place_card_end]
     check('x:Name="DoneNotifySwitch"' in place_card
-          and 'x:Name="NotifyTestButton"' in place_card,
-          "Der Fertig-Meldungs-Test bleibt in der PLACE-LISTE-Karte beim Schalter")
-    check("Test-Meldung anzeigen" in settings_xaml and "NotifyTestButton" in settings_ui,
-          "Die Einstellungen behalten den Testknopf fuer die Fertig-Meldung")
+          and 'NotifyTestButton' not in settings_ui
+          and 'Test-Meldung anzeigen' not in settings_xaml,
+          "Der echte Fertig-Meldungs-Schalter bleibt, die Test-Benachrichtigung ist aus Einstellungen entfernt")
     settings_loader = region(source, "function Get-BridgeSettingsFile", "function Save-BridgeSettingsFile")
     check("perfDiagnostics = $false" in settings_loader
           and "$loaded.perfDiagnostics" not in settings_loader
           and "alte opt-ins werden ignoriert" in settings_loader,
           "Ein alter Performance-Diagnose-Opt-in wird nicht still wieder aktiviert")
-    check("NotifySeenYes" in source and "NotifySeenNo" in source,
-          "Ja/Nein wird gezaehlt und in der Diagnose-Datei ausgewiesen")
+    check("NotifySeenYes" not in source and "NotifySeenNo" not in source,
+          "Die entfernte Test-Rueckfrage hinterlaesst keine toten Diagnose-Zaehler")
     done_start = source.index("                $notifyFlowId = 'n-' + [string]$notifyFlowSeq")
     done = source[done_start:done_start + 9000]
     check("delivered = $true" not in done,
@@ -332,7 +383,7 @@ def main() -> int:
     check("platformVerdict" in done and "notify.sweep" in done,
           "Die Antwort nennt Urteil, Grund und die Nachmessung")
 
-    print("\n4) Fragen ueber die Bridge (D3)")
+    print("\n4) Fragen ueber die Bridge (D3 / 7.2.3)")
     for marker in (
         "function Test-AskTree",
         "function Invoke-AskUser",
@@ -340,40 +391,94 @@ def main() -> int:
         "function Get-LateAskAnswers",
         "function Get-PendingAskViews",
         "function Wait-AskAnswer",
+        "function Cancel-AskForUi",
+        "function Start-AskModal",
+        "function Stop-AskModal",
         "'ask_user'",
         "'confirm_action'",
     ):
         check(marker in source, f"Marker vorhanden: {marker}")
-    for code in ("ASK_TOO_MANY_QUESTIONS", "ASK_GRAPH_INVALID", "ASK_CYCLE", "ASK_EXPIRED", "ASK_UNKNOWN"):
+    for code in ("ASK_TOO_MANY_QUESTIONS", "ASK_GRAPH_INVALID", "ASK_CYCLE", "ASK_EXPIRED", "ASK_UNKNOWN", "ASK_CANCELLED"):
         check(code in source, f"Typisierter Fehler vorhanden: {code}")
     check("ASK_UNREACHABLE" in source, "Unbrauchbare Bedingungen werden gemeldet (ASK_UNREACHABLE)")
+    tree = region(source, "function Test-AskTree", "function Read-AskState")
+    check("if ($options.Count -lt 2)" in tree and "code = 'ASK_GRAPH_INVALID'" in tree,
+          "Test-AskTree weist Baeume mit weniger als zwei Optionen vor dem Fenster ab")
     check("$maxQuestions = 12" in source and "$maxOptions = 6" in source and "$maxChars = 400" in source,
           "Die Grenzen des Plans sind umgesetzt (12 Fragen, 6 Optionen, 400 Zeichen)")
     ask = region(source, "function Invoke-AskUser", "function Get-LateAskAnswers")
-    check("resume" in ask and "nextCall" in ask,
-          "Das Warten ist wiederaufnehmbar (resume=true, nextCall)")
+    check("resume" in ask and "nextCall" in ask and "Get-AskCancelledResponse" in ask,
+          "Das Warten ist wiederaufnehmbar und beantwortet Abbruch als ASK_CANCELLED")
     check("if ($seconds -gt 50) { $seconds = 50 }" in source,
           "waitSeconds bleibt unter dem harten HTTP-Deckel")
     check("path = @($State.path)" in source and "notShown = @($State.notShown)" in source,
           "Die Antwort nennt gestellte und uebersprungene Fragen")
-    check("_bridge.userAnswers" in source or "$envelope.userAnswers" in source,
-          "Spaete Antworten gehen nicht verloren (_bridge.userAnswers)")
-    check("openQuestions" in source, "Offene Fragen stehen in jeder Antwort")
+    check("cancelled = $wasCancelled" in source
+          and "summary = $(if ($wasCancelled) { 'Der Nutzer hat abgebrochen.' }" in source,
+          "Spaete Nutzerantworten liefern cancelled:true samt ehrlicher Zusammenfassung")
+    check("$answer.confirmed = $false" in source and "ASK_CANCELLED" in region(source, "function Invoke-ConfirmAction", "function Get-LateAskAnswers"),
+          "confirm_action behandelt ASK_CANCELLED eindeutig als Nein")
+    check("$envelope.userAnswers = @($lateAnswers)" in envelope_rules
+          and "$envelope.openQuestions = @($openAsks)" in envelope_rules,
+          "Antworten und offene Fragen werden am Umschlag als echte Arrays normalisiert")
+
     ui = region(source, "function Update-AskWindow", "function Get-PlaceOpenCommand")
+    open_ask = region(source, "function Open-AskWindow", "function Sync-AskWindows")
     check("function Open-AskWindow" in source and "function Sync-AskWindows" in source,
           "Das Fragenfenster oeffnet sich aus dem Anzeige-Takt")
-    check("[System.Windows.Forms.Cursor]::Position" in source
-          and "[System.Windows.Forms.Screen]::FromPoint" in source,
-          "Es erscheint mit Versatz am Mauszeiger und bleibt im sichtbaren Bereich")
-    for state in ("Agent ist mittlerweile offline", "Arena wartet nicht mehr aktiv",
-                  "Arena wartet auf deine Antwort", "kannst dieses Fenster schliessen"):
-        check(state in ui, f"Fenster-Zustand ehrlich benannt: {state}")
-    check("Get-AskCopyPrompt" in source and "Antwort als Text kopieren" in ui,
-          "Es gibt den Knopf fuer den paste-fertigen Text in den Arena-Chat")
+    check("[System.Windows.Forms.Cursor]::Position" in open_ask
+          and "[System.Windows.Forms.Screen]::FromPoint" in open_ask
+          and "$win.SizeToContent = [System.Windows.SizeToContent]::Height" in open_ask
+          and "$windowMaxHeight = [Math]::Min(340, [Math]::Floor($area.Height * 0.70))" in open_ask,
+          "Fenster startet kompakt am Mauszeiger, hoehenbasiert, maximal 460 x 340 und innerhalb von 70 % des Bildschirms")
+    check("$scroll, 2" in open_ask and "GridUnitType]::Star" in open_ask,
+          "Der ScrollViewer liegt in der eigenen *-Zeile")
+    check("SetRow($copyPanel, 4)" in open_ask and "SetRow($buttonRow, 5)" in open_ask,
+          "CopyPanel und ButtonRow haben getrennte Grid-Zeilen und ueberlappen nicht")
+    check("$backButton.Content = 'Zurück'" in open_ask
+          and "$cancelButton.Content = 'Abbrechen'" in open_ask
+          and "$nextButton.Content = 'Weiter'" in open_ask
+          and "$nextButton.Background = Get-Brush '#38D16C'" in open_ask
+          and "$cancelButton.Background = Get-Brush '#FF5C77'" in open_ask
+          and "$backButton.Background = Get-Brush '#0E1428'" in open_ask,
+          "Unten stehen genau die drei farblich eindeutigen Aktionen Zurueck/Abbrechen/Weiter")
+    check("Antwort als Text kopieren" in open_ask
+          and "$copyPanel.Visibility = 'Collapsed'" in ui
+          and "Agent arbeitet weiter …" in ui
+          and "Agent ist offline …" in ui,
+          "Der Kopierknopf erscheint nur als Ausnahme bei Offline oder Ablauf")
+    check("Diese Frage kam ohne Optionen an" in ui
+          and "EMPTY_QUESTION" in ui
+          and "Write-UiErrorLog ('ASK EMPTY_QUESTION" in ui,
+          "Fehlgeformte Altfragen zeigen sichtbar einen Fehler und werden protokolliert")
+    check("#5CFFEF" not in open_ask
+          and "#F50B1030" in open_ask
+          and "#141B33" in open_ask
+          and "#F4F8FF" in open_ask,
+          "Fragenfenster nutzt die dunkle Shell-/Panel-/Text-Palette ohne Mint")
+    check("$titleBar.Add_MouseLeftButtonDown" in open_ask
+          and "DragMove()" in open_ask
+          and "$closeButton.Width = 30" in open_ask
+          and "$closeButton.Add_MouseEnter" in open_ask,
+          "Titelzeile ist ziehbar und das X ist ein eigener Hover-Schliesser")
+    check("$window.IsEnabled = $false" in source
+          and "Stop-AskModal $Info" in ui
+          and "state.state -ne 'waiting'" in open_ask,
+          "Fragen sperren die Hauptoberflaeche nur waehrend waiting und geben im Timer sicher frei")
+    check("$win.Add_PreviewKeyDown" in open_ask
+          and "Key]::Escape" in open_ask
+          and "Cancel-AskForUi $data 'escape'" in open_ask,
+          "Esc und X folgen derselben Abbruchsemantik")
+    pending = region(source, "function Get-AskPendingForUi", "function Test-AskCondition")
+    sync = region(source, "function Sync-AskWindows", "function Get-PlaceOpenCommand")
+    check("$askState -eq 'cancelled'" in pending and "pending.state -eq 'cancelled'" in sync,
+          "Get-AskPendingForUi und Sync-AskWindows ignorieren cancelled dauerhaft")
+    check("cancelledAt" in source and "Set-UiMessageField $state 'state' 'cancelled'" in source,
+          "Abbrechen schreibt cancelled und cancelledAt in den gemeinsamen Zustand")
     check("function Test-AskCondition" in source and "anyOf" in source and "allOf" in source,
           "Bedingungen (when/anyOf/allOf/custom) werden ausgewertet")
-    check("ANSWERS_DISCARDED" in source or "ANSWER_DISCARDED" in source,
-          "Zurueck verwirft ungueltig gewordene Antworten nachvollziehbar")
+    check("ANSWER_DISCARDED" in source and "reason = 'back'" in open_ask,
+          "Zurueck verwirft Folgeantworten nachvollziehbar")
 
     print("\n5) Qualitaet und GUI")
     check("finishScore = finishScore" in source and "grade = grade" in source,
@@ -414,13 +519,18 @@ def main() -> int:
     ):
         check(marker in source, f"Fundament-Marker vorhanden: {marker}")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    check(version["version"] == VERSION, "version.json identifiziert 7.2.2")
+    check(version["version"] == VERSION, "version.json identifiziert 7.2.3")
     notes = "\n".join(str(note) for note in version.get("notes", []))
-    for word in ("7.2.2", "NUTZER-KANAL", "FORTSCHRITT", "FERTIG-MELDUNG", "FRAGEN", "QUALITÄT",
-                 "Diagnosebereich", "perfDiagnostics", "Laufenden Befehl abbrechen", "460 × 440", "ShowDialog"):
+    for word in ("7.2.3", "LIVE-SAMMLUNGEN", "ASK_CANCELLED", "Strg+Enter",
+                 "Test-Benachrichtigung", "NOTIFICATION_UNVERIFIED", "notify-diagnose.txt"):
         check(word in notes, f"version.json beschreibt: {word}")
-    check("DocsVersion     = '7.2.2'" in source and 'local ARENA_VERSION  = "7.2.2"' in source,
-          "Alle funktionalen Versionsstellen stehen auf 7.2.2")
+    check("DocsVersion     = '7.2.3'" in source and 'local ARENA_VERSION  = "7.2.3"' in source,
+          "Alle funktionalen Versionsstellen stehen auf 7.2.3")
+    problems = collection_return_problems(source)
+    for problem in problems:
+        print(f"    {problem}")
+    check(not problems,
+          "Keine Generic List/Queue/Stack/Dictionary wird entpackbar zurueckgegeben (return ,$liste)")
     final_lines = source.rstrip().splitlines()[-4:]
     check(final_lines[0].startswith("# Sicherheitsnetz") and final_lines[-1] == "[System.Environment]::Exit(0)",
           "Der absichtliche Not-Aus am Dateiende ist unveraendert")
@@ -448,7 +558,7 @@ def main() -> int:
         for entry in failures:
             print(f"  - {entry}")
         return 1
-    print("OK: 7.2.2 - Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene "
+    print("OK: 7.2.3 - Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene "
           "Fertig-Meldung, Fragen-Baum, Qualitaets- und GUI-Vertrag sind vollstaendig; "
           "die Datei ist ausbalanciert und der echte PowerShell-Parser ist gruen.")
     return 0

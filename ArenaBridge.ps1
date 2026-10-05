@@ -1,6 +1,21 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.2.2
+# Arena Roblox Bridge  -  Version 7.2.3
 #
+#
+# Version 7.2.3 (2026-10-05) - FRAGENFENSTER, NUTZER-KANAL, LIVE-SAMMLUNGEN
+#
+#   1) Alle List-/Queue-/Stack-/Dictionary-Hilfsfunktionen geben ihre Sammlung
+#      jetzt als EINEN Wert zurueck (return ,$liste). Dadurch brechen einzelne
+#      Optionen, Antworten, Bau-Register oder Nutzernachrichten nicht mehr an
+#      PowerShells 0/1/n-Pipeline-Entpacken auseinander.
+#   2) ask_user ist kompakt, ziehbar und sicher modal: sichtbare Optionen und
+#      Eingabefelder, drei eindeutige Knopfe (Zurueck/Abbrechen/Weiter), X/Esc
+#      als echter Abbruch, Ablauf-Notausgang und Kopieren nur bei Offline/
+#      Timeout. cancelled wird ehrlich an Arena ausgeliefert (ASK_CANCELLED).
+#   3) "Nachricht an Arena" zeigt Speicherfehler direkt kurz im Fenster,
+#      unterstuetzt Strg+Enter/Esc und nutzt dieselbe dunkle Fenstersprache.
+#      Der zusaetzliche Test-Popup fuer Fertig-Meldungen ist aus den
+#      Einstellungen entfernt; report_done, Registrierung und Messung bleiben.
 #
 # Version 7.2.2 (2026-10-05) - MINI-UPDATE: EINSTELLUNGEN, PLACE-MENUE, NACHRICHTENFENSTER
 #
@@ -1883,7 +1898,6 @@ $script:NotifyAumidState = $null
 $script:NotifyPlatformCache = $null
 $script:NotifyPlatformCacheAt = $null
 $script:NotifyRecords = New-Object System.Collections.Generic.List[object]
-$script:NotifySeenWindow = $null
 # Version 7.2.0 (D8): Fenster "Nachricht an Arena senden".
 $script:UserMessageWindow = $null
 # Version 7.2.0 (D3): Fenster "Arena fragt" (Entscheidungsbaum am Mauszeiger).
@@ -2398,7 +2412,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.2.2'
+    DocsVersion     = '7.2.3'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -2434,7 +2448,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Version 7.0.6: Laufzeit-Identitaet der LAUFENDEN Datei (Version, Pfad,
     # SHA-256, Sprachmodus, Startzeit) fuer GET /api/version.
     RuntimeInfo = [hashtable]::Synchronized(@{
-        Version = '7.2.2'
+        Version = '7.2.3'
         File = ''
         Sha256 = ''
         LanguageMode = ''
@@ -2519,9 +2533,6 @@ $script:Shared = [hashtable]::Synchronized(@{
         NotifyEnqueued           = 0L
         NotifyShown              = 0L
         NotifyUnverified         = 0L
-        NotifyTestRuns           = 0L
-        NotifySeenYes            = 0L
-        NotifySeenNo             = 0L
         NotifyLastSeen           = ''
         NotifySuppressed         = 0L
         NotifyFailed             = 0L
@@ -2693,12 +2704,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.2.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.2.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.2.3, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.2.3, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.2.2'
+$script:Shared.RuntimeInfo.Version = '7.2.3'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -2801,7 +2812,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.2.2)
+  Arena Studio Bridge - Studio Plugin  (Version 7.2.3)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -2874,7 +2885,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.2.2"
+local ARENA_VERSION  = "7.2.3"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -13473,7 +13484,9 @@ $script:BridgeHandlerScript = {
                 foreach ($option in $Question.options) { $options.Add($option) }
             }
         } catch {}
-        return $options
+        # List[object] muss als ein Rueckgabewert erhalten bleiben: PowerShell
+        # entpackt sonst 0/1/n Elemente in die Pipeline.
+        return ,$options
     }
 
     function Test-AskTree {
@@ -13705,6 +13718,23 @@ $script:BridgeHandlerScript = {
         }
     }
 
+    function Get-AskCancelledResponse {
+        # Ein Abbruch ist eine echte Nutzerentscheidung, keine fehlende Antwort.
+        # Die KI darf die gleiche Frage nicht erneut stellen und muss die
+        # Annahme, mit der sie weiterarbeitet, offen benennen.
+        param([string]$AskId, $State = $null)
+        return @{
+            ok = $false
+            code = 'ASK_CANCELLED'
+            error = 'The user cancelled this question.'
+            hint = 'Der Nutzer hat abgebrochen. Frage nicht erneut. Arbeite mit einer vernünftigen Annahme weiter und sage welche — oder stoppe und berichte.'
+            askId = $AskId
+            cancelled = $true
+            cancelledAt = $(try { [int64]$State.cancelledAt } catch { [int64]0 })
+            summary = 'Der Nutzer hat abgebrochen.'
+        }
+    }
+
     function Get-AskExpirySeconds {
         param($ToolArgs, [int]$Default = 180)
         $seconds = $Default
@@ -13755,6 +13785,7 @@ $script:BridgeHandlerScript = {
             createdAt = $now
             expiresAt = ($now + $expiresIn)
             answeredAt = 0
+            cancelledAt = 0
             answers = $null
             path = @()
             notShown = @()
@@ -13783,7 +13814,7 @@ $script:BridgeHandlerScript = {
         $started = [System.Diagnostics.Stopwatch]::StartNew()
         $reason = 'timeout'
         $state = Read-AskState $AskId
-        if ($null -ne $state -and [string]$state.state -eq 'answered') { return $state }
+        if ($null -ne $state -and ([string]$state.state -eq 'answered' -or [string]$state.state -eq 'cancelled')) { return $state }
         if ($MaxSeconds -lt 1) { return $state }
         while ($started.Elapsed.TotalSeconds -lt $MaxSeconds) {
             $remaining = [int][Math]::Ceiling($MaxSeconds - $started.Elapsed.TotalSeconds)
@@ -13793,6 +13824,7 @@ $script:BridgeHandlerScript = {
             $state = Read-AskState $AskId
             if ($null -eq $state) { break }
             if ([string]$state.state -eq 'answered') { $reason = 'answered'; break }
+            if ([string]$state.state -eq 'cancelled') { $reason = 'cancelled'; break }
             if ([string]$state.state -eq 'expired') { $reason = 'expired'; break }
             if ((Get-UnixSeconds) -gt [int64]$state.expiresAt) { $reason = 'expired'; break }
         }
@@ -13823,6 +13855,7 @@ $script:BridgeHandlerScript = {
             if ($waitSeconds -le 0) { return $created }
             $state = Wait-AskAnswer $askId $waitSeconds
             if ($null -ne $state -and [string]$state.state -eq 'answered') { return (Get-AskResult $askId $state) }
+            if ($null -ne $state -and [string]$state.state -eq 'cancelled') { return (Get-AskCancelledResponse $askId $state) }
             if ($null -ne $state -and [string]$state.state -eq 'expired') {
                 return @{ ok = $false; code = 'ASK_EXPIRED'; error = 'The question window expired before the user answered.'; hint = 'Ask again only if you really need it, or continue with your best assumption and say so in your answer.'; askId = $askId }
             }
@@ -13838,6 +13871,7 @@ $script:BridgeHandlerScript = {
             return @{ ok = $false; code = 'ASK_UNKNOWN'; error = ('No question request with id "' + $resumeId + '".'); hint = 'Use the askId from the previous ask_user answer.' }
         }
         if ([string]$state.state -eq 'answered') { return (Get-AskResult $resumeId $state) }
+        if ([string]$state.state -eq 'cancelled') { return (Get-AskCancelledResponse $resumeId $state) }
         if ([string]$state.state -eq 'expired' -or (Get-UnixSeconds) -gt [int64]$state.expiresAt) {
             if ([string]$state.state -ne 'expired') {
                 $state.state = 'expired'
@@ -13858,6 +13892,7 @@ $script:BridgeHandlerScript = {
         if ($waitSeconds -le 0) { $waitSeconds = 45 }
         $waited = Wait-AskAnswer $resumeId $waitSeconds
         if ($null -ne $waited -and [string]$waited.state -eq 'answered') { return (Get-AskResult $resumeId $waited) }
+        if ($null -ne $waited -and [string]$waited.state -eq 'cancelled') { return (Get-AskCancelledResponse $resumeId $waited) }
         if ($null -ne $waited -and [string]$waited.state -eq 'expired') {
             return @{ ok = $false; code = 'ASK_EXPIRED'; error = 'The question window expired before the user answered.'; hint = 'Continue with your best assumption and say so.'; askId = $resumeId }
         }
@@ -13922,6 +13957,13 @@ $script:BridgeHandlerScript = {
             if ([string]$answer.result.state -eq 'answered') {
                 Write-FlowStation 'ASK' ([string]$answer.result.askId) 'CONFIRMED' @{ confirmed = $confirmed; sid = $SessionId }
             }
+        } elseif ($answer.ContainsKey('code') -and [string]$answer.code -eq 'ASK_CANCELLED') {
+            # confirm_action bleibt bei einem Abbruch eindeutig Nein; der
+            # ASK_CANCELLED-Code sagt der KI zugleich, dass sie nicht erneut
+            # fragen darf.
+            $answer.confirmed = $false
+            $answer.cancelled = $true
+            $answer.summary = 'Der Nutzer hat abgebrochen.'
         }
         return $answer
     }
@@ -13939,25 +13981,29 @@ $script:BridgeHandlerScript = {
                 try { $state = ($pair.Value | ConvertFrom-Json) } catch { $state = $null }
                 if ($null -eq $state) { continue }
                 if ([string]$state.sessionId -ne [string]$SessionId) { continue }
-                if ([string]$state.state -ne 'answered') { continue }
+                $answerState = [string]$state.state
+                if ($answerState -ne 'answered' -and $answerState -ne 'cancelled') { continue }
                 if ([int64]$state.deliveredAt -gt 0) { continue }
                 $state.deliveredAt = Get-UnixSeconds
                 Save-AskState ([string]$state.askId) $state
+                $wasCancelled = ($answerState -eq 'cancelled')
                 $items.Add([pscustomobject]@{
                     askId = [string]$state.askId
                     kind = [string]$state.kind
                     title = [string]$state.title
-                    answers = $state.answers
-                    path = @($state.path)
-                    notShown = @($state.notShown)
-                    summary = (Get-AskSummary $state)
+                    answers = $(if ($wasCancelled) { @{} } else { $state.answers })
+                    path = $(if ($wasCancelled) { @() } else { @($state.path) })
+                    notShown = $(if ($wasCancelled) { @() } else { @($state.notShown) })
+                    cancelled = $wasCancelled
+                    cancelledAt = $(if ($wasCancelled) { [int64]$state.cancelledAt } else { [int64]0 })
+                    summary = $(if ($wasCancelled) { 'Der Nutzer hat abgebrochen.' } else { Get-AskSummary $state })
                     answeredAt = [int64]$state.answeredAt
                 })
                 Add-ChannelCount 'AskLateAnswers' 1
-                Write-FlowStation 'ASK' ([string]$state.askId) 'LATE_DELIVERED' @{ sid = $SessionId }
+                Write-FlowStation 'ASK' ([string]$state.askId) $(if ($wasCancelled) { 'CANCELLED_DELIVERED' } else { 'LATE_DELIVERED' }) @{ sid = $SessionId }
             }
         } catch {}
-        return $items
+        return ,$items
     }
 
     function Get-PendingAskViews {
@@ -13976,7 +14022,7 @@ $script:BridgeHandlerScript = {
                 if ($items.Count -ge $Max) { break }
             }
         } catch {}
-        return $items
+        return ,$items
     }
 
     # ------------------------------------------------------------------
@@ -14007,7 +14053,7 @@ $script:BridgeHandlerScript = {
                 foreach ($entry in $State.models) { $items.Add($entry) }
             }
         } catch {}
-        return $items
+        return ,$items
     }
 
     function Register-SessionBuild {
@@ -14324,7 +14370,7 @@ $script:BridgeHandlerScript = {
                 foreach ($entry in $State.messages) { $items.Add($entry) }
             }
         } catch {}
-        return $items
+        return ,$items
     }
 
     function Get-PendingUserMessageViews {
@@ -14362,7 +14408,7 @@ $script:BridgeHandlerScript = {
             }
         } catch {}
         finally { try { [System.Threading.Monitor]::Exit($Shared.UserMessageLock) } catch {} }
-        return $views
+        return ,$views
     }
 
     function Mark-UserMessagesDelivered {
@@ -15081,7 +15127,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.2.2 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.2.3 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -19471,7 +19517,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             example = @{ confirm = $true };
             errors = @('RUNTIME_ERROR: Studio-Fenster nicht sichtbar.') })
 
-        return $t
+        return ,$t
     }
 
 
@@ -20042,7 +20088,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.2.2'
+            version = '7.2.3'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -20273,7 +20319,7 @@ end
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.2.2'
+            bridgeVersion = '7.2.3'
             executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent is never an error, but the user then sees NO bar and NO percentage at all - only your message as text. Send a real number every few calls. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
@@ -20461,8 +20507,8 @@ end
         # gerade nicht gewartet hat.
         $lateAnswers = Get-LateAskAnswers $sessionId 4
         if ($lateAnswers.Count -gt 0) {
-            $envelope.userAnswers = $lateAnswers.ToArray()
-            $answerNote = 'USER ANSWERS (ask_user/confirm_action): the user answered. Read _bridge.userAnswers, act exactly on it and mention the decision in your reply.'
+            $envelope.userAnswers = @($lateAnswers)
+            $answerNote = 'USER ANSWERS (ask_user/confirm_action): the user answered or cancelled. Read _bridge.userAnswers, honor cancelled: true without asking again, and mention the decision in your reply.'
             if ($envelope.attention) { $envelope.attention = $answerNote + ' ' + $envelope.attention } else { $envelope.attention = $answerNote }
         }
         # Version 7.2.0 (AP7): Die Code-Struktur-Messung wiederholt sich in
@@ -20484,7 +20530,7 @@ end
         } catch {}
         $openAsks = Get-PendingAskViews $sessionId 1
         if ($openAsks.Count -gt 0) {
-            $envelope.openQuestions = $openAsks.ToArray()
+            $envelope.openQuestions = @($openAsks)
             $askNote = 'OPEN QUESTION: the user still sees a question window (' + [string]$openAsks[0].askId + ': ' + [string]$openAsks[0].title + '). Do not guess - wait with ask_user { askId, resume: true } or continue with work that does not depend on the answer.'
             if ($envelope.attention) { $envelope.attention = $askNote + ' ' + $envelope.attention } else { $envelope.attention = $askNote }
         }
@@ -20493,7 +20539,7 @@ end
             $deliveredIds = New-Object System.Collections.Generic.List[string]
             foreach ($messageView in $pendingUserMessages) { $deliveredIds.Add([string]$messageView.id) }
             [void](Mark-UserMessagesDelivered $sessionId $deliveredIds 'envelope')
-            $envelope.userMessages = $pendingUserMessages.ToArray()
+            $envelope.userMessages = @($pendingUserMessages)
             $envelope.userMessageContract = @{
                 code = 'USER_MESSAGE_PENDING'
                 priority = 'highest'
@@ -21017,7 +21063,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.2.2'
+                        bridgeVersion = '7.2.3'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -21461,7 +21507,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.2.2'
+                        serverVersion = '7.2.3'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -21820,7 +21866,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.2.2'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.2.3'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -21904,8 +21950,8 @@ end
                 }
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.2.2'
-                    serverVersion = '7.2.2'
+                    bridgeVersion = '7.2.3'
+                    serverVersion = '7.2.3'
                     toolbox = $statusToolbox
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
@@ -24941,7 +24987,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.2.2)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.2.3)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -25180,6 +25226,20 @@ function Set-UiMessageField {
     } catch {}
 }
 
+function Get-UiShortErrorReason {
+    param($ErrorRecord, [string]$Fallback = 'Unbekannter Speicherfehler')
+    $reason = ''
+    try {
+        if ($null -ne $ErrorRecord -and $null -ne $ErrorRecord.Exception) { $reason = [string]$ErrorRecord.Exception.Message }
+        elseif ($ErrorRecord -is [System.Exception]) { $reason = [string]$ErrorRecord.Message }
+        elseif ($null -ne $ErrorRecord) { $reason = [string]$ErrorRecord }
+    } catch {}
+    $reason = ($reason -replace '[\r\n\t]+', ' ').Trim()
+    if ([string]::IsNullOrWhiteSpace($reason)) { $reason = $Fallback }
+    if ($reason.Length -gt 180) { $reason = $reason.Substring(0, 177).TrimEnd() + '...' }
+    return $reason
+}
+
 function Get-UserMessageStateForUi {
     # Version 7.2.0: liest denselben JSON-Zustand wie der Server
     # (Read-UserMessageState im Handler-Runspace). Die Oberflaeche hat keinen
@@ -25202,7 +25262,7 @@ function Get-UserMessageUiList {
             foreach ($entry in $State.messages) { $items.Add($entry) }
         }
     } catch {}
-    return $items
+    return ,$items
 }
 
 function Add-UiBridgeEvent {
@@ -25240,9 +25300,16 @@ function Add-UserMessage {
     # dem Umschlag der NAECHSTEN Arena-Anfrage (at-least-once, max. 3 Versuche).
     # Rueckgabe: die Nachrichten-Id, oder $null bei Ablehnung.
     param([string]$SessionId, [string]$Text, [string]$Kind = 'note')
-    if ([string]::IsNullOrWhiteSpace($SessionId)) { return $null }
+    $script:UserMessageUiLastError = ''
+    if ([string]::IsNullOrWhiteSpace($SessionId)) {
+        $script:UserMessageUiLastError = 'Die verbundene Sitzung fehlt.'
+        return $null
+    }
     $clean = ([string]$Text).Trim()
-    if ([string]::IsNullOrWhiteSpace($clean)) { return $null }
+    if ([string]::IsNullOrWhiteSpace($clean)) {
+        $script:UserMessageUiLastError = 'Die Nachricht ist leer.'
+        return $null
+    }
     if ($clean.Length -gt 4000) { $clean = $clean.Substring(0, 4000) }
     $kindValue = ([string]$Kind).Trim().ToLowerInvariant()
     if ($kindValue -notin @('note', 'correction', 'stop', 'question')) { $kindValue = 'note' }
@@ -25285,6 +25352,7 @@ function Add-UserMessage {
         Set-UiMessageField $state 'updatedAt' $now
         $script:Shared.UserMessages[[string]$SessionId] = ($state | ConvertTo-Json -Depth 12 -Compress)
     } catch {
+        $script:UserMessageUiLastError = Get-UiShortErrorReason $_ 'Die Nachricht konnte nicht in der Bridge abgelegt werden.'
         Write-UiErrorLog 'Nachricht an Arena konnte nicht gespeichert werden' $_
         return $null
     }
@@ -25351,7 +25419,7 @@ function Get-UserMessageUiViews {
     # Gibt eine echte List[object] zurueck (kein @() am Aufrufer noetig).
     param([string]$SessionId)
     $views = New-Object System.Collections.Generic.List[object]
-    if ([string]::IsNullOrWhiteSpace($SessionId)) { return $views }
+    if ([string]::IsNullOrWhiteSpace($SessionId)) { return ,$views }
     $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
     $list = Get-UserMessageUiList (Get-UserMessageStateForUi $SessionId)
     foreach ($message in $list) {
@@ -25390,7 +25458,7 @@ function Get-UserMessageUiViews {
             canWithdraw   = ($messageState -eq 'queued')
         })
     }
-    return $views
+    return ,$views
 }
 
 function Format-UserMessageAge {
@@ -25546,7 +25614,7 @@ function Update-UserMessageWindow {
 }
 
 function Open-UserMessageWindow {
-    # Version 7.2.2: Kompaktes Anthrazit/Grau/Pink-Fenster statt Liquid Glass.
+    # Version 7.2.3: Nachrichtenfenster im selben dunklen Dialogstil wie Fragen.
     # Das echte ShowDialog sperrt die Hauptoberflaeche, bis der Nutzer das
     # Fenster schliesst; die Titelleiste bleibt frei verschiebbar.
     param([string]$SessionId, [string]$PlaceName = '')
@@ -25567,31 +25635,31 @@ function Open-UserMessageWindow {
         ShowInTaskbar="False" FontFamily="Segoe UI">
     <Window.Resources>
         <Style x:Key="MessageTextField" TargetType="TextBox">
-            <Setter Property="Foreground" Value="#FFF3F3F5"/>
-            <Setter Property="Background" Value="#FF19191D"/>
-            <Setter Property="BorderBrush" Value="#FF48484F"/>
+            <Setter Property="Foreground" Value="#F4F8FF"/>
+            <Setter Property="Background" Value="#141B33"/>
+            <Setter Property="BorderBrush" Value="#33FFFFFF"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="10,8"/>
             <Setter Property="FontSize" Value="12"/>
-            <Setter Property="CaretBrush" Value="#FFFF5C77"/>
-            <Setter Property="SelectionBrush" Value="#AAFF5C77"/>
+            <Setter Property="CaretBrush" Value="#FF5C77"/>
+            <Setter Property="SelectionBrush" Value="#66FF5C77"/>
             <Setter Property="SelectionOpacity" Value="0.45"/>
             <Style.Triggers>
                 <Trigger Property="IsKeyboardFocused" Value="True">
-                    <Setter Property="BorderBrush" Value="#FFFF5C77"/>
+                    <Setter Property="BorderBrush" Value="#FF5C77"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
         <Style x:Key="MessageHistoryField" TargetType="TextBox" BasedOn="{StaticResource MessageTextField}">
-            <Setter Property="Foreground" Value="#FFC4C4CA"/>
-            <Setter Property="Background" Value="#FF29292E"/>
+            <Setter Property="Foreground" Value="#9AA9CE"/>
+            <Setter Property="Background" Value="#141B33"/>
             <Setter Property="FontSize" Value="10.5"/>
             <Setter Property="Padding" Value="9,7"/>
         </Style>
         <Style x:Key="MessageButton" TargetType="Button">
-            <Setter Property="Foreground" Value="#FFF4F4F6"/>
-            <Setter Property="Background" Value="#FF37373D"/>
-            <Setter Property="BorderBrush" Value="#FF55555D"/>
+            <Setter Property="Foreground" Value="#F4F8FF"/>
+            <Setter Property="Background" Value="#0E1428"/>
+            <Setter Property="BorderBrush" Value="#33FFFFFF"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Padding" Value="14,7"/>
             <Setter Property="FontSize" Value="11.5"/>
@@ -25623,21 +25691,27 @@ function Open-UserMessageWindow {
             </Setter>
         </Style>
         <Style x:Key="MessagePrimaryButton" TargetType="Button" BasedOn="{StaticResource MessageButton}">
-            <Setter Property="Foreground" Value="#FFFFFFFF"/>
-            <Setter Property="Background" Value="#FFE84B6C"/>
-            <Setter Property="BorderBrush" Value="#FFFF6B86"/>
+            <Setter Property="Foreground" Value="#08111F"/>
+            <Setter Property="Background" Value="#38D16C"/>
+            <Setter Property="BorderBrush" Value="#38D16C"/>
         </Style>
         <Style x:Key="MessageCloseButton" TargetType="Button" BasedOn="{StaticResource MessageButton}">
-            <Setter Property="Foreground" Value="#FFFF8296"/>
-            <Setter Property="Background" Value="#FF343438"/>
-            <Setter Property="BorderBrush" Value="#FF55555D"/>
+            <Setter Property="Foreground" Value="#F4F8FF"/>
+            <Setter Property="Background" Value="#0E1428"/>
+            <Setter Property="BorderBrush" Value="#33FFFFFF"/>
             <Setter Property="Padding" Value="0"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#263252"/>
+                    <Setter Property="Foreground" Value="#FF5C77"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
     </Window.Resources>
-    <Border CornerRadius="12" Background="#FF252529" BorderBrush="#FF48484F"
+    <Border CornerRadius="12" Background="#F50B1030" BorderBrush="#33FFFFFF"
             BorderThickness="1" ClipToBounds="True">
         <Grid>
-            <Border Height="3" VerticalAlignment="Top" Background="#FFFF5C77"
+            <Border Height="3" VerticalAlignment="Top" Background="#FF5C77"
                     CornerRadius="12,12,0,0" IsHitTestVisible="False"/>
             <Grid Margin="18,16,18,16">
                 <Grid.RowDefinitions>
@@ -25655,9 +25729,9 @@ function Open-UserMessageWindow {
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Nachricht an Arena" Foreground="#FFF4F4F6"
+                        <TextBlock Text="Nachricht an Arena" Foreground="#F4F8FF"
                                    FontSize="16" FontWeight="SemiBold"/>
-                        <TextBlock x:Name="PlaceNameText" Text="Place" Foreground="#FFB8B8C0"
+                        <TextBlock x:Name="PlaceNameText" Text="Place" Foreground="#9AA9CE"
                                    FontSize="10.5" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
                     </StackPanel>
                     <Button x:Name="CloseButton" Grid.Column="1" Width="32" Height="32"
@@ -25667,10 +25741,10 @@ function Open-UserMessageWindow {
 
                 <TextBlock Grid.Row="1" Margin="0,9,0,0"
                            Text="Deine Nachricht geht mit Arenas naechster Anfrage weiter und muss von Arena bestaetigt werden. Die Bridge schreibt nicht direkt in den Arena-Chat."
-                           Foreground="#FFB8B8C0" FontSize="10.5" TextWrapping="Wrap"/>
+                           Foreground="#9AA9CE" FontSize="10.5" TextWrapping="Wrap"/>
 
                 <StackPanel Grid.Row="2" Margin="0,12,0,0">
-                    <TextBlock Text="DEINE NACHRICHT" Foreground="#FFFF8296" FontSize="9.5"
+                    <TextBlock Text="DEINE NACHRICHT" Foreground="#9AA9CE" FontSize="9.5"
                                FontWeight="Bold" Margin="0,0,0,5"/>
                     <TextBox x:Name="MessageTextBox" Height="80" MinHeight="72" MaxLength="4000"
                              AcceptsReturn="True" TextWrapping="Wrap"
@@ -25682,7 +25756,7 @@ function Open-UserMessageWindow {
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <TextBlock Text="LETZTE NACHRICHTEN" Foreground="#FFFF8296" FontSize="9.5"
+                    <TextBlock Text="LETZTE NACHRICHTEN" Foreground="#9AA9CE" FontSize="9.5"
                                FontWeight="Bold" Margin="0,0,0,5"/>
                     <TextBox x:Name="HistoryTextBox" Grid.Row="1" MinHeight="70"
                              IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
@@ -25690,10 +25764,10 @@ function Open-UserMessageWindow {
                              Style="{StaticResource MessageHistoryField}"/>
                 </Grid>
 
-                <Border Grid.Row="4" Margin="0,10,0,0" Background="#FF2D2D32"
-                        BorderBrush="#FF424249" BorderThickness="1" CornerRadius="7" Padding="9,7">
+                <Border Grid.Row="4" Margin="0,10,0,0" Background="#141B33"
+                        BorderBrush="#22FFFFFF" BorderThickness="1" CornerRadius="7" Padding="9,7">
                     <TextBlock x:Name="StatusText" Text="Noch nicht gesendet."
-                               Foreground="#FFB8B8C0" FontSize="10.5" TextWrapping="Wrap"/>
+                               Foreground="#9AA9CE" FontSize="10.5" TextWrapping="Wrap"/>
                 </Border>
 
                 <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right"
@@ -25755,6 +25829,25 @@ function Open-UserMessageWindow {
             param($s, $e)
             try { $s.Tag.Close() } catch {}
         })
+        $win.Add_PreviewKeyDown({
+            param($s, $e)
+            try {
+                if ($e.Key -eq [System.Windows.Input.Key]::Escape) {
+                    $s.Close()
+                    $e.Handled = $true
+                    return
+                }
+                $isCtrlEnter = ($e.Key -eq [System.Windows.Input.Key]::Enter -and
+                    (([System.Windows.Input.Keyboard]::Modifiers -band [System.Windows.Input.ModifierKeys]::Control) -ne 0))
+                if ($isCtrlEnter -and $s.Tag.SendButton.IsEnabled) {
+                    $args = [System.Windows.RoutedEventArgs]::new([System.Windows.Controls.Primitives.ButtonBase]::ClickEvent)
+                    $s.Tag.SendButton.RaiseEvent($args)
+                    $e.Handled = $true
+                }
+            } catch {
+                Write-UiErrorLog 'Tastatur im Nachricht-Fenster fehlgeschlagen' $_
+            }
+        })
         $win.Add_ContentRendered({
             param($s, $e)
             try { [void]$s.FindName('MessageTextBox').Focus() } catch {}
@@ -25773,8 +25866,11 @@ function Open-UserMessageWindow {
                 if ([string]::IsNullOrWhiteSpace($text)) { return }
                 $newId = Add-UserMessage $data.SessionId $text 'correction'
                 if ([string]::IsNullOrWhiteSpace([string]$newId)) {
-                    $data.Status.Text = 'Die Nachricht konnte nicht gespeichert werden (siehe runtime.log).'
-                    $data.Status.Foreground = Get-Brush '#FFFF8296'
+                    $reason = ''
+                    try { $reason = [string]$script:UserMessageUiLastError } catch {}
+                    if ([string]::IsNullOrWhiteSpace($reason)) { $reason = 'Die Bridge hat keine Nachrichten-ID zurueckgegeben.' }
+                    $data.Status.Text = 'Die Nachricht konnte nicht gespeichert werden: ' + $reason
+                    $data.Status.Foreground = Get-Brush '#FF5C77'
                     return
                 }
                 $data.MessageId = [string]$newId
@@ -25783,6 +25879,11 @@ function Open-UserMessageWindow {
                 $data.SendButton.IsEnabled = $false
                 Update-UserMessageWindow $data
             } catch {
+                $reason = Get-UiShortErrorReason $_ 'Unerwarteter Fehler beim Speichern.'
+                try {
+                    $data.Status.Text = 'Die Nachricht konnte nicht gesendet werden: ' + $reason
+                    $data.Status.Foreground = Get-Brush '#FF5C77'
+                } catch {}
                 Write-UiErrorLog 'Nachricht konnte nicht gesendet werden' $_
             }
         })
@@ -25865,11 +25966,13 @@ function Save-AskStateForUi {
 }
 
 function Get-AskPendingForUi {
-    # Offene Frage einer Sitzung: entweder noch unbeantwortet (Fenster zeigen)
-    # oder beantwortet und von Arena noch nicht abgeholt (Fenster offen lassen).
+    # Nur eine noch offene, nicht abgelaufene Frage darf ein Fenster oeffnen.
+    # answered, expired und cancelled sind terminal; insbesondere darf ein
+    # abgebrochenes Fenster nicht beim naechsten Anzeige-Takt wiederkommen.
     param([string]$SessionId)
     $best = $null
     $bestCreated = [int64](-1)
+    $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
     try {
         foreach ($pair in $script:Shared.AskRequests.GetEnumerator()) {
             $state = $null
@@ -25877,8 +25980,17 @@ function Get-AskPendingForUi {
             if ($null -eq $state) { continue }
             if ([string]$state.sessionId -ne [string]$SessionId) { continue }
             $askState = [string]$state.state
-            if ($askState -ne 'waiting' -and $askState -ne 'answered') { continue }
-            if ($askState -eq 'answered' -and [int64]$state.deliveredAt -gt 0) { continue }
+            if ($askState -eq 'cancelled') { continue }
+            if ($askState -ne 'waiting') { continue }
+            if ($now -ge [int64]$state.expiresAt) {
+                # Der UI-Takt ist ein Notausgang: Eine nicht mehr wartende
+                # Anfrage darf die Hauptoberflaeche nie dauerhaft blockieren.
+                Set-UiMessageField $state 'state' 'expired'
+                Save-AskStateForUi ([string]$state.askId) $state
+                Add-UiChannelCount 'AskExpired' 1
+                Write-FlowTrace 'ASK' ([string]$state.askId) 'EXPIRED' @{ sid = [string]$state.sessionId; source = 'ui_pending' }
+                continue
+            }
             $created = [int64]$state.createdAt
             if ($created -gt $bestCreated) { $bestCreated = $created; $best = $state }
         }
@@ -25944,7 +26056,7 @@ function Get-AskVisibleQuestions {
             if ($has) { $live[[string]$question.id] = $Answers[[string]$question.id] }
         }
     } catch {}
-    return $result
+    return ,$result
 }
 
 function Submit-AskAnswers {
@@ -26020,7 +26132,7 @@ function Get-AskCopyPrompt {
             } catch {}
             $answerText = '(nicht beantwortet)'
             try {
-                if (null -ne $Info.Answers -and $Info.Answers.ContainsKey($qid)) {
+                if ($null -ne $Info.Answers -and $Info.Answers.ContainsKey($qid)) {
                     $entry = $Info.Answers[$qid]
                     $labels = @($entry.labels)
                     $custom = [string]$entry.custom
@@ -26041,17 +26153,96 @@ function Get-AskCopyPrompt {
     return ($lines.ToArray() -join [Environment]::NewLine)
 }
 
+function Start-AskModal {
+    # Das Fragenfenster wird bewusst nicht per ShowDialog gestartet: Bei Ablauf
+    # bleibt die Ausnahmeansicht (mit Kopierknopf) sichtbar, aber die
+    # Hauptoberflaeche wird SOFORT wieder freigegeben. Solange state=waiting
+    # ist, ist sie trotzdem genauso modal wie ein Dialog.
+    param($Info)
+    try {
+        if ($null -eq $Info -or [bool]$Info.OwnerDisabled) { return }
+        if ($null -ne $window) {
+            $Info.OwnerWindow = $window
+            $window.IsEnabled = $false
+            $Info.OwnerDisabled = $true
+        }
+    } catch {
+        Write-UiErrorLog 'Frage-Fenster konnte die Hauptoberflaeche nicht sperren' $_
+    }
+}
+
+function Stop-AskModal {
+    param($Info)
+    try {
+        if ($null -eq $Info -or -not [bool]$Info.OwnerDisabled) { return }
+        $Info.OwnerDisabled = $false
+        if ($null -ne $Info.OwnerWindow) { $Info.OwnerWindow.IsEnabled = $true }
+    } catch {
+        Write-UiErrorLog 'Frage-Fenster konnte die Hauptoberflaeche nicht freigeben' $_
+    }
+}
+
+function Cancel-AskForUi {
+    # X, Esc und Abbrechen teilen exakt dieselbe ehrliche Semantik. Ein
+    # cancelled-Zustand ist terminal, wird an die KI ausgeliefert und kann von
+    # Get-AskPendingForUi/Sync-AskWindows nie wieder geoeffnet werden.
+    param($Info, [string]$Reason = 'user_cancelled')
+    try {
+        if ($null -eq $Info) { return $false }
+        $askId = [string]$Info.AskId
+        $state = Get-AskStateForUi $askId
+        if ($null -eq $state -or [string]$state.state -ne 'waiting') { return $false }
+        $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        Set-UiMessageField $state 'state' 'cancelled'
+        Set-UiMessageField $state 'cancelledAt' $now
+        Set-UiMessageField $state 'answers' $null
+        Set-UiMessageField $state 'path' @()
+        Set-UiMessageField $state 'notShown' @()
+        Save-AskStateForUi $askId $state
+        Add-UiChannelCount 'AskCancelled' 1
+        Write-FlowTrace 'ASK' $askId 'CANCELLED' @{ sid = [string]$state.sessionId; reason = $Reason }
+        Add-UiBridgeEvent ([string]$state.sessionId) 'ask_cancelled' 'Der Nutzer hat die Frage abgebrochen.' @{ askId = $askId; cancelled = $true }
+        $signal = $null
+        try {
+            if ($script:Shared.AskSignals.TryGetValue($askId, [ref]$signal) -and $null -ne $signal) { [void]$signal.Set() }
+        } catch {}
+        return $true
+    } catch {
+        Write-UiErrorLog 'Frage konnte nicht abgebrochen werden' $_
+        return $false
+    }
+}
+
 function Update-AskWindow {
-    # Zeichnet Kopf, aktuelle Frage, Fortschritt und den ehrlichen Zustand.
+    # Zeichnet Kopf, aktuelle Frage, Fortschritt und die wenigen erlaubten
+    # Ausnahmezustaende. Im Normalfall gibt es unten genau Zurueck, Abbrechen,
+    # Weiter/Fertig - kein Kopier- oder Schliessen-Knopf.
     param($Info)
     try {
         if ($null -eq $Info) { return }
         $state = Get-AskStateForUi ([string]$Info.AskId)
-        if ($null -eq $state) { return }
+        if ($null -eq $state) {
+            Stop-AskModal $Info
+            try { $Info.Window.Close() } catch {}
+            return
+        }
         $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        $askState = [string]$state.state
+        $secondsLeft = [int][Math]::Max(0, ([int64]$state.expiresAt - $now))
+        if ($askState -eq 'waiting' -and $secondsLeft -le 0) {
+            Set-UiMessageField $state 'state' 'expired'
+            Save-AskStateForUi ([string]$Info.AskId) $state
+            Add-UiChannelCount 'AskExpired' 1
+            Write-FlowTrace 'ASK' ([string]$Info.AskId) 'EXPIRED' @{ sid = [string]$state.sessionId; source = 'ui_timer' }
+            $signal = $null
+            try {
+                if ($script:Shared.AskSignals.TryGetValue([string]$Info.AskId, [ref]$signal) -and $null -ne $signal) { [void]$signal.Set() }
+            } catch {}
+            $askState = 'expired'
+        }
 
-        # Wie lebendig ist Arena? Fortschritt (jeder Werkzeugaufruf) und
-        # Instanz-Heartbeat sind die beiden einzigen Messpunkte.
+        # Wie lebendig ist Arena? Fortschritt und Plugin-Heartbeat sind die
+        # einzigen ehrlichen Sensoren; kein erfundener Online-Status.
         $lastCall = [int64]0
         try {
             $snapshot = Get-ProgressStateSnapshot ([string]$state.sessionId)
@@ -26062,194 +26253,254 @@ function Update-AskWindow {
         $aliveAt = [Math]::Max($lastCall, $instanceSeen)
         $agentSilent = 0
         if ($aliveAt -gt 0) { $agentSilent = [int][Math]::Max(0, ($now - $aliveAt)) }
-        $agentAlive = ($aliveAt -gt 0 -and $agentSilent -le 90)
+        # Direkt nach dem Oeffnen kann noch kein Heartbeat im gemeinsamen
+        # Zustand stehen. Diese kurze, klar begrenzte Schonfrist verhindert,
+        # dass ein ganz normales frisches Fragenfenster faelschlich als offline
+        # erscheint; nach 90 Sekunden ohne Sensor wird der Zustand wieder ehrlich
+        # als offline gezeigt.
+        $createdAt = [int64]0
+        try { $createdAt = [int64]$state.createdAt } catch {}
+        $freshWithoutSensor = ($aliveAt -le 0 -and $createdAt -gt 0 -and ($now - $createdAt) -le 90)
+        $agentAlive = $freshWithoutSensor -or ($aliveAt -gt 0 -and $agentSilent -le 90)
+        $Info.LastRenderedAt = $now
 
-        $askState = [string]$state.state
-        $secondsLeft = [int][Math]::Max(0, ([int64]$state.expiresAt - $now))
-        if ($askState -eq 'waiting' -and $secondsLeft -le 0) { $askState = 'expired' }
-
-        Set-Text $Info.ProgressText ('Frage ' + [string]([Math]::Min($Info.Step + 1, [Math]::Max(1, $Info.Visible.Count))) + ' von ' + [string][Math]::Max(1, $Info.Visible.Count) + ' · ' + [string]$secondsLeft + ' s')
-
-        if ($askState -eq 'answered') {
-            $delivered = ([int64]$state.deliveredAt -gt 0)
-            $headline = 'Deine Antworten sind gespeichert.'
-            $detail = 'Arena holt sie mit seiner naechsten Anfrage ab.'
-            $color = '#FFD9A0'
-            if ($delivered -or -not $agentAlive) {
-                $headline = 'Deine Antworten sind bei Arena angekommen.'
-                $detail = 'Arena arbeitet weiter - du kannst dieses Fenster schliessen.'
-                $color = '#38D16C'
-            }
-            $Info.StatusText.Text = $headline + ' ' + $detail
-            $Info.StatusText.Foreground = Get-Brush $color
-            $Info.QuestionPanel.Visibility = 'Collapsed'
-            $Info.ButtonRow.Visibility = 'Collapsed'
-            $Info.CopyPanel.Visibility = 'Visible'
-            return
-        }
-
-        if ($askState -eq 'expired') {
-            $Info.StatusText.Text = 'Arena wartet nicht mehr aktiv auf eine Antwort' + $(if ($agentAlive) { ' - arbeitet aber weiter.' } else { ' - der Agent ist mittlerweile offline.' }) + ' Wenn du antwortest, bekommt Arena es mit der naechsten Anfrage. Du kannst auch den fertigen Text kopieren und in den Arena-Chat einfuegen.'
-            $Info.StatusText.Foreground = Get-Brush '#FFD9A0'
-        } elseif ($agentAlive) {
-            $Info.StatusText.Text = 'Arena wartet auf deine Antwort.'
-            $Info.StatusText.Foreground = Get-Brush '#9FDCFF'
-        } else {
-            $Info.StatusText.Text = 'Agent ist mittlerweile offline - deine Antwort kommt an, sobald Arena wieder fragt. Du kannst den Text auch direkt in den Arena-Chat einfuegen.'
-            $Info.StatusText.Foreground = Get-Brush '#FFD9A0'
-        }
-        $Info.QuestionPanel.Visibility = 'Visible'
-        $Info.ButtonRow.Visibility = 'Visible'
-        $Info.CopyPanel.Visibility = 'Visible'
-
-        # Sichtbare Fragen neu auswerten (Zurueck verwirft ungueltig gewordene
-        # Antworten sichtbar - genau wie in der Antwort an die KI).
-        $visible = Get-AskVisibleQuestions $state.questions $Info.Answers
-        $Info.Visible = $visible
-        if ($Info.Step -ge $visible.Count) { $Info.Step = [Math]::Max(0, $visible.Count - 1) }
-        # Fragen, die unsichtbar geworden sind, duerfen keine Antwort behalten.
-        $liveIds = @{}
-        foreach ($entry in $visible) { $liveIds[[string]$entry.Question.id] = $true }
-        foreach ($key in @($Info.Answers.Keys)) {
-            if (-not $liveIds.ContainsKey([string]$key)) {
-                $Info.Answers.Remove([string]$key)
-                # Sichtbar machen, dass eine Antwort weg ist: sie trifft auf die
-                # neue Antwort auf die vorherige Frage nicht mehr zu.
-                Write-FlowTrace 'ASK' ([string]$Info.AskId) 'ANSWER_DISCARDED' @{ questionId = [string]$key }
-            }
-        }
-
-        # Kopf
         Set-Text $Info.TitleText ([string]$state.title)
         $subtitle = ''
         try { $subtitle = [string]$state.message } catch {}
         Set-Text $Info.MessageText $subtitle
         if ([string]::IsNullOrWhiteSpace($subtitle)) { $Info.MessageText.Visibility = 'Collapsed' } else { $Info.MessageText.Visibility = 'Visible' }
 
+        # Jede terminale Lage MUSS die manuelle Modalitaet freigeben. Das ist
+        # auch der Notausgang, falls der Server den Zustand ausserhalb der UI
+        # auf answered/cancelled/expired gesetzt hat.
+        if ($askState -eq 'answered' -or $askState -eq 'cancelled') {
+            Stop-AskModal $Info
+            if (-not [bool]$Info.TerminalClosing) {
+                $Info.TerminalClosing = $true
+                try { $Info.Timer.Stop() } catch {}
+                try { $Info.Window.Close() } catch {}
+            }
+            return
+        }
+        if ($askState -eq 'expired') {
+            Stop-AskModal $Info
+            $Info.QuestionScroll.Visibility = 'Collapsed'
+            $Info.QuestionPanel.Visibility = 'Collapsed'
+            $Info.ButtonRow.Visibility = 'Collapsed'
+            $Info.CopyPanel.Visibility = 'Visible'
+            Set-Text $Info.ProgressText 'Antwortzeit abgelaufen'
+            if ($agentAlive) {
+                $Info.StatusText.Text = 'Agent arbeitet weiter … Die Antwortzeit ist abgelaufen. Du kannst die Fragen und deine Auswahl als Text kopieren und im Arena-Chat senden.'
+            } else {
+                $Info.StatusText.Text = 'Agent ist offline … Die Antwortzeit ist abgelaufen. Du kannst die Fragen und deine Auswahl als Text kopieren und im Arena-Chat senden.'
+            }
+            $Info.StatusText.Foreground = Get-Brush '#9AA9CE'
+            return
+        }
+        if ($askState -ne 'waiting') {
+            Stop-AskModal $Info
+            try { $Info.Window.Close() } catch {}
+            return
+        }
+
+        # Normaler Fragenablauf.
+        $Info.QuestionScroll.Visibility = 'Visible'
+        $Info.QuestionPanel.Visibility = 'Visible'
+        $Info.ButtonRow.Visibility = 'Visible'
+        if ($agentAlive) {
+            $Info.StatusText.Text = 'Arena wartet auf deine Antwort.'
+            $Info.StatusText.Foreground = Get-Brush '#9AA9CE'
+            $Info.CopyPanel.Visibility = 'Collapsed'
+        } else {
+            # Offline ist ein Ausnahmezustand: die Eingabe bleibt moeglich,
+            # aber der dezente Kopierknopf hilft, wenn niemand mehr zuhoert.
+            $Info.StatusText.Text = 'Agent ist offline … Deine Antwort wird gespeichert und mit der naechsten Anfrage uebergeben.'
+            $Info.StatusText.Foreground = Get-Brush '#FFB4C4'
+            $Info.CopyPanel.Visibility = 'Visible'
+        }
+
+        $visible = Get-AskVisibleQuestions $state.questions $Info.Answers
+        $Info.Visible = $visible
+        if ($Info.Step -ge $visible.Count) { $Info.Step = [Math]::Max(0, $visible.Count - 1) }
+        if ($Info.Step -lt 0) { $Info.Step = 0 }
+        Set-Text $Info.ProgressText ('Frage ' + [string]([Math]::Min($Info.Step + 1, [Math]::Max(1, $visible.Count))) + ' von ' + [string][Math]::Max(1, $visible.Count) + ' · ' + [string]$secondsLeft + ' s')
+
+        # Antworten auf nicht mehr sichtbare Folgefragen koennen nach Zurueck
+        # oder einer when-Verzweigung nicht heimlich weitergelten.
+        $liveIds = @{}
+        foreach ($entry in $visible) { $liveIds[[string]$entry.Question.id] = $true }
+        foreach ($key in @($Info.Answers.Keys)) {
+            if (-not $liveIds.ContainsKey([string]$key)) {
+                $Info.Answers.Remove([string]$key)
+                Write-FlowTrace 'ASK' ([string]$Info.AskId) 'ANSWER_DISCARDED' @{ questionId = [string]$key; reason = 'not_visible' }
+            }
+        }
+
         $questionStack = $Info.QuestionStack
         $questionStack.Children.Clear()
         $question = $null
         if ($visible.Count -gt 0) { $question = $visible[[Math]::Min($Info.Step, $visible.Count - 1)].Question }
-        if ($null -ne $question) {
-            $qid = [string]$question.id
-            $answer = $null
-            try { if ($Info.Answers.ContainsKey($qid)) { $answer = $Info.Answers[$qid] } } catch {}
-            $selected = @()
-            $custom = ''
-            if ($null -ne $answer) {
-                try { $selected = @($answer.optionIds) } catch {}
-                try { $custom = [string]$answer.custom } catch {}
+        if ($null -eq $question) {
+            $missing = [System.Windows.Controls.TextBlock]::new()
+            $missing.Text = 'Diese Frage kam ohne Optionen an'
+            $missing.TextWrapping = 'Wrap'
+            $missing.FontSize = 12
+            $missing.FontWeight = 'SemiBold'
+            $missing.Foreground = Get-Brush '#FF5C77'
+            [void]$questionStack.Children.Add($missing)
+            $Info.NextButton.IsEnabled = $false
+            return
+        }
+
+        $qid = [string]$question.id
+        $answer = $null
+        try { if ($Info.Answers.ContainsKey($qid)) { $answer = $Info.Answers[$qid] } } catch {}
+        $selected = @()
+        $custom = ''
+        if ($null -ne $answer) {
+            try { $selected = @($answer.optionIds) } catch {}
+            try { $custom = [string]$answer.custom } catch {}
+        }
+        $questionText = [System.Windows.Controls.TextBlock]::new()
+        $questionText.Text = [string]$question.text
+        $questionText.TextWrapping = 'Wrap'
+        $questionText.FontSize = 13
+        $questionText.FontWeight = 'SemiBold'
+        $questionText.Foreground = Get-Brush '#F4F8FF'
+        $questionText.Margin = [System.Windows.Thickness]::new(0, 0, 0, 8)
+        [void]$questionStack.Children.Add($questionText)
+
+        $allowCustom = $false
+        try { if ($question.PSObject.Properties['allowCustomResponse']) { $allowCustom = ([bool]$question.allowCustomResponse) } } catch {}
+        $optionCount = 0
+        try { foreach ($optionProbe in $question.options) { $optionCount = $optionCount + 1 } } catch {}
+        if ($optionCount -eq 0 -and -not $allowCustom) {
+            # Dieser Zustand sollte Test-AskTree nie passieren lassen. Alte oder
+            # extern beschaedigte Zustandsdaten duerfen aber niemals als leere
+            # Flaeche erscheinen.
+            $emptyLine = [System.Windows.Controls.TextBlock]::new()
+            $emptyLine.Text = 'Diese Frage kam ohne Optionen an'
+            $emptyLine.TextWrapping = 'Wrap'
+            $emptyLine.FontSize = 12
+            $emptyLine.FontWeight = 'SemiBold'
+            $emptyLine.Foreground = Get-Brush '#FF5C77'
+            [void]$questionStack.Children.Add($emptyLine)
+            if (-not [bool]$Info.EmptyQuestionLogged) {
+                $Info.EmptyQuestionLogged = $true
+                try { throw [System.InvalidOperationException]::new('Diese Frage kam ohne Optionen an') } catch {
+                    Write-UiErrorLog ('ASK EMPTY_QUESTION askId=' + [string]$Info.AskId + ' questionId=' + $qid) $_
+                }
+                Write-FlowTrace 'ASK' ([string]$Info.AskId) 'EMPTY_QUESTION' @{ questionId = $qid; allowCustomResponse = $false }
             }
-            $questionText = [System.Windows.Controls.TextBlock]::new()
-            $questionText.Text = [string]$question.text
-            $questionText.TextWrapping = 'Wrap'
-            $questionText.FontSize = 13
-            $questionText.FontWeight = 'SemiBold'
-            $questionText.Foreground = Get-Brush '#F4F8FF'
-            $questionText.Margin = [System.Windows.Thickness]::new(0, 0, 0, 8)
-            [void]$questionStack.Children.Add($questionText)
-            $multi = $false
-            try { if ($question.PSObject.Properties['multi']) { $multi = ([bool]$question.multi) } } catch {}
+            $Info.BackButton.IsEnabled = ($Info.Step -gt 0)
+            $Info.NextButton.IsEnabled = $false
+            return
+        }
+
+        $multi = $false
+        try { if ($question.PSObject.Properties['multi']) { $multi = ([bool]$question.multi) } } catch {}
+        if ($multi) {
+            $hintRow = [System.Windows.Controls.TextBlock]::new()
+            $hintRow.Text = 'Mehrfachauswahl möglich.'
+            $hintRow.FontSize = 10.5
+            $hintRow.Foreground = Get-Brush '#6E7FA8'
+            $hintRow.Margin = [System.Windows.Thickness]::new(0, 0, 0, 6)
+            [void]$questionStack.Children.Add($hintRow)
+        }
+        foreach ($option in @($question.options)) {
+            $oid = [string]$option.id
+            if ($multi) { $item = [System.Windows.Controls.CheckBox]::new() } else { $item = [System.Windows.Controls.RadioButton]::new() }
+            $item.Content = [string]$option.label
+            $item.Foreground = Get-Brush '#F4F8FF'
+            $item.FontSize = 12
+            $item.Margin = [System.Windows.Thickness]::new(0, 3, 0, 3)
+            $item.Tag = [pscustomobject]@{ Info = $Info; QuestionId = $qid; OptionId = $oid; Label = [string]$option.label; Multi = $multi }
+            $item.IsChecked = ($selected -contains $oid)
             if ($multi) {
-                $hintRow = [System.Windows.Controls.TextBlock]::new()
-                $hintRow.Text = 'Mehrfachauswahl möglich.'
-                $hintRow.FontSize = 10.5
-                $hintRow.Foreground = Get-Brush '#6E7FA8'
-                $hintRow.Margin = [System.Windows.Thickness]::new(0, 0, 0, 6)
-                [void]$questionStack.Children.Add($hintRow)
-            }
-            foreach ($option in @($question.options)) {
-                $oid = [string]$option.id
-                if ($multi) { $item = [System.Windows.Controls.CheckBox]::new() } else { $item = [System.Windows.Controls.RadioButton]::new() }
-                $item.Content = [string]$option.label
-                $item.Foreground = Get-Brush '#F4F8FF'
-                $item.FontSize = 12
-                $item.Margin = [System.Windows.Thickness]::new(0, 3, 0, 3)
-                $item.Tag = [pscustomobject]@{ Info = $Info; QuestionId = $qid; OptionId = $oid; Label = [string]$option.label; Multi = $multi }
-                $item.IsChecked = ($selected -contains $oid)
-                if ($multi) {
-                    $item.Add_Click({
-                        param($s, $e)
-                        $data = $s.Tag
-                        try {
-                            $entry = $data.Info.Answers[$data.QuestionId]
-                            if ($null -eq $entry) { $entry = @{ optionIds = @(); custom = ''; labels = @() } }
-                            $ids = New-Object System.Collections.Generic.List[string]
-                            foreach ($value in @($entry.optionIds)) { $ids.Add([string]$value) }
-                            $labels = New-Object System.Collections.Generic.List[string]
-                            foreach ($value in @($entry.labels)) { $labels.Add([string]$value) }
-                            if ([bool]$s.IsChecked) {
-                                if (-not $ids.Contains([string]$data.OptionId)) { $ids.Add([string]$data.OptionId); $labels.Add([string]$data.Label) }
-                            } else {
-                                $ids.Remove([string]$data.OptionId) | Out-Null
-                                $labels.Remove([string]$data.Label) | Out-Null
-                            }
-                            $entry.optionIds = @($ids.ToArray())
-                            $entry.labels = @($labels.ToArray())
-                            $data.Info.Answers[$data.QuestionId] = $entry
-                            $data.Info.Dirty = $true
-                        } catch {}
-                    })
-                } else {
-                    $item.Add_Click({
-                        param($s, $e)
-                        $data = $s.Tag
-                        try {
-                            $entry = @{ optionIds = @([string]$data.OptionId); labels = @([string]$data.Label); custom = '' }
-                            try { if ($data.Info.Answers.ContainsKey([string]$data.QuestionId)) { $entry.custom = [string]$data.Info.Answers[[string]$data.QuestionId].custom } } catch {}
-                            $data.Info.Answers[$data.QuestionId] = $entry
-                            $data.Info.Dirty = $true
-                        } catch {}
-                    })
-                }
-                if (-not [string]::IsNullOrWhiteSpace([string]$option.description)) {
-                    $vbox = [System.Windows.Controls.StackPanel]::new()
-                    [void]$vbox.Children.Add($item)
-                    $desc = [System.Windows.Controls.TextBlock]::new()
-                    $desc.Text = [string]$option.description
-                    $desc.FontSize = 10.5
-                    $desc.TextWrapping = 'Wrap'
-                    $desc.Foreground = Get-Brush '#6E7FA8'
-                    $desc.Margin = [System.Windows.Thickness]::new(20, 0, 0, 4)
-                    [void]$vbox.Children.Add($desc)
-                    [void]$questionStack.Children.Add($vbox)
-                } else {
-                    [void]$questionStack.Children.Add($item)
-                }
-            }
-            $allowCustom = $false
-            try { if ($question.PSObject.Properties['allowCustomResponse']) { $allowCustom = ([bool]$question.allowCustomResponse) } } catch {}
-            if ($allowCustom) {
-                $customLabel = [System.Windows.Controls.TextBlock]::new()
-                $customLabel.Text = 'Eigene Antwort (optional):'
-                $customLabel.FontSize = 10.5
-                $customLabel.Foreground = Get-Brush '#6E7FA8'
-                $customLabel.Margin = [System.Windows.Thickness]::new(0, 8, 0, 3)
-                [void]$questionStack.Children.Add($customLabel)
-                $customBox = [System.Windows.Controls.TextBox]::new()
-                $customBox.Text = $custom
-                $customBox.FontSize = 12
-                $customBox.Foreground = Get-Brush '#F4F8FF'
-                $customBox.Background = Get-Brush '#141B33'
-                $customBox.BorderBrush = Get-Brush '#33FFFFFF'
-                $customBox.BorderThickness = [System.Windows.Thickness]::new(1)
-                $customBox.Padding = [System.Windows.Thickness]::new(8, 6, 8, 6)
-                $customBox.Tag = [pscustomobject]@{ Info = $Info; QuestionId = $qid }
-                $customBox.Add_TextChanged({
+                $item.Add_Click({
                     param($s, $e)
                     $data = $s.Tag
                     try {
                         $entry = $data.Info.Answers[$data.QuestionId]
-                        if ($null -eq $entry) { $entry = @{ optionIds = @(); labels = @(); custom = '' } }
-                        $entry.custom = [string]$s.Text
+                        if ($null -eq $entry) { $entry = @{ optionIds = @(); custom = ''; labels = @() } }
+                        $ids = New-Object System.Collections.Generic.List[string]
+                        foreach ($value in @($entry.optionIds)) { $ids.Add([string]$value) }
+                        $labels = New-Object System.Collections.Generic.List[string]
+                        foreach ($value in @($entry.labels)) { $labels.Add([string]$value) }
+                        if ([bool]$s.IsChecked) {
+                            if (-not $ids.Contains([string]$data.OptionId)) { $ids.Add([string]$data.OptionId); $labels.Add([string]$data.Label) }
+                        } else {
+                            $ids.Remove([string]$data.OptionId) | Out-Null
+                            $labels.Remove([string]$data.Label) | Out-Null
+                        }
+                        $entry.optionIds = @($ids.ToArray())
+                        $entry.labels = @($labels.ToArray())
                         $data.Info.Answers[$data.QuestionId] = $entry
                         $data.Info.Dirty = $true
                     } catch {}
                 })
-                [void]$questionStack.Children.Add($customBox)
+            } else {
+                $item.Add_Click({
+                    param($s, $e)
+                    $data = $s.Tag
+                    try {
+                        $entry = @{ optionIds = @([string]$data.OptionId); labels = @([string]$data.Label); custom = '' }
+                        try { if ($data.Info.Answers.ContainsKey([string]$data.QuestionId)) { $entry.custom = [string]$data.Info.Answers[[string]$data.QuestionId].custom } } catch {}
+                        $data.Info.Answers[$data.QuestionId] = $entry
+                        $data.Info.Dirty = $true
+                    } catch {}
+                })
+            }
+            if (-not [string]::IsNullOrWhiteSpace([string]$option.description)) {
+                $vbox = [System.Windows.Controls.StackPanel]::new()
+                [void]$vbox.Children.Add($item)
+                $desc = [System.Windows.Controls.TextBlock]::new()
+                $desc.Text = [string]$option.description
+                $desc.FontSize = 10.5
+                $desc.TextWrapping = 'Wrap'
+                $desc.Foreground = Get-Brush '#6E7FA8'
+                $desc.Margin = [System.Windows.Thickness]::new(20, 0, 0, 4)
+                [void]$vbox.Children.Add($desc)
+                [void]$questionStack.Children.Add($vbox)
+            } else {
+                [void]$questionStack.Children.Add($item)
             }
         }
+        if ($allowCustom) {
+            $customLabel = [System.Windows.Controls.TextBlock]::new()
+            $customLabel.Text = 'Eigene Antwort (optional):'
+            $customLabel.FontSize = 10.5
+            $customLabel.Foreground = Get-Brush '#6E7FA8'
+            $customLabel.Margin = [System.Windows.Thickness]::new(0, 8, 0, 3)
+            [void]$questionStack.Children.Add($customLabel)
+            $customBox = [System.Windows.Controls.TextBox]::new()
+            $customBox.Text = $custom
+            $customBox.MinHeight = 52
+            $customBox.AcceptsReturn = $true
+            $customBox.TextWrapping = 'Wrap'
+            $customBox.VerticalScrollBarVisibility = 'Auto'
+            $customBox.FontSize = 12
+            $customBox.Foreground = Get-Brush '#F4F8FF'
+            $customBox.Background = Get-Brush '#141B33'
+            $customBox.BorderBrush = Get-Brush '#33FFFFFF'
+            $customBox.BorderThickness = [System.Windows.Thickness]::new(1)
+            $customBox.Padding = [System.Windows.Thickness]::new(8, 6, 8, 6)
+            $customBox.Tag = [pscustomobject]@{ Info = $Info; QuestionId = $qid }
+            $customBox.Add_TextChanged({
+                param($s, $e)
+                $data = $s.Tag
+                try {
+                    $entry = $data.Info.Answers[$data.QuestionId]
+                    if ($null -eq $entry) { $entry = @{ optionIds = @(); labels = @(); custom = '' } }
+                    $entry.custom = [string]$s.Text
+                    $data.Info.Answers[$data.QuestionId] = $entry
+                    $data.Info.Dirty = $true
+                } catch {}
+            })
+            [void]$questionStack.Children.Add($customBox)
+        }
         $Info.BackButton.IsEnabled = ($Info.Step -gt 0)
+        $Info.NextButton.IsEnabled = $true
         $Info.NextButton.Content = $(if ($Info.Step -ge ($visible.Count - 1)) { 'Fertig' } else { 'Weiter' })
     } catch {
         Write-UiErrorLog 'Frage-Fenster konnte nicht aktualisiert werden' $_
@@ -26257,14 +26508,15 @@ function Update-AskWindow {
 }
 
 function Open-AskWindow {
-    # Version 7.2.0 (D3): Fragenfenster in der Naehe des Mauszeigers - mit
-    # Versatz, damit ein Klick auf "Senden" nicht versehentlich etwas ausloest
-    # (der Cursor steht beim Oeffnen genau dort, wo der Nutzer gerade klickt).
+    # 7.2.3: kompaktes, ziehbares Fragenfenster mit eigener sicheren Modalitaet.
+    # Der ScrollViewer liegt in der einzigen *-Zeile; Status, Ausnahme-Kopie und
+    # Navigation haben jeweils getrennte Zeilen und ueberlappen nie.
     param($AskState)
     try {
         if ($null -eq $AskState) { return }
         $askId = [string]$AskState.askId
         if ([string]::IsNullOrWhiteSpace($askId)) { return }
+        if ([string]$AskState.state -eq 'cancelled') { return }
         if ($null -ne $script:AskWindow -and [string]$script:AskWindow.Tag.AskId -eq $askId) {
             [void](Update-AskWindow $script:AskWindow.Tag)
             return
@@ -26273,52 +26525,97 @@ function Open-AskWindow {
             try { $script:AskWindow.Close() } catch {}
             $script:AskWindow = $null
         }
+
         $win = [System.Windows.Window]::new()
         $win.Title = 'Arena fragt'
-        $win.Width = 520
-        $win.Height = 430
-        $win.MinWidth = 460; $win.MinHeight = 320
+        $win.Width = 460
+        # Breite fest und Hoehe inhaltsbasiert: selbst bei vielen Optionen darf
+        # der Dialog weder groesser als ca. 460 x 340 noch groesser als 70 % des
+        # jeweiligen Bildschirms werden.
+        $win.MinWidth = 400
+        $win.MinHeight = 250
+        $win.MaxWidth = 460
+        $win.MaxHeight = 340
+        $win.SizeToContent = [System.Windows.SizeToContent]::Height
         $win.WindowStyle = 'None'
         $win.AllowsTransparency = $true
         $win.Background = [System.Windows.Media.Brushes]::Transparent
         $win.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe UI')
-        $win.ResizeMode = 'CanResize'
+        $win.ResizeMode = 'NoResize'
         $win.Topmost = $true
         try { $win.Owner = $window } catch {}
 
-        # Position: Naehe Mauszeiger + Versatz, immer im sichtbaren Bereich
-        # (auch auf dem zweiten Monitor - Screen.FromPoint liefert dessen
-        # Arbeitsflaeche).
+        # Mit Versatz am Mauszeiger, auf dem jeweiligen Monitor. Die Hoehe
+        # bleibt kompakt; bei langem Inhalt wird nur der Fragenbereich gescrollt.
+        $screenHeight = 800
+        $windowMaxHeight = 340
         try {
             $cursor = [System.Windows.Forms.Cursor]::Position
             $screen = [System.Windows.Forms.Screen]::FromPoint($cursor)
             $area = $screen.WorkingArea
-            $x = [int]$cursor.X + 28
-            $y = [int]$cursor.Y + 24
-            if (($x + $win.Width) -gt ($area.X + $area.Width)) { $x = [int]$cursor.X - 28 - [int]$win.Width }
-            if (($y + $win.Height) -gt ($area.Y + $area.Height)) { $y = [int]$cursor.Y - 24 - [int]$win.Height }
+            $screenHeight = [int]$area.Height
+            $windowMaxHeight = [Math]::Min(340, [Math]::Floor($area.Height * 0.70))
+            $win.MaxHeight = $windowMaxHeight
+            $x = [int]$cursor.X + 24
+            $y = [int]$cursor.Y + 20
+            if (($x + 460) -gt ($area.X + $area.Width)) { $x = [int]$cursor.X - 24 - 460 }
+            if (($y + 340) -gt ($area.Y + $area.Height)) { $y = [int]$cursor.Y - 20 - 340 }
             if ($x -lt $area.X) { $x = $area.X + 8 }
             if ($y -lt $area.Y) { $y = $area.Y + 8 }
             $win.WindowStartupLocation = 'Manual'
             $win.Left = $x
             $win.Top = $y
         } catch {
+            $windowMaxHeight = [Math]::Min(340, [Math]::Floor($screenHeight * 0.70))
+            $win.MaxHeight = $windowMaxHeight
             $win.WindowStartupLocation = 'CenterOwner'
         }
 
         $shell = [System.Windows.Controls.Border]::new()
-        $shell.CornerRadius = [System.Windows.CornerRadius]::new(16)
+        $shell.CornerRadius = [System.Windows.CornerRadius]::new(14)
         $shell.Background = Get-Brush '#F50B1030'
         $shell.BorderBrush = Get-Brush '#33FFFFFF'
         $shell.BorderThickness = [System.Windows.Thickness]::new(1)
-        $shell.Padding = [System.Windows.Thickness]::new(18)
+        $shell.Padding = [System.Windows.Thickness]::new(14)
         $grid = [System.Windows.Controls.Grid]::new()
-        foreach ($h in @('Auto', 'Auto', '*', 'Auto')) {
+        foreach ($rowKind in @('Auto', 'Auto', '*', 'Auto', 'Auto', 'Auto')) {
             $rd = [System.Windows.Controls.RowDefinition]::new()
-            if ($h -ne 'Auto') { $rd.Height = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star) }
+            if ($rowKind -eq '*') { $rd.Height = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star) }
             [void]$grid.RowDefinitions.Add($rd)
         }
+
+        $titleBar = [System.Windows.Controls.Grid]::new()
+        $titleBar.Background = [System.Windows.Media.Brushes]::Transparent
+        $titleBar.Cursor = 'SizeAll'
+        $c0 = [System.Windows.Controls.ColumnDefinition]::new(); $c0.Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
+        $c1 = [System.Windows.Controls.ColumnDefinition]::new(); $c1.Width = [System.Windows.GridLength]::new(30)
+        [void]$titleBar.ColumnDefinitions.Add($c0); [void]$titleBar.ColumnDefinitions.Add($c1)
+        $caption = [System.Windows.Controls.TextBlock]::new()
+        $caption.Text = 'Arena fragt'
+        $caption.FontSize = 11
+        $caption.FontWeight = 'SemiBold'
+        $caption.Foreground = Get-Brush '#9AA9CE'
+        $caption.VerticalAlignment = 'Center'
+        [void]$titleBar.Children.Add($caption)
+        $closeButton = [System.Windows.Controls.Button]::new()
+        $closeButton.Content = '×'
+        $closeButton.Width = 30
+        $closeButton.Height = 30
+        $closeButton.FontSize = 18
+        $closeButton.FontWeight = 'SemiBold'
+        $closeButton.Foreground = Get-Brush '#F4F8FF'
+        $closeButton.Background = Get-Brush '#0E1428'
+        $closeButton.BorderBrush = Get-Brush '#33FFFFFF'
+        $closeButton.BorderThickness = [System.Windows.Thickness]::new(1)
+        $closeButton.Cursor = 'Hand'
+        $closeButton.ToolTip = 'Abbrechen'
+        [System.Windows.Controls.Grid]::SetColumn($closeButton, 1)
+        [void]$titleBar.Children.Add($closeButton)
+        [System.Windows.Controls.Grid]::SetRow($titleBar, 0)
+        [void]$grid.Children.Add($titleBar)
+
         $headPanel = [System.Windows.Controls.StackPanel]::new()
+        $headPanel.Margin = [System.Windows.Thickness]::new(0, 6, 0, 0)
         $titleText = [System.Windows.Controls.TextBlock]::new()
         $titleText.FontSize = 15
         $titleText.FontWeight = 'SemiBold'
@@ -26328,123 +26625,167 @@ function Open-AskWindow {
         $messageText = [System.Windows.Controls.TextBlock]::new()
         $messageText.FontSize = 11.5
         $messageText.TextWrapping = 'Wrap'
-        $messageText.Margin = [System.Windows.Thickness]::new(0, 6, 0, 0)
+        $messageText.Margin = [System.Windows.Thickness]::new(0, 5, 0, 0)
         $messageText.Foreground = Get-Brush '#9AA9CE'
         [void]$headPanel.Children.Add($messageText)
         $progressText = [System.Windows.Controls.TextBlock]::new()
         $progressText.FontSize = 10.5
-        $progressText.Margin = [System.Windows.Thickness]::new(0, 8, 0, 0)
+        $progressText.Margin = [System.Windows.Thickness]::new(0, 7, 0, 0)
         $progressText.Foreground = Get-Brush '#6E7FA8'
         [void]$headPanel.Children.Add($progressText)
-        [System.Windows.Controls.Grid]::SetRow($headPanel, 0)
+        [System.Windows.Controls.Grid]::SetRow($headPanel, 1)
         [void]$grid.Children.Add($headPanel)
 
         $scroll = [System.Windows.Controls.ScrollViewer]::new()
         $scroll.VerticalScrollBarVisibility = 'Auto'
-        $scroll.Margin = [System.Windows.Thickness]::new(0, 12, 0, 0)
+        $scroll.HorizontalScrollBarVisibility = 'Disabled'
+        $scroll.Margin = [System.Windows.Thickness]::new(0, 10, 0, 0)
+        $scroll.MaxHeight = [Math]::Max(100, [Math]::Min(145, ($windowMaxHeight - 190)))
         $questionPanel = [System.Windows.Controls.Border]::new()
         $questionPanel.Background = Get-Brush '#141B33'
         $questionPanel.BorderBrush = Get-Brush '#22FFFFFF'
         $questionPanel.BorderThickness = [System.Windows.Thickness]::new(1)
-        $questionPanel.CornerRadius = [System.Windows.CornerRadius]::new(12)
-        $questionPanel.Padding = [System.Windows.Thickness]::new(14, 12, 14, 12)
+        $questionPanel.CornerRadius = [System.Windows.CornerRadius]::new(10)
+        $questionPanel.Padding = [System.Windows.Thickness]::new(12)
         $questionStack = [System.Windows.Controls.StackPanel]::new()
         $questionPanel.Child = $questionStack
         $scroll.Content = $questionPanel
-        [System.Windows.Controls.Grid]::SetRow($scroll, 1)
+        [System.Windows.Controls.Grid]::SetRow($scroll, 2)
         [void]$grid.Children.Add($scroll)
 
+        $statusPanel = [System.Windows.Controls.Border]::new()
+        $statusPanel.Background = Get-Brush '#141B33'
+        $statusPanel.BorderBrush = Get-Brush '#22FFFFFF'
+        $statusPanel.BorderThickness = [System.Windows.Thickness]::new(1)
+        $statusPanel.CornerRadius = [System.Windows.CornerRadius]::new(8)
+        $statusPanel.Padding = [System.Windows.Thickness]::new(9, 7, 9, 7)
+        $statusPanel.Margin = [System.Windows.Thickness]::new(0, 9, 0, 0)
+        $statusText = [System.Windows.Controls.TextBlock]::new()
+        $statusText.FontSize = 11
+        $statusText.TextWrapping = 'Wrap'
+        $statusText.Foreground = Get-Brush '#9AA9CE'
+        $statusPanel.Child = $statusText
+        [System.Windows.Controls.Grid]::SetRow($statusPanel, 3)
+        [void]$grid.Children.Add($statusPanel)
+
         $copyPanel = [System.Windows.Controls.StackPanel]::new()
-        $copyRow = [System.Windows.Controls.StackPanel]::new()
-        $copyRow.Orientation = 'Horizontal'
+        $copyPanel.Orientation = 'Horizontal'
+        $copyPanel.HorizontalAlignment = 'Left'
+        $copyPanel.Margin = [System.Windows.Thickness]::new(0, 9, 0, 0)
+        $copyPanel.Visibility = 'Collapsed'
         $copyButton = [System.Windows.Controls.Button]::new()
         $copyButton.Content = 'Antwort als Text kopieren'
-        $copyButton.Padding = [System.Windows.Thickness]::new(14, 7, 14, 7)
-        $copyButton.Background = Get-Brush '#1B2440'
-        $copyButton.Foreground = Get-Brush '#F4F8FF'
-        $copyButton.BorderBrush = Get-Brush '#3AFFFFFF'
+        $copyButton.Padding = [System.Windows.Thickness]::new(11, 6, 11, 6)
+        $copyButton.Background = Get-Brush '#0E1428'
+        $copyButton.Foreground = Get-Brush '#9AA9CE'
+        $copyButton.BorderBrush = Get-Brush '#33FFFFFF'
         $copyButton.BorderThickness = [System.Windows.Thickness]::new(1)
         $copyButton.Cursor = 'Hand'
-        [void]$copyRow.Children.Add($copyButton)
-        $closeButton = [System.Windows.Controls.Button]::new()
-        $closeButton.Content = 'Schließen'
-        $closeButton.Padding = [System.Windows.Thickness]::new(14, 7, 14, 7)
-        $closeButton.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
-        $closeButton.Background = Get-Brush '#0E1428'
-        $closeButton.Foreground = Get-Brush '#9AA9CE'
-        $closeButton.BorderBrush = Get-Brush '#22FFFFFF'
-        $closeButton.BorderThickness = [System.Windows.Thickness]::new(1)
-        $closeButton.Cursor = 'Hand'
-        [void]$copyRow.Children.Add($closeButton)
-        [void]$copyPanel.Children.Add($copyRow)
-        [System.Windows.Controls.Grid]::SetRow($copyPanel, 3)
+        [void]$copyPanel.Children.Add($copyButton)
+        [System.Windows.Controls.Grid]::SetRow($copyPanel, 4)
         [void]$grid.Children.Add($copyPanel)
-
-        $statusText = [System.Windows.Controls.TextBlock]::new()
-        $statusText.FontSize = 11.5
-        $statusText.TextWrapping = 'Wrap'
-        $statusText.Margin = [System.Windows.Thickness]::new(0, 12, 0, 0)
-        $statusText.Foreground = Get-Brush '#9FDCFF'
-        [System.Windows.Controls.Grid]::SetRow($statusText, 2)
-        [void]$grid.Children.Add($statusText)
 
         $buttonRow = [System.Windows.Controls.StackPanel]::new()
         $buttonRow.Orientation = 'Horizontal'
         $buttonRow.HorizontalAlignment = 'Right'
+        $buttonRow.Margin = [System.Windows.Thickness]::new(0, 11, 0, 0)
         $backButton = [System.Windows.Controls.Button]::new()
         $backButton.Content = 'Zurück'
-        $backButton.Padding = [System.Windows.Thickness]::new(14, 7, 14, 7)
+        $backButton.MinWidth = 76
+        $backButton.Height = 32
+        $backButton.Padding = [System.Windows.Thickness]::new(12, 5, 12, 5)
         $backButton.Background = Get-Brush '#0E1428'
         $backButton.Foreground = Get-Brush '#9AA9CE'
-        $backButton.BorderBrush = Get-Brush '#22FFFFFF'
+        $backButton.BorderBrush = Get-Brush '#33FFFFFF'
         $backButton.BorderThickness = [System.Windows.Thickness]::new(1)
         $backButton.Cursor = 'Hand'
+        $cancelButton = [System.Windows.Controls.Button]::new()
+        $cancelButton.Content = 'Abbrechen'
+        $cancelButton.MinWidth = 88
+        $cancelButton.Height = 32
+        $cancelButton.Padding = [System.Windows.Thickness]::new(12, 5, 12, 5)
+        $cancelButton.Margin = [System.Windows.Thickness]::new(8, 0, 0, 0)
+        $cancelButton.Background = Get-Brush '#FF5C77'
+        $cancelButton.Foreground = Get-Brush '#08111F'
+        $cancelButton.BorderThickness = [System.Windows.Thickness]::new(0)
+        $cancelButton.FontWeight = 'SemiBold'
+        $cancelButton.Cursor = 'Hand'
         $nextButton = [System.Windows.Controls.Button]::new()
         $nextButton.Content = 'Weiter'
-        $nextButton.Padding = [System.Windows.Thickness]::new(16, 7, 16, 7)
-        $nextButton.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
-        $nextButton.Background = Get-Brush '#5CFFEF'
+        $nextButton.MinWidth = 76
+        $nextButton.Height = 32
+        $nextButton.Padding = [System.Windows.Thickness]::new(13, 5, 13, 5)
+        $nextButton.Margin = [System.Windows.Thickness]::new(8, 0, 0, 0)
+        $nextButton.Background = Get-Brush '#38D16C'
         $nextButton.Foreground = Get-Brush '#08111F'
         $nextButton.BorderThickness = [System.Windows.Thickness]::new(0)
         $nextButton.FontWeight = 'SemiBold'
         $nextButton.Cursor = 'Hand'
         [void]$buttonRow.Children.Add($backButton)
+        [void]$buttonRow.Children.Add($cancelButton)
         [void]$buttonRow.Children.Add($nextButton)
-        [System.Windows.Controls.Grid]::SetRow($buttonRow, 3)
+        [System.Windows.Controls.Grid]::SetRow($buttonRow, 5)
         [void]$grid.Children.Add($buttonRow)
 
         $shell.Child = $grid
         $win.Content = $shell
-
-        # Daten am Element (Tag) - dieselbe Regel wie in New-Row.
         $info = [pscustomobject]@{
-            Window       = $win
-            AskId        = $askId
-            SessionId    = [string]$AskState.sessionId
-            Answers      = @{}
-            Visible      = New-Object System.Collections.Generic.List[object]
-            Step         = 0
-            Dirty        = $false
-            TitleText    = $titleText
-            MessageText  = $messageText
+            Window = $win
+            AskId = $askId
+            SessionId = [string]$AskState.sessionId
+            Answers = @{}
+            Visible = New-Object System.Collections.Generic.List[object]
+            Step = 0
+            Dirty = $false
+            OwnerWindow = $null
+            OwnerDisabled = $false
+            TerminalClosing = $false
+            EmptyQuestionLogged = $false
+            LastRenderedAt = [int64]0
+            TitleText = $titleText
+            MessageText = $messageText
             ProgressText = $progressText
+            QuestionScroll = $scroll
             QuestionPanel = $questionPanel
             QuestionStack = $questionStack
-            StatusText   = $statusText
-            ButtonRow    = $buttonRow
-            CopyPanel    = $copyPanel
-            BackButton   = $backButton
-            NextButton   = $nextButton
-            CopyButton   = $copyButton
-            CloseButton  = $closeButton
-            Timer        = $null
-            LastDelivered = $false
+            StatusText = $statusText
+            ButtonRow = $buttonRow
+            CopyPanel = $copyPanel
+            BackButton = $backButton
+            CancelButton = $cancelButton
+            NextButton = $nextButton
+            CopyButton = $copyButton
+            CloseButton = $closeButton
+            Timer = $null
         }
         $win.Tag = $info
-        $backButton.Tag = $info
-        $nextButton.Tag = $info
-        $copyButton.Tag = $info
-        $closeButton.Tag = $info
+        foreach ($control in @($titleBar, $backButton, $cancelButton, $nextButton, $copyButton, $closeButton)) { $control.Tag = $info }
+
+        $titleBar.Add_MouseLeftButtonDown({
+            param($s, $e)
+            if ($e.ButtonState -eq [System.Windows.Input.MouseButtonState]::Pressed) {
+                try { $s.Tag.Window.DragMove() } catch {}
+            }
+        })
+        $closeButton.Add_MouseEnter({ param($s, $e) $s.Background = Get-Brush '#263252'; $s.Foreground = Get-Brush '#FF5C77' })
+        $closeButton.Add_MouseLeave({ param($s, $e) $s.Background = Get-Brush '#0E1428'; $s.Foreground = Get-Brush '#F4F8FF' })
+        $closeButton.Add_Click({
+            param($s, $e)
+            $data = $s.Tag
+            [void](Cancel-AskForUi $data 'close_button')
+            Stop-AskModal $data
+            try { $data.Window.Close() } catch {}
+        })
+        $win.Add_PreviewKeyDown({
+            param($s, $e)
+            if ($e.Key -eq [System.Windows.Input.Key]::Escape) {
+                $data = $s.Tag
+                [void](Cancel-AskForUi $data 'escape')
+                Stop-AskModal $data
+                try { $s.Close() } catch {}
+                $e.Handled = $true
+            }
+        })
 
         $backButton.Add_Click({
             param($s, $e)
@@ -26452,18 +26793,30 @@ function Open-AskWindow {
             try {
                 $visible = $data.Visible
                 if ($data.Step -le 0) { return }
-                $current = $null
-                if ($visible.Count -gt $data.Step) { $current = [string]$visible[$data.Step].Question.id }
-                $data.Step = $data.Step - 1
-                if (-not [string]::IsNullOrWhiteSpace($current)) {
-                    # Zurueck = die Antwort auf diese Frage zuruecknehmen. Fragen,
-                    # die dadurch nicht mehr zutreffen, verlieren ihre Antwort
-                    # sichtbar (Hinweis unten im Fenster).
-                    try { $data.Answers.Remove($current) } catch {}
+                $target = $data.Step - 1
+                # Alles NACH der Zielstufe ist eine Folgeantwort und wird beim
+                # Zurueckgehen konsequent verworfen.
+                for ($i = $target + 1; $i -lt $visible.Count; $i++) {
+                    $discardId = [string]$visible[$i].Question.id
+                    if ($data.Answers.ContainsKey($discardId)) {
+                        $data.Answers.Remove($discardId)
+                        Write-FlowTrace 'ASK' ([string]$data.AskId) 'ANSWER_DISCARDED' @{ questionId = $discardId; reason = 'back' }
+                    }
                 }
+                $data.Step = $target
                 $data.Dirty = $true
                 Write-FlowTrace 'ASK' ([string]$data.AskId) 'BACK' @{ step = $data.Step }
-            } catch {}
+                [void](Update-AskWindow $data)
+            } catch {
+                Write-UiErrorLog 'Zurueck im Frage-Fenster fehlgeschlagen' $_
+            }
+        })
+        $cancelButton.Add_Click({
+            param($s, $e)
+            $data = $s.Tag
+            [void](Cancel-AskForUi $data 'cancel_button')
+            Stop-AskModal $data
+            try { $data.Window.Close() } catch {}
         })
         $nextButton.Add_Click({
             param($s, $e)
@@ -26485,28 +26838,36 @@ function Open-AskWindow {
                 }
                 if ($required -and -not $hasAnswer) {
                     $data.StatusText.Text = 'Bitte waehle eine Antwort (oder schreibe eine eigene), bevor es weitergeht.'
-                    $data.StatusText.Foreground = Get-Brush '#FFB4C4'
+                    $data.StatusText.Foreground = Get-Brush '#FF5C77'
                     return
                 }
                 if (-not $data.Answers.ContainsKey($qid)) { $data.Answers[$qid] = @{ optionIds = @(); labels = @(); custom = '' } }
                 if ($index -ge ($visible.Count - 1)) {
-                    # Fertig: Antworten abgeben. Pfad = alle tatsaechlich
-                    # gestellten Fragen, notShown = uebersprungene.
                     $path = New-Object System.Collections.Generic.List[string]
                     $allShown = New-Object System.Collections.Generic.List[string]
                     foreach ($entry2 in $visible) { $path.Add([string]$entry2.Question.id) }
                     foreach ($questionAll in @((Get-AskStateForUi ([string]$data.AskId)).questions)) { $allShown.Add([string]$questionAll.id) }
                     $notShown = New-Object System.Collections.Generic.List[string]
                     foreach ($candidate in $allShown) { if (-not $path.Contains($candidate)) { $notShown.Add($candidate) } }
-                    [void](Submit-AskAnswers ([string]$data.AskId) $data.Answers $path.ToArray() $notShown.ToArray())
-                    $data.StatusText.Text = 'Danke! Deine Antworten sind gespeichert und gehen an Arena.'
-                    $data.StatusText.Foreground = Get-Brush '#38D16C'
+                    $submitted = Submit-AskAnswers ([string]$data.AskId) $data.Answers $path.ToArray() $notShown.ToArray()
+                    if ($submitted) {
+                        Stop-AskModal $data
+                        try { $data.Window.Close() } catch {}
+                    } else {
+                        $data.StatusText.Text = 'Die Antworten konnten nicht gespeichert werden. Bitte versuche es erneut.'
+                        $data.StatusText.Foreground = Get-Brush '#FF5C77'
+                    }
                     return
                 }
                 $data.Step = $index + 1
                 $data.Dirty = $true
+                [void](Update-AskWindow $data)
             } catch {
                 Write-UiErrorLog 'Antwort konnte nicht uebernommen werden' $_
+                try {
+                    $data.StatusText.Text = ('Antwort konnte nicht gespeichert werden: ' + [string]$_.Exception.Message)
+                    $data.StatusText.Foreground = Get-Brush '#FF5C77'
+                } catch {}
             }
         })
         $copyButton.Add_Click({
@@ -26523,71 +26884,86 @@ function Open-AskWindow {
                 Write-UiErrorLog 'Antworttext konnte nicht kopiert werden' $_
             }
         })
-        $closeButton.Add_Click({ param($s, $e) try { $s.Tag.Window.Close() } catch {} })
 
         $timer = [System.Windows.Threading.DispatcherTimer]::new()
-        $timer.Interval = [TimeSpan]::FromMilliseconds(1000)
+        $timer.Interval = [TimeSpan]::FromMilliseconds(500)
         $timer.Tag = $info
         $timer.Add_Tick({
             param($s, $e)
             try {
                 $data = $s.Tag
-                if ([bool]$data.Dirty) {
+                $state = Get-AskStateForUi ([string]$data.AskId)
+                if ($null -eq $state -or [string]$state.state -ne 'waiting') {
+                    # Pflicht-Notausgang: bei JEDEM terminalen Zustand endet die
+                    # Modalitaet auch dann, wenn kein Button geklickt wurde.
+                    [void](Update-AskWindow $data)
+                    return
+                }
+                $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+                $left = [int][Math]::Max(0, ([int64]$state.expiresAt - $now))
+                if ($left -le 0 -or [bool]$data.Dirty -or ($now - [int64]$data.LastRenderedAt) -ge 5) {
                     $data.Dirty = $false
                     [void](Update-AskWindow $data)
                 } else {
-                    # Nur die Uhr/den Agent-Zustand aktualisieren.
-                    $state = Get-AskStateForUi ([string]$data.AskId)
-                    if ($null -ne $state) {
-                        $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-                        $left = [int][Math]::Max(0, ([int64]$state.expiresAt - $now))
-                        $total = [Math]::Max(1, @($data.Visible).Count)
-                        if ([string]$state.state -eq 'waiting') {
-                            Set-Text $data.ProgressText (([string]::Format('Frage {0} von {1} · {2} s', ([Math]::Min($data.Step + 1, $total)), $total, $left)))
-                        } else {
-                            [void](Update-AskWindow $data)
-                        }
-                    }
+                    $total = [Math]::Max(1, $data.Visible.Count)
+                    Set-Text $data.ProgressText (([string]::Format('Frage {0} von {1} · {2} s', ([Math]::Min($data.Step + 1, $total)), $total, $left)))
                 }
-            } catch {}
+            } catch {
+                # Ein Timerfehler darf keine tote Modalitaet hinterlassen.
+                try { Stop-AskModal $s.Tag } catch {}
+                Write-UiErrorLog 'Frage-Fenster-Timer fehlgeschlagen' $_
+            }
         })
         $info.Timer = $timer
+        $win.Add_Closing({
+            param($s, $e)
+            try {
+                $data = $s.Tag
+                $state = Get-AskStateForUi ([string]$data.AskId)
+                if ($null -ne $state -and [string]$state.state -eq 'waiting') { [void](Cancel-AskForUi $data 'window_closing') }
+                Stop-AskModal $data
+            } catch {}
+        })
         $win.Add_Closed({
             param($s, $e)
             try { $s.Tag.Timer.Stop() } catch {}
+            try { Stop-AskModal $s.Tag } catch {}
             try { $script:AskWindow = $null } catch {}
         })
 
         $script:AskWindow = $win
         $stateForRender = Get-AskStateForUi $askId
         if ($null -ne $stateForRender) {
-            # Bereits beantwortete Fragen (z. B. nach einem Fenster-Neustart)
-            # in das Fenster uebernehmen.
             try {
                 if ($null -ne $stateForRender.answers) {
                     foreach ($property in $stateForRender.answers.PSObject.Properties) {
-                        $data = $stateForRender.answers.$($property.Name)
+                        $saved = $stateForRender.answers.$($property.Name)
                         $entry = @{ optionIds = @(); labels = @(); custom = '' }
-                        try { $entry.optionIds = @($data.optionIds) } catch {}
-                        try { $entry.labels = @($data.labels) } catch {}
-                        try { $entry.custom = [string]$data.custom } catch {}
+                        try { $entry.optionIds = @($saved.optionIds) } catch {}
+                        try { $entry.labels = @($saved.labels) } catch {}
+                        try { $entry.custom = [string]$saved.custom } catch {}
                         $info.Answers[$property.Name] = $entry
                     }
                 }
-            } catch {}
-            [void](Update-AskWindow $info)
+            } catch {
+                Write-UiErrorLog 'Vorherige Antworten konnten nicht geladen werden' $_
+            }
         }
+        Start-AskModal $info
+        [void](Update-AskWindow $info)
+        $timer.Start()
         [void]$win.Show()
         try { $win.Activate() } catch {}
-        $timer.Start()
     } catch {
         Write-UiErrorLog 'Frage-Fenster konnte nicht geoeffnet werden' $_
+        try { if ($null -ne $window) { $window.IsEnabled = $true } } catch {}
     }
 }
 
 function Sync-AskWindows {
-    # Version 7.2.0 (D3): Der Anzeige-Takt oeffnet das Fragenfenster, sobald
-    # eine Frage anliegt - ohne Zutun des Nutzers und ohne Toast.
+    # Der Anzeige-Takt oeffnet ausschliesslich aktuelle waiting-Requests.
+    # cancelled ist explizit ausgeschlossen, damit ein Abbruch nie wieder
+    # sichtbar wird.
     try {
         $currentAskId = ''
         if ($null -ne $script:AskWindow) {
@@ -26598,12 +26974,15 @@ function Sync-AskWindows {
             if ([string]::IsNullOrWhiteSpace($sid)) { continue }
             $pending = Get-AskPendingForUi $sid
             if ($null -eq $pending) { continue }
+            if ([string]$pending.state -eq 'cancelled') { continue }
             $askId = [string]$pending.askId
             if ($askId -eq $currentAskId) { continue }
             Open-AskWindow $pending
             break
         }
-    } catch {}
+    } catch {
+        Write-UiErrorLog 'Frage-Fenster konnte nicht abgeglichen werden' $_
+    }
 }
 
 function Get-PlaceOpenCommand {
@@ -26861,7 +27240,7 @@ function Get-ProgressDiagnoseLines {
             foreach ($h in @($state.history)) { $lines.Add('      ' + [string]$h) }
         }
     } catch {}
-    return $lines
+    return ,$lines
 }
 
 
@@ -26879,7 +27258,7 @@ function Get-ChannelStations {
             if ($lines.Count -ge $Max) { break }
         }
     } catch {}
-    return $lines
+    return ,$lines
 }
 
 function Get-ChannelCountText {
@@ -26909,7 +27288,7 @@ function Write-ChannelDiagnoseFile {
 
         $progressPath = Join-Path $script:AppDataRoot 'progress-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.2.2)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.2.3)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -26944,7 +27323,7 @@ function Write-ChannelDiagnoseFile {
 
         $notifyPath = Join-Path $script:AppDataRoot 'notify-diagnose.txt'
         $sb2 = New-Object System.Text.StringBuilder
-        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.2.2)')
+        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.2.3)')
         [void]$sb2.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb2.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb2.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -26956,8 +27335,6 @@ function Write-ChannelDiagnoseFile {
         [void]$sb2.AppendLine(('  von Windows unterdrueckt:        {0}' -f (Get-ChannelCountText 'NotifySuppressed')))
         [void]$sb2.AppendLine(('  Aufruf fehlgeschlagen:           {0}' -f (Get-ChannelCountText 'NotifyFailed')))
         [void]$sb2.AppendLine(('  nach Aufruf nicht bestaetigt:    {0}' -f (Get-ChannelCountText 'NotifyUnverified')))
-        [void]$sb2.AppendLine(('  Testlaeufe:                      {0}' -f (Get-ChannelCountText 'NotifyTestRuns')))
-        [void]$sb2.AppendLine(('  vom Nutzer gesehen (ja/nein):    {0} / {1}' -f (Get-ChannelCountText 'NotifySeenYes'), (Get-ChannelCountText 'NotifySeenNo')))
         [void]$sb2.AppendLine(('  letztes Urteil:                  {0}' -f (Get-ChannelCountText 'NotifyLastVerdict')))
         [void]$sb2.AppendLine(('  letzter Grund:                   {0}' -f (Get-ChannelCountText 'NotifyLastReason')))
         [void]$sb2.AppendLine('')
@@ -27314,7 +27691,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.2.2)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.2.3)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -29511,7 +29888,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.2.2)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.2.3)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -30205,7 +30582,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.2.2'
+    $versionText = '7.2.3'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -30864,184 +31241,6 @@ function Show-ArenaDoneNotification {
     return $record
 }
 
-function Send-NotifyTestMessage {
-    # Version 7.2.0 (D4): Test-Meldung aus den Einstellungen. Sie zeigt das
-    # gemessene Urteil und fragt danach ehrlich nach, ob der Nutzer die Meldung
-    # GESEHEN hat - der einzige Sensor, den es fuer einen Toast gibt.
-    param()
-    $flowId = 'test-' + [string]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
-    Add-UiChannelCount 'NotifyTestRuns' 1
-    $aumidState = Register-NotifyAumid -Force
-    $wasAllowed = $false
-    try { $wasAllowed = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch {}
-    $record = $null
-    if ($wasAllowed) {
-        $record = Show-ArenaDoneNotification -Place 'Test' -Title '✅ Test-Meldung der Bridge' -Message 'Wenn du das siehst, kommt auch Arenas Fertig-Meldung an.' -FlowId $flowId
-    } else {
-        # Der Test darf die Einstellung nicht veraendern: kurz erlauben, zeigen,
-        # zurueckstellen - und ehrlich sagen, dass der Schalter aus war.
-        try { $script:Shared.BridgeSettings.notifyOnDone = $true } catch {}
-        $record = Show-ArenaDoneNotification -Place 'Test' -Title '✅ Test-Meldung der Bridge' -Message 'Wenn du das siehst, kommt auch Arenas Fertig-Meldung an.' -FlowId $flowId
-        try { $script:Shared.BridgeSettings.notifyOnDone = $wasAllowed } catch {}
-    }
-    $platform = Update-NotifyPlatformCache -Force
-    return [pscustomobject]@{
-        flowId = $flowId
-        record = $record
-        platform = $platform
-        aumid = $aumidState
-        settingWasOff = (-not $wasAllowed)
-    }
-}
-
-function Format-NotifyTestSummary {
-    param($TestResult)
-    $lines = New-Object System.Collections.Generic.List[string]
-    try {
-        if ($null -eq $TestResult) { return 'Test ohne Ergebnis.' }
-        $platform = $null
-        try { $platform = $TestResult.platform } catch {}
-        if ($null -ne $platform) {
-            $lines.Add(('Urteil: ' + [string]$platform.verdict))
-            $lines.Add([string]$platform.reason)
-        } else {
-            $lines.Add('Urteil: UNKNOWN - die Plattform konnte nicht gemessen werden.')
-        }
-        $aumid = $null
-        try { $aumid = $TestResult.aumid } catch {}
-        if ($null -ne $aumid) {
-            $lines.Add(('App-Id: ' + [string]$aumid.verdict + $(if ([string]$aumid.reason) { ' - ' + [string]$aumid.reason } else { '' })))
-        }
-        $record = $null
-        try { $record = $TestResult.record } catch {}
-        if ($null -ne $record) {
-            $lines.Add(('Kanal: ' + $(if ([string]$record.method) { [string]$record.method } else { 'keiner erreichbar' })))
-        }
-        $settingWasOff = $false
-        try { $settingWasOff = [bool]$TestResult.settingWasOff } catch {}
-        if ($settingWasOff) { $lines.Add('Der Schalter war AUS - fuer den Test kurz erlaubt und danach wieder zurueckgestellt.') }
-    } catch {}
-    if ($lines.Count -eq 0) { return 'Test ohne Ergebnis.' }
-    return ($lines.ToArray() -join [Environment]::NewLine)
-}
-
-function Open-NotifySeenWindow {
-    # Version 7.2.0 (D4): Der einzige Sensor fuer einen Windows-Toast ist der
-    # Nutzer selbst. Dieses Fenster fragt nach dem Test ehrlich nach und
-    # verbucht die Antwort als Station und Zaehler - damit "ich habe nichts
-    # gesehen" endlich ein Messwert ist und keine Erinnerung.
-    param($TestResult)
-    try {
-        if ($null -ne $script:NotifySeenWindow) {
-            try { $script:NotifySeenWindow.Close() } catch {}
-            $script:NotifySeenWindow = $null
-        }
-        $flowId = ''
-        $platformLine = 'Urteil: UNKNOWN'
-        try {
-            if ($null -ne $TestResult) {
-                $flowId = [string]$TestResult.flowId
-                if ($null -ne $TestResult.platform) { $platformLine = ('Urteil: ' + (Get-NotifyPlatformLine $TestResult.platform)) }
-            }
-        } catch {}
-        $win = [System.Windows.Window]::new()
-        $win.Title = 'Meldung gesehen?'
-        $win.Width = 460
-        $win.Height = 250
-        $win.MinWidth = 460; $win.MinHeight = 250; $win.MaxWidth = 460; $win.MaxHeight = 250
-        $win.WindowStartupLocation = 'CenterOwner'
-        $win.WindowStyle = 'None'
-        $win.AllowsTransparency = $true
-        $win.Background = [System.Windows.Media.Brushes]::Transparent
-        $win.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe UI')
-        $win.ResizeMode = 'NoResize'
-        $win.Topmost = $true
-        try { $win.Owner = $window } catch {}
-        $shell = [System.Windows.Controls.Border]::new()
-        $shell.CornerRadius = [System.Windows.CornerRadius]::new(16)
-        $shell.Background = Get-Brush '#F50B1030'
-        $shell.BorderBrush = Get-Brush '#33FFFFFF'
-        $shell.BorderThickness = [System.Windows.Thickness]::new(1)
-        $shell.Padding = [System.Windows.Thickness]::new(18)
-        $stack = [System.Windows.Controls.StackPanel]::new()
-        $headline = [System.Windows.Controls.TextBlock]::new()
-        $headline.Text = 'Hast du die Test-Meldung gesehen?'
-        $headline.FontSize = 15
-        $headline.FontWeight = 'SemiBold'
-        $headline.Foreground = Get-Brush '#F4F8FF'
-        [void]$stack.Children.Add($headline)
-        $hint = [System.Windows.Controls.TextBlock]::new()
-        $hint.Text = $platformLine
-        $hint.FontSize = 11
-        $hint.TextWrapping = 'Wrap'
-        $hint.Margin = [System.Windows.Thickness]::new(0, 8, 0, 0)
-        $hint.Foreground = Get-Brush '#9AA9CE'
-        [void]$stack.Children.Add($hint)
-        $buttonRow = [System.Windows.Controls.StackPanel]::new()
-        $buttonRow.Orientation = 'Horizontal'
-        $buttonRow.Margin = [System.Windows.Thickness]::new(0, 16, 0, 0)
-        $yesButton = [System.Windows.Controls.Button]::new()
-        $yesButton.Content = 'Ja, gesehen'
-        $yesButton.Padding = [System.Windows.Thickness]::new(14, 7, 14, 7)
-        $yesButton.Margin = [System.Windows.Thickness]::new(0, 0, 10, 0)
-        $yesButton.Background = Get-Brush '#22C55E'
-        $yesButton.Foreground = Get-Brush '#08111F'
-        $yesButton.BorderThickness = [System.Windows.Thickness]::new(0)
-        $yesButton.FontWeight = 'SemiBold'
-        $yesButton.Cursor = 'Hand'
-        $noButton = [System.Windows.Controls.Button]::new()
-        $noButton.Content = 'Nein, nichts gesehen'
-        $noButton.Padding = [System.Windows.Thickness]::new(14, 7, 14, 7)
-        $noButton.Background = Get-Brush '#1B2440'
-        $noButton.Foreground = Get-Brush '#F4F8FF'
-        $noButton.BorderBrush = Get-Brush '#3AFFFFFF'
-        $noButton.BorderThickness = [System.Windows.Thickness]::new(1)
-        $noButton.Cursor = 'Hand'
-        [void]$buttonRow.Children.Add($yesButton)
-        [void]$buttonRow.Children.Add($noButton)
-        [void]$stack.Children.Add($buttonRow)
-        $answerText = [System.Windows.Controls.TextBlock]::new()
-        $answerText.FontSize = 11
-        $answerText.TextWrapping = 'Wrap'
-        $answerText.Margin = [System.Windows.Thickness]::new(0, 12, 0, 0)
-        $answerText.Foreground = Get-Brush '#6E7FA8'
-        [void]$stack.Children.Add($answerText)
-        $shell.Child = $stack
-        $win.Content = $shell
-        $seenFlowId = $flowId
-        $yesButton.Add_Click({
-            param($s, $e)
-            try {
-                Add-UiChannelCount 'NotifySeenYes' 1
-                Set-UiChannelText 'NotifyLastSeen' 'yes'
-                Write-FlowTrace 'NOTIFY' $seenFlowId 'SEEN' @{ answer = 'yes' }
-                $answerText.Text = 'Danke - der Kanal funktioniert. Dieses Fenster kannst du schliessen.'
-                $answerText.Foreground = Get-Brush '#38D16C'
-                $yesButton.IsEnabled = $false
-                $noButton.IsEnabled = $false
-            } catch {}
-        })
-        $noButton.Add_Click({
-            param($s, $e)
-            try {
-                Add-UiChannelCount 'NotifySeenNo' 1
-                Set-UiChannelText 'NotifyLastSeen' 'no'
-                Write-FlowTrace 'NOTIFY' $seenFlowId 'SEEN' @{ answer = 'no' }
-                $diagPath = Join-Path $script:AppDataRoot 'notify-diagnose.txt'
-                $answerText.Text = ('Verstanden - Windows hat die Meldung unterdrueckt. Grund und Gegenmittel stehen in ' + $diagPath + ' (klein, vollstaendig weitergebbar).')
-                $answerText.Foreground = Get-Brush '#FFB4C4'
-                $yesButton.IsEnabled = $false
-                $noButton.IsEnabled = $false
-                [void](Write-ChannelDiagnoseFile -Force)
-            } catch {}
-        })
-        $script:NotifySeenWindow = $win
-        [void]$win.Show()
-    } catch {
-        Write-UiErrorLog 'Fenster "Meldung gesehen?" konnte nicht geoeffnet werden' $_
-    }
-}
-
 function Get-NotifyDiagnoseLines {
     # Letzte Meldungen mit Kanal und Urteil - fuer notify-diagnose.txt.
     param()
@@ -31049,7 +31248,7 @@ function Get-NotifyDiagnoseLines {
     try {
         if ($null -eq $script:NotifyRecords -or $script:NotifyRecords.Count -eq 0) {
             $lines.Add('  (noch keine Fertig-Meldung in dieser Laufzeit)')
-            return $lines
+            return ,$lines
         }
         $records = $script:NotifyRecords.ToArray()
         for ($i = $records.Length - 1; $i -ge 0; $i--) {
@@ -31063,7 +31262,7 @@ function Get-NotifyDiagnoseLines {
             if (-not [string]::IsNullOrWhiteSpace($reason)) { $lines.Add(('      ' + $reason)) }
         }
     } catch {}
-    return $lines
+    return ,$lines
 }
 
 function Set-ArenaSwitchVisualState {
@@ -31359,9 +31558,6 @@ function Open-SettingsWindow {
                                      Schalter direkt unter der Fortschrittsanzeige. -->
                                 <CheckBox x:Name="DoneNotifySwitch" Style="{StaticResource ArenaSwitch}" Content="Benachrichtigung, wenn Arena fertig ist" Margin="0,14,0,0"/>
                                 <TextBlock Text="Zeigt am Ende der Arbeit die Windows-Meldung von Arena (Titel und kurzer Text). Standard: aus." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,7,0,0"/>
-                                <Border Height="1" Background="{StaticResource SwLine}" Margin="0,14,0,12"/>
-                                <Button x:Name="NotifyTestButton" Content="Test-Meldung anzeigen" Background="{StaticResource SwCardBg}" Foreground="{StaticResource SwTextMain}" BorderBrush="#3AFFFFFF" BorderThickness="1" Padding="14,7" FontSize="11.5" HorizontalAlignment="Left" Cursor="Hand"/>
-                                <TextBlock Text="Zeigt eine Test-Meldung und fragt danach, ob du sie gesehen hast." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,8,0,0"/>
                             </StackPanel>
                         </Border>
 
@@ -31369,7 +31565,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.2.2" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.2.3" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -31401,21 +31597,9 @@ function Open-SettingsWindow {
     $doneNotifySwitch = $settingsWindow.FindName('DoneNotifySwitch')
     $editorIconsSwitch = $settingsWindow.FindName('EditorIconsSwitch')
     $updateText      = $settingsWindow.FindName('UpdateInfoText')
-    # Version 7.2.0 (D4): Test-Knopf + Urteil fuer die Fertig-Meldung.
-    $notifyTestButton = $settingsWindow.FindName('NotifyTestButton')
-    # Version 7.2.2: Der Meldungstest gehoert jetzt direkt zum passenden
-    # Fertig-Meldungs-Schalter, nicht mehr in einen eigenen Diagnosebereich.
-    if ($null -ne $notifyTestButton) {
-        $notifyTestButton.Add_Click({
-            param($s, $e)
-            try {
-                $testResult = Send-NotifyTestMessage
-                Open-NotifySeenWindow $testResult
-            } catch {
-                Write-UiErrorLog 'Test der Fertig-Meldung fehlgeschlagen' $_
-            }
-        })
-    }
+    # 7.2.3: Die Test-Benachrichtigung ist vollstaendig aus den Einstellungen
+    # entfernt. Der report_done-Kanal, seine Registrierung und seine Messung
+    # bleiben unveraendert; nur ein zusaetzlicher kuenstlicher Popup-Test entfiel.
 
     $startupSwitch.IsChecked = $autoStartNow
     $progressSwitch.IsChecked = $progressNow
@@ -31429,7 +31613,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.2.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.2.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -31494,7 +31678,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.2.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.2.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -31507,7 +31691,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.2.2'
+    $verText = '7.2.3'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
