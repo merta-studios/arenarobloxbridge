@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Live-Abnahme der Arena Roblox Bridge 7.1.3 (laeuft gegen die echte Bridge).
+"""Live-Abnahme der Arena Roblox Bridge 7.2.3 (laeuft gegen die echte Bridge).
 
 Aufruf (URL + Token aus der Place-Zeile im Bridge-Fenster):
 
@@ -12,7 +12,7 @@ Geprueft wird, was in 7.0.4-7.1.0 live kaputt war (und in 7.0.5 / 7.1.1 behoben 
                              counters.revivedSessions bleibt bei pollendem Studio
                              KONSTANT (Plugin schickt sessionId; kein Reconnect je Poll),
                              nach dem normalen Befehl: delivery.undeliveredCommands == 0
-  1. /api/status          -> Version 7.1.3 + queue.sweep.running == true
+  1. /api/status          -> Version 7.2.3 + queue.sweep.running == true
   2. normaler Befehl      -> kommt in wenigen Sekunden mit Ergebnis zurueck
   3. Haenger-Reproduktion -> run_lua blockiert ~150 s; die Bridge muss WEIT vor
                              Cloudflares ~100-s-524 antworten (< 90 s), der
@@ -36,10 +36,11 @@ import json
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 FAILURES: list[str] = []
-EXPECTED_VERSION = "7.1.3"
+EXPECTED_VERSION = "7.2.3"
 
 
 def check(condition: bool, message: str) -> None:
@@ -82,9 +83,20 @@ def api(url: str, path: str, payload: dict | None = None, timeout: float = 120.0
 
 
 def tool(url: str, token: str, name: str, args: dict | None = None, **extra) -> tuple[int, dict, float]:
-    payload = {"token": token, "tool": name, "args": args or {}}
-    payload.update(extra)
-    return api(url, "/api/tool", payload)
+    """Call /api/tool with the owner-safe GET form used for live acceptance.
+
+    The bridge accepts GET and POST equivalently, but GET keeps the exact URL
+    reproducible from a tunnel/Place token hand-off. `args` stays one JSON
+    query value so nested Lua sources and targetPlace values are encoded safely.
+    """
+    query: dict[str, str] = {
+        "token": token,
+        "tool": name,
+        "args": json.dumps(args or {}, ensure_ascii=False, separators=(",", ":")),
+    }
+    for key, value in extra.items():
+        query[key] = json.dumps(value, ensure_ascii=False, separators=(",", ":")) if isinstance(value, (dict, list)) else str(value)
+    return api(url, "/api/tool?" + urllib.parse.urlencode(query))
 
 
 def status(url: str, token: str) -> dict:
