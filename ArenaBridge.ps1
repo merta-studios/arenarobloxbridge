@@ -13805,6 +13805,9 @@ $script:BridgeHandlerScript = {
                 return @{ ok = $false; code = 'ASK_EXPIRED'; error = 'The question window expired before the user answered.'; hint = 'Ask again only if you really need it, or continue with your best assumption and say so in your answer.'; askId = $askId }
             }
             $waiting = Get-AskView $state
+            if ($null -eq $waiting) {
+                return @{ ok = $false; code = 'ASK_UNKNOWN'; error = 'The question request disappeared while waiting.'; hint = 'Ask again with the same question text.'; askId = $askId }
+            }
             $waiting.nextCall = 'ask_user { askId: "' + $askId + '", resume: true, waitSeconds: 45 }'
             return @{ ok = $true; result = $waiting }
         }
@@ -13823,6 +13826,9 @@ $script:BridgeHandlerScript = {
         }
         if (-not $resume) {
             $view = Get-AskView $state
+            if ($null -eq $view) {
+                return @{ ok = $false; code = 'ASK_UNKNOWN'; error = 'The question request could not be read.'; hint = 'Ask again with the same question text.'; askId = $resumeId }
+            }
             $view.nextCall = 'ask_user { askId: "' + $resumeId + '", resume: true, waitSeconds: 45 }'
             return @{ ok = $true; result = $view }
         }
@@ -13834,6 +13840,9 @@ $script:BridgeHandlerScript = {
             return @{ ok = $false; code = 'ASK_EXPIRED'; error = 'The question window expired before the user answered.'; hint = 'Continue with your best assumption and say so.'; askId = $resumeId }
         }
         $view = Get-AskView $waited
+        if ($null -eq $view) {
+            return @{ ok = $false; code = 'ASK_UNKNOWN'; error = 'The question request disappeared while waiting.'; hint = 'Ask again with the same question text.'; askId = $resumeId }
+        }
         $view.nextCall = 'ask_user { askId: "' + $resumeId + '", resume: true, waitSeconds: 45 }'
         $view.hint = 'Still no answer. The window is still open. Do useful work you can do without the answer, then resume.'
         return @{ ok = $true; result = $view }
