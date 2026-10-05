@@ -2424,6 +2424,9 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Urteil aber, damit report_done ehrlich antwortet (NOTIFICATION_UNVERIFIED).
     NotifyPlatformJson = ''
     NotifyLastJson     = ''
+    # Version 7.2.0 (AP7): Ergebnis der Code-Struktur-Messung je Sitzung
+    # (UI_ENGINE.codeLayoutReport beim Schreiben eines Skripts).
+    CodeLayouts        = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     # Zuletzt geschriebene Station je Schluessel (Drosselung gegen vollaufende
     # runtime.log: Fortschritt kaeme sonst bei JEDEM Werkzeugaufruf).
     ProgressLogAt   = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
@@ -2461,6 +2464,7 @@ $script:Shared = [hashtable]::Synchronized(@{
         AskAgentGone             = 0L
         AskLateAnswers           = 0L
         BuildsRegistered         = 0L
+        CodeLayoutChecked        = 0L
         BuildAuditDemands        = 0L
         QualityDraftFlags        = 0L
         QualityAuditDemands      = 0L
@@ -6303,9 +6307,18 @@ tools.set_script_source = function(args)
     if #oldSource > 4000 and #newSource < #oldSource * 0.6 then
         warnings = { "The new source is much shorter than the old one (" .. tostring(#oldSource) .. " -> " .. tostring(#newSource) .. " bytes). If that was not intended, use undo and switch to patch_script." }
     end
+    -- Version 7.2.0: Code-Struktur messen statt nur Bytes zaehlen.
+    local codeLayout = nil
+    if UI_ENGINE and UI_ENGINE.codeLayoutReport then codeLayout = UI_ENGINE.codeLayoutReport(newSource) end
+    local layoutWarning = nil
+    if UI_ENGINE and UI_ENGINE.describeCodeLayout then layoutWarning = UI_ENGINE.describeCodeLayout(codeLayout) end
+    if layoutWarning then
+        if warnings then table.insert(warnings, layoutWarning) else warnings = { layoutWarning } end
+    end
     return ok({
         id = idOf(inst),
         path = pathOf(inst),
+        codeLayout = codeLayout,
         bytes = #newSource,
         lines = select(2, string.gsub(newSource, "\n", "\n")) + 1,
         previousLines = select(2, string.gsub(oldSource, "\n", "\n")) + 1,
@@ -6368,9 +6381,22 @@ tools.patch_script = function(args)
         if firstLine then break end
     end
 
+    -- Version 7.2.0: Auch nach einer punktgenauen Aenderung die Struktur messen -
+    -- so waechst kein Skript unbemerkt zum Monolithen.
+    local codeLayout = nil
+    local layoutWarnings = nil
+    if UI_ENGINE and UI_ENGINE.codeLayoutReport then
+        codeLayout = UI_ENGINE.codeLayoutReport(working)
+        if UI_ENGINE.describeCodeLayout then
+            local layoutWarning = UI_ENGINE.describeCodeLayout(codeLayout)
+            if layoutWarning then layoutWarnings = { layoutWarning } end
+        end
+    end
+
     return ok({
         id = idOf(inst),
         path = pathOf(inst),
+        codeLayout = codeLayout,
         operations = report,
         oldLines = oldLines,
         newLines = newLines,
@@ -6378,7 +6404,7 @@ tools.patch_script = function(args)
         bytes = #working,
         hash = hashString(working),
         preview = firstLine and previewAround(working, firstLine, 4) or nil,
-    })
+    }, layoutWarnings)
 end
 
 tools.insert_script = function(args)
@@ -6395,13 +6421,24 @@ tools.insert_script = function(args)
     if args.properties then applyProperties(created, args.properties) end
     created.Parent = parent
     waypoint("insert script")
+    -- Version 7.2.0: Code-Struktur messen (siehe UI_ENGINE.codeLayoutReport).
+    local codeLayout = nil
+    local layoutWarnings = nil
+    if UI_ENGINE and UI_ENGINE.codeLayoutReport then
+        codeLayout = UI_ENGINE.codeLayoutReport(tostring(args.source or ""))
+        if UI_ENGINE.describeCodeLayout then
+            local layoutWarning = UI_ENGINE.describeCodeLayout(codeLayout)
+            if layoutWarning then layoutWarnings = { layoutWarning } end
+        end
+    end
     return ok({
         id = idOf(created),
         path = pathOf(created),
+        codeLayout = codeLayout,
         className = created.ClassName,
         lines = select(2, string.gsub(created.Source, "\n", "\n")) + 1,
         hash = hashString(created.Source),
-    })
+    }, layoutWarnings)
 end
 
 tools.bulk_insert_scripts = function(args)
@@ -6412,6 +6449,12 @@ tools.bulk_insert_scripts = function(args)
         local result = tools.insert_script(item)
         if result.ok then
             table.insert(created, result.result)
+            -- Version 7.2.0: Code-Struktur-Warnungen auch im Sammelaufruf melden.
+            if result.warnings ~= nil then
+                for _, warning in ipairs(result.warnings) do
+                    table.insert(errors, "item " .. tostring(index) .. " (Hinweis): " .. tostring(warning))
+                end
+            end
         else
             table.insert(errors, "item " .. tostring(index) .. ": " .. tostring(result.error))
         end
@@ -8164,6 +8207,58 @@ UI_ENGINE = {}
 -- Version 7.0.0: Engine 2.0 - Glow, echte Texturen (textureImage statt
 -- nur prozeduraler Muster) und Radialmenues aus einer Bild-Id.
 UI_ENGINE.ENGINE_VERSION = "2.0"
+
+-- Version 7.2.0: CODE-STRUKTUR MESSEN (Thema 2: GUI wirklich in StarterGui,
+-- viele kleine Skripte statt eines Monolithen).
+-- Ein Skript, das die ganze Oberflaeche zur Laufzeit mit Instance.new
+-- aufbaut, ist in Studio nicht editierbar, kostet beim Beitritt Leistung und
+-- kann von niemandem gelesen werden. Gemessen wird beim Schreiben.
+UI_ENGINE.codeLayoutReport = function(source)
+    local text = tostring(source or "")
+    local lines = select(2, string.gsub(text, "\n", "\n")) + 1
+    local function countOccurrences(needle)
+        local total, position = 0, 1
+        while true do
+            local found = string.find(text, needle, position, true)
+            if not found then break end
+            total = total + 1
+            position = found + #needle
+        end
+        return total
+    end
+    local instanceNew = countOccurrences("Instance.new(")
+    local clones = countOccurrences(":Clone()")
+    local parentWrites = countOccurrences(".Parent =")
+    local level = "ok"
+    if lines > 400 then level = "monolith"
+    elseif lines > 250 then level = "large"
+    elseif instanceNew >= 15 then level = "runtime_built" end
+    local report = {
+        lines = lines,
+        instanceNewCalls = instanceNew,
+        cloneCalls = clones,
+        parentAssignments = parentWrites,
+        monolithRisk = (level ~= "ok"),
+        level = level,
+    }
+    if level == "ok" then
+        report.advice = ""
+    elseif level == "runtime_built" then
+        report.advice = "RUNTIME_BUILT_UI: die Oberflaeche wird zur Laufzeit mit Instance.new erzeugt, statt in StarterGui zu liegen. Baue Frames und Knoepfe als ECHTE gespeicherte Instanzen (build_interface/ui_engine) und lass jedes kleine Skript nur das aendern, was ihm gehoert. Eine zur Laufzeit gebaute Oberflaeche ist in Studio nicht editierbar, kostet beim Beitritt Zeit und ist nicht lesbar."
+    elseif level == "large" then
+        report.advice = "LARGE_SCRIPT: dieses Skript hat ueber 250 Zeilen. Teile es nach Verantwortung auf (Eingabe, Zustand, Aktualisierung, Effekte, Daten) - mehrere kleine ModuleScripts/LocalScripts unter derselben ScreenGui, jedes in einem Zug lesbar."
+    else
+        report.advice = "MONOLITH_SCRIPT: dieses Skript hat ueber 400 Zeilen. Genau so entsteht ein unlesbarer Monolith; teile es in kleine Skripte mit je EINER Verantwortung (siehe uiStructureRules und scaffold_ui_scripts)."
+    end
+    return report
+end
+
+UI_ENGINE.describeCodeLayout = function(layout)
+    if layout == nil then return nil end
+    if layout.monolithRisk ~= true then return nil end
+    return "MONOLITH_RISK (" .. tostring(layout.level) .. ", " .. tostring(layout.lines) .. " Zeilen, "
+        .. tostring(layout.instanceNewCalls) .. "x Instance.new): " .. tostring(layout.advice)
+end
 
 -- AnchorPoint wird NIE geraten: er folgt immer aus der Ausrichtung. Das ist
 -- die Wurzel des haeufigsten Fehlers (AnchorPoint 0,0 + Skalierungs-
@@ -14991,7 +15086,7 @@ $script:BridgeHandlerScript = {
     }
 
     function Get-ActivityToolSets {
-        $read = @('get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','sim_status','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait','ui_capabilities','ui_skin','ui_audit','ui_texture','world_style','site_survey','variation','model_audit','world_audit','prop_list','wait_for_user','ack_user_message','ask_user','confirm_action')
+        $read = @('get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','sim_status','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait','ui_capabilities','ui_skin','ui_audit','ui_texture','world_style','site_survey','variation','model_audit','world_audit','prop_list','wait_for_user','ack_user_message','ask_user','confirm_action','scaffold_ui_scripts')
         $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','build_polygon_model','build_assembly','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','sim_start','set_context','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute','build_surface','build_interface','ui_glow','ui_radial','prop_place','prop_save','refine','style_lock','world_glow')
         return @{ read = $read; write = $write }
     }
@@ -19238,6 +19333,12 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             returns = '{ events: [...], count }';
             example = @{};
             errors = @() })
+        $t.Add(@{ name = 'scaffold_ui_scripts'; category = 'session'; summary = 'Aufbau-Vorschlag fuer eine Oberflaeche: welche KLEINEN Skripte, wer macht was.';
+            description = 'Server-Werkzeug ohne Studio-Umlauf. Es liefert die Aufteilung (Config, State, je Bildschirm ein View, Input, Update, Effects, Data), die Reihenfolge und die Leitplanken - damit eine GUI in StarterGui als echte, editierbare Instanzen entsteht und die Logik in mehreren kleinen Skripten liegt, nicht in einem 10.000-Zeilen-LocalScript. Die Strukturmessung (codeLayout) meldet MONOLITH_RISK, wenn ein Skript ueber 400 Zeilen hat oder ueber 15 Instance.new enthaelt. Regeln: uiStructureRules.';
+            params = @{ ui = @{ type = 'string'; required = $true; default = '-'; description = 'Name der Oberflaeche, z.B. "Shop".' }; screens = @{ type = 'string[]'; required = $false; default = 'null'; description = 'Bildschirmseiten, je eine bekommt ein eigenes View-Skript.' }; mode = @{ type = 'string'; required = $false; default = 'new'; description = '"new" oder "extend" (bestehende, vom Nutzer gebaute GUI erweitern).' } };
+            returns = '{ ui, mode, structure, scripts: [ { name, className, responsibility, why, order } ], buildOrder, limits, note }';
+            example = @{ ui = 'Shop'; screens = @( 'Shop', 'Inventory' ); mode = 'extend' };
+            errors = @('BAD_ARGS: ui fehlt.') })
         $t.Add(@{ name = 'ask_user'; category = 'session'; summary = 'Den Nutzer etwas fragen - mit Entscheidungsbaum, Fenster am Mauszeiger.';
             description = 'Statt im Chat zu fragen (der Nutzer ist oft weg und uebersieht es): ein Fenster erscheint in der Naehe des Mauszeigers mit Haekchen/Knopf-Optionen und eigener Antwort. Der ganze Baum kommt in EINER Anfrage. Bedingungen erlaubt: when = [ { questionId = "fruehererId", anyOf = ["optionA"], allOf = [...], custom = true } ] auf eine FRUEHERE Frage (mehrere Ebenen tief). Der gesamte Baum zaehlt: max 12 Fragen, max 6 Optionen je Frage, max 400 Zeichen je Text, Ids eindeutig. Du kannst dabei schlafen: waitSeconds (max 50) blockiert; kommt keine Antwort, liefert der Aufruf { state: "waiting", askId, nextCall } und du rufst spaeter mit resume=true erneut auf. Antworten kommen notfalls als _bridge.userAnswers mit.';
             params = @{ title = @{ type = 'string'; required = $true; default = '-'; description = 'Kurze Ueberschrift (max 90 Zeichen).' }; message = @{ type = 'string'; required = $false; default = 'null'; description = 'Einleitungssatz (max 600 Zeichen).' }; questions = @{ type = 'object[]'; required = $true; default = '-'; description = 'Je Frage: { id, text, options: [ { id, label, description? } ], allowCustomResponse?, required?, multi?, when? }.' }; expiresInSeconds = @{ type = 'int'; required = $false; default = '180'; description = '30..1800: so lange bleibt das Fenster offen.' }; waitSeconds = @{ type = 'int'; required = $false; default = '0'; description = '0..50: aktiv auf die Antwort warten (0 = sofort zurueck und spaeter mit resume=true fortsetzen).' }; askId = @{ type = 'string'; required = $false; default = 'null'; description = 'Zum Fortsetzen einer offenen Frage.' }; resume = @{ type = 'bool'; required = $false; default = 'false'; description = 'true = erneut auf diese Frage warten.' } };
@@ -19476,6 +19577,21 @@ end
                     'The exact organic model has ArenaPolygonTriangle wedges, at least three contrasting non-default colours and an enabled motion Script under the model.',
                     'model_audit organicQuality.detected=true, polygonTriangles>0, uniqueColors>=3, nearWhiteShare<=0.90, motionScripts>0, issues=[]; auditAt is after the latest write before report_done.'
                 )
+            }
+            uiStructureRules = @{
+                title = 'UI STRUCTURE CONTRACT (7.2.0) - the interface lives in StarterGui, the logic lives in MANY SMALL scripts'
+                theOneIdea = 'The GUI is BUILT ONCE as real, saved instances (build_interface/build_surface) and stays editable in Studio. Scripts only change what already exists - they never rebuild the screen with Instance.new at runtime.'
+                hardRules = @(
+                    '1 REAL INSTANCES: frames, labels, buttons, images are created ONCE and saved under StarterGui (ScreenGui -> your layout). The user must be able to select and edit every element in Studio.',
+                    '2 NO RUNTIME REBUILD: never generate the whole interface inside a LocalScript with Instance.new. That is unreadable, costs join time and cannot be edited. Instance.new is for the few elements you really create while running (list rows, tooltips).',
+                    '3 ONE SCRIPT PER RESPONSIBILITY: split the logic into several small scripts (for example UiInput, UiState, UiUpdate, UiEffects, UiData) under the same ScreenGui instead of one 10.000-line script.',
+                    '4 SIZE LIMIT: keep every script under about 250 lines. Above 400 lines the bridge reports MONOLITH_RISK and asks you to split it (tool: scaffold_ui_scripts).',
+                    '5 RUNTIME COST: more than about 15 Instance.new calls in one script is a warning sign - it usually means the interface is built at runtime instead of saved.',
+                    '6 EXTEND, DO NOT REBUILD: when the user already designed a GUI, extend exactly those instances (build_surface mode="extend", set_property, patch_script). Never replace user-made elements.',
+                    '7 DATA SEPARATION: numbers, texts and tuning values belong into a ModuleScript (or attributes), not into the drawing code - that is what makes the small scripts small.'
+                )
+                measurement = 'Every set_script_source / insert_script / patch_script result carries codeLayout { lines, instanceNewCalls, cloneCalls, parentAssignments, monolithRisk, level, advice } and warns MONOLITH_RISK. Every response repeats it until the script is split.'
+                scaffold = 'Call scaffold_ui_scripts { ui = "<name>" } to get a ready split (script names, responsibilities, order) for the interface you are building.'
             }
             uiEngineRules = @{
                 title = 'UI Engine 2.0 - canonical rules for every GUI (anchor/scale/corner/CanvasGroup bugs, glow, real textures, radial menus and the generic dark-dashboard look)'
@@ -20266,6 +20382,23 @@ end
             $answerNote = 'USER ANSWERS (ask_user/confirm_action): the user answered. Read _bridge.userAnswers, act exactly on it and mention the decision in your reply.'
             if ($envelope.attention) { $envelope.attention = $answerNote + ' ' + $envelope.attention } else { $envelope.attention = $answerNote }
         }
+        # Version 7.2.0 (AP7): Die Code-Struktur-Messung wiederholt sich in
+        # jeder Antwort, bis das Skript aufgeteilt ist - einmal lesen und
+        # ignorieren hilft nicht.
+        try {
+            $layoutJson = ''
+            if ($Shared.CodeLayouts.TryGetValue([string]$sessionId, [ref]$layoutJson) -and -not [string]::IsNullOrWhiteSpace($layoutJson)) {
+                $layoutView = $layoutJson | ConvertFrom-Json
+                $layoutRisk = $false
+                try { $layoutRisk = [bool]$layoutView.monolithRisk } catch {}
+                if ($layoutRisk) {
+                    $envelope.codeLayout = $layoutView
+                    $envelope.uiStructureWarning = 'MONOLITH_RISK'
+                    $layoutNote = ('MONOLITH_RISK (' + [string]$layoutView.level + ', ' + [string]$layoutView.lines + ' lines, ' + [string]$layoutView.instanceNewCalls + 'x Instance.new): ' + [string]$layoutView.advice)
+                    if ($envelope.attention) { $envelope.attention = $layoutNote + ' ' + $envelope.attention } else { $envelope.attention = $layoutNote }
+                }
+            }
+        } catch {}
         $openAsks = Get-PendingAskViews $sessionId 1
         if ($openAsks.Count -gt 0) {
             $envelope.openQuestions = $openAsks.ToArray()
@@ -20820,6 +20953,103 @@ end
                         }
                         docs = 'GET /api/docs for the complete tool documentation (or ?tool= / ?category=).'
                         note = 'Each Studio window has its own token. This token only ever reaches the place shown above.'
+                    }
+                }
+            }
+            # Version 7.2.0 (AP7): Der Aufbau der Oberflaeche als Server-Werkzeug
+            # (kein Studio-Umlauf): Namen, Verantwortungen und Reihenfolge der
+            # KLEINEN Skripte. Genau das fehlte, wenn die KI stattdessen ein
+            # 10.000-Zeilen-LocalScript geschrieben hat.
+            'scaffold_ui_scripts' {
+                $uiName = ''
+                try { if ($null -ne $toolArgs -and $toolArgs.PSObject.Properties['ui']) { $uiName = ([string]$toolArgs.ui).Trim() } } catch {}
+                if ([string]::IsNullOrWhiteSpace($uiName)) {
+                    return @{
+                        ok = $false
+                        code = 'BAD_ARGS'
+                        error = 'ui is required (the name of the interface, for example "Shop").'
+                        hint = 'Call scaffold_ui_scripts { ui = "Shop", screens = ["Shop","Inventory"] } - you get the split and the order to build it in.'
+                    }
+                }
+                $screens = New-Object System.Collections.Generic.List[string]
+                try {
+                    if ($null -ne $toolArgs -and $toolArgs.PSObject.Properties['screens']) {
+                        foreach ($screen in @($toolArgs.screens)) {
+                            $value = ([string]$screen).Trim()
+                            if (-not [string]::IsNullOrWhiteSpace($value)) { $screens.Add($value) }
+                        }
+                    }
+                } catch {}
+                $modeValue = 'new'
+                try { if ($null -ne $toolArgs -and $toolArgs.PSObject.Properties['mode'] -and -not [string]::IsNullOrWhiteSpace([string]$toolArgs.mode)) { $modeValue = ([string]$toolArgs.mode).Trim().ToLowerInvariant() } } catch {}
+                if ($modeValue -ne 'extend') { $modeValue = 'new' }
+                $scripts = New-Object System.Collections.Generic.List[object]
+                $scripts.Add([pscustomobject]@{
+                    name = $uiName + 'Config'
+                    className = 'ModuleScript'
+                    responsibility = 'Zahlen, Farben, Texte und Grenzen an EINER Stelle. Kein Zeichencode hier.'
+                    why = 'Damit niemand Werte im Zeichencode sucht und zwei Skripte dieselbe Zahl anders belegen.'
+                    order = 1
+                })
+                $scripts.Add([pscustomobject]@{
+                    name = $uiName + 'State'
+                    className = 'ModuleScript'
+                    responsibility = 'Der Zustand (welche Seite, welche Auswahl, welche Werte) plus Getter/Setter und ein Signal (BindableEvent), wenn sich etwas aendert.'
+                    why = 'Zustand getrennt von der Darstellung - genau das ist der Grund, warum die kleinen Skripte klein bleiben.'
+                    order = 2
+                })
+                foreach ($screen in $screens) {
+                    $scripts.Add([pscustomobject]@{
+                        name = $uiName + ([string]$screen) + 'View'
+                        className = 'LocalScript'
+                        responsibility = ('Nur die Elemente von "' + [string]$screen + '": was wird angezeigt, was ist sichtbar. Schreibt in BESTEHENDE GuiObjects, erzeugt nichts neu.')
+                        why = 'Eine Bildschirmseite, ein Skript - lesbar in einem Zug.'
+                        order = 3
+                    })
+                }
+                $scripts.Add([pscustomobject]@{
+                    name = $uiName + 'Input'
+                    className = 'LocalScript'
+                    responsibility = 'Klicks, Hover, Tasten und Touch. Ruft NUR Setter des State auf, aendert selbst nichts am Aussehen.'
+                    why = 'Eingabe und Darstellung zu trennen verhindert doppelte Wahrheiten.'
+                    order = 4
+                })
+                $scripts.Add([pscustomobject]@{
+                    name = $uiName + 'Update'
+                    className = 'LocalScript'
+                    responsibility = 'Hoert auf den State und aktualisiert die vorhandenen Elemente (Texte, Zahlen, Sichtbarkeit, Auswahl).'
+                    why = 'Nur hier laeuft Aktualisierung - kein Skript schreibt an einem anderen vorbei.'
+                    order = 5
+                })
+                $scripts.Add([pscustomobject]@{
+                    name = $uiName + 'Effects'
+                    className = 'LocalScript'
+                    responsibility = 'Tweens und Animationen auf den Transform-Wrappern (UIScale), inklusive Oeffnen/Schliessen.'
+                    why = 'Effekte sind der Teil, der am haeufigsten Laufzeitfehler erzeugt - klein und getrennt testbar.'
+                    order = 6
+                })
+                $scripts.Add([pscustomobject]@{
+                    name = $uiName + 'Data'
+                    className = 'ModuleScript'
+                    responsibility = 'Optional: RemoteEvents/Remotes, Profildaten, Preise. Alles, was mit dem Server spricht.'
+                    why = 'Datenzugriff gehoert nicht in die Zeichenschleife.'
+                    order = 7
+                })
+                return @{
+                    ok = $true
+                    result = @{
+                        ui = $uiName
+                        mode = $modeValue
+                        structure = @{
+                            instance = 'StarterGui.' + $uiName + 'Gui (ScreenGui)'
+                            layout = 'Frames, Labels, Buttons und Bilder werden EINMAL gebaut (build_interface/build_surface) und bleiben in Studio editierbar.'
+                            scriptsFolder = 'StarterGui.' + $uiName + 'Gui.' + $uiName + 'Scripts (Folder) - alle kleinen Skripte liegen sichtbar beieinander.'
+                            forbidden = 'Kein LocalScript, das die ganze Oberflaeche zur Laufzeit mit Instance.new aufbaut. Das ist in Studio nicht editierbar, kostet beim Beitritt Leistung und ist nicht lesbar.'
+                        }
+                        scripts = @($scripts.ToArray())
+                        buildOrder = @('1. Instanzen bauen (build_interface/build_surface ' + $(if ($modeValue -eq 'extend') { 'mode="extend" auf den BESTEHENDEN Elementen' } else { 'neu' }) + ')', '2. Config und State anlegen (insert_script, klein halten)', '3. je Bildschirm ein View-Skript', '4. Input, Update, Effects - je eine Verantwortung', '5. erst danach Details wie Bilder/Effekte ergaenzen')
+                        limits = @{ maxLinesPerScript = 250; hardWarnLines = 400; instanceNewPerScript = 15 }
+                        note = 'Jedes Skript bleibt unter etwa 250 Zeilen und erzeugt nichts, was es nicht besitzt. set_script_source/insert_script/patch_script messen das und melden MONOLITH_RISK mit Zahlen. Regeln: uiStructureRules.'
                     }
                 }
             }
@@ -22061,6 +22291,21 @@ end
                         if ($tool -eq 'model_audit') {
                             try { Update-SessionBuildAudit $sessionId $pluginPayload $resultAtTicks } catch {}
                         }
+                        # Version 7.2.0 (AP7): Code-Struktur je Sitzung merken.
+                        try {
+                            if ($pluginPayload.PSObject.Properties['codeLayout'] -and $null -ne $pluginPayload.codeLayout) {
+                                $layoutView = $pluginPayload.codeLayout
+                                $layoutJson = ($layoutView | ConvertTo-Json -Depth 6 -Compress)
+                                $Shared.CodeLayouts[[string]$sessionId] = [string]$layoutJson
+                                Add-ChannelCount 'CodeLayoutChecked' 1
+                                $layoutRisk = $false
+                                try { $layoutRisk = [bool]$layoutView.monolithRisk } catch {}
+                                if ($layoutRisk) {
+                                    Add-ChannelCount 'UiMonolithFlags' 1
+                                    Write-FlowStation 'UISTRUCTURE' (Get-ShortSid $sessionId) 'MONOLITH_RISK' @{ tool = $tool; level = ([string]$layoutView.level); lines = ([string]$layoutView.lines); instanceNew = ([string]$layoutView.instanceNewCalls) }
+                                }
+                            }
+                        } catch {}
                     }
                     if ($resultSucceeded -and $tool -eq 'build_polygon_model' -and $pluginPayload.organic -eq $true) {
                         $builtModel = $null
