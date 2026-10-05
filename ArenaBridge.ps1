@@ -1,5 +1,58 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.1.5
+# Arena Roblox Bridge  -  Version 7.2.0
+#
+#
+# Version 7.2.0 (2026-10-05) - NUTZER-KANAL, FRAGEN, EHRLICHE MESSUNG, QUALITAET
+#
+#   Der Owner hat fuenf Dinge gemeldet; alle fuenf sind in diesem Release
+#   geloest - jeweils mit Messung statt Behauptung:
+#
+#   1) ZWISCHENNACHRICHT (D8): Das Menue (...) der Place-Zeile hat den Punkt
+#      "Nachricht an Arena senden". Er oeffnet ein eigenes Fenster mit ehrlichen
+#      Zustaenden: "wird gesendet" (Abbrechen zieht die Nachricht WIRKLICH
+#      zurueck) -> "angekommen" (mit Uhrzeit und Werkzeug) -> "von Arena
+#      bestaetigt" (ack_user_message). Jede Antwort traegt _bridge.userMessages;
+#      ohne Bestaetigung wiederholt sie sich in bis zu drei Antworten.
+#      "Laufenden Befehl abbrechen" ist ebenfalls ein Menuepunkt.
+#
+#   2) FORTSCHRITT (D5/D6/D7): Ohne Prozentzahl zeigt die Zeile KEINEN Balken
+#      und KEINE erfundene 0 %, sondern eine Textzeile. Eine Nachricht ohne Zahl
+#      setzt den Fortschritt nicht mehr auf 0 zurueck, der Clamp parst invariant
+#      (aus "45.5" wurde unter de-DE 455 und damit 100 %), die Zeile liest die
+#      Nachfolger-Sitzung mit, PERCENT_MISSING steht in jeder Antwort, und ein
+#      offener Studio-Befehl verdraengt die Anzeige nicht mehr.
+#
+#   3) FERTIG-MELDUNG (D4): Show() ohne Ausnahme galt bisher als "angezeigt" -
+#      Windows verwirft Toasts aber still (App-Id nicht registriert, global aus,
+#      Fokus-Assistent, Vollbild). Jetzt: App-Id wird bei Bedarf registriert,
+#      Test-NotifyPlatform misst und nennt das Urteil, NOTIFY-Stationen
+#      (ENQUEUED/PLATFORM/CALL/SWEEP/SEEN) verbinden eine Meldung, notify.sweep
+#      misst nach, die Einstellungen haben einen Testknopf mit der ehrlichen
+#      Rueckfrage "Hast du die Meldung gesehen?", report_done antwortet ohne
+#      Blindvertrauen (NOTIFICATION_UNVERIFIED) und notify-diagnose.txt sagt,
+#      was wirklich geschah.
+#
+#   4) FRAGEN (D3): ask_user stellt den GANZEN Entscheidungsbaum in einer
+#      Anfrage (bis 12 Fragen, Bedingungen auf fruehere Fragen, beliebig tief),
+#      das Fenster erscheint mit Versatz am Mauszeiger, "Zurueck" wertet die
+#      Sichtbarkeit neu aus und verwirft ungueltig gewordene Antworten sichtbar.
+#      Warten ist wiederaufnehmbar (max. 50 s je Aufruf); spaete Antworten
+#      kommen als _bridge.userAnswers. confirm_action ist die Ja/Nein-Abkuerzung.
+#      Zeitablauf und Offline-Zustand sind ehrlich beschriftet, inklusive
+#      Knopf "Antwort als Text kopieren" fuer den Arena-Chat.
+#
+#   5) QUALITAET UND GUI: model_audit benotet jetzt jeden Bau (finishScore,
+#      grade draft/simple/detailed/sculpted). "draft" = mindestens 4 Teile,
+#      keine Polygon-/Mesh-/Union-/Detail-Geometrie, ueber 60 % primitive -
+#      genau der Baum aus einem Zylinder und drei Kugeln, der bis 7.1.5 "clean"
+#      war. report_done antwortet dann DRAFT_GRADE_RISK; wer Einfachheit wirklich
+#      will, erklaert sie beim Bauen (grade). Jedes Skript wird beim Schreiben
+#      gemessen (UI_ENGINE.codeLayoutReport: Zeilen, Instance.new);
+#      MONOLITH_RISK steht als Warnung in jeder Antwort, scaffold_ui_scripts
+#      liefert die Aufteilung in kleine Skripte mit je einer Verantwortung.
+#
+#   Diagnose-Dateien (klein, vollstaendig weitergebbar):
+#     progress-diagnose.txt, notify-diagnose.txt, places-diagnose.txt
 #
 # KRITISCHER START-HOTFIX 7.1.5 - DIE BRIDGE STARTET WIEDER (2026-10-03):
 #   7.1.4 enthielt im HTTP-Handler (report_done, Organic-Pruefung) eine
@@ -1799,6 +1852,20 @@ $script:PreviewDiagLines = New-Object System.Collections.Generic.List[string]
 $script:PreviewDiagIdentity = ''
 $script:PreviewSelfTestVerdict = ''
 $script:PreviewDiagLastWrite = [DateTime]::MinValue
+# Version 7.2.0: Drossel-Zustaende fuer die Kanal-Stationen der Oberflaeche und
+# fuer die kleinen Kurzberichte progress-diagnose.txt / notify-diagnose.txt.
+$script:ChannelDiagLastWrite = [DateTime]::MinValue
+$script:UiStationLogAt = @{}
+# Version 7.2.0 (D4): Zustand der Benachrichtigungs-Messung.
+$script:NotifyAumidState = $null
+$script:NotifyPlatformCache = $null
+$script:NotifyPlatformCacheAt = $null
+$script:NotifyRecords = New-Object System.Collections.Generic.List[object]
+$script:NotifySeenWindow = $null
+# Version 7.2.0 (D8): Fenster "Nachricht an Arena senden".
+$script:UserMessageWindow = $null
+# Version 7.2.0 (D3): Fenster "Arena fragt" (Entscheidungsbaum am Mauszeiger).
+$script:AskWindow = $null
 $script:PreviewFlowCounter = [long]0
 $script:PreviewFlowContexts = @{}
 $script:PreviewHandleInfos = @{}
@@ -2309,7 +2376,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.1.5'
+    DocsVersion     = '7.2.0'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -2345,7 +2412,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Version 7.0.6: Laufzeit-Identitaet der LAUFENDEN Datei (Version, Pfad,
     # SHA-256, Sprachmodus, Startzeit) fuer GET /api/version.
     RuntimeInfo = [hashtable]::Synchronized(@{
-        Version = '7.1.5'
+        Version = '7.2.0'
         File = ''
         Sha256 = ''
         LanguageMode = ''
@@ -2366,6 +2433,97 @@ $script:Shared = [hashtable]::Synchronized(@{
     })
     # report_done-Meldungen: der Server legt sie ab, die Oberflaeche zeigt sie an
     NotifyQueue     = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+
+    # ==================================================================
+    # Version 7.2.0: NUTZER-KANAL, FRAGEN, BUILD-REGISTER, KANAL-ZAEHLER.
+    # Alles liegt in $Shared (nicht als $script:-Variable), weil der
+    # HTTP-Handler in EIGENEN Runspaces laeuft und $script: dort nicht kennt
+    # (dieselbe Regel wie bei SessionPayloadHardBudgetBytes seit 7.1.3).
+    # ==================================================================
+    # NUTZER-KANAL ("Zwischen-Prompt"): sessionId -> JSON
+    #   { messages = [ { id, text, kind, createdAt, state, attempts,
+    #                    deliveredAt, deliveredWith, ackAt, withdrawnAt } ],
+    #     updatedAt }
+    # Die Oberflaeche stellt ein, der Umschlag JEDER HTTP-Antwort liefert aus
+    # (at-least-once, maximal 3 Versuche). state: queued -> delivered ->
+    # acked | delivered_unacked | withdrawn.
+    UserMessages    = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    UserMessageLock = [System.Object]::new()
+    # sessionId -> ManualResetEvent: weckt wait_for_user, sobald der Nutzer
+    # schreibt (sonst wuerde die KI bis zum Ende ihrer Wartezeit schlafen).
+    UserSignals     = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
+    # FRAGEN AN DEN NUTZER (ask_user/confirm_action): askId -> JSON
+    #   { askId, sessionId, kind, title, questions = [ { id, text, options,
+    #     allowCustomResponse, required, multi, when } ], state, createdAt,
+    #     expiresAt, answeredAt, answers, path, notShown, deliveredTo }
+    AskRequests     = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    AskLock         = [System.Object]::new()
+    AskSignals      = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
+    # sessionId -> JSON-Liste mit Antworten, die erst NACH dem Ende der
+    # wartenden Anfrage ankamen. Sie gehen nie verloren: der naechste Umschlag
+    # liefert sie als _bridge.userAnswers nach.
+    LateAskAnswers  = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    # BUILD-REGISTER: sessionId -> JSON { models = [ { id, path, name, kind,
+    #   declaredGrade, firstWriteAtTicks, lastWriteAtTicks, auditAtTicks,
+    #   auditGrade, auditFinishScore, auditVerdict } ] }
+    SessionBuilds    = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    SessionBuildLock = [System.Object]::new()
+    # STATIONEN-Puffer (Ring) fuer die kleinen Diagnose-Dateien der
+    # Oberflaeche (progress-diagnose.txt / notify-diagnose.txt).
+    FlowTrace       = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+    FlowTraceCap    = 500
+    # Version 7.2.0 (D4): Das von der Oberflaeche GEMESSENE Plattform-Urteil als
+    # JSON. Der Handler-Runspace kann keine UI-Funktionen aufrufen, braucht das
+    # Urteil aber, damit report_done ehrlich antwortet (NOTIFICATION_UNVERIFIED).
+    NotifyPlatformJson = ''
+    NotifyLastJson     = ''
+    # Version 7.2.0 (AP7): Ergebnis der Code-Struktur-Messung je Sitzung
+    # (UI_ENGINE.codeLayoutReport beim Schreiben eines Skripts).
+    CodeLayouts        = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    # Zuletzt geschriebene Station je Schluessel (Drosselung gegen vollaufende
+    # runtime.log: Fortschritt kaeme sonst bei JEDEM Werkzeugaufruf).
+    ProgressLogAt   = [System.Collections.Concurrent.ConcurrentDictionary[string,long]]::new()
+    # KANAL-ZAEHLER: laufen IMMER mit (wie Telemetry seit 7.0.6). Sie
+    # verwandeln "die Meldung kam nicht an" und "der Balken blieb bei 0 %"
+    # in Zahlen, die man zwischen zwei Laeufen vergleichen kann.
+    Channel = [hashtable]::Synchronized(@{
+        ProgressCalls            = 0L
+        ProgressWithPercent      = 0L
+        ProgressMissingPercent   = 0L
+        ProgressPaintedPercent   = 0L
+        ProgressPaintedNoPercent = 0L
+        ProgressNotDisplaced     = 0L
+        NotifyFlowSeq            = 0L
+        NotifyEnqueued           = 0L
+        NotifyShown              = 0L
+        NotifyUnverified         = 0L
+        NotifyTestRuns           = 0L
+        NotifySeenYes            = 0L
+        NotifySeenNo             = 0L
+        NotifyLastSeen           = ''
+        NotifySuppressed         = 0L
+        NotifyFailed             = 0L
+        NotifyLastVerdict        = ''
+        NotifyLastReason         = ''
+        NotifyLastAt             = 0L
+        UserMessagesQueued       = 0L
+        UserMessagesDelivered    = 0L
+        UserMessagesAcked        = 0L
+        UserMessagesUnacked      = 0L
+        UserMessagesWithdrawn    = 0L
+        AskOpened                = 0L
+        AskAnswered              = 0L
+        AskExpired               = 0L
+        AskAgentGone             = 0L
+        AskLateAnswers           = 0L
+        BuildsRegistered         = 0L
+        CodeLayoutChecked        = 0L
+        BuildAuditDemands        = 0L
+        QualityDraftFlags        = 0L
+        QualityAuditDemands      = 0L
+        UiMonolithFlags          = 0L
+        UiStructureDemands       = 0L
+    })
     # Version 7.1.3: harte Obergrenze des Sessionstart-Pakets (Bytes, JSON).
     # Liegt hier - und nicht als $script:-Variable - damit der HTTP-Handler in
     # seinem eigenen Runspace denselben Wert liest (siehe Kommentar oben).
@@ -2513,12 +2671,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.1.5, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.1.5, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.2.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.2.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.1.5'
+$script:Shared.RuntimeInfo.Version = '7.2.0'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -2621,7 +2779,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.1.5)
+  Arena Studio Bridge - Studio Plugin  (Version 7.2.0)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -2694,7 +2852,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.1.5"
+local ARENA_VERSION  = "7.2.0"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -6202,9 +6360,18 @@ tools.set_script_source = function(args)
     if #oldSource > 4000 and #newSource < #oldSource * 0.6 then
         warnings = { "The new source is much shorter than the old one (" .. tostring(#oldSource) .. " -> " .. tostring(#newSource) .. " bytes). If that was not intended, use undo and switch to patch_script." }
     end
+    -- Version 7.2.0: Code-Struktur messen statt nur Bytes zaehlen.
+    local codeLayout = nil
+    if UI_ENGINE and UI_ENGINE.codeLayoutReport then codeLayout = UI_ENGINE.codeLayoutReport(newSource) end
+    local layoutWarning = nil
+    if UI_ENGINE and UI_ENGINE.describeCodeLayout then layoutWarning = UI_ENGINE.describeCodeLayout(codeLayout) end
+    if layoutWarning then
+        if warnings then table.insert(warnings, layoutWarning) else warnings = { layoutWarning } end
+    end
     return ok({
         id = idOf(inst),
         path = pathOf(inst),
+        codeLayout = codeLayout,
         bytes = #newSource,
         lines = select(2, string.gsub(newSource, "\n", "\n")) + 1,
         previousLines = select(2, string.gsub(oldSource, "\n", "\n")) + 1,
@@ -6267,9 +6434,22 @@ tools.patch_script = function(args)
         if firstLine then break end
     end
 
+    -- Version 7.2.0: Auch nach einer punktgenauen Aenderung die Struktur messen -
+    -- so waechst kein Skript unbemerkt zum Monolithen.
+    local codeLayout = nil
+    local layoutWarnings = nil
+    if UI_ENGINE and UI_ENGINE.codeLayoutReport then
+        codeLayout = UI_ENGINE.codeLayoutReport(working)
+        if UI_ENGINE.describeCodeLayout then
+            local layoutWarning = UI_ENGINE.describeCodeLayout(codeLayout)
+            if layoutWarning then layoutWarnings = { layoutWarning } end
+        end
+    end
+
     return ok({
         id = idOf(inst),
         path = pathOf(inst),
+        codeLayout = codeLayout,
         operations = report,
         oldLines = oldLines,
         newLines = newLines,
@@ -6277,7 +6457,7 @@ tools.patch_script = function(args)
         bytes = #working,
         hash = hashString(working),
         preview = firstLine and previewAround(working, firstLine, 4) or nil,
-    })
+    }, layoutWarnings)
 end
 
 tools.insert_script = function(args)
@@ -6294,13 +6474,24 @@ tools.insert_script = function(args)
     if args.properties then applyProperties(created, args.properties) end
     created.Parent = parent
     waypoint("insert script")
+    -- Version 7.2.0: Code-Struktur messen (siehe UI_ENGINE.codeLayoutReport).
+    local codeLayout = nil
+    local layoutWarnings = nil
+    if UI_ENGINE and UI_ENGINE.codeLayoutReport then
+        codeLayout = UI_ENGINE.codeLayoutReport(tostring(args.source or ""))
+        if UI_ENGINE.describeCodeLayout then
+            local layoutWarning = UI_ENGINE.describeCodeLayout(codeLayout)
+            if layoutWarning then layoutWarnings = { layoutWarning } end
+        end
+    end
     return ok({
         id = idOf(created),
         path = pathOf(created),
+        codeLayout = codeLayout,
         className = created.ClassName,
         lines = select(2, string.gsub(created.Source, "\n", "\n")) + 1,
         hash = hashString(created.Source),
-    })
+    }, layoutWarnings)
 end
 
 tools.bulk_insert_scripts = function(args)
@@ -6311,6 +6502,12 @@ tools.bulk_insert_scripts = function(args)
         local result = tools.insert_script(item)
         if result.ok then
             table.insert(created, result.result)
+            -- Version 7.2.0: Code-Struktur-Warnungen auch im Sammelaufruf melden.
+            if result.warnings ~= nil then
+                for _, warning in ipairs(result.warnings) do
+                    table.insert(errors, "item " .. tostring(index) .. " (Hinweis): " .. tostring(warning))
+                end
+            end
         else
             table.insert(errors, "item " .. tostring(index) .. ": " .. tostring(result.error))
         end
@@ -7868,6 +8065,12 @@ tools.build_polygon_model = function(args)
 
     local model=Instance.new("Model"); model.Name=tostring(args.modelName or args.name or "ArenaPolygonModel"); model.Parent=parent
     model:SetAttribute("ArenaMasterBuild",true)
+    -- Version 7.2.0: Wenn der Aufrufer die Einfachheit AUSDRUECKLICH erklaert
+    -- (grade = simple/lowpoly/blockout), wird sie als Attribut gespeichert.
+    -- model_audit liest sie und nennt das Ergebnis dann nicht mehr Entwurf.
+    if args.grade == "simple" or args.grade == "lowpoly" or args.grade == "blockout" or args.grade == "detailed" then
+        model:SetAttribute("ArenaDeclaredGrade", tostring(args.grade))
+    end
     local organicBuild=args.organic==true
     if organicBuild then
         model:SetAttribute("ArenaOrganicBuild",true)
@@ -8010,6 +8213,7 @@ end
 tools.build_assembly = function(args)
     local parent,err=resolveRef(args.parentRef or "game.Workspace"); if not parent then return failCode("REF_NOT_FOUND",err) end
     local model=Instance.new("Model"); model.Name=tostring(args.modelName or args.name or "ArenaAssembly"); model.Parent=parent; model:SetAttribute("ArenaMasterBuild",true)
+    if args.grade == "simple" or args.grade == "lowpoly" or args.grade == "blockout" or args.grade == "detailed" then model:SetAttribute("ArenaDeclaredGrade", tostring(args.grade)) end
     local items=args.items or args.parts or {}; local expanded={}
     for _,spec in ipairs(items) do
         local repeatSpec=spec.repeatSpec or spec["repeat"] or {}; local count=math.max(1,math.floor(tonumber(repeatSpec.count) or 1))
@@ -8056,6 +8260,58 @@ UI_ENGINE = {}
 -- Version 7.0.0: Engine 2.0 - Glow, echte Texturen (textureImage statt
 -- nur prozeduraler Muster) und Radialmenues aus einer Bild-Id.
 UI_ENGINE.ENGINE_VERSION = "2.0"
+
+-- Version 7.2.0: CODE-STRUKTUR MESSEN (Thema 2: GUI wirklich in StarterGui,
+-- viele kleine Skripte statt eines Monolithen).
+-- Ein Skript, das die ganze Oberflaeche zur Laufzeit mit Instance.new
+-- aufbaut, ist in Studio nicht editierbar, kostet beim Beitritt Leistung und
+-- kann von niemandem gelesen werden. Gemessen wird beim Schreiben.
+UI_ENGINE.codeLayoutReport = function(source)
+    local text = tostring(source or "")
+    local lines = select(2, string.gsub(text, "\n", "\n")) + 1
+    local function countOccurrences(needle)
+        local total, position = 0, 1
+        while true do
+            local found = string.find(text, needle, position, true)
+            if not found then break end
+            total = total + 1
+            position = found + #needle
+        end
+        return total
+    end
+    local instanceNew = countOccurrences("Instance.new(")
+    local clones = countOccurrences(":Clone()")
+    local parentWrites = countOccurrences(".Parent =")
+    local level = "ok"
+    if lines > 400 then level = "monolith"
+    elseif lines > 250 then level = "large"
+    elseif instanceNew >= 15 then level = "runtime_built" end
+    local report = {
+        lines = lines,
+        instanceNewCalls = instanceNew,
+        cloneCalls = clones,
+        parentAssignments = parentWrites,
+        monolithRisk = (level ~= "ok"),
+        level = level,
+    }
+    if level == "ok" then
+        report.advice = ""
+    elseif level == "runtime_built" then
+        report.advice = "RUNTIME_BUILT_UI: die Oberflaeche wird zur Laufzeit mit Instance.new erzeugt, statt in StarterGui zu liegen. Baue Frames und Knoepfe als ECHTE gespeicherte Instanzen (build_interface/ui_engine) und lass jedes kleine Skript nur das aendern, was ihm gehoert. Eine zur Laufzeit gebaute Oberflaeche ist in Studio nicht editierbar, kostet beim Beitritt Zeit und ist nicht lesbar."
+    elseif level == "large" then
+        report.advice = "LARGE_SCRIPT: dieses Skript hat ueber 250 Zeilen. Teile es nach Verantwortung auf (Eingabe, Zustand, Aktualisierung, Effekte, Daten) - mehrere kleine ModuleScripts/LocalScripts unter derselben ScreenGui, jedes in einem Zug lesbar."
+    else
+        report.advice = "MONOLITH_SCRIPT: dieses Skript hat ueber 400 Zeilen. Genau so entsteht ein unlesbarer Monolith; teile es in kleine Skripte mit je EINER Verantwortung (siehe uiStructureRules und scaffold_ui_scripts)."
+    end
+    return report
+end
+
+UI_ENGINE.describeCodeLayout = function(layout)
+    if layout == nil then return nil end
+    if layout.monolithRisk ~= true then return nil end
+    return "MONOLITH_RISK (" .. tostring(layout.level) .. ", " .. tostring(layout.lines) .. " Zeilen, "
+        .. tostring(layout.instanceNewCalls) .. "x Instance.new): " .. tostring(layout.advice)
+end
 
 -- AnchorPoint wird NIE geraten: er folgt immer aus der Ausrichtung. Das ist
 -- die Wurzel des haeufigsten Fehlers (AnchorPoint 0,0 + Skalierungs-
@@ -11163,6 +11419,59 @@ WORLD_ENGINE.auditBuildQuality = function(parts, root)
     local variety = 0
     for _ in pairs(shapes) do variety = variety + 1 end
     local ballShare = 0
+    -- Version 7.2.0: FERTIG-GRAD STATT NUR "KEIN FEHLER GEFUNDEN".
+    -- Ein Baum aus zwei Zylindern und drei Kugeln war bis 7.1.5 "clean", weil
+    -- die Pruefung nur extreme Faelle kannte (mindestens 6 Teile, davon
+    -- mindestens 6 Kugeln). Jetzt wird gezaehlt und benotet: Teilzahl, echte
+    -- Gestaltung (Polygon/Mesh/Union/Detail), Formenvielfalt, Farbvielfalt -
+    -- abzueglich der gemessenen Fehler. Note 'draft' faengt genau den Fall des
+    -- Owners ab: wenige Teile, keine Gestaltung, fast alles primitive.
+    local declaredGrade = nil
+    pcall(function() declaredGrade = root:GetAttribute("ArenaDeclaredGrade") end)
+    if declaredGrade == nil then
+        for _, part in ipairs(parts) do
+            local value = nil
+            pcall(function() value = part:GetAttribute("ArenaDeclaredGrade") end)
+            if value ~= nil then declaredGrade = value break end
+        end
+    end
+    if declaredGrade ~= nil then declaredGrade = string.lower(tostring(declaredGrade)) end
+    if declaredGrade ~= "simple" and declaredGrade ~= "lowpoly" and declaredGrade ~= "blockout" and declaredGrade ~= "detailed" then
+        declaredGrade = nil
+    end
+    local colorVariety = 0
+    for _ in pairs(colorCounts) do colorVariety = colorVariety + 1 end
+    local intentional = counts.meshes + counts.unions + counts.polygonParts + counts.detailParts
+    local primitiveShare = 0
+    if #parts > 0 then primitiveShare = math.floor(((#parts - math.min(intentional, #parts)) / #parts) * 100 + 0.5) / 100 end
+    local finishScore = 0
+    if #parts >= 4 then finishScore = finishScore + 10 end
+    if #parts >= 12 then finishScore = finishScore + 10 end
+    if #parts >= 30 then finishScore = finishScore + 10 end
+    if counts.polygonParts > 0 then finishScore = finishScore + 20 end
+    if counts.meshes > 0 then finishScore = finishScore + 10 end
+    if counts.unions > 0 then finishScore = finishScore + 5 end
+    if counts.detailParts > 0 then finishScore = finishScore + 15 end
+    if counts.wedges > 0 then finishScore = finishScore + 5 end
+    finishScore = finishScore + math.min(10, 5 * math.max(0, variety - 1))
+    finishScore = finishScore + math.min(10, 5 * math.max(0, colorVariety - 1))
+    finishScore = finishScore - math.min(12, 3 * #primitiveGroups)
+    finishScore = finishScore - math.min(9, 3 * cylinderProblemCount)
+    if finishScore < 0 then finishScore = 0 end
+    if finishScore > 100 then finishScore = 100 end
+    local grade = "simple"
+    if finishScore >= 85 then grade = "sculpted"
+    elseif finishScore >= 60 then grade = "detailed"
+    elseif finishScore >= 35 then grade = "simple" end
+    local draftRisk = false
+    if #parts >= 4 and intentional == 0 and primitiveShare > 0.6 then
+        grade = "draft"
+        draftRisk = true
+    end
+    if declaredGrade ~= nil then
+        grade = declaredGrade
+        draftRisk = false
+    end
     if #parts > 0 then ballShare = math.floor((counts.balls / #parts) * 100 + 0.5) / 100 end
     local verdict = "clean"
     if #primitiveGroups > 0 and cylinderProblemCount > 0 then verdict = "primitive_abuse_and_cylinder_rotation"
@@ -11183,6 +11492,14 @@ WORLD_ENGINE.auditBuildQuality = function(parts, root)
         counts = counts,
         shapeVariety = variety,
         ballShare = ballShare,
+        -- Version 7.2.0: dieselbe Messung, aber als Note statt nur als Urteil.
+        finishScore = finishScore,
+        grade = grade,
+        declaredGrade = declaredGrade,
+        draftRisk = draftRisk,
+        primitiveShare = primitiveShare,
+        intentionalParts = intentional,
+        colorVariety = colorVariety,
         primitiveOnly = (#primitiveGroups > 0),
         primitiveGroups = primitiveGroups,
         cylinderProblems = cylinderProblems,
@@ -11239,6 +11556,12 @@ tools.model_audit = function(args)
     if quality.organicQuality and #quality.organicQuality.issues > 0 then
         table.insert(qualityWarnings, "ORGANIC_BUILD_INCOMPLETE: " .. table.concat(quality.organicQuality.issues, " "))
     end
+    if quality.draftRisk then
+        table.insert(qualityWarnings, "DRAFT_GRADE_RISK (grade '" .. tostring(quality.grade) .. "', " .. tostring(quality.finishScore)
+            .. "/100): " .. tostring(#parts) .. " part(s), davon " .. tostring(quality.intentionalParts)
+            .. " gestaltete(s) (Polygon/Mesh/Union/ArenaDetail), Primitive-Anteil " .. tostring(math.floor(quality.primitiveShare * 100 + 0.5))
+            .. "%. Das ist ein Entwurf, kein Modell. Baue die Silhouette mit build_polygon_model und echten Details nach (organicBuildRules/modelBuildRules) - oder erklaere die Einfachheit AUSDRUECKLICH beim Bauen (grade = \"simple\"/\"lowpoly\"/\"blockout\"), wenn sie so gewollt ist. report_done antwortet bis dahin DRAFT_GRADE_RISK.")
+    end
     local phase, verdict
     if #placeholders > 0 then
         phase, verdict = "blockout", "NOT done: " .. tostring(#placeholders) .. " placeholder(s) are still in the place."
@@ -11250,6 +11573,9 @@ tools.model_audit = function(args)
         phase, verdict = "modelled", "NOT done: " .. tostring(quality.cylinderProblemCount) .. " cylinder(s) stand as discs on their edge - the axis lies horizontally because the length was typed into Size.Y or Size.Z instead of Size.X."
     elseif quality.organicQuality and #quality.organicQuality.issues > 0 then
         phase, verdict = "modelled", "NOT done: organic build quality is incomplete - " .. table.concat(quality.organicQuality.issues, " ")
+    elseif quality.draftRisk then
+        phase, verdict = "modelled", "Draft (grade '" .. tostring(quality.grade) .. "', " .. tostring(quality.finishScore) .. "/100): " .. tostring(#parts) .. " part(s) without polygon, mesh, union or detail geometry. Rebuild it with real structure or declare the intended simplicity with the grade argument."
+
     elseif meshes + unions + quality.counts.polygonParts == 0 then
         phase, verdict = "modelled", "Modelled, but nothing is a mesh, union or polygon model - check whether detail is missing."
     elseif quality.counts.detailParts > 0 then
@@ -11260,7 +11586,7 @@ tools.model_audit = function(args)
     local nextStep = "Run world_audit for style/lighting, then continue."
     if (#placeholders + #blockouts) > 0 then
         nextStep = "refine the flagged parts or replace them, then run model_audit again."
-    elseif quality.primitiveOnly or quality.cylinderProblemCount > 0 or (quality.organicQuality and #quality.organicQuality.issues > 0) then
+    elseif quality.primitiveOnly or quality.cylinderProblemCount > 0 or quality.draftRisk or (quality.organicQuality and #quality.organicQuality.issues > 0) then
         nextStep = quality.advice
     end
     return ok({
@@ -12645,6 +12971,139 @@ namespace Arena {
 }
 
 # ----------------------------------------------------------------------------
+# Version 7.2.0 (D4): Helfer fuer die Benachrichtigungs-Messung und fuer die
+# Registrierung der App-Id (AUMID).
+#
+# Warum: Windows zeigt einen Toast nur fuer eine REGISTRIERTE App-Id. Die
+# Bridge benutzte bis 7.1.5 die feste PowerShell-Id
+# '{1AC14E77-...}\WindowsPowerShell\v1.0\powershell.exe'. Ohne dazu gehoerigen
+# Startmenue-Eintrag verwirft Windows die Meldung still oder zeigt sie ohne
+# Zuordnung - CreateToastNotifier().Show() kehrt dabei OHNE Ausnahme zurueck.
+# Genau das steht im 7.1.4-Protokoll zweimal als "Arena-Fertig-Meldung
+# angezeigt", waehrend der Nutzer nichts gesehen hat.
+#
+# Add-Type gilt fuer den ganzen Prozess, also auch fuer die Server-Runspaces.
+# Scheitert das Kompilieren (z. B. Sprachmodus ConstrainedLanguage), faellt die
+# Bridge auf das bisherige Verhalten zurueck und sagt das ehrlich.
+# ----------------------------------------------------------------------------
+try {
+    if (-not ('Arena.NotifyLink' -as [type])) {
+        Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+using System.Text;
+
+namespace Arena {
+    [ComImport]
+    [Guid("000214F9-0000-0000-C000-000000000046")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface IShellLinkW {
+        void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszFile, int cchMaxPath, IntPtr pfd, uint fFlags);
+        void GetIDList(out IntPtr ppidl);
+        void SetIDList(IntPtr pidl);
+        void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszName, int cchMaxName);
+        void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string pszName);
+        void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszDir, int cchMaxPath);
+        void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string pszDir);
+        void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszArgs, int cchMaxPath);
+        void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string pszArgs);
+        void GetHotkey(out short pwHotkey);
+        void SetHotkey(short wHotkey);
+        void GetShowCmd(out int piShowCmd);
+        void SetShowCmd(int iShowCmd);
+        void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] StringBuilder pszIconPath, int cchMaxPath, out int piIcon);
+        void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string pszIconPath, int iIcon);
+        void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string pszPathRel, uint dwReserved);
+        void Resolve(IntPtr hwnd, uint fFlags);
+        void SetPath([MarshalAs(UnmanagedType.LPWStr)] string pszFile);
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    internal struct NOTIFYPROPERTYKEY { public Guid fmtid; public int pid; }
+
+    [ComImport]
+    [Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal interface INotifyPropertyStore {
+        [PreserveSig] int GetCount(out uint cProps);
+        [PreserveSig] int GetAt(uint iProp, out NOTIFYPROPERTYKEY pkey);
+        [PreserveSig] int GetValue(ref NOTIFYPROPERTYKEY key, [Out, MarshalAs(UnmanagedType.Struct)] out object pv);
+        [PreserveSig] int SetValue(ref NOTIFYPROPERTYKEY key, [In, MarshalAs(UnmanagedType.Struct)] ref object pv);
+        [PreserveSig] int Commit();
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct NOTIFYRECT { public int Left; public int Top; public int Right; public int Bottom; }
+
+    public static class NotifyLink {
+        [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+        [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out NOTIFYRECT lpRect);
+        [DllImport("user32.dll")] public static extern int GetSystemMetrics(int nIndex);
+
+        // Legt eine Startmenue-Verknuepfung mit System.AppUserModel.ID an.
+        // Rueckgabe: "ok" oder der Grund - die Bridge zeigt beides ehrlich an.
+        public static string Register(string lnkPath, string targetPath, string arguments, string workingDir, string aumid, string description, string iconPath, int iconIndex) {
+            object shellLink = null;
+            try {
+                Type shellLinkType = Type.GetTypeFromCLSID(new Guid("00021401-0000-0000-C000-000000000046"));
+                if (shellLinkType == null) { return "failed: CLSID_ShellLink nicht verfuegbar" }
+                shellLink = Activator.CreateInstance(shellLinkType);
+                IShellLinkW link = (IShellLinkW)shellLink;
+                link.SetPath(targetPath);
+                if (!string.IsNullOrEmpty(arguments)) { link.SetArguments(arguments); }
+                if (!string.IsNullOrEmpty(workingDir)) { link.SetWorkingDirectory(workingDir); }
+                if (!string.IsNullOrEmpty(description)) { link.SetDescription(description); }
+                if (!string.IsNullOrEmpty(iconPath)) { link.SetIconLocation(iconPath, iconIndex); }
+                link.SetShowCmd(1);
+                INotifyPropertyStore store = (INotifyPropertyStore)shellLink;
+                NOTIFYPROPERTYKEY key = new NOTIFYPROPERTYKEY();
+                key.fmtid = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3");
+                key.pid = 5;
+                object value = aumid;
+                int setHr = store.SetValue(ref key, ref value);
+                store.Commit();
+                IPersistFile file = (IPersistFile)shellLink;
+                file.Save(lnkPath, false);
+                Marshal.ReleaseComObject(file);
+                Marshal.ReleaseComObject(store);
+                if (setHr != 0) { return "saved_but_aumid_hr_" + setHr.ToString(); }
+                return "ok";
+            } catch (Exception ex) {
+                return "failed: " + ex.Message;
+            } finally {
+                if (shellLink != null) { try { Marshal.ReleaseComObject(shellLink); } catch {} }
+            }
+        }
+
+        // Misst, ob eine Vollbild-Anwendung den Vordergrund hat (Windows
+        // unterdrueckt Toasts dann von sich aus). "unknown" statt Raten.
+        public static string ForegroundFullscreen() {
+            try {
+                IntPtr hwnd = GetForegroundWindow();
+                if (hwnd == IntPtr.Zero) { return "no_foreground_window"; }
+                NOTIFYRECT rect;
+                if (!GetWindowRect(hwnd, out rect)) { return "unknown"; }
+                int screenW = GetSystemMetrics(0);
+                int screenH = GetSystemMetrics(1);
+                if (screenW <= 0 || screenH <= 0) { return "unknown"; }
+                int width = rect.Right - rect.Left;
+                int height = rect.Bottom - rect.Top;
+                if (width >= screenW && height >= screenH && rect.Left <= 0 && rect.Top <= 0) { return "fullscreen"; }
+                return "windowed";
+            } catch (Exception ex) {
+                return "unknown: " + ex.Message;
+            }
+        }
+    }
+}
+'@ -ErrorAction Stop
+    }
+} catch {
+    Write-RuntimeLog "Benachrichtigungs-Helfertyp konnte nicht geladen werden (Fallback auf bisheriges Verhalten): $($_.Exception.Message)"
+}
+
+# ----------------------------------------------------------------------------
 # Version 6.0.4: Kompilierter Aufnahme-Helfer fuer die Fenster-Vorschau.
 # Laueft IM Hauptprozess: Das Ergebnis ist ein CLR-Objekt mit echtem,
 # unveraenderlichem byte[] und durchquert keine PowerShell-Runspace-Grenze
@@ -12969,6 +13428,1110 @@ $script:BridgeHandlerScript = {
         } catch {}
     }
 
+    # ==================================================================
+    # Version 7.2.0 (D3): ask_user mit ENTSCHEIDUNGSBAUM.
+    # Der ganze Baum kommt in EINER Anfrage. Bedingungen sind erlaubt
+    # (when auf eine FRUEHERE Frage), deshalb darf eine Frage von der Antwort
+    # einer anderen abhaengen - auch mehrere Ebenen tief und mit mehreren
+    # Zweigen. Das Fenster beim Nutzer verzweigt mit; die Antwort enthaelt
+    # answers, path (wirklich gestellte Fragen) und notShown (uebersprungene).
+    #
+    # Wartezeit: Der harte HTTP-Deckel liegt bei 55 s (max. 85 s). ask_user
+    # blockiert deshalb hoechstens 50 s und ist WIEDERAUFNEHMBAR: kommt keine
+    # Antwort, liefert es { state='waiting', askId, nextCall } zurueck, und die
+    # KI ruft spaeter mit resume=true erneut auf. Antworten gehen nie verloren:
+    # sie liegen im gemeinsamen Zustand und kommen notfalls als
+    # _bridge.userAnswers mit der naechsten Antwort.
+    # ==================================================================
+    function Get-AskOptionList {
+        param($Question)
+        $options = New-Object System.Collections.Generic.List[object]
+        try {
+            if ($null -ne $Question -and $Question.PSObject.Properties['options']) {
+                foreach ($option in $Question.options) { $options.Add($option) }
+            }
+        } catch {}
+        return $options
+    }
+
+    function Test-AskTree {
+        # Prueft den Baum VOR dem ersten Fenster. Ein ungueltiger Baum darf
+        # niemals eine halbe Frage beim Nutzer zeigen.
+        param($ToolArgs)
+        $maxQuestions = 12
+        $maxOptions = 6
+        $maxChars = 400
+        $rawQuestions = $null
+        try { if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['questions']) { $rawQuestions = @($ToolArgs.questions) } } catch {}
+        if ($null -eq $rawQuestions -or $rawQuestions.Count -eq 0) {
+            return @{ ok = $false; code = 'BAD_ARGS'; error = 'questions is required and must contain 1..12 questions.'; hint = 'Each question: { id, text, options: [ { id, label } ], allowCustomResponse, required, multi, when: [ { questionId, anyOf: [..] } ] }.' }
+        }
+        if ($rawQuestions.Count -gt $maxQuestions) {
+            return @{ ok = $false; code = 'ASK_TOO_MANY_QUESTIONS'; error = ('Too many questions: ' + [string]$rawQuestions.Count + ' (max ' + [string]$maxQuestions + ').'); max = $maxQuestions; actual = $rawQuestions.Count; hint = 'Split the request or ask only what you really need to continue.' }
+        }
+        $questions = New-Object System.Collections.Generic.List[object]
+        $seen = New-Object System.Collections.Generic.HashSet[string]
+        $optionMap = @{}
+        $index = 0
+        foreach ($raw in $rawQuestions) {
+            $qid = ''
+            $qtext = ''
+            try { $qid = ([string]$raw.id).Trim() } catch {}
+            try { $qtext = ([string]$raw.text).Trim() } catch {}
+            if ([string]::IsNullOrWhiteSpace($qid)) {
+                return @{ ok = $false; code = 'BAD_ARGS'; error = ('Question ' + [string]($index + 1) + ' has no id.'); hint = 'Give every question a short unique id (for example "style"), so the answer can be matched.' }
+            }
+            if ($seen.Contains($qid)) {
+                return @{ ok = $false; code = 'ASK_GRAPH_INVALID'; error = ('Duplicate question id "' + $qid + '".'); duplicateId = $qid; hint = 'Question ids must be unique.' }
+            }
+            if ([string]::IsNullOrWhiteSpace($qtext)) {
+                return @{ ok = $false; code = 'BAD_ARGS'; error = ('Question "' + $qid + '" has no text.'); hint = 'Write the question as the user should read it.' }
+            }
+            if ($qtext.Length -gt $maxChars) {
+                return @{ ok = $false; code = 'ASK_TOO_LONG'; error = ('Question "' + $qid + '" is too long (' + [string]$qtext.Length + ' characters, max ' + [string]$maxChars + ').'); max = $maxChars; actual = $qtext.Length }
+            }
+            $options = Get-AskOptionList $raw
+            if ($options.Count -lt 2) {
+                return @{ ok = $false; code = 'ASK_GRAPH_INVALID'; error = ('Question "' + $qid + '" needs at least 2 options.'); questionId = $qid; hint = 'Give the user real choices (labels, not numbers). Use confirm_action for a plain yes/no.' }
+            }
+            if ($options.Count -gt $maxOptions) {
+                return @{ ok = $false; code = 'ASK_TOO_MANY_QUESTIONS'; error = ('Question "' + $qid + '" has ' + [string]$options.Count + ' options (max ' + [string]$maxOptions + ').'); max = $maxOptions; actual = $options.Count; questionId = $qid }
+            }
+            $optionIds = New-Object System.Collections.Generic.List[string]
+            $optionViews = New-Object System.Collections.Generic.List[object]
+            foreach ($option in $options) {
+                $oid = ''
+                $olabel = ''
+                try { $oid = ([string]$option.id).Trim() } catch {}
+                try { $olabel = ([string]$option.label).Trim() } catch {}
+                if ([string]::IsNullOrWhiteSpace($oid) -or [string]::IsNullOrWhiteSpace($olabel)) {
+                    return @{ ok = $false; code = 'ASK_GRAPH_INVALID'; error = ('Question "' + $qid + '" has an option without id or label.'); questionId = $qid }
+                }
+                if ($optionIds.Contains($oid)) {
+                    return @{ ok = $false; code = 'ASK_GRAPH_INVALID'; error = ('Question "' + $qid + '" uses the option id "' + $oid + '" twice.'); questionId = $qid; duplicateId = $oid }
+                }
+                if ($olabel.Length -gt $maxChars) {
+                    return @{ ok = $false; code = 'ASK_TOO_LONG'; error = ('Option "' + $oid + '" is too long (max ' + [string]$maxChars + ' characters).'); max = $maxChars; actual = $olabel.Length }
+                }
+                $optionIds.Add($oid)
+                $optionView = @{ id = $oid; label = $olabel }
+                try { if ($option.PSObject.Properties['description'] -and -not [string]::IsNullOrWhiteSpace([string]$option.description)) { $optionView.description = [string]$option.description } } catch {}
+                $optionViews.Add($optionView)
+            }
+            $whenViews = New-Object System.Collections.Generic.List[object]
+            $whenRaw = $null
+            try { if ($raw.PSObject.Properties['when']) { $whenRaw = @($raw.when) } } catch {}
+            if ($null -ne $whenRaw) {
+                foreach ($condition in $whenRaw) {
+                    $refId = ''
+                    try { $refId = ([string]$condition.questionId).Trim() } catch {}
+                    if ([string]::IsNullOrWhiteSpace($refId)) {
+                        return @{ ok = $false; code = 'ASK_GRAPH_INVALID'; error = ('Question "' + $qid + '" has a when entry without questionId.'); questionId = $qid; hint = 'when entries reference an EARLIER question id.' }
+                    }
+                    if ($refId -eq $qid) {
+                        return @{ ok = $false; code = 'ASK_CYCLE'; error = ('Question "' + $qid + '" depends on itself.'); questionId = $qid; cycleWith = $refId; hint = 'A question may only depend on a question that comes BEFORE it in the payload.' }
+                    }
+                    if (-not $seen.Contains($refId)) {
+                        if ($optionMap.ContainsKey($refId)) {
+                            return @{ ok = $false; code = 'ASK_CYCLE'; error = ('Question "' + $qid + '" depends on the LATER question "' + $refId + '".'); questionId = $qid; cycleWith = $refId; hint = 'Order matters: a question may only depend on earlier questions. Reorder the payload.' }
+                        }
+                        return @{ ok = $false; code = 'ASK_GRAPH_INVALID'; error = ('Question "' + $qid + '" depends on the unknown question "' + $refId + '".'); questionId = $qid; unknownQuestionId = $refId; knownQuestionIds = @($seen | Sort-Object) }
+                    }
+                    $conditionView = @{ questionId = $refId }
+                    foreach ($key in @('anyOf', 'allOf')) {
+                        $values = New-Object System.Collections.Generic.List[string]
+                        try {
+                            if ($condition.PSObject.Properties[$key]) { foreach ($value in @($condition.$key)) { $values.Add([string]$value) } }
+                        } catch {}
+                        if ($values.Count -gt 0) { $conditionView[$key] = @($values.ToArray()) }
+                    }
+                    try { if ($condition.PSObject.Properties['custom'] -and $condition.custom -eq $true) { $conditionView.custom = $true } } catch {}
+                    $whenViews.Add($conditionView)
+                }
+            }
+            $questionView = @{
+                id = $qid
+                text = $qtext
+                index = $index
+                options = @($optionViews.ToArray())
+                allowCustomResponse = $false
+                required = $true
+                multi = $false
+                when = @($whenViews.ToArray())
+            }
+            try { if ($raw.PSObject.Properties['allowCustomResponse'] -and $raw.allowCustomResponse -eq $true) { $questionView.allowCustomResponse = $true } } catch {}
+            try { if ($raw.PSObject.Properties['required'] -and $raw.required -eq $false) { $questionView.required = $false } } catch {}
+            try { if ($raw.PSObject.Properties['multi'] -and $raw.multi -eq $true) { $questionView.multi = $true } } catch {}
+            $questions.Add($questionView)
+            [void]$seen.Add($qid)
+            $optionMap[$qid] = $optionIds
+            $index = $index + 1
+        }
+        # Warnungen: eine Bedingung, die auf eine Option zeigt, die es nicht
+        # gibt, macht die Frage unerreichbar - das ist erlaubt, wird aber
+        # gesagt (ASK_UNREACHABLE), damit die KI es korrigieren kann.
+        $unreachable = New-Object System.Collections.Generic.List[string]
+        foreach ($question in $questions) {
+            foreach ($condition in @($question.when)) {
+                $refId = [string]$condition.questionId
+                $validIds = $null
+                if ($optionMap.ContainsKey($refId)) { $validIds = $optionMap[$refId] }
+                if ($null -eq $validIds) { continue }
+                foreach ($key in @('anyOf', 'allOf')) {
+                    if ($null -eq $condition[$key]) { continue }
+                    foreach ($value in @($condition[$key])) {
+                        if (-not $validIds.Contains([string]$value)) {
+                            $unreachable.Add(('Frage "' + [string]$question.id + '" wartet auf die Option "' + [string]$value + '", die es in "' + $refId + '" nicht gibt.'))
+                        }
+                    }
+                }
+            }
+        }
+        return @{ ok = $true; questions = $questions; warnings = $unreachable }
+    }
+
+    function Read-AskState {
+        param([string]$AskId)
+        $json = ''
+        if (-not $Shared.AskRequests.TryGetValue([string]$AskId, [ref]$json)) { return $null }
+        if ([string]::IsNullOrWhiteSpace($json)) { return $null }
+        try { return ($json | ConvertFrom-Json) } catch { return $null }
+    }
+
+    function Save-AskState {
+        param([string]$AskId, $State)
+        try { $Shared.AskRequests[[string]$AskId] = (To-Json $State 14) } catch {}
+    }
+
+    function Ensure-AskSignal {
+        param([string]$AskId)
+        $existing = $null
+        try {
+            if ($Shared.AskSignals.TryGetValue([string]$AskId, [ref]$existing) -and $null -ne $existing) { return $existing }
+        } catch {}
+        $created = [System.Threading.ManualResetEvent]::new($false)
+        try { $existing = $Shared.AskSignals.GetOrAdd([string]$AskId, $created) } catch { $existing = $created }
+        if ($null -eq $existing) { $existing = $created }
+        if (-not [object]::ReferenceEquals($existing, $created)) { try { $created.Dispose() } catch {} }
+        return $existing
+    }
+
+    function Get-AskView {
+        # Nur das, was der Nutzer sehen soll - ohne Server-Interna.
+        param($State)
+        $view = $null
+        try {
+            $view = @{
+                askId = [string]$State.askId
+                kind = [string]$State.kind
+                title = [string]$State.title
+                message = [string]$State.message
+                questions = $State.questions
+                createdAt = [int64]$State.createdAt
+                expiresAt = [int64]$State.expiresAt
+                state = [string]$State.state
+                secondsLeft = [int][Math]::Max(0, ([int64]$State.expiresAt - (Get-UnixSeconds)))
+            }
+        } catch {}
+        return $view
+    }
+
+    function Get-AskSummary {
+        param($State)
+        $parts = New-Object System.Collections.Generic.List[string]
+        try {
+            foreach ($question in @($State.questions)) {
+                $qid = [string]$question.id
+                $answer = $null
+                try { if ($null -ne $State.answers -and $State.answers.PSObject.Properties[$qid]) { $answer = $State.answers.$qid } } catch {}
+                if ($null -eq $answer) { continue }
+                $labels = New-Object System.Collections.Generic.List[string]
+                try { foreach ($label in @($answer.labels)) { $labels.Add([string]$label) } } catch {}
+                $text = [string]$question.text
+                if ($text.Length -gt 80) { $text = $text.Substring(0, 79) + '...' }
+                $value = ''
+                if ($labels.Count -gt 0) { $value = ($labels.ToArray() -join ', ') }
+                $custom = ''
+                try { $custom = [string]$answer.custom } catch {}
+                if (-not [string]::IsNullOrWhiteSpace($custom)) {
+                    if ($value) { $value = $value + ' (eigene Antwort: ' + $custom + ')' } else { $value = $custom }
+                }
+                if ([string]::IsNullOrWhiteSpace($value)) { $value = '(keine Angabe)' }
+                $parts.Add($text + ' -> ' + $value)
+            }
+        } catch {}
+        return ($parts.ToArray() -join ' | ')
+    }
+
+    function Get-AskResult {
+        param([string]$AskId, $State)
+        $answers = @{}
+        try { if ($null -ne $State.answers) { $answers = $State.answers } } catch {}
+        return @{
+            ok = $true
+            result = @{
+                state = [string]$State.state
+                askId = [string]$AskId
+                kind = [string]$State.kind
+                answeredAt = [int64]$State.answeredAt
+                answers = $answers
+                path = @($State.path)
+                notShown = @($State.notShown)
+                summary = (Get-AskSummary $State)
+                note = 'path lists the questions the user actually saw; notShown lists the questions that were skipped because their condition did not match. Act on the answers exactly as given.'
+            }
+        }
+    }
+
+    function Get-AskExpirySeconds {
+        param($ToolArgs, [int]$Default = 180)
+        $seconds = $Default
+        try { if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['expiresInSeconds']) { $seconds = [int]$ToolArgs.expiresInSeconds } } catch {}
+        if ($seconds -lt 30) { $seconds = 30 }
+        if ($seconds -gt 1800) { $seconds = 1800 }
+        return $seconds
+    }
+
+    function Get-AskWaitSeconds {
+        param($ToolArgs, [int]$Default = 0)
+        $seconds = $Default
+        try { if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['waitSeconds']) { $seconds = [int]$ToolArgs.waitSeconds } } catch {}
+        if ($seconds -lt 0) { $seconds = 0 }
+        if ($seconds -gt 50) { $seconds = 50 }
+        return $seconds
+    }
+
+    function New-AskRequest {
+        param([string]$SessionId, $ToolArgs, [string]$Kind = 'ask')
+        $tree = Test-AskTree $ToolArgs
+        if (-not $tree.ok) { return $tree }
+        $title = ''
+        try { if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['title']) { $title = ([string]$ToolArgs.title).Trim() } } catch {}
+        if ([string]::IsNullOrWhiteSpace($title)) { $title = 'Arena braucht eine Entscheidung' }
+        if ($title.Length -gt 90) { $title = $title.Substring(0, 89) + '...' }
+        $message = ''
+        try { if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['message']) { $message = ([string]$ToolArgs.message).Trim() } } catch {}
+        if ($message.Length -gt 600) { $message = $message.Substring(0, 599) + '...' }
+        $askId = 'ask_' + ([guid]::NewGuid().ToString('N').Substring(0, 12))
+        $now = Get-UnixSeconds
+        $expiresIn = Get-AskExpirySeconds $ToolArgs
+        $entry = $SessionId
+        $place = ''
+        try {
+            $entryInfo = Get-SessionEntry $SessionId
+            if ($entryInfo) { $place = [string]$entryInfo.placeName }
+        } catch {}
+        $state = [pscustomobject]@{
+            askId = $askId
+            sessionId = [string]$SessionId
+            kind = [string]$Kind
+            title = $title
+            message = $message
+            place = $place
+            questions = @($tree.questions.ToArray())
+            state = 'waiting'
+            createdAt = $now
+            expiresAt = ($now + $expiresIn)
+            answeredAt = 0
+            answers = $null
+            path = @()
+            notShown = @()
+            deliveredAt = 0
+            lastCallAt = $now
+        }
+        Save-AskState $askId $state
+        [void](Ensure-AskSignal $askId)
+        Add-ChannelCount 'AskOpened' 1
+        Write-FlowStation 'ASK' $askId 'OPENED' @{ sid = $SessionId; kind = $Kind; questions = $tree.questions.Count; expiresInSeconds = $expiresIn; title = $title }
+        foreach ($warning in @($tree.warnings)) { Write-FlowStation 'ASK' $askId 'UNREACHABLE' @{ detail = [string]$warning } }
+        Add-BridgeEvent $SessionId 'ask_opened' ('Arena fragt: ' + $title) @{ askId = $askId; questions = $tree.questions.Count }
+        $result = @{
+            ok = $true
+            result = (Get-AskView $state)
+        }
+        $result.result.nextCall = 'ask_user { askId: "' + $askId + '", resume: true, waitSeconds: 45 }'
+        $result.result.hint = 'The question window is open at the user''s mouse cursor. It stays open for ' + [string]$expiresIn + ' seconds. Do NOT guess: call ask_user again with askId and resume=true to wait for the answers (max 50 seconds per call), or continue with other work and resume later. Answers also arrive automatically as _bridge.userAnswers.'
+        if ($tree.warnings.Count -gt 0) { $result.result.askWarning = 'ASK_UNREACHABLE'; $result.result.warnings = @($tree.warnings) }
+        return $result
+    }
+
+    function Wait-AskAnswer {
+        param([string]$AskId, [int]$MaxSeconds)
+        $signal = Ensure-AskSignal $AskId
+        $started = [System.Diagnostics.Stopwatch]::StartNew()
+        $reason = 'timeout'
+        $state = Read-AskState $AskId
+        if ($null -ne $state -and [string]$state.state -eq 'answered') { return $state }
+        if ($MaxSeconds -lt 1) { return $state }
+        while ($started.Elapsed.TotalSeconds -lt $MaxSeconds) {
+            $remaining = [int][Math]::Ceiling($MaxSeconds - $started.Elapsed.TotalSeconds)
+            $slice = 250
+            if (($remaining * 1000) -lt $slice) { $slice = [Math]::Max(20, ($remaining * 1000)) }
+            try { [void]$signal.WaitOne($slice) } catch { break }
+            $state = Read-AskState $AskId
+            if ($null -eq $state) { break }
+            if ([string]$state.state -eq 'answered') { $reason = 'answered'; break }
+            if ([string]$state.state -eq 'expired') { $reason = 'expired'; break }
+            if ((Get-UnixSeconds) -gt [int64]$state.expiresAt) { $reason = 'expired'; break }
+        }
+        try { [void]$signal.Reset() } catch {}
+        $state = Read-AskState $AskId
+        if ($null -eq $state) { return $null }
+        if ([string]$state.state -eq 'waiting' -and (Get-UnixSeconds) -gt [int64]$state.expiresAt) {
+            $state.state = 'expired'
+            Save-AskState $AskId $state
+            Add-ChannelCount 'AskExpired' 1
+            Write-FlowStation 'ASK' $AskId 'EXPIRED' @{ sid = [string]$state.sessionId; waitedSeconds = [int][Math]::Round($started.Elapsed.TotalSeconds, 1) }
+        }
+        Write-FlowStation 'ASK' $AskId 'WAIT_END' @{ reason = $reason; waitedSeconds = [int][Math]::Round($started.Elapsed.TotalSeconds, 1); state = [string]$state.state }
+        return $state
+    }
+
+    function Invoke-AskUser {
+        param([string]$SessionId, $ToolArgs)
+        $resumeId = ''
+        try { if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['askId']) { $resumeId = ([string]$ToolArgs.askId).Trim() } } catch {}
+        $resume = $false
+        try { if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['resume']) { $resume = ($ToolArgs.resume -eq $true) } } catch {}
+        if ([string]::IsNullOrWhiteSpace($resumeId)) {
+            $created = New-AskRequest $SessionId $ToolArgs 'ask'
+            if ($null -eq $created -or -not $created.ok) { return $created }
+            $askId = [string]$created.result.askId
+            $waitSeconds = Get-AskWaitSeconds $ToolArgs 0
+            if ($waitSeconds -le 0) { return $created }
+            $state = Wait-AskAnswer $askId $waitSeconds
+            if ($null -ne $state -and [string]$state.state -eq 'answered') { return (Get-AskResult $askId $state) }
+            if ($null -ne $state -and [string]$state.state -eq 'expired') {
+                return @{ ok = $false; code = 'ASK_EXPIRED'; error = 'The question window expired before the user answered.'; hint = 'Ask again only if you really need it, or continue with your best assumption and say so in your answer.'; askId = $askId }
+            }
+            $waiting = Get-AskView $state
+            if ($null -eq $waiting) {
+                return @{ ok = $false; code = 'ASK_UNKNOWN'; error = 'The question request disappeared while waiting.'; hint = 'Ask again with the same question text.'; askId = $askId }
+            }
+            $waiting.nextCall = 'ask_user { askId: "' + $askId + '", resume: true, waitSeconds: 45 }'
+            return @{ ok = $true; result = $waiting }
+        }
+        $state = Read-AskState $resumeId
+        if ($null -eq $state) {
+            return @{ ok = $false; code = 'ASK_UNKNOWN'; error = ('No question request with id "' + $resumeId + '".'); hint = 'Use the askId from the previous ask_user answer.' }
+        }
+        if ([string]$state.state -eq 'answered') { return (Get-AskResult $resumeId $state) }
+        if ([string]$state.state -eq 'expired' -or (Get-UnixSeconds) -gt [int64]$state.expiresAt) {
+            if ([string]$state.state -ne 'expired') {
+                $state.state = 'expired'
+                Save-AskState $resumeId $state
+                Add-ChannelCount 'AskExpired' 1
+            }
+            return @{ ok = $false; code = 'ASK_EXPIRED'; error = 'The question window expired before the user answered.'; hint = 'Continue with your best assumption, say clearly what you assumed, and let the user correct you with a message.'; askId = $resumeId }
+        }
+        if (-not $resume) {
+            $view = Get-AskView $state
+            if ($null -eq $view) {
+                return @{ ok = $false; code = 'ASK_UNKNOWN'; error = 'The question request could not be read.'; hint = 'Ask again with the same question text.'; askId = $resumeId }
+            }
+            $view.nextCall = 'ask_user { askId: "' + $resumeId + '", resume: true, waitSeconds: 45 }'
+            return @{ ok = $true; result = $view }
+        }
+        $waitSeconds = Get-AskWaitSeconds $ToolArgs 45
+        if ($waitSeconds -le 0) { $waitSeconds = 45 }
+        $waited = Wait-AskAnswer $resumeId $waitSeconds
+        if ($null -ne $waited -and [string]$waited.state -eq 'answered') { return (Get-AskResult $resumeId $waited) }
+        if ($null -ne $waited -and [string]$waited.state -eq 'expired') {
+            return @{ ok = $false; code = 'ASK_EXPIRED'; error = 'The question window expired before the user answered.'; hint = 'Continue with your best assumption and say so.'; askId = $resumeId }
+        }
+        $view = Get-AskView $waited
+        if ($null -eq $view) {
+            return @{ ok = $false; code = 'ASK_UNKNOWN'; error = 'The question request disappeared while waiting.'; hint = 'Ask again with the same question text.'; askId = $resumeId }
+        }
+        $view.nextCall = 'ask_user { askId: "' + $resumeId + '", resume: true, waitSeconds: 45 }'
+        $view.hint = 'Still no answer. The window is still open. Do useful work you can do without the answer, then resume.'
+        return @{ ok = $true; result = $view }
+    }
+
+    function Invoke-ConfirmAction {
+        param([string]$SessionId, $ToolArgs)
+        $title = ''
+        $message = ''
+        $confirmLabel = 'Ja, mach das'
+        $cancelLabel = 'Nein, nicht'
+        try {
+            if ($null -ne $ToolArgs) {
+                if ($ToolArgs.PSObject.Properties['title']) { $title = ([string]$ToolArgs.title).Trim() }
+                if ($ToolArgs.PSObject.Properties['message']) { $message = ([string]$ToolArgs.message).Trim() }
+                if ($ToolArgs.PSObject.Properties['confirmLabel'] -and -not [string]::IsNullOrWhiteSpace([string]$ToolArgs.confirmLabel)) { $confirmLabel = ([string]$ToolArgs.confirmLabel).Trim() }
+                if ($ToolArgs.PSObject.Properties['cancelLabel'] -and -not [string]::IsNullOrWhiteSpace([string]$ToolArgs.cancelLabel)) { $cancelLabel = ([string]$ToolArgs.cancelLabel).Trim() }
+            }
+        } catch {}
+        if ([string]::IsNullOrWhiteSpace($title)) { $title = 'Soll Arena das wirklich tun?' }
+        $question = [pscustomobject]@{
+            id = 'confirm'
+            text = $(if ([string]::IsNullOrWhiteSpace($message)) { $title } else { $message })
+            options = @(
+                @{ id = 'yes'; label = $confirmLabel; description = 'Arena macht so weiter, wie beschrieben.' },
+                @{ id = 'no'; label = $cancelLabel; description = 'Arena laesst es und fragt nach einer anderen Loesung.' }
+            )
+            allowCustomResponse = $true
+            required = $true
+            multi = $false
+            when = @()
+        }
+        $payload = [pscustomobject]@{
+            title = $title
+            message = $message
+            questions = @($question)
+            expiresInSeconds = $(if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['expiresInSeconds']) { [int]$ToolArgs.expiresInSeconds } else { 120 })
+            waitSeconds = $(if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['waitSeconds']) { [int]$ToolArgs.waitSeconds } else { 0 })
+        }
+        $answer = Invoke-AskUser $SessionId $payload
+        $answer.kind = 'confirm'
+        if ($answer.ContainsKey('result')) {
+            $answer.result.kind = 'confirm'
+            $confirmed = $false
+            $custom = ''
+            try {
+                $yes = $answer.result.answers.confirm
+                if ($null -ne $yes) {
+                    foreach ($optionId in @($yes.optionIds)) { if ([string]$optionId -eq 'yes') { $confirmed = $true } }
+                    $custom = [string]$yes.custom
+                }
+            } catch {}
+            $answer.result.confirmed = $confirmed
+            $answer.result.customResponse = $custom
+            if ([string]$answer.result.state -eq 'answered') {
+                Write-FlowStation 'ASK' ([string]$answer.result.askId) 'CONFIRMED' @{ confirmed = $confirmed; sid = $SessionId }
+            }
+        }
+        return $answer
+    }
+
+    function Get-LateAskAnswers {
+        # Antworten, die der KI noch NICHT gezeigt wurden. Sie gehen als
+        # _bridge.userAnswers mit der naechsten Antwort - eine Antwort darf
+        # niemals verloren gehen, nur weil die KI gerade nicht gewartet hat.
+        param([string]$SessionId, [int]$Max = 4)
+        $items = New-Object System.Collections.Generic.List[object]
+        try {
+            foreach ($pair in $Shared.AskRequests.GetEnumerator()) {
+                if ($items.Count -ge $Max) { break }
+                $state = $null
+                try { $state = ($pair.Value | ConvertFrom-Json) } catch { $state = $null }
+                if ($null -eq $state) { continue }
+                if ([string]$state.sessionId -ne [string]$SessionId) { continue }
+                if ([string]$state.state -ne 'answered') { continue }
+                if ([int64]$state.deliveredAt -gt 0) { continue }
+                $state.deliveredAt = Get-UnixSeconds
+                Save-AskState ([string]$state.askId) $state
+                $items.Add([pscustomobject]@{
+                    askId = [string]$state.askId
+                    kind = [string]$state.kind
+                    title = [string]$state.title
+                    answers = $state.answers
+                    path = @($state.path)
+                    notShown = @($state.notShown)
+                    summary = (Get-AskSummary $state)
+                    answeredAt = [int64]$state.answeredAt
+                })
+                Add-ChannelCount 'AskLateAnswers' 1
+                Write-FlowStation 'ASK' ([string]$state.askId) 'LATE_DELIVERED' @{ sid = $SessionId }
+            }
+        } catch {}
+        return $items
+    }
+
+    function Get-PendingAskViews {
+        # Offene Fragen einer Sitzung fuer die Oberflaeche (neueste zuerst).
+        param([string]$SessionId, [int]$Max = 3)
+        $items = New-Object System.Collections.Generic.List[object]
+        try {
+            foreach ($pair in $Shared.AskRequests.GetEnumerator()) {
+                $state = $null
+                try { $state = ($pair.Value | ConvertFrom-Json) } catch { $state = $null }
+                if ($null -eq $state) { continue }
+                if ([string]$state.sessionId -ne [string]$SessionId) { continue }
+                if ([string]$state.state -ne 'waiting') { continue }
+                if ((Get-UnixSeconds) -gt [int64]$state.expiresAt) { continue }
+                $items.Add((Get-AskView $state))
+                if ($items.Count -ge $Max) { break }
+            }
+        } catch {}
+        return $items
+    }
+
+    # ------------------------------------------------------------------
+    # Version 7.2.0 (AP6): BAU-REGISTER.
+    # Bis 7.1.5 fuehrte die Bridge nur fuer ORGANISCHE Modelle Buch. Alles
+    # andere konnte unbemerkt und ungeprueft entstehen - genau so wurde aus
+    # einem Baum ein Zylinder mit zwei Kugeln. Jetzt wird jeder Modell-Bau
+    # registriert; report_done nennt, was gebaut und was davon geprueft wurde.
+    # ------------------------------------------------------------------
+    function Read-SessionBuilds {
+        param([string]$SessionId)
+        $json = ''
+        if (-not $Shared.SessionBuilds.TryGetValue([string]$SessionId, [ref]$json)) { return $null }
+        if ([string]::IsNullOrWhiteSpace($json)) { return $null }
+        try { return ($json | ConvertFrom-Json) } catch { return $null }
+    }
+
+    function Save-SessionBuilds {
+        param([string]$SessionId, $State)
+        try { $Shared.SessionBuilds[[string]$SessionId] = (To-Json $State 12) } catch {}
+    }
+
+    function Get-SessionBuildRecords {
+        param($State)
+        $items = New-Object System.Collections.Generic.List[object]
+        try {
+            if ($null -ne $State -and $State.PSObject.Properties['models']) {
+                foreach ($entry in $State.models) { $items.Add($entry) }
+            }
+        } catch {}
+        return $items
+    }
+
+    function Register-SessionBuild {
+        param([string]$SessionId, [string]$Tool, $ToolArgs, $Payload, [int64]$AtTicks = 0)
+        try {
+            $eligible = $Tool -in @('build_polygon_model', 'build_assembly', 'build_surface', 'build_interface',
+                'union', 'subtract', 'negate', 'intersect', 'insert_asset', 'apply_asset', 'clone_instance', 'group_instances')
+            if (-not $eligible -and $Tool -in @('create_instance', 'bulk_create')) {
+                $className = ''
+                try { $className = [string]$ToolArgs.className } catch {}
+                if ($className -eq 'Model') { $eligible = $true }
+            }
+            if (-not $eligible) { return }
+            if ($null -eq $Payload) { return }
+            if ($AtTicks -le 0) { $AtTicks = [DateTime]::UtcNow.Ticks }
+            $modelId = ''
+            $modelPath = ''
+            $modelName = ''
+            try { if ($Payload.PSObject.Properties['model'] -and $null -ne $Payload.model) { $modelId = [string]$Payload.model.id; $modelPath = [string]$Payload.model.path; $modelName = [string]$Payload.model.name } } catch {}
+            if ([string]::IsNullOrWhiteSpace($modelId)) { try { if ($Payload.PSObject.Properties['id']) { $modelId = [string]$Payload.id } } catch {} }
+            if ([string]::IsNullOrWhiteSpace($modelPath)) { try { if ($Payload.PSObject.Properties['path']) { $modelPath = [string]$Payload.path } } catch {} }
+            if ([string]::IsNullOrWhiteSpace($modelName)) { try { if ($Payload.PSObject.Properties['name']) { $modelName = [string]$Payload.name } } catch {} }
+            if ([string]::IsNullOrWhiteSpace($modelId) -and [string]::IsNullOrWhiteSpace($modelPath)) { return }
+            $declaredGrade = ''
+            try { if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['grade']) { $declaredGrade = ([string]$ToolArgs.grade).ToLowerInvariant() } } catch {}
+            if ($declaredGrade -notin @('simple', 'lowpoly', 'blockout', 'detailed')) { $declaredGrade = '' }
+            $state = Read-SessionBuilds $SessionId
+            if ($null -eq $state) { $state = [pscustomobject]@{ models = @(); updatedAt = 0 } }
+            $records = Get-SessionBuildRecords $state
+            $existing = $null
+            foreach ($record in $records) {
+                $recordId = ''
+                $recordPath = ''
+                try { $recordId = [string]$record.id } catch {}
+                try { $recordPath = [string]$record.path } catch {}
+                if (-not [string]::IsNullOrWhiteSpace($modelId) -and $recordId -eq $modelId) { $existing = $record; break }
+                if ([string]::IsNullOrWhiteSpace($modelId) -and -not [string]::IsNullOrWhiteSpace($modelPath) -and $recordPath -eq $modelPath) { $existing = $record; break }
+            }
+            if ($null -eq $existing) {
+                $record = [pscustomobject]@{
+                    tool = [string]$Tool
+                    id = $modelId
+                    path = $modelPath
+                    name = $modelName
+                    declaredGrade = $declaredGrade
+                    firstWriteAtTicks = $AtTicks
+                    lastWriteAtTicks = $AtTicks
+                    writes = 1
+                    auditAtTicks = [int64]0
+                    auditGrade = ''
+                    auditFinishScore = -1
+                    auditVerdict = ''
+                    auditDraftRisk = $false
+                }
+                $records.Add($record)
+                Write-FlowStation 'BUILD' ([string]$Tool) 'REGISTERED' @{ sid = $SessionId; path = $modelPath; name = $modelName; declaredGrade = $declaredGrade }
+            } else {
+                Set-FlowField $existing 'lastWriteAtTicks' $AtTicks
+                $writes = 0
+                try { $writes = [int]$existing.writes } catch {}
+                Set-FlowField $existing 'writes' ($writes + 1)
+                if (-not [string]::IsNullOrWhiteSpace($declaredGrade)) { Set-FlowField $existing 'declaredGrade' $declaredGrade }
+                if (-not [string]::IsNullOrWhiteSpace($modelPath)) { Set-FlowField $existing 'path' $modelPath }
+                if (-not [string]::IsNullOrWhiteSpace($modelName)) { Set-FlowField $existing 'name' $modelName }
+                # Ein neuer Schreibvorgang macht den alten Audit ungueltig.
+                Set-FlowField $existing 'auditAtTicks' ([int64]0)
+                Set-FlowField $existing 'auditGrade' ''
+                Set-FlowField $existing 'auditFinishScore' (-1)
+                Set-FlowField $existing 'auditVerdict' ''
+                Set-FlowField $existing 'auditDraftRisk' $false
+            }
+            while ($records.Count -gt 40) { $records.RemoveAt(0) }
+            Set-FlowField $state 'models' @($records.ToArray())
+            Set-FlowField $state 'updatedAt' (Get-UnixSeconds)
+            Save-SessionBuilds $SessionId $state
+            Add-ChannelCount 'BuildsRegistered' 1
+        } catch {}
+    }
+
+    function Update-SessionBuildAudit {
+        param([string]$SessionId, $AuditPayload, [int64]$AtTicks = 0)
+        try {
+            if ($null -eq $AuditPayload) { return }
+            if ($AtTicks -le 0) { $AtTicks = [DateTime]::UtcNow.Ticks }
+            $quality = $null
+            try { if ($AuditPayload.PSObject.Properties['buildQuality']) { $quality = $AuditPayload.buildQuality } } catch {}
+            if ($null -eq $quality) { return }
+            $grade = ''
+            try { if ($quality.PSObject.Properties['grade']) { $grade = [string]$quality.grade } } catch {}
+            $finishScore = -1
+            try { if ($quality.PSObject.Properties['finishScore']) { $finishScore = [int]$quality.finishScore } } catch {}
+            $draftRisk = $false
+            try { if ($quality.PSObject.Properties['draftRisk']) { $draftRisk = [bool]$quality.draftRisk } } catch {}
+            $verdict = ''
+            try { if ($quality.PSObject.Properties['verdict']) { $verdict = [string]$quality.verdict } } catch {}
+            $scope = ''
+            try { if ($AuditPayload.PSObject.Properties['scope']) { $scope = [string]$AuditPayload.scope } } catch {}
+            $modelIds = New-Object System.Collections.Generic.List[string]
+            try {
+                if ($quality.PSObject.Properties['organicQuality'] -and $null -ne $quality.organicQuality) {
+                    foreach ($evidence in @($quality.organicQuality.models)) {
+                        $evidenceId = ''
+                        try { $evidenceId = [string]$evidence.id } catch {}
+                        if (-not [string]::IsNullOrWhiteSpace($evidenceId)) { $modelIds.Add($evidenceId) }
+                    }
+                }
+            } catch {}
+            $state = Read-SessionBuilds $SessionId
+            if ($null -eq $state) { return }
+            $records = Get-SessionBuildRecords $state
+            $touched = 0
+            foreach ($record in $records) {
+                $recordId = ''
+                $recordPath = ''
+                try { $recordId = [string]$record.id } catch {}
+                try { $recordPath = [string]$record.path } catch {}
+                $matches = $false
+                if (-not [string]::IsNullOrWhiteSpace($recordId) -and $modelIds.Contains($recordId)) { $matches = $true }
+                if (-not $matches -and -not [string]::IsNullOrWhiteSpace($recordPath) -and -not [string]::IsNullOrWhiteSpace($scope)) {
+                    if ($recordPath -eq $scope -or $recordPath.StartsWith($scope + '.')) { $matches = $true }
+                }
+                if (-not $matches) { continue }
+                Set-FlowField $record 'auditAtTicks' $AtTicks
+                Set-FlowField $record 'auditGrade' $grade
+                Set-FlowField $record 'auditFinishScore' $finishScore
+                Set-FlowField $record 'auditVerdict' $verdict
+                Set-FlowField $record 'auditDraftRisk' $draftRisk
+                $touched = $touched + 1
+            }
+            if ($touched -gt 0) {
+                Set-FlowField $state 'models' @($records.ToArray())
+                Set-FlowField $state 'updatedAt' (Get-UnixSeconds)
+                Save-SessionBuilds $SessionId $state
+                Write-FlowStation 'BUILD' ([string]$SessionId) 'AUDITED' @{ models = $touched; grade = $grade; finishScore = $finishScore; draftRisk = $draftRisk }
+            }
+        } catch {}
+    }
+
+    function Get-SessionBuildSummary {
+        # Was wurde gebaut, was davon ist geprueft, was ist ein Entwurf?
+        param([string]$SessionId)
+        $summary = [pscustomobject]@{
+            models = 0
+            audited = 0
+            unaudited = @()
+            drafts = @()
+            declared = @()
+            averageFinishScore = -1
+        }
+        try {
+            $state = Read-SessionBuilds $SessionId
+            $records = Get-SessionBuildRecords $state
+            if ($records.Count -eq 0) { return $summary }
+            $unaudited = New-Object System.Collections.Generic.List[object]
+            $drafts = New-Object System.Collections.Generic.List[object]
+            $declared = New-Object System.Collections.Generic.List[string]
+            $audited = 0
+            $scoreSum = 0
+            $scoreCount = 0
+            $now = Get-UnixSeconds
+            foreach ($record in $records) {
+                $auditAt = [int64]0
+                try { $auditAt = [int64]$record.auditAtTicks } catch {}
+                $lastWrite = [int64]0
+                try { $lastWrite = [int64]$record.lastWriteAtTicks } catch {}
+                $name = ''
+                $path = ''
+                $tool = ''
+                $declaredGrade = ''
+                try { $name = [string]$record.name } catch {}
+                try { $path = [string]$record.path } catch {}
+                try { $tool = [string]$record.tool } catch {}
+                try { $declaredGrade = [string]$record.declaredGrade } catch {}
+                if (-not [string]::IsNullOrWhiteSpace($declaredGrade)) { $declared.Add($name + ' (' + $declaredGrade + ')') }
+                if ($auditAt -gt 0 -and $auditAt -ge $lastWrite) {
+                    $audited = $audited + 1
+                    $score = -1
+                    try { $score = [int]$record.auditFinishScore } catch {}
+                    if ($score -ge 0) { $scoreSum = $scoreSum + $score; $scoreCount = $scoreCount + 1 }
+                    $draft = $false
+                    try { $draft = [bool]$record.auditDraftRisk } catch {}
+                    if ($draft) {
+                        $drafts.Add([pscustomobject]@{ name = $name; path = $path; tool = $tool; grade = $(try { [string]$record.auditGrade } catch { '' }); finishScore = $score })
+                    }
+                } else {
+                    $age = 0
+                    try { if ($lastWrite -gt 0) { $age = [int][Math]::Max(0, ($now - [int64](($lastWrite - 621355968000000000) / 10000000))) } } catch {}
+                    $unaudited.Add([pscustomobject]@{ name = $name; path = $path; tool = $tool; declaredGrade = $declaredGrade; ageSeconds = $age })
+                }
+            }
+            $summary.models = $records.Count
+            $summary.audited = $audited
+            $summary.unaudited = @($unaudited.ToArray())
+            $summary.drafts = @($drafts.ToArray())
+            $summary.declared = @($declared.ToArray())
+            if ($scoreCount -gt 0) { $summary.averageFinishScore = [int][Math]::Round($scoreSum / $scoreCount) }
+        } catch {}
+        return $summary
+    }
+
+    # ------------------------------------------------------------------
+    # Version 7.2.0: STATIONEN + KANAL-ZAEHLER.
+    # Format wie die bewaehrten PREVIEW-Stationen aus 6.0.4:
+    #   <BEREICH> [<flowId>] <STATION> feld=wert feld=wert
+    # Ohne diese Zeilen war "der Balken blieb bei 0 %" und "die Meldung kam
+    # nicht an" nicht beweisbar - beides wurde in 7.1.x nur vermutet.
+    # ------------------------------------------------------------------
+    function Format-FlowFields {
+        param($Fields)
+        $parts = New-Object System.Collections.Generic.List[string]
+        try {
+            if ($Fields -is [System.Collections.IDictionary]) {
+                foreach ($key in $Fields.Keys) {
+                    $value = $Fields[$key]
+                    if ($null -eq $value) { $value = '-' }
+                    $text = ([string]$value) -replace '[\r\n\t]+', ' '
+                    if ($text.Length -gt 200) { $text = $text.Substring(0, 199) + '...' }
+                    $parts.Add(([string]$key + '=' + $text))
+                }
+            }
+        } catch {}
+        if ($parts.Count -eq 0) { return '' }
+        return (' ' + ($parts.ToArray() -join ' '))
+    }
+
+    function Add-FlowTraceLine {
+        param([string]$Line)
+        try {
+            if ([string]::IsNullOrWhiteSpace($Line)) { return }
+            $cap = 500
+            try { $cap = [int]$Shared.FlowTraceCap } catch {}
+            if ($cap -lt 20) { $cap = 20 }
+            $Shared.FlowTrace.Enqueue(('{0:u} ' -f (Get-Date)) + $Line)
+            $discard = $null
+            while ($Shared.FlowTrace.Count -gt $cap) {
+                if (-not $Shared.FlowTrace.TryDequeue([ref]$discard)) { break }
+            }
+        } catch {}
+    }
+
+    function Write-FlowStation {
+        param([string]$Area, [string]$FlowId, [string]$Station, $Fields = $null)
+        $line = ''
+        try {
+            $line = ([string]$Area).ToUpperInvariant() + ' [' + [string]$FlowId + '] ' + ([string]$Station).ToUpperInvariant() + (Format-FlowFields $Fields)
+            Write-BridgeLog $line
+            Add-FlowTraceLine $line
+        } catch {}
+        # Bewusst KEIN return: eine Ausgabe hier wuerde den Rueckgabewert jedes
+        # Aufrufers verschmutzen (Invoke-AckUserMessage, Update-ArenaProgressState).
+    }
+
+    function Add-ChannelCount {
+        param([string]$Name, [long]$Delta = 1)
+        try {
+            $channel = $Shared.Channel
+            if ($null -eq $channel) { return }
+            if ([string]::IsNullOrWhiteSpace($Name)) { return }
+            $existing = $null
+            if ($channel.ContainsKey($Name)) { $existing = $channel[$Name] }
+            if ($existing -is [long] -or $existing -is [int]) { $channel[$Name] = ([long]$existing + [long]$Delta) }
+            else { $channel[$Name] = [long]$Delta }
+        } catch {}
+    }
+
+    function Set-ChannelText {
+        param([string]$Name, [string]$Value)
+        try {
+            $channel = $Shared.Channel
+            if ($null -eq $channel) { return }
+            $channel[$Name] = [string]$Value
+        } catch {}
+    }
+
+    # Ein Feld an einem aus JSON gelesenen Objekt schreiben, ohne in die
+    # PowerShell-5.1-Falle "The property cannot be found" zu laufen.
+    function Set-FlowField {
+        param($Object, [string]$Name, $Value)
+        try {
+            if ($null -eq $Object) { return }
+            if ($Object.PSObject.Properties[$Name]) { $Object.$Name = $Value }
+            else { $Object | Add-Member -NotePropertyName $Name -NotePropertyValue $Value -Force }
+        } catch {}
+    }
+
+    # ------------------------------------------------------------------
+    # Version 7.2.0: NUTZER-KANAL ("Zwischen-Prompt").
+    # Die Bridge kann NICHT in den Arena-Chat schreiben - es gibt keinen
+    # Push-Kanal zur KI. Deshalb traegt JEDER Umschlag wartende
+    # Nutzernachrichten mit (at-least-once), und wait_for_user erlaubt der KI,
+    # an einer Entscheidungsstelle aktiv auf den Nutzer zu warten.
+    # ------------------------------------------------------------------
+    function Read-UserMessageState {
+        param([string]$SessionId)
+        $json = ''
+        if (-not $Shared.UserMessages.TryGetValue([string]$SessionId, [ref]$json)) { return $null }
+        if ([string]::IsNullOrWhiteSpace($json)) { return $null }
+        try { return ($json | ConvertFrom-Json) } catch { return $null }
+    }
+
+    function Save-UserMessageState {
+        param([string]$SessionId, $State)
+        try { $Shared.UserMessages[[string]$SessionId] = (To-Json $State 12) } catch {}
+    }
+
+    # Gibt IMMER eine echte List[object] zurueck. Kein ", $array" und kein
+    # @() am Aufrufer - genau die Kombination hat in 7.1.0 jede
+    # Befehlszustellung blockiert.
+    function Get-UserMessageList {
+        param($State)
+        $items = New-Object System.Collections.Generic.List[object]
+        try {
+            if ($null -ne $State -and $State.PSObject.Properties['messages']) {
+                foreach ($entry in $State.messages) { $items.Add($entry) }
+            }
+        } catch {}
+        return $items
+    }
+
+    function Get-PendingUserMessageViews {
+        param([string]$SessionId, [int]$Max = 3)
+        $views = New-Object System.Collections.Generic.List[object]
+        $now = Get-UnixSeconds
+        try {
+            [System.Threading.Monitor]::Enter($Shared.UserMessageLock)
+            $list = Get-UserMessageList (Read-UserMessageState $SessionId)
+            foreach ($message in $list) {
+                if ($views.Count -ge $Max) { break }
+                $messageState = ''
+                try { $messageState = [string]$message.state } catch {}
+                $attempts = 0
+                try { $attempts = [int]$message.attempts } catch {}
+                $deliveredAt = [int64]0
+                try { $deliveredAt = [int64]$message.deliveredAt } catch {}
+                $repeatable = ($messageState -eq 'delivered' -and $attempts -lt 3 -and ($now - $deliveredAt) -ge 20)
+                if ($messageState -ne 'queued' -and -not $repeatable) { continue }
+                $text = ''
+                try { $text = [string]$message.text } catch {}
+                if ($text.Length -gt 2000) { $text = $text.Substring(0, 1999) + '...' }
+                $sentAt = [int64]0
+                try { $sentAt = [int64]$message.createdAt } catch {}
+                $age = 0
+                if ($sentAt -gt 0 -and $now -ge $sentAt) { $age = [int]($now - $sentAt) }
+                $views.Add([pscustomobject]@{
+                    id           = $(try { [string]$message.id } catch { '' })
+                    text         = $text
+                    kind         = $(try { [string]$message.kind } catch { 'note' })
+                    sentAt       = $sentAt
+                    ageSeconds   = $age
+                    attempt      = ($attempts + 1)
+                })
+            }
+        } catch {}
+        finally { try { [System.Threading.Monitor]::Exit($Shared.UserMessageLock) } catch {} }
+        return $views
+    }
+
+    function Mark-UserMessagesDelivered {
+        param([string]$SessionId, $Ids, [string]$ToolName)
+        $marked = 0
+        $now = Get-UnixSeconds
+        try {
+            [System.Threading.Monitor]::Enter($Shared.UserMessageLock)
+            $state = Read-UserMessageState $SessionId
+            if ($null -ne $state) {
+                $list = Get-UserMessageList $state
+                foreach ($message in $list) {
+                    $id = ''
+                    try { $id = [string]$message.id } catch {}
+                    if ([string]::IsNullOrWhiteSpace($id)) { continue }
+                    $hit = $false
+                    foreach ($wanted in $Ids) { if ([string]$wanted -eq $id) { $hit = $true; break } }
+                    if (-not $hit) { continue }
+                    $attempts = 0
+                    try { $attempts = [int]$message.attempts } catch {}
+                    Set-FlowField $message 'attempts' ($attempts + 1)
+                    Set-FlowField $message 'state' 'delivered'
+                    Set-FlowField $message 'deliveredAt' $now
+                    Set-FlowField $message 'deliveredWith' ([string]$ToolName)
+                    $marked = $marked + 1
+                    Write-FlowStation 'USERMSG' $id 'DELIVERED' @{ sid = $SessionId; attempt = ($attempts + 1); tool = $ToolName }
+                }
+                if ($marked -gt 0) {
+                    Set-FlowField $state 'updatedAt' $now
+                    Save-UserMessageState $SessionId $state
+                    Add-ChannelCount 'UserMessagesDelivered' ([long]$marked)
+                }
+            }
+        } catch {}
+        finally { try { [System.Threading.Monitor]::Exit($Shared.UserMessageLock) } catch {} }
+        return $marked
+    }
+
+    function Invoke-AckUserMessage {
+        param([string]$SessionId, $ToolArgs)
+        $wanted = New-Object System.Collections.Generic.List[string]
+        try {
+            if ($null -ne $ToolArgs) {
+                if ($ToolArgs.PSObject.Properties['ids']) {
+                    foreach ($entry in $ToolArgs.ids) {
+                        $value = ([string]$entry).Trim()
+                        if (-not [string]::IsNullOrWhiteSpace($value)) { $wanted.Add($value) }
+                    }
+                }
+                if ($wanted.Count -eq 0 -and $ToolArgs.PSObject.Properties['id']) {
+                    $value = ([string]$ToolArgs.id).Trim()
+                    if (-not [string]::IsNullOrWhiteSpace($value)) { $wanted.Add($value) }
+                }
+                if ($wanted.Count -eq 0 -and $ToolArgs.PSObject.Properties['all'] -and $ToolArgs.all -eq $true) {
+                    $list = Get-UserMessageList (Read-UserMessageState $SessionId)
+                    foreach ($message in $list) {
+                        $state = ''
+                        try { $state = [string]$message.state } catch {}
+                        if ($state -eq 'queued' -or $state -eq 'delivered') {
+                            try { $wanted.Add([string]$message.id) } catch {}
+                        }
+                    }
+                }
+            }
+        } catch {}
+        if ($wanted.Count -eq 0) {
+            return @{
+                ok = $false
+                code = 'BAD_ARGS'
+                error = 'ack_user_message needs id, ids or all=true.'
+                hint = 'The message ids are in _bridge.userMessages of every response.'
+            }
+        }
+        $acked = 0
+        $reply = ''
+        $now = Get-UnixSeconds
+        $knownIds = New-Object System.Collections.Generic.List[string]
+        try {
+            [System.Threading.Monitor]::Enter($Shared.UserMessageLock)
+            $state = Read-UserMessageState $SessionId
+            $list = Get-UserMessageList $state
+            foreach ($message in $list) {
+                $id = ''
+                try { $id = [string]$message.id } catch {}
+                if (-not [string]::IsNullOrWhiteSpace($id)) { $knownIds.Add($id) }
+            }
+            if ($null -ne $state) {
+                foreach ($message in $list) {
+                    $id = ''
+                    try { $id = [string]$message.id } catch {}
+                    $hit = $false
+                    foreach ($entry in $wanted) { if ([string]$entry -eq $id) { $hit = $true; break } }
+                    if (-not $hit) { continue }
+                    $messageState = ''
+                    try { $messageState = [string]$message.state } catch {}
+                    if ($messageState -eq 'acked' -or $messageState -eq 'withdrawn') { continue }
+                    Set-FlowField $message 'state' 'acked'
+                    Set-FlowField $message 'ackAt' $now
+                    $acked = $acked + 1
+                    Write-FlowStation 'USERMSG' $id 'ACKED' @{ sid = $SessionId }
+                }
+                if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['reply']) {
+                    $reply = ([string]$ToolArgs.reply).Trim()
+                    if ($reply.Length -gt 300) { $reply = $reply.Substring(0, 299) + '...' }
+                }
+                if ($acked -gt 0 -or -not [string]::IsNullOrWhiteSpace($reply)) {
+                    Set-FlowField $state 'updatedAt' $now
+                    if (-not [string]::IsNullOrWhiteSpace($reply)) { Set-FlowField $state 'lastAckReply' $reply }
+                    Save-UserMessageState $SessionId $state
+                    Add-ChannelCount 'UserMessagesAcked' ([long]$acked)
+                }
+            }
+        } catch {}
+        finally { try { [System.Threading.Monitor]::Exit($Shared.UserMessageLock) } catch {} }
+        if ($acked -eq 0) {
+            return @{
+                ok = $false
+                code = 'ACK_UNKNOWN_MESSAGE'
+                error = 'No open user message matched that id.'
+                knownMessageIds = @($knownIds.ToArray())
+                hint = 'Only messages listed in _bridge.userMessages can be acknowledged.'
+            }
+        }
+        return @{
+            ok = $true
+            result = @{
+                acked = $acked
+                replyShownToUser = $reply
+                note = 'The bridge shows the user that their message arrived and was read. Now act on it.'
+            }
+        }
+    }
+
+    function Ensure-UserSignal {
+        param([string]$SessionId)
+        $existing = $null
+        try {
+            if ($Shared.UserSignals.TryGetValue([string]$SessionId, [ref]$existing) -and $null -ne $existing) { return $existing }
+        } catch {}
+        $created = [System.Threading.ManualResetEvent]::new($false)
+        try { $existing = $Shared.UserSignals.GetOrAdd([string]$SessionId, $created) } catch { $existing = $created }
+        if ($null -eq $existing) { $existing = $created }
+        if (-not [object]::ReferenceEquals($existing, $created)) { try { $created.Dispose() } catch {} }
+        return $existing
+    }
+
+    function Invoke-WaitForUser {
+        param([string]$SessionId, $ToolArgs)
+        $maxSeconds = 30
+        try { if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['maxSeconds']) { $maxSeconds = [int]$ToolArgs.maxSeconds } } catch {}
+        if ($maxSeconds -lt 1) { $maxSeconds = 1 }
+        if ($maxSeconds -gt 50) { $maxSeconds = 50 }
+        $flowId = 'wait_' + ([guid]::NewGuid().ToString('N').Substring(0, 8))
+        $signal = Ensure-UserSignal $SessionId
+        $started = [System.Diagnostics.Stopwatch]::StartNew()
+        $reason = 'timeout'
+        $views = Get-PendingUserMessageViews $SessionId 3
+        if ($views.Count -eq 0) {
+            Write-FlowStation 'USERMSG' $flowId 'WAIT_START' @{ sid = $SessionId; maxSeconds = $maxSeconds }
+            while ($started.Elapsed.TotalSeconds -lt $maxSeconds) {
+                $remaining = [int][Math]::Ceiling($maxSeconds - $started.Elapsed.TotalSeconds)
+                $slice = 250
+                if (($remaining * 1000) -lt $slice) { $slice = [Math]::Max(20, ($remaining * 1000)) }
+                try { [void]$signal.WaitOne($slice) } catch { break }
+                $views = Get-PendingUserMessageViews $SessionId 3
+                if ($views.Count -gt 0) { $reason = 'user_message'; break }
+            }
+            try { [void]$signal.Reset() } catch {}
+        } else {
+            $reason = 'user_message'
+        }
+        $waited = [int][Math]::Round($started.Elapsed.TotalSeconds, 1)
+        Write-FlowStation 'USERMSG' $flowId 'WAIT_END' @{ sid = $SessionId; reason = $reason; waitedSeconds = $waited; messages = $views.Count }
+        if ($views.Count -gt 0) {
+            $ids = New-Object System.Collections.Generic.List[string]
+            foreach ($view in $views) { $ids.Add([string]$view.id) }
+            [void](Mark-UserMessagesDelivered $SessionId $ids 'wait_for_user')
+        }
+        return @{
+            ok = $true
+            result = @{
+                state = $(if ($views.Count -gt 0) { 'messages_waiting' } else { 'timeout' })
+                reason = $reason
+                waitedSeconds = $waited
+                messageCount = $views.Count
+                maxSeconds = $maxSeconds
+                note = $(if ($views.Count -gt 0) { 'The user messages themselves are in _bridge.userMessages of THIS response. Read them, act on them and acknowledge with ack_user_message.' } else { 'No user message arrived. Continue your work; do not call wait_for_user in a loop.' })
+            }
+        }
+    }
+
     # Beweis statt Vermutung: Ein Plugin, das deutlich haeufiger pollt als
     # seine eigene Richtlinie erlaubt (> 30 Anfragen je 60 s), wird EINMAL
     # pro 5 Minuten protokolliert. Das kostet pro Anfrage nur wenige
@@ -13234,12 +14797,78 @@ $script:BridgeHandlerScript = {
     # Fehler. Die Bridge fuehrt je Sitzung Buch und zeigt das ehrlich an.
     # ------------------------------------------------------------------
     function Clamp-ProgressPercent($value) {
+        # Version 7.2.0: INVARIANT parsen. Unter deutscher Kultur wurde aus dem
+        # String "45.5" die Zahl 455 (Punkt = Tausendertrennzeichen) und der
+        # Balken sprang auf 100 %. Zahlen aus JSON bleiben unveraendert sicher.
         $number = 0.0
-        try { $number = [double]$value } catch { $number = 0.0 }
+        try {
+            if ($value -is [string]) {
+                $text = ([string]$value).Trim().Replace(',', '.')
+                if ($text.Length -gt 0) {
+                    $parsed = 0.0
+                    if ([double]::TryParse($text, [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$parsed)) { $number = $parsed }
+                }
+            } else {
+                $number = [double]$value
+            }
+        } catch { $number = 0.0 }
         if ($number -ne $number) { $number = 0.0 }
         if ($number -lt 0) { $number = 0 }
         if ($number -gt 100) { $number = 100 }
         return [math]::Round($number, 1)
+    }
+
+    function Get-ProgressPercentProvided($node) {
+        # Version 7.2.0: "Die KI hat eine Zahl geschickt" ist etwas ANDERES als
+        # "die Zahl ist 0". Nur eine wirklich mitgeschickte Zahl darf den Balken
+        # erscheinen lassen - sonst zeigt die Zeile Klartext ohne erfundene 0 %.
+        try {
+            if ($null -eq $node) { return $false }
+            if ($node -is [string]) {
+                $text = ([string]$node).Trim()
+                if ($text.Length -eq 0) { return $false }
+                $parsed = 0.0
+                return [double]::TryParse($text.Replace(',', '.'), [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$parsed)
+            }
+            if ($node -is [ValueType]) { return $true }
+            if ($node.PSObject.Properties['percent']) {
+                $value = $node.percent
+                if ($null -eq $value) { return $false }
+                if ($value -is [string] -and [string]::IsNullOrWhiteSpace([string]$value)) { return $false }
+                return $true
+            }
+        } catch {}
+        return $false
+    }
+
+    function Get-ShortSid([string]$sessionId) {
+        $text = ([string]$sessionId).Trim()
+        if ($text.Length -le 8) { return $text }
+        return $text.Substring(0, 8)
+    }
+
+    function Set-ProgressField {
+        param($Object, [string]$Name, $Value)
+        try {
+            if ($null -eq $Object) { return }
+            if ($Object.PSObject.Properties[$Name]) { $Object.$Name = $Value }
+            else { $Object | Add-Member -NotePropertyName $Name -NotePropertyValue $Value -Force }
+        } catch {}
+    }
+
+    function Write-ProgressStationThrottled {
+        # Stationen fuer den Fortschritt, gedrosselt: eine Zeile je Sitzung und
+        # 30 s fuer "keine Prozentzahl", damit runtime.log nicht vollaeuft
+        # (PREVIEW schreibt pro Aufnahmeversuch - Fortschritt kaeme pro Call).
+        param([string]$sessionId, [string]$Station, $Fields, [int]$EverySeconds = 30)
+        try {
+            $key = (Get-ShortSid $sessionId) + ':' + $Station
+            $now = Get-UnixSeconds
+            $last = [long]0
+            if ($Shared.ProgressLogAt.TryGetValue($key, [ref]$last) -and ($now - $last) -lt $EverySeconds) { return }
+            $Shared.ProgressLogAt[$key] = $now
+            Write-FlowStation 'PROGRESS' (Get-ShortSid $sessionId) $Station $Fields
+        } catch {}
     }
 
     function Read-ProgressState([string]$sessionId) {
@@ -13254,29 +14883,55 @@ $script:BridgeHandlerScript = {
     }
 
     function Update-ArenaProgressState {
-        param([string]$sessionId, [string]$tool, $percent, [string]$message, [bool]$reported, [bool]$isDone, [bool]$autoSet)
+        # Version 7.2.0: Die Ursache fuer "der Balken bleibt bei 0 %" war, dass
+        # percent NUR bei expliziter Zahl gesetzt wurde, eine Nachricht OHNE
+        # Zahl percent aber auf 0 ZURUECKgesetzt hat - ein einmal gemeldeter
+        # Stand fiel damit bei der naechsten Nachricht wieder auf 0 %. Jetzt
+        # wird percent ausschliesslich bei wirklich mitgeschickter Zahl
+        # geschrieben ($percentProvided), und der Zustand merkt sich, ob
+        # ueberhaupt schon eine Zahl kam (percentKnown). Ohne Zahl zeigt die
+        # Oberflaeche keinen Balken und keine erfundene 0 %.
+        param([string]$sessionId, [string]$tool, $percent, [string]$message, [bool]$reported, [bool]$isDone, [bool]$autoSet, [bool]$percentProvided = $false)
         $state = Read-ProgressState $sessionId
         if ($null -eq $state) {
             $state = [pscustomobject]@{
                 percent = 0.0; message = ''; state = 'working'; updatedAt = 0; lastCallAt = 0
                 calls = 0; callsWithProgress = 0; autoSet = $false; history = @(); lastTool = ''
+                percentKnown = $false; callsWithPercent = 0; callsWithoutPercent = 0; lastPercentAt = 0
             }
         }
         $now = Get-UnixSeconds
         $state.calls = [int]$state.calls + 1
         $state.lastCallAt = $now
         $state.lastTool = [string]$tool
+        Add-ChannelCount 'ProgressCalls' 1
         if (-not $isDone) {
             if ([string]$state.state -eq 'done') {
                 $state.percent = 0.0
                 $state.message = ''
                 $state.autoSet = $false
+                Set-ProgressField $state 'percentKnown' $false
             }
             $state.state = 'working'
         }
         if ($reported) {
             $state.callsWithProgress = [int]$state.callsWithProgress + 1
-            $state.percent = Clamp-ProgressPercent $percent
+            if ($percentProvided) {
+                $state.percent = Clamp-ProgressPercent $percent
+                Set-ProgressField $state 'percentKnown' $true
+                Set-ProgressField $state 'lastPercentAt' $now
+                $withPercent = 0
+                try { $withPercent = [int]$state.callsWithPercent } catch {}
+                Set-ProgressField $state 'callsWithPercent' ($withPercent + 1)
+                Add-ChannelCount 'ProgressWithPercent' 1
+                Write-FlowStation 'PROGRESS' (Get-ShortSid $sessionId) 'REPORTED' @{ percent = $state.percent; tool = [string]$tool; message = ([string]$message); callsWithPercent = ($withPercent + 1) }
+            } else {
+                $withoutPercent = 0
+                try { $withoutPercent = [int]$state.callsWithoutPercent } catch {}
+                Set-ProgressField $state 'callsWithoutPercent' ($withoutPercent + 1)
+                Add-ChannelCount 'ProgressMissingPercent' 1
+                Write-ProgressStationThrottled $sessionId 'PERCENT_MISSING' @{ tool = [string]$tool; callsWithoutPercent = ($withoutPercent + 1); message = ([string]$message) } 30
+            }
             if (-not [string]::IsNullOrWhiteSpace($message)) { $state.message = $message.Trim() }
             $state.updatedAt = $now
             $state.state = 'working'
@@ -13292,6 +14947,9 @@ $script:BridgeHandlerScript = {
             }
             $state.percent = 100.0
             $state.state = 'done'
+            Set-ProgressField $state 'percentKnown' $true
+            Set-ProgressField $state 'lastPercentAt' $now
+            Write-FlowStation 'PROGRESS' (Get-ShortSid $sessionId) 'DONE' @{ percent = 100.0; autoSet = [bool]$state.autoSet; tool = [string]$tool }
         }
         $state.updatedAt = $now
         $line = ('{0}% {1} {2}' -f [string]$state.percent, [string]$tool, [string]$state.message).Trim()
@@ -13401,7 +15059,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.1.5 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.2.0 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -13490,7 +15148,7 @@ $script:BridgeHandlerScript = {
     }
 
     function Get-ActivityToolSets {
-        $read = @('get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','sim_status','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait','ui_capabilities','ui_skin','ui_audit','ui_texture','world_style','site_survey','variation','model_audit','world_audit','prop_list')
+        $read = @('get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','sim_status','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait','ui_capabilities','ui_skin','ui_audit','ui_texture','world_style','site_survey','variation','model_audit','world_audit','prop_list','wait_for_user','ack_user_message','ask_user','confirm_action','scaffold_ui_scripts')
         $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','build_polygon_model','build_assembly','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','sim_start','set_context','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute','build_surface','build_interface','ui_glow','ui_radial','prop_place','prop_save','refine','style_lock','world_glow')
         return @{ read = $read; write = $write }
     }
@@ -17381,13 +19039,13 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         # ---------------- MASTER BUILD ----------------
         $t.Add(@{ name = 'build_assembly'; category = 'create'; summary = 'Modulare/wiederholte Baugruppe in EINEM Call; mit Polygon-Silhouetten kombinieren.';
             description = 'Erstellt bis zu 2000 Parts/Instanzen, wendet Properties an, erzeugt lineare oder radiale Wiederholungen und gruppiert alles direkt in ein Model. Ideal fuer Gebaeude-Rahmen, Treppen, Zaeune, Saeulenringe, Fassaden und wiederholte Module. Kombiniere die Baugruppe mit build_polygon_model fuer die praegende Hauptsilhouette oder individuelle Formen; build_assembly ersetzt bei einem nichttrivialen Hero-Modell nicht die polygonale Hauptform. Die Bridge berechnet Wiederholungen/Positionen; Arena muss weder Lua-Schleifen noch hunderte Einzelcalls schreiben.';
-            params = @{ modelName = @{ type='string'; required=$false; default="'ArenaAssembly'"; description='Name des fertigen Models.' }; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'}; items=@{type='array';required=$true;default='-';description='[{className,name,properties,repeat:{count,offset}|{count,radius,startAngle,angleStep,heightStep}}]. {n} im Namen wird ersetzt.'}; pivot=@{type='Vector3|CFrame';required=$false;default='null';description='Optional das ganze Model am Ende versetzen.'} };
+            params = @{ grade = @{ type='string'; required=$false; default='null'; description='Version 7.2.0: \'simple\' | \'lowpoly\' | \'blockout\' - Erklaert die Einfachheit AUSDRUECKLICH (Attribut ArenaDeclaredGrade). model_audit benotet das Ergebnis dann nicht mehr als Entwurf und report_done antwortet nicht mit DRAFT_GRADE_RISK.' }; modelName = @{ type='string'; required=$false; default="'ArenaAssembly'"; description='Name des fertigen Models.' }; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'}; items=@{type='array';required=$true;default='-';description='[{className,name,properties,repeat:{count,offset}|{count,radius,startAngle,angleStep,heightStep}}]. {n} im Namen wird ersetzt.'}; pivot=@{type='Vector3|CFrame';required=$false;default='null';description='Optional das ganze Model am Ende versetzen.'} };
             returns = '{ model, created, count, errors, geometry }';
             example = @{ modelName='Saeulenring'; items=@(@{className='Part';name='Saeule{n}';properties=@{Size=@{x=2;y=12;z=2};Anchored=$true};repeat=@{count=12;radius=20}}) };
             errors = @('BUDGET_EXCEEDED: mehr als 2000 Teile.', 'BAD_ARGS: nichts erstellt.') })
         $t.Add(@{ name = 'build_polygon_model'; category = 'create'; summary = 'BEVORZUGT fuer nichttriviale Custom-3D-Modelle: Hauptsilhouette als Polygon direkt im Place bauen.';
             description = 'GLOBALER 3D-BAUSTANDARD: Fuer nichttriviale Custom-Modelle aller Kategorien - Figuren, Props, Architektur, Fahrzeuge, Maschinen, Landschaften und Kulissen - build_polygon_model fuer die praegende Hauptsilhouette sowie freie, gekruemmte, verjuengte oder unregelmaessige Formen BEVORZUGEN. Mit benannten Submodels, eigener Part-Farbe/Material je Rolle, mainWelds und refine entsteht ein absichtlich detailliertes Ergebnis statt eines Blockouts. build_assembly ist der passende Partner fuer Wiederholungen/Module; native Parts bleiben fuer einfache Standardformen, Stuetzen und Akzente. Der Builder erstellt echte ArenaPolygonTriangle-Wedges direkt im Place und sorgt fuer Triangulation, Wedge-Orientierung, AutoCaps und Welds. Fuer organische Modelle organic=true setzen; dann sind drei explizite kontrastierende Farben bereits beim Bau Pflicht und der frische per-model Audit mit Polygongeometrie, Palette und aktiviertem Bewegungs-Script ist Voraussetzung fuer report_done. Die Modellwahl ist eine globale Praeferenz, kein anhand von Namen ausgeloester Zwang fuer einfache Parts.';
-            params = @{ modelName=@{type='string';required=$false;default="'ArenaPolygonModel'";description='Oberstes fertiges Model.'}; organic=@{type='bool';required=$false;default='false';description='Fuer jedes bewusst organische Modell true setzen: markiert es im Place, verlangt mindestens drei explizite kontrastierende submodel.style.color-Werte und aktiviert den frischen per-model Geometry/Palette/Enabled-Motion-Audit vor report_done. Kein Modellname loest diese Schreibsperre aus.'}; submodels=@{type='array';required=$false;default='[]';description='EMPFOHLEN: [{name,containerClass="Folder|Model",polygons:[...],style:{...},autoWeld,closeOpenings,capStyle}]. Alles bleibt dem Hauptmodel untergeordnet.'}; polygons=@{type='array';required=$false;default='[]';description='Einfache Flaechen [{name,points,color,material,thickness,...,style}]. Fuer grosse Modelle besser submodels verwenden.'}; points=@{type='Vector3[]';required=$false;default='null';description='Kurzform fuer ein Polygon.'}; script=@{type='string';required=$false;default='null';description='Mehrere Bloecke: POLYGON name=Roof color=#884422 material=Slate thickness=0.03, Punkte, END.'}; style=@{type='table';required=$false;default='{}';description='Globale Part-Defaults: color, material, materialVariant, collisionGroup, thickness, thicknessPlacement (inside Standard|center|positive|negative), anchored, canCollide, canQuery, canTouch, castShadow, transparency, reflectance, properties. Geometrie bleibt Builder-eigen: Position/Orientation/Rotation/CFrame/Size/PivotOffset in properties werden ignoriert, damit keine Flaeche verdreht wird.'}; autoWeld=@{type='bool';required=$false;default='true';description='Standard AN: WeldConstraint-Kette innerhalb jedes Untermodells, damit Polygon-Wedges auch bei anchored=false als ein Objekt verbunden bleiben. Nur autoWeld=false erzeugt bewusst getrennte Teile.'}; mainWeld=@{type='bool';required=$false;default='false';description='Verbindet alle Untermodelle automatisch mit dem ersten.'}; mainWelds=@{type='array';required=$false;default='[]';description='Animierbare Verbindungen [{name,from,to}] zwischen benannten Untermodellen. Erzeugt klassische Welds mit C0/C1 fuer Script-Animation.'}; closeOpenings=@{type='bool';required=$false;default='false';description='Erkennt offene Rand-Loops pro Untermodell und verschliesst sie automatisch mit triangulierten AutoCap-Flaechen.'}; capStyle=@{type='table';required=$false;default='{}';description='Eigener Style fuer automatisch geschlossene Oeffnungen.'}; origin=@{type='Vector3';required=$false;default='{0,0,0}';description='Gesamt-Offset.'}; rotation=@{type='Vector3 degrees';required=$false;default='{0,0,0}';description='Gesamtrotation.'}; scale=@{type='number';required=$false;default='1';description='Gesamtskalierung.'}; maxWedges=@{type='int';required=$false;default='4000';description='Budget, maximal 10000.'}; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'} };
+            params = @{ grade=@{type='string';required=$false;default='null';description='Version 7.2.0: \'simple\' | \'lowpoly\' | \'blockout\' - Erklaert die Einfachheit AUSDRUECKLICH (Attribut ArenaDeclaredGrade). Ohne das gilt ein Bau mit wenigen Teilen ohne Polygon-/Mesh-/Union-/Detail-Geometrie als Entwurf (DRAFT_GRADE_RISK).'}; modelName=@{type='string';required=$false;default="'ArenaPolygonModel'";description='Oberstes fertiges Model.'}; organic=@{type='bool';required=$false;default='false';description='Fuer jedes bewusst organische Modell true setzen: markiert es im Place, verlangt mindestens drei explizite kontrastierende submodel.style.color-Werte und aktiviert den frischen per-model Geometry/Palette/Enabled-Motion-Audit vor report_done. Kein Modellname loest diese Schreibsperre aus.'}; submodels=@{type='array';required=$false;default='[]';description='EMPFOHLEN: [{name,containerClass="Folder|Model",polygons:[...],style:{...},autoWeld,closeOpenings,capStyle}]. Alles bleibt dem Hauptmodel untergeordnet.'}; polygons=@{type='array';required=$false;default='[]';description='Einfache Flaechen [{name,points,color,material,thickness,...,style}]. Fuer grosse Modelle besser submodels verwenden.'}; points=@{type='Vector3[]';required=$false;default='null';description='Kurzform fuer ein Polygon.'}; script=@{type='string';required=$false;default='null';description='Mehrere Bloecke: POLYGON name=Roof color=#884422 material=Slate thickness=0.03, Punkte, END.'}; style=@{type='table';required=$false;default='{}';description='Globale Part-Defaults: color, material, materialVariant, collisionGroup, thickness, thicknessPlacement (inside Standard|center|positive|negative), anchored, canCollide, canQuery, canTouch, castShadow, transparency, reflectance, properties. Geometrie bleibt Builder-eigen: Position/Orientation/Rotation/CFrame/Size/PivotOffset in properties werden ignoriert, damit keine Flaeche verdreht wird.'}; autoWeld=@{type='bool';required=$false;default='true';description='Standard AN: WeldConstraint-Kette innerhalb jedes Untermodells, damit Polygon-Wedges auch bei anchored=false als ein Objekt verbunden bleiben. Nur autoWeld=false erzeugt bewusst getrennte Teile.'}; mainWeld=@{type='bool';required=$false;default='false';description='Verbindet alle Untermodelle automatisch mit dem ersten.'}; mainWelds=@{type='array';required=$false;default='[]';description='Animierbare Verbindungen [{name,from,to}] zwischen benannten Untermodellen. Erzeugt klassische Welds mit C0/C1 fuer Script-Animation.'}; closeOpenings=@{type='bool';required=$false;default='false';description='Erkennt offene Rand-Loops pro Untermodell und verschliesst sie automatisch mit triangulierten AutoCap-Flaechen.'}; capStyle=@{type='table';required=$false;default='{}';description='Eigener Style fuer automatisch geschlossene Oeffnungen.'}; origin=@{type='Vector3';required=$false;default='{0,0,0}';description='Gesamt-Offset.'}; rotation=@{type='Vector3 degrees';required=$false;default='{0,0,0}';description='Gesamtrotation.'}; scale=@{type='number';required=$false;default='1';description='Gesamtskalierung.'}; maxWedges=@{type='int';required=$false;default='4000';description='Budget, maximal 10000.'}; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'} };
             returns = '{ model, submodels, polygons, triangles, wedges, autoCaps, welds, weldedSubmodels, autoWeldDefault, mainWelds, skipped, ignoredGeometryProperties, geometryInvariant, geometry, method, editable }';
             example = @{ modelName='Clocktower'; submodels=@(@{name='StoneBody';style=@{color='#777B80';material='Slate'};polygons=@('... tapered silhouette, buttresses and arches ...')},@{name='CopperRoof';style=@{color='#A65F35';material='Metal'};polygons=@('... roof, eaves and finial ...')},@{name='ClockFace';style=@{color='#E8D9B5';material='SmoothPlastic'};polygons=@('... inset rim and clock face ...')}); mainWelds=@(@{name='RoofToStone';from='StoneBody';to='CopperRoof'}) };
             errors = @('ORGANIC_COLORS_REQUIRED: organic=true needs at least three explicit colour assignments.', 'ORGANIC_POLYGON_REQUIRED: an explicitly organic build must use this polygon builder with organic=true.', 'POLYGON_INVALID: kein gueltiges Polygon.', 'BUDGET_EXCEEDED', 'BAD_ARGS', 'REF_NOT_FOUND') })
@@ -17537,7 +19195,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             example = @{};
             errors = @() })
         $t.Add(@{ name = 'model_audit'; category = 'world'; summary = 'Modell-Audit: Platzhalter, Blockouts, Phase, Urteil.';
-            description = 'Auditiert jedes 3D-Build: Platzhalter, Blockouts, Modellphase, Meshes/Unions, Materialien, Polygon-/Primitive-Verhaeltnis, echte ArenaPolygonTriangle-Wedges, Zylinderachsen und ArenaDetail. Liefert konkrete Pfade/Messwerte statt einer unbelegten Qualitaetsbehauptung. Fuer organische Modelle (explizit markiert oder als organisch erkannt) wird organicQuality ZUSAETZLICH pro Modell berechnet, damit kein fremdes Polygon oder Script im Workspace die Metriken erfuellt: polygonTriangles, eindeutige Farben, dominanter Farbanteil, nearWhiteShare und enabled motionScripts mit issues je Modell. Fuer mit organic=true gebaute Modelle muss der Audit jedes exakt zurueckgegebene Modell NACH dem letzten Schreibaufruf enthalten; report_done gibt bei fehlendem/stalem Beleg ORGANIC_AUDIT_REQUIRED und bei nicht bestandenen Metriken DETAIL_REQUIRED zurueck. Dieser Messpfad waehlt nicht anhand des Modellnamens das bevorzugte Build-Tool. Regeln: modelBuildRules und organicBuildRules.';
+            description = 'Auditiert jedes 3D-Build: Platzhalter, Blockouts, Modellphase, Meshes/Unions, Materialien, Polygon-/Primitive-Verhaeltnis, echte ArenaPolygonTriangle-Wedges, Zylinderachsen und ArenaDetail. Liefert konkrete Pfade/Messwerte statt einer unbelegten Qualitaetsbehauptung. Fuer organische Modelle (explizit markiert oder als organisch erkannt) wird organicQuality ZUSAETZLICH pro Modell berechnet, damit kein fremdes Polygon oder Script im Workspace die Metriken erfuellt: polygonTriangles, eindeutige Farben, dominanter Farbanteil, nearWhiteShare und enabled motionScripts mit issues je Modell. Fuer mit organic=true gebaute Modelle muss der Audit jedes exakt zurueckgegebene Modell NACH dem letzten Schreibaufruf enthalten; report_done gibt bei fehlendem/stalem Beleg ORGANIC_AUDIT_REQUIRED und bei nicht bestandenen Metriken DETAIL_REQUIRED zurueck. Dieser Messpfad waehlt nicht anhand des Modellnamens das bevorzugte Build-Tool. Version 7.2.0: Das Ergebnis traegt zusaetzlich finishScore (0..100) und grade ("draft", "simple", "detailed", "sculpted" oder die beim Bauen erklaerte Note). grade "draft" heisst: mindestens 4 Teile, KEIN Polygon/Mesh/Union/ArenaDetail und ueber 60 % primitive - also ein Entwurf (genau der Fall "Baum = ein Zylinder plus drei Kugeln"). report_done antwortet dann DRAFT_GRADE_RISK. Ausweg: nachbauen ODER die Einfachheit beim Bauen ausdruecklich erklaeren - build_polygon_model/build_assembly { grade = "simple" | "lowpoly" | "blockout" } setzt das Attribut ArenaDeclaredGrade, und der Audit nennt das Ergebnis dann nicht mehr Entwurf. Regeln: modelBuildRules und organicBuildRules.';
             params = @{ ref = @{ type = 'string'; required = $false; default = 'game.Workspace'; description = '' } };
             returns = '{ ok, result: { scope, placeholderCount, phase, verdict, buildQuality: { verdict, organicQuality: { detected, models: [{ id, path, polygonTriangles, uniqueColors, dominantColorShare, nearWhiteShare, motionScripts, issues }] } }, nextStep }, warnings }';
             example = @{ ref = 'game.Workspace.Stadt' };
@@ -17610,7 +19268,9 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             params = @{ title = @{ type = 'string'; required = $true; default = '-'; description = 'Von Arena formulierter lebendiger Titel, maximal 70 Zeichen.' }; message = @{ type = 'string'; required = $true; default = '-'; description = 'Ein natuerlicher, einladender Satz, maximal 140 Zeichen; keine Auflistung.' } };
             returns = '{ delivered, title, message, limits: { titleCharacters=70, messageCharacters=140 } }';
             example = @{ title = '✅ Arena hat den Lauf-Bug behoben!'; message = 'Der Lauf-Bug ist weg – komm ins Spiel und probiere es aus!' };
-            errors = @('NOTIFICATIONS_DISABLED', 'BAD_ARGS: title/message fehlen oder ueberschreiten 70/140 Zeichen.') })
+            errors = @('NOTIFICATIONS_DISABLED', 'DRAFT_GRADE_RISK: model_audit hat die Arbeit als Entwurf benotet (wenige Teile, keine Polygon-/Mesh-/Union-/Detail-Geometrie) - nachbauen oder die Einfachheit mit grade erklaeren.', 'BAD_ARGS: title/message fehlen oder ueberschreiten 70/140 Zeichen.'),
+            notes2 = 'Das Ergebnis traegt buildRegister und buildRegisterNote: was wurde gebaut, was davon ist mit model_audit gemessen, was ist noch Entwurf.';
+            notes = @('Version 7.2.0: Die Antwort enthaelt notification { flowId, platformVerdict, platformReason, verified }. Steht dort NOTIFICATION_UNVERIFIED, hat Windows die Meldung vermutlich unterdrueckt (Grund im Feld platformReason) - behaupte dann NICHT, der Nutzer sei benachrichtigt, sondern sage im Antworttext, was fertig ist und dass die Windows-Meldung moeglicherweise nicht erscheint.', 'Version 7.2.0: Die Antwort enthaelt buildRegister { models, audited, unaudited, drafts, declared, averageFinishScore } und buildRegisterNote. Steht dort ein ungeprueftes Modell, hat model_audit diese Geometrie nie gemessen - hole das nach oder sage ehrlich, was ungeprueft ist.') })
                         $t.Add(@{ name = 'set_context'; category = 'session'; summary = 'Seite wechseln: server oder client.';
             description = 'Bestimmt, welche Seite Laufzeit-Werkzeuge (run_lua) treffen. run_lua selbst laeuft IMMER nur auf der Server/Seite - fuer den Client die client_-Werkzeuge.';
             params = @{ context = @{ type = "'server'|'client'"; required = $true; default = '-'; description = '' } };
@@ -17735,6 +19395,36 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             returns = '{ events: [...], count }';
             example = @{};
             errors = @() })
+        $t.Add(@{ name = 'scaffold_ui_scripts'; category = 'session'; summary = 'Aufbau-Vorschlag fuer eine Oberflaeche: welche KLEINEN Skripte, wer macht was.';
+            description = 'Server-Werkzeug ohne Studio-Umlauf. Es liefert die Aufteilung (Config, State, je Bildschirm ein View, Input, Update, Effects, Data), die Reihenfolge und die Leitplanken - damit eine GUI in StarterGui als echte, editierbare Instanzen entsteht und die Logik in mehreren kleinen Skripten liegt, nicht in einem 10.000-Zeilen-LocalScript. Die Strukturmessung (codeLayout) meldet MONOLITH_RISK, wenn ein Skript ueber 400 Zeilen hat oder ueber 15 Instance.new enthaelt. Regeln: uiStructureRules.';
+            params = @{ ui = @{ type = 'string'; required = $true; default = '-'; description = 'Name der Oberflaeche, z.B. "Shop".' }; screens = @{ type = 'string[]'; required = $false; default = 'null'; description = 'Bildschirmseiten, je eine bekommt ein eigenes View-Skript.' }; mode = @{ type = 'string'; required = $false; default = 'new'; description = '"new" oder "extend" (bestehende, vom Nutzer gebaute GUI erweitern).' } };
+            returns = '{ ui, mode, structure, scripts: [ { name, className, responsibility, why, order } ], buildOrder, limits, note }';
+            example = @{ ui = 'Shop'; screens = @( 'Shop', 'Inventory' ); mode = 'extend' };
+            errors = @('BAD_ARGS: ui fehlt.') })
+        $t.Add(@{ name = 'ask_user'; category = 'session'; summary = 'Den Nutzer etwas fragen - mit Entscheidungsbaum, Fenster am Mauszeiger.';
+            description = 'Statt im Chat zu fragen (der Nutzer ist oft weg und uebersieht es): ein Fenster erscheint in der Naehe des Mauszeigers mit Haekchen/Knopf-Optionen und eigener Antwort. Der ganze Baum kommt in EINER Anfrage. Bedingungen erlaubt: when = [ { questionId = "fruehererId", anyOf = ["optionA"], allOf = [...], custom = true } ] auf eine FRUEHERE Frage (mehrere Ebenen tief). Der gesamte Baum zaehlt: max 12 Fragen, max 6 Optionen je Frage, max 400 Zeichen je Text, Ids eindeutig. Du kannst dabei schlafen: waitSeconds (max 50) blockiert; kommt keine Antwort, liefert der Aufruf { state: "waiting", askId, nextCall } und du rufst spaeter mit resume=true erneut auf. Antworten kommen notfalls als _bridge.userAnswers mit.';
+            params = @{ title = @{ type = 'string'; required = $true; default = '-'; description = 'Kurze Ueberschrift (max 90 Zeichen).' }; message = @{ type = 'string'; required = $false; default = 'null'; description = 'Einleitungssatz (max 600 Zeichen).' }; questions = @{ type = 'object[]'; required = $true; default = '-'; description = 'Je Frage: { id, text, options: [ { id, label, description? } ], allowCustomResponse?, required?, multi?, when? }.' }; expiresInSeconds = @{ type = 'int'; required = $false; default = '180'; description = '30..1800: so lange bleibt das Fenster offen.' }; waitSeconds = @{ type = 'int'; required = $false; default = '0'; description = '0..50: aktiv auf die Antwort warten (0 = sofort zurueck und spaeter mit resume=true fortsetzen).' }; askId = @{ type = 'string'; required = $false; default = 'null'; description = 'Zum Fortsetzen einer offenen Frage.' }; resume = @{ type = 'bool'; required = $false; default = 'false'; description = 'true = erneut auf diese Frage warten.' } };
+            returns = '{ state: waiting|answered, askId, answers: { frageId: { optionIds, labels, custom } }, path, notShown, summary, secondsLeft, nextCall }';
+            example = @{ title = 'Welcher Baumstil?'; waitSeconds = 45; questions = @( @{ id = 'style'; text = 'Welchen Stil willst du?'; options = @( @{ id = 'organic'; label = 'Organisch' }, @{ id = 'lowpoly'; label = 'Low-Poly' } ) }, @{ id = 'detail'; text = 'Welche Details?'; multi = $true; when = @( @{ questionId = 'style'; anyOf = @('organic') } ); options = @( @{ id = 'leaves'; label = 'Laub' }, @{ id = 'branches'; label = 'Zweige' } ) } ) };
+            errors = @('ASK_TOO_MANY_QUESTIONS: mehr als 12 Fragen oder mehr als 6 Optionen je Frage.', 'ASK_GRAPH_INVALID: doppelte/fehlende Ids, unbekannte Bedingung, weniger als 2 Optionen.', 'ASK_CYCLE: eine Frage haengt von sich selbst oder einer SPAETEREN Frage ab.', 'ASK_EXPIRED: das Fenster lief ab, ohne dass geantwortet wurde.', 'ASK_UNKNOWN: unbekannte askId.') })
+        $t.Add(@{ name = 'confirm_action'; category = 'session'; summary = 'Kurz nachfragen: soll Arena das wirklich tun? (Ja/Nein)';
+            description = 'Abkuerzung fuer ask_user mit genau einer Frage und zwei Optionen. Fuer Loeschungen, Umbauten, Ueberschreiben von Nutzerarbeit oder teure Schritte. Der Nutzer kann auch eine eigene Antwort schreiben.';
+            params = @{ title = @{ type = 'string'; required = $true; default = '-'; description = 'Was bestaetigt werden soll.' }; message = @{ type = 'string'; required = $false; default = 'null'; description = 'Was passiert, wenn der Nutzer zustimmt.' }; confirmLabel = @{ type = 'string'; required = $false; default = 'Ja, mach das'; description = '' }; cancelLabel = @{ type = 'string'; required = $false; default = 'Nein, nicht'; description = '' }; expiresInSeconds = @{ type = 'int'; required = $false; default = '120'; description = '' }; waitSeconds = @{ type = 'int'; required = $false; default = '0'; description = '0..50, wie ask_user.' } };
+            returns = '{ state, askId, confirmed: true/false, customResponse, answers, path, notShown, summary }';
+            example = @{ title = 'Darf ich das bestehende Gebaeude ersetzen?'; message = 'Alle Teile des alten Hauses werden geloescht und neu gebaut.'; waitSeconds = 45 };
+            errors = @('ASK_EXPIRED: keine Antwort im Zeitfenster.', 'ASK_UNKNOWN: unbekannte askId.') })
+        $t.Add(@{ name = 'wait_for_user'; category = 'session'; summary = 'Aktiv auf eine Nachricht des Nutzers warten (max. 50 s).';
+            description = 'Blockiert, bis der Nutzer ueber die Bridge schreibt ("Nachricht an Arena senden" im Menue der Place-Zeile) oder die Zeit ablaeuft. Die Nachrichten selbst stehen im Umschlag DERSELBEN Antwort unter _bridge.userMessages. Nur an einer echten Entscheidungsstelle benutzen, nie als Dauer-Polling. Der harte HTTP-Deckel liegt bei 55/85 s, deshalb ist maxSeconds auf 50 begrenzt.';
+            params = @{ maxSeconds = @{ type = 'int'; required = $false; default = '30'; description = '1..50.' } };
+            returns = '{ state: messages_waiting|timeout, reason, waitedSeconds, messageCount, maxSeconds, note }';
+            example = @{ maxSeconds = 25 };
+            errors = @() })
+        $t.Add(@{ name = 'ack_user_message'; category = 'session'; summary = 'Nachricht des Nutzers als gelesen bestaetigen (Pflicht).';
+            description = 'Beendet die Wiederholung einer Nutzernachricht und zeigt dem Nutzer im Fenster "von Arena bestaetigt" plus deine optionale Kurzantwort. Ohne Bestaetigung wird dieselbe Nachricht in bis zu drei Antworten wiederholt und die Oberflaeche meldet ehrlich "angekommen, nicht bestaetigt".';
+            params = @{ id = @{ type = 'string'; required = $false; default = 'null'; description = 'Eine Nachrichten-Id aus _bridge.userMessages.' }; ids = @{ type = 'string[]'; required = $false; default = 'null'; description = 'Mehrere Ids.' }; all = @{ type = 'bool'; required = $false; default = 'false'; description = 'true = alle offenen Nachrichten.' }; reply = @{ type = 'string'; required = $false; default = 'null'; description = 'Kurze Antwort an den Nutzer (max. 300 Zeichen).' } };
+            returns = '{ acked, replyShownToUser, note }';
+            example = @{ id = 'msg_ab12cd34ef56'; reply = 'Verstanden - ich baue den Baum neu.' };
+            errors = @('BAD_ARGS: weder id, ids noch all=true.', 'ACK_UNKNOWN_MESSAGE: keine offene Nachricht mit dieser Id (knownMessageIds nennt die gueltigen).') })
         $t.Add(@{ name = 'get_chunk'; category = 'system'; summary = 'Stueck eines grossen Ergebnisses holen.';
             description = 'Wenn eine Antwort zu gross ist, liegt sie im Programm: blobId + chunkCount. Alle Chunks in Reihe holen und zusammenfuegen = komplettes Ergebnis (nie abgeschnitten).';
             params = @{ blobId = @{ type = 'string'; required = $true; default = '-'; description = '' }; index = @{ type = 'int'; required = $true; default = '-'; description = '1..chunkCount.' } };
@@ -17788,6 +19478,9 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
                 'Windows finish notifications use report_done { title, message }. Arena writes a lively title (max 70 characters) and an inviting body (max 140); avoid dry changelog lists.',
                 'Responses include typed error codes and concrete diagnostics. Use those details to decide the next step.',
                 'HARD CONSTRAINT for any hand-written WedgePart/triangle geometry (build_polygon_model already does this correctly - this rule is for genuinely custom run_lua geometry code only): see polygonEngineRules below for the mandatory WedgePart axis convention and the canonical seamless-triangle formula. Getting the axis order wrong is the single most common cause of 90-degree rotation errors and gaping seams in procedural low-poly builds.',
+                'ASK THE USER (7.2.0): when you need a real decision, use ask_user (decision tree, window appears at the user''s mouse cursor) or confirm_action (plain yes/no) instead of only asking in chat - the user is often away and misses chat questions. The WHOLE tree goes into ONE ask_user call; conditions use when = [ { questionId = "<earlier question id>", anyOf = ["optionId"] } ] and may nest several levels. Pass waitSeconds (max 50) to wait actively; if nothing arrives you get { state = "waiting", askId, nextCall } - resume later with ask_user { askId, resume: true }. Late answers arrive as _bridge.userAnswers. Never guess while an openQuestions field is present.',
+                'FINISH GRADE (7.2.0): model_audit now grades every build (finishScore 0..100, grade draft/simple/detailed/sculpted). grade "draft" means at least 4 parts, no polygon/mesh/union/detail geometry and more than 60 % primitives - report_done answers DRAFT_GRADE_RISK until you rebuild the silhouette with real structure. If the simplicity IS what the user asked for, declare it while building: build_polygon_model/build_assembly { grade = "simple" | "lowpoly" | "blockout" } writes the attribute ArenaDeclaredGrade and the audit stops calling it a draft. report_done also returns buildRegister: it lists what you built and what model_audit has not measured yet.',
+                'USER CHANNEL (7.2.0): the user can message you WHILE you work ("Nachricht an Arena senden" in the bridge place row). Every response then carries _bridge.userMessages plus _bridge.userMessageContract. Read it first, apply it, tell the user what you changed, and acknowledge with ack_user_message { id } - an unacknowledged message repeats in up to three responses. wait_for_user { maxSeconds <= 50 } blocks until a message arrives; use it only at a real decision point, never as polling. The user can also switch the place to read-only from the same menu, which is reported as WRITE_LOCKED_BY_USER.'
                 'HARD ORGANIC EVIDENCE CONTRACT (separate from the global builder preference): when an organic model is explicitly built with organic=true or is registered from per-model model_audit evidence, build and audit the real model in Studio, use a deliberate palette, install motion under that model, and fix its organicQuality issues. report_done requires fresh passing evidence for every registered organic model, even after a handoff. This is not selected or enforced from animal/tree names; see organicBuildRules for the stricter per-organic-model evidence contract.'
             )
             worldEngineRules = @{
@@ -17946,6 +19639,21 @@ end
                     'The exact organic model has ArenaPolygonTriangle wedges, at least three contrasting non-default colours and an enabled motion Script under the model.',
                     'model_audit organicQuality.detected=true, polygonTriangles>0, uniqueColors>=3, nearWhiteShare<=0.90, motionScripts>0, issues=[]; auditAt is after the latest write before report_done.'
                 )
+            }
+            uiStructureRules = @{
+                title = 'UI STRUCTURE CONTRACT (7.2.0) - the interface lives in StarterGui, the logic lives in MANY SMALL scripts'
+                theOneIdea = 'The GUI is BUILT ONCE as real, saved instances (build_interface/build_surface) and stays editable in Studio. Scripts only change what already exists - they never rebuild the screen with Instance.new at runtime.'
+                hardRules = @(
+                    '1 REAL INSTANCES: frames, labels, buttons, images are created ONCE and saved under StarterGui (ScreenGui -> your layout). The user must be able to select and edit every element in Studio.',
+                    '2 NO RUNTIME REBUILD: never generate the whole interface inside a LocalScript with Instance.new. That is unreadable, costs join time and cannot be edited. Instance.new is for the few elements you really create while running (list rows, tooltips).',
+                    '3 ONE SCRIPT PER RESPONSIBILITY: split the logic into several small scripts (for example UiInput, UiState, UiUpdate, UiEffects, UiData) under the same ScreenGui instead of one 10.000-line script.',
+                    '4 SIZE LIMIT: keep every script under about 250 lines. Above 400 lines the bridge reports MONOLITH_RISK and asks you to split it (tool: scaffold_ui_scripts).',
+                    '5 RUNTIME COST: more than about 15 Instance.new calls in one script is a warning sign - it usually means the interface is built at runtime instead of saved.',
+                    '6 EXTEND, DO NOT REBUILD: when the user already designed a GUI, extend exactly those instances (build_surface mode="extend", set_property, patch_script). Never replace user-made elements.',
+                    '7 DATA SEPARATION: numbers, texts and tuning values belong into a ModuleScript (or attributes), not into the drawing code - that is what makes the small scripts small.'
+                )
+                measurement = 'Every set_script_source / insert_script / patch_script result carries codeLayout { lines, instanceNewCalls, cloneCalls, parentAssignments, monolithRisk, level, advice } and warns MONOLITH_RISK. Every response repeats it until the script is split.'
+                scaffold = 'Call scaffold_ui_scripts { ui = "<name>" } to get a ready split (script names, responsibilities, order) for the interface you are building.'
             }
             uiEngineRules = @{
                 title = 'UI Engine 2.0 - canonical rules for every GUI (anchor/scale/corner/CanvasGroup bugs, glow, real textures, radial menus and the generic dark-dashboard look)'
@@ -18212,10 +19920,11 @@ end
         # JEDE Sitzung - kurz, hart, maschinenlesbar.
         $out.progressContract = @{
             field = 'Every API call carries progress = { percent = 43, message = "kurze, konkrete Nachricht" } on the same level as token/targetPlace/tool. Inside args works too: the bridge pulls it out and NEVER forwards it to the plugin.'
-            missing = 'A missing percent is 0 percent (the normal case on the first call) and is NEVER an error - a missing progress field must never block building.'
+            missing = 'Missing percent is NEVER an error and never blocks building - but since 7.2.0 the user then sees NO bar and NO percentage at all (only a text line with your message and your last tool), and every response carries progressWarning PERCENT_MISSING until you send a real number. Send percent: it is the only thing that makes your progress visible.'
+            neverReset = 'A call with only a message no longer resets the bar to 0. percent is written exclusively when you actually send a number, so reported progress survives message-only calls.'
             last = 'The last call of a completed task is report_done; it fills in 100 itself and marks "Automatisch gesetzt".'
-            display = 'The bridge shows percent + message in the place row (blue = working, green = done only after report_done, grey = waiting/no feedback for ~2 minutes, red = error). Every message is logged in the Arena history and in places-diagnose.txt.'
-            rewind = 'Rewinds are allowed. From more than 20 points of drop the row says "neuer Versuch".'
+            display = 'The bridge shows percent + your message in the place row (blue = working, green = done only after report_done, grey = waiting/no feedback for 60 s, red = error). An open Studio command no longer replaces the bar - it is additional tooltip information. Everything is logged in the Arena history, in progress-diagnose.txt and as PROGRESS stations in runtime.log.'
+            rewind = 'Rewinds are allowed and stay visible; the bridge never invents a higher percentage than you reported.'
         }
         $out.qualityContract = @(
             'No turn has to end with "done". It ends with report_done OR with a handoff - both are complete finishes.',
@@ -18312,7 +20021,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.1.5'
+            version = '7.2.0'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -18454,6 +20163,7 @@ end
                         $progressReported = ($null -ne $progressNode)
                         $progressPercent = 0.0
                         $progressMessage = ''
+                        $progressPercentProvided = (Get-ProgressPercentProvided $progressNode)
                         if ($progressReported) {
                             if ($progressNode -is [ValueType] -or $progressNode -is [string]) {
                                 $progressPercent = Clamp-ProgressPercent $progressNode
@@ -18462,7 +20172,7 @@ end
                                 try { if ($progressNode.PSObject.Properties['message']) { $progressMessage = [string]$progressNode.message } } catch {}
                             }
                         }
-                        Update-ArenaProgressState $sessionId $callTool $progressPercent $progressMessage $progressReported $false $false | Out-Null
+                        Update-ArenaProgressState $sessionId $callTool $progressPercent $progressMessage $progressReported $false $false $progressPercentProvided | Out-Null
                         $progressStarted = $true
                     }
                     $pending.Add(@{ id=$commandId; tool=$callTool; args=$callArgs; signal=$signal; result=$null; deduplicated=$false; activityId=$activityId })
@@ -18542,10 +20252,10 @@ end
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.1.5'
+            bridgeVersion = '7.2.0'
             executor = $executorSnapshot
             progressContract = @{
-                rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent = 0, never an error. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
+                rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent is never an error, but the user then sees NO bar and NO percentage at all - only your message as text. Send a real number every few calls. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
                 lastPercent = $(if ($progressView) { [double]$progressView.percent } else { 0 })
                 lastMessage = $(if ($progressView) { [string]$progressView.message } else { '' })
                 state = $(if ($progressView) { [string]$progressView.state } else { 'idle' })
@@ -18680,9 +20390,98 @@ end
                     if ($qualityAbuse -and $qualityCylinders -gt 0) { $qualityNote = $qualityNote + 'and ' }
                     if ($qualityCylinders -gt 0) { $qualityNote = $qualityNote + ([string]$qualityCylinders + ' cylinder(s) standing as discs on their edge (90-degree error) ') }
                     $qualityNote = $qualityNote + '- see organicBuildRules, rebuild with build_polygon_model and the cylinder helper, then run model_audit again. report_done answers DETAIL_REQUIRED until this is fixed or handed off.'
+                    $draftRiskView = $false
+                    $draftGradeView = ''
+                    $draftScoreView = -1
+                    try { if ($qualityView.PSObject.Properties['draftRisk']) { $draftRiskView = [bool]$qualityView.draftRisk } } catch {}
+                    try { if ($qualityView.PSObject.Properties['buildGrade']) { $draftGradeView = [string]$qualityView.buildGrade } } catch {}
+                    try { if ($qualityView.PSObject.Properties['finishScore']) { $draftScoreView = [int]$qualityView.finishScore } } catch {}
+                    if ($draftRiskView) {
+                        $envelope.qualityWarning = 'DRAFT_GRADE_RISK'
+                        $draftNote = ('DRAFT_GRADE_RISK: the last model_audit graded this build "' + $draftGradeView + '" (' + [string]$draftScoreView + '/100) - few parts, no polygon/mesh/union/detail geometry. report_done answers DRAFT_GRADE_RISK. Rebuild it with real structure, or declare the intended simplicity while building (grade = "simple"/"lowpoly"/"blockout") and audit again.')
+                        if ($envelope.attention) { $envelope.attention = $envelope.attention + ' ' + $draftNote } else { $envelope.attention = $draftNote }
+                    }
                     if ($envelope.attention) { $envelope.attention = $envelope.attention + ' ' + $qualityNote } else { $envelope.attention = $qualityNote }
                 }
             } catch {}
+        }
+        # Version 7.2.0: NUTZER-KANAL. JEDER Umschlag traegt wartende
+        # Nutzernachrichten mit - das ist die einzige Stelle, an der eine
+        # Korrektur des Nutzers die KI ueberhaupt erreichen kann (die Bridge
+        # kann nicht in den Arena-Chat schreiben, es gibt keinen Push-Kanal).
+        # Version 7.2.0: PERCENT_MISSING als Nudge in JEDER Antwort, solange die
+        # KI keine Zahl schickt. Ohne Zahl zeigt die Oberflaeche bewusst keinen
+        # Balken (D5/D6) - die KI muss also erfahren, warum der Nutzer nichts
+        # sieht, statt es zu raten.
+        try {
+            $progressWarnJson = ''
+            if ($Shared.ProgressStates.TryGetValue([string]$sessionId, [ref]$progressWarnJson) -and -not [string]::IsNullOrWhiteSpace($progressWarnJson)) {
+                $progressWarnState = $progressWarnJson | ConvertFrom-Json
+                $warnCalls = 0
+                $warnWithPercent = 0
+                $warnKnown = $false
+                try { $warnCalls = [int]$progressWarnState.calls } catch {}
+                try { if ($progressWarnState.PSObject.Properties['callsWithPercent']) { $warnWithPercent = [int]$progressWarnState.callsWithPercent } } catch {}
+                try { if ($progressWarnState.PSObject.Properties['percentKnown']) { $warnKnown = [bool]$progressWarnState.percentKnown } } catch {}
+                if ($warnCalls -ge 2 -and -not $warnKnown -and [string]$progressWarnState.state -ne 'done') {
+                    $envelope.progressWarning = @{
+                        code = 'PERCENT_MISSING'
+                        callsWithoutPercent = $warnCalls
+                        effect = 'The user sees NO progress bar and NO percentage for this place - only a text line with your message and your last tool. They cannot tell how far you are.'
+                        fix = 'Add progress = { percent = <0-100>, message = "<what you are doing>" } to your next call. A rough honest number is worth more than no number.'
+                    }
+                    $percentNote = 'PERCENT_MISSING: send progress.percent - the user currently sees no bar at all.'
+                    if ($envelope.attention) { $envelope.attention = $percentNote + ' ' + $envelope.attention } else { $envelope.attention = $percentNote }
+                }
+            }
+        } catch {}
+        # Version 7.2.0 (D3): Antworten aus dem Fragenfenster, die noch nicht
+        # gezeigt wurden. Eine Antwort darf nie verloren gehen, nur weil die KI
+        # gerade nicht gewartet hat.
+        $lateAnswers = Get-LateAskAnswers $sessionId 4
+        if ($lateAnswers.Count -gt 0) {
+            $envelope.userAnswers = $lateAnswers.ToArray()
+            $answerNote = 'USER ANSWERS (ask_user/confirm_action): the user answered. Read _bridge.userAnswers, act exactly on it and mention the decision in your reply.'
+            if ($envelope.attention) { $envelope.attention = $answerNote + ' ' + $envelope.attention } else { $envelope.attention = $answerNote }
+        }
+        # Version 7.2.0 (AP7): Die Code-Struktur-Messung wiederholt sich in
+        # jeder Antwort, bis das Skript aufgeteilt ist - einmal lesen und
+        # ignorieren hilft nicht.
+        try {
+            $layoutJson = ''
+            if ($Shared.CodeLayouts.TryGetValue([string]$sessionId, [ref]$layoutJson) -and -not [string]::IsNullOrWhiteSpace($layoutJson)) {
+                $layoutView = $layoutJson | ConvertFrom-Json
+                $layoutRisk = $false
+                try { $layoutRisk = [bool]$layoutView.monolithRisk } catch {}
+                if ($layoutRisk) {
+                    $envelope.codeLayout = $layoutView
+                    $envelope.uiStructureWarning = 'MONOLITH_RISK'
+                    $layoutNote = ('MONOLITH_RISK (' + [string]$layoutView.level + ', ' + [string]$layoutView.lines + ' lines, ' + [string]$layoutView.instanceNewCalls + 'x Instance.new): ' + [string]$layoutView.advice)
+                    if ($envelope.attention) { $envelope.attention = $layoutNote + ' ' + $envelope.attention } else { $envelope.attention = $layoutNote }
+                }
+            }
+        } catch {}
+        $openAsks = Get-PendingAskViews $sessionId 1
+        if ($openAsks.Count -gt 0) {
+            $envelope.openQuestions = $openAsks.ToArray()
+            $askNote = 'OPEN QUESTION: the user still sees a question window (' + [string]$openAsks[0].askId + ': ' + [string]$openAsks[0].title + '). Do not guess - wait with ask_user { askId, resume: true } or continue with work that does not depend on the answer.'
+            if ($envelope.attention) { $envelope.attention = $askNote + ' ' + $envelope.attention } else { $envelope.attention = $askNote }
+        }
+        $pendingUserMessages = Get-PendingUserMessageViews $sessionId 3
+        if ($pendingUserMessages.Count -gt 0) {
+            $deliveredIds = New-Object System.Collections.Generic.List[string]
+            foreach ($messageView in $pendingUserMessages) { $deliveredIds.Add([string]$messageView.id) }
+            [void](Mark-UserMessagesDelivered $sessionId $deliveredIds 'envelope')
+            $envelope.userMessages = $pendingUserMessages.ToArray()
+            $envelope.userMessageContract = @{
+                code = 'USER_MESSAGE_PENDING'
+                priority = 'highest'
+                instruction = 'The user sent this WHILE you were working. Stop executing your previous plan, apply the instruction, and tell the user in your reply what you changed. Then acknowledge with ack_user_message { id }.'
+                doNotIgnore = 'These messages outrank your own assumptions and any earlier plan. Never tell the user you received nothing while this field is present.'
+                repeatRule = 'An unacknowledged message is repeated in up to three responses, so ignoring it does not make it disappear - it only makes the bridge show the user "angekommen, nicht bestaetigt".'
+            }
+            $userNote = 'USER MESSAGE PENDING: the user interrupted your work - read _bridge.userMessages FIRST, act on it, then ack_user_message.'
+            if ($envelope.attention) { $envelope.attention = $userNote + ' ' + $envelope.attention } else { $envelope.attention = $userNote }
         }
         $late = Take-LateResults $sessionId
         if ($late.Count -gt 0) {
@@ -18880,6 +20679,37 @@ end
                             }
                         }
                     }
+                    # Version 7.2.0 (AP6): ENTWURFS-SPERRE. Der Audit nennt seit
+                    # 7.2.0 eine Note. Ist sie 'draft' (wenige Teile, kein Polygon/
+                    # Mesh/Union/Detail, ueber 60 % primitive), ist das kein
+                    # fertiges Modell - genau der Fall "Baum = Zylinder + Kugeln".
+                    # Ausweg: nachbauen ODER die Einfachheit beim Bauen erklaeren
+                    # (grade = simple/lowpoly/blockout) und erneut auditieren.
+                    if ($audit) {
+                        $draftRiskNow = $false
+                        $draftGradeNow = ''
+                        $draftScoreNow = -1
+                        try { if ($audit.PSObject.Properties['draftRisk']) { $draftRiskNow = [bool]$audit.draftRisk } } catch {}
+                        try { if ($audit.PSObject.Properties['buildGrade']) { $draftGradeNow = [string]$audit.buildGrade } } catch {}
+                        try { if ($audit.PSObject.Properties['finishScore']) { $draftScoreNow = [int]$audit.finishScore } } catch {}
+                        if ($draftRiskNow -and [string]::IsNullOrWhiteSpace($handoffState)) {
+                            Add-ChannelCount 'BuildAuditDemands' 1
+                            Add-ChannelCount 'QualityDraftFlags' 1
+                            Write-FlowStation 'BUILD' $sessionId 'DRAFT_BLOCKED' @{ grade = $draftGradeNow; finishScore = $draftScoreNow }
+                            return @{
+                                ok = $false
+                                code = 'DRAFT_GRADE_RISK'
+                                error = ('model_audit graded this build as a DRAFT (grade "' + $draftGradeNow + '", ' + [string]$draftScoreNow + '/100): few parts, no polygon/mesh/union/detail geometry, almost everything primitive. That is not finished work.')
+                                buildQuality = @{
+                                    verdict = [string]$audit.buildQualityVerdict
+                                    grade = $draftGradeNow
+                                    finishScore = $draftScoreNow
+                                    draftRisk = $true
+                                }
+                                howToFix = 'Either rebuild it (real silhouette with build_polygon_model, details, palette - see modelBuildRules/organicBuildRules, then model_audit again) OR - if the simplicity is what the user asked for - declare it while building (build_polygon_model/build_assembly { grade = "simple" | "lowpoly" | "blockout" }) and run model_audit again. Or hand off honestly with handoff {...}.'
+                            }
+                        }
+                    }
                     # Organic quality is a separate, per-model proof. It is
                     # required even when AuditFlags is empty, and any later
                     # successful write invalidates the proof until re-audited.
@@ -19029,12 +20859,36 @@ end
                 }
                 # Version 3.8: Arena meldet "fertig" - der Nutzer bekommt eine
                 # Windows-Benachrichtigung (nur wenn er das aktiviert hat).
+                # Version 7.2.0 (AP6): Das Bau-Register gehoert in JEDE
+                # report_done-Antwort - auch wenn die Fertig-Meldung aus ist.
+                # Es sagt ehrlich, was gebaut und was davon geprueft wurde.
+                $buildRegister = Get-SessionBuildSummary $sessionId
+                $buildRegisterNote = ''
+                if ($buildRegister.models -gt 0) {
+                    $buildRegisterNote = ('Build register: ' + [string]$buildRegister.models + ' model(s) built in this session, ' + [string]$buildRegister.audited + ' audited.')
+                    if (@($buildRegister.unaudited).Count -gt 0) {
+                        $names = New-Object System.Collections.Generic.List[string]
+                        foreach ($entry in @($buildRegister.unaudited)) {
+                            $label = [string]$entry.name
+                            if ([string]::IsNullOrWhiteSpace($label)) { $label = [string]$entry.path }
+                            if (-not [string]::IsNullOrWhiteSpace($label)) { $names.Add('"' + $label + '"') }
+                        }
+                        $buildRegisterNote = $buildRegisterNote + ' NOT verified by model_audit: ' + ($names.ToArray() -join ', ') + '. Nothing measured this geometry - run model_audit on it.'
+                        Add-ChannelCount 'BuildAuditDemands' 1
+                        Write-FlowStation 'BUILD' $sessionId 'UNAUDITED' @{ models = $buildRegister.models; unaudited = @($buildRegister.unaudited).Count }
+                    }
+                    if (@($buildRegister.drafts).Count -gt 0) {
+                        Add-ChannelCount 'QualityDraftFlags' 1
+                    }
+                }
                 $notifyOn = $false
                 try { $notifyOn = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
                 if (-not $notifyOn) {
                     return @{
                         ok = $false
                         code = 'NOTIFICATIONS_DISABLED'
+                        buildRegister = $buildRegister
+                        buildRegisterNote = $buildRegisterNote
                         error = 'report_done is not active: the user has NOT enabled finish notifications in the Arena Roblox Bridge settings.'
                         hint = 'Nothing is wrong - simply finish your answer normally. Do not call report_done again in this session.'
                     }
@@ -19055,24 +20909,69 @@ end
                 $doneEntry = Get-SessionEntry $sessionId
                 $donePlace = 'Place'
                 if ($doneEntry) { $donePlace = [string]$doneEntry.placeName }
+                # Version 7.2.0 (D4): Jede Meldung bekommt eine Flow-Id, die
+                # ENQUEUED -> PLATFORM -> CALL -> SWEEP verbindet. Vorher stand
+                # im Protokoll "Arena-Fertig-Meldung angezeigt", ohne dass
+                # irgendjemand wusste, ob Windows sie wirklich gezeichnet hat.
+                $notifyFlowSeq = [long]0
+                try {
+                    $notifyFlowSeq = [long]$Shared.Channel['NotifyFlowSeq'] + 1
+                    $Shared.Channel['NotifyFlowSeq'] = $notifyFlowSeq
+                } catch {}
+                $notifyFlowId = 'n-' + [string]$notifyFlowSeq
+                $platformVerdict = 'UNKNOWN'
+                $platformReason = 'Die Oberflaeche hat die Plattform noch nicht gemessen.'
+                $platformAppId = $false
+                try {
+                    $platformJson = [string]$Shared.NotifyPlatformJson
+                    if (-not [string]::IsNullOrWhiteSpace($platformJson)) {
+                        $platformView = $platformJson | ConvertFrom-Json
+                        $platformVerdict = [string]$platformView.verdict
+                        $platformReason = [string]$platformView.reason
+                        $platformAppId = [bool]$platformView.appUserModelIdRegistered
+                    }
+                } catch {}
                 $donePayload = @{
+                    flowId = $notifyFlowId
                     place = $donePlace
                     title = $doneTitle
                     message = $doneMessage
                     time = (Get-Date).ToString('u')
+                    queuedAt = (Get-UnixSeconds)
                 }
                 $Shared.NotifyQueue.Enqueue((To-Json $donePayload 8))
+                Add-ChannelCount 'NotifyEnqueued' 1
+                Write-FlowStation 'NOTIFY' $notifyFlowId 'ENQUEUED' @{ place = $donePlace; platform = $platformVerdict; aumidRegistered = $platformAppId; title = $doneTitle }
                 Add-BridgeEvent $sessionId 'arena_done' ("The assistant reported it is done: " + $doneMessage) @{ place = $donePlace }
-                return @{
-                    ok = $true
-                    result = @{
-                        delivered = $true
-                        title = $doneTitle
-                        message = $doneMessage
-                        limits = @{ titleCharacters = 70; messageCharacters = 140 }
-                        note = 'The user is being notified on their PC right now. This was your LAST action: make no further changes and no further tool calls - end your response now with your final summary.'
+                $notifyVerified = ($platformVerdict -eq 'READY')
+                $notifyResult = @{
+                    queued = $true
+                    delivered = $notifyVerified
+                    buildRegister = $buildRegister
+                    buildRegisterNote = $buildRegisterNote
+                    flowId = $notifyFlowId
+                    title = $doneTitle
+                    message = $doneMessage
+                    limits = @{ titleCharacters = 70; messageCharacters = 140 }
+                    notification = @{
+                        flowId = $notifyFlowId
+                        state = 'QUEUED'
+                        settingEnabled = $true
+                        platformVerdict = $platformVerdict
+                        platformReason = $platformReason
+                        appUserModelIdRegistered = $platformAppId
+                        verified = $false
+                        verification = 'notify.sweep re-measures the platform a few seconds after the call and writes the verdict (SHOWN or SHOWN_UNVERIFIED plus reason) to notify-diagnose.txt. Windows has no API that confirms a toast was drawn, so "verified" here means: no suppression was measurable.'
+                        diagnoseFile = '%LOCALAPPDATA%\ArenaRobloxBridge\notify-diagnose.txt'
                     }
+                    note = 'The user is being notified on their PC right now. This was your LAST action: make no further changes and no further tool calls - end your response now with your final summary.'
                 }
+                if (-not $notifyVerified) {
+                    $notifyResult.notificationWarning = 'NOTIFICATION_UNVERIFIED'
+                    $notifyResult.honest = ('The finish notification was queued, but Windows may suppress it right now: ' + $platformVerdict + ' - ' + $platformReason + ' Do NOT claim the user was notified. Say in your reply what you finished and that the Windows notification may not appear.')
+                    Write-FlowStation 'NOTIFY' $notifyFlowId 'UNVERIFIED' @{ verdict = $platformVerdict; reason = $platformReason }
+                }
+                return @{ ok = $true; result = $notifyResult }
             }
             'get_events' {
                 $events = Take-Events $sessionId 40
@@ -19097,7 +20996,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.1.5'
+                        bridgeVersion = '7.2.0'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -19119,6 +21018,111 @@ end
                     }
                 }
             }
+            # Version 7.2.0 (AP7): Der Aufbau der Oberflaeche als Server-Werkzeug
+            # (kein Studio-Umlauf): Namen, Verantwortungen und Reihenfolge der
+            # KLEINEN Skripte. Genau das fehlte, wenn die KI stattdessen ein
+            # 10.000-Zeilen-LocalScript geschrieben hat.
+            'scaffold_ui_scripts' {
+                $uiName = ''
+                try { if ($null -ne $toolArgs -and $toolArgs.PSObject.Properties['ui']) { $uiName = ([string]$toolArgs.ui).Trim() } } catch {}
+                if ([string]::IsNullOrWhiteSpace($uiName)) {
+                    return @{
+                        ok = $false
+                        code = 'BAD_ARGS'
+                        error = 'ui is required (the name of the interface, for example "Shop").'
+                        hint = 'Call scaffold_ui_scripts { ui = "Shop", screens = ["Shop","Inventory"] } - you get the split and the order to build it in.'
+                    }
+                }
+                $screens = New-Object System.Collections.Generic.List[string]
+                try {
+                    if ($null -ne $toolArgs -and $toolArgs.PSObject.Properties['screens']) {
+                        foreach ($screen in @($toolArgs.screens)) {
+                            $value = ([string]$screen).Trim()
+                            if (-not [string]::IsNullOrWhiteSpace($value)) { $screens.Add($value) }
+                        }
+                    }
+                } catch {}
+                $modeValue = 'new'
+                try { if ($null -ne $toolArgs -and $toolArgs.PSObject.Properties['mode'] -and -not [string]::IsNullOrWhiteSpace([string]$toolArgs.mode)) { $modeValue = ([string]$toolArgs.mode).Trim().ToLowerInvariant() } } catch {}
+                if ($modeValue -ne 'extend') { $modeValue = 'new' }
+                $scripts = New-Object System.Collections.Generic.List[object]
+                $scripts.Add([pscustomobject]@{
+                    name = $uiName + 'Config'
+                    className = 'ModuleScript'
+                    responsibility = 'Zahlen, Farben, Texte und Grenzen an EINER Stelle. Kein Zeichencode hier.'
+                    why = 'Damit niemand Werte im Zeichencode sucht und zwei Skripte dieselbe Zahl anders belegen.'
+                    order = 1
+                })
+                $scripts.Add([pscustomobject]@{
+                    name = $uiName + 'State'
+                    className = 'ModuleScript'
+                    responsibility = 'Der Zustand (welche Seite, welche Auswahl, welche Werte) plus Getter/Setter und ein Signal (BindableEvent), wenn sich etwas aendert.'
+                    why = 'Zustand getrennt von der Darstellung - genau das ist der Grund, warum die kleinen Skripte klein bleiben.'
+                    order = 2
+                })
+                foreach ($screen in $screens) {
+                    $scripts.Add([pscustomobject]@{
+                        name = $uiName + ([string]$screen) + 'View'
+                        className = 'LocalScript'
+                        responsibility = ('Nur die Elemente von "' + [string]$screen + '": was wird angezeigt, was ist sichtbar. Schreibt in BESTEHENDE GuiObjects, erzeugt nichts neu.')
+                        why = 'Eine Bildschirmseite, ein Skript - lesbar in einem Zug.'
+                        order = 3
+                    })
+                }
+                $scripts.Add([pscustomobject]@{
+                    name = $uiName + 'Input'
+                    className = 'LocalScript'
+                    responsibility = 'Klicks, Hover, Tasten und Touch. Ruft NUR Setter des State auf, aendert selbst nichts am Aussehen.'
+                    why = 'Eingabe und Darstellung zu trennen verhindert doppelte Wahrheiten.'
+                    order = 4
+                })
+                $scripts.Add([pscustomobject]@{
+                    name = $uiName + 'Update'
+                    className = 'LocalScript'
+                    responsibility = 'Hoert auf den State und aktualisiert die vorhandenen Elemente (Texte, Zahlen, Sichtbarkeit, Auswahl).'
+                    why = 'Nur hier laeuft Aktualisierung - kein Skript schreibt an einem anderen vorbei.'
+                    order = 5
+                })
+                $scripts.Add([pscustomobject]@{
+                    name = $uiName + 'Effects'
+                    className = 'LocalScript'
+                    responsibility = 'Tweens und Animationen auf den Transform-Wrappern (UIScale), inklusive Oeffnen/Schliessen.'
+                    why = 'Effekte sind der Teil, der am haeufigsten Laufzeitfehler erzeugt - klein und getrennt testbar.'
+                    order = 6
+                })
+                $scripts.Add([pscustomobject]@{
+                    name = $uiName + 'Data'
+                    className = 'ModuleScript'
+                    responsibility = 'Optional: RemoteEvents/Remotes, Profildaten, Preise. Alles, was mit dem Server spricht.'
+                    why = 'Datenzugriff gehoert nicht in die Zeichenschleife.'
+                    order = 7
+                })
+                return @{
+                    ok = $true
+                    result = @{
+                        ui = $uiName
+                        mode = $modeValue
+                        structure = @{
+                            instance = 'StarterGui.' + $uiName + 'Gui (ScreenGui)'
+                            layout = 'Frames, Labels, Buttons und Bilder werden EINMAL gebaut (build_interface/build_surface) und bleiben in Studio editierbar.'
+                            scriptsFolder = 'StarterGui.' + $uiName + 'Gui.' + $uiName + 'Scripts (Folder) - alle kleinen Skripte liegen sichtbar beieinander.'
+                            forbidden = 'Kein LocalScript, das die ganze Oberflaeche zur Laufzeit mit Instance.new aufbaut. Das ist in Studio nicht editierbar, kostet beim Beitritt Leistung und ist nicht lesbar.'
+                        }
+                        scripts = @($scripts.ToArray())
+                        buildOrder = @('1. Instanzen bauen (build_interface/build_surface ' + $(if ($modeValue -eq 'extend') { 'mode="extend" auf den BESTEHENDEN Elementen' } else { 'neu' }) + ')', '2. Config und State anlegen (insert_script, klein halten)', '3. je Bildschirm ein View-Skript', '4. Input, Update, Effects - je eine Verantwortung', '5. erst danach Details wie Bilder/Effekte ergaenzen')
+                        limits = @{ maxLinesPerScript = 250; hardWarnLines = 400; instanceNewPerScript = 15 }
+                        note = 'Jedes Skript bleibt unter etwa 250 Zeilen und erzeugt nichts, was es nicht besitzt. set_script_source/insert_script/patch_script messen das und melden MONOLITH_RISK mit Zahlen. Regeln: uiStructureRules.'
+                    }
+                }
+            }
+            # Version 7.2.0: NUTZER-KANAL. Beides sind reine Server-Werkzeuge
+            # (kein Studio-Umlauf), damit eine Korrektur des Nutzers die KI auch
+            # dann sofort erreicht, wenn die Studio-Queue gerade belegt ist.
+            'ack_user_message' { return (Invoke-AckUserMessage $sessionId $toolArgs) }
+            'wait_for_user'    { return (Invoke-WaitForUser $sessionId $toolArgs) }
+            # Version 7.2.0 (D3): Fragen mit Entscheidungsbaum + Ja/Nein-Bestaetigung.
+            'ask_user'         { return (Invoke-AskUser $sessionId $toolArgs) }
+            'confirm_action'   { return (Invoke-ConfirmAction $sessionId $toolArgs) }
         }
         return $null
     }
@@ -19436,7 +21440,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.1.5'
+                        serverVersion = '7.2.0'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -19795,7 +21799,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.1.5'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.2.0'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -19879,8 +21883,8 @@ end
                 }
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.1.5'
-                    serverVersion = '7.1.5'
+                    bridgeVersion = '7.2.0'
+                    serverVersion = '7.2.0'
                     toolbox = $statusToolbox
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
@@ -20086,8 +22090,10 @@ end
                         try { $toolArgs.PSObject.Properties.Remove('progress') } catch {}
                     }
                 } catch {}
+                $progressPercentProvided = $false
                 if ($null -ne $progressNode) {
                     $progressReported = $true
+                    $progressPercentProvided = (Get-ProgressPercentProvided $progressNode)
                     if ($progressNode -is [ValueType] -or $progressNode -is [string]) {
                         $progressPercent = Clamp-ProgressPercent $progressNode
                     } else {
@@ -20096,7 +22102,7 @@ end
                     }
                 }
                 $isDoneTool = ($tool -eq 'report_done')
-                $progressState = Update-ArenaProgressState $sessionId $tool $progressPercent $progressMessage $progressReported $isDoneTool $false
+                $progressState = Update-ArenaProgressState $sessionId $tool $progressPercent $progressMessage $progressReported $isDoneTool $false $progressPercentProvided
                 if ($progressReported -and -not [string]::IsNullOrWhiteSpace($progressMessage)) {
                     try { Add-BridgeEvent $sessionId 'progress' $progressMessage @{ percent = $progressPercent; tool = [string]$tool } } catch {}
                 }
@@ -20339,6 +22345,30 @@ end
                     # Remember the actual returned model so report_done can demand
                     # an audit of this precise organic build even when the build
                     # request timed out/reconnected before any later audit arrives.
+                    # Version 7.2.0 (AP6): Jeder erfolgreiche Modell-Bau wird
+                    # registriert (unabhaengig von organisch). Ein Audit traegt
+                    # Note und Entwurfs-Kennzeichen nach.
+                    if ($resultSucceeded -and $pluginPayload) {
+                        try { Register-SessionBuild $sessionId $tool $toolArgs $pluginPayload $resultAtTicks } catch {}
+                        if ($tool -eq 'model_audit') {
+                            try { Update-SessionBuildAudit $sessionId $pluginPayload $resultAtTicks } catch {}
+                        }
+                        # Version 7.2.0 (AP7): Code-Struktur je Sitzung merken.
+                        try {
+                            if ($pluginPayload.PSObject.Properties['codeLayout'] -and $null -ne $pluginPayload.codeLayout) {
+                                $layoutView = $pluginPayload.codeLayout
+                                $layoutJson = ($layoutView | ConvertTo-Json -Depth 6 -Compress)
+                                $Shared.CodeLayouts[[string]$sessionId] = [string]$layoutJson
+                                Add-ChannelCount 'CodeLayoutChecked' 1
+                                $layoutRisk = $false
+                                try { $layoutRisk = [bool]$layoutView.monolithRisk } catch {}
+                                if ($layoutRisk) {
+                                    Add-ChannelCount 'UiMonolithFlags' 1
+                                    Write-FlowStation 'UISTRUCTURE' (Get-ShortSid $sessionId) 'MONOLITH_RISK' @{ tool = $tool; level = ([string]$layoutView.level); lines = ([string]$layoutView.lines); instanceNew = ([string]$layoutView.instanceNewCalls) }
+                                }
+                            }
+                        } catch {}
+                    }
                     if ($resultSucceeded -and $tool -eq 'build_polygon_model' -and $pluginPayload.organic -eq $true) {
                         $builtModel = $null
                         try { $builtModel = $pluginPayload.model } catch {}
@@ -20444,6 +22474,15 @@ end
                             if ($primitiveAbuse -or $cylinderProblemCount -gt 0 -or $organicIssues.Count -gt 0) {
                                 $summary = $summary + ' | buildQuality ' + $buildVerdict
                             }
+                            # Version 7.2.0 (AP6): Note und Fertig-Punktzahl gehoeren
+                            # in jede Antwort, damit ein Entwurf auffaellt, BEVOR die
+                            # Arbeit als fertig gemeldet wird.
+                            $buildGrade = ''
+                            $buildFinishScore = -1
+                            $buildDraftRisk = $false
+                            try { if ($buildQuality -and $buildQuality.PSObject.Properties['grade']) { $buildGrade = [string]$buildQuality.grade } } catch {}
+                            try { if ($buildQuality -and $buildQuality.PSObject.Properties['finishScore']) { $buildFinishScore = [int]$buildQuality.finishScore } } catch {}
+                            try { if ($buildQuality -and $buildQuality.PSObject.Properties['draftRisk']) { $buildDraftRisk = [bool]$buildQuality.draftRisk } } catch {}
                             $flag = [pscustomobject]@{
                                 placeholderCount = $placeholderCount
                                 placeholders = $placeholders
@@ -20453,6 +22492,9 @@ end
                                 primitiveGroups = $primitiveGroups
                                 cylinderProblemCount = $cylinderProblemCount
                                 buildQualityVerdict = $buildVerdict
+                                buildGrade = $buildGrade
+                                finishScore = $buildFinishScore
+                                draftRisk = $buildDraftRisk
                                 organicDetected = $organicDetected
                                 organicIssues = $organicIssues
                                 organicPolygonTriangles = $organicPolygonTriangles
@@ -22878,7 +24920,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.1.5)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.2.0)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -22929,7 +24971,11 @@ function Write-PlacesDiagnoseFile {
 # GRUEN = fertig (nur nach report_done), GRAU = wartet/keine Rueckmeldung,
 # ROT = Fehler. Alles nur in der Zeile - keine Toasts, keine Popups.
 # ----------------------------------------------------------------------------
-function Get-ProgressStateSnapshot {
+function Get-ProgressStateSnapshotForId {
+    # Version 7.2.0: dieselbe Auswertung wie bisher, aber um die Felder
+    # erweitert, die fuer "keine erfundene 0 %" noetig sind: PercentKnown
+    # (hat die KI ueberhaupt schon eine Zahl geschickt?), CallsWithPercent und
+    # LastTool.
     param([string]$SessionId)
     $json = ''
     if (-not $script:Shared.ProgressStates.TryGetValue([string]$SessionId, [ref]$json)) { return $null }
@@ -22941,8 +24987,21 @@ function Get-ProgressStateSnapshot {
     $lastCall = [int64]$state.lastCallAt
     if ($lastCall -le 0) { $lastCall = [int64]$state.updatedAt }
     $silent = ($now - $lastCall)
+    $percentKnown = $false
+    try { if ($state.PSObject.Properties['percentKnown']) { $percentKnown = [bool]$state.percentKnown } } catch {}
+    if (-not $percentKnown) {
+        try { if ([double]$state.percent -gt 0) { $percentKnown = $true } } catch {}
+    }
+    $callsWithPercent = 0
+    try { if ($state.PSObject.Properties['callsWithPercent']) { $callsWithPercent = [int]$state.callsWithPercent } } catch {}
+    $callsWithoutPercent = 0
+    try { if ($state.PSObject.Properties['callsWithoutPercent']) { $callsWithoutPercent = [int]$state.callsWithoutPercent } } catch {}
+    $lastTool = ''
+    try { if ($state.PSObject.Properties['lastTool']) { $lastTool = [string]$state.lastTool } } catch {}
     $view = [pscustomobject]@{
+        SessionId = [string]$SessionId
         Percent = [double]$state.percent
+        PercentKnown = $percentKnown
         Message = [string]$state.message
         State   = [string]$state.state
         AutoSet = [bool]$state.autoSet
@@ -22951,6 +25010,9 @@ function Get-ProgressStateSnapshot {
         SilentSeconds = $silent
         Calls = [int]$state.calls
         CallsWithProgress = [int]$state.callsWithProgress
+        CallsWithPercent = $callsWithPercent
+        CallsWithoutPercent = $callsWithoutPercent
+        LastTool = $lastTool
     }
     # Nach einer Minute ohne Bridge-Aufruf: Fortschritt ehrlich einfrieren
     # und grau markieren. Eine abgeschlossene 100-%-Meldung bleibt separat
@@ -22960,6 +25022,42 @@ function Get-ProgressStateSnapshot {
         $view.Message = 'Seit über einer Minute kein Bridge Aufruf mehr'
     }
     return $view
+}
+
+function Get-ProgressStateSnapshot {
+    # Version 7.2.0: Die Zeile traegt die Sitzung aus der Fensterliste, der
+    # Fortschritt wird aber unter der Token-Sitzung geschrieben. Nach einer
+    # Sitzungsuebergabe (Reconnect/Nachfolger) las die Zeile deshalb eine andere
+    # Id als die, unter der die Arbeit laeuft - der Balken blieb leer, waehrend
+    # Arena baute. Jetzt werden alle Kandidaten geprueft (eigene Id, Nachfolger
+    # und jede Id, die auf diese Zeile zeigt) und der FRISCHESTE Zustand gewinnt.
+    param([string]$SessionId)
+    $sid = [string]$SessionId
+    if ([string]::IsNullOrWhiteSpace($sid)) { return $null }
+    $candidates = New-Object System.Collections.Generic.List[string]
+    $candidates.Add($sid)
+    try {
+        $delivery = Get-UiDeliverySession $sid
+        if (-not [string]::IsNullOrWhiteSpace($delivery) -and -not $candidates.Contains($delivery)) { $candidates.Add($delivery) }
+    } catch {}
+    try {
+        foreach ($pair in $script:Shared.ProgressStates.GetEnumerator()) {
+            $other = [string]$pair.Key
+            if ([string]::IsNullOrWhiteSpace($other) -or $candidates.Contains($other)) { continue }
+            $resolved = ''
+            try { $resolved = Get-UiDeliverySession $other } catch {}
+            if ($resolved -eq $sid) { $candidates.Add($other) }
+        }
+    } catch {}
+    $best = $null
+    $bestCall = [int64](-1)
+    foreach ($candidate in $candidates) {
+        $view = Get-ProgressStateSnapshotForId $candidate
+        if ($null -eq $view) { continue }
+        $callAt = [int64]$view.LastCallAt
+        if ($null -eq $best -or $callAt -gt $bestCall) { $best = $view; $bestCall = $callAt }
+    }
+    return $best
 }
 
 function Format-ProgressMessage {
@@ -22989,6 +25087,1436 @@ function Get-UiDeliverySession {
         $current = $next
     }
     return $current
+}
+
+function Write-FlowTrace {
+    # Version 7.2.0: dieselbe Stations-Schreibweise wie auf der Server-Seite
+    # (Write-FlowStation im Handler-Runspace), aber fuer die Oberflaeche. Beide
+    # Seiten schreiben bewusst dasselbe Zeilenformat:
+    #   <BEREICH> [<flowId>] <STATION> feld=wert feld=wert
+    # Vorbild sind die PREVIEW-Stationen aus 6.0.4, die das Raten beendet haben.
+    param([string]$Area, [string]$FlowId, [string]$Station, $Fields = $null)
+    $line = ''
+    try {
+        $parts = New-Object System.Collections.Generic.List[string]
+        if ($Fields -is [System.Collections.IDictionary]) {
+            foreach ($key in $Fields.Keys) {
+                $value = $Fields[$key]
+                if ($null -eq $value) { $value = '-' }
+                $text = ([string]$value) -replace '[\r\n\t]+', ' '
+                if ($text.Length -gt 200) { $text = $text.Substring(0, 199) + '...' }
+                $parts.Add(([string]$key + '=' + $text))
+            }
+        }
+        $line = ([string]$Area).ToUpperInvariant() + ' [' + [string]$FlowId + '] ' + ([string]$Station).ToUpperInvariant()
+        if ($parts.Count -gt 0) { $line = $line + ' ' + ($parts.ToArray() -join ' ') }
+        Write-RuntimeLog $line
+        $cap = 500
+        try { $cap = [int]$script:Shared.FlowTraceCap } catch {}
+        if ($cap -lt 20) { $cap = 20 }
+        try {
+            $script:Shared.FlowTrace.Enqueue(('{0:u} ' -f (Get-Date)) + $line)
+            $discard = $null
+            while ($script:Shared.FlowTrace.Count -gt $cap) {
+                if (-not $script:Shared.FlowTrace.TryDequeue([ref]$discard)) { break }
+            }
+        } catch {}
+    } catch {}
+    # Bewusst KEIN return: eine Ausgabe hier wuerde z. B. Add-UserMessage einen
+    # Array statt der Nachrichten-Id zurueckgeben lassen.
+}
+
+function Add-UiChannelCount {
+    # Version 7.2.0: Zaehler im gemeinsamen Zustand, von der Oberflaeche aus.
+    param([string]$Name, [long]$Delta = 1)
+    try {
+        $channel = $script:Shared.Channel
+        if ($null -eq $channel -or [string]::IsNullOrWhiteSpace($Name)) { return }
+        $existing = $null
+        if ($channel.ContainsKey($Name)) { $existing = $channel[$Name] }
+        if ($existing -is [long] -or $existing -is [int]) { $channel[$Name] = ([long]$existing + [long]$Delta) }
+        else { $channel[$Name] = [long]$Delta }
+    } catch {}
+}
+
+function Set-UiChannelText {
+    param([string]$Name, [string]$Value)
+    try {
+        $channel = $script:Shared.Channel
+        if ($null -eq $channel) { return }
+        $channel[$Name] = [string]$Value
+    } catch {}
+}
+
+function Set-UiMessageField {
+    # Feld an einem aus JSON gelesenen Objekt schreiben, ohne in die
+    # PowerShell-5.1-Falle "The property cannot be found on this object" zu laufen.
+    param($Object, [string]$Name, $Value)
+    try {
+        if ($null -eq $Object) { return }
+        if ($Object.PSObject.Properties[$Name]) { $Object.$Name = $Value }
+        else { $Object | Add-Member -NotePropertyName $Name -NotePropertyValue $Value -Force }
+    } catch {}
+}
+
+function Get-UserMessageStateForUi {
+    # Version 7.2.0: liest denselben JSON-Zustand wie der Server
+    # (Read-UserMessageState im Handler-Runspace). Die Oberflaeche hat keinen
+    # Zugriff auf Server-Funktionen, deshalb dieselbe Regel hier noch einmal -
+    # exakt wie bei Get-UiDeliverySession/Get-PlaceOpenCommand seit 7.0.6/7.0.7.
+    param([string]$SessionId)
+    $json = ''
+    try {
+        if (-not $script:Shared.UserMessages.TryGetValue([string]$SessionId, [ref]$json)) { return $null }
+    } catch { return $null }
+    if ([string]::IsNullOrWhiteSpace($json)) { return $null }
+    try { return ($json | ConvertFrom-Json) } catch { return $null }
+}
+
+function Get-UserMessageUiList {
+    param($State)
+    $items = New-Object System.Collections.Generic.List[object]
+    try {
+        if ($null -ne $State -and $State.PSObject.Properties['messages']) {
+            foreach ($entry in $State.messages) { $items.Add($entry) }
+        }
+    } catch {}
+    return $items
+}
+
+function Add-UiBridgeEvent {
+    # Version 7.2.0: dieselbe Ereignis-Queue wie Add-BridgeEvent im
+    # Handler-Runspace ($Shared.Events), von der Oberflaeche aus befuellt - die
+    # UI hat keinen Zugriff auf Server-Funktionen, wohl aber auf $Shared.
+    param([string]$SessionId, [string]$Kind, [string]$Message, $Data = $null)
+    try {
+        if ([string]::IsNullOrWhiteSpace($SessionId)) { return }
+        $queue = $null
+        if (-not $script:Shared.Events.TryGetValue([string]$SessionId, [ref]$queue) -or $null -eq $queue) {
+            $created = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+            [void]$script:Shared.Events.TryAdd([string]$SessionId, $created)
+            $queue = $null
+            [void]$script:Shared.Events.TryGetValue([string]$SessionId, [ref]$queue)
+            if ($null -eq $queue) { $queue = $created }
+        }
+        $event = @{
+            kind    = [string]$Kind
+            message = [string]$Message
+            time    = (Get-Date).ToString('u')
+            data    = $Data
+        }
+        $queue.Enqueue(($event | ConvertTo-Json -Depth 12 -Compress))
+        $dropped = $null
+        while ($queue.Count -gt 60) {
+            if (-not $queue.TryDequeue([ref]$dropped)) { break }
+        }
+    } catch {}
+}
+
+function Add-UserMessage {
+    # Version 7.2.0: "Nachricht an Arena senden" (Menuepunkt in der Place-Zeile).
+    # Legt die Nachricht in den gemeinsamen Zustand; ausgeliefert wird sie mit
+    # dem Umschlag der NAECHSTEN Arena-Anfrage (at-least-once, max. 3 Versuche).
+    # Rueckgabe: die Nachrichten-Id, oder $null bei Ablehnung.
+    param([string]$SessionId, [string]$Text, [string]$Kind = 'note')
+    if ([string]::IsNullOrWhiteSpace($SessionId)) { return $null }
+    $clean = ([string]$Text).Trim()
+    if ([string]::IsNullOrWhiteSpace($clean)) { return $null }
+    if ($clean.Length -gt 4000) { $clean = $clean.Substring(0, 4000) }
+    $kindValue = ([string]$Kind).Trim().ToLowerInvariant()
+    if ($kindValue -notin @('note', 'correction', 'stop', 'question')) { $kindValue = 'note' }
+    $messageId = 'msg_' + ([guid]::NewGuid().ToString('N').Substring(0, 12))
+    $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    try {
+        [System.Threading.Monitor]::Enter($script:Shared.UserMessageLock)
+        $state = Get-UserMessageStateForUi $SessionId
+        if ($null -eq $state) {
+            $state = [pscustomobject]@{ messages = @(); updatedAt = $now }
+        }
+        $list = Get-UserMessageUiList $state
+        $entry = [pscustomobject]@{
+            id            = $messageId
+            text          = $clean
+            kind          = $kindValue
+            createdAt     = $now
+            state         = 'queued'
+            attempts      = 0
+            deliveredAt   = 0
+            deliveredWith = ''
+            ackAt         = 0
+            withdrawnAt   = 0
+        }
+        $list.Add($entry)
+        # Begrenzen: die letzten 20 Nachrichten, erledigte aelter als 30 Minuten
+        # fallen raus. Sonst waechst der Zustand unbegrenzt (Lehre aus 7.1.2).
+        $kept = New-Object System.Collections.Generic.List[object]
+        $cutoff = $now - 1800
+        foreach ($message in $list) {
+            $messageState = ''
+            try { $messageState = [string]$message.state } catch {}
+            $messageAt = [int64]0
+            try { $messageAt = [int64]$message.createdAt } catch {}
+            if (($messageState -eq 'acked' -or $messageState -eq 'withdrawn') -and $messageAt -lt $cutoff) { continue }
+            $kept.Add($message)
+        }
+        while ($kept.Count -gt 20) { $kept.RemoveAt(0) }
+        Set-UiMessageField $state 'messages' $kept.ToArray()
+        Set-UiMessageField $state 'updatedAt' $now
+        $script:Shared.UserMessages[[string]$SessionId] = ($state | ConvertTo-Json -Depth 12 -Compress)
+    } catch {
+        Write-UiErrorLog 'Nachricht an Arena konnte nicht gespeichert werden' $_
+        return $null
+    }
+    finally { try { [System.Threading.Monitor]::Exit($script:Shared.UserMessageLock) } catch {} }
+    Add-UiChannelCount 'UserMessagesQueued' 1
+    Write-FlowTrace 'USERMSG' $messageId 'QUEUED' @{ sid = $SessionId; kind = $kindValue; chars = $clean.Length }
+    # wait_for_user wecken: wartet die KI gerade, kommt die Nachricht sofort an.
+    try {
+        $signal = $null
+        if ($script:Shared.UserSignals.TryGetValue([string]$SessionId, [ref]$signal) -and $null -ne $signal) {
+            try { [void]$signal.Set() } catch {}
+        }
+    } catch {}
+    Add-UiBridgeEvent $SessionId 'user_message' ('The user sent a message during the session: ' + $clean) @{ kind = $kindValue; messageId = $messageId }
+    return $messageId
+}
+
+function Withdraw-UserMessage {
+    # "Abbrechen" im Nachricht-Fenster. Ehrlich: zurueckziehen geht NUR, solange
+    # die Nachricht noch in der Queue liegt (state=queued). Hat eine
+    # Arena-Anfrage sie bereits mitgenommen, ist sie technisch unterwegs - dann
+    # liefert diese Funktion $false und das Fenster sagt das auch.
+    param([string]$SessionId, [string]$MessageId)
+    if ([string]::IsNullOrWhiteSpace($SessionId) -or [string]::IsNullOrWhiteSpace($MessageId)) { return $false }
+    $withdrawn = $false
+    $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    try {
+        [System.Threading.Monitor]::Enter($script:Shared.UserMessageLock)
+        $state = Get-UserMessageStateForUi $SessionId
+        if ($null -ne $state) {
+            $list = Get-UserMessageUiList $state
+            foreach ($message in $list) {
+                $id = ''
+                try { $id = [string]$message.id } catch {}
+                if ($id -ne [string]$MessageId) { continue }
+                $messageState = ''
+                try { $messageState = [string]$message.state } catch {}
+                if ($messageState -ne 'queued') { break }
+                Set-UiMessageField $message 'state' 'withdrawn'
+                Set-UiMessageField $message 'withdrawnAt' $now
+                $withdrawn = $true
+                break
+            }
+            if ($withdrawn) {
+                Set-UiMessageField $state 'updatedAt' $now
+                $script:Shared.UserMessages[[string]$SessionId] = ($state | ConvertTo-Json -Depth 12 -Compress)
+            }
+        }
+    } catch {
+        Write-UiErrorLog 'Nachricht konnte nicht zurueckgezogen werden' $_
+    }
+    finally { try { [System.Threading.Monitor]::Exit($script:Shared.UserMessageLock) } catch {} }
+    if ($withdrawn) {
+        Add-UiChannelCount 'UserMessagesWithdrawn' 1
+        Write-FlowTrace 'USERMSG' $MessageId 'WITHDRAWN' @{ sid = $SessionId }
+    } else {
+        Write-FlowTrace 'USERMSG' $MessageId 'WITHDRAW_TOO_LATE' @{ sid = $SessionId }
+    }
+    return $withdrawn
+}
+
+function Get-UserMessageUiViews {
+    # Alle Nachrichten einer Sitzung fuer das Nachricht-Fenster und die Zeile.
+    # Gibt eine echte List[object] zurueck (kein @() am Aufrufer noetig).
+    param([string]$SessionId)
+    $views = New-Object System.Collections.Generic.List[object]
+    if ([string]::IsNullOrWhiteSpace($SessionId)) { return $views }
+    $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    $list = Get-UserMessageUiList (Get-UserMessageStateForUi $SessionId)
+    foreach ($message in $list) {
+        $messageState = ''
+        try { $messageState = [string]$message.state } catch {}
+        if ($messageState -eq 'withdrawn') { continue }
+        $createdAt = [int64]0
+        try { $createdAt = [int64]$message.createdAt } catch {}
+        $deliveredAt = [int64]0
+        try { $deliveredAt = [int64]$message.deliveredAt } catch {}
+        $attempts = 0
+        try { $attempts = [int]$message.attempts } catch {}
+        $deliveredWith = ''
+        try { $deliveredWith = [string]$message.deliveredWith } catch {}
+        $statusText = 'wird gesendet'
+        $statusCode = 'queued'
+        if ($messageState -eq 'acked') { $statusText = 'von Arena bestaetigt'; $statusCode = 'acked' }
+        elseif ($messageState -eq 'delivered') {
+            if ($attempts -ge 3) { $statusText = 'angekommen, nicht bestaetigt'; $statusCode = 'delivered_unacked' }
+            else { $statusText = 'angekommen'; $statusCode = 'delivered' }
+        }
+        $ageSeconds = 0
+        if ($createdAt -gt 0 -and $now -ge $createdAt) { $ageSeconds = [int]($now - $createdAt) }
+        $views.Add([pscustomobject]@{
+            id            = $(try { [string]$message.id } catch { '' })
+            text          = $(try { [string]$message.text } catch { '' })
+            kind          = $(try { [string]$message.kind } catch { 'note' })
+            createdAt     = $createdAt
+            ageSeconds    = $ageSeconds
+            state         = $messageState
+            statusCode    = $statusCode
+            statusText    = $statusText
+            attempts      = $attempts
+            deliveredAt   = $deliveredAt
+            deliveredWith = $deliveredWith
+            canWithdraw   = ($messageState -eq 'queued')
+        })
+    }
+    return $views
+}
+
+function Format-UserMessageAge {
+    # Kleine, ehrliche Zeitangabe fuer das Nachricht-Fenster.
+    param([int]$Seconds)
+    if ($Seconds -lt 0) { $Seconds = 0 }
+    if ($Seconds -lt 60) { return ([string]$Seconds + ' s') }
+    $minutes = [int][Math]::Floor($Seconds / 60)
+    if ($minutes -lt 60) { return ([string]$minutes + ' min') }
+    return ([string][int][Math]::Floor($minutes / 60) + ' h')
+}
+
+function Get-UserMessageAckReply {
+    # Die Kurzantwort, die Arena beim Bestaetigen mitgeschickt hat
+    # (ack_user_message { reply = '...' }).
+    param([string]$SessionId)
+    try {
+        $state = Get-UserMessageStateForUi $SessionId
+        if ($null -ne $state -and $state.PSObject.Properties['lastAckReply']) { return [string]$state.lastAckReply }
+    } catch {}
+    return ''
+}
+
+function Get-UserMessageBadgeText {
+    # Version 7.2.0: unauffaelliger Zaehler fuer die Place-Zeile (D8). Kein
+    # neues Feld in der Zeile, keine Farbe, kein Blinken - die Zahl steht im
+    # Tooltip des Fortschritts und im Menue.
+    param([string]$SessionId)
+    try {
+        $views = Get-UserMessageUiViews $SessionId
+        $waiting = 0
+        $acked = 0
+        foreach ($view in $views) {
+            $code = [string]$view.statusCode
+            if ($code -eq 'queued') { $waiting = $waiting + 1 }
+            elseif ($code -eq 'delivered' -or $code -eq 'delivered_unacked') { $waiting = $waiting + 1 }
+            elseif ($code -eq 'acked') { $acked = $acked + 1 }
+        }
+        if ($waiting -eq 0 -and $acked -eq 0) { return '' }
+        if ($waiting -gt 0) {
+            if ($waiting -eq 1) { return '1 Nachricht liegt fuer Arena bereit' }
+            return ([string]$waiting + ' Nachrichten liegen fuer Arena bereit')
+        }
+        if ($acked -eq 1) { return '1 Nachricht von Arena bestaetigt' }
+        return ([string]$acked + ' Nachrichten von Arena bestaetigt')
+    } catch { return '' }
+}
+
+function Update-UserMessageWindow {
+    # Zustand des Fensters aus dem gemeinsamen JSON ziehen (D8):
+    #   wird gesendet -> angekommen -> von Arena bestaetigt
+    # und ehrlich sagen, wann Arena gar nichts abholt.
+    param($Info)
+    try {
+        if ($null -eq $Info) { return }
+        $sessionId = [string]$Info.SessionId
+        $messageId = [string]$Info.MessageId
+        $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+
+        # Verlauf der bisherigen Nachrichten dieser Sitzung.
+        $historyLines = New-Object System.Collections.Generic.List[string]
+        $views = Get-UserMessageUiViews $sessionId
+        foreach ($view in $views) {
+            $text = [string]$view.text
+            if ($text.Length -gt 90) { $text = $text.Substring(0, 89) + '...' }
+            $when = ''
+            try { $when = ([DateTimeOffset]::FromUnixTimeSeconds([int64]$view.createdAt).LocalDateTime.ToString('HH:mm:ss')) } catch {}
+            $historyLines.Add(([string]$view.statusCode + '  ' + $when + '  ' + $text))
+        }
+        if ($historyLines.Count -eq 0) { $Info.History.Text = 'Noch keine Nachricht in dieser Sitzung.' }
+        else { $Info.History.Text = ($historyLines.ToArray() -join [Environment]::NewLine) }
+
+        # Wie lange hat Arena ueberhaupt nichts mehr gefragt?
+        $silentSeconds = 0
+        try {
+            $snapshot = Get-ProgressStateSnapshot $sessionId
+            if ($null -ne $snapshot) { $silentSeconds = [int]$snapshot.SilentSeconds }
+        } catch {}
+
+        if ([string]::IsNullOrWhiteSpace($messageId)) {
+            $Info.Status.Text = 'Noch nicht gesendet. Arena bekommt die Nachricht mit ihrer naechsten Anfrage - die Bridge kann nicht in den Arena-Chat schreiben.'
+            $Info.Status.Foreground = Get-Brush '#9AA9CE'
+            $Info.SendButton.IsEnabled = ($Info.TextBox.Text.Trim().Length -gt 0)
+            $Info.CancelButton.IsEnabled = $false
+            $Info.CancelButton.Content = 'Abbrechen'
+            return
+        }
+
+        $current = $null
+        foreach ($view in $views) { if ([string]$view.id -eq $messageId) { $current = $view } }
+        # Zurueckgezogene Nachrichten erscheinen nicht mehr im Verlauf.
+        if ($null -eq $current) {
+            if ([string]$Info.LastState -eq 'withdrawn') {
+                $Info.Status.Text = 'ZURUECKGEZOGEN - Arena hat die Nachricht nie bekommen.'
+                $Info.Status.Foreground = Get-Brush '#FFB4C4'
+                $Info.SendButton.IsEnabled = ($Info.TextBox.Text.Trim().Length -gt 0)
+                $Info.CancelButton.IsEnabled = $false
+                $Info.CancelButton.Content = 'Abbrechen'
+            } else {
+                $Info.Status.Text = 'Die Nachricht ist nicht mehr auffindbar (Sitzung zurueckgesetzt?).'
+                $Info.Status.Foreground = Get-Brush '#9AA9CE'
+            }
+            return
+        }
+
+        $age = 0
+        try { $age = [int]$current.ageSeconds } catch {}
+        $code = [string]$current.statusCode
+        $clock = ''
+        try { $clock = ([DateTimeOffset]::FromUnixTimeSeconds([int64]$current.createdAt).LocalDateTime.ToString('HH:mm:ss')) } catch {}
+        $text = ''
+        if ($code -eq 'queued') {
+            $text = ('wird gesendet - liegt seit ' + (Format-UserMessageAge $age) + ' bereit (gesendet ' + $clock + ').')
+            if ($silentSeconds -ge 45) {
+                $text = $text + ' Arena hat seit ' + (Format-UserMessageAge $silentSeconds) + ' keine Anfrage gestellt - die Nachricht kommt mit der naechsten.'
+            }
+            $Info.Status.Foreground = Get-Brush '#FFD9A0'
+            $Info.SendButton.IsEnabled = $false
+            $Info.CancelButton.IsEnabled = $true
+            $Info.CancelButton.Content = 'Abbrechen'
+        } elseif ($code -eq 'delivered') {
+            $tool = [string]$current.deliveredWith
+            if ([string]::IsNullOrWhiteSpace($tool)) { $tool = 'einer Arena-Anfrage' }
+            $text = ('angekommen - mitgenommen von ' + $tool + '. Du kannst das Fenster jetzt schliessen.')
+            $Info.Status.Foreground = Get-Brush '#9FDCFF'
+            $Info.SendButton.IsEnabled = $false
+            $Info.CancelButton.IsEnabled = $true
+            $Info.CancelButton.Content = 'Schliessen'
+        } elseif ($code -eq 'delivered_unacked') {
+            $text = 'angekommen, aber von Arena nicht bestaetigt - sie wird noch bis zu drei Antworten wiederholt.'
+            $Info.Status.Foreground = Get-Brush '#FFD9A0'
+            $Info.SendButton.IsEnabled = $false
+            $Info.CancelButton.IsEnabled = $true
+            $Info.CancelButton.Content = 'Schliessen'
+        } elseif ($code -eq 'acked') {
+            $reply = Get-UserMessageAckReply $sessionId
+            $text = 'von Arena bestaetigt.'
+            if (-not [string]::IsNullOrWhiteSpace($reply)) { $text = $text + ' Antwort: ' + $reply }
+            $Info.Status.Foreground = Get-Brush '#38D16C'
+            $Info.SendButton.IsEnabled = ($Info.TextBox.Text.Trim().Length -gt 0)
+            $Info.CancelButton.IsEnabled = $true
+            $Info.CancelButton.Content = 'Schliessen'
+        } else {
+            $text = ('Zustand: ' + $code)
+            $Info.Status.Foreground = Get-Brush '#9AA9CE'
+        }
+        $Info.LastState = $code
+        $Info.Status.Text = $text
+        if ($code -eq 'acked' -and $Info.TextBox.Text.Trim().Length -gt 0) {
+            $Info.MessageId = ''
+        }
+    } catch {}
+}
+
+function Open-UserMessageWindow {
+    # Version 7.2.0 (D8): "Nachricht an Arena senden" aus dem Menue der
+    # Place-Zeile. Eigenes Fenster mit ehrlichen Zustaenden statt eines
+    # Eingabefelds, das still verschluckt, was der Nutzer geschrieben hat.
+    param([string]$SessionId, [string]$PlaceName = '')
+    try {
+        if ([string]::IsNullOrWhiteSpace($SessionId)) { return }
+        if ($null -ne $script:UserMessageWindow) {
+            try { $script:UserMessageWindow.Close() } catch {}
+            $script:UserMessageWindow = $null
+        }
+        $win = [System.Windows.Window]::new()
+        $win.Title = 'Nachricht an Arena'
+        $win.Width = 560
+        $win.Height = 470
+        $win.MinWidth = 560; $win.MinHeight = 470
+        $win.WindowStartupLocation = 'CenterOwner'
+        $win.WindowStyle = 'None'
+        $win.AllowsTransparency = $true
+        $win.Background = [System.Windows.Media.Brushes]::Transparent
+        $win.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe UI')
+        $win.ResizeMode = 'CanResize'
+        try { $win.Owner = $window } catch {}
+
+        $shell = [System.Windows.Controls.Border]::new()
+        $shell.CornerRadius = [System.Windows.CornerRadius]::new(16)
+        $shell.Background = Get-Brush '#F50B1030'
+        $shell.BorderBrush = Get-Brush '#33FFFFFF'
+        $shell.BorderThickness = [System.Windows.Thickness]::new(1)
+        $shell.Padding = [System.Windows.Thickness]::new(18)
+
+        $grid = [System.Windows.Controls.Grid]::new()
+        foreach ($h in @('Auto', 'Auto', 'Auto', '*', 'Auto', 'Auto')) {
+            $rd = [System.Windows.Controls.RowDefinition]::new()
+            if ($h -ne 'Auto') { $rd.Height = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star) }
+            [void]$grid.RowDefinitions.Add($rd)
+        }
+
+        $headline = [System.Windows.Controls.TextBlock]::new()
+        $headline.Text = $(if ([string]::IsNullOrWhiteSpace($PlaceName)) { 'Nachricht an Arena' } else { 'Nachricht an Arena · ' + $PlaceName })
+        $headline.FontSize = 15
+        $headline.FontWeight = 'SemiBold'
+        $headline.Foreground = Get-Brush '#F4F8FF'
+        [System.Windows.Controls.Grid]::SetRow($headline, 0)
+        [void]$grid.Children.Add($headline)
+
+        $hint = [System.Windows.Controls.TextBlock]::new()
+        $hint.Text = 'Schreib deine Korrektur hier auf ("halt - mach das so nicht"). Arena bekommt sie mit ihrer naechsten Anfrage und muss sie bestaetigen. Die Bridge kann nicht selbst in den Arena-Chat schreiben.'
+        $hint.FontSize = 11
+        $hint.TextWrapping = 'Wrap'
+        $hint.Margin = [System.Windows.Thickness]::new(0, 8, 0, 12)
+        $hint.Foreground = Get-Brush '#9AA9CE'
+        [System.Windows.Controls.Grid]::SetRow($hint, 1)
+        [void]$grid.Children.Add($hint)
+
+        $textBox = [System.Windows.Controls.TextBox]::new()
+        $textBox.AcceptsReturn = $true
+        $textBox.TextWrapping = 'Wrap'
+        $textBox.VerticalScrollBarVisibility = 'Auto'
+        $textBox.MinHeight = 86
+        $textBox.FontSize = 12.5
+        $textBox.Foreground = Get-Brush '#F4F8FF'
+        $textBox.Background = Get-Brush '#141B33'
+        $textBox.BorderBrush = Get-Brush '#33FFFFFF'
+        $textBox.BorderThickness = [System.Windows.Thickness]::new(1)
+        $textBox.Padding = [System.Windows.Thickness]::new(9, 7, 9, 7)
+        $textBox.CaretBrush = Get-Brush '#F4F8FF'
+        $textBox.MaxLength = 4000
+        [System.Windows.Controls.Grid]::SetRow($textBox, 2)
+        [void]$grid.Children.Add($textBox)
+
+        $historyBox = [System.Windows.Controls.TextBox]::new()
+        $historyBox.IsReadOnly = $true
+        $historyBox.TextWrapping = 'Wrap'
+        $historyBox.VerticalScrollBarVisibility = 'Auto'
+        $historyBox.FontSize = 10.5
+        $historyBox.FontFamily = [System.Windows.Media.FontFamily]::new('Consolas')
+        $historyBox.Foreground = Get-Brush '#9AA9CE'
+        $historyBox.Background = Get-Brush '#0E1428'
+        $historyBox.BorderBrush = Get-Brush '#22FFFFFF'
+        $historyBox.BorderThickness = [System.Windows.Thickness]::new(1)
+        $historyBox.Padding = [System.Windows.Thickness]::new(9, 7, 9, 7)
+        $historyBox.Margin = [System.Windows.Thickness]::new(0, 12, 0, 0)
+        $historyBox.Text = 'Noch keine Nachricht in dieser Sitzung.'
+        [System.Windows.Controls.Grid]::SetRow($historyBox, 3)
+        [void]$grid.Children.Add($historyBox)
+
+        $statusText = [System.Windows.Controls.TextBlock]::new()
+        $statusText.Text = 'Noch nicht gesendet.'
+        $statusText.FontSize = 11.5
+        $statusText.TextWrapping = 'Wrap'
+        $statusText.Margin = [System.Windows.Thickness]::new(0, 12, 0, 0)
+        $statusText.Foreground = Get-Brush '#9AA9CE'
+        [System.Windows.Controls.Grid]::SetRow($statusText, 4)
+        [void]$grid.Children.Add($statusText)
+
+        $buttonRow = [System.Windows.Controls.StackPanel]::new()
+        $buttonRow.Orientation = 'Horizontal'
+        $buttonRow.HorizontalAlignment = 'Right'
+        $buttonRow.Margin = [System.Windows.Thickness]::new(0, 14, 0, 0)
+        $sendButton = [System.Windows.Controls.Button]::new()
+        $sendButton.Content = 'Senden'
+        $sendButton.Padding = [System.Windows.Thickness]::new(16, 8, 16, 8)
+        $sendButton.Margin = [System.Windows.Thickness]::new(0, 0, 10, 0)
+        $sendButton.Background = Get-Brush '#5CFFEF'
+        $sendButton.Foreground = Get-Brush '#08111F'
+        $sendButton.BorderThickness = [System.Windows.Thickness]::new(0)
+        $sendButton.FontWeight = 'SemiBold'
+        $sendButton.Cursor = 'Hand'
+        $sendButton.IsEnabled = $false
+        $cancelButton = [System.Windows.Controls.Button]::new()
+        $cancelButton.Content = 'Abbrechen'
+        $cancelButton.Padding = [System.Windows.Thickness]::new(16, 8, 16, 8)
+        $cancelButton.Background = Get-Brush '#1B2440'
+        $cancelButton.Foreground = Get-Brush '#F4F8FF'
+        $cancelButton.BorderBrush = Get-Brush '#3AFFFFFF'
+        $cancelButton.BorderThickness = [System.Windows.Thickness]::new(1)
+        $cancelButton.Cursor = 'Hand'
+        $cancelButton.IsEnabled = $false
+        [void]$buttonRow.Children.Add($sendButton)
+        [void]$buttonRow.Children.Add($cancelButton)
+        [System.Windows.Controls.Grid]::SetRow($buttonRow, 5)
+        [void]$grid.Children.Add($buttonRow)
+
+        $shell.Child = $grid
+        $win.Content = $shell
+
+        # Alle Daten haengen am Element selbst (Tag) - dieselbe Regel wie in
+        # New-Row: lokale Variablen einer Funktion sind in Event-Handlern nicht
+        # zuverlaessig verfuegbar.
+        $info = [pscustomobject]@{
+            Window      = $win
+            SessionId   = [string]$SessionId
+            PlaceName   = [string]$PlaceName
+            MessageId   = ''
+            LastState   = ''
+            TextBox     = $textBox
+            History     = $historyBox
+            Status      = $statusText
+            SendButton  = $sendButton
+            CancelButton = $cancelButton
+            Timer       = $null
+        }
+        $win.Tag = $info
+        $textBox.Tag = $info
+        $sendButton.Tag = $info
+        $cancelButton.Tag = $info
+
+        $textBox.Add_TextChanged({
+            param($s, $e)
+            $data = $s.Tag
+            try { $data.SendButton.IsEnabled = ($s.Text.Trim().Length -gt 0 -and [string]$data.MessageId -eq '') } catch {}
+        })
+        $sendButton.Add_Click({
+            param($s, $e)
+            $data = $s.Tag
+            try {
+                $text = [string]$data.TextBox.Text
+                if ([string]::IsNullOrWhiteSpace($text)) { return }
+                $newId = Add-UserMessage $data.SessionId $text 'correction'
+                if ([string]::IsNullOrWhiteSpace([string]$newId)) {
+                    $data.Status.Text = 'Die Nachricht konnte nicht gespeichert werden (siehe runtime.log).'
+                    $data.Status.Foreground = Get-Brush '#FFB4C4'
+                    return
+                }
+                $data.MessageId = [string]$newId
+                $data.LastState = 'queued'
+                $data.TextBox.Clear()
+                $data.SendButton.IsEnabled = $false
+                Update-UserMessageWindow $data
+            } catch {
+                Write-UiErrorLog 'Nachricht konnte nicht gesendet werden' $_
+            }
+        })
+        $cancelButton.Add_Click({
+            param($s, $e)
+            $data = $s.Tag
+            try {
+                $id = [string]$data.MessageId
+                if ([string]::IsNullOrWhiteSpace($id)) {
+                    try { $data.Window.Close() } catch {}
+                    return
+                }
+                $state = [string]$data.LastState
+                if ($state -eq 'queued') {
+                    # Ehrliches Abbrechen: zurueckziehen geht nur, solange die
+                    # Nachricht noch in der Queue liegt.
+                    $withdrawn = Withdraw-UserMessage $data.SessionId $id
+                    if ($withdrawn) {
+                        $data.LastState = 'withdrawn'
+                        $data.MessageId = ''
+                        $data.Status.Text = 'ZURUECKGEZOGEN - Arena hat die Nachricht nie bekommen.'
+                        $data.Status.Foreground = Get-Brush '#FFB4C4'
+                        $data.SendButton.IsEnabled = ($data.TextBox.Text.Trim().Length -gt 0)
+                        $data.CancelButton.IsEnabled = $false
+                        $data.CancelButton.Content = 'Abbrechen'
+                        Write-FlowTrace 'USERMSG' $id 'WITHDRAWN_BY_USER' @{ sid = $data.SessionId }
+                    } else {
+                        $data.Status.Text = 'Zu spaet zum Zurueckziehen: Eine Arena-Anfrage hat die Nachricht bereits mitgenommen. Sie ist jetzt unterwegs.'
+                        $data.Status.Foreground = Get-Brush '#FFD9A0'
+                        $data.CancelButton.Content = 'Schliessen'
+                        $data.LastState = 'delivered'
+                    }
+                    return
+                }
+                try { $data.Window.Close() } catch {}
+            } catch {
+                Write-UiErrorLog 'Abbrechen der Nachricht fehlgeschlagen' $_
+            }
+        })
+
+        $timer = [System.Windows.Threading.DispatcherTimer]::new()
+        $timer.Interval = [TimeSpan]::FromMilliseconds(500)
+        $timer.Tag = $info
+        $timer.Add_Tick({
+            param($s, $e)
+            try { Update-UserMessageWindow $s.Tag } catch {}
+        })
+        $info.Timer = $timer
+        $win.Add_Closed({
+            param($s, $e)
+            try { $s.Tag.Timer.Stop() } catch {}
+            try { $script:UserMessageWindow = $null } catch {}
+        })
+        $script:UserMessageWindow = $win
+        Update-UserMessageWindow $info
+        [void]$win.Show()
+        try { $win.Activate() } catch {}
+        try { $textBox.Focus() } catch {}
+        $timer.Start()
+    } catch {
+        Write-UiErrorLog 'Nachricht-Fenster konnte nicht geoeffnet werden' $_
+    }
+}
+
+function Get-AskStateForUi {
+    # Version 7.2.0 (D3): dieselbe Ablage wie auf der Server-Seite
+    # ($Shared.AskRequests, askId -> JSON) - die Oberflaeche hat keinen Zugriff
+    # auf Handler-Funktionen, wohl aber auf den gemeinsamen Zustand.
+    param([string]$AskId)
+    $json = ''
+    try {
+        if (-not $script:Shared.AskRequests.TryGetValue([string]$AskId, [ref]$json)) { return $null }
+    } catch { return $null }
+    if ([string]::IsNullOrWhiteSpace($json)) { return $null }
+    try { return ($json | ConvertFrom-Json) } catch { return $null }
+}
+
+function Save-AskStateForUi {
+    param([string]$AskId, $State)
+    try { $script:Shared.AskRequests[[string]$AskId] = ($State | ConvertTo-Json -Depth 14 -Compress) } catch {}
+}
+
+function Get-AskPendingForUi {
+    # Offene Frage einer Sitzung: entweder noch unbeantwortet (Fenster zeigen)
+    # oder beantwortet und von Arena noch nicht abgeholt (Fenster offen lassen).
+    param([string]$SessionId)
+    $best = $null
+    $bestCreated = [int64](-1)
+    try {
+        foreach ($pair in $script:Shared.AskRequests.GetEnumerator()) {
+            $state = $null
+            try { $state = ($pair.Value | ConvertFrom-Json) } catch { $state = $null }
+            if ($null -eq $state) { continue }
+            if ([string]$state.sessionId -ne [string]$SessionId) { continue }
+            $askState = [string]$state.state
+            if ($askState -ne 'waiting' -and $askState -ne 'answered') { continue }
+            if ($askState -eq 'answered' -and [int64]$state.deliveredAt -gt 0) { continue }
+            $created = [int64]$state.createdAt
+            if ($created -gt $bestCreated) { $bestCreated = $created; $best = $state }
+        }
+    } catch {}
+    return $best
+}
+
+function Test-AskCondition {
+    # Bedingungen: mehrere when-Eintraege muessen ALLE zutreffen; anyOf = eine
+    # der Optionen, allOf = alle, custom = es muss eine eigene Antwort geben.
+    param($Question, $Answers)
+    try {
+        if ($null -eq $Question) { return $false }
+        $when = @()
+        try { if ($Question.PSObject.Properties['when']) { $when = @($Question.when) } } catch {}
+        if ($when.Count -eq 0) { return $true }
+        foreach ($condition in $when) {
+            $refId = ''
+            try { $refId = [string]$condition.questionId } catch {}
+            if ([string]::IsNullOrWhiteSpace($refId)) { return $false }
+            $answer = $null
+            try { if ($null -ne $Answers -and $Answers.ContainsKey($refId)) { $answer = $Answers[$refId] } } catch {}
+            if ($null -eq $answer) { return $false }
+            $selected = New-Object System.Collections.Generic.List[string]
+            try { foreach ($id in @($answer.optionIds)) { $selected.Add([string]$id) } } catch {}
+            $custom = ''
+            try { $custom = [string]$answer.custom } catch {}
+            foreach ($key in @('anyOf', 'allOf')) {
+                $wanted = @()
+                try { if ($condition.PSObject.Properties[$key]) { $wanted = @($condition.$key) } } catch {}
+                if ($wanted.Count -eq 0) { continue }
+                if ($key -eq 'anyOf') {
+                    $hit = $false
+                    foreach ($value in $wanted) { if ($selected.Contains([string]$value)) { $hit = $true; break } }
+                    if (-not $hit) { return $false }
+                } else {
+                    foreach ($value in $wanted) { if (-not $selected.Contains([string]$value)) { return $false } }
+                }
+            }
+            $wantsCustom = $false
+            try { if ($condition.PSObject.Properties['custom'] -and $condition.custom -eq $true) { $wantsCustom = $true } } catch {}
+            if ($wantsCustom -and [string]::IsNullOrWhiteSpace($custom)) { return $false }
+        }
+        return $true
+    } catch {}
+    return $false
+}
+
+function Get-AskVisibleQuestions {
+    # Welche Fragen der Nutzer JETZT sieht - und fuer welche es schon eine
+    # Antwort gibt. Genau diese Auswertung passiert auch beim Zurueckgehen neu.
+    param($Questions, $Answers)
+    $result = New-Object System.Collections.Generic.List[object]
+    $live = @{}
+    try {
+        foreach ($question in @($Questions)) {
+            $visible = $true
+            try { $visible = (Test-AskCondition $question $live) } catch { $visible = $false }
+            if (-not $visible) { continue }
+            $has = $false
+            try { $has = ($null -ne $Answers -and $Answers.ContainsKey([string]$question.id)) } catch {}
+            $result.Add([pscustomobject]@{ Question = $question; Answered = $has })
+            if ($has) { $live[[string]$question.id] = $Answers[[string]$question.id] }
+        }
+    } catch {}
+    return $result
+}
+
+function Submit-AskAnswers {
+    # Antworten des Nutzers ablegen. Das weckt einen wartenden Arena-Aufruf
+    # (AskSignals) ODER liegt bereit und geht als _bridge.userAnswers mit der
+    # naechsten Antwort - beides ist richtig, nichts geht verloren.
+    param([string]$AskId, $Answers, $Path, $NotShown)
+    try {
+        $state = Get-AskStateForUi $AskId
+        if ($null -eq $state) { return $false }
+        Set-UiMessageField $state 'state' 'answered'
+        Set-UiMessageField $state 'answers' $Answers
+        Set-UiMessageField $state 'path' @($Path)
+        Set-UiMessageField $state 'notShown' @($NotShown)
+        Set-UiMessageField $state 'answeredAt' ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+        $stateJson = ''
+        try { $stateJson = ($state | ConvertTo-Json -Depth 14 -Compress) } catch {}
+        $script:Shared.AskRequests[[string]$AskId] = $stateJson
+        Add-UiChannelCount 'AskAnswered' 1
+        Write-FlowTrace 'ASK' $AskId 'ANSWERED' @{ sid = [string]$state.sessionId; questions = @($Path).Count; notShown = @($NotShown).Count }
+        $signal = $null
+        try {
+            if ($script:Shared.AskSignals.TryGetValue([string]$AskId, [ref]$signal) -and $null -ne $signal) { [void]$signal.Set() }
+        } catch {}
+        Add-UiBridgeEvent ([string]$state.sessionId) 'ask_answered' ('Der Nutzer hat geantwortet: ' + [string]$state.title) @{ askId = $AskId }
+        return $true
+    } catch {
+        Write-UiErrorLog 'Antworten konnten nicht gespeichert werden' $_
+        return $false
+    }
+}
+
+function Get-AskCopyPrompt {
+    # Paste-fertiger Text fuer den Arena-Chat, wenn der Agent nicht mehr wartet
+    # oder offline ist. Enthaelt Titel, alle Fragen mit ihren Bedingungen, die
+    # Antworten und den Platz.
+    param($Info)
+    $lines = New-Object System.Collections.Generic.List[string]
+    try {
+        $state = Get-AskStateForUi ([string]$Info.AskId)
+        if ($null -eq $state) { return '' }
+        $lines.Add('Antworten auf deine Frage (Arena Roblox Bridge)')
+        $place = ''
+        try { $place = [string]$state.place } catch {}
+        if (-not [string]::IsNullOrWhiteSpace($place)) { $lines.Add('Platz: ' + $place) }
+        $lines.Add('Titel: ' + [string]$state.title)
+        $message = ''
+        try { $message = [string]$state.message } catch {}
+        if (-not [string]::IsNullOrWhiteSpace($message)) { $lines.Add('Kontext: ' + $message) }
+        $lines.Add('')
+        foreach ($question in @($state.questions)) {
+            $qid = [string]$question.id
+            $conditionText = ''
+            try {
+                $when = @($question.when)
+                if ($when.Count -gt 0) {
+                    $parts = New-Object System.Collections.Generic.List[string]
+                    foreach ($condition in $when) {
+                        $bits = New-Object System.Collections.Generic.List[string]
+                        foreach ($key in @('anyOf', 'allOf')) {
+                            try {
+                                if ($condition.PSObject.Properties[$key]) {
+                                    $values = @($condition.$key)
+                                    if ($values.Count -gt 0) { $bits.Add($key + '=' + ($values -join '/')) }
+                                }
+                            } catch {}
+                        }
+                        try { if ($condition.PSObject.Properties['custom'] -and $condition.custom -eq $true) { $bits.Add('custom') } } catch {}
+                        $parts.Add([string]$condition.questionId + ' (' + ($bits.ToArray() -join ', ') + ')')
+                    }
+                    $conditionText = ' [nur wenn ' + ($parts.ToArray() -join ' und ') + ']'
+                }
+            } catch {}
+            $answerText = '(nicht beantwortet)'
+            try {
+                if (null -ne $Info.Answers -and $Info.Answers.ContainsKey($qid)) {
+                    $entry = $Info.Answers[$qid]
+                    $labels = @($entry.labels)
+                    $custom = [string]$entry.custom
+                    $combo = ''
+                    if ($labels.Count -gt 0) { $combo = ($labels -join ', ') }
+                    if (-not [string]::IsNullOrWhiteSpace($custom)) {
+                        if ($combo) { $combo = $combo + ' | eigene Antwort: ' + $custom } else { $combo = 'eigene Antwort: ' + $custom }
+                    }
+                    if ($combo) { $answerText = $combo }
+                }
+            } catch {}
+            $lines.Add('- ' + [string]$question.text + $conditionText)
+            $lines.Add('  Antwort: ' + $answerText)
+        }
+        $lines.Add('')
+        $lines.Add('Bitte arbeite mit diesen Antworten weiter.')
+    } catch {}
+    return ($lines.ToArray() -join [Environment]::NewLine)
+}
+
+function Update-AskWindow {
+    # Zeichnet Kopf, aktuelle Frage, Fortschritt und den ehrlichen Zustand.
+    param($Info)
+    try {
+        if ($null -eq $Info) { return }
+        $state = Get-AskStateForUi ([string]$Info.AskId)
+        if ($null -eq $state) { return }
+        $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+
+        # Wie lebendig ist Arena? Fortschritt (jeder Werkzeugaufruf) und
+        # Instanz-Heartbeat sind die beiden einzigen Messpunkte.
+        $lastCall = [int64]0
+        try {
+            $snapshot = Get-ProgressStateSnapshot ([string]$state.sessionId)
+            if ($null -ne $snapshot) { $lastCall = [int64]$snapshot.LastCallAt }
+        } catch {}
+        $instanceSeen = [int64]0
+        try { [void]$script:Shared.InstanceLastSeen.TryGetValue([string]$state.sessionId, [ref]$instanceSeen) } catch {}
+        $aliveAt = [Math]::Max($lastCall, $instanceSeen)
+        $agentSilent = 0
+        if ($aliveAt -gt 0) { $agentSilent = [int][Math]::Max(0, ($now - $aliveAt)) }
+        $agentAlive = ($aliveAt -gt 0 -and $agentSilent -le 90)
+
+        $askState = [string]$state.state
+        $secondsLeft = [int][Math]::Max(0, ([int64]$state.expiresAt - $now))
+        if ($askState -eq 'waiting' -and $secondsLeft -le 0) { $askState = 'expired' }
+
+        Set-Text $Info.ProgressText ('Frage ' + [string]([Math]::Min($Info.Step + 1, [Math]::Max(1, $Info.Visible.Count))) + ' von ' + [string][Math]::Max(1, $Info.Visible.Count) + ' · ' + [string]$secondsLeft + ' s')
+
+        if ($askState -eq 'answered') {
+            $delivered = ([int64]$state.deliveredAt -gt 0)
+            $headline = 'Deine Antworten sind gespeichert.'
+            $detail = 'Arena holt sie mit seiner naechsten Anfrage ab.'
+            $color = '#FFD9A0'
+            if ($delivered -or -not $agentAlive) {
+                $headline = 'Deine Antworten sind bei Arena angekommen.'
+                $detail = 'Arena arbeitet weiter - du kannst dieses Fenster schliessen.'
+                $color = '#38D16C'
+            }
+            $Info.StatusText.Text = $headline + ' ' + $detail
+            $Info.StatusText.Foreground = Get-Brush $color
+            $Info.QuestionPanel.Visibility = 'Collapsed'
+            $Info.ButtonRow.Visibility = 'Collapsed'
+            $Info.CopyPanel.Visibility = 'Visible'
+            return
+        }
+
+        if ($askState -eq 'expired') {
+            $Info.StatusText.Text = 'Arena wartet nicht mehr aktiv auf eine Antwort' + $(if ($agentAlive) { ' - arbeitet aber weiter.' } else { ' - der Agent ist mittlerweile offline.' }) + ' Wenn du antwortest, bekommt Arena es mit der naechsten Anfrage. Du kannst auch den fertigen Text kopieren und in den Arena-Chat einfuegen.'
+            $Info.StatusText.Foreground = Get-Brush '#FFD9A0'
+        } elseif ($agentAlive) {
+            $Info.StatusText.Text = 'Arena wartet auf deine Antwort.'
+            $Info.StatusText.Foreground = Get-Brush '#9FDCFF'
+        } else {
+            $Info.StatusText.Text = 'Agent ist mittlerweile offline - deine Antwort kommt an, sobald Arena wieder fragt. Du kannst den Text auch direkt in den Arena-Chat einfuegen.'
+            $Info.StatusText.Foreground = Get-Brush '#FFD9A0'
+        }
+        $Info.QuestionPanel.Visibility = 'Visible'
+        $Info.ButtonRow.Visibility = 'Visible'
+        $Info.CopyPanel.Visibility = 'Visible'
+
+        # Sichtbare Fragen neu auswerten (Zurueck verwirft ungueltig gewordene
+        # Antworten sichtbar - genau wie in der Antwort an die KI).
+        $visible = Get-AskVisibleQuestions $state.questions $Info.Answers
+        $Info.Visible = $visible
+        if ($Info.Step -ge $visible.Count) { $Info.Step = [Math]::Max(0, $visible.Count - 1) }
+        # Fragen, die unsichtbar geworden sind, duerfen keine Antwort behalten.
+        $liveIds = @{}
+        foreach ($entry in $visible) { $liveIds[[string]$entry.Question.id] = $true }
+        foreach ($key in @($Info.Answers.Keys)) {
+            if (-not $liveIds.ContainsKey([string]$key)) {
+                $Info.Answers.Remove([string]$key)
+                # Sichtbar machen, dass eine Antwort weg ist: sie trifft auf die
+                # neue Antwort auf die vorherige Frage nicht mehr zu.
+                Write-FlowTrace 'ASK' ([string]$Info.AskId) 'ANSWER_DISCARDED' @{ questionId = [string]$key }
+            }
+        }
+
+        # Kopf
+        Set-Text $Info.TitleText ([string]$state.title)
+        $subtitle = ''
+        try { $subtitle = [string]$state.message } catch {}
+        Set-Text $Info.MessageText $subtitle
+        if ([string]::IsNullOrWhiteSpace($subtitle)) { $Info.MessageText.Visibility = 'Collapsed' } else { $Info.MessageText.Visibility = 'Visible' }
+
+        $questionStack = $Info.QuestionStack
+        $questionStack.Children.Clear()
+        $question = $null
+        if ($visible.Count -gt 0) { $question = $visible[[Math]::Min($Info.Step, $visible.Count - 1)].Question }
+        if ($null -ne $question) {
+            $qid = [string]$question.id
+            $answer = $null
+            try { if ($Info.Answers.ContainsKey($qid)) { $answer = $Info.Answers[$qid] } } catch {}
+            $selected = @()
+            $custom = ''
+            if ($null -ne $answer) {
+                try { $selected = @($answer.optionIds) } catch {}
+                try { $custom = [string]$answer.custom } catch {}
+            }
+            $questionText = [System.Windows.Controls.TextBlock]::new()
+            $questionText.Text = [string]$question.text
+            $questionText.TextWrapping = 'Wrap'
+            $questionText.FontSize = 13
+            $questionText.FontWeight = 'SemiBold'
+            $questionText.Foreground = Get-Brush '#F4F8FF'
+            $questionText.Margin = [System.Windows.Thickness]::new(0, 0, 0, 8)
+            [void]$questionStack.Children.Add($questionText)
+            $multi = $false
+            try { if ($question.PSObject.Properties['multi']) { $multi = ([bool]$question.multi) } } catch {}
+            if ($multi) {
+                $hintRow = [System.Windows.Controls.TextBlock]::new()
+                $hintRow.Text = 'Mehrfachauswahl möglich.'
+                $hintRow.FontSize = 10.5
+                $hintRow.Foreground = Get-Brush '#6E7FA8'
+                $hintRow.Margin = [System.Windows.Thickness]::new(0, 0, 0, 6)
+                [void]$questionStack.Children.Add($hintRow)
+            }
+            foreach ($option in @($question.options)) {
+                $oid = [string]$option.id
+                if ($multi) { $item = [System.Windows.Controls.CheckBox]::new() } else { $item = [System.Windows.Controls.RadioButton]::new() }
+                $item.Content = [string]$option.label
+                $item.Foreground = Get-Brush '#F4F8FF'
+                $item.FontSize = 12
+                $item.Margin = [System.Windows.Thickness]::new(0, 3, 0, 3)
+                $item.Tag = [pscustomobject]@{ Info = $Info; QuestionId = $qid; OptionId = $oid; Label = [string]$option.label; Multi = $multi }
+                $item.IsChecked = ($selected -contains $oid)
+                if ($multi) {
+                    $item.Add_Click({
+                        param($s, $e)
+                        $data = $s.Tag
+                        try {
+                            $entry = $data.Info.Answers[$data.QuestionId]
+                            if ($null -eq $entry) { $entry = @{ optionIds = @(); custom = ''; labels = @() } }
+                            $ids = New-Object System.Collections.Generic.List[string]
+                            foreach ($value in @($entry.optionIds)) { $ids.Add([string]$value) }
+                            $labels = New-Object System.Collections.Generic.List[string]
+                            foreach ($value in @($entry.labels)) { $labels.Add([string]$value) }
+                            if ([bool]$s.IsChecked) {
+                                if (-not $ids.Contains([string]$data.OptionId)) { $ids.Add([string]$data.OptionId); $labels.Add([string]$data.Label) }
+                            } else {
+                                $ids.Remove([string]$data.OptionId) | Out-Null
+                                $labels.Remove([string]$data.Label) | Out-Null
+                            }
+                            $entry.optionIds = @($ids.ToArray())
+                            $entry.labels = @($labels.ToArray())
+                            $data.Info.Answers[$data.QuestionId] = $entry
+                            $data.Info.Dirty = $true
+                        } catch {}
+                    })
+                } else {
+                    $item.Add_Click({
+                        param($s, $e)
+                        $data = $s.Tag
+                        try {
+                            $entry = @{ optionIds = @([string]$data.OptionId); labels = @([string]$data.Label); custom = '' }
+                            try { if ($data.Info.Answers.ContainsKey([string]$data.QuestionId)) { $entry.custom = [string]$data.Info.Answers[[string]$data.QuestionId].custom } } catch {}
+                            $data.Info.Answers[$data.QuestionId] = $entry
+                            $data.Info.Dirty = $true
+                        } catch {}
+                    })
+                }
+                if (-not [string]::IsNullOrWhiteSpace([string]$option.description)) {
+                    $vbox = [System.Windows.Controls.StackPanel]::new()
+                    [void]$vbox.Children.Add($item)
+                    $desc = [System.Windows.Controls.TextBlock]::new()
+                    $desc.Text = [string]$option.description
+                    $desc.FontSize = 10.5
+                    $desc.TextWrapping = 'Wrap'
+                    $desc.Foreground = Get-Brush '#6E7FA8'
+                    $desc.Margin = [System.Windows.Thickness]::new(20, 0, 0, 4)
+                    [void]$vbox.Children.Add($desc)
+                    [void]$questionStack.Children.Add($vbox)
+                } else {
+                    [void]$questionStack.Children.Add($item)
+                }
+            }
+            $allowCustom = $false
+            try { if ($question.PSObject.Properties['allowCustomResponse']) { $allowCustom = ([bool]$question.allowCustomResponse) } } catch {}
+            if ($allowCustom) {
+                $customLabel = [System.Windows.Controls.TextBlock]::new()
+                $customLabel.Text = 'Eigene Antwort (optional):'
+                $customLabel.FontSize = 10.5
+                $customLabel.Foreground = Get-Brush '#6E7FA8'
+                $customLabel.Margin = [System.Windows.Thickness]::new(0, 8, 0, 3)
+                [void]$questionStack.Children.Add($customLabel)
+                $customBox = [System.Windows.Controls.TextBox]::new()
+                $customBox.Text = $custom
+                $customBox.FontSize = 12
+                $customBox.Foreground = Get-Brush '#F4F8FF'
+                $customBox.Background = Get-Brush '#141B33'
+                $customBox.BorderBrush = Get-Brush '#33FFFFFF'
+                $customBox.BorderThickness = [System.Windows.Thickness]::new(1)
+                $customBox.Padding = [System.Windows.Thickness]::new(8, 6, 8, 6)
+                $customBox.Tag = [pscustomobject]@{ Info = $Info; QuestionId = $qid }
+                $customBox.Add_TextChanged({
+                    param($s, $e)
+                    $data = $s.Tag
+                    try {
+                        $entry = $data.Info.Answers[$data.QuestionId]
+                        if ($null -eq $entry) { $entry = @{ optionIds = @(); labels = @(); custom = '' } }
+                        $entry.custom = [string]$s.Text
+                        $data.Info.Answers[$data.QuestionId] = $entry
+                        $data.Info.Dirty = $true
+                    } catch {}
+                })
+                [void]$questionStack.Children.Add($customBox)
+            }
+        }
+        $Info.BackButton.IsEnabled = ($Info.Step -gt 0)
+        $Info.NextButton.Content = $(if ($Info.Step -ge ($visible.Count - 1)) { 'Fertig' } else { 'Weiter' })
+    } catch {
+        Write-UiErrorLog 'Frage-Fenster konnte nicht aktualisiert werden' $_
+    }
+}
+
+function Open-AskWindow {
+    # Version 7.2.0 (D3): Fragenfenster in der Naehe des Mauszeigers - mit
+    # Versatz, damit ein Klick auf "Senden" nicht versehentlich etwas ausloest
+    # (der Cursor steht beim Oeffnen genau dort, wo der Nutzer gerade klickt).
+    param($AskState)
+    try {
+        if ($null -eq $AskState) { return }
+        $askId = [string]$AskState.askId
+        if ([string]::IsNullOrWhiteSpace($askId)) { return }
+        if ($null -ne $script:AskWindow -and [string]$script:AskWindow.Tag.AskId -eq $askId) {
+            [void](Update-AskWindow $script:AskWindow.Tag)
+            return
+        }
+        if ($null -ne $script:AskWindow) {
+            try { $script:AskWindow.Close() } catch {}
+            $script:AskWindow = $null
+        }
+        $win = [System.Windows.Window]::new()
+        $win.Title = 'Arena fragt'
+        $win.Width = 520
+        $win.Height = 430
+        $win.MinWidth = 460; $win.MinHeight = 320
+        $win.WindowStyle = 'None'
+        $win.AllowsTransparency = $true
+        $win.Background = [System.Windows.Media.Brushes]::Transparent
+        $win.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe UI')
+        $win.ResizeMode = 'CanResize'
+        $win.Topmost = $true
+        try { $win.Owner = $window } catch {}
+
+        # Position: Naehe Mauszeiger + Versatz, immer im sichtbaren Bereich
+        # (auch auf dem zweiten Monitor - Screen.FromPoint liefert dessen
+        # Arbeitsflaeche).
+        try {
+            $cursor = [System.Windows.Forms.Cursor]::Position
+            $screen = [System.Windows.Forms.Screen]::FromPoint($cursor)
+            $area = $screen.WorkingArea
+            $x = [int]$cursor.X + 28
+            $y = [int]$cursor.Y + 24
+            if (($x + $win.Width) -gt ($area.X + $area.Width)) { $x = [int]$cursor.X - 28 - [int]$win.Width }
+            if (($y + $win.Height) -gt ($area.Y + $area.Height)) { $y = [int]$cursor.Y - 24 - [int]$win.Height }
+            if ($x -lt $area.X) { $x = $area.X + 8 }
+            if ($y -lt $area.Y) { $y = $area.Y + 8 }
+            $win.WindowStartupLocation = 'Manual'
+            $win.Left = $x
+            $win.Top = $y
+        } catch {
+            $win.WindowStartupLocation = 'CenterOwner'
+        }
+
+        $shell = [System.Windows.Controls.Border]::new()
+        $shell.CornerRadius = [System.Windows.CornerRadius]::new(16)
+        $shell.Background = Get-Brush '#F50B1030'
+        $shell.BorderBrush = Get-Brush '#33FFFFFF'
+        $shell.BorderThickness = [System.Windows.Thickness]::new(1)
+        $shell.Padding = [System.Windows.Thickness]::new(18)
+        $grid = [System.Windows.Controls.Grid]::new()
+        foreach ($h in @('Auto', 'Auto', '*', 'Auto')) {
+            $rd = [System.Windows.Controls.RowDefinition]::new()
+            if ($h -ne 'Auto') { $rd.Height = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star) }
+            [void]$grid.RowDefinitions.Add($rd)
+        }
+        $headPanel = [System.Windows.Controls.StackPanel]::new()
+        $titleText = [System.Windows.Controls.TextBlock]::new()
+        $titleText.FontSize = 15
+        $titleText.FontWeight = 'SemiBold'
+        $titleText.TextWrapping = 'Wrap'
+        $titleText.Foreground = Get-Brush '#F4F8FF'
+        [void]$headPanel.Children.Add($titleText)
+        $messageText = [System.Windows.Controls.TextBlock]::new()
+        $messageText.FontSize = 11.5
+        $messageText.TextWrapping = 'Wrap'
+        $messageText.Margin = [System.Windows.Thickness]::new(0, 6, 0, 0)
+        $messageText.Foreground = Get-Brush '#9AA9CE'
+        [void]$headPanel.Children.Add($messageText)
+        $progressText = [System.Windows.Controls.TextBlock]::new()
+        $progressText.FontSize = 10.5
+        $progressText.Margin = [System.Windows.Thickness]::new(0, 8, 0, 0)
+        $progressText.Foreground = Get-Brush '#6E7FA8'
+        [void]$headPanel.Children.Add($progressText)
+        [System.Windows.Controls.Grid]::SetRow($headPanel, 0)
+        [void]$grid.Children.Add($headPanel)
+
+        $scroll = [System.Windows.Controls.ScrollViewer]::new()
+        $scroll.VerticalScrollBarVisibility = 'Auto'
+        $scroll.Margin = [System.Windows.Thickness]::new(0, 12, 0, 0)
+        $questionPanel = [System.Windows.Controls.Border]::new()
+        $questionPanel.Background = Get-Brush '#141B33'
+        $questionPanel.BorderBrush = Get-Brush '#22FFFFFF'
+        $questionPanel.BorderThickness = [System.Windows.Thickness]::new(1)
+        $questionPanel.CornerRadius = [System.Windows.CornerRadius]::new(12)
+        $questionPanel.Padding = [System.Windows.Thickness]::new(14, 12, 14, 12)
+        $questionStack = [System.Windows.Controls.StackPanel]::new()
+        $questionPanel.Child = $questionStack
+        $scroll.Content = $questionPanel
+        [System.Windows.Controls.Grid]::SetRow($scroll, 1)
+        [void]$grid.Children.Add($scroll)
+
+        $copyPanel = [System.Windows.Controls.StackPanel]::new()
+        $copyRow = [System.Windows.Controls.StackPanel]::new()
+        $copyRow.Orientation = 'Horizontal'
+        $copyButton = [System.Windows.Controls.Button]::new()
+        $copyButton.Content = 'Antwort als Text kopieren'
+        $copyButton.Padding = [System.Windows.Thickness]::new(14, 7, 14, 7)
+        $copyButton.Background = Get-Brush '#1B2440'
+        $copyButton.Foreground = Get-Brush '#F4F8FF'
+        $copyButton.BorderBrush = Get-Brush '#3AFFFFFF'
+        $copyButton.BorderThickness = [System.Windows.Thickness]::new(1)
+        $copyButton.Cursor = 'Hand'
+        [void]$copyRow.Children.Add($copyButton)
+        $closeButton = [System.Windows.Controls.Button]::new()
+        $closeButton.Content = 'Schließen'
+        $closeButton.Padding = [System.Windows.Thickness]::new(14, 7, 14, 7)
+        $closeButton.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
+        $closeButton.Background = Get-Brush '#0E1428'
+        $closeButton.Foreground = Get-Brush '#9AA9CE'
+        $closeButton.BorderBrush = Get-Brush '#22FFFFFF'
+        $closeButton.BorderThickness = [System.Windows.Thickness]::new(1)
+        $closeButton.Cursor = 'Hand'
+        [void]$copyRow.Children.Add($closeButton)
+        [void]$copyPanel.Children.Add($copyRow)
+        [System.Windows.Controls.Grid]::SetRow($copyPanel, 3)
+        [void]$grid.Children.Add($copyPanel)
+
+        $statusText = [System.Windows.Controls.TextBlock]::new()
+        $statusText.FontSize = 11.5
+        $statusText.TextWrapping = 'Wrap'
+        $statusText.Margin = [System.Windows.Thickness]::new(0, 12, 0, 0)
+        $statusText.Foreground = Get-Brush '#9FDCFF'
+        [System.Windows.Controls.Grid]::SetRow($statusText, 2)
+        [void]$grid.Children.Add($statusText)
+
+        $buttonRow = [System.Windows.Controls.StackPanel]::new()
+        $buttonRow.Orientation = 'Horizontal'
+        $buttonRow.HorizontalAlignment = 'Right'
+        $backButton = [System.Windows.Controls.Button]::new()
+        $backButton.Content = 'Zurück'
+        $backButton.Padding = [System.Windows.Thickness]::new(14, 7, 14, 7)
+        $backButton.Background = Get-Brush '#0E1428'
+        $backButton.Foreground = Get-Brush '#9AA9CE'
+        $backButton.BorderBrush = Get-Brush '#22FFFFFF'
+        $backButton.BorderThickness = [System.Windows.Thickness]::new(1)
+        $backButton.Cursor = 'Hand'
+        $nextButton = [System.Windows.Controls.Button]::new()
+        $nextButton.Content = 'Weiter'
+        $nextButton.Padding = [System.Windows.Thickness]::new(16, 7, 16, 7)
+        $nextButton.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
+        $nextButton.Background = Get-Brush '#5CFFEF'
+        $nextButton.Foreground = Get-Brush '#08111F'
+        $nextButton.BorderThickness = [System.Windows.Thickness]::new(0)
+        $nextButton.FontWeight = 'SemiBold'
+        $nextButton.Cursor = 'Hand'
+        [void]$buttonRow.Children.Add($backButton)
+        [void]$buttonRow.Children.Add($nextButton)
+        [System.Windows.Controls.Grid]::SetRow($buttonRow, 3)
+        [void]$grid.Children.Add($buttonRow)
+
+        $shell.Child = $grid
+        $win.Content = $shell
+
+        # Daten am Element (Tag) - dieselbe Regel wie in New-Row.
+        $info = [pscustomobject]@{
+            Window       = $win
+            AskId        = $askId
+            SessionId    = [string]$AskState.sessionId
+            Answers      = @{}
+            Visible      = New-Object System.Collections.Generic.List[object]
+            Step         = 0
+            Dirty        = $false
+            TitleText    = $titleText
+            MessageText  = $messageText
+            ProgressText = $progressText
+            QuestionPanel = $questionPanel
+            QuestionStack = $questionStack
+            StatusText   = $statusText
+            ButtonRow    = $buttonRow
+            CopyPanel    = $copyPanel
+            BackButton   = $backButton
+            NextButton   = $nextButton
+            CopyButton   = $copyButton
+            CloseButton  = $closeButton
+            Timer        = $null
+            LastDelivered = $false
+        }
+        $win.Tag = $info
+        $backButton.Tag = $info
+        $nextButton.Tag = $info
+        $copyButton.Tag = $info
+        $closeButton.Tag = $info
+
+        $backButton.Add_Click({
+            param($s, $e)
+            $data = $s.Tag
+            try {
+                $visible = $data.Visible
+                if ($data.Step -le 0) { return }
+                $current = $null
+                if ($visible.Count -gt $data.Step) { $current = [string]$visible[$data.Step].Question.id }
+                $data.Step = $data.Step - 1
+                if (-not [string]::IsNullOrWhiteSpace($current)) {
+                    # Zurueck = die Antwort auf diese Frage zuruecknehmen. Fragen,
+                    # die dadurch nicht mehr zutreffen, verlieren ihre Antwort
+                    # sichtbar (Hinweis unten im Fenster).
+                    try { $data.Answers.Remove($current) } catch {}
+                }
+                $data.Dirty = $true
+                Write-FlowTrace 'ASK' ([string]$data.AskId) 'BACK' @{ step = $data.Step }
+            } catch {}
+        })
+        $nextButton.Add_Click({
+            param($s, $e)
+            $data = $s.Tag
+            try {
+                $visible = $data.Visible
+                if ($visible.Count -eq 0) { return }
+                $index = [Math]::Min($data.Step, $visible.Count - 1)
+                $question = $visible[$index].Question
+                $qid = [string]$question.id
+                $required = $true
+                try { if ($question.PSObject.Properties['required']) { $required = [bool]$question.required } } catch {}
+                $entry = $null
+                try { if ($data.Answers.ContainsKey($qid)) { $entry = $data.Answers[$qid] } } catch {}
+                $hasAnswer = $false
+                if ($null -ne $entry) {
+                    try { if (@($entry.optionIds).Count -gt 0) { $hasAnswer = $true } } catch {}
+                    try { if (-not [string]::IsNullOrWhiteSpace([string]$entry.custom)) { $hasAnswer = $true } } catch {}
+                }
+                if ($required -and -not $hasAnswer) {
+                    $data.StatusText.Text = 'Bitte waehle eine Antwort (oder schreibe eine eigene), bevor es weitergeht.'
+                    $data.StatusText.Foreground = Get-Brush '#FFB4C4'
+                    return
+                }
+                if (-not $data.Answers.ContainsKey($qid)) { $data.Answers[$qid] = @{ optionIds = @(); labels = @(); custom = '' } }
+                if ($index -ge ($visible.Count - 1)) {
+                    # Fertig: Antworten abgeben. Pfad = alle tatsaechlich
+                    # gestellten Fragen, notShown = uebersprungene.
+                    $path = New-Object System.Collections.Generic.List[string]
+                    $allShown = New-Object System.Collections.Generic.List[string]
+                    foreach ($entry2 in $visible) { $path.Add([string]$entry2.Question.id) }
+                    foreach ($questionAll in @((Get-AskStateForUi ([string]$data.AskId)).questions)) { $allShown.Add([string]$questionAll.id) }
+                    $notShown = New-Object System.Collections.Generic.List[string]
+                    foreach ($candidate in $allShown) { if (-not $path.Contains($candidate)) { $notShown.Add($candidate) } }
+                    [void](Submit-AskAnswers ([string]$data.AskId) $data.Answers $path.ToArray() $notShown.ToArray())
+                    $data.StatusText.Text = 'Danke! Deine Antworten sind gespeichert und gehen an Arena.'
+                    $data.StatusText.Foreground = Get-Brush '#38D16C'
+                    return
+                }
+                $data.Step = $index + 1
+                $data.Dirty = $true
+            } catch {
+                Write-UiErrorLog 'Antwort konnte nicht uebernommen werden' $_
+            }
+        })
+        $copyButton.Add_Click({
+            param($s, $e)
+            $data = $s.Tag
+            try {
+                $text = Get-AskCopyPrompt $data
+                if ([string]::IsNullOrWhiteSpace($text)) { return }
+                [System.Windows.Clipboard]::SetText($text)
+                $data.StatusText.Text = 'Text in der Zwischenablage - jetzt im Arena-Chat einfuegen (Strg+V).'
+                $data.StatusText.Foreground = Get-Brush '#38D16C'
+                Write-FlowTrace 'ASK' ([string]$data.AskId) 'COPY_PROMPT' @{ chars = $text.Length }
+            } catch {
+                Write-UiErrorLog 'Antworttext konnte nicht kopiert werden' $_
+            }
+        })
+        $closeButton.Add_Click({ param($s, $e) try { $s.Tag.Window.Close() } catch {} })
+
+        $timer = [System.Windows.Threading.DispatcherTimer]::new()
+        $timer.Interval = [TimeSpan]::FromMilliseconds(1000)
+        $timer.Tag = $info
+        $timer.Add_Tick({
+            param($s, $e)
+            try {
+                $data = $s.Tag
+                if ([bool]$data.Dirty) {
+                    $data.Dirty = $false
+                    [void](Update-AskWindow $data)
+                } else {
+                    # Nur die Uhr/den Agent-Zustand aktualisieren.
+                    $state = Get-AskStateForUi ([string]$data.AskId)
+                    if ($null -ne $state) {
+                        $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+                        $left = [int][Math]::Max(0, ([int64]$state.expiresAt - $now))
+                        $total = [Math]::Max(1, @($data.Visible).Count)
+                        if ([string]$state.state -eq 'waiting') {
+                            Set-Text $data.ProgressText (([string]::Format('Frage {0} von {1} · {2} s', ([Math]::Min($data.Step + 1, $total)), $total, $left)))
+                        } else {
+                            [void](Update-AskWindow $data)
+                        }
+                    }
+                }
+            } catch {}
+        })
+        $info.Timer = $timer
+        $win.Add_Closed({
+            param($s, $e)
+            try { $s.Tag.Timer.Stop() } catch {}
+            try { $script:AskWindow = $null } catch {}
+        })
+
+        $script:AskWindow = $win
+        $stateForRender = Get-AskStateForUi $askId
+        if ($null -ne $stateForRender) {
+            # Bereits beantwortete Fragen (z. B. nach einem Fenster-Neustart)
+            # in das Fenster uebernehmen.
+            try {
+                if ($null -ne $stateForRender.answers) {
+                    foreach ($property in $stateForRender.answers.PSObject.Properties) {
+                        $data = $stateForRender.answers.$($property.Name)
+                        $entry = @{ optionIds = @(); labels = @(); custom = '' }
+                        try { $entry.optionIds = @($data.optionIds) } catch {}
+                        try { $entry.labels = @($data.labels) } catch {}
+                        try { $entry.custom = [string]$data.custom } catch {}
+                        $info.Answers[$property.Name] = $entry
+                    }
+                }
+            } catch {}
+            [void](Update-AskWindow $info)
+        }
+        [void]$win.Show()
+        try { $win.Activate() } catch {}
+        $timer.Start()
+    } catch {
+        Write-UiErrorLog 'Frage-Fenster konnte nicht geoeffnet werden' $_
+    }
+}
+
+function Sync-AskWindows {
+    # Version 7.2.0 (D3): Der Anzeige-Takt oeffnet das Fragenfenster, sobald
+    # eine Frage anliegt - ohne Zutun des Nutzers und ohne Toast.
+    try {
+        $currentAskId = ''
+        if ($null -ne $script:AskWindow) {
+            try { $currentAskId = [string]$script:AskWindow.Tag.AskId } catch {}
+        }
+        foreach ($studio in @(Get-ActiveStudios)) {
+            $sid = [string]$studio.sessionId
+            if ([string]::IsNullOrWhiteSpace($sid)) { continue }
+            $pending = Get-AskPendingForUi $sid
+            if ($null -eq $pending) { continue }
+            $askId = [string]$pending.askId
+            if ($askId -eq $currentAskId) { continue }
+            Open-AskWindow $pending
+            break
+        }
+    } catch {}
 }
 
 function Get-PlaceOpenCommand {
@@ -23080,6 +26608,23 @@ function Invoke-PlaceRowCancel {
     }
 }
 
+function Write-UiStationThrottled {
+    # Version 7.2.0: Stationen der Oberflaeche, gedrosselt (eine Zeile je
+    # Schluessel und Intervall). Der UI-Tick laeuft alle 250 ms - ohne Drosselung
+    # wuerde runtime.log vollaufen (Lehre aus 6.0.4: Stationen ja, aber bezahlt).
+    param([string]$Area, [string]$FlowId, [string]$Station, $Fields = $null, [int]$EverySeconds = 5)
+    try {
+        if ($null -eq $script:UiStationLogAt) { $script:UiStationLogAt = @{} }
+        $key = $Area + ':' + $FlowId + ':' + $Station
+        $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        $last = [int64]0
+        try { if ($script:UiStationLogAt.ContainsKey($key)) { $last = [int64]$script:UiStationLogAt[$key] } } catch {}
+        if (($now - $last) -lt $EverySeconds) { return }
+        $script:UiStationLogAt[$key] = $now
+        Write-FlowTrace $Area $FlowId $Station $Fields
+    } catch {}
+}
+
 function Update-PlaceProgressVisual {
     param($Row, $Studio)
     if ($null -eq $Row -or $null -eq $Row.ProgressPanel) { return }
@@ -23087,9 +26632,13 @@ function Update-PlaceProgressVisual {
     try { $show = [bool]$script:Shared.BridgeSettings.progressInPlaceList } catch {}
     $sessionId = [string]$Studio.sessionId
     $snapshot = Get-ProgressStateSnapshot $sessionId
-    # Version 7.0.6: Die Bridge zeigt den ECHTEN Befehlszustand, nicht nur den
-    # vom Aufrufer gemeldeten Fortschritt. Der offene Befehl ist die Ursache
-    # jeder Haenge-Zeit und stand bisher nirgends in der Zeile.
+    # Version 7.0.6: Die Bridge kennt den ECHTEN Befehlszustand. Version 7.2.0
+    # (D7): er VERDRAENGT den Fortschritt aber nicht mehr - bis 7.1.5 wurde der
+    # Balken ausgeblendet und durch "Befehl: <tool> - <status> seit X s" plus
+    # einen Abbrechen-Knopf ersetzt. Genau das hat der Owner als Stoerung
+    # gemeldet ("der schoene Balken wird durch irgendeine Abbrechen-Taste
+    # ersetzt"). Der Befehl ist jetzt Zusatzinformation im Tooltip, und
+    # abgebrochen wird ueber das Menue der Place-Zeile.
     $openCmd = Get-PlaceOpenCommand (Get-UiDeliverySession $sessionId)
     if (-not $show -or ($null -eq $snapshot -and $null -eq $openCmd)) {
         $Row.ProgressPanel.Visibility = 'Collapsed'
@@ -23097,46 +26646,62 @@ function Update-PlaceProgressVisual {
         try { if ($Row.CommandCancelButton) { $Row.CommandCancelButton.Visibility = 'Collapsed' } } catch {}
         return
     }
+
+    $state = 'working'
+    $percent = 0
+    $percentKnown = $false
+    $silent = 0
+    $lastTool = ''
+    $message = ''
+    $callsWithoutPercent = 0
+    $sourceSid = ''
+    if ($null -ne $snapshot) {
+        $state = [string]$snapshot.State
+        $percent = [int][math]::Round([double]$snapshot.Percent, 0)
+        if ($percent -lt 0) { $percent = 0 }
+        if ($percent -gt 100) { $percent = 100 }
+        $percentKnown = [bool]$snapshot.PercentKnown
+        $silent = [int]$snapshot.SilentSeconds
+        $lastTool = [string]$snapshot.LastTool
+        $message = [string]$snapshot.Message
+        $callsWithoutPercent = [int]$snapshot.CallsWithoutPercent
+        $sourceSid = [string]$snapshot.SessionId
+    }
+
+    # Offener Studio-Befehl: zusaetzliche Information, kein Ersatz.
+    $commandText = ''
     if ($null -ne $openCmd) {
         $status = [string]$openCmd.status
         $ageBase = [int64]$openCmd.startedAt
         if ($ageBase -le 0) { $ageBase = [int64]$openCmd.queuedAt }
         $age = 0
         try { if ($ageBase -gt 0) { $age = [int][Math]::Max(0, ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - $ageBase)) } } catch {}
-        $color = '#FF4C9BFF'
-        if ($status -eq 'cancel_requested') { $color = '#FFFFC95E' }
-        elseif ($status -eq 'delivered' -or $status -eq 'received') { $color = '#FF8A93A6' }
-        $label = 'Befehl: ' + [string]$openCmd.tool + ' - ' + $status + ' seit ' + [string]$age + ' s'
-        if ($show) { $Row.ProgressPanel.Visibility = 'Visible' } else { $Row.ProgressPanel.Visibility = 'Collapsed' }
-        $Row.ProgressState = 'command'
-        Set-Text $Row.ProgressText $label
-        $Row.ProgressText.Visibility = 'Visible'
-        $Row.ProgressText.Foreground = Get-Brush $color
-        $Row.ProgressBar.Visibility = 'Collapsed'
-        Set-Text $Row.ProgressPercent ''
-        $Row.ProgressPercent.Visibility = 'Collapsed'
+        $commandText = ('Studio-Befehl: ' + [string]$openCmd.tool + ' - ' + $status + ' seit ' + [string]$age + ' s. Abbrechen ueber das Menue der Place-Zeile (COMMAND_CANCELLED, gibt die Studio-Queue sofort frei).')
         try {
             if ($Row.CommandCancelButton) {
                 $Row.CommandCancelButton.Tag = $sessionId
-                $Row.CommandCancelButton.Visibility = 'Visible'
+                # Der Knopf bleibt unsichtbar: Er ersetzt seit 7.2.0 nicht mehr
+                # die Fortschrittsanzeige (D7). Die Funktion liegt im Menue.
+                $Row.CommandCancelButton.Visibility = 'Collapsed'
             }
         } catch {}
-        $tip = 'commandId=' + [string]$openCmd.commandId + ' tool=' + [string]$openCmd.tool + ' status=' + $status + ' sichtbar seit ' + [string]$age + ' s. Abbrechen loest den Befehl sauber auf (COMMAND_CANCELLED) und gibt die Studio-Queue sofort wieder frei.'
-        $Row.ProgressText.ToolTip = $tip
-        $Row.ProgressPanel.ToolTip = $tip
-        return
+        Add-UiChannelCount 'ProgressNotDisplaced' 1
     }
-    # AUS: Die Bridge zeigt nichts, speichert aber alles weiter - beim
-    # Wiedereinschalten ist der Verlauf vollstaendig da.
-    $state = [string]$snapshot.State
+
+    # Version 7.2.0 (D8): unauffaelliger Hinweis auf wartende Nutzernachrichten.
+    # Kein neues Feld in der Zeile, keine Farbe, kein Blinken - die Zahl steht
+    # im Tooltip und im Menue.
+    $userBadgeText = ''
+    try { $userBadgeText = Get-UserMessageBadgeText $sessionId } catch {}
+
     $color = '#FF4C9BFF'      # arbeitet = blau
     $label = 'Arena arbeitet gerade...'
     if ($state -eq 'done') { $color = '#FF38D16C'; $label = 'Fertig!' }
     elseif ($state -eq 'waiting') { $color = '#FF8A93A6'; $label = 'Seit über einer Minute kein Bridge Aufruf mehr' }
     elseif ($state -eq 'error') { $color = '#FFE11D48'; $label = 'Fehler' }
-    $percent = [math]::Round([double]$snapshot.Percent, 0)
-    if ($percent -lt 0) { $percent = 0 }
-    if ($percent -gt 100) { $percent = 100 }
+    # Version 7.2.0: Die Nachricht der KI wird SICHTBAR (sie stand bis hier nur
+    # im Tooltip, deshalb sah die Zeile aus, als ob nichts passiert).
+    if ($state -ne 'done' -and $state -ne 'waiting' -and -not [string]::IsNullOrWhiteSpace($message)) { $label = $message }
 
     # 100% bleibt nach report_done exakt 60 s sichtbar, danach verschwindet
     # nur die Zeilenanzeige; der Verlauf bleibt fuer Diagnose/Prompt erhalten.
@@ -23149,20 +26714,43 @@ function Update-PlaceProgressVisual {
 
     $Row.ProgressPanel.Visibility = 'Visible'
     $Row.ProgressState = $state
-    Set-Text $Row.ProgressText $label
-    $Row.ProgressText.Visibility = 'Collapsed'
-    $Row.ProgressText.Foreground = Get-Brush $color
-    $Row.ProgressBar.Visibility = 'Visible'
-    $Row.ProgressPercent.Visibility = 'Visible'
-    $Row.ProgressBar.Value = $percent
-    $Row.ProgressBar.Foreground = Get-Brush $color
-    $Row.ProgressPercent.Text = ($percent.ToString() + ' % • ' + $label)
-    $Row.ProgressPercent.Foreground = Get-Brush $color
-    try { if ($Row.CommandCancelButton) { $Row.CommandCancelButton.Visibility = 'Collapsed' } } catch {}
     $tooltip = Format-ProgressMessage $snapshot
-    $Row.ProgressBar.ToolTip = $tooltip
+    if (-not [string]::IsNullOrWhiteSpace($commandText)) { $tooltip = $tooltip + [Environment]::NewLine + $commandText }
+    if (-not [string]::IsNullOrWhiteSpace($userBadgeText)) { $tooltip = $tooltip + [Environment]::NewLine + $userBadgeText + ' - Menue (...) der Place-Zeile: "Nachricht an Arena senden".' }
+
+    if ($percentKnown -or $state -eq 'done') {
+        # ECHTE Zahl gemeldet: Balken + Prozent wie gewohnt.
+        Set-Text $Row.ProgressText $label
+        $Row.ProgressText.Visibility = 'Collapsed'
+        $Row.ProgressText.Foreground = Get-Brush $color
+        $Row.ProgressBar.Visibility = 'Visible'
+        $Row.ProgressPercent.Visibility = 'Visible'
+        $Row.ProgressBar.Value = $percent
+        $Row.ProgressBar.Foreground = Get-Brush $color
+        $Row.ProgressPercent.Text = ($percent.ToString() + ' % • ' + $label)
+        $Row.ProgressPercent.Foreground = Get-Brush $color
+        Add-UiChannelCount 'ProgressPaintedPercent' 1
+        Write-UiStationThrottled 'PROGRESS' ($sessionId.Substring(0, [Math]::Min(8, $sessionId.Length))) 'UI_PAINTED' @{ mode = 'percent'; percent = $percent; state = $state; tool = $lastTool; sidSource = $sourceSid; command = $(if ($null -ne $openCmd) { [string]$openCmd.tool + ':' + [string]$openCmd.status } else { '-' }) } 5
+    } else {
+        # KEINE Zahl gemeldet (D5/D6): kein Balken und keine erfundene 0 %,
+        # sondern Klartext darueber, was messbar passiert.
+        $textLine = $label
+        if (-not [string]::IsNullOrWhiteSpace($lastTool)) { $textLine = $textLine + ' - ' + $lastTool }
+        if ($silent -gt 0) { $textLine = $textLine + ' - vor ' + [string]$silent + ' s' }
+        Set-Text $Row.ProgressText $textLine
+        $Row.ProgressText.Visibility = 'Visible'
+        $Row.ProgressText.Foreground = Get-Brush $color
+        $Row.ProgressBar.Visibility = 'Collapsed'
+        $Row.ProgressPercent.Visibility = 'Collapsed'
+        if ($null -ne $snapshot) { $tooltip = $tooltip + [Environment]::NewLine + ('Kein Prozent gemeldet (' + [string]$callsWithoutPercent + ' Aufruf(e) ohne Zahl) - deshalb zeigt die Zeile keinen Balken und keine erfundene 0 %. Arena bekommt in jeder Antwort PERCENT_MISSING.') }
+        Add-UiChannelCount 'ProgressPaintedNoPercent' 1
+        Write-UiStationThrottled 'PROGRESS' ($sessionId.Substring(0, [Math]::Min(8, $sessionId.Length))) 'UI_PAINTED' @{ mode = 'text_no_percent'; percent = '-'; state = $state; tool = $lastTool; callsWithoutPercent = $callsWithoutPercent; sidSource = $sourceSid } 5
+    }
+    try { if ($Row.CommandCancelButton) { if ($null -eq $openCmd) { $Row.CommandCancelButton.Visibility = 'Collapsed' } } } catch {}
     $Row.ProgressText.ToolTip = $tooltip
     $Row.ProgressPanel.ToolTip = $tooltip
+    try { $Row.ProgressBar.ToolTip = $tooltip } catch {}
+    try { $Row.ProgressPercent.ToolTip = $tooltip } catch {}
 }
 
 function Get-ProgressDiagnoseLines {
@@ -23175,7 +26763,14 @@ function Get-ProgressDiagnoseLines {
             $name = ''
             try { $name = [string]$script:PlaceNames[[string]$pair.Key] } catch {}
             if ([string]::IsNullOrWhiteSpace($name)) { $name = [string]$pair.Key }
+            $knownText = 'nein'
+            try { if ($state.PSObject.Properties['percentKnown'] -and [bool]$state.percentKnown) { $knownText = 'ja' } } catch {}
+            $withPercent = 0
+            try { if ($state.PSObject.Properties['callsWithPercent']) { $withPercent = [int]$state.callsWithPercent } } catch {}
+            $lastTool = ''
+            try { if ($state.PSObject.Properties['lastTool']) { $lastTool = [string]$state.lastTool } } catch {}
             $lines.Add(('  {0}: {1} % / {2} - "{3}"' -f $name, [string]$state.percent, [string]$state.state, [string]$state.message))
+            $lines.Add(('      Prozent von Arena gemeldet: {0} (Aufrufe mit Zahl: {1}, letztes Werkzeug: {2})' -f $knownText, [string]$withPercent, $(if ($lastTool) { $lastTool } else { '-' })))
             foreach ($h in @($state.history)) { $lines.Add('      ' + [string]$h) }
         }
     } catch {}
@@ -23183,6 +26778,142 @@ function Get-ProgressDiagnoseLines {
 }
 
 
+
+function Get-ChannelStations {
+    # Stationen eines Bereichs aus dem Ringpuffer (neueste zuerst, begrenzt).
+    param([string]$Area, [int]$Max = 40)
+    $lines = New-Object System.Collections.Generic.List[string]
+    try {
+        $all = $script:Shared.FlowTrace.ToArray()
+        for ($i = $all.Length - 1; $i -ge 0; $i--) {
+            $line = [string]$all[$i]
+            if ($line -notmatch (' ' + [regex]::Escape(([string]$Area).ToUpperInvariant()) + ' \[')) { continue }
+            $lines.Add($line)
+            if ($lines.Count -ge $Max) { break }
+        }
+    } catch {}
+    return $lines
+}
+
+function Get-ChannelCountText {
+    param([string]$Name)
+    try {
+        $channel = $script:Shared.Channel
+        if ($null -ne $channel -and $channel.ContainsKey($Name)) { return [string]$channel[$Name] }
+    } catch {}
+    return '-'
+}
+
+function Write-ChannelDiagnoseFile {
+    # Version 7.2.0: kleine, vollstaendig weitergebbare Kurzberichte fuer die
+    # beiden Kanaele, die bis 7.1.5 nicht messbar waren (Vorbild:
+    # preview-diagnose.txt aus 6.0.4). Ohne -Force hoechstens alle 10 Sekunden.
+    param([switch]$Force)
+    try {
+        $now = Get-Date
+        if (-not $Force -and ($now - $script:ChannelDiagLastWrite).TotalSeconds -lt 10) { return }
+        $script:ChannelDiagLastWrite = $now
+        $identity = ''
+        try { $identity = [string]$script:PreviewDiagIdentity } catch {}
+        $notifyOn = $false
+        try { $notifyOn = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch {}
+        $progressOn = $true
+        try { $progressOn = [bool]$script:Shared.BridgeSettings.progressInPlaceList } catch {}
+
+        $progressPath = Join-Path $script:AppDataRoot 'progress-diagnose.txt'
+        $sb = New-Object System.Text.StringBuilder
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.2.0)')
+        [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
+        [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
+        [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
+        [void]$sb.AppendLine(('Schalter "Fortschritt in der Place-Liste anzeigen": {0}' -f $(if ($progressOn) { 'AN' } else { 'AUS' })))
+        [void]$sb.AppendLine('')
+        [void]$sb.AppendLine('Zaehler (laufen immer mit):')
+        [void]$sb.AppendLine(('  Arena-Aufrufe gesamt:            {0}' -f (Get-ChannelCountText 'ProgressCalls')))
+        [void]$sb.AppendLine(('  Aufrufe MIT Prozentzahl:         {0}' -f (Get-ChannelCountText 'ProgressWithPercent')))
+        [void]$sb.AppendLine(('  Aufrufe OHNE Prozentzahl:        {0}' -f (Get-ChannelCountText 'ProgressMissingPercent')))
+        [void]$sb.AppendLine(('  Zeile mit Balken gezeichnet:     {0}' -f (Get-ChannelCountText 'ProgressPaintedPercent')))
+        [void]$sb.AppendLine(('  Zeile als Text gezeichnet:       {0}' -f (Get-ChannelCountText 'ProgressPaintedNoPercent')))
+        [void]$sb.AppendLine(('  Fortschritt nicht verdraengt:    {0}' -f (Get-ChannelCountText 'ProgressNotDisplaced')))
+        [void]$sb.AppendLine('')
+        [void]$sb.AppendLine('Zustand je Sitzung:')
+        $progressLines = Get-ProgressDiagnoseLines
+        if ($progressLines.Count -gt 0) {
+            foreach ($diagLine in $progressLines) { [void]$sb.AppendLine([string]$diagLine) }
+        } else {
+            [void]$sb.AppendLine('  (kein Fortschrittszustand gespeichert)')
+        }
+        [void]$sb.AppendLine('')
+        [void]$sb.AppendLine('Letzte PROGRESS-Stationen (neueste zuerst):')
+        $stations = Get-ChannelStations 'PROGRESS' 40
+        if ($stations.Count -gt 0) {
+            foreach ($station in $stations) { [void]$sb.AppendLine('  ' + [string]$station) }
+        } else {
+            [void]$sb.AppendLine('  (noch keine PROGRESS-Station protokolliert)')
+        }
+        [void]$sb.AppendLine('')
+        [void]$sb.AppendLine(('Vollstaendiges Protokoll: {0}' -f [string]$script:RuntimeLog))
+        [System.IO.File]::WriteAllText($progressPath, $sb.ToString(), (New-Object System.Text.UTF8Encoding($true)))
+
+        $notifyPath = Join-Path $script:AppDataRoot 'notify-diagnose.txt'
+        $sb2 = New-Object System.Text.StringBuilder
+        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.2.0)')
+        [void]$sb2.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
+        [void]$sb2.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
+        [void]$sb2.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
+        [void]$sb2.AppendLine(('Schalter "Benachrichtigung, wenn Arena fertig ist": {0}' -f $(if ($notifyOn) { 'AN' } else { 'AUS - report_done antwortet NOTIFICATIONS_DISABLED und es erscheint keine Meldung' })))
+        [void]$sb2.AppendLine('')
+        [void]$sb2.AppendLine('Zaehler (laufen immer mit):')
+        [void]$sb2.AppendLine(('  Meldungen eingereiht:            {0}' -f (Get-ChannelCountText 'NotifyEnqueued')))
+        [void]$sb2.AppendLine(('  Meldungen angezeigt:             {0}' -f (Get-ChannelCountText 'NotifyShown')))
+        [void]$sb2.AppendLine(('  von Windows unterdrueckt:        {0}' -f (Get-ChannelCountText 'NotifySuppressed')))
+        [void]$sb2.AppendLine(('  Aufruf fehlgeschlagen:           {0}' -f (Get-ChannelCountText 'NotifyFailed')))
+        [void]$sb2.AppendLine(('  nach Aufruf nicht bestaetigt:    {0}' -f (Get-ChannelCountText 'NotifyUnverified')))
+        [void]$sb2.AppendLine(('  Testlaeufe:                      {0}' -f (Get-ChannelCountText 'NotifyTestRuns')))
+        [void]$sb2.AppendLine(('  vom Nutzer gesehen (ja/nein):    {0} / {1}' -f (Get-ChannelCountText 'NotifySeenYes'), (Get-ChannelCountText 'NotifySeenNo')))
+        [void]$sb2.AppendLine(('  letztes Urteil:                  {0}' -f (Get-ChannelCountText 'NotifyLastVerdict')))
+        [void]$sb2.AppendLine(('  letzter Grund:                   {0}' -f (Get-ChannelCountText 'NotifyLastReason')))
+        [void]$sb2.AppendLine('')
+        [void]$sb2.AppendLine('Windows-Plattform (gemessen, nicht geraten):')
+        try {
+            $platformNow = Update-NotifyPlatformCache -Force
+            if ($null -ne $platformNow) {
+                [void]$sb2.AppendLine(('  Urteil:                          {0}' -f [string]$platformNow.verdict))
+                [void]$sb2.AppendLine(('  Grund:                           {0}' -f [string]$platformNow.reason))
+                [void]$sb2.AppendLine(('  Benachrichtigungen global:       {0}' -f $(if ($null -eq $platformNow.globalToastsEnabled) { 'unbekannt' } elseif ($platformNow.globalToastsEnabled) { 'an' } else { 'AUS' })))
+                [void]$sb2.AppendLine(('  Benachrichtigungen fuer die App: {0}' -f $(if ($null -eq $platformNow.appNotificationsEnabled) { 'unbekannt' } elseif ($platformNow.appNotificationsEnabled) { 'an' } else { 'AUS' })))
+                [void]$sb2.AppendLine(('  Fokus-Assistent:                 {0}' -f [string]$platformNow.focusAssist))
+                [void]$sb2.AppendLine(('  Vordergrund:                     {0}' -f [string]$platformNow.foreground))
+                [void]$sb2.AppendLine(('  App-Id registriert:              {0}' -f $(if ($platformNow.appUserModelIdRegistered) { 'ja' } else { 'nein' })))
+                [void]$sb2.AppendLine(('  Startmenue-Verknuepfung:         {0}' -f $(if ($platformNow.startMenuShortcut) { 'ja' } else { 'nein' })))
+                [void]$sb2.AppendLine(('  Windows-Build:                   {0}' -f [string]$platformNow.windowsBuild))
+            } else {
+                [void]$sb2.AppendLine('  (Plattform-Check nicht verfuegbar)')
+            }
+        } catch {}
+        try {
+            if ($null -ne $script:NotifyAumidState) {
+                [void]$sb2.AppendLine(('  Registrierung:                   {0} - {1}' -f [string]$script:NotifyAumidState.verdict, [string]$script:NotifyAumidState.reason))
+                [void]$sb2.AppendLine(('  Verknuepfung:                    {0}' -f [string]$script:NotifyAumidState.shortcutPath))
+            }
+        } catch {}
+        [void]$sb2.AppendLine('')
+        [void]$sb2.AppendLine('Letzte Meldungen:')
+        $notifyRecords = Get-NotifyDiagnoseLines
+        foreach ($recordLine in $notifyRecords) { [void]$sb2.AppendLine([string]$recordLine) }
+        [void]$sb2.AppendLine('')
+        [void]$sb2.AppendLine('Letzte NOTIFY-Stationen (neueste zuerst):')
+        $notifyStations = Get-ChannelStations 'NOTIFY' 40
+        if ($notifyStations.Count -gt 0) {
+            foreach ($station in $notifyStations) { [void]$sb2.AppendLine('  ' + [string]$station) }
+        } else {
+            [void]$sb2.AppendLine('  (noch keine NOTIFY-Station protokolliert)')
+        }
+        [void]$sb2.AppendLine('')
+        [void]$sb2.AppendLine(('Vollstaendiges Protokoll: {0}' -f [string]$script:RuntimeLog))
+        [System.IO.File]::WriteAllText($notifyPath, $sb2.ToString(), (New-Object System.Text.UTF8Encoding($true)))
+    } catch {}
+}
 
 # ----------------------------------------------------------------------------
 # Version 7.0.0: UEBERGABE ALS KARTE IM BRIDGE-FENSTER
@@ -23496,7 +27227,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.1.5)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.2.0)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -25227,6 +28958,11 @@ function New-Row {
         $menuStack.Children.Add($menuHeader) | Out-Null
         $menuStack.Children.Add((New-Separator)) | Out-Null
 
+        # Version 7.2.0 (D8): Korrektur waehrend der Arbeit, ohne die Antwort
+        # abzubrechen - und (D7) der harte Befehls-Abbruch im Menue statt als
+        # Knopf, der die Fortschrittsanzeige verdraengt.
+        $messageItem = New-MenuRow -Glyph ([char]0xE724) -Title 'Nachricht an Arena senden' -Subtitle 'Korrektur während der Arbeit' -Accent '#FFD9A0'
+        $cancelCmdItem = New-MenuRow -Glyph ([char]0xE711) -Title 'Laufenden Befehl abbrechen' -Subtitle 'Gibt die Studio-Queue sofort frei' -Accent '#FF9AA8'
         $copyItem = New-MenuRow -Glyph ([char]0xE8C8) -Title 'Prompt kopieren' -Subtitle 'URL und Token für Arena' -Accent '#5CFFEF'
         $resetItem = New-MenuRow -Glyph ([char]0xE72C) -Title 'Token zurücksetzen' -Subtitle 'Neuen Zugang für dieses Place' -Accent '#C9B7FF'
         $toggleItem = New-MenuRow -Glyph ([char]0xE72E) -Title 'Nur Lesezugriff' -Subtitle 'Inaktiv - Änderungen sind erlaubt' -Accent '#FFC1CE' -Checkable $true -Checked $false
@@ -25238,12 +28974,43 @@ function New-Row {
             Popup     = $popup
             SessionId = $sessionId
             Row       = $row
+            # Version 7.2.0 (D8): Der Place-Name gehoert ins Fenster
+            # "Nachricht an Arena senden" - und Daten haengen am Element (Tag),
+            # weil lokale Variablen in Event-Handlern nicht zuverlaessig sind.
+            PlaceName = [string]$Studio.placeName
         }
+        $messageItem.Root.Tag = $itemTag
+        $cancelCmdItem.Root.Tag = $itemTag
         $copyItem.Root.Tag = $itemTag
         $resetItem.Root.Tag = $itemTag
         $toggleItem.Root.Tag = $itemTag
         $historyItem.Root.Tag = $itemTag
 
+        $messageItem.Root.Add_MouseLeftButtonUp({
+            param($s, $e)
+            $info = $s.Tag
+            try { $info.Popup.IsOpen = $false } catch {}
+            try {
+                $placeTitle = ''
+                try { $placeTitle = [string]$info.PlaceName } catch {}
+                if ([string]::IsNullOrWhiteSpace($placeTitle)) {
+                    try { $placeTitle = [string]$script:PlaceNames[[string]$info.SessionId] } catch {}
+                }
+                Open-UserMessageWindow -SessionId ([string]$info.SessionId) -PlaceName $placeTitle
+            } catch {
+                Write-UiErrorLog 'Nachricht-Fenster konnte nicht geoeffnet werden' $_
+            }
+        })
+        $cancelCmdItem.Root.Add_MouseLeftButtonUp({
+            param($s, $e)
+            $info = $s.Tag
+            # Version 7.2.0 (D7): Abbrechen bleibt im Menue und schliesst es
+            # danach - die Fortschrittsanzeige wird nie ersetzt.
+            try { $info.Popup.IsOpen = $false } catch {}
+            try { Invoke-PlaceRowCancel ([string]$info.SessionId) } catch {
+                Write-UiErrorLog 'Laufender Befehl konnte nicht abgebrochen werden' $_
+            }
+        })
         $copyItem.Root.Add_MouseLeftButtonUp({
             param($s, $e)
             $info = $s.Tag
@@ -25282,10 +29049,13 @@ function New-Row {
             Set-RowMode $targetRow $newMode
         })
 
+        $menuStack.Children.Add($messageItem.Root) | Out-Null
+        $menuStack.Children.Add((New-Separator)) | Out-Null
         $menuStack.Children.Add($copyItem.Root) | Out-Null
         $menuStack.Children.Add($resetItem.Root) | Out-Null
         $menuStack.Children.Add($historyItem.Root) | Out-Null
         $menuStack.Children.Add((New-Separator)) | Out-Null
+        $menuStack.Children.Add($cancelCmdItem.Root) | Out-Null
         $menuStack.Children.Add($toggleItem.Root) | Out-Null
 
         $menuShell.Child = $menuStack
@@ -25668,7 +29438,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.1.5)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.2.0)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -25869,6 +29639,9 @@ function Refresh-Ui {
         }
     }
 
+    Write-ChannelDiagnoseFile
+    # Version 7.2.0 (D3): Fragenfenster oeffnen, sobald eine Frage anliegt.
+    Sync-AskWindows
     Update-PlacePreviewCaptures
     $activeStudios = @(Get-ActiveStudios)
     Update-HandoffCard
@@ -26359,7 +30132,7 @@ $window.Add_Loaded({
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.1.5'
+    $versionText = '7.2.0'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -26604,6 +30377,265 @@ function ConvertTo-XmlSafeText {
     return ([string]$Text).Replace('&', '&amp;').Replace('<', '&lt;').Replace('>', '&gt;')
 }
 
+function Get-NotifyRegistryValue {
+    # Liefert $null, wenn der Schluessel oder der Wert nicht existiert -
+    # "nicht gesetzt" ist etwas anderes als "aus".
+    param([string]$Path, [string]$Name)
+    try {
+        if ([string]::IsNullOrWhiteSpace($Path) -or [string]::IsNullOrWhiteSpace($Name)) { return $null }
+        if (-not (Test-Path -LiteralPath $Path)) { return $null }
+        $item = Get-ItemProperty -LiteralPath $Path -ErrorAction Stop
+        if ($null -eq $item) { return $null }
+        if (-not ($item.PSObject.Properties.Name -contains $Name)) { return $null }
+        return $item.$Name
+    } catch { return $null }
+}
+
+function Register-NotifyAumid {
+    # Version 7.2.0 (D4): Windows zeigt einen Toast nur fuer eine REGISTRIERTE
+    # App-Id. Registriert werden (a) HKCU\Software\Classes\AppUserModelId\<AUMID>
+    # mit Anzeigename und (b) eine Startmenue-Verknuepfung, die genau diese
+    # App-Id traegt. Beides liegt im Benutzerprofil, nichts im System, und
+    # beides ist idempotent. Ohne diesen Schritt verwirft Windows die Meldung
+    # still - Show() kehrt trotzdem ohne Ausnahme zurueck.
+    param([switch]$Force)
+    $aumid = 'Arena.ArenaRobloxBridge'
+    $result = [pscustomobject]@{
+        aumid = $aumid
+        registered = $false
+        registryKey = $false
+        shortcutPath = ''
+        shortcutExists = $false
+        verdict = 'NOT_REGISTERED'
+        reason = ''
+        checkedAt = (Get-Date).ToString('u')
+    }
+    try {
+        if ($null -ne $script:NotifyAumidState -and -not $Force) {
+            if ([bool]$script:NotifyAumidState.registered) { return $script:NotifyAumidState }
+        }
+        $startMenu = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
+        $shortcut = Join-Path $startMenu 'Arena Roblox Bridge.lnk'
+        $result.shortcutPath = $shortcut
+        $result.shortcutExists = (Test-Path -LiteralPath $shortcut)
+
+        # (a) Registrierungsdatenbank: Anzeigename der App fuer die Meldung.
+        $keyPath = 'HKCU:\Software\Classes\AppUserModelId\' + $aumid
+        try {
+            if (-not (Test-Path -LiteralPath $keyPath)) { New-Item -Path $keyPath -Force | Out-Null }
+            Set-ItemProperty -LiteralPath $keyPath -Name 'DisplayName' -Value 'Arena Roblox Bridge' -Type String -ErrorAction Stop
+            Set-ItemProperty -LiteralPath $keyPath -Name 'ShowInSettings' -Value 1 -Type DWord -ErrorAction Stop
+            $result.registryKey = $true
+        } catch {
+            $result.reason = 'Registry: ' + $_.Exception.Message
+        }
+
+        # (b) Startmenue-Verknuepfung mit System.AppUserModel.ID.
+        if ($Force -or -not $result.shortcutExists) {
+            if (-not ('Arena.NotifyLink' -as [type])) {
+                $result.verdict = 'HELPER_UNAVAILABLE'
+                $result.reason = 'Arena.NotifyLink konnte nicht kompiliert werden (siehe runtime.log) - die Verknuepfung fehlt, Windows kann die Meldung verwerfen.'
+                $script:NotifyAumidState = $result
+                return $result
+            }
+            $target = ''
+            try { $target = [string][System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName } catch {}
+            if ([string]::IsNullOrWhiteSpace($target)) { $target = (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') }
+            $scriptPath = ''
+            try { $scriptPath = [string]$script:ScriptPath } catch {}
+            $arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden'
+            if (-not [string]::IsNullOrWhiteSpace($scriptPath)) { $arguments = $arguments + ' -File "' + $scriptPath + '"' }
+            $workingDir = ''
+            try { if (-not [string]::IsNullOrWhiteSpace($scriptPath)) { $workingDir = [string](Split-Path -Parent $scriptPath) } } catch {}
+            $registerVerdict = ''
+            try {
+                $registerVerdict = [string][Arena.NotifyLink]::Register($shortcut, $target, $arguments, $workingDir, $aumid, 'Arena Roblox Bridge', '', 0)
+            } catch {
+                $registerVerdict = 'failed: ' + $_.Exception.Message
+            }
+            $result.shortcutExists = (Test-Path -LiteralPath $shortcut)
+            if ($registerVerdict -eq 'ok' -and $result.shortcutExists) {
+                $result.registered = $true
+                $result.verdict = 'REGISTERED'
+                $result.reason = 'Startmenue-Verknuepfung mit App-Id angelegt.'
+            } else {
+                $result.verdict = 'SHORTCUT_FAILED'
+                $result.reason = ('Verknuepfung: ' + $registerVerdict)
+            }
+        } elseif ($result.shortcutExists -and $result.registryKey) {
+            $result.registered = $true
+            $result.verdict = 'ALREADY_REGISTERED'
+            $result.reason = 'Verknuepfung und App-Id waren bereits vorhanden.'
+        }
+    } catch {
+        $result.verdict = 'FAILED'
+        $result.reason = $_.Exception.Message
+    }
+    $script:NotifyAumidState = $result
+    try { Write-FlowTrace 'NOTIFY' 'aumid' 'REGISTER' @{ verdict = $result.verdict; registryKey = $result.registryKey; shortcut = $result.shortcutExists; reason = $result.reason } } catch {}
+    return $result
+}
+
+function Test-NotifyPlatform {
+    # Version 7.2.0 (D4): MESSEN statt behaupten. Bis hierher galt
+    # "Toast.Show() ohne Ausnahme = angezeigt". Windows unterdrueckt Toasts
+    # aber still. Diese Funktion liefert das Urteil UND den Grund.
+    param()
+    $platform = [pscustomobject]@{
+        checkedAt = (Get-Date).ToString('u')
+        settingEnabled = $false
+        globalToastsEnabled = $null
+        appNotificationsEnabled = $null
+        appUserModelId = 'Arena.ArenaRobloxBridge'
+        appUserModelIdRegistered = $false
+        startMenuShortcut = $false
+        focusAssist = 'unknown'
+        foreground = 'unknown'
+        windowsBuild = 0
+        helperAvailable = $false
+        verdict = 'UNKNOWN'
+        reason = ''
+    }
+    try { $platform.settingEnabled = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch {}
+    try { $platform.windowsBuild = [int][Environment]::OSVersion.Version.Build } catch {}
+    try { $platform.helperAvailable = [bool]('Arena.NotifyLink' -as [type]) } catch {}
+    $settingsRoot = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Notifications\Settings'
+    $globalToasts = Get-NotifyRegistryValue $settingsRoot 'NOC_GLOBAL_SETTING_TOASTS_ENABLED'
+    if ($null -ne $globalToasts) { try { $platform.globalToastsEnabled = ([int]$globalToasts -ne 0) } catch {} }
+    $appEnabled = Get-NotifyRegistryValue ($settingsRoot + '\' + $platform.appUserModelId) 'ENABLED'
+    if ($null -ne $appEnabled) { try { $platform.appNotificationsEnabled = ([int]$appEnabled -ne 0) } catch {} }
+    # App-Id des PowerShell-Hosts (Fallback-Pfad der Meldung) ebenfalls pruefen.
+    $legacyId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
+    if ($null -eq $appEnabled) {
+        $legacyEnabled = Get-NotifyRegistryValue ($settingsRoot + '\' + $legacyId) 'ENABLED'
+        if ($null -ne $legacyEnabled) { try { $platform.appNotificationsEnabled = ([int]$legacyEnabled -ne 0) } catch {} }
+    }
+    try {
+        if ($null -ne $script:NotifyAumidState) {
+            $platform.appUserModelIdRegistered = [bool]$script:NotifyAumidState.registered
+            $platform.startMenuShortcut = [bool]$script:NotifyAumidState.shortcutExists
+        }
+    } catch {}
+    # Fokus-Assistent / "Benachrichtigungen nicht stoeren".
+    $profileValue = Get-NotifyRegistryValue 'HKCU:\Software\Microsoft\Windows\CurrentVersion\QuietHours' 'Profile'
+    if ($null -ne $profileValue -and -not [string]::IsNullOrWhiteSpace([string]$profileValue)) {
+        $platform.focusAssist = ([string]$profileValue).ToLowerInvariant()
+    }
+    # Vollbild-App im Vordergrund: Windows zeigt dann von sich aus keine Toasts.
+    if ($platform.helperAvailable) {
+        try { $platform.foreground = [string][Arena.NotifyLink]::ForegroundFullscreen() } catch { $platform.foreground = 'unknown' }
+    }
+    # Urteil - in der Reihenfolge, in der Windows selbst unterdrueckt.
+    if (-not $platform.settingEnabled) {
+        $platform.verdict = 'SUPPRESSED_APP_DISABLED'
+        $platform.reason = 'Der Schalter "Benachrichtigung, wenn Arena fertig ist" ist AUS.'
+    } elseif ($platform.globalToastsEnabled -eq $false) {
+        $platform.verdict = 'SUPPRESSED_WINDOWS_DISABLED'
+        $platform.reason = 'Benachrichtigungen sind in Windows global ausgeschaltet (NOC_GLOBAL_SETTING_TOASTS_ENABLED = 0).'
+    } elseif ($platform.appNotificationsEnabled -eq $false) {
+        $platform.verdict = 'SUPPRESSED_APP_NOTIFICATIONS_OFF'
+        $platform.reason = 'Benachrichtigungen sind fuer diese App in Windows ausgeschaltet (Einstellungen > System > Benachrichtigungen).'
+    } elseif ($platform.focusAssist -eq 'priorityonly' -or $platform.focusAssist -eq 'alarmsonly') {
+        $platform.verdict = 'SUPPRESSED_QUIET_HOURS'
+        $platform.reason = ('Der Fokus-Assistent steht auf "' + $platform.focusAssist + '" - Windows legt die Meldung ins Info-Center statt sie zu zeigen.')
+    } elseif ($platform.foreground -eq 'fullscreen') {
+        $platform.verdict = 'SUPPRESSED_FULLSCREEN_RULE'
+        $platform.reason = 'Eine Vollbild-Anwendung hat den Vordergrund - Windows unterdrueckt Toasts dann von sich aus.'
+    } elseif (-not $platform.appUserModelIdRegistered -and -not $platform.startMenuShortcut) {
+        $platform.verdict = 'AUMID_UNREGISTERED'
+        $platform.reason = 'Die App-Id ist nicht registriert (keine Startmenue-Verknuepfung) - Windows kann die Meldung verwerfen, ohne dass Show() eine Ausnahme wirft.'
+    } else {
+        $platform.verdict = 'READY'
+        $platform.reason = 'Keine Unterdrueckung messbar: Windows darf die Meldung zeigen.'
+    }
+    return $platform
+}
+
+function Get-NotifyPlatformLine {
+    param($Platform)
+    if ($null -eq $Platform) { return 'Plattform-Check nicht verfuegbar' }
+    return ([string]$Platform.verdict + ' - ' + [string]$Platform.reason)
+}
+
+function Update-NotifyPlatformCache {
+    # Haelt das Urteil fuer den HTTP-Handler bereit: Der Server-Runspace kann
+    # keine UI-Funktionen aufrufen, liest aber genau dieses JSON, damit
+    # report_done ehrlich antworten kann (NOTIFICATION_UNVERIFIED).
+    param([switch]$Force)
+    try {
+        $now = Get-Date
+        if (-not $Force -and $null -ne $script:NotifyPlatformCacheAt -and ($now - $script:NotifyPlatformCacheAt).TotalSeconds -lt 30) { return $script:NotifyPlatformCache }
+        $script:NotifyPlatformCacheAt = $now
+        $platform = Test-NotifyPlatform
+        $script:NotifyPlatformCache = $platform
+        $json = ''
+        try { $json = ($platform | ConvertTo-Json -Depth 6 -Compress) } catch {}
+        try { $script:Shared.NotifyPlatformJson = [string]$json } catch {}
+        try { Set-UiChannelText 'NotifyLastVerdict' ([string]$platform.verdict) } catch {}
+        try { Set-UiChannelText 'NotifyLastReason' ([string]$platform.reason) } catch {}
+        return $platform
+    } catch { return $null }
+}
+
+function Add-NotifyRecord {
+    # Letzten Meldungen der Oberflaeche (maximal 20) - fuer notify.sweep und
+    # notify-diagnose.txt.
+    param($Record)
+    try {
+        if ($null -eq $Record) { return }
+        if ($null -eq $script:NotifyRecords) { $script:NotifyRecords = New-Object System.Collections.Generic.List[object] }
+        $script:NotifyRecords.Add($Record)
+        while ($script:NotifyRecords.Count -gt 20) { $script:NotifyRecords.RemoveAt(0) }
+        $json = ''
+        try { $json = ($Record | ConvertTo-Json -Depth 6 -Compress) } catch {}
+        try { $script:Shared.NotifyLastJson = [string]$json } catch {}
+    } catch {}
+}
+
+function Invoke-NotifySweep {
+    # Version 7.2.0: Nachsicht statt Blindheit. Windows bietet keine API, die
+    # das Anzeigen eines Toasts bestaetigt - also wird NACH dem Aufruf erneut
+    # gemessen und ehrlich verbucht: SHOWN (keine Unterdrueckung messbar) oder
+    # SHOWN_UNVERIFIED (Grund steht dabei). Genau dieser Unterschied fehlte
+    # 7.1.x, wo "delivered = true" blind zurueckgegeben wurde.
+    param()
+    try {
+        if ($null -eq $script:NotifyRecords -or $script:NotifyRecords.Count -eq 0) { return }
+        $nowSeconds = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        foreach ($record in $script:NotifyRecords.ToArray()) {
+            try {
+                if ([bool]$record.swept) { continue }
+                $shownAt = [int64]$record.shownAt
+                if ($shownAt -le 0) { continue }
+                if (($nowSeconds - $shownAt) -lt 4) { continue }
+                $platform = Update-NotifyPlatformCache -Force
+                $verdict = 'SHOWN_UNVERIFIED'
+                $reason = 'Windows bestaetigt das Anzeigen eines Toasts nicht; nach dem Aufruf war keine Unterdrueckung messbar.'
+                if ($null -ne $platform) {
+                    if ([string]$platform.verdict -eq 'READY') {
+                        $verdict = 'SHOWN'
+                        $reason = [string]$platform.reason
+                    } else {
+                        $verdict = 'SHOWN_UNVERIFIED'
+                        $reason = ('Nach dem Aufruf gemessen: ' + (Get-NotifyPlatformLine $platform))
+                    }
+                }
+                Set-UiMessageField $record 'swept' $true
+                Set-UiMessageField $record 'sweptAt' $nowSeconds
+                Set-UiMessageField $record 'verdict' $verdict
+                Set-UiMessageField $record 'sweepReason' $reason
+                if ($verdict -eq 'SHOWN') { Add-UiChannelCount 'NotifyShown' 1 } else { Add-UiChannelCount 'NotifyUnverified' 1 }
+                Set-UiChannelText 'NotifyLastVerdict' $verdict
+                Set-UiChannelText 'NotifyLastReason' $reason
+                Write-FlowTrace 'NOTIFY' ([string]$record.flowId) 'SWEEP' @{ verdict = $verdict; ageSeconds = ($nowSeconds - $shownAt); method = ([string]$record.method); reason = $reason }
+                # Nicht erneut einreihen (das wuerde duplizieren) - nur die
+                # gemeinsame Ablage fuer Diagnose/HTTP aktualisieren.
+                try { $script:Shared.NotifyLastJson = [string]($record | ConvertTo-Json -Depth 6 -Compress) } catch {}
+            } catch {}
+        }
+    } catch {}
+}
+
 function Clear-NotifyQueue {
     # Version 7.1.3: wartende Fertig-Meldungen verwerfen. Das Ausschalten des
     # Schalters "Benachrichtigung, wenn Arena fertig ist" muss SOFORT wirken,
@@ -26630,12 +30662,44 @@ function Show-ArenaDoneNotification {
     # steht direkt unter "Fortschritt in der Place-Liste anzeigen" und wird
     # hier ZUSAETZLICH unmittelbar vor dem Anzeigen geprueft - ein Ausschalten
     # wirkt damit auch fuer Meldungen, die schon in der Warteschlange lagen.
-    param([string]$Place, [string]$Title, [string]$Message)
+    # Version 7.2.0 (D4): Es wird GEMESSEN, nicht behauptet. Vor dem Aufruf
+    # laeuft Test-NotifyPlatform, der Aufruf selbst bekommt eine Station, und
+    # notify.sweep misst danach erneut. Ein Toast, den Windows still verworfen
+    # hat, steht jetzt als SHOWN_UNVERIFIED mit Grund im Protokoll und in
+    # notify-diagnose.txt - statt "Arena-Fertig-Meldung angezeigt".
+    param([string]$Place, [string]$Title, [string]$Message, [string]$FlowId = '', [int64]$QueuedAt = 0)
+    $flowId = [string]$FlowId
+    if ([string]::IsNullOrWhiteSpace($flowId)) { $flowId = 'n-' + [string]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) }
+    $record = [pscustomobject]@{
+        flowId     = $flowId
+        place      = [string]$Place
+        title      = [string]$Title
+        message    = [string]$Message
+        queuedAt   = $QueuedAt
+        shownAt    = [int64]0
+        method     = ''
+        verdict    = 'PENDING'
+        reason     = ''
+        swept      = $false
+        seenByUser = ''
+    }
     $allowed = $false
     try { $allowed = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch {}
     if (-not $allowed) {
+        Set-UiMessageField $record 'verdict' 'SUPPRESSED_APP_DISABLED'
+        Set-UiMessageField $record 'reason' 'Der Schalter "Benachrichtigung, wenn Arena fertig ist" ist aus.'
+        Add-UiChannelCount 'NotifySuppressed' 1
+        Set-UiChannelText 'NotifyLastVerdict' 'SUPPRESSED_APP_DISABLED'
+        Set-UiChannelText 'NotifyLastReason' ([string]$record.reason)
+        Write-FlowTrace 'NOTIFY' $flowId 'SUPPRESSED' @{ reason = 'setting_off'; place = ([string]$Place) }
+        Add-NotifyRecord $record
         Write-RuntimeLog 'Fertig-Meldung verworfen: der Schalter "Benachrichtigung, wenn Arena fertig ist" ist aus.'
-        return
+        return $record
+    }
+    # Plattform VOR dem Aufruf messen: das Urteil gehoert zur Meldung.
+    $platform = Update-NotifyPlatformCache -Force
+    if ($null -ne $platform) {
+        Write-FlowTrace 'NOTIFY' $flowId 'PLATFORM' @{ verdict = ([string]$platform.verdict); globalToasts = $(if ($null -eq $platform.globalToastsEnabled) { 'unknown' } else { [string]$platform.globalToastsEnabled }); appEnabled = $(if ($null -eq $platform.appNotificationsEnabled) { 'unknown' } else { [string]$platform.appNotificationsEnabled }); focusAssist = ([string]$platform.focusAssist); foreground = ([string]$platform.foreground); aumidRegistered = ([string]$platform.appUserModelIdRegistered); build = ([string]$platform.windowsBuild) }
     }
     # Windows 11 ToastGeneric hat laut Microsoft kein festes Zeichenlimit je
     # Textfeld (Darstellung wird nach Breite/Skalierung abgeschnitten; Gesamt-XML
@@ -26649,19 +30713,29 @@ function Show-ArenaDoneNotification {
     if ($text.Length -gt 140) { $text = $text.Substring(0, 139).TrimEnd() + '…' }
     if ([string]::IsNullOrWhiteSpace($text)) { $text = 'Ich bin fertig.' }
     $shown = $false
-    # 1) Moderner Windows-Toast (WinRT) - erscheint wie eine echte App-Meldung.
+    $method = ''
+    # 1) Moderner Windows-Toast (WinRT) - mit der REGISTRIERTEN App-Id, damit
+    #    Windows die Meldung nicht still verwirft und sie "Arena Roblox Bridge"
+    #    heisst statt "Windows PowerShell".
     try {
         [void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
         [void][Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime]
         $appId = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\WindowsPowerShell\v1.0\powershell.exe'
+        try {
+            if ($null -ne $script:NotifyAumidState -and ([bool]$script:NotifyAumidState.registered -or [bool]$script:NotifyAumidState.shortcutExists)) {
+                $appId = [string]$script:NotifyAumidState.aumid
+            }
+        } catch {}
         $toastXml = '<toast duration="long"><visual><binding template="ToastGeneric"><text>' + (ConvertTo-XmlSafeText $title) + '</text><text>' + (ConvertTo-XmlSafeText $text) + '</text></binding></visual><audio src="ms-winsoundevent:Notification.Default"/></toast>'
         $xmlDoc = New-Object Windows.Data.Xml.Dom.XmlDocument
         $xmlDoc.LoadXml($toastXml)
         $toast = New-Object Windows.UI.Notifications.ToastNotification $xmlDoc
         [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($appId).Show($toast)
         $shown = $true
+        $method = 'winrt:' + $appId
     } catch {
         Write-RuntimeLog "Windows-Toast fehlgeschlagen: $($_.Exception.Message)"
+        Write-FlowTrace 'NOTIFY' $flowId 'CALL_FAILED' @{ channel = 'winrt'; error = $_.Exception.Message }
     }
     # 2) Fallback: klassischer Balloon-Hinweis ueber ein Tray-Symbol.
     if (-not $shown) {
@@ -26685,8 +30759,10 @@ function Show-ArenaDoneNotification {
             })
             $niTimer.Start()
             $shown = $true
+            $method = 'balloon'
         } catch {
             Write-RuntimeLog "Balloon-Hinweis fehlgeschlagen: $($_.Exception.Message)"
+            Write-FlowTrace 'NOTIFY' $flowId 'CALL_FAILED' @{ channel = 'balloon'; error = $_.Exception.Message }
         }
     }
     # 3) Letzter Fallback: Hauptfenster holen und aktivieren.
@@ -26694,9 +30770,227 @@ function Show-ArenaDoneNotification {
         try {
             $window.Activate()
             [void]$window.Focus()
+            $method = 'window'
         } catch {}
     }
-    Write-RuntimeLog "Arena-Fertig-Meldung angezeigt: $text"
+    Set-UiMessageField $record 'shownAt' ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+    Set-UiMessageField $record 'method' $method
+    if ($shown) {
+        Set-UiMessageField $record 'verdict' 'CALL_RETURNED'
+        Set-UiMessageField $record 'reason' 'Show() kam ohne Ausnahme zurueck - ob Windows die Meldung wirklich gezeichnet hat, misst notify.sweep.'
+        Write-FlowTrace 'NOTIFY' $flowId 'CALL' @{ channel = $method; verdict = 'CALL_RETURNED'; platform = $(if ($null -ne $platform) { [string]$platform.verdict } else { '-' }) }
+    } else {
+        Set-UiMessageField $record 'verdict' 'CALL_FAILED'
+        Set-UiMessageField $record 'reason' 'Kein Kanal (WinRT, Balloon, Fenster) konnte aufgerufen werden.'
+        Add-UiChannelCount 'NotifyFailed' 1
+        Set-UiChannelText 'NotifyLastVerdict' 'CALL_FAILED'
+        Write-FlowTrace 'NOTIFY' $flowId 'CALL_FAILED' @{ channel = 'none' }
+    }
+    Add-NotifyRecord $record
+    Write-RuntimeLog ("Arena-Fertig-Meldung angezeigt: " + $text + " (Kanal: " + $(if ($method) { $method } else { 'keiner' }) + ", Urteil: " + [string]$record.verdict + ", wird von notify.sweep nachgemessen)")
+    return $record
+}
+
+function Send-NotifyTestMessage {
+    # Version 7.2.0 (D4): Test-Meldung aus den Einstellungen. Sie zeigt das
+    # gemessene Urteil und fragt danach ehrlich nach, ob der Nutzer die Meldung
+    # GESEHEN hat - der einzige Sensor, den es fuer einen Toast gibt.
+    param()
+    $flowId = 'test-' + [string]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+    Add-UiChannelCount 'NotifyTestRuns' 1
+    $aumidState = Register-NotifyAumid -Force
+    $wasAllowed = $false
+    try { $wasAllowed = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch {}
+    $record = $null
+    if ($wasAllowed) {
+        $record = Show-ArenaDoneNotification -Place 'Test' -Title '✅ Test-Meldung der Bridge' -Message 'Wenn du das siehst, kommt auch Arenas Fertig-Meldung an.' -FlowId $flowId
+    } else {
+        # Der Test darf die Einstellung nicht veraendern: kurz erlauben, zeigen,
+        # zurueckstellen - und ehrlich sagen, dass der Schalter aus war.
+        try { $script:Shared.BridgeSettings.notifyOnDone = $true } catch {}
+        $record = Show-ArenaDoneNotification -Place 'Test' -Title '✅ Test-Meldung der Bridge' -Message 'Wenn du das siehst, kommt auch Arenas Fertig-Meldung an.' -FlowId $flowId
+        try { $script:Shared.BridgeSettings.notifyOnDone = $wasAllowed } catch {}
+    }
+    $platform = Update-NotifyPlatformCache -Force
+    return [pscustomobject]@{
+        flowId = $flowId
+        record = $record
+        platform = $platform
+        aumid = $aumidState
+        settingWasOff = (-not $wasAllowed)
+    }
+}
+
+function Format-NotifyTestSummary {
+    param($TestResult)
+    $lines = New-Object System.Collections.Generic.List[string]
+    try {
+        if ($null -eq $TestResult) { return 'Test ohne Ergebnis.' }
+        $platform = $null
+        try { $platform = $TestResult.platform } catch {}
+        if ($null -ne $platform) {
+            $lines.Add(('Urteil: ' + [string]$platform.verdict))
+            $lines.Add([string]$platform.reason)
+        } else {
+            $lines.Add('Urteil: UNKNOWN - die Plattform konnte nicht gemessen werden.')
+        }
+        $aumid = $null
+        try { $aumid = $TestResult.aumid } catch {}
+        if ($null -ne $aumid) {
+            $lines.Add(('App-Id: ' + [string]$aumid.verdict + $(if ([string]$aumid.reason) { ' - ' + [string]$aumid.reason } else { '' })))
+        }
+        $record = $null
+        try { $record = $TestResult.record } catch {}
+        if ($null -ne $record) {
+            $lines.Add(('Kanal: ' + $(if ([string]$record.method) { [string]$record.method } else { 'keiner erreichbar' })))
+        }
+        $settingWasOff = $false
+        try { $settingWasOff = [bool]$TestResult.settingWasOff } catch {}
+        if ($settingWasOff) { $lines.Add('Der Schalter war AUS - fuer den Test kurz erlaubt und danach wieder zurueckgestellt.') }
+    } catch {}
+    if ($lines.Count -eq 0) { return 'Test ohne Ergebnis.' }
+    return ($lines.ToArray() -join [Environment]::NewLine)
+}
+
+function Open-NotifySeenWindow {
+    # Version 7.2.0 (D4): Der einzige Sensor fuer einen Windows-Toast ist der
+    # Nutzer selbst. Dieses Fenster fragt nach dem Test ehrlich nach und
+    # verbucht die Antwort als Station und Zaehler - damit "ich habe nichts
+    # gesehen" endlich ein Messwert ist und keine Erinnerung.
+    param($TestResult)
+    try {
+        if ($null -ne $script:NotifySeenWindow) {
+            try { $script:NotifySeenWindow.Close() } catch {}
+            $script:NotifySeenWindow = $null
+        }
+        $flowId = ''
+        $platformLine = 'Urteil: UNKNOWN'
+        try {
+            if ($null -ne $TestResult) {
+                $flowId = [string]$TestResult.flowId
+                if ($null -ne $TestResult.platform) { $platformLine = ('Urteil: ' + (Get-NotifyPlatformLine $TestResult.platform)) }
+            }
+        } catch {}
+        $win = [System.Windows.Window]::new()
+        $win.Title = 'Meldung gesehen?'
+        $win.Width = 460
+        $win.Height = 250
+        $win.MinWidth = 460; $win.MinHeight = 250; $win.MaxWidth = 460; $win.MaxHeight = 250
+        $win.WindowStartupLocation = 'CenterOwner'
+        $win.WindowStyle = 'None'
+        $win.AllowsTransparency = $true
+        $win.Background = [System.Windows.Media.Brushes]::Transparent
+        $win.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe UI')
+        $win.ResizeMode = 'NoResize'
+        $win.Topmost = $true
+        try { $win.Owner = $window } catch {}
+        $shell = [System.Windows.Controls.Border]::new()
+        $shell.CornerRadius = [System.Windows.CornerRadius]::new(16)
+        $shell.Background = Get-Brush '#F50B1030'
+        $shell.BorderBrush = Get-Brush '#33FFFFFF'
+        $shell.BorderThickness = [System.Windows.Thickness]::new(1)
+        $shell.Padding = [System.Windows.Thickness]::new(18)
+        $stack = [System.Windows.Controls.StackPanel]::new()
+        $headline = [System.Windows.Controls.TextBlock]::new()
+        $headline.Text = 'Hast du die Test-Meldung gesehen?'
+        $headline.FontSize = 15
+        $headline.FontWeight = 'SemiBold'
+        $headline.Foreground = Get-Brush '#F4F8FF'
+        [void]$stack.Children.Add($headline)
+        $hint = [System.Windows.Controls.TextBlock]::new()
+        $hint.Text = $platformLine
+        $hint.FontSize = 11
+        $hint.TextWrapping = 'Wrap'
+        $hint.Margin = [System.Windows.Thickness]::new(0, 8, 0, 0)
+        $hint.Foreground = Get-Brush '#9AA9CE'
+        [void]$stack.Children.Add($hint)
+        $buttonRow = [System.Windows.Controls.StackPanel]::new()
+        $buttonRow.Orientation = 'Horizontal'
+        $buttonRow.Margin = [System.Windows.Thickness]::new(0, 16, 0, 0)
+        $yesButton = [System.Windows.Controls.Button]::new()
+        $yesButton.Content = 'Ja, gesehen'
+        $yesButton.Padding = [System.Windows.Thickness]::new(14, 7, 14, 7)
+        $yesButton.Margin = [System.Windows.Thickness]::new(0, 0, 10, 0)
+        $yesButton.Background = Get-Brush '#22C55E'
+        $yesButton.Foreground = Get-Brush '#08111F'
+        $yesButton.BorderThickness = [System.Windows.Thickness]::new(0)
+        $yesButton.FontWeight = 'SemiBold'
+        $yesButton.Cursor = 'Hand'
+        $noButton = [System.Windows.Controls.Button]::new()
+        $noButton.Content = 'Nein, nichts gesehen'
+        $noButton.Padding = [System.Windows.Thickness]::new(14, 7, 14, 7)
+        $noButton.Background = Get-Brush '#1B2440'
+        $noButton.Foreground = Get-Brush '#F4F8FF'
+        $noButton.BorderBrush = Get-Brush '#3AFFFFFF'
+        $noButton.BorderThickness = [System.Windows.Thickness]::new(1)
+        $noButton.Cursor = 'Hand'
+        [void]$buttonRow.Children.Add($yesButton)
+        [void]$buttonRow.Children.Add($noButton)
+        [void]$stack.Children.Add($buttonRow)
+        $answerText = [System.Windows.Controls.TextBlock]::new()
+        $answerText.FontSize = 11
+        $answerText.TextWrapping = 'Wrap'
+        $answerText.Margin = [System.Windows.Thickness]::new(0, 12, 0, 0)
+        $answerText.Foreground = Get-Brush '#6E7FA8'
+        [void]$stack.Children.Add($answerText)
+        $shell.Child = $stack
+        $win.Content = $shell
+        $seenFlowId = $flowId
+        $yesButton.Add_Click({
+            param($s, $e)
+            try {
+                Add-UiChannelCount 'NotifySeenYes' 1
+                Set-UiChannelText 'NotifyLastSeen' 'yes'
+                Write-FlowTrace 'NOTIFY' $seenFlowId 'SEEN' @{ answer = 'yes' }
+                $answerText.Text = 'Danke - der Kanal funktioniert. Dieses Fenster kannst du schliessen.'
+                $answerText.Foreground = Get-Brush '#38D16C'
+                $yesButton.IsEnabled = $false
+                $noButton.IsEnabled = $false
+            } catch {}
+        })
+        $noButton.Add_Click({
+            param($s, $e)
+            try {
+                Add-UiChannelCount 'NotifySeenNo' 1
+                Set-UiChannelText 'NotifyLastSeen' 'no'
+                Write-FlowTrace 'NOTIFY' $seenFlowId 'SEEN' @{ answer = 'no' }
+                $diagPath = Join-Path $script:AppDataRoot 'notify-diagnose.txt'
+                $answerText.Text = ('Verstanden - Windows hat die Meldung unterdrueckt. Grund und Gegenmittel stehen in ' + $diagPath + ' (klein, vollstaendig weitergebbar).')
+                $answerText.Foreground = Get-Brush '#FFB4C4'
+                $yesButton.IsEnabled = $false
+                $noButton.IsEnabled = $false
+                [void](Write-ChannelDiagnoseFile -Force)
+            } catch {}
+        })
+        $script:NotifySeenWindow = $win
+        [void]$win.Show()
+    } catch {
+        Write-UiErrorLog 'Fenster "Meldung gesehen?" konnte nicht geoeffnet werden' $_
+    }
+}
+
+function Get-NotifyDiagnoseLines {
+    # Letzte Meldungen mit Kanal und Urteil - fuer notify-diagnose.txt.
+    param()
+    $lines = New-Object System.Collections.Generic.List[string]
+    try {
+        if ($null -eq $script:NotifyRecords -or $script:NotifyRecords.Count -eq 0) {
+            $lines.Add('  (noch keine Fertig-Meldung in dieser Laufzeit)')
+            return $lines
+        }
+        $records = $script:NotifyRecords.ToArray()
+        for ($i = $records.Length - 1; $i -ge 0; $i--) {
+            $record = $records[$i]
+            $seen = ''
+            try { $seen = [string]$record.seenByUser } catch {}
+            $lines.Add(('  {0}  Place="{1}"  Kanal={2}  Urteil={3}{4}' -f [string]$record.flowId, [string]$record.place, $(if ([string]$record.method) { [string]$record.method } else { '-' }), [string]$record.verdict, $(if ($seen) { '  vom Nutzer gesehen: ' + $seen } else { '' })))
+            $reason = ''
+            try { $reason = [string]$record.sweepReason } catch {}
+            if ([string]::IsNullOrWhiteSpace($reason)) { try { $reason = [string]$record.reason } catch {} }
+            if (-not [string]::IsNullOrWhiteSpace($reason)) { $lines.Add(('      ' + $reason)) }
+        }
+    } catch {}
+    return $lines
 }
 
 function Set-ArenaSwitchVisualState {
@@ -26991,6 +31285,14 @@ function Open-SettingsWindow {
                             <StackPanel>
                                 <CheckBox x:Name="PerfSwitch" Style="{StaticResource ArenaSwitch}" Content="Leistungsdiagnose aufzeichnen"/>
                                 <TextBlock Text="Schreibt höchstens alle 30 Sekunden einen kompakten Bericht nach %LOCALAPPDATA%\ArenaRobloxBridge\performance.txt: Anfragen pro Minute, Dauer und Pausen des Studio-Kanals, UI-Zeit und HTTP-Zeit. Standard: aus." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,7,0,0"/>
+                                <Border Height="1" Background="{StaticResource SwLine}" Margin="0,14,0,14"/>
+                                <!-- Version 7.2.0 (D4): Die Fertig-Meldung wird
+                                     messbar. Der Test zeigt eine echte Meldung,
+                                     misst die Windows-Plattform und fragt danach
+                                     ehrlich nach, ob sie gesehen wurde. -->
+                                <TextBlock Text="FERTIG-MELDUNG TESTEN" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="0,0,0,8"/>
+                                <Button x:Name="NotifyTestButton" Content="Test-Meldung anzeigen" Background="{StaticResource SwCardBg}" Foreground="{StaticResource SwTextMain}" BorderBrush="#3AFFFFFF" BorderThickness="1" Padding="14,7" FontSize="11.5" HorizontalAlignment="Left" Cursor="Hand"/>
+                                <TextBlock x:Name="NotifyTestStatus" Text="Noch nicht getestet. Der Test misst, ob Windows die Meldung zeigen darf, und legt bei Bedarf die App-Id im Startmenue an." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,9,0,0"/>
                             </StackPanel>
                         </Border>
 
@@ -27009,7 +31311,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.1.5" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.2.0" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -27042,6 +31344,29 @@ function Open-SettingsWindow {
     $editorIconsSwitch = $settingsWindow.FindName('EditorIconsSwitch')
     $perfSwitch      = $settingsWindow.FindName('PerfSwitch')
     $updateText      = $settingsWindow.FindName('UpdateInfoText')
+    # Version 7.2.0 (D4): Test-Knopf + Urteil fuer die Fertig-Meldung.
+    $notifyTestButton = $settingsWindow.FindName('NotifyTestButton')
+    $notifyTestStatus = $settingsWindow.FindName('NotifyTestStatus')
+    if ($null -ne $notifyTestButton) {
+        $notifyTestButton.Add_Click({
+            param($s, $e)
+            try {
+                $notifyTestStatus.Text = 'Test laeuft - Meldung wird angezeigt und Windows-Plattform gemessen...'
+                $testResult = Send-NotifyTestMessage
+                $notifyTestStatus.Text = [string](Format-NotifyTestSummary $testResult)
+                Open-NotifySeenWindow $testResult
+            } catch {
+                $notifyTestStatus.Text = 'Test fehlgeschlagen: ' + $_.Exception.Message
+                Write-UiErrorLog 'Test der Fertig-Meldung fehlgeschlagen' $_
+            }
+        })
+    }
+    try {
+        $cachedPlatform = Update-NotifyPlatformCache -Force
+        if ($null -ne $cachedPlatform -and $null -ne $notifyTestStatus) {
+            $notifyTestStatus.Text = ('Letztes Urteil: ' + (Get-NotifyPlatformLine $cachedPlatform))
+        }
+    } catch {}
 
     $startupSwitch.IsChecked = $autoStartNow
     $progressSwitch.IsChecked = $progressNow
@@ -27056,7 +31381,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.1.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.2.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -27099,6 +31424,11 @@ function Open-SettingsWindow {
         $script:SettingsCache.notifyOnDone = $enabled
         Save-BridgeSettingsFile
         if (-not $enabled) { Clear-NotifyQueue }
+        # Version 7.2.0 (D4): Beim Einschalten die App-Id registrieren, sonst
+        # verwirft Windows die Meldung still - und beim Ausschalten das Urteil
+        # sofort neu messen (SUPPRESSED_APP_DISABLED).
+        if ($enabled) { [void](Register-NotifyAumid -Force) }
+        [void](Update-NotifyPlatformCache -Force)
         $stateText = 'aus'
         if ($enabled) { $stateText = 'an' }
         Write-RuntimeLog "Fertig-Benachrichtigung (report_done) ist jetzt $stateText."
@@ -27130,7 +31460,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.1.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.2.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -27143,7 +31473,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.1.5'
+    $verText = '7.2.0'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
@@ -27287,14 +31617,35 @@ $notifyTimer.Add_Tick({
             if (-not $script:Shared.NotifyQueue.TryDequeue([ref]$item)) { break }
             try {
                 $payload = $item | ConvertFrom-Json
-                Show-ArenaDoneNotification -Place ([string]$payload.place) -Title ([string]$payload.title) -Message ([string]$payload.message)
+                $payloadFlow = ''
+                try { if ($payload.PSObject.Properties['flowId']) { $payloadFlow = [string]$payload.flowId } } catch {}
+                $payloadQueued = [int64]0
+                try { if ($payload.PSObject.Properties['queuedAt']) { $payloadQueued = [int64]$payload.queuedAt } } catch {}
+                [void](Show-ArenaDoneNotification -Place ([string]$payload.place) -Title ([string]$payload.title) -Message ([string]$payload.message) -FlowId $payloadFlow -QueuedAt $payloadQueued)
             } catch {
                 Write-RuntimeLog "Fertig-Meldung konnte nicht angezeigt werden: $($_.Exception.Message)"
+                Write-FlowTrace 'NOTIFY' 'n-?' 'CALL_FAILED' @{ channel = 'tick'; error = $_.Exception.Message }
             }
             try { $notifyAllowed = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch { $notifyAllowed = $false }
         }
+        # Version 7.2.0 (D4): notify.sweep misst NACH dem Anzeigen erneut und
+        # verbucht ehrlich SHOWN oder SHOWN_UNVERIFIED mit Grund. Windows bietet
+        # keine Bestaetigungs-API fuer einen Toast - deshalb Messung plus
+        # Nutzerfrage ("Gesehen? Ja/Nein") statt blindem delivered = true.
+        Invoke-NotifySweep
+        [void](Update-NotifyPlatformCache)
     } catch {}
 })
+# Version 7.2.0 (D4): Ohne registrierte App-Id verwirft Windows den Toast still,
+# obwohl Show() ohne Ausnahme zurueckkehrt. Registriert wird nur, wenn der
+# Nutzer Fertig-Meldungen ueberhaupt eingeschaltet hat - und nur im
+# Benutzerprofil (HKCU + Startmenue), idempotent.
+try {
+    $notifyWantedAtStart = $false
+    try { $notifyWantedAtStart = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch {}
+    if ($notifyWantedAtStart) { [void](Register-NotifyAumid) }
+    [void](Update-NotifyPlatformCache -Force)
+} catch {}
 $notifyTimer.Start()
 
 Refresh-Ui
