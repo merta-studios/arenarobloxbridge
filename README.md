@@ -30,7 +30,7 @@ sein.
 
 | `ORGANIC_BUILD_CONTRACT.md` | Der 7.1.4-Bauvertrag zum Nachlesen: globaler Polygon-Vorrang für nichttriviale 3D-Modelle, bewusst höherer Finish-Standard, organischer per-Modell-Nachweis, Zylinder-Achsen-Regel mit Referenz-Lua, `buildQuality`-Messung und UI |
 | `test_queue_model_707.py` | Python-Modelltest: reproduziert den Queue-Stillstand von 7.0.4 und prüft die 7.0.5-Regeln (unabhängiger Watchdog, lateResults, Reconnect-Übergabe) **plus** 7.0.6 (Sitzungs-Identität, Fast-Fail, Zustell-Timeline) und 7.0.7 (Place-Zeile: fehlende Eigenschaft bricht den Zeilenaufbau ab) |
-| `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Versions-Checks (`/api/version` 7.2.9, `counters.revivedSessions` konstant, `/api/places` 200, `/api/status` 200), Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `--reset-test` (Reset mit 2 wartenden Befehlen), `--force-fail`, `--ask-sweep` (7.2.4 P0-Abnahme: alle Werkzeuge bei **offener** Frage) und `--message-round` (Nachricht → `_bridge.userMessages` → `ack_user_message`) |
+| `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Versions-Checks (`/api/version` 7.3.0, `counters.revivedSessions` konstant, `/api/places` 200, `/api/status` 200), Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `--reset-test` (Reset mit 2 wartenden Befehlen), `--force-fail`, `--ask-sweep` (7.2.4 P0-Abnahme: alle Werkzeuge bei **offener** Frage) und `--message-round` (Nachricht → `_bridge.userMessages` → `ack_user_message`) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -45,6 +45,49 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 7.3.0 — STARTGARANTIE: Fenster zuerst, Beweisdatei, gesicherte Assemblies
+
+**MINI-FIX gegen „es passiert gar nichts“ — fünf kleine Änderungen, keine
+neuen Fehlernetze, keine Änderung der Fenster- oder Ablaufstruktur.**
+
+- **(A) Update-/Willkommenshinweis läuft jetzt nach dem Hauptfenster** (im
+  `ContentRendered`-Handler, nach der harten Deckkraft-Sicherung und direkt vor
+  `Start-BridgeRuntime`). Vorher lag er modal **vor** dem Hauptfenster und konnte
+  den Start genau nach einem Update blockieren. Rettungstimer (700 ms),
+  Wächter (2500 ms), Esc und OK aus 7.2.8 bleiben unverändert.
+- **(B) Fenster starten sichtbar:** Das Hinweisfenster beginnt mit Deckkraft 1
+  (statt 0), bekommt `Owner` = Hauptfenster und `CenterOwner`; die Einblendung
+  ist nur Verzierung (`FillBehavior::Stop`). Dasselbe Muster hat das
+  Hauptfenster: sichtbarer Grundwert, Animation optional.
+- **(C) Die vier `Add-Type -AssemblyName`-Aufrufe** am Skriptanfang
+  (`PresentationFramework`, `PresentationCore`, `WindowsBase`, `System.Web`)
+  sind einzeln gesichert. Eine fehlende Assembly beendet den Prozess nicht mehr
+  lautlos vor dem Fenster, sondern wird protokolliert.
+- **(D) `%LOCALAPPDATA%\START-CHECK.txt`** wird bei jeder Startstufe
+  geschrieben (Zeit, Version, PowerShell/CLR, Skriptpfad, letzte erreichte
+  Startstufe, „Fenster sichtbar“). Das ist die eine Datei, die den Start belegt.
+- **(E) Scheitert der Start, wird die Diagnose sichtbar:** `startup-diagnose.txt`
+  öffnet sich zusätzlich im Editor (Notepad), solange kein Fenster sichtbar ist;
+  `startup-trace.txt`, `startup-diagnose.txt` und „START-ABSCHNITT
+  FEHLGESCHLAGEN“ im `runtime.log` bleiben die technische Spur.
+- Der Neustart nach einem Autostart-Update wird geprüft und genau einmal
+  wiederholt, wenn er sofort endet; der Grund landet in `startup-trace.txt`.
+
+**Wenn weiterhin kein Fenster erscheint (Notfallweg):**
+
+1. `%LOCALAPPDATA%\START-CHECK.txt` öffnen und „Letzte erreichte Startstufe“
+   ablesen — sie belegt, wie weit der Start gekommen ist.
+2. Im Ordner `%LOCALAPPDATA%\ArenaRobloxBridge\app` die Dateien
+   `ArenaBridge.ps1`, `ArenaBridge.ps1.new` und `ArenaBridge.ps1.old` löschen.
+3. `ArenaBridge.exe` neu starten — der Starter lädt `ArenaBridge.ps1` frisch
+   aus diesem Repository.
+
+**Offen benannte Abweichung:** Der verbindliche Windows-PowerShell-5.1-Parse-Gate
+(`parse-gate.ps1`) und ein echter Fensterstart konnten in dieser Umgebung nicht
+ausgeführt werden. Vor dem Weitergeben bitte einmal
+`powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\parse-gate.ps1`
+ausführen; nur Exit-Code 0 gibt die Datei frei.
 
 ## 7.2.9 — Diagnose statt unbewiesener Startreparatur
 
@@ -1021,6 +1064,16 @@ Quellen für den Befund (Roblox Developer Forum):
 
 ### 3.2 / 3.1 / 3.0
 - Siehe Kommentarblock am Anfang von `ArenaBridge.ps1`.
+
+### Prüfprotokoll 7.3.0 (2026-10-06)
+
+- 8 von 8 Offline-Suiten: Exit-Code 0.
+- `test_v720_bridge.py`: 218 erfolgreiche Prüfungen, 0 ROT; Tree-sitter-Parse
+  ohne neue ERROR-Stellen; echter Windows-Parser ausdrücklich UEBERSPRUNGEN
+  (kein powershell/pwsh verfügbar).
+- UTF-8-BOM vorhanden, 0 CR-Zeichen.
+- Windows-PowerShell-5.1-Parse-Gate und echter Fensterstart NICHT ausgeführt
+  (kein Windows verfügbar) — offen benannt, vor der Weitergabe nachholen.
 
 ### Prüfprotokoll 7.2.9 (2026-10-06)
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline-Abnahme fuer Arena Roblox Bridge 7.2.9.
+"""Offline-Abnahme fuer Arena Roblox Bridge 7.3.0.
 
 Dieser Test braucht KEIN Windows und keinen PowerShell-Prozess. Er prueft genau
 die fuenf Themen des Owners plus das Fundament:
@@ -29,7 +29,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.2.9"
+VERSION = "7.3.0"
 
 failures: list[str] = []
 
@@ -747,7 +747,7 @@ def main() -> int:
     ):
         check(marker in source, f"Fundament-Marker vorhanden: {marker}")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    check(version["version"] == VERSION, "version.json identifiziert 7.2.9")
+    check(version["version"] == VERSION, "version.json identifiziert 7.3.0")
     notes = "\n".join(str(note) for note in version.get("notes", []))
     for word in ("7.2.4", "P0-BLOCKER", ".ToArray()",
                  "gemeinsamen XAML-Ressourcenblock",
@@ -755,8 +755,8 @@ def main() -> int:
                  "7.2.3", "LIVE-SAMMLUNGEN", "ASK_CANCELLED", "Strg+Enter",
                  "NOTIFICATION_UNVERIFIED", "notify-diagnose.txt"):
         check(word in notes, f"version.json beschreibt: {word}")
-    check("DocsVersion     = '7.2.9'" in source and 'local ARENA_VERSION  = "7.2.9"' in source,
-          "Alle funktionalen Versionsstellen stehen auf 7.2.9")
+    check("DocsVersion     = '7.3.0'" in source and 'local ARENA_VERSION  = "7.3.0"' in source,
+          "Alle funktionalen Versionsstellen stehen auf 7.3.0")
     for marker in ("Set-StartupStage", "startup-trace.txt", "START-NETZ KOMPLETT",
                    "$script:WindowShown", "function Start-BridgeRuntime",
                    "$window.Add_ContentRendered({", "Start fehlgeschlagen"):
@@ -770,35 +770,37 @@ def main() -> int:
     trap_at = source.index("trap {")
     window_build_at = source.index("Set-StartupStage 'Fensteraufbau: XAML wird geladen'")
     check(trap_head < trap_at < window_build_at,
-          "7.2.9: trap auf Skriptebene sitzt VOR dem Fensterbau und faengt jeden nicht abgefangenen Fehler")
+          "7.3.0: trap auf Skriptebene sitzt VOR dem Fensterbau und faengt jeden nicht abgefangenen Fehler")
     check("trap {\n    $trapMessage = ''" in source
-          and "startup-diagnose.txt" in source[trap_at:trap_at + 3000]
-          and "\n    break\n}" in source[trap_at:trap_at + 3000],
-          "7.2.9: Der trap sichert den Fehler (startup-diagnose.txt) und beendet danach sauber")
+          and "startup-diagnose.txt" in source[trap_at:trap_at + 6000]
+          and "notepad.exe" in source[trap_at:trap_at + 6000]
+          and "\n    break\n}\n" in source[trap_at:trap_at + 6000],
+          "7.3.0: Der trap sichert den Fehler (startup-diagnose.txt), zeigt ihn notfalls in "
+          "Notepad und beendet danach sauber")
     notice = region(source, "function Show-UpdateNotice", "# ----------------------------------------------------------------------------\n# EINSTELLUNGSFENSTER")
     check("NOTICE_OPACITY_RESCUE" in notice and "NOTICE_WATCHDOG" in notice,
-          "7.2.9: Hinweisfenster hat Rettungs-Timer UND Waechter (unsichtbar = Start-Blocker)")
+          "7.3.0: Hinweisfenster hat Rettungs-Timer UND Waechter (unsichtbar = Start-Blocker)")
     rescue_at = notice.index("FromMilliseconds(700)")
     fade_at = notice.index("FromMilliseconds(240)")
     dialog_at = notice.index("[void]$noticeWindow.ShowDialog()")
     check(rescue_at < fade_at < dialog_at,
-          "7.2.9: Der 700-ms-Rettungstimer startet VOR der Einblend-Animation und vor ShowDialog")
+          "7.3.0: Der 700-ms-Rettungstimer startet VOR der Einblend-Animation und vor ShowDialog")
     watchdog_at = notice.index("FromMilliseconds(2500)")
     check(watchdog_at < dialog_at and "IsLoaded" in notice and "IsVisible" in notice
           and "damit das Programm starten kann" in notice,
-          "7.2.9: Der Waechter schliesst ein unsichtbares Hinweisfenster, statt den Start zu blockieren")
+          "7.3.0: Der Waechter schliesst ein unsichtbares Hinweisfenster, statt den Start zu blockieren")
     check("[System.Windows.Input.Key]::Escape" in notice,
-          "7.2.9: Esc ist ein Notausgang aus dem modalen Hinweisfenster")
+          "7.3.0: Esc ist ein Notausgang aus dem modalen Hinweisfenster")
     for guarded in ("if ($noticeTitleEl)", "if ($noticeSubEl)",
                     "if ($noticeNotesEl)", "if ($noticeOkEl)"):
-        check(guarded in notice, f"7.2.9: FindName-Ergebnis wird geprueft: {guarded}")
+        check(guarded in notice, f"7.3.0: FindName-Ergebnis wird geprueft: {guarded}")
     check("$noticeNoteItems.ToArray()" in notice and "[string]::Join(" in notice
           and "6000" in notice,
-          "7.2.9: Die notes-LISTE erscheint als Absaetze (mit Umbruechen) und ist gedeckelt")
+          "7.3.0: Die notes-LISTE erscheint als Absaetze (mit Umbruechen) und ist gedeckelt")
     check("[string]$script:UpdateDetails.notes" not in source,
-          "7.2.9: notes wird nicht mehr mit [string] zu einer Zeile ohne Umbruch gepresst")
+          "7.3.0: notes wird nicht mehr mit [string] zu einer Zeile ohne Umbruch gepresst")
     check("$script:UpdateNoticeWindow" in notice,
-          "7.2.9: Hinweisfenster liegt im Skriptbereich (Timer/Handler erreichen es sicher)")
+          "7.3.0: Hinweisfenster liegt im Skriptbereich (Timer/Handler erreichen es sicher)")
     try:
         start_area = region(source, "# START: Ereignisse stehen VOR ShowDialog",
                             "# Sicherheitsnetz (Version 3.4): Falls das Closed-Ereignis")
@@ -812,14 +814,24 @@ def main() -> int:
         init_at = handler.index("Start-BridgeRuntime")
         check(rendered_at < dialog_at and closed_at < dialog_at,
               "ShowDialog/cleanup stehen bereit, bevor ContentRendered die Initialisierung ausloest")
-        check("if ($UpdateStatus -eq 'update-erfolgreich' -or $UpdateStatus -eq 'erster-start')" in start_area
-              and start_area.index("Show-UpdateNotice") < dialog_at,
-              "Der Update-/Willkommensdialog bleibt vor dem Hauptfenster")
+        # 7.3.0 (STARTGARANTIE): Der Update-/Willkommenshinweis laeuft NICHT
+        # mehr vor dem Hauptfenster (ein modales Fenster dort konnte den ganzen
+        # Start unsichtbar festhalten), sondern in genau derselben
+        # Einmal-Initialisierung direkt nach dem sichtbaren Fenster und VOR den
+        # Diensten. Damit ist die Bridge in jedem Fall sichtbar.
+        notice_call = "if ($UpdateStatus -eq 'update-erfolgreich' -or $UpdateStatus -eq 'erster-start')"
+        check(notice_call in handler and "Show-UpdateNotice" in handler
+              and notice_call not in start_area[:rendered_at],
+              "7.3.0: Der Update-/Willkommenshinweis laeuft erst nach dem sichtbaren Hauptfenster (nie davor)")
+        notice_at = handler.index("Show-UpdateNotice")
+        check(opacity_visible_at < notice_at < init_at,
+              "7.3.0: Hinweis erscheint nach der harten Deckkraft-Sicherung und vor Start-BridgeRuntime")
         check(timer_at < opacity_clear_at < opacity_visible_at < init_at,
               "WPF bekommt 500 ms zum Rendern; die Deckkraft wird vor jedem potenziell blockierenden Startschritt hart auf 1 gesetzt")
         runtime_function = region(source, "function Start-BridgeRuntime", "# ----------------------------------------------------------------------------\n# START: Ereignisse stehen VOR ShowDialog")
-        check("Show-UpdateNotice" not in runtime_function,
-              "Update-Hinweis wird nicht erneut nach dem Hauptfenster geoeffnet")
+        check("Show-UpdateNotice" not in runtime_function
+              and source.count("Show-UpdateNotice }") == 1,
+              "7.3.0: Der Update-Hinweis wird genau einmal geoeffnet (im Einmal-Timer, nicht in Start-BridgeRuntime)")
         check("if ($script:StartupRuntimeStarted) { return }" in handler
               and "$script:StartupRuntimeStarted = $true" in handler,
               "ContentRendered startet den Runtime-Start genau einmal")
@@ -828,6 +840,33 @@ def main() -> int:
     check("$splash.Visibility = 'Visible'" in source
           and "$headline.Text = 'Start fehlgeschlagen'" in source,
           "Startfehler nach dem ersten Rendern bleiben im sichtbaren Splash erklaert")
+    # 7.3.0 (STARTGARANTIE): Diese fuenf Pruefungen halten die Ursachenklassen
+    # fest, die "es passiert gar nichts" erzeugen - sie duerfen nicht
+    # zurueckgebaut werden.
+    loaded_handler = region(source, "$window.Add_Loaded({", "Set-StartupStage 'Ereignisse verdrahtet")
+    check("$window.Opacity = 0" not in loaded_handler
+          and "$window.Opacity = 1" in loaded_handler
+          and "[System.Windows.Media.Animation.FillBehavior]::Stop" in loaded_handler,
+          "7.3.0: Hauptfenster startet mit sichtbarem Grundwert (Opacity 1), Einblendung ist nur Verzierung")
+    notice_region = region(source, "function Show-UpdateNotice", "# EINSTELLUNGSFENSTER")
+    check("$noticeWindow.Opacity = 1" in notice_region
+          and "$noticeWindow.Opacity = 0" not in notice_region
+          and "$noticeWindow.Owner = $script:MainWindow" in notice_region
+          and "CenterOwner" in notice_region,
+          "7.3.0: Hinweisfenster ist sofort sichtbar und gehoert dem Hauptfenster (Owner/CenterOwner)")
+    check("foreach ($bridgeAssembly in @('PresentationFramework', 'PresentationCore', 'WindowsBase', 'System.Web'))" in source
+          and "\nAdd-Type -AssemblyName PresentationFramework\n" not in source
+          and "\nAdd-Type -AssemblyName System.Web\n" not in source,
+          "7.3.0: Die vier Assembly-Aufrufe am Skriptanfang sind einzeln gesichert (kein lautloser Tod vor dem Fenster)")
+    check("START-CHECK.txt" in source and "Letzte erreichte Startstufe" in source
+          and "Fenster sichtbar" in source,
+          "7.3.0: %LOCALAPPDATA%\\START-CHECK.txt belegt bei jeder Startstufe, wie weit der Start kam")
+    check(source.count("notepad.exe") >= 2 and "Start-Process -FilePath 'notepad.exe'" in source,
+          "7.3.0: Letzter sichtbarer Weg (Diagnosedatei in Notepad) fehlt in trap und Startdiagnose nicht")
+    check("-WorkingDirectory $script:AppFolder -PassThru" in source
+          and "$restartProc.HasExited" in source and "$restartTry -le 2" in source,
+          "7.3.0: Der Neustart nach einem Autostart-Update wird geprueft und genau einmal wiederholt "
+          "(kein stilles Ende nach dem Update)")
     problems = collection_return_problems(source)
     for problem in problems:
         print(f"    {problem}")
@@ -856,7 +895,7 @@ def main() -> int:
               "Tree-sitter-PowerShell-Parse-Gate meldet keine neuen ERROR-Stellen")
 
     check((ROOT / "parse-gate.ps1").is_file(), "Echtes Parser-Gate vorhanden")
-    check("PROOF_OF_LIFE Version=7.2.9" in source,
+    check("PROOF_OF_LIFE Version=7.3.0" in source,
           "Proof-of-Life mit aktueller Version vorhanden")
     engine = shutil.which("powershell") or shutil.which("pwsh")
     if engine:
