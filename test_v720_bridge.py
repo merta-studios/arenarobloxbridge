@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline-Abnahme fuer Arena Roblox Bridge 7.2.8.
+"""Offline-Abnahme fuer Arena Roblox Bridge 7.2.9.
 
 Dieser Test braucht KEIN Windows und keinen PowerShell-Prozess. Er prueft genau
 die fuenf Themen des Owners plus das Fundament:
@@ -11,10 +11,9 @@ die fuenf Themen des Owners plus das Fundament:
   5. Qualitaet und GUI ......................... finishScore/grade/draft, codeLayout
   6. Fundament ................................. Stationen, Zaehler, echter PowerShell-Parser
 
-Der Klammer-/String-Check bleibt als schneller Zusatzschutz erhalten. Das
-verbindliche Parse-Gate nutzt tree_sitter + tree_sitter_powershell und laesst
-nur die sieben bekannten Grammatik-Rauschstellen zu. Das ist wichtig, weil
-PowerShell die ganze Datei parst, bevor irgendetwas sichtbar wird.
+Tree-sitter ist nur ein Struktur-Zusatzcheck, kein Windows-PowerShell-Parser.
+parse-gate.ps1 nutzt den echten Parser, wenn PowerShell installiert ist.
+Ohne PowerShell wird dieser Check explizit uebersprungen.
 
 Aufruf:
     .venv/bin/python test_v720_bridge.py
@@ -24,11 +23,13 @@ from __future__ import annotations
 import json
 import re
 import sys
+import shutil
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.2.8"
+VERSION = "7.2.9"
 
 failures: list[str] = []
 
@@ -746,7 +747,7 @@ def main() -> int:
     ):
         check(marker in source, f"Fundament-Marker vorhanden: {marker}")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    check(version["version"] == VERSION, "version.json identifiziert 7.2.8")
+    check(version["version"] == VERSION, "version.json identifiziert 7.2.9")
     notes = "\n".join(str(note) for note in version.get("notes", []))
     for word in ("7.2.4", "P0-BLOCKER", ".ToArray()",
                  "gemeinsamen XAML-Ressourcenblock",
@@ -754,14 +755,14 @@ def main() -> int:
                  "7.2.3", "LIVE-SAMMLUNGEN", "ASK_CANCELLED", "Strg+Enter",
                  "NOTIFICATION_UNVERIFIED", "notify-diagnose.txt"):
         check(word in notes, f"version.json beschreibt: {word}")
-    check("DocsVersion     = '7.2.8'" in source and 'local ARENA_VERSION  = "7.2.8"' in source,
-          "Alle funktionalen Versionsstellen stehen auf 7.2.8")
+    check("DocsVersion     = '7.2.9'" in source and 'local ARENA_VERSION  = "7.2.9"' in source,
+          "Alle funktionalen Versionsstellen stehen auf 7.2.9")
     for marker in ("Set-StartupStage", "startup-trace.txt", "START-NETZ KOMPLETT",
                    "$script:WindowShown", "function Start-BridgeRuntime",
                    "$window.Add_ContentRendered({", "Start fehlgeschlagen"):
         check(marker in source, f"7.2.7-Startnetz-Marker vorhanden: {marker}")
 
-    # 7.2.8 (START-BLOCKER): Der Start starb nicht an einer Ausnahme, sondern
+    # 7.2.9 (START-BLOCKER): Der Start starb nicht an einer Ausnahme, sondern
     # blieb stecken - dafuer hilft kein try/catch. Zwei Stellen sind gesichert:
     # das modale Hinweisfenster VOR dem Hauptfenster und der ungeschuetzte
     # Bereich vor dem Fensterbau.
@@ -769,35 +770,35 @@ def main() -> int:
     trap_at = source.index("trap {")
     window_build_at = source.index("Set-StartupStage 'Fensteraufbau: XAML wird geladen'")
     check(trap_head < trap_at < window_build_at,
-          "7.2.8: trap auf Skriptebene sitzt VOR dem Fensterbau und faengt jeden nicht abgefangenen Fehler")
+          "7.2.9: trap auf Skriptebene sitzt VOR dem Fensterbau und faengt jeden nicht abgefangenen Fehler")
     check("trap {\n    $trapMessage = ''" in source
           and "startup-diagnose.txt" in source[trap_at:trap_at + 3000]
           and "\n    break\n}" in source[trap_at:trap_at + 3000],
-          "7.2.8: Der trap sichert den Fehler (startup-diagnose.txt) und beendet danach sauber")
+          "7.2.9: Der trap sichert den Fehler (startup-diagnose.txt) und beendet danach sauber")
     notice = region(source, "function Show-UpdateNotice", "# ----------------------------------------------------------------------------\n# EINSTELLUNGSFENSTER")
     check("NOTICE_OPACITY_RESCUE" in notice and "NOTICE_WATCHDOG" in notice,
-          "7.2.8: Hinweisfenster hat Rettungs-Timer UND Waechter (unsichtbar = Start-Blocker)")
+          "7.2.9: Hinweisfenster hat Rettungs-Timer UND Waechter (unsichtbar = Start-Blocker)")
     rescue_at = notice.index("FromMilliseconds(700)")
     fade_at = notice.index("FromMilliseconds(240)")
     dialog_at = notice.index("[void]$noticeWindow.ShowDialog()")
     check(rescue_at < fade_at < dialog_at,
-          "7.2.8: Der 700-ms-Rettungstimer startet VOR der Einblend-Animation und vor ShowDialog")
+          "7.2.9: Der 700-ms-Rettungstimer startet VOR der Einblend-Animation und vor ShowDialog")
     watchdog_at = notice.index("FromMilliseconds(2500)")
     check(watchdog_at < dialog_at and "IsLoaded" in notice and "IsVisible" in notice
           and "damit das Programm starten kann" in notice,
-          "7.2.8: Der Waechter schliesst ein unsichtbares Hinweisfenster, statt den Start zu blockieren")
+          "7.2.9: Der Waechter schliesst ein unsichtbares Hinweisfenster, statt den Start zu blockieren")
     check("[System.Windows.Input.Key]::Escape" in notice,
-          "7.2.8: Esc ist ein Notausgang aus dem modalen Hinweisfenster")
+          "7.2.9: Esc ist ein Notausgang aus dem modalen Hinweisfenster")
     for guarded in ("if ($noticeTitleEl)", "if ($noticeSubEl)",
                     "if ($noticeNotesEl)", "if ($noticeOkEl)"):
-        check(guarded in notice, f"7.2.8: FindName-Ergebnis wird geprueft: {guarded}")
+        check(guarded in notice, f"7.2.9: FindName-Ergebnis wird geprueft: {guarded}")
     check("$noticeNoteItems.ToArray()" in notice and "[string]::Join(" in notice
           and "6000" in notice,
-          "7.2.8: Die notes-LISTE erscheint als Absaetze (mit Umbruechen) und ist gedeckelt")
+          "7.2.9: Die notes-LISTE erscheint als Absaetze (mit Umbruechen) und ist gedeckelt")
     check("[string]$script:UpdateDetails.notes" not in source,
-          "7.2.8: notes wird nicht mehr mit [string] zu einer Zeile ohne Umbruch gepresst")
+          "7.2.9: notes wird nicht mehr mit [string] zu einer Zeile ohne Umbruch gepresst")
     check("$script:UpdateNoticeWindow" in notice,
-          "7.2.8: Hinweisfenster liegt im Skriptbereich (Timer/Handler erreichen es sicher)")
+          "7.2.9: Hinweisfenster liegt im Skriptbereich (Timer/Handler erreichen es sicher)")
     try:
         start_area = region(source, "# START: Ereignisse stehen VOR ShowDialog",
                             "# Sicherheitsnetz (Version 3.4): Falls das Closed-Ereignis")
@@ -854,15 +855,28 @@ def main() -> int:
         check(not parse_errors,
               "Tree-sitter-PowerShell-Parse-Gate meldet keine neuen ERROR-Stellen")
 
+    check((ROOT / "parse-gate.ps1").is_file(), "Echtes Parser-Gate vorhanden")
+    check("PROOF_OF_LIFE Version=7.2.9" in source,
+          "Proof-of-Life mit aktueller Version vorhanden")
+    engine = shutil.which("powershell") or shutil.which("pwsh")
+    if engine:
+        result = subprocess.run([engine, "-NoProfile", "-ExecutionPolicy", "Bypass",
+                                 "-File", str(ROOT / "parse-gate.ps1")],
+                                capture_output=True, text=True, timeout=120)
+        print(result.stdout)
+        print(result.stderr)
+        check(result.returncode == 0, "Echter PowerShell-Parser (siehe Engine-Version oben)")
+    else:
+        print("  UEBERSPRUNGEN: echter PowerShell-Parser; powershell/pwsh fehlen. "
+              "Windows-PowerShell-5.1-Gate vor Freigabe erforderlich.")
+
     print()
     if failures:
         print(f"ROT: {len(failures)} Pruefung(en) fehlgeschlagen:")
         for entry in failures:
             print(f"  - {entry}")
         return 1
-    print("OK: 7.2.8 - Start-Blocker weg; Hauptfenster zuerst; Start-Netz komplett; Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene "
-          "Fertig-Meldung, Fragen-Baum, Qualitaets- und GUI-Vertrag sind vollstaendig; "
-          "die Datei ist ausbalanciert und der echte PowerShell-Parser ist gruen.")
+    print("OK: Offline-Pruefungen abgeschlossen. Kein Nachweis eines Windows-Fensterstarts.")
     return 0
 
 

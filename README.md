@@ -25,12 +25,12 @@ sein.
 | `test_v711_delivery.py` | Python-Modelltest 7.1.1: stellt die 7.1.0-Zustellblockade exakt nach (PowerShell-`@()`-Semantik mit Komma-Operator → Poll-Schleife bricht vor dem Dequeue ab), beweist die Reparatur, den wirksamen Admin-Reset und die Sitzungsauflösung über `instanceGuid` |
 | `test_v712_toolbox.py` | Python-Modelltest 7.1.2 (Toolbox-Hotfix): gemockter Katalog + gemockter Studio-Executor. Stellt die 7.1.1-Symptome exakt nach (automatische Katalog-Wiederholung 2×20 s+1,5 s, 20 s Validierung + 55 s Studio auf **einer** HTTP-Anfrage, `delivery.state='ok'` bei `executorAlive=false`, Verlaufskarte bleibt auf „Macht gerade“, Cache-Schreibsturm) und beweist den Fix: harter Timeout, keine Wiederholung, `TOOLBOX_BUSY`/`TOOLBOX_IMPORT_IN_FLIGHT`/`TOOLBOX_IMPORT_WEDGED`, kein zweiter nativer `LoadAsset`, keine doppelte Einfügung, terminale UI-Zustände, begrenzte Caches |
 | `test_v713_quality.py` | Regressionen aus 7.1.3 (Zylinder-Mathematik, primitive Gruppen, `buildQuality`, Benachrichtigungsschalter und Sessionstart-Budget), weiterhin gegen die aktuelle Bridge ausführbar |
-| `test_v720_bridge.py` | Offline-Abnahme 7.2.4: Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene Fertig-Meldung, robustes `ask_user`-Fenster samt Abbruchsemantik und Rückgabe-Gate für PowerShell-Sammlungen – mit echtem Tree-sitter-PowerShell-Parse-Gate (zusätzlich zur Klammer-/String-Balance). |
+| `test_v720_bridge.py` | Offline-Abnahme 7.2.4: Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene Fertig-Meldung, robustes `ask_user`-Fenster samt Abbruchsemantik und Rückgabe-Gate für PowerShell-Sammlungen – mit zusätzlichem Tree-sitter-Strukturcheck (zusätzlich zur Klammer-/String-Balance). |
 | `test_v714_organic.py` | 7.1.4-Gegenprüfungen: globaler Polygon-/Finish-Standard ohne Namens-Trigger, explizites `organic=true`-Gate, Farb-/Reihenfolge-Sperren, frische Belege für jedes registrierte Modell (auch Multi-Modell/Stale-Fälle), fail-closed `report_done` und UI |
 
 | `ORGANIC_BUILD_CONTRACT.md` | Der 7.1.4-Bauvertrag zum Nachlesen: globaler Polygon-Vorrang für nichttriviale 3D-Modelle, bewusst höherer Finish-Standard, organischer per-Modell-Nachweis, Zylinder-Achsen-Regel mit Referenz-Lua, `buildQuality`-Messung und UI |
 | `test_queue_model_707.py` | Python-Modelltest: reproduziert den Queue-Stillstand von 7.0.4 und prüft die 7.0.5-Regeln (unabhängiger Watchdog, lateResults, Reconnect-Übergabe) **plus** 7.0.6 (Sitzungs-Identität, Fast-Fail, Zustell-Timeline) und 7.0.7 (Place-Zeile: fehlende Eigenschaft bricht den Zeilenaufbau ab) |
-| `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Versions-Checks (`/api/version` 7.2.8, `counters.revivedSessions` konstant, `/api/places` 200, `/api/status` 200), Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `--reset-test` (Reset mit 2 wartenden Befehlen), `--force-fail`, `--ask-sweep` (7.2.4 P0-Abnahme: alle Werkzeuge bei **offener** Frage) und `--message-round` (Nachricht → `_bridge.userMessages` → `ack_user_message`) |
+| `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Versions-Checks (`/api/version` 7.2.9, `counters.revivedSessions` konstant, `/api/places` 200, `/api/status` 200), Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `--reset-test` (Reset mit 2 wartenden Befehlen), `--force-fail`, `--ask-sweep` (7.2.4 P0-Abnahme: alle Werkzeuge bei **offener** Frage) und `--message-round` (Nachricht → `_bridge.userMessages` → `ack_user_message`) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -45,6 +45,65 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 7.2.9 — Diagnose statt unbewiesener Startreparatur
+
+Die bisherigen Startänderungen haben laut Nutzer keinen sichtbaren Start bewirkt.
+START-CHECK.txt liegt nicht vor; eine Ursache auf dem betroffenen Rechner ist
+**nicht nachgewiesen**. Diese Version verändert weder Fenster noch Startreihenfolge
+und fügt keine weiteren try/catch-Netze hinzu.
+
+- Erste ausführbare Anweisung nach `param()` schreibt einen Proof-of-Life nach
+  `%LOCALAPPDATA%\ArenaRobloxBridge-start-entry.txt` (überschreibt beim nächsten
+  Start; Zeit, Version, PID, PowerShell-Version, Skriptpfad, UpdateStatus).
+  Der Zielordner LOCALAPPDATA existiert bereits; Schreibfehler sind nicht beendend.
+- Ein aktueller Marker beweist den Eintritt ins Skript, nicht den Fensterstart.
+  Ein fehlender Marker beweist allein keine Ursache (auch Schreibschutz ist möglich).
+  Parser-/Policy-Fehler passieren vor diesem Marker und vor jedem Skript-trap.
+- `parse-gate.ps1` verwendet `System.Management.Automation.Language.Parser.ParseFile`
+  ohne Ausführung des Programms; Fehler mit Zeile/Spalte/ID ergeben Exit-Code 1.
+- `test_v720_bridge.py` ruft das Gate auf, wenn `powershell` oder `pwsh` im PATH ist.
+  Andernfalls steht ausdrücklich **UEBERSPRUNGEN**, nicht grün. PowerShell 7 ist
+  kein Ersatz für den verbindlichen Windows-PowerShell-5.1-Test.
+- Die inaktive Vorlage `ci/windows-parse.yml.example` würde als GitHub-Actions-Workflow
+  unter Windows PowerShell 5.1 den Quelltext und die Zurückweisung einer absichtlich
+  defekten Testdatei prüfen. GitHub hat den Workflow-Push wegen fehlender
+  `workflows`-Berechtigung der Arena-Verbindung abgelehnt. Nach Freigabe dieser
+  Berechtigung gehört die Vorlage nach `.github/workflows/windows-parse.yml`.
+  **In dieser Veröffentlichung lief kein Windows-CI-Test.**
+  Auch ein erfolgreicher Parserlauf prüft weder WPF-Sichtbarkeit noch lokale Policy/AV.
+
+### PFLICHTSCHRITT VOR JEDEM PUSH
+
+Auf Windows mit **Windows PowerShell 5.1** aus dem Repository ausführen:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\parse-gate.ps1
+```
+
+Nur Exit-Code 0 bestätigt die Parsebarkeit für diese Engine. Die CI ist eine
+zusätzliche Kontrolle vor dem Merge; Offline- und Tree-sitter-Ergebnisse sind
+kein Ersatz. Wenn lokal kein Windows vorhanden ist, muss diese Abweichung offen
+benannt und das Windows-CI-Ergebnis vor einer Reparaturfreigabe geprüft werden.
+7.2.9 ist ausschließlich eine Diagnose-Auslieferung ohne diese Freigabe.
+Zum Prüfen der tatsächlich installierten Datei:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\parse-gate.ps1 -Path "$env:LOCALAPPDATA\ArenaRobloxBridge\app\ArenaBridge.ps1"
+```
+
+**Encoding-Vertrag für den EXE-Build (`make-updater.ps1`):** ArenaBridge.ps1 muss
+UTF-8 **mit BOM** und LF bleiben, auch nach Download/atomarem Dateitausch.
+Die Builder-Quelle ist nicht in diesem Checkout; daran wurde nichts geändert.
+Ein Neuencodieren ohne BOM ist unzulässig. Vor dem Ersetzen sollte der Starter
+BOM/Hash sowie einen Windows-PowerShell-Parse-Check prüfen und Startfehler des
+Kindprozesses sichtbar protokollieren. Das ist hier eine Anforderung, keine
+bereits implementierte EXE-Änderung.
+
+Bei Parserfehlern nur die gemeldeten Stellen reparieren. Bei erfolgreichem Parse
+und fehlendem Startnachweis den Starterpfad, Policy, MOTW und AV untersuchen;
+MOTW allein beweist keine Blockade, da die wirksame Policy entscheidend ist.
+Keine systemweite Policy-Absenkung und kein Abschalten des Virenschutzes.
 
 ## 7.2.8
 
@@ -962,3 +1021,12 @@ Quellen für den Befund (Roblox Developer Forum):
 
 ### 3.2 / 3.1 / 3.0
 - Siehe Kommentarblock am Anfang von `ArenaBridge.ps1`.
+
+### Prüfprotokoll 7.2.9 (2026-10-06)
+
+- 8 von 8 Offline-Suiten: Exit-Code 0.
+- `test_v720_bridge.py`: 211 erfolgreiche Prüfungen, 0 ROT; echter Parser
+  ausdrücklich UEBERSPRUNGEN (kein powershell/pwsh im Sandbox-PATH).
+- UTF-8-BOM vorhanden, 0 CR-Zeichen; `git diff --check` ohne Befund.
+- Windows-CI-Ausführung durch fehlende Workflow-Berechtigung verhindert.
+- Kein Windows-Fensterstart, EXE-Downloadpfad, lokale Policy oder AV geprüft.
