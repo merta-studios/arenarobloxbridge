@@ -30,7 +30,7 @@ sein.
 
 | `ORGANIC_BUILD_CONTRACT.md` | Der 7.1.4-Bauvertrag zum Nachlesen: globaler Polygon-Vorrang für nichttriviale 3D-Modelle, bewusst höherer Finish-Standard, organischer per-Modell-Nachweis, Zylinder-Achsen-Regel mit Referenz-Lua, `buildQuality`-Messung und UI |
 | `test_queue_model_707.py` | Python-Modelltest: reproduziert den Queue-Stillstand von 7.0.4 und prüft die 7.0.5-Regeln (unabhängiger Watchdog, lateResults, Reconnect-Übergabe) **plus** 7.0.6 (Sitzungs-Identität, Fast-Fail, Zustell-Timeline) und 7.0.7 (Place-Zeile: fehlende Eigenschaft bricht den Zeilenaufbau ab) |
-| `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Versions-Checks (`/api/version` 7.2.7, `counters.revivedSessions` konstant, `/api/places` 200, `/api/status` 200), Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `--reset-test` (Reset mit 2 wartenden Befehlen), `--force-fail`, `--ask-sweep` (7.2.4 P0-Abnahme: alle Werkzeuge bei **offener** Frage) und `--message-round` (Nachricht → `_bridge.userMessages` → `ack_user_message`) |
+| `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Versions-Checks (`/api/version` 7.2.8, `counters.revivedSessions` konstant, `/api/places` 200, `/api/status` 200), Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `--reset-test` (Reset mit 2 wartenden Befehlen), `--force-fail`, `--ask-sweep` (7.2.4 P0-Abnahme: alle Werkzeuge bei **offener** Frage) und `--message-round` (Nachricht → `_bridge.userMessages` → `ack_user_message`) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -45,6 +45,51 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 7.2.8
+
+**MINI-FIX: Start-Blocker weg – zwei Stellen, die den Start unsichtbar festhielten.**
+
+- **Warum vier Hotfixes nicht halfen:** 7.2.5/7.2.6/7.2.7 bauten Netze gegen
+  *Ausnahmen*. Der Start starb aber nicht an einer Ausnahme, sondern blieb
+  **stecken** – und dagegen hilft kein `try/catch`.
+- **(A) Das Update-/Willkommensfenster blockierte den Start.**
+  `Show-UpdateNotice` läuft **modal vor** dem Hauptfenster und nur bei
+  `update-erfolgreich`/`erster-start` – also **genau nach einem Update**. Das
+  Fenster begann mit `Opacity = 0`, wurde ausschließlich durch eine
+  Einblend-Animation in `ContentRendered` sichtbar, und `Add_Closing` brach
+  **jedes** Schließen ab, solange nicht OK gedrückt war. Kam die Animation
+  nicht an (bekannte Fehlerklasse 6.0.5/7.2.5), stand ein **unsichtbares,
+  unbedienbares, nicht schließbares** Fenster im Weg: `ShowDialog()` blockierte
+  für immer, das Hauptfenster wurde nie erreicht – nichts auf dem Bildschirm,
+  nichts im Log, keine Ausnahme. Der 700-ms-Rettungstimer aus 7.2.5/7.2.6 war
+  nur für das **Hauptfenster** eingebaut, nie für dieses Fenster.
+  - `NOTICE_OPACITY_RESCUE`: Der Rettungstimer startet **vor** der Animation
+    und erzwingt nach 700 ms Deckkraft 1 (bewährtes Muster aus 6.0.5/7.2.5).
+  - `NOTICE_WATCHDOG`: Misst nach 2500 ms, ob das Fenster wirklich `IsLoaded`
+    **und** `IsVisible` ist. Wenn nicht, wird es geschlossen und der Start läuft
+    weiter – ein Hinweisfenster darf den Programmstart nie blockieren.
+  - **Esc** ist zusätzlich ein Notausgang; `FindName`-Ergebnisse werden vor der
+    Verwendung geprüft.
+- **(B) Der Bereich vor dem Fensterbau war ungeschützt.** Die Start-Netze
+  beginnen erst bei `Fensteraufbau: XAML wird geladen`. Jeder nicht
+  abgefangene Fehler davor (`New-Item` auf `%LOCALAPPDATA%`,
+  `update-status.json`, `$script:Shared`, `Add-Type`) beendete den Prozess
+  lautlos. Ein **`trap` auf Skriptebene** – ganz oben, vor allem anderen –
+  fängt jetzt jeden nicht abgefangenen, beendenden Fehler der ganzen Datei,
+  schreibt `startup-diagnose.txt` und zeigt eine sichtbare Meldung, **bevor**
+  der Prozess endet. Bestehende `try/catch`-Pfade gehen vor; ihr Verhalten
+  ändert sich nicht.
+- **Lesbarer Update-Text:** `notes` ist eine **Liste**; `[string]` darauf machte
+  aus 13 Einträgen mit 8,5 KB **eine** Zeile ohne einzigen Umbruch. Jetzt steht
+  jeder Eintrag als eigener Absatz da, gedeckelt auf 6000 Zeichen.
+- **Unverändert:** Design, Dialogreihenfolge (Update-Hinweis bleibt vor dem
+  Hauptfenster), Plugin, Server, Tunnel, Toast-Regeln und alle 7.2.4–7.2.7-Fixes.
+- **Prüfung:** alle acht Offline-Suiten grün, einschließlich
+  Tree-sitter-PowerShell-Parse-Gate (0 neue ERROR-Stellen) und neuer
+  7.2.8-Regression (trap-Position, Rettungs-Timer vor der Animation,
+  Waechter vor `ShowDialog`, Esc, `FindName`-Prüfung, notes-Absätze). Ein
+  Windows-Live-Start ist in dieser Linux-Sandbox nicht ausführbar.
 
 ## 7.2.7
 
