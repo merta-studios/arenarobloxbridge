@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline-Abnahme fuer Arena Roblox Bridge 7.2.7.
+"""Offline-Abnahme fuer Arena Roblox Bridge 7.2.8.
 
 Dieser Test braucht KEIN Windows und keinen PowerShell-Prozess. Er prueft genau
 die fuenf Themen des Owners plus das Fundament:
@@ -28,7 +28,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.2.7"
+VERSION = "7.2.8"
 
 failures: list[str] = []
 
@@ -746,7 +746,7 @@ def main() -> int:
     ):
         check(marker in source, f"Fundament-Marker vorhanden: {marker}")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    check(version["version"] == VERSION, "version.json identifiziert 7.2.7")
+    check(version["version"] == VERSION, "version.json identifiziert 7.2.8")
     notes = "\n".join(str(note) for note in version.get("notes", []))
     for word in ("7.2.4", "P0-BLOCKER", ".ToArray()",
                  "gemeinsamen XAML-Ressourcenblock",
@@ -754,12 +754,50 @@ def main() -> int:
                  "7.2.3", "LIVE-SAMMLUNGEN", "ASK_CANCELLED", "Strg+Enter",
                  "NOTIFICATION_UNVERIFIED", "notify-diagnose.txt"):
         check(word in notes, f"version.json beschreibt: {word}")
-    check("DocsVersion     = '7.2.7'" in source and 'local ARENA_VERSION  = "7.2.7"' in source,
-          "Alle funktionalen Versionsstellen stehen auf 7.2.7")
+    check("DocsVersion     = '7.2.8'" in source and 'local ARENA_VERSION  = "7.2.8"' in source,
+          "Alle funktionalen Versionsstellen stehen auf 7.2.8")
     for marker in ("Set-StartupStage", "startup-trace.txt", "START-NETZ KOMPLETT",
                    "$script:WindowShown", "function Start-BridgeRuntime",
                    "$window.Add_ContentRendered({", "Start fehlgeschlagen"):
         check(marker in source, f"7.2.7-Startnetz-Marker vorhanden: {marker}")
+
+    # 7.2.8 (START-BLOCKER): Der Start starb nicht an einer Ausnahme, sondern
+    # blieb stecken - dafuer hilft kein try/catch. Zwei Stellen sind gesichert:
+    # das modale Hinweisfenster VOR dem Hauptfenster und der ungeschuetzte
+    # Bereich vor dem Fensterbau.
+    trap_head = source.index("$ErrorActionPreference = 'Stop'")
+    trap_at = source.index("trap {")
+    window_build_at = source.index("Set-StartupStage 'Fensteraufbau: XAML wird geladen'")
+    check(trap_head < trap_at < window_build_at,
+          "7.2.8: trap auf Skriptebene sitzt VOR dem Fensterbau und faengt jeden nicht abgefangenen Fehler")
+    check("trap {\n    $trapMessage = ''" in source
+          and "startup-diagnose.txt" in source[trap_at:trap_at + 3000]
+          and "\n    break\n}" in source[trap_at:trap_at + 3000],
+          "7.2.8: Der trap sichert den Fehler (startup-diagnose.txt) und beendet danach sauber")
+    notice = region(source, "function Show-UpdateNotice", "# ----------------------------------------------------------------------------\n# EINSTELLUNGSFENSTER")
+    check("NOTICE_OPACITY_RESCUE" in notice and "NOTICE_WATCHDOG" in notice,
+          "7.2.8: Hinweisfenster hat Rettungs-Timer UND Waechter (unsichtbar = Start-Blocker)")
+    rescue_at = notice.index("FromMilliseconds(700)")
+    fade_at = notice.index("FromMilliseconds(240)")
+    dialog_at = notice.index("[void]$noticeWindow.ShowDialog()")
+    check(rescue_at < fade_at < dialog_at,
+          "7.2.8: Der 700-ms-Rettungstimer startet VOR der Einblend-Animation und vor ShowDialog")
+    watchdog_at = notice.index("FromMilliseconds(2500)")
+    check(watchdog_at < dialog_at and "IsLoaded" in notice and "IsVisible" in notice
+          and "damit das Programm starten kann" in notice,
+          "7.2.8: Der Waechter schliesst ein unsichtbares Hinweisfenster, statt den Start zu blockieren")
+    check("[System.Windows.Input.Key]::Escape" in notice,
+          "7.2.8: Esc ist ein Notausgang aus dem modalen Hinweisfenster")
+    for guarded in ("if ($noticeTitleEl)", "if ($noticeSubEl)",
+                    "if ($noticeNotesEl)", "if ($noticeOkEl)"):
+        check(guarded in notice, f"7.2.8: FindName-Ergebnis wird geprueft: {guarded}")
+    check("$noticeNoteItems.ToArray()" in notice and "[string]::Join(" in notice
+          and "6000" in notice,
+          "7.2.8: Die notes-LISTE erscheint als Absaetze (mit Umbruechen) und ist gedeckelt")
+    check("[string]$script:UpdateDetails.notes" not in source,
+          "7.2.8: notes wird nicht mehr mit [string] zu einer Zeile ohne Umbruch gepresst")
+    check("$script:UpdateNoticeWindow" in notice,
+          "7.2.8: Hinweisfenster liegt im Skriptbereich (Timer/Handler erreichen es sicher)")
     try:
         start_area = region(source, "# START: Ereignisse stehen VOR ShowDialog",
                             "# Sicherheitsnetz (Version 3.4): Falls das Closed-Ereignis")
@@ -822,7 +860,7 @@ def main() -> int:
         for entry in failures:
             print(f"  - {entry}")
         return 1
-    print("OK: 7.2.7 - Hauptfenster zuerst; Start-Netz komplett; Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene "
+    print("OK: 7.2.8 - Start-Blocker weg; Hauptfenster zuerst; Start-Netz komplett; Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene "
           "Fertig-Meldung, Fragen-Baum, Qualitaets- und GUI-Vertrag sind vollstaendig; "
           "die Datei ist ausbalanciert und der echte PowerShell-Parser ist gruen.")
     return 0
