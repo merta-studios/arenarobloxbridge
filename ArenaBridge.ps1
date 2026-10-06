@@ -1,8 +1,23 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.2.6
+# Arena Roblox Bridge  -  Version 7.2.7
+#
+# Version 7.2.7 (2026-10-06) - MINI-START-FIX: FENSTER VOR STARTARBEIT
+# -----------------------------------------------------------------------------
+# Befund: Die 7.2.5/7.2.6-Fixes fingen Fehler ab, zeigten ShowDialog aber
+# weiterhin ERST NACH Selbst-Update, Studio-Suche, Plugin-/Server-/Tunnel-
+# Start und Refresh-Ui. Ein haengender (nicht werfender) Startschritt blieb
+# darum unsichtbar und umging jedes try/catch. Der ausdruecklich gewuenschte
+# Update-/Willkommensdialog bleibt unveraendert vor dem Hauptfenster.
+# Fix (gezielt, ohne Umbau der Dienste oder des Designs):
+#   1) Hauptfenster/Startbildschirm wird zuerst angezeigt; Startarbeit
+#      beginnt einmalig erst nach ContentRendered (erster Frame sichtbar).
+#   2) Schliessen/Ereignisse werden vor ShowDialog verdrahtet; Timer und
+#      Startdienste initialisieren danach im selben PowerShell-Runspace.
+#   3) startup-trace.txt markiert Update-, Studio-/Plugin-/Server- und UI-
+#      Stufen; ein Fehler bleibt im sichtbaren Splash samt Diagnosepfad.
 #
 # Version 7.2.6 (2026-10-06) - START-NETZ KOMPLETT: NIE MEHR LAUTLOS
-# -----------------------------------------------------------------------------
+#
 # Befund: Das 7.2.5-Netz begann erst NACH dem Fensterbau. XamlReader::Load,
 # FindName, die Ereignis-Verdrahtung und ShowDialog lagen ausserhalb - ein
 # Fehler dort beendete den Prozess weiterhin lautlos ("startet gar nicht").
@@ -2513,7 +2528,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.2.6'
+    DocsVersion     = '7.2.7'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -2549,7 +2564,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Version 7.0.6: Laufzeit-Identitaet der LAUFENDEN Datei (Version, Pfad,
     # SHA-256, Sprachmodus, Startzeit) fuer GET /api/version.
     RuntimeInfo = [hashtable]::Synchronized(@{
-        Version = '7.2.6'
+        Version = '7.2.7'
         File = ''
         Sha256 = ''
         LanguageMode = ''
@@ -2769,7 +2784,7 @@ function Write-StartupFailureDiagnose {
         try { $trace = [string]$ErrorRecord.ScriptStackTrace } catch {}
         if ($trace.Length -gt 2000) { $trace = $trace.Substring(0, 2000) }
         $report = New-Object System.Text.StringBuilder
-        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.2.6)')
+        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.2.7)')
         [void]$report.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$report.AppendLine('Letzte Startstufe: ' + $stage)
         [void]$report.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -2793,6 +2808,27 @@ function Write-StartupFailureDiagnose {
                            'Fehler: ' + $message + $nl + $nl +
                            'Details: ' + $diagnosePath
                 [void][System.Windows.MessageBox]::Show($boxText, 'Arena Roblox Bridge - Startfehler')
+            } catch {}
+        } else {
+            # Nach dem ersten Rendern bleibt der Fehler direkt im sichtbaren
+            # Startbildschirm stehen; der Nutzer muss nicht erst Logs suchen.
+            try {
+                $main = $script:MainWindow
+                if ($null -ne $main) {
+                    $splash = $main.FindName('SplashScreen')
+                    $headline = $main.FindName('SplashHeadline')
+                    $subline = $main.FindName('SplashSub')
+                    if ($splash) { $splash.Visibility = 'Visible' }
+                    if ($headline) { $headline.Text = 'Start fehlgeschlagen' }
+                    if ($subline) {
+                        $shortMessage = [string]$message
+                        if ($shortMessage.Length -gt 240) { $shortMessage = $shortMessage.Substring(0, 240) + '…' }
+                        $subline.Text = 'Stufe: ' + $stage + [Environment]::NewLine +
+                                        'Fehler: ' + $shortMessage + [Environment]::NewLine +
+                                        'Details: ' + $diagnosePath
+                    }
+                    [void]$main.Activate()
+                }
             } catch {}
         }
     } catch {}
@@ -2867,12 +2903,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.2.6, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.2.6, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.2.7, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.2.7, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.2.6'
+$script:Shared.RuntimeInfo.Version = '7.2.7'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -2975,7 +3011,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.2.6)
+  Arena Studio Bridge - Studio Plugin  (Version 7.2.7)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -3048,7 +3084,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.2.6"
+local ARENA_VERSION  = "7.2.7"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -15290,7 +15326,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.2.6 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.2.7 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -20251,7 +20287,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.2.6'
+            version = '7.2.7'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -20482,7 +20518,7 @@ end
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.2.6'
+            bridgeVersion = '7.2.7'
             executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent is never an error, but the user then sees NO bar and NO percentage at all - only your message as text. Send a real number every few calls. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
@@ -21248,7 +21284,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.2.6'
+                        bridgeVersion = '7.2.7'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -21692,7 +21728,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.2.6'
+                        serverVersion = '7.2.7'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -22051,7 +22087,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.2.6'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.2.7'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -22135,8 +22171,8 @@ end
                 }
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.2.6'
-                    serverVersion = '7.2.6'
+                    bridgeVersion = '7.2.7'
+                    serverVersion = '7.2.7'
                     toolbox = $statusToolbox
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
@@ -24615,6 +24651,7 @@ Set-StartupStage 'Fensteraufbau: XAML wird geladen'
 try {
 $reader = [System.Xml.XmlNodeReader]::new([xml]$xaml)
 $window = [Windows.Markup.XamlReader]::Load($reader)
+$script:MainWindow = $window
 
 $window.Dispatcher.add_UnhandledException({
     param($sender, $eventArgs)
@@ -25199,7 +25236,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.2.6)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.2.7)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -28020,7 +28057,7 @@ function Write-ChannelDiagnoseFile {
 
         $progressPath = Join-Path $script:AppDataRoot 'progress-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.2.6)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.2.7)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -28055,7 +28092,7 @@ function Write-ChannelDiagnoseFile {
 
         $notifyPath = Join-Path $script:AppDataRoot 'notify-diagnose.txt'
         $sb2 = New-Object System.Text.StringBuilder
-        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.2.6)')
+        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.2.7)')
         [void]$sb2.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb2.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb2.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -28423,7 +28460,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.2.6)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.2.7)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -30620,7 +30657,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.2.6)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.2.7)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -31423,7 +31460,7 @@ Set-StartupStage 'Ereignisse verdrahtet (Fenstersteuerung + Loaded)'
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.2.6'
+    $versionText = '7.2.7'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -32406,7 +32443,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.2.6" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.2.7" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -32454,7 +32491,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.2.6 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.2.7 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -32519,7 +32556,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.2.6 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.2.7 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -32532,7 +32569,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.2.6'
+    $verText = '7.2.7'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
@@ -32549,35 +32586,31 @@ if (Test-UpdateError) {
 }
 
 # ----------------------------------------------------------------------------
-# START
-# ----------------------------------------------------------------------------
-if (-not $script:EncodingOk) {
-    Add-PendingToast 'Achtung: Die Skriptdatei ist nicht als "UTF-8 mit BOM" gespeichert. Umlaute koennen falsch aussehen.' 'Warn' 9
-    Write-RuntimeLog 'ACHTUNG: Skriptdatei ist falsch codiert - Umlaute werden ggf. falsch angezeigt.'
+# Version 7.2.7 (MINI-START-FIX): Das Hauptfenster wird gezeigt, BEVOR
+# Selbst-Update, Roblox-Suche, Plugin-, Server- und Tunnel-Start laufen. Ein
+# Haenger in einem Startschritt kann die Bridge damit nicht mehr unsichtbar
+# halten. ContentRendered stellt zugleich sicher, dass WPF den ersten Frame
+# wirklich gezeichnet hat, bevor die Startarbeiten beginnen.
+$script:UiRefreshTimer = $null
+$script:NotifyTimer = $null
+$script:StartupLaunchTimer = $null
+$script:StartupRuntimeStarted = $false
+
+function Set-UiRefreshCadence {
+    param([bool]$Minimized)
+    if ($null -eq $script:UiRefreshTimer) { return }
+    $milliseconds = if ($Minimized) { $script:UiRefreshMinimizedMs } else { $script:UiRefreshVisibleMs }
+    $interval = [System.TimeSpan]::FromMilliseconds($milliseconds)
+    if ($script:UiRefreshTimer.Interval -ne $interval) { $script:UiRefreshTimer.Interval = $interval }
 }
 
-# ----------------------------------------------------------------------------
-# AUTOSTART + SICHERHEITS-CHECK: SELBST NACH UPDATES SUCHEN (3.9.8 / 6.0.2)
-# Ohne -UpdateStatus wurde das Programm NICHT vom Starter geoeffnet - das ist
-# genau der Windows-Autostart ("Beim PC-Start automatisch oeffnen"). Dann
-# uebernimmt die Bridge die Update-Suche selbst.
-# 6.0.2 ZUSATZ: Auch nach einem Starter-Start mit einem Status, der NICHT
-# beweist, dass der Starter gerade frisch installiert hat ('kein-update',
-# 'keine-verbindung', 'update-fehler', 'update-suche-fehler'), prueft die
-# Bridge kurz selbst gegen version.json im Repository und zieht ein Update
-# notfalls direkt (kurzes Zeitlimit, stilles Scheitern, Neustart mit
-# Hinweisfenster). Grund (Live-Befund der 6.0.1-Runde): haengt die Update-
-# Logik des Starters, startet er unbegrenzt lange dieselbe lokale Fassung -
-# jedes im Repository veroeffentlichte Fix kam dann beim Nutzer NIE an.
-# Alles ist abgesichert: ein Netzproblem darf den Start niemals verhindern.
-# ----------------------------------------------------------------------------
-# Version 7.2.5 (START-HOTFIX): Der komplette Startabschnitt liegt in EINEM
-# grossen try/catch. Vorher konnte jede nicht abgefangene Ausnahme zwischen
-# Update-Pruefung und ShowDialog den Prozess lautlos beenden - es erschien
-# kein Fenster ("startet gar nicht mehr"). Jetzt gilt: Das Fenster erscheint
-# IMMER, und jeder Fehler wird gesichert (runtime.log + startup-diagnose.txt).
-# Exit-Pfade (Selbstupdate) laufen an catch vorbei - exit wird nicht gefangen.
-try {
+function Start-BridgeRuntime {
+    Set-StartupStage 'Hauptfenster gerendert; Startinitialisierung beginnt'
+    if (-not $script:EncodingOk) {
+        Add-PendingToast 'Achtung: Die Skriptdatei ist nicht als "UTF-8 mit BOM" gespeichert. Umlaute koennen falsch aussehen.' 'Warn' 9
+        Write-RuntimeLog 'ACHTUNG: Skriptdatei ist falsch codiert - Umlaute werden ggf. falsch angezeigt.'
+    }
+    Set-StartupStage 'Selbst-Update-Pruefung'
     $starterProvesFreshInstall = ((@('update-erfolgreich', 'erster-start') -contains $UpdateStatus) -eq $true)
     if (-not $starterProvesFreshInstall) {
         $selfUpdated = $false
@@ -32593,12 +32626,7 @@ try {
         }
     }
 
-    # Update/Willkommen blockiert bewusst den eigentlichen Programmstart. Es gibt
-    # keinen Timer: Studio-Suche, Plugin, Server und Tunnel beginnen erst nach OK.
-    if ($UpdateStatus -eq 'update-erfolgreich' -or $UpdateStatus -eq 'erster-start') {
-        try { Show-UpdateNotice } catch { Write-RuntimeLog "Update-Hinweis konnte nicht angezeigt werden: $($_.Exception.Message)" }
-    }
-
+    Set-StartupStage 'Roblox-Studio-Suche und Plugin-/Server-Start'
     $script:RobloxStudioPath = Find-RobloxStudio
     if ($script:RobloxStudioPath) {
         Write-RuntimeLog "Roblox Studio gefunden: $($script:RobloxStudioPath.FullName)"
@@ -32636,19 +32664,12 @@ try {
         Write-RuntimeLog 'Roblox Studio wurde nicht gefunden.'
     }
 
+    Set-StartupStage 'UI-Timer und Benachrichtigungen werden gestartet'
     $script:UiRefreshVisibleMs = 1800
     $script:UiRefreshMinimizedMs = 5000
     $script:UiRefreshTimer = [System.Windows.Threading.DispatcherTimer]::new()
-    function Set-UiRefreshCadence {
-        param([bool]$Minimized)
-        if ($null -eq $script:UiRefreshTimer) { return }
-        $milliseconds = if ($Minimized) { $script:UiRefreshMinimizedMs } else { $script:UiRefreshVisibleMs }
-        $interval = [System.TimeSpan]::FromMilliseconds($milliseconds)
-        if ($script:UiRefreshTimer.Interval -ne $interval) { $script:UiRefreshTimer.Interval = $interval }
-    }
-    $timer = $script:UiRefreshTimer
     Set-UiRefreshCadence $false
-    $timer.Add_Tick({
+    $script:UiRefreshTimer.Add_Tick({
         try {
             $minimized = $false
             try { $minimized = ($window.WindowState -eq 'Minimized') } catch {}
@@ -32675,14 +32696,14 @@ try {
             try { Refresh-Ui } catch { Write-RuntimeLog "Refresh nach Wiederherstellung fehlgeschlagen: $($_.Exception.Message)" }
         }
     })
-    $timer.Start()
+    $script:UiRefreshTimer.Start()
 
     # Version 3.8: report_done-Meldungen der KI abholen und als Windows-
     # Benachrichtigung anzeigen. Der Server legt sie nur in die Warteschlange,
     # wenn der Nutzer die Fertig-Meldung aktiviert hat.
-    $notifyTimer = [System.Windows.Threading.DispatcherTimer]::new()
-    $notifyTimer.Interval = [TimeSpan]::FromMilliseconds(800)
-    $notifyTimer.Add_Tick({
+    $script:NotifyTimer = [System.Windows.Threading.DispatcherTimer]::new()
+    $script:NotifyTimer.Interval = [TimeSpan]::FromMilliseconds(800)
+    $script:NotifyTimer.Add_Tick({
         try {
             # Version 7.1.3: Ist der Schalter aus, wird nicht nur nicht angezeigt -
             # die Warteschlange wird geleert, damit spaeter nichts nachploppt.
@@ -32723,37 +32744,69 @@ try {
         if ($notifyWantedAtStart) { [void](Register-NotifyAumid) }
         [void](Update-NotifyPlatformCache -Force)
     } catch {}
-    $notifyTimer.Start()
+    $script:NotifyTimer.Start()
 
     Refresh-Ui
+    Set-StartupStage 'Startinitialisierung abgeschlossen; Hauptfenster bleibt sichtbar'
 
-    Set-StartupStage 'Fenster wird geoeffnet (ShowDialog)'
-$window.Add_Closed({
-    try { $timer.Stop() } catch {}
-    try { $notifyTimer.Stop() } catch {}
-    foreach ($row in @($script:UiRows.Values)) {
-        try { $row.Popup.IsOpen = $false } catch {}
+}
+
+# ----------------------------------------------------------------------------
+# START: Ereignisse stehen VOR ShowDialog, damit Schliessen auch waehrend der
+# Startarbeiten sauber beendet. Die eigentliche Initialisierung startet erst
+# nach dem ersten sichtbaren Rendern und genau einmal.
+# ----------------------------------------------------------------------------
+try {
+    # Die ausdruecklich gewuenschte Update-/Willkommensnotiz bleibt vor dem
+    # Hauptfenster; erst nach OK wird die Bridge-Oberflaeche geoeffnet.
+    if ($UpdateStatus -eq 'update-erfolgreich' -or $UpdateStatus -eq 'erster-start') {
+        try { Show-UpdateNotice } catch { Write-RuntimeLog "Update-Hinweis konnte nicht angezeigt werden: $($_.Exception.Message)" }
     }
-    try {
-        if ($script:TunnelProcess -and -not $script:TunnelProcess.HasExited) {
-            $script:TunnelProcess.Kill()
-        }
-    } catch {}
-    try { Write-RuntimeLog 'Fenster geschlossen - Programm wird vollstaendig beendet.' } catch {}
-    # WIRKLICH BEENDEN (Version 3.4): Der Prozess wird hart beendet. Vorher
-    # konnte das Programm nach dem Schliessen im Hintergrund weiterlaufen und
-    # den Port blockieren, weil blockierende Hintergrund-Runspaces (HTTP-
-    # Server, Cloudflared-Ausgaben) das regulaere Ende verhindern konnten.
-    # Environment.Exit schliesst den Prozess garantiert - der Port ist sofort
-    # wieder frei. Offene Hintergrund-Runspaces sterben mit dem Prozess.
-    [System.Environment]::Exit(0)
-})
-
-Write-RuntimeLog 'Fenster wird geöffnet.'
-[void]$window.ShowDialog()
+    $window.Add_Closed({
+        try { if ($script:UiRefreshTimer) { $script:UiRefreshTimer.Stop() } } catch {}
+        try { if ($script:NotifyTimer) { $script:NotifyTimer.Stop() } } catch {}
+        try { if ($script:StartupLaunchTimer) { $script:StartupLaunchTimer.Stop() } } catch {}
+        try {
+            foreach ($row in @($script:UiRows.Values)) {
+                try { $row.Popup.IsOpen = $false } catch {}
+            }
+        } catch {}
+        try {
+            if ($script:TunnelProcess -and -not $script:TunnelProcess.HasExited) {
+                $script:TunnelProcess.Kill()
+            }
+        } catch {}
+        try { Write-RuntimeLog 'Fenster geschlossen - Programm wird vollstaendig beendet.' } catch {}
+        [System.Environment]::Exit(0)
+    })
+    $window.Add_ContentRendered({
+        if ($script:StartupRuntimeStarted) { return }
+        $script:StartupRuntimeStarted = $true
+        Set-StartupStage 'Hauptfenster gerendert; Sichtbarkeit wird gesichert'
+        # ContentRendered muss erst zurueckkehren, damit WPF den Opacity-Fade
+        # und den sichtbaren Startbildschirm zeichnen kann. Danach haertet ein
+        # kurzer Einmal-Timer die Deckkraft auf 1, BEVOR ein Startschritt den
+        # Dispatcher eventuell laenger belegt.
+        $script:StartupLaunchTimer = [System.Windows.Threading.DispatcherTimer]::new()
+        $script:StartupLaunchTimer.Interval = [TimeSpan]::FromMilliseconds(500)
+        $script:StartupLaunchTimer.Add_Tick({
+            param($sender, $eventArgs)
+            try { $sender.Stop() } catch {}
+            try {
+                try { $window.BeginAnimation([System.Windows.Window]::OpacityProperty, $null) } catch {}
+                $window.Opacity = 1
+                Set-StartupStage 'Hauptfenster sichtbar; Startinitialisierung beginnt'
+                Start-BridgeRuntime
+            } catch {
+                Write-StartupFailureDiagnose $_
+            }
+        })
+        $script:StartupLaunchTimer.Start()
+    })
+    Set-StartupStage 'Hauptfenster wird jetzt geoeffnet (ShowDialog)'
+    Write-RuntimeLog 'Fenster wird geöffnet; Startinitialisierung folgt nach dem ersten Rendern.'
+    [void]$window.ShowDialog()
 } catch {
-    # Version 7.2.6 (START-NETZ KOMPLETT): Auch Add_Closed und ShowDialog liegen
-    # im Netz - ein Fehler dort wird gesichert statt still zu sterben.
     Write-StartupFailureDiagnose $_
 }
 # Sicherheitsnetz (Version 3.4): Falls das Closed-Ereignis doch nicht zum
