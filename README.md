@@ -30,7 +30,7 @@ sein.
 
 | `ORGANIC_BUILD_CONTRACT.md` | Der 7.1.4-Bauvertrag zum Nachlesen: globaler Polygon-Vorrang für nichttriviale 3D-Modelle, bewusst höherer Finish-Standard, organischer per-Modell-Nachweis, Zylinder-Achsen-Regel mit Referenz-Lua, `buildQuality`-Messung und UI |
 | `test_queue_model_707.py` | Python-Modelltest: reproduziert den Queue-Stillstand von 7.0.4 und prüft die 7.0.5-Regeln (unabhängiger Watchdog, lateResults, Reconnect-Übergabe) **plus** 7.0.6 (Sitzungs-Identität, Fast-Fail, Zustell-Timeline) und 7.0.7 (Place-Zeile: fehlende Eigenschaft bricht den Zeilenaufbau ab) |
-| `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Versions-Checks (`/api/version` 7.2.4, `counters.revivedSessions` konstant, `/api/places` 200, `/api/status` 200), Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `--reset-test` (Reset mit 2 wartenden Befehlen), `--force-fail`, `--ask-sweep` (7.2.4 P0-Abnahme: alle Werkzeuge bei **offener** Frage) und `--message-round` (Nachricht → `_bridge.userMessages` → `ack_user_message`) |
+| `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Versions-Checks (`/api/version` 7.2.5, `counters.revivedSessions` konstant, `/api/places` 200, `/api/status` 200), Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `--reset-test` (Reset mit 2 wartenden Befehlen), `--force-fail`, `--ask-sweep` (7.2.4 P0-Abnahme: alle Werkzeuge bei **offener** Frage) und `--message-round` (Nachricht → `_bridge.userMessages` → `ack_user_message`) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -45,6 +45,31 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 7.2.5
+
+**START-HOTFIX: Die Bridge startet wieder sicher.**
+
+- **Startabschnitt gesichert.** Alles zwischen Update-Prüfung und `ShowDialog`
+  liegt jetzt in einem großen `try`/`catch`. Vorher konnte jede nicht
+  abgefangene Ausnahme in diesem Bereich den Prozess lautlos beenden, bevor
+  ein Fenster sichtbar wurde („startet gar nicht mehr“). Jetzt erscheint das
+  Fenster immer; `exit`-Pfade (Selbstupdate) laufen unverändert durch.
+- **Neue Diagnose `startup-diagnose.txt`.** Jeder Startfehler wird zusätzlich
+  zur `runtime.log` im Bin-Ordner gesichert: Zeitstempel, PowerShell-/CLR-
+  Version, Fehlermeldung und Stapel – der nächste Blick zeigt sofort, wo der
+  Start gestorben ist.
+- **MAIN_OPACITY_RESCUE.** Ein Einmal-Timer blendet das Hauptfenster nach
+  700 ms hart ein, falls die Einblend-Animation nicht angekommen ist
+  (bewährtes Muster aus 6.0.5, damals für die Vorschau-Kacheln). Damit kann
+  das Fenster nie wieder unsichtbar bleiben.
+- **Sonstige Änderungen:** keine. Design, Dialoge und alle 7.2.4-Fixes sind
+  unverändert.
+- **Prüfung:** `python test_v398_structure.py`, `python test_v720_bridge.py`,
+  `python test_v710_delivery.py`, `python test_v711_delivery.py`,
+  `python test_v712_toolbox.py`, `python test_v713_quality.py`,
+  `python test_v714_organic.py`, `python test_queue_model_707.py`.
+  Live-Abnahme auf Windows: `python bridge_live_check.py --url <TUNNEL> --token <TOKEN>`.
 
 ## 7.2.4
 
