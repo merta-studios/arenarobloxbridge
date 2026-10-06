@@ -46,6 +46,39 @@ heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestarte
 
 ## Versionsverlauf
 
+## 7.2.6
+
+**START-NETZ KOMPLETT: nie mehr lautlos.**
+
+- **Warum noch ein Start-Fix?** Der 7.2.5-Hotfix begann erst **nach** dem
+  Fensterbau. `XamlReader::Load`, die `FindName`-Aufrufe, die
+  Ereignis-Verdrahtung und `ShowDialog` lagen weiterhin **außerhalb** des
+  `try`/`catch` – ein Fehler dort beendete den Prozess lautlos, ohne Fenster
+  und ohne Log („startet gar nicht“).
+- **Komplettes Start-Netz.** Das `try` beginnt jetzt direkt beim Fensterbau
+  (XAML laden, `FindName`, Verdrahtung) und reicht bis einschließlich
+  `ShowDialog`. Ein Fehler wird gesichert; existiert gar kein Hauptfenster,
+  endet der Prozess sauber mit sichtbarer Meldung statt stumm.
+- **Sichtbar statt stumm.** `Write-StartupFailureDiagnose` schreibt die letzte
+  erreichte **Startstufe** nach `startup-trace.txt` (und mit Zeitstempel,
+  PowerShell-/CLR-Version, Meldung und Stapel nach `startup-diagnose.txt`).
+  Solange kein Fenster sichtbar wurde, erscheint zusätzlich eine sichtbare
+  Windows-Meldung mit Grund und Dateipfad.
+- **Sichtbarkeits-Rettung zuerst.** Der 700-ms-Opacity-Rettungstimer startet
+  jetzt **vor** der Einblend-Animation; scheitert schon deren Erzeugung, wird
+  das Fenster sofort hart eingeblendet – ein unsichtbares Hauptfenster ist
+  damit ausgeschlossen.
+- **Notfall.** Startet trotzdem nichts: `startup-trace.txt` und
+  `startup-diagnose.txt` im Bin-Ordner lesen und `ArenaBridge.ps1` (samt
+  `.new`/`.old`) im App-Ordner löschen – der Starter lädt die Datei dann
+  frisch herunter.
+- **Sonstige Änderungen:** keine. Design, Dialoge und alle 7.2.4/7.2.5-Fixes
+  sind unverändert.
+- **Prüfung:** `test_v398_structure.py`, `test_v720_bridge.py`,
+  `test_v710_delivery.py`, `test_v711_delivery.py`, `test_v712_toolbox.py`,
+  `test_v713_quality.py`, `test_v714_organic.py`, `test_queue_model_707.py` –
+  alle acht Offline-Abnahmen grün (inkl. Tree-sitter-PowerShell-Parse-Gate).
+
 ## 7.2.5
 
 **START-HOTFIX: Die Bridge startet wieder sicher.**
