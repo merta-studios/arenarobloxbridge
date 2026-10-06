@@ -30,7 +30,7 @@ sein.
 
 | `ORGANIC_BUILD_CONTRACT.md` | Der 7.1.4-Bauvertrag zum Nachlesen: globaler Polygon-Vorrang für nichttriviale 3D-Modelle, bewusst höherer Finish-Standard, organischer per-Modell-Nachweis, Zylinder-Achsen-Regel mit Referenz-Lua, `buildQuality`-Messung und UI |
 | `test_queue_model_707.py` | Python-Modelltest: reproduziert den Queue-Stillstand von 7.0.4 und prüft die 7.0.5-Regeln (unabhängiger Watchdog, lateResults, Reconnect-Übergabe) **plus** 7.0.6 (Sitzungs-Identität, Fast-Fail, Zustell-Timeline) und 7.0.7 (Place-Zeile: fehlende Eigenschaft bricht den Zeilenaufbau ab) |
-| `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Versions-Checks (`/api/version` 7.2.5, `counters.revivedSessions` konstant, `/api/places` 200, `/api/status` 200), Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `--reset-test` (Reset mit 2 wartenden Befehlen), `--force-fail`, `--ask-sweep` (7.2.4 P0-Abnahme: alle Werkzeuge bei **offener** Frage) und `--message-round` (Nachricht → `_bridge.userMessages` → `ack_user_message`) |
+| `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Versions-Checks (`/api/version` 7.2.7, `counters.revivedSessions` konstant, `/api/places` 200, `/api/status` 200), Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `--reset-test` (Reset mit 2 wartenden Befehlen), `--force-fail`, `--ask-sweep` (7.2.4 P0-Abnahme: alle Werkzeuge bei **offener** Frage) und `--message-round` (Nachricht → `_bridge.userMessages` → `ack_user_message`) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -45,6 +45,31 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 7.2.7
+
+**MINI-START-FIX: Hauptfenster sichtbar, bevor Startarbeiten beginnen.**
+
+- **Ursache der wiederholten „startet gar nicht“-Hotfixes:** 7.2.5/7.2.6
+  fingen Ausnahmen ab, riefen `ShowDialog()` aber erst *nach* Update-Prüfung,
+  Studio-Suche, Plugin-/Server-/Tunnel-Start und `Refresh-Ui` auf. Ein Schritt,
+  der hing statt eine Ausnahme zu werfen, ließ das Programm deshalb weiterhin
+  unsichtbar.
+- **Reihenfolge korrigiert:** Bei normalem Start öffnet sich das Hauptfenster
+  vor Update-Prüfung sowie Studio-/Plugin-/Server-/Tunnel-Start. Der explizite
+  Update-/Willkommensdialog bleibt bei einem Update weiterhin zuerst. Nach
+  `ContentRendered` wartet ein Einmal-Timer 500 ms auf den ersten Frame, setzt
+  die Deckkraft garantiert auf 1 und startet die bisherige Initialisierung
+  genau einmal. Das Fenster bleibt sichtbar, auch wenn ein Startdienst langsam
+  ist oder hängt; Schließen beendet weiterhin sauber.
+- **Fehler sichtbar:** Startstufen werden in `startup-trace.txt` aktualisiert.
+  Ein Fehler nach dem Rendern bleibt im Splash mit Ursache und Pfad zu
+  `startup-diagnose.txt` stehen; ein Fehler davor erhält weiter die Meldung.
+- **Unverändert:** Design, Update-Dialog, Plugin, Server, Tunnel, Toast-Regeln
+  und alle 7.2.4–7.2.6-Fixes.
+- **Prüfung:** alle acht Offline-Suiten, einschließlich Tree-sitter-PowerShell-
+  Parse-Gate und neuer Reihenfolge-Regression. Ein Windows-Live-Start ist in
+  dieser Linux-Sandbox nicht ausführbar.
 
 ## 7.2.6
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline-Abnahme fuer Arena Roblox Bridge 7.2.5.
+"""Offline-Abnahme fuer Arena Roblox Bridge 7.2.7.
 
 Dieser Test braucht KEIN Windows und keinen PowerShell-Prozess. Er prueft genau
 die fuenf Themen des Owners plus das Fundament:
@@ -28,7 +28,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.2.6"
+VERSION = "7.2.7"
 
 failures: list[str] = []
 
@@ -746,7 +746,7 @@ def main() -> int:
     ):
         check(marker in source, f"Fundament-Marker vorhanden: {marker}")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    check(version["version"] == VERSION, "version.json identifiziert 7.2.6")
+    check(version["version"] == VERSION, "version.json identifiziert 7.2.7")
     notes = "\n".join(str(note) for note in version.get("notes", []))
     for word in ("7.2.4", "P0-BLOCKER", ".ToArray()",
                  "gemeinsamen XAML-Ressourcenblock",
@@ -754,15 +754,41 @@ def main() -> int:
                  "7.2.3", "LIVE-SAMMLUNGEN", "ASK_CANCELLED", "Strg+Enter",
                  "NOTIFICATION_UNVERIFIED", "notify-diagnose.txt"):
         check(word in notes, f"version.json beschreibt: {word}")
-    check("DocsVersion     = '7.2.6'" in source and 'local ARENA_VERSION  = "7.2.6"' in source,
-          "Alle funktionalen Versionsstellen stehen auf 7.2.6")
+    check("DocsVersion     = '7.2.7'" in source and 'local ARENA_VERSION  = "7.2.7"' in source,
+          "Alle funktionalen Versionsstellen stehen auf 7.2.7")
     for marker in ("Set-StartupStage", "startup-trace.txt", "START-NETZ KOMPLETT",
-                   "$script:WindowShown", "write-startup-failure"):
-        if marker == "write-startup-failure":
-            check("Write-StartupFailureDiagnose $_" in source,
-                  "Jeder Startfehler laeuft durch Write-StartupFailureDiagnose")
-        else:
-            check(marker in source, f"7.2.6-Startnetz-Marker vorhanden: {marker}")
+                   "$script:WindowShown", "function Start-BridgeRuntime",
+                   "$window.Add_ContentRendered({", "Start fehlgeschlagen"):
+        check(marker in source, f"7.2.7-Startnetz-Marker vorhanden: {marker}")
+    try:
+        start_area = region(source, "# START: Ereignisse stehen VOR ShowDialog",
+                            "# Sicherheitsnetz (Version 3.4): Falls das Closed-Ereignis")
+        rendered_at = start_area.index("$window.Add_ContentRendered({")
+        dialog_at = start_area.index("[void]$window.ShowDialog()")
+        closed_at = start_area.index("$window.Add_Closed({")
+        handler = region(start_area, "$window.Add_ContentRendered({", "    })\n    Set-StartupStage")
+        timer_at = handler.index("FromMilliseconds(500)")
+        opacity_clear_at = handler.index("OpacityProperty, $null")
+        opacity_visible_at = handler.index("$window.Opacity = 1")
+        init_at = handler.index("Start-BridgeRuntime")
+        check(rendered_at < dialog_at and closed_at < dialog_at,
+              "ShowDialog/cleanup stehen bereit, bevor ContentRendered die Initialisierung ausloest")
+        check("if ($UpdateStatus -eq 'update-erfolgreich' -or $UpdateStatus -eq 'erster-start')" in start_area
+              and start_area.index("Show-UpdateNotice") < dialog_at,
+              "Der Update-/Willkommensdialog bleibt vor dem Hauptfenster")
+        check(timer_at < opacity_clear_at < opacity_visible_at < init_at,
+              "WPF bekommt 500 ms zum Rendern; die Deckkraft wird vor jedem potenziell blockierenden Startschritt hart auf 1 gesetzt")
+        runtime_function = region(source, "function Start-BridgeRuntime", "# ----------------------------------------------------------------------------\n# START: Ereignisse stehen VOR ShowDialog")
+        check("Show-UpdateNotice" not in runtime_function,
+              "Update-Hinweis wird nicht erneut nach dem Hauptfenster geoeffnet")
+        check("if ($script:StartupRuntimeStarted) { return }" in handler
+              and "$script:StartupRuntimeStarted = $true" in handler,
+              "ContentRendered startet den Runtime-Start genau einmal")
+    except ValueError as exc:
+        check(False, f"Window-first-Startsequenz nicht auswertbar: {exc}")
+    check("$splash.Visibility = 'Visible'" in source
+          and "$headline.Text = 'Start fehlgeschlagen'" in source,
+          "Startfehler nach dem ersten Rendern bleiben im sichtbaren Splash erklaert")
     problems = collection_return_problems(source)
     for problem in problems:
         print(f"    {problem}")
@@ -796,7 +822,7 @@ def main() -> int:
         for entry in failures:
             print(f"  - {entry}")
         return 1
-    print("OK: 7.2.6 - Start-Netz komplett; Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene "
+    print("OK: 7.2.7 - Hauptfenster zuerst; Start-Netz komplett; Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene "
           "Fertig-Meldung, Fragen-Baum, Qualitaets- und GUI-Vertrag sind vollstaendig; "
           "die Datei ist ausbalanciert und der echte PowerShell-Parser ist gruen.")
     return 0
