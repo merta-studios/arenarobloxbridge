@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Offline regression checks for the Arena Roblox Bridge 7.1.4 organic build contract.
 
@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.3.0"
+VERSION = "7.3.1"
 FAILURES: list[str] = []
 
 
@@ -114,12 +114,12 @@ def main() -> int:
     release_notes = "\n".join(meta.get("notes", []))
 
     # Release identity and release notes.
-    check(meta.get("version") == VERSION, "version.json identifiziert 7.3.0")
+    check(meta.get("version") == VERSION, "version.json identifiziert 7.3.1")
     # 7.2.3 dokumentiert das UI-Mini-Update; 7.2.1 behaelt den Start-/Parser-
     # Fix, und 7.2.0 beschreibt Nutzer-Kanal, Meldungsmessung und Qualitaet.
     # Der organische Vertrag selbst wird weiter unten DIREKT
     # im Quellcode geprueft (und darf dort nicht fehlen).
-    for marker in ("7.3.0", "7.2.4", "7.2.3", "report_done", "DRAFT_GRADE_RISK", "NOTIFICATION_UNVERIFIED"):
+    for marker in ("7.3.1", "7.2.4", "7.2.3", "report_done", "DRAFT_GRADE_RISK", "NOTIFICATION_UNVERIFIED"):
         check(marker in release_notes, f"Release-Notiz nennt {marker}")
 
     # The server guard only enforces explicitly marked organic builds; the
