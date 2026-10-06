@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline-Abnahme fuer Arena Roblox Bridge 7.3.0.
+"""Offline-Abnahme fuer Arena Roblox Bridge 7.3.1.
 
 Dieser Test braucht KEIN Windows und keinen PowerShell-Prozess. Er prueft genau
 die fuenf Themen des Owners plus das Fundament:
@@ -29,7 +29,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.3.0"
+VERSION = "7.3.1"
 
 failures: list[str] = []
 
@@ -747,7 +747,7 @@ def main() -> int:
     ):
         check(marker in source, f"Fundament-Marker vorhanden: {marker}")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    check(version["version"] == VERSION, "version.json identifiziert 7.3.0")
+    check(version["version"] == VERSION, "version.json identifiziert 7.3.1")
     notes = "\n".join(str(note) for note in version.get("notes", []))
     for word in ("7.2.4", "P0-BLOCKER", ".ToArray()",
                  "gemeinsamen XAML-Ressourcenblock",
@@ -755,8 +755,8 @@ def main() -> int:
                  "7.2.3", "LIVE-SAMMLUNGEN", "ASK_CANCELLED", "Strg+Enter",
                  "NOTIFICATION_UNVERIFIED", "notify-diagnose.txt"):
         check(word in notes, f"version.json beschreibt: {word}")
-    check("DocsVersion     = '7.3.0'" in source and 'local ARENA_VERSION  = "7.3.0"' in source,
-          "Alle funktionalen Versionsstellen stehen auf 7.3.0")
+    check("DocsVersion     = '7.3.1'" in source and 'local ARENA_VERSION  = "7.3.1"' in source,
+          "Alle funktionalen Versionsstellen stehen auf 7.3.1")
     for marker in ("Set-StartupStage", "startup-trace.txt", "START-NETZ KOMPLETT",
                    "$script:WindowShown", "function Start-BridgeRuntime",
                    "$window.Add_ContentRendered({", "Start fehlgeschlagen"):
@@ -894,8 +894,72 @@ def main() -> int:
         check(not parse_errors,
               "Tree-sitter-PowerShell-Parse-Gate meldet keine neuen ERROR-Stellen")
 
+    # 7.3.1-Regressionstor: Auf Windows PowerShell 5.1 darf ein Operator (+, *,
+    # /, %, -binary) NICHT am Anfang einer Fortsetzungszeile stehen. Der Parser
+    # behandelt einen Zeilenumbruch direkt vor einem Operator als
+    # Anweisungsende - das erzeugte in 7.3.0 9 Parse-Fehler ab Zeile 27432.
+    # Operatoren gehoeren an das Ende der vorherigen Zeile.
+    # Wir filtern hier-strings (@'...'@ / @"..."@) und Kommentare heraus, da
+    # dort fuehrende Operatoren Teil des eingebetteten Codes (Lua, Bullet-
+    # Listen in Beschreibungen) sind und von PowerShell nicht als Operator
+    # interpretiert werden.
+    def operator_at_line_start_problems(text: str) -> list[str]:
+        import re
+        problems: list[str] = []
+        lines_t = text.split("\n")
+        in_hs_single = False
+        in_hs_double = False
+        # Matches a binary operator at line start (after indentation).
+        op_re = re.compile(r"^(\s+)(\+|\*|/|%|-(?:replace|match|eq|ne|gt|lt|ge|le|like|notmatch|notlike|contains|in|is|as|join|split|f|and|or|band|bor|bxor)?)(?=\s)")
+        safe_end_tokens = ("`", "|", ",", "+", "-", "*", "/", "%", "=", "(", "{", "[", "@(", "@{", "$(", "::", ".", "\\",
+                           "-and", "-or", "-replace", "-join", "-split", "-f", "-is", "-as", "-eq", "-ne", "-gt", "-lt")
+        for i, line_t in enumerate(lines_t):
+            stripped_end = line_t.rstrip()
+            if in_hs_single:
+                if line_t.lstrip().startswith("'@"):
+                    in_hs_single = False
+                continue
+            if in_hs_double:
+                if line_t.lstrip().startswith('"@'):
+                    in_hs_double = False
+                continue
+            if stripped_end.endswith("@'"):
+                in_hs_single = True
+                continue
+            if stripped_end.endswith('"@'):
+                in_hs_double = True
+                continue
+            m = op_re.match(line_t)
+            if not m:
+                continue
+            op = m.group(2)
+            cur_lstrip = line_t.lstrip()
+            if cur_lstrip.startswith("#") or cur_lstrip.startswith("--"):
+                continue
+            if i == 0:
+                problems.append(f"Zeile {i+1}: Operator {op!r} am Zeilenanfang ohne vorherige Zeile")
+                continue
+            prev_rstrip = lines_t[i-1].rstrip()
+            if not prev_rstrip or prev_rstrip.lstrip().startswith("#"):
+                continue
+            if prev_rstrip.endswith(safe_end_tokens):
+                continue
+            problems.append(
+                f"Zeile {i+1}: Operator {op!r} steht am Zeilenanfang "
+                f"(Windows-PowerShell-5.1-Parse-Fehler!); vorherige Zeile endet mit "
+                f"...{prev_rstrip[-60:]!r}"
+            )
+        return problems
+
+    op_problems = operator_at_line_start_problems(source)
+    for problem in op_problems:
+        print(f"    {problem}")
+    check(not op_problems,
+          "Kein Operator (+, *, /, %, -bin.) steht am Anfang einer Fortsetzungszeile "
+          "(Parse-Fehler auf Windows PowerShell 5.1)")
+
     check((ROOT / "parse-gate.ps1").is_file(), "Echtes Parser-Gate vorhanden")
-    check("PROOF_OF_LIFE Version=7.3.0" in source,
+    check("PROOF_OF_LIFE Version=7.3.1" in source,
           "Proof-of-Life mit aktueller Version vorhanden")
     engine = shutil.which("powershell") or shutil.which("pwsh")
     if engine:
