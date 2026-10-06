@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.2.5"
+VERSION = "7.2.6"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -715,21 +715,21 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '7.2.5'": 1,
-        'local ARENA_VERSION  = "7.2.5"': 1,
-        "version = '7.2.5'": 1,
-        "bridgeVersion = '7.2.5'": 3,
-        "bridgeVersion='7.2.5'": 1,
-        "serverVersion = '7.2.5'": 2,
-        "$versionText = '7.2.5'": 1,
-        "$verText = '7.2.5'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 7.2.5)": 1,
-        'Text="Arena Roblox Bridge - Version 7.2.5"': 1,
-        "Version 7.2.5 - aktuell. Beim naechsten Start": 2,
-        "Laufzeit-Identitaet: Bridge-Version=7.2.5": 1,
-        "Kurzbericht Fenster-Vorschau (Version 7.2.5)": 1,
-        "Arena Roblox Bridge - Leistungsbericht (Version 7.2.5)": 1,
-        "Arena Roblox Bridge - Place-Diagnose (Version 7.2.5)": 1,
+        "DocsVersion     = '7.2.6'": 1,
+        'local ARENA_VERSION  = "7.2.6"': 1,
+        "version = '7.2.6'": 1,
+        "bridgeVersion = '7.2.6'": 3,
+        "bridgeVersion='7.2.6'": 1,
+        "serverVersion = '7.2.6'": 2,
+        "$versionText = '7.2.6'": 1,
+        "$verText = '7.2.6'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.2.6)": 1,
+        'Text="Arena Roblox Bridge - Version 7.2.6"': 1,
+        "Version 7.2.6 - aktuell. Beim naechsten Start": 2,
+        "Laufzeit-Identitaet: Bridge-Version=7.2.6": 1,
+        "Kurzbericht Fenster-Vorschau (Version 7.2.6)": 1,
+        "Arena Roblox Bridge - Leistungsbericht (Version 7.2.6)": 1,
+        "Arena Roblox Bridge - Place-Diagnose (Version 7.2.6)": 1,
     }
     for marker, expected_count in functional_version_counts.items():
         actual_count = source.count(marker)

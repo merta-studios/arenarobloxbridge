@@ -28,7 +28,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.2.5"
+VERSION = "7.2.6"
 
 failures: list[str] = []
 
@@ -746,7 +746,7 @@ def main() -> int:
     ):
         check(marker in source, f"Fundament-Marker vorhanden: {marker}")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    check(version["version"] == VERSION, "version.json identifiziert 7.2.5")
+    check(version["version"] == VERSION, "version.json identifiziert 7.2.6")
     notes = "\n".join(str(note) for note in version.get("notes", []))
     for word in ("7.2.4", "P0-BLOCKER", ".ToArray()",
                  "gemeinsamen XAML-Ressourcenblock",
@@ -754,8 +754,15 @@ def main() -> int:
                  "7.2.3", "LIVE-SAMMLUNGEN", "ASK_CANCELLED", "Strg+Enter",
                  "NOTIFICATION_UNVERIFIED", "notify-diagnose.txt"):
         check(word in notes, f"version.json beschreibt: {word}")
-    check("DocsVersion     = '7.2.5'" in source and 'local ARENA_VERSION  = "7.2.5"' in source,
-          "Alle funktionalen Versionsstellen stehen auf 7.2.5")
+    check("DocsVersion     = '7.2.6'" in source and 'local ARENA_VERSION  = "7.2.6"' in source,
+          "Alle funktionalen Versionsstellen stehen auf 7.2.6")
+    for marker in ("Set-StartupStage", "startup-trace.txt", "START-NETZ KOMPLETT",
+                   "$script:WindowShown", "write-startup-failure"):
+        if marker == "write-startup-failure":
+            check("Write-StartupFailureDiagnose $_" in source,
+                  "Jeder Startfehler laeuft durch Write-StartupFailureDiagnose")
+        else:
+            check(marker in source, f"7.2.6-Startnetz-Marker vorhanden: {marker}")
     problems = collection_return_problems(source)
     for problem in problems:
         print(f"    {problem}")
@@ -789,7 +796,7 @@ def main() -> int:
         for entry in failures:
             print(f"  - {entry}")
         return 1
-    print("OK: 7.2.5 - Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene "
+    print("OK: 7.2.6 - Start-Netz komplett; Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene "
           "Fertig-Meldung, Fragen-Baum, Qualitaets- und GUI-Vertrag sind vollstaendig; "
           "die Datei ist ausbalanciert und der echte PowerShell-Parser ist gruen.")
     return 0
