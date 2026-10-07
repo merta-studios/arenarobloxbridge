@@ -29,9 +29,10 @@ sein.
 | `test_v714_organic.py` | Regressionen des ursprünglichen 7.1.4-Organic-/Finish-Vertrags: explizites Gate, frische Belege pro Modell und fail-closed `report_done` |
 | `test_v732_organic_creature.py` | 7.3.2-Creature-Abnahme: typed body/head-Lofts, echte Querachsen-Tiefe, physische Augen/Pupillen, Flügelpaar/-Anbindung, Gesichts-Overlays und Audit→`report_done` |
 | `MODEL_BUILD_CONTRACT.md` | Kategorieneutraler Polygon-Bauablauf mit Schema, validem Mehrflächen-Hausbeispiel, Volumen-/Submodel-/Assembly-Auswahl und Ergebnisprüfung für alle 3D-Arten |
-| `ORGANIC_BUILD_CONTRACT.md` | Organic-Bauvertrag (aktuell 7.3.2): typed Creature-Loft-Volumen, Gesichts-/Flügelrollen und fail-closed Audit; 7.1.4 bleibt als Historie |
+| `ORGANIC_BUILD_CONTRACT.md` | Organic-Bauvertrag (Stand 7.3.2, weiterhin gueltig; der Mesh-Weg kommt in 7.4.0 hinzu): typed Creature-Loft-Volumen, Gesichts-/Flügelrollen und fail-closed Audit; 7.1.4 bleibt als Historie |
 | `test_queue_model_707.py` | Python-Modelltest: reproduziert den Queue-Stillstand von 7.0.4 und prüft die 7.0.5-Regeln (unabhängiger Watchdog, lateResults, Reconnect-Übergabe) **plus** 7.0.6 (Sitzungs-Identität, Fast-Fail, Zustell-Timeline) und 7.0.7 (Place-Zeile: fehlende Eigenschaft bricht den Zeilenaufbau ab) |
-| `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Versions-Checks (`/api/version` 7.3.2, `counters.revivedSessions` konstant, `/api/places` 200, `/api/status` 200), Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `--reset-test` (Reset mit 2 wartenden Befehlen), `--force-fail`, `--ask-sweep` (7.2.4 P0-Abnahme: alle Werkzeuge bei **offener** Frage) und `--message-round` (Nachricht → `_bridge.userMessages` → `ack_user_message`) |
+| `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Versions-Checks (`/api/version` 7.4.0, `counters.revivedSessions` konstant, `/api/places` 200, `/api/status` 200), Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `--reset-test` (Reset mit 2 wartenden Befehlen), `--force-fail`, `--ask-sweep` (7.2.4 P0-Abnahme: alle Werkzeuge bei **offener** Frage) und `--message-round` (Nachricht → `_bridge.userMessages` → `ack_user_message`) |
+| `test_v740_mesh.py` | Offline-Abnahme 7.4.0 (Blender-/Mesh-Weg): Skript-Sperrliste, OBJ-Messung mit Dreiecks-/Groessen-/Limit-Pruefung, Register/Job-Zustandsmaschine, Report-Gates (`MESH_UPLOAD_PENDING`) und Beleg, dass `MeshPart.MeshId` nur ueber `CreateMeshPartAsync`/`ApplyMesh` gesetzt wird |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -46,6 +47,56 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 7.4.0 — Blender-Mesh-Bau plus Mesh-Upload-Fenster
+
+Die Bridge hat einen **zweiten Bauweg** für alles, was sich mit Dreiecken und
+Wedges schlecht bauen lässt: glatte oder organische Oberflächen, sehr viele
+Details und Modelle, die im Place nicht aus tausenden Teilen bestehen sollen.
+
+1. **Schritt 4 des Starts (vor dem Tunnel).** Die Bridge sucht zuerst eine
+   vorhandene Blender-Installation (PATH, Standardordner, `%LOCALAPPDATA%`) und
+   prüft sie. Fehlt Blender, lädt sie das **offizielle portable ZIP** von
+   download.blender.org im Hintergrund (kein Admin, kein UAC, mit
+   SHA-256-Prüfung, sofern die `.sha256`-Datei erreichbar ist) und prüft
+   anschließend mit einer echten Fähigkeitsprobe, dass Blender im Hintergrund
+   wirklich ein OBJ erzeugen kann. Erst dann startet der Tunnel.
+   **Nie ein neuer Startblocker:** Schlägt der Schritt fehl, wird Zeile 4 des
+   Startbildschirms rot, der Mesh-Bau wird deaktiviert und alles andere läuft
+   normal weiter. Im Mesh-Fenster gibt es „Blender jetzt installieren“ und
+   „Schritt überspringen“.
+2. **Der Agent baut nichts am Mesh vorbei.** `build_mesh_model` nimmt je Slot
+   ein Blender-Python-Skript entgegen (nur Geometrie: `bpy`, `bmesh`, `math`,
+   `mathutils`, `random`), startet Blender **im Hintergrund** und antwortet
+   sofort mit `jobId`. Der Runner gehört der Bridge: leere Szene, Export,
+   Zentrierung auf die bbox-Mitte, Messung. Skripte mit Datei-, Netzwerk-,
+   Prozess- oder Systemzugriff, `bpy.ops.wm.*` oder Exportfunktionen werden
+   **vor** dem Start abgelehnt; es läuft immer nur **ein** Blender-Prozess, mit
+   Zeitlimit und Abbruch.
+3. **Gemessen statt behauptet.** Die Bridge liest die OBJ-Datei selbst:
+   Dreiecke, Vertices, Größe in Studs, Dateigröße, SHA-256. Ein Slot über der
+   Grenze (rund 10.000 Dreiecke) wird mit `state=rejected` abgelehnt und muss
+   einfacher gebaut werden.
+4. **Der Upload ist ein Menschenschritt.** Roblox hat keine API für
+   Mesh-Uploads. Die Bridge legt die **viereckigen MeshPart-Platzhalter** in
+   den gemessenen Maßen selbst an; der Nutzer lädt die OBJ-Dateien in Studio
+   (3D-Importer oder Drag & Drop) oder im Creator Dashboard hoch und trägt die
+   Mesh-Ids im neuen Fenster **„Mesh-Uploads“** (Menü … der Place-Zeile) ein.
+   Die Bridge setzt die Geometrie dann automatisch ein — über
+   `InsertService:CreateMeshPartAsync` + `MeshPart:ApplyMesh`, weil
+   `MeshPart.MeshId` schreibgeschützt ist. Größe, Position, Welds, Attribute
+   und Animationen bleiben erhalten.
+5. **Kein falsches „fertig“.** `model_audit` zählt Mesh-Platzhalter getrennt
+   (`meshSlotCount`/`meshSlots`) und `report_done` antwortet
+   `MESH_UPLOAD_PENDING`, solange ein Platzhalter auf seinen Upload wartet.
+   Nach dem Einsetzen meldet `mesh_apply_asset` je Slot die **zurückgelesene**
+   MeshId.
+
+Der Polygon-Weg (`build_polygon_model`) bleibt der Standard für Entwurf,
+Iteration und einfache Formen; der Mesh-Weg ist die richtige Wahl, wenn Form
+oder Teilzahl mit Wedges nicht mehr tragen. Details stehen in
+`MODEL_BUILD_CONTRACT.md`, im Abschnitt „Mesh-Weg“ — und als Kurzregeln in
+`meshBuildRules` im Sessionstart.
 
 ## 7.3.2 — universeller Polygon-Bauablauf plus messbare Creature-Geometrie
 

@@ -145,6 +145,14 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
   (NOTIFICATION_UNVERIFIED statt delivered = true). Seit v7.2.3 gibt es KEINEN
   kuenstlichen Test-Popup mehr in den Einstellungen. Es bleibt bei GENAU
   DIESEM EINEN report_done-Kanal - kein neuer Meldeweg (D4).
+- DAS MESH-FENSTER IST FENSTER Nr. 3 (v7.4.0, ausdruecklicher Nutzerwunsch):
+  "Mesh-Uploads" aus dem Menue (...) der Place-Zeile. Der Nutzer sieht dort je
+  Bauteil die OBJ-Datei mit Dreiecken/Groesse, einen Knopf "Ordner oeffnen",
+  das Mesh-Id-Textfeld, den Blender-Zustand mit Fortschritt sowie
+  "Blender jetzt installieren" / "Schritt ueberspringen". Bauart wie das
+  Nachrichtenfenster: Anthrazit/Grau/Pink, ziehbare Titelleiste, X oben rechts,
+  modal per ShowDialog, KEIN Toast. Es ist bewusst KEIN neuer Meldeweg: der
+  eine report_done-Kanal bleibt unveraendert.
 - ZWEI NEUE FENSTER SIND AUSDRUECKLICH ERLAUBT (v7.2.0, Entscheidung D2 des
   Owners): (1) "Nachricht an Arena senden" aus dem Menue (…) der Place-Zeile
   (Add-UserMessage/Open-UserMessageWindow) und (2) "Arena fragt" fuer
@@ -385,6 +393,28 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v7.4.0 (07.10.2026): BLENDER-MESH-BAU + MESH-UPLOAD-FENSTER. Der Bauweg
+  neben build_polygon_model. SCHRITT 4 DES STARTS (vor dem Tunnel): Blender
+  wird gesucht (vorhandene Installation zuerst, schnelle Versionspruefung) und
+  sonst als offizielles PORTABLES ZIP im Hintergrund geladen (kein Admin,
+  kein UAC, SHA-256 wenn erreichbar); danach echte Faehigkeitsprobe. Schlaegt
+  der Schritt fehl, wird Zeile 4 des Startbildschirms ROT, der Mesh-Bau wird
+  deaktiviert und alles andere laeuft normal weiter - KEIN neuer Startblocker.
+  Der Nutzer kann ihn im Fenster "Mesh-Uploads" ueberspringen. Neue Werkzeuge:
+  blender_status, build_mesh_model (Blender im Hintergrund, sofort jobId),
+  mesh_status (gemessene Dreiecke/Groesse je Slot), mesh_cancel,
+  mesh_apply_asset (CreateMeshPartAsync + ApplyMesh in die BESTEHENDEN
+  Platzhalter), intern mesh_slots/mesh_apply. Der Nutzer laedt die OBJ-Dateien
+  selbst hoch (Roblox hat keine Mesh-Upload-API) und traegt die Ids im neuen
+  Fenster "Mesh-Uploads" ein; die Bridge setzt sie automatisch ein.
+  model_audit zaehlt Mesh-Platzhalter getrennt (meshSlotCount/meshSlots),
+  report_done antwortet MESH_UPLOAD_PENDING, solange ein Platzhalter wartet -
+  "fertig" waere hier eine Luege. Blender-Skripte werden VOR dem Start
+  geprueft (Sperrliste: Datei-, Netzwerk-, Prozess-, Systemzugriff,
+  bpy.ops.wm.*, Exportfunktionen); ein Blender-Prozess je Slot, Zeitlimit,
+  Abbruch. Offline-Abnahme: test_v740_mesh.py plus die aktualisierten
+  Versionsmarken der uebrigen Tests. Mesh-Dateien liegen unter
+  %LOCALAPPDATA%\ArenaRobloxBridge\meshes (je Job ein Unterordner).
 - v7.2.3 (05.10.2026): FRAGENFENSTER, NUTZER-KANAL, LIVE-SAMMLUNGEN.
   Generic List/Queue/Stack/Dictionary-Helfer geben ihre Sammlung als EINEN
   Wert (`return ,$liste`) zurueck, sodass der 0/1/n-Pipelinefehler keine

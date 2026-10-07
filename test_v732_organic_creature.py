@@ -13,7 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.3.2"
+VERSION = "7.4.0"
 FAILURES: list[str] = []
 
 
@@ -47,7 +47,7 @@ def main() -> int:
     source = raw.decode("utf-8-sig")
     metadata = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     notes = "\n".join(str(note) for note in metadata.get("notes", []))
-    check(metadata.get("version") == VERSION, "version.json is 7.3.2")
+    check(metadata.get("version") == VERSION, "version.json is 7.4.0")
     for phrase in ("7.3.2", "Körper und Kopf", "linke/rechte Flügel", "report_done", "Roblox Studio"):
         check(phrase in notes, f"release note covers {phrase}")
 
@@ -166,7 +166,7 @@ def main() -> int:
     if FAILURES:
         print(f"\nFEHLGESCHLAGEN: {len(FAILURES)} Pruefung(en) rot.")
         return 1
-    print("\nOK: 7.3.2 creature loft, face, wing and fail-closed audit regressions passed.")
+    print("\nOK: 7.4.0 creature loft, face, wing and fail-closed audit regressions passed.")
     return 0
 
 
