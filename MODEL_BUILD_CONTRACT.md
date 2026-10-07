@@ -178,16 +178,22 @@ Workflow (own the whole loop, never fake it):
 4. The bridge creates the **rectangular MeshPart placeholders** with the
    measured size, position and rotation, marked with `ArenaMeshSlot` /
    `ArenaMeshState` / `ArenaPlaceholder`.
-5. **The user uploads.** Roblox has no automatic mesh upload and no public API
-   for it: the bridge window "Mesh-Uploads" opens by itself (modeless) as soon
-   as a measured OBJ file waits for upload. The user uses "Ordner öffnen",
-   uploads the OBJ file(s) in Studio (3D Importer or drag & drop) or in the
-   Creator Dashboard, pastes the mesh id(s) into the text fields and presses
-   "Fertig" — the bridge then inserts the geometry and deletes the OBJ file.
-   "Stornieren" cancels a slot (placeholder and files are deleted; an already
-   applied mesh is NOT restored). If the user
-   gives you the id in chat, call `mesh_apply_asset` with the slot `key`s from
-   `mesh_status`.
+5. **You upload — the user does nothing (7.5.0).** Roblox has no mesh upload
+   API *in Studio*, but it has an official one over Open Cloud
+   (`POST https://apis.roblox.com/assets/v1/assets`). The bridge uses exactly
+   that: the user stores his own Roblox Open Cloud API key ONCE in the bridge
+   settings (section "ROBLOX OPEN CLOUD", with a collapsible tutorial that also
+   names the required rights: **assets + read + write**). From then on
+   `upload_asset { slotKey }` sends the FBX/GLB file the bridge already built
+   (`mesh_status` names it under `uploadPath`) to Roblox and answers with the
+   **real asset id**; `mesh_apply_asset { slots = [ { key, assetId } ] }` puts
+   the geometry into the existing placeholders. The mesh window "Mesh-Uploads"
+   is **removed** since 7.5.0 — there is no manual step left.
+   If the key is missing, `upload_asset` answers `OPENCLOUD_KEY_MISSING` with a
+   German `userMessage`: say that sentence to the user verbatim and wait — do
+   not ask for an asset id and do not report done. `mesh_cancel` / `mesh_drop`
+   discard a slot (placeholder and files are deleted; an already applied mesh is
+   NOT restored).
 6. Insertion uses `InsertService:CreateMeshPartAsync` + `MeshPart:ApplyMesh`,
    because `MeshPart.MeshId` is write-restricted. The **existing** instance
    survives: name, size, position, welds, attributes and animations stay. The
