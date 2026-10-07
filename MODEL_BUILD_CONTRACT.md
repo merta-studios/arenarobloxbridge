@@ -152,9 +152,10 @@ not as a replacement for it.
 Workflow (own the whole loop, never fake it):
 
 1. `blender_status` — is Blender ready? If not, `build_mesh_model` answers
-   `BLENDER_NOT_READY`; tell the user honestly (the bridge window
-   "Mesh-Uploads" has an install button) or keep building with
-   `build_polygon_model`.
+   `BLENDER_NOT_READY`; tell the user honestly. The check can be repeated at
+   any time — click row 4 of the start screen or call
+   `blender_status { action: "check" }`; that always runs the real capability
+   probe. Alternatively keep building with `build_polygon_model`.
 2. `build_mesh_model` — one Blender script per slot, `offset` per slot,
    `origin` for the model. It returns a `jobId` immediately: **Blender runs in
    the background, so never wait synchronously.** Each slot becomes one
@@ -169,10 +170,13 @@ Workflow (own the whole loop, never fake it):
    measured size, position and rotation, marked with `ArenaMeshSlot` /
    `ArenaMeshState` / `ArenaPlaceholder`.
 5. **The user uploads.** Roblox has no automatic mesh upload and no public API
-   for it: the user opens the bridge window "Mesh-Uploads" (place row menu),
-   uses "Ordner öffnen", uploads the OBJ file(s) in Studio (3D Importer or
-   drag & drop) or in the Creator Dashboard, and pastes the mesh id(s) into the
-   text fields. The bridge then inserts the geometry automatically. If the user
+   for it: the bridge window "Mesh-Uploads" opens by itself (modeless) as soon
+   as a measured OBJ file waits for upload. The user uses "Ordner öffnen",
+   uploads the OBJ file(s) in Studio (3D Importer or drag & drop) or in the
+   Creator Dashboard, pastes the mesh id(s) into the text fields and presses
+   "Fertig" — the bridge then inserts the geometry and deletes the OBJ file.
+   "Stornieren" cancels a slot (placeholder and files are deleted; an already
+   applied mesh is NOT restored). If the user
    gives you the id in chat, call `mesh_apply_asset` with the slot `key`s from
    `mesh_status`.
 6. Insertion uses `InsertService:CreateMeshPartAsync` + `MeshPart:ApplyMesh`,

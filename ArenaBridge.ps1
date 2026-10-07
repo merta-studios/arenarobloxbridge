@@ -1,5 +1,37 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.4.0
+# Arena Roblox Bridge  -  Version 7.4.1
+#
+# Version 7.4.1 (2026-10-07) - BOM-HOTFIX, AUTOMATISCHES MESH-FENSTER, EHRLICHER SCHRITT 4
+# -----------------------------------------------------------------------------
+# Drei Baustellen, ein Live-Befund.
+#   1) BOM-HOTFIX (der gemeldete Fehler): PowerShell 5.1 schrieb die erzeugten
+#      Python-Dateien (Runner, Slot-Skripte, Probenskripte) mit BOM; Blender
+#      starb mit "SyntaxError: invalid non-printable character U+FEFF" in
+#      Zeile 1. Jetzt schreibt die Bridge jede erzeugte .py-Datei BOM-FREI
+#      ([System.IO.File]::WriteAllText mit UTF8Encoding($false)); der Runner
+#      liest Modelldateien zusaetzlich BOM-tolerant (utf-8-sig + Entfernen
+#      eines fuehrenden U+FEFF).
+#   2) DAS MESH-FENSTER OEFFNET SICH SELBST (ausdruecklicher Nutzerwunsch):
+#      kein Menue-Eintrag mehr. Sobald mindestens eine gemessene OBJ-Datei auf
+#      den Upload wartet, erscheint das Fenster MODELESS und stoert die Arbeit
+#      nicht; beim Schliessen merkt es sich die wartenden Slots und oeffnet nur
+#      wieder, wenn eine neue Datei dazukommt. Je Mesh eine Zeile mit Datei,
+#      Messwerten und Zustand, Mesh-Id-Feld, "Fertig" und "Stornieren"
+#      (Rueckfrage "Wirklich stornieren?"). "Fertig" setzt ein und loescht
+#      danach OBJ + Slot-Skript; "Stornieren" sendet den neuen internen Befehl
+#      tools.mesh_drop (entfernt die MeshParts mit ArenaMeshSlot) und raeumt
+#      Slot und Dateien weg. Ehrlich: ein schon EINGESETZTES Mesh kommt beim
+#      Stornieren NICHT zurueck - das sagt die Bridge im Text.
+#   3) SCHRITT 4 EHRLICH UND OHNE EINFRIEREN: Suche, Versionspruefung und die
+#      ECHTE Faehigkeitsprobe laufen in EINEM Hintergrund-Runspace (7.4.0 lief
+#      synchron im UI-Thread und fror das Fenster ein). Der Tunnel startet erst
+#      nach dem Endzustand. ready setzt AUSSCHLIESSLICH die bestandene Probe
+#      (Messmarker ARENA_MESH_STATS, Laenge exakt geprueft, fail-closed); der
+#      Installationsweg kann kein ready mehr vortaeuschen, "Blender pruefen"
+#      wiederholt immer die ECHTE Probe. Eine Hilfs-Quelle
+#      ($script:BridgeBlenderTools) gilt fuer Hauptprogramm UND jeden Runspace
+#      (7.4.0 hatte dort Phantom-Funktionen). Fehlschlag = rote Zeile, Mesh-Bau
+#      aus, kein Startblocker.
 #
 # Version 7.4.0 (2026-10-07) - BLENDER-MESH-BAU + MESH-UPLOAD-FENSTER
 # -----------------------------------------------------------------------------
@@ -1961,7 +1993,7 @@ param(
 # Existing LOCALAPPDATA directory; no UI, no new exception net.
 # A parse/policy failure prevents even this marker. Check its timestamp/version.
 # Continue + SilentlyContinue keeps diagnostic I/O from becoming a start blocker.
-Write-Output ("{0:o} PROOF_OF_LIFE Version=7.4.0 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
+Write-Output ("{0:o} PROOF_OF_LIFE Version=7.4.1 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
 
 $ErrorActionPreference = 'Stop'
 
@@ -1996,7 +2028,7 @@ trap {
         }
         $trapPath = Join-Path $trapFolder 'startup-diagnose.txt'
         $trapReport = New-Object System.Text.StringBuilder
-        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.4.0)')
+        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.4.1)')
         [void]$trapReport.AppendLine('Quelle: trap auf Skriptebene (nicht abgefangener Fehler)')
         [void]$trapReport.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$trapReport.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -2035,7 +2067,7 @@ trap {
             try {
                 [System.IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA 'START-CHECK.txt'),
                     ('Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.4.0' + [Environment]::NewLine +
+                     'Version: 7.4.1' + [Environment]::NewLine +
                      'ABBRUCH: ' + $trapMessage + [Environment]::NewLine +
                      'Details: ' + $trapPath + [Environment]::NewLine),
                     [System.Text.Encoding]::UTF8)
@@ -2864,7 +2896,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.4.0'
+    DocsVersion     = '7.4.1'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -2900,7 +2932,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Version 7.0.6: Laufzeit-Identitaet der LAUFENDEN Datei (Version, Pfad,
     # SHA-256, Sprachmodus, Startzeit) fuer GET /api/version.
     RuntimeInfo = [hashtable]::Synchronized(@{
-        Version = '7.4.0'
+        Version = '7.4.1'
         File = ''
         Sha256 = ''
         LanguageMode = ''
@@ -3120,7 +3152,7 @@ function Write-StartupFailureDiagnose {
         try { $trace = [string]$ErrorRecord.ScriptStackTrace } catch {}
         if ($trace.Length -gt 2000) { $trace = $trace.Substring(0, 2000) }
         $report = New-Object System.Text.StringBuilder
-        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.4.0)')
+        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.4.1)')
         [void]$report.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$report.AppendLine('Letzte Startstufe: ' + $stage)
         [void]$report.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -3203,7 +3235,7 @@ function Set-StartupStage {
     try {
         $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
         $checkText = 'Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.4.0' + [Environment]::NewLine +
+                     'Version: 7.4.1' + [Environment]::NewLine +
                      'Zeit: ' + $stamp + [Environment]::NewLine +
                      'PowerShell: ' + [string]$PSVersionTable.PSVersion + ' | CLR ' + [string][Environment]::Version + [Environment]::NewLine +
                      'Skript: ' + [string]$script:ScriptPath + [Environment]::NewLine +
@@ -3269,12 +3301,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.4.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.4.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.4.1, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.4.1, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.4.0'
+$script:Shared.RuntimeInfo.Version = '7.4.1'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -3377,7 +3409,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.4.0)
+  Arena Studio Bridge - Studio Plugin  (Version 7.4.1)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -3450,7 +3482,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.4.0"
+local ARENA_VERSION  = "7.4.1"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -11024,6 +11056,54 @@ tools.mesh_apply = function(args)
     })
 end
 
+-- mesh_drop (Version 7.4.1): der Stornieren-Weg des Mesh-Fensters. Loescht die
+-- MeshParts mit Attribut ArenaMeshSlot = key aus dem Place. Ehrlich: ein schon
+-- EINGESETZTES Mesh wird dabei NICHT wiederhergestellt - es kommt kein
+-- Platzhalter zurueck, die Geometrie ist mit der Instanz weg. Die Bridge raeumt
+-- danach Slot und Dateien auf.
+tools.mesh_drop = function(args)
+    local slots = args.slots or {}
+    if #slots == 0 then return failCode("BAD_ARGS", "mesh_drop needs at least one slot key.") end
+    if #slots > 40 then return failCode("BUDGET_EXCEEDED", "mesh_drop removes at most 40 slots per call.") end
+    local workspaceRoot = game:GetService("Workspace")
+    local dropped, failed = {}, {}
+    for _, spec in ipairs(slots) do
+        local key = tostring(spec.key or "")
+        if key == "" then
+            table.insert(failed, { key = "", error = "Der Slot hat keinen Schluessel (key)." })
+        else
+            local okSlot, result = pcall(function()
+                local removed, paths, hadAppliedMesh = 0, {}, false
+                for _, inst in ipairs(workspaceRoot:GetDescendants()) do
+                    if inst:IsA("MeshPart") and inst:GetAttribute("ArenaMeshSlot") == key then
+                        if inst:GetAttribute("ArenaMeshState") == "applied" then hadAppliedMesh = true end
+                        table.insert(paths, inst:GetFullName())
+                        inst:Destroy()
+                        removed = removed + 1
+                    end
+                end
+                if removed == 0 then
+                    error("Kein MeshPart mit ArenaMeshSlot=\"" .. key .. "\" gefunden - wurde er verschoben, umbenannt oder geloescht?")
+                end
+                return { key = key, removed = removed, paths = paths, hadAppliedMesh = hadAppliedMesh }
+            end)
+            if okSlot then
+                table.insert(dropped, result)
+            else
+                table.insert(failed, { key = key, error = tostring(result) })
+            end
+        end
+    end
+    return ok({
+        dropped = dropped,
+        failed = failed,
+        droppedCount = #dropped,
+        failedCount = #failed,
+        note = "Die MeshPart(s) mit diesem ArenaMeshSlot wurden aus dem Place ENTFERNT (Stornieren). Ein schon EINGESETZTES Mesh wird dabei NICHT wiederhergestellt: es kommt kein Platzhalter zurueck, die Geometrie ist mit der Instanz geloescht. Die Bridge loescht danach Slot und Dateien; fuer einen neuen Versuch baut Blender die Datei neu.",
+    })
+end
+
+
 -- ------------------------- Ausgabefenster -----------------------------------
 tools.get_output = function(args)
     -- LogService from the edit DataModel is the universal source (also for the
@@ -11517,7 +11597,7 @@ local PERSISTENT_WRITE_TOOLS = {
     insert_asset = true, apply_asset = true,
     point_at = true, fill_region = true,
     build_polygon_model = true, build_assembly = true,
-    mesh_slots = true, mesh_apply = true,
+    mesh_slots = true, mesh_apply = true, mesh_drop = true,
     build_surface = true, build_interface = true,
     undo = true, redo = true,
 }
@@ -16306,7 +16386,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.4.0 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.4.1 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -16396,7 +16476,7 @@ $script:BridgeHandlerScript = {
 
     function Get-ActivityToolSets {
         $read = @('get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','sim_status','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait','ui_capabilities','ui_skin','ui_audit','ui_texture','world_style','site_survey','variation','model_audit','world_audit','prop_list','wait_for_user','ack_user_message','ask_user','confirm_action','scaffold_ui_scripts')
-        $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','build_polygon_model','build_assembly','mesh_slots','mesh_apply','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','sim_start','set_context','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute','build_surface','build_interface','ui_glow','ui_radial','prop_place','prop_save','refine','style_lock','world_glow')
+        $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','build_polygon_model','build_assembly','mesh_slots','mesh_apply','mesh_drop','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','sim_start','set_context','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute','build_surface','build_interface','ui_glow','ui_radial','prop_place','prop_save','refine','style_lock','world_glow')
         return @{ read = $read; write = $write }
     }
 
@@ -16575,6 +16655,7 @@ $script:BridgeHandlerScript = {
             apply_asset = 'Hat ein Asset auf ein Objekt gelegt.'
             mesh_slots = 'Hat Mesh-Platzhalter fuer den Blender-Bau angelegt.'
             mesh_apply = 'Hat hochgeladene Meshes in die Platzhalter gesetzt.'
+            mesh_drop = 'Hat einen Mesh-Slot storniert (Platzhalter entfernt).'
             mesh_apply_asset = 'Hat hochgeladene Meshes in die Platzhalter gesetzt.'
             catalog_status = 'Hat geprüft, ob der Katalog erreichbar ist.'
             get_output = 'Hat die Ausgabe gelesen.'
@@ -20570,9 +20651,9 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
 
         # ---------------- MESH / BLENDER (Version 7.4.0) ----------------
         $t.Add(@{ name = 'blender_status'; category = 'mesh'; summary = 'Ist Blender bereit? Zustand, Version, Pfad, Probe.';
-            description = 'Liest den Schritt-4-Zustand der Bridge: Blender wird gesucht (vorhandene Installationen zuerst), geprueft und bei Bedarf als portables ZIP im Hintergrund installiert. Solange state nicht ready ist, ist der Mesh-Bau deaktiviert - build_mesh_model antwortet dann BLENDER_NOT_READY. Der Polygon-Weg (build_polygon_model) funktioniert unabhaengig davon.';
-            params = @{};
-            returns = '{ ok, result { blender { state, ready, version, path, source, percent, message, detail, probe, enabled, meshFolder, installLog }, note } }';
+            description = 'Liest den Schritt-4-Zustand der Bridge: Blender wird gesucht (vorhandene Installationen zuerst), die Version gemessen und eine ECHTE Faehigkeitsprobe gefahren (Blender baut im Hintergrund wirklich ein OBJ). Nur wenn die Probe bestanden ist, wird state ready und der Mesh-Bau frei. Mit action="check" wird die ganze Pruefung erneut angestossen (Hintergrund, sofortige Antwort - danach kurz erneut lesen). Solange state nicht ready ist, ist der Mesh-Bau deaktiviert - build_mesh_model antwortet dann BLENDER_NOT_READY. Der Polygon-Weg (build_polygon_model) funktioniert unabhaengig davon.';
+            params = @{ action = @{ type = 'string'; required = $false; default = '-'; description = 'Leer oder "check" (Suche + Version + echte Faehigkeitsprobe erneut starten).' } };
+            returns = '{ ok, result { started, blender { state, ready, version, path, source, percent, message, detail, probe, enabled, meshFolder, installLog }, note } }';
             example = @{};
             errors = @() })
         $t.Add(@{ name = 'build_mesh_model'; category = 'mesh'; summary = 'Blender baut im Hintergrund ein OBJ (ein Slot = ein MeshPart).';
@@ -20611,6 +20692,12 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
             returns = '{ ok, applied, failed, appliedCount, failedCount, note }';
             example = @{ slots = @( @{ key = 'mesh_1a2b3c4d5e:base'; assetId = '1234567890' } ) };
             errors = @('BAD_ARGS: slots fehlt.') })
+        $t.Add(@{ name = 'mesh_drop'; category = 'mesh'; summary = 'Interner Befehl der Bridge: Mesh-Slot stornieren (nicht direkt aufrufen).';
+            description = 'Wird von der Bridge geschickt, wenn der Nutzer im automatischen Mesh-Fenster "Stornieren" bestaetigt. Loescht jedes MeshPart mit dem Attribut ArenaMeshSlot = key aus dem Place - den Platzhalter UND ein schon eingesetztes Mesh. Ehrlich: ein eingesetztes Mesh wird NICHT wiederhergestellt (es kommt kein Platzhalter zurueck). Danach raeumt die Oberflaeche Slot und Dateien auf. Wie jeder schreibende Befehl ist er im laufenden Playtest (Testmodus) blockiert.';
+            params = @{ slots = @{ type = 'array'; required = $true; default = '-'; description = 'Array von { key } (keys aus mesh_status).' } };
+            returns = '{ ok, dropped, failed, droppedCount, failedCount, note }';
+            example = @{ slots = @( @{ key = 'mesh_1a2b3c4d5e:base' } ) };
+            errors = @('BAD_ARGS: slots fehlt.', 'SIM_RUNNING/USER_PLAYTEST_ACTIVE: im laufenden Playtest sind schreibende Befehle gesperrt.') })
 
         # ---------------- JOBS ----------------
         $t.Add(@{ name = 'start_job'; category = 'jobs'; summary = 'Arbeit im Hintergrund starten (keine 60s-Grenze).';
@@ -20881,7 +20968,7 @@ end
                 motion = 'Add animation only when the task requests motion or the object is inherently living/moving. For organic models, explicitly use organic=true so per-model geometry, palette, enabled-motion and fresh-audit evidence is enforced; see organicBuildRules.'
             }
             meshBuildRules = @{
-                title = 'Mesh-Build Engine 1.0 (Version 7.4.0) - Blender im Hintergrund, Nutzer laedt hoch, Bridge setzt ein'
+                title = 'Mesh-Build Engine 1.0 (Version 7.4.1) - Blender im Hintergrund, Nutzer laedt hoch, Bridge setzt ein'
                 whenThisApplies = 'Freiwilliger ZWEITER Weg neben build_polygon_model. Sinnvoll, wenn eine Form mit Dreiecken/Wedges nicht gut wird (glatte oder organische Oberflaechen, viele Details, hohe Teilzahl) oder wenn das Modell im Place nur EIN Bauteil statt tausender Wedges sein soll. Fuer Entwurf, Iteration und fuer alles, was im Studio per Teil editierbar bleiben muss, bleibt build_polygon_model die erste Wahl.'
                 workflow = '1 blender_status lesen (Bereitschaft + Zustand). 2 build_mesh_model mit einem Blender-Skript je Slot aufrufen -> sofort jobId (Blender laeuft im Hintergrund, KEIN synchrones Warten). 3 mesh_status pollen, bis state measured ist; die Antwort nennt je Slot Dreiecke + Groesse in Studs. 4 Die Bridge legt die viereckigen MeshPart-Platzhalter selbst an. 5 Der NUTZER laedt die OBJ-Datei(en) hoch und traegt die Mesh-Id(s) im Bridge-Fenster "Mesh-Uploads" ein (oder nennt sie im Chat, dann mesh_apply_asset aufrufen). 6 mesh_status zeigt applied. 7 Erst dann model_audit + report_done.'
                 scriptContract = 'Ein Slot = ein Blender-Skript = EIN MeshPart. Das Skript ist normaler Code mit bpy (bmesh, math, mathutils, random erlaubt) und baut NUR Geometrie: 1 Blender-Einheit = 1 Stud, Y ist oben, die bbox-Mitte am Ursprung setzt der Runner automatisch, Modifier werden beim Export angewandt. Der Runner der Bridge macht Szene, Export, Zentrierung und Messung - bpy.ops.wm.*, Export, Datei-, Netzwerk- und Systemzugriff sind im Skript gesperrt (die Bridge lehnt solche Skripte vor dem Start ab).'
@@ -20892,7 +20979,7 @@ end
                 failure = 'Schlaegt Blender fehl (nicht installiert, Faehigkeitsprobe rot, Exit ungleich 0, Zeitlimit), sagt die Bridge das mit Code und Protokollzeile; dann bleibt der Polygon-Weg. Nie ein leeres oder unbemessenes Modell als fertig melden.'
             }
             organicBuildRules = @{
-                title = 'Organic Build Engine 1.1 (Version 7.4.0) - typed creature volumes, physical face, bilateral anatomy, measured before done'
+                title = 'Organic Build Engine 1.1 (Version 7.4.1) - typed creature volumes, physical face, bilateral anatomy, measured before done'
                 whenThisApplies = 'For any model intentionally built as organic (character, creature, plant, tree, prop or other organic free-form shape), this is a hard sequence independent of its name: the FIRST write targeting that model is build_polygon_model { organic=true, organicKind=... } with an explicit contrasting palette. For organicKind=creature the same first build must create closed role=body and role=head loft volumes; a long flat side-profile wedge is not a body or head volume. Use organicTraits=["wings"] when wings are intended and build role=wing_left/wing_right. Face features are physical 3D geometry, never Decal/Texture/GUI substitutes. Do not start with run_lua, build_assembly, loose primitives, or an external generator file. Then install an enabled motion Script under that same model, run model_audit on every returned organic model after the final edit, and fix every organicQuality issue. report_done is rejected with ORGANIC_AUDIT_REQUIRED/DETAIL_REQUIRED until every registered model passes.'
                 theOneIdea = 'For an organic model, the first write is build_polygon_model { organic=true, organicKind=... }. A creature gets real closed lofts for body and head (at least 4/3 stations, at least 8 sides) plus physical eyes and pupils; winged creatures get a mirrored, torso-attached wing pair. No side-view wedge, face sticker, or unmeasured claim can pass. Then add joints/details, install the enabled motion Script beneath the model, and audit the exact model.'
                 forbidden = @(
@@ -21354,7 +21441,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.4.0'
+            version = '7.4.1'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -21585,7 +21672,7 @@ end
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.4.0'
+            bridgeVersion = '7.4.1'
             executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent is never an error, but the user then sees NO bar and NO percentage at all - only your message as text. Send a real number every few calls. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
@@ -21872,6 +21959,11 @@ end
         try { . ([scriptblock]::Create([string]$Shared.MeshToolkitText)) } catch {
             Write-BridgeLog ('Mesh-Toolkit konnte im Handler nicht geladen werden: ' + $_.Exception.Message)
         }
+        # Version 7.4.1: GENAU die eine Blender-Hilfs-Quelle - dieselben
+        # Funktionen wie im Hauptprogramm und in jedem Runspace.
+        try { . ([scriptblock]::Create([string]$Shared.BlenderToolsText)) } catch {
+            Write-BridgeLog ('Blender-Helfer konnten im Handler nicht geladen werden: ' + $_.Exception.Message)
+        }
         $sid = [string]$sessionId
         $blender = $Shared.BlenderState
         $meshRoot = [string]$Shared.MeshRoot
@@ -21881,25 +21973,33 @@ end
             try { $blenderState = [string]$blender.state } catch {}
             try { $blenderReady = ($blenderState -eq 'ready' -and [bool]$blender.enabled) } catch {}
         }
-        $blenderReport = @{
-            state = $blenderState
-            ready = [bool]$blenderReady
-            version = $(if ($null -ne $blender) { [string]$blender.version } else { '' })
-            path = $(if ($null -ne $blender) { [string]$blender.path } else { '' })
-            source = $(if ($null -ne $blender) { [string]$blender.source } else { '' })
-            percent = $(if ($null -ne $blender) { [int]$blender.percent } else { 0 })
-            message = $(if ($null -ne $blender) { [string]$blender.message } else { '' })
-            detail = $(if ($null -ne $blender) { [string]$blender.detail } else { '' })
-            probe = $(if ($null -ne $blender) { [string]$blender.probe } else { '' })
-            enabled = [bool]$blenderReady
-            meshFolder = $meshRoot
-            installLog = (Join-Path $meshRoot 'blender-install.log')
-        }
+        $blenderReport = @{}
+        try { $blenderReport = Get-BlenderReport -Shared $Shared } catch {}
+        $blenderReport.ready = [bool]$blenderReady
+        $blenderReport.enabled = [bool]$blenderReady
+        $blenderReport.installLog = (Join-Path $meshRoot 'blender-install.log')
+        $blenderReport.gatePending = $false
+        try { $blenderReport.gatePending = (-not [bool]$blender.gateResolved) } catch {}
 
         if ($tool -eq 'blender_status') {
+            $action = ''
+            if ($toolArgs -and -not [string]::IsNullOrWhiteSpace([string]$toolArgs.action)) { $action = ([string]$toolArgs.action).Trim().ToLowerInvariant() }
+            if ($action -eq 'check') {
+                # Wiederholt die ECHTE Faehigkeitsprobe (nicht nur die Version)
+                # im Hintergrund - die Antwort kommt sofort, kein Warten.
+                $started = $false
+                try { $started = [bool](Start-BlenderRecheck -Shared $Shared) } catch {
+                    Write-BridgeLog ('Blender-Pruefung konnte im Handler nicht gestartet werden: ' + $_.Exception.Message)
+                }
+                $blenderReport = @{}
+                try { $blenderReport = Get-BlenderReport -Shared $Shared } catch {}
+                $blenderReport.ready = ([string]$blenderReport.state -eq 'ready' -and [bool]$blenderReport.enabled)
+                $blenderReport.installLog = (Join-Path $meshRoot 'blender-install.log')
+                return @{ ok = $true; result = @{ started = [bool]$started; blender = $blenderReport; note = $(if ($started) { 'Suche, Version und echte Faehigkeitsprobe laufen jetzt im Hintergrund - in ein paar Sekunden blender_status erneut lesen (nicht in einer engen Schleife).' } else { 'Es laeuft schon eine Blender-Pruefung (Zustand ' + [string]$blenderReport.state + ').' }) } }
+            }
             $note = 'Blender ist bereit. Mesh-Dateien und Ids: siehe mesh_status.'
             if (-not $blenderReady) {
-                $note = 'Der Mesh-Bau ist deaktiviert, solange Blender nicht bereit ist. Der Polygon-Weg (build_polygon_model) funktioniert unabhaengig davon. Der Nutzer kann im Bridge-Fenster "Mesh-Uploads" den Knopf "Blender jetzt installieren" druecken oder den Start abwarten.'
+                $note = 'Der Mesh-Bau ist deaktiviert, solange Blender nicht bereit ist (state=' + $blenderState + ', probe=' + [string]$blenderReport.probe + '). Der Polygon-Weg (build_polygon_model) funktioniert unabhaengig davon. Der Nutzer kann die Pruefung mit blender_status { action = "check" } oder per Klick auf Zeile 4 im Startbildschirm wiederholen - dort laeuft immer die ECHTE Faehigkeitsprobe.'
             }
             return @{ ok = $true; result = @{ blender = $blenderReport; note = $note } }
         }
@@ -21911,7 +22011,7 @@ end
                     code = 'BLENDER_NOT_READY'
                     error = ('Blender ist nicht bereit (Zustand: ' + $blenderState + '). Es wurde NICHTS gebaut.')
                     blender = $blenderReport
-                    howToFix = 'Dem Nutzer ehrlich sagen, dass Blender fehlt oder sich noch installiert, und dass er im Bridge-Fenster "Mesh-Uploads" den Knopf "Blender jetzt installieren" druecken kann. Alternativ mit build_polygon_model weiterbauen. Nicht in einer Schleife wiederholen.'
+                    howToFix = 'Dem Nutzer ehrlich sagen, dass Blender nicht bereit ist (der Zustand und die Proben-Meldung stehen oben), und dass er die Pruefung mit blender_status { action = "check" } oder per Klick auf Zeile 4 im Startbildschirm wiederholen kann - dort laeuft immer die ECHTE Faehigkeitsprobe. Alternativ mit build_polygon_model weiterbauen. Nicht in einer Schleife wiederholen.'
                 } 20)
             }
             $modelName = 'Mesh'
@@ -22042,6 +22142,7 @@ end
                         bytes = $(try { [int64]$slot.bytes } catch { 0 })
                         fileName = [string]$slot.fileName
                         objPath = [string]$slot.objPath
+                        fileExists = $(try { [bool](Test-Path -LiteralPath ([string]$slot.objPath)) } catch { $false })
                         assetId = [string]$slot.assetId
                         meshIdReadBack = $(try { [string]$slot.meshIdReadBack } catch { '' })
                         placeholderPath = [string]$slot.placeholderPath
@@ -22087,13 +22188,16 @@ end
             foreach ($job in $jobsOut) {
                 foreach ($slot in $job.slots) {
                     $slotState = [string]$slot.state
-                    if ($slotState -eq 'obj' -or $slotState -eq 'applied') {
+                    if ($slotState -eq 'obj') {
+                        # Version 7.4.1: Nur ECHT offene Dateien zaehlen. Eingesetzte
+                        # Slots sind fertig - ihre OBJ ist nach dem Aufraeumen weg.
                         $needUpload.Add(@{
                             key = [string]$slot.key
                             name = [string]$slot.name
                             state = $slotState
                             triangles = [int]$slot.triangles
                             file = [string]$slot.objPath
+                            fileExists = $(try { [bool](Test-Path -LiteralPath ([string]$slot.objPath)) } catch { $false })
                             assetId = [string]$slot.assetId
                         })
                     }
@@ -22746,7 +22850,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.4.0'
+                        bridgeVersion = '7.4.1'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -23213,7 +23317,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.4.0'
+                        serverVersion = '7.4.1'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -23572,7 +23676,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.4.0'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.4.1'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -23656,8 +23760,8 @@ end
                 }
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.4.0'
-                    serverVersion = '7.4.0'
+                    bridgeVersion = '7.4.1'
+                    serverVersion = '7.4.1'
                     toolbox = $statusToolbox
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
@@ -24914,44 +25018,90 @@ function Start-BridgeServer {
 # ============================================================================
 # Version 7.4.0: BLENDER (Schritt 4 des Starts) + MESH-BAU
 # ============================================================================
-# Der Owner will Blender als VIERTEN Startschritt (Studio, Plugin, Blender,
-# Tunnel). Vorhandene Installationen werden gefunden und GEMESSEN (Version +
-# Faehigkeitsprobe); fehlt Blender, laedt die Bridge das portable ZIP im
-# Hintergrund (kein Admin, kein UAC) und startet den Tunnel erst, wenn der
-# Schritt fertig ist. Scheitert er, wird die Zeile ROT, der Mesh-Bau wird
-# deaktiviert und die Bridge arbeitet normal weiter - der Start haengt nie.
 # ----------------------------------------------------------------------------
+# Version 7.4.1: BLENDER (Schritt 4 des Starts) - EINE Hilfs-Quelle.
+#
+# In 7.4.0 liefen Suche + Versionspruefung SYNCHRON im UI-Thread (das Fenster
+# fror ein), die Faehigkeitsprobe lief in einem eigenen Runspace OHNE die
+# Helferfunktionen (Phantom-Funktionen: ihre Protokollzeilen verschwanden
+# lautlos) und "bereit" wurde schon nach dem Lesen der Version gesetzt -
+# gemessen beim Nutzer: state=ready bei probe=failed.
+#
+# 7.4.1: Suche + Version + ECHTE Faehigkeitsprobe laufen in EINEM
+# Hintergrund-Runspace ($script:BridgeBlenderStepScript). Das Hauptprogramm
+# UND jeder Runspace laden GENAU EINE Hilfs-Quelle
+# ($script:BridgeBlenderTools / $Shared.BlenderToolsText). ready setzt NUR die
+# bestandene Probe; ein Fehlschlag wird ehrlich rot gemeldet, deaktiviert den
+# Mesh-Bau und ist KEIN Start-Blocker (der Tunnel wartet nur auf den
+# Endzustand: ready / failed / skipped).
+# ----------------------------------------------------------------------------
+$script:BridgeBlenderTools = {
+    # ========================================================================
+    # Alle Blender-Helfer in EINER Quelle. Keine $script:-Variablen: alles
+    # kommt aus $Shared, damit dieselben Funktionen auch in Runspaces laufen.
+    # ========================================================================
 
-function Set-BlenderState {
-    # Schreibt den Zustand in $script:Shared.BlenderState (Handler, Sweep und
-    # UI lesen mit) und legt einen kleinen, weitergebbaren Kurzbericht ab.
-    param(
-        [string]$State = '',
-        [string]$Path = '',
-        [string]$Version = '',
-        [string]$Detail = '',
-        [string]$Message = '',
-        [int]$Percent = -1,
-        [string]$Source = '',
-        [bool]$Enabled = $false,
-        [long]$InstallStartedAt = [long]0,
-        [bool]$GateResolved = $false
-    )
-    try {
-        $map = $script:Shared.BlenderState
-        if (-not [string]::IsNullOrWhiteSpace($State)) { $map.state = $State }
-        if (-not [string]::IsNullOrWhiteSpace($Path)) { $map.path = $Path }
-        if (-not [string]::IsNullOrWhiteSpace($Version)) { $map.version = $Version }
-        if (-not [string]::IsNullOrWhiteSpace($Detail)) { $map.detail = $Detail }
-        if (-not [string]::IsNullOrWhiteSpace($Message)) { $map.message = $Message }
-        if ($Percent -ge 0) { $map.percent = [int]$Percent }
-        if (-not [string]::IsNullOrWhiteSpace($Source)) { $map.source = $Source }
-        if ($InstallStartedAt -gt 0) { $map.installStartedAt = $InstallStartedAt }
-        $map.enabled = $Enabled
-        $map.gateResolved = $GateResolved
-        $map.updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-        $map.checkedAt = $map.updatedAt
+    function Write-BridgeBomFreeFile {
+        # BOM-FREI schreiben. PowerShell 5.1 setzt bei Set-Content/Out-File
+        # -Encoding UTF8 ein BOM vor die Datei - Python starb daran mit
+        # "SyntaxError: invalid non-printable character U+FEFF" (Zeile 1).
+        param([string]$Path, [string]$Text)
         try {
+            $dir = [System.IO.Path]::GetDirectoryName($Path)
+            if (-not [string]::IsNullOrWhiteSpace($dir) -and -not (Test-Path -LiteralPath $dir)) {
+                [void](New-Item -ItemType Directory -Path $dir -Force)
+            }
+            [System.IO.File]::WriteAllText($Path, [string]$Text, (New-Object System.Text.UTF8Encoding($false)))
+            return $true
+        } catch { return $false }
+    }
+
+    function Write-BridgeLog {
+        # Protokollzeile in die runtime.log der Bridge - AUCH aus Runspaces
+        # (dort gibt es die Write-RuntimeLog des Hauptprogramms nicht).
+        param($Shared, [string]$Text)
+        try {
+            $path = ''
+            try { $path = [string]$Shared.LogFile } catch {}
+            if ([string]::IsNullOrWhiteSpace($path)) { return }
+            [System.IO.File]::AppendAllText($path, ((Get-Date).ToString('u') + ' ' + [string]$Text) + [Environment]::NewLine, (New-Object System.Text.UTF8Encoding($false)))
+        } catch {}
+    }
+
+    function Set-BlenderState {
+        # EINE Funktion schreibt blender-status.json - BOM-frei und auch aus
+        # Runspaces. Sie behauptet nichts: 'ready' setzt ausschliesslich die
+        # Faehigkeitsprobe nach einer BESTANDENEN Messung.
+        param(
+            $Shared,
+            [string]$State = '',
+            [string]$Path = '',
+            [string]$Version = '',
+            [string]$Detail = '',
+            [string]$Message = '',
+            [int]$Percent = -1,
+            [string]$Source = '',
+            [bool]$Enabled = $false,
+            [long]$InstallStartedAt = [long]0,
+            [bool]$GateResolved = $false,
+            [string]$Probe = '',
+            [switch]$ResetProbe
+        )
+        try {
+            $map = $Shared.BlenderState
+            if (-not [string]::IsNullOrWhiteSpace($State)) { $map.state = $State }
+            if (-not [string]::IsNullOrWhiteSpace($Path)) { $map.path = $Path }
+            if (-not [string]::IsNullOrWhiteSpace($Version)) { $map.version = $Version }
+            if (-not [string]::IsNullOrWhiteSpace($Detail)) { $map.detail = $Detail }
+            if (-not [string]::IsNullOrWhiteSpace($Message)) { $map.message = $Message }
+            if ($Percent -ge 0) { $map.percent = [int]$Percent }
+            if (-not [string]::IsNullOrWhiteSpace($Source)) { $map.source = $Source }
+            if ($InstallStartedAt -gt 0) { $map.installStartedAt = $InstallStartedAt }
+            if ($ResetProbe -or -not [string]::IsNullOrWhiteSpace($Probe)) { $map.probe = $Probe }
+            $map.enabled = $Enabled
+            $map.gateResolved = $GateResolved
+            $map.updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+            $map.checkedAt = $map.updatedAt
             $payload = @{
                 state = [string]$map.state
                 path = [string]$map.path
@@ -24962,288 +25112,437 @@ function Set-BlenderState {
                 source = [string]$map.source
                 enabled = [bool]$map.enabled
                 gateResolved = [bool]$map.gateResolved
+                probe = [string]$map.probe
                 updatedAt = $map.updatedAt
             }
-            ($payload | ConvertTo-Json -Depth 4 -Compress) | Set-Content -LiteralPath $script:BlenderStatusFile -Encoding UTF8 -ErrorAction SilentlyContinue
-        } catch {}
-    } catch {
-        try { Write-RuntimeLog ('Blender-Zustand konnte nicht gespeichert werden: ' + $_.Exception.Message) } catch {}
-    }
-}
-
-function Get-BlenderExeInFolder {
-    param([string]$Folder)
-    if ([string]::IsNullOrWhiteSpace($Folder)) { return $null }
-    $direct = Join-Path $Folder 'blender.exe'
-    if (Test-Path -LiteralPath $direct) { return $direct }
-    try {
-        $hit = Get-ChildItem -LiteralPath $Folder -Filter 'blender.exe' -Recurse -Depth 3 -File -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($hit) { return $hit.FullName }
-    } catch {}
-    return $null
-}
-
-function Get-BlenderPath {
-    # Reihenfolge: eigener Ordner -> PATH -> Registry (echte Installationen)
-    # -> klassische Ordner -> Steam -> Microsoft Store.
-    try {
-        if (Test-Path -LiteralPath $script:BlenderFolder) {
-            $hit = Get-ChildItem -LiteralPath $script:BlenderFolder -Filter 'blender.exe' -Recurse -Depth 2 -File -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($hit) { return $hit.FullName }
+            $jsonText = [string]($payload | ConvertTo-Json -Depth 4 -Compress)
+            $statusFile = ''
+            try { $statusFile = [string]$Shared.BlenderStatusFile } catch {}
+            if (-not [string]::IsNullOrWhiteSpace($statusFile)) {
+                [void](Write-BridgeBomFreeFile -Path $statusFile -Text $jsonText)
+            }
+        } catch {
+            try { Write-BridgeLog -Shared $Shared -Text ('Blender-Zustand konnte nicht gespeichert werden: ' + $_.Exception.Message) } catch {}
         }
-    } catch {}
-    try {
-        $cmd = Get-Command blender -ErrorAction SilentlyContinue
-        if ($cmd -and $cmd.Source) { return [string]$cmd.Source }
-        $cmdExe = Get-Command blender.exe -ErrorAction SilentlyContinue
-        if ($cmdExe -and $cmdExe.Source) { return [string]$cmdExe.Source }
-    } catch {}
-    try {
-        foreach ($root in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*')) {
-            $entries = Get-ItemProperty -Path $root -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like 'Blender*' }
-            foreach ($entry in $entries) {
-                $loc = [string]$entry.InstallLocation
-                if (-not [string]::IsNullOrWhiteSpace($loc)) {
-                    $exe = Get-BlenderExeInFolder $loc
-                    if ($exe) { return $exe }
+    }
+
+    function Get-BlenderExeInFolder {
+        param([string]$Folder)
+        if ([string]::IsNullOrWhiteSpace($Folder)) { return $null }
+        $direct = Join-Path $Folder 'blender.exe'
+        if (Test-Path -LiteralPath $direct) { return $direct }
+        try {
+            $hit = Get-ChildItem -LiteralPath $Folder -Filter 'blender.exe' -Recurse -Depth 3 -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($hit) { return $hit.FullName }
+        } catch {}
+        return $null
+    }
+
+    function Get-BlenderPath {
+        # Reihenfolge: eigener Ordner -> PATH -> Registry (echte Installationen)
+        # -> klassische Ordner -> Steam -> Microsoft Store.
+        param($Shared)
+        $blenderFolder = ''
+        try { $blenderFolder = [string]$Shared.BlenderFolder } catch {}
+        try {
+            if (-not [string]::IsNullOrWhiteSpace($blenderFolder) -and (Test-Path -LiteralPath $blenderFolder)) {
+                $hit = Get-ChildItem -LiteralPath $blenderFolder -Filter 'blender.exe' -Recurse -Depth 2 -File -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($hit) { return $hit.FullName }
+            }
+        } catch {}
+        try {
+            $cmd = Get-Command blender -ErrorAction SilentlyContinue
+            if ($cmd -and $cmd.Source) { return [string]$cmd.Source }
+            $cmdExe = Get-Command blender.exe -ErrorAction SilentlyContinue
+            if ($cmdExe -and $cmdExe.Source) { return [string]$cmdExe.Source }
+        } catch {}
+        try {
+            foreach ($root in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*')) {
+                $entries = Get-ItemProperty -Path $root -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like 'Blender*' }
+                foreach ($entry in $entries) {
+                    $loc = [string]$entry.InstallLocation
+                    if (-not [string]::IsNullOrWhiteSpace($loc)) {
+                        $exe = Get-BlenderExeInFolder $loc
+                        if ($exe) { return $exe }
+                    }
                 }
             }
-        }
-    } catch {}
-    $patterns = New-Object System.Collections.Generic.List[string]
-    $patterns.Add((Join-Path $env:LOCALAPPDATA 'Programs\Blender Foundation\Blender*'))
-    $patterns.Add((Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps'))
-    if (${env:ProgramFiles}) { $patterns.Add((Join-Path ${env:ProgramFiles} 'Blender Foundation\Blender*')) }
-    if (${env:ProgramFiles(x86)}) { $patterns.Add((Join-Path ${env:ProgramFiles(x86)} 'Blender Foundation\Blender*')) }
-    foreach ($steamRoot in @((Join-Path ${env:ProgramFiles} 'Steam\steamapps\common\Blender'), (Join-Path ${env:ProgramFiles(x86)} 'Steam\steamapps\common\Blender'))) {
-        if ($steamRoot) { $patterns.Add($steamRoot) }
-    }
-    foreach ($pattern in $patterns) {
-        try {
-            $folders = Get-ChildItem -Path $pattern -Directory -ErrorAction SilentlyContinue
-            foreach ($folder in $folders) {
-                $exe = Get-BlenderExeInFolder $folder.FullName
-                if ($exe) { return $exe }
-            }
         } catch {}
-    }
-    return $null
-}
-
-function Invoke-BlenderProcess {
-    # Startet blender.exe ohne Fenster und liest stdout/stderr mit hartem
-    # Zeitlimit. Rueckgabe: exitCode, timedOut, output (beide Stroeme).
-    param([string]$Path, [string]$Arguments, [int]$TimeoutSeconds = 60)
-    $result = @{ ok = $false; exitCode = -1; timedOut = $false; output = ''; error = '' }
-    if ([string]::IsNullOrWhiteSpace($Path)) { $result.error = 'Kein Blender-Pfad.'; return $result }
-    if (-not (Test-Path -LiteralPath $Path)) { $result.error = ('Blender nicht gefunden: ' + $Path); return $result }
-    $process = $null
-    try {
-        $psi = [System.Diagnostics.ProcessStartInfo]::new()
-        $psi.FileName = $Path
-        $psi.Arguments = $Arguments
-        $psi.UseShellExecute = $false
-        $psi.CreateNoWindow = $true
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError = $true
-        $psi.WorkingDirectory = $script:MeshRoot
-        $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
-        $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
-        $process = [System.Diagnostics.Process]::new()
-        $process.StartInfo = $psi
-        [void]$process.Start()
-        $outTask = $process.StandardOutput.ReadToEndAsync()
-        $errTask = $process.StandardError.ReadToEndAsync()
-        $exited = $process.WaitForExit([Math]::Max(5, $TimeoutSeconds) * 1000)
-        if (-not $exited) {
-            $result.timedOut = $true
-            try { $process.Kill() } catch {}
-            try { [void]$process.WaitForExit(4000) } catch {}
+        $patterns = New-Object System.Collections.Generic.List[string]
+        $patterns.Add((Join-Path $env:LOCALAPPDATA 'Programs\Blender Foundation\Blender*'))
+        $patterns.Add((Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps'))
+        if (${env:ProgramFiles}) { $patterns.Add((Join-Path ${env:ProgramFiles} 'Blender Foundation\Blender*')) }
+        if (${env:ProgramFiles(x86)}) { $patterns.Add((Join-Path ${env:ProgramFiles(x86)} 'Blender Foundation\Blender*')) }
+        foreach ($steamRoot in @((Join-Path ${env:ProgramFiles} 'Steam\steamapps\common\Blender'), (Join-Path ${env:ProgramFiles(x86)} 'Steam\steamapps\common\Blender'))) {
+            if ($steamRoot) { $patterns.Add($steamRoot) }
         }
-        $outText = ''
-        $errText = ''
-        try { if ($outTask.Wait(4000)) { $outText = [string]$outTask.Result } } catch {}
-        try { if ($errTask.Wait(4000)) { $errText = [string]$errTask.Result } } catch {}
-        $result.output = (($outText + [Environment]::NewLine + $errText).Trim())
-        try { $result.exitCode = [int]$process.ExitCode } catch {}
-        $result.ok = ((-not $result.timedOut) -and $result.exitCode -eq 0)
-        if ($result.timedOut) { $result.error = ('Blender hat nach ' + [string]$TimeoutSeconds + ' s nicht geantwortet und wurde beendet.') }
-        elseif ($result.exitCode -ne 0) { $result.error = ('Blender endete mit Code ' + [string]$result.exitCode + '.') }
-    } catch {
-        $result.error = $_.Exception.Message
-    } finally {
-        try { if ($process) { $process.Dispose() } } catch {}
+        foreach ($pattern in $patterns) {
+            try {
+                $folders = Get-ChildItem -Path $pattern -Directory -ErrorAction SilentlyContinue
+                foreach ($folder in $folders) {
+                    $exe = Get-BlenderExeInFolder $folder.FullName
+                    if ($exe) { return $exe }
+                }
+            } catch {}
+        }
+        return $null
     }
-    return $result
-}
 
-function Test-BlenderQuick {
-    # SCHNELLE Pruefung: blender.exe --version -> "Blender 4.5.12".
-    # Laeuft synchron (~1 s) und entscheidet, ob der Start sofort weitergeht.
-    param([string]$Path)
-    $out = @{ ok = $false; version = ''; error = '' }
-    $run = Invoke-BlenderProcess -Path $Path -Arguments '--version' -TimeoutSeconds 25
-    if ($run.timedOut) { $out.error = $run.error; return $out }
-    $text = [string]$run.output
-    if ([string]::IsNullOrWhiteSpace($text)) { $out.error = 'Blender lieferte keine Versionsausgabe.'; return $out }
-    $match = [System.Text.RegularExpressions.Regex]::Match($text, 'Blender\s+([0-9]+(?:\.[0-9]+){1,2})')
-    if (-not $match.Success) { $out.error = ('Versionsausgabe nicht lesbar: ' + $text.Substring(0, [Math]::Min(120, $text.Length))); return $out }
-    $version = $match.Groups[1].Value
-    $parts = $version.Split('.')
-    $major = 0
-    try { $major = [int]$parts[0] } catch { $major = 0 }
-    $out.version = $version
-    if ($major -lt 3) {
-        $out.error = ('Blender ' + $version + ' ist zu alt (mindestens 3.3 wird gebraucht).')
+    function Invoke-BlenderProcess {
+        # Startet blender.exe ohne Fenster und liest stdout/stderr mit hartem
+        # Zeitlimit. Rueckgabe: exitCode, timedOut, output (beide Stroeme).
+        param([string]$Path, [string]$Arguments, [int]$TimeoutSeconds = 60, [string]$WorkingDirectory = '')
+        $result = @{ ok = $false; exitCode = -1; timedOut = $false; output = ''; error = '' }
+        if ([string]::IsNullOrWhiteSpace($Path)) { $result.error = 'Kein Blender-Pfad.'; return $result }
+        if (-not (Test-Path -LiteralPath $Path)) { $result.error = ('Blender nicht gefunden: ' + $Path); return $result }
+        $process = $null
+        try {
+            $psi = [System.Diagnostics.ProcessStartInfo]::new()
+            $psi.FileName = $Path
+            $psi.Arguments = $Arguments
+            $psi.UseShellExecute = $false
+            $psi.CreateNoWindow = $true
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            if (-not [string]::IsNullOrWhiteSpace($WorkingDirectory) -and (Test-Path -LiteralPath $WorkingDirectory)) {
+                $psi.WorkingDirectory = $WorkingDirectory
+            }
+            $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+            $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+            $process = [System.Diagnostics.Process]::new()
+            $process.StartInfo = $psi
+            [void]$process.Start()
+            $outTask = $process.StandardOutput.ReadToEndAsync()
+            $errTask = $process.StandardError.ReadToEndAsync()
+            $exited = $process.WaitForExit([Math]::Max(5, $TimeoutSeconds) * 1000)
+            if (-not $exited) {
+                $result.timedOut = $true
+                try { $process.Kill() } catch {}
+                try { [void]$process.WaitForExit(4000) } catch {}
+            }
+            $outText = ''
+            $errText = ''
+            try { if ($outTask.Wait(4000)) { $outText = [string]$outTask.Result } } catch {}
+            try { if ($errTask.Wait(4000)) { $errText = [string]$errTask.Result } } catch {}
+            $result.output = (($outText + [Environment]::NewLine + $errText).Trim())
+            try { $result.exitCode = [int]$process.ExitCode } catch {}
+            $result.ok = ((-not $result.timedOut) -and $result.exitCode -eq 0)
+            if ($result.timedOut) { $result.error = ('Blender hat nach ' + [string]$TimeoutSeconds + ' s nicht geantwortet und wurde beendet.') }
+            elseif ($result.exitCode -ne 0) { $result.error = ('Blender endete mit Code ' + [string]$result.exitCode + '.') }
+        } catch {
+            $result.error = $_.Exception.Message
+        } finally {
+            try { if ($process) { $process.Dispose() } } catch {}
+        }
+        return $result
+    }
+
+    function Test-BlenderQuick {
+        # SCHNELLE Messung: blender.exe --version -> "Blender 5.0.1". Sie sagt
+        # NUR, dass die Datei startet und welche Version es ist - NICHT, dass
+        # der Mesh-Bau funktioniert (das entscheidet allein die Probe).
+        param([string]$Path)
+        $out = @{ ok = $false; version = ''; error = '' }
+        $run = Invoke-BlenderProcess -Path $Path -Arguments '--version' -TimeoutSeconds 25
+        if ($run.timedOut) { $out.error = $run.error; return $out }
+        $text = [string]$run.output
+        if ([string]::IsNullOrWhiteSpace($text)) { $out.error = 'Blender lieferte keine Versionsausgabe.'; return $out }
+        $match = [System.Text.RegularExpressions.Regex]::Match($text, 'Blender\s+([0-9]+(?:\.[0-9]+){1,2})')
+        if (-not $match.Success) { $out.error = ('Versionsausgabe nicht lesbar: ' + $text.Substring(0, [Math]::Min(120, $text.Length))); return $out }
+        $version = $match.Groups[1].Value
+        $parts = $version.Split('.')
+        $major = 0
+        try { $major = [int]$parts[0] } catch { $major = 0 }
+        $out.version = $version
+        if ($major -lt 3) {
+            $out.error = ('Blender ' + $version + ' ist zu alt (mindestens 3.3 wird gebraucht).')
+            return $out
+        }
+        $out.ok = $true
         return $out
     }
-    $out.ok = $true
-    return $out
-}
 
-function Test-BlenderCapability {
-    # FAEHIGKEITSPROBE statt Versionsvergleich: startet Blender headless,
-    # importiert bpy und prueft den OBJ-Exporter. Beweis statt Annahme.
-    param([string]$Path)
-    $probe = @{ ok = $false; version = ''; detail = ''; probe = '' }
-    $probeFile = Join-Path $script:BlenderFolder 'arena-blender-probe.py'
-    $probeCode = 'import json, sys, traceback' + [Environment]::NewLine
-    $probeCode = $probeCode + 'try:' + [Environment]::NewLine
-    $probeCode = $probeCode + '    import bpy' + [Environment]::NewLine
-    $probeCode = $probeCode + '    data = {"ok": True, "blender": str(bpy.app.version_string), "python": "%d.%d" % sys.version_info[:2], "objExport": ("obj_export" in dir(bpy.ops.wm)), "legacyObj": ("obj" in dir(bpy.ops.export_scene))}' + [Environment]::NewLine
-    $probeCode = $probeCode + '    print("ARENA_BLENDER_PROBE " + json.dumps(data))' + [Environment]::NewLine
-    $probeCode = $probeCode + 'except Exception:' + [Environment]::NewLine
-    $probeCode = $probeCode + '    print("ARENA_BLENDER_PROBE " + json.dumps({"ok": False, "error": traceback.format_exc(limit=2)}))' + [Environment]::NewLine
-    try {
-        if (-not (Test-Path -LiteralPath $script:BlenderFolder)) { New-Item -ItemType Directory -Path $script:BlenderFolder -Force | Out-Null }
-        Set-Content -LiteralPath $probeFile -Value $probeCode -Encoding UTF8
-    } catch {
-        $probe.error = ('Probendatei konnte nicht geschrieben werden: ' + $_.Exception.Message)
-        return $probe
-    }
-    $run = Invoke-BlenderProcess -Path $Path -Arguments ('--background --factory-startup --python-exit-code 1 --python "' + $probeFile + '"') -TimeoutSeconds 90
-    $text = [string]$run.output
-    $marker = 'ARENA_BLENDER_PROBE '
-    $index = $text.IndexOf($marker)
-    if ($index -lt 0) {
-        $probe.error = 'Blender startete nicht headless (keine Probenzeile).'
-        if ($run.timedOut) { $probe.error = $run.error }
-        if (-not [string]::IsNullOrWhiteSpace($text)) {
-            $tail = $text
-            if ($tail.Length -gt 400) { $tail = $tail.Substring($tail.Length - 400) }
-            $probe.detail = $tail
+    function Get-BlenderDownloadCandidates {
+        # Gepinnte LTS-Kandidaten zuerst (4.5 LTS laeuft auch auf aelterer
+        # Hardware), danach die Verzeichnisliste der offiziellen Quelle. Immer
+        # portables ZIP - kein MSI, kein UAC, kein Admin.
+        $list = New-Object System.Collections.Generic.List[string]
+        foreach ($patch in @('4.5.12', '4.5.11', '4.5.10', '4.5.9', '4.5.8')) {
+            $list.Add(('https://download.blender.org/release/Blender4.5/blender-' + $patch + '-windows-x64.zip'))
         }
-        return $probe
-    }
-    $jsonText = $text.Substring($index + $marker.Length)
-    $lineEnd = $jsonText.IndexOfAny(@([char]10, [char]13))
-    if ($lineEnd -ge 0) { $jsonText = $jsonText.Substring(0, $lineEnd) }
-    try {
-        $data = $jsonText.Trim() | ConvertFrom-Json
-        $probe.probe = $jsonText.Trim()
-        if ($data.ok -eq $true) {
-            $probe.ok = $true
-            $probe.version = [string]$data.blender
-            if ($data.objExport -ne $true -and $data.legacyObj -ne $true) {
-                $probe.ok = $false
-                $probe.error = ('Blender ' + [string]$data.blender + ' hat keinen OBJ-Exporter (erwartet wird der offizielle Windows-Build ab 3.3).')
+        try {
+            $listing = (Invoke-WebRequest -Uri 'https://download.blender.org/release/Blender4.5/' -UseBasicParsing -TimeoutSec 25).Content
+            $found = [System.Text.RegularExpressions.Regex]::Matches([string]$listing, 'blender-(4\.5\.[0-9]+)-windows-x64\.zip')
+            $rounds = New-Object System.Collections.Generic.List[string]
+            foreach ($hit in $found) {
+                $name = [string]$hit.Groups[1].Value
+                if (-not $rounds.Contains($name)) { $rounds.Add($name) }
             }
-            return $probe
-        }
-        $probe.error = ('Blender meldete: ' + [string]$data.error)
-    } catch {
-        $probe.error = ('Probenzeile nicht lesbar: ' + $jsonText)
+            $sorted = $rounds.ToArray() | Sort-Object { [int]($_ -split '\.')[2] } -Descending
+            foreach ($name in $sorted) {
+                $url = ('https://download.blender.org/release/Blender4.5/blender-' + $name + '-windows-x64.zip')
+                if (-not $list.Contains($url)) { $list.Add($url) }
+            }
+        } catch {}
+        return ,$list
     }
-    return $probe
+
+    function Test-BlenderZipHash {
+        # Wenn die offizielle .sha256-Datei erreichbar ist, wird der Download
+        # wirklich geprueft; sonst wird das ehrlich im Protokoll vermerkt.
+        param([string]$Url, [string]$File)
+        try {
+            $expected = ([string](Invoke-WebRequest -Uri ($Url + '.sha256') -UseBasicParsing -TimeoutSec 20).Content).Trim()
+            $expectedHash = ($expected -split '\s+')[0]
+            if ([string]::IsNullOrWhiteSpace($expectedHash)) { return @{ checked = $false; ok = $true; note = 'Keine Pruefsumme in der .sha256-Datei gefunden.' } }
+            $actual = (Get-FileHash -LiteralPath $File -Algorithm SHA256).Hash
+            if ($actual -eq $expectedHash.ToUpperInvariant()) { return @{ checked = $true; ok = $true; note = 'SHA-256 stimmt mit der offiziellen Pruefsumme ueberein.' } }
+            return @{ checked = $true; ok = $false; note = 'SHA-256 stimmt NICHT mit der offiziellen Pruefsumme ueberein.' }
+        } catch {
+            return @{ checked = $false; ok = $true; note = ('Keine offizielle Pruefsumme erreichbar (' + $_.Exception.Message + ') - der Download wurde nur strukturell (ZIP) und danach mit der Faehigkeitsprobe geprueft.') }
+        }
+    }
+
+    function Install-BlenderPortableZip {
+        # Laedt das offizielle PORTABLE ZIP (kein Admin, kein UAC), prueft die
+        # SHA-256 wenn erreichbar, entpackt und MISST die Version. Setzt
+        # ausdruecklich KEIN ready - das entscheidet NUR die Faehigkeitsprobe.
+        param($Shared)
+        $result = @{ ok = $false; path = ''; version = ''; error = '' }
+        $root = ''
+        $folder = ''
+        try { $root = [string]$Shared.MeshRoot } catch {}
+        try { $folder = [string]$Shared.BlenderFolder } catch {}
+        if ([string]::IsNullOrWhiteSpace($root) -or [string]::IsNullOrWhiteSpace($folder)) {
+            $result.error = 'Mesh-/Blender-Ordner der Bridge ist unbekannt.'
+            return $result
+        }
+        $logPath = Join-Path $root 'blender-install.log'
+        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+        try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12 } catch {}
+        try {
+            if (-not (Test-Path -LiteralPath $root)) { [void](New-Item -ItemType Directory -Path $root -Force) }
+            if (-not (Test-Path -LiteralPath $folder)) { [void](New-Item -ItemType Directory -Path $folder -Force) }
+        } catch {}
+        Write-BridgeLog -Shared $Shared -Text 'Blender-Installation gestartet (portables ZIP von download.blender.org, kein Admin).'
+        $urls = Get-BlenderDownloadCandidates
+        $zipPath = Join-Path $folder 'blender-portable.zip'
+        $downloaded = $false
+        $usedUrl = ''
+        foreach ($url in $urls) {
+            Set-BlenderState -Shared $Shared -State 'installing' -Message ('Blender wird heruntergeladen … (' + [string]$url + ')') -Percent 0 -Source 'download' -InstallStartedAt ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+            try {
+                try { [System.IO.File]::AppendAllText($logPath, ((Get-Date).ToString('u') + ' Download: ' + [string]$url) + [Environment]::NewLine, $utf8NoBom) } catch {}
+                if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue }
+                $client = [System.Net.WebClient]::new()
+                $expected = [int64]0
+                try {
+                    $head = [System.Net.HttpWebRequest]::Create([string]$url)
+                    $head.Method = 'HEAD'
+                    $head.Timeout = 20000
+                    $response = $head.GetResponse()
+                    $expected = [int64]$response.ContentLength
+                    $response.Close()
+                } catch { $expected = 0 }
+                $task = $client.DownloadFileTaskAsync([string]$url, $zipPath)
+                while (-not $task.IsCompleted) {
+                    [System.Threading.Thread]::Sleep(500)
+                    $percent = -1
+                    try {
+                        $size = [int64]0
+                        if (Test-Path -LiteralPath $zipPath) { $size = [int64](Get-Item -LiteralPath $zipPath).Length }
+                        if ($expected -gt 0) { $percent = [int]([Math]::Min(99, [Math]::Floor($size * 100 / $expected))) } else { $percent = -1 }
+                    } catch { $percent = -1 }
+                    if ($percent -ge 0) {
+                        Set-BlenderState -Shared $Shared -State 'installing' -Message ('Blender wird heruntergeladen … ' + [string]$percent + ' %') -Percent $percent -Source 'download'
+                    }
+                }
+                if ($task.IsFaulted) { throw $task.Exception.GetBaseException() }
+                try { $client.Dispose() } catch {}
+                if (-not (Test-Path -LiteralPath $zipPath)) { throw 'Die Datei wurde nicht gespeichert.' }
+                $zipBytes = [int64](Get-Item -LiteralPath $zipPath).Length
+                if ($zipBytes -lt 50000000) { throw ('Die Datei ist zu klein fuer ein Blender-ZIP (' + [string]$zipBytes + ' Bytes).') }
+                $zipOk = $true
+                try {
+                    $head = [System.IO.File]::OpenRead($zipPath)
+                    $magic = New-Object byte[] 2
+                    [void]$head.Read($magic, 0, 2)
+                    $head.Close()
+                    if (-not ($magic[0] -eq 80 -and $magic[1] -eq 75)) { $zipOk = $false }
+                } catch {}
+                if (-not $zipOk) { throw 'Die Datei ist kein ZIP-Archiv.' }
+                Set-BlenderState -Shared $Shared -State 'installing' -Message 'Pruefsumme wird geprueft …' -Percent 99 -Source 'download'
+                $hashNote = Test-BlenderZipHash -Url ([string]$url) -File $zipPath
+                if ([bool]$hashNote.ok -ne $true) { throw 'Die Pruefsumme des Downloads stimmt nicht - der Download wird verworfen.' }
+                try { [System.IO.File]::AppendAllText($logPath, ((Get-Date).ToString('u') + ' ' + [string]$hashNote.note) + [Environment]::NewLine, $utf8NoBom) } catch {}
+                $downloaded = $true
+                $usedUrl = [string]$url
+                break
+            } catch {
+                try { [System.IO.File]::AppendAllText($logPath, ((Get-Date).ToString('u') + ' Download fehlgeschlagen (' + [string]$url + '): ' + $_.Exception.Message) + [Environment]::NewLine, $utf8NoBom) } catch {}
+                Set-BlenderState -Shared $Shared -State 'installing' -Message 'Download fehlgeschlagen - naechste Quelle wird versucht …' -Percent 0 -Detail $_.Exception.Message -Source 'download'
+            }
+        }
+        if (-not $downloaded) {
+            # Letzter Weg: winget (braucht eine Bestaetigung von Windows).
+            Set-BlenderState -Shared $Shared -State 'installing' -Message 'Download nicht moeglich - winget wird versucht …' -Percent 0 -Source 'winget'
+            try {
+                $winget = Get-Command winget -ErrorAction SilentlyContinue
+                if ($winget) {
+                    Write-BridgeLog -Shared $Shared -Text 'winget install BlenderFoundation.Blender.LTS'
+                    $wingetOut = & $winget.Source install --id BlenderFoundation.Blender.LTS -e --silent --accept-source-agreements --accept-package-agreements 2>&1
+                    Write-BridgeLog -Shared $Shared -Text ('winget: ' + ([string]($wingetOut -join ' ')))
+                    $machinePath = [System.Environment]::GetEnvironmentVariable('Path', 'Machine')
+                    $userPath = [System.Environment]::GetEnvironmentVariable('Path', 'User')
+                    if (-not [string]::IsNullOrWhiteSpace($machinePath) -or -not [string]::IsNullOrWhiteSpace($userPath)) { $env:Path = ([string]$machinePath + ';' + [string]$userPath) }
+                    $exe = $null
+                    foreach ($pattern in @((Join-Path ${env:ProgramFiles} 'Blender Foundation\Blender*'), (Join-Path ${env:LOCALAPPDATA} 'Programs\Blender Foundation\Blender*'))) {
+                        try {
+                            foreach ($sub in (Get-ChildItem -Path $pattern -Directory -ErrorAction SilentlyContinue)) {
+                                $hit = Join-Path $sub.FullName 'blender.exe'
+                                if (Test-Path -LiteralPath $hit) { $exe = $hit; break }
+                            }
+                        } catch {}
+                        if ($exe) { break }
+                    }
+                    if ($exe) {
+                        $quick = Test-BlenderQuick -Path $exe
+                        if ($quick.ok) {
+                            $result.ok = $true
+                            $result.path = [string]$exe
+                            $result.version = [string]$quick.version
+                            Set-BlenderState -Shared $Shared -State 'installing' -Message 'Blender ist per winget installiert - die echte Faehigkeitsprobe laeuft gleich.' -Percent 99 -Path ([string]$exe) -Version ([string]$quick.version) -Source 'winget' -Detail 'Ueber winget installiert.'
+                            return $result
+                        }
+                    }
+                } else {
+                    Write-BridgeLog -Shared $Shared -Text 'winget ist nicht vorhanden.'
+                }
+            } catch {
+                Write-BridgeLog -Shared $Shared -Text ('winget fehlgeschlagen: ' + $_.Exception.Message)
+            }
+            $result.error = 'Blender konnte nicht automatisch installiert werden (Download + winget). Siehe blender-install.log im Bridge-Ordner.'
+            return $result
+        }
+        Set-BlenderState -Shared $Shared -State 'installing' -Message 'Blender wird entpackt … (das dauert 1-2 Minuten)' -Percent 99 -Source 'download'
+        try {
+            $extractOk = $false
+            try {
+                Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+                [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $folder)
+                $extractOk = $true
+            } catch {
+                Write-BridgeLog -Shared $Shared -Text ('Schnelles Entpacken nicht moeglich (' + $_.Exception.Message + ') - Expand-Archive wird benutzt.')
+            }
+            if (-not $extractOk) { Expand-Archive -LiteralPath $zipPath -DestinationPath $folder -Force }
+        } catch {
+            $result.error = ('Blender wurde heruntergeladen, konnte aber nicht entpackt werden: ' + $_.Exception.Message)
+            return $result
+        }
+        $exe = Get-BlenderExeInFolder $folder
+        if (-not $exe) {
+            $result.error = 'Im entpackten Archiv wurde blender.exe nicht gefunden.'
+            return $result
+        }
+        $quick = Test-BlenderQuick -Path $exe
+        if (-not $quick.ok) {
+            $result.error = ('Die entpackte blender.exe ist unbrauchbar: ' + [string]$quick.error)
+            return $result
+        }
+        try { if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue } } catch {}
+        Write-BridgeLog -Shared $Shared -Text ('Blender entpackt: ' + [string]$exe + ' (Version ' + [string]$quick.version + ', Quelle ' + [string]$usedUrl + ').')
+        $result.ok = $true
+        $result.path = [string]$exe
+        $result.version = [string]$quick.version
+        return $result
+    }
+
+    function Start-BlenderStepRunspace {
+        # EIN Hintergrund-Runspace fuer Schritt 4: suchen -> Version -> (bei
+        # Bedarf installieren) -> ECHTE Faehigkeitsprobe. Diese Funktion liegt
+        # in der EINEN Hilfs-Quelle, damit auch der Handler-Runspace sie
+        # benutzen kann (dort gibt es keine $script:-Funktionen des
+        # Hauptprogramms - die 7.4.0-Phantom-Funktionen).
+        param($Shared)
+        try {
+            $ps = [PowerShell]::Create()
+            [void]$ps.AddScript([string]$Shared.BlenderStepScriptText).AddArgument($Shared)
+            [void]$ps.BeginInvoke()
+            return $true
+        } catch {
+            Write-BridgeLog -Shared $Shared -Text ('Blender-Schritt 4 konnte nicht gestartet werden: ' + $_.Exception.Message)
+            Set-BlenderState -Shared $Shared -State 'failed' -Detail ('Der Pruef-Thread konnte nicht gestartet werden: ' + $_.Exception.Message) -Message 'Blender konnte nicht geprueft werden - der Mesh-Bau ist AUS, alles andere laeuft normal.' -Enabled $false -Percent 0 -Probe 'failed' -GateResolved $true
+            return $false
+        }
+    }
+
+    function Start-BlenderRecheck {
+        # "Blender pruefen" (Zeile 4 im Startbildschirm, blender_status
+        # action=check) wiederholt die ECHTE Faehigkeitsprobe - NICHT nur das
+        # Lesen der Version. Antwortet sofort; die Arbeit laeuft im
+        # Hintergrund-Runspace.
+        param($Shared)
+        $state = ''
+        try { $state = [string]$Shared.BlenderState.state } catch {}
+        if ($state -in @('searching', 'installing', 'probing')) { return $false }
+        Set-BlenderState -Shared $Shared -State 'searching' -Message 'Blender wird erneut geprueft (echte Faehigkeitsprobe) ...' -Percent 0 -GateResolved $false -ResetProbe
+        Write-BridgeLog -Shared $Shared -Text 'Blender-Pruefung angefordert - Suche, Version und Faehigkeitsprobe laufen im Hintergrund-Runspace.'
+        return (Start-BlenderStepRunspace -Shared $Shared)
+    }
+
+    function Get-BlenderReport {
+        # Kompakter Zustand fuer Werkzeuge und Fenster (ehrlich, ohne Behauptung).
+        param($Shared)
+        $map = $Shared.BlenderState
+        $blenderFolder = ''
+        $meshFolder = ''
+        try { $blenderFolder = [string]$Shared.BlenderFolder } catch {}
+        try { $meshFolder = [string]$Shared.MeshRoot } catch {}
+        $report = @{
+            state = [string]$map.state
+            enabled = [bool]$map.enabled
+            path = [string]$map.path
+            version = [string]$map.version
+            detail = [string]$map.detail
+            message = [string]$map.message
+            percent = [int]$map.percent
+            source = [string]$map.source
+            probe = [string]$map.probe
+            gateResolved = [bool]$map.gateResolved
+            updatedAt = [long]$map.updatedAt
+            folder = $blenderFolder
+            meshFolder = $meshFolder
+            installing = ([string]$map.state -eq 'installing')
+            probing = ([string]$map.state -eq 'probing')
+        }
+        if ($report.enabled -ne $true) {
+            $report.hint = 'Mesh-Bau ist deaktiviert, solange Blender nicht bereit ist. Die Polygon-Wedge-Wege (build_polygon_model/build_assembly) funktionieren unabhaengig davon weiter.'
+        }
+        return $report
+    }
 }
 
-function Get-BlenderDownloadCandidates {
-    # Gepinnte LTS-Kandidaten zuerst (4.5 LTS laeuft auch auf aelterer
-    # Hardware), danach die Verzeichnisliste der offiziellen Quelle. Immer
-    # portables ZIP - kein MSI, kein UAC, kein Admin.
-    $list = New-Object System.Collections.Generic.List[string]
-    foreach ($patch in @('4.5.12', '4.5.11', '4.5.10', '4.5.9', '4.5.8')) {
-        $list.Add(('https://download.blender.org/release/Blender4.5/blender-' + $patch + '-windows-x64.zip'))
-    }
-    try {
-        $listing = (Invoke-WebRequest -Uri 'https://download.blender.org/release/Blender4.5/' -UseBasicParsing -TimeoutSec 25).Content
-        $found = [System.Text.RegularExpressions.Regex]::Matches([string]$listing, 'blender-(4\.5\.[0-9]+)-windows-x64\.zip')
-        $rounds = New-Object System.Collections.Generic.List[string]
-        foreach ($hit in $found) {
-            $name = [string]$hit.Groups[1].Value
-            if (-not $rounds.Contains($name)) { $rounds.Add($name) }
-        }
-        $sorted = $rounds.ToArray() | Sort-Object { [int]($_ -split '\.')[2] } -Descending
-        foreach ($name in $sorted) {
-            $url = ('https://download.blender.org/release/Blender4.5/blender-' + $name + '-windows-x64.zip')
-            if (-not $list.Contains($url)) { $list.Add($url) }
-        }
-    } catch {
-        Write-RuntimeLog ('Blender-Verzeichnisliste nicht erreichbar: ' + $_.Exception.Message)
-    }
-    return ,$list
-}
-
-function Test-BlenderZipHash {
-    # Wenn die offizielle .sha256-Datei erreichbar ist, wird der Download
-    # wirklich geprueft; sonst wird das ehrlich im Protokoll vermerkt.
-    param([string]$Url, [string]$File)
-    try {
-        $expected = ([string](Invoke-WebRequest -Uri ($Url + '.sha256') -UseBasicParsing -TimeoutSec 20).Content).Trim()
-        $expectedHash = ($expected -split '\s+')[0]
-        if ([string]::IsNullOrWhiteSpace($expectedHash)) { return @{ checked = $false; ok = $true; note = 'Keine Pruefsumme in der .sha256-Datei gefunden.' } }
-        $actual = (Get-FileHash -LiteralPath $File -Algorithm SHA256).Hash
-        if ($actual -eq $expectedHash.ToUpperInvariant()) { return @{ checked = $true; ok = $true; note = 'SHA-256 stimmt mit der offiziellen Pruefsumme ueberein.' } }
-        return @{ checked = $true; ok = $false; note = 'SHA-256 stimmt NICHT mit der offiziellen Pruefsumme ueberein.' }
-    } catch {
-        return @{ checked = $false; ok = $true; note = ('Keine offizielle Pruefsumme erreichbar (' + $_.Exception.Message + ') - der Download wurde nur strukturell (ZIP) und danach mit der Faehigkeitsprobe geprueft.') }
-    }
-}
-
-function Start-BlenderInstall {
-    # Vollautomatische Installation im HINTERGRUND (eigener Runspace): die
-    # Bridge bleibt bedienbar, der Splash zeigt den Fortschritt. Nur der
-    # Tunnel wartet auf dieses Ergebnis (Schritt 4 vor Schritt 4...).
-    if ([string]$script:Shared.BlenderState.state -eq 'installing') { return }
-    Set-BlenderState -State 'installing' -Message 'Blender wird heruntergeladen (portables ZIP, ohne Admin) ...' -Percent 0 -Source 'download' -InstallStartedAt ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
-    Write-RuntimeLog 'Blender-Installation gestartet (portables ZIP von download.blender.org, kein Admin).'
-    try {
-        $ps = [PowerShell]::Create()
-        [void]$ps.AddScript([string]$script:BridgeBlenderInstallScript).AddArgument($script:Shared)
-        [void]$ps.BeginInvoke()
-    } catch {
-        Set-BlenderState -State 'failed' -Detail 'Der Installations-Thread konnte nicht gestartet werden.' -Message 'Blender wurde nicht gefunden und konnte nicht installiert werden.' -Enabled $false -Percent 0
-        Write-RuntimeLog ('Blender-Installation konnte nicht gestartet werden: ' + $_.Exception.Message)
-    }
+# Version 7.4.1: EINE Hilfs-Quelle laden - das Hauptprogramm benutzt GENAU
+# dieselben Blender-Helfer wie jeder Runspace (keine Phantom-Funktionen).
+try { . ([scriptblock]::Create([string]$script:BridgeBlenderTools)) } catch {
+    try { Write-RuntimeLog ('Blender-Helfer konnten nicht geladen werden: ' + $_.Exception.Message) } catch {}
 }
 
 function Start-BlenderStartupGate {
-    # Schritt 4 des Starts. Ist Blender vorhanden, geht es SOFORT weiter
-    # (schnelle Versionspruefung); fehlt er, wartet der Tunnel auf die
-    # Installation. Ein Fehlschlag macht die Zeile rot, deaktiviert den
-    # Mesh-Bau und laesst die Bridge normal weiterlaufen.
+    # Schritt 4 des Starts. Suche + Version + ECHTE Faehigkeitsprobe laufen in
+    # EINEM Hintergrund-Runspace (in 7.4.0 liefen sie im UI-Thread und froren
+    # das Fenster ein). Der Tunnel startet erst nach dem Endzustand
+    # (Complete-BlenderStartupGate im UI-Takt). Ein Fehlschlag macht die Zeile
+    # rot, deaktiviert den Mesh-Bau und laesst alles andere weiterlaufen -
+    # KEIN Start-Blocker.
     Set-StartupStage 'Blender-Pruefung (Schritt 4)'
-    $script:BlenderGatePending = $false
-    $script:BlenderSkippedByUser = $false
-    $path = Get-BlenderPath
-    if ($path) {
-        $quick = Test-BlenderQuick -Path $path
-        if ($quick.ok) {
-            Set-BlenderState -State 'ready' -Path $path -Version $quick.version -Detail 'Vorhandene Blender-Installation gefunden und geprueft.' -Message ('Blender ' + [string]$quick.version + ' ist bereit.') -Percent 100 -Source 'vorhanden' -Enabled $true -GateResolved $true
-            Write-RuntimeLog ('Blender gefunden: ' + $path + ' (Version ' + [string]$quick.version + ').')
-            try { $capPs = [PowerShell]::Create(); [void]$capPs.AddScript([string]$script:BridgeBlenderProbeScript).AddArgument($script:Shared); [void]$capPs.BeginInvoke() } catch {}
-            return $true
-        }
-        Write-RuntimeLog ('Blender gefunden, aber unbrauchbar: ' + [string]$quick.error)
-        Set-BlenderState -State 'missing' -Path $path -Detail ('Gefundene Datei ist unbrauchbar: ' + [string]$quick.error) -Message 'Die gefundene Blender-Datei ist unbrauchbar - es wird die offizielle Version geladen.' -Percent 0
-    } else {
-        Set-BlenderState -State 'missing' -Message 'Blender ist nicht installiert - die Bridge laedt die offizielle portable Version.' -Percent 0
-        Write-RuntimeLog 'Blender wurde nicht gefunden - automatische Installation startet.'
-    }
     $script:BlenderGatePending = $true
+    $script:BlenderSkippedByUser = $false
     $script:BlenderGateDeadline = (Get-Date).AddMinutes(12)
     $script:BlenderAttempts = [int]$script:BlenderAttempts + 1
-    Start-BlenderInstall
+    Set-BlenderState -Shared $script:Shared -State 'searching' -Message 'Blender wird gesucht und geprueft (echte Faehigkeitsprobe) ...' -Percent 0 -ResetProbe
+    Write-RuntimeLog 'Schritt 4: Blender-Suche, Version und Faehigkeitsprobe laufen im Hintergrund (Zeitlimit Suchen/Pruefen 180 s, Gesamt-Gate 12 min).'
+    [void](Start-BlenderStepRunspace -Shared $script:Shared)
     return $false
 }
 
@@ -25257,7 +25556,7 @@ function Complete-BlenderStartupGate {
     $timedOut = ((Get-Date) -gt $script:BlenderGateDeadline)
     if (-not $terminal -and -not $timedOut) { return }
     if ($timedOut -and -not $terminal) {
-        Set-BlenderState -State 'failed' -Detail 'Zeitlimit erreicht - der Download/Installation wurde uebersprungen.' -Message 'Blender konnte nicht rechtzeitig bereitgestellt werden. Der Mesh-Bau ist vorerst AUS, alles andere laeuft normal.' -Enabled $false -Percent 0
+        Set-BlenderState -Shared $script:Shared -State 'failed' -Detail 'Zeitlimit erreicht - der Blender-Schritt wurde beendet.' -Message 'Blender konnte nicht rechtzeitig bereitgestellt werden. Der Mesh-Bau ist vorerst AUS, alles andere laeuft normal.' -Enabled $false -Percent 0 -Probe 'failed' -GateResolved $true
         Write-RuntimeLog 'Blender-Schritt 4 im Zeitlimit beendet - Mesh-Bau vorerst deaktiviert, Start laeuft weiter.'
     }
     $script:BlenderGatePending = $false
@@ -25265,8 +25564,9 @@ function Complete-BlenderStartupGate {
 }
 
 function Update-BlenderSplashRow {
-    # Zeile 4 im Startbildschirm: gruen = bereit, amber = pruefen/installieren,
-    # rot = fehlgeschlagen (Mesh-Bau aus), grau = uebersprungen.
+    # Zeile 4 im Startbildschirm: gruen = bereit (NUR nach der Probe), amber =
+    # suchen/pruefen/installieren, rot = fehlgeschlagen (Mesh-Bau aus), grau =
+    # uebersprungen. Ein Klick auf den Zustandstext wiederholt die ECHTE Probe.
     param($Row)
     $dot = $null
     $state = $null
@@ -25303,6 +25603,12 @@ function Update-BlenderSplashRow {
         $state.Foreground = Get-Brush '#FFD9A0'
         return
     }
+    if ($mode -eq 'searching' -or $mode -eq 'probing') {
+        if ($dot) { Set-Dot $dot $script:ColorAmber }
+        if ($mode -eq 'probing') { Set-Text $state 'Wird geprüft …' } else { Set-Text $state 'Wird gesucht …' }
+        $state.Foreground = Get-Brush '#9AA9CE'
+        return
+    }
     if ($null -ne $Row) {
         if ($dot) { Set-Dot $dot $script:ColorAmber }
         Set-Text $state 'Wird geprüft …'
@@ -25312,31 +25618,6 @@ function Update-BlenderSplashRow {
     if ($dot) { Set-Dot $dot $script:ColorGray }
     Set-Text $state 'Wartet …'
     $state.Foreground = Get-Brush '#9AA9CE'
-}
-
-function Get-BlenderReport {
-    # Kompakter Zustand fuer Werkzeuge und Fenster (ehrlich, ohne Behauptung).
-    $map = $script:Shared.BlenderState
-    $report = @{
-        state = [string]$map.state
-        enabled = [bool]$map.enabled
-        path = [string]$map.path
-        version = [string]$map.version
-        detail = [string]$map.detail
-        message = [string]$map.message
-        percent = [int]$map.percent
-        source = [string]$map.source
-        probe = [string]$map.probe
-        updatedAt = [long]$map.updatedAt
-        folder = [string]$script:BlenderFolder
-        meshFolder = [string]$script:MeshRoot
-        installing = ([string]$map.state -eq 'installing')
-        gatePending = [bool]$script:BlenderGatePending
-    }
-    if ($report.enabled -ne $true) {
-        $report.hint = 'Mesh-Bau ist deaktiviert, solange Blender nicht bereit ist. Die Polygon-Wedge-Wege (build_polygon_model/build_assembly) funktionieren unabhaengig davon weiter.'
-    }
-    return $report
 }
 
 
@@ -25534,8 +25815,9 @@ $script:BridgeMeshToolkit = {
             foreach ($pair in $Shared.MeshRegistry.GetEnumerator()) {
                 try { $rows.Add(($pair.Value | ConvertFrom-Json)) } catch {}
             }
-            $payload = @{ registryVersion = '7.4.0'; updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds(); slots = $rows.ToArray() }
-            ($payload | ConvertTo-Json -Depth 8).ToString() | Set-Content -LiteralPath $path -Encoding UTF8 -ErrorAction SilentlyContinue
+            $payload = @{ registryVersion = '7.4.1'; updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds(); slots = $rows.ToArray() }
+            # Version 7.4.1: BOM-FREI schreiben (WriteAllText statt Set-Content).
+            [System.IO.File]::WriteAllText($path, [string]($payload | ConvertTo-Json -Depth 8), (New-Object System.Text.UTF8Encoding($false)))
         } catch {}
     }
 
@@ -25563,7 +25845,10 @@ $script:BridgeMeshToolkit = {
         $jobFolder = Join-Path $root $jobId
         if (-not (Test-Path -LiteralPath $jobFolder)) { [void](New-Item -ItemType Directory -Path $jobFolder -Force) }
         $runnerPath = Join-Path $jobFolder 'runner.py'
-        Set-Content -LiteralPath $runnerPath -Value ([string]$Shared.MeshRunnerText) -Encoding UTF8
+        # Version 7.4.1: BOM-FREI schreiben! Set-Content -Encoding UTF8 setzt
+        # im Windows PowerShell 5.1 ein BOM - genau das brach den Mesh-Bau
+        # (SyntaxError: invalid non-printable character U+FEFF).
+        [System.IO.File]::WriteAllText($runnerPath, [string]$Shared.MeshRunnerText, (New-Object System.Text.UTF8Encoding($false)))
         $slots = New-Object System.Collections.Generic.List[object]
         $index = 0
         foreach ($slot in $Spec.slots) {
@@ -25573,7 +25858,7 @@ $script:BridgeMeshToolkit = {
             $slotKey = ($jobId + ':' + $name)
             $scriptPath = Join-Path $jobFolder ($name + '.py')
             $objPath = Join-Path $jobFolder ($name + '.obj')
-            Set-Content -LiteralPath $scriptPath -Value ([string]$slot.script) -Encoding UTF8
+            [System.IO.File]::WriteAllText($scriptPath, [string]$slot.script, (New-Object System.Text.UTF8Encoding($false)))
             $slots.Add([pscustomobject]@{
                 key = $slotKey
                 name = $name
@@ -25941,6 +26226,130 @@ $script:BridgeMeshToolkit = {
         Save-MeshRegistryFile $Shared
         return ($applied -gt 0)
     }
+
+    function Remove-MeshSlotFiles {
+        # Weniger Datenmuell (Version 7.4.1): OBJ + MTL + Slot-Skript loeschen.
+        # Den Job-Ordner nur, wenn danach NICHTS mehr auf den Upload wartet.
+        param($Shared, [string]$SlotKey, [bool]$RemoveSlot = $false)
+        $result = @{ ok = $false; filesRemoved = 0; folderRemoved = $false; slotRemoved = $false; jobId = ''; error = '' }
+        try {
+            $slot = Get-MeshSlotData $Shared $SlotKey
+            if ($null -eq $slot) { $result.error = 'Slot unbekannt.'; return $result }
+            $result.jobId = [string]$slot.jobId
+            $paths = New-Object System.Collections.Generic.List[string]
+            try {
+                if (-not [string]::IsNullOrWhiteSpace([string]$slot.objPath)) {
+                    $paths.Add([string]$slot.objPath)
+                    $paths.Add([System.IO.Path]::ChangeExtension([string]$slot.objPath, '.mtl'))
+                }
+            } catch {}
+            try { if (-not [string]::IsNullOrWhiteSpace([string]$slot.scriptPath)) { $paths.Add([string]$slot.scriptPath) } } catch {}
+            foreach ($path in $paths) {
+                try {
+                    if (Test-Path -LiteralPath $path) {
+                        Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+                        if (-not (Test-Path -LiteralPath $path)) { $result.filesRemoved = [int]$result.filesRemoved + 1 }
+                    }
+                } catch { $result.error = $_.Exception.Message }
+            }
+            if ($RemoveSlot) {
+                $discard = $null
+                if ($Shared.MeshRegistry.TryRemove([string]$SlotKey, [ref]$discard)) { $result.slotRemoved = $true }
+            }
+            # Job-Ordner: nur wenn kein Slot dieses Jobs mehr wartet.
+            $job = Get-MeshJobData $Shared ([string]$result.jobId)
+            if ($null -ne $job) {
+                $openLeft = 0
+                foreach ($other in (Get-MeshSlotsBySession $Shared ([string]$job.sessionId) ([string]$job.id))) {
+                    $otherState = ''
+                    try { $otherState = [string]$other.state } catch {}
+                    if ($otherState -in @('obj', 'applying', 'dropping', 'pending', 'running', 'measured')) { $openLeft = $openLeft + 1 }
+                }
+                if ($RemoveSlot) {
+                    # Stornierte Slots auch aus der Job-Kopie nehmen (mesh_status
+                    # liest das Register, der Job bleibt sonst mit Altstand stehen).
+                    $kept = New-Object System.Collections.Generic.List[object]
+                    foreach ($entry in @($job.slots)) {
+                        $entryKey = ''
+                        try { $entryKey = [string]$entry.key } catch {}
+                        if ($entryKey -ne [string]$SlotKey) { $kept.Add($entry) }
+                    }
+                    $job.slots = $kept.ToArray()
+                    Save-MeshJobData $Shared $job
+                }
+                if ($openLeft -eq 0) {
+                    $folder = ''
+                    try { $folder = [string]$job.folder } catch {}
+                    if (-not [string]::IsNullOrWhiteSpace($folder) -and (Test-Path -LiteralPath $folder)) {
+                        try { Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+                        if (-not (Test-Path -LiteralPath $folder)) { $result.folderRemoved = $true }
+                    }
+                }
+            }
+            $result.ok = $true
+            return $result
+        } catch {
+            $result.error = $_.Exception.Message
+            return $result
+        }
+    }
+
+    function Remove-MeshAppliedFileSets {
+        # Nach erfolgreichem Einsetzen: je eingesetztem Slot des Jobs Datei +
+        # Slot-Skript loeschen (der Job-Ordner faellt mit, wenn nichts mehr
+        # wartet). Rueckgabe: Anzahl der aufgeraeumten Slots.
+        param($Shared, [string]$JobId)
+        $count = 0
+        foreach ($slot in (Get-MeshSlotsBySession $Shared '' $JobId)) {
+            $slotState = ''
+            try { $slotState = [string]$slot.state } catch {}
+            if ($slotState -ne 'applied') { continue }
+            $cleanup = Remove-MeshSlotFiles $Shared ([string]$slot.slotKey) $false
+            if ([bool]$cleanup.ok) { $count = $count + 1 }
+        }
+        Save-MeshRegistryFile $Shared
+        return $count
+    }
+
+    function Update-MeshRegistryFromDropResult {
+        # Ergebnis von mesh_drop verbuchen: stornierte Slots aus dem Register
+        # nehmen und Dateien/Ordner aufraeumen. Steht kein Erfolg im Ergebnis,
+        # bleibt der Slot ehrlich auf 'drop_failed' mit der ECHTEN Meldung.
+        param($Shared, [string]$JobId, $ResultJson)
+        $parsed = $null
+        try { if (-not [string]::IsNullOrWhiteSpace([string]$ResultJson)) { $parsed = [string]$ResultJson | ConvertFrom-Json } } catch {}
+        if ($null -eq $parsed) { return $false }
+        $droppedKeys = New-Object System.Collections.Generic.List[string]
+        try {
+            foreach ($entry in @($parsed.dropped)) {
+                if ($null -eq $entry) { continue }
+                $key = [string]$entry.key
+                if ([string]::IsNullOrWhiteSpace($key)) { continue }
+                if (-not $droppedKeys.Contains($key)) { $droppedKeys.Add($key) }
+            }
+        } catch {}
+        $failedMessage = ''
+        try {
+            foreach ($entry in @($parsed.failed)) {
+                if ($null -eq $entry) { continue }
+                if (-not [string]::IsNullOrWhiteSpace([string]$entry.error)) { $failedMessage = [string]$entry.error; break }
+            }
+        } catch {}
+        foreach ($key in $droppedKeys) {
+            [void](Remove-MeshSlotFiles $Shared $key $true)
+        }
+        if ($droppedKeys.Count -eq 0) {
+            foreach ($slot in (Get-MeshSlotsBySession $Shared '' $JobId)) {
+                $slotState = ''
+                try { $slotState = [string]$slot.state } catch {}
+                if ($slotState -ne 'dropping') { continue }
+                Set-MeshSlotField $Shared ([string]$slot.slotKey) 'state' 'drop_failed'
+                if (-not [string]::IsNullOrWhiteSpace($failedMessage)) { Set-MeshSlotField $Shared ([string]$slot.slotKey) 'error' $failedMessage }
+            }
+        }
+        Save-MeshRegistryFile $Shared
+        return ($droppedKeys.Count -gt 0)
+    }
 }
 
 # ----------------------------------------------------------------------------
@@ -26073,8 +26482,14 @@ def main():
     import bpy  # erst hier laden: die Szene wird danach leer aufgebaut
     bpy.ops.wm.read_factory_settings(use_empty=True)
     source_path = options["script"]
-    with open(source_path, "r", encoding="utf-8", errors="replace") as handle:
+    # Version 7.4.1: BOM-tolerant lesen. PowerShell 5.1 hatte die Datei in
+    # 7.4.0 per Set-Content -Encoding UTF8 mit BOM geschrieben - Python
+    # stoppte deshalb mit "SyntaxError: invalid non-printable character
+    # U+FEFF" in Zeile 1. utf-8-sig UND der Strip unten fangen beides ab.
+    with open(source_path, "r", encoding="utf-8-sig", errors="replace") as handle:
         source = handle.read()
+    if source.startswith("\ufeff"):
+        source = source[1:]
     namespace = {"__name__": "__arena_slot__", "__file__": source_path}
     exec(compile(source, source_path, "exec"), namespace)
     arena_export(options["out"])
@@ -26089,311 +26504,112 @@ main()
 
 
 # ----------------------------------------------------------------------------
-# Der Blender-Installer: eigener Runspace, laedt das portable ZIP der
-# offiziellen Quelle (kein Admin, kein UAC), prueft die Pruefsumme (wenn die
-# .sha256-Datei erreichbar ist), entpackt und MISST danach blender.exe.
+# Schritt 4 in EINEM Hintergrund-Runspace (Version 7.4.1): suchen -> Version ->
+# (bei Bedarf installieren) -> ECHTE Faehigkeitsprobe. Er laedt GENAU die eine
+# Hilfs-Quelle ($Shared.BlenderToolsText) - in 7.4.0 fehlten den Runspaces die
+# Helferfunktionen (Phantom-Funktionen), ihre Protokollzeilen verschwanden.
+# NUR die Probe setzt ready; jeder Fehler endet ehrlich als failed.
 # ----------------------------------------------------------------------------
-$script:BridgeBlenderInstallScript = {
+$script:BridgeBlenderStepScript = {
     param($Shared)
-    $state = $Shared.BlenderState
-    $logPath = Join-Path ([string]$Shared.MeshRoot) 'blender-install.log'
-    function Write-InstallLog {
-        param([string]$Text)
-        try { Add-Content -LiteralPath $logPath -Value ((Get-Date).ToString('u') + ' ' + $Text) -Encoding UTF8 } catch {}
-    }
-    function Set-InstallState {
-        param([string]$State, [string]$Message, [int]$Percent, [string]$Detail, [bool]$Enabled, [string]$Path, [string]$Version)
-        try {
-            if (-not [string]::IsNullOrWhiteSpace($State)) { $state.state = $State }
-            if (-not [string]::IsNullOrWhiteSpace($Message)) { $state.message = $Message }
-            if ($Percent -ge 0) { $state.percent = [int]$Percent }
-            if (-not [string]::IsNullOrWhiteSpace($Detail)) { $state.detail = $Detail }
-            if (-not [string]::IsNullOrWhiteSpace($Path)) { $state.path = $Path }
-            if (-not [string]::IsNullOrWhiteSpace($Version)) { $state.version = $Version }
-            $state.enabled = $Enabled
-            $state.updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-        } catch {}
-    }
-    function Find-Exe {
-        param([string]$Folder)
-        if ([string]::IsNullOrWhiteSpace($Folder)) { return $null }
-        $direct = Join-Path $Folder 'blender.exe'
-        if (Test-Path -LiteralPath $direct) { return $direct }
-        try {
-            $hit = Get-ChildItem -LiteralPath $Folder -Filter 'blender.exe' -Recurse -Depth 3 -File -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($hit) { return $hit.FullName }
-        } catch {}
-        return $null
-    }
-    function Get-QuickVersion {
-        param([string]$Exe)
-        $result = @{ ok = $false; version = ''; error = '' }
-        try {
-            $psi = [System.Diagnostics.ProcessStartInfo]::new()
-            $psi.FileName = $Exe
-            $psi.Arguments = '--version'
-            $psi.UseShellExecute = $false
-            $psi.CreateNoWindow = $true
-            $psi.RedirectStandardOutput = $true
-            $psi.RedirectStandardError = $true
-            $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
-            $process = [System.Diagnostics.Process]::new()
-            $process.StartInfo = $psi
-            [void]$process.Start()
-            $outTask = $process.StandardOutput.ReadToEndAsync()
-            if (-not $process.WaitForExit(30000)) { try { $process.Kill() } catch {}; $result.error = 'blender.exe --version antwortete nicht.'; return $result }
-            $text = ''
-            try { if ($outTask.Wait(3000)) { $text = [string]$outTask.Result } } catch {}
-            try { $process.Dispose() } catch {}
-            $match = [System.Text.RegularExpressions.Regex]::Match($text, 'Blender\s+([0-9]+(?:\.[0-9]+){1,2})')
-            if (-not $match.Success) { $result.error = 'Versionsausgabe nicht lesbar.'; return $result }
-            $result.version = $match.Groups[1].Value
-            $result.ok = $true
-        } catch {
-            $result.error = $_.Exception.Message
-        }
-        return $result
-    }
+    try { . ([scriptblock]::Create([string]$Shared.BlenderToolsText)) } catch {}
     try {
-        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-    } catch {}
-    $root = [string]$Shared.MeshRoot
-    $folder = [string]$Shared.BlenderFolder
-    try {
-        if (-not (Test-Path -LiteralPath $root)) { [void](New-Item -ItemType Directory -Path $root -Force) }
-        if (-not (Test-Path -LiteralPath $folder)) { [void](New-Item -ItemType Directory -Path $folder -Force) }
-    } catch {}
-    Write-InstallLog 'Installation gestartet.'
-    $urls = New-Object System.Collections.Generic.List[string]
-    foreach ($patch in @('4.5.12', '4.5.11', '4.5.10', '4.5.9', '4.5.8')) {
-        $urls.Add(('https://download.blender.org/release/Blender4.5/blender-' + $patch + '-windows-x64.zip'))
-    }
-    try {
-        $listing = (Invoke-WebRequest -Uri 'https://download.blender.org/release/Blender4.5/' -UseBasicParsing -TimeoutSec 25).Content
-        $matches = [System.Text.RegularExpressions.Regex]::Matches([string]$listing, 'blender-(4\.5\.[0-9]+)-windows-x64\.zip')
-        $names = New-Object System.Collections.Generic.List[string]
-        foreach ($hit in $matches) {
-            $name = [string]$hit.Groups[1].Value
-            if (-not $names.Contains($name)) { $names.Add($name) }
-        }
-        $sorted = $names.ToArray() | Sort-Object { [int]($_ -split '\.')[2] } -Descending
-        foreach ($name in $sorted) {
-            $candidate = ('https://download.blender.org/release/Blender4.5/blender-' + $name + '-windows-x64.zip')
-            if (-not $urls.Contains($candidate)) { $urls.Add($candidate) }
-        }
-        Write-InstallLog ('Verzeichnisliste gelesen: ' + [string]$sorted.Count + ' Treffer.')
-    } catch {
-        Write-InstallLog ('Verzeichnisliste nicht erreichbar: ' + $_.Exception.Message)
-    }
-    $zipPath = Join-Path $folder 'blender-portable.zip'
-    $downloaded = $false
-    $usedUrl = ''
-    foreach ($url in $urls) {
-        Set-InstallState -State 'installing' -Message ('Blender wird heruntergeladen … (' + $url + ')') -Percent 0 -Detail '' -Enabled $false
-        try {
-            Write-InstallLog ('Download: ' + $url)
-            if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue }
-            $client = [System.Net.WebClient]::new()
-            $expected = [int64]0
-            try {
-                $head = [System.Net.HttpWebRequest]::Create($url)
-                $head.Method = 'HEAD'
-                $head.Timeout = 20000
-                $response = $head.GetResponse()
-                $expected = [int64]$response.ContentLength
-                $response.Close()
-            } catch { $expected = 0 }
-            $task = $client.DownloadFileTaskAsync($url, $zipPath)
-            while (-not $task.IsCompleted) {
-                [System.Threading.Thread]::Sleep(500)
-                $percent = -1
-                try {
-                    $size = [int64]0
-                    if (Test-Path -LiteralPath $zipPath) { $size = [int64](Get-Item -LiteralPath $zipPath).Length }
-                    if ($expected -gt 0) { $percent = [int]([Math]::Min(99, [Math]::Floor($size * 100 / $expected))) } else { $percent = -1 }
-                } catch { $percent = -1 }
-                if ($percent -ge 0) {
-                    Set-InstallState -State 'installing' -Message ('Blender wird heruntergeladen … ' + [string]$percent + ' %') -Percent $percent -Detail '' -Enabled $false
-                } else {
-                    Set-InstallState -State 'installing' -Message 'Blender wird heruntergeladen …' -Percent 0 -Detail '' -Enabled $false
-                }
-            }
-            if ($task.IsFaulted) { throw $task.Exception.GetBaseException() }
-            try { $client.Dispose() } catch {}
-            if (-not (Test-Path -LiteralPath $zipPath)) { throw 'Die Datei wurde nicht gespeichert.' }
-            $zipBytes = [int64](Get-Item -LiteralPath $zipPath).Length
-            Write-InstallLog ('Download fertig: ' + [string]$zipBytes + ' Bytes.')
-            if ($zipBytes -lt 50000000) { throw ('Die Datei ist zu klein fuer ein Blender-ZIP (' + [string]$zipBytes + ' Bytes).') }
-            try {
-                $head = [System.IO.File]::OpenRead($zipPath)
-                $magic = New-Object byte[] 2
-                [void]$head.Read($magic, 0, 2)
-                $head.Close()
-                if (-not ($magic[0] -eq 80 -and $magic[1] -eq 75)) { throw 'Die Datei ist kein ZIP-Archiv.' }
-            } catch [System.Management.Automation.RuntimeException] { throw }
-            catch { Write-InstallLog ('ZIP-Kopfpruefung uebersprungen: ' + $_.Exception.Message) }
-            Set-InstallState -State 'installing' -Message 'Pruefsumme wird geprueft …' -Percent 99 -Detail '' -Enabled $false
-            try {
-                $expectedHash = ([string](Invoke-WebRequest -Uri ($url + '.sha256') -UseBasicParsing -TimeoutSec 20).Content).Trim()
-                $expectedHash = ($expectedHash -split '\s+')[0]
-                if (-not [string]::IsNullOrWhiteSpace($expectedHash)) {
-                    $actual = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash
-                    if ($actual -ne $expectedHash.ToUpperInvariant()) { throw 'Die Pruefsumme des Downloads stimmt nicht - der Download wird verworfen.' }
-                    Write-InstallLog 'SHA-256 stimmt mit der offiziellen Pruefsumme ueberein.'
-                } else {
-                    Write-InstallLog 'Die offizielle .sha256-Datei hatte keinen Hash - nur strukturell geprueft.'
-                }
-            } catch [System.Management.Automation.RuntimeException] {
-                if ($_.Exception.Message -like '*Pruefsumme*') { throw }
-                Write-InstallLog ('Pruefsumme nicht pruefbar: ' + $_.Exception.Message)
-            } catch {
-                Write-InstallLog ('Pruefsumme nicht pruefbar: ' + $_.Exception.Message)
-            }
-            $downloaded = $true
-            $usedUrl = $url
-            break
-        } catch {
-            Write-InstallLog ('Download fehlgeschlagen (' + $url + '): ' + $_.Exception.Message)
-            Set-InstallState -State 'installing' -Message 'Download fehlgeschlagen - naechste Quelle wird versucht …' -Percent 0 -Detail $_.Exception.Message -Enabled $false
-        }
-    }
-    if ($downloaded) {
-        Set-InstallState -State 'installing' -Message 'Blender wird entpackt … (das dauert 1-2 Minuten)' -Percent 99 -Detail '' -Enabled $false
-        try {
-            $extractOk = $false
-            try {
-                Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
-                [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $folder)
-                $extractOk = $true
-            } catch {
-                Write-InstallLog ('Schnelles Entpacken nicht moeglich (' + $_.Exception.Message + ') - Expand-Archive wird benutzt.')
-            }
-            if (-not $extractOk) { Expand-Archive -LiteralPath $zipPath -DestinationPath $folder -Force }
-            Write-InstallLog 'Entpackt.'
-        } catch {
-            Set-InstallState -State 'failed' -Message 'Blender wurde heruntergeladen, konnte aber nicht entpackt werden.' -Percent 0 -Detail $_.Exception.Message -Enabled $false
-            Write-InstallLog ('Entpacken fehlgeschlagen: ' + $_.Exception.Message)
+        # Zeitlimit Suchen/Pruefen: 180 s (das Gesamt-Gate im UI-Takt: 12 min).
+        $searchStart = Get-Date
+        Set-BlenderState -Shared $Shared -State 'searching' -Message 'Blender wird gesucht ...' -Percent 0
+        $path = Get-BlenderPath -Shared $Shared
+        $quick = $null
+        if (-not [string]::IsNullOrWhiteSpace([string]$path)) { $quick = Test-BlenderQuick -Path $path }
+        if (((Get-Date) - $searchStart).TotalSeconds -gt 180) {
+            Set-BlenderState -Shared $Shared -State 'failed' -Detail 'Zeitlimit: Suchen/Pruefen brauchte laenger als 180 s.' -Message 'Blender konnte nicht rechtzeitig geprueft werden. Der Mesh-Bau ist AUS, alles andere laeuft normal.' -Enabled $false -Percent 0 -Probe 'failed' -GateResolved $true
+            Write-BridgeLog -Shared $Shared -Text 'Blender-Schritt 4 im Zeitlimit (Suchen/Pruefen 180 s) beendet.'
             return
         }
-        $exe = Find-Exe $folder
-        if (-not $exe) {
-            Set-InstallState -State 'failed' -Message 'Im entpackten Archiv wurde blender.exe nicht gefunden.' -Percent 0 -Detail 'Der Download war kein gueltiges Blender-Archiv.' -Enabled $false
-            Write-InstallLog 'blender.exe fehlt nach dem Entpacken.'
+        if (-not [string]::IsNullOrWhiteSpace([string]$path) -and $null -ne $quick -and [bool]$quick.ok) {
+            Set-BlenderState -Shared $Shared -State 'probing' -Path ([string]$path) -Version ([string]$quick.version) -Source 'vorhanden' -Detail 'Vorhandene Blender-Installation gefunden - jetzt laeuft die echte Faehigkeitsprobe.' -Message ('Blender ' + [string]$quick.version + ' wird geprueft ...') -Percent 0
+            Write-BridgeLog -Shared $Shared -Text ('Blender gefunden: ' + [string]$path + ' (Version ' + [string]$quick.version + ') - Faehigkeitsprobe startet.')
+            & ([scriptblock]::Create([string]$Shared.BlenderProbeScriptText)) $Shared
             return
         }
-        $quick = Get-QuickVersion $exe
-        if ($quick.ok) {
-            Set-InstallState -State 'ready' -Message ('Blender ' + [string]$quick.version + ' ist bereit (automatisch installiert).') -Percent 100 -Detail ('Installiert aus: ' + $usedUrl) -Enabled $true -Path $exe -Version $quick.version
-            Write-InstallLog ('Bereit: ' + $exe + ' Version ' + [string]$quick.version)
-            try { Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue } catch {}
-            # Faehigkeitsprobe direkt anschliessen (echter Mesh-Testlauf).
-            try {
-                $ps = [PowerShell]::Create()
-                [void]$ps.AddScript([string]$Shared.BlenderProbeScriptText).AddArgument($Shared)
-                [void]$ps.BeginInvoke()
-            } catch {}
-            return
-        }
-        Set-InstallState -State 'failed' -Message 'Blender wurde installiert, startet aber nicht.' -Percent 0 -Detail ([string]$quick.error) -Enabled $false
-        Write-InstallLog ('Start fehlgeschlagen: ' + [string]$quick.error)
-        return
-    }
-    # Letzter Weg: winget (braucht eine Bestaetigung von Windows).
-    Set-InstallState -State 'installing' -Message 'Download nicht moeglich - winget wird versucht …' -Percent 0 -Detail '' -Enabled $false
-    try {
-        $winget = Get-Command winget -ErrorAction SilentlyContinue
-        if ($winget) {
-            Write-InstallLog 'winget install BlenderFoundation.Blender.LTS'
-            $wingetOut = & $winget.Source install --id BlenderFoundation.Blender.LTS -e --silent --accept-source-agreements --accept-package-agreements 2>&1
-            Write-InstallLog ('winget: ' + ([string]($wingetOut -join ' ')))
-            $machinePath = [System.Environment]::GetEnvironmentVariable('Path', 'Machine')
-            $userPath = [System.Environment]::GetEnvironmentVariable('Path', 'User')
-            if (-not [string]::IsNullOrWhiteSpace($machinePath) -or -not [string]::IsNullOrWhiteSpace($userPath)) { $env:Path = ([string]$machinePath + ';' + [string]$userPath) }
-            $exe = $null
-            foreach ($pattern in @((Join-Path ${env:ProgramFiles} 'Blender Foundation\Blender*'), (Join-Path ${env:LOCALAPPDATA} 'Programs\Blender Foundation\Blender*'))) {
-                try {
-                    foreach ($sub in (Get-ChildItem -Path $pattern -Directory -ErrorAction SilentlyContinue)) {
-                        $hit = Join-Path $sub.FullName 'blender.exe'
-                        if (Test-Path -LiteralPath $hit) { $exe = $hit; break }
-                    }
-                } catch {}
-                if ($exe) { break }
-            }
-            if ($exe) {
-                $quick = Get-QuickVersion $exe
-                if ($quick.ok) {
-                    Set-InstallState -State 'ready' -Message ('Blender ' + [string]$quick.version + ' ist bereit (winget).') -Percent 100 -Detail 'Ueber winget installiert.' -Enabled $true -Path $exe -Version $quick.version
-                    try { $ps = [PowerShell]::Create(); [void]$ps.AddScript([string]$Shared.BlenderProbeScriptText).AddArgument($Shared); [void]$ps.BeginInvoke() } catch {}
-                    return
-                }
-            }
+        if (-not [string]::IsNullOrWhiteSpace([string]$path)) {
+            $quickError = 'unbekannt'
+            if ($null -ne $quick) { $quickError = [string]$quick.error }
+            Set-BlenderState -Shared $Shared -State 'missing' -Path ([string]$path) -Detail ('Gefundene Datei ist unbrauchbar: ' + $quickError) -Message 'Die gefundene Blender-Datei ist unbrauchbar - es wird die offizielle portable Version geladen.' -Percent 0 -Source 'vorhanden'
+            Write-BridgeLog -Shared $Shared -Text ('Blender gefunden, aber unbrauchbar: ' + $quickError)
         } else {
-            Write-InstallLog 'winget ist nicht vorhanden.'
+            Set-BlenderState -Shared $Shared -State 'missing' -Message 'Blender ist nicht installiert - die Bridge laedt die offizielle portable Version.' -Percent 0
+            Write-BridgeLog -Shared $Shared -Text 'Blender wurde nicht gefunden - automatische Installation startet.'
         }
+        $install = Install-BlenderPortableZip -Shared $Shared
+        if (-not [bool]$install.ok) {
+            Set-BlenderState -Shared $Shared -State 'failed' -Message 'Blender konnte nicht automatisch bereitgestellt werden. Der Mesh-Bau ist AUS - alles andere laeuft normal.' -Detail ([string]$install.error) -Enabled $false -Percent 0 -Probe 'failed' -GateResolved $true
+            Write-BridgeLog -Shared $Shared -Text ('Blender-Schritt 4 gescheitert: ' + [string]$install.error)
+            return
+        }
+        # WICHTIG (7.4.1): Der Installationsweg setzt KEIN ready - ready gibt es
+        # nur nach der bestandenen Faehigkeitsprobe.
+        Set-BlenderState -Shared $Shared -State 'probing' -Path ([string]$install.path) -Version ([string]$install.version) -Source 'download' -Message ('Blender ' + [string]$install.version + ' wird geprueft ...') -Percent 99
+        & ([scriptblock]::Create([string]$Shared.BlenderProbeScriptText)) $Shared
     } catch {
-        Write-InstallLog ('winget fehlgeschlagen: ' + $_.Exception.Message)
+        Set-BlenderState -Shared $Shared -State 'failed' -Detail ('Der Blender-Schritt 4 wurde abgebrochen: ' + $_.Exception.Message) -Message 'Blender ist nicht bereit - der Mesh-Bau bleibt AUS, alles andere laeuft normal.' -Enabled $false -Percent 0 -Probe 'failed' -GateResolved $true
+        Write-BridgeLog -Shared $Shared -Text ('Blender-Schritt 4 abgebrochen: ' + $_.Exception.Message)
     }
-    Set-InstallState -State 'failed' -Message 'Blender konnte nicht automatisch installiert werden. Der Mesh-Bau ist vorerst AUS - alles andere laeuft normal.' -Percent 0 -Detail ('Quellen versucht: ' + [string]$urls.Count + ' Downloads + winget. Siehe blender-install.log im Bridge-Ordner.') -Enabled $false
 }
 
 # ----------------------------------------------------------------------------
-# Faehigkeitsprobe: beweist, dass Blender WIRKLICH ein OBJ erzeugen kann.
-# Sie benutzt denselben Runner wie der echte Bau - kein Theorie-Test.
+# Die EINZIGE Faehigkeitsprobe (Version 7.4.1): beweist, dass Blender WIRKLICH
+# ein OBJ erzeugen kann - mit demselben Runner wie der echte Bau, gemessen
+# ueber die Markerzeile ARENA_MESH_STATS (Laenge EXAKT geprueft). Sie
+# protokolliert SELBST in die runtime.log und faellt FAIL-CLOSED durch: ohne
+# lesbare Messzeile wird sie NIE ready. Die zweite, tote Probe aus 7.4.0
+# (Test-BlenderCapability) ist geloescht - es gab genau einen Aufrufer.
 # ----------------------------------------------------------------------------
 $script:BridgeBlenderProbeScript = {
     param($Shared)
-    $state = $Shared.BlenderState
-    $path = [string]$state.path
-    if ([string]::IsNullOrWhiteSpace($path)) { return }
-    $probeRoot = Join-Path ([string]$Shared.MeshRoot) '_probe'
+    try { . ([scriptblock]::Create([string]$Shared.BlenderToolsText)) } catch {}
     try {
-        if (-not (Test-Path -LiteralPath $probeRoot)) { [void](New-Item -ItemType Directory -Path $probeRoot -Force) }
+        $state = $Shared.BlenderState
+        $path = ''
+        try { $path = [string]$state.path } catch {}
+        if ([string]::IsNullOrWhiteSpace($path)) {
+            Write-BridgeLog -Shared $Shared -Text 'Blender-Faehigkeitsprobe ohne Pfad - sie wurde NICHT gestartet.'
+            Set-BlenderState -Shared $Shared -State 'failed' -Detail 'Faehigkeitsprobe ohne Blender-Pfad gestartet.' -Message 'Blender ist nicht bereit - der Mesh-Bau bleibt AUS.' -Enabled $false -Probe 'failed' -GateResolved $true
+            return
+        }
+        $probeRoot = Join-Path ([string]$Shared.MeshRoot) '_probe'
         $runnerPath = Join-Path $probeRoot 'runner.py'
-        Set-Content -LiteralPath $runnerPath -Value ([string]$Shared.MeshRunnerText) -Encoding UTF8
         $slotPath = Join-Path $probeRoot 'probe.py'
+        $objPath = Join-Path $probeRoot 'probe.obj'
         $slotCode = 'import bpy' + [Environment]::NewLine
         $slotCode = $slotCode + 'bpy.ops.mesh.primitive_cube_add(size=2.0)' + [Environment]::NewLine
         $slotCode = $slotCode + 'bpy.ops.mesh.primitive_uv_sphere_add(radius=0.6, location=(0.0, 0.0, 2.0))' + [Environment]::NewLine
-        Set-Content -LiteralPath $slotPath -Value $slotCode -Encoding UTF8
-        $objPath = Join-Path $probeRoot 'probe.obj'
+        # BOM-FREI schreiben (sonst stirbt Python mit "SyntaxError: invalid
+        # non-printable character U+FEFF" in Zeile 1 - der Live-Befund).
+        $runnerWritten = Write-BridgeBomFreeFile -Path $runnerPath -Text ([string]$Shared.MeshRunnerText)
+        $slotWritten = Write-BridgeBomFreeFile -Path $slotPath -Text $slotCode
+        if (-not $runnerWritten -or -not $slotWritten) {
+            Set-BlenderState -Shared $Shared -State 'failed' -Detail ('Probendateien konnten nicht geschrieben werden (' + $runnerPath + ').') -Message 'Blender ist nicht bereit - der Mesh-Bau bleibt AUS.' -Enabled $false -Probe 'failed' -GateResolved $true
+            Write-BridgeLog -Shared $Shared -Text 'Blender-Faehigkeitsprobe: Probendateien konnten nicht BOM-frei geschrieben werden.'
+            return
+        }
         if (Test-Path -LiteralPath $objPath) { Remove-Item -LiteralPath $objPath -Force -ErrorAction SilentlyContinue }
         $arguments = '--background --factory-startup --python-exit-code 1 --python "' + $runnerPath + '" -- --script "' + $slotPath + '" --out "' + $objPath + '" --slot probe'
-        $psi = [System.Diagnostics.ProcessStartInfo]::new()
-        $psi.FileName = $path
-        $psi.Arguments = $arguments
-        $psi.UseShellExecute = $false
-        $psi.CreateNoWindow = $true
-        $psi.RedirectStandardOutput = $true
-        $psi.RedirectStandardError = $true
-        $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
-        $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
-        $process = [System.Diagnostics.Process]::new()
-        $process.StartInfo = $psi
-        [void]$process.Start()
-        $outTask = $process.StandardOutput.ReadToEndAsync()
-        $errTask = $process.StandardError.ReadToEndAsync()
-        $exited = $process.WaitForExit(120000)
-        if (-not $exited) { try { $process.Kill() } catch {} }
-        $outText = ''
-        try { if ($outTask.Wait(4000)) { $outText = [string]$outTask.Result } } catch {}
-        $errText = ''
-        try { if ($errTask.Wait(4000)) { $errText = [string]$errTask.Result } } catch {}
-        $exitCode = -1
-        try { $exitCode = [int]$process.ExitCode } catch {}
-        try { $process.Dispose() } catch {}
-        $combined = ($outText + [Environment]::NewLine + $errText)
+        $run = Invoke-BlenderProcess -Path $path -Arguments $arguments -TimeoutSeconds 120 -WorkingDirectory $probeRoot
+        $combined = [string]$run.output
         $marker = 'ARENA_MESH_STATS '
+        # Laenge EXAKT pruefen (der 7.4.0-Fehler war ein Zeichenversatz beim
+        # Ausschneiden der Messzeile).
+        if ($marker.Length -ne 17) {
+            Set-BlenderState -Shared $Shared -State 'failed' -Detail ('Interner Fehler: Markerlaenge ' + [string]$marker.Length + ' statt 17.') -Message 'Blender ist nicht bereit - der Mesh-Bau bleibt AUS.' -Enabled $false -Probe 'failed' -GateResolved $true
+            Write-BridgeLog -Shared $Shared -Text ('Blender-Faehigkeitsprobe: Markerlaenge ' + [string]$marker.Length + ' statt 17 - Abbruch.')
+            return
+        }
         $markerIndex = $combined.IndexOf($marker)
-        if ((-not $exited) -or $exitCode -ne 0 -or $markerIndex -lt 0 -or -not (Test-Path -LiteralPath $objPath)) {
+        if ($run.timedOut -or [int]$run.exitCode -ne 0 -or $markerIndex -lt 0 -or -not (Test-Path -LiteralPath $objPath)) {
             $tail = $combined.Trim()
             if ($tail.Length -gt 600) { $tail = $tail.Substring($tail.Length - 600) }
-            $state.state = 'failed'
-            $state.enabled = $false
-            $state.message = 'Blender ist installiert, kann aber keine Meshes erzeugen - der Mesh-Bau bleibt AUS.'
-            $state.detail = ('Faehigkeitsprobe fehlgeschlagen (Exit ' + [string]$exitCode + '): ' + $tail)
-            $state.probe = 'failed'
-            $state.updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-            try { Write-RuntimeLog ('Blender-Faehigkeitsprobe fehlgeschlagen: ' + $tail) } catch {}
+            Set-BlenderState -Shared $Shared -State 'failed' -Detail ('Faehigkeitsprobe fehlgeschlagen (Exit ' + [string]$run.exitCode + ', timeout=' + [string]$run.timedOut + '): ' + $tail) -Message 'Blender ist installiert, kann aber keine Meshes erzeugen - der Mesh-Bau bleibt AUS.' -Enabled $false -Probe 'failed' -Percent 0 -GateResolved $true
+            Write-BridgeLog -Shared $Shared -Text ('Blender-Faehigkeitsprobe fehlgeschlagen (Exit ' + [string]$run.exitCode + ', timeout=' + [string]$run.timedOut + '): ' + $tail)
             return
         }
         $jsonText = $combined.Substring($markerIndex + $marker.Length)
@@ -26401,28 +26617,27 @@ $script:BridgeBlenderProbeScript = {
         if ($lineEnd -ge 0) { $jsonText = $jsonText.Substring(0, $lineEnd) }
         $stats = $null
         try { $stats = $jsonText.Trim() | ConvertFrom-Json } catch {}
-        if ($null -eq $stats -or [string]::IsNullOrWhiteSpace([string]$jsonText)) {
-            # Fail closed: ohne lesbare Messzeile gilt die Probe als NICHT
-            # bestanden - der Mesh-Bau bleibt aus (kein falscher Erfolg).
-            $state.state = 'failed'
-            $state.enabled = $false
-            $state.probe = 'failed'
-            $state.message = 'Blender ist installiert, kann aber keine Meshes erzeugen - der Mesh-Bau bleibt AUS.'
-            $state.detail = ('Faehigkeitsprobe: Probenzeile nicht lesbar (' + [string]$jsonText + ')')
-            $state.updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-            try { Write-RuntimeLog ('Blender-Faehigkeitsprobe lieferte keine lesbare Messzeile: ' + [string]$jsonText) } catch {}
+        # FAIL CLOSED: ohne lesbare Messzeile gilt die Probe als NICHT bestanden
+        # (kein falscher Erfolg) - der Mesh-Bau bleibt aus.
+        if ($null -eq $stats -or [string]::IsNullOrWhiteSpace([string]$jsonText) -or $null -eq $stats.triangles -or $null -eq $stats.bytes) {
+            Set-BlenderState -Shared $Shared -State 'failed' -Detail ('Faehigkeitsprobe: Probenzeile nicht lesbar (' + [string]$jsonText + ')') -Message 'Blender ist installiert, kann aber keine Meshes erzeugen - der Mesh-Bau bleibt AUS.' -Enabled $false -Probe 'failed' -Percent 0 -GateResolved $true
+            Write-BridgeLog -Shared $Shared -Text ('Blender-Faehigkeitsprobe lieferte keine lesbare Messzeile: ' + [string]$jsonText)
             return
         }
-        $state.probe = ('ok triangles=' + [string]$stats.triangles + ' bytes=' + [string]$stats.bytes)
-        $state.detail = 'Faehigkeitsprobe bestanden: Blender hat im Hintergrund ein OBJ erzeugt (' + [string]$stats.triangles + ' Dreiecke).'
-        $state.enabled = $true
-        $state.message = ('Blender ' + [string]$state.version + ' ist bereit und geprueft.')
-        $state.updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-        try { Write-RuntimeLog ('Blender-Faehigkeitsprobe bestanden (' + [string]$stats.triangles + ' Dreiecke, ' + [string]$stats.bytes + ' Bytes).') } catch {}
+        Set-BlenderState -Shared $Shared -State 'ready' -Probe ('ok triangles=' + [string]$stats.triangles + ' bytes=' + [string]$stats.bytes) -Detail ('Faehigkeitsprobe bestanden: Blender hat im Hintergrund ein OBJ erzeugt (' + [string]$stats.triangles + ' Dreiecke, ' + [string]$stats.bytes + ' Bytes).') -Enabled $true -Percent 100 -Message ('Blender ' + [string]$state.version + ' ist bereit und geprueft.') -GateResolved $true
+        Write-BridgeLog -Shared $Shared -Text ('Blender-Faehigkeitsprobe bestanden (' + [string]$stats.triangles + ' Dreiecke, ' + [string]$stats.bytes + ' Bytes).')
     } catch {
-        $state.probe = 'failed'
-        $state.detail = ('Faehigkeitsprobe konnte nicht laufen: ' + $_.Exception.Message)
-        try { Write-RuntimeLog ('Blender-Faehigkeitsprobe abgebrochen: ' + $_.Exception.Message) } catch {}
+        try {
+            $st = $Shared.BlenderState
+            $st.probe = 'failed'
+            $st.state = 'failed'
+            $st.enabled = $false
+            $st.gateResolved = $true
+            $st.detail = ('Faehigkeitsprobe konnte nicht laufen: ' + $_.Exception.Message)
+            $st.message = 'Blender ist nicht bereit - der Mesh-Bau bleibt AUS, alles andere laeuft normal.'
+            $st.updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        } catch {}
+        Write-BridgeLog -Shared $Shared -Text ('Blender-Faehigkeitsprobe abgebrochen: ' + $_.Exception.Message)
     }
 }
 
@@ -26439,7 +26654,7 @@ $script:BridgeMeshJobScript = {
         try {
             $jobNow = Get-MeshJobData $Shared $JobId
             if ($null -eq $jobNow) { return }
-            Add-Content -LiteralPath ([string]$jobNow.logFile) -Value ((Get-Date).ToString('u') + ' ' + $Text) -Encoding UTF8
+            [System.IO.File]::AppendAllText([string]$jobNow.logFile, ((Get-Date).ToString('u') + ' ' + $Text) + [Environment]::NewLine, (New-Object System.Text.UTF8Encoding($false)))
         } catch {}
     }
     $job = Get-MeshJobData $Shared $JobId
@@ -26588,6 +26803,8 @@ $script:Shared.MeshRegistryPath = [string]$script:MeshRegistryFile
 $script:Shared.MeshRunnerText = [string]$script:MeshRunnerTemplate
 $script:Shared.MeshToolkitText = [string]$script:BridgeMeshToolkit
 $script:Shared.MeshJobScriptText = [string]$script:BridgeMeshJobScript
+$script:Shared.BlenderToolsText = [string]$script:BridgeBlenderTools
+$script:Shared.BlenderStepScriptText = [string]$script:BridgeBlenderStepScript
 $script:Shared.BlenderProbeScriptText = [string]$script:BridgeBlenderProbeScript
 $script:Shared.LocalPort = [int]$script:Port
 $script:Shared.LocalBaseUrl = [string]$script:LocalBaseUrl
@@ -26608,6 +26825,9 @@ try { . ([scriptblock]::Create([string]$script:BridgeMeshToolkit)) } catch { Wri
 $script:MeshWindow = $null
 $script:MeshWindowRows = @{}
 $script:MeshWindowNotice = ''
+# Version 7.4.1: Wartemenge beim Schliessen (sortierte Slot-Keys) - das Fenster
+# geht erst wieder auf, wenn sich diese Menge aendert (keine Schleife).
+$script:MeshAutoClosedSignature = ''
 
 function Update-MeshTick {
     # Laeuft im UI-Takt (kein zusaetzlicher Timer). Holt Ergebnisse interner
@@ -26643,14 +26863,59 @@ function Update-MeshTick {
             if ($tag.StartsWith('apply:')) {
                 $jobId = $tag.Substring(6)
                 if ($state -eq 'done') {
-                    [void](Update-MeshRegistryFromApplyResult $script:Shared ([string]$outcome.json))
+                    $appliedOk = $false
+                    try { $appliedOk = [bool](Update-MeshRegistryFromApplyResult $script:Shared ([string]$outcome.json)) } catch {}
+                    if ($appliedOk) {
+                        # Version 7.4.1: Dateimuell vermeiden - OBJ + Slot-Skript
+                        # loeschen, den Job-Ordner nur, wenn nichts mehr wartet.
+                        $cleaned = 0
+                        try { $cleaned = [int](Remove-MeshAppliedFileSets $script:Shared $jobId) } catch {}
+                        Write-RuntimeLog ('Eingesetzte Mesh-Dateien geloescht (' + [string]$cleaned + ' Slot(s), Job ' + $jobId + ').')
+                        $script:MeshWindowNotice = 'Eingesetzte Mesh-Dateien geloescht - der MeshPart ist jetzt das echte Mesh.'
+                    } else {
+                        $script:MeshWindowNotice = 'Das Einsetzen hat nicht geklappt - die Zeile zeigt den echten Fehler.'
+                    }
                 } else {
+                    $failedNow = 0
                     foreach ($slot in (Get-MeshSlotsBySession $script:Shared '' $jobId)) {
-                        if ([string]$slot.state -eq 'applying') {
+                        if ([string]$slot.state -ne 'applying') { continue }
+                        $pending = ''
+                        try { $pending = [string]$slot.pendingCommandId } catch {}
+                        if ($pending -eq $commandId -or [string]::IsNullOrWhiteSpace($pending)) {
                             Set-MeshSlotField $script:Shared ([string]$slot.slotKey) 'state' 'apply_failed'
                             Set-MeshSlotField $script:Shared ([string]$slot.slotKey) 'error' ([string]$outcome.message)
+                            $failedNow = $failedNow + 1
                         }
                     }
+                    if ($failedNow -gt 0) { $script:MeshWindowNotice = 'Einsetzen fehlgeschlagen: ' + [string]$outcome.message }
+                    Save-MeshRegistryFile $script:Shared
+                }
+                continue
+            }
+            if ($tag.StartsWith('drop:')) {
+                $jobId = $tag.Substring(5)
+                if ($state -eq 'done') {
+                    $droppedOk = $false
+                    try { $droppedOk = [bool](Update-MeshRegistryFromDropResult $script:Shared $jobId ([string]$outcome.json)) } catch {}
+                    if ($droppedOk) {
+                        Write-RuntimeLog ('Mesh-Slot storniert (' + $jobId + '): Platzhalter und Dateien sind entfernt.')
+                        $script:MeshWindowNotice = 'Mesh-Slot storniert - Platzhalter und Dateien sind weg.'
+                    } else {
+                        $script:MeshWindowNotice = 'Stornieren hat nicht geklappt - die Zeile zeigt den echten Fehler.'
+                    }
+                } else {
+                    $failedNow = 0
+                    foreach ($slot in (Get-MeshSlotsBySession $script:Shared '' $jobId)) {
+                        if ([string]$slot.state -ne 'dropping') { continue }
+                        $pending = ''
+                        try { $pending = [string]$slot.pendingCommandId } catch {}
+                        if ($pending -eq $commandId -or [string]::IsNullOrWhiteSpace($pending)) {
+                            Set-MeshSlotField $script:Shared ([string]$slot.slotKey) 'state' 'drop_failed'
+                            Set-MeshSlotField $script:Shared ([string]$slot.slotKey) 'error' ([string]$outcome.message)
+                            $failedNow = $failedNow + 1
+                        }
+                    }
+                    if ($failedNow -gt 0) { $script:MeshWindowNotice = 'Stornieren fehlgeschlagen: ' + [string]$outcome.message }
                     Save-MeshRegistryFile $script:Shared
                 }
                 continue
@@ -26694,11 +26959,15 @@ function Update-MeshTick {
 # beiden anderen erlaubten Fenster und arbeitet ohne Toast.
 # ----------------------------------------------------------------------------
 function Get-MeshWindowXaml {
+    # Version 7.4.1: EINFACHES, automatisches Mesh-Fenster. Es oeffnet sich von
+    # selbst (modellos, Show()) sobald eine OBJ-Datei auf den Upload wartet -
+    # es gibt KEINEN Menueeintrag mehr. Der Blender-Zustand steht im
+    # Startbildschirm und in blender_status, nicht in diesem Fenster.
     $template = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Mesh-Uploads"
-        Width="640" Height="580" MinWidth="560" MinHeight="470"
+        Width="680" Height="540" MinWidth="580" MinHeight="420"
         ResizeMode="CanResize" WindowStyle="None" AllowsTransparency="True"
         Background="Transparent" WindowStartupLocation="CenterOwner"
         ShowInTaskbar="False" FontFamily="Segoe UI"
@@ -26733,13 +27002,11 @@ function Get-MeshWindowXaml {
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <!-- Titelzeile: ziehbar, Kreuz oben rechts. -->
+                <!-- Titelzeile: ziehbar, Kreuz oben rechts, Place-Name darunter. -->
                 <Grid x:Name="TitleBar" Grid.Row="0" Background="Transparent" Cursor="SizeAll">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
@@ -26756,67 +27023,26 @@ function Get-MeshWindowXaml {
                             ToolTip="Schließen (Esc)"/>
                 </Grid>
 
-                <!-- Blender-Zustand -->
-                <Border Grid.Row="1" Margin="0,12,0,0" Background="{StaticResource SwCardBg}"
-                        BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="10" Padding="12,10">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <TextBlock Text="BLENDER (SCHRITT 4 DES STARTS)" Foreground="{StaticResource SwTextMuted}"
-                                   FontSize="9.5" FontWeight="Bold"/>
-                        <TextBlock x:Name="BlenderText" Grid.Row="1" Margin="0,6,0,0"
-                                   Text="Blender-Status wird gelesen …" Foreground="{StaticResource SwTextMain}"
-                                   FontSize="11" TextWrapping="Wrap"/>
-                        <Grid Grid.Row="2" Margin="0,8,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <ProgressBar x:Name="BlenderBar" Height="6" Minimum="0" Maximum="100" Value="0"
-                                         Background="#22000000" Foreground="#FFFF7BA8" BorderThickness="0"
-                                         VerticalAlignment="Center"/>
-                            <Button x:Name="InstallButton" Grid.Column="1" Margin="10,0,0,0" MinWidth="150" MinHeight="26"
-                                    Padding="10,3" Content="Blender jetzt installieren"
-                                    Style="{StaticResource ArenaPrimaryButton}"/>
-                            <Button x:Name="SkipButton" Grid.Column="2" Margin="8,0,0,0" MinWidth="120" MinHeight="26"
-                                    Padding="10,3" Content="Schritt überspringen"
-                                    Style="{StaticResource ArenaQuietButton}"
-                                    ToolTip="Startet den Tunnel sofort. Der Mesh-Bau bleibt aus, alles andere läuft normal."/>
-                        </Grid>
-                    </Grid>
-                </Border>
+                <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+                    <Button x:Name="FolderButton" Content="Ordner öffnen" MinWidth="130" MinHeight="28"
+                            Padding="12,4" Style="{StaticResource ArenaQuietButton}"
+                            ToolTip="Den Mesh-/Job-Ordner im Explorer öffnen"/>
+                </StackPanel>
 
-                <TextBlock Grid.Row="2" Margin="0,14,0,6"
-                           Text="So geht es: Datei(en) im Ordner in Roblox Studio hochladen (3D-Importer oder Drag &amp; Drop) oder im Creator Dashboard. Danach die Mesh-Id hier eintragen und „Ids einsetzen“ drücken. Die Bridge setzt die Geometrie in die vorhandenen Platzhalter — Größe, Position und Verbindungen bleiben erhalten."
-                           Foreground="{StaticResource SwTextMuted}" FontSize="10.5" TextWrapping="Wrap"/>
-
-                <!-- Dateien je Slot -->
-                <Border Grid.Row="3" Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF"
+                <!-- EINE Liste: je Mesh eine Zeile. -->
+                <Border Grid.Row="2" Margin="0,12,0,0" Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF"
                         BorderThickness="1" CornerRadius="10" Padding="10,8">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <StackPanel x:Name="SlotList"/>
                     </ScrollViewer>
                 </Border>
 
-                <Border x:Name="StatusBorder" Grid.Row="4" Margin="0,12,0,0"
+                <Border x:Name="StatusBorder" Grid.Row="3" Margin="0,12,0,0"
                         Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF"
                         BorderThickness="1" CornerRadius="10" Padding="11,8">
-                    <TextBlock x:Name="StatusText" Text="Noch keine Mesh-Datei vorhanden."
+                    <TextBlock x:Name="StatusText" Text="Keine Mesh-Datei wartet auf den Upload."
                                Foreground="{StaticResource SwTextMuted}" FontSize="11" TextWrapping="Wrap"/>
                 </Border>
-
-                <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-                    <Button x:Name="FolderButton" Content="Ordner öffnen" MinWidth="120" MinHeight="30"
-                            Padding="12,5" Margin="0,0,8,0" Style="{StaticResource ArenaQuietButton}"/>
-                    <Button x:Name="RefreshButton" Content="Aktualisieren" MinWidth="110" MinHeight="30"
-                            Padding="12,5" Margin="0,0,8,0" Style="{StaticResource ArenaQuietButton}"/>
-                    <Button x:Name="ApplyButton" Content="Ids einsetzen" MinWidth="130" MinHeight="30"
-                            Padding="14,5" Style="{StaticResource ArenaPrimaryButton}"/>
-                </StackPanel>
             </Grid>
         </Grid>
     </Border>
@@ -26839,11 +27065,13 @@ function Get-MeshSlotStateText {
         'running' { $text = 'Blender baut …' }
         'script' { $text = 'Blender baut …' }
         'measured' { $text = 'Wird gemessen …' }
-        'obj' { $text = 'Datei fertig - bitte hochladen und Id eintragen' }
+        'obj' { $text = 'Datei fertig - bitte in Roblox hochladen und die Mesh-Id eintragen' }
         'rejected' { $text = 'Zu viele Dreiecke (' + [string]$triangles + ') - einfacher bauen' }
         'applying' { $text = 'Wird in den Place gesetzt …' }
         'applied' { $text = 'Eingesetzt' }
         'apply_failed' { $text = 'Einsetzen fehlgeschlagen' }
+        'dropping' { $text = 'Wird storniert …' }
+        'drop_failed' { $text = 'Stornieren fehlgeschlagen' }
         'failed' { $text = 'Bau fehlgeschlagen' }
         'cancelled' { $text = 'Abgebrochen' }
         default { $text = $state }
@@ -26852,45 +27080,263 @@ function Get-MeshSlotStateText {
     return $text
 }
 
+function Get-MeshWindowPlaceLabel {
+    # Place-Name aus dem ersten wartenden Slot (die Zeile im Fenster soll
+    # sagen, WO die Datei hochgeladen werden muss).
+    $label = 'Verbundenes Place'
+    try {
+        foreach ($pair in @($script:Shared.MeshRegistry.GetEnumerator())) {
+            $slot = $null
+            try { $slot = ($pair.Value | ConvertFrom-Json) } catch { continue }
+            if ($null -eq $slot) { continue }
+            $slotState = ''
+            try { $slotState = [string]$slot.state } catch {}
+            if ($slotState -ne 'obj') { continue }
+            $sid = ''
+            try { $sid = [string]$slot.sessionId } catch {}
+            if ([string]::IsNullOrWhiteSpace($sid)) { continue }
+            $name = ''
+            try { $name = [string]$script:PlaceNames[$sid] } catch {}
+            if ([string]::IsNullOrWhiteSpace($name)) { $name = $sid }
+            return ('Place · ' + $name)
+        }
+    } catch {}
+    return $label
+}
+
+function New-MeshRow {
+    # EINE Zeile je Mesh: Name (model · slot), Info (Datei/Dreiecke/Studs),
+    # Zustand (farbig), Id-Feld, "Fertig", "Stornieren" - und die Rueckfrage
+    # in der Zeile ("Wirklich stornieren?" mit "Ja, stornieren"/"Abbrechen").
+    param($Slot)
+    $win = $script:MeshWindow
+    $shell = [System.Windows.Controls.Border]::new()
+    $shell.Background = Get-Brush '#14FFFFFF'
+    $shell.BorderBrush = Get-Brush '#1FFFFFFF'
+    $shell.BorderThickness = [System.Windows.Thickness]::new(1)
+    $shell.CornerRadius = [System.Windows.CornerRadius]::new(8)
+    $shell.Padding = [System.Windows.Thickness]::new(10, 8, 10, 8)
+    $shell.Margin = [System.Windows.Thickness]::new(0, 0, 0, 8)
+    $stack = [System.Windows.Controls.StackPanel]::new()
+    $title = [System.Windows.Controls.TextBlock]::new()
+    $title.Foreground = Get-Brush '#F4F8FF'
+    $title.FontSize = 12
+    $title.FontWeight = 'Bold'
+    $file = [System.Windows.Controls.TextBlock]::new()
+    $file.Foreground = Get-Brush '#9AA9CE'
+    $file.FontSize = 10.5
+    $file.Margin = [System.Windows.Thickness]::new(0, 3, 0, 0)
+    $stateText = [System.Windows.Controls.TextBlock]::new()
+    $stateText.Foreground = Get-Brush '#FFD9A0'
+    $stateText.FontSize = 10.5
+    $stateText.TextWrapping = 'Wrap'
+    $stateText.Margin = [System.Windows.Thickness]::new(0, 3, 0, 0)
+
+    $actionPanel = [System.Windows.Controls.Grid]::new()
+    $actionPanel.Margin = [System.Windows.Thickness]::new(0, 7, 0, 0)
+    $col1 = [System.Windows.Controls.ColumnDefinition]::new()
+    $col1.Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
+    $col2 = [System.Windows.Controls.ColumnDefinition]::new()
+    $col2.Width = [System.Windows.GridLength]::new(0, [System.Windows.GridUnitType]::Auto)
+    $col3 = [System.Windows.Controls.ColumnDefinition]::new()
+    $col3.Width = [System.Windows.GridLength]::new(0, [System.Windows.GridUnitType]::Auto)
+    [void]$actionPanel.ColumnDefinitions.Add($col1)
+    [void]$actionPanel.ColumnDefinitions.Add($col2)
+    [void]$actionPanel.ColumnDefinitions.Add($col3)
+    $idBox = [System.Windows.Controls.TextBox]::new()
+    $idBox.MinHeight = 28
+    $idBox.MaxLength = 32
+    $idBox.Foreground = Get-Brush '#F4F8FF'
+    $idBox.ToolTip = 'Mesh-Id aus Roblox - nur die Ziffern'
+    $idBox.Style = $win.FindResource('ArenaTextField')
+    [System.Windows.Controls.Grid]::SetColumn($idBox, 0)
+    $doneButton = [System.Windows.Controls.Button]::new()
+    $doneButton.Content = 'Fertig'
+    $doneButton.MinWidth = 92
+    $doneButton.MinHeight = 28
+    $doneButton.Margin = [System.Windows.Thickness]::new(8, 0, 0, 0)
+    $doneButton.Style = $win.FindResource('ArenaPrimaryButton')
+    [System.Windows.Controls.Grid]::SetColumn($doneButton, 1)
+    $cancelButton = [System.Windows.Controls.Button]::new()
+    $cancelButton.Content = 'Stornieren'
+    $cancelButton.MinWidth = 104
+    $cancelButton.MinHeight = 28
+    $cancelButton.Margin = [System.Windows.Thickness]::new(8, 0, 0, 0)
+    $cancelButton.Style = $win.FindResource('ArenaDangerButton')
+    [System.Windows.Controls.Grid]::SetColumn($cancelButton, 2)
+    [void]$actionPanel.Children.Add($idBox)
+    [void]$actionPanel.Children.Add($doneButton)
+    [void]$actionPanel.Children.Add($cancelButton)
+
+    $askPanel = [System.Windows.Controls.StackPanel]::new()
+    $askPanel.Margin = [System.Windows.Thickness]::new(0, 7, 0, 0)
+    $askPanel.Visibility = 'Collapsed'
+    $askText = [System.Windows.Controls.TextBlock]::new()
+    $askText.Text = 'Wirklich stornieren? Der MeshPart wird aus dem Place entfernt; ein schon eingesetztes Mesh wird NICHT wiederhergestellt.'
+    $askText.Foreground = Get-Brush '#FFD9A0'
+    $askText.FontSize = 10.5
+    $askText.TextWrapping = 'Wrap'
+    $askButtons = [System.Windows.Controls.StackPanel]::new()
+    $askButtons.Orientation = 'Horizontal'
+    $askButtons.Margin = [System.Windows.Thickness]::new(0, 6, 0, 0)
+    $yesButton = [System.Windows.Controls.Button]::new()
+    $yesButton.Content = 'Ja, stornieren'
+    $yesButton.MinWidth = 118
+    $yesButton.MinHeight = 28
+    $yesButton.Style = $win.FindResource('ArenaDangerButton')
+    $noButton = [System.Windows.Controls.Button]::new()
+    $noButton.Content = 'Abbrechen'
+    $noButton.MinWidth = 104
+    $noButton.MinHeight = 28
+    $noButton.Margin = [System.Windows.Thickness]::new(8, 0, 0, 0)
+    $noButton.Style = $win.FindResource('ArenaQuietButton')
+    [void]$askButtons.Children.Add($yesButton)
+    [void]$askButtons.Children.Add($noButton)
+    [void]$askPanel.Children.Add($askText)
+    [void]$askPanel.Children.Add($askButtons)
+
+    [void]$stack.Children.Add($title)
+    [void]$stack.Children.Add($file)
+    [void]$stack.Children.Add($stateText)
+    [void]$stack.Children.Add($actionPanel)
+    [void]$stack.Children.Add($askPanel)
+    $shell.Child = $stack
+
+    $rowTag = [pscustomobject]@{
+        SlotKey      = [string]$Slot.slotKey
+        Title        = $title
+        FileText     = $file
+        StateText    = $stateText
+        IdBox        = $idBox
+        DoneButton   = $doneButton
+        CancelButton = $cancelButton
+        ActionPanel  = $actionPanel
+        AskPanel     = $askPanel
+    }
+    $shell.Tag = $rowTag
+    $doneButton.Tag = $rowTag
+    $cancelButton.Tag = $rowTag
+    $yesButton.Tag = $rowTag
+    $noButton.Tag = $rowTag
+    $doneButton.Add_Click({
+        param($s, $e)
+        try { Invoke-MeshRowApply -Row $s.Tag } catch { try { Write-UiErrorLog 'Mesh-Zeile Fertig' $_ } catch {} }
+    })
+    $cancelButton.Add_Click({
+        param($s, $e)
+        try { Show-MeshRowAsk -Row $s.Tag } catch {}
+    })
+    $yesButton.Add_Click({
+        param($s, $e)
+        try { Invoke-MeshRowDrop -Row $s.Tag } catch { try { Write-UiErrorLog 'Mesh-Zeile Stornieren' $_ } catch {} }
+    })
+    $noButton.Add_Click({
+        param($s, $e)
+        try { Hide-MeshRowAsk -Row $s.Tag } catch {}
+    })
+    return $shell
+}
+
+function Show-MeshRowAsk {
+    # Rueckfrage IN der Zeile (kein Fenster, kein Popup, kein Toast).
+    param($Row)
+    try { $Row.ActionPanel.Visibility = 'Collapsed' } catch {}
+    try { $Row.AskPanel.Visibility = 'Visible' } catch {}
+}
+
+function Hide-MeshRowAsk {
+    param($Row)
+    try { $Row.AskPanel.Visibility = 'Collapsed' } catch {}
+    try { $Row.ActionPanel.Visibility = 'Visible' } catch {}
+}
+
+function Invoke-MeshRowApply {
+    # "Fertig": Id pruefen (NUR Ziffern) -> Zustand applying -> interner Befehl
+    # mesh_apply an Studio. Das Ergebnis holt der UI-Takt ab; erst dann wird
+    # aufgeraeumt und gemeldet - kein falscher Erfolg.
+    param($Row)
+    if ($null -eq $Row) { return }
+    $slotKey = [string]$Row.SlotKey
+    $raw = ''
+    try { $raw = ([string]$Row.IdBox.Text).Trim() } catch {}
+    if ($raw -notmatch '^\d+$') {
+        $script:MeshWindowNotice = 'Bitte nur die Ziffern der Mesh-Id eintragen (keine Buchstaben, kein rbxassetid://).'
+        return
+    }
+    $slot = Get-MeshSlotData $script:Shared $slotKey
+    if ($null -eq $slot) {
+        $script:MeshWindowNotice = 'Dieser Slot steht nicht mehr im Register - die Zeile verschwindet beim naechsten Takt.'
+        return
+    }
+    try { $Row.IdBox.IsEnabled = $false } catch {}
+    Set-MeshSlotField $script:Shared $slotKey 'assetId' $raw
+    Set-MeshSlotField $script:Shared $slotKey 'state' 'applying'
+    Set-MeshSlotField $script:Shared $slotKey 'error' ''
+    $jobId = ''
+    try { $jobId = [string]$slot.jobId } catch {}
+    $sessionId = ''
+    try { $sessionId = [string]$slot.sessionId } catch {}
+    $commandId = New-MeshBridgeCommand -Shared $script:Shared -SessionId $sessionId -Tool 'mesh_apply' -ToolArgs @{ slots = @(@{ key = $slotKey; assetId = $raw }) } -BudgetSeconds 180 -Tag ('apply:' + $jobId)
+    if ([string]::IsNullOrWhiteSpace($commandId)) {
+        Set-MeshSlotField $script:Shared $slotKey 'state' 'apply_failed'
+        Set-MeshSlotField $script:Shared $slotKey 'error' 'Die Bridge konnte den Befehl nicht einreihen - ist Roblox Studio mit diesem Place verbunden?'
+        $script:MeshWindowNotice = 'Der Befehl konnte nicht an Studio geschickt werden.'
+        try { $Row.IdBox.IsEnabled = $true } catch {}
+        return
+    }
+    Set-MeshSlotField $script:Shared $slotKey 'pendingCommandId' $commandId
+    $script:MeshWindowNotice = ('Mesh-Id ' + $raw + ' wird eingesetzt - Roblox laedt die Geometrie aus der Cloud.')
+}
+
+function Invoke-MeshRowDrop {
+    # "Stornieren" (nach der Rueckfrage): internen Befehl mesh_drop senden. Er
+    # loescht die MeshParts mit ArenaMeshSlot = key aus dem Place - ein schon
+    # eingesetztes Mesh wird NICHT wiederhergestellt. Danach raeumt der
+    # UI-Takt Slot + Dateien auf.
+    param($Row)
+    if ($null -eq $Row) { return }
+    $slotKey = [string]$Row.SlotKey
+    $slot = Get-MeshSlotData $script:Shared $slotKey
+    if ($null -eq $slot) {
+        $script:MeshWindowNotice = 'Dieser Slot steht nicht mehr im Register.'
+        Hide-MeshRowAsk -Row $Row
+        return
+    }
+    $jobId = ''
+    try { $jobId = [string]$slot.jobId } catch {}
+    $sessionId = ''
+    try { $sessionId = [string]$slot.sessionId } catch {}
+    Set-MeshSlotField $script:Shared $slotKey 'state' 'dropping'
+    Set-MeshSlotField $script:Shared $slotKey 'error' ''
+    $commandId = New-MeshBridgeCommand -Shared $script:Shared -SessionId $sessionId -Tool 'mesh_drop' -ToolArgs @{ slots = @(@{ key = $slotKey }) } -BudgetSeconds 150 -Tag ('drop:' + $jobId)
+    if ([string]::IsNullOrWhiteSpace($commandId)) {
+        Set-MeshSlotField $script:Shared $slotKey 'state' 'drop_failed'
+        Set-MeshSlotField $script:Shared $slotKey 'error' 'Die Bridge konnte den Befehl nicht einreihen - ist Roblox Studio mit diesem Place verbunden?'
+        $script:MeshWindowNotice = 'Stornieren konnte nicht an Studio geschickt werden.'
+        Hide-MeshRowAsk -Row $Row
+        return
+    }
+    Set-MeshSlotField $script:Shared $slotKey 'pendingCommandId' $commandId
+    $script:MeshWindowNotice = 'Stornieren laeuft - der MeshPart wird entfernt; ein schon eingesetztes Mesh kommt NICHT zurueck.'
+    Hide-MeshRowAsk -Row $Row
+}
+
 function Update-MeshWindow {
-    # Aktualisiert das offene Fenster: Blender-Zustand, Zeilen je Slot und die
-    # Statuszeile. Zeilen werden NUR ergaenzt/entfernt - die Textfelder des
-    # Nutzers werden nie ueberschrieben.
+    # Aktualisiert das offene Fenster: je wartendem/gesetztem Mesh EINE Zeile,
+    # EINE Statuszeile. Zeilen werden nur ergaenzt/entfernt - die Eingaben des
+    # Nutzers (Id-Feld, Rueckfrage) werden nie ueberschrieben.
     if ($null -eq $script:MeshWindow) { return }
     $win = $script:MeshWindow
     try {
-        $state = $script:Shared.BlenderState
-        $mode = [string]$state.state
-        $blenderText = [string]$state.message
-        if ([string]::IsNullOrWhiteSpace($blenderText)) { $blenderText = 'Blender-Status unbekannt.' }
-        $detail = [string]$state.detail
-        if (-not [string]::IsNullOrWhiteSpace($detail)) { $blenderText = $blenderText + [Environment]::NewLine + $detail }
-        $percent = 0
-        try { $percent = [int]$state.percent } catch { $percent = 0 }
-        if ($percent -lt 0) { $percent = 0 }
-        if ($percent -gt 100) { $percent = 100 }
-        $blenderLabel = $win.FindName('BlenderText')
-        $blenderBar = $win.FindName('BlenderBar')
-        $installButton = $win.FindName('InstallButton')
-        $skipButton = $win.FindName('SkipButton')
-        if ($null -ne $blenderLabel) { $blenderLabel.Text = $blenderText }
-        if ($null -ne $blenderBar) { $blenderBar.Value = $percent }
-        if ($null -ne $installButton) {
-            if ($mode -eq 'ready') { $installButton.Content = 'Blender prüfen' } else { $installButton.Content = 'Blender jetzt installieren' }
-            $installButton.IsEnabled = -not ($mode -eq 'installing')
-        }
-        if ($null -ne $skipButton) { $skipButton.IsEnabled = [bool]$script:BlenderGatePending }
-
-        $sessionId = ''
-        try { $sessionId = [string]$win.Tag.SessionId } catch {}
         $rows = New-Object System.Collections.Generic.List[object]
-        foreach ($jobPair in @($script:Shared.MeshJobs.GetEnumerator())) {
-            $job = Get-MeshJobData $script:Shared ([string]$jobPair.Key)
-            if ($null -eq $job) { continue }
-            if (-not [string]::IsNullOrWhiteSpace($sessionId) -and [string]$job.sessionId -ne $sessionId) { continue }
-            foreach ($slot in (Get-MeshSlotsBySession $script:Shared ([string]$job.sessionId) ([string]$job.id))) {
-                $rows.Add($slot)
-            }
+        foreach ($pair in @($script:Shared.MeshRegistry.GetEnumerator())) {
+            $slot = $null
+            try { $slot = ($pair.Value | ConvertFrom-Json) } catch { continue }
+            if ($null -eq $slot) { continue }
+            $slotState = ''
+            try { $slotState = [string]$slot.state } catch {}
+            if ($slotState -notin @('obj', 'applying', 'applied', 'apply_failed', 'dropping', 'drop_failed')) { continue }
+            $rows.Add($slot)
         }
 
         $slotList = $win.FindName('SlotList')
@@ -26902,7 +27348,6 @@ function Update-MeshWindow {
                 if (-not [string]::IsNullOrWhiteSpace($childKey)) { $keyed[$childKey] = $child }
             }
         }
-
         $rowsByKey = @{}
         foreach ($slot in $rows) {
             $slotKey = ''
@@ -26916,79 +27361,23 @@ function Update-MeshWindow {
                 $keyed.Remove($knownKey)
             }
         }
-        $addedRows = 0
+
+        $openCount = 0
+        $appliedCount = 0
+        $failedCount = 0
         foreach ($slot in $rows) {
             $slotKey = ''
             try { $slotKey = [string]$slot.slotKey } catch {}
             if ([string]::IsNullOrWhiteSpace($slotKey)) { continue }
             if (-not $keyed.ContainsKey($slotKey)) {
                 if ($null -eq $slotList) { continue }
-                $rowShell = [System.Windows.Controls.Border]::new()
-                $rowShell.Background = Get-Brush '#14FFFFFF'
-                $rowShell.BorderBrush = Get-Brush '#1FFFFFFF'
-                $rowShell.BorderThickness = [System.Windows.Thickness]::new(1)
-                $rowShell.CornerRadius = [System.Windows.CornerRadius]::new(8)
-                $rowShell.Padding = [System.Windows.Thickness]::new(10, 8, 10, 8)
-                $rowShell.Margin = [System.Windows.Thickness]::new(0, 0, 0, 8)
-                $rowStack = [System.Windows.Controls.StackPanel]::new()
-                $rowTitle = [System.Windows.Controls.TextBlock]::new()
-                $rowTitle.Foreground = Get-Brush '#F4F8FF'
-                $rowTitle.FontSize = 12
-                $rowTitle.FontWeight = 'Bold'
-                $rowFile = [System.Windows.Controls.TextBlock]::new()
-                $rowFile.Foreground = Get-Brush '#9AA9CE'
-                $rowFile.FontSize = 10.5
-                $rowFile.Margin = [System.Windows.Thickness]::new(0, 3, 0, 0)
-                $rowState = [System.Windows.Controls.TextBlock]::new()
-                $rowState.Foreground = Get-Brush '#FFD9A0'
-                $rowState.FontSize = 10.5
-                $rowState.TextWrapping = 'Wrap'
-                $rowState.Margin = [System.Windows.Thickness]::new(0, 3, 0, 0)
-                $idGrid = [System.Windows.Controls.Grid]::new()
-                $idGrid.Margin = [System.Windows.Thickness]::new(0, 7, 0, 0)
-                $col1 = [System.Windows.Controls.ColumnDefinition]::new()
-                $col1.Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
-                $col2 = [System.Windows.Controls.ColumnDefinition]::new()
-                $col2.Width = [System.Windows.GridLength]::new(0, [System.Windows.GridUnitType]::Auto)
-                [void]$idGrid.ColumnDefinitions.Add($col1)
-                [void]$idGrid.ColumnDefinitions.Add($col2)
-                $idBox = [System.Windows.Controls.TextBox]::new()
-                $idBox.MinHeight = 26
-                $idBox.MaxLength = 64
-                $idBox.Foreground = Get-Brush '#F4F8FF'
-                $idBox.ToolTip = 'Mesh-Id aus Roblox (nur die Zahl oder rbxassetid://...)'
-                $idBox.Style = $win.FindResource('ArenaTextField')
-                [System.Windows.Controls.Grid]::SetColumn($idBox, 0)
-                $idLabel = [System.Windows.Controls.TextBlock]::new()
-                $idLabel.Text = 'Mesh-Id'
-                $idLabel.Foreground = Get-Brush '#6E7FA8'
-                $idLabel.FontSize = 10.5
-                $idLabel.VerticalAlignment = 'Center'
-                $idLabel.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
-                [System.Windows.Controls.Grid]::SetColumn($idLabel, 1)
-                [void]$idGrid.Children.Add($idBox)
-                [void]$idGrid.Children.Add($idLabel)
-                [void]$rowStack.Children.Add($rowTitle)
-                [void]$rowStack.Children.Add($rowFile)
-                [void]$rowStack.Children.Add($rowState)
-                [void]$rowStack.Children.Add($idGrid)
-                $rowShell.Child = $rowStack
-                $rowShell.Tag = [pscustomobject]@{ SlotKey = $slotKey; StateText = $rowState; IdBox = $idBox; Title = $rowTitle; FileText = $rowFile }
-                [void]$slotList.Children.Add($rowShell)
-                $keyed[$slotKey] = $rowShell
-                $addedRows = $addedRows + 1
+                $keyed[$slotKey] = New-MeshRow -Slot $slot
+                [void]$slotList.Children.Add($keyed[$slotKey])
             }
-        }
-
-        $readyCount = 0
-        $appliedCount = 0
-        $failedCount = 0
-        foreach ($slot in $rows) {
-            $slotKey = ''
-            try { $slotKey = [string]$slot.slotKey } catch {}
-            if ([string]::IsNullOrWhiteSpace($slotKey) -or -not $keyed.ContainsKey($slotKey)) { continue }
             $shell = $keyed[$slotKey]
-            try { $shell.Tag.Title.Text = [string]$slot.modelName + ' - ' + [string]$slot.slotName } catch {}
+            $slotState = ''
+            try { $slotState = [string]$slot.state } catch {}
+            try { $shell.Tag.Title.Text = ([string]$slot.modelName + ' · ' + [string]$slot.slotName) } catch {}
             $fileLine = 'Datei: ' + [string]$slot.fileName
             try {
                 if ([int]$slot.triangles -gt 0) { $fileLine = $fileLine + '  |  ' + [string]$slot.triangles + ' Dreiecke' }
@@ -27000,13 +27389,11 @@ function Update-MeshWindow {
             } catch {}
             try { $shell.Tag.FileText.Text = $fileLine } catch {}
             try { $shell.Tag.StateText.Text = (Get-MeshSlotStateText $slot) } catch {}
-            $currentState = ''
-            try { $currentState = [string]$slot.state } catch {}
             $currentColor = '#FFD9A0'
-            if ($currentState -eq 'applied') { $currentColor = '#9AD9AE' }
-            elseif ($currentState -in @('failed', 'rejected', 'apply_failed')) { $currentColor = '#FF8AA0' }
-            elseif ($currentState -eq 'obj') { $currentColor = '#FFD9A0' }
-            elseif ($currentState -eq 'applying') { $currentColor = '#9FDCFF' }
+            if ($slotState -eq 'applied') { $currentColor = '#9AD9AE' }
+            elseif ($slotState -in @('failed', 'rejected', 'apply_failed', 'drop_failed')) { $currentColor = '#FF8AA0' }
+            elseif ($slotState -eq 'obj') { $currentColor = '#FFD9A0' }
+            elseif ($slotState -eq 'applying' -or $slotState -eq 'dropping') { $currentColor = '#9FDCFF' }
             try { $shell.Tag.StateText.Foreground = Get-Brush $currentColor } catch {}
             try {
                 $existingId = [string]$slot.assetId
@@ -27014,28 +27401,80 @@ function Update-MeshWindow {
                     $shell.Tag.IdBox.Text = $existingId
                 }
             } catch {}
-            if ($currentState -eq 'obj') { $readyCount = $readyCount + 1 }
-            if ($currentState -eq 'applied') { $appliedCount = $appliedCount + 1; $readyCount = $readyCount + 1 }
-            if ($currentState -in @('failed', 'rejected', 'apply_failed')) { $failedCount = $failedCount + 1 }
+            $canSubmit = ($slotState -eq 'obj' -or $slotState -eq 'apply_failed')
+            try { $shell.Tag.IdBox.IsEnabled = $canSubmit } catch {}
+            try { $shell.Tag.DoneButton.IsEnabled = $canSubmit } catch {}
+            try { $shell.Tag.CancelButton.IsEnabled = ($slotState -in @('obj', 'apply_failed', 'applied')) } catch {}
+            if ($canSubmit) { $openCount = $openCount + 1 }
+            if ($slotState -eq 'applied') { $appliedCount = $appliedCount + 1 }
+            if ($slotState -in @('apply_failed', 'drop_failed')) { $failedCount = $failedCount + 1 }
         }
 
         $statusText = $win.FindName('StatusText')
         if ($null -ne $statusText) {
             if ($rows.Count -eq 0) {
-                $statusText.Text = 'Noch keine Mesh-Datei vorhanden. Sobald Arena den Blender-Bau startet, erscheint hier je Bauteil eine Zeile mit Datei und Id-Feld.'
+                $statusText.Text = 'Keine Mesh-Datei wartet auf den Upload. Sobald Blender eine OBJ-Datei gebaut hat, oeffnet sich dieses Fenster von selbst.'
             } else {
-                $statusText.Text = [string]$rows.Count + ' Bauteil(e): ' + [string]$appliedCount + ' eingesetzt, ' + [string]$readyCount + ' mit Datei, ' + [string]$failedCount + ' mit Fehler. ' + [string]$script:MeshWindowNotice
+                $status = [string]$rows.Count + ' Mesh(s): ' + [string]$openCount + ' warten auf die Mesh-Id, ' + [string]$appliedCount + ' eingesetzt'
+                if ($failedCount -gt 0) { $status = $status + ', ' + [string]$failedCount + ' mit Fehler' }
+                if (-not [string]::IsNullOrWhiteSpace([string]$script:MeshWindowNotice)) { $status = $status + '. ' + [string]$script:MeshWindowNotice }
+                $statusText.Text = $status + '.'
             }
         }
-        $applyButton = $win.FindName('ApplyButton')
-        if ($null -ne $applyButton) { $applyButton.IsEnabled = ($readyCount -gt 0) -or ($appliedCount -gt 0) }
+        $placeLabel = $win.FindName('PlaceNameText')
+        if ($null -ne $placeLabel) { $placeLabel.Text = Get-MeshWindowPlaceLabel }
     } catch {
         try { Write-UiErrorLog 'Mesh-Fenster Aktualisierung' $_ } catch {}
     }
 }
 
+function Get-MeshWaitingUploadKeys {
+    # Slot-Keys aller Slots, deren OBJ-Datei auf den Upload wartet (state obj).
+    $keys = New-Object System.Collections.Generic.List[string]
+    try {
+        foreach ($pair in @($script:Shared.MeshRegistry.GetEnumerator())) {
+            $slot = $null
+            try { $slot = ($pair.Value | ConvertFrom-Json) } catch { continue }
+            if ($null -eq $slot) { continue }
+            $slotState = ''
+            try { $slotState = [string]$slot.state } catch {}
+            if ($slotState -ne 'obj') { continue }
+            $keys.Add([string]$slot.slotKey)
+        }
+    } catch {}
+    return ,$keys
+}
+
+function Get-MeshWaitingSignature {
+    # Sortierte Wartemenge als eine Zeichenkette - damit das Fenster nicht in
+    # Schleife aufgeht, merkt sich die Bridge diese Menge beim Schliessen.
+    $keys = Get-MeshWaitingUploadKeys
+    if ($null -eq $keys -or $keys.Count -eq 0) { return '' }
+    return (($keys.ToArray() | Sort-Object) -join '|')
+}
+
+function Update-MeshAutoWindow {
+    # Version 7.4.1: Das Fenster erscheint AUTOMATISCH und MODELLOS, sobald
+    # mindestens eine OBJ auf den Upload wartet. Nach dem Schliessen geht es
+    # erst wieder auf, wenn sich die Wartemenge (sortierte Slot-Keys) aendert.
+    try {
+        $signature = Get-MeshWaitingSignature
+        if ([string]::IsNullOrWhiteSpace($signature)) {
+            $script:MeshAutoClosedSignature = ''
+            return
+        }
+        if ($null -ne $script:MeshWindow) { return }
+        if ($signature -eq [string]$script:MeshAutoClosedSignature) { return }
+        Open-MeshWindow
+    } catch {
+        try { Write-UiErrorLog 'Mesh-Fenster automatisch oeffnen' $_ } catch {}
+    }
+}
+
 function Open-MeshWindow {
-    param([string]$SessionId, [string]$PlaceName = '')
+    # MODELLOS (Show(), KEIN ShowDialog): der Nutzer arbeitet im Studio weiter,
+    # waehrend das Fenster offen ist. Es wird automatisch geoeffnet und kann
+    # jederzeit geschlossen werden.
     if ($null -ne $script:MeshWindow) {
         try {
             $script:MeshWindow.Activate()
@@ -27051,18 +27490,11 @@ function Open-MeshWindow {
     $titleBar = $win.FindName('TitleBar')
     $placeLabel = $win.FindName('PlaceNameText')
     $closeButton = $win.FindName('CloseButton')
-    $installButton = $win.FindName('InstallButton')
-    $skipButton = $win.FindName('SkipButton')
-    $applyButton = $win.FindName('ApplyButton')
     $folderButton = $win.FindName('FolderButton')
-    $refreshButton = $win.FindName('RefreshButton')
-    if ([string]::IsNullOrWhiteSpace($PlaceName)) { $placeLabel.Text = 'Verbundenes Place' }
-    else { $placeLabel.Text = 'Place · ' + [string]$PlaceName }
 
     $info = [pscustomobject]@{
         Window    = $win
-        SessionId = [string]$SessionId
-        PlaceName = [string]$PlaceName
+        SessionId = [string]$script:MeshWindowSessionId
     }
     $win.Tag = $info
     $titleBar.Tag = $win
@@ -27081,134 +27513,39 @@ function Open-MeshWindow {
         param($s, $e)
         try { $s.Tag.Close() } catch {}
     })
-    $refreshButton.Add_Click({
-        param($s, $e)
-        Update-MeshWindow
-    })
     $folderButton.Add_Click({
         param($s, $e)
+        # "Ordner oeffnen": den Mesh-/Job-Ordner im Explorer zeigen; ohne
+        # wartenden Job den Mesh-Ordner der Bridge.
         try {
-            $info = $s.Tag
             $folder = ''
             try {
-                $jobId = ''
-                $target = $null
-                foreach ($jobPair in @($script:Shared.MeshJobs.GetEnumerator())) {
-                    $job = Get-MeshJobData $script:Shared ([string]$jobPair.Key)
-                    if ($null -eq $job) { continue }
-                    if ([string]$job.sessionId -ne [string]$info.SessionId) { continue }
-                    $slot = Get-MeshSlotsBySession $script:Shared ([string]$job.sessionId) ([string]$job.id) | Select-Object -First 1
-                    if ($null -ne $slot) { $folder = [System.IO.Path]::GetDirectoryName([string]$slot.objPath); $target = $job; break }
+                foreach ($pair in @($script:Shared.MeshRegistry.GetEnumerator())) {
+                    $slot = $null
+                    try { $slot = ($pair.Value | ConvertFrom-Json) } catch { continue }
+                    if ($null -eq $slot) { continue }
+                    $slotState = ''
+                    try { $slotState = [string]$slot.state } catch {}
+                    if ($slotState -ne 'obj') { continue }
+                    $objPath = ''
+                    try { $objPath = [string]$slot.objPath } catch {}
+                    if ([string]::IsNullOrWhiteSpace($objPath)) { continue }
+                    $folder = [System.IO.Path]::GetDirectoryName($objPath)
+                    if (-not [string]::IsNullOrWhiteSpace($folder)) { break }
                 }
             } catch {}
             if ([string]::IsNullOrWhiteSpace($folder) -or -not (Test-Path -LiteralPath $folder)) {
                 $folder = [string]$script:MeshRoot
             }
             if (Test-Path -LiteralPath $folder) { Start-Process explorer.exe -ArgumentList ('"' + $folder + '"') | Out-Null }
-        } catch {}
-    })
-    $installButton.Add_Click({
-        param($s, $e)
-        try {
-            $mode = [string]$script:Shared.BlenderState.state
-            $statusText = $s.Tag.Window.FindName('StatusText')
-            if ($mode -eq 'ready' -or $mode -eq 'installing') {
-                if ($null -ne $statusText) { $statusText.Text = 'Blender ist schon bereit (oder wird gerade installiert).' }
-                Update-MeshWindow
-                return
-            }
-            if ($null -ne $statusText) { $statusText.Text = 'Blender wird geprueft und bei Bedarf heruntergeladen …' }
-            $path = Get-BlenderPath
-            if ($path) {
-                $quick = Test-BlenderQuick -Path $path
-                if ($quick.ok) {
-                    Set-BlenderState -State 'ready' -Path $path -Version $quick.version -Detail 'Vom Nutzer erneut geprueft.' -Message ('Blender ' + [string]$quick.version + ' ist bereit.') -Percent 100 -Source 'vorhanden' -Enabled $true -GateResolved $true
-                    if ($null -ne $statusText) { $statusText.Text = 'Blender ' + [string]$quick.version + ' ist bereit.' }
-                    Update-MeshWindow
-                    return
-                }
-            }
-            Set-BlenderState -State 'missing' -Message 'Blender ist nicht installiert - die Bridge laedt die offizielle portable Version.' -Percent 0 -Enabled $false
-            Start-BlenderInstall
-            Update-MeshWindow
         } catch {
-            try { Write-UiErrorLog 'Blender-Installation aus dem Fenster' $_ } catch {}
-        }
-    })
-    $skipButton.Add_Click({
-        param($s, $e)
-        try {
-            $script:BlenderSkippedByUser = $true
-            Set-BlenderState -State 'skipped' -Message 'Vom Nutzer uebersprungen - der Mesh-Bau bleibt aus, alles andere laeuft normal.' -Percent 0 -Enabled $false -GateResolved $true
-            $statusText = $s.Tag.Window.FindName('StatusText')
-            if ($null -ne $statusText) { $statusText.Text = 'Blender-Schritt uebersprungen. Der Tunnel startet jetzt.' }
-            Update-MeshWindow
-        } catch {}
-    })
-    $applyButton.Add_Click({
-        param($s, $e)
-        try {
-            $info = $s.Tag
-            $statusText = $info.Window.FindName('StatusText')
-            $wanted = New-Object System.Collections.Generic.List[object]
-            $skipped = 0
-            foreach ($row in @($info.Window.FindName('SlotList').Children)) {
-                $slotKey = ''
-                $raw = ''
-                try { $slotKey = [string]$row.Tag.SlotKey } catch {}
-                try { $raw = [string]$row.Tag.IdBox.Text } catch {}
-                if ([string]::IsNullOrWhiteSpace($slotKey) -or [string]::IsNullOrWhiteSpace($raw)) { continue }
-                $digits = ''
-                try { $digits = ([regex]::Match($raw, '(\d+)')).Groups[1].Value } catch {}
-                if ([string]::IsNullOrWhiteSpace($digits)) {
-                    $skipped = $skipped + 1
-                    continue
-                }
-                $slot = Get-MeshSlotData $script:Shared $slotKey
-                $jobId = ''
-                $jobSession = ''
-                try { $jobId = [string]$slot.jobId } catch {}
-                try { $jobSession = [string]$slot.sessionId } catch {}
-                if ([string]::IsNullOrWhiteSpace($jobSession)) { $jobSession = [string]$info.SessionId }
-                $wanted.Add(@{ key = $slotKey; assetId = $digits; jobId = $jobId; sessionId = $jobSession })
-                Set-MeshSlotField $script:Shared $slotKey 'assetId' $digits
-                Set-MeshSlotField $script:Shared $slotKey 'state' 'applying'
-                Set-MeshSlotField $script:Shared $slotKey 'error' ''
-            }
-            if ($wanted.Count -eq 0) {
-                if ($null -ne $statusText) {
-                    if ($skipped -gt 0) { $statusText.Text = 'In ' + [string]$skipped + ' Feld(ern) steht keine Zahl - bitte die Mesh-Id aus Roblox eintragen.' }
-                    else { $statusText.Text = 'Bitte zuerst mindestens eine Mesh-Id eintragen.' }
-                }
-                Update-MeshWindow
-                return
-            }
-            $grouped = @{}
-            foreach ($entry in $wanted) {
-                $key = [string]$entry.sessionId + '|' + [string]$entry.jobId
-                if (-not $grouped.ContainsKey($key)) { $grouped[$key] = New-Object System.Collections.Generic.List[object] }
-                $grouped[$key].Add(@{ key = [string]$entry.key; assetId = [string]$entry.assetId })
-            }
-            $sent = 0
-            foreach ($groupKey in $grouped.Keys) {
-                $parts = [string]$groupKey -split '\|', 2
-                $sessionForCommand = [string]$parts[0]
-                $jobForCommand = [string]$parts[1]
-                $args = @{ slots = $grouped[$groupKey].ToArray() }
-                $commandId = New-MeshBridgeCommand -Shared $script:Shared -SessionId $sessionForCommand -Tool 'mesh_apply' -ToolArgs $args -BudgetSeconds 180 -Tag ('apply:' + $jobForCommand)
-                if (-not [string]::IsNullOrWhiteSpace($commandId)) { $sent = $sent + 1 }
-            }
-            if ($null -ne $statusText) {
-                if ($sent -gt 0) { $statusText.Text = [string]$wanted.Count + ' Mesh-Id(s) werden jetzt in die Platzhalter gesetzt. Roblox laedt die Geometrie aus der Cloud - das dauert ein paar Sekunden.' }
-                else { $statusText.Text = 'Die Bridge konnte den Befehl nicht einreihen. Ist Roblox Studio offen und mit diesem Place verbunden?' }
-            }
-            Update-MeshWindow
-        } catch {
-            try { Write-UiErrorLog 'Mesh-Ids einsetzen' $_ } catch {}
+            try { Write-UiErrorLog 'Mesh-Ordner oeffnen' $_ } catch {}
         }
     })
     $win.Add_Closed({
         param($s, $e)
+        # Wartemenge merken - erst wenn sie sich aendert, oeffnet es wieder.
+        try { $script:MeshAutoClosedSignature = Get-MeshWaitingSignature } catch {}
         try { $script:MeshWindow = $null } catch {}
     })
     $win.Add_PreviewKeyDown({
@@ -27218,13 +27555,10 @@ function Open-MeshWindow {
         } catch {}
     })
 
-    $applyButton.Tag = $info
-    $folderButton.Tag = $info
-    $skipButton.Tag = $info
-    $installButton.Tag = $info
-
     Update-MeshWindow
-    try { $win.ShowDialog() | Out-Null } catch { try { $win.Show() | Out-Null } catch {} }
+    try { $win.Show() | Out-Null } catch {
+        try { Write-UiErrorLog 'Mesh-Fenster konnte nicht angezeigt werden' $_ } catch {}
+    }
 }
 
 # ----------------------------------------------------------------------------
@@ -28445,7 +28779,7 @@ $xaml = @'
                                         </Grid.ColumnDefinitions>
                                         <Ellipse x:Name="SplashBlenderDot" Grid.Column="0" Width="9" Height="9" Fill="#8FA3CC" Margin="0,0,12,0" VerticalAlignment="Center"/>
                                         <TextBlock Grid.Column="1" Text="Blender (Mesh-Bau)" Foreground="#DCE6FF" FontSize="13.5" VerticalAlignment="Center"/>
-                                        <TextBlock x:Name="SplashBlenderState" Grid.Column="2" Text="Wartet …" Foreground="#9AA9CE" FontSize="12" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="SplashBlenderState" Grid.Column="2" Text="Wartet …" Foreground="#9AA9CE" FontSize="12" VerticalAlignment="Center" Cursor="Hand" ToolTip="Blender erneut pruefen (echte Faehigkeitsprobe)"/>
                                     </Grid>
                                     <Border Height="1" Background="#1FFFFFFF" Margin="0,11,0,11"/>
                                     <Grid>
@@ -28498,6 +28832,15 @@ $SplashPluginDot    = $window.FindName('SplashPluginDot')
 $SplashPluginState  = $window.FindName('SplashPluginState')
 $SplashBlenderDot   = $window.FindName('SplashBlenderDot')
 $SplashBlenderState = $window.FindName('SplashBlenderState')
+# Version 7.4.1: "Blender pruefen" wiederholt die ECHTE Faehigkeitsprobe
+# (nicht nur das Lesen der Version) - im Hintergrund, ohne Einfrieren.
+try {
+    $SplashBlenderState.Add_MouseLeftButtonUp({
+        try {
+            if (-not (Start-BlenderRecheck -Shared $script:Shared)) { Write-RuntimeLog 'Blender-Pruefung laeuft bereits - kein zweiter Lauf.' }
+        } catch { try { Write-RuntimeLog ('Blender-Pruefung aus dem Startbildschirm fehlgeschlagen: ' + $_.Exception.Message) } catch {} }
+    })
+} catch { }
 $SplashTunnelDot    = $window.FindName('SplashTunnelDot')
 $SplashTunnelState  = $window.FindName('SplashTunnelState')
 $PlaceList       = $window.FindName('PlaceList')
@@ -29063,7 +29406,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.4.0)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.4.1)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -31884,7 +32227,7 @@ function Write-ChannelDiagnoseFile {
 
         $progressPath = Join-Path $script:AppDataRoot 'progress-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.4.0)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.4.1)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -31919,7 +32262,7 @@ function Write-ChannelDiagnoseFile {
 
         $notifyPath = Join-Path $script:AppDataRoot 'notify-diagnose.txt'
         $sb2 = New-Object System.Text.StringBuilder
-        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.4.0)')
+        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.4.1)')
         [void]$sb2.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb2.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb2.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -32287,7 +32630,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.4.0)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.4.1)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -34025,9 +34368,6 @@ function New-Row {
         $resetItem = New-MenuRow -Glyph ([char]0xE72C) -Title 'Token zurücksetzen' -Subtitle 'Neuen Zugang für dieses Place' -Accent '#C9B7FF'
         $toggleItem = New-MenuRow -Glyph ([char]0xE72E) -Title 'Nur Lesezugriff' -Subtitle 'Inaktiv - Änderungen sind erlaubt' -Accent '#FFC1CE' -Checkable $true -Checked $false
         $historyItem = New-MenuRow -Glyph ([char]0xE81C) -Title 'Arena-Verlauf anzeigen' -Subtitle 'Aktionen und Änderungen dieses Place' -Accent '#9FDCFF'
-        # Version 7.4.0: Mesh-Uploads (Blender-Bau). Der Nutzer laedt die
-        # OBJ-Dateien selbst hoch und traegt hier die Mesh-Ids ein.
-        $meshItem = New-MenuRow -Glyph ([char]0xE8F4) -Title 'Mesh-Uploads (Blender)' -Subtitle 'Mesh-Ids eintragen und einsetzen lassen' -Accent '#FF9EC4'
 
         # Alle Daten haengen am Element selbst (Tag). Lokale Variablen einer
         # Funktion sind in Event-Handlern nicht verfuegbar.
@@ -34045,7 +34385,6 @@ function New-Row {
         $resetItem.Root.Tag = $itemTag
         $toggleItem.Root.Tag = $itemTag
         $historyItem.Root.Tag = $itemTag
-        $meshItem.Root.Tag = $itemTag
 
         $messageItem.Root.Add_MouseLeftButtonUp({
             param($s, $e)
@@ -34088,21 +34427,6 @@ function New-Row {
                 Write-UiErrorLog 'Arena-Verlaufsfenster konnte nicht geoeffnet werden' $_
             }
         })
-        $meshItem.Root.Add_MouseLeftButtonUp({
-            param($s, $e)
-            $info = $s.Tag
-            try { $info.Popup.IsOpen = $false } catch {}
-            try {
-                $placeTitle = ''
-                try { $placeTitle = [string]$info.PlaceName } catch {}
-                if ([string]::IsNullOrWhiteSpace($placeTitle)) {
-                    try { $placeTitle = [string]$script:PlaceNames[[string]$info.SessionId] } catch {}
-                }
-                Open-MeshWindow -SessionId ([string]$info.SessionId) -PlaceName $placeTitle
-            } catch {
-                Write-UiErrorLog 'Mesh-Fenster konnte nicht geoeffnet werden' $_
-            }
-        })
         $toggleItem.Root.Add_MouseLeftButtonUp({
             param($s, $e)
             $info = $s.Tag
@@ -34120,7 +34444,6 @@ function New-Row {
         $menuStack.Children.Add($copyItem.Root) | Out-Null
         $menuStack.Children.Add($resetItem.Root) | Out-Null
         $menuStack.Children.Add($historyItem.Root) | Out-Null
-        $menuStack.Children.Add($meshItem.Root) | Out-Null
         $menuStack.Children.Add((New-Separator)) | Out-Null
         $menuStack.Children.Add($toggleItem.Root) | Out-Null
 
@@ -34504,7 +34827,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.4.0)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.4.1)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -34589,6 +34912,9 @@ function Refresh-Ui {
     try { Update-BlenderSplashRow $null } catch { }
     try { Update-MeshTick } catch { }
     try { if ($null -ne $script:MeshWindow) { Update-MeshWindow } } catch { }
+    # Version 7.4.1: Das Mesh-Fenster kommt von selbst, sobald eine OBJ auf
+    # den Upload wartet (modellos, ohne Menueeintrag).
+    try { Update-MeshAutoWindow } catch { }
     $line = $null
     while ($script:TunnelLines.TryDequeue([ref]$line)) {
         $lineText = [string]$line
@@ -35321,7 +35647,7 @@ Set-StartupStage 'Ereignisse verdrahtet (Fenstersteuerung + Loaded)'
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.4.0'
+    $versionText = '7.4.1'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -36409,7 +36735,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.4.0" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.4.1" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -36457,7 +36783,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.4.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.4.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -36522,7 +36848,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.4.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.4.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -36535,7 +36861,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.4.0'
+    $verText = '7.4.1'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

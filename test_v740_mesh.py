@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline-Abnahme fuer den 7.4.0-Blender-/Mesh-Weg (ohne Windows/PowerShell).
+"""Offline-Abnahme fuer den 7.4.1-Blender-/Mesh-Weg (ohne Windows/PowerShell).
 
 Geprueft wird, was ohne laufende Bridge pruefbar ist:
 
@@ -25,7 +25,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.4.0"
+VERSION = "7.4.1"
 FAILURES: list[str] = []
 
 
@@ -47,13 +47,41 @@ def main() -> int:
     source = raw.decode("utf-8-sig")
     metadata = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     notes = "\n".join(str(note) for note in metadata.get("notes", []))
-    check(metadata.get("version") == VERSION, "version.json ist 7.4.0")
+    check(metadata.get("version") == VERSION, "version.json ist 7.4.1")
     for phrase in ("7.4.0", "Blender", "MESH_UPLOAD_PENDING", "Mesh-Uploads",
                    "CreateMeshPartAsync"):
         check(phrase in notes, f"Release-Notiz nennt {phrase}")
 
     # ------------------------------------------------------------------
-    # 1) Schritt 4 des Starts: vor dem Tunnel, ohne Startblocker
+    # 0) BOM-Hotfix 7.4.1 (Live-Befund: "SyntaxError: invalid
+    #    non-printable character U+FEFF" in check.py Zeile 1)
+    #    PowerShell 5.1 schreibt Set-Content -Encoding UTF8 MIT BOM.
+    # ------------------------------------------------------------------
+    mesh_path = region(source, "# Version 7.4.0: BLENDER (Schritt 4 des Starts) + MESH-BAU",
+                       "# Tunnel (cloudflared)")
+    bom_writers = [line.strip() for line in mesh_path.splitlines()
+                   if not line.strip().startswith("#")
+                   and ("Set-Content" in line or "Out-File" in line or "-Encoding UTF8" in line)]
+    check(not bom_writers,
+          "kein Set-Content/Out-File/-Encoding UTF8 mehr auf dem Mesh-Pfad (BOM-Falle)")
+    check(mesh_path.count("[System.IO.File]::WriteAllText(") >= 4,
+          "die erzeugten Skript- und Statusdateien werden mit WriteAllText BOM-frei geschrieben")
+    check("(New-Object System.Text.UTF8Encoding($false))" in mesh_path,
+          "WriteAllText benutzt den UTF8-Encoder OHNE BOM")
+    check('encoding="utf-8-sig"' in mesh_path and 'if source.startswith("\\ufeff")' in mesh_path
+          and 'source = source[1:]' in mesh_path,
+          "der Runner liest Modellskripte BOM-tolerant (utf-8-sig + \\ufeff-Strip)")
+    job_write = region(source, "function Start-MeshJobWork {", "function Stop-MeshJob {")
+    job_writers = [line.strip() for line in job_write.splitlines()
+                   if not line.strip().startswith("#") and "Set-Content" in line]
+    check(not job_writers and job_write.count("::WriteAllText(") >= 2,
+          "Job-Runner UND Slot-Skript werden BOM-frei geschrieben (kein Set-Content)")
+
+    # ------------------------------------------------------------------
+    # 1) Schritt 4 (7.4.1): EIN Hintergrund-Runspace, EINE Hilfs-Quelle, EINE
+    #    Probe, ready NUR nach bestandener Messung, kein Startblocker.
+    #    7.4.0 fror hier ein (Suche+Version im UI-Thread) und meldete beim
+    #    Nutzer state="ready" bei probe="failed".
     # ------------------------------------------------------------------
     runtime = region(source, "function Start-BridgeRuntime {", "# START: Ereignisse stehen VOR ShowDialog")
     check("Start-BlenderStartupGate" in runtime and "Start-CloudflareTunnel" in runtime,
@@ -65,10 +93,11 @@ def main() -> int:
     tunnel = region(source, "function Start-CloudflareTunnel {", "function Restart-CloudflareTunnel {")
     check(tunnel.index("if ($script:BlenderGatePending)") < tunnel.index("Get-CloudflaredPath"),
           "kein Tunnelstart (auch nicht aus der Selbstheilung), solange Schritt 4 laeuft")
-    gate = region(source, "function Start-BlenderStartupGate {", "function Update-BlenderSplashRow {")
-    check("[bool]$script:BlenderGatePending" in source
-          and "AddMinutes(12)" in gate,
-          "der Blender-Schritt hat ein hartes Zeitlimit und setzt den Warte-Zustand")
+    gate = region(source, "function Start-BlenderStartupGate {", "function Complete-BlenderStartupGate {")
+    check("$script:BlenderGatePending = $true" in gate and "AddMinutes(12)" in gate,
+          "der Blender-Schritt hat ein hartes Gesamt-Gate (12 min) und setzt den Warte-Zustand")
+    check("Start-BlenderStepRunspace -Shared $script:Shared" in gate,
+          "Suche + Version + Probe starten in EINEM Hintergrund-Runspace (kein Einfrieren)")
     complete = region(source, "function Complete-BlenderStartupGate {", "function Update-BlenderSplashRow {")
     check("Start-CloudflareTunnel" in complete and "$script:BlenderGatePending = $false" in complete,
           "der UI-Takt loest den Tunnel nach dem Schritt aus")
@@ -76,29 +105,75 @@ def main() -> int:
     check("Complete-BlenderStartupGate" in refresh and "Update-BlenderSplashRow $null" in refresh
           and "Update-MeshTick" in refresh,
           "Refresh-Ui fuehrt Gate, Splash-Zeile und Mesh-Takt aus")
-    for mode in ("'ready'", "'failed'", "'skipped'", "'installing'"):
-        check(mode in region(source, "function Update-BlenderSplashRow {", "function Get-BlenderReport {"),
-              f"Zeile 4 kennt den Zustand {mode}")
-    check("$SplashBlenderDot" in source and "$SplashBlenderState" in source
-          and "SplashBlenderDot" in source,
+    splash = region(source, "function Update-BlenderSplashRow {",
+                    "# ============================================================================\n# Version 7.4.0: MESH-BAU")
+    for mode in ("'ready'", "'failed'", "'skipped'", "'installing'", "'searching'", "'probing'"):
+        check(mode in splash, f"Zeile 4 kennt den Zustand {mode}")
+    check("$SplashBlenderDot" in source and "$SplashBlenderState" in source,
           "Zeile 4 des Startbildschirms existiert (XAML + FindName)")
-    state = region(source, "function Set-BlenderState {", "function Get-BlenderExeInFolder {")
-    check("BlenderState" in state and "GateResolved" in state,
-          "der Blender-Zustand liegt in Shared (Handler und UI lesen mit)")
-    install = region(source, "function Start-BlenderInstall {", "function Start-BlenderStartupGate {")
-    check("portables ZIP" in install or "portable" in install.lower(),
-          "die Installation nutzt das portable ZIP (kein Admin/UAC)")
-    check("Set-BlenderState -State 'failed'" in install,
-          "ein gescheiterter Installationsstart wird rot gemeldet, nicht verschluckt")
-    worker = region(source, "function Test-BlenderCapability {", "function Get-BlenderDownloadCandidates {")
-    check("BridgeBlenderProbeScript" in source and "ARENA_MESH_STATS" in source,
-          "die Faehigkeitsprobe baut wirklich ein OBJ und misst es")
-    probe = region(source, "$script:BridgeBlenderProbeScript = {", "# Der Mesh-Job-Worker")
+    click = region(source, "$SplashBlenderState = $window.FindName('SplashBlenderState')",
+                   "$SplashTunnelDot    = $window.FindName('SplashTunnelDot')")
+    check("Add_MouseLeftButtonUp" in click and "Start-BlenderRecheck" in click,
+          '"Blender pruefen" (Zeile 4) startet die Pruefung neu')
+    recheck = region(source, "    function Start-BlenderRecheck {", "    function Get-BlenderReport {")
+    check("Start-BlenderStepRunspace" in recheck and "Install-BlenderPortableZip" not in recheck,
+          '"Blender pruefen" startet denselben Runspace (echte Probe, kein reines Versionslesen)')
+    check("'searching'" in recheck and "return $false" in recheck,
+          "eine laufende Pruefung wird nicht doppelt gestartet")
+
+    # EINE Hilfs-Quelle fuer Hauptprogramm UND Runspaces (7.4.0 hatte im
+    # Runspace Phantom-Funktionen - die Probe scheiterte lautlos).
+    tools = region(source, "$script:BridgeBlenderTools = {",
+                   "try { . ([scriptblock]::Create([string]$script:BridgeBlenderTools)) }")
+    for helper in ("Write-BridgeBomFreeFile", "Write-BridgeLog", "Set-BlenderState", "Get-BlenderPath",
+                   "Invoke-BlenderProcess", "Test-BlenderQuick", "Get-BlenderDownloadCandidates",
+                   "Test-BlenderZipHash", "Install-BlenderPortableZip", "Get-BlenderReport",
+                   "Start-BlenderStepRunspace", "Start-BlenderRecheck"):
+        check(f"function {helper}" in tools, f"die eine Hilfs-Quelle enthaelt {helper}")
+    check(". ([scriptblock]::Create([string]$script:BridgeBlenderTools))" in source,
+          "das Hauptprogramm laedt genau diese Quelle")
+    check("BlenderToolsText = [string]$script:BridgeBlenderTools" in source,
+          "die Quelle liegt in Shared fuer die Runspaces bereit")
+    step = region(source, "$script:BridgeBlenderStepScript = {", "$script:BridgeBlenderProbeScript = {")
+    check("BlenderToolsText" in step, "der Schritt-Runspace laedt genau diese Quelle (keine Phantom-Funktionen)")
+    check("BlenderProbeScriptText" in step, "der Schritt-Runspace faehrt die EINE Probe")
+    check("TotalSeconds -gt 180" in step, "Zeitlimit Suchen/Pruefen: 180 s")
+    check("-State 'probing'" in step and "Install-BlenderPortableZip" in step,
+          "auch der Installationsweg endet in der echten Probe")
+    check("-State 'ready'" not in step and "portable" in step.lower(),
+          "der Such-/Installationsweg setzt NIE selbst ready (portables ZIP, kein Admin)")
+
+    # NUR EINE Probe; ready gibt es nur hier - nach bestandener Messung.
+    probe = region(source, "$script:BridgeBlenderProbeScript = {",
+                   "# ----------------------------------------------------------------------------\n# Der Mesh-Job-Worker")
+    check("ARENA_MESH_STATS" in probe and "$marker.Length -ne 17" in probe,
+          "die Probe prueft die Markerlaenge EXAKT (kein Zeichenversatz)")
     check("$markerIndex + $marker.Length" in probe and "$markerIndex + 18" not in source,
-          "die Probenzeile wird exakt hinter dem Marker gelesen (kein Zeichenversatz)")
-    check("if ($null -eq $stats -or [string]::IsNullOrWhiteSpace([string]$jsonText)) {" in probe
-          and "$state.enabled = $false" in probe,
+          "die Messzeile wird exakt hinter dem Marker gelesen")
+    check("Write-BridgeBomFreeFile" in probe and "Write-BridgeLog" in probe,
+          "die Probe schreibt BOM-frei UND protokolliert selbst in die runtime.log")
+    check("$null -eq $stats" in probe and "-Probe 'failed'" in probe,
           "eine unlesbare Messzeile faellt GESCHLOSSEN durch (kein falscher Erfolg)")
+    check(source.count("-State 'ready'") == 1 and "-State 'ready'" in probe,
+          "ready setzt AUSSCHLIESSLICH die bestandene Faehigkeitsprobe")
+    dead = [ln for ln in source.splitlines() if "Test-BlenderCapability" in ln and not ln.strip().startswith("#")]
+    check(not dead, "die tote zweite Probe ist geloescht (0 Aufrufer)")
+    check("BridgeBlenderInstallScript" not in source,
+          "der alte Installer-Runspace ist im Schritt-Runspace aufgegangen")
+
+    # blender-status.json: EINE Funktion, BOM-frei, Gate-Endstand sichtbar.
+    state_fn = region(source, "    function Set-BlenderState {", "    function Get-BlenderExeInFolder {")
+    check("BlenderStatusFile" in state_fn and "Write-BridgeBomFreeFile" in state_fn,
+          "blender-status.json wird aus EINER Funktion BOM-frei geschrieben (auch aus Runspaces)")
+    for field in ("state", "path", "version", "detail", "message", "percent", "source",
+                  "enabled", "gateResolved", "probe"):
+        check(field in state_fn, f"der Zustandsbericht enthaelt {field}")
+    check("GateResolved $true" in source and "GateResolved $false" in source,
+          "der Gate-Endstand wird ausdruecklich gesetzt (ready/failed zuerst)")
+    failed_paths = probe.count("-State 'failed'")
+    check(failed_paths >= 4, "jeder Fehlerweg der Probe endet ehrlich als failed (kein stiller Ausgang)")
+    check("$state.Foreground = Get-Brush '#FF8AA0'" in splash,
+          "failed wird in Zeile 4 ROT gemeldet")
 
     # ------------------------------------------------------------------
     # 2) Werkzeuge: Schema (Tool-Doku) und Handler-Verdrahtung
@@ -179,41 +254,102 @@ def main() -> int:
           "Audit-Kennzahlen landen in AuditFlags (report_done liest sie)")
 
     # ------------------------------------------------------------------
-    # 5) Fenster "Mesh-Uploads" (Fenster Nr. 3) und Menue
+    # 5) Automatisches Mesh-Fenster (7.4.1): neue Namen, alte Knoepfe weg,
+    #    modellos per Show(), Auto-Oeffnen nur bei geaenderter Wartemenge,
+    #    "Fertig" (nur Ziffern) mit Aufraeumen, "Stornieren" mit Rueckfrage.
     # ------------------------------------------------------------------
     xaml = region(source, "function Get-MeshWindowXaml {", "function Get-MeshSlotStateText {")
     check("<!--ARENA_DIALOG_STYLES-->" in xaml,
           "das Fenster nutzt den gemeinsamen Design-Block (Anthrazit/Grau/Pink)")
-    for name in ("TitleBar", "CloseButton", "BlenderBar", "InstallButton", "SkipButton",
-                 "SlotList", "ApplyButton", "FolderButton", "RefreshButton", "StatusText"):
+    check('WindowStyle="None"' in xaml and 'AllowsTransparency="True"' in xaml,
+          "das Fenster ist randlos/transparent wie die uebrigen DIALOG-Fenster")
+    for name in ("TitleBar", "PlaceNameText", "CloseButton", "FolderButton", "SlotList", "StatusText"):
         check(f'x:Name="{name}"' in xaml, f"Fenster enthaelt {name}")
+    for gone in ("ApplyButton", "RefreshButton", "InstallButton", "SkipButton",
+                 "BlenderBar", "BlenderText", "Blender jetzt installieren",
+                 "Ids einsetzen", "Schritt überspringen", "Aktualisieren"):
+        check(gone not in xaml, f"alter Fensterteil ist ENTFERNT: {gone}")
+    check("Mesh-Uploads (Blender)" not in source and "$meshItem" not in source,
+          "die Place-Liste hat KEINEN Mesh-Menueeintrag mehr")
+    check("Open-MeshWindow -SessionId" not in source,
+          "das Fenster wird nicht mehr aus dem Menue geoeffnet")
     open_win = region(source, "function Open-MeshWindow {",
-                     "# ----------------------------------------------------------------------------\n# Tunnel (cloudflared)")
-    check("ShowDialog" in open_win,
-          "das Fenster ist modal wie die beiden anderen erlaubten Fenster")
-    check("Show-Toast" not in open_win,
-          "das Fenster nutzt KEINE Toasts")
-    apply_handler = region(source, "$applyButton.Add_Click({", "$win.Add_Closed({")
-    check("New-MeshBridgeCommand" in apply_handler and "'mesh_apply'" in apply_handler,
-          "die Ids aus den Textfeldern werden als Befehl an Studio geschickt")
-    check("Set-MeshSlotField $script:Shared $slotKey 'state' 'applying'" in apply_handler,
-          "der Slot wird sofort als 'wird eingesetzt' markiert (kein falscher Erfolg)")
-    check("Mesh-Uploads" in source and "Open-MeshWindow -SessionId" in source,
-          "das Place-Menue oeffnet das Fenster")
-    tick = region(source, "function Update-MeshTick {", "function Get-MeshWindowXaml {")
-    check("Send-MeshPlaceholders" in tick and "Update-MeshRegistryFromApplyResult" in tick,
-          "der UI-Takt legt Platzhalter an und verbucht die Einsetz-Ergebnisse")
-    check("Get-MeshCommandOutcome" in tick and "TryRemove" in tick,
-          "Ergebnisse interner Befehle werden abgeholt und aufgeraeumt (keine late results)")
+                      "# ----------------------------------------------------------------------------\n# Tunnel (cloudflared)")
+    check("ShowDialog(" not in open_win, "das Fenster ist MODELLOS (kein ShowDialog-Aufruf)")
+    check("$win.Show() | Out-Null" in open_win, "das Fenster wird mit Show() angezeigt")
+    check("Get-MeshWaitingSignature" in open_win and "$win.Add_Closed" in open_win,
+          "beim Schliessen merkt sich die Bridge die Wartemenge (sortierte Slot-Keys)")
+    auto = region(source, "function Update-MeshAutoWindow {", "function Open-MeshWindow {")
+    check("MeshAutoClosedSignature" in auto and "signature -eq [string]$script:MeshAutoClosedSignature" in auto,
+          "Auto-Oeffnen nur, wenn sich die Wartemenge geaendert hat (keine Schleife)")
+    waiting = region(source, "function Get-MeshWaitingUploadKeys {", "function Get-MeshWaitingSignature {")
+    check("MeshRegistry" in waiting and "'obj'" in waiting,
+          "die Wartemenge kommt aus dem ECHTEN Register (state obj)")
+    refresh = region(source, "function Refresh-Ui {", "$line = $null")
+    check("Update-MeshTick" in refresh and "Update-MeshAutoWindow" in refresh
+          and "Update-MeshWindow" in refresh,
+          "der UI-Takt faehrt Mesh-Takt, offenes Fenster und Auto-Oeffnen")
     send = region(source, "function New-MeshBridgeCommand {", "function Get-MeshCommandOutcome {")
     check("ResultSignals" in send and "CommandPayloads" in send and "PendingCommands" in send,
           "interne Befehle laufen ueber denselben Queue-Weg wie Werkzeugaufrufe")
     check("MeshInternal" in send, "interne Befehle sind im Mesh-Takt auffindbar")
+    row = region(source, "function New-MeshRow {", "function Update-MeshWindow {")
+    for text in ("'Fertig'", "'Stornieren'", "'Ja, stornieren'", "'Abbrechen'", "Wirklich stornieren?"):
+        check(text in row, f"die Zeile enthaelt {text}")
+    check("ArenaTextField" in row and "ArenaPrimaryButton" in row and "ArenaDangerButton" in row,
+          "die Zeile nutzt die geteilten Styles (Id-Feld, Fertig, Stornieren)")
+    check("'Collapsed'" in row and "'Visible'" in row,
+          "die Rueckfrage erscheint IN der Zeile (Aktionsknopfpaar wird ausgetauscht)")
+    apply_fn = region(source, "function Invoke-MeshRowApply {", "function Invoke-MeshRowDrop {")
+    check("notmatch '^\\d+$'" in apply_fn, '"Fertig" prueft die Id streng: NUR Ziffern')
+    check("'applying'" in apply_fn and "'mesh_apply'" in apply_fn and "('apply:' + $jobId)" in apply_fn,
+          '"Fertig" setzt applying und schickt den internen Befehl mesh_apply (Tag apply:<jobId>)')
+    drop_fn = region(source, "function Invoke-MeshRowDrop {", "function Update-MeshWindow {")
+    check("'dropping'" in drop_fn and "'mesh_drop'" in drop_fn and "('drop:' + $jobId)" in drop_fn,
+          '"Stornieren" schickt den internen Befehl mesh_drop (Tag drop:<jobId>)')
+    check("NICHT wiederhergestellt" in drop_fn or "NICHT zurueck" in drop_fn,
+          'die Rueckfrage/Statuszeile sagt ehrlich, dass ein eingesetztes Mesh nicht zurueckkommt')
+    tick = region(source, "function Update-MeshTick {", "function Get-MeshWindowPlaceLabel {")
+    check("Send-MeshPlaceholders" in tick and "Update-MeshRegistryFromApplyResult" in tick,
+          "der UI-Takt legt Platzhalter an und verbucht die Einsetz-Ergebnisse")
+    check("'drop:'" in tick and "Update-MeshRegistryFromDropResult" in tick,
+          "der UI-Takt verbucht auch die Stornieren-Ergebnisse (done/error)")
+    check("Remove-MeshAppliedFileSets" in tick and "Eingesetzte Mesh-Dateien geloescht" in tick,
+          'nach "Fertig" raeumt der Takt Dateien auf und protokolliert das wortgleich')
+    check("apply_failed" in tick and "drop_failed" in tick,
+          "Fehlschlaege werden ehrlich als apply_failed/drop_failed gesetzt")
+    check("Mesh-Slot storniert" in tick, 'das Stornieren wird als "Mesh-Slot storniert" protokolliert')
+    cleanup = region(source, "function Remove-MeshSlotFiles {", "function Remove-MeshAppliedFileSets {")
+    check("MeshRegistry.TryRemove" in cleanup and "Remove-Item -LiteralPath $folder -Recurse" in cleanup,
+          "aufraeumen: Slot + Dateien; der Job-Ordner nur, wenn nichts mehr wartet")
+    check("'obj', 'applying', 'dropping'" in cleanup,
+          "der Ordner bleibt stehen, solange noch ein Slot wartet (weniger Datenmuell, kein Verlust)")
+    check("MeshSlotsBySession" in source and "placeholder" in source.lower(),
+          "Register/Platzhalter bleiben die Quelle (nichts wird behauptet)")
+
+    # ------------------------------------------------------------------
+    # 6) mesh_drop: Lua-Werkzeug + Registrierung als schreibendes Werkzeug
+    # ------------------------------------------------------------------
+    lua_drop = region(source, "tools.mesh_drop = function(args)", "tools.get_output = function(args)")
+    check('inst:IsA("MeshPart") and inst:GetAttribute("ArenaMeshSlot") == key' in lua_drop,
+          "mesh_drop loescht genau die MeshParts mit ArenaMeshSlot = key")
+    check("inst:Destroy()" in lua_drop and "hadAppliedMesh" in lua_drop,
+          "mesh_drop entfernt die Instanz und meldet, ob schon ein Mesh eingesetzt war")
+    check("NICHT wiederhergestellt" in lua_drop,
+          "mesh_drop sagt im note ehrlich, dass ein eingesetztes Mesh nicht zurueckkommt")
+    check("mesh_drop = true" in region(source, "local PERSISTENT_WRITE_TOOLS = {", "local WRITE_TOOLS = {}"),
+          "mesh_drop ist in PERSISTENT_WRITE_TOOLS registriert (Testmodus-Schutz)")
+    check("'mesh_drop'" in region(source, "    function Get-ActivityToolSets {", "    function Get-ArenaActivityText"),
+          "mesh_drop steht in der writeTools-Liste")
+    check("name = 'mesh_drop'" in region(source, "# ---------------- MESH / BLENDER", "# ---------------- JOBS ----------------"),
+          "mesh_drop hat einen Doku-Eintrag (Kategorie mesh)")
+    check("mesh_drop = 'Hat einen Mesh-Slot storniert" in source,
+          "mesh_drop hat einen Aktivitaetstext fuer die Place-Zeile")
 
     if FAILURES:
         print(f"\nFEHLGESCHLAGEN: {len(FAILURES)} Pruefung(en) rot.")
         return 1
-    print("\nOK: 7.4.0 Blender-/Mesh-Weg (Schritt 4, Messung, Platzhalter, Fenster, Gates) bestanden.")
+    print("\nOK: 7.4.1 Blender-/Mesh-Weg (Schritt 4, Messung, Platzhalter, Fenster, Gates) bestanden.")
     return 0
 
 
