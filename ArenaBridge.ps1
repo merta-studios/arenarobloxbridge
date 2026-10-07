@@ -1,5 +1,39 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.3.2
+# Arena Roblox Bridge  -  Version 7.4.0
+#
+# Version 7.4.0 (2026-10-07) - BLENDER-MESH-BAU + MESH-UPLOAD-FENSTER
+# -----------------------------------------------------------------------------
+# Zweiter Bauweg fuer anspruchsvolle Modelle: statt tausender Wedges laesst die
+# Bridge Blender headless ein OBJ bauen und MISST es selbst (Dreiecke, Groesse
+# in Studs, Dateigroesse) - "fertig" ohne Messung gibt es nicht.
+#   1) SCHRITT 4 DES STARTS: Vor dem Tunnel prueft die Bridge Blender
+#      (vorhandene Installationen zuerst, schnelle Versionspruefung) und laedt
+#      sonst das offizielle PORTABLE ZIP im Hintergrund (kein Admin, kein UAC).
+#      Danach laeuft eine echte Faehigkeitsprobe (Cube+Sphere -> OBJ -> Messung).
+#      Scheitert der Schritt, wird Zeile 4 des Startbildschirms ROT, der Mesh-Bau
+#      wird deaktiviert und ALLES ANDERE laeuft normal weiter - es gibt keinen
+#      neuen Startblocker. Der Nutzer kann den Schritt im Mesh-Fenster
+#      ueberspringen.
+#   2) NEUE WERKZEUGE: blender_status, build_mesh_model (sofort jobId, Blender
+#      laeuft im Hintergrund), mesh_status (gemessene Zahlen je Slot),
+#      mesh_cancel, mesh_apply_asset (Setzt die Geometrie ueber
+#      InsertService:CreateMeshPartAsync + MeshPart:ApplyMesh in die
+#      BESTEHENDEN Platzhalter - Groesse, Position, Welds, Attribute und
+#      Animationen bleiben erhalten). Intern: mesh_slots (viereckige MeshPart-
+#      Platzhalter) und mesh_apply.
+#   3) ROLLENKLARHEIT: Roblox hat KEINE API fuer Mesh-Uploads. Der Nutzer laedt
+#      die OBJ-Datei(en) hoch und traegt die Mesh-Id(s) im neuen Fenster
+#      "Mesh-Uploads" (Place-Menue) ein; die Bridge setzt sie automatisch ein.
+#   4) EHRLICHE GATES: model_audit zaehlt Mesh-Platzhalter getrennt
+#      (meshSlotCount/meshSlots) und report_done antwortet MESH_UPLOAD_PENDING,
+#      solange ein Platzhalter auf den Upload wartet - "fertig" waere hier eine
+#      Luege. Ein Mesh bleibt im Place messtechnisch eine Blackbox; Beleg sind
+#      die OBJ-Messung, die zurueckgelesene MeshId und der Sichttest.
+#   5) SICHERHEIT: Das Blender-Skript kommt vom Agenten, der Runner kommt von der
+#      Bridge (leere Szene, Export, Zentrierung, Messung). Skripte mit Datei-,
+#      Netzwerk-, Prozess- oder Systemzugriff, bpy.ops.wm.* oder Exportfunktionen
+#      werden VOR dem Start abgelehnt; es laeuft immer nur EIN Blender-Prozess,
+#      mit Zeitlimit und Abbruch.
 #
 # Version 7.3.2 (2026-10-07) - GLOBAL POLYGON GUIDE + CREATURE GEOMETRY CONTRACT
 # -----------------------------------------------------------------------------
@@ -1927,7 +1961,7 @@ param(
 # Existing LOCALAPPDATA directory; no UI, no new exception net.
 # A parse/policy failure prevents even this marker. Check its timestamp/version.
 # Continue + SilentlyContinue keeps diagnostic I/O from becoming a start blocker.
-Write-Output ("{0:o} PROOF_OF_LIFE Version=7.3.2 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
+Write-Output ("{0:o} PROOF_OF_LIFE Version=7.4.0 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
 
 $ErrorActionPreference = 'Stop'
 
@@ -1962,7 +1996,7 @@ trap {
         }
         $trapPath = Join-Path $trapFolder 'startup-diagnose.txt'
         $trapReport = New-Object System.Text.StringBuilder
-        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.3.2)')
+        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.4.0)')
         [void]$trapReport.AppendLine('Quelle: trap auf Skriptebene (nicht abgefangener Fehler)')
         [void]$trapReport.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$trapReport.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -2001,7 +2035,7 @@ trap {
             try {
                 [System.IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA 'START-CHECK.txt'),
                     ('Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.3.2' + [Environment]::NewLine +
+                     'Version: 7.4.0' + [Environment]::NewLine +
                      'ABBRUCH: ' + $trapMessage + [Environment]::NewLine +
                      'Details: ' + $trapPath + [Environment]::NewLine),
                     [System.Text.Encoding]::UTF8)
@@ -2173,6 +2207,29 @@ $script:TunnelReaders = @()
 $script:TunnelInstalling = $false
 $script:TunnelInstallFailed = $false
 $script:TunnelInstallMessage = ''
+
+# ----------------------------------------------------------------------------
+# Version 7.4.0: BLENDER (Schritt 4) + MESH-BAU.
+# Der ZUSTAND liegt in $script:Shared.BlenderState, damit auch Handler- und
+# Sweep-Runspaces ihn sehen. Hier stehen nur die UI-nahen Handles und Pfade.
+# ----------------------------------------------------------------------------
+$script:BlenderGatePending   = $false
+$script:BlenderGateDeadline  = [DateTime]::MinValue
+$script:BlenderSkippedByUser = $false
+$script:BlenderAttempts      = 0
+$script:MeshRoot             = Join-Path $script:AppDataRoot 'meshes'
+$script:BlenderFolder        = Join-Path $script:AppDataRoot 'blender'
+$script:BlenderStatusFile    = Join-Path $script:AppDataRoot 'blender-status.json'
+$script:MeshRegistryFile     = Join-Path $script:AppDataRoot 'mesh-registry.json'
+$script:BlenderInstallUrl    = ''
+$script:BlenderInstallZip    = ''
+$script:MeshWindow           = $null
+$script:MeshWindowSessionId  = ''
+$script:MeshWindowRows       = @{}
+$script:MeshWindowNotice     = ''
+$script:MeshAutoOpenPending  = $false
+$script:MeshLastOpenAt       = [DateTime]::MinValue
+$script:MeshApplyInFlight    = @{}
 $script:TunnelInstallStartedAt = $null
 $script:TunnelInstallErrorNotified = $false
 $script:TunnelInstaller = $null
@@ -2750,6 +2807,34 @@ $script:Shared = [hashtable]::Synchronized(@{
     PlayRetryDedupe = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
     # sessionId -> true, wenn die Start-Doku bereits an die KI ging
     DocsSent        = [System.Collections.Concurrent.ConcurrentDictionary[string,bool]]::new()
+    # ================================================================
+    # Version 7.4.0: BLENDER-/MESH-BAU (Schritt 4 vor dem Tunnel).
+    # Alle Strukturen sind thread-sicher: Handler-, Sweep- und UI-Threads
+    # lesen und schreiben sie parallel.
+    #   BlenderState -> Zustand von Pruefung/Installation (Splash-Schritt 4)
+    #   MeshJobs     -> jobId  -> JSON {id, modelName, state, slots[], ...}
+    #   MeshRegistry -> slotKey -> JSON {slotKey, state, objPath, assetId, ...}
+    #   MeshInternal -> tag -> JSON-Ergebnis eines INTERNEN Studio-Aufrufs
+    # ================================================================
+    BlenderState    = [hashtable]::Synchronized(@{
+        state = 'unknown'
+        path = ''
+        version = ''
+        probe = ''
+        detail = ''
+        percent = 0
+        message = 'Blender wird geprueft ...'
+        source = ''
+        updatedAt = 0L
+        installStartedAt = 0L
+        checkedAt = 0L
+        gateResolved = $false
+        enabled = $false
+    })
+    MeshJobs        = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    MeshRegistry    = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    MeshInternal    = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    MeshRunnerText  = ''
     # Pfad des lokalen Asset-Caches (Suche/Details, damit pro Session nichts neu geladen wird)
     AssetCachePath  = Join-Path $script:AppDataRoot 'asset_cache.json'
     # Version 7.1.2: TOOLBOX-DROSSEL je Place. Ohne sie lief jeder Katalog-/
@@ -2779,7 +2864,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.3.2'
+    DocsVersion     = '7.4.0'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -2815,7 +2900,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Version 7.0.6: Laufzeit-Identitaet der LAUFENDEN Datei (Version, Pfad,
     # SHA-256, Sprachmodus, Startzeit) fuer GET /api/version.
     RuntimeInfo = [hashtable]::Synchronized(@{
-        Version = '7.3.2'
+        Version = '7.4.0'
         File = ''
         Sha256 = ''
         LanguageMode = ''
@@ -3035,7 +3120,7 @@ function Write-StartupFailureDiagnose {
         try { $trace = [string]$ErrorRecord.ScriptStackTrace } catch {}
         if ($trace.Length -gt 2000) { $trace = $trace.Substring(0, 2000) }
         $report = New-Object System.Text.StringBuilder
-        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.3.2)')
+        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.4.0)')
         [void]$report.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$report.AppendLine('Letzte Startstufe: ' + $stage)
         [void]$report.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -3118,7 +3203,7 @@ function Set-StartupStage {
     try {
         $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
         $checkText = 'Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.3.2' + [Environment]::NewLine +
+                     'Version: 7.4.0' + [Environment]::NewLine +
                      'Zeit: ' + $stamp + [Environment]::NewLine +
                      'PowerShell: ' + [string]$PSVersionTable.PSVersion + ' | CLR ' + [string][Environment]::Version + [Environment]::NewLine +
                      'Skript: ' + [string]$script:ScriptPath + [Environment]::NewLine +
@@ -3184,12 +3269,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.3.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.3.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.4.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.4.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.3.2'
+$script:Shared.RuntimeInfo.Version = '7.4.0'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -3292,7 +3377,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.3.2)
+  Arena Studio Bridge - Studio Plugin  (Version 7.4.0)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -3365,7 +3450,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.3.2"
+local ARENA_VERSION  = "7.4.0"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -10808,6 +10893,137 @@ tools.apply_asset = function(args)
     return ok({ applied = applied, count = #applied, errors = errors })
 end
 
+-- ------------------------- Mesh-Bau (Version 7.4.0) -------------------------
+-- Der Blender-Mesh-Weg: die Bridge baut die OBJ-Datei im Hintergrund, der
+-- Nutzer laedt sie hoch, die Bridge setzt die Geometrie ein. Roblox erlaubt
+-- KEINEN automatischen Mesh-Upload - deshalb gibt es den Zwischenschritt.
+-- mesh_slots legt VIERECKIGE MeshPart-Platzhalter mit den GEMESSENEN Maßen an;
+-- mesh_apply setzt die echte Geometrie spaeter in GENAU diese Instanzen.
+tools.mesh_slots = function(args)
+    local parent, err = resolveRef(args.parentRef or "game.Workspace")
+    if not parent then return failCode("REF_NOT_FOUND", err) end
+    local slots = args.slots or {}
+    if #slots == 0 then return failCode("BAD_ARGS", "mesh_slots needs at least one slot (key, name, size).") end
+    if #slots > 40 then return failCode("BUDGET_EXCEEDED", "mesh_slots creates at most 40 placeholders per call.") end
+    local buildId = tostring(args.buildId or "")
+    local modelName = tostring(args.modelName or "ArenaMesh")
+    local created, failed = {}, {}
+    for _, spec in ipairs(slots) do
+        local key = tostring(spec.key or "")
+        if key == "" then
+            table.insert(failed, { key = "", error = "Der Slot hat keinen Schluessel (key)." })
+        else
+            local okSlot, result = pcall(function()
+                local part = Instance.new("MeshPart")
+                part.Name = "ArenaMesh_" .. modelName .. "_" .. tostring(spec.name or "slot")
+                local size = spec.size or {}
+                part.Size = Vector3.new(
+                    math.max(0.05, tonumber(size.x) or 0.05),
+                    math.max(0.05, tonumber(size.y) or 0.05),
+                    math.max(0.05, tonumber(size.z) or 0.05))
+                local position = spec.position or {}
+                local rotationY = tonumber(spec.rotationY) or 0
+                part.CFrame = CFrame.new(tonumber(position.x) or 0, tonumber(position.y) or 0, tonumber(position.z) or 0) * CFrame.Angles(0, math.rad(rotationY), 0)
+                part.Anchored = (spec.anchored ~= false)
+                part.CanCollide = (spec.canCollide == true)
+                part.Material = Enum.Material.SmoothPlastic
+                if tostring(spec.material or "") ~= "" then
+                    pcall(function() part.Material = Enum.Material[tostring(spec.material)] end)
+                end
+                local color = tostring(spec.color or "")
+                if color ~= "" then
+                    local hex = color:gsub("#", "")
+                    if #hex == 6 then
+                        pcall(function()
+                            part.Color = Color3.fromRGB(math.floor(tonumber(hex:sub(1, 2), 16)), math.floor(tonumber(hex:sub(3, 4), 16)), math.floor(tonumber(hex:sub(5, 6), 16)))
+                        end)
+                    end
+                end
+                part:SetAttribute("ArenaMeshSlot", key)
+                part:SetAttribute("ArenaMeshState", "placeholder")
+                if buildId ~= "" then part:SetAttribute("ArenaMeshBuildId", buildId) end
+                if tostring(spec.fileName or "") ~= "" then part:SetAttribute("ArenaMeshFile", tostring(spec.fileName)) end
+                if tostring(spec.assetId or "") ~= "" then part:SetAttribute("ArenaMeshAssetId", tostring(spec.assetId)) end
+                -- ERST nach allen Eigenschaften markieren: model_audit und
+                -- report_done lesen ArenaPlaceholder als "hier fehlt echtes
+                -- Modell". Genau das soll bis zum Upload gelten.
+                part:SetAttribute("ArenaPlaceholder", true)
+                part.Parent = parent
+                return { key = key, path = part:GetFullName(), size = tostring(part.Size) }
+            end)
+            if okSlot then
+                table.insert(created, result)
+            else
+                table.insert(failed, { key = key, error = tostring(result) })
+            end
+        end
+    end
+    return ok({
+        created = created,
+        failed = failed,
+        createdCount = #created,
+        failedCount = #failed,
+        note = "Viereckige MeshPart-Platzhalter stehen. Jetzt laedt der NUTZER die OBJ-Datei(en) in Roblox hoch (Studio-3D-Importer oder Creator Dashboard) und traegt die Mesh-Id(s) im Bridge-Fenster \"Mesh-Uploads\" ein - die Bridge setzt die Geometrie dann automatisch ein. Bis dahin ist KEIN fertiges Modell vorhanden: report_done antwortet MESH_UPLOAD_PENDING.",
+    })
+end
+
+tools.mesh_apply = function(args)
+    local slots = args.slots or {}
+    if #slots == 0 then return failCode("BAD_ARGS", "mesh_apply needs at least one slot { key, assetId }.") end
+    local InsertService = game:GetService("InsertService")
+    local workspaceRoot = game:GetService("Workspace")
+    local applied, failed = {}, {}
+    for _, spec in ipairs(slots) do
+        local key = tostring(spec.key or "")
+        local digits = tostring(spec.assetId or ""):match("(%d+)")
+        if key == "" or not digits then
+            table.insert(failed, { key = key, error = "key und eine numerische assetId sind Pflicht." })
+        else
+            local okSlot, result = pcall(function()
+                local target = nil
+                for _, inst in ipairs(workspaceRoot:GetDescendants()) do
+                    if inst:IsA("MeshPart") and inst:GetAttribute("ArenaMeshSlot") == key then
+                        target = inst
+                        break
+                    end
+                end
+                if not target then
+                    error("Kein Platzhalter mit ArenaMeshSlot=\"" .. key .. "\" gefunden - wurde er verschoben, umbenannt oder geloescht?")
+                end
+                local savedSize = target.Size
+                local savedCFrame = target.CFrame
+                -- MeshPart.MeshId ist SCHREIBGESCHUETZT. Der offizielle Weg ist
+                -- InsertService:CreateMeshPartAsync + MeshPart:ApplyMesh - damit
+                -- bleibt DIESE Instanz erhalten (Name, Attribute, Welds,
+                -- Animationen, Kinder).
+                local created = InsertService:CreateMeshPartAsync("rbxassetid://" .. digits, Enum.CollisionFidelity.Default, Enum.RenderFidelity.Automatic)
+                target:ApplyMesh(created)
+                target.Size = savedSize
+                target.CFrame = savedCFrame
+                created:Destroy()
+                local readBack = ""
+                pcall(function() readBack = tostring(target.MeshId) end)
+                target:SetAttribute("ArenaMeshAssetId", digits)
+                target:SetAttribute("ArenaMeshState", "applied")
+                target:SetAttribute("ArenaPlaceholder", false)
+                return { key = key, path = target:GetFullName(), assetId = digits, meshIdReadBack = readBack, size = tostring(target.Size) }
+            end)
+            if okSlot then
+                table.insert(applied, result)
+            else
+                table.insert(failed, { key = key, assetId = digits, error = tostring(result) })
+            end
+        end
+    end
+    return ok({
+        applied = applied,
+        failed = failed,
+        appliedCount = #applied,
+        failedCount = #failed,
+        note = "Die Geometrie sitzt in den BESTEHENDEN Platzhaltern: Groesse, Position, Welds, Attribute und Animationen bleiben erhalten. meshIdReadBack ist der vom Place gelesene Wert - passt er nicht zur Id, wurde nichts erfunden, sondern ehrlich gemeldet.",
+    })
+end
+
 -- ------------------------- Ausgabefenster -----------------------------------
 tools.get_output = function(args)
     -- LogService from the edit DataModel is the universal source (also for the
@@ -11301,6 +11517,7 @@ local PERSISTENT_WRITE_TOOLS = {
     insert_asset = true, apply_asset = true,
     point_at = true, fill_region = true,
     build_polygon_model = true, build_assembly = true,
+    mesh_slots = true, mesh_apply = true,
     build_surface = true, build_interface = true,
     undo = true, redo = true,
 }
@@ -12496,14 +12713,30 @@ tools.model_audit = function(args)
     end
     local parts = collectParts(root, {}, 8000)
     local placeholders, blockouts, meshes, unions, untextured, named = {}, {}, 0, 0, 0, 0
+    local meshSlots = {}
     local materials = {}
     for _, part in ipairs(parts) do
         if part:IsA("MeshPart") then meshes = meshes + 1 end
         if part:IsA("UnionOperation") or part:IsA("IntersectOperation") then unions = unions + 1 end
+        -- Version 7.4.0: Mesh-Platzhalter des Blender-Wegs sind EIGENE Klasse.
+        -- Sie warten auf den Upload des Nutzers (ArenaMeshSlot) und werden
+        -- darum nicht als vergessene Platzhalter gezaehlt - report_done
+        -- antwortet fuer sie mit MESH_UPLOAD_PENDING.
+        local meshKey = part:GetAttribute("ArenaMeshSlot")
+        if meshKey ~= nil then
+            table.insert(meshSlots, {
+                id = idOf(part),
+                path = part:GetFullName(),
+                name = part.Name,
+                key = tostring(meshKey),
+                state = tostring(part:GetAttribute("ArenaMeshState") or ""),
+                assetId = tostring(part:GetAttribute("ArenaMeshAssetId") or ""),
+            })
+        end
         local isPlaceholder, why = isPlaceholderPart(part)
-        if isPlaceholder then
+        if isPlaceholder and meshKey == nil then
             table.insert(placeholders, { id = idOf(part), path = part:GetFullName(), name = part.Name, why = why })
-        else
+        elseif meshKey == nil then
             local blockout, colorHex = isBlockoutPart(part)
             if blockout then table.insert(blockouts, { id = idOf(part), path = part:GetFullName(), color = colorHex }) end
         end
@@ -12559,7 +12792,9 @@ tools.model_audit = function(args)
         phase, verdict = "modelled", "Clean: no placeholders, blockouts or measured build defects found in the checked scope."
     end
     local nextStep = "Run world_audit for style/lighting, then continue."
-    if (#placeholders + #blockouts) > 0 then
+    if #meshSlots > 0 then
+        nextStep = tostring(#meshSlots) .. " mesh placeholder(s) wait for the user: he uploads the OBJ file(s) to Roblox and enters the mesh id(s) in the bridge window \"Mesh-Uploads\" (or tells you the id so you call mesh_apply_asset). report_done answers MESH_UPLOAD_PENDING until then - be honest about that."
+    elseif (#placeholders + #blockouts) > 0 then
         nextStep = "refine the flagged parts or replace them, then run model_audit again."
     elseif quality.primitiveOnly or quality.cylinderProblemCount > 0 or quality.draftRisk or (quality.organicQuality and #quality.organicQuality.issues > 0) then
         nextStep = quality.advice
@@ -12569,6 +12804,8 @@ tools.model_audit = function(args)
         parts = #parts,
         placeholderCount = #placeholders,
         placeholders = placeholders,
+        meshSlotCount = #meshSlots,
+        meshSlots = meshSlots,
         blockoutCount = #blockouts,
         blockoutExamples = { blockouts[1], blockouts[2], blockouts[3] },
         meshes = meshes,
@@ -15001,7 +15238,7 @@ $script:BridgeHandlerScript = {
     function Register-SessionBuild {
         param([string]$SessionId, [string]$Tool, $ToolArgs, $Payload, [int64]$AtTicks = 0)
         try {
-            $eligible = $Tool -in @('build_polygon_model', 'build_assembly', 'build_surface', 'build_interface',
+            $eligible = $Tool -in @('build_polygon_model', 'build_assembly', 'mesh_slots', 'mesh_apply', 'build_surface', 'build_interface',
                 'union', 'subtract', 'negate', 'intersect', 'insert_asset', 'apply_asset', 'clone_instance', 'group_instances')
             if (-not $eligible -and $Tool -in @('create_instance', 'bulk_create')) {
                 $className = ''
@@ -16069,7 +16306,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.3.2 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.4.0 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -16159,7 +16396,7 @@ $script:BridgeHandlerScript = {
 
     function Get-ActivityToolSets {
         $read = @('get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','sim_status','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait','ui_capabilities','ui_skin','ui_audit','ui_texture','world_style','site_survey','variation','model_audit','world_audit','prop_list','wait_for_user','ack_user_message','ask_user','confirm_action','scaffold_ui_scripts')
-        $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','build_polygon_model','build_assembly','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','sim_start','set_context','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute','build_surface','build_interface','ui_glow','ui_radial','prop_place','prop_save','refine','style_lock','world_glow')
+        $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','build_polygon_model','build_assembly','mesh_slots','mesh_apply','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','sim_start','set_context','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute','build_surface','build_interface','ui_glow','ui_radial','prop_place','prop_save','refine','style_lock','world_glow')
         return @{ read = $read; write = $write }
     }
 
@@ -16336,6 +16573,9 @@ $script:BridgeHandlerScript = {
             validate_asset = 'Hat ein Asset geprüft.'
             insert_asset = 'Hat ein Asset in den Place eingefügt.'
             apply_asset = 'Hat ein Asset auf ein Objekt gelegt.'
+            mesh_slots = 'Hat Mesh-Platzhalter fuer den Blender-Bau angelegt.'
+            mesh_apply = 'Hat hochgeladene Meshes in die Platzhalter gesetzt.'
+            mesh_apply_asset = 'Hat hochgeladene Meshes in die Platzhalter gesetzt.'
             catalog_status = 'Hat geprüft, ob der Katalog erreichbar ist.'
             get_output = 'Hat die Ausgabe gelesen.'
             wait_for_output = 'Hat auf eine Ausgabezeile gewartet.'
@@ -20328,6 +20568,50 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
             example = @{};
             errors = @() })
 
+        # ---------------- MESH / BLENDER (Version 7.4.0) ----------------
+        $t.Add(@{ name = 'blender_status'; category = 'mesh'; summary = 'Ist Blender bereit? Zustand, Version, Pfad, Probe.';
+            description = 'Liest den Schritt-4-Zustand der Bridge: Blender wird gesucht (vorhandene Installationen zuerst), geprueft und bei Bedarf als portables ZIP im Hintergrund installiert. Solange state nicht ready ist, ist der Mesh-Bau deaktiviert - build_mesh_model antwortet dann BLENDER_NOT_READY. Der Polygon-Weg (build_polygon_model) funktioniert unabhaengig davon.';
+            params = @{};
+            returns = '{ ok, result { blender { state, ready, version, path, source, percent, message, detail, probe, enabled, meshFolder, installLog }, note } }';
+            example = @{};
+            errors = @() })
+        $t.Add(@{ name = 'build_mesh_model'; category = 'mesh'; summary = 'Blender baut im Hintergrund ein OBJ (ein Slot = ein MeshPart).';
+            description = 'Startet den Blender-Bau als HINTERGRUND-Job und antwortet sofort mit jobId - niemals synchron warten. Je Slot liefert der Aufruf ein Blender-Python-Skript (nur Geometrie: bpy, bmesh, math, mathutils, random; Datei-/Netzwerk-/Prozesszugriff, bpy.ops.wm.* und Exportfunktionen werden vor dem Start abgelehnt). 1 Blender-Einheit = 1 Stud, Y ist oben, die bbox-Mitte am Ursprung setzt der Runner der Bridge automatisch, Modifier werden beim Export angewandt. Danach MISST die Bridge die OBJ-Datei (Dreiecke, Groesse in Studs) und legt die viereckigen MeshPart-Platzhalter selbst in den Place. Der NUTZER laedt die Datei(en) in Roblox hoch und traegt die Mesh-Id(s) im Bridge-Fenster "Mesh-Uploads" ein; mesh_apply_asset setzt die Geometrie ein. Fortschritt und Zahlen mit mesh_status lesen (kurz pollen, nicht in einer engen Schleife). Siehe meshBuildRules in den Guides.';
+            params = @{ modelName = @{ type = 'string'; required = $true; default = '-'; description = 'Name des Modells (auch fuer die Platzhalter-Namen).' }; slots = @{ type = 'array'; required = $true; default = '-'; description = 'Array von { name, script, offset {x,y,z}, targetTriangles, color, material, canCollide } - ein Eintrag je MeshPart (max. 12).' }; parentRef = @{ type = 'string'; required = $false; default = 'game.Workspace'; description = 'Wohin die Platzhalter kommen.' }; origin = @{ type = 'table'; required = $false; default = '{x=0,y=0,z=0}'; description = 'Weltposition des Modell-Ursprungs; Slot-Offsets kommen darauf.' }; rotationY = @{ type = 'number'; required = $false; default = '0'; description = 'Drehung um Y in Grad.' }; anchored = @{ type = 'boolean'; required = $false; default = 'true'; description = 'Anchored der Platzhalter.' }; timeoutSeconds = @{ type = 'number'; required = $false; default = '300'; description = 'Zeitlimit je Slot (max. 900).' } };
+            returns = '{ ok, result { jobId, state="queued", slotCount, blender, meshFolder, note, files } }';
+            example = @{ modelName = 'Turret'; origin = @{ x = 12; y = 4; z = -18 }; slots = @( @{ name = 'base'; script = 'bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=1.4, depth=0.6)'; color = '#8A8F99' } ) };
+            errors = @('BLENDER_NOT_READY: Blender fehlt/installiert noch - nichts wurde gebaut.', 'SCRIPT_REJECTED: mindestens ein Skript ist gesperrt (problems nennt den Grund).', 'BUDGET_EXCEEDED: mehr als 12 Slots.', 'BAD_ARGS: slots fehlt oder ist leer.') })
+        $t.Add(@{ name = 'mesh_status'; category = 'mesh'; summary = 'Zustand der Mesh-Jobs, gemessene Dreiecke/Groesse, Platzhalter, Ids.';
+            description = 'Liest alle Mesh-Jobs dieser Sitzung aus dem Register der Bridge: Zustand, Ordner, je Slot die GEMESSENEN Dreiecke und die Groesse in Studs, die Platzhalter, die eingetragene Asset-Id und die zurueckgelesene MeshId. readyForUpload nennt genau die Dateien, die der Nutzer noch hochladen muss. Mit action="placeholders" werden die Platzhalter neu angefordert (z.B. nachdem sie im Studio geloescht wurden).';
+            params = @{ jobId = @{ type = 'string'; required = $false; default = '-'; description = 'Nur diesen Job lesen.' }; action = @{ type = 'string'; required = $false; default = '-'; description = 'Leer oder "placeholders" (Platzhalter neu anfordern).' } };
+            returns = '{ ok, result { blender, jobs [ { jobId, modelName, state, folder, placeholdersCreated, placeholderState, slots [ { key, name, state, triangles, size, fileName, objPath, assetId, meshIdReadBack, placeholderPath, error } ] } ], readyForUpload, appliedCount, failedCount, summary, note } }';
+            example = @{};
+            errors = @() })
+        $t.Add(@{ name = 'mesh_cancel'; category = 'mesh'; summary = 'Laufenden Blender-Job abbrechen.';
+            description = 'Beendet den laufenden Blender-Job (ohne jobId den neuesten dieser Sitzung). Eine halbfertige OBJ-Datei wird verworfen; bereits gemessene Slots bleiben unveraendert. Nicht in einer Schleife aufrufen.';
+            params = @{ jobId = @{ type = 'string'; required = $false; default = '-'; description = 'Job aus build_mesh_model/mesh_status.' } };
+            returns = '{ ok, result { jobId, cancelled, note } }';
+            example = @{ jobId = 'mesh_1a2b3c4d5e' };
+            errors = @('NO_JOB: es laeuft kein Job.') })
+        $t.Add(@{ name = 'mesh_apply_asset'; category = 'mesh'; summary = 'Hochgeladene Mesh-Ids in die vorhandenen Platzhalter setzen.';
+            description = 'Setzt die Geometrie in die BESTEHENDEN MeshPart-Platzhalter (Slot-keys aus mesh_status). Groesse, Position, Welds, Attribute und Animationen bleiben erhalten. MeshPart.MeshId ist schreibgeschuetzt - die Bridge benutzt deshalb InsertService:CreateMeshPartAsync + MeshPart:ApplyMesh ueber das Plugin. Die Asset-Ids muessen zum Konto des Nutzers gehoeren (er hat die Dateien selbst hochgeladen). Nach dem Einsetzen meldet die Antwort je Slot die zurueckgelesene MeshId - erst dann ist der Slot wirklich fertig.';
+            params = @{ slots = @{ type = 'array'; required = $true; default = '-'; description = 'Array von { key, assetId } - keys aus mesh_status, assetId ist die Zahl aus Roblox (rbxassetid:// optional).' } };
+            returns = '{ ok, result { applied [ { key, state, assetId, meshIdReadBack, path, error } ], pluginResult, note } }';
+            example = @{ slots = @( @{ key = 'mesh_1a2b3c4d5e:base'; assetId = 1234567890 } ) };
+            errors = @('BAD_ARGS: slots fehlt oder enthaelt keine gueltige key/assetId.', 'STUDIO_UNREACHABLE_OR_TIMEOUT: Studio hat nicht geantwortet - nichts wurde eingesetzt.') })
+        $t.Add(@{ name = 'mesh_slots'; category = 'mesh'; summary = 'Viereckige MeshPart-Platzhalter anlegen (interner Baustein des Mesh-Wegs).';
+            description = 'Legt die viereckigen MeshPart-Platzhalter mit den GEMESSENEN Maßen an und markiert sie mit ArenaMeshSlot/ArenaMeshState/ArenaPlaceholder. Normalerweise macht das die Bridge nach dem Blender-Bau selbst - dieser Aufruf ist fuer Sonderfaelle (z.B. Platzhalter an anderer Stelle neu anlegen). Die Groesse muss von mesh_status kommen; sie darf nicht geschaetzt werden.';
+            params = @{ slots = @{ type = 'array'; required = $true; default = '-'; description = 'Array von { key, name, size {x,y,z}, position {x,y,z}, rotationY, color, material, canCollide, fileName } (max. 40).' }; parentRef = @{ type = 'string'; required = $false; default = 'game.Workspace'; description = 'Elternobjekt.' }; modelName = @{ type = 'string'; required = $false; default = 'ArenaMesh'; description = 'Namensbestandteil.' }; buildId = @{ type = 'string'; required = $false; default = '-'; description = 'Job-Id aus mesh_status.' } };
+            returns = '{ ok, created, failed, createdCount, failedCount, note }';
+            example = @{ slots = @( @{ key = 'mesh_1a2b3c4d5e:base'; name = 'base'; size = @{ x = 2.8; y = 0.6; z = 2.8 } } ) };
+            errors = @('BAD_ARGS: slots fehlt.', 'BUDGET_EXCEEDED: mehr als 40 Platzhalter.') })
+        $t.Add(@{ name = 'mesh_apply'; category = 'mesh'; summary = 'Interner Befehl der Bridge: Geometrie einsetzen (nicht direkt aufrufen).';
+            description = 'Wird von der Bridge (mesh_apply_asset) an das Plugin geschickt. Der Aufruf setzt je Slot { key, assetId } die Geometrie in den bestehenden MeshPart mit dem Attribut ArenaMeshSlot. Nicht direkt benutzen - die Dokumentation steht bei mesh_apply_asset.';
+            params = @{ slots = @{ type = 'array'; required = $true; default = '-'; description = 'Array von { key, assetId }.' } };
+            returns = '{ ok, applied, failed, appliedCount, failedCount, note }';
+            example = @{ slots = @( @{ key = 'mesh_1a2b3c4d5e:base'; assetId = '1234567890' } ) };
+            errors = @('BAD_ARGS: slots fehlt.') })
+
         # ---------------- JOBS ----------------
         $t.Add(@{ name = 'start_job'; category = 'jobs'; summary = 'Arbeit im Hintergrund starten (keine 60s-Grenze).';
             description = 'Startet Lua-Code ODER einen Tool-Call als Job im Studio. Laeuft unabhaengig weiter, auch wenn der HTTP-Call timet-out. Fortschritt: job kann job.progress(percent, message) rufen (im Code als job-Parameter: job:progress(...)). Ergebnis: job_result. Abbruch: cancel_job (kooperativ).';
@@ -20505,6 +20789,7 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
                 'FINISH GRADE (7.2.0): model_audit now grades every build (finishScore 0..100, grade draft/simple/detailed/sculpted). grade "draft" means at least 4 parts, no polygon/mesh/union/detail geometry and more than 60 % primitives - report_done answers DRAFT_GRADE_RISK until you rebuild the silhouette with real structure. If the simplicity IS what the user asked for, declare it while building: build_polygon_model/build_assembly { grade = "simple" | "lowpoly" | "blockout" } writes the attribute ArenaDeclaredGrade and the audit stops calling it a draft. report_done also returns buildRegister: it lists what you built and what model_audit has not measured yet.',
                 'USER CHANNEL (7.2.0): the user can message you WHILE you work ("Nachricht an Arena senden" in the bridge place row). Every response then carries _bridge.userMessages plus _bridge.userMessageContract. Read it first, apply it, tell the user what you changed, and acknowledge with ack_user_message { id } - an unacknowledged message repeats in up to three responses. wait_for_user { maxSeconds <= 50 } blocks until a message arrives; use it only at a real decision point, never as polling. The user can also switch the place to read-only from the same menu, which is reported as WRITE_LOCKED_BY_USER.'
                 'HARD ORGANIC EVIDENCE CONTRACT (separate from the global builder preference): when an organic model is explicitly built with organic=true or is registered from per-model model_audit evidence, build and audit the real model in Studio, use a deliberate palette, install motion under that model, and fix its organicQuality issues. report_done requires fresh passing evidence for every registered organic model, even after a handoff. This is not selected or enforced from animal/tree names; see organicBuildRules for the stricter per-organic-model evidence contract.'
+                'BLENDER-MESH-BAU (7.4.0, freiwilliger zweiter Weg fuer anspruchsvolle Modelle): build_mesh_model laesst Blender im Hintergrund ein OBJ bauen, die Bridge MISST es (Dreiecke, Groesse in Studs) und legt viereckige MeshPart-Platzhalter in den Place. Danach laedt der NUTZER die Datei in Roblox hoch und traegt die Mesh-Id im Bridge-Fenster "Mesh-Uploads" ein; mesh_apply_asset setzt die Geometrie automatisch ein. Roblox bietet keinen automatischen Mesh-Upload - dieser Zwischenschritt ist keine Unfertigkeit, sondern der offizielle Weg. Solange Platzhalter stehen, ist es KEIN fertiges Modell: report_done antwortet MESH_UPLOAD_PENDING. Der Polygon-Weg (build_polygon_model) bleibt der Standard fuer Entwurf, Iteration und einfache Formen; Mesh lohnt sich fuer glatte/organische Formen, viele Details und Teilzahl. Siehe meshBuildRules.'
             )
             worldEngineRules = @{
                 title = 'World Engine 1.0 - the world is a place with rules, not a pile of parts'
@@ -20595,8 +20880,19 @@ end
                 workflow = 'inspect/select/measure -> choose art direction or world_style -> follow polygonWorkflow and build the complete main custom silhouette with build_polygon_model (first model-build call for nontrivial custom 3D) -> assembly/native support geometry -> detail/refine -> verify the returned face/wedge diagnostics -> model_audit (and world_audit for scenes) -> fix measured issues -> report_done. Build directly in the target Place; a generated source file or later unsupported quality claim is not a model.'
                 motion = 'Add animation only when the task requests motion or the object is inherently living/moving. For organic models, explicitly use organic=true so per-model geometry, palette, enabled-motion and fresh-audit evidence is enforced; see organicBuildRules.'
             }
+            meshBuildRules = @{
+                title = 'Mesh-Build Engine 1.0 (Version 7.4.0) - Blender im Hintergrund, Nutzer laedt hoch, Bridge setzt ein'
+                whenThisApplies = 'Freiwilliger ZWEITER Weg neben build_polygon_model. Sinnvoll, wenn eine Form mit Dreiecken/Wedges nicht gut wird (glatte oder organische Oberflaechen, viele Details, hohe Teilzahl) oder wenn das Modell im Place nur EIN Bauteil statt tausender Wedges sein soll. Fuer Entwurf, Iteration und fuer alles, was im Studio per Teil editierbar bleiben muss, bleibt build_polygon_model die erste Wahl.'
+                workflow = '1 blender_status lesen (Bereitschaft + Zustand). 2 build_mesh_model mit einem Blender-Skript je Slot aufrufen -> sofort jobId (Blender laeuft im Hintergrund, KEIN synchrones Warten). 3 mesh_status pollen, bis state measured ist; die Antwort nennt je Slot Dreiecke + Groesse in Studs. 4 Die Bridge legt die viereckigen MeshPart-Platzhalter selbst an. 5 Der NUTZER laedt die OBJ-Datei(en) hoch und traegt die Mesh-Id(s) im Bridge-Fenster "Mesh-Uploads" ein (oder nennt sie im Chat, dann mesh_apply_asset aufrufen). 6 mesh_status zeigt applied. 7 Erst dann model_audit + report_done.'
+                scriptContract = 'Ein Slot = ein Blender-Skript = EIN MeshPart. Das Skript ist normaler Code mit bpy (bmesh, math, mathutils, random erlaubt) und baut NUR Geometrie: 1 Blender-Einheit = 1 Stud, Y ist oben, die bbox-Mitte am Ursprung setzt der Runner automatisch, Modifier werden beim Export angewandt. Der Runner der Bridge macht Szene, Export, Zentrierung und Messung - bpy.ops.wm.*, Export, Datei-, Netzwerk- und Systemzugriff sind im Skript gesperrt (die Bridge lehnt solche Skripte vor dem Start ab).'
+                slots = 'Mehrere Slots statt eines Riesenmeshes: ein MeshPart traegt EINE Farbe/Material (Roblox uebernimmt keine Blender-Materialien), und ein einzelnes Mesh laesst sich nicht animieren. Fuer Kreaturen, Fahrzeuge und Maschinen also je bewegliches Glied ein Slot und die Gelenke wie gewohnt mit Welds/Motor6D verbinden. Farbe und Material setzt Roblox ueber die Slot-Angaben color/material.'
+                budget = 'Roblox nimmt pro Mesh hoechstens rund 10.000 Dreiecke an (Datei max. 20 MB). Die Bridge MISST die OBJ-Datei selbst und lehnt einen Slot ueber der Grenze mit state rejected ab - dann weniger Unterteilungen, Decimate/Remesh oder kleinere Slots bauen. Ziel: unter 8.000 Dreiecken je Slot.'
+                userStep = 'Der Upload ist ein MENSCHEN-Schritt und nicht automatisierbar (keine Roblox-API fuer Mesh-Uploads). Immer ehrlich sagen: Datei im Bridge-Ordner oeffnen, in Studio per 3D-Importer/Drag-und-Drop oder im Creator Dashboard hochladen, Mesh-Id im Bridge-Fenster eintragen. NICHT behaupten, das Modell sei fertig, solange Platzhalter stehen.'
+                evidence = 'Beweis statt Behauptung: Dreieckszahl, Groesse und Dateigroesse kommen aus der Messung der Bridge und stehen in mesh_status und im Bau-Register. Nach dem Einsetzen meldet mesh_apply_asset je Slot die zurueckgelesene MeshId. Ein Mesh ist im Place messtechnisch eine Blackbox - die OBJ-Messung plus der Sichttest des Nutzers sind der Beleg.'
+                failure = 'Schlaegt Blender fehl (nicht installiert, Faehigkeitsprobe rot, Exit ungleich 0, Zeitlimit), sagt die Bridge das mit Code und Protokollzeile; dann bleibt der Polygon-Weg. Nie ein leeres oder unbemessenes Modell als fertig melden.'
+            }
             organicBuildRules = @{
-                title = 'Organic Build Engine 1.1 (Version 7.3.2) - typed creature volumes, physical face, bilateral anatomy, measured before done'
+                title = 'Organic Build Engine 1.1 (Version 7.4.0) - typed creature volumes, physical face, bilateral anatomy, measured before done'
                 whenThisApplies = 'For any model intentionally built as organic (character, creature, plant, tree, prop or other organic free-form shape), this is a hard sequence independent of its name: the FIRST write targeting that model is build_polygon_model { organic=true, organicKind=... } with an explicit contrasting palette. For organicKind=creature the same first build must create closed role=body and role=head loft volumes; a long flat side-profile wedge is not a body or head volume. Use organicTraits=["wings"] when wings are intended and build role=wing_left/wing_right. Face features are physical 3D geometry, never Decal/Texture/GUI substitutes. Do not start with run_lua, build_assembly, loose primitives, or an external generator file. Then install an enabled motion Script under that same model, run model_audit on every returned organic model after the final edit, and fix every organicQuality issue. report_done is rejected with ORGANIC_AUDIT_REQUIRED/DETAIL_REQUIRED until every registered model passes.'
                 theOneIdea = 'For an organic model, the first write is build_polygon_model { organic=true, organicKind=... }. A creature gets real closed lofts for body and head (at least 4/3 stations, at least 8 sides) plus physical eyes and pupils; winged creatures get a mirrored, torso-attached wing pair. No side-view wedge, face sticker, or unmeasured claim can pass. Then add joints/details, install the enabled motion Script beneath the model, and audit the exact model.'
                 forbidden = @(
@@ -21058,7 +21354,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.3.2'
+            version = '7.4.0'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -21289,7 +21585,7 @@ end
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.3.2'
+            bridgeVersion = '7.4.0'
             executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent is never an error, but the user then sees NO bar and NO percentage at all - only your message as text. Send a real number every few calls. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
@@ -21562,6 +21858,364 @@ end
     # ------------------------------------------------------------------
     # Werkzeuge, die das Programm selbst beantwortet (ohne Roblox)
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Version 7.4.0: MESH-SERVERWERKZEUGE
+    # blender_status / build_mesh_model / mesh_status / mesh_cancel /
+    # mesh_apply_asset laufen im Handler (Bridge-Prozess): Blender, OBJ-Messung
+    # und Register liegen ausserhalb von Roblox Studio. Nur mesh_apply_asset
+    # spricht mit dem Plugin (interner Befehl mesh_apply).
+    # ------------------------------------------------------------------
+    function Invoke-MeshServerTool($sessionId, [string]$tool, $toolArgs) {
+        # Der Toolkit-Text ist die EINZIGE Quelle fuer Queue-Anmeldung,
+        # Registerpflege und Messung. Er wird in DIESER Funktion geladen, damit
+        # alle Mesh-Helfer hier sichtbar sind (kein Zustand zwischen Aufrufen).
+        try { . ([scriptblock]::Create([string]$Shared.MeshToolkitText)) } catch {
+            Write-BridgeLog ('Mesh-Toolkit konnte im Handler nicht geladen werden: ' + $_.Exception.Message)
+        }
+        $sid = [string]$sessionId
+        $blender = $Shared.BlenderState
+        $meshRoot = [string]$Shared.MeshRoot
+        $blenderState = ''
+        $blenderReady = $false
+        if ($null -ne $blender) {
+            try { $blenderState = [string]$blender.state } catch {}
+            try { $blenderReady = ($blenderState -eq 'ready' -and [bool]$blender.enabled) } catch {}
+        }
+        $blenderReport = @{
+            state = $blenderState
+            ready = [bool]$blenderReady
+            version = $(if ($null -ne $blender) { [string]$blender.version } else { '' })
+            path = $(if ($null -ne $blender) { [string]$blender.path } else { '' })
+            source = $(if ($null -ne $blender) { [string]$blender.source } else { '' })
+            percent = $(if ($null -ne $blender) { [int]$blender.percent } else { 0 })
+            message = $(if ($null -ne $blender) { [string]$blender.message } else { '' })
+            detail = $(if ($null -ne $blender) { [string]$blender.detail } else { '' })
+            probe = $(if ($null -ne $blender) { [string]$blender.probe } else { '' })
+            enabled = [bool]$blenderReady
+            meshFolder = $meshRoot
+            installLog = (Join-Path $meshRoot 'blender-install.log')
+        }
+
+        if ($tool -eq 'blender_status') {
+            $note = 'Blender ist bereit. Mesh-Dateien und Ids: siehe mesh_status.'
+            if (-not $blenderReady) {
+                $note = 'Der Mesh-Bau ist deaktiviert, solange Blender nicht bereit ist. Der Polygon-Weg (build_polygon_model) funktioniert unabhaengig davon. Der Nutzer kann im Bridge-Fenster "Mesh-Uploads" den Knopf "Blender jetzt installieren" druecken oder den Start abwarten.'
+            }
+            return @{ ok = $true; result = @{ blender = $blenderReport; note = $note } }
+        }
+
+        if ($tool -eq 'build_mesh_model') {
+            if (-not $blenderReady) {
+                return (To-Json @{
+                    ok = $false
+                    code = 'BLENDER_NOT_READY'
+                    error = ('Blender ist nicht bereit (Zustand: ' + $blenderState + '). Es wurde NICHTS gebaut.')
+                    blender = $blenderReport
+                    howToFix = 'Dem Nutzer ehrlich sagen, dass Blender fehlt oder sich noch installiert, und dass er im Bridge-Fenster "Mesh-Uploads" den Knopf "Blender jetzt installieren" druecken kann. Alternativ mit build_polygon_model weiterbauen. Nicht in einer Schleife wiederholen.'
+                } 20)
+            }
+            $modelName = 'Mesh'
+            if ($toolArgs -and -not [string]::IsNullOrWhiteSpace([string]$toolArgs.modelName)) { $modelName = ([string]$toolArgs.modelName).Trim() }
+            $modelName = ([regex]::Replace($modelName, '[^A-Za-z0-9_\- ]', '')).Trim()
+            if ([string]::IsNullOrWhiteSpace($modelName)) { $modelName = 'Mesh' }
+            if ($modelName.Length -gt 32) { $modelName = $modelName.Substring(0, 32) }
+            $slotsRaw = @()
+            if ($toolArgs -and $null -ne $toolArgs.slots) { $slotsRaw = @($toolArgs.slots) }
+            if ($slotsRaw.Count -lt 1) {
+                return (To-Json @{ ok = $false; code = 'BAD_ARGS'; error = 'build_mesh_model braucht mindestens einen Slot mit name und script.' } 12)
+            }
+            if ($slotsRaw.Count -gt 12) {
+                return (To-Json @{ ok = $false; code = 'BUDGET_EXCEEDED'; error = ('Hochstens 12 Slots je Aufruf (angefragt: ' + [string]$slotsRaw.Count + '). Mehr Slots = mehr Meshes = mehr Handarbeit beim Upload.'); maximumSlots = 12 } 12)
+            }
+            $specSlots = New-Object System.Collections.Generic.List[object]
+            $problems = New-Object System.Collections.Generic.List[string]
+            $index = 0
+            foreach ($slotRaw in $slotsRaw) {
+                $index = $index + 1
+                if ($null -eq $slotRaw) { $problems.Add('Slot ' + [string]$index + ' ist leer.'); continue }
+                $slotName = [string]$slotRaw.name
+                $slotName = ([regex]::Replace($slotName, '[^A-Za-z0-9_\-]', '_')).Trim('_')
+                if ([string]::IsNullOrWhiteSpace($slotName)) { $slotName = ('slot' + [string]$index) }
+                if ($slotName.Length -gt 32) { $slotName = $slotName.Substring(0, 32) }
+                $scriptText = [string]$slotRaw.script
+                $safety = Test-MeshScriptSafety $scriptText
+                if (-not $safety.ok) { $problems.Add($slotName + ': ' + [string]$safety.reason); continue }
+                $targetTriangles = 0
+                try { if ($null -ne $slotRaw.targetTriangles) { $targetTriangles = [int]$slotRaw.targetTriangles } } catch {}
+                if ($targetTriangles -lt 0) { $targetTriangles = 0 }
+                if ($targetTriangles -gt 10000) { $targetTriangles = 10000 }
+                $color = '#A0A4AD'
+                if (-not [string]::IsNullOrWhiteSpace([string]$slotRaw.color)) { $color = ([string]$slotRaw.color).Trim() }
+                if ($color -notmatch '^#[0-9A-Fa-f]{6}$') { $color = '#A0A4AD' }
+                $material = 'SmoothPlastic'
+                if (-not [string]::IsNullOrWhiteSpace([string]$slotRaw.material)) { $material = ([string]$slotRaw.material).Trim() }
+                $canCollide = $false
+                try { $canCollide = ([bool]$slotRaw.canCollide -eq $true) } catch {}
+                $offset = @{ x = 0.0; y = 0.0; z = 0.0 }
+                if ($null -ne $slotRaw.offset) {
+                    try {
+                        $offset = @{
+                            x = [double]$slotRaw.offset.x
+                            y = [double]$slotRaw.offset.y
+                            z = [double]$slotRaw.offset.z
+                        }
+                    } catch { $offset = @{ x = 0.0; y = 0.0; z = 0.0 } }
+                }
+                $specSlots.Add(@{
+                    name = $slotName
+                    script = $scriptText
+                    targetTriangles = $targetTriangles
+                    color = $color
+                    material = $material
+                    canCollide = $canCollide
+                    offset = $offset
+                })
+            }
+            if ($problems.Count -gt 0) {
+                return (To-Json @{
+                    ok = $false
+                    code = 'SCRIPT_REJECTED'
+                    error = 'Mindestens ein Blender-Skript wurde abgelehnt - es wurde NICHTS gebaut.'
+                    problems = $problems.ToArray()
+                    scriptRules = 'Erlaubt: bpy, bmesh, math, mathutils, random und normale Rechen-/Mesh-Befehle. Gesperrt: Datei-, Netzwerk-, Prozess- und Systemzugriff (os, sys, subprocess, shutil, socket, urllib, requests, ctypes, winreg, __import__, importlib, eval, exec), bpy.ops.wm.* und alle Exportfunktionen - Szene, Export und Messung macht der Runner der Bridge.'
+                } 20)
+            }
+            $origin = @{ x = 0.0; y = 0.0; z = 0.0 }
+            if ($toolArgs -and $null -ne $toolArgs.origin) {
+                try { $origin = @{ x = [double]$toolArgs.origin.x; y = [double]$toolArgs.origin.y; z = [double]$toolArgs.origin.z } } catch { $origin = @{ x = 0.0; y = 0.0; z = 0.0 } }
+            }
+            $rotationY = 0.0
+            try { if ($toolArgs -and $null -ne $toolArgs.rotationY) { $rotationY = [double]$toolArgs.rotationY } } catch {}
+            $anchored = $true
+            try { if ($toolArgs -and $toolArgs.anchored -eq $false) { $anchored = $false } } catch {}
+            $parentRef = 'game.Workspace'
+            if ($toolArgs -and -not [string]::IsNullOrWhiteSpace([string]$toolArgs.parentRef)) { $parentRef = ([string]$toolArgs.parentRef).Trim() }
+            $timeoutSeconds = 300
+            try { if ($toolArgs -and $null -ne $toolArgs.timeoutSeconds) { $timeoutSeconds = [int]$toolArgs.timeoutSeconds } } catch {}
+            if ($timeoutSeconds -lt 30) { $timeoutSeconds = 30 }
+            if ($timeoutSeconds -gt 900) { $timeoutSeconds = 900 }
+            $spec = @{
+                modelName = $modelName
+                sessionId = $sid
+                parentRef = $parentRef
+                origin = $origin
+                rotationY = $rotationY
+                anchored = $anchored
+                timeoutSeconds = $timeoutSeconds
+                slots = $specSlots.ToArray()
+            }
+            $jobId = Start-MeshJobWork $Shared ([string]$blender.path) $spec
+            Write-BridgeLog ('Mesh-Job gestartet: ' + [string]$jobId + ' (' + [string]$specSlots.Count + ' Slot(s), ' + $modelName + ')')
+            return @{
+                ok = $true
+                result = @{
+                    jobId = $jobId
+                    state = 'queued'
+                    slotCount = [int]$specSlots.Count
+                    blender = $blenderReport
+                    meshFolder = $meshRoot
+                    note = 'Blender laeuft im HINTERGRUND - sofort weiterarbeiten und NICHT synchron warten. mesh_status zeigt Dreiecke und Groesse je Slot, sobald die Datei gemessen ist (meist in unter einer Minute). Die Bridge legt die viereckigen MeshPart-Platzhalter danach selbst an. Danach laedt der NUTZER die OBJ-Datei(en) in Roblox hoch und traegt die Mesh-Id(s) im Bridge-Fenster "Mesh-Uploads" ein; mesh_apply_asset setzt die Geometrie ein. Solange Platzhalter stehen, ist das Modell NICHT fertig (report_done: MESH_UPLOAD_PENDING).'
+                    files = $(foreach ($s in $specSlots) { @{ name = [string]$s.name; file = ([string]$s.name + '.obj') } })
+                }
+            }
+        }
+
+        if ($tool -eq 'mesh_status') {
+            $wantedJob = ''
+            if ($toolArgs -and -not [string]::IsNullOrWhiteSpace([string]$toolArgs.jobId)) { $wantedJob = ([string]$toolArgs.jobId).Trim() }
+            $action = ''
+            if ($toolArgs -and -not [string]::IsNullOrWhiteSpace([string]$toolArgs.action)) { $action = ([string]$toolArgs.action).Trim().ToLowerInvariant() }
+            $jobsOut = New-Object System.Collections.Generic.List[object]
+            foreach ($pair in @($Shared.MeshJobs.GetEnumerator())) {
+                $job = Get-MeshJobData $Shared ([string]$pair.Key)
+                if ($null -eq $job) { continue }
+                if (-not [string]::IsNullOrWhiteSpace($wantedJob) -and [string]$job.id -ne $wantedJob) { continue }
+                if (-not [string]::IsNullOrWhiteSpace($sid) -and [string]$job.sessionId -ne $sid) { continue }
+                $slotRows = New-Object System.Collections.Generic.List[object]
+                foreach ($slot in (Get-MeshSlotsBySession $Shared ([string]$job.sessionId) ([string]$job.id))) {
+                    $slotRows.Add(@{
+                        key = [string]$slot.slotKey
+                        name = [string]$slot.slotName
+                        state = [string]$slot.state
+                        triangles = [int]$slot.triangles
+                        size = $slot.size
+                        bytes = $(try { [int64]$slot.bytes } catch { 0 })
+                        fileName = [string]$slot.fileName
+                        objPath = [string]$slot.objPath
+                        assetId = [string]$slot.assetId
+                        meshIdReadBack = $(try { [string]$slot.meshIdReadBack } catch { '' })
+                        placeholderPath = [string]$slot.placeholderPath
+                        error = [string]$slot.error
+                    })
+                }
+                $jobsOut.Add(@{
+                    jobId = [string]$job.id
+                    modelName = [string]$job.modelName
+                    state = [string]$job.state
+                    folder = [string]$job.folder
+                    createdAt = [int64]$job.createdAt
+                    finishedAt = [int64]$job.finishedAt
+                    placeholdersCreated = [bool]$job.placeholdersCreated
+                    placeholderState = $(try { [string]$job.placeholderState } catch { '' })
+                    parentRef = [string]$job.parentRef
+                    origin = $job.origin
+                    rotationY = [double]$job.rotationY
+                    error = [string]$job.error
+                    slots = $slotRows.ToArray()
+                })
+            }
+            if ($action -eq 'placeholders') {
+                # Platzhalter erneut anfordern (z.B. nachdem sie im Studio
+                # geloescht wurden). Der UI-Takt schickt den Befehl.
+                $reset = 0
+                foreach ($pair in @($Shared.MeshJobs.GetEnumerator())) {
+                    $job = Get-MeshJobData $Shared ([string]$pair.Key)
+                    if ($null -eq $job) { continue }
+                    if (-not [string]::IsNullOrWhiteSpace($wantedJob) -and [string]$job.id -ne $wantedJob) { continue }
+                    if (-not [string]::IsNullOrWhiteSpace($sid) -and [string]$job.sessionId -ne $sid) { continue }
+                    $job.placeholdersCreated = $false
+                    $job.placeholderCommandId = ''
+                    $job.placeholderState = 'requested'
+                    Save-MeshJobData $Shared $job
+                    $reset = $reset + 1
+                }
+                return @{ ok = $true; result = @{ requested = $reset; note = 'Die Platzhalter werden neu angefordert (der UI-Takt schickt den Befehl an Studio). Kurz darauf mesh_status erneut lesen.'; blender = $blenderReport } }
+            }
+            $needUpload = New-Object System.Collections.Generic.List[object]
+            $applied = 0
+            $failed = 0
+            foreach ($job in $jobsOut) {
+                foreach ($slot in $job.slots) {
+                    $slotState = [string]$slot.state
+                    if ($slotState -eq 'obj' -or $slotState -eq 'applied') {
+                        $needUpload.Add(@{
+                            key = [string]$slot.key
+                            name = [string]$slot.name
+                            state = $slotState
+                            triangles = [int]$slot.triangles
+                            file = [string]$slot.objPath
+                            assetId = [string]$slot.assetId
+                        })
+                    }
+                    if ($slotState -eq 'applied') { $applied = $applied + 1 }
+                    if ($slotState -in @('failed', 'rejected', 'apply_failed')) { $failed = $failed + 1 }
+                }
+            }
+            $summary = 'Kein Mesh-Job in dieser Sitzung.'
+            if ($jobsOut.Count -gt 0) {
+                $summary = [string]$jobsOut.Count + ' Job(s): ' + [string]$applied + ' Slot(s) eingesetzt, ' + [string]$failed + ' Slot(s) mit Fehler.'
+                if ($needUpload.Count -gt 0) {
+                    $summary = $summary + ' Der Nutzer muss noch ' + [string]$needUpload.Count + ' Datei(en) hochladen und die Mesh-Id(s) im Bridge-Fenster "Mesh-Uploads" eintragen.'
+                }
+            }
+            return @{
+                ok = $true
+                result = @{
+                    blender = $blenderReport
+                    jobs = $jobsOut.ToArray()
+                    readyForUpload = $needUpload.ToArray()
+                    appliedCount = [int]$applied
+                    failedCount = [int]$failed
+                    summary = $summary
+                    note = 'Dateien liegen im Ordner meshFolder (je Job ein Unterordner). Roblox nimmt pro Mesh rund 10.000 Dreiecke an - mesh_status nennt die GEMESSENEN Zahlen. Ein Slot ueber der Grenze wird abgelehnt und muss einfacher gebaut werden.'
+                }
+            }
+        }
+
+        if ($tool -eq 'mesh_cancel') {
+            $wantedJob = ''
+            if ($toolArgs -and -not [string]::IsNullOrWhiteSpace([string]$toolArgs.jobId)) { $wantedJob = ([string]$toolArgs.jobId).Trim() }
+            if ([string]::IsNullOrWhiteSpace($wantedJob)) {
+                $newest = [int64]0
+                foreach ($pair in @($Shared.MeshJobs.GetEnumerator())) {
+                    $job = Get-MeshJobData $Shared ([string]$pair.Key)
+                    if ($null -eq $job) { continue }
+                    if (-not [string]::IsNullOrWhiteSpace($sid) -and [string]$job.sessionId -ne $sid) { continue }
+                    if ([string]$job.state -in @('measured', 'failed', 'cancelled')) { continue }
+                    $created = 0
+                    try { $created = [int64]$job.createdAt } catch {}
+                    if ($created -ge $newest) { $newest = $created; $wantedJob = [string]$job.id }
+                }
+            }
+            if ([string]::IsNullOrWhiteSpace($wantedJob)) {
+                return (To-Json @{ ok = $false; code = 'NO_JOB'; error = 'Es laeuft kein Mesh-Job, der abgebrochen werden koennte.' } 12)
+            }
+            $stopped = Stop-MeshJob $Shared $wantedJob
+            return @{ ok = [bool]$stopped; result = @{ jobId = $wantedJob; cancelled = [bool]$stopped; note = $(if ($stopped) { 'Der Job wird beendet; die OBJ-Datei kann unvollstaendig sein und wird verworfen.' } else { 'Der Job war schon fertig oder unbekannt - nichts wurde abgebrochen.' }) } }
+        }
+
+        if ($tool -eq 'mesh_apply_asset') {
+            $entries = New-Object System.Collections.Generic.List[object]
+            $problems = New-Object System.Collections.Generic.List[string]
+            $slotsRaw = @()
+            if ($toolArgs -and $null -ne $toolArgs.slots) { $slotsRaw = @($toolArgs.slots) }
+            foreach ($raw in $slotsRaw) {
+                if ($null -eq $raw) { continue }
+                $key = ([string]$raw.key).Trim()
+                $digits = ''
+                try { $digits = ([regex]::Match([string]$raw.assetId, '(\d+)')).Groups[1].Value } catch {}
+                if ([string]::IsNullOrWhiteSpace($key)) { $problems.Add('Ein Eintrag ohne key wurde uebersprungen.'); continue }
+                if ([string]::IsNullOrWhiteSpace($digits)) { $problems.Add($key + ': keine numerische assetId.'); continue }
+                $slot = Get-MeshSlotData $Shared $key
+                if ($null -eq $slot) { $problems.Add($key + ': unbekannter Slot (mesh_status zeigt die gueltigen keys).'); continue }
+                Set-MeshSlotField $Shared $key 'assetId' $digits
+                Set-MeshSlotField $Shared $key 'state' 'applying'
+                Set-MeshSlotField $Shared $key 'error' ''
+                $entries.Add(@{ key = $key; assetId = $digits })
+            }
+            if ($entries.Count -eq 0) {
+                return (To-Json @{
+                    ok = $false
+                    code = 'BAD_ARGS'
+                    error = 'Kein gueltiger Eintrag: mesh_apply_asset braucht slots = [ { key, assetId } ] mit den keys aus mesh_status.'
+                    problems = $problems.ToArray()
+                } 20)
+            }
+            $pluginArgs = @{ slots = $entries.ToArray() }
+            $rawResult = Invoke-PluginTool $sid 'mesh_apply' $pluginArgs 180 ''
+            if ([string]::IsNullOrWhiteSpace([string]$rawResult)) {
+                foreach ($entry in $entries) {
+                    Set-MeshSlotField $Shared ([string]$entry.key) 'state' 'apply_failed'
+                    Set-MeshSlotField $Shared ([string]$entry.key) 'error' 'Studio hat nicht geantwortet (Zeitlimit).'
+                }
+                return (To-Json @{
+                    ok = $false
+                    code = 'STUDIO_UNREACHABLE_OR_TIMEOUT'
+                    error = 'Roblox Studio hat nicht rechtzeitig geantwortet - es wurde NICHTS eingesetzt. Den Zustand mit mesh_status pruefen und erst dann erneut versuchen (nicht in einer Schleife).'
+                    applied = @()
+                    problems = $problems.ToArray()
+                } 20)
+            }
+            $appliedOk = $false
+            try { $appliedOk = [bool](Update-MeshRegistryFromApplyResult $Shared ([string]$rawResult)) } catch {}
+            $pluginView = $null
+            try { $pluginView = ([string]$rawResult | ConvertFrom-Json) } catch {}
+            $rows = New-Object System.Collections.Generic.List[object]
+            foreach ($entry in $entries) {
+                $slot = Get-MeshSlotData $Shared ([string]$entry.key)
+                $rows.Add(@{
+                    key = [string]$entry.key
+                    state = $(try { [string]$slot.state } catch { 'unknown' })
+                    assetId = $(try { [string]$slot.assetId } catch { '' })
+                    meshIdReadBack = $(try { [string]$slot.meshIdReadBack } catch { '' })
+                    path = $(try { [string]$slot.placeholderPath } catch { '' })
+                    error = $(try { [string]$slot.error } catch { '' })
+                })
+            }
+            return @{
+                ok = [bool]$appliedOk
+                result = @{
+                    applied = $rows.ToArray()
+                    pluginResult = $(if ($null -ne $pluginView) { $pluginView } else { [string]$rawResult })
+                    problems = $problems.ToArray()
+                    note = $(if ($appliedOk) { 'Die Geometrie sitzt in den BESTEHENDEN MeshParts: Groesse, Position, Welds, Attribute und Animationen bleiben erhalten. meshIdReadBack ist der Wert, den der Place wirklich liest.' } else { 'Es wurde nichts eingesetzt. Die Fehlermeldung je Slot steht oben - meistens ist die Platzhalter-Instanz weg (verschoben/geloescht) oder die Asset-Id gehoert nicht zum eigenen Konto.' })
+                }
+            }
+        }
+
+        return $null
+    }
+
     function Invoke-ServerTool($sessionId, [string]$tool, $toolArgs) {
         switch ($tool) {
             # Version 7.1.2: nicht mehr direkt - immer ueber das Toolbox-Tor
@@ -21570,6 +22224,13 @@ end
             'asset_details'      { return (Invoke-ToolboxServerTool $sessionId $tool $toolArgs) }
             'validate_asset'     { return (Invoke-ToolboxServerTool $sessionId $tool $toolArgs) }
             'catalog_status'     { return (Invoke-ToolboxServerTool $sessionId $tool $toolArgs) }
+            # Version 7.4.0: Blender + Mesh-Bau. Laeuft im Bridge-Prozess, weil
+            # Blender und die OBJ-Messung nicht in Studio stattfinden.
+            'blender_status'     { return (Invoke-MeshServerTool $sessionId $tool $toolArgs) }
+            'build_mesh_model'   { return (Invoke-MeshServerTool $sessionId $tool $toolArgs) }
+            'mesh_status'        { return (Invoke-MeshServerTool $sessionId $tool $toolArgs) }
+            'mesh_cancel'        { return (Invoke-MeshServerTool $sessionId $tool $toolArgs) }
+            'mesh_apply_asset'   { return (Invoke-MeshServerTool $sessionId $tool $toolArgs) }
             'get_docs' {
                 $qTool = if ($toolArgs.tool) { [string]$toolArgs.tool } else { $null }
                 $qCategory = if ($toolArgs.category) { [string]$toolArgs.category } else { $null }
@@ -21687,6 +22348,36 @@ end
                         $audit = $auditJson | ConvertFrom-Json
                         $handoffState = ''
                         [void]$Shared.Handoffs.TryGetValue([string]$sessionId, [ref]$handoffState)
+                        # Version 7.4.0: Offene Mesh-Platzhalter sind KEIN
+                        # vergessener Platzhalter, sondern warten auf den Upload
+                        # des Nutzers. "Fertig" waere hier eine Luege - der
+                        # ehrliche Code ist MESH_UPLOAD_PENDING.
+                        $meshSlotCount = 0
+                        $meshSlots = @()
+                        try { if ($audit.PSObject.Properties['meshSlotCount']) { $meshSlotCount = [int]$audit.meshSlotCount } } catch {}
+                        try { if ($audit.PSObject.Properties['meshSlots']) { $meshSlots = @($audit.meshSlots) } } catch {}
+                        if ($meshSlotCount -gt 0 -and [string]::IsNullOrWhiteSpace($handoffState)) {
+                            $waitingKeys = New-Object System.Collections.Generic.List[string]
+                            foreach ($slot in $meshSlots) {
+                                try {
+                                    if ([string]$slot.state -eq 'applied') { continue }
+                                    $label = [string]$slot.name
+                                    if ([string]::IsNullOrWhiteSpace($label)) { $label = [string]$slot.key }
+                                    if (-not [string]::IsNullOrWhiteSpace($label)) { $waitingKeys.Add($label) }
+                                } catch {}
+                            }
+                            $waitCount = $waitingKeys.Count
+                            if ($waitCount -gt 0) {
+                                return @{
+                                    ok = $false
+                                    code = 'MESH_UPLOAD_PENDING'
+                                    error = ('This place contains ' + [string]$waitCount + ' mesh placeholder(s) that still wait for the mesh upload: ' + ($waitingKeys.ToArray() -join ', ') + '. A placeholder is a box, not the model. Roblox has no automatic mesh upload - the USER must upload the OBJ file(s) and enter the mesh id(s) in the bridge window "Mesh-Uploads" (or tell you the id, then call mesh_apply_asset). Tell him that honestly instead of reporting done.')
+                                    meshPlaceholders = $waitingKeys.ToArray()
+                                    meshFolder = [string]$Shared.MeshRoot
+                                    howToFix = 'Read mesh_status: it names the exact file per slot. Tell the user, in German, where the files are (bridge window "Mesh-Uploads" has an "Ordner öffnen" button), that he must upload them in Roblox Studio (3D Importer / drag and drop) or the Creator Dashboard, and that he enters the id in that window - then the bridge inserts the geometry automatically. After that run model_audit again and report done. If the work is genuinely handed over, call handoff { scope="game", ... } instead.'
+                                }
+                            }
+                        }
                         if ([int]$audit.placeholderCount -gt 0 -and [string]::IsNullOrWhiteSpace($handoffState)) {
                             return @{
                                 ok = $false
@@ -22055,7 +22746,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.3.2'
+                        bridgeVersion = '7.4.0'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -22522,7 +23213,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.3.2'
+                        serverVersion = '7.4.0'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -22881,7 +23572,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.3.2'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.4.0'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -22965,8 +23656,8 @@ end
                 }
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.3.2'
-                    serverVersion = '7.3.2'
+                    bridgeVersion = '7.4.0'
+                    serverVersion = '7.4.0'
                     toolbox = $statusToolbox
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
@@ -23289,12 +23980,12 @@ end
                     'separate','insert_asset','apply_asset','group_instances','ungroup','add_tag','remove_tag','place_on','align','stack',
                     'grid_arrange','distribute','snap_to_ground','look_at','rotate_around','move_relative','resize_part','fit_between','point_at',
                     'sim_start','undo','redo','clear_output','fill_region','probe_world','start_job',
-                    'cancel_job','clear_lua_state','build_polygon_model','build_assembly','build_surface','build_interface')
+                    'cancel_job','clear_lua_state','build_polygon_model','build_assembly','mesh_slots','mesh_apply','build_surface','build_interface')
                 $persistentEditTools = @('set_property','set_properties','bulk_set_properties','set_attribute','create_instance','bulk_create',
                     'clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','set_script_source','patch_script',
                     'insert_script','bulk_insert_scripts','run_lua','batch','parallel','union','subtract','negate','intersect','separate',
                     'insert_asset','apply_asset','group_instances','ungroup','add_tag','remove_tag','place_on','align','stack','grid_arrange',
-                    'distribute','snap_to_ground','look_at','rotate_around','move_relative','resize_part','fit_between','point_at','fill_region','build_polygon_model','build_assembly','build_surface','build_interface','start_job','prop_place','prop_save','refine','world_style','style_lock','world_glow','ui_glow','ui_radial','ui_texture','undo','redo')
+                    'distribute','snap_to_ground','look_at','rotate_around','move_relative','resize_part','fit_between','point_at','fill_region','build_polygon_model','build_assembly','mesh_slots','mesh_apply','build_surface','build_interface','start_job','prop_place','prop_save','refine','world_style','style_lock','world_glow','ui_glow','ui_radial','ui_texture','undo','redo')
                 $organicGuard = Get-OrganicBuildGuardResult $tool $toolArgs
                 if ($null -ne $organicGuard) {
                     Complete-ArenaActivity $sessionId $activityId $tool $toolArgs (To-Json $organicGuard 20)
@@ -23565,9 +24256,15 @@ end
                             try { if ($buildQuality -and $buildQuality.PSObject.Properties['grade']) { $buildGrade = [string]$buildQuality.grade } } catch {}
                             try { if ($buildQuality -and $buildQuality.PSObject.Properties['finishScore']) { $buildFinishScore = [int]$buildQuality.finishScore } } catch {}
                             try { if ($buildQuality -and $buildQuality.PSObject.Properties['draftRisk']) { $buildDraftRisk = [bool]$buildQuality.draftRisk } } catch {}
+                            $meshSlotCount = 0
+                            $meshSlots = @()
+                            try { if ($auditResult.PSObject.Properties['meshSlotCount']) { $meshSlotCount = [int]$auditResult.meshSlotCount } } catch {}
+                            try { if ($auditResult.PSObject.Properties['meshSlots']) { $meshSlots = @($auditResult.meshSlots) } } catch {}
                             $flag = [pscustomobject]@{
                                 placeholderCount = $placeholderCount
                                 placeholders = $placeholders
+                                meshSlotCount = $meshSlotCount
+                                meshSlots = $meshSlots
                                 summary = $summary
                                 phase = $(try { [string]$auditResult.phase } catch { '' })
                                 primitiveAbuse = $primitiveAbuse
@@ -24214,6 +24911,2322 @@ function Start-BridgeServer {
     Write-RuntimeLog "Lokaler Bridge Server wird auf Port $Port gestartet."
 }
 
+# ============================================================================
+# Version 7.4.0: BLENDER (Schritt 4 des Starts) + MESH-BAU
+# ============================================================================
+# Der Owner will Blender als VIERTEN Startschritt (Studio, Plugin, Blender,
+# Tunnel). Vorhandene Installationen werden gefunden und GEMESSEN (Version +
+# Faehigkeitsprobe); fehlt Blender, laedt die Bridge das portable ZIP im
+# Hintergrund (kein Admin, kein UAC) und startet den Tunnel erst, wenn der
+# Schritt fertig ist. Scheitert er, wird die Zeile ROT, der Mesh-Bau wird
+# deaktiviert und die Bridge arbeitet normal weiter - der Start haengt nie.
+# ----------------------------------------------------------------------------
+
+function Set-BlenderState {
+    # Schreibt den Zustand in $script:Shared.BlenderState (Handler, Sweep und
+    # UI lesen mit) und legt einen kleinen, weitergebbaren Kurzbericht ab.
+    param(
+        [string]$State = '',
+        [string]$Path = '',
+        [string]$Version = '',
+        [string]$Detail = '',
+        [string]$Message = '',
+        [int]$Percent = -1,
+        [string]$Source = '',
+        [bool]$Enabled = $false,
+        [long]$InstallStartedAt = [long]0,
+        [bool]$GateResolved = $false
+    )
+    try {
+        $map = $script:Shared.BlenderState
+        if (-not [string]::IsNullOrWhiteSpace($State)) { $map.state = $State }
+        if (-not [string]::IsNullOrWhiteSpace($Path)) { $map.path = $Path }
+        if (-not [string]::IsNullOrWhiteSpace($Version)) { $map.version = $Version }
+        if (-not [string]::IsNullOrWhiteSpace($Detail)) { $map.detail = $Detail }
+        if (-not [string]::IsNullOrWhiteSpace($Message)) { $map.message = $Message }
+        if ($Percent -ge 0) { $map.percent = [int]$Percent }
+        if (-not [string]::IsNullOrWhiteSpace($Source)) { $map.source = $Source }
+        if ($InstallStartedAt -gt 0) { $map.installStartedAt = $InstallStartedAt }
+        $map.enabled = $Enabled
+        $map.gateResolved = $GateResolved
+        $map.updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        $map.checkedAt = $map.updatedAt
+        try {
+            $payload = @{
+                state = [string]$map.state
+                path = [string]$map.path
+                version = [string]$map.version
+                detail = [string]$map.detail
+                message = [string]$map.message
+                percent = [int]$map.percent
+                source = [string]$map.source
+                enabled = [bool]$map.enabled
+                gateResolved = [bool]$map.gateResolved
+                updatedAt = $map.updatedAt
+            }
+            ($payload | ConvertTo-Json -Depth 4 -Compress) | Set-Content -LiteralPath $script:BlenderStatusFile -Encoding UTF8 -ErrorAction SilentlyContinue
+        } catch {}
+    } catch {
+        try { Write-RuntimeLog ('Blender-Zustand konnte nicht gespeichert werden: ' + $_.Exception.Message) } catch {}
+    }
+}
+
+function Get-BlenderExeInFolder {
+    param([string]$Folder)
+    if ([string]::IsNullOrWhiteSpace($Folder)) { return $null }
+    $direct = Join-Path $Folder 'blender.exe'
+    if (Test-Path -LiteralPath $direct) { return $direct }
+    try {
+        $hit = Get-ChildItem -LiteralPath $Folder -Filter 'blender.exe' -Recurse -Depth 3 -File -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($hit) { return $hit.FullName }
+    } catch {}
+    return $null
+}
+
+function Get-BlenderPath {
+    # Reihenfolge: eigener Ordner -> PATH -> Registry (echte Installationen)
+    # -> klassische Ordner -> Steam -> Microsoft Store.
+    try {
+        if (Test-Path -LiteralPath $script:BlenderFolder) {
+            $hit = Get-ChildItem -LiteralPath $script:BlenderFolder -Filter 'blender.exe' -Recurse -Depth 2 -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($hit) { return $hit.FullName }
+        }
+    } catch {}
+    try {
+        $cmd = Get-Command blender -ErrorAction SilentlyContinue
+        if ($cmd -and $cmd.Source) { return [string]$cmd.Source }
+        $cmdExe = Get-Command blender.exe -ErrorAction SilentlyContinue
+        if ($cmdExe -and $cmdExe.Source) { return [string]$cmdExe.Source }
+    } catch {}
+    try {
+        foreach ($root in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*')) {
+            $entries = Get-ItemProperty -Path $root -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like 'Blender*' }
+            foreach ($entry in $entries) {
+                $loc = [string]$entry.InstallLocation
+                if (-not [string]::IsNullOrWhiteSpace($loc)) {
+                    $exe = Get-BlenderExeInFolder $loc
+                    if ($exe) { return $exe }
+                }
+            }
+        }
+    } catch {}
+    $patterns = New-Object System.Collections.Generic.List[string]
+    $patterns.Add((Join-Path $env:LOCALAPPDATA 'Programs\Blender Foundation\Blender*'))
+    $patterns.Add((Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps'))
+    if (${env:ProgramFiles}) { $patterns.Add((Join-Path ${env:ProgramFiles} 'Blender Foundation\Blender*')) }
+    if (${env:ProgramFiles(x86)}) { $patterns.Add((Join-Path ${env:ProgramFiles(x86)} 'Blender Foundation\Blender*')) }
+    foreach ($steamRoot in @((Join-Path ${env:ProgramFiles} 'Steam\steamapps\common\Blender'), (Join-Path ${env:ProgramFiles(x86)} 'Steam\steamapps\common\Blender'))) {
+        if ($steamRoot) { $patterns.Add($steamRoot) }
+    }
+    foreach ($pattern in $patterns) {
+        try {
+            $folders = Get-ChildItem -Path $pattern -Directory -ErrorAction SilentlyContinue
+            foreach ($folder in $folders) {
+                $exe = Get-BlenderExeInFolder $folder.FullName
+                if ($exe) { return $exe }
+            }
+        } catch {}
+    }
+    return $null
+}
+
+function Invoke-BlenderProcess {
+    # Startet blender.exe ohne Fenster und liest stdout/stderr mit hartem
+    # Zeitlimit. Rueckgabe: exitCode, timedOut, output (beide Stroeme).
+    param([string]$Path, [string]$Arguments, [int]$TimeoutSeconds = 60)
+    $result = @{ ok = $false; exitCode = -1; timedOut = $false; output = ''; error = '' }
+    if ([string]::IsNullOrWhiteSpace($Path)) { $result.error = 'Kein Blender-Pfad.'; return $result }
+    if (-not (Test-Path -LiteralPath $Path)) { $result.error = ('Blender nicht gefunden: ' + $Path); return $result }
+    $process = $null
+    try {
+        $psi = [System.Diagnostics.ProcessStartInfo]::new()
+        $psi.FileName = $Path
+        $psi.Arguments = $Arguments
+        $psi.UseShellExecute = $false
+        $psi.CreateNoWindow = $true
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.WorkingDirectory = $script:MeshRoot
+        $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+        $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+        $process = [System.Diagnostics.Process]::new()
+        $process.StartInfo = $psi
+        [void]$process.Start()
+        $outTask = $process.StandardOutput.ReadToEndAsync()
+        $errTask = $process.StandardError.ReadToEndAsync()
+        $exited = $process.WaitForExit([Math]::Max(5, $TimeoutSeconds) * 1000)
+        if (-not $exited) {
+            $result.timedOut = $true
+            try { $process.Kill() } catch {}
+            try { [void]$process.WaitForExit(4000) } catch {}
+        }
+        $outText = ''
+        $errText = ''
+        try { if ($outTask.Wait(4000)) { $outText = [string]$outTask.Result } } catch {}
+        try { if ($errTask.Wait(4000)) { $errText = [string]$errTask.Result } } catch {}
+        $result.output = (($outText + [Environment]::NewLine + $errText).Trim())
+        try { $result.exitCode = [int]$process.ExitCode } catch {}
+        $result.ok = ((-not $result.timedOut) -and $result.exitCode -eq 0)
+        if ($result.timedOut) { $result.error = ('Blender hat nach ' + [string]$TimeoutSeconds + ' s nicht geantwortet und wurde beendet.') }
+        elseif ($result.exitCode -ne 0) { $result.error = ('Blender endete mit Code ' + [string]$result.exitCode + '.') }
+    } catch {
+        $result.error = $_.Exception.Message
+    } finally {
+        try { if ($process) { $process.Dispose() } } catch {}
+    }
+    return $result
+}
+
+function Test-BlenderQuick {
+    # SCHNELLE Pruefung: blender.exe --version -> "Blender 4.5.12".
+    # Laeuft synchron (~1 s) und entscheidet, ob der Start sofort weitergeht.
+    param([string]$Path)
+    $out = @{ ok = $false; version = ''; error = '' }
+    $run = Invoke-BlenderProcess -Path $Path -Arguments '--version' -TimeoutSeconds 25
+    if ($run.timedOut) { $out.error = $run.error; return $out }
+    $text = [string]$run.output
+    if ([string]::IsNullOrWhiteSpace($text)) { $out.error = 'Blender lieferte keine Versionsausgabe.'; return $out }
+    $match = [System.Text.RegularExpressions.Regex]::Match($text, 'Blender\s+([0-9]+(?:\.[0-9]+){1,2})')
+    if (-not $match.Success) { $out.error = ('Versionsausgabe nicht lesbar: ' + $text.Substring(0, [Math]::Min(120, $text.Length))); return $out }
+    $version = $match.Groups[1].Value
+    $parts = $version.Split('.')
+    $major = 0
+    try { $major = [int]$parts[0] } catch { $major = 0 }
+    $out.version = $version
+    if ($major -lt 3) {
+        $out.error = ('Blender ' + $version + ' ist zu alt (mindestens 3.3 wird gebraucht).')
+        return $out
+    }
+    $out.ok = $true
+    return $out
+}
+
+function Test-BlenderCapability {
+    # FAEHIGKEITSPROBE statt Versionsvergleich: startet Blender headless,
+    # importiert bpy und prueft den OBJ-Exporter. Beweis statt Annahme.
+    param([string]$Path)
+    $probe = @{ ok = $false; version = ''; detail = ''; probe = '' }
+    $probeFile = Join-Path $script:BlenderFolder 'arena-blender-probe.py'
+    $probeCode = 'import json, sys, traceback' + [Environment]::NewLine
+    $probeCode = $probeCode + 'try:' + [Environment]::NewLine
+    $probeCode = $probeCode + '    import bpy' + [Environment]::NewLine
+    $probeCode = $probeCode + '    data = {"ok": True, "blender": str(bpy.app.version_string), "python": "%d.%d" % sys.version_info[:2], "objExport": ("obj_export" in dir(bpy.ops.wm)), "legacyObj": ("obj" in dir(bpy.ops.export_scene))}' + [Environment]::NewLine
+    $probeCode = $probeCode + '    print("ARENA_BLENDER_PROBE " + json.dumps(data))' + [Environment]::NewLine
+    $probeCode = $probeCode + 'except Exception:' + [Environment]::NewLine
+    $probeCode = $probeCode + '    print("ARENA_BLENDER_PROBE " + json.dumps({"ok": False, "error": traceback.format_exc(limit=2)}))' + [Environment]::NewLine
+    try {
+        if (-not (Test-Path -LiteralPath $script:BlenderFolder)) { New-Item -ItemType Directory -Path $script:BlenderFolder -Force | Out-Null }
+        Set-Content -LiteralPath $probeFile -Value $probeCode -Encoding UTF8
+    } catch {
+        $probe.error = ('Probendatei konnte nicht geschrieben werden: ' + $_.Exception.Message)
+        return $probe
+    }
+    $run = Invoke-BlenderProcess -Path $Path -Arguments ('--background --factory-startup --python-exit-code 1 --python "' + $probeFile + '"') -TimeoutSeconds 90
+    $text = [string]$run.output
+    $marker = 'ARENA_BLENDER_PROBE '
+    $index = $text.IndexOf($marker)
+    if ($index -lt 0) {
+        $probe.error = 'Blender startete nicht headless (keine Probenzeile).'
+        if ($run.timedOut) { $probe.error = $run.error }
+        if (-not [string]::IsNullOrWhiteSpace($text)) {
+            $tail = $text
+            if ($tail.Length -gt 400) { $tail = $tail.Substring($tail.Length - 400) }
+            $probe.detail = $tail
+        }
+        return $probe
+    }
+    $jsonText = $text.Substring($index + $marker.Length)
+    $lineEnd = $jsonText.IndexOfAny(@([char]10, [char]13))
+    if ($lineEnd -ge 0) { $jsonText = $jsonText.Substring(0, $lineEnd) }
+    try {
+        $data = $jsonText.Trim() | ConvertFrom-Json
+        $probe.probe = $jsonText.Trim()
+        if ($data.ok -eq $true) {
+            $probe.ok = $true
+            $probe.version = [string]$data.blender
+            if ($data.objExport -ne $true -and $data.legacyObj -ne $true) {
+                $probe.ok = $false
+                $probe.error = ('Blender ' + [string]$data.blender + ' hat keinen OBJ-Exporter (erwartet wird der offizielle Windows-Build ab 3.3).')
+            }
+            return $probe
+        }
+        $probe.error = ('Blender meldete: ' + [string]$data.error)
+    } catch {
+        $probe.error = ('Probenzeile nicht lesbar: ' + $jsonText)
+    }
+    return $probe
+}
+
+function Get-BlenderDownloadCandidates {
+    # Gepinnte LTS-Kandidaten zuerst (4.5 LTS laeuft auch auf aelterer
+    # Hardware), danach die Verzeichnisliste der offiziellen Quelle. Immer
+    # portables ZIP - kein MSI, kein UAC, kein Admin.
+    $list = New-Object System.Collections.Generic.List[string]
+    foreach ($patch in @('4.5.12', '4.5.11', '4.5.10', '4.5.9', '4.5.8')) {
+        $list.Add(('https://download.blender.org/release/Blender4.5/blender-' + $patch + '-windows-x64.zip'))
+    }
+    try {
+        $listing = (Invoke-WebRequest -Uri 'https://download.blender.org/release/Blender4.5/' -UseBasicParsing -TimeoutSec 25).Content
+        $found = [System.Text.RegularExpressions.Regex]::Matches([string]$listing, 'blender-(4\.5\.[0-9]+)-windows-x64\.zip')
+        $rounds = New-Object System.Collections.Generic.List[string]
+        foreach ($hit in $found) {
+            $name = [string]$hit.Groups[1].Value
+            if (-not $rounds.Contains($name)) { $rounds.Add($name) }
+        }
+        $sorted = $rounds.ToArray() | Sort-Object { [int]($_ -split '\.')[2] } -Descending
+        foreach ($name in $sorted) {
+            $url = ('https://download.blender.org/release/Blender4.5/blender-' + $name + '-windows-x64.zip')
+            if (-not $list.Contains($url)) { $list.Add($url) }
+        }
+    } catch {
+        Write-RuntimeLog ('Blender-Verzeichnisliste nicht erreichbar: ' + $_.Exception.Message)
+    }
+    return ,$list
+}
+
+function Test-BlenderZipHash {
+    # Wenn die offizielle .sha256-Datei erreichbar ist, wird der Download
+    # wirklich geprueft; sonst wird das ehrlich im Protokoll vermerkt.
+    param([string]$Url, [string]$File)
+    try {
+        $expected = ([string](Invoke-WebRequest -Uri ($Url + '.sha256') -UseBasicParsing -TimeoutSec 20).Content).Trim()
+        $expectedHash = ($expected -split '\s+')[0]
+        if ([string]::IsNullOrWhiteSpace($expectedHash)) { return @{ checked = $false; ok = $true; note = 'Keine Pruefsumme in der .sha256-Datei gefunden.' } }
+        $actual = (Get-FileHash -LiteralPath $File -Algorithm SHA256).Hash
+        if ($actual -eq $expectedHash.ToUpperInvariant()) { return @{ checked = $true; ok = $true; note = 'SHA-256 stimmt mit der offiziellen Pruefsumme ueberein.' } }
+        return @{ checked = $true; ok = $false; note = 'SHA-256 stimmt NICHT mit der offiziellen Pruefsumme ueberein.' }
+    } catch {
+        return @{ checked = $false; ok = $true; note = ('Keine offizielle Pruefsumme erreichbar (' + $_.Exception.Message + ') - der Download wurde nur strukturell (ZIP) und danach mit der Faehigkeitsprobe geprueft.') }
+    }
+}
+
+function Start-BlenderInstall {
+    # Vollautomatische Installation im HINTERGRUND (eigener Runspace): die
+    # Bridge bleibt bedienbar, der Splash zeigt den Fortschritt. Nur der
+    # Tunnel wartet auf dieses Ergebnis (Schritt 4 vor Schritt 4...).
+    if ([string]$script:Shared.BlenderState.state -eq 'installing') { return }
+    Set-BlenderState -State 'installing' -Message 'Blender wird heruntergeladen (portables ZIP, ohne Admin) ...' -Percent 0 -Source 'download' -InstallStartedAt ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+    Write-RuntimeLog 'Blender-Installation gestartet (portables ZIP von download.blender.org, kein Admin).'
+    try {
+        $ps = [PowerShell]::Create()
+        [void]$ps.AddScript([string]$script:BridgeBlenderInstallScript).AddArgument($script:Shared)
+        [void]$ps.BeginInvoke()
+    } catch {
+        Set-BlenderState -State 'failed' -Detail 'Der Installations-Thread konnte nicht gestartet werden.' -Message 'Blender wurde nicht gefunden und konnte nicht installiert werden.' -Enabled $false -Percent 0
+        Write-RuntimeLog ('Blender-Installation konnte nicht gestartet werden: ' + $_.Exception.Message)
+    }
+}
+
+function Start-BlenderStartupGate {
+    # Schritt 4 des Starts. Ist Blender vorhanden, geht es SOFORT weiter
+    # (schnelle Versionspruefung); fehlt er, wartet der Tunnel auf die
+    # Installation. Ein Fehlschlag macht die Zeile rot, deaktiviert den
+    # Mesh-Bau und laesst die Bridge normal weiterlaufen.
+    Set-StartupStage 'Blender-Pruefung (Schritt 4)'
+    $script:BlenderGatePending = $false
+    $script:BlenderSkippedByUser = $false
+    $path = Get-BlenderPath
+    if ($path) {
+        $quick = Test-BlenderQuick -Path $path
+        if ($quick.ok) {
+            Set-BlenderState -State 'ready' -Path $path -Version $quick.version -Detail 'Vorhandene Blender-Installation gefunden und geprueft.' -Message ('Blender ' + [string]$quick.version + ' ist bereit.') -Percent 100 -Source 'vorhanden' -Enabled $true -GateResolved $true
+            Write-RuntimeLog ('Blender gefunden: ' + $path + ' (Version ' + [string]$quick.version + ').')
+            try { $capPs = [PowerShell]::Create(); [void]$capPs.AddScript([string]$script:BridgeBlenderProbeScript).AddArgument($script:Shared); [void]$capPs.BeginInvoke() } catch {}
+            return $true
+        }
+        Write-RuntimeLog ('Blender gefunden, aber unbrauchbar: ' + [string]$quick.error)
+        Set-BlenderState -State 'missing' -Path $path -Detail ('Gefundene Datei ist unbrauchbar: ' + [string]$quick.error) -Message 'Die gefundene Blender-Datei ist unbrauchbar - es wird die offizielle Version geladen.' -Percent 0
+    } else {
+        Set-BlenderState -State 'missing' -Message 'Blender ist nicht installiert - die Bridge laedt die offizielle portable Version.' -Percent 0
+        Write-RuntimeLog 'Blender wurde nicht gefunden - automatische Installation startet.'
+    }
+    $script:BlenderGatePending = $true
+    $script:BlenderGateDeadline = (Get-Date).AddMinutes(12)
+    $script:BlenderAttempts = [int]$script:BlenderAttempts + 1
+    Start-BlenderInstall
+    return $false
+}
+
+function Complete-BlenderStartupGate {
+    # Wird vom UI-Takt aufgerufen. Sobald der Schritt 4 in einem Endzustand
+    # ist (fertig / fehlgeschlagen / uebersprungen), startet der Tunnel.
+    if (-not $script:BlenderGatePending) { return }
+    $map = $script:Shared.BlenderState
+    $state = [string]$map.state
+    $terminal = ($state -eq 'ready' -or $state -eq 'failed' -or $state -eq 'skipped')
+    $timedOut = ((Get-Date) -gt $script:BlenderGateDeadline)
+    if (-not $terminal -and -not $timedOut) { return }
+    if ($timedOut -and -not $terminal) {
+        Set-BlenderState -State 'failed' -Detail 'Zeitlimit erreicht - der Download/Installation wurde uebersprungen.' -Message 'Blender konnte nicht rechtzeitig bereitgestellt werden. Der Mesh-Bau ist vorerst AUS, alles andere laeuft normal.' -Enabled $false -Percent 0
+        Write-RuntimeLog 'Blender-Schritt 4 im Zeitlimit beendet - Mesh-Bau vorerst deaktiviert, Start laeuft weiter.'
+    }
+    $script:BlenderGatePending = $false
+    Start-CloudflareTunnel
+}
+
+function Update-BlenderSplashRow {
+    # Zeile 4 im Startbildschirm: gruen = bereit, amber = pruefen/installieren,
+    # rot = fehlgeschlagen (Mesh-Bau aus), grau = uebersprungen.
+    param($Row)
+    $dot = $null
+    $state = $null
+    try { $dot = $script:SplashBlenderDot } catch {}
+    try { $state = $script:SplashBlenderState } catch {}
+    if ($null -eq $state) { return }
+    $map = $script:Shared.BlenderState
+    $mode = [string]$map.state
+    if ($mode -eq 'ready') {
+        if ($dot) { Set-Dot $dot $script:ColorGreen }
+        $text = 'Bereit'
+        if (-not [string]::IsNullOrWhiteSpace([string]$map.version)) { $text = ('Bereit (' + [string]$map.version + ')') }
+        Set-Text $state $text
+        $state.Foreground = Get-Brush '#9AD9AE'
+        return
+    }
+    if ($mode -eq 'failed') {
+        if ($dot) { Set-Dot $dot $script:ColorRed }
+        Set-Text $state 'Nicht verfügbar'
+        $state.Foreground = Get-Brush '#FF8AA0'
+        return
+    }
+    if ($mode -eq 'skipped') {
+        if ($dot) { Set-Dot $dot $script:ColorGray }
+        Set-Text $state 'Übersprungen'
+        $state.Foreground = Get-Brush '#9AA9CE'
+        return
+    }
+    if ($mode -eq 'installing') {
+        if ($dot) { Set-Dot $dot $script:ColorAmber }
+        $percent = 0
+        try { $percent = [int]$map.percent } catch {}
+        if ($percent -gt 0) { Set-Text $state ('Wird installiert … ' + [string]$percent + ' %') } else { Set-Text $state 'Wird installiert …' }
+        $state.Foreground = Get-Brush '#FFD9A0'
+        return
+    }
+    if ($null -ne $Row) {
+        if ($dot) { Set-Dot $dot $script:ColorAmber }
+        Set-Text $state 'Wird geprüft …'
+        $state.Foreground = Get-Brush '#9AA9CE'
+        return
+    }
+    if ($dot) { Set-Dot $dot $script:ColorGray }
+    Set-Text $state 'Wartet …'
+    $state.Foreground = Get-Brush '#9AA9CE'
+}
+
+function Get-BlenderReport {
+    # Kompakter Zustand fuer Werkzeuge und Fenster (ehrlich, ohne Behauptung).
+    $map = $script:Shared.BlenderState
+    $report = @{
+        state = [string]$map.state
+        enabled = [bool]$map.enabled
+        path = [string]$map.path
+        version = [string]$map.version
+        detail = [string]$map.detail
+        message = [string]$map.message
+        percent = [int]$map.percent
+        source = [string]$map.source
+        probe = [string]$map.probe
+        updatedAt = [long]$map.updatedAt
+        folder = [string]$script:BlenderFolder
+        meshFolder = [string]$script:MeshRoot
+        installing = ([string]$map.state -eq 'installing')
+        gatePending = [bool]$script:BlenderGatePending
+    }
+    if ($report.enabled -ne $true) {
+        $report.hint = 'Mesh-Bau ist deaktiviert, solange Blender nicht bereit ist. Die Polygon-Wedge-Wege (build_polygon_model/build_assembly) funktionieren unabhaengig davon weiter.'
+    }
+    return $report
+}
+
+
+# ============================================================================
+# Version 7.4.0: MESH-BAU - Blender headless, OBJ MESSEN, Platzhalter, IDs
+# ============================================================================
+# Ablauf (ehrlich, ohne Behauptung):
+#   build_mesh_model  -> Bridge schreibt Blender-Skripte + Runner, startet
+#                        Blender im Hintergrund (ein Prozess je Slot).
+#   Worker            -> Blender erzeugt die OBJ-Datei; die Bridge MISST sie
+#                        (Dreiecke, Bounds in Studs, Objekte, Materialien).
+#   mesh_slots        -> viereckige MeshPart-Platzhalter im Place, mit
+#                        Attributen (ArenaPlaceholder, ArenaMeshSlot, ...).
+#   Nutzer            -> laedt die OBJ-Datei in Roblox hoch und traegt die
+#                        Asset-Id im Fenster "Mesh-Uploads" ein.
+#   mesh_apply_asset  -> Bridge setzt die Geometrie ueber
+#                        InsertService:CreateMeshPartAsync + ApplyMesh in die
+#                        Platzhalter (MeshId ist schreibgeschuetzt).
+# ----------------------------------------------------------------------------
+
+$script:BridgeMeshToolkit = {
+    # ----------------------------------------------------------------
+    # OBJ MESSEN - die Bridge glaubt keine Zahlen, sie liest sie selbst.
+    # ----------------------------------------------------------------
+    function Get-MeshObjStats {
+        param($Shared, [string]$Path, [int]$Limit = 10000)
+        $stats = @{
+            ok = $false; error = ''; bytes = 0; vertices = 0; faces = 0; triangles = 0
+            objects = 0; groups = 0; materials = 0; hasNaN = $false
+            min = @{ x = 0.0; y = 0.0; z = 0.0 }; max = @{ x = 0.0; y = 0.0; z = 0.0 }
+            size = @{ x = 0.0; y = 0.0; z = 0.0 }; limit = $Limit; overLimit = $false
+        }
+        try {
+            if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) {
+                $stats.error = 'Die OBJ-Datei wurde nicht gefunden.'
+                return $stats
+            }
+            $stats.bytes = [int64](Get-Item -LiteralPath $Path).Length
+            if ($stats.bytes -le 0) { $stats.error = 'Die OBJ-Datei ist leer.'; return $stats }
+            $minX = [double]::MaxValue; $minY = [double]::MaxValue; $minZ = [double]::MaxValue
+            $maxX = [double]::MinValue; $maxY = [double]::MinValue; $maxZ = [double]::MinValue
+            $culture = [System.Globalization.CultureInfo]::InvariantCulture
+            $reader = [System.IO.StreamReader]::new($Path, [System.Text.Encoding]::UTF8)
+            try {
+                while ($null -ne ($line = $reader.ReadLine())) {
+                    if ($line.Length -lt 2) { continue }
+                    $head = $line.Substring(0, 2)
+                    if ($head -eq 'v ') {
+                        $parts = $line.Split([char[]]@(' ', [char]9), [System.StringSplitOptions]::RemoveEmptyEntries)
+                        if ($parts.Length -lt 4) { continue }
+                        $x = 0.0; $y = 0.0; $z = 0.0
+                        [void][double]::TryParse($parts[1], [System.Globalization.NumberStyles]::Float, $culture, [ref]$x)
+                        [void][double]::TryParse($parts[2], [System.Globalization.NumberStyles]::Float, $culture, [ref]$y)
+                        [void][double]::TryParse($parts[3], [System.Globalization.NumberStyles]::Float, $culture, [ref]$z)
+                        if ([double]::IsNaN($x) -or [double]::IsNaN($y) -or [double]::IsNaN($z) -or [double]::IsInfinity($x) -or [double]::IsInfinity($y) -or [double]::IsInfinity($z)) { $stats.hasNaN = $true; continue }
+                        $stats.vertices = [int]$stats.vertices + 1
+                        if ($x -lt $minX) { $minX = $x }
+                        if ($y -lt $minY) { $minY = $y }
+                        if ($z -lt $minZ) { $minZ = $z }
+                        if ($x -gt $maxX) { $maxX = $x }
+                        if ($y -gt $maxY) { $maxY = $y }
+                        if ($z -gt $maxZ) { $maxZ = $z }
+                    } elseif ($head -eq 'f ') {
+                        $parts = $line.Split([char[]]@(' ', [char]9), [System.StringSplitOptions]::RemoveEmptyEntries)
+                        $count = $parts.Length - 1
+                        if ($count -ge 3) {
+                            $stats.faces = [int]$stats.faces + 1
+                            $stats.triangles = [int]$stats.triangles + ($count - 2)
+                        }
+                    } elseif ($line.StartsWith('usemtl')) {
+                        $stats.materials = [int]$stats.materials + 1
+                    } elseif ($head -eq 'o ') {
+                        $stats.objects = [int]$stats.objects + 1
+                    } elseif ($head -eq 'g ') {
+                        $stats.groups = [int]$stats.groups + 1
+                    }
+                }
+            } finally {
+                try { $reader.Dispose() } catch {}
+            }
+            if ($stats.vertices -le 0) { $stats.error = 'Die OBJ-Datei enthaelt keine Punkte.'; return $stats }
+            if ($stats.triangles -le 0) { $stats.error = 'Die OBJ-Datei enthaelt keine Flaechen.'; return $stats }
+            $stats.min = @{ x = $minX; y = $minY; z = $minZ }
+            $stats.max = @{ x = $maxX; y = $maxY; z = $maxZ }
+            $stats.size = @{ x = [Math]::Round(($maxX - $minX), 4); y = [Math]::Round(($maxY - $minY), 4); z = [Math]::Round(($maxZ - $minZ), 4) }
+            if ([int]$stats.triangles -gt $Limit) { $stats.overLimit = $true }
+            $stats.ok = $true
+            return $stats
+        } catch {
+            $stats.error = $_.Exception.Message
+            return $stats
+        }
+    }
+
+    # ----------------------------------------------------------------
+    # SKRIPT-PRUEFUNG. Ehrlich: das ist eine LEITPLANKE, kein Sandkasten.
+    # Blender-Skripte bauen Geometrie - alles andere wird abgelehnt.
+    # ----------------------------------------------------------------
+    function Test-MeshScriptSafety {
+        param([string]$Script)
+        if ([string]::IsNullOrWhiteSpace($Script)) { return @{ ok = $false; reason = 'Das Blender-Skript ist leer.' } }
+        if ($Script.Length -gt 200000) { return @{ ok = $false; reason = 'Das Blender-Skript ist zu gross (max. 200 KB).' } }
+        $deny = @(
+            @{ token = 'import os'; why = 'Modul os ist gesperrt' },
+            @{ token = 'import sys'; why = 'Modul sys ist gesperrt' },
+            @{ token = 'subprocess'; why = 'Prozessstart ist gesperrt' },
+            @{ token = '__import__'; why = 'dynamischer Import ist gesperrt' },
+            @{ token = 'importlib'; why = 'dynamischer Import ist gesperrt' },
+            @{ token = 'socket'; why = 'Netzwerk ist gesperrt' },
+            @{ token = 'urllib'; why = 'Netzwerk ist gesperrt' },
+            @{ token = 'requests'; why = 'Netzwerk ist gesperrt' },
+            @{ token = 'shutil'; why = 'Dateizugriff ist gesperrt' },
+            @{ token = 'ctypes'; why = 'Systemaufrufe sind gesperrt' },
+            @{ token = 'winreg'; why = 'Registry-Zugriff ist gesperrt' },
+            @{ token = 'pickle'; why = 'Serialisierung ist gesperrt' },
+            @{ token = 'eval('; why = 'eval ist gesperrt' },
+            @{ token = 'exec('; why = 'exec ist gesperrt' },
+            @{ token = 'compile('; why = 'compile ist gesperrt' },
+            @{ token = 'open('; why = 'direkter Dateizugriff ist gesperrt' },
+            @{ token = 'pathlib'; why = 'Dateizugriff ist gesperrt' },
+            @{ token = 'glob'; why = 'Dateizugriff ist gesperrt' },
+            @{ token = 'bpy.ops.wm.'; why = 'Datei-/Exportoperationen macht der Runner der Bridge' },
+            @{ token = 'export_scene'; why = 'der Export wird von der Bridge gemacht' },
+            @{ token = 'import_scene'; why = 'das Laden externer Dateien ist gesperrt' },
+            @{ token = 'save_as_mainfile'; why = 'Dateizugriff ist gesperrt' },
+            @{ token = 'open_mainfile'; why = 'Dateizugriff ist gesperrt' },
+            @{ token = 'libraries'; why = 'Bibliothekszugriff ist gesperrt' },
+            @{ token = 'bpy.utils.'; why = 'Erweiterungen/Skripte sind gesperrt' }
+        )
+        $lower = $Script.ToLowerInvariant()
+        foreach ($rule in $deny) {
+            if ($lower.Contains([string]$rule.token)) {
+                return @{ ok = $false; reason = ('Nicht erlaubt: ' + [string]$rule.why + ' ("' + [string]$rule.token + '"). Blender-Skripte bauen NUR Geometrie ueber bpy - kein Datei-, Netzwerk- oder Systemzugriff.') }
+            }
+        }
+        $allowed = @('bpy', 'bmesh', 'math', 'mathutils', 'random')
+        foreach ($hit in [System.Text.RegularExpressions.Regex]::Matches($Script, '(?m)^\s*(?:from\s+([A-Za-z_][A-Za-z0-9_\.]*)\s+import|import\s+([A-Za-z_][A-Za-z0-9_\.]*))')) {
+            $module = [string]$hit.Groups[1].Value
+            if ([string]::IsNullOrWhiteSpace($module)) { $module = [string]$hit.Groups[2].Value }
+            $module = $module.Split('.')[0]
+            if ($allowed -notcontains $module) {
+                return @{ ok = $false; reason = ('Modul "' + $module + '" ist nicht freigegeben. Erlaubt sind nur: bpy, bmesh, math, mathutils, random.') }
+            }
+        }
+        return @{ ok = $true; reason = '' }
+    }
+
+    function Get-MeshJobData {
+        param($Shared, [string]$JobId)
+        $json = $null
+        if ([string]::IsNullOrWhiteSpace($JobId)) { return $null }
+        if (-not $Shared.MeshJobs.TryGetValue([string]$JobId, [ref]$json)) { return $null }
+        if ([string]::IsNullOrWhiteSpace($json)) { return $null }
+        try { return ($json | ConvertFrom-Json) } catch { return $null }
+    }
+
+    function Save-MeshJobData {
+        param($Shared, $JobData)
+        if ($null -eq $JobData) { return }
+        try {
+            $JobData.updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+            $Shared.MeshJobs[[string]$JobData.id] = ($JobData | ConvertTo-Json -Depth 8 -Compress)
+        } catch {}
+    }
+
+    function Get-MeshSlotData {
+        param($Shared, [string]$SlotKey)
+        $json = $null
+        if ([string]::IsNullOrWhiteSpace($SlotKey)) { return $null }
+        if (-not $Shared.MeshRegistry.TryGetValue([string]$SlotKey, [ref]$json)) { return $null }
+        if ([string]::IsNullOrWhiteSpace($json)) { return $null }
+        try { return ($json | ConvertFrom-Json) } catch { return $null }
+    }
+
+    function Set-MeshSlotField {
+        param($Shared, [string]$SlotKey, [string]$Name, $Value)
+        if ([string]::IsNullOrWhiteSpace($SlotKey)) { return }
+        try {
+            $data = Get-MeshSlotData $Shared $SlotKey
+            if ($null -eq $data) { return }
+            $existing = $data.PSObject.Properties[$Name]
+            if ($existing) { $existing.Value = $Value } else { $data | Add-Member -NotePropertyName $Name -NotePropertyValue $Value -Force }
+            $data.updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+            $Shared.MeshRegistry[[string]$SlotKey] = ($data | ConvertTo-Json -Depth 8 -Compress)
+        } catch {}
+    }
+
+    function Save-MeshRegistryFile {
+        param($Shared)
+        $path = ''
+        try { $path = [string]$Shared.MeshRegistryPath } catch {}
+        if ([string]::IsNullOrWhiteSpace($path)) { return }
+        try {
+            $rows = New-Object System.Collections.Generic.List[object]
+            foreach ($pair in $Shared.MeshRegistry.GetEnumerator()) {
+                try { $rows.Add(($pair.Value | ConvertFrom-Json)) } catch {}
+            }
+            $payload = @{ registryVersion = '7.4.0'; updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds(); slots = $rows.ToArray() }
+            ($payload | ConvertTo-Json -Depth 8).ToString() | Set-Content -LiteralPath $path -Encoding UTF8 -ErrorAction SilentlyContinue
+        } catch {}
+    }
+
+    function Get-MeshSlotsBySession {
+        param($Shared, [string]$SessionId, [string]$JobId = '')
+        $rows = New-Object System.Collections.Generic.List[object]
+        foreach ($pair in $Shared.MeshRegistry.GetEnumerator()) {
+            $data = $null
+            try { $data = ($pair.Value | ConvertFrom-Json) } catch { continue }
+            if ($null -eq $data) { continue }
+            if (-not [string]::IsNullOrWhiteSpace($SessionId) -and [string]$data.sessionId -ne [string]$SessionId) { continue }
+            if (-not [string]::IsNullOrWhiteSpace($JobId) -and [string]$data.jobId -ne [string]$JobId) { continue }
+            $rows.Add($data)
+        }
+        return ,$rows
+    }
+
+    function Start-MeshJobWork {
+        param($Shared, [string]$BlenderPath, $Spec)
+        # Spec kommt fertig geprueft vom Werkzeug: modelName, sessionId, root,
+        # timeoutSeconds und slots[] (name, fileName, script, targetTriangles,
+        # color, material, canCollide).
+        $jobId = 'mesh_' + ([guid]::NewGuid().ToString('N').Substring(0, 10))
+        $root = [string]$Shared.MeshRoot
+        $jobFolder = Join-Path $root $jobId
+        if (-not (Test-Path -LiteralPath $jobFolder)) { [void](New-Item -ItemType Directory -Path $jobFolder -Force) }
+        $runnerPath = Join-Path $jobFolder 'runner.py'
+        Set-Content -LiteralPath $runnerPath -Value ([string]$Shared.MeshRunnerText) -Encoding UTF8
+        $slots = New-Object System.Collections.Generic.List[object]
+        $index = 0
+        foreach ($slot in $Spec.slots) {
+            $index = $index + 1
+            $name = [string]$slot.name
+            if ([string]::IsNullOrWhiteSpace($name)) { $name = ('slot' + [string]$index) }
+            $slotKey = ($jobId + ':' + $name)
+            $scriptPath = Join-Path $jobFolder ($name + '.py')
+            $objPath = Join-Path $jobFolder ($name + '.obj')
+            Set-Content -LiteralPath $scriptPath -Value ([string]$slot.script) -Encoding UTF8
+            $slots.Add([pscustomobject]@{
+                key = $slotKey
+                name = $name
+                scriptPath = $scriptPath
+                objPath = $objPath
+                runnerPath = $runnerPath
+                state = 'pending'
+                triangles = 0
+                targetTriangles = [int]$slot.targetTriangles
+                color = [string]$slot.color
+                material = [string]$slot.material
+                canCollide = [bool]$slot.canCollide
+                size = $null
+                error = ''
+                startedAt = 0
+                finishedAt = 0
+            })
+            $registry = [ordered]@{
+                slotKey = $slotKey
+                jobId = $jobId
+                sessionId = [string]$Spec.sessionId
+                modelName = [string]$Spec.modelName
+                slotName = $name
+                state = 'pending'
+                fileName = [System.IO.Path]::GetFileName($objPath)
+                objPath = $objPath
+                scriptPath = $scriptPath
+                triangles = 0
+                size = $null
+                color = [string]$slot.color
+                material = [string]$slot.material
+                assetId = ''
+                placeholderPath = ''
+                # Platzierung: die Bridge legt die Platzhalter genau dorthin.
+                parentRef = [string]$Spec.parentRef
+                origin = $Spec.origin
+                offset = $slot.offset
+                rotationY = [double]$Spec.rotationY
+                anchored = [bool]$Spec.anchored
+                canCollide = [bool]$slot.canCollide
+                error = ''
+                createdAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+                updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+            }
+            $Shared.MeshRegistry[$slotKey] = ($registry | ConvertTo-Json -Depth 6 -Compress)
+        }
+        $job = [ordered]@{
+            id = $jobId
+            modelName = [string]$Spec.modelName
+            sessionId = [string]$Spec.sessionId
+            parentRef = [string]$Spec.parentRef
+            origin = $Spec.origin
+            rotationY = [double]$Spec.rotationY
+            anchored = [bool]$Spec.anchored
+            placeholdersCreated = $false
+            state = 'queued'
+            folder = $jobFolder
+            logFile = (Join-Path $jobFolder 'build-log.txt')
+            blenderPath = [string]$BlenderPath
+            timeoutSeconds = [int]$Spec.timeoutSeconds
+            cancelRequested = $false
+            currentPid = 0
+            currentSlot = ''
+            createdAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+            updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+            finishedAt = 0
+            slots = $slots
+            error = ''
+            note = 'Blender laeuft im Hintergrund. Der Nutzer muss die OBJ-Datei spaeter in Roblox hochladen und die Asset-Id im Bridge-Fenster "Mesh-Uploads" eintragen.'
+        }
+        $Shared.MeshJobs[$jobId] = ($job | ConvertTo-Json -Depth 8 -Compress)
+        Save-MeshRegistryFile $Shared
+        # Worker: eigener Runspace, damit die HTTP-Antwort sofort zurueckgeht.
+        $ps = [PowerShell]::Create()
+        [void]$ps.AddScript([string]$Shared.MeshJobScriptText).AddArgument($Shared).AddArgument($jobId).AddArgument([string]$Shared.MeshToolkitText)
+        [void]$ps.BeginInvoke()
+        return $jobId
+    }
+
+    function Stop-MeshJob {
+        param($Shared, [string]$JobId)
+        $job = Get-MeshJobData $Shared $JobId
+        if ($null -eq $job) { return $false }
+        if ([string]$job.state -in @('measured', 'failed', 'cancelled')) { return $false }
+        try {
+            $job.cancelRequested = $true
+            Save-MeshJobData $Shared $job
+        } catch {}
+        $pidToKill = 0
+        try { $pidToKill = [int]$job.currentPid } catch { $pidToKill = 0 }
+        if ($pidToKill -gt 0) {
+            try { Stop-Process -Id $pidToKill -Force -ErrorAction SilentlyContinue } catch {}
+        }
+        foreach ($slot in (Get-MeshSlotsBySession $Shared ([string]$job.sessionId) $JobId)) {
+            if ([string]$slot.state -in @('pending', 'running', 'script')) {
+                Set-MeshSlotField $Shared ([string]$slot.slotKey) 'state' 'cancelled'
+                Set-MeshSlotField $Shared ([string]$slot.slotKey) 'error' 'Vom Nutzer abgebrochen.'
+            }
+        }
+        return $true
+    }
+
+    # ------------------------------------------------------------------
+    # Interne Mesh-Befehle (Version 7.4.0): Befehle, die die BRIDGE selbst an
+    # Studio schickt - Platzhalter anlegen, Geometrie einsetzen. Sie benutzen
+    # den normalen Befehlsweg, aber ohne wartenden HTTP-Aufruf: es gibt ein
+    # wartendes Signal (damit das Ergebnis nicht als "late result" beim
+    # Agenten landet) und die Oberflaeche erntet das Ergebnis im UI-Takt.
+    # ------------------------------------------------------------------
+    function New-MeshBridgeCommand {
+        param($Shared, [string]$SessionId, [string]$Tool, $ToolArgs, [int]$BudgetSeconds = 120, [string]$Tag = '')
+        $sid = [string]$SessionId
+        if ([string]::IsNullOrWhiteSpace($sid)) { return '' }
+        $commandId = [guid]::NewGuid().ToString('N')
+        $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        $budget = [Math]::Max(30, [Math]::Min(300, [int]$BudgetSeconds))
+        $payloadJson = (@{ id = $commandId; tool = [string]$Tool; args = $ToolArgs; queuedAt = $now; budgetSeconds = $budget } | ConvertTo-Json -Depth 12 -Compress)
+        $record = @{
+            sessionId = $sid
+            commandId = $commandId
+            tool = [string]$Tool
+            status = 'queued'
+            createdAt = $now
+            queuedAt = $now
+            deliveredAt = 0
+            lastDeliveryAt = 0
+            receivedAt = 0
+            startedAt = 0
+            heartbeatAt = 0
+            unackedCount = 0
+            deliveryAttempts = 0
+            budgetSeconds = $budget
+            executor = $null
+        }
+        $recordJson = ($record | ConvertTo-Json -Depth 6 -Compress)
+        $signal = New-Object System.Threading.ManualResetEventSlim($false)
+        [void]$Shared.ResultSignals.TryAdd($commandId, $signal)
+        $Shared.CommandPayloads[$commandId] = $payloadJson
+        $Shared.CommandOwners[$commandId] = $sid
+        $Shared.CommandOrigins[$commandId] = $sid
+        $Shared.CommandStates[$commandId] = $recordJson
+        try {
+            foreach ($pair in @($Shared.InstanceSessions.GetEnumerator())) {
+                if ([string]$pair.Value -eq $sid) { $Shared.CommandInstanceGuids[$commandId] = [string]$pair.Key; break }
+            }
+        } catch {}
+        try {
+            $bag = $null
+            if (-not $Shared.PendingCommands.TryGetValue($sid, [ref]$bag)) {
+                $bag = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+                [void]$Shared.PendingCommands.TryAdd($sid, $bag)
+                [void]$Shared.PendingCommands.TryGetValue($sid, [ref]$bag)
+            }
+            $bag[$commandId] = $recordJson
+        } catch {}
+        try {
+            $queue = $null
+            if (-not $Shared.CommandQueues.TryGetValue($sid, [ref]$queue)) {
+                $queue = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+                [void]$Shared.CommandQueues.TryAdd($sid, $queue)
+                [void]$Shared.CommandQueues.TryGetValue($sid, [ref]$queue)
+            }
+            [System.Threading.Monitor]::Enter($Shared.CommandQueueLock)
+            try {
+                if ($queue.Count -lt 64) { $queue.Enqueue($payloadJson) }
+            } finally {
+                [System.Threading.Monitor]::Exit($Shared.CommandQueueLock)
+            }
+            $poke = $null
+            if (-not $Shared.CommandSignals.TryGetValue($sid, [ref]$poke)) {
+                $poke = New-Object System.Threading.ManualResetEventSlim($false)
+                [void]$Shared.CommandSignals.TryAdd($sid, $poke)
+                [void]$Shared.CommandSignals.TryGetValue($sid, [ref]$poke)
+            }
+            if ($poke) { [void]$poke.Set() }
+        } catch {}
+        try { $Shared.MeshInternal['cmd:' + $commandId] = ([string]$Tag + '|' + [string]$Tool) } catch {}
+        return $commandId
+    }
+
+    function Get-MeshCommandOutcome {
+        # Ergebnis eines internen Befehls abholen: pending / done / error.
+        param($Shared, [string]$CommandId)
+        $id = [string]$CommandId
+        if ([string]::IsNullOrWhiteSpace($id)) { return @{ state = 'invalid'; message = 'Es wurde kein Befehl angegeben.' } }
+        $json = $null
+        if ($Shared.CommandResults.TryRemove($id, [ref]$json)) {
+            $removedSignal = $null
+            [void]$Shared.ResultSignals.TryRemove($id, [ref]$removedSignal)
+            if ($removedSignal) { try { $removedSignal.Dispose() } catch {} }
+            $discard = $null
+            [void]$Shared.MeshInternal.TryRemove('cmd:' + $id, [ref]$discard)
+            if ([string]::IsNullOrWhiteSpace($json)) { return @{ state = 'error'; message = 'Der Befehl kam ohne Ergebnis zurueck.' } }
+            return @{ state = 'done'; json = $json }
+        }
+        $stateJson = $null
+        if ($Shared.CommandStates.TryGetValue($id, [ref]$stateJson) -and -not [string]::IsNullOrWhiteSpace($stateJson)) {
+            $status = ''
+            $finishedAt = 0
+            $code = ''
+            try { $view = $stateJson | ConvertFrom-Json; $status = [string]$view.status; $finishedAt = [int64]$view.finishedAt; $code = [string]$view.resultCode } catch {}
+            if ($status -in @('completed', 'failed', 'abandoned', 'cancelled')) {
+                $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+                if (($now - $finishedAt) -ge 6) {
+                    # Endgueltig: nur noch aufraeumen. Das Ergebnis ist verloren
+                    # (z.B. Plugin-Neustart) - ehrlich melden, nichts erfinden.
+                    $removedSignal = $null
+                    [void]$Shared.ResultSignals.TryRemove($id, [ref]$removedSignal)
+                    if ($removedSignal) { try { $removedSignal.Dispose() } catch {} }
+                    $discard = $null
+                    [void]$Shared.MeshInternal.TryRemove('cmd:' + $id, [ref]$discard)
+                    [void]$Shared.CommandStates.TryRemove($id, [ref]$discard)
+                    [void]$Shared.CommandPayloads.TryRemove($id, [ref]$discard)
+                    $message = 'Der Befehl wurde nicht ausgefuehrt (' + $status + ')'
+                    if (-not [string]::IsNullOrWhiteSpace($code)) { $message = $message + ' - Code ' + $code }
+                    return @{ state = 'error'; message = ($message + '. Studio hat nicht geantwortet oder die Sitzung wurde beendet.') }
+                }
+            }
+        }
+        return @{ state = 'pending' }
+    }
+
+    function Send-MeshPlaceholders {
+        # Nach der Messung: fuer jeden gemessenen Slot einen viereckigen
+        # MeshPart-Platzhalter in den Place setzen lassen. Die Befehls-Id wird
+        # im Job vermerkt, damit die Oberflaeche das Ergebnis zuordnen kann.
+        param($Shared, [string]$JobId)
+        $job = Get-MeshJobData $Shared $JobId
+        if ($null -eq $job) { return '' }
+        if ([bool]$job.placeholdersCreated) { return [string]$job.placeholderCommandId }
+        $slots = New-Object System.Collections.Generic.List[object]
+        foreach ($slot in (Get-MeshSlotsBySession $Shared ([string]$job.sessionId) $JobId)) {
+            if ([string]$slot.state -ne 'obj' -and [string]$slot.state -ne 'applied') { continue }
+            $size = $slot.size
+            if ($null -eq $size) { continue }
+            $offset = $slot.offset
+            $position = @{ x = 0.0; y = 0.0; z = 0.0 }
+            try {
+                $position = @{
+                    x = ([double]$job.origin.x + [double]$offset.x)
+                    y = ([double]$job.origin.y + [double]$offset.y)
+                    z = ([double]$job.origin.z + [double]$offset.z)
+                }
+            } catch { $position = @{ x = 0.0; y = 0.0; z = 0.0 } }
+            $slots.Add(@{
+                key = [string]$slot.slotKey
+                name = [string]$slot.slotName
+                size = @{ x = [double]$size.x; y = [double]$size.y; z = [double]$size.z }
+                position = $position
+                rotationY = [double]$job.rotationY
+                anchored = [bool]$job.anchored
+                canCollide = [bool]$slot.canCollide
+                color = [string]$slot.color
+                material = [string]$slot.material
+                fileName = [string]$slot.fileName
+            })
+        }
+        if ($slots.Count -eq 0) { return '' }
+        $args = @{
+            parentRef = [string]$job.parentRef
+            buildId = [string]$job.id
+            modelName = [string]$job.modelName
+            slots = $slots.ToArray()
+        }
+        $commandId = New-MeshBridgeCommand -Shared $Shared -SessionId ([string]$job.sessionId) -Tool 'mesh_slots' -ToolArgs $args -BudgetSeconds 150 -Tag ('placeholders:' + [string]$job.id)
+        if (-not [string]::IsNullOrWhiteSpace($commandId)) {
+            $job.placeholderCommandId = $commandId
+            $job.placeholderState = 'sent'
+            Save-MeshJobData $Shared $job
+        }
+        return $commandId
+    }
+
+    function Update-MeshRegistryFromPlaceholderResult {
+        # Ergebnis von mesh_slots verbuchen: Platzhalter-Pfade sichern und den
+        # Job als "Platzhalter stehen" markieren.
+        param($Shared, [string]$JobId, $ResultJson)
+        $job = Get-MeshJobData $Shared $JobId
+        if ($null -eq $job) { return }
+        $parsed = $null
+        try { if (-not [string]::IsNullOrWhiteSpace([string]$ResultJson)) { $parsed = [string]$ResultJson | ConvertFrom-Json } } catch {}
+        if ($null -eq $parsed) {
+            $job.placeholderState = 'failed'
+            $job.error = 'Die Antwort fuer die Platzhalter war nicht lesbar.'
+            Save-MeshJobData $Shared $job
+            return
+        }
+        $createdCount = 0
+        try { if ($null -ne $parsed.createdCount) { $createdCount = [int]$parsed.createdCount } } catch {}
+        $createdPaths = @{}
+        try {
+            foreach ($entry in @($parsed.created)) {
+                if ($null -eq $entry) { continue }
+                $key = [string]$entry.key
+                if ([string]::IsNullOrWhiteSpace($key)) { continue }
+                $createdPaths[$key] = [string]$entry.path
+            }
+        } catch {}
+        foreach ($entry in $createdPaths.GetEnumerator()) {
+            Set-MeshSlotField $Shared ([string]$entry.Key) 'placeholderPath' ([string]$entry.Value)
+        }
+        $failedCount = 0
+        try { if ($null -ne $parsed.failedCount) { $failedCount = [int]$parsed.failedCount } } catch {}
+        $job.placeholdersCreated = [bool]($createdCount -gt 0)
+        if ($createdCount -gt 0) {
+            $job.placeholderState = 'ready'
+            $job.error = ''
+        } else {
+            $job.placeholderState = 'failed'
+            $job.error = 'Die Platzhalter konnten nicht angelegt werden.'
+            try {
+                foreach ($entry in @($parsed.failed)) {
+                    if ($null -ne $entry -and -not [string]::IsNullOrWhiteSpace([string]$entry.error)) {
+                        $job.error = 'Die Platzhalter konnten nicht angelegt werden: ' + [string]$entry.error
+                        break
+                    }
+                }
+            } catch {}
+        }
+        if ($failedCount -gt 0 -and $createdCount -gt 0) {
+            $job.note = 'Ein Teil der Platzhalter fehlt (' + [string]$failedCount + ' von ' + [string]([int]$createdCount + [int]$failedCount) + ').'
+        }
+        Save-MeshJobData $Shared $job
+        Save-MeshRegistryFile $Shared
+    }
+
+    function Update-MeshRegistryFromApplyResult {
+        # Ergebnis von mesh_apply verbuchen: je Slot Zustand, Asset-Id und die
+        # zurueckgelesene MeshId. Nichts wird erfunden - steht im Ergebnis kein
+        # Erfolg, bleibt der Slot auf 'apply_failed' mit der echten Fehlermeldung.
+        param($Shared, $ResultJson)
+        $parsed = $null
+        try { if (-not [string]::IsNullOrWhiteSpace([string]$ResultJson)) { $parsed = [string]$ResultJson | ConvertFrom-Json } } catch {}
+        if ($null -eq $parsed) { return $false }
+        $applied = 0
+        $failed = 0
+        try {
+            foreach ($entry in @($parsed.applied)) {
+                if ($null -eq $entry) { continue }
+                $key = [string]$entry.key
+                if ([string]::IsNullOrWhiteSpace($key)) { continue }
+                Set-MeshSlotField $Shared $key 'state' 'applied'
+                Set-MeshSlotField $Shared $key 'error' ''
+                Set-MeshSlotField $Shared $key 'placeholderPath' ([string]$entry.path)
+                if (-not [string]::IsNullOrWhiteSpace([string]$entry.meshIdReadBack)) {
+                    Set-MeshSlotField $Shared $key 'meshIdReadBack' ([string]$entry.meshIdReadBack)
+                }
+                Set-MeshSlotField $Shared $key 'appliedAt' ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+                $applied = $applied + 1
+            }
+        } catch {}
+        try {
+            foreach ($entry in @($parsed.failed)) {
+                if ($null -eq $entry) { continue }
+                $key = [string]$entry.key
+                if ([string]::IsNullOrWhiteSpace($key)) { continue }
+                $existing = Get-MeshSlotData $Shared $key
+                $wasApplied = $false
+                if ($null -ne $existing) { try { $wasApplied = ([string]$existing.state -eq 'applied') } catch {} }
+                if (-not $wasApplied) { Set-MeshSlotField $Shared $key 'state' 'apply_failed' }
+                Set-MeshSlotField $Shared $key 'error' ([string]$entry.error)
+                $failed = $failed + 1
+            }
+        } catch {}
+        Save-MeshRegistryFile $Shared
+        return ($applied -gt 0)
+    }
+}
+
+# ----------------------------------------------------------------------------
+# Der Runner: EIN Python-Programm, das die Bridge schreibt und der Agent NICHT
+# aendert. Er baut eine leere Szene, fuehrt den Modellteil aus, exportiert OBJ
+# (Y up, trianguliert, Modifier angewandt) und zentriert exakt auf die
+# Bounding-Box-Mitte - danach meldet er die gemessenen Zahlen.
+# ----------------------------------------------------------------------------
+$script:MeshRunnerTemplate = @'
+# Arena Roblox Bridge - Mesh-Runner (Version 7.4.0)
+# Dieses Programm gehoert der Bridge. Der Agent liefert nur den Modellteil
+# (--script); der Runner macht Szene, Export, Zentrierung und Messung.
+import json
+import os
+import sys
+
+MARKER = "ARENA_MESH_STATS "
+
+def arena_args():
+    argv = list(sys.argv)
+    if "--" in argv:
+        argv = argv[argv.index("--") + 1:]
+    else:
+        argv = []
+    parsed = {"script": "", "out": "", "slot": "mesh"}
+    index = 0
+    while index < len(argv):
+        key = argv[index]
+        if key in ("--script", "--out", "--slot") and index + 1 < len(argv):
+            parsed[key[2:]] = argv[index + 1]
+            index += 2
+        else:
+            index += 1
+    return parsed
+
+def arena_export(obj_path):
+    errors = []
+    try:
+        bpy.ops.wm.obj_export(
+            filepath=obj_path,
+            export_selected_objects=False,
+            apply_modifiers=True,
+            export_materials=False,
+            export_triangulated_mesh=True,
+            export_uv=False,
+            export_normals=True,
+            forward_axis="NEGATIVE_Z",
+            up_axis="Y",
+        )
+        return
+    except TypeError as exc:
+        errors.append("obj_export(TypeError): %s" % exc)
+    except Exception as exc:
+        errors.append("obj_export(%s): %s" % (type(exc).__name__, exc))
+    try:
+        bpy.ops.wm.obj_export(filepath=obj_path)
+        return
+    except Exception as exc:
+        errors.append("obj_export(plain): %s" % exc)
+    try:
+        bpy.ops.export_scene.obj(filepath=obj_path, use_materials=False, axis_forward="-Z", axis_up="Y")
+        return
+    except Exception as exc:
+        errors.append("export_scene.obj: %s" % exc)
+    raise RuntimeError("Kein funktionierender OBJ-Exporter: " + " | ".join(errors))
+
+def arena_measure_and_center(obj_path):
+    vertices = []
+    faces = []
+    objects = 0
+    with open(obj_path, "r", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            if line.startswith("v "):
+                parts = line.split()
+                if len(parts) >= 4:
+                    vertices.append((float(parts[1]), float(parts[2]), float(parts[3])))
+            elif line.startswith("f "):
+                parts = line.split()
+                if len(parts) >= 4:
+                    faces.append(len(parts) - 1)
+            elif line.startswith("o "):
+                objects += 1
+    if not vertices:
+        raise RuntimeError("Der Export enthielt keine Punkte.")
+    min_x = min(v[0] for v in vertices)
+    min_y = min(v[1] for v in vertices)
+    min_z = min(v[2] for v in vertices)
+    max_x = max(v[0] for v in vertices)
+    max_y = max(v[1] for v in vertices)
+    max_z = max(v[2] for v in vertices)
+    center_x = (min_x + max_x) / 2.0
+    center_y = (min_y + max_y) / 2.0
+    center_z = (min_z + max_z) / 2.0
+    if abs(center_x) > 1e-9 or abs(center_y) > 1e-9 or abs(center_z) > 1e-9:
+        with open(obj_path, "r", encoding="utf-8", errors="replace") as handle:
+            lines = handle.readlines()
+        with open(obj_path, "w", encoding="utf-8", newline="\n") as handle:
+            for line in lines:
+                if line.startswith("v "):
+                    parts = line.split()
+                    if len(parts) >= 4:
+                        x = float(parts[1]) - center_x
+                        y = float(parts[2]) - center_y
+                        z = float(parts[3]) - center_z
+                        rest = " ".join(parts[4:])
+                        if rest:
+                            handle.write("v %.6f %.6f %.6f %s\n" % (x, y, z, rest))
+                        else:
+                            handle.write("v %.6f %.6f %.6f\n" % (x, y, z))
+                        continue
+                handle.write(line)
+    triangles = sum(max(1, count - 2) for count in faces)
+    return {
+        "triangles": int(triangles),
+        "faces": int(len(faces)),
+        "vertices": int(len(vertices)),
+        "objects": int(objects),
+        "sizeStuds": {
+            "x": round(max_x - min_x, 4),
+            "y": round(max_y - min_y, 4),
+            "z": round(max_z - min_z, 4),
+        },
+        "bytes": int(os.path.getsize(obj_path)),
+    }
+
+def main():
+    options = arena_args()
+    if not options["script"] or not options["out"]:
+        raise RuntimeError("Runner braucht --script und --out.")
+    import bpy  # erst hier laden: die Szene wird danach leer aufgebaut
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    source_path = options["script"]
+    with open(source_path, "r", encoding="utf-8", errors="replace") as handle:
+        source = handle.read()
+    namespace = {"__name__": "__arena_slot__", "__file__": source_path}
+    exec(compile(source, source_path, "exec"), namespace)
+    arena_export(options["out"])
+    stats = arena_measure_and_center(options["out"])
+    stats["slot"] = options["slot"]
+    stats["ok"] = True
+    print(MARKER + json.dumps(stats))
+    print("ARENA_MESH_OK " + options["slot"])
+
+main()
+'@
+
+
+# ----------------------------------------------------------------------------
+# Der Blender-Installer: eigener Runspace, laedt das portable ZIP der
+# offiziellen Quelle (kein Admin, kein UAC), prueft die Pruefsumme (wenn die
+# .sha256-Datei erreichbar ist), entpackt und MISST danach blender.exe.
+# ----------------------------------------------------------------------------
+$script:BridgeBlenderInstallScript = {
+    param($Shared)
+    $state = $Shared.BlenderState
+    $logPath = Join-Path ([string]$Shared.MeshRoot) 'blender-install.log'
+    function Write-InstallLog {
+        param([string]$Text)
+        try { Add-Content -LiteralPath $logPath -Value ((Get-Date).ToString('u') + ' ' + $Text) -Encoding UTF8 } catch {}
+    }
+    function Set-InstallState {
+        param([string]$State, [string]$Message, [int]$Percent, [string]$Detail, [bool]$Enabled, [string]$Path, [string]$Version)
+        try {
+            if (-not [string]::IsNullOrWhiteSpace($State)) { $state.state = $State }
+            if (-not [string]::IsNullOrWhiteSpace($Message)) { $state.message = $Message }
+            if ($Percent -ge 0) { $state.percent = [int]$Percent }
+            if (-not [string]::IsNullOrWhiteSpace($Detail)) { $state.detail = $Detail }
+            if (-not [string]::IsNullOrWhiteSpace($Path)) { $state.path = $Path }
+            if (-not [string]::IsNullOrWhiteSpace($Version)) { $state.version = $Version }
+            $state.enabled = $Enabled
+            $state.updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        } catch {}
+    }
+    function Find-Exe {
+        param([string]$Folder)
+        if ([string]::IsNullOrWhiteSpace($Folder)) { return $null }
+        $direct = Join-Path $Folder 'blender.exe'
+        if (Test-Path -LiteralPath $direct) { return $direct }
+        try {
+            $hit = Get-ChildItem -LiteralPath $Folder -Filter 'blender.exe' -Recurse -Depth 3 -File -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($hit) { return $hit.FullName }
+        } catch {}
+        return $null
+    }
+    function Get-QuickVersion {
+        param([string]$Exe)
+        $result = @{ ok = $false; version = ''; error = '' }
+        try {
+            $psi = [System.Diagnostics.ProcessStartInfo]::new()
+            $psi.FileName = $Exe
+            $psi.Arguments = '--version'
+            $psi.UseShellExecute = $false
+            $psi.CreateNoWindow = $true
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+            $process = [System.Diagnostics.Process]::new()
+            $process.StartInfo = $psi
+            [void]$process.Start()
+            $outTask = $process.StandardOutput.ReadToEndAsync()
+            if (-not $process.WaitForExit(30000)) { try { $process.Kill() } catch {}; $result.error = 'blender.exe --version antwortete nicht.'; return $result }
+            $text = ''
+            try { if ($outTask.Wait(3000)) { $text = [string]$outTask.Result } } catch {}
+            try { $process.Dispose() } catch {}
+            $match = [System.Text.RegularExpressions.Regex]::Match($text, 'Blender\s+([0-9]+(?:\.[0-9]+){1,2})')
+            if (-not $match.Success) { $result.error = 'Versionsausgabe nicht lesbar.'; return $result }
+            $result.version = $match.Groups[1].Value
+            $result.ok = $true
+        } catch {
+            $result.error = $_.Exception.Message
+        }
+        return $result
+    }
+    try {
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+    } catch {}
+    $root = [string]$Shared.MeshRoot
+    $folder = [string]$Shared.BlenderFolder
+    try {
+        if (-not (Test-Path -LiteralPath $root)) { [void](New-Item -ItemType Directory -Path $root -Force) }
+        if (-not (Test-Path -LiteralPath $folder)) { [void](New-Item -ItemType Directory -Path $folder -Force) }
+    } catch {}
+    Write-InstallLog 'Installation gestartet.'
+    $urls = New-Object System.Collections.Generic.List[string]
+    foreach ($patch in @('4.5.12', '4.5.11', '4.5.10', '4.5.9', '4.5.8')) {
+        $urls.Add(('https://download.blender.org/release/Blender4.5/blender-' + $patch + '-windows-x64.zip'))
+    }
+    try {
+        $listing = (Invoke-WebRequest -Uri 'https://download.blender.org/release/Blender4.5/' -UseBasicParsing -TimeoutSec 25).Content
+        $matches = [System.Text.RegularExpressions.Regex]::Matches([string]$listing, 'blender-(4\.5\.[0-9]+)-windows-x64\.zip')
+        $names = New-Object System.Collections.Generic.List[string]
+        foreach ($hit in $matches) {
+            $name = [string]$hit.Groups[1].Value
+            if (-not $names.Contains($name)) { $names.Add($name) }
+        }
+        $sorted = $names.ToArray() | Sort-Object { [int]($_ -split '\.')[2] } -Descending
+        foreach ($name in $sorted) {
+            $candidate = ('https://download.blender.org/release/Blender4.5/blender-' + $name + '-windows-x64.zip')
+            if (-not $urls.Contains($candidate)) { $urls.Add($candidate) }
+        }
+        Write-InstallLog ('Verzeichnisliste gelesen: ' + [string]$sorted.Count + ' Treffer.')
+    } catch {
+        Write-InstallLog ('Verzeichnisliste nicht erreichbar: ' + $_.Exception.Message)
+    }
+    $zipPath = Join-Path $folder 'blender-portable.zip'
+    $downloaded = $false
+    $usedUrl = ''
+    foreach ($url in $urls) {
+        Set-InstallState -State 'installing' -Message ('Blender wird heruntergeladen … (' + $url + ')') -Percent 0 -Detail '' -Enabled $false
+        try {
+            Write-InstallLog ('Download: ' + $url)
+            if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue }
+            $client = [System.Net.WebClient]::new()
+            $expected = [int64]0
+            try {
+                $head = [System.Net.HttpWebRequest]::Create($url)
+                $head.Method = 'HEAD'
+                $head.Timeout = 20000
+                $response = $head.GetResponse()
+                $expected = [int64]$response.ContentLength
+                $response.Close()
+            } catch { $expected = 0 }
+            $task = $client.DownloadFileTaskAsync($url, $zipPath)
+            while (-not $task.IsCompleted) {
+                [System.Threading.Thread]::Sleep(500)
+                $percent = -1
+                try {
+                    $size = [int64]0
+                    if (Test-Path -LiteralPath $zipPath) { $size = [int64](Get-Item -LiteralPath $zipPath).Length }
+                    if ($expected -gt 0) { $percent = [int]([Math]::Min(99, [Math]::Floor($size * 100 / $expected))) } else { $percent = -1 }
+                } catch { $percent = -1 }
+                if ($percent -ge 0) {
+                    Set-InstallState -State 'installing' -Message ('Blender wird heruntergeladen … ' + [string]$percent + ' %') -Percent $percent -Detail '' -Enabled $false
+                } else {
+                    Set-InstallState -State 'installing' -Message 'Blender wird heruntergeladen …' -Percent 0 -Detail '' -Enabled $false
+                }
+            }
+            if ($task.IsFaulted) { throw $task.Exception.GetBaseException() }
+            try { $client.Dispose() } catch {}
+            if (-not (Test-Path -LiteralPath $zipPath)) { throw 'Die Datei wurde nicht gespeichert.' }
+            $zipBytes = [int64](Get-Item -LiteralPath $zipPath).Length
+            Write-InstallLog ('Download fertig: ' + [string]$zipBytes + ' Bytes.')
+            if ($zipBytes -lt 50000000) { throw ('Die Datei ist zu klein fuer ein Blender-ZIP (' + [string]$zipBytes + ' Bytes).') }
+            try {
+                $head = [System.IO.File]::OpenRead($zipPath)
+                $magic = New-Object byte[] 2
+                [void]$head.Read($magic, 0, 2)
+                $head.Close()
+                if (-not ($magic[0] -eq 80 -and $magic[1] -eq 75)) { throw 'Die Datei ist kein ZIP-Archiv.' }
+            } catch [System.Management.Automation.RuntimeException] { throw }
+            catch { Write-InstallLog ('ZIP-Kopfpruefung uebersprungen: ' + $_.Exception.Message) }
+            Set-InstallState -State 'installing' -Message 'Pruefsumme wird geprueft …' -Percent 99 -Detail '' -Enabled $false
+            try {
+                $expectedHash = ([string](Invoke-WebRequest -Uri ($url + '.sha256') -UseBasicParsing -TimeoutSec 20).Content).Trim()
+                $expectedHash = ($expectedHash -split '\s+')[0]
+                if (-not [string]::IsNullOrWhiteSpace($expectedHash)) {
+                    $actual = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash
+                    if ($actual -ne $expectedHash.ToUpperInvariant()) { throw 'Die Pruefsumme des Downloads stimmt nicht - der Download wird verworfen.' }
+                    Write-InstallLog 'SHA-256 stimmt mit der offiziellen Pruefsumme ueberein.'
+                } else {
+                    Write-InstallLog 'Die offizielle .sha256-Datei hatte keinen Hash - nur strukturell geprueft.'
+                }
+            } catch [System.Management.Automation.RuntimeException] {
+                if ($_.Exception.Message -like '*Pruefsumme*') { throw }
+                Write-InstallLog ('Pruefsumme nicht pruefbar: ' + $_.Exception.Message)
+            } catch {
+                Write-InstallLog ('Pruefsumme nicht pruefbar: ' + $_.Exception.Message)
+            }
+            $downloaded = $true
+            $usedUrl = $url
+            break
+        } catch {
+            Write-InstallLog ('Download fehlgeschlagen (' + $url + '): ' + $_.Exception.Message)
+            Set-InstallState -State 'installing' -Message 'Download fehlgeschlagen - naechste Quelle wird versucht …' -Percent 0 -Detail $_.Exception.Message -Enabled $false
+        }
+    }
+    if ($downloaded) {
+        Set-InstallState -State 'installing' -Message 'Blender wird entpackt … (das dauert 1-2 Minuten)' -Percent 99 -Detail '' -Enabled $false
+        try {
+            $extractOk = $false
+            try {
+                Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+                [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $folder)
+                $extractOk = $true
+            } catch {
+                Write-InstallLog ('Schnelles Entpacken nicht moeglich (' + $_.Exception.Message + ') - Expand-Archive wird benutzt.')
+            }
+            if (-not $extractOk) { Expand-Archive -LiteralPath $zipPath -DestinationPath $folder -Force }
+            Write-InstallLog 'Entpackt.'
+        } catch {
+            Set-InstallState -State 'failed' -Message 'Blender wurde heruntergeladen, konnte aber nicht entpackt werden.' -Percent 0 -Detail $_.Exception.Message -Enabled $false
+            Write-InstallLog ('Entpacken fehlgeschlagen: ' + $_.Exception.Message)
+            return
+        }
+        $exe = Find-Exe $folder
+        if (-not $exe) {
+            Set-InstallState -State 'failed' -Message 'Im entpackten Archiv wurde blender.exe nicht gefunden.' -Percent 0 -Detail 'Der Download war kein gueltiges Blender-Archiv.' -Enabled $false
+            Write-InstallLog 'blender.exe fehlt nach dem Entpacken.'
+            return
+        }
+        $quick = Get-QuickVersion $exe
+        if ($quick.ok) {
+            Set-InstallState -State 'ready' -Message ('Blender ' + [string]$quick.version + ' ist bereit (automatisch installiert).') -Percent 100 -Detail ('Installiert aus: ' + $usedUrl) -Enabled $true -Path $exe -Version $quick.version
+            Write-InstallLog ('Bereit: ' + $exe + ' Version ' + [string]$quick.version)
+            try { Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue } catch {}
+            # Faehigkeitsprobe direkt anschliessen (echter Mesh-Testlauf).
+            try {
+                $ps = [PowerShell]::Create()
+                [void]$ps.AddScript([string]$Shared.BlenderProbeScriptText).AddArgument($Shared)
+                [void]$ps.BeginInvoke()
+            } catch {}
+            return
+        }
+        Set-InstallState -State 'failed' -Message 'Blender wurde installiert, startet aber nicht.' -Percent 0 -Detail ([string]$quick.error) -Enabled $false
+        Write-InstallLog ('Start fehlgeschlagen: ' + [string]$quick.error)
+        return
+    }
+    # Letzter Weg: winget (braucht eine Bestaetigung von Windows).
+    Set-InstallState -State 'installing' -Message 'Download nicht moeglich - winget wird versucht …' -Percent 0 -Detail '' -Enabled $false
+    try {
+        $winget = Get-Command winget -ErrorAction SilentlyContinue
+        if ($winget) {
+            Write-InstallLog 'winget install BlenderFoundation.Blender.LTS'
+            $wingetOut = & $winget.Source install --id BlenderFoundation.Blender.LTS -e --silent --accept-source-agreements --accept-package-agreements 2>&1
+            Write-InstallLog ('winget: ' + ([string]($wingetOut -join ' ')))
+            $machinePath = [System.Environment]::GetEnvironmentVariable('Path', 'Machine')
+            $userPath = [System.Environment]::GetEnvironmentVariable('Path', 'User')
+            if (-not [string]::IsNullOrWhiteSpace($machinePath) -or -not [string]::IsNullOrWhiteSpace($userPath)) { $env:Path = ([string]$machinePath + ';' + [string]$userPath) }
+            $exe = $null
+            foreach ($pattern in @((Join-Path ${env:ProgramFiles} 'Blender Foundation\Blender*'), (Join-Path ${env:LOCALAPPDATA} 'Programs\Blender Foundation\Blender*'))) {
+                try {
+                    foreach ($sub in (Get-ChildItem -Path $pattern -Directory -ErrorAction SilentlyContinue)) {
+                        $hit = Join-Path $sub.FullName 'blender.exe'
+                        if (Test-Path -LiteralPath $hit) { $exe = $hit; break }
+                    }
+                } catch {}
+                if ($exe) { break }
+            }
+            if ($exe) {
+                $quick = Get-QuickVersion $exe
+                if ($quick.ok) {
+                    Set-InstallState -State 'ready' -Message ('Blender ' + [string]$quick.version + ' ist bereit (winget).') -Percent 100 -Detail 'Ueber winget installiert.' -Enabled $true -Path $exe -Version $quick.version
+                    try { $ps = [PowerShell]::Create(); [void]$ps.AddScript([string]$Shared.BlenderProbeScriptText).AddArgument($Shared); [void]$ps.BeginInvoke() } catch {}
+                    return
+                }
+            }
+        } else {
+            Write-InstallLog 'winget ist nicht vorhanden.'
+        }
+    } catch {
+        Write-InstallLog ('winget fehlgeschlagen: ' + $_.Exception.Message)
+    }
+    Set-InstallState -State 'failed' -Message 'Blender konnte nicht automatisch installiert werden. Der Mesh-Bau ist vorerst AUS - alles andere laeuft normal.' -Percent 0 -Detail ('Quellen versucht: ' + [string]$urls.Count + ' Downloads + winget. Siehe blender-install.log im Bridge-Ordner.') -Enabled $false
+}
+
+# ----------------------------------------------------------------------------
+# Faehigkeitsprobe: beweist, dass Blender WIRKLICH ein OBJ erzeugen kann.
+# Sie benutzt denselben Runner wie der echte Bau - kein Theorie-Test.
+# ----------------------------------------------------------------------------
+$script:BridgeBlenderProbeScript = {
+    param($Shared)
+    $state = $Shared.BlenderState
+    $path = [string]$state.path
+    if ([string]::IsNullOrWhiteSpace($path)) { return }
+    $probeRoot = Join-Path ([string]$Shared.MeshRoot) '_probe'
+    try {
+        if (-not (Test-Path -LiteralPath $probeRoot)) { [void](New-Item -ItemType Directory -Path $probeRoot -Force) }
+        $runnerPath = Join-Path $probeRoot 'runner.py'
+        Set-Content -LiteralPath $runnerPath -Value ([string]$Shared.MeshRunnerText) -Encoding UTF8
+        $slotPath = Join-Path $probeRoot 'probe.py'
+        $slotCode = 'import bpy' + [Environment]::NewLine
+        $slotCode = $slotCode + 'bpy.ops.mesh.primitive_cube_add(size=2.0)' + [Environment]::NewLine
+        $slotCode = $slotCode + 'bpy.ops.mesh.primitive_uv_sphere_add(radius=0.6, location=(0.0, 0.0, 2.0))' + [Environment]::NewLine
+        Set-Content -LiteralPath $slotPath -Value $slotCode -Encoding UTF8
+        $objPath = Join-Path $probeRoot 'probe.obj'
+        if (Test-Path -LiteralPath $objPath) { Remove-Item -LiteralPath $objPath -Force -ErrorAction SilentlyContinue }
+        $arguments = '--background --factory-startup --python-exit-code 1 --python "' + $runnerPath + '" -- --script "' + $slotPath + '" --out "' + $objPath + '" --slot probe'
+        $psi = [System.Diagnostics.ProcessStartInfo]::new()
+        $psi.FileName = $path
+        $psi.Arguments = $arguments
+        $psi.UseShellExecute = $false
+        $psi.CreateNoWindow = $true
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+        $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+        $process = [System.Diagnostics.Process]::new()
+        $process.StartInfo = $psi
+        [void]$process.Start()
+        $outTask = $process.StandardOutput.ReadToEndAsync()
+        $errTask = $process.StandardError.ReadToEndAsync()
+        $exited = $process.WaitForExit(120000)
+        if (-not $exited) { try { $process.Kill() } catch {} }
+        $outText = ''
+        try { if ($outTask.Wait(4000)) { $outText = [string]$outTask.Result } } catch {}
+        $errText = ''
+        try { if ($errTask.Wait(4000)) { $errText = [string]$errTask.Result } } catch {}
+        $exitCode = -1
+        try { $exitCode = [int]$process.ExitCode } catch {}
+        try { $process.Dispose() } catch {}
+        $combined = ($outText + [Environment]::NewLine + $errText)
+        $marker = 'ARENA_MESH_STATS '
+        $markerIndex = $combined.IndexOf($marker)
+        if ((-not $exited) -or $exitCode -ne 0 -or $markerIndex -lt 0 -or -not (Test-Path -LiteralPath $objPath)) {
+            $tail = $combined.Trim()
+            if ($tail.Length -gt 600) { $tail = $tail.Substring($tail.Length - 600) }
+            $state.state = 'failed'
+            $state.enabled = $false
+            $state.message = 'Blender ist installiert, kann aber keine Meshes erzeugen - der Mesh-Bau bleibt AUS.'
+            $state.detail = ('Faehigkeitsprobe fehlgeschlagen (Exit ' + [string]$exitCode + '): ' + $tail)
+            $state.probe = 'failed'
+            $state.updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+            try { Write-RuntimeLog ('Blender-Faehigkeitsprobe fehlgeschlagen: ' + $tail) } catch {}
+            return
+        }
+        $jsonText = $combined.Substring($markerIndex + $marker.Length)
+        $lineEnd = $jsonText.IndexOfAny(@([char]10, [char]13))
+        if ($lineEnd -ge 0) { $jsonText = $jsonText.Substring(0, $lineEnd) }
+        $stats = $null
+        try { $stats = $jsonText.Trim() | ConvertFrom-Json } catch {}
+        if ($null -eq $stats -or [string]::IsNullOrWhiteSpace([string]$jsonText)) {
+            # Fail closed: ohne lesbare Messzeile gilt die Probe als NICHT
+            # bestanden - der Mesh-Bau bleibt aus (kein falscher Erfolg).
+            $state.state = 'failed'
+            $state.enabled = $false
+            $state.probe = 'failed'
+            $state.message = 'Blender ist installiert, kann aber keine Meshes erzeugen - der Mesh-Bau bleibt AUS.'
+            $state.detail = ('Faehigkeitsprobe: Probenzeile nicht lesbar (' + [string]$jsonText + ')')
+            $state.updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+            try { Write-RuntimeLog ('Blender-Faehigkeitsprobe lieferte keine lesbare Messzeile: ' + [string]$jsonText) } catch {}
+            return
+        }
+        $state.probe = ('ok triangles=' + [string]$stats.triangles + ' bytes=' + [string]$stats.bytes)
+        $state.detail = 'Faehigkeitsprobe bestanden: Blender hat im Hintergrund ein OBJ erzeugt (' + [string]$stats.triangles + ' Dreiecke).'
+        $state.enabled = $true
+        $state.message = ('Blender ' + [string]$state.version + ' ist bereit und geprueft.')
+        $state.updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        try { Write-RuntimeLog ('Blender-Faehigkeitsprobe bestanden (' + [string]$stats.triangles + ' Dreiecke, ' + [string]$stats.bytes + ' Bytes).') } catch {}
+    } catch {
+        $state.probe = 'failed'
+        $state.detail = ('Faehigkeitsprobe konnte nicht laufen: ' + $_.Exception.Message)
+        try { Write-RuntimeLog ('Blender-Faehigkeitsprobe abgebrochen: ' + $_.Exception.Message) } catch {}
+    }
+}
+
+# ----------------------------------------------------------------------------
+# Der Mesh-Job-Worker: laeuft in einem eigenen Runspace, startet Blender je
+# Slot, MISST die OBJ-Datei und aktualisiert Job + Register. Netzwerkzugriffe
+# macht er nicht - Platzhalter und Asset-Ids macht die Oberflaeche.
+# ----------------------------------------------------------------------------
+$script:BridgeMeshJobScript = {
+    param($Shared, [string]$JobId, [string]$ToolkitText)
+    try { . ([scriptblock]::Create([string]$ToolkitText)) } catch {}
+    function Write-JobLog {
+        param([string]$Text)
+        try {
+            $jobNow = Get-MeshJobData $Shared $JobId
+            if ($null -eq $jobNow) { return }
+            Add-Content -LiteralPath ([string]$jobNow.logFile) -Value ((Get-Date).ToString('u') + ' ' + $Text) -Encoding UTF8
+        } catch {}
+    }
+    $job = Get-MeshJobData $Shared $JobId
+    if ($null -eq $job) { return }
+    $job.state = 'running'
+    Save-MeshJobData $Shared $job
+    Write-JobLog ('Job ' + $JobId + ' gestartet: ' + [string]$job.modelName + ' (' + [string]$job.slots.Count + ' Slot(s))')
+    Write-JobLog ('Blender: ' + [string]$job.blenderPath)
+    $timeoutSeconds = 300
+    try { if ([int]$job.timeoutSeconds -gt 0) { $timeoutSeconds = [int]$job.timeoutSeconds } } catch {}
+    $anyMeasured = $false
+    $anyFailed = $false
+    $anyRejected = $false
+    foreach ($slot in $job.slots) {
+        $current = Get-MeshJobData $Shared $JobId
+        if ($null -ne $current -and [bool]$current.cancelRequested) { break }
+        try {
+            Set-MeshSlotField $Shared ([string]$slot.key) 'state' 'running'
+            $current = Get-MeshJobData $Shared $JobId
+            if ($null -ne $current) { $current.currentSlot = [string]$slot.name; Save-MeshJobData $Shared $current }
+            $arguments = '--background --factory-startup --python-exit-code 1 --python "' + [string]$slot.runnerPath + '" -- --script "' + [string]$slot.scriptPath + '" --out "' + [string]$slot.objPath + '" --slot ' + [string]$slot.name
+            Write-JobLog ('Slot ' + [string]$slot.name + ': Blender startet.')
+            try { if (Test-Path -LiteralPath ([string]$slot.objPath)) { Remove-Item -LiteralPath ([string]$slot.objPath) -Force -ErrorAction SilentlyContinue } } catch {}
+            $psi = [System.Diagnostics.ProcessStartInfo]::new()
+            $psi.FileName = [string]$job.blenderPath
+            $psi.Arguments = $arguments
+            $psi.UseShellExecute = $false
+            $psi.CreateNoWindow = $true
+            $psi.RedirectStandardOutput = $true
+            $psi.RedirectStandardError = $true
+            $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+            $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+            $psi.WorkingDirectory = [string]$job.folder
+            $process = [System.Diagnostics.Process]::new()
+            $process.StartInfo = $psi
+            [void]$process.Start()
+            $current = Get-MeshJobData $Shared $JobId
+            if ($null -ne $current) { $current.currentPid = [int]$process.Id; Save-MeshJobData $Shared $current }
+            $outTask = $process.StandardOutput.ReadToEndAsync()
+            $errTask = $process.StandardError.ReadToEndAsync()
+            $timedOut = $false
+            if (-not $process.WaitForExit($timeoutSeconds * 1000)) {
+                $timedOut = $true
+                try { $process.Kill() } catch {}
+                try { [void]$process.WaitForExit(5000) } catch {}
+            }
+            $outText = ''
+            try { if ($outTask.Wait(4000)) { $outText = [string]$outTask.Result } } catch {}
+            $errText = ''
+            try { if ($errTask.Wait(4000)) { $errText = [string]$errTask.Result } } catch {}
+            $exitCode = -1
+            try { $exitCode = [int]$process.ExitCode } catch {}
+            try { $process.Dispose() } catch {}
+            $combined = ($outText + [Environment]::NewLine + $errText).Trim()
+            $current = Get-MeshJobData $Shared $JobId
+            if ($null -ne $current) { $current.currentPid = 0; Save-MeshJobData $Shared $current }
+            $logTail = $combined
+            if ($logTail.Length -gt 1500) { $logTail = $logTail.Substring($logTail.Length - 1500) }
+            Write-JobLog ('Slot ' + [string]$slot.name + ': Exit ' + [string]$exitCode + ' (timeout=' + [string]$timedOut + ')')
+            if (-not [string]::IsNullOrWhiteSpace($logTail)) { Write-JobLog ('Slot ' + [string]$slot.name + ' Ausgabe: ' + $logTail) }
+            $cancelledNow = $false
+            $current = Get-MeshJobData $Shared $JobId
+            if ($null -ne $current -and [bool]$current.cancelRequested) { $cancelledNow = $true }
+            if ($cancelledNow) {
+                Set-MeshSlotField $Shared ([string]$slot.key) 'state' 'cancelled'
+                Set-MeshSlotField $Shared ([string]$slot.key) 'error' 'Abgebrochen.'
+                break
+            }
+            if ($timedOut) {
+                Set-MeshSlotField $Shared ([string]$slot.key) 'state' 'failed'
+                Set-MeshSlotField $Shared ([string]$slot.key) 'error' ('Blender brauchte laenger als ' + [string]$timeoutSeconds + ' s und wurde beendet. Weniger Details oder ein groesseres timeoutSeconds benutzen.')
+                $anyFailed = $true
+                continue
+            }
+            if (-not (Test-Path -LiteralPath ([string]$slot.objPath))) {
+                Set-MeshSlotField $Shared ([string]$slot.key) 'state' 'failed'
+                Set-MeshSlotField $Shared ([string]$slot.key) 'error' ('Blender hat keine OBJ-Datei erzeugt (Exit ' + [string]$exitCode + '). Siehe build-log.txt: ' + $logTail)
+                $anyFailed = $true
+                continue
+            }
+            $stats = Get-MeshObjStats $Shared ([string]$slot.objPath)
+            if (-not $stats.ok) {
+                Set-MeshSlotField $Shared ([string]$slot.key) 'state' 'failed'
+                Set-MeshSlotField $Shared ([string]$slot.key) 'error' ('Die OBJ-Datei ist unbrauchbar: ' + [string]$stats.error)
+                $anyFailed = $true
+                continue
+            }
+            foreach ($entry in $job.slots) {
+                if ([string]$entry.key -eq [string]$slot.key) {
+                    $entry.triangles = [int]$stats.triangles
+                    $entry.size = $stats.size
+                    $entry.state = 'measured'
+                    $entry.finishedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+                }
+            }
+            Set-MeshSlotField $Shared ([string]$slot.key) 'triangles' ([int]$stats.triangles)
+            Set-MeshSlotField $Shared ([string]$slot.key) 'size' $stats.size
+            Set-MeshSlotField $Shared ([string]$slot.key) 'bytes' ([int64]$stats.bytes)
+            Set-MeshSlotField $Shared ([string]$slot.key) 'vertices' ([int]$stats.vertices)
+            Set-MeshSlotField $Shared ([string]$slot.key) 'faces' ([int]$stats.faces)
+            if ([bool]$stats.overLimit) {
+                Set-MeshSlotField $Shared ([string]$slot.key) 'state' 'rejected'
+                Set-MeshSlotField $Shared ([string]$slot.key) 'error' ('Roblox nimmt pro Mesh hoechstens ' + [string]$stats.limit + ' Dreiecke an - gemessen sind es ' + [string]$stats.triangles + '. Das Modell muss einfacher gebaut werden (Weniger Unterteilungen / Decimate / kleinere Slots).')
+                $anyRejected = $true
+            } else {
+                Set-MeshSlotField $Shared ([string]$slot.key) 'state' 'obj'
+                Set-MeshSlotField $Shared ([string]$slot.key) 'error' ''
+                $anyMeasured = $true
+            }
+            Write-JobLog ('Slot ' + [string]$slot.name + ': gemessen - ' + [string]$stats.triangles + ' Dreiecke, ' + [string]$stats.bytes + ' Bytes, Groesse ' + [string]$stats.size.x + ' x ' + [string]$stats.size.y + ' x ' + [string]$stats.size.z + ' Studs.')
+            Save-MeshJobData $Shared $job
+            Save-MeshRegistryFile $Shared
+        } catch {
+            Set-MeshSlotField $Shared ([string]$slot.key) 'state' 'failed'
+            Set-MeshSlotField $Shared ([string]$slot.key) 'error' ('Bridge-Fehler beim Bau: ' + $_.Exception.Message)
+            Write-JobLog ('Slot ' + [string]$slot.name + ' Fehler: ' + $_.Exception.Message)
+            $anyFailed = $true
+        }
+    }
+    $job = Get-MeshJobData $Shared $JobId
+    if ($null -ne $job) {
+        $cancelled = [bool]$job.cancelRequested
+        if ($cancelled) { $job.state = 'cancelled' }
+        elseif ($anyMeasured) { $job.state = 'measured' }
+        else { $job.state = 'failed' }
+        $job.currentPid = 0
+        $job.currentSlot = ''
+        $job.finishedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        if ($job.state -eq 'failed') {
+            if ($anyRejected) { $job.error = 'Alle Slots wurden von der Dreiecksgrenze abgelehnt.' }
+            else { $job.error = 'Kein Slot hat eine brauchbare OBJ-Datei ergeben - siehe build-log.txt im Job-Ordner.' }
+        }
+        Save-MeshJobData $Shared $job
+    }
+    Save-MeshRegistryFile $Shared
+    Write-JobLog ('Job ' + $JobId + ' beendet mit Zustand ' + [string]$job.state + '.')
+}
+
+# ----------------------------------------------------------------------------
+# Alles, was Handler- und Worker-Runspaces brauchen, liegt in $Shared.
+# ----------------------------------------------------------------------------
+$script:Shared.MeshRoot = [string]$script:MeshRoot
+$script:Shared.BlenderFolder = [string]$script:BlenderFolder
+$script:Shared.BlenderStatusFile = [string]$script:BlenderStatusFile
+$script:Shared.MeshRegistryPath = [string]$script:MeshRegistryFile
+$script:Shared.MeshRunnerText = [string]$script:MeshRunnerTemplate
+$script:Shared.MeshToolkitText = [string]$script:BridgeMeshToolkit
+$script:Shared.MeshJobScriptText = [string]$script:BridgeMeshJobScript
+$script:Shared.BlenderProbeScriptText = [string]$script:BridgeBlenderProbeScript
+$script:Shared.LocalPort = [int]$script:Port
+$script:Shared.LocalBaseUrl = [string]$script:LocalBaseUrl
+$script:Shared.MeshRootFolder = [string]$script:AppDataRoot
+try {
+    if (-not (Test-Path -LiteralPath $script:MeshRoot)) { [void](New-Item -ItemType Directory -Path $script:MeshRoot -Force) }
+    if (-not (Test-Path -LiteralPath $script:BlenderFolder)) { [void](New-Item -ItemType Directory -Path $script:BlenderFolder -Force) }
+} catch { }
+
+# ----------------------------------------------------------------------------
+# Version 7.4.0: MESH-TAKT und MESH-FENSTER
+# Der Toolkit-Text liegt in $Shared, damit auch der Handler-Runspace ihn
+# benutzen kann. Fuer die Oberflaeche wird er hier EINMAL geladen - so gibt es
+# genau eine Quelle fuer Queue-Anmeldung, Registerpflege und Messung.
+# ----------------------------------------------------------------------------
+try { . ([scriptblock]::Create([string]$script:BridgeMeshToolkit)) } catch { Write-RuntimeLog ('Mesh-Werkzeuge konnten nicht geladen werden: ' + $_.Exception.Message) }
+
+$script:MeshWindow = $null
+$script:MeshWindowRows = @{}
+$script:MeshWindowNotice = ''
+
+function Update-MeshTick {
+    # Laeuft im UI-Takt (kein zusaetzlicher Timer). Holt Ergebnisse interner
+    # Mesh-Befehle ab, legt nach der Messung die Platzhalter an und pflegt das
+    # Register. Kein Netzwerkzugriff, keine Annahmen: steht keine Antwort da,
+    # passiert nichts.
+    try {
+        $map = $script:Shared.MeshInternal
+        foreach ($pair in @($map.GetEnumerator())) {
+            $key = [string]$pair.Key
+            if (-not $key.StartsWith('cmd:')) { continue }
+            $commandId = $key.Substring(4)
+            $tag = [string]$pair.Value
+            $outcome = Get-MeshCommandOutcome $script:Shared $commandId
+            $state = [string]$outcome.state
+            if ($state -eq 'pending' -or $state -eq 'invalid') { continue }
+            $discard = $null
+            [void]$map.TryRemove($key, [ref]$discard)
+            if ($tag.StartsWith('placeholders:')) {
+                $jobId = $tag.Substring(13)
+                if ($state -eq 'done') {
+                    Update-MeshRegistryFromPlaceholderResult $script:Shared $jobId ([string]$outcome.json)
+                } else {
+                    $job = Get-MeshJobData $script:Shared $jobId
+                    if ($null -ne $job) {
+                        $job.placeholderState = 'failed'
+                        $job.error = [string]$outcome.message
+                        Save-MeshJobData $script:Shared $job
+                    }
+                }
+                continue
+            }
+            if ($tag.StartsWith('apply:')) {
+                $jobId = $tag.Substring(6)
+                if ($state -eq 'done') {
+                    [void](Update-MeshRegistryFromApplyResult $script:Shared ([string]$outcome.json))
+                } else {
+                    foreach ($slot in (Get-MeshSlotsBySession $script:Shared '' $jobId)) {
+                        if ([string]$slot.state -eq 'applying') {
+                            Set-MeshSlotField $script:Shared ([string]$slot.slotKey) 'state' 'apply_failed'
+                            Set-MeshSlotField $script:Shared ([string]$slot.slotKey) 'error' ([string]$outcome.message)
+                        }
+                    }
+                    Save-MeshRegistryFile $script:Shared
+                }
+                continue
+            }
+            Write-RuntimeLog ('Mesh-Befehl ohne Zuordnung beendet: ' + $tag)
+        }
+
+        # Nach der Messung: Platzhalter automatisch anlegen lassen.
+        foreach ($jobPair in @($script:Shared.MeshJobs.GetEnumerator())) {
+            $job = Get-MeshJobData $script:Shared ([string]$jobPair.Key)
+            if ($null -eq $job) { continue }
+            if ([string]$job.state -ne 'measured') { continue }
+            if ([bool]$job.placeholdersCreated) { continue }
+            if (-not [string]::IsNullOrWhiteSpace([string]$job.placeholderCommandId)) { continue }
+            if ([string]::IsNullOrWhiteSpace([string]$job.sessionId)) { continue }
+            $open = $false
+            $ready = 0
+            foreach ($slot in (Get-MeshSlotsBySession $script:Shared ([string]$job.sessionId) ([string]$job.id))) {
+                $slotState = [string]$slot.state
+                if ($slotState -in @('pending', 'running', 'script', 'measured')) { $open = $true }
+                if ($slotState -eq 'obj' -or $slotState -eq 'applied') { $ready = $ready + 1 }
+            }
+            if ($open -or $ready -eq 0) { continue }
+            $sent = Send-MeshPlaceholders $script:Shared ([string]$job.id)
+            if (-not [string]::IsNullOrWhiteSpace($sent)) {
+                Write-RuntimeLog ('Mesh-Platzhalter beauftragt: Job ' + [string]$job.id + ', ' + [string]$ready + ' Slot(s), commandId=' + $sent)
+            }
+        }
+    } catch {
+        try { Write-RuntimeLog ('Mesh-Takt Fehler: ' + $_.Exception.Message) } catch {}
+    }
+}
+
+# ----------------------------------------------------------------------------
+# Version 7.4.0: FENSTER "MESH-UPLOADS"
+# Der Nutzer laedt die OBJ-Dateien selbst in Roblox hoch (Roblox hat keine
+# API fuer Mesh-Uploads) und traegt die Mesh-Ids hier ein. Die Bridge setzt
+# die Geometrie danach automatisch in die bestehenden Platzhalter.
+# Aufbau und Design sind aus dem Nachrichtenfenster uebernommen (anthrazit,
+# verschiebbare Titelleiste, X oben rechts); das Fenster ist modal wie die
+# beiden anderen erlaubten Fenster und arbeitet ohne Toast.
+# ----------------------------------------------------------------------------
+function Get-MeshWindowXaml {
+    $template = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Mesh-Uploads"
+        Width="640" Height="580" MinWidth="560" MinHeight="470"
+        ResizeMode="CanResize" WindowStyle="None" AllowsTransparency="True"
+        Background="Transparent" WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False" FontFamily="Segoe UI"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display">
+    <Window.Resources>
+<!--ARENA_DIALOG_STYLES-->
+    </Window.Resources>
+    <Border CornerRadius="20" Background="{StaticResource SwAppBg}"
+            BorderBrush="#33FFFFFF" BorderThickness="1" ClipToBounds="True">
+        <Grid>
+            <Grid IsHitTestVisible="False">
+                <Ellipse Width="420" Height="420" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-150,-190,0,0">
+                    <Ellipse.Fill>
+                        <RadialGradientBrush>
+                            <GradientStop Color="#407B5CFF" Offset="0"/>
+                            <GradientStop Color="#007B5CFF" Offset="1"/>
+                        </RadialGradientBrush>
+                    </Ellipse.Fill>
+                </Ellipse>
+                <Ellipse Width="360" Height="360" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-120,-140">
+                    <Ellipse.Fill>
+                        <RadialGradientBrush>
+                            <GradientStop Color="#2EFF5C8A" Offset="0"/>
+                            <GradientStop Color="#00FF5C8A" Offset="1"/>
+                        </RadialGradientBrush>
+                    </Ellipse.Fill>
+                </Ellipse>
+            </Grid>
+
+            <Grid Margin="22">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Titelzeile: ziehbar, Kreuz oben rechts. -->
+                <Grid x:Name="TitleBar" Grid.Row="0" Background="Transparent" Cursor="SizeAll">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Mesh-Uploads" Foreground="{StaticResource SwTextMain}"
+                                   FontSize="16" FontWeight="Bold"/>
+                        <TextBlock x:Name="PlaceNameText" Text="Place" Foreground="{StaticResource SwTextFaint}"
+                                   FontSize="10.5" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                    </StackPanel>
+                    <Button x:Name="CloseButton" Grid.Column="1" Style="{StaticResource ArenaCloseButton}"
+                            Content="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="11"
+                            ToolTip="Schließen (Esc)"/>
+                </Grid>
+
+                <!-- Blender-Zustand -->
+                <Border Grid.Row="1" Margin="0,12,0,0" Background="{StaticResource SwCardBg}"
+                        BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="10" Padding="12,10">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Text="BLENDER (SCHRITT 4 DES STARTS)" Foreground="{StaticResource SwTextMuted}"
+                                   FontSize="9.5" FontWeight="Bold"/>
+                        <TextBlock x:Name="BlenderText" Grid.Row="1" Margin="0,6,0,0"
+                                   Text="Blender-Status wird gelesen …" Foreground="{StaticResource SwTextMain}"
+                                   FontSize="11" TextWrapping="Wrap"/>
+                        <Grid Grid.Row="2" Margin="0,8,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <ProgressBar x:Name="BlenderBar" Height="6" Minimum="0" Maximum="100" Value="0"
+                                         Background="#22000000" Foreground="#FFFF7BA8" BorderThickness="0"
+                                         VerticalAlignment="Center"/>
+                            <Button x:Name="InstallButton" Grid.Column="1" Margin="10,0,0,0" MinWidth="150" MinHeight="26"
+                                    Padding="10,3" Content="Blender jetzt installieren"
+                                    Style="{StaticResource ArenaPrimaryButton}"/>
+                            <Button x:Name="SkipButton" Grid.Column="2" Margin="8,0,0,0" MinWidth="120" MinHeight="26"
+                                    Padding="10,3" Content="Schritt überspringen"
+                                    Style="{StaticResource ArenaQuietButton}"
+                                    ToolTip="Startet den Tunnel sofort. Der Mesh-Bau bleibt aus, alles andere läuft normal."/>
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <TextBlock Grid.Row="2" Margin="0,14,0,6"
+                           Text="So geht es: Datei(en) im Ordner in Roblox Studio hochladen (3D-Importer oder Drag &amp; Drop) oder im Creator Dashboard. Danach die Mesh-Id hier eintragen und „Ids einsetzen“ drücken. Die Bridge setzt die Geometrie in die vorhandenen Platzhalter — Größe, Position und Verbindungen bleiben erhalten."
+                           Foreground="{StaticResource SwTextMuted}" FontSize="10.5" TextWrapping="Wrap"/>
+
+                <!-- Dateien je Slot -->
+                <Border Grid.Row="3" Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF"
+                        BorderThickness="1" CornerRadius="10" Padding="10,8">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel x:Name="SlotList"/>
+                    </ScrollViewer>
+                </Border>
+
+                <Border x:Name="StatusBorder" Grid.Row="4" Margin="0,12,0,0"
+                        Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF"
+                        BorderThickness="1" CornerRadius="10" Padding="11,8">
+                    <TextBlock x:Name="StatusText" Text="Noch keine Mesh-Datei vorhanden."
+                               Foreground="{StaticResource SwTextMuted}" FontSize="11" TextWrapping="Wrap"/>
+                </Border>
+
+                <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+                    <Button x:Name="FolderButton" Content="Ordner öffnen" MinWidth="120" MinHeight="30"
+                            Padding="12,5" Margin="0,0,8,0" Style="{StaticResource ArenaQuietButton}"/>
+                    <Button x:Name="RefreshButton" Content="Aktualisieren" MinWidth="110" MinHeight="30"
+                            Padding="12,5" Margin="0,0,8,0" Style="{StaticResource ArenaQuietButton}"/>
+                    <Button x:Name="ApplyButton" Content="Ids einsetzen" MinWidth="130" MinHeight="30"
+                            Padding="14,5" Style="{StaticResource ArenaPrimaryButton}"/>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>
+'@
+    return $template.Replace('<!--ARENA_DIALOG_STYLES-->', [string]$script:ArenaDialogStyles)
+}
+
+function Get-MeshSlotStateText {
+    param($Slot)
+    $state = ''
+    $errorText = ''
+    $triangles = 0
+    try { $state = [string]$Slot.state } catch {}
+    try { $errorText = [string]$Slot.error } catch {}
+    try { $triangles = [int]$Slot.triangles } catch {}
+    $text = ''
+    switch ($state) {
+        'pending' { $text = 'Wartet auf Blender …' }
+        'running' { $text = 'Blender baut …' }
+        'script' { $text = 'Blender baut …' }
+        'measured' { $text = 'Wird gemessen …' }
+        'obj' { $text = 'Datei fertig - bitte hochladen und Id eintragen' }
+        'rejected' { $text = 'Zu viele Dreiecke (' + [string]$triangles + ') - einfacher bauen' }
+        'applying' { $text = 'Wird in den Place gesetzt …' }
+        'applied' { $text = 'Eingesetzt' }
+        'apply_failed' { $text = 'Einsetzen fehlgeschlagen' }
+        'failed' { $text = 'Bau fehlgeschlagen' }
+        'cancelled' { $text = 'Abgebrochen' }
+        default { $text = $state }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($errorText)) { $text = $text + ' - ' + $errorText }
+    return $text
+}
+
+function Update-MeshWindow {
+    # Aktualisiert das offene Fenster: Blender-Zustand, Zeilen je Slot und die
+    # Statuszeile. Zeilen werden NUR ergaenzt/entfernt - die Textfelder des
+    # Nutzers werden nie ueberschrieben.
+    if ($null -eq $script:MeshWindow) { return }
+    $win = $script:MeshWindow
+    try {
+        $state = $script:Shared.BlenderState
+        $mode = [string]$state.state
+        $blenderText = [string]$state.message
+        if ([string]::IsNullOrWhiteSpace($blenderText)) { $blenderText = 'Blender-Status unbekannt.' }
+        $detail = [string]$state.detail
+        if (-not [string]::IsNullOrWhiteSpace($detail)) { $blenderText = $blenderText + [Environment]::NewLine + $detail }
+        $percent = 0
+        try { $percent = [int]$state.percent } catch { $percent = 0 }
+        if ($percent -lt 0) { $percent = 0 }
+        if ($percent -gt 100) { $percent = 100 }
+        $blenderLabel = $win.FindName('BlenderText')
+        $blenderBar = $win.FindName('BlenderBar')
+        $installButton = $win.FindName('InstallButton')
+        $skipButton = $win.FindName('SkipButton')
+        if ($null -ne $blenderLabel) { $blenderLabel.Text = $blenderText }
+        if ($null -ne $blenderBar) { $blenderBar.Value = $percent }
+        if ($null -ne $installButton) {
+            if ($mode -eq 'ready') { $installButton.Content = 'Blender prüfen' } else { $installButton.Content = 'Blender jetzt installieren' }
+            $installButton.IsEnabled = -not ($mode -eq 'installing')
+        }
+        if ($null -ne $skipButton) { $skipButton.IsEnabled = [bool]$script:BlenderGatePending }
+
+        $sessionId = ''
+        try { $sessionId = [string]$win.Tag.SessionId } catch {}
+        $rows = New-Object System.Collections.Generic.List[object]
+        foreach ($jobPair in @($script:Shared.MeshJobs.GetEnumerator())) {
+            $job = Get-MeshJobData $script:Shared ([string]$jobPair.Key)
+            if ($null -eq $job) { continue }
+            if (-not [string]::IsNullOrWhiteSpace($sessionId) -and [string]$job.sessionId -ne $sessionId) { continue }
+            foreach ($slot in (Get-MeshSlotsBySession $script:Shared ([string]$job.sessionId) ([string]$job.id))) {
+                $rows.Add($slot)
+            }
+        }
+
+        $slotList = $win.FindName('SlotList')
+        $keyed = @{}
+        if ($null -ne $slotList) {
+            foreach ($child in @($slotList.Children)) {
+                $childKey = ''
+                try { $childKey = [string]$child.Tag.SlotKey } catch {}
+                if (-not [string]::IsNullOrWhiteSpace($childKey)) { $keyed[$childKey] = $child }
+            }
+        }
+
+        $rowsByKey = @{}
+        foreach ($slot in $rows) {
+            $slotKey = ''
+            try { $slotKey = [string]$slot.slotKey } catch {}
+            if ([string]::IsNullOrWhiteSpace($slotKey)) { continue }
+            $rowsByKey[$slotKey] = $slot
+        }
+        foreach ($knownKey in @($keyed.Keys)) {
+            if (-not $rowsByKey.ContainsKey([string]$knownKey)) {
+                try { [void]$slotList.Children.Remove($keyed[$knownKey]) } catch {}
+                $keyed.Remove($knownKey)
+            }
+        }
+        $addedRows = 0
+        foreach ($slot in $rows) {
+            $slotKey = ''
+            try { $slotKey = [string]$slot.slotKey } catch {}
+            if ([string]::IsNullOrWhiteSpace($slotKey)) { continue }
+            if (-not $keyed.ContainsKey($slotKey)) {
+                if ($null -eq $slotList) { continue }
+                $rowShell = [System.Windows.Controls.Border]::new()
+                $rowShell.Background = Get-Brush '#14FFFFFF'
+                $rowShell.BorderBrush = Get-Brush '#1FFFFFFF'
+                $rowShell.BorderThickness = [System.Windows.Thickness]::new(1)
+                $rowShell.CornerRadius = [System.Windows.CornerRadius]::new(8)
+                $rowShell.Padding = [System.Windows.Thickness]::new(10, 8, 10, 8)
+                $rowShell.Margin = [System.Windows.Thickness]::new(0, 0, 0, 8)
+                $rowStack = [System.Windows.Controls.StackPanel]::new()
+                $rowTitle = [System.Windows.Controls.TextBlock]::new()
+                $rowTitle.Foreground = Get-Brush '#F4F8FF'
+                $rowTitle.FontSize = 12
+                $rowTitle.FontWeight = 'Bold'
+                $rowFile = [System.Windows.Controls.TextBlock]::new()
+                $rowFile.Foreground = Get-Brush '#9AA9CE'
+                $rowFile.FontSize = 10.5
+                $rowFile.Margin = [System.Windows.Thickness]::new(0, 3, 0, 0)
+                $rowState = [System.Windows.Controls.TextBlock]::new()
+                $rowState.Foreground = Get-Brush '#FFD9A0'
+                $rowState.FontSize = 10.5
+                $rowState.TextWrapping = 'Wrap'
+                $rowState.Margin = [System.Windows.Thickness]::new(0, 3, 0, 0)
+                $idGrid = [System.Windows.Controls.Grid]::new()
+                $idGrid.Margin = [System.Windows.Thickness]::new(0, 7, 0, 0)
+                $col1 = [System.Windows.Controls.ColumnDefinition]::new()
+                $col1.Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
+                $col2 = [System.Windows.Controls.ColumnDefinition]::new()
+                $col2.Width = [System.Windows.GridLength]::new(0, [System.Windows.GridUnitType]::Auto)
+                [void]$idGrid.ColumnDefinitions.Add($col1)
+                [void]$idGrid.ColumnDefinitions.Add($col2)
+                $idBox = [System.Windows.Controls.TextBox]::new()
+                $idBox.MinHeight = 26
+                $idBox.MaxLength = 64
+                $idBox.Foreground = Get-Brush '#F4F8FF'
+                $idBox.ToolTip = 'Mesh-Id aus Roblox (nur die Zahl oder rbxassetid://...)'
+                $idBox.Style = $win.FindResource('ArenaTextField')
+                [System.Windows.Controls.Grid]::SetColumn($idBox, 0)
+                $idLabel = [System.Windows.Controls.TextBlock]::new()
+                $idLabel.Text = 'Mesh-Id'
+                $idLabel.Foreground = Get-Brush '#6E7FA8'
+                $idLabel.FontSize = 10.5
+                $idLabel.VerticalAlignment = 'Center'
+                $idLabel.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
+                [System.Windows.Controls.Grid]::SetColumn($idLabel, 1)
+                [void]$idGrid.Children.Add($idBox)
+                [void]$idGrid.Children.Add($idLabel)
+                [void]$rowStack.Children.Add($rowTitle)
+                [void]$rowStack.Children.Add($rowFile)
+                [void]$rowStack.Children.Add($rowState)
+                [void]$rowStack.Children.Add($idGrid)
+                $rowShell.Child = $rowStack
+                $rowShell.Tag = [pscustomobject]@{ SlotKey = $slotKey; StateText = $rowState; IdBox = $idBox; Title = $rowTitle; FileText = $rowFile }
+                [void]$slotList.Children.Add($rowShell)
+                $keyed[$slotKey] = $rowShell
+                $addedRows = $addedRows + 1
+            }
+        }
+
+        $readyCount = 0
+        $appliedCount = 0
+        $failedCount = 0
+        foreach ($slot in $rows) {
+            $slotKey = ''
+            try { $slotKey = [string]$slot.slotKey } catch {}
+            if ([string]::IsNullOrWhiteSpace($slotKey) -or -not $keyed.ContainsKey($slotKey)) { continue }
+            $shell = $keyed[$slotKey]
+            try { $shell.Tag.Title.Text = [string]$slot.modelName + ' - ' + [string]$slot.slotName } catch {}
+            $fileLine = 'Datei: ' + [string]$slot.fileName
+            try {
+                if ([int]$slot.triangles -gt 0) { $fileLine = $fileLine + '  |  ' + [string]$slot.triangles + ' Dreiecke' }
+            } catch {}
+            try {
+                if ($null -ne $slot.size) {
+                    $fileLine = $fileLine + '  |  ' + ([string]([Math]::Round([double]$slot.size.x, 2))) + ' x ' + ([string]([Math]::Round([double]$slot.size.y, 2))) + ' x ' + ([string]([Math]::Round([double]$slot.size.z, 2))) + ' Studs'
+                }
+            } catch {}
+            try { $shell.Tag.FileText.Text = $fileLine } catch {}
+            try { $shell.Tag.StateText.Text = (Get-MeshSlotStateText $slot) } catch {}
+            $currentState = ''
+            try { $currentState = [string]$slot.state } catch {}
+            $currentColor = '#FFD9A0'
+            if ($currentState -eq 'applied') { $currentColor = '#9AD9AE' }
+            elseif ($currentState -in @('failed', 'rejected', 'apply_failed')) { $currentColor = '#FF8AA0' }
+            elseif ($currentState -eq 'obj') { $currentColor = '#FFD9A0' }
+            elseif ($currentState -eq 'applying') { $currentColor = '#9FDCFF' }
+            try { $shell.Tag.StateText.Foreground = Get-Brush $currentColor } catch {}
+            try {
+                $existingId = [string]$slot.assetId
+                if (-not [string]::IsNullOrWhiteSpace($existingId) -and [string]::IsNullOrWhiteSpace($shell.Tag.IdBox.Text)) {
+                    $shell.Tag.IdBox.Text = $existingId
+                }
+            } catch {}
+            if ($currentState -eq 'obj') { $readyCount = $readyCount + 1 }
+            if ($currentState -eq 'applied') { $appliedCount = $appliedCount + 1; $readyCount = $readyCount + 1 }
+            if ($currentState -in @('failed', 'rejected', 'apply_failed')) { $failedCount = $failedCount + 1 }
+        }
+
+        $statusText = $win.FindName('StatusText')
+        if ($null -ne $statusText) {
+            if ($rows.Count -eq 0) {
+                $statusText.Text = 'Noch keine Mesh-Datei vorhanden. Sobald Arena den Blender-Bau startet, erscheint hier je Bauteil eine Zeile mit Datei und Id-Feld.'
+            } else {
+                $statusText.Text = [string]$rows.Count + ' Bauteil(e): ' + [string]$appliedCount + ' eingesetzt, ' + [string]$readyCount + ' mit Datei, ' + [string]$failedCount + ' mit Fehler. ' + [string]$script:MeshWindowNotice
+            }
+        }
+        $applyButton = $win.FindName('ApplyButton')
+        if ($null -ne $applyButton) { $applyButton.IsEnabled = ($readyCount -gt 0) -or ($appliedCount -gt 0) }
+    } catch {
+        try { Write-UiErrorLog 'Mesh-Fenster Aktualisierung' $_ } catch {}
+    }
+}
+
+function Open-MeshWindow {
+    param([string]$SessionId, [string]$PlaceName = '')
+    if ($null -ne $script:MeshWindow) {
+        try {
+            $script:MeshWindow.Activate()
+            Update-MeshWindow
+            return
+        } catch {}
+    }
+    $windowXaml = Get-MeshWindowXaml
+    $reader = [System.Xml.XmlNodeReader]::new([xml]$windowXaml)
+    $win = [Windows.Markup.XamlReader]::Load($reader)
+    try { $win.Owner = $window } catch {}
+
+    $titleBar = $win.FindName('TitleBar')
+    $placeLabel = $win.FindName('PlaceNameText')
+    $closeButton = $win.FindName('CloseButton')
+    $installButton = $win.FindName('InstallButton')
+    $skipButton = $win.FindName('SkipButton')
+    $applyButton = $win.FindName('ApplyButton')
+    $folderButton = $win.FindName('FolderButton')
+    $refreshButton = $win.FindName('RefreshButton')
+    if ([string]::IsNullOrWhiteSpace($PlaceName)) { $placeLabel.Text = 'Verbundenes Place' }
+    else { $placeLabel.Text = 'Place · ' + [string]$PlaceName }
+
+    $info = [pscustomobject]@{
+        Window    = $win
+        SessionId = [string]$SessionId
+        PlaceName = [string]$PlaceName
+    }
+    $win.Tag = $info
+    $titleBar.Tag = $win
+    $closeButton.Tag = $win
+    $script:MeshWindow = $win
+    $script:MeshWindowRows = @{}
+    $script:MeshWindowNotice = ''
+
+    $titleBar.Add_MouseLeftButtonDown({
+        param($s, $e)
+        if ($e.ButtonState -eq [System.Windows.Input.MouseButtonState]::Pressed) {
+            try { $s.Tag.DragMove() } catch {}
+        }
+    })
+    $closeButton.Add_Click({
+        param($s, $e)
+        try { $s.Tag.Close() } catch {}
+    })
+    $refreshButton.Add_Click({
+        param($s, $e)
+        Update-MeshWindow
+    })
+    $folderButton.Add_Click({
+        param($s, $e)
+        try {
+            $info = $s.Tag
+            $folder = ''
+            try {
+                $jobId = ''
+                $target = $null
+                foreach ($jobPair in @($script:Shared.MeshJobs.GetEnumerator())) {
+                    $job = Get-MeshJobData $script:Shared ([string]$jobPair.Key)
+                    if ($null -eq $job) { continue }
+                    if ([string]$job.sessionId -ne [string]$info.SessionId) { continue }
+                    $slot = Get-MeshSlotsBySession $script:Shared ([string]$job.sessionId) ([string]$job.id) | Select-Object -First 1
+                    if ($null -ne $slot) { $folder = [System.IO.Path]::GetDirectoryName([string]$slot.objPath); $target = $job; break }
+                }
+            } catch {}
+            if ([string]::IsNullOrWhiteSpace($folder) -or -not (Test-Path -LiteralPath $folder)) {
+                $folder = [string]$script:MeshRoot
+            }
+            if (Test-Path -LiteralPath $folder) { Start-Process explorer.exe -ArgumentList ('"' + $folder + '"') | Out-Null }
+        } catch {}
+    })
+    $installButton.Add_Click({
+        param($s, $e)
+        try {
+            $mode = [string]$script:Shared.BlenderState.state
+            $statusText = $s.Tag.Window.FindName('StatusText')
+            if ($mode -eq 'ready' -or $mode -eq 'installing') {
+                if ($null -ne $statusText) { $statusText.Text = 'Blender ist schon bereit (oder wird gerade installiert).' }
+                Update-MeshWindow
+                return
+            }
+            if ($null -ne $statusText) { $statusText.Text = 'Blender wird geprueft und bei Bedarf heruntergeladen …' }
+            $path = Get-BlenderPath
+            if ($path) {
+                $quick = Test-BlenderQuick -Path $path
+                if ($quick.ok) {
+                    Set-BlenderState -State 'ready' -Path $path -Version $quick.version -Detail 'Vom Nutzer erneut geprueft.' -Message ('Blender ' + [string]$quick.version + ' ist bereit.') -Percent 100 -Source 'vorhanden' -Enabled $true -GateResolved $true
+                    if ($null -ne $statusText) { $statusText.Text = 'Blender ' + [string]$quick.version + ' ist bereit.' }
+                    Update-MeshWindow
+                    return
+                }
+            }
+            Set-BlenderState -State 'missing' -Message 'Blender ist nicht installiert - die Bridge laedt die offizielle portable Version.' -Percent 0 -Enabled $false
+            Start-BlenderInstall
+            Update-MeshWindow
+        } catch {
+            try { Write-UiErrorLog 'Blender-Installation aus dem Fenster' $_ } catch {}
+        }
+    })
+    $skipButton.Add_Click({
+        param($s, $e)
+        try {
+            $script:BlenderSkippedByUser = $true
+            Set-BlenderState -State 'skipped' -Message 'Vom Nutzer uebersprungen - der Mesh-Bau bleibt aus, alles andere laeuft normal.' -Percent 0 -Enabled $false -GateResolved $true
+            $statusText = $s.Tag.Window.FindName('StatusText')
+            if ($null -ne $statusText) { $statusText.Text = 'Blender-Schritt uebersprungen. Der Tunnel startet jetzt.' }
+            Update-MeshWindow
+        } catch {}
+    })
+    $applyButton.Add_Click({
+        param($s, $e)
+        try {
+            $info = $s.Tag
+            $statusText = $info.Window.FindName('StatusText')
+            $wanted = New-Object System.Collections.Generic.List[object]
+            $skipped = 0
+            foreach ($row in @($info.Window.FindName('SlotList').Children)) {
+                $slotKey = ''
+                $raw = ''
+                try { $slotKey = [string]$row.Tag.SlotKey } catch {}
+                try { $raw = [string]$row.Tag.IdBox.Text } catch {}
+                if ([string]::IsNullOrWhiteSpace($slotKey) -or [string]::IsNullOrWhiteSpace($raw)) { continue }
+                $digits = ''
+                try { $digits = ([regex]::Match($raw, '(\d+)')).Groups[1].Value } catch {}
+                if ([string]::IsNullOrWhiteSpace($digits)) {
+                    $skipped = $skipped + 1
+                    continue
+                }
+                $slot = Get-MeshSlotData $script:Shared $slotKey
+                $jobId = ''
+                $jobSession = ''
+                try { $jobId = [string]$slot.jobId } catch {}
+                try { $jobSession = [string]$slot.sessionId } catch {}
+                if ([string]::IsNullOrWhiteSpace($jobSession)) { $jobSession = [string]$info.SessionId }
+                $wanted.Add(@{ key = $slotKey; assetId = $digits; jobId = $jobId; sessionId = $jobSession })
+                Set-MeshSlotField $script:Shared $slotKey 'assetId' $digits
+                Set-MeshSlotField $script:Shared $slotKey 'state' 'applying'
+                Set-MeshSlotField $script:Shared $slotKey 'error' ''
+            }
+            if ($wanted.Count -eq 0) {
+                if ($null -ne $statusText) {
+                    if ($skipped -gt 0) { $statusText.Text = 'In ' + [string]$skipped + ' Feld(ern) steht keine Zahl - bitte die Mesh-Id aus Roblox eintragen.' }
+                    else { $statusText.Text = 'Bitte zuerst mindestens eine Mesh-Id eintragen.' }
+                }
+                Update-MeshWindow
+                return
+            }
+            $grouped = @{}
+            foreach ($entry in $wanted) {
+                $key = [string]$entry.sessionId + '|' + [string]$entry.jobId
+                if (-not $grouped.ContainsKey($key)) { $grouped[$key] = New-Object System.Collections.Generic.List[object] }
+                $grouped[$key].Add(@{ key = [string]$entry.key; assetId = [string]$entry.assetId })
+            }
+            $sent = 0
+            foreach ($groupKey in $grouped.Keys) {
+                $parts = [string]$groupKey -split '\|', 2
+                $sessionForCommand = [string]$parts[0]
+                $jobForCommand = [string]$parts[1]
+                $args = @{ slots = $grouped[$groupKey].ToArray() }
+                $commandId = New-MeshBridgeCommand -Shared $script:Shared -SessionId $sessionForCommand -Tool 'mesh_apply' -ToolArgs $args -BudgetSeconds 180 -Tag ('apply:' + $jobForCommand)
+                if (-not [string]::IsNullOrWhiteSpace($commandId)) { $sent = $sent + 1 }
+            }
+            if ($null -ne $statusText) {
+                if ($sent -gt 0) { $statusText.Text = [string]$wanted.Count + ' Mesh-Id(s) werden jetzt in die Platzhalter gesetzt. Roblox laedt die Geometrie aus der Cloud - das dauert ein paar Sekunden.' }
+                else { $statusText.Text = 'Die Bridge konnte den Befehl nicht einreihen. Ist Roblox Studio offen und mit diesem Place verbunden?' }
+            }
+            Update-MeshWindow
+        } catch {
+            try { Write-UiErrorLog 'Mesh-Ids einsetzen' $_ } catch {}
+        }
+    })
+    $win.Add_Closed({
+        param($s, $e)
+        try { $script:MeshWindow = $null } catch {}
+    })
+    $win.Add_PreviewKeyDown({
+        param($s, $e)
+        try {
+            if ($e.Key -eq [System.Windows.Input.Key]::Escape) { $s.Close(); $e.Handled = $true }
+        } catch {}
+    })
+
+    $applyButton.Tag = $info
+    $folderButton.Tag = $info
+    $skipButton.Tag = $info
+    $installButton.Tag = $info
+
+    Update-MeshWindow
+    try { $win.ShowDialog() | Out-Null } catch { try { $win.Show() | Out-Null } catch {} }
+}
+
 # ----------------------------------------------------------------------------
 # Tunnel (cloudflared)
 # ----------------------------------------------------------------------------
@@ -24353,6 +27366,13 @@ function Start-CloudflaredInstall {
 function Start-CloudflareTunnel {
     param([string]$Protocol = 'auto')
     try {
+        # Version 7.4.0: Schritt 4 hat Vorrang. Solange Blender geprueft oder
+        # installiert wird, startet kein Tunnel - auch nicht aus der
+        # Selbstheilung im UI-Takt heraus.
+        if ($script:BlenderGatePending) {
+            Write-RuntimeLog 'Der Tunnel wartet noch auf den Blender-Schritt 4.'
+            return
+        }
         $cloudflaredPath = Get-CloudflaredPath
         if (-not $cloudflaredPath) {
             # Nicht installiert: komplett automatische Installation anstossen.
@@ -25423,6 +28443,17 @@ $xaml = @'
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
+                                        <Ellipse x:Name="SplashBlenderDot" Grid.Column="0" Width="9" Height="9" Fill="#8FA3CC" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                                        <TextBlock Grid.Column="1" Text="Blender (Mesh-Bau)" Foreground="#DCE6FF" FontSize="13.5" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="SplashBlenderState" Grid.Column="2" Text="Wartet …" Foreground="#9AA9CE" FontSize="12" VerticalAlignment="Center"/>
+                                    </Grid>
+                                    <Border Height="1" Background="#1FFFFFFF" Margin="0,11,0,11"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
                                         <Ellipse x:Name="SplashTunnelDot" Grid.Column="0" Width="9" Height="9" Fill="#8FA3CC" Margin="0,0,12,0" VerticalAlignment="Center"/>
                                         <TextBlock Grid.Column="1" Text="Cloudflare-Tunnel" Foreground="#DCE6FF" FontSize="13.5" VerticalAlignment="Center"/>
                                         <TextBlock x:Name="SplashTunnelState" Grid.Column="2" Text="Wartet …" Foreground="#9AA9CE" FontSize="12" VerticalAlignment="Center"/>
@@ -25465,6 +28496,8 @@ $SplashStudioDot    = $window.FindName('SplashStudioDot')
 $SplashStudioState  = $window.FindName('SplashStudioState')
 $SplashPluginDot    = $window.FindName('SplashPluginDot')
 $SplashPluginState  = $window.FindName('SplashPluginState')
+$SplashBlenderDot   = $window.FindName('SplashBlenderDot')
+$SplashBlenderState = $window.FindName('SplashBlenderState')
 $SplashTunnelDot    = $window.FindName('SplashTunnelDot')
 $SplashTunnelState  = $window.FindName('SplashTunnelState')
 $PlaceList       = $window.FindName('PlaceList')
@@ -26030,7 +29063,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.3.2)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.4.0)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -28851,7 +31884,7 @@ function Write-ChannelDiagnoseFile {
 
         $progressPath = Join-Path $script:AppDataRoot 'progress-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.3.2)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.4.0)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -28886,7 +31919,7 @@ function Write-ChannelDiagnoseFile {
 
         $notifyPath = Join-Path $script:AppDataRoot 'notify-diagnose.txt'
         $sb2 = New-Object System.Text.StringBuilder
-        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.3.2)')
+        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.4.0)')
         [void]$sb2.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb2.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb2.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -29254,7 +32287,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.3.2)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.4.0)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -30992,6 +34025,9 @@ function New-Row {
         $resetItem = New-MenuRow -Glyph ([char]0xE72C) -Title 'Token zurücksetzen' -Subtitle 'Neuen Zugang für dieses Place' -Accent '#C9B7FF'
         $toggleItem = New-MenuRow -Glyph ([char]0xE72E) -Title 'Nur Lesezugriff' -Subtitle 'Inaktiv - Änderungen sind erlaubt' -Accent '#FFC1CE' -Checkable $true -Checked $false
         $historyItem = New-MenuRow -Glyph ([char]0xE81C) -Title 'Arena-Verlauf anzeigen' -Subtitle 'Aktionen und Änderungen dieses Place' -Accent '#9FDCFF'
+        # Version 7.4.0: Mesh-Uploads (Blender-Bau). Der Nutzer laedt die
+        # OBJ-Dateien selbst hoch und traegt hier die Mesh-Ids ein.
+        $meshItem = New-MenuRow -Glyph ([char]0xE8F4) -Title 'Mesh-Uploads (Blender)' -Subtitle 'Mesh-Ids eintragen und einsetzen lassen' -Accent '#FF9EC4'
 
         # Alle Daten haengen am Element selbst (Tag). Lokale Variablen einer
         # Funktion sind in Event-Handlern nicht verfuegbar.
@@ -31009,6 +34045,7 @@ function New-Row {
         $resetItem.Root.Tag = $itemTag
         $toggleItem.Root.Tag = $itemTag
         $historyItem.Root.Tag = $itemTag
+        $meshItem.Root.Tag = $itemTag
 
         $messageItem.Root.Add_MouseLeftButtonUp({
             param($s, $e)
@@ -31051,6 +34088,21 @@ function New-Row {
                 Write-UiErrorLog 'Arena-Verlaufsfenster konnte nicht geoeffnet werden' $_
             }
         })
+        $meshItem.Root.Add_MouseLeftButtonUp({
+            param($s, $e)
+            $info = $s.Tag
+            try { $info.Popup.IsOpen = $false } catch {}
+            try {
+                $placeTitle = ''
+                try { $placeTitle = [string]$info.PlaceName } catch {}
+                if ([string]::IsNullOrWhiteSpace($placeTitle)) {
+                    try { $placeTitle = [string]$script:PlaceNames[[string]$info.SessionId] } catch {}
+                }
+                Open-MeshWindow -SessionId ([string]$info.SessionId) -PlaceName $placeTitle
+            } catch {
+                Write-UiErrorLog 'Mesh-Fenster konnte nicht geoeffnet werden' $_
+            }
+        })
         $toggleItem.Root.Add_MouseLeftButtonUp({
             param($s, $e)
             $info = $s.Tag
@@ -31068,6 +34120,7 @@ function New-Row {
         $menuStack.Children.Add($copyItem.Root) | Out-Null
         $menuStack.Children.Add($resetItem.Root) | Out-Null
         $menuStack.Children.Add($historyItem.Root) | Out-Null
+        $menuStack.Children.Add($meshItem.Root) | Out-Null
         $menuStack.Children.Add((New-Separator)) | Out-Null
         $menuStack.Children.Add($toggleItem.Root) | Out-Null
 
@@ -31451,7 +34504,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.3.2)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.4.0)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -31529,6 +34582,13 @@ function Write-PerfReport {
 }
 
 function Refresh-Ui {
+    # Version 7.4.0: Blender-Schritt 4 und Mesh-Takt laufen ganz vorne im
+    # UI-Takt - auch dann, wenn (noch) kein Studio gefunden wurde, denn der
+    # Blender-Schritt gehoert vor den Tunnel.
+    try { Complete-BlenderStartupGate } catch { }
+    try { Update-BlenderSplashRow $null } catch { }
+    try { Update-MeshTick } catch { }
+    try { if ($null -ne $script:MeshWindow) { Update-MeshWindow } } catch { }
     $line = $null
     while ($script:TunnelLines.TryDequeue([ref]$line)) {
         $lineText = [string]$line
@@ -32261,7 +35321,7 @@ Set-StartupStage 'Ereignisse verdrahtet (Fenstersteuerung + Loaded)'
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.3.2'
+    $versionText = '7.4.0'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -33349,7 +36409,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.3.2" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.4.0" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -33397,7 +36457,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.3.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.4.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -33462,7 +36522,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.3.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.4.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -33475,7 +36535,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.3.2'
+    $verText = '7.4.0'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
@@ -33558,7 +36618,14 @@ function Start-BridgeRuntime {
                 $pluginPath = Install-RobloxPlugin
                 Write-RuntimeLog "Studio Plugin installiert: $pluginPath"
                 Start-BridgeServer -Port $script:Port
-                Start-CloudflareTunnel
+                # Version 7.4.0: Schritt 4 - Blender pruefen/installieren, BEVOR
+                # der Tunnel startet. Ist Blender vorhanden, geht es sofort
+                # weiter; sonst wartet der Tunnel und der UI-Takt loest ihn aus,
+                # sobald der Schritt fertig, gescheitert oder uebersprungen ist.
+                $blenderReady = $false
+                try { $blenderReady = [bool](Start-BlenderStartupGate) } catch { Write-RuntimeLog ('Blender-Schritt 4 konnte nicht gestartet werden: ' + $_.Exception.Message) }
+                if ($blenderReady) { Start-CloudflareTunnel }
+                else { Write-RuntimeLog 'Der Start wartet auf den Blender-Schritt 4; der Tunnel startet danach automatisch.' }
                 Add-PendingToast 'Plugin installiert. Öffne nun ein Place in Roblox Studio - es erscheint automatisch hier.' 'Info' 6
             } catch {
                 Add-PendingToast "Startfehler: $($_.Exception.Message)" 'Error' 8

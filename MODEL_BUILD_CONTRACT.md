@@ -5,13 +5,18 @@ buildings, vehicles, tools, machines, landmarks, set pieces, characters,
 creatures, plants, and custom shapes. It is not an animal-only rule. Keep a
 truly simple object simple, and honor an explicit request for primitives,
 blockout, low part count, or a plain style. For a nontrivial custom silhouette,
-`build_polygon_model` is the first model-building call.
+`build_polygon_model` is the first model-building call. **Exception since
+7.4.0:** for shapes that wedges cannot carry (smooth or organic surfaces, very
+high detail, or a model that must not become thousands of parts), the
+**Blender mesh path** (`build_mesh_model`) is the better first call — see
+"Mesh path" below. Everything else in this contract still applies.
 
 ## Choose the right geometry tool
 
 | Need | Preferred tool |
 |---|---|
 | Custom silhouette, angled/curved/tapered panel, hull, roof, body shell or other authored shape | `build_polygon_model` |
+| Smooth/organic surface, very fine detail, or a shape where thousands of Wedges are too heavy | `build_mesh_model` (Blender mesh path, 7.4.0) |
 | Several named components/materials built together | `build_polygon_model.submodels` |
 | Long form whose cross-section changes along a path (hull, shaft, handle, column, branch, pipe) | `build_polygon_model.volumes` |
 | Repeated stairs, rails, ribs, windows, spokes, structural frames or modules | `build_assembly` alongside the custom silhouette |
@@ -137,3 +142,60 @@ machine housing, prop, or other category.
 Low-poly describes the facet style, not permission to omit the silhouette,
 back/sides, meaningful components or finish. For a deliberately simple request,
 keep it simple and record the requested grade instead of adding needless parts.
+
+## Mesh path (7.4.0): Blender, upload by the user, insert by the bridge
+
+`build_mesh_model` is the second, voluntary way to build a nontrivial model. Use
+it when the polygon path would end in a poor shape or in thousands of Wedges,
+not as a replacement for it.
+
+Workflow (own the whole loop, never fake it):
+
+1. `blender_status` — is Blender ready? If not, `build_mesh_model` answers
+   `BLENDER_NOT_READY`; tell the user honestly (the bridge window
+   "Mesh-Uploads" has an install button) or keep building with
+   `build_polygon_model`.
+2. `build_mesh_model` — one Blender script per slot, `offset` per slot,
+   `origin` for the model. It returns a `jobId` immediately: **Blender runs in
+   the background, so never wait synchronously.** Each slot becomes one
+   MeshPart, so split moving parts (limbs, wheels, doors) into their own slots
+   and join them in Studio with Welds/Motor6D as usual.
+3. `mesh_status` — poll it (not in a tight loop) until the slots show measured
+   triangles and size in studs. The bridge measures the OBJ itself: triangles,
+   vertices, bounding box in studs, file size. A slot above the limit (~10,000
+   triangles) is rejected — build it simpler (fewer subdivisions, Decimate or
+   Remesh, smaller slots).
+4. The bridge creates the **rectangular MeshPart placeholders** with the
+   measured size, position and rotation, marked with `ArenaMeshSlot` /
+   `ArenaMeshState` / `ArenaPlaceholder`.
+5. **The user uploads.** Roblox has no automatic mesh upload and no public API
+   for it: the user opens the bridge window "Mesh-Uploads" (place row menu),
+   uses "Ordner öffnen", uploads the OBJ file(s) in Studio (3D Importer or
+   drag & drop) or in the Creator Dashboard, and pastes the mesh id(s) into the
+   text fields. The bridge then inserts the geometry automatically. If the user
+   gives you the id in chat, call `mesh_apply_asset` with the slot `key`s from
+   `mesh_status`.
+6. Insertion uses `InsertService:CreateMeshPartAsync` + `MeshPart:ApplyMesh`,
+   because `MeshPart.MeshId` is write-restricted. The **existing** instance
+   survives: name, size, position, welds, attributes and animations stay. The
+   answer reports the mesh id **read back** from the place.
+7. `model_audit` counts mesh placeholders separately (`meshSlotCount` /
+   `meshSlots`) and `report_done` answers `MESH_UPLOAD_PENDING` while a
+   placeholder still waits for its upload. "Done" would be a lie — say what is
+   missing and where the files are. Only a `handoff` can end the turn honestly
+   while a mesh is still waiting.
+
+Hard rules for Blender scripts (the bridge rejects violations before start):
+
+- One slot = one script = one MeshPart. 1 Blender unit = 1 stud, Y is up, the
+  runner centres the bbox automatically and applies modifiers on export.
+- Allowed: `bpy`, `bmesh`, `math`, `mathutils`, `random` and ordinary mesh
+  code. Forbidden: `os`, `sys`, `subprocess`, `shutil`, `socket`, `urllib`,
+  `requests`, `ctypes`, `winreg`, `__import__`, `importlib`, `eval`, `exec`,
+  `bpy.ops.wm.*` and every export function — scene, export, centring and
+  measurement belong to the bridge.
+- Roblox keeps **one** colour/material per MeshPart and no Blender materials.
+  Set `color`/`material` per slot; use more slots instead of more materials in
+  Blender.
+- A mesh is a black box inside the place: the honest evidence is the bridge's
+  OBJ measurement, the read-back mesh id and the user's visual check.
