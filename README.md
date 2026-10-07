@@ -31,8 +31,8 @@ sein.
 | `MODEL_BUILD_CONTRACT.md` | Kategorieneutraler Polygon-Bauablauf mit Schema, validem Mehrflächen-Hausbeispiel, Volumen-/Submodel-/Assembly-Auswahl und Ergebnisprüfung für alle 3D-Arten |
 | `ORGANIC_BUILD_CONTRACT.md` | Organic-Bauvertrag (Stand 7.3.2, weiterhin gueltig; der Mesh-Weg kommt in 7.4.0 hinzu): typed Creature-Loft-Volumen, Gesichts-/Flügelrollen und fail-closed Audit; 7.1.4 bleibt als Historie |
 | `test_queue_model_707.py` | Python-Modelltest: reproduziert den Queue-Stillstand von 7.0.4 und prüft die 7.0.5-Regeln (unabhängiger Watchdog, lateResults, Reconnect-Übergabe) **plus** 7.0.6 (Sitzungs-Identität, Fast-Fail, Zustell-Timeline) und 7.0.7 (Place-Zeile: fehlende Eigenschaft bricht den Zeilenaufbau ab) |
-| `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Versions-Checks (`/api/version` 7.4.1, `counters.revivedSessions` konstant, `/api/places` 200, `/api/status` 200), Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `--reset-test` (Reset mit 2 wartenden Befehlen), `--force-fail`, `--ask-sweep` (7.2.4 P0-Abnahme: alle Werkzeuge bei **offener** Frage) und `--message-round` (Nachricht → `_bridge.userMessages` → `ack_user_message`) |
-| `test_v740_mesh.py` | Offline-Abnahme 7.4.1 (Blender-/Mesh-Weg, BOM-Hotfix, automatisches Mesh-Fenster): BOM-freie WriteAllText-Pfade und BOM-tolerantes Lesen im Runner, Skript-Sperrliste, OBJ-Messung mit Dreiecks-/Groessen-/Limit-Pruefung, Register/Job-Zustandsmaschine, automatisches modeless Fenster (Auto-Oeffnen nur bei neuer Wartemenge, „Fertig“ raeumt auf, „Stornieren“ ueber tools.mesh_drop mit Rueckfrage), Report-Gates (`MESH_UPLOAD_PENDING`) und Beleg, dass `MeshPart.MeshId` nur ueber `CreateMeshPartAsync`/`ApplyMesh` gesetzt wird |
+| `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Versions-Checks (`/api/version` 7.4.2, `counters.revivedSessions` konstant, `/api/places` 200, `/api/status` 200), Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `--reset-test` (Reset mit 2 wartenden Befehlen), `--force-fail`, `--ask-sweep` (7.2.4 P0-Abnahme: alle Werkzeuge bei **offener** Frage) und `--message-round` (Nachricht → `_bridge.userMessages` → `ack_user_message`) |
+| `test_v740_mesh.py` | Offline-Abnahme 7.4.2/7.4.1 (Blender-/Mesh-Weg, Runner-Hotfix, BOM-Hotfix, automatisches Mesh-Fenster): BOM-freie WriteAllText-Pfade und BOM-tolerantes Lesen im Runner, Skript-Sperrliste, OBJ-Messung mit Dreiecks-/Groessen-/Limit-Pruefung, Register/Job-Zustandsmaschine, automatisches modeless Fenster (Auto-Oeffnen nur bei neuer Wartemenge, „Fertig“ raeumt auf, „Stornieren“ ueber tools.mesh_drop mit Rueckfrage), Report-Gates (`MESH_UPLOAD_PENDING`) und Beleg, dass `MeshPart.MeshId` nur ueber `CreateMeshPartAsync`/`ApplyMesh` gesetzt wird; seit 7.4.2 zusaetzlich: `import bpy` steht im Runner auf Modulebene (nicht eingerueckt in `main()`), und ein Mini-Ausfuehrungstest laesst den Runner mit gestubbtem `bpy`-Modul echt durchlaufen |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -47,6 +47,36 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 7.4.2 — Mini-Hotfix im Mesh-Runner (Blender-Export)
+
+1. **Der Live-Befund.** Auf einem Rechner mit Blender 5.0.1 scheiterte die
+   Fähigkeitsprobe (und damit `ready`) mit
+   `RuntimeError: Kein funktionierender OBJ-Exporter` — alle drei Exportwege
+   starben gleichzeitig mit `NameError: name 'bpy' is not defined`. Ursache:
+   Der Mesh-Runner (`$script:MeshRunnerTemplate`) importierte `bpy` **nur
+   innerhalb von `main()`** — das ist dort eine lokale Variable. Die
+   Modulfunktion `arena_export()` sah kein `bpy`. In 7.4.0/7.4.1 war der
+   Fehler unsichtbar, weil der BOM-`SyntaxError` zuerst zuschlug; seit dem
+   BOM-Hotfix trat er offen zutage. Derselbe Runner-Text läuft auch bei jedem
+   echten Mesh-Job — der Fehler hätte jeden Bau getroffen, nicht nur die Probe.
+2. **Der Fix (klein und gezielt).** `import bpy` steht jetzt auf Modulebene
+   neben `json`/`os`/`sys`, **vor** `arena_export`; der Import in `main()` ist
+   entfernt. Die leere Szene wird weiterhin **vor** dem Laden des Nutzer-Skripts
+   gesetzt (`bpy.ops.wm.read_factory_settings(use_empty=True)` bleibt in
+   `main()`). Blender 5.0 akzeptiert die Parameter von `bpy.ops.wm.obj_export`
+   unverändert (geprüft gegen den Quelltext von Blender 5.0.1); die zwei
+   Rückfallwege (`obj_export` plain, `export_scene.obj`) bleiben als
+   Sicherheitsnetz. Der Fehlertext unterscheidet jetzt klar **NameError**
+   (Runner-Fehler: `bpy` nicht sichtbar) vs. **TypeError** (diese
+   Blender-Version kennt einen Parameter nicht mehr), damit die nächste
+   Fehlersuche die Ursache sofort sieht.
+3. **Ehrlichkeit unverändert.** `ready` setzt weiterhin **nur** die bestandene
+   Probe (Marker `ARENA_MESH_STATS`, Länge exakt 17, fail-closed). Nichts an
+   Schritt 4 wurde aufgeweicht, kein neuer Startblocker. Neu ist ein
+   Offline-Ausführungstest in `test_v740_mesh.py`, der den Runner mit einem
+   gestubbten `bpy`-Modul wirklich ausführt — er hätte diesen Fehler sofort
+   gefunden.
 
 ## 7.4.1 — BOM-Hotfix, automatisches Mesh-Fenster, ehrlicher Schritt 4
 
