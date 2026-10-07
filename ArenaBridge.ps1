@@ -1,5 +1,53 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.4.2
+# Arena Roblox Bridge  -  Version 7.5.0
+#
+# Version 7.5.0 (2026-10-07) - OPEN CLOUD UPLOAD: MESH-FENSTER WEG, AGENT LAEDT SELBST HOCH
+# -----------------------------------------------------------------------------
+# Der Mesh-Upload war der letzte MENSCHEN-Schritt im Bau: der Nutzer musste
+# die OBJ-Datei von Hand in Roblox hochladen und die Mesh-Id in ein Fenster
+# tippen. Genau dieser Schritt ist jetzt automatisiert - ueber die offizielle
+# Roblox-Open-Cloud-Assets-API und den eigenen API-Schluessel des Nutzers.
+#   1) DAS MESH-FENSTER IST WEG (ausdruecklicher Nutzerwunsch). Kein Fenster
+#      "Mesh-Uploads", kein automatisches Aufgehen, kein Mesh-Id-Abtippen.
+#      Es bleiben: der Blender-Bau, die GEMESSENEN Platzhalter, mesh_status
+#      und mesh_apply_asset - nur der Upload laeuft jetzt von allein.
+#   2) OPEN-CLOUD-API-KEY IN DEN EINSTELLUNGEN (NEU). Der Nutzer legt seinen
+#      eigenen Schluessel an und speichert ihn im Einstellungsfenster im
+#      neuen Abschnitt "ROBLOX OPEN CLOUD". Daneben liegt ein AUFKLAPPBARES
+#      TUTORIAL MIT ANIMATION, das Schritt fuer Schritt zeigt, wie der
+#      Schluessel entsteht - mit den PFLICHT-RECHTEN, die sonst jeder
+#      Upload mit 403 ablehnt: Assets hinzufuegen, dann LESEN (asset:read)
+#      und SCHREIBEN (asset:write). Dazu gehoert der ERSTELLER (Nutzer oder
+#      Gruppe), weil Roblox jedes Asset einem Ersteller zuordnet. Der
+#      Schluessel liegt verschluesselt (DPAPI, CurrentUser) in
+#      %LOCALAPPDATA%\ArenaRobloxBridge\opencloud.key - nie im Klartext.
+#   3) NEUES WERKZEUG upload_asset (Kategorie cloud). Der Agent laedt damit
+#      MESHES (FBX/GLB aus Blender, z. B. aus build_mesh_model) und BILDER
+#      (PNG/JPG/BMP/TGA, z. B. selbst erzeugte Texturen) hoch und bekommt
+#      die ASSET-ID zurueck. Der Upload-Dateiinhalt kann als Pfad (Datei im
+#      Bridge-Ordner) ODER als contentBase64 direkt im Aufruf kommen - damit
+#      kann der Agent ein selbst generiertes Bild ohne Umweg hochladen.
+#      Danach setzt der Agent das Asset SELBST in den Place ein
+#      (mesh_apply_asset in die vorhandenen Platzhalter, insert_asset fuer
+#      ein ganzes Modell, set_property fuer Texture/Decal/Image).
+#      VOLL AUTOMATISIERT: der Nutzer laedt nichts mehr von Hand hoch.
+#   4) KEIN SCHLUESSEL = KLARE ANSAGE, KEIN VERSTECKEN. Das Werkzeug bleibt
+#      sichtbar und aufrufbar. Erst beim Aufruf antwortet die Bridge mit
+#      OPENCLOUD_KEY_MISSING und einem Text, den der Agent dem Nutzer
+#      WORTLICH sagen soll: kurz in die Einstellungen des Bridge-Programms
+#      gehen, dort das Open-Cloud-Tutorial machen, Schluessel speichern -
+#      dann geht es weiter. Fehler von Roblox (Rate-Limit 429, 401/403,
+#      400, 5xx, Netz/Timeout, abgelehnte Operation) gehen UNVERAENDERT mit
+#      Status, Code und Antworttext an den Agenten. Nichts wird erfunden.
+#   5) BLENDER + BAUEN WERDEN STARK EMPFOHLEN. Sessionstart, Guides
+#      (cloudUploadRules, meshBuildRules) und die Werkzeugtexte empfehlen
+#      den Weg jetzt aktiv: anspruchsvolle Formen mit Blender bauen
+#      (build_mesh_model), mit upload_asset hochladen, einsetzen, pruefen.
+#   6) EHRLICH BLEIBT EHRLICH: die Bridge misst die OBJ-Datei weiter selbst,
+#      der Upload-Pfad steht in mesh_status (uploadPath/uploadFormat/
+#      uploadBytes), ein fehlgeschlagener Export wird gemeldet statt
+#      verschwiegen, und report_done bleibt bei MESH_UPLOAD_PENDING, solange
+#      ein Platzhalter noch keine echte Geometrie hat.
 #
 # Version 7.4.2 (2026-10-07) - MINI-HOTFIX MESH-RUNNER: bpy AUF MODULEBENE
 # -----------------------------------------------------------------------------
@@ -82,12 +130,20 @@
 #      BESTEHENDEN Platzhalter - Groesse, Position, Welds, Attribute und
 #      Animationen bleiben erhalten). Intern: mesh_slots (viereckige MeshPart-
 #      Platzhalter) und mesh_apply.
-#   3) ROLLENKLARHEIT: Roblox hat KEINE API fuer Mesh-Uploads. Der Nutzer laedt
-#      die OBJ-Datei(en) hoch und traegt die Mesh-Id(s) im neuen Fenster
-#      "Mesh-Uploads" (Place-Menue) ein; die Bridge setzt sie automatisch ein.
+#   3) ROLLENKLARHEIT (SEIT 7.5.0 NEU): Roblox hat KEINE Mesh-Upload-API in
+#      Studio - aber eine OFFIZIELLE ueber Open Cloud (POST /assets/v1/assets).
+#      Genau die benutzt die Bridge: der Nutzer hinterlegt EINMAL seinen
+#      eigenen Open-Cloud-Schluessel in den Einstellungen (Abschnitt ROBLOX
+#      OPEN CLOUD, mit aufklappbarem Tutorial inkl. der Pflicht-Rechte ASSETS
+#      + LESEN + SCHREIBEN), und der AGENT laedt danach Meshes und Bilder
+#      selbst hoch (upload_asset) und setzt sie selbst in den Place ein. Das
+#      Fenster "Mesh-Uploads" ist WEG - der letzte Menschen-Schritt im Bau ist
+#      damit automatisiert. Fehlt der Schluessel, bleibt das Werkzeug
+#      aufrufbar und antwortet OPENCLOUD_KEY_MISSING mit einem Satz, den der
+#      Agent dem Nutzer wortlich sagt.
 #   4) EHRLICHE GATES: model_audit zaehlt Mesh-Platzhalter getrennt
 #      (meshSlotCount/meshSlots) und report_done antwortet MESH_UPLOAD_PENDING,
-#      solange ein Platzhalter auf den Upload wartet - "fertig" waere hier eine
+#      solange ein Platzhalter auf Geometrie wartet - "fertig" waere hier eine
 #      Luege. Ein Mesh bleibt im Place messtechnisch eine Blackbox; Beleg sind
 #      die OBJ-Messung, die zurueckgelesene MeshId und der Sichttest.
 #   5) SICHERHEIT: Das Blender-Skript kommt vom Agenten, der Runner kommt von der
@@ -2022,7 +2078,7 @@ param(
 # Existing LOCALAPPDATA directory; no UI, no new exception net.
 # A parse/policy failure prevents even this marker. Check its timestamp/version.
 # Continue + SilentlyContinue keeps diagnostic I/O from becoming a start blocker.
-Write-Output ("{0:o} PROOF_OF_LIFE Version=7.4.2 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
+Write-Output ("{0:o} PROOF_OF_LIFE Version=7.5.0 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
 
 $ErrorActionPreference = 'Stop'
 
@@ -2057,7 +2113,7 @@ trap {
         }
         $trapPath = Join-Path $trapFolder 'startup-diagnose.txt'
         $trapReport = New-Object System.Text.StringBuilder
-        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.4.2)')
+        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.0)')
         [void]$trapReport.AppendLine('Quelle: trap auf Skriptebene (nicht abgefangener Fehler)')
         [void]$trapReport.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$trapReport.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -2096,7 +2152,7 @@ trap {
             try {
                 [System.IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA 'START-CHECK.txt'),
                     ('Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.4.2' + [Environment]::NewLine +
+                     'Version: 7.5.0' + [Environment]::NewLine +
                      'ABBRUCH: ' + $trapMessage + [Environment]::NewLine +
                      'Details: ' + $trapPath + [Environment]::NewLine),
                     [System.Text.Encoding]::UTF8)
@@ -2284,12 +2340,10 @@ $script:BlenderStatusFile    = Join-Path $script:AppDataRoot 'blender-status.jso
 $script:MeshRegistryFile     = Join-Path $script:AppDataRoot 'mesh-registry.json'
 $script:BlenderInstallUrl    = ''
 $script:BlenderInstallZip    = ''
-$script:MeshWindow           = $null
-$script:MeshWindowSessionId  = ''
-$script:MeshWindowRows       = @{}
-$script:MeshWindowNotice     = ''
-$script:MeshAutoOpenPending  = $false
-$script:MeshLastOpenAt       = [DateTime]::MinValue
+# Version 7.5.0: die Fenster-Zustaende (MeshWindow, MeshWindowRows,
+# MeshAutoClosedSignature, ...) sind mit dem Mesh-Upload-Fenster ENTFALLEN.
+# Der Upload laeuft jetzt voll automatisch ueber das Werkzeug upload_asset -
+# es gibt kein Fenster, das auf den Nutzer wartet.
 $script:MeshApplyInFlight    = @{}
 $script:TunnelInstallStartedAt = $null
 $script:TunnelInstallErrorNotified = $false
@@ -2725,6 +2779,11 @@ function Invoke-AutostartSelfUpdate {
 # wieder mit Lese- und Schreibzugriff.
 # ----------------------------------------------------------------------------
 $script:SettingsFile = Join-Path $script:AppDataRoot 'settings.json'
+# Version 7.5.0: der Roblox-Open-Cloud-Schluessel liegt NICHT in settings.json
+# (die Datei wird oft weitergegeben/screenshots), sondern verschluesselt in der
+# eigenen Datei opencloud.key daneben. Schutz: DPAPI im CurrentUser-Kontext -
+# nur dieses Windows-Konto auf diesem Rechner kann ihn wieder lesen.
+$script:OpenCloudKeyFile = Join-Path $script:AppDataRoot 'opencloud.key'
 
 function Get-BridgeSettingsFile {
     $settings = @{
@@ -2736,6 +2795,16 @@ function Get-BridgeSettingsFile {
         editorIconsEnabled = $true # Live-Vorschau-Icons im Editor (Standard: an)
         progressInPlaceList = $true # Fortschrittsanzeige in der Place-Liste (Standard: an)
         perfDiagnostics = $false    # Laufzeitdiagnostik Leistung (Standard: AUS)
+        # Version 7.5.0: ROBLOX OPEN CLOUD. Der Schluessel selbst steht NIE
+        # hier, sondern verschluesselt in opencloud.key. Hier stehen nur die
+        # Metadaten (ob einer hinterlegt ist) und der ERSTELLER, dem Roblox
+        # jedes hochgeladene Asset zuordnet (Pflichtfeld der Assets-API).
+        openCloudKeySet     = $false
+        openCloudKeyHint    = ''      # z. B. "…7Hf9" - nur die letzten Zeichen
+        openCloudCreatorId  = ''      # numerische Nutzer- oder Gruppen-Id
+        openCloudCreatorKind = 'user' # 'user' oder 'group'
+        openCloudCreatorName = ''     # Anzeigename (aufgeloest oder leer)
+        openCloudSavedAt    = ''      # Zeitpunkt des Speicherns (Anzeige)
         # accessModes aus älteren Versionen werden absichtlich NICHT mehr geladen:
         # Lesezugriff gilt nur für die aktuelle Verbindung und startet immer aus.
     }
@@ -2746,6 +2815,14 @@ function Get-BridgeSettingsFile {
             if ($loaded.PSObject.Properties.Name -contains 'progressInPlaceList') { $settings.progressInPlaceList = [bool]$loaded.progressInPlaceList }
             if ($loaded.PSObject.Properties.Name -contains 'notifyOnDone') { $settings.notifyOnDone = [bool]$loaded.notifyOnDone }
             if ($loaded.PSObject.Properties.Name -contains 'editorIconsEnabled') { $settings.editorIconsEnabled = [bool]$loaded.editorIconsEnabled }
+            # Version 7.5.0: Open-Cloud-Metadaten + Ersteller. Der SCHLUESSEL
+            # selbst wird von Get-OpenCloudKey aus opencloud.key gelesen.
+            if ($loaded.PSObject.Properties.Name -contains 'openCloudKeySet') { $settings.openCloudKeySet = [bool]$loaded.openCloudKeySet }
+            if ($loaded.PSObject.Properties.Name -contains 'openCloudKeyHint') { $settings.openCloudKeyHint = [string]$loaded.openCloudKeyHint }
+            if ($loaded.PSObject.Properties.Name -contains 'openCloudCreatorId') { $settings.openCloudCreatorId = [string]$loaded.openCloudCreatorId }
+            if ($loaded.PSObject.Properties.Name -contains 'openCloudCreatorKind') { $settings.openCloudCreatorKind = [string]$loaded.openCloudCreatorKind }
+            if ($loaded.PSObject.Properties.Name -contains 'openCloudCreatorName') { $settings.openCloudCreatorName = [string]$loaded.openCloudCreatorName }
+            if ($loaded.PSObject.Properties.Name -contains 'openCloudSavedAt') { $settings.openCloudSavedAt = [string]$loaded.openCloudSavedAt }
             # Version 7.2.2: Der Diagnosebereich ist entfernt; alte opt-ins werden ignoriert.
             # Legacy accessModes are deliberately ignored (Version 5): the
             # per-place read-only switch is temporary and never survives a registration.
@@ -2763,6 +2840,14 @@ function Save-BridgeSettingsFile {
             editorIconsEnabled = [bool]$script:SettingsCache.editorIconsEnabled
             progressInPlaceList = [bool]$script:SettingsCache.progressInPlaceList
             perfDiagnostics = [bool]$script:SettingsCache.perfDiagnostics
+            # Version 7.5.0: NUR Metadaten - der Schluessel bleibt in
+            # opencloud.key (verschluesselt) und wird dort gesetzt.
+            openCloudKeySet = [bool]$script:SettingsCache.openCloudKeySet
+            openCloudKeyHint = [string]$script:SettingsCache.openCloudKeyHint
+            openCloudCreatorId = [string]$script:SettingsCache.openCloudCreatorId
+            openCloudCreatorKind = [string]$script:SettingsCache.openCloudCreatorKind
+            openCloudCreatorName = [string]$script:SettingsCache.openCloudCreatorName
+            openCloudSavedAt = [string]$script:SettingsCache.openCloudSavedAt
         }
         $json = $out | ConvertTo-Json -Depth 6
         [System.IO.File]::WriteAllText($script:SettingsFile, $json, [System.Text.UTF8Encoding]::new($true))
@@ -2896,6 +2981,13 @@ $script:Shared = [hashtable]::Synchronized(@{
     MeshRegistry    = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     MeshInternal    = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     MeshRunnerText  = ''
+    # Version 7.5.0: ROBLOX OPEN CLOUD. OpenCloudToolsText ist dieselbe
+    # Funktionssammlung fuer Hauptprogramm UND Runspaces; OpenCloudKeyCache
+    # haelt den entschluesselten Schluessel NUR im Speicher (nie auf Platte,
+    # nie im Log, nie in settings.json).
+    OpenCloudToolsText = ''
+    OpenCloudKeyFile   = ''
+    OpenCloudKeyCache  = ''
     # Pfad des lokalen Asset-Caches (Suche/Details, damit pro Session nichts neu geladen wird)
     AssetCachePath  = Join-Path $script:AppDataRoot 'asset_cache.json'
     # Version 7.1.2: TOOLBOX-DROSSEL je Place. Ohne sie lief jeder Katalog-/
@@ -2925,7 +3017,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.4.2'
+    DocsVersion     = '7.5.0'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -2961,7 +3053,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Version 7.0.6: Laufzeit-Identitaet der LAUFENDEN Datei (Version, Pfad,
     # SHA-256, Sprachmodus, Startzeit) fuer GET /api/version.
     RuntimeInfo = [hashtable]::Synchronized(@{
-        Version = '7.4.2'
+        Version = '7.5.0'
         File = ''
         Sha256 = ''
         LanguageMode = ''
@@ -3132,6 +3224,14 @@ try {
     if ($script:SettingsCache.notifyOnDone -is [bool]) { $script:Shared.BridgeSettings.notifyOnDone = [bool]$script:SettingsCache.notifyOnDone }
     if ($script:SettingsCache.progressInPlaceList -is [bool]) { $script:Shared.BridgeSettings.progressInPlaceList = [bool]$script:SettingsCache.progressInPlaceList }
     if ($script:SettingsCache.perfDiagnostics -is [bool]) { $script:Shared.BridgeSettings.perfDiagnostics = [bool]$script:SettingsCache.perfDiagnostics }
+    # Version 7.5.0: Open-Cloud-Metadaten (NIE der Schluessel selbst - der
+    # liegt verschluesselt in opencloud.key und wird erst beim Upload gelesen).
+    $script:Shared.BridgeSettings.openCloudKeySet = [bool]$script:SettingsCache.openCloudKeySet
+    $script:Shared.BridgeSettings.openCloudKeyHint = [string]$script:SettingsCache.openCloudKeyHint
+    $script:Shared.BridgeSettings.openCloudCreatorId = [string]$script:SettingsCache.openCloudCreatorId
+    $script:Shared.BridgeSettings.openCloudCreatorKind = [string]$script:SettingsCache.openCloudCreatorKind
+    $script:Shared.BridgeSettings.openCloudCreatorName = [string]$script:SettingsCache.openCloudCreatorName
+    $script:Shared.BridgeSettings.openCloudSavedAt = [string]$script:SettingsCache.openCloudSavedAt
     # Version 5: legacy per-place accessModes are ignored on purpose.
 } catch {}
 
@@ -3181,7 +3281,7 @@ function Write-StartupFailureDiagnose {
         try { $trace = [string]$ErrorRecord.ScriptStackTrace } catch {}
         if ($trace.Length -gt 2000) { $trace = $trace.Substring(0, 2000) }
         $report = New-Object System.Text.StringBuilder
-        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.4.2)')
+        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.0)')
         [void]$report.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$report.AppendLine('Letzte Startstufe: ' + $stage)
         [void]$report.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -3264,7 +3364,7 @@ function Set-StartupStage {
     try {
         $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
         $checkText = 'Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.4.2' + [Environment]::NewLine +
+                     'Version: 7.5.0' + [Environment]::NewLine +
                      'Zeit: ' + $stamp + [Environment]::NewLine +
                      'PowerShell: ' + [string]$PSVersionTable.PSVersion + ' | CLR ' + [string][Environment]::Version + [Environment]::NewLine +
                      'Skript: ' + [string]$script:ScriptPath + [Environment]::NewLine +
@@ -3330,12 +3430,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.4.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.4.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.5.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.5.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.4.2'
+$script:Shared.RuntimeInfo.Version = '7.5.0'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -3438,7 +3538,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.4.2)
+  Arena Studio Bridge - Studio Plugin  (Version 7.5.0)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -3511,7 +3611,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.4.2"
+local ARENA_VERSION  = "7.5.0"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -11024,10 +11124,17 @@ tools.mesh_slots = function(args)
         failed = failed,
         createdCount = #created,
         failedCount = #failed,
-        note = "Viereckige MeshPart-Platzhalter stehen. Jetzt laedt der NUTZER die OBJ-Datei(en) in Roblox hoch (Studio-3D-Importer oder Creator Dashboard) und traegt die Mesh-Id(s) im Bridge-Fenster \"Mesh-Uploads\" ein - die Bridge setzt die Geometrie dann automatisch ein. Bis dahin ist KEIN fertiges Modell vorhanden: report_done antwortet MESH_UPLOAD_PENDING.",
+        note = "Viereckige MeshPart-Platzhalter stehen. Jetzt laedt der AGENT die Datei(en) selbst hoch: upload_asset { slotKey } schickt die vom Runner erzeugte FBX/GLB-Datei ueber die Roblox-Open-Cloud-API nach Roblox und nennt die echte Asset-Id; mesh_apply_asset setzt die Geometrie dann in GENAU diese Platzhalter ein. Der NUTZER muss NICHTS mehr von Hand hochladen (das Mesh-Fenster gibt es seit 7.5.0 nicht mehr). Fehlt noch sein Open-Cloud-Schluessel, sagt ihm das Werkzeug den einen Satz. Bis die Geometrie sitzt, ist KEIN fertiges Modell vorhanden: report_done antwortet MESH_UPLOAD_PENDING.",
     })
 end
 
+-- mesh_apply setzt die echte Geometrie in GENAU diese Instanzen. Seit 7.5.0
+-- kennt es ZWEI Arten von Asset-Ids:
+--   * eine MESH-Id (frueher: der Nutzer hat die Datei von Hand hochgeladen),
+--   * eine MODELL-Id (so liefert Roblox Open Cloud ein hochgeladenes FBX/GLB
+--     zurueck - upload_asset nennt sie dir). Dann laedt die Bridge das Modell,
+--     nimmt die MeshId aus dem darin liegenden MeshPart und setzt sie ein.
+-- Welcher Weg gegriffen hat, steht danach in applyPath - nichts wird geraten.
 tools.mesh_apply = function(args)
     local slots = args.slots or {}
     if #slots == 0 then return failCode("BAD_ARGS", "mesh_apply needs at least one slot { key, assetId }.") end
@@ -11057,7 +11164,51 @@ tools.mesh_apply = function(args)
                 -- InsertService:CreateMeshPartAsync + MeshPart:ApplyMesh - damit
                 -- bleibt DIESE Instanz erhalten (Name, Attribute, Welds,
                 -- Animationen, Kinder).
-                local created = InsertService:CreateMeshPartAsync("rbxassetid://" .. digits, Enum.CollisionFidelity.Default, Enum.RenderFidelity.Automatic)
+                local created = nil
+                local applyPath = "meshId"
+                local okDirect, directResult = pcall(function()
+                    return InsertService:CreateMeshPartAsync("rbxassetid://" .. digits, Enum.CollisionFidelity.Default, Enum.RenderFidelity.Automatic)
+                end)
+                if okDirect and directResult then
+                    created = directResult
+                else
+                    -- WEG 2: die Id ist ein MODELL (Roblox Open Cloud). Das
+                    -- Modell laden, den MeshPart darin suchen und DESSEN
+                    -- MeshId einsetzen. So bleibt der Platzhalter erhalten.
+                    local loaded = nil
+                    local okLoad, loadErr = pcall(function()
+                        loaded = InsertService:LoadAsset(tonumber(digits))
+                    end)
+                    if not okLoad or not loaded then
+                        error("Die Asset-Id " .. digits .. " ist weder eine direkt einsetzbare Mesh-Id noch ein ladbares Modell. Roblox hat sie abgelehnt: " .. tostring(loadErr))
+                    end
+                    local sourcePart = nil
+                    for _, inst in ipairs(loaded:GetDescendants()) do
+                        if inst:IsA("MeshPart") then
+                            sourcePart = inst
+                            break
+                        end
+                    end
+                    if not sourcePart then
+                        loaded:Destroy()
+                        error("Das Modell " .. digits .. " enthaelt keinen MeshPart. Ein hochgeladenes FBX/GLB muss mindestens ein Mesh enthalten - baue den Slot neu oder fuege das Modell mit insert_asset ein.")
+                    end
+                    local innerId = tostring(sourcePart.MeshId):match("(%d+)")
+                    if not innerId then
+                        loaded:Destroy()
+                        error("Der MeshPart im Modell " .. digits .. " hat keine lesbare MeshId - die Geometrie wurde NICHT eingesetzt.")
+                    end
+                    local okInner, innerResult = pcall(function()
+                        return InsertService:CreateMeshPartAsync("rbxassetid://" .. innerId, Enum.CollisionFidelity.Default, Enum.RenderFidelity.Automatic)
+                    end)
+                    if not okInner or not innerResult then
+                        loaded:Destroy()
+                        error("Die Mesh-Id " .. innerId .. " aus dem Modell " .. digits .. " liess sich nicht einsetzen (" .. tostring(innerResult) .. "). Nimm stattdessen insert_asset mit der Modell-Id " .. digits .. " und positioniere das Modell selbst.")
+                    end
+                    created = innerResult
+                    applyPath = "modelMeshId"
+                    loaded:Destroy()
+                end
                 target:ApplyMesh(created)
                 target.Size = savedSize
                 target.CFrame = savedCFrame
@@ -11067,7 +11218,7 @@ tools.mesh_apply = function(args)
                 target:SetAttribute("ArenaMeshAssetId", digits)
                 target:SetAttribute("ArenaMeshState", "applied")
                 target:SetAttribute("ArenaPlaceholder", false)
-                return { key = key, path = target:GetFullName(), assetId = digits, meshIdReadBack = readBack, size = tostring(target.Size) }
+                return { key = key, path = target:GetFullName(), assetId = digits, applyPath = applyPath, meshIdReadBack = readBack, size = tostring(target.Size) }
             end)
             if okSlot then
                 table.insert(applied, result)
@@ -11081,7 +11232,7 @@ tools.mesh_apply = function(args)
         failed = failed,
         appliedCount = #applied,
         failedCount = #failed,
-        note = "Die Geometrie sitzt in den BESTEHENDEN Platzhaltern: Groesse, Position, Welds, Attribute und Animationen bleiben erhalten. meshIdReadBack ist der vom Place gelesene Wert - passt er nicht zur Id, wurde nichts erfunden, sondern ehrlich gemeldet.",
+        note = "Die Geometrie sitzt in den BESTEHENDEN Platzhaltern: Groesse, Position, Welds, Attribute und Animationen bleiben erhalten. applyPath nennt den Weg (meshId = direkt eingesetzt, modelMeshId = Id war ein Roblox-Modell aus dem Open-Cloud-Upload und die MeshId kam aus dem MeshPart darin). meshIdReadBack ist der vom Place gelesene Wert - passt er nicht zur Id, wurde nichts erfunden, sondern ehrlich gemeldet.",
     })
 end
 
@@ -12902,7 +13053,7 @@ tools.model_audit = function(args)
     end
     local nextStep = "Run world_audit for style/lighting, then continue."
     if #meshSlots > 0 then
-        nextStep = tostring(#meshSlots) .. " mesh placeholder(s) wait for the user: he uploads the OBJ file(s) to Roblox and enters the mesh id(s) in the bridge window \"Mesh-Uploads\" (or tells you the id so you call mesh_apply_asset). report_done answers MESH_UPLOAD_PENDING until then - be honest about that."
+        nextStep = tostring(#meshSlots) .. " mesh placeholder(s) still wait for real geometry. Finish them YOURSELF: call upload_asset { slotKey } (the bridge uploads the FBX/GLB file it built, through the Roblox Open Cloud API, and returns the real asset id), then mesh_apply_asset { slots = [ { key, assetId } ] }. The USER does not upload anything by hand any more. If the tool answers OPENCLOUD_KEY_MISSING, tell the user the sentence in userMessage (bridge settings -> ROBLOX OPEN CLOUD -> tutorial) and stop claiming progress. report_done answers MESH_UPLOAD_PENDING until the geometry is applied - be honest about that."
     elseif (#placeholders + #blockouts) > 0 then
         nextStep = "refine the flagged parts or replace them, then run model_audit again."
     elseif quality.primitiveOnly or quality.cylinderProblemCount > 0 or quality.draftRisk or (quality.organicQuality and #quality.organicQuality.issues > 0) then
@@ -16415,7 +16566,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.4.2 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.5.0 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -16686,6 +16837,7 @@ $script:BridgeHandlerScript = {
             mesh_apply = 'Hat hochgeladene Meshes in die Platzhalter gesetzt.'
             mesh_drop = 'Hat einen Mesh-Slot storniert (Platzhalter entfernt).'
             mesh_apply_asset = 'Hat hochgeladene Meshes in die Platzhalter gesetzt.'
+            upload_asset = 'Hat ein Asset per Roblox Open Cloud hochgeladen.'
             catalog_status = 'Hat geprüft, ob der Katalog erreichbar ist.'
             get_output = 'Hat die Ausgabe gelesen.'
             wait_for_output = 'Hat auf eine Ausgabezeile gewartet.'
@@ -20680,13 +20832,13 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
 
         # ---------------- MESH / BLENDER (Version 7.4.0) ----------------
         $t.Add(@{ name = 'blender_status'; category = 'mesh'; summary = 'Ist Blender bereit? Zustand, Version, Pfad, Probe.';
-            description = 'Liest den Schritt-4-Zustand der Bridge: Blender wird gesucht (vorhandene Installationen zuerst), die Version gemessen und eine ECHTE Faehigkeitsprobe gefahren (Blender baut im Hintergrund wirklich ein OBJ). Nur wenn die Probe bestanden ist, wird state ready und der Mesh-Bau frei. Mit action="check" wird die ganze Pruefung erneut angestossen (Hintergrund, sofortige Antwort - danach kurz erneut lesen). Solange state nicht ready ist, ist der Mesh-Bau deaktiviert - build_mesh_model antwortet dann BLENDER_NOT_READY. Der Polygon-Weg (build_polygon_model) funktioniert unabhaengig davon.';
+            description = 'Liest den Schritt-4-Zustand der Bridge: Blender wird gesucht (vorhandene Installationen zuerst), die Version gemessen und eine ECHTE Faehigkeitsprobe gefahren (Blender baut im Hintergrund wirklich ein OBJ - und seit 7.5.0 zusaetzlich die Upload-Datei FBX/GLB fuer Roblox Open Cloud; das steht danach in uploadExport). Nur wenn die Probe bestanden ist, wird state ready und der Mesh-Bau frei. Mit action="check" wird die ganze Pruefung erneut angestossen (Hintergrund, sofortige Antwort - danach kurz erneut lesen). Solange state nicht ready ist, ist der Mesh-Bau deaktiviert - build_mesh_model antwortet dann BLENDER_NOT_READY. Der Polygon-Weg (build_polygon_model) funktioniert unabhaengig davon.';
             params = @{ action = @{ type = 'string'; required = $false; default = '-'; description = 'Leer oder "check" (Suche + Version + echte Faehigkeitsprobe erneut starten).' } };
-            returns = '{ ok, result { started, blender { state, ready, version, path, source, percent, message, detail, probe, enabled, meshFolder, installLog }, note } }';
+            returns = '{ ok, result { started, blender { state, ready, version, path, source, percent, message, detail, probe, enabled, meshFolder, installLog, uploadExport, uploadExportDetail, uploadHint? }, note } }';
             example = @{};
             errors = @() })
         $t.Add(@{ name = 'build_mesh_model'; category = 'mesh'; summary = 'Blender baut im Hintergrund ein OBJ (ein Slot = ein MeshPart).';
-            description = 'Startet den Blender-Bau als HINTERGRUND-Job und antwortet sofort mit jobId - niemals synchron warten. Je Slot liefert der Aufruf ein Blender-Python-Skript (nur Geometrie: bpy, bmesh, math, mathutils, random; Datei-/Netzwerk-/Prozesszugriff, bpy.ops.wm.* und Exportfunktionen werden vor dem Start abgelehnt). 1 Blender-Einheit = 1 Stud, Y ist oben, die bbox-Mitte am Ursprung setzt der Runner der Bridge automatisch, Modifier werden beim Export angewandt. Danach MISST die Bridge die OBJ-Datei (Dreiecke, Groesse in Studs) und legt die viereckigen MeshPart-Platzhalter selbst in den Place. Der NUTZER laedt die Datei(en) in Roblox hoch und traegt die Mesh-Id(s) im Bridge-Fenster "Mesh-Uploads" ein; mesh_apply_asset setzt die Geometrie ein. Fortschritt und Zahlen mit mesh_status lesen (kurz pollen, nicht in einer engen Schleife). Siehe meshBuildRules in den Guides.';
+            description = 'EMPFOHLEN fuer jede anspruchsvolle Form (glatte oder organische Flaechen, viele Details, hohe Teilzahl): Blender baut sie im HINTERGRUND - dieser Aufruf antwortet sofort mit jobId, also NIEMALS synchron warten. Je Slot liefert der Aufruf ein Blender-Python-Skript (nur Geometrie: bpy, bmesh, math, mathutils, random; Datei-/Netzwerk-/Prozesszugriff, bpy.ops.wm.* und Exportfunktionen werden vor dem Start abgelehnt). 1 Blender-Einheit = 1 Stud, Y ist oben, die bbox-Mitte am Ursprung setzt der Runner der Bridge automatisch, Modifier werden beim Export angewandt. Danach MISST die Bridge das Ergebnis (Dreiecke, Groesse in Studs), legt die viereckigen MeshPart-Platzhalter selbst in den Place UND erzeugt je Slot eine Upload-Datei (FBX, sonst GLB). Danach gehoert der Upload DIR: upload_asset { slotKey } schickt genau diese Datei ueber die Roblox-Open-Cloud-API nach Roblox und nennt die echte Asset-Id; mesh_apply_asset setzt die Geometrie in die Platzhalter. Der Nutzer laedt NICHTS mehr von Hand hoch - er braucht nur einmal seinen Open-Cloud-Schluessel in den Einstellungen (die Antwort OPENCLOUD_KEY_MISSING nennt dir den Satz fuer ihn). Fortschritt und Zahlen mit mesh_status lesen (kurz pollen, nicht in einer engen Schleife). Siehe meshBuildRules und cloudUploadRules in den Guides.';
             params = @{ modelName = @{ type = 'string'; required = $true; default = '-'; description = 'Name des Modells (auch fuer die Platzhalter-Namen).' }; slots = @{ type = 'array'; required = $true; default = '-'; description = 'Array von { name, script, offset {x,y,z}, targetTriangles, color, material, canCollide } - ein Eintrag je MeshPart (max. 12).' }; parentRef = @{ type = 'string'; required = $false; default = 'game.Workspace'; description = 'Wohin die Platzhalter kommen.' }; origin = @{ type = 'table'; required = $false; default = '{x=0,y=0,z=0}'; description = 'Weltposition des Modell-Ursprungs; Slot-Offsets kommen darauf.' }; rotationY = @{ type = 'number'; required = $false; default = '0'; description = 'Drehung um Y in Grad.' }; anchored = @{ type = 'boolean'; required = $false; default = 'true'; description = 'Anchored der Platzhalter.' }; timeoutSeconds = @{ type = 'number'; required = $false; default = '300'; description = 'Zeitlimit je Slot (max. 900).' } };
             returns = '{ ok, result { jobId, state="queued", slotCount, blender, meshFolder, note, files } }';
             example = @{ modelName = 'Turret'; origin = @{ x = 12; y = 4; z = -18 }; slots = @( @{ name = 'base'; script = 'bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=1.4, depth=0.6)'; color = '#8A8F99' } ) };
@@ -20704,7 +20856,7 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
             example = @{ jobId = 'mesh_1a2b3c4d5e' };
             errors = @('NO_JOB: es laeuft kein Job.') })
         $t.Add(@{ name = 'mesh_apply_asset'; category = 'mesh'; summary = 'Hochgeladene Mesh-Ids in die vorhandenen Platzhalter setzen.';
-            description = 'Setzt die Geometrie in die BESTEHENDEN MeshPart-Platzhalter (Slot-keys aus mesh_status). Groesse, Position, Welds, Attribute und Animationen bleiben erhalten. MeshPart.MeshId ist schreibgeschuetzt - die Bridge benutzt deshalb InsertService:CreateMeshPartAsync + MeshPart:ApplyMesh ueber das Plugin. Die Asset-Ids muessen zum Konto des Nutzers gehoeren (er hat die Dateien selbst hochgeladen). Nach dem Einsetzen meldet die Antwort je Slot die zurueckgelesene MeshId - erst dann ist der Slot wirklich fertig.';
+            description = 'Setzt die Geometrie in die BESTEHENDEN MeshPart-Platzhalter (Slot-keys aus mesh_status). Groesse, Position, Welds, Attribute und Animationen bleiben erhalten. MeshPart.MeshId ist schreibgeschuetzt - die Bridge benutzt deshalb InsertService:CreateMeshPartAsync + MeshPart:ApplyMesh ueber das Plugin. Die Asset-Id kommt normalerweise aus upload_asset: Roblox Open Cloud legt ein hochgeladenes FBX/GLB als MODELL an; die Bridge laedt es, nimmt die MeshId aus dem MeshPart darin und setzt sie ein (applyPath = modelMeshId). Eine direkt hochgeladene Mesh-Id funktioniert genauso (applyPath = meshId). Nach dem Einsetzen meldet die Antwort je Slot die zurueckgelesene MeshId - erst dann ist der Slot wirklich fertig.';
             params = @{ slots = @{ type = 'array'; required = $true; default = '-'; description = 'Array von { key, assetId } - keys aus mesh_status, assetId ist die Zahl aus Roblox (rbxassetid:// optional).' } };
             returns = '{ ok, result { applied [ { key, state, assetId, meshIdReadBack, path, error } ], pluginResult, note } }';
             example = @{ slots = @( @{ key = 'mesh_1a2b3c4d5e:base'; assetId = 1234567890 } ) };
@@ -20722,11 +20874,44 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
             example = @{ slots = @( @{ key = 'mesh_1a2b3c4d5e:base'; assetId = '1234567890' } ) };
             errors = @('BAD_ARGS: slots fehlt.') })
         $t.Add(@{ name = 'mesh_drop'; category = 'mesh'; summary = 'Interner Befehl der Bridge: Mesh-Slot stornieren (nicht direkt aufrufen).';
-            description = 'Wird von der Bridge geschickt, wenn der Nutzer im automatischen Mesh-Fenster "Stornieren" bestaetigt. Loescht jedes MeshPart mit dem Attribut ArenaMeshSlot = key aus dem Place - den Platzhalter UND ein schon eingesetztes Mesh. Ehrlich: ein eingesetztes Mesh wird NICHT wiederhergestellt (es kommt kein Platzhalter zurueck). Danach raeumt die Oberflaeche Slot und Dateien auf. Wie jeder schreibende Befehl ist er im laufenden Playtest (Testmodus) blockiert.';
+            description = 'Aufaeum-Werkzeug fuer Mesh-Slots: loescht jedes MeshPart mit dem Attribut ArenaMeshSlot = key aus dem Place - den Platzhalter UND ein schon eingesetztes Mesh. Seit 7.5.0 gibt es dafuer kein Fenster mehr (das Mesh-Fenster ist entfernt) - der Aufruf ist ein ganz normales Werkzeug. Ehrlich: ein eingesetztes Mesh wird NICHT wiederhergestellt (es kommt kein Platzhalter zurueck). Nuetzlich, wenn du einen Slot endgueltig verwirfst oder einen Fehlbau wegraeumen willst. Wie jeder schreibende Befehl ist er im laufenden Playtest (Testmodus) blockiert.';
             params = @{ slots = @{ type = 'array'; required = $true; default = '-'; description = 'Array von { key } (keys aus mesh_status).' } };
             returns = '{ ok, dropped, failed, droppedCount, failedCount, note }';
             example = @{ slots = @( @{ key = 'mesh_1a2b3c4d5e:base' } ) };
             errors = @('BAD_ARGS: slots fehlt.', 'SIM_RUNNING/USER_PLAYTEST_ACTIVE: im laufenden Playtest sind schreibende Befehle gesperrt.') })
+
+        # ---------------- ROBLOX OPEN CLOUD (Version 7.5.0) ----------------
+        $t.Add(@{ name = 'upload_asset'; category = 'cloud'; summary = 'Mesh oder Bild per Roblox Open Cloud hochladen - gibt die echte Asset-Id zurueck.';
+            description = 'Laedt eine Datei ueber die OFFIZIELLE Roblox-Open-Cloud-Assets-API in das Roblox-Konto des Nutzers hoch und antwortet mit der ASSET-ID, die Roblox selbst genannt hat. Danach setzt DU das Asset selbst in den Place ein: ein Mesh mit mesh_apply_asset in den bestehenden Platzhalter (oder insert_asset fuer das komplette Modell), ein Bild mit set_property auf Decal.Texture / Texture.Texture / ImageLabel.Image / MeshPart.TextureID. Der Nutzer muss NICHTS mehr von Hand hochladen - das Mesh-Fenster gibt es nicht mehr. QUELLE (genau eine): slotKey = ein Mesh-Slot aus mesh_status (die Bridge kennt die fertige FBX/GLB-Datei dazu), filePath = eine Datei im Ordner der Bridge, oder contentBase64 + fileName = ein Bild, das DU erzeugt hast (kein Dateipfad noetig). Optional assetType: Model (Mesh, automatisch aus der Endung), Decal oder Image. Formate: .fbx/.glb/.gltf fuer Meshes, .png/.jpg/.jpeg/.bmp/.tga fuer Bilder. Roblox-Grenzen: 20 MB je Datei, Bilder unter 8000x8000 Pixel. Braucht der Upload laenger, antwortet das Werkzeug mit state=pending und einer operationId - dann einfach upload_asset { operationId } erneut aufrufen (nicht in einer engen Schleife pollen). Fehlt der Schluessel, antwortet das Werkzeug OPENCLOUD_KEY_MISSING mit einem userMessage-Satz: sage ihn dem Nutzer WORTLICH auf Deutsch.';
+            params = @{
+                slotKey = @{ type = 'string'; required = $false; default = '-'; description = 'Mesh-Slot aus mesh_status (z. B. mesh_1a2b3c4d5e:base). Die Bridge sucht die passende FBX/GLB-Datei selbst und traegt die Asset-Id danach in den Slot ein.' }
+                filePath = @{ type = 'string'; required = $false; default = '-'; description = 'Absoluter Pfad oder Pfad relativ zum Mesh-Ordner der Bridge. Nur Dateien aus dem Bridge-Ordner werden hochgeladen (Sicherheit) - eigene Bilder stattdessen als contentBase64 schicken.' }
+                contentBase64 = @{ type = 'string'; required = $false; default = '-'; description = 'Dateiinhalt direkt als Base64 (zusammen mit fileName). So kannst du ein selbst erzeugtes Bild ohne Datei auf der Festplatte hochladen.' }
+                fileName = @{ type = 'string'; required = $false; default = '-'; description = 'Dateiname MIT Endung, wenn contentBase64 genutzt wird (oder um den Anzeigenamen zu bestimmen).' }
+                assetType = @{ type = 'string'; required = $false; default = 'aus der Endung'; description = 'Model (Mesh), Decal oder Image. Leer = die Bridge waehlt passend zur Endung.' }
+                displayName = @{ type = 'string'; required = $false; default = 'Dateiname'; description = 'Anzeigename des Assets in Roblox.' }
+                description = @{ type = 'string'; required = $false; default = 'Arena Roblox Bridge'; description = 'Beschreibung des Assets in Roblox.' }
+                operationId = @{ type = 'string'; required = $false; default = '-'; description = 'Nur angeben, um einen schon laufenden Upload weiterzuverfolgen (aus einer frueheren pending-Antwort).' }
+                forceNew = @{ type = 'boolean'; required = $false; default = 'false'; description = 'Slot wurde schon hochgeladen und soll trotzdem ein NEUES Asset bekommen (sonst kommt die alte Asset-Id zurueck).' }
+                waitSeconds = @{ type = 'number'; required = $false; default = '20'; description = 'Wie lange die Bridge auf die Fertigmeldung von Roblox wartet (max. 45).' }
+            };
+            returns = '{ ok, result { state="uploaded", assetId, rbxassetId, assetType, fileName, bytes, operationId, slotKey, howToUse, note } } bzw. { ok=false, code, error, status?, robloxResponse?, userMessage?, howToFix } bzw. { ok=true, result { state="pending", operationId, nextCall } }';
+            example = @{ slotKey = 'mesh_1a2b3c4d5e:base'; displayName = 'Turm Sockel' };
+            errors = @(
+                'OPENCLOUD_KEY_MISSING: kein API-Schluessel hinterlegt - userMessage WORTLICH an den Nutzer (Einstellungen -> ROBLOX OPEN CLOUD -> Tutorial).',
+                'OPENCLOUD_CREATOR_MISSING: kein Roblox-Ersteller hinterlegt (Einstellungen).',
+                'OPENCLOUD_KEY_REJECTED: Roblox hat den Schluessel abgelehnt (401/403) - ungueltig, abgelaufen oder ohne die Rechte Assets + Lesen + Schreiben.',
+                'OPENCLOUD_RATE_LIMITED: Roblox drosselt (429) - spaeter erneut versuchen, dem Nutzer ehrlich sagen.',
+                'OPENCLOUD_UPLOAD_REJECTED: Roblox hat die Datei abgelehnt (anderer 4xx) - robloxResponse nennt den Grund.',
+                'OPENCLOUD_SERVER_ERROR: Roblox stoert (5xx).',
+                'OPENCLOUD_UNREACHABLE: keine Antwort / Netzwerkfehler.',
+                'OPENCLOUD_OPERATION_FAILED: Roblox hat die Datei nach dem Upload abgelehnt (Moderation/Format) - robloxResponse nennt den Grund.',
+                'NO_UPLOAD_FILE: zum Slot liegt keine FBX/GLB bereit (Slot neu bauen).',
+                'UNSUPPORTED_FORMAT: Endung nicht erlaubt - OBJ kann Roblox Open Cloud NICHT hochladen.',
+                'FILE_TOO_LARGE: ueber 20 MB.',
+                'PATH_OUTSIDE_BRIDGE: filePath liegt ausserhalb des Bridge-Ordners.',
+                'BAD_ARGS: keine Quelle angegeben oder contentBase64 ohne fileName.'
+            ) })
 
         # ---------------- JOBS ----------------
         $t.Add(@{ name = 'start_job'; category = 'jobs'; summary = 'Arbeit im Hintergrund starten (keine 60s-Grenze).';
@@ -20905,7 +21090,8 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
                 'FINISH GRADE (7.2.0): model_audit now grades every build (finishScore 0..100, grade draft/simple/detailed/sculpted). grade "draft" means at least 4 parts, no polygon/mesh/union/detail geometry and more than 60 % primitives - report_done answers DRAFT_GRADE_RISK until you rebuild the silhouette with real structure. If the simplicity IS what the user asked for, declare it while building: build_polygon_model/build_assembly { grade = "simple" | "lowpoly" | "blockout" } writes the attribute ArenaDeclaredGrade and the audit stops calling it a draft. report_done also returns buildRegister: it lists what you built and what model_audit has not measured yet.',
                 'USER CHANNEL (7.2.0): the user can message you WHILE you work ("Nachricht an Arena senden" in the bridge place row). Every response then carries _bridge.userMessages plus _bridge.userMessageContract. Read it first, apply it, tell the user what you changed, and acknowledge with ack_user_message { id } - an unacknowledged message repeats in up to three responses. wait_for_user { maxSeconds <= 50 } blocks until a message arrives; use it only at a real decision point, never as polling. The user can also switch the place to read-only from the same menu, which is reported as WRITE_LOCKED_BY_USER.'
                 'HARD ORGANIC EVIDENCE CONTRACT (separate from the global builder preference): when an organic model is explicitly built with organic=true or is registered from per-model model_audit evidence, build and audit the real model in Studio, use a deliberate palette, install motion under that model, and fix its organicQuality issues. report_done requires fresh passing evidence for every registered organic model, even after a handoff. This is not selected or enforced from animal/tree names; see organicBuildRules for the stricter per-organic-model evidence contract.'
-                'BLENDER-MESH-BAU (7.4.0, freiwilliger zweiter Weg fuer anspruchsvolle Modelle): build_mesh_model laesst Blender im Hintergrund ein OBJ bauen, die Bridge MISST es (Dreiecke, Groesse in Studs) und legt viereckige MeshPart-Platzhalter in den Place. Danach laedt der NUTZER die Datei in Roblox hoch und traegt die Mesh-Id im Bridge-Fenster "Mesh-Uploads" ein; mesh_apply_asset setzt die Geometrie automatisch ein. Roblox bietet keinen automatischen Mesh-Upload - dieser Zwischenschritt ist keine Unfertigkeit, sondern der offizielle Weg. Solange Platzhalter stehen, ist es KEIN fertiges Modell: report_done antwortet MESH_UPLOAD_PENDING. Der Polygon-Weg (build_polygon_model) bleibt der Standard fuer Entwurf, Iteration und einfache Formen; Mesh lohnt sich fuer glatte/organische Formen, viele Details und Teilzahl. Siehe meshBuildRules.'
+                'BLENDER-MESH-BAU (7.5.0, der starke Weg fuer anspruchsvolle Modelle - ausdruecklich empfohlen): build_mesh_model laesst Blender im Hintergrund die Form bauen, die Bridge MISST sie (Dreiecke, Groesse in Studs), legt die viereckigen MeshPart-Platzhalter in den Place und erzeugt je Slot eine Upload-Datei (FBX, sonst GLB). Danach ist der Upload DEIN Schritt und keiner des Nutzers mehr: upload_asset { slotKey } schickt die Datei ueber die Roblox-Open-Cloud-API nach Roblox und nennt dir die ECHTE Asset-Id; mesh_apply_asset setzt die Geometrie in die bestehenden Platzhalter (applyPath nennt den Weg). Der Nutzer laedt NICHTS mehr von Hand hoch - das Fenster "Mesh-Uploads" ist seit 7.5.0 entfernt. Braucht er erst einen Open-Cloud-Schluessel, antwortet upload_asset mit OPENCLOUD_KEY_MISSING und einem userMessage-Satz: sage ihn ihm WORTLICH (Einstellungen -> ROBLOX OPEN CLOUD -> Tutorial). Solange ein Platzhalter noch keine Geometrie hat, ist es KEIN fertiges Modell: report_done antwortet MESH_UPLOAD_PENDING. Siehe meshBuildRules und cloudUploadRules.',
+                'BAUEN GEHT VOR SUCHEN UND VOR PRIMITIVEN (7.5.0, ausdrueckliche Empfehlung der Bridge): baue eigene 3D-Geometrie, statt sie im Katalog zu suchen oder aus Baellen und Bloecken zusammenzustecken. Fuer die Hauptform, freie Flaechen und alles Organische nimm build_polygon_model; wird eine Form damit nicht gut (glatte Rundungen, viele Details, hohe Teilzahl), nimm den Blender-Weg (build_mesh_model + upload_asset + mesh_apply_asset). Der Katalog (search_assets/insert_asset) ist ein NOTBEHELFER, den du dem Nutzer anbietest - kein Standard. Bloecke, Kugeln und Zylinder sind Bausteine fuer einfache Stuetzen und Details, nicht fuer das Modell selbst.'
             )
             worldEngineRules = @{
                 title = 'World Engine 1.0 - the world is a place with rules, not a pile of parts'
@@ -20997,18 +21183,29 @@ end
                 motion = 'Add animation only when the task requests motion or the object is inherently living/moving. For organic models, explicitly use organic=true so per-model geometry, palette, enabled-motion and fresh-audit evidence is enforced; see organicBuildRules.'
             }
             meshBuildRules = @{
-                title = 'Mesh-Build Engine 1.0 (Version 7.4.2) - Blender im Hintergrund, Nutzer laedt hoch, Bridge setzt ein'
-                whenThisApplies = 'Freiwilliger ZWEITER Weg neben build_polygon_model. Sinnvoll, wenn eine Form mit Dreiecken/Wedges nicht gut wird (glatte oder organische Oberflaechen, viele Details, hohe Teilzahl) oder wenn das Modell im Place nur EIN Bauteil statt tausender Wedges sein soll. Fuer Entwurf, Iteration und fuer alles, was im Studio per Teil editierbar bleiben muss, bleibt build_polygon_model die erste Wahl.'
-                workflow = '1 blender_status lesen (Bereitschaft + Zustand). 2 build_mesh_model mit einem Blender-Skript je Slot aufrufen -> sofort jobId (Blender laeuft im Hintergrund, KEIN synchrones Warten). 3 mesh_status pollen, bis state measured ist; die Antwort nennt je Slot Dreiecke + Groesse in Studs. 4 Die Bridge legt die viereckigen MeshPart-Platzhalter selbst an. 5 Der NUTZER laedt die OBJ-Datei(en) hoch und traegt die Mesh-Id(s) im Bridge-Fenster "Mesh-Uploads" ein (oder nennt sie im Chat, dann mesh_apply_asset aufrufen). 6 mesh_status zeigt applied. 7 Erst dann model_audit + report_done.'
+                title = 'Mesh-Build Engine 1.1 (Version 7.5.0) - Blender baut, der Agent laedt hoch (Open Cloud), die Bridge setzt ein'
+                whenThisApplies = 'Der STARKE Weg neben build_polygon_model und ausdruecklich empfohlen, wenn eine Form mit Dreiecken/Wedges nicht gut wird (glatte oder organische Oberflaechen, viele Details, hohe Teilzahl) oder wenn das Modell im Place nur EIN Bauteil statt tausender Wedges sein soll. Fuer Entwurf, Iteration und fuer alles, was im Studio per Teil editierbar bleiben muss, bleibt build_polygon_model die erste Wahl. Seit 7.5.0 ist der Upload VOLL AUTOMATISIERT - der Nutzer muss nichts mehr hochladen.'
+                workflow = '1 blender_status lesen (Bereitschaft + Zustand). 2 build_mesh_model mit einem Blender-Skript je Slot aufrufen -> sofort jobId (Blender laeuft im Hintergrund, KEIN synchrones Warten). 3 mesh_status pollen, bis state measured ist; die Antwort nennt je Slot Dreiecke + Groesse in Studs UND die Upload-Datei (uploadPath, FBX oder GLB). 4 Die Bridge legt die viereckigen MeshPart-Platzhalter selbst an. 5 DU laedst hoch: upload_asset { slotKey } -> Roblox-Open-Cloud-API -> die Antwort nennt die ECHTE assetId. 6 mesh_apply_asset { slots = [ { key, assetId } ] } setzt die Geometrie ein (applyPath = modelMeshId bei einem Roblox-Modell). 7 Erst dann model_audit + report_done.'
                 scriptContract = 'Ein Slot = ein Blender-Skript = EIN MeshPart. Das Skript ist normaler Code mit bpy (bmesh, math, mathutils, random erlaubt) und baut NUR Geometrie: 1 Blender-Einheit = 1 Stud, Y ist oben, die bbox-Mitte am Ursprung setzt der Runner automatisch, Modifier werden beim Export angewandt. Der Runner der Bridge macht Szene, Export, Zentrierung und Messung - bpy.ops.wm.*, Export, Datei-, Netzwerk- und Systemzugriff sind im Skript gesperrt (die Bridge lehnt solche Skripte vor dem Start ab).'
                 slots = 'Mehrere Slots statt eines Riesenmeshes: ein MeshPart traegt EINE Farbe/Material (Roblox uebernimmt keine Blender-Materialien), und ein einzelnes Mesh laesst sich nicht animieren. Fuer Kreaturen, Fahrzeuge und Maschinen also je bewegliches Glied ein Slot und die Gelenke wie gewohnt mit Welds/Motor6D verbinden. Farbe und Material setzt Roblox ueber die Slot-Angaben color/material.'
                 budget = 'Roblox nimmt pro Mesh hoechstens rund 10.000 Dreiecke an (Datei max. 20 MB). Die Bridge MISST die OBJ-Datei selbst und lehnt einen Slot ueber der Grenze mit state rejected ab - dann weniger Unterteilungen, Decimate/Remesh oder kleinere Slots bauen. Ziel: unter 8.000 Dreiecken je Slot.'
-                userStep = 'Der Upload ist ein MENSCHEN-Schritt und nicht automatisierbar (keine Roblox-API fuer Mesh-Uploads). Immer ehrlich sagen: Datei im Bridge-Ordner oeffnen, in Studio per 3D-Importer/Drag-und-Drop oder im Creator Dashboard hochladen, Mesh-Id im Bridge-Fenster eintragen. NICHT behaupten, das Modell sei fertig, solange Platzhalter stehen.'
-                evidence = 'Beweis statt Behauptung: Dreieckszahl, Groesse und Dateigroesse kommen aus der Messung der Bridge und stehen in mesh_status und im Bau-Register. Nach dem Einsetzen meldet mesh_apply_asset je Slot die zurueckgelesene MeshId. Ein Mesh ist im Place messtechnisch eine Blackbox - die OBJ-Messung plus der Sichttest des Nutzers sind der Beleg.'
-                failure = 'Schlaegt Blender fehl (nicht installiert, Faehigkeitsprobe rot, Exit ungleich 0, Zeitlimit), sagt die Bridge das mit Code und Protokollzeile; dann bleibt der Polygon-Weg. Nie ein leeres oder unbemessenes Modell als fertig melden.'
+                userStep = 'Der Upload ist seit 7.5.0 KEIN Menschen-Schritt mehr: die Bridge laedt das FBX/GLB ueber die offizielle Roblox-Open-Cloud-Assets-API selbst hoch (upload_asset) und nennt dir die Asset-Id. Was der Nutzer genau EINMAL machen muss, ist den Schluessel hinterlegen - steht er noch nicht in den Einstellungen (Abschnitt ROBLOX OPEN CLOUD), antwortet upload_asset mit OPENCLOUD_KEY_MISSING; dann sagst du ihm den Satz aus userMessage WORTLICH: kurz auf das Zahnrad (Einstellungen), dort das aufklappbare Tutorial machen, Schluessel mit den Rechten Assets + Lesen + Schreiben erstellen und speichern. NICHT behaupten, das Modell sei fertig, solange ein Platzhalter noch viereckig ist.'
+                uploadFormats = 'Roblox Open Cloud nimmt FUER MESHES NUR FBX, GLB oder GLTF an - NIEMALS das gemessene OBJ. Die Bridge erzeugt die Upload-Datei deshalb selbst (uploadPath in mesh_status, normalerweise .fbx, sonst .glb). Fehlt sie (uploadReady = false, uploadError gesetzt), ist dieses Mesh nicht hochladbar: Slot neu bauen statt das OBJ zu schicken - das lehnt Roblox mit UNSUPPORTED_FORMAT ab. Bilder gehen als PNG, JPG, JPEG, BMP oder TGA (max. 20 MB, unter 8000x8000 Pixel).'
+                evidence = 'Beweis statt Behauptung: Dreieckszahl, Groesse und Dateigroesse kommen aus der Messung der Bridge und stehen in mesh_status und im Bau-Register. Die Asset-Id kommt von ROBLOX selbst (aus der Operation des Uploads) - keine Schätzung, kein Raten. Nach dem Einsetzen meldet mesh_apply_asset je Slot die zurueckgelesene MeshId und den Weg (applyPath). Ein Mesh ist im Place messtechnisch eine Blackbox - Messung, zurueckgelesene Id und der Sichttest sind der Beleg.'
+                failure = 'Schlaegt Blender fehl (nicht installiert, Faehigkeitsprobe rot, Exit ungleich 0, Zeitlimit), sagt die Bridge das mit Code und Protokollzeile; dann bleibt der Polygon-Weg. Schlaegt der UPLOAD fehl, kommen Status, Code und die Original-Antwort von Roblox unveraendert zu dir (429 Rate Limit, 401/403 Schluessel, 400 Datei, 5xx Stoerung) - melde sie dem Nutzer ehrlich und erfinde keine Asset-Id. Nie ein leeres oder unbemessenes Modell als fertig melden.'
+            }
+            cloudUploadRules = @{
+                title = 'Cloud-Upload Engine 1.0 (Version 7.5.0) - Meshes und Bilder voll automatisch nach Roblox'
+                whenThisApplies = 'Immer, wenn ein Mesh (aus Blender) oder ein Bild (z. B. von dir selbst erzeugt) nach Roblox muss. Du brauchst dafuer KEINEN Menschen mehr - nur den einmalig hinterlegten Open-Cloud-Schluessel des Nutzers. Der Nutzer laedt nichts mehr von Hand hoch, es gibt kein Mesh-Fenster mehr.'
+                workflow = '1 Mesh: build_mesh_model -> mesh_status (uploadPath/uploadReady) -> upload_asset { slotKey } -> assetId -> mesh_apply_asset { slots = [ { key, assetId } ] } -> model_audit. Bild: upload_asset { fileName = "name.png", contentBase64 = "<Base64>" } -> assetId -> selbst einsetzen (Decal.Texture, Texture.Texture, ImageLabel.Image, MeshPart.TextureID) -> auditieren.'
+                meshUpload = 'Roblox Open Cloud legt ein hochgeladenes FBX/GLB als MODELL an (nicht als nackte Mesh-Id). Die Bridge kommt damit zurecht: mesh_apply_asset laedt das Modell, nimmt die MeshId aus dem MeshPart darin und setzt sie in den bestehenden Platzhalter ein (applyPath = modelMeshId). Alternativ fuegst du das komplette Modell mit insert_asset ein und positionierst es selbst.'
+                imageUpload = 'Bilder schickst du als contentBase64 MIT fileName (Endung!) - dann braucht es keine Datei auf dem Rechner des Nutzers. Roblox-Grenzen: 20 MB je Datei und unter 8000x8000 Pixel. Ergebnis ist eine Asset-Id: setze sie selbst ein (Decal.Texture = "rbxassetid://<id>", ImageLabel.Image, MeshPart.TextureID).'
+                limits = 'Roblox-Grenzen je Upload: 20 MB, ein Asset je Aufruf, Bilder unter 8000x8000 Pixel, Formate FBX/GLB/GLTF (Mesh) und PNG/JPG/JPEG/BMP/TGA (Bild). Ein Rate Limit (429) ist ein echter Roblox-Zustand: sage dem Nutzer, dass Roblox gerade drosselt, und versuche es spaeter erneut - nicht sofort wieder.'
+                missingKey = 'Fehlt der Schluessel, bleibt das Werkzeug ganz normal verfuegbar und antwortet erst beim Aufruf mit OPENCLOUD_KEY_MISSING. Die Antwort enthaelt userMessage: sage diesen Satz dem Nutzer WORTLICH auf Deutsch. Danach wartest du - du erfindest keine Asset-Id und behauptest keinen Erfolg.'
+                honesty = 'Die Asset-Id ist nur dann echt, wenn Roblox sie genannt hat. Steht die Operation noch auf pending, rufst du upload_asset { operationId } erneut auf (kein enger Loop). Fehlertexte von Roblox gehoren unverfaelscht an den Nutzer - die Bridge versteckt und beschoenigt nichts.'
             }
             organicBuildRules = @{
-                title = 'Organic Build Engine 1.1 (Version 7.4.2) - typed creature volumes, physical face, bilateral anatomy, measured before done'
+                title = 'Organic Build Engine 1.1 (Version 7.5.0) - typed creature volumes, physical face, bilateral anatomy, measured before done'
                 whenThisApplies = 'For any model intentionally built as organic (character, creature, plant, tree, prop or other organic free-form shape), this is a hard sequence independent of its name: the FIRST write targeting that model is build_polygon_model { organic=true, organicKind=... } with an explicit contrasting palette. For organicKind=creature the same first build must create closed role=body and role=head loft volumes; a long flat side-profile wedge is not a body or head volume. Use organicTraits=["wings"] when wings are intended and build role=wing_left/wing_right. Face features are physical 3D geometry, never Decal/Texture/GUI substitutes. Do not start with run_lua, build_assembly, loose primitives, or an external generator file. Then install an enabled motion Script under that same model, run model_audit on every returned organic model after the final edit, and fix every organicQuality issue. report_done is rejected with ORGANIC_AUDIT_REQUIRED/DETAIL_REQUIRED until every registered model passes.'
                 theOneIdea = 'For an organic model, the first write is build_polygon_model { organic=true, organicKind=... }. A creature gets real closed lofts for body and head (at least 4/3 stations, at least 8 sides) plus physical eyes and pupils; winged creatures get a mirrored, torso-attached wing pair. No side-view wedge, face sticker, or unmeasured claim can pass. Then add joints/details, install the enabled motion Script beneath the model, and audit the exact model.'
                 forbidden = @(
@@ -21414,7 +21611,11 @@ end
             'delete_instance','build_polygon_model','build_assembly','build_interface','build_surface','ui_capabilities','ui_skin','ui_audit',
             'run_lua','insert_script','set_script_source','compile_check','model_audit','world_audit','site_survey','world_style','style_lock',
             'refine','prop_place','prop_save','report_done','get_docs','get_chunk','list_tools','bridge_status','start_job','job_status',
-            'job_result','get_output','get_errors','wait'
+            'job_result','get_output','get_errors','wait',
+            # Version 7.5.0: der Bau- und Upload-Weg gehoert VOLLSTAENDIG in
+            # jede Session - die Bridge empfiehlt Bauen und den Blender-Weg
+            # ausdruecklich, und ohne upload_asset bleibt jedes Mesh Handarbeit.
+            'blender_status','build_mesh_model','mesh_status','mesh_apply_asset','upload_asset'
         )
         $coreDocs = New-Object System.Collections.Generic.List[object]
         $indexDocs = New-Object System.Collections.Generic.List[object]
@@ -21470,7 +21671,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.4.2'
+            version = '7.5.0'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -21701,7 +21902,7 @@ end
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.4.2'
+            bridgeVersion = '7.5.0'
             executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent is never an error, but the user then sees NO bar and NO percentage at all - only your message as text. Send a real number every few calls. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
@@ -22143,7 +22344,7 @@ end
                     slotCount = [int]$specSlots.Count
                     blender = $blenderReport
                     meshFolder = $meshRoot
-                    note = 'Blender laeuft im HINTERGRUND - sofort weiterarbeiten und NICHT synchron warten. mesh_status zeigt Dreiecke und Groesse je Slot, sobald die Datei gemessen ist (meist in unter einer Minute). Die Bridge legt die viereckigen MeshPart-Platzhalter danach selbst an. Danach laedt der NUTZER die OBJ-Datei(en) in Roblox hoch und traegt die Mesh-Id(s) im Bridge-Fenster "Mesh-Uploads" ein; mesh_apply_asset setzt die Geometrie ein. Solange Platzhalter stehen, ist das Modell NICHT fertig (report_done: MESH_UPLOAD_PENDING).'
+                    note = 'Blender laeuft im HINTERGRUND - sofort weiterarbeiten und NICHT synchron warten. mesh_status zeigt Dreiecke und Groesse je Slot, sobald die Datei gemessen ist (meist in unter einer Minute). Die Bridge legt die viereckigen MeshPart-Platzhalter danach selbst an und baut je Slot eine Upload-Datei (FBX, sonst GLB). Dann laedtst DU sie hoch: upload_asset { slotKey } -> echte Asset-Id von Roblox -> mesh_apply_asset setzt die Geometrie ein. Der Nutzer laedt NICHTS mehr von Hand hoch; sein Open-Cloud-Schluessel liegt in den Einstellungen der Bridge (fehlt er, nennt dir das Werkzeug den einen Satz fuer ihn). Solange Platzhalter stehen, ist das Modell NICHT fertig (report_done: MESH_UPLOAD_PENDING).'
                     files = $(foreach ($s in $specSlots) { @{ name = [string]$s.name; file = ([string]$s.name + '.obj') } })
                 }
             }
@@ -22172,6 +22373,13 @@ end
                         fileName = [string]$slot.fileName
                         objPath = [string]$slot.objPath
                         fileExists = $(try { [bool](Test-Path -LiteralPath ([string]$slot.objPath)) } catch { $false })
+                        # Version 7.5.0: genau diese Datei laedt der Agent mit
+                        # upload_asset { slotKey } hoch (FBX/GLB, kein OBJ).
+                        uploadPath = $(try { [string]$slot.uploadPath } catch { '' })
+                        uploadFormat = $(try { [string]$slot.uploadFormat } catch { '' })
+                        uploadBytes = $(try { [int64]$slot.uploadBytes } catch { 0 })
+                        uploadReady = $(try { (-not [string]::IsNullOrWhiteSpace([string]$slot.uploadPath)) -and (Test-Path -LiteralPath ([string]$slot.uploadPath)) } catch { $false })
+                        uploadError = $(try { [string]$slot.uploadError } catch { '' })
                         assetId = [string]$slot.assetId
                         meshIdReadBack = $(try { [string]$slot.meshIdReadBack } catch { '' })
                         placeholderPath = [string]$slot.placeholderPath
@@ -22227,7 +22435,12 @@ end
                             triangles = [int]$slot.triangles
                             file = [string]$slot.objPath
                             fileExists = $(try { [bool](Test-Path -LiteralPath ([string]$slot.objPath)) } catch { $false })
+                            uploadPath = [string]$slot.uploadPath
+                            uploadFormat = [string]$slot.uploadFormat
+                            uploadReady = [bool]$slot.uploadReady
+                            uploadError = [string]$slot.uploadError
                             assetId = [string]$slot.assetId
+                            nextCall = ('upload_asset { slotKey: "' + [string]$slot.key + '" }')
                         })
                     }
                     if ($slotState -eq 'applied') { $applied = $applied + 1 }
@@ -22238,7 +22451,7 @@ end
             if ($jobsOut.Count -gt 0) {
                 $summary = [string]$jobsOut.Count + ' Job(s): ' + [string]$applied + ' Slot(s) eingesetzt, ' + [string]$failed + ' Slot(s) mit Fehler.'
                 if ($needUpload.Count -gt 0) {
-                    $summary = $summary + ' Der Nutzer muss noch ' + [string]$needUpload.Count + ' Datei(en) hochladen und die Mesh-Id(s) im Bridge-Fenster "Mesh-Uploads" eintragen.'
+                    $summary = $summary + ' ' + [string]$needUpload.Count + ' Slot(s) warten auf den Upload: rufe upload_asset { slotKey } auf - die Bridge laedt die fertige FBX/GLB-Datei selbst nach Roblox (Open Cloud) und nennt dir die Asset-Id. Der Nutzer muss NICHTS von Hand hochladen.'
                 }
             }
             return @{
@@ -22250,7 +22463,7 @@ end
                     appliedCount = [int]$applied
                     failedCount = [int]$failed
                     summary = $summary
-                    note = 'Dateien liegen im Ordner meshFolder (je Job ein Unterordner). Roblox nimmt pro Mesh rund 10.000 Dreiecke an - mesh_status nennt die GEMESSENEN Zahlen. Ein Slot ueber der Grenze wird abgelehnt und muss einfacher gebaut werden.'
+                    note = 'Dateien liegen im Ordner meshFolder (je Job ein Unterordner). Roblox nimmt pro Mesh rund 10.000 Dreiecke an - mesh_status nennt die GEMESSENEN Zahlen. Ein Slot ueber der Grenze wird abgelehnt und muss einfacher gebaut werden. Seit 7.5.0 gehoert der Upload DIR: upload_asset { slotKey } laedt die fertige Datei (uploadPath, FBX oder GLB - NIEMALS das OBJ) ueber die Roblox-Open-Cloud-API hoch und gibt dir die Asset-Id; danach setzt du sie mit mesh_apply_asset in die Platzhalter ein. Braucht der Nutzer erst einen Schluessel, sagt dir das Werkzeug das mit OPENCLOUD_KEY_MISSING und einem Satz fuer ihn.'
                 }
             }
         }
@@ -22349,6 +22562,248 @@ end
         return $null
     }
 
+    # ------------------------------------------------------------------
+    # Version 7.5.0: ROBLOX OPEN CLOUD (Server-Werkzeug upload_asset).
+    # Der Upload laeuft IM BRIDGE-PROZESS: Datei lesen, Multipart bauen,
+    # Operation pollen. Das Ergebnis ist IMMER ehrlich - entweder eine
+    # ASSET-ID, die Roblox selbst genannt hat, oder ein Fehler mit Status,
+    # Code und Original-Antwort. Der Agent setzt das Asset danach SELBST in
+    # den Place ein (mesh_apply_asset / insert_asset / set_property).
+    # ------------------------------------------------------------------
+    function Invoke-OpenCloudServerTool($sessionId, [string]$tool, $toolArgs) {
+        # Genau wie beim Mesh-Weg: die EINZIGE Funktionsquelle laden, damit
+        # Hauptprogramm, Handler- und Worker-Runspace dieselbe Logik nutzen.
+        try { . ([scriptblock]::Create([string]$Shared.OpenCloudToolsText)) } catch {
+            Write-BridgeLog ('Open-Cloud-Werkzeuge konnten im Handler nicht geladen werden: ' + $_.Exception.Message)
+        }
+        try { . ([scriptblock]::Create([string]$Shared.MeshToolkitText)) } catch {}
+        $sid = [string]$sessionId
+        if ($tool -ne 'upload_asset') { return $null }
+
+        # ---- Argumente (alle optional bis auf EINE Quelle) ----------------
+        $operationId = ''
+        $filePath = ''
+        $slotKey = ''
+        $assetType = ''
+        $displayName = ''
+        $description = ''
+        $fileName = ''
+        $contentBase64 = ''
+        $forceNew = $false
+        $waitSeconds = 20
+        if ($toolArgs) {
+            try { $operationId = ([string]$toolArgs.operationId).Trim() } catch {}
+            try { $filePath = ([string]$toolArgs.filePath).Trim() } catch {}
+            try { $slotKey = ([string]$toolArgs.slotKey).Trim() } catch {}
+            try { $assetType = ([string]$toolArgs.assetType).Trim() } catch {}
+            try { $displayName = ([string]$toolArgs.displayName).Trim() } catch {}
+            try { $description = ([string]$toolArgs.description).Trim() } catch {}
+            try { $fileName = ([string]$toolArgs.fileName).Trim() } catch {}
+            try { $contentBase64 = ([string]$toolArgs.contentBase64).Trim() } catch {}
+            try { $forceNew = [bool]$toolArgs.forceNew } catch {}
+            try { if ([int]$toolArgs.waitSeconds -gt 0) { $waitSeconds = [int]$toolArgs.waitSeconds } } catch {}
+        }
+        if ($waitSeconds -gt 45) { $waitSeconds = 45 }
+
+        # ---- Weg 1: eine laufende Operation weiterverfolgen ---------------
+        if (-not [string]::IsNullOrWhiteSpace($operationId)) {
+            $polled = Wait-OpenCloudOperation -Shared $Shared -OperationId $operationId -MaxSeconds $waitSeconds
+            if ($null -eq $polled) { return @{ ok = $false; code = 'OPENCLOUD_BAD_RESPONSE'; error = 'Der Upload-Status blieb leer.' } }
+            if ([bool]$polled.ok -ne $true) { return $polled }
+            if ([string]$polled.state -ne 'done') {
+                return @{ ok = $true; result = $polled }
+            }
+            $idNow = [string]$polled.assetId
+            return @{
+                ok = $true
+                result = @{
+                    state = 'uploaded'
+                    assetId = $idNow
+                    rbxassetId = ('rbxassetid://' + $idNow)
+                    assetType = [string]$polled.assetType
+                    operationId = [string]$polled.operationId
+                    note = 'Roblox hat das Asset fertig verarbeitet. Die Asset-Id ist echt und kommt von Roblox - setze sie jetzt selbst in den Place ein.'
+                }
+            }
+        }
+
+        # ---- Weg 2: Datei aus dem Bridge-Ordner, aus einem Mesh-Slot -----
+        #      oder direkt als Base64 (z. B. ein selbst erzeugtes Bild).
+        $bytes = $null
+        $sourceName = ''
+        $slot = $null
+        if (-not [string]::IsNullOrWhiteSpace($slotKey)) {
+            $slot = Get-MeshSlotData $Shared $slotKey
+            if ($null -eq $slot) {
+                return @{
+                    ok = $false; code = 'UNKNOWN_SLOT'
+                    error = ('Unbekannter Slot "' + $slotKey + '". mesh_status nennt die gueltigen Slot-Keys.')
+                    howToFix = 'Rufe mesh_status auf und nimm einen key aus slots[].key.'
+                }
+            }
+            $existingId = ''
+            try { $existingId = [string]$slot.assetId } catch {}
+            if (-not [string]::IsNullOrWhiteSpace($existingId) -and -not $forceNew) {
+                return @{
+                    ok = $true
+                    result = @{
+                        state = 'already_uploaded'
+                        assetId = $existingId
+                        rbxassetId = ('rbxassetid://' + $existingId)
+                        slotKey = $slotKey
+                        note = 'Dieser Slot wurde bereits hochgeladen. Nimm diese Asset-Id - oder erzwinge mit forceNew=true einen neuen Upload (Roblox legt dann ein weiteres Asset an).'
+                    }
+                }
+            }
+            $uploadPath = ''
+            try { $uploadPath = [string]$slot.uploadPath } catch {}
+            if ([string]::IsNullOrWhiteSpace($uploadPath) -or -not (Test-Path -LiteralPath $uploadPath)) {
+                $uploadError = ''
+                try { $uploadError = [string]$slot.uploadError } catch {}
+                $message = 'Fuer diesen Slot liegt keine hochladbare Datei bereit (erwartet: FBX oder GLB aus dem Blender-Bau).'
+                if (-not [string]::IsNullOrWhiteSpace($uploadError)) { $message = $message + ' Grund: ' + $uploadError }
+                return @{
+                    ok = $false; code = 'NO_UPLOAD_FILE'
+                    error = $message
+                    slotKey = $slotKey
+                    howToFix = 'Lies mesh_status: steht der Slot nicht auf measured (oder fehlt uploadPath), baue ihn mit build_mesh_model neu. Ein OBJ kann Roblox Open Cloud nicht hochladen - nur FBX/GLB.'
+                }
+            }
+            $filePath = $uploadPath
+            if ([string]::IsNullOrWhiteSpace($displayName)) {
+                $modelName = ''
+                $slotName = ''
+                try { $modelName = [string]$slot.modelName } catch {}
+                try { $slotName = [string]$slot.slotName } catch {}
+                $displayName = (($modelName + ' ' + $slotName).Trim())
+            }
+            if ([string]::IsNullOrWhiteSpace($description)) {
+                $description = ('Arena Roblox Bridge - Mesh-Slot ' + $slotKey)
+            }
+        } elseif (-not [string]::IsNullOrWhiteSpace($contentBase64)) {
+            if ([string]::IsNullOrWhiteSpace($fileName)) {
+                return @{
+                    ok = $false; code = 'BAD_ARGS'
+                    error = 'Zu contentBase64 fehlt fileName - die Bridge muss die Endung kennen (.png, .jpg, .bmp, .tga, .fbx, .glb, .gltf).'
+                    howToFix = 'Beispiel: upload_asset { fileName = "mein-bild.png", contentBase64 = "..." }.'
+                }
+            }
+            try {
+                $bytes = [Convert]::FromBase64String($contentBase64)
+            } catch {
+                return @{ ok = $false; code = 'BAD_ARGS'; error = ('contentBase64 ist kein gueltiges Base64: ' + $_.Exception.Message) }
+            }
+            $sourceName = $fileName
+            if ([string]::IsNullOrWhiteSpace($displayName)) {
+                $displayName = [System.IO.Path]::GetFileNameWithoutExtension($fileName)
+            }
+        } elseif (-not [string]::IsNullOrWhiteSpace($filePath)) {
+            # Nur Dateien aus dem Ordner der Bridge: die Bridge laedt NICHT
+            # irgendwelche Dateien vom Rechner des Nutzers nach Roblox hoch.
+            $candidate = $filePath
+            if (-not [System.IO.Path]::IsPathRooted($candidate)) {
+                $meshRoot = ''
+                try { $meshRoot = [string]$Shared.MeshRoot } catch {}
+                if (-not [string]::IsNullOrWhiteSpace($meshRoot)) { $candidate = Join-Path $meshRoot $candidate }
+            }
+            $allowedRoot = ''
+            try { $allowedRoot = [string]$Shared.AppDataRoot } catch {}
+            if ([string]::IsNullOrWhiteSpace($allowedRoot)) { $allowedRoot = [string]$Shared.MeshRoot }
+            $fullCandidate = ''
+            try { $fullCandidate = [System.IO.Path]::GetFullPath($candidate) } catch { $fullCandidate = $candidate }
+            $fullRoot = ''
+            try { $fullRoot = [System.IO.Path]::GetFullPath($allowedRoot) } catch { $fullRoot = $allowedRoot }
+            if ([string]::IsNullOrWhiteSpace($fullRoot) -or -not $fullCandidate.StartsWith($fullRoot, [StringComparison]::OrdinalIgnoreCase)) {
+                return @{
+                    ok = $false; code = 'PATH_OUTSIDE_BRIDGE'
+                    error = ('Die Bridge laedt nur Dateien aus ihrem eigenen Ordner hoch (' + $fullRoot + '). "' + $candidate + '" liegt ausserhalb.')
+                    howToFix = 'Fuer eigene Bilder: schicke sie als contentBase64 mit fileName im selben Aufruf mit - dann braucht es keine Datei auf der Festplatte. Fuer Mesh-Dateien: slotKey aus mesh_status benutzen.'
+                }
+            }
+            if (-not (Test-Path -LiteralPath $fullCandidate)) {
+                return @{ ok = $false; code = 'FILE_NOT_FOUND'; error = ('Die Datei wurde nicht gefunden: ' + $fullCandidate) }
+            }
+            $filePath = $fullCandidate
+            $sourceName = [System.IO.Path]::GetFileName($fullCandidate)
+            if ([string]::IsNullOrWhiteSpace($displayName)) { $displayName = [System.IO.Path]::GetFileNameWithoutExtension($fullCandidate) }
+        } else {
+            return @{
+                ok = $false; code = 'BAD_ARGS'
+                error = 'upload_asset braucht EINE Quelle: slotKey (Mesh-Slot aus mesh_status), filePath (Datei im Bridge-Ordner) oder contentBase64 + fileName (z. B. ein selbst erzeugtes Bild). Optional: operationId, um einen laufenden Upload weiterzuverfolgen.'
+                howToFix = 'Fuer ein Blender-Mesh: upload_asset { slotKey = "<key aus mesh_status>" }. Fuer ein Bild, das du selbst erzeugt hast: upload_asset { fileName = "bild.png", contentBase64 = "<Base64>", assetType = "Decal" }.'
+            }
+        }
+
+        $started = Invoke-OpenCloudUpload -Shared $Shared -FilePath $filePath -FileName $sourceName -Bytes $bytes -AssetType $assetType -DisplayName $displayName -Description $description
+        if ($null -eq $started) {
+            return @{ ok = $false; code = 'OPENCLOUD_BAD_RESPONSE'; error = 'Der Upload kam ohne Ergebnis zurueck.' }
+        }
+        if ([bool]$started.ok -ne $true) { return $started }
+
+        $opId = ''
+        try { $opId = [string]$started.operationId } catch {}
+        $final = $null
+        if ([string]$started.code -eq 'UPLOADED') {
+            $final = $started
+        } else {
+            $final = Wait-OpenCloudOperation -Shared $Shared -OperationId $opId -MaxSeconds $waitSeconds
+        }
+        if ($null -eq $final) { return @{ ok = $false; code = 'OPENCLOUD_BAD_RESPONSE'; error = 'Der Upload-Status blieb leer.' } }
+        if ([bool]$final.ok -ne $true) {
+            # Roblox-Fehler gehen UNVERAENDERT durch - der Agent sieht Code,
+            # Status und Originaltext und kann dem Nutzer die Wahrheit sagen.
+            return $final
+        }
+        if ([string]$final.state -ne 'done') {
+            $pending = @{
+                state = 'pending'
+                operationId = $opId
+                assetType = [string]$started.assetType
+                fileName = [string]$started.fileName
+                slotKey = $slotKey
+                nextCall = ('upload_asset { operationId: "' + $opId + '" }')
+                note = 'Roblox verarbeitet die Datei noch (Moderation/Umwandlung). Rufe upload_asset mit dieser operationId erneut auf - nicht in einer engen Schleife pollen.'
+            }
+            return @{ ok = $true; result = $pending }
+        }
+
+        $assetId = [string]$final.assetId
+        $typeOut = [string]$final.assetType
+        if ([string]::IsNullOrWhiteSpace($typeOut)) { $typeOut = [string]$started.assetType }
+        $howToUse = ''
+        if ($typeOut -eq 'Model') {
+            $howToUse = ('mesh_apply_asset { slots = [ { key = "' + $slotKey + '", assetId = ' + $assetId + ' } ] } setzt die Geometrie in den BESTEHENDEN Platzhalter (Groesse, Position, Welds und Attribute bleiben erhalten). Ohne Platzhalter: insert_asset { assetId = ' + $assetId + ' } fuegt das komplette Modell ein - danach selbst positionieren und model_audit laufen lassen.')
+        } else {
+            $howToUse = ('Setze die Id selbst ein: Decal.Texture = "rbxassetid://' + $assetId + '" (oder Texture.Texture, ImageLabel.Image, MeshPart.TextureID). Danach model_audit/world_audit - die Bridge prueft nichts, was du nicht selbst gesetzt hast.')
+        }
+        if (-not [string]::IsNullOrWhiteSpace($slotKey) -and $null -ne $slot) {
+            Set-MeshSlotField $Shared $slotKey 'assetId' $assetId
+            Set-MeshSlotField $Shared $slotKey 'uploadedAt' ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+            $stateNow = ''
+            try { $stateNow = [string]$slot.state } catch {}
+            if ($stateNow -ne 'applied') { Set-MeshSlotField $Shared $slotKey 'state' 'uploaded' }
+            Set-MeshSlotField $Shared $slotKey 'error' ''
+            try { Save-MeshRegistryFile $Shared } catch {}
+        }
+        try { Write-BridgeLog ('Open Cloud: Asset ' + $assetId + ' hochgeladen (' + $typeOut + ', ' + [string]$started.fileName + ').') } catch {}
+        return @{
+            ok = $true
+            result = @{
+                state = 'uploaded'
+                assetId = $assetId
+                rbxassetId = ('rbxassetid://' + $assetId)
+                assetType = $typeOut
+                displayName = [string]$started.displayName
+                fileName = [string]$started.fileName
+                bytes = [int]$started.bytes
+                operationId = $opId
+                slotKey = $slotKey
+                howToUse = $howToUse
+                note = 'Die Asset-Id ist echt: Roblox hat sie nach dem Upload selbst genannt. Der Nutzer muss NICHTS mehr von Hand hochladen - setze das Asset jetzt selbst in den Place ein und pruefe es danach mit model_audit.'
+            }
+        }
+    }
+
     function Invoke-ServerTool($sessionId, [string]$tool, $toolArgs) {
         switch ($tool) {
             # Version 7.1.2: nicht mehr direkt - immer ueber das Toolbox-Tor
@@ -22364,6 +22819,8 @@ end
             'mesh_status'        { return (Invoke-MeshServerTool $sessionId $tool $toolArgs) }
             'mesh_cancel'        { return (Invoke-MeshServerTool $sessionId $tool $toolArgs) }
             'mesh_apply_asset'   { return (Invoke-MeshServerTool $sessionId $tool $toolArgs) }
+            # Version 7.5.0: ROBLOX OPEN CLOUD (Meshes und Bilder hochladen).
+            'upload_asset'       { return (Invoke-OpenCloudServerTool $sessionId $tool $toolArgs) }
             'get_docs' {
                 $qTool = if ($toolArgs.tool) { [string]$toolArgs.tool } else { $null }
                 $qCategory = if ($toolArgs.category) { [string]$toolArgs.category } else { $null }
@@ -22504,10 +22961,10 @@ end
                                 return @{
                                     ok = $false
                                     code = 'MESH_UPLOAD_PENDING'
-                                    error = ('This place contains ' + [string]$waitCount + ' mesh placeholder(s) that still wait for the mesh upload: ' + ($waitingKeys.ToArray() -join ', ') + '. A placeholder is a box, not the model. Roblox has no automatic mesh upload - the USER must upload the OBJ file(s) and enter the mesh id(s) in the bridge window "Mesh-Uploads" (or tell you the id, then call mesh_apply_asset). Tell him that honestly instead of reporting done.')
+                                    error = ('This place contains ' + [string]$waitCount + ' mesh placeholder(s) that still wait for real geometry: ' + ($waitingKeys.ToArray() -join ', ') + '. A placeholder is a box, not the model. Upload it YOURSELF with upload_asset { slotKey } (the bridge sends the FBX/GLB file through the Roblox Open Cloud API and answers with the real asset id), then mesh_apply_asset { slots = [ { key, assetId } ] } and run model_audit again. The user uploads NOTHING by hand any more. If upload_asset answers OPENCLOUD_KEY_MISSING, tell the user the sentence from userMessage and wait - do not report done.')
                                     meshPlaceholders = $waitingKeys.ToArray()
                                     meshFolder = [string]$Shared.MeshRoot
-                                    howToFix = 'Read mesh_status: it names the exact file per slot. Tell the user, in German, where the files are (bridge window "Mesh-Uploads" has an "Ordner öffnen" button), that he must upload them in Roblox Studio (3D Importer / drag and drop) or the Creator Dashboard, and that he enters the id in that window - then the bridge inserts the geometry automatically. After that run model_audit again and report done. If the work is genuinely handed over, call handoff { scope="game", ... } instead.'
+                                    howToFix = 'Read mesh_status first: it names every slot with uploadPath (the FBX/GLB file the bridge already built) and uploadReady. Then call upload_asset { slotKey } - the bridge uploads that file through the Roblox Open Cloud API and returns the real assetId - and mesh_apply_asset { slots = [ { key, assetId } ] } to put the geometry into the existing placeholder. Only if upload_asset answers OPENCLOUD_KEY_MISSING does the user have to act: tell him, in German, the sentence from userMessage (bridge settings -> ROBLOX OPEN CLOUD -> open the tutorial, create the key with Assets + Read + Write, save it). After the geometry is applied, run model_audit again and report done. If the work is genuinely handed over, call handoff { scope="game", ... } instead.'
                                 }
                             }
                         }
@@ -22879,7 +23336,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.4.2'
+                        bridgeVersion = '7.5.0'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -23346,7 +23803,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.4.2'
+                        serverVersion = '7.5.0'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -23705,7 +24162,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.4.2'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.5.0'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -23789,8 +24246,8 @@ end
                 }
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.4.2'
-                    serverVersion = '7.4.2'
+                    bridgeVersion = '7.5.0'
+                    serverVersion = '7.5.0'
                     toolbox = $statusToolbox
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
@@ -25543,6 +26000,14 @@ $script:BridgeBlenderTools = {
             meshFolder = $meshFolder
             installing = ([string]$map.state -eq 'installing')
             probing = ([string]$map.state -eq 'probing')
+            # Version 7.5.0: kann dieses Blender auch die Upload-Datei (FBX
+            # oder GLB) erzeugen, die Roblox Open Cloud verlangt? Ohne sie
+            # bleibt der Mesh-Weg stecken - dann ehrlich melden.
+            uploadExport = $(try { [string]$map.uploadExport } catch { '' })
+            uploadExportDetail = $(try { [string]$map.uploadExportDetail } catch { '' })
+        }
+        if ($report.uploadExport -eq 'failed') {
+            $report.uploadHint = 'Dieses Blender kann keine FBX-/GLB-Datei erzeugen - der automatische Mesh-Upload (upload_asset) funktioniert damit NICHT. Der Polygon-Weg ist davon unabhaengig.'
         }
         if ($report.enabled -ne $true) {
             $report.hint = 'Mesh-Bau ist deaktiviert, solange Blender nicht bereit ist. Die Polygon-Wedge-Wege (build_polygon_model/build_assembly) funktionieren unabhaengig davon weiter.'
@@ -25661,7 +26126,7 @@ function Update-BlenderSplashRow {
 #   mesh_slots        -> viereckige MeshPart-Platzhalter im Place, mit
 #                        Attributen (ArenaPlaceholder, ArenaMeshSlot, ...).
 #   Nutzer            -> laedt die OBJ-Datei in Roblox hoch und traegt die
-#                        Asset-Id im Fenster "Mesh-Uploads" ein.
+#                        upload_asset laedt sie hoch und nennt ihm die Id.
 #   mesh_apply_asset  -> Bridge setzt die Geometrie ueber
 #                        InsertService:CreateMeshPartAsync + ApplyMesh in die
 #                        Platzhalter (MeshId ist schreibgeschuetzt).
@@ -25844,7 +26309,7 @@ $script:BridgeMeshToolkit = {
             foreach ($pair in $Shared.MeshRegistry.GetEnumerator()) {
                 try { $rows.Add(($pair.Value | ConvertFrom-Json)) } catch {}
             }
-            $payload = @{ registryVersion = '7.4.1'; updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds(); slots = $rows.ToArray() }
+            $payload = @{ registryVersion = '7.5.0'; updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds(); slots = $rows.ToArray() }
             # Version 7.4.1: BOM-FREI schreiben (WriteAllText statt Set-Content).
             [System.IO.File]::WriteAllText($path, [string]($payload | ConvertTo-Json -Depth 8), (New-Object System.Text.UTF8Encoding($false)))
         } catch {}
@@ -25915,6 +26380,13 @@ $script:BridgeMeshToolkit = {
                 fileName = [System.IO.Path]::GetFileName($objPath)
                 objPath = $objPath
                 scriptPath = $scriptPath
+                # Version 7.5.0: die Upload-Datei (FBX/GLB), die der Runner
+                # nach der Messung erzeugt. Ohne sie kann der Agent dieses
+                # Mesh NICHT hochladen - Roblox Open Cloud nimmt kein OBJ an.
+                uploadPath = ''
+                uploadFormat = ''
+                uploadBytes = 0
+                uploadError = ''
                 triangles = 0
                 size = $null
                 color = [string]$slot.color
@@ -25956,7 +26428,7 @@ $script:BridgeMeshToolkit = {
             finishedAt = 0
             slots = $slots
             error = ''
-            note = 'Blender laeuft im Hintergrund. Der Nutzer muss die OBJ-Datei spaeter in Roblox hochladen und die Asset-Id im Bridge-Fenster "Mesh-Uploads" eintragen.'
+            note = 'Blender laeuft im Hintergrund. Danach erzeugt der Runner je Slot eine Upload-Datei (FBX, sonst GLB); mit upload_asset { slotKey } laedt der Agent sie selbst ueber die Roblox-Open-Cloud-API hoch und bekommt die Asset-Id. Der Nutzer laedt NICHTS mehr von Hand hoch.'
         }
         $Shared.MeshJobs[$jobId] = ($job | ConvertTo-Json -Depth 8 -Compress)
         Save-MeshRegistryFile $Shared
@@ -26388,9 +26860,11 @@ $script:BridgeMeshToolkit = {
 # Bounding-Box-Mitte - danach meldet er die gemessenen Zahlen.
 # ----------------------------------------------------------------------------
 $script:MeshRunnerTemplate = @'
-# Arena Roblox Bridge - Mesh-Runner (Version 7.4.2)
+# Arena Roblox Bridge - Mesh-Runner (Version 7.5.0)
 # Dieses Programm gehoert der Bridge. Der Agent liefert nur den Modellteil
-# (--script); der Runner macht Szene, Export, Zentrierung und Messung.
+# (--script); der Runner macht Szene, Export, Zentrierung und Messung - und
+# seit 7.5.0 zusaetzlich die Upload-Datei (FBX, sonst GLB) fuer Roblox Open
+# Cloud, damit der Agent das Mesh selbst hochladen kann.
 import json
 import os
 import sys
@@ -26513,8 +26987,118 @@ def arena_measure_and_center(obj_path):
             "y": round(max_y - min_y, 4),
             "z": round(max_z - min_z, 4),
         },
+        "center": {
+            "x": round(center_x, 6),
+            "y": round(center_y, 6),
+            "z": round(center_z, 6),
+        },
         "bytes": int(os.path.getsize(obj_path)),
     }
+
+
+def arena_center_scene(center):
+    """Schiebt die Szene auf denselben Ursprung wie die gemessene OBJ-Datei.
+
+    Die OBJ-Datei wird beim Messen zentriert (die Bridge schreibt sie um). Der
+    Upload (FBX/GLB fuer Roblox Open Cloud) muss GENAU dieselbe Mitte haben,
+    sonst sitzt das Mesh spaeter neben dem Platzhalter. Rueckgabe: True/False.
+    """
+    if not center:
+        return False
+    try:
+        dx = float(center.get("x", 0.0) or 0.0)
+        dy = float(center.get("y", 0.0) or 0.0)
+        dz = float(center.get("z", 0.0) or 0.0)
+    except Exception:
+        return False
+    if abs(dx) < 1e-9 and abs(dy) < 1e-9 and abs(dz) < 1e-9:
+        return True
+    moved = 0
+    try:
+        for obj in list(bpy.context.scene.objects):
+            obj.location.x -= dx
+            obj.location.y -= dy
+            obj.location.z -= dz
+            moved += 1
+        bpy.context.view_layer.update()
+    except Exception:
+        return False
+    return moved > 0
+
+
+def arena_operator(name):
+    """Findet einen Blender-Operator ueber seinen vollen Namen.
+
+    Blender 4.x kennt export_scene.fbx / export_scene.gltf, Blender 5.x hat
+    die Exporte nach wm.* verschoben. Beide Schreibweisen werden probiert,
+    damit der Upload nicht an einer Versionskleinigkeit scheitert.
+    """
+    node = bpy.ops
+    try:
+        for part in name.split("."):
+            node = getattr(node, part)
+        return node
+    except Exception:
+        return None
+
+
+def arena_export_upload(base_path):
+    """Erzeugt die Upload-Datei fuer Roblox Open Cloud: FBX, sonst GLB.
+
+    Rueckgabe: (pfad, endung) bei Erfolg, ("", fehlertext) wenn ALLE Wege
+    scheitern. Nichts wird erfunden - der Fehlertext nennt jeden Versuch.
+    """
+    errors = []
+
+    def _try(name, path, kwargs, plain):
+        operator = arena_operator(name)
+        if operator is None:
+            errors.append("%s: Operator fehlt in dieser Blender-Version" % name)
+            return ""
+        attempts = [kwargs, plain] if kwargs else [plain]
+        for index, options in enumerate(attempts):
+            try:
+                operator(filepath=path, **options)
+                if os.path.exists(path) and os.path.getsize(path) > 0:
+                    return path
+                errors.append("%s: keine Datei erzeugt" % name)
+            except TypeError as exc:
+                # Diese Blender-Version kennt mindestens einen Parameter
+                # nicht mehr - der naechste Versuch laeuft mit filepath only.
+                errors.append("%s(TypeError): %s" % (name, exc))
+            except NameError as exc:
+                errors.append("%s(NameError): %s | Ursache: bpy ist im Runner nicht sichtbar" % (name, exc))
+                return ""
+            except Exception as exc:
+                errors.append("%s(%s): %s" % (name, type(exc).__name__, exc))
+        return ""
+
+    # Weg 1: FBX (Blender 4.x: export_scene.fbx, Blender 5.x: wm.fbx_export)
+    fbx_path = base_path + ".fbx"
+    found = _try(
+        "export_scene.fbx", fbx_path,
+        {"use_mesh_modifiers": True, "global_scale": 1.0, "axis_forward": "-Z", "axis_up": "Y", "path_mode": "COPY"},
+        {})
+    if not found:
+        found = _try("wm.fbx_export", fbx_path,
+                     {"use_mesh_modifiers": True, "global_scale": 1.0}, {})
+    if found:
+        return found, "fbx"
+
+    # Weg 2: GLB (Blender 4.x: export_scene.gltf, Blender 5.x: wm.gltf_export)
+    glb_path = base_path + ".glb"
+    found = _try(
+        "export_scene.gltf", glb_path,
+        {"export_format": "GLB", "export_apply": True, "export_materials": "NONE", "export_yup": True},
+        {"export_format": "GLB"})
+    if not found:
+        found = _try("wm.gltf_export", glb_path,
+                     {"export_format": "GLB", "export_apply": True},
+                     {"export_format": "GLB"})
+    if found:
+        return found, "glb"
+
+    return "", ("Kein funktionierender FBX-/GLB-Exporter: " + " | ".join(errors))
 
 def main():
     options = arena_args()
@@ -26536,6 +27120,22 @@ def main():
     arena_export(options["out"])
     stats = arena_measure_and_center(options["out"])
     stats["slot"] = options["slot"]
+    # Version 7.5.0: die Szene auf dieselbe Mitte schieben wie die gemessene
+    # OBJ-Datei - nur dann passt der Upload (FBX/GLB) exakt zum Platzhalter.
+    stats["centeredScene"] = bool(arena_center_scene(stats.get("center")))
+    upload_path, upload_format = arena_export_upload(os.path.splitext(options["out"])[0])
+    if upload_path:
+        stats["uploadPath"] = upload_path
+        stats["uploadFormat"] = upload_format
+        stats["uploadBytes"] = int(os.path.getsize(upload_path))
+        stats["uploadError"] = ""
+    else:
+        # Ehrlich melden statt verschweigen: ohne Upload-Datei kann der Agent
+        # dieses Mesh NICHT nach Roblox laden (Roblox nimmt kein OBJ an).
+        stats["uploadPath"] = ""
+        stats["uploadFormat"] = ""
+        stats["uploadBytes"] = 0
+        stats["uploadError"] = str(upload_format)
     stats["ok"] = True
     print(MARKER + json.dumps(stats))
     print("ARENA_MESH_OK " + options["slot"])
@@ -26665,8 +27265,30 @@ $script:BridgeBlenderProbeScript = {
             Write-BridgeLog -Shared $Shared -Text ('Blender-Faehigkeitsprobe lieferte keine lesbare Messzeile: ' + [string]$jsonText)
             return
         }
-        Set-BlenderState -Shared $Shared -State 'ready' -Probe ('ok triangles=' + [string]$stats.triangles + ' bytes=' + [string]$stats.bytes) -Detail ('Faehigkeitsprobe bestanden: Blender hat im Hintergrund ein OBJ erzeugt (' + [string]$stats.triangles + ' Dreiecke, ' + [string]$stats.bytes + ' Bytes).') -Enabled $true -Percent 100 -Message ('Blender ' + [string]$state.version + ' ist bereit und geprueft.') -GateResolved $true
-        Write-BridgeLog -Shared $Shared -Text ('Blender-Faehigkeitsprobe bestanden (' + [string]$stats.triangles + ' Dreiecke, ' + [string]$stats.bytes + ' Bytes).')
+        # Version 7.5.0: dieselbe Probe sagt jetzt AUCH, ob die Upload-Datei
+        # (FBX, sonst GLB) fuer Roblox Open Cloud erzeugt werden kann. Ohne
+        # sie waere der Mesh-Weg blind - deshalb steht es im Zustand.
+        $uploadState = 'failed'
+        $uploadDetail = 'Der Probe fehlte die Upload-Datei (FBX/GLB).'
+        $uploadPath = ''
+        $uploadFormat = ''
+        try { $uploadPath = [string]$stats.uploadPath } catch {}
+        try { $uploadFormat = [string]$stats.uploadFormat } catch {}
+        if (-not [string]::IsNullOrWhiteSpace($uploadPath) -and (Test-Path -LiteralPath $uploadPath)) {
+            $uploadState = $uploadFormat
+            $uploadDetail = ('Upload-Export bereit: ' + $uploadFormat + ' (Roblox Open Cloud nimmt FBX/GLB, kein OBJ).')
+        } else {
+            $probeError = ''
+            try { $probeError = [string]$stats.uploadError } catch {}
+            if (-not [string]::IsNullOrWhiteSpace($probeError)) { $uploadDetail = $probeError }
+        }
+        try {
+            $st = $Shared.BlenderState
+            $st.uploadExport = $uploadState
+            $st.uploadExportDetail = $uploadDetail
+        } catch {}
+        Set-BlenderState -Shared $Shared -State 'ready' -Probe ('ok triangles=' + [string]$stats.triangles + ' bytes=' + [string]$stats.bytes + ' upload=' + $uploadState) -Detail ('Faehigkeitsprobe bestanden: Blender hat im Hintergrund ein OBJ erzeugt (' + [string]$stats.triangles + ' Dreiecke, ' + [string]$stats.bytes + ' Bytes). ' + $uploadDetail) -Message ('Blender ' + [string]$state.version + ' ist bereit und geprueft.') -Enabled $true -Percent 100 -GateResolved $true
+        Write-BridgeLog -Shared $Shared -Text ('Blender-Faehigkeitsprobe bestanden (' + [string]$stats.triangles + ' Dreiecke, ' + [string]$stats.bytes + ' Bytes, Upload-Export: ' + $uploadState + ').')
     } catch {
         try {
             $st = $Shared.BlenderState
@@ -26796,6 +27418,34 @@ $script:BridgeMeshJobScript = {
             Set-MeshSlotField $Shared ([string]$slot.key) 'bytes' ([int64]$stats.bytes)
             Set-MeshSlotField $Shared ([string]$slot.key) 'vertices' ([int]$stats.vertices)
             Set-MeshSlotField $Shared ([string]$slot.key) 'faces' ([int]$stats.faces)
+            # Version 7.5.0: Upload-Datei (FBX/GLB) fuer Roblox Open Cloud.
+            # Der Runner erzeugt sie NACH der Messung. Fehlt sie, meldet die
+            # Bridge das ehrlich - der Agent kann dieses Mesh dann nicht
+            # hochladen und muss den Slot neu bauen.
+            $uploadPath = ''
+            $uploadFormat = ''
+            $uploadBytes = [int64]0
+            $uploadError = ''
+            try {
+                $slotDir = [System.IO.Path]::GetDirectoryName([string]$slot.objPath)
+                $slotBase = [System.IO.Path]::Combine($slotDir, [System.IO.Path]::GetFileNameWithoutExtension([string]$slot.objPath))
+                $fbxPath = $slotBase + '.fbx'
+                $glbPath = $slotBase + '.glb'
+                if (Test-Path -LiteralPath $fbxPath) { $uploadPath = $fbxPath; $uploadFormat = 'fbx' }
+                elseif (Test-Path -LiteralPath $glbPath) { $uploadPath = $glbPath; $uploadFormat = 'glb' }
+                if ($uploadPath -ne '') {
+                    $uploadBytes = [int64](Get-Item -LiteralPath $uploadPath).Length
+                    if ($uploadBytes -le 0) { $uploadPath = ''; $uploadFormat = ''; $uploadError = 'Die Upload-Datei ist leer.' }
+                } else {
+                    $uploadError = 'Blender hat keine FBX-/GLB-Datei erzeugt - Roblox Open Cloud nimmt kein OBJ an, dieses Mesh kann also nicht hochgeladen werden. Siehe build-log.txt im Job-Ordner.'
+                }
+            } catch {
+                $uploadError = 'Die Upload-Datei konnte nicht geprueft werden: ' + $_.Exception.Message
+            }
+            Set-MeshSlotField $Shared ([string]$slot.key) 'uploadPath' $uploadPath
+            Set-MeshSlotField $Shared ([string]$slot.key) 'uploadFormat' $uploadFormat
+            Set-MeshSlotField $Shared ([string]$slot.key) 'uploadBytes' $uploadBytes
+            Set-MeshSlotField $Shared ([string]$slot.key) 'uploadError' $uploadError
             if ([bool]$stats.overLimit) {
                 Set-MeshSlotField $Shared ([string]$slot.key) 'state' 'rejected'
                 Set-MeshSlotField $Shared ([string]$slot.key) 'error' ('Roblox nimmt pro Mesh hoechstens ' + [string]$stats.limit + ' Dreiecke an - gemessen sind es ' + [string]$stats.triangles + '. Das Modell muss einfacher gebaut werden (Weniger Unterteilungen / Decimate / kleinere Slots).')
@@ -26806,6 +27456,11 @@ $script:BridgeMeshJobScript = {
                 $anyMeasured = $true
             }
             Write-JobLog ('Slot ' + [string]$slot.name + ': gemessen - ' + [string]$stats.triangles + ' Dreiecke, ' + [string]$stats.bytes + ' Bytes, Groesse ' + [string]$stats.size.x + ' x ' + [string]$stats.size.y + ' x ' + [string]$stats.size.z + ' Studs.')
+            if ($uploadPath -ne '') {
+                Write-JobLog ('Slot ' + [string]$slot.name + ': Upload-Datei bereit (' + $uploadFormat + ', ' + [string]$uploadBytes + ' Bytes).')
+            } else {
+                Write-JobLog ('Slot ' + [string]$slot.name + ': KEINE Upload-Datei - ' + $uploadError)
+            }
             Save-MeshJobData $Shared $job
             Save-MeshRegistryFile $Shared
         } catch {
@@ -26835,6 +27490,529 @@ $script:BridgeMeshJobScript = {
 }
 
 # ----------------------------------------------------------------------------
+# Version 7.5.0: ROBLOX OPEN CLOUD (Upload von Meshes und Bildern).
+# Dieselbe Quelle gilt fuer das Hauptprogramm und jeden Runspace - genau wie
+# $script:BridgeBlenderTools und $script:BridgeMeshToolkit. Sie haelt den
+# Schluessel (verschluesselt auf der Platte, entschluesselt nur im Speicher)
+# und kennt den kompletten Upload-Weg der Assets-API inklusive Operation.
+# ----------------------------------------------------------------------------
+$script:BridgeOpenCloudTools = {
+    # ----------------------------------------------------------------
+    # Version 7.5.0: ROBLOX OPEN CLOUD - EINE QUELLE, ZWEI WELTEN.
+    # Dieselbe Sammlung wird im Hauptprogramm UND in jedem Handler-/
+    # Worker-Runspace geladen (wie $Shared.BlenderToolsText und
+    # $Shared.MeshToolkitText). Deshalb: KEIN $script:-Zustand, alles
+    # kommt ueber $Shared oder ueber Parameter herein.
+    #
+    # Was hier passiert:
+    #   * der Open-Cloud-Schluessel wird verschluesselt abgelegt (DPAPI,
+    #     CurrentUser) und NUR im Speicher der Bridge entschluesselt,
+    #   * Meshes (FBX/GLB) und Bilder (PNG/JPG/BMP/TGA) werden ueber die
+    #     offizielle Assets-API hochgeladen (POST /assets/v1/assets),
+    #   * die asynchrone Operation wird gepollt, bis Roblox die ASSET-ID
+    #     nennt - genau diese ID bekommt der Agent zurueck, damit er das
+    #     Mesh oder Bild selbst in den Place setzen kann.
+    # ----------------------------------------------------------------
+
+    function Get-OpenCloudKeyPath {
+        param($Shared)
+        $path = ''
+        try { if ($Shared) { $path = [string]$Shared.OpenCloudKeyFile } } catch {}
+        if ([string]::IsNullOrWhiteSpace($path)) {
+            try { $path = [string]$script:OpenCloudKeyFile } catch {}
+        }
+        if ([string]::IsNullOrWhiteSpace($path) -and $Shared -and $Shared.AppDataRoot) {
+            $path = Join-Path ([string]$Shared.AppDataRoot) 'opencloud.key'
+        }
+        return $path
+    }
+
+    function Protect-OpenCloudSecret {
+        param([string]$Text)
+        if ([string]::IsNullOrWhiteSpace($Text)) { return '' }
+        try {
+            try { Add-Type -AssemblyName System.Security -ErrorAction Stop } catch {}
+            $bytes = [System.Text.Encoding]::UTF8.GetBytes($Text)
+            $enc = [System.Security.Cryptography.ProtectedData]::Protect($bytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
+            return ('dpapi:' + [Convert]::ToBase64String($enc))
+        } catch {
+            # Kein DPAPI verfügbar (z. B. Server-Kontext): dann Klartext, aber
+            # sichtbar markiert, damit niemand Sicherheit vortaeuscht.
+            return ('plain:' + $Text)
+        }
+    }
+
+    function Unprotect-OpenCloudSecret {
+        param([string]$Data)
+        if ([string]::IsNullOrWhiteSpace($Data)) { return '' }
+        if ($Data.StartsWith('dpapi:')) {
+            try {
+                try { Add-Type -AssemblyName System.Security -ErrorAction Stop } catch {}
+                $enc = [Convert]::FromBase64String($Data.Substring(6))
+                $bytes = [System.Security.Cryptography.ProtectedData]::Unprotect($enc, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
+                return [System.Text.Encoding]::UTF8.GetString($bytes)
+            } catch { return '' }
+        }
+        if ($Data.StartsWith('plain:')) { return $Data.Substring(6) }
+        return ''
+    }
+
+    function Get-OpenCloudKey {
+        param($Shared)
+        # Der entschluesselte Schluessel liegt NUR im Speicher der Bridge
+        # ($Shared.OpenCloudKeyCache). Nie in settings.json, nie im Log.
+        try {
+            $cached = [string]$Shared.OpenCloudKeyCache
+            if (-not [string]::IsNullOrWhiteSpace($cached)) { return $cached }
+        } catch {}
+        $path = Get-OpenCloudKeyPath $Shared
+        if ([string]::IsNullOrWhiteSpace($path) -or -not (Test-Path -LiteralPath $path)) { return '' }
+        $key = ''
+        try {
+            $raw = [System.IO.File]::ReadAllText($path, (New-Object System.Text.UTF8Encoding($false)))
+            $key = Unprotect-OpenCloudSecret ([string]$raw).Trim()
+        } catch {}
+        if (-not [string]::IsNullOrWhiteSpace($key)) {
+            try { $Shared.OpenCloudKeyCache = $key } catch {}
+        }
+        return $key
+    }
+
+    function Set-OpenCloudKey {
+        param($Shared, [string]$Key)
+        $clean = ([string]$Key).Trim()
+        $path = Get-OpenCloudKeyPath $Shared
+        if ([string]::IsNullOrWhiteSpace($path)) { return $false }
+        if ([string]::IsNullOrWhiteSpace($clean)) { return $false }
+        try {
+            $folder = [System.IO.Path]::GetDirectoryName($path)
+            if (-not [string]::IsNullOrWhiteSpace($folder) -and -not (Test-Path -LiteralPath $folder)) {
+                [void](New-Item -ItemType Directory -Path $folder -Force)
+            }
+            $protected = Protect-OpenCloudSecret $clean
+            [System.IO.File]::WriteAllText($path, $protected, (New-Object System.Text.UTF8Encoding($false)))
+            $Shared.OpenCloudKeyCache = $clean
+            return $true
+        } catch {
+            try { Write-BridgeLog ('Open Cloud: Schluessel konnte nicht gespeichert werden: ' + $_.Exception.Message) } catch {}
+            return $false
+        }
+    }
+
+    function Remove-OpenCloudKey {
+        param($Shared)
+        try { $Shared.OpenCloudKeyCache = '' } catch {}
+        $path = Get-OpenCloudKeyPath $Shared
+        try {
+            if (-not [string]::IsNullOrWhiteSpace($path) -and (Test-Path -LiteralPath $path)) {
+                [System.IO.File]::Delete($path)
+            }
+            return $true
+        } catch { return $false }
+    }
+
+    function Get-OpenCloudConfig {
+        param($Shared)
+        $key = Get-OpenCloudKey $Shared
+        $creatorId = ''
+        $creatorKind = 'user'
+        $creatorName = ''
+        $savedAt = ''
+        $hint = ''
+        try { $creatorId = [string]$Shared.BridgeSettings.openCloudCreatorId } catch {}
+        try { if (-not [string]::IsNullOrWhiteSpace([string]$Shared.BridgeSettings.openCloudCreatorKind)) { $creatorKind = [string]$Shared.BridgeSettings.openCloudCreatorKind } } catch {}
+        try { $creatorName = [string]$Shared.BridgeSettings.openCloudCreatorName } catch {}
+        try { $savedAt = [string]$Shared.BridgeSettings.openCloudSavedAt } catch {}
+        try { $hint = [string]$Shared.BridgeSettings.openCloudKeyHint } catch {}
+        return @{
+            hasKey      = (-not [string]::IsNullOrWhiteSpace($key))
+            key         = $key
+            creatorId   = $creatorId
+            creatorKind = $creatorKind
+            creatorName = $creatorName
+            savedAt     = $savedAt
+            keyHint     = $hint
+        }
+    }
+
+    function Resolve-OpenCloudCreatorId {
+        # Ein Roblox-NAME wird ueber die oeffentliche Nutzerschnittstelle in
+        # eine ID uebersetzt (kein Schluessel noetig). Klappt das nicht, bleibt
+        # die Eingabe stehen und die Bridge meldet das ehrlich - dann eben die
+        # Zahlen-ID aus der Profil-URL eintragen.
+        param([string]$Name)
+        $clean = ([string]$Name).Trim()
+        if ([string]::IsNullOrWhiteSpace($clean)) { return @{ ok = $false; error = 'Kein Name angegeben.' } }
+        if ($clean -match '^\d+$') { return @{ ok = $true; id = $clean; name = '' } }
+        try {
+            $payload = (@{ usernames = @($clean); excludeBannedUsers = $false } | ConvertTo-Json -Compress)
+            $request = [System.Net.HttpWebRequest]::Create('https://users.roblox.com/v1/usernames/users')
+            $request.Method = 'POST'
+            $request.ContentType = 'application/json'
+            $request.Accept = 'application/json'
+            $request.Timeout = 12000
+            $body = [System.Text.Encoding]::UTF8.GetBytes($payload)
+            $request.ContentLength = $body.Length
+            $stream = $request.GetRequestStream()
+            try { $stream.Write($body, 0, $body.Length) } finally { try { $stream.Dispose() } catch {} }
+            $response = $request.GetResponse()
+            $reader = [System.IO.StreamReader]::new($response.GetResponseStream(), [System.Text.Encoding]::UTF8)
+            try { $text = $reader.ReadToEnd() } finally { try { $reader.Dispose() } catch {} }
+            $parsed = $text | ConvertFrom-Json
+            if ($parsed -and $parsed.data -and $parsed.data.Count -gt 0) {
+                $first = $parsed.data[0]
+                return @{ ok = $true; id = [string]$first.id; name = [string]$first.name }
+            }
+            return @{ ok = $false; error = ('Der Name "' + $clean + '" wurde auf Roblox nicht gefunden.') }
+        } catch {
+            return @{ ok = $false; error = ('Der Name konnte nicht aufgeloest werden (' + $_.Exception.Message + '). Trage stattdessen die Zahlen-ID aus deiner Profil-URL ein.') }
+        }
+    }
+
+    function Get-OpenCloudAssetSpec {
+        # Dateiendung -> assetType + Content-Type. Genau die Paare, die die
+        # Assets-API annimmt (20 MB je Datei, Bilder unter 8000x8000).
+        param([string]$Path, [string]$WantedType = '')
+        $ext = ''
+        try { $ext = ([System.IO.Path]::GetExtension([string]$Path)).ToLowerInvariant() } catch {}
+        $map = @{
+            '.fbx'  = @{ assetType = 'Model'; contentType = 'model/fbx' }
+            '.glb'  = @{ assetType = 'Model'; contentType = 'model/gltf-binary' }
+            '.gltf' = @{ assetType = 'Model'; contentType = 'model/gltf+json' }
+            '.png'  = @{ assetType = 'Decal'; contentType = 'image/png' }
+            '.jpg'  = @{ assetType = 'Decal'; contentType = 'image/jpeg' }
+            '.jpeg' = @{ assetType = 'Decal'; contentType = 'image/jpeg' }
+            '.bmp'  = @{ assetType = 'Decal'; contentType = 'image/bmp' }
+            '.tga'  = @{ assetType = 'Decal'; contentType = 'image/x-targa' }
+        }
+        if (-not $map.ContainsKey($ext)) {
+            if ($ext -eq '.obj') {
+                return @{ ok = $false; code = 'UNSUPPORTED_FORMAT'; error = 'Roblox Open Cloud nimmt KEIN OBJ an. Die Bridge baut fuer jeden Mesh-Slot zusaetzlich ein FBX (mesh_status nennt es unter uploadPath) - nimm dieses, oder baue den Slot neu.' }
+            }
+            return @{ ok = $false; code = 'UNSUPPORTED_FORMAT'; error = ('Die Dateiendung "' + $ext + '" kann Roblox Open Cloud nicht hochladen. Erlaubt: .fbx, .glb, .gltf (Mesh) und .png, .jpg, .jpeg, .bmp, .tga (Bild).') }
+        }
+        $spec = $map[$ext]
+        $assetType = [string]$spec.assetType
+        $wanted = ([string]$WantedType).Trim()
+        if (-not [string]::IsNullOrWhiteSpace($wanted)) {
+            $lower = $wanted.ToLowerInvariant()
+            if ($lower -eq 'image' -and $assetType -eq 'Decal') { $assetType = 'Image' }
+            elseif ($lower -eq 'decal' -and $assetType -eq 'Decal') { $assetType = 'Decal' }
+            elseif ($lower -eq 'model' -or $lower -eq 'mesh' -or $lower -eq 'meshpart') { $assetType = 'Model' }
+            else {
+                return @{ ok = $false; code = 'BAD_ARGS'; error = ('assetType "' + $wanted + '" passt nicht zur Datei. Erlaubt: Model (Mesh), Decal, Image.') }
+            }
+        }
+        return @{ ok = $true; assetType = $assetType; contentType = [string]$spec.contentType; extension = $ext }
+    }
+
+    function New-OpenCloudHttpClient {
+        param([string]$Key, [int]$TimeoutSeconds = 90)
+        $client = $null
+        try {
+            $client = [System.Net.Http.HttpClient]::new()
+            $client.Timeout = [TimeSpan]::FromSeconds($TimeoutSeconds)
+            try { $client.DefaultRequestHeaders.Remove('x-api-key') | Out-Null } catch {}
+            $client.DefaultRequestHeaders.TryAddWithoutValidation('x-api-key', $Key) | Out-Null
+        } catch {
+            try { $client = [System.Net.Http.HttpClient]::new() } catch { $client = $null }
+        }
+        return $client
+    }
+
+    function Get-OpenCloudErrorBody {
+        param($Response)
+        try {
+            if ($null -eq $Response) { return '' }
+            $text = $Response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+            if ([string]::IsNullOrWhiteSpace($text)) { return '' }
+            if ($text.Length -gt 600) { $text = $text.Substring(0, 600) }
+            return $text
+        } catch { return '' }
+    }
+
+    function ConvertTo-OpenCloudHttpError {
+        # Roblox-Fehler gehen UNVERAENDERT an den Agenten: Status, Code und
+        # Antworttext. Nichts wird schoengeredet, nichts erfunden.
+        param([int]$Status, [string]$Body, [string]$What = 'Upload')
+        if ($Status -eq 429) {
+            return @{
+                ok = $false; code = 'OPENCLOUD_RATE_LIMITED'
+                error = ('Roblox meldet 429 (Rate Limit) beim ' + $What + '. Zu viele Uploads in kurzer Zeit - warte einige Minuten und versuche es dann erneut.')
+                status = 429; robloxResponse = $Body
+                howToFix = 'Sage dem Nutzer in einem Satz, dass Roblox gerade drosselt. Warte, bevor du es erneut versuchst - ein sofortiger zweiter Versuch wird wieder abgelehnt.'
+            }
+        }
+        if ($Status -eq 401 -or $Status -eq 403) {
+            return @{
+                ok = $false; code = 'OPENCLOUD_KEY_REJECTED'
+                error = ('Roblox hat den Open-Cloud-Schluessel abgelehnt (HTTP ' + [string]$Status + ') beim ' + $What + '. Der Schluessel ist ungueltig, abgelaufen, ohne die Rechte ASSETS + LESEN + SCHREIBEN, oder die IP-Sperre (Security) passt nicht.')
+                status = $Status; robloxResponse = $Body
+                howToFix = 'Sage dem Nutzer woertlich: Bitte oben in der Bridge auf das Zahnrad (Einstellungen) gehen, im Abschnitt ROBLOX OPEN CLOUD das aufklappbare Tutorial machen und den Schluessel neu erstellen und speichern - mit den Rechten Assets/Lesen/Schreiben. Danach kann ich weiterarbeiten.'
+            }
+        }
+        if ($Status -ge 500) {
+            return @{
+                ok = $false; code = 'OPENCLOUD_SERVER_ERROR'
+                error = ('Roblox meldet einen Serverfehler (HTTP ' + [string]$Status + ') beim ' + $What + '.')
+                status = $Status; robloxResponse = $Body
+                howToFix = 'Das liegt nicht am Schluessel. Sage dem Nutzer, dass Roblox gerade stoert, und versuche es spaeter erneut.'
+            }
+        }
+        return @{
+            ok = $false; code = 'OPENCLOUD_UPLOAD_REJECTED'
+            error = ('Roblox hat den ' + $What + ' abgelehnt (HTTP ' + [string]$Status + ').')
+            status = $Status; robloxResponse = $Body
+            howToFix = 'Pruefe die Angaben: Datei kleiner als 20 MB, Bilder unter 8000x8000 Pixel, Mesh als FBX/GLB. Die vollstaendige Roblox-Antwort steht in robloxResponse - melde sie dem Nutzer unverfaelscht.'
+        }
+    }
+
+    function Invoke-OpenCloudUpload {
+        param($Shared, [string]$FilePath, [string]$FileName, [byte[]]$Bytes, [string]$AssetType, [string]$DisplayName, [string]$Description, [int]$TimeoutSeconds = 90)
+
+        $config = Get-OpenCloudConfig $Shared
+        if (-not $config.hasKey) {
+            return @{
+                ok = $false; code = 'OPENCLOUD_KEY_MISSING'
+                error = 'In diesem Bridge-Programm ist noch KEIN Roblox-Open-Cloud-API-Schluessel hinterlegt. Ohne ihn kann ich nichts nach Roblox hochladen.'
+                userMessage = 'Du hast in deiner Bridge noch keinen Roblox Open Cloud API-Key hinterlegt. Damit ich Meshes und Bilder automatisch hochladen kann, gehe bitte kurz oben rechts auf das Zahnrad (Einstellungen) in deinem Bridge-Programm, dort auf den Abschnitt ROBLOX OPEN CLOUD, klappe das Tutorial auf und erstelle damit deinen Schluessel (mit den Rechten Assets + Lesen + Schreiben). Speichern - und ich kann direkt weiterarbeiten.'
+                howToFix = 'Sage dem Nutzer den Satz aus userMessage WORTLICH auf Deutsch. Frage nicht nach der Asset-Id und lade nichts von Hand hoch - der Nutzer muss nur einmal den Schluessel hinterlegen.'
+            }
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$config.creatorId)) {
+            return @{
+                ok = $false; code = 'OPENCLOUD_CREATOR_MISSING'
+                error = 'Es ist kein Roblox-ERSTELLER hinterlegt. Roblox ordnet jedes hochgeladene Asset einem Nutzer oder einer Gruppe zu - ohne diese Angabe lehnt die API den Upload ab.'
+                userMessage = 'In deiner Bridge fehlt noch der Roblox-Ersteller fuer Uploads. Bitte kurz auf das Zahnrad (Einstellungen) gehen, im Abschnitt ROBLOX OPEN CLOUD deinen Roblox-Namen (oder deine Zahlen-ID) eintragen und speichern - Danke!'
+                howToFix = 'Sage dem Nutzer den Satz aus userMessage WORTLICH auf Deutsch.'
+            }
+        }
+
+        # --- Datei: entweder aus dem Dateisystem oder direkt aus den Bytes ---
+        $content = $null
+        $size = 0
+        $name = ([string]$FileName).Trim()
+        if ($null -ne $Bytes -and $Bytes.Length -gt 0) {
+            $content = $Bytes
+            $size = $Bytes.Length
+            if ([string]::IsNullOrWhiteSpace($name)) { $name = 'upload.bin' }
+        } else {
+            if ([string]::IsNullOrWhiteSpace($FilePath) -or -not (Test-Path -LiteralPath $FilePath)) {
+                return @{ ok = $false; code = 'FILE_NOT_FOUND'; error = ('Die Datei wurde nicht gefunden: ' + [string]$FilePath + '. Nenne einen Pfad aus mesh_status (uploadPath) oder liefere contentBase64 mit.'); howToFix = 'Lies mesh_status: dort steht je Slot der exakte uploadPath.' }
+            }
+            try {
+                $content = [System.IO.File]::ReadAllBytes($FilePath)
+                $size = $content.Length
+                if ([string]::IsNullOrWhiteSpace($name)) { $name = [System.IO.Path]::GetFileName($FilePath) }
+            } catch {
+                return @{ ok = $false; code = 'FILE_UNREADABLE'; error = ('Die Datei konnte nicht gelesen werden: ' + $_.Exception.Message) }
+            }
+        }
+        if ($size -le 0) { return @{ ok = $false; code = 'FILE_EMPTY'; error = 'Die Datei ist leer - es wurde nichts hochgeladen.' } }
+        if ($size -gt 20971520) {
+            return @{ ok = $false; code = 'FILE_TOO_LARGE'; error = ('Die Datei ist ' + [Math]::Round(($size / 1048576.0), 2) + ' MB gross. Roblox Open Cloud nimmt hoechstens 20 MB je Datei an.'); howToFix = 'Baue den Slot einfacher (weniger Unterteilungen, Decimate/Remesh) oder teile das Modell in mehrere Slots.' }
+        }
+        $spec = Get-OpenCloudAssetSpec -Path $name -WantedType $AssetType
+        if (-not $spec.ok) { return $spec }
+        if ([string]::IsNullOrWhiteSpace($name)) { $name = ('upload' + [string]$spec.extension) }
+
+        $display = ([string]$DisplayName).Trim()
+        if ([string]::IsNullOrWhiteSpace($display)) { $display = [System.IO.Path]::GetFileNameWithoutExtension($name) }
+        if ($display.Length -gt 90) { $display = $display.Substring(0, 90) }
+        $text = ([string]$Description).Trim()
+        if ([string]::IsNullOrWhiteSpace($text)) { $text = 'Hochgeladen von Arena Roblox Bridge.' }
+        if ($text.Length -gt 900) { $text = $text.Substring(0, 900) }
+
+        $creator = @{}
+        if ([string]$config.creatorKind -eq 'group') { $creator['groupId'] = [string]$config.creatorId } else { $creator['userId'] = [string]$config.creatorId }
+        $meta = @{
+            assetType = [string]$spec.assetType
+            displayName = $display
+            description = $text
+            creationContext = @{ creator = $creator; expectedPrice = 0 }
+        }
+        $metaJson = $meta | ConvertTo-Json -Depth 6 -Compress
+
+        $client = New-OpenCloudHttpClient -Key ([string]$config.key) -TimeoutSeconds $TimeoutSeconds
+        if ($null -eq $client) { return @{ ok = $false; code = 'OPENCLOUD_UNREACHABLE'; error = 'Der HTTP-Client konnte nicht erzeugt werden.' } }
+        try {
+            $form = [System.Net.Http.MultipartFormDataContent]::new()
+            $requestPart = [System.Net.Http.StringContent]::new($metaJson, [System.Text.Encoding]::UTF8, 'application/json')
+            $form.Add($requestPart, 'request')
+            $filePart = [System.Net.Http.ByteArrayContent]::new($content)
+            $filePart.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse([string]$spec.contentType)
+            $form.Add($filePart, 'fileContent', $name)
+            $response = $client.PostAsync('https://apis.roblox.com/assets/v1/assets', $form).GetAwaiter().GetResult()
+            $status = [int]$response.StatusCode
+            $body = Get-OpenCloudErrorBody $response
+            if ($status -lt 200 -or $status -gt 299) {
+                return (ConvertTo-OpenCloudHttpError -Status $status -Body $body -What 'Upload')
+            }
+            $parsed = $null
+            try { $parsed = $body | ConvertFrom-Json } catch { $parsed = $null }
+            $opPath = ''
+            try { if ($parsed -and $parsed.path) { $opPath = [string]$parsed.path } } catch {}
+            $opId = ''
+            if ($opPath -match '/([^/]+)$') { $opId = $Matches[1] }
+            if ([string]::IsNullOrWhiteSpace($opId)) { $opId = $opPath }
+            if ([string]::IsNullOrWhiteSpace($opId)) {
+                return @{ ok = $false; code = 'OPENCLOUD_BAD_RESPONSE'; error = 'Roblox hat den Upload angenommen, aber keine Operation zum Nachverfolgen zurueckgemeldet.'; robloxResponse = $body }
+            }
+            # Schon fertig? Dann steht die Asset-Id direkt im ersten Ergebnis.
+            $doneNow = $false
+            try { if ($parsed -and $parsed.done -eq $true) { $doneNow = $true } } catch {}
+            if ($doneNow) {
+                $assetId = ''
+                try { if ($parsed.response -and $parsed.response.assetId) { $assetId = [string]$parsed.response.assetId } } catch {}
+                if (-not [string]::IsNullOrWhiteSpace($assetId)) {
+                    return @{ ok = $true; code = 'UPLOADED'; assetId = $assetId; operationId = $opId; poll = @{ needed = $false } }
+                }
+            }
+            return @{
+                ok = $true; code = 'UPLOAD_STARTED'
+                operationId = $opId
+                operationPath = $opPath
+                assetType = [string]$spec.assetType
+                fileName = $name
+                bytes = $size
+                displayName = $display
+            }
+        } catch {
+            $message = $_.Exception.Message
+            try { if ($_.Exception.InnerException) { $message = $message + ' / ' + $_.Exception.InnerException.Message } } catch {}
+            return @{
+                ok = $false; code = 'OPENCLOUD_UNREACHABLE'
+                error = ('Der Upload ist fehlgeschlagen, bevor Roblox geantwortet hat: ' + $message)
+                howToFix = 'Pruefe die Internetverbindung des Nutzers. Der Schluessel wurde NICHT verbraucht - versuche es einfach erneut.'
+            }
+        } finally {
+            try { $client.Dispose() } catch {}
+        }
+    }
+
+    function Get-OpenCloudOperation {
+        # Einmaliger Blick auf die asynchrone Operation. Ergebnis ist immer
+        # ehrlich: pending, done (mit assetId) oder failed (mit Roblox-Text).
+        param($Shared, [string]$OperationId)
+        $config = Get-OpenCloudConfig $Shared
+        if (-not $config.hasKey) {
+            return @{
+                ok = $false; code = 'OPENCLOUD_KEY_MISSING'
+                error = 'In diesem Bridge-Programm ist noch KEIN Roblox-Open-Cloud-API-Schluessel hinterlegt.'
+                userMessage = 'Du hast in deiner Bridge noch keinen Roblox Open Cloud API-Key hinterlegt. Bitte kurz auf das Zahnrad (Einstellungen) gehen, im Abschnitt ROBLOX OPEN CLOUD das Tutorial machen und den Schluessel speichern - dann geht es direkt weiter.'
+                howToFix = 'Sage dem Nutzer den Satz aus userMessage WORTLICH auf Deutsch.'
+            }
+        }
+        $clean = ([string]$OperationId).Trim()
+        if ($clean -match '/([^/]+)$') { $clean = $Matches[1] }
+        if ([string]::IsNullOrWhiteSpace($clean)) {
+            return @{ ok = $false; code = 'BAD_ARGS'; error = 'Keine operationId angegeben.' }
+        }
+        $client = New-OpenCloudHttpClient -Key ([string]$config.key) -TimeoutSeconds 30
+        if ($null -eq $client) { return @{ ok = $false; code = 'OPENCLOUD_UNREACHABLE'; error = 'Der HTTP-Client konnte nicht erzeugt werden.' } }
+        try {
+            $response = $client.GetAsync('https://apis.roblox.com/assets/v1/operations/' + [Uri]::EscapeDataString($clean)).GetAwaiter().GetResult()
+            $status = [int]$response.StatusCode
+            $body = Get-OpenCloudErrorBody $response
+            if ($status -lt 200 -or $status -gt 299) {
+                return (ConvertTo-OpenCloudHttpError -Status $status -Body $body -What 'Abfragen des Upload-Status')
+            }
+            $parsed = $null
+            try { $parsed = $body | ConvertFrom-Json } catch { $parsed = $null }
+            if ($null -eq $parsed) {
+                return @{ ok = $false; code = 'OPENCLOUD_BAD_RESPONSE'; error = 'Die Antwort von Roblox war nicht lesbar.'; robloxResponse = $body }
+            }
+            $done = $false
+            try { $done = [bool]$parsed.done } catch {}
+            if (-not $done) {
+                return @{ ok = $true; state = 'pending'; operationId = $clean }
+            }
+            $errText = ''
+            try { if ($parsed.error) { $errText = ($parsed.error | ConvertTo-Json -Compress) } } catch {}
+            if (-not [string]::IsNullOrWhiteSpace($errText)) {
+                return @{
+                    ok = $false; code = 'OPENCLOUD_OPERATION_FAILED'
+                    error = ('Roblox hat den Upload abgelehnt: ' + $errText)
+                    robloxResponse = $errText
+                    howToFix = 'Haeufige Gruende: Datei zu gross, Format nicht erlaubt, Bild ueber 8000x8000, Ersteller gehoert nicht zum Schluessel. Melde dem Nutzer den Roblox-Text unverfaelscht.'
+                }
+            }
+            $assetId = ''
+            try { if ($parsed.response -and $parsed.response.assetId) { $assetId = [string]$parsed.response.assetId } } catch {}
+            if ([string]::IsNullOrWhiteSpace($assetId)) {
+                return @{ ok = $true; state = 'done_without_id'; operationId = $clean; robloxResponse = $body }
+            }
+            $assetType = ''
+            try { if ($parsed.response -and $parsed.response.assetType) { $assetType = [string]$parsed.response.assetType } } catch {}
+            return @{
+                ok = $true; state = 'done'
+                assetId = $assetId
+                assetType = $assetType
+                operationId = $clean
+            }
+        } catch {
+            $message = $_.Exception.Message
+            try { if ($_.Exception.InnerException) { $message = $message + ' / ' + $_.Exception.InnerException.Message } } catch {}
+            return @{ ok = $false; code = 'OPENCLOUD_UNREACHABLE'; error = ('Der Upload-Status konnte nicht abgefragt werden: ' + $message) }
+        } finally {
+            try { $client.Dispose() } catch {}
+        }
+    }
+
+    function Wait-OpenCloudOperation {
+        # Kurz pollen (Bilder sind oft in 1-2 s fertig, Meshes brauchen
+        # laenger). Reicht die Zeit nicht, kommt der Stand 'pending' mit der
+        # operationId zurueck - der Agent kann dann gezielt weiterfragen,
+        # statt blind zu warten.
+        param($Shared, [string]$OperationId, [int]$MaxSeconds = 20)
+        $deadline = [DateTime]::UtcNow.AddSeconds($MaxSeconds)
+        $last = $null
+        $tries = 0
+        while ($true) {
+            if ($tries -gt 0) { Start-Sleep -Milliseconds 1500 }
+            $last = Get-OpenCloudOperation $Shared $OperationId
+            $tries = $tries + 1
+            if ($null -eq $last) { break }
+            if ($last.ok -ne $true) { return $last }
+            if ([string]$last.state -ne 'pending') { return $last }
+            if ([DateTime]::UtcNow -ge $deadline) { break }
+        }
+        if ($null -eq $last) { return @{ ok = $false; code = 'OPENCLOUD_BAD_RESPONSE'; error = 'Der Upload-Status blieb leer.' } }
+        $last.state = 'pending'
+        $last.pollBudgetSeconds = $MaxSeconds
+        $last.nextCall = ('upload_asset { operationId: "' + [string]$OperationId + '" }')
+        $last.hint = 'Roblox braucht laenger. Rufe upload_asset mit dieser operationId erneut auf, um fertig zu werden - nicht in einer engen Schleife pollen.'
+        return $last
+    }
+
+    function Test-OpenCloudKeyAuth {
+        # Billige Echtheitspruefung: Roblox beantwortet eine GET-Anfrage auf
+        # eine erfundene Operation mit 404, WENN der Schluessel angenommen
+        # wurde. 401/403 heisst: Schluessel ungueltig oder ohne Rechte.
+        param($Shared)
+        $config = Get-OpenCloudConfig $Shared
+        if (-not $config.hasKey) { return @{ ok = $false; code = 'OPENCLOUD_KEY_MISSING'; error = 'Kein Schluessel hinterlegt.' } }
+        $client = New-OpenCloudHttpClient -Key ([string]$config.key) -TimeoutSeconds 20
+        if ($null -eq $client) { return @{ ok = $false; code = 'OPENCLOUD_UNREACHABLE'; error = 'Der HTTP-Client konnte nicht erzeugt werden.' } }
+        try {
+            $response = $client.GetAsync('https://apis.roblox.com/assets/v1/operations/arena-bridge-key-check').GetAwaiter().GetResult()
+            $status = [int]$response.StatusCode
+            $body = Get-OpenCloudErrorBody $response
+            if ($status -eq 401 -or $status -eq 403) {
+                return @{ ok = $false; code = 'OPENCLOUD_KEY_REJECTED'; error = ('Roblox hat den Schluessel abgelehnt (HTTP ' + [string]$status + ').'); status = $status; robloxResponse = $body }
+            }
+            return @{ ok = $true; code = 'KEY_ACCEPTED'; status = $status; accepted = $true; robloxResponse = $body }
+        } catch {
+            $message = $_.Exception.Message
+            try { if ($_.Exception.InnerException) { $message = $message + ' / ' + $_.Exception.InnerException.Message } } catch {}
+            return @{ ok = $false; code = 'OPENCLOUD_UNREACHABLE'; error = ('Roblox war nicht erreichbar: ' + $message) }
+        } finally {
+            try { $client.Dispose() } catch {}
+        }
+    }
+}
+
+# ----------------------------------------------------------------------------
 # Alles, was Handler- und Worker-Runspaces brauchen, liegt in $Shared.
 # ----------------------------------------------------------------------------
 $script:Shared.MeshRoot = [string]$script:MeshRoot
@@ -26845,6 +28023,8 @@ $script:Shared.MeshRunnerText = [string]$script:MeshRunnerTemplate
 $script:Shared.MeshToolkitText = [string]$script:BridgeMeshToolkit
 $script:Shared.MeshJobScriptText = [string]$script:BridgeMeshJobScript
 $script:Shared.BlenderToolsText = [string]$script:BridgeBlenderTools
+$script:Shared.OpenCloudToolsText = [string]$script:BridgeOpenCloudTools
+$script:Shared.OpenCloudKeyFile = [string]$script:OpenCloudKeyFile
 $script:Shared.BlenderStepScriptText = [string]$script:BridgeBlenderStepScript
 $script:Shared.BlenderProbeScriptText = [string]$script:BridgeBlenderProbeScript
 $script:Shared.LocalPort = [int]$script:Port
@@ -26862,13 +28042,7 @@ try {
 # genau eine Quelle fuer Queue-Anmeldung, Registerpflege und Messung.
 # ----------------------------------------------------------------------------
 try { . ([scriptblock]::Create([string]$script:BridgeMeshToolkit)) } catch { Write-RuntimeLog ('Mesh-Werkzeuge konnten nicht geladen werden: ' + $_.Exception.Message) }
-
-$script:MeshWindow = $null
-$script:MeshWindowRows = @{}
-$script:MeshWindowNotice = ''
-# Version 7.4.1: Wartemenge beim Schliessen (sortierte Slot-Keys) - das Fenster
-# geht erst wieder auf, wenn sich diese Menge aendert (keine Schleife).
-$script:MeshAutoClosedSignature = ''
+try { . ([scriptblock]::Create([string]$script:BridgeOpenCloudTools)) } catch { Write-RuntimeLog ('Open-Cloud-Werkzeuge konnten nicht geladen werden: ' + $_.Exception.Message) }
 
 function Update-MeshTick {
     # Laeuft im UI-Takt (kein zusaetzlicher Timer). Holt Ergebnisse interner
@@ -26911,10 +28085,9 @@ function Update-MeshTick {
                         # loeschen, den Job-Ordner nur, wenn nichts mehr wartet.
                         $cleaned = 0
                         try { $cleaned = [int](Remove-MeshAppliedFileSets $script:Shared $jobId) } catch {}
-                        Write-RuntimeLog ('Eingesetzte Mesh-Dateien geloescht (' + [string]$cleaned + ' Slot(s), Job ' + $jobId + ').')
-                        $script:MeshWindowNotice = 'Eingesetzte Mesh-Dateien geloescht - der MeshPart ist jetzt das echte Mesh.'
+                        Write-RuntimeLog ('Eingesetzte Mesh-Dateien geloescht (' + [string]$cleaned + ' Slot(s), Job ' + $jobId + ') - der MeshPart traegt jetzt die echte Geometrie.')
                     } else {
-                        $script:MeshWindowNotice = 'Das Einsetzen hat nicht geklappt - die Zeile zeigt den echten Fehler.'
+                        Write-RuntimeLog ('Mesh-Einsetzen fehlgeschlagen (Job ' + $jobId + ') - der Slot meldet den echten Fehler.')
                     }
                 } else {
                     $failedNow = 0
@@ -26928,7 +28101,7 @@ function Update-MeshTick {
                             $failedNow = $failedNow + 1
                         }
                     }
-                    if ($failedNow -gt 0) { $script:MeshWindowNotice = 'Einsetzen fehlgeschlagen: ' + [string]$outcome.message }
+                    if ($failedNow -gt 0) { Write-RuntimeLog ('Mesh-Einsetzen fehlgeschlagen: ' + [string]$outcome.message) }
                     Save-MeshRegistryFile $script:Shared
                 }
                 continue
@@ -26940,9 +28113,8 @@ function Update-MeshTick {
                     try { $droppedOk = [bool](Update-MeshRegistryFromDropResult $script:Shared $jobId ([string]$outcome.json)) } catch {}
                     if ($droppedOk) {
                         Write-RuntimeLog ('Mesh-Slot storniert (' + $jobId + '): Platzhalter und Dateien sind entfernt.')
-                        $script:MeshWindowNotice = 'Mesh-Slot storniert - Platzhalter und Dateien sind weg.'
                     } else {
-                        $script:MeshWindowNotice = 'Stornieren hat nicht geklappt - die Zeile zeigt den echten Fehler.'
+                        Write-RuntimeLog ('Mesh-Slot konnte nicht storniert werden (' + $jobId + ') - der Slot meldet den echten Fehler.')
                     }
                 } else {
                     $failedNow = 0
@@ -26956,7 +28128,7 @@ function Update-MeshTick {
                             $failedNow = $failedNow + 1
                         }
                     }
-                    if ($failedNow -gt 0) { $script:MeshWindowNotice = 'Stornieren fehlgeschlagen: ' + [string]$outcome.message }
+                    if ($failedNow -gt 0) { Write-RuntimeLog ('Mesh-Slot stornieren fehlgeschlagen: ' + [string]$outcome.message) }
                     Save-MeshRegistryFile $script:Shared
                 }
                 continue
@@ -26987,618 +28159,6 @@ function Update-MeshTick {
         }
     } catch {
         try { Write-RuntimeLog ('Mesh-Takt Fehler: ' + $_.Exception.Message) } catch {}
-    }
-}
-
-# ----------------------------------------------------------------------------
-# Version 7.4.0: FENSTER "MESH-UPLOADS"
-# Der Nutzer laedt die OBJ-Dateien selbst in Roblox hoch (Roblox hat keine
-# API fuer Mesh-Uploads) und traegt die Mesh-Ids hier ein. Die Bridge setzt
-# die Geometrie danach automatisch in die bestehenden Platzhalter.
-# Aufbau und Design sind aus dem Nachrichtenfenster uebernommen (anthrazit,
-# verschiebbare Titelleiste, X oben rechts); das Fenster ist modal wie die
-# beiden anderen erlaubten Fenster und arbeitet ohne Toast.
-# ----------------------------------------------------------------------------
-function Get-MeshWindowXaml {
-    # Version 7.4.1: EINFACHES, automatisches Mesh-Fenster. Es oeffnet sich von
-    # selbst (modellos, Show()) sobald eine OBJ-Datei auf den Upload wartet -
-    # es gibt KEINEN Menueeintrag mehr. Der Blender-Zustand steht im
-    # Startbildschirm und in blender_status, nicht in diesem Fenster.
-    $template = @'
-<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Mesh-Uploads"
-        Width="680" Height="540" MinWidth="580" MinHeight="420"
-        ResizeMode="CanResize" WindowStyle="None" AllowsTransparency="True"
-        Background="Transparent" WindowStartupLocation="CenterOwner"
-        ShowInTaskbar="False" FontFamily="Segoe UI"
-        UseLayoutRounding="True" SnapsToDevicePixels="True"
-        TextOptions.TextFormattingMode="Display">
-    <Window.Resources>
-<!--ARENA_DIALOG_STYLES-->
-    </Window.Resources>
-    <Border CornerRadius="20" Background="{StaticResource SwAppBg}"
-            BorderBrush="#33FFFFFF" BorderThickness="1" ClipToBounds="True">
-        <Grid>
-            <Grid IsHitTestVisible="False">
-                <Ellipse Width="420" Height="420" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-150,-190,0,0">
-                    <Ellipse.Fill>
-                        <RadialGradientBrush>
-                            <GradientStop Color="#407B5CFF" Offset="0"/>
-                            <GradientStop Color="#007B5CFF" Offset="1"/>
-                        </RadialGradientBrush>
-                    </Ellipse.Fill>
-                </Ellipse>
-                <Ellipse Width="360" Height="360" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-120,-140">
-                    <Ellipse.Fill>
-                        <RadialGradientBrush>
-                            <GradientStop Color="#2EFF5C8A" Offset="0"/>
-                            <GradientStop Color="#00FF5C8A" Offset="1"/>
-                        </RadialGradientBrush>
-                    </Ellipse.Fill>
-                </Ellipse>
-            </Grid>
-
-            <Grid Margin="22">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-
-                <!-- Titelzeile: ziehbar, Kreuz oben rechts, Place-Name darunter. -->
-                <Grid x:Name="TitleBar" Grid.Row="0" Background="Transparent" Cursor="SizeAll">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Mesh-Uploads" Foreground="{StaticResource SwTextMain}"
-                                   FontSize="16" FontWeight="Bold"/>
-                        <TextBlock x:Name="PlaceNameText" Text="Place" Foreground="{StaticResource SwTextFaint}"
-                                   FontSize="10.5" Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
-                    </StackPanel>
-                    <Button x:Name="CloseButton" Grid.Column="1" Style="{StaticResource ArenaCloseButton}"
-                            Content="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="11"
-                            ToolTip="Schließen (Esc)"/>
-                </Grid>
-
-                <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-                    <Button x:Name="FolderButton" Content="Ordner öffnen" MinWidth="130" MinHeight="28"
-                            Padding="12,4" Style="{StaticResource ArenaQuietButton}"
-                            ToolTip="Den Mesh-/Job-Ordner im Explorer öffnen"/>
-                </StackPanel>
-
-                <!-- EINE Liste: je Mesh eine Zeile. -->
-                <Border Grid.Row="2" Margin="0,12,0,0" Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF"
-                        BorderThickness="1" CornerRadius="10" Padding="10,8">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                        <StackPanel x:Name="SlotList"/>
-                    </ScrollViewer>
-                </Border>
-
-                <Border x:Name="StatusBorder" Grid.Row="3" Margin="0,12,0,0"
-                        Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF"
-                        BorderThickness="1" CornerRadius="10" Padding="11,8">
-                    <TextBlock x:Name="StatusText" Text="Keine Mesh-Datei wartet auf den Upload."
-                               Foreground="{StaticResource SwTextMuted}" FontSize="11" TextWrapping="Wrap"/>
-                </Border>
-            </Grid>
-        </Grid>
-    </Border>
-</Window>
-'@
-    return $template.Replace('<!--ARENA_DIALOG_STYLES-->', [string]$script:ArenaDialogStyles)
-}
-
-function Get-MeshSlotStateText {
-    param($Slot)
-    $state = ''
-    $errorText = ''
-    $triangles = 0
-    try { $state = [string]$Slot.state } catch {}
-    try { $errorText = [string]$Slot.error } catch {}
-    try { $triangles = [int]$Slot.triangles } catch {}
-    $text = ''
-    switch ($state) {
-        'pending' { $text = 'Wartet auf Blender …' }
-        'running' { $text = 'Blender baut …' }
-        'script' { $text = 'Blender baut …' }
-        'measured' { $text = 'Wird gemessen …' }
-        'obj' { $text = 'Datei fertig - bitte in Roblox hochladen und die Mesh-Id eintragen' }
-        'rejected' { $text = 'Zu viele Dreiecke (' + [string]$triangles + ') - einfacher bauen' }
-        'applying' { $text = 'Wird in den Place gesetzt …' }
-        'applied' { $text = 'Eingesetzt' }
-        'apply_failed' { $text = 'Einsetzen fehlgeschlagen' }
-        'dropping' { $text = 'Wird storniert …' }
-        'drop_failed' { $text = 'Stornieren fehlgeschlagen' }
-        'failed' { $text = 'Bau fehlgeschlagen' }
-        'cancelled' { $text = 'Abgebrochen' }
-        default { $text = $state }
-    }
-    if (-not [string]::IsNullOrWhiteSpace($errorText)) { $text = $text + ' - ' + $errorText }
-    return $text
-}
-
-function Get-MeshWindowPlaceLabel {
-    # Place-Name aus dem ersten wartenden Slot (die Zeile im Fenster soll
-    # sagen, WO die Datei hochgeladen werden muss).
-    $label = 'Verbundenes Place'
-    try {
-        foreach ($pair in @($script:Shared.MeshRegistry.GetEnumerator())) {
-            $slot = $null
-            try { $slot = ($pair.Value | ConvertFrom-Json) } catch { continue }
-            if ($null -eq $slot) { continue }
-            $slotState = ''
-            try { $slotState = [string]$slot.state } catch {}
-            if ($slotState -ne 'obj') { continue }
-            $sid = ''
-            try { $sid = [string]$slot.sessionId } catch {}
-            if ([string]::IsNullOrWhiteSpace($sid)) { continue }
-            $name = ''
-            try { $name = [string]$script:PlaceNames[$sid] } catch {}
-            if ([string]::IsNullOrWhiteSpace($name)) { $name = $sid }
-            return ('Place · ' + $name)
-        }
-    } catch {}
-    return $label
-}
-
-function New-MeshRow {
-    # EINE Zeile je Mesh: Name (model · slot), Info (Datei/Dreiecke/Studs),
-    # Zustand (farbig), Id-Feld, "Fertig", "Stornieren" - und die Rueckfrage
-    # in der Zeile ("Wirklich stornieren?" mit "Ja, stornieren"/"Abbrechen").
-    param($Slot)
-    $win = $script:MeshWindow
-    $shell = [System.Windows.Controls.Border]::new()
-    $shell.Background = Get-Brush '#14FFFFFF'
-    $shell.BorderBrush = Get-Brush '#1FFFFFFF'
-    $shell.BorderThickness = [System.Windows.Thickness]::new(1)
-    $shell.CornerRadius = [System.Windows.CornerRadius]::new(8)
-    $shell.Padding = [System.Windows.Thickness]::new(10, 8, 10, 8)
-    $shell.Margin = [System.Windows.Thickness]::new(0, 0, 0, 8)
-    $stack = [System.Windows.Controls.StackPanel]::new()
-    $title = [System.Windows.Controls.TextBlock]::new()
-    $title.Foreground = Get-Brush '#F4F8FF'
-    $title.FontSize = 12
-    $title.FontWeight = 'Bold'
-    $file = [System.Windows.Controls.TextBlock]::new()
-    $file.Foreground = Get-Brush '#9AA9CE'
-    $file.FontSize = 10.5
-    $file.Margin = [System.Windows.Thickness]::new(0, 3, 0, 0)
-    $stateText = [System.Windows.Controls.TextBlock]::new()
-    $stateText.Foreground = Get-Brush '#FFD9A0'
-    $stateText.FontSize = 10.5
-    $stateText.TextWrapping = 'Wrap'
-    $stateText.Margin = [System.Windows.Thickness]::new(0, 3, 0, 0)
-
-    $actionPanel = [System.Windows.Controls.Grid]::new()
-    $actionPanel.Margin = [System.Windows.Thickness]::new(0, 7, 0, 0)
-    $col1 = [System.Windows.Controls.ColumnDefinition]::new()
-    $col1.Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
-    $col2 = [System.Windows.Controls.ColumnDefinition]::new()
-    $col2.Width = [System.Windows.GridLength]::new(0, [System.Windows.GridUnitType]::Auto)
-    $col3 = [System.Windows.Controls.ColumnDefinition]::new()
-    $col3.Width = [System.Windows.GridLength]::new(0, [System.Windows.GridUnitType]::Auto)
-    [void]$actionPanel.ColumnDefinitions.Add($col1)
-    [void]$actionPanel.ColumnDefinitions.Add($col2)
-    [void]$actionPanel.ColumnDefinitions.Add($col3)
-    $idBox = [System.Windows.Controls.TextBox]::new()
-    $idBox.MinHeight = 28
-    $idBox.MaxLength = 32
-    $idBox.Foreground = Get-Brush '#F4F8FF'
-    $idBox.ToolTip = 'Mesh-Id aus Roblox - nur die Ziffern'
-    $idBox.Style = $win.FindResource('ArenaTextField')
-    [System.Windows.Controls.Grid]::SetColumn($idBox, 0)
-    $doneButton = [System.Windows.Controls.Button]::new()
-    $doneButton.Content = 'Fertig'
-    $doneButton.MinWidth = 92
-    $doneButton.MinHeight = 28
-    $doneButton.Margin = [System.Windows.Thickness]::new(8, 0, 0, 0)
-    $doneButton.Style = $win.FindResource('ArenaPrimaryButton')
-    [System.Windows.Controls.Grid]::SetColumn($doneButton, 1)
-    $cancelButton = [System.Windows.Controls.Button]::new()
-    $cancelButton.Content = 'Stornieren'
-    $cancelButton.MinWidth = 104
-    $cancelButton.MinHeight = 28
-    $cancelButton.Margin = [System.Windows.Thickness]::new(8, 0, 0, 0)
-    $cancelButton.Style = $win.FindResource('ArenaDangerButton')
-    [System.Windows.Controls.Grid]::SetColumn($cancelButton, 2)
-    [void]$actionPanel.Children.Add($idBox)
-    [void]$actionPanel.Children.Add($doneButton)
-    [void]$actionPanel.Children.Add($cancelButton)
-
-    $askPanel = [System.Windows.Controls.StackPanel]::new()
-    $askPanel.Margin = [System.Windows.Thickness]::new(0, 7, 0, 0)
-    $askPanel.Visibility = 'Collapsed'
-    $askText = [System.Windows.Controls.TextBlock]::new()
-    $askText.Text = 'Wirklich stornieren? Der MeshPart wird aus dem Place entfernt; ein schon eingesetztes Mesh wird NICHT wiederhergestellt.'
-    $askText.Foreground = Get-Brush '#FFD9A0'
-    $askText.FontSize = 10.5
-    $askText.TextWrapping = 'Wrap'
-    $askButtons = [System.Windows.Controls.StackPanel]::new()
-    $askButtons.Orientation = 'Horizontal'
-    $askButtons.Margin = [System.Windows.Thickness]::new(0, 6, 0, 0)
-    $yesButton = [System.Windows.Controls.Button]::new()
-    $yesButton.Content = 'Ja, stornieren'
-    $yesButton.MinWidth = 118
-    $yesButton.MinHeight = 28
-    $yesButton.Style = $win.FindResource('ArenaDangerButton')
-    $noButton = [System.Windows.Controls.Button]::new()
-    $noButton.Content = 'Abbrechen'
-    $noButton.MinWidth = 104
-    $noButton.MinHeight = 28
-    $noButton.Margin = [System.Windows.Thickness]::new(8, 0, 0, 0)
-    $noButton.Style = $win.FindResource('ArenaQuietButton')
-    [void]$askButtons.Children.Add($yesButton)
-    [void]$askButtons.Children.Add($noButton)
-    [void]$askPanel.Children.Add($askText)
-    [void]$askPanel.Children.Add($askButtons)
-
-    [void]$stack.Children.Add($title)
-    [void]$stack.Children.Add($file)
-    [void]$stack.Children.Add($stateText)
-    [void]$stack.Children.Add($actionPanel)
-    [void]$stack.Children.Add($askPanel)
-    $shell.Child = $stack
-
-    $rowTag = [pscustomobject]@{
-        SlotKey      = [string]$Slot.slotKey
-        Title        = $title
-        FileText     = $file
-        StateText    = $stateText
-        IdBox        = $idBox
-        DoneButton   = $doneButton
-        CancelButton = $cancelButton
-        ActionPanel  = $actionPanel
-        AskPanel     = $askPanel
-    }
-    $shell.Tag = $rowTag
-    $doneButton.Tag = $rowTag
-    $cancelButton.Tag = $rowTag
-    $yesButton.Tag = $rowTag
-    $noButton.Tag = $rowTag
-    $doneButton.Add_Click({
-        param($s, $e)
-        try { Invoke-MeshRowApply -Row $s.Tag } catch { try { Write-UiErrorLog 'Mesh-Zeile Fertig' $_ } catch {} }
-    })
-    $cancelButton.Add_Click({
-        param($s, $e)
-        try { Show-MeshRowAsk -Row $s.Tag } catch {}
-    })
-    $yesButton.Add_Click({
-        param($s, $e)
-        try { Invoke-MeshRowDrop -Row $s.Tag } catch { try { Write-UiErrorLog 'Mesh-Zeile Stornieren' $_ } catch {} }
-    })
-    $noButton.Add_Click({
-        param($s, $e)
-        try { Hide-MeshRowAsk -Row $s.Tag } catch {}
-    })
-    return $shell
-}
-
-function Show-MeshRowAsk {
-    # Rueckfrage IN der Zeile (kein Fenster, kein Popup, kein Toast).
-    param($Row)
-    try { $Row.ActionPanel.Visibility = 'Collapsed' } catch {}
-    try { $Row.AskPanel.Visibility = 'Visible' } catch {}
-}
-
-function Hide-MeshRowAsk {
-    param($Row)
-    try { $Row.AskPanel.Visibility = 'Collapsed' } catch {}
-    try { $Row.ActionPanel.Visibility = 'Visible' } catch {}
-}
-
-function Invoke-MeshRowApply {
-    # "Fertig": Id pruefen (NUR Ziffern) -> Zustand applying -> interner Befehl
-    # mesh_apply an Studio. Das Ergebnis holt der UI-Takt ab; erst dann wird
-    # aufgeraeumt und gemeldet - kein falscher Erfolg.
-    param($Row)
-    if ($null -eq $Row) { return }
-    $slotKey = [string]$Row.SlotKey
-    $raw = ''
-    try { $raw = ([string]$Row.IdBox.Text).Trim() } catch {}
-    if ($raw -notmatch '^\d+$') {
-        $script:MeshWindowNotice = 'Bitte nur die Ziffern der Mesh-Id eintragen (keine Buchstaben, kein rbxassetid://).'
-        return
-    }
-    $slot = Get-MeshSlotData $script:Shared $slotKey
-    if ($null -eq $slot) {
-        $script:MeshWindowNotice = 'Dieser Slot steht nicht mehr im Register - die Zeile verschwindet beim naechsten Takt.'
-        return
-    }
-    try { $Row.IdBox.IsEnabled = $false } catch {}
-    Set-MeshSlotField $script:Shared $slotKey 'assetId' $raw
-    Set-MeshSlotField $script:Shared $slotKey 'state' 'applying'
-    Set-MeshSlotField $script:Shared $slotKey 'error' ''
-    $jobId = ''
-    try { $jobId = [string]$slot.jobId } catch {}
-    $sessionId = ''
-    try { $sessionId = [string]$slot.sessionId } catch {}
-    $commandId = New-MeshBridgeCommand -Shared $script:Shared -SessionId $sessionId -Tool 'mesh_apply' -ToolArgs @{ slots = @(@{ key = $slotKey; assetId = $raw }) } -BudgetSeconds 180 -Tag ('apply:' + $jobId)
-    if ([string]::IsNullOrWhiteSpace($commandId)) {
-        Set-MeshSlotField $script:Shared $slotKey 'state' 'apply_failed'
-        Set-MeshSlotField $script:Shared $slotKey 'error' 'Die Bridge konnte den Befehl nicht einreihen - ist Roblox Studio mit diesem Place verbunden?'
-        $script:MeshWindowNotice = 'Der Befehl konnte nicht an Studio geschickt werden.'
-        try { $Row.IdBox.IsEnabled = $true } catch {}
-        return
-    }
-    Set-MeshSlotField $script:Shared $slotKey 'pendingCommandId' $commandId
-    $script:MeshWindowNotice = ('Mesh-Id ' + $raw + ' wird eingesetzt - Roblox laedt die Geometrie aus der Cloud.')
-}
-
-function Invoke-MeshRowDrop {
-    # "Stornieren" (nach der Rueckfrage): internen Befehl mesh_drop senden. Er
-    # loescht die MeshParts mit ArenaMeshSlot = key aus dem Place - ein schon
-    # eingesetztes Mesh wird NICHT wiederhergestellt. Danach raeumt der
-    # UI-Takt Slot + Dateien auf.
-    param($Row)
-    if ($null -eq $Row) { return }
-    $slotKey = [string]$Row.SlotKey
-    $slot = Get-MeshSlotData $script:Shared $slotKey
-    if ($null -eq $slot) {
-        $script:MeshWindowNotice = 'Dieser Slot steht nicht mehr im Register.'
-        Hide-MeshRowAsk -Row $Row
-        return
-    }
-    $jobId = ''
-    try { $jobId = [string]$slot.jobId } catch {}
-    $sessionId = ''
-    try { $sessionId = [string]$slot.sessionId } catch {}
-    Set-MeshSlotField $script:Shared $slotKey 'state' 'dropping'
-    Set-MeshSlotField $script:Shared $slotKey 'error' ''
-    $commandId = New-MeshBridgeCommand -Shared $script:Shared -SessionId $sessionId -Tool 'mesh_drop' -ToolArgs @{ slots = @(@{ key = $slotKey }) } -BudgetSeconds 150 -Tag ('drop:' + $jobId)
-    if ([string]::IsNullOrWhiteSpace($commandId)) {
-        Set-MeshSlotField $script:Shared $slotKey 'state' 'drop_failed'
-        Set-MeshSlotField $script:Shared $slotKey 'error' 'Die Bridge konnte den Befehl nicht einreihen - ist Roblox Studio mit diesem Place verbunden?'
-        $script:MeshWindowNotice = 'Stornieren konnte nicht an Studio geschickt werden.'
-        Hide-MeshRowAsk -Row $Row
-        return
-    }
-    Set-MeshSlotField $script:Shared $slotKey 'pendingCommandId' $commandId
-    $script:MeshWindowNotice = 'Stornieren laeuft - der MeshPart wird entfernt; ein schon eingesetztes Mesh kommt NICHT zurueck.'
-    Hide-MeshRowAsk -Row $Row
-}
-
-function Update-MeshWindow {
-    # Aktualisiert das offene Fenster: je wartendem/gesetztem Mesh EINE Zeile,
-    # EINE Statuszeile. Zeilen werden nur ergaenzt/entfernt - die Eingaben des
-    # Nutzers (Id-Feld, Rueckfrage) werden nie ueberschrieben.
-    if ($null -eq $script:MeshWindow) { return }
-    $win = $script:MeshWindow
-    try {
-        $rows = New-Object System.Collections.Generic.List[object]
-        foreach ($pair in @($script:Shared.MeshRegistry.GetEnumerator())) {
-            $slot = $null
-            try { $slot = ($pair.Value | ConvertFrom-Json) } catch { continue }
-            if ($null -eq $slot) { continue }
-            $slotState = ''
-            try { $slotState = [string]$slot.state } catch {}
-            if ($slotState -notin @('obj', 'applying', 'applied', 'apply_failed', 'dropping', 'drop_failed')) { continue }
-            $rows.Add($slot)
-        }
-
-        $slotList = $win.FindName('SlotList')
-        $keyed = @{}
-        if ($null -ne $slotList) {
-            foreach ($child in @($slotList.Children)) {
-                $childKey = ''
-                try { $childKey = [string]$child.Tag.SlotKey } catch {}
-                if (-not [string]::IsNullOrWhiteSpace($childKey)) { $keyed[$childKey] = $child }
-            }
-        }
-        $rowsByKey = @{}
-        foreach ($slot in $rows) {
-            $slotKey = ''
-            try { $slotKey = [string]$slot.slotKey } catch {}
-            if ([string]::IsNullOrWhiteSpace($slotKey)) { continue }
-            $rowsByKey[$slotKey] = $slot
-        }
-        foreach ($knownKey in @($keyed.Keys)) {
-            if (-not $rowsByKey.ContainsKey([string]$knownKey)) {
-                try { [void]$slotList.Children.Remove($keyed[$knownKey]) } catch {}
-                $keyed.Remove($knownKey)
-            }
-        }
-
-        $openCount = 0
-        $appliedCount = 0
-        $failedCount = 0
-        foreach ($slot in $rows) {
-            $slotKey = ''
-            try { $slotKey = [string]$slot.slotKey } catch {}
-            if ([string]::IsNullOrWhiteSpace($slotKey)) { continue }
-            if (-not $keyed.ContainsKey($slotKey)) {
-                if ($null -eq $slotList) { continue }
-                $keyed[$slotKey] = New-MeshRow -Slot $slot
-                [void]$slotList.Children.Add($keyed[$slotKey])
-            }
-            $shell = $keyed[$slotKey]
-            $slotState = ''
-            try { $slotState = [string]$slot.state } catch {}
-            try { $shell.Tag.Title.Text = ([string]$slot.modelName + ' · ' + [string]$slot.slotName) } catch {}
-            $fileLine = 'Datei: ' + [string]$slot.fileName
-            try {
-                if ([int]$slot.triangles -gt 0) { $fileLine = $fileLine + '  |  ' + [string]$slot.triangles + ' Dreiecke' }
-            } catch {}
-            try {
-                if ($null -ne $slot.size) {
-                    $fileLine = $fileLine + '  |  ' + ([string]([Math]::Round([double]$slot.size.x, 2))) + ' x ' + ([string]([Math]::Round([double]$slot.size.y, 2))) + ' x ' + ([string]([Math]::Round([double]$slot.size.z, 2))) + ' Studs'
-                }
-            } catch {}
-            try { $shell.Tag.FileText.Text = $fileLine } catch {}
-            try { $shell.Tag.StateText.Text = (Get-MeshSlotStateText $slot) } catch {}
-            $currentColor = '#FFD9A0'
-            if ($slotState -eq 'applied') { $currentColor = '#9AD9AE' }
-            elseif ($slotState -in @('failed', 'rejected', 'apply_failed', 'drop_failed')) { $currentColor = '#FF8AA0' }
-            elseif ($slotState -eq 'obj') { $currentColor = '#FFD9A0' }
-            elseif ($slotState -eq 'applying' -or $slotState -eq 'dropping') { $currentColor = '#9FDCFF' }
-            try { $shell.Tag.StateText.Foreground = Get-Brush $currentColor } catch {}
-            try {
-                $existingId = [string]$slot.assetId
-                if (-not [string]::IsNullOrWhiteSpace($existingId) -and [string]::IsNullOrWhiteSpace($shell.Tag.IdBox.Text)) {
-                    $shell.Tag.IdBox.Text = $existingId
-                }
-            } catch {}
-            $canSubmit = ($slotState -eq 'obj' -or $slotState -eq 'apply_failed')
-            try { $shell.Tag.IdBox.IsEnabled = $canSubmit } catch {}
-            try { $shell.Tag.DoneButton.IsEnabled = $canSubmit } catch {}
-            try { $shell.Tag.CancelButton.IsEnabled = ($slotState -in @('obj', 'apply_failed', 'applied')) } catch {}
-            if ($canSubmit) { $openCount = $openCount + 1 }
-            if ($slotState -eq 'applied') { $appliedCount = $appliedCount + 1 }
-            if ($slotState -in @('apply_failed', 'drop_failed')) { $failedCount = $failedCount + 1 }
-        }
-
-        $statusText = $win.FindName('StatusText')
-        if ($null -ne $statusText) {
-            if ($rows.Count -eq 0) {
-                $statusText.Text = 'Keine Mesh-Datei wartet auf den Upload. Sobald Blender eine OBJ-Datei gebaut hat, oeffnet sich dieses Fenster von selbst.'
-            } else {
-                $status = [string]$rows.Count + ' Mesh(s): ' + [string]$openCount + ' warten auf die Mesh-Id, ' + [string]$appliedCount + ' eingesetzt'
-                if ($failedCount -gt 0) { $status = $status + ', ' + [string]$failedCount + ' mit Fehler' }
-                if (-not [string]::IsNullOrWhiteSpace([string]$script:MeshWindowNotice)) { $status = $status + '. ' + [string]$script:MeshWindowNotice }
-                $statusText.Text = $status + '.'
-            }
-        }
-        $placeLabel = $win.FindName('PlaceNameText')
-        if ($null -ne $placeLabel) { $placeLabel.Text = Get-MeshWindowPlaceLabel }
-    } catch {
-        try { Write-UiErrorLog 'Mesh-Fenster Aktualisierung' $_ } catch {}
-    }
-}
-
-function Get-MeshWaitingUploadKeys {
-    # Slot-Keys aller Slots, deren OBJ-Datei auf den Upload wartet (state obj).
-    $keys = New-Object System.Collections.Generic.List[string]
-    try {
-        foreach ($pair in @($script:Shared.MeshRegistry.GetEnumerator())) {
-            $slot = $null
-            try { $slot = ($pair.Value | ConvertFrom-Json) } catch { continue }
-            if ($null -eq $slot) { continue }
-            $slotState = ''
-            try { $slotState = [string]$slot.state } catch {}
-            if ($slotState -ne 'obj') { continue }
-            $keys.Add([string]$slot.slotKey)
-        }
-    } catch {}
-    return ,$keys
-}
-
-function Get-MeshWaitingSignature {
-    # Sortierte Wartemenge als eine Zeichenkette - damit das Fenster nicht in
-    # Schleife aufgeht, merkt sich die Bridge diese Menge beim Schliessen.
-    $keys = Get-MeshWaitingUploadKeys
-    if ($null -eq $keys -or $keys.Count -eq 0) { return '' }
-    return (($keys.ToArray() | Sort-Object) -join '|')
-}
-
-function Update-MeshAutoWindow {
-    # Version 7.4.1: Das Fenster erscheint AUTOMATISCH und MODELLOS, sobald
-    # mindestens eine OBJ auf den Upload wartet. Nach dem Schliessen geht es
-    # erst wieder auf, wenn sich die Wartemenge (sortierte Slot-Keys) aendert.
-    try {
-        $signature = Get-MeshWaitingSignature
-        if ([string]::IsNullOrWhiteSpace($signature)) {
-            $script:MeshAutoClosedSignature = ''
-            return
-        }
-        if ($null -ne $script:MeshWindow) { return }
-        if ($signature -eq [string]$script:MeshAutoClosedSignature) { return }
-        Open-MeshWindow
-    } catch {
-        try { Write-UiErrorLog 'Mesh-Fenster automatisch oeffnen' $_ } catch {}
-    }
-}
-
-function Open-MeshWindow {
-    # MODELLOS (Show(), KEIN ShowDialog): der Nutzer arbeitet im Studio weiter,
-    # waehrend das Fenster offen ist. Es wird automatisch geoeffnet und kann
-    # jederzeit geschlossen werden.
-    if ($null -ne $script:MeshWindow) {
-        try {
-            $script:MeshWindow.Activate()
-            Update-MeshWindow
-            return
-        } catch {}
-    }
-    $windowXaml = Get-MeshWindowXaml
-    $reader = [System.Xml.XmlNodeReader]::new([xml]$windowXaml)
-    $win = [Windows.Markup.XamlReader]::Load($reader)
-    try { $win.Owner = $window } catch {}
-
-    $titleBar = $win.FindName('TitleBar')
-    $placeLabel = $win.FindName('PlaceNameText')
-    $closeButton = $win.FindName('CloseButton')
-    $folderButton = $win.FindName('FolderButton')
-
-    $info = [pscustomobject]@{
-        Window    = $win
-        SessionId = [string]$script:MeshWindowSessionId
-    }
-    $win.Tag = $info
-    $titleBar.Tag = $win
-    $closeButton.Tag = $win
-    $script:MeshWindow = $win
-    $script:MeshWindowRows = @{}
-    $script:MeshWindowNotice = ''
-
-    $titleBar.Add_MouseLeftButtonDown({
-        param($s, $e)
-        if ($e.ButtonState -eq [System.Windows.Input.MouseButtonState]::Pressed) {
-            try { $s.Tag.DragMove() } catch {}
-        }
-    })
-    $closeButton.Add_Click({
-        param($s, $e)
-        try { $s.Tag.Close() } catch {}
-    })
-    $folderButton.Add_Click({
-        param($s, $e)
-        # "Ordner oeffnen": den Mesh-/Job-Ordner im Explorer zeigen; ohne
-        # wartenden Job den Mesh-Ordner der Bridge.
-        try {
-            $folder = ''
-            try {
-                foreach ($pair in @($script:Shared.MeshRegistry.GetEnumerator())) {
-                    $slot = $null
-                    try { $slot = ($pair.Value | ConvertFrom-Json) } catch { continue }
-                    if ($null -eq $slot) { continue }
-                    $slotState = ''
-                    try { $slotState = [string]$slot.state } catch {}
-                    if ($slotState -ne 'obj') { continue }
-                    $objPath = ''
-                    try { $objPath = [string]$slot.objPath } catch {}
-                    if ([string]::IsNullOrWhiteSpace($objPath)) { continue }
-                    $folder = [System.IO.Path]::GetDirectoryName($objPath)
-                    if (-not [string]::IsNullOrWhiteSpace($folder)) { break }
-                }
-            } catch {}
-            if ([string]::IsNullOrWhiteSpace($folder) -or -not (Test-Path -LiteralPath $folder)) {
-                $folder = [string]$script:MeshRoot
-            }
-            if (Test-Path -LiteralPath $folder) { Start-Process explorer.exe -ArgumentList ('"' + $folder + '"') | Out-Null }
-        } catch {
-            try { Write-UiErrorLog 'Mesh-Ordner oeffnen' $_ } catch {}
-        }
-    })
-    $win.Add_Closed({
-        param($s, $e)
-        # Wartemenge merken - erst wenn sie sich aendert, oeffnet es wieder.
-        try { $script:MeshAutoClosedSignature = Get-MeshWaitingSignature } catch {}
-        try { $script:MeshWindow = $null } catch {}
-    })
-    $win.Add_PreviewKeyDown({
-        param($s, $e)
-        try {
-            if ($e.Key -eq [System.Windows.Input.Key]::Escape) { $s.Close(); $e.Handled = $true }
-        } catch {}
-    })
-
-    Update-MeshWindow
-    try { $win.Show() | Out-Null } catch {
-        try { Write-UiErrorLog 'Mesh-Fenster konnte nicht angezeigt werden' $_ } catch {}
     }
 }
 
@@ -29447,7 +30007,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.4.2)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.5.0)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -32268,7 +32828,7 @@ function Write-ChannelDiagnoseFile {
 
         $progressPath = Join-Path $script:AppDataRoot 'progress-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.4.2)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.5.0)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -32303,7 +32863,7 @@ function Write-ChannelDiagnoseFile {
 
         $notifyPath = Join-Path $script:AppDataRoot 'notify-diagnose.txt'
         $sb2 = New-Object System.Text.StringBuilder
-        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.4.2)')
+        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.5.0)')
         [void]$sb2.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb2.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb2.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -32671,7 +33231,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.4.2)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.5.0)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -34868,7 +35428,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.4.2)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.5.0)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -34952,10 +35512,10 @@ function Refresh-Ui {
     try { Complete-BlenderStartupGate } catch { }
     try { Update-BlenderSplashRow $null } catch { }
     try { Update-MeshTick } catch { }
-    try { if ($null -ne $script:MeshWindow) { Update-MeshWindow } } catch { }
-    # Version 7.4.1: Das Mesh-Fenster kommt von selbst, sobald eine OBJ auf
-    # den Upload wartet (modellos, ohne Menueeintrag).
-    try { Update-MeshAutoWindow } catch { }
+    # Version 7.5.0: KEIN Mesh-Fenster mehr. Der UI-Takt pflegt nur noch den
+    # Mesh-Takt (Messen, Platzhalter, Einsetz-Ergebnisse). Der Upload selbst
+    # ist ein Werkzeugaufruf des Agenten (upload_asset) und braucht weder ein
+    # Fenster noch Handarbeit des Nutzers.
     $line = $null
     while ($script:TunnelLines.TryDequeue([ref]$line)) {
         $lineText = [string]$line
@@ -35688,7 +36248,7 @@ Set-StartupStage 'Ereignisse verdrahtet (Fenstersteuerung + Loaded)'
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.4.2'
+    $versionText = '7.5.0'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -36772,11 +37332,128 @@ function Open-SettingsWindow {
                             </StackPanel>
                         </Border>
 
+
+                        <TextBlock Text="ROBLOX OPEN CLOUD" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
+                        <Border Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="14" Padding="16,12">
+                            <StackPanel>
+                                <TextBlock Text="Eigener API-Schlüssel für voll automatische Uploads" Foreground="{StaticResource SwTextMain}" FontSize="13.5" TextWrapping="Wrap"/>
+                                <TextBlock Text="Mit Schlüssel lädt Arena Meshes aus Blender und selbst erzeugte Bilder ÜBER DIE OFFIZIELLE ROBLOX-SCHNITTSTELLE hoch und setzt sie selbst in deinen Place ein - du musst nichts mehr von Hand hochladen. Ohne Schlüssel bleibt diese eine Fähigkeit aus; alles andere läuft weiter." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,7,0,0"/>
+
+                                <TextBlock Text="API-Schlüssel (wird verschlüsselt auf diesem PC gespeichert)" Foreground="{StaticResource SwTextMuted}" FontSize="10" FontWeight="Bold" Margin="0,16,0,5"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <PasswordBox x:Name="CloudKeyBox" Grid.Column="0" Height="34" Margin="0,0,8,0" VerticalContentAlignment="Center"
+                                                 Background="#0E1730" Foreground="#F4F8FF" CaretBrush="#F4F8FF" BorderBrush="#33FFFFFF"
+                                                 BorderThickness="1" Padding="10,0" FontSize="12.5"/>
+                                    <Button x:Name="CloudSaveButton" Grid.Column="1" Height="34" MinWidth="96" Margin="0,0,8,0" Cursor="Hand"
+                                            Content="Speichern" Foreground="#FFFFFF" Background="{StaticResource SwCrimsonBtnBg}"
+                                            BorderBrush="#4DFFFFFF" BorderThickness="1" FontSize="12.5" FontWeight="SemiBold"/>
+                                    <Button x:Name="CloudTestButton" Grid.Column="2" Height="34" MinWidth="76" Margin="0,0,8,0" Cursor="Hand"
+                                            Content="Prüfen" Foreground="#F4F8FF" Background="#1B2A55" BorderBrush="#33FFFFFF"
+                                            BorderThickness="1" FontSize="12.5"/>
+                                    <Button x:Name="CloudRemoveButton" Grid.Column="3" Height="34" MinWidth="90" Cursor="Hand"
+                                            Content="Entfernen" Foreground="#FFC7D3" Background="#59E11D48" BorderBrush="#73FF5C77"
+                                            BorderThickness="1" FontSize="12.5"/>
+                                </Grid>
+                                <TextBlock x:Name="CloudStatusText" Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,8,0,0"/>
+
+                                <TextBlock Text="Ersteller - wem gehören die hochgeladenen Assets?" Foreground="{StaticResource SwTextMuted}" FontSize="10" FontWeight="Bold" Margin="0,14,0,5"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="130"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox x:Name="CloudCreatorBox" Grid.Column="0" Height="34" Margin="0,0,8,0" VerticalContentAlignment="Center"
+                                             Background="#0E1730" Foreground="#F4F8FF" CaretBrush="#F4F8FF" BorderBrush="#33FFFFFF"
+                                             BorderThickness="1" Padding="10,0" FontSize="12.5"/>
+                                    <ComboBox x:Name="CloudCreatorKind" Grid.Column="1" Height="34" VerticalContentAlignment="Center"
+                                              Background="#0E1730" Foreground="#F4F8FF" BorderBrush="#33FFFFFF" BorderThickness="1" FontSize="12.5">
+                                        <ComboBoxItem Content="Nutzer" IsSelected="True"/>
+                                        <ComboBoxItem Content="Gruppe"/>
+                                    </ComboBox>
+                                </Grid>
+                                <TextBlock x:Name="CloudCreatorHint" Text="Roblox-Name oder Zahlen-ID. Der Schlüssel muss zu diesem Nutzer (oder dieser Gruppe) gehören." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
+
+                                <!-- Aufklappbares Tutorial (animiert): Klick auf die Zeile -->
+                                <Border x:Name="CloudTutorialHeader" Margin="0,16,0,0" Padding="12,10" CornerRadius="10"
+                                        Background="#14FFFFFF" BorderBrush="#2EFFFFFF" BorderThickness="1" Cursor="Hand">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock x:Name="CloudTutorialChevron" Grid.Column="0" Text="›" FontSize="17" FontWeight="Bold"
+                                                   Foreground="#FF5C77" Margin="0,0,10,0" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                                            <TextBlock.RenderTransform>
+                                                <RotateTransform Angle="0"/>
+                                            </TextBlock.RenderTransform>
+                                        </TextBlock>
+                                        <TextBlock Grid.Column="1" Text="Tutorial: Schlüssel in 6 Schritten erstellen (mit den nötigen Rechten)" Foreground="{StaticResource SwTextMain}" FontSize="12.5" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                        <TextBlock x:Name="CloudTutorialToggle" Grid.Column="2" Text="anzeigen" Foreground="#FF5C77" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                    </Grid>
+                                </Border>
+                                <Grid x:Name="CloudTutorialWrap" Margin="0,8,0,0" ClipToBounds="True" Opacity="0" MaxHeight="0">
+                                    <StackPanel x:Name="CloudTutorialBody" Orientation="Vertical">
+
+                                        <Border x:Name="CloudStep1" Background="#0C1730" CornerRadius="10" Padding="12,10" Margin="0,0,0,8" BorderBrush="#26FFFFFF" BorderThickness="1">
+                                            <StackPanel>
+                                                <TextBlock Foreground="{StaticResource SwTextMain}" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap"><Run Text="1. Creator Dashboard öffnen" Foreground="#FF5C77"/><Run Text=" — auf " Foreground="{StaticResource SwTextMain}"/><Run Text="create.roblox.com/credentials" Foreground="#9FD0FF"/><Run Text=" gehen (oder: Creator Dashboard → Open Cloud → API Keys) und auf " Foreground="{StaticResource SwTextMain}"/><Run Text="Create API Key" Foreground="#9FD0FF"/><Run Text=" klicken." Foreground="{StaticResource SwTextMain}"/></TextBlock>
+                                                <TextBlock Text="Du musst mit dem Roblox-Konto angemeldet sein, dem die Assets später gehören sollen." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,5,0,0"/>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border x:Name="CloudStep2" Background="#0C1730" CornerRadius="10" Padding="12,10" Margin="0,0,0,8" BorderBrush="#26FFFFFF" BorderThickness="1">
+                                            <StackPanel>
+                                                <TextBlock Foreground="{StaticResource SwTextMain}" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap"><Run Text="2. Name und Zweck" Foreground="#FF5C77"/><Run Text=" — nenne ihn z. B. " Foreground="{StaticResource SwTextMain}"/><Run Text="Arena Bridge" Foreground="#9FD0FF"/><Run Text=". Die Beschreibung ist optional." Foreground="{StaticResource SwTextMain}"/></TextBlock>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border x:Name="CloudStep3" Background="#2A1020" CornerRadius="10" Padding="12,10" Margin="0,0,0,8" BorderBrush="#66FF5C77" BorderThickness="1">
+                                            <StackPanel>
+                                                <TextBlock Foreground="{StaticResource SwTextMain}" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap"><Run Text="3. WICHTIG — Berechtigungen (Access Permissions)" Foreground="#FF5C77"/></TextBlock>
+                                                <TextBlock Text="• Unter Access Permissions den Punkt ASSETS hinzufügen." Foreground="#F4F8FF" FontSize="11.5" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                                <TextBlock Text="• Bei Assets BEIDE Haken setzen: READ (Lesen) und WRITE (Schreiben). Roblox nennt sie asset:read und asset:write." Foreground="#F4F8FF" FontSize="11.5" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                                <TextBlock Text="• Mehr braucht der Schlüssel nicht. Ohne WRITE lehnt Roblox JEDEN Upload mit 403 ab - Arena meldet das dann ehrlich." Foreground="#FFC7D3" FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                                <TextBlock Text="• Nicht nötig: Erfahrungen/Places, Datastore, Messaging, Inventory. Weniger Rechte sind sicherer." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border x:Name="CloudStep4" Background="#0C1730" CornerRadius="10" Padding="12,10" Margin="0,0,0,8" BorderBrush="#26FFFFFF" BorderThickness="1">
+                                            <StackPanel>
+                                                <TextBlock Foreground="{StaticResource SwTextMain}" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap"><Run Text="4. Sicherheit (Security)" Foreground="#FF5C77"/><Run Text=" — deine IP-Adresse eintragen, am einfachsten " Foreground="{StaticResource SwTextMain}"/><Run Text="0.0.0.0/0" Foreground="#9FD0FF"/><Run Text=" (jede IP). Kein Ablaufdatum setzen, sonst stoppt der Upload später stillschweigend." Foreground="{StaticResource SwTextMain}"/></TextBlock>
+                                                <TextBlock Text="Der Schlüssel liegt verschlüsselt nur auf diesem PC. Wer ihn hat, kann in deinem Namen Assets hochladen - also niemals weitergeben." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,5,0,0"/>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border x:Name="CloudStep5" Background="#0C1730" CornerRadius="10" Padding="12,10" Margin="0,0,0,8" BorderBrush="#26FFFFFF" BorderThickness="1">
+                                            <StackPanel>
+                                                <TextBlock Foreground="{StaticResource SwTextMain}" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap"><Run Text="5. Save &amp; Generate Key" Foreground="#FF5C77"/><Run Text=" — den Schlüssel SOFORT kopieren. Roblox zeigt ihn genau EINMAL und nie wieder." Foreground="{StaticResource SwTextMain}"/></TextBlock>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border x:Name="CloudStep6" Background="#0C1730" CornerRadius="10" Padding="12,10" BorderBrush="#26FFFFFF" BorderThickness="1">
+                                            <StackPanel>
+                                                <TextBlock Foreground="{StaticResource SwTextMain}" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap"><Run Text="6. Hier einfügen" Foreground="#FF5C77"/><Run Text=" — Schlüssel oben eintragen, Ersteller (dein Roblox-Name oder deine ID) ergänzen und Speichern. Danach lädt Arena Meshes und Bilder voll automatisch hoch." Foreground="{StaticResource SwTextMain}"/></TextBlock>
+                                                <TextBlock Text="Was Arena damit hochladen kann: Meshes als FBX/GLB/GLTF und Bilder als PNG/JPG/BMP/TGA - maximal 20 MB je Datei, Bilder unter 8000x8000 Pixel. Hochgeladene Assets landen im Inventar des eingetragenen Erstellers." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,5,0,0"/>
+                                            </StackPanel>
+                                        </Border>
+
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
                         <TextBlock Text="UPDATES" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.4.2" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.5.0" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -36808,6 +37485,309 @@ function Open-SettingsWindow {
     $doneNotifySwitch = $settingsWindow.FindName('DoneNotifySwitch')
     $editorIconsSwitch = $settingsWindow.FindName('EditorIconsSwitch')
     $updateText      = $settingsWindow.FindName('UpdateInfoText')
+    # ----------------------------------------------------------------
+    # Version 7.5.0: ROBLOX OPEN CLOUD im Einstellungsfenster.
+    # Der Schluessel wird verschluesselt abgelegt (DPAPI/CurrentUser in
+    # opencloud.key) und liegt im Betrieb NUR im Speicher. Das Tutorial ist
+    # AUFKLAPPBAR und ANIMIERT (Hoehe, Deckkraft, Chevron, gestaffelte
+    # Schritte) - und es nennt die Rechte, ohne die jeder Upload mit 403
+    # scheitert: ASSETS + LESEN (asset:read) + SCHREIBEN (asset:write).
+    # ----------------------------------------------------------------
+    $cloudKeyBox          = $settingsWindow.FindName('CloudKeyBox')
+    $cloudSaveButton      = $settingsWindow.FindName('CloudSaveButton')
+    $cloudTestButton      = $settingsWindow.FindName('CloudTestButton')
+    $cloudRemoveButton    = $settingsWindow.FindName('CloudRemoveButton')
+    $cloudStatusText      = $settingsWindow.FindName('CloudStatusText')
+    $cloudCreatorBox      = $settingsWindow.FindName('CloudCreatorBox')
+    $cloudCreatorKind     = $settingsWindow.FindName('CloudCreatorKind')
+    $cloudCreatorHint     = $settingsWindow.FindName('CloudCreatorHint')
+    $cloudTutorialHeader  = $settingsWindow.FindName('CloudTutorialHeader')
+    $cloudTutorialChevron = $settingsWindow.FindName('CloudTutorialChevron')
+    $cloudTutorialToggle  = $settingsWindow.FindName('CloudTutorialToggle')
+    $cloudTutorialWrap    = $settingsWindow.FindName('CloudTutorialWrap')
+    $cloudTutorialBody    = $settingsWindow.FindName('CloudTutorialBody')
+
+    function Set-CloudStatusText {
+        param([string]$Text, [string]$Hex = '#94A3B8')
+        try { $cloudStatusText.Text = [string]$Text } catch {}
+        try { $cloudStatusText.Foreground = Get-Brush ([string]$Hex) } catch {}
+    }
+
+    function Get-CloudSelectedKind {
+        $kind = 'user'
+        try { if ([int]$cloudCreatorKind.SelectedIndex -eq 1) { $kind = 'group' } } catch {}
+        return $kind
+    }
+
+    function Sync-CloudSharedSettings {
+        # Die Laufzeit liest den Schluessel und den Ersteller aus $Shared -
+        # der HTTP-Handler laeuft in einem eigenen Runspace und sieht die
+        # $script:-Werte des Hauptprogramms nicht.
+        try {
+            $script:Shared.BridgeSettings.openCloudKeySet = [bool]$script:SettingsCache.openCloudKeySet
+            $script:Shared.BridgeSettings.openCloudKeyHint = [string]$script:SettingsCache.openCloudKeyHint
+            $script:Shared.BridgeSettings.openCloudCreatorId = [string]$script:SettingsCache.openCloudCreatorId
+            $script:Shared.BridgeSettings.openCloudCreatorKind = [string]$script:SettingsCache.openCloudCreatorKind
+            $script:Shared.BridgeSettings.openCloudCreatorName = [string]$script:SettingsCache.openCloudCreatorName
+            $script:Shared.BridgeSettings.openCloudSavedAt = [string]$script:SettingsCache.openCloudSavedAt
+        } catch {}
+    }
+
+    # --- Startzustand: steht schon ein Schluessel / Ersteller bereit? -------
+    $cloudKeyPresent = $false
+    $cloudKey = ''
+    try { $cloudKey = [string](Get-OpenCloudKey -Shared $script:Shared) } catch {}
+    if (-not [string]::IsNullOrWhiteSpace($cloudKey)) { $cloudKeyPresent = $true }
+    try {
+        $storedCreator = [string]$script:SettingsCache.openCloudCreatorName
+        if ([string]::IsNullOrWhiteSpace($storedCreator)) { $storedCreator = [string]$script:SettingsCache.openCloudCreatorId }
+        $cloudCreatorBox.Text = $storedCreator
+    } catch {}
+    try { $cloudCreatorKind.SelectedIndex = $(if ([string]$script:SettingsCache.openCloudCreatorKind -eq 'group') { 1 } else { 0 }) } catch {}
+    if ($cloudKeyPresent) {
+        $hintText = ''
+        try { $hintText = [string]$script:SettingsCache.openCloudKeyHint } catch {}
+        $savedText = ''
+        try { $savedText = [string]$script:SettingsCache.openCloudSavedAt } catch {}
+        $line = 'Schlüssel ist hinterlegt'
+        if (-not [string]::IsNullOrWhiteSpace($hintText)) { $line = $line + ' (' + $hintText + ')' }
+        if (-not [string]::IsNullOrWhiteSpace($savedText)) { $line = $line + ' - gespeichert ' + $savedText }
+        $line = $line + '. Arena kann Meshes und Bilder damit selbst hochladen.'
+        Set-CloudStatusText $line '#7EE2A8'
+    } else {
+        Set-CloudStatusText 'Noch kein Schlüssel hinterlegt. Ohne ihn kann Arena keine eigenen Meshes und Bilder hochladen - alles andere läuft weiter. Klappe das Tutorial auf, es zeigt dir jeden Schritt inklusive der nötigen Rechte.' '#FFC7D3'
+    }
+
+    # --- Tutorial: ANIMIERT auf- und zuklappen ------------------------------
+    $script:CloudTutorialOpen = $false
+    $script:CloudCheckRunning = $false
+    $script:CloudCheckPs = $null
+    $script:CloudCheckHandle = $null
+    $cloudSteps = New-Object System.Collections.Generic.List[object]
+    for ($stepIndex = 1; $stepIndex -le 6; $stepIndex = $stepIndex + 1) {
+        $stepElement = $settingsWindow.FindName('CloudStep' + [string]$stepIndex)
+        if ($null -ne $stepElement) { $cloudSteps.Add($stepElement) }
+    }
+    foreach ($step in $cloudSteps) {
+        try {
+            $step.Opacity = 0
+            $step.RenderTransform = [System.Windows.Media.TranslateTransform]::new(0.0, 12.0)
+        } catch {}
+    }
+    $cloudTutorialHeader.Add_MouseLeftButtonDown({
+        param($s, $e)
+        try {
+            $ease = [System.Windows.Media.Animation.CubicEase]::new()
+            $ease.EasingMode = [System.Windows.Media.Animation.EasingMode]::EaseOut
+            if (-not $script:CloudTutorialOpen) {
+                # Erst die echte Hoehe messen (unsichtbar), DANN animieren -
+                # damit die Animation das Ziel kennt und nichts zappelt.
+                $cloudTutorialWrap.MaxHeight = 100000
+                $cloudTutorialWrap.UpdateLayout()
+                $targetHeight = [Math]::Max(60.0, [double]$cloudTutorialBody.ActualHeight)
+                $cloudTutorialWrap.MaxHeight = 0
+                $cloudTutorialWrap.UpdateLayout()
+                $grow = [System.Windows.Media.Animation.DoubleAnimation]::new(0.0, $targetHeight, [TimeSpan]::FromMilliseconds(300))
+                $grow.EasingFunction = $ease
+                $cloudTutorialWrap.BeginAnimation([System.Windows.FrameworkElement]::MaxHeightProperty, $grow)
+                $fadeIn = [System.Windows.Media.Animation.DoubleAnimation]::new(0.0, 1.0, [TimeSpan]::FromMilliseconds(240))
+                $cloudTutorialWrap.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fadeIn)
+                # Die Schritte kommen NACHEINANDER - das ist die Animation.
+                $delay = 60
+                foreach ($step in $cloudSteps) {
+                    $stepFade = [System.Windows.Media.Animation.DoubleAnimation]::new(0.0, 1.0, [TimeSpan]::FromMilliseconds(260))
+                    $stepFade.BeginTime = [TimeSpan]::FromMilliseconds($delay)
+                    $step.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $stepFade)
+                    $stepMove = [System.Windows.Media.Animation.DoubleAnimation]::new(12.0, 0.0, [TimeSpan]::FromMilliseconds(260))
+                    $stepMove.BeginTime = [TimeSpan]::FromMilliseconds($delay)
+                    $stepMove.EasingFunction = $ease
+                    $step.RenderTransform.BeginAnimation([System.Windows.Media.TranslateTransform]::YProperty, $stepMove)
+                    $delay = $delay + 55
+                }
+                $turn = [System.Windows.Media.Animation.DoubleAnimation]::new(0.0, 90.0, [TimeSpan]::FromMilliseconds(240))
+                $turn.EasingFunction = $ease
+                $cloudTutorialChevron.RenderTransform.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $turn)
+                $cloudTutorialToggle.Text = 'ausblenden'
+                $script:CloudTutorialOpen = $true
+            } else {
+                $currentHeight = [Math]::Max(0.0, [double]$cloudTutorialWrap.ActualHeight)
+                $shrink = [System.Windows.Media.Animation.DoubleAnimation]::new($currentHeight, 0.0, [TimeSpan]::FromMilliseconds(220))
+                $shrink.EasingFunction = $ease
+                $cloudTutorialWrap.BeginAnimation([System.Windows.FrameworkElement]::MaxHeightProperty, $shrink)
+                $fadeOut = [System.Windows.Media.Animation.DoubleAnimation]::new([double]$cloudTutorialWrap.Opacity, 0.0, [TimeSpan]::FromMilliseconds(180))
+                $cloudTutorialWrap.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fadeOut)
+                $turnBack = [System.Windows.Media.Animation.DoubleAnimation]::new(90.0, 0.0, [TimeSpan]::FromMilliseconds(220))
+                $turnBack.EasingFunction = $ease
+                $cloudTutorialChevron.RenderTransform.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $turnBack)
+                $cloudTutorialToggle.Text = 'anzeigen'
+                $script:CloudTutorialOpen = $false
+            }
+        } catch {
+            try { Write-UiErrorLog 'Open-Cloud-Tutorial' $_ } catch {}
+        }
+    })
+
+    # --- Speichern ---------------------------------------------------------
+    $cloudSaveButton.Add_Click({
+        param($s, $e)
+        try {
+            $keyText = ''
+            try { $keyText = ([string]$cloudKeyBox.Password).Trim() } catch {}
+            $creatorInput = ''
+            try { $creatorInput = ([string]$cloudCreatorBox.Text).Trim() } catch {}
+            $kind = Get-CloudSelectedKind
+            $messages = New-Object System.Collections.Generic.List[string]
+            $keyChanged = $false
+            if (-not [string]::IsNullOrWhiteSpace($keyText)) {
+                if ($keyText.Length -lt 20) {
+                    Set-CloudStatusText 'Das sieht nicht nach einem Roblox-Open-Cloud-Schlüssel aus (er ist deutlich länger). Bitte kopiere ihn komplett aus dem Creator Dashboard.' '#FFC7D3'
+                    return
+                }
+                $saved = $false
+                try { $saved = [bool](Set-OpenCloudKey -Shared $script:Shared -Key $keyText) } catch {}
+                if ($saved) {
+                    $messages.Add('Schlüssel gespeichert (verschlüsselt in opencloud.key).')
+                    $script:SettingsCache.openCloudKeySet = $true
+                    $script:SettingsCache.openCloudKeyHint = ('…' + $keyText.Substring([Math]::Max(0, $keyText.Length - 4)))
+                    $script:SettingsCache.openCloudSavedAt = (Get-Date).ToString('dd.MM.yyyy HH:mm')
+                    $keyChanged = $true
+                    try { $cloudKeyBox.Clear() } catch {}
+                } else {
+                    Set-CloudStatusText 'Der Schlüssel konnte nicht gespeichert werden. Ist der Bridge-Ordner beschreibbar? Siehe runtime.log.' '#FFC7D3'
+                    return
+                }
+            }
+            if (-not [string]::IsNullOrWhiteSpace($creatorInput)) {
+                $resolved = Resolve-OpenCloudCreatorId -Name $creatorInput
+                if ([bool]$resolved.ok) {
+                    $script:SettingsCache.openCloudCreatorId = [string]$resolved.id
+                    $script:SettingsCache.openCloudCreatorKind = $kind
+                    $nameOut = [string]$resolved.name
+                    if ([string]::IsNullOrWhiteSpace($nameOut)) { $nameOut = $creatorInput }
+                    $script:SettingsCache.openCloudCreatorName = $nameOut
+                    $messages.Add(('Ersteller: ' + $nameOut + ' (ID ' + [string]$resolved.id + ').'))
+                } else {
+                    $script:SettingsCache.openCloudCreatorKind = $kind
+                    $script:SettingsCache.openCloudCreatorName = ''
+                    Set-CloudStatusText ([string]$resolved.error + ' Der Schlüssel wurde' + $(if ($keyChanged) { '' } else { ' NICHT' }) + ' geändert.') '#FFC7D3'
+                    if (-not $keyChanged) { return }
+                }
+            }
+            $script:SettingsCache.openCloudCreatorKind = $kind
+            Save-BridgeSettingsFile
+            Sync-CloudSharedSettings
+            if ($messages.Count -eq 0) {
+                Set-CloudStatusText 'Nichts geändert: trage einen Schlüssel und/oder einen Ersteller ein.' '#94A3B8'
+                return
+            }
+            $textOut = (($messages.ToArray()) -join ' ')
+            $keyNow = ''
+            try { $keyNow = [string](Get-OpenCloudKey -Shared $script:Shared) } catch {}
+            if ([string]::IsNullOrWhiteSpace($keyNow)) {
+                $textOut = $textOut + ' Es fehlt noch der Schlüssel selbst - klappe dazu das Tutorial auf.'
+                Set-CloudStatusText $textOut '#FFC7D3'
+            } elseif ([string]::IsNullOrWhiteSpace([string]$script:SettingsCache.openCloudCreatorId)) {
+                $textOut = $textOut + ' Es fehlt noch der Ersteller (Roblox-Name oder ID) - ohne ihn lehnt Roblox jeden Upload ab.'
+                Set-CloudStatusText $textOut '#FFC7D3'
+            } else {
+                $textOut = $textOut + ' Ab jetzt lädt Arena Meshes und Bilder voll automatisch hoch.'
+                Set-CloudStatusText $textOut '#7EE2A8'
+            }
+            Write-RuntimeLog ('Open Cloud: ' + $textOut)
+        } catch {
+            try { Write-UiErrorLog 'Open-Cloud-Speichern' $_ } catch {}
+            Set-CloudStatusText ('Speichern fehlgeschlagen: ' + $_.Exception.Message) '#FFC7D3'
+        }
+    })
+
+    # --- Prüfen: nimmt Roblox den Schlüssel an? ----------------------------
+    $cloudTestButton.Add_Click({
+        param($s, $e)
+        try {
+            $keyNow = ''
+            try { $keyNow = [string](Get-OpenCloudKey -Shared $script:Shared) } catch {}
+            if ([string]::IsNullOrWhiteSpace($keyNow)) {
+                Set-CloudStatusText 'Zum Prüfen muss erst ein Schlüssel gespeichert sein.' '#FFC7D3'
+                return
+            }
+            if ($script:CloudCheckRunning -eq $true) { return }
+            $script:CloudCheckRunning = $true
+            $cloudTestButton.IsEnabled = $false
+            Set-CloudStatusText 'Prüfe den Schlüssel bei Roblox …' '#94A3B8'
+            # IM HINTERGRUND pruefen: das Fenster bleibt bedienbar und friert
+            # nicht ein, auch wenn die Leitung langsam ist. Der Prueflauf
+            # bekommt dieselbe Werkzeug-Quelle wie der Handler (ein eigener
+            # Runspace kennt die Funktionen des Hauptskripts nicht).
+            $script:CloudCheckPs = [PowerShell]::Create()
+            [void]$script:CloudCheckPs.AddScript({
+                param($SharedObject, $ToolsText)
+                try { . ([scriptblock]::Create([string]$ToolsText)) } catch {}
+                try { return (Test-OpenCloudKeyAuth -Shared $SharedObject) } catch {
+                    return @{ ok = $false; code = 'OPENCLOUD_UNREACHABLE'; error = $_.Exception.Message; status = 0 }
+                }
+            }).AddArgument($script:Shared).AddArgument([string]$script:Shared.OpenCloudToolsText)
+            $script:CloudCheckHandle = $script:CloudCheckPs.BeginInvoke()
+            $checkTimer = [System.Windows.Threading.DispatcherTimer]::new()
+            $checkTimer.Interval = [TimeSpan]::FromMilliseconds(250)
+            $checkTimer.Add_Tick({
+                param($ts, $te)
+                try {
+                    if ($script:CloudCheckHandle.IsCompleted -ne $true) { return }
+                    $ts.Stop()
+                    $verdict = $null
+                    try { $verdict = $script:CloudCheckPs.EndInvoke($script:CloudCheckHandle) } catch {}
+                    try { $script:CloudCheckPs.Dispose() } catch {}
+                    $script:CloudCheckRunning = $false
+                    $cloudTestButton.IsEnabled = $true
+                    $verdictOk = $false
+                    $verdictCode = ''
+                    $verdictStatus = ''
+                    $verdictError = ''
+                    try { $verdictOk = [bool]$verdict.ok } catch {}
+                    try { $verdictCode = [string]$verdict.code } catch {}
+                    try { $verdictStatus = [string]$verdict.status } catch {}
+                    try { $verdictError = [string]$verdict.error } catch {}
+                    if ($verdictOk) {
+                        Set-CloudStatusText ('Roblox nimmt den Schlüssel an (HTTP ' + $verdictStatus + '). Achtung: die Prüfung bestätigt nur die Anmeldung - die Upload-Rechte (ASSETS + LESEN + SCHREIBEN) zeigen sich beim ersten echten Upload.') '#7EE2A8'
+                    } elseif ($verdictCode -eq 'OPENCLOUD_KEY_REJECTED') {
+                        Set-CloudStatusText ('Roblox hat den Schlüssel ABGELEHNT (HTTP ' + $verdictStatus + '). Erstelle ihn neu - mit den Rechten ASSETS + LESEN + SCHREIBEN (siehe Schritt 3 im Tutorial) und ohne Ablaufdatum.') '#FFC7D3'
+                    } else {
+                        Set-CloudStatusText ('Die Prüfung konnte nicht abgeschlossen werden: ' + $verdictError) '#FFC7D3'
+                    }
+                    try { Write-RuntimeLog ('Open Cloud: Schlüsselprüfung -> ' + $verdictCode + ' (HTTP ' + $verdictStatus + ').') } catch {}
+                } catch {
+                    try { $ts.Stop() } catch {}
+                    $script:CloudCheckRunning = $false
+                    try { $cloudTestButton.IsEnabled = $true } catch {}
+                    Set-CloudStatusText ('Prüfung fehlgeschlagen: ' + $_.Exception.Message) '#FFC7D3'
+                }
+            })
+            $checkTimer.Start()
+        } catch {
+            try { Write-UiErrorLog 'Open-Cloud-Pruefung' $_ } catch {}
+            Set-CloudStatusText ('Prüfung fehlgeschlagen: ' + $_.Exception.Message) '#FFC7D3'
+        }
+    })
+
+    # --- Entfernen ---------------------------------------------------------
+    $cloudRemoveButton.Add_Click({
+        param($s, $e)
+        try {
+            [void](Remove-OpenCloudKey -Shared $script:Shared)
+            $script:SettingsCache.openCloudKeySet = $false
+            $script:SettingsCache.openCloudKeyHint = ''
+            $script:SettingsCache.openCloudSavedAt = ''
+            Save-BridgeSettingsFile
+            Sync-CloudSharedSettings
+            try { $cloudKeyBox.Clear() } catch {}
+            Set-CloudStatusText 'Schlüssel entfernt. Arena kann keine Meshes und Bilder mehr hochladen, bis du wieder einen einträgst.' '#FFC7D3'
+            Write-RuntimeLog 'Open Cloud: Schlüssel entfernt.'
+        } catch {
+            try { Write-UiErrorLog 'Open-Cloud-Entfernen' $_ } catch {}
+            Set-CloudStatusText ('Entfernen fehlgeschlagen: ' + $_.Exception.Message) '#FFC7D3'
+        }
+    })
+
     # 7.2.3: Die Test-Benachrichtigung ist vollstaendig aus den Einstellungen
     # entfernt. Der report_done-Kanal, seine Registrierung und seine Messung
     # bleiben unveraendert; nur ein zusaetzlicher kuenstlicher Popup-Test entfiel.
@@ -36824,7 +37804,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.4.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.5.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -36889,7 +37869,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.4.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.5.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -36902,7 +37882,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.4.2'
+    $verText = '7.5.0'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

@@ -32,7 +32,8 @@ sein.
 | `ORGANIC_BUILD_CONTRACT.md` | Organic-Bauvertrag (Stand 7.3.2, weiterhin gueltig; der Mesh-Weg kommt in 7.4.0 hinzu): typed Creature-Loft-Volumen, Gesichts-/Flügelrollen und fail-closed Audit; 7.1.4 bleibt als Historie |
 | `test_queue_model_707.py` | Python-Modelltest: reproduziert den Queue-Stillstand von 7.0.4 und prüft die 7.0.5-Regeln (unabhängiger Watchdog, lateResults, Reconnect-Übergabe) **plus** 7.0.6 (Sitzungs-Identität, Fast-Fail, Zustell-Timeline) und 7.0.7 (Place-Zeile: fehlende Eigenschaft bricht den Zeilenaufbau ab) |
 | `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Versions-Checks (`/api/version` 7.4.2, `counters.revivedSessions` konstant, `/api/places` 200, `/api/status` 200), Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `--reset-test` (Reset mit 2 wartenden Befehlen), `--force-fail`, `--ask-sweep` (7.2.4 P0-Abnahme: alle Werkzeuge bei **offener** Frage) und `--message-round` (Nachricht → `_bridge.userMessages` → `ack_user_message`) |
-| `test_v740_mesh.py` | Offline-Abnahme 7.4.2/7.4.1 (Blender-/Mesh-Weg, Runner-Hotfix, BOM-Hotfix, automatisches Mesh-Fenster): BOM-freie WriteAllText-Pfade und BOM-tolerantes Lesen im Runner, Skript-Sperrliste, OBJ-Messung mit Dreiecks-/Groessen-/Limit-Pruefung, Register/Job-Zustandsmaschine, automatisches modeless Fenster (Auto-Oeffnen nur bei neuer Wartemenge, „Fertig“ raeumt auf, „Stornieren“ ueber tools.mesh_drop mit Rueckfrage), Report-Gates (`MESH_UPLOAD_PENDING`) und Beleg, dass `MeshPart.MeshId` nur ueber `CreateMeshPartAsync`/`ApplyMesh` gesetzt wird; seit 7.4.2 zusaetzlich: `import bpy` steht im Runner auf Modulebene (nicht eingerueckt in `main()`), und ein Mini-Ausfuehrungstest laesst den Runner mit gestubbtem `bpy`-Modul echt durchlaufen |
+| `test_v740_mesh.py` | Offline-Abnahme des Blender-/Mesh-Wegs (fortgeschrieben auf 7.5.0): BOM-freie WriteAllText-Pfade und BOM-tolerantes Lesen im Runner, Skript-Sperrliste, OBJ-Messung mit Dreiecks-/Groessen-/Limit-Pruefung, Register/Job-Zustandsmaschine, Report-Gates (`MESH_UPLOAD_PENDING`), Beleg, dass `MeshPart.MeshId` nur ueber `CreateMeshPartAsync`/`ApplyMesh` gesetzt wird, `import bpy` auf Modulebene und ein Mini-Ausfuehrungstest mit gestubbtem `bpy`; **seit 7.5.0**: das Mesh-Fenster ist entfernt (13 Funktionen, Fenster-Zustand und Auto-Oeffnen geloescht) und der Upload ist ein Werkzeugaufruf |
+| `test_v750_cloud.py` | Offline-Abnahme 7.5.0 (Roblox Open Cloud Upload): Schluessel verschluesselt in `opencloud.key` (DPAPI CurrentUser), nie in `settings.json`, nie im Log; Ersteller als Nutzer oder Gruppe; das Upload-Protokoll (`POST https://apis.roblox.com/assets/v1/assets`, `x-api-key`, multipart `request` + `fileContent`, Polling ueber `/assets/v1/operations/<id>`, 20 MB, Endungs-Tabelle, OBJ abgelehnt); die Fehlerwege (429/401/403/5xx/400/Netz -> `OPENCLOUD_*` mit Originalantwort) und der deutsche Nutzer-Satz bei fehlendem Schluessel; das Einstellungsfenster (Karte, Ersteller, aufklappbares Tutorial mit Animation, Pruefen im Hintergrund); die Empfehlung an den Agenten. Dazu ein **ausfuehrbarer Modelltest** gegen eine nachgespielte Roblox-API (Upload mit Asset-Id, Rate-Limit, abgelehnter Schluessel) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -47,6 +48,61 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 7.5.0 — Open Cloud Upload: Mesh-Fenster weg, Arena lädt selbst hoch
+
+Der letzte Handgriff im Modellbau war bisher ein **Menschen-Schritt**: du
+musstest die OBJ-Datei von Hand bei Roblox hochladen und die Mesh-Id in ein
+Fenster tippen. Damit ist Schluss — voll automatisch, ohne dass du irgendetwas
+tust.
+
+1. **Das Mesh-Fenster ist entfernt.** Fenster „Mesh-Uploads“, Menüeintrag, das
+   automatische Aufgehen und das Abtippen von Ids sind Geschichte. Es bleiben
+   der Blender-Bau (`blender_status`, `build_mesh_model`, `mesh_status`,
+   `mesh_cancel`), die von der Bridge **gemessenen** viereckigen
+   MeshPart-Platzhalter und `mesh_apply_asset` — der Upload selbst ist jetzt
+   ein Werkzeugaufruf.
+2. **Neuer Abschnitt „ROBLOX OPEN CLOUD“ in den Einstellungen** (Zahnrad oben
+   rechts). Dort trägst du **einmal** deinen eigenen Roblox-Open-Cloud-
+   API-Schlüssel ein. Er wird **verschlüsselt** (DPAPI, nur für dein
+   Windows-Konto) in `%LOCALAPPDATA%\ArenaRobloxBridge\opencloud.key`
+   gespeichert — nicht im Klartext, nicht in `settings.json`, nie im Log.
+   Daneben liegt ein **aufklappbares Tutorial mit Animation**, das dir in sechs
+   Schritten zeigt, wie der Schlüssel bei Roblox entsteht — inklusive der
+   Rechte, ohne die Roblox **jeden** Upload mit `403` ablehnt: **ASSETS**
+   hinzufügen und dort **LESEN** (`asset:read`) und **SCHREIBEN**
+   (`asset:write`) anhaken. Außerdem gehört der **Ersteller** dazu (dein
+   Roblox-Name oder deine Zahlen-ID, auch eine Gruppe), weil Roblox jedes Asset
+   jemandem zuordnet. „Prüfen“ fragt bei Roblox im Hintergrund nach, ob der
+   Schlüssel angenommen wird — und sagt ehrlich, dass diese Prüfung nur die
+   Anmeldung bestätigt, nicht die Upload-Rechte.
+3. **Neues Werkzeug `upload_asset`.** Arena lädt damit **Meshes** (FBX/GLB/
+   GLTF aus Blender, maximal 20 MB) und **Bilder** (PNG/JPG/BMP/TGA unter
+   8000×8000 Pixel) über die offizielle Roblox-Schnittstelle hoch und bekommt
+   die **echte Asset-Id**. Bilder kann sie sogar direkt aus ihrem eigenen
+   Speicher schicken (`contentBase64` + `fileName`) — ohne Umweg über die
+   Festplatte. Danach setzt sie das Asset **selbst** in den Place ein:
+   `mesh_apply_asset` in die bestehenden Platzhalter, `insert_asset` für ein
+   komplettes Modell, `set_property` für Decal/Texture/Image.
+4. **Kein Schlüssel? Kein Aus — aber eine klare Ansage.** Das Werkzeug bleibt
+   ganz normal verfügbar und meldet `OPENCLOUD_KEY_MISSING` erst beim Aufruf,
+   zusammen mit einem deutschen Satz, den Arena dir **wörtlich** sagt: kurz auf
+   das Zahnrad, Abschnitt ROBLOX OPEN CLOUD, Tutorial machen, Schlüssel
+   speichern — dann geht es weiter.
+5. **Roblox-Fehler kommen unverfälscht an.** Rate-Limit (`429`) →
+   `OPENCLOUD_RATE_LIMITED`, abgelehnter Schlüssel (`401`/`403`) →
+   `OPENCLOUD_KEY_REJECTED`, abgelehnte Datei (`400`) →
+   `OPENCLOUD_UPLOAD_REJECTED`, Störung (`5xx`) → `OPENCLOUD_SERVER_ERROR`,
+   Netz weg → `OPENCLOUD_UNREACHABLE`. Immer mit Status und Originaltext von
+   Roblox. Nichts wird erfunden, keine Asset-Id geraten.
+6. **Bauen und Blender werden ausdrücklich empfohlen.** Sessionstart, die
+   Führungen (`meshBuildRules`, neue `cloudUploadRules`) und die Werkzeugtexte
+   nennen den Weg *Blender baut → `upload_asset` → einsetzen → prüfen* als
+   Empfehlung; der Katalog ist der Notbehelf. Grenzen von Roblox: 20 MB je
+   Datei, Bilder unter 8000×8000 Pixel, **OBJ nimmt Open Cloud nicht an** — die
+   Bridge baut deshalb zusätzlich ein FBX (sonst GLB), `mesh_status` zeigt es
+   unter `uploadPath`. Und die Ehrlichkeit bleibt: solange ein Platzhalter noch
+   viereckig ist, antwortet `report_done` mit `MESH_UPLOAD_PENDING`.
 
 ## 7.4.2 — Mini-Hotfix im Mesh-Runner (Blender-Export)
 
@@ -138,8 +194,10 @@ Details und Modelle, die im Place nicht aus tausenden Teilen bestehen sollen.
    Dreiecke, Vertices, Größe in Studs, Dateigröße, SHA-256. Ein Slot über der
    Grenze (rund 10.000 Dreiecke) wird mit `state=rejected` abgelehnt und muss
    einfacher gebaut werden.
-4. **Der Upload ist ein Menschenschritt.** Roblox hat keine API für
-   Mesh-Uploads. Die Bridge legt die **viereckigen MeshPart-Platzhalter** in
+4. **Der Upload war ein Menschenschritt** *(Stand 7.4.0 — seit 7.5.0
+   überholt, siehe oben: das Fenster ist entfernt und `upload_asset` lädt über
+   die offizielle Open-Cloud-API selbst hoch).* Roblox hat keine Mesh-Upload-
+   API *in Studio*. Die Bridge legt die **viereckigen MeshPart-Platzhalter** in
    den gemessenen Maßen selbst an; der Nutzer lädt die OBJ-Dateien in Studio
    (3D-Importer oder Drag & Drop) oder im Creator Dashboard hoch und trägt die
    Mesh-Ids im neuen Fenster **„Mesh-Uploads“** (Menü … der Place-Zeile) ein.

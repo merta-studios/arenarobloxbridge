@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Offline-Abnahme fuer den 7.4.2-Blender-/Mesh-Weg (ohne Windows/PowerShell).
+"""Offline-Abnahme fuer den Blender-/Mesh-Weg, fortgeschrieben auf 7.5.0.
+
+Der 7.4.x-Teil bleibt als Bestandsabnahme erhalten (Schritt 4, Runner, BOM,
+Messung, Register, Lua-Werkzeuge, Gates). Ab 7.5.0 ist EINES anders und hier
+mitgeprueft: DAS MESH-FENSTER IST ENTFERNT. Der Upload laeuft ueber die
+Roblox-Open-Cloud-API und das Werkzeug upload_asset (eigene Abnahme in
+test_v750_cloud.py).
 
 Geprueft wird, was ohne laufende Bridge pruefbar ist:
 
@@ -14,8 +20,10 @@ Geprueft wird, was ohne laufende Bridge pruefbar ist:
   MeshPart.MeshId - und markiert/loescht ArenaPlaceholder korrekt.
 * model_audit trennt Mesh-Platzhalter von vergessenen Platzhaltern und
   report_done antwortet MESH_UPLOAD_PENDING.
-* Das Fenster "Mesh-Uploads" ist echtes XAML im gemeinsamen Design und das
-  Place-Menue oeffnet es.
+* Seit 7.5.0: das Fenster "Mesh-Uploads" ist WEG (alle 13 Funktionen, die
+  Fenster-Zustandsvariablen und die Auto-Oeffnen-Logik sind geloescht). Der
+  UI-Takt pflegt weiter die Mesh-Zeilen und Platzhalter, der Upload selbst ist
+  ein Werkzeugaufruf (upload_asset), kein Menschenschritt.
 """
 from __future__ import annotations
 
@@ -30,7 +38,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.4.2"
+VERSION = "7.5.0"
 FAILURES: list[str] = []
 
 
@@ -52,9 +60,9 @@ def main() -> int:
     source = raw.decode("utf-8-sig")
     metadata = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     notes = "\n".join(str(note) for note in metadata.get("notes", []))
-    check(metadata.get("version") == VERSION, "version.json ist 7.4.2")
-    for phrase in ("7.4.2", "7.4.0", "Blender", "MESH_UPLOAD_PENDING", "Mesh-Uploads",
-                   "CreateMeshPartAsync"):
+    check(metadata.get("version") == VERSION, "version.json ist 7.5.0")
+    for phrase in ("7.5.0", "7.4.0", "Blender", "MESH_UPLOAD_PENDING", "upload_asset",
+                   "Open Cloud", "CreateMeshPartAsync"):
         check(phrase in notes, f"Release-Notiz nennt {phrase}")
 
     # ------------------------------------------------------------------
@@ -351,71 +359,50 @@ def main() -> int:
           "Audit-Kennzahlen landen in AuditFlags (report_done liest sie)")
 
     # ------------------------------------------------------------------
-    # 5) Automatisches Mesh-Fenster (7.4.1): neue Namen, alte Knoepfe weg,
-    #    modellos per Show(), Auto-Oeffnen nur bei geaenderter Wartemenge,
-    #    "Fertig" (nur Ziffern) mit Aufraeumen, "Stornieren" mit Rueckfrage.
+    # 5) 7.5.0: DAS MESH-FENSTER IST ENTFERNT (ausdruecklicher Nutzerwunsch).
+    #    Kein Fenster, kein Menueeintrag, kein automatisches Aufgehen, kein
+    #    Mesh-Id-Abtippen. Was bleibt: Blender-Bau, gemessene Platzhalter,
+    #    mesh_apply_asset / mesh_drop als normale Werkzeuge - und der Upload
+    #    als Werkzeugaufruf upload_asset.
     # ------------------------------------------------------------------
-    xaml = region(source, "function Get-MeshWindowXaml {", "function Get-MeshSlotStateText {")
-    check("<!--ARENA_DIALOG_STYLES-->" in xaml,
-          "das Fenster nutzt den gemeinsamen Design-Block (Anthrazit/Grau/Pink)")
-    check('WindowStyle="None"' in xaml and 'AllowsTransparency="True"' in xaml,
-          "das Fenster ist randlos/transparent wie die uebrigen DIALOG-Fenster")
-    for name in ("TitleBar", "PlaceNameText", "CloseButton", "FolderButton", "SlotList", "StatusText"):
-        check(f'x:Name="{name}"' in xaml, f"Fenster enthaelt {name}")
-    for gone in ("ApplyButton", "RefreshButton", "InstallButton", "SkipButton",
-                 "BlenderBar", "BlenderText", "Blender jetzt installieren",
-                 "Ids einsetzen", "Schritt überspringen", "Aktualisieren"):
-        check(gone not in xaml, f"alter Fensterteil ist ENTFERNT: {gone}")
-    check("Mesh-Uploads (Blender)" not in source and "$meshItem" not in source,
+    for gone in ("function Get-MeshWindowXaml", "function Open-MeshWindow",
+                 "function Update-MeshWindow", "function Update-MeshAutoWindow",
+                 "function New-MeshRow", "function Show-MeshRowAsk",
+                 "function Invoke-MeshRowApply", "function Invoke-MeshRowDrop",
+                 "function Get-MeshWaitingUploadKeys", "function Get-MeshWaitingSignature",
+                 "function Get-MeshSlotStateText", "function Get-MeshWindowPlaceLabel"):
+        check(gone not in source, f"Mesh-Fenster-Funktion ist ENTFERNT: {gone}")
+    for gone in ("$script:MeshWindow", "$script:MeshWindowSessionId", "$script:MeshWindowRows",
+                 "$script:MeshWindowNotice", "$script:MeshAutoOpenPending", "$script:MeshLastOpenAt",
+                 "$script:MeshAutoClosedSignature"):
+        check(gone not in source, f"Fenster-Zustand ist ENTFERNT: {gone}")
+    # "Mesh-Uploads" darf nur noch im Changelog und in dem Satz vorkommen, der
+    # dem Agenten sagt, dass das Fenster WEG ist - nirgends als sichtbarer Text.
+    mentions = [line.strip() for line in source.splitlines() if "Mesh-Uploads" in line]
+    check(len(mentions) <= 3, f'"Mesh-Uploads" steht hoechstens dreimal in der Datei ({len(mentions)})')
+    for line in mentions:
+        stripped = line.lstrip()
+        check(stripped.startswith("#") or "entfernt" in line or "WEG" in line,
+              'jede Erwaehnung ist Changelog oder sagt, dass das Fenster entfernt ist')
+    check("$meshItem" not in source and "Mesh-Uploads (Blender)" not in source,
           "die Place-Liste hat KEINEN Mesh-Menueeintrag mehr")
-    check("Open-MeshWindow -SessionId" not in source,
-          "das Fenster wird nicht mehr aus dem Menue geoeffnet")
-    open_win = region(source, "function Open-MeshWindow {",
-                      "# ----------------------------------------------------------------------------\n# Tunnel (cloudflared)")
-    check("ShowDialog(" not in open_win, "das Fenster ist MODELLOS (kein ShowDialog-Aufruf)")
-    check("$win.Show() | Out-Null" in open_win, "das Fenster wird mit Show() angezeigt")
-    check("Get-MeshWaitingSignature" in open_win and "$win.Add_Closed" in open_win,
-          "beim Schliessen merkt sich die Bridge die Wartemenge (sortierte Slot-Keys)")
-    auto = region(source, "function Update-MeshAutoWindow {", "function Open-MeshWindow {")
-    check("MeshAutoClosedSignature" in auto and "signature -eq [string]$script:MeshAutoClosedSignature" in auto,
-          "Auto-Oeffnen nur, wenn sich die Wartemenge geaendert hat (keine Schleife)")
-    waiting = region(source, "function Get-MeshWaitingUploadKeys {", "function Get-MeshWaitingSignature {")
-    check("MeshRegistry" in waiting and "'obj'" in waiting,
-          "die Wartemenge kommt aus dem ECHTEN Register (state obj)")
     refresh = region(source, "function Refresh-Ui {", "$line = $null")
-    check("Update-MeshTick" in refresh and "Update-MeshAutoWindow" in refresh
-          and "Update-MeshWindow" in refresh,
-          "der UI-Takt faehrt Mesh-Takt, offenes Fenster und Auto-Oeffnen")
-    send = region(source, "function New-MeshBridgeCommand {", "function Get-MeshCommandOutcome {")
-    check("ResultSignals" in send and "CommandPayloads" in send and "PendingCommands" in send,
-          "interne Befehle laufen ueber denselben Queue-Weg wie Werkzeugaufrufe")
-    check("MeshInternal" in send, "interne Befehle sind im Mesh-Takt auffindbar")
-    row = region(source, "function New-MeshRow {", "function Update-MeshWindow {")
-    for text in ("'Fertig'", "'Stornieren'", "'Ja, stornieren'", "'Abbrechen'", "Wirklich stornieren?"):
-        check(text in row, f"die Zeile enthaelt {text}")
-    check("ArenaTextField" in row and "ArenaPrimaryButton" in row and "ArenaDangerButton" in row,
-          "die Zeile nutzt die geteilten Styles (Id-Feld, Fertig, Stornieren)")
-    check("'Collapsed'" in row and "'Visible'" in row,
-          "die Rueckfrage erscheint IN der Zeile (Aktionsknopfpaar wird ausgetauscht)")
-    apply_fn = region(source, "function Invoke-MeshRowApply {", "function Invoke-MeshRowDrop {")
-    check("notmatch '^\\d+$'" in apply_fn, '"Fertig" prueft die Id streng: NUR Ziffern')
-    check("'applying'" in apply_fn and "'mesh_apply'" in apply_fn and "('apply:' + $jobId)" in apply_fn,
-          '"Fertig" setzt applying und schickt den internen Befehl mesh_apply (Tag apply:<jobId>)')
-    drop_fn = region(source, "function Invoke-MeshRowDrop {", "function Update-MeshWindow {")
-    check("'dropping'" in drop_fn and "'mesh_drop'" in drop_fn and "('drop:' + $jobId)" in drop_fn,
-          '"Stornieren" schickt den internen Befehl mesh_drop (Tag drop:<jobId>)')
-    check("NICHT wiederhergestellt" in drop_fn or "NICHT zurueck" in drop_fn,
-          'die Rueckfrage/Statuszeile sagt ehrlich, dass ein eingesetztes Mesh nicht zurueckkommt')
-    tick = region(source, "function Update-MeshTick {", "function Get-MeshWindowPlaceLabel {")
+    check("Update-MeshTick" in refresh, "der UI-Takt pflegt die Mesh-Zeilen weiter")
+    check("Update-MeshWindow" not in refresh and "Update-MeshAutoWindow" not in refresh,
+          "der UI-Takt oeffnet/aktualisiert KEIN Mesh-Fenster mehr")
+    check("upload_asset" in source, "upload_asset existiert als Upload-Werkzeug")
+    tick_end = source.index("# Version 7.5.0: KEIN Mesh-Fenster mehr")
+    tick = source[source.index("function Update-MeshTick {"):tick_end]
     check("Send-MeshPlaceholders" in tick and "Update-MeshRegistryFromApplyResult" in tick,
           "der UI-Takt legt Platzhalter an und verbucht die Einsetz-Ergebnisse")
     check("'drop:'" in tick and "Update-MeshRegistryFromDropResult" in tick,
           "der UI-Takt verbucht auch die Stornieren-Ergebnisse (done/error)")
     check("Remove-MeshAppliedFileSets" in tick and "Eingesetzte Mesh-Dateien geloescht" in tick,
-          'nach "Fertig" raeumt der Takt Dateien auf und protokolliert das wortgleich')
+          'nach einem Einsetzen raeumt der Takt Dateien auf und protokolliert das wortgleich')
     check("apply_failed" in tick and "drop_failed" in tick,
           "Fehlschlaege werden ehrlich als apply_failed/drop_failed gesetzt")
     check("Mesh-Slot storniert" in tick, 'das Stornieren wird als "Mesh-Slot storniert" protokolliert')
+    check("Write-RuntimeLog" in tick, "der Takt protokolliert Einsetzen/Stornieren (kein Fenster mehr)")
     cleanup = region(source, "function Remove-MeshSlotFiles {", "function Remove-MeshAppliedFileSets {")
     check("MeshRegistry.TryRemove" in cleanup and "Remove-Item -LiteralPath $folder -Recurse" in cleanup,
           "aufraeumen: Slot + Dateien; der Job-Ordner nur, wenn nichts mehr wartet")
@@ -446,7 +433,7 @@ def main() -> int:
     if FAILURES:
         print(f"\nFEHLGESCHLAGEN: {len(FAILURES)} Pruefung(en) rot.")
         return 1
-    print("\nOK: 7.4.2 Blender-/Mesh-Weg (Schritt 4, Runner, Messung, Platzhalter, Fenster, Gates) bestanden.")
+    print("\nOK: Blender-/Mesh-Weg bestanden (Schritt 4, Runner, Messung, Platzhalter, Gates; Mesh-Fenster entfernt, Upload per Werkzeug).")
     return 0
 
 

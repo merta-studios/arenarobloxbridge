@@ -154,24 +154,55 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
   (NOTIFICATION_UNVERIFIED statt delivered = true). Seit v7.2.3 gibt es KEINEN
   kuenstlichen Test-Popup mehr in den Einstellungen. Es bleibt bei GENAU
   DIESEM EINEN report_done-Kanal - kein neuer Meldeweg (D4).
-- DAS MESH-FENSTER IST FENSTER Nr. 3 (v7.4.0, in v7.4.1 NEU GEBAUT -
-  ausdruecklicher Nutzerwunsch): "Mesh-Uploads". Seit v7.4.1 gibt es KEINEN
-  Menue-Eintrag mehr: Sobald mindestens eine gemessene OBJ-Datei auf den
-  Upload wartet, oeffnet sich das Fenster von SELBST, MODELESS (Show, kein
-  ShowDialog - die Hauptoberflaeche bleibt bedienbar), und nach dem
-  Schliessen nur wieder, wenn eine neue Datei dazukommt. Je Bauteil eine
-  Zeile mit OBJ-Datei (Dreiecke/Groesse), Zustand, Mesh-Id-Textfeld,
-  "Fertig" und "Stornieren" (Rueckfrage; der neue interne Befehl
-  tools.mesh_drop entfernt die MeshParts mit ArenaMeshSlot - ein schon
-  EINGESETZTES Mesh kommt NICHT zurueck). "Fertig" loescht danach OBJ und
-  Slot-Skript, "Stornieren" Slot und Dateien. Dazu Titel, Place-Name,
-  Schliessen und "Ordner oeffnen". Bauart wie die anderen Fenster:
-  Anthrazit/Grau/Pink, WindowStyle=None, ziehbare Titelleiste, X oben rechts,
-  KEIN Toast. Die alten Knoepfe (Aktualisieren, "Ids einsetzen", "Blender
-  jetzt installieren", "Schritt ueberspringen") sind WEG; der
-  Blender-Zustand steht auf dem Startbildschirm (Zeile 4, ein Klick
-  wiederholt die ECHTE Probe). Es ist bewusst KEIN neuer Meldeweg: der eine
-  report_done-Kanal bleibt unveraendert.
+- DAS MESH-FENSTER IST SEIT v7.5.0 ENTFERNT (ausdruecklicher Nutzerwunsch;
+  dieser Satz LOEST die Regel "DAS MESH-FENSTER IST FENSTER Nr. 3" aus
+  v7.4.0/v7.4.1 AB). Es gibt kein Fenster "Mesh-Uploads" mehr, keinen
+  Menue-Eintrag, kein automatisches Aufgehen und kein Abtippen von Mesh-Ids
+  durch den Nutzer. Was BLEIBT: der Blender-Bau (blender_status,
+  build_mesh_model, mesh_status, mesh_cancel), die von der Bridge GEMESSENEN
+  viereckigen MeshPart-Platzhalter, mesh_apply_asset und mesh_drop als ganz
+  normale Werkzeuge. Hochgeladen wird nicht mehr von Hand.
+- DER UPLOAD LAEUFT UEBER DIE ROBLOX-OPEN-CLOUD-API (v7.5.0). Der Nutzer
+  hinterlegt EINMAL seinen eigenen API-Schluessel im Einstellungsfenster im
+  neuen Abschnitt "ROBLOX OPEN CLOUD" (Set-OpenCloudKey / Get-OpenCloudKey /
+  Remove-OpenCloudKey; verschluesselt per DPAPI CurrentUser in
+  %LOCALAPPDATA%\ArenaRobloxBridge\opencloud.key - NIE im Klartext und NIE in
+  settings.json). Dazu gehoert der ERSTELLER (Nutzer oder Gruppe) samt
+  aufgeloester ID (Resolve-OpenCloudCreatorId ueber
+  users.roblox.com/v1/usernames/users). Im selben Abschnitt liegt ein
+  AUFKLAPPBARES TUTORIAL MIT ANIMATION (Hoehe, Einblenden, Pfeil,
+  gestaffelte Schritte), das die Anlage Schritt fuer Schritt zeigt und die
+  PFLICHT-RECHTE nennt: ASSETS, dann LESEN (asset:read) und SCHREIBEN
+  (asset:write). "Pruefen" fragt Roblox IM HINTERGRUND
+  (Test-OpenCloudKeyAuth, DispatcherTimer, kein Einfrieren) - und sagt
+  ehrlich, dass diese Pruefung nur die ANMELDUNG bestaetigt, nicht die
+  Upload-Rechte.
+- NEUES WERKZEUG upload_asset (Kategorie cloud, v7.5.0): laedt MESHES
+  (.fbx/.glb/.gltf aus Blender, max. 20 MB) und BILDER (.png/.jpg/.jpeg/
+  .bmp/.tga, unter 8000x8000) hoch - aus einem Mesh-Slot (slotKey), aus
+  einer Datei im Bridge-Ordner (filePath) oder direkt als contentBase64
+  (Bilder, die der Agent SELBST erzeugt hat, ohne Umweg ueber die
+  Festplatte). Bei Erfolg antwortet das Werkzeug mit der ECHTEN Asset-Id aus
+  der Roblox-Antwort (nie geraten); der Agent setzt sie danach SELBST ein
+  (mesh_apply_asset / insert_asset / set_property). Dauert der Upload
+  laenger, kommt state=pending mit operationId - dann upload_asset {
+  operationId } erneut aufrufen, nicht eng pollen.
+- FEHLENDE VORAUSSETZUNGEN SIND KEIN AUS-BEFEHL (v7.5.0): ohne Schluessel
+  (OPENCLOUD_KEY_MISSING) oder ohne Ersteller (OPENCLOUD_CREATOR_MISSING)
+  bleibt das Werkzeug ganz normal verfuegbar und meldet den Fehler erst beim
+  Aufruf - zusammen mit einem deutschen userMessage-Satz, den der Agent dem
+  Nutzer WOERTLICH sagt (Einstellungen -> ROBLOX OPEN CLOUD -> Tutorial).
+  Roblox-Fehler gehen unverfaelscht an den Agent weiter:
+  OPENCLOUD_RATE_LIMITED (429), OPENCLOUD_KEY_REJECTED (401/403),
+  OPENCLOUD_UPLOAD_REJECTED (400), OPENCLOUD_SERVER_ERROR (5xx),
+  OPENCLOUD_UNREACHABLE, OPENCLOUD_OPERATION_FAILED, OPENCLOUD_BAD_RESPONSE.
+  Es ist bewusst KEIN neuer Meldeweg: der eine report_done-Kanal bleibt
+  unveraendert.
+- BLENDER UND BAUEN SIND AUSDRUECKLICH EMPFOHLEN (v7.5.0): Sessionstart,
+  Guides (meshBuildRules und die neue cloudUploadRules), die wichtigen
+  Regeln und die Werkzeugtexte nennen den Weg "Blender baut -> upload_asset
+  -> einsetzen -> pruefen" als EMPFEHLUNG und den Katalog
+  (search_assets/insert_asset) als Notbehelf.
 - ZWEI NEUE FENSTER SIND AUSDRUECKLICH ERLAUBT (v7.2.0, Entscheidung D2 des
   Owners): (1) "Nachricht an Arena senden" aus dem Menue (…) der Place-Zeile
   (Add-UserMessage/Open-UserMessageWindow) und (2) "Arena fragt" fuer
@@ -422,6 +453,26 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v7.5.0 (07.10.2026): OPEN CLOUD UPLOAD - MESH-FENSTER WEG, DER AGENT
+  LAEDT SELBST HOCH. (1) DAS MESH-FENSTER IST GELOSCHT (ausdruecklicher
+  Nutzerwunsch, Umkehrung von v7.4.0/v7.4.1): alle 13 Funktionen, die
+  Fenster-Zustandsvariablen und die Aufrufe im UI-Takt sind aus
+  ArenaBridge.ps1 entfernt; der Takt pflegt nur noch die Mesh-Zeilen und
+  Platzhalter. (2) NEUER ABSCHNITT "ROBLOX OPEN CLOUD" IM
+  EINSTELLUNGSFENSTER: Schluessel (PasswordBox), Speichern / Pruefen /
+  Entfernen, Statuszeile, ERSTELLER (Nutzer oder Gruppe, ID wird aus dem
+  Namen aufgeloest) und ein AUFKLAPPBARES TUTORIAL MIT ANIMATION
+  (MaxHeight-Messung, Einblenden, Pfeil-Drehung, gestaffelte Schritte), das
+  die PFLICHT-RECHTE ASSETS + LESEN + SCHREIBEN nennt. Der Schluessel liegt
+  verschluesselt (DPAPI CurrentUser) in opencloud.key. Die Einstellungen
+  werden zusaetzlich nach $script:Shared.BridgeSettings gespiegelt, weil die
+  HTTP-Handler in einem eigenen Runspace laufen. (3) upload_asset laedt
+  Meshes und Bilder ueber apis.roblox.com/assets/v1/assets hoch und nennt
+  die echte Asset-Id; multipart request + fileContent, x-api-key,
+  Operations-Polling. (4) Fehlende Voraussetzungen melden erst beim Aufruf,
+  mit einem Satz, den der Agent dem Nutzer wortlich sagt. (5) Ehrlichkeit
+  bleibt: report_done antwortet MESH_UPLOAD_PENDING, solange ein Platzhalter
+  noch keine Geometrie hat.
 - v7.4.2 (07.10.2026): MINI-HOTFIX MESH-RUNNER (Blender-Export). Der
   Mesh-Runner ($script:MeshRunnerTemplate) importierte bpy NUR innerhalb von
   main() - das ist eine LOKALE Variable, und die Modulfunktion arena_export()

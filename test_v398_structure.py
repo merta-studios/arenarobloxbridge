@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 7.4.2.
+"""Offline structure check for Arena Roblox Bridge 7.5.0.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.4.2"
+VERSION = "7.5.0"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -719,34 +719,34 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '7.4.2'": 1,
-        'local ARENA_VERSION  = "7.4.2"': 1,
-        "version = '7.4.2'": 1,
-        "bridgeVersion = '7.4.2'": 3,
-        "bridgeVersion='7.4.2'": 1,
-        "serverVersion = '7.4.2'": 2,
-        "$versionText = '7.4.2'": 1,
-        "$verText = '7.4.2'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 7.4.2)": 1,
-        'Text="Arena Roblox Bridge - Version 7.4.2"': 1,
-        "Version 7.4.2 - aktuell. Beim naechsten Start": 2,
-        "Bridge-Version=7.4.2": 2,
-        "Kurzbericht Fenster-Vorschau (Version 7.4.2)": 1,
-        "Kurzbericht Fortschrittsanzeige (Version 7.4.2)": 1,
-        "Kurzbericht Fertig-Meldung (Version 7.4.2)": 1,
-        "Arena Roblox Bridge - Leistungsbericht (Version 7.4.2)": 1,
-        "Arena Roblox Bridge - Place-Diagnose (Version 7.4.2)": 1,
-        "Version: 7.4.2": 2,
-        "Version=7.4.2": 3,
-        "Bridge/Plugin-Stand: 7.4.2": 1,
-        "Arena Roblox Bridge - Start-Diagnose (Version 7.4.2)": 2,
-        "RuntimeInfo.Version = '7.4.2'": 1,
-        "Mesh-Build Engine 1.0 (Version 7.4.2)": 1,
-        "Organic Build Engine 1.1 (Version 7.4.2)": 1,
+        "DocsVersion     = '7.5.0'": 1,
+        'local ARENA_VERSION  = "7.5.0"': 1,
+        "version = '7.5.0'": 1,
+        "bridgeVersion = '7.5.0'": 3,
+        "bridgeVersion='7.5.0'": 1,
+        "serverVersion = '7.5.0'": 2,
+        "$versionText = '7.5.0'": 1,
+        "$verText = '7.5.0'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.5.0)": 1,
+        'Text="Arena Roblox Bridge - Version 7.5.0"': 1,
+        "Version 7.5.0 - aktuell. Beim naechsten Start": 2,
+        "Bridge-Version=7.5.0": 2,
+        "Kurzbericht Fenster-Vorschau (Version 7.5.0)": 1,
+        "Kurzbericht Fortschrittsanzeige (Version 7.5.0)": 1,
+        "Kurzbericht Fertig-Meldung (Version 7.5.0)": 1,
+        "Arena Roblox Bridge - Leistungsbericht (Version 7.5.0)": 1,
+        "Arena Roblox Bridge - Place-Diagnose (Version 7.5.0)": 1,
+        "Version: 7.5.0": 2,
+        "Version=7.5.0": 3,
+        "Bridge/Plugin-Stand: 7.5.0": 1,
+        "Arena Roblox Bridge - Start-Diagnose (Version 7.5.0)": 2,
+        "RuntimeInfo.Version = '7.5.0'": 1,
+        "Mesh-Build Engine 1.1 (Version 7.5.0)": 1,
+        "Organic Build Engine 1.1 (Version 7.5.0)": 1,
         "# Version 7.3.2 (2026-10-07)": 1,
         "# Version 7.4.0 (2026-10-07)": 1,
         "# Version 7.4.1 (2026-10-07)": 1,
-        "# Version 7.4.2 (2026-10-07)": 1,
+        "# Version 7.5.0 (2026-10-07)": 1,
     }
 
     for marker, expected_count in functional_version_counts.items():
@@ -1417,13 +1417,15 @@ def main() -> int:
                  "SharedTableRegistry", "reporterEndTest"):
         require(gone not in lua, f"removed 7.0.0 reporter/session marker is back: {gone}")
 
-    # 7.2.4: the question window became XAML-based too, so the bridge now
-    # ships five Window here-strings (main, settings, handoff, user message,
-    # question); 7.4.0 adds the sixth (Mesh-Uploads). Every one of them is
-    # parsed here - that is what catches a broken dialog before PowerShell
-    # ever sees the file.
+    # 7.2.4: the question window became XAML-based too, so the bridge ships
+    # five Window here-strings (main, settings, handoff, user message,
+    # question); 7.4.0 added a sixth (Mesh-Uploads) and 7.5.0 REMOVED it
+    # again - the mesh upload is a tool call now (upload_asset), the user
+    # uploads nothing by hand and needs no window. Five is the truth again.
+    # Every block is parsed here - that is what catches a broken dialog
+    # before PowerShell ever sees the file.
     blocks = xaml_blocks(source)
-    require(len(blocks) == 6, f"expected 6 XAML Window blocks, found {len(blocks)}")
+    require(len(blocks) == 5, f"expected 5 XAML Window blocks, found {len(blocks)}")
     for index, block in enumerate(blocks, 1):
         try:
             ET.fromstring(block)
@@ -1435,9 +1437,11 @@ def main() -> int:
     shared = re.search(r"\$script:ArenaDialogStyles = @'\n([\s\S]*?)\n'@", source)
     require(shared is not None, "shared dialog resource block is missing")
     shared_keys = set(re.findall(r'x:Key="([A-Za-z0-9_]+)"', shared.group(1)))
+    # 7.5.0: the mesh-uploads window is GONE (upload_asset does the upload),
+    # so only the two dialogs built from here-strings remain here. The
+    # settings window is checked below through its own XAML block instead.
     for name, func in (("question", "function Get-AskWindowXaml"),
-                       ("user message", "function Get-UserMessageWindowXaml"),
-                       ("mesh uploads", "function Get-MeshWindowXaml")):
+                       ("user message", "function Get-UserMessageWindowXaml")):
         start = source.index(func)
         tpl = re.search(r"@'\n([\s\S]*?)\n'@", source[start:start + 12000]).group(1)
         used = set(re.findall(r"\{StaticResource ([A-Za-z0-9_]+)\}", tpl))
@@ -1921,7 +1925,7 @@ def main() -> int:
     guides_block = source[source.index("function Get-BridgeGuides"):source.index("function Get-SessionStartPackage")]
     for marker in (
         "organicBuildRules = @{",
-        "Organic Build Engine 1.1 (Version 7.4.2) - typed creature volumes, physical face, bilateral anatomy, measured before done",
+        "Organic Build Engine 1.1 (Version 7.5.0) - typed creature volumes, physical face, bilateral anatomy, measured before done",
         "the FIRST write targeting that model is build_polygon_model { organic=true, organicKind=... }",
         "creatureVolumeContract =",
         "FORBIDDEN - FLAT CREATURE SILHOUETTE",
