@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline-Abnahme fuer Arena Roblox Bridge 7.3.1.
+"""Offline-Abnahme fuer Arena Roblox Bridge 7.3.2.
 
 Dieser Test braucht KEIN Windows und keinen PowerShell-Prozess. Er prueft genau
 die fuenf Themen des Owners plus das Fundament:
@@ -29,7 +29,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.3.1"
+VERSION = "7.3.2"
 
 failures: list[str] = []
 
@@ -747,7 +747,7 @@ def main() -> int:
     ):
         check(marker in source, f"Fundament-Marker vorhanden: {marker}")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    check(version["version"] == VERSION, "version.json identifiziert 7.3.1")
+    check(version["version"] == VERSION, "version.json identifiziert 7.3.2")
     notes = "\n".join(str(note) for note in version.get("notes", []))
     for word in ("7.2.4", "P0-BLOCKER", ".ToArray()",
                  "gemeinsamen XAML-Ressourcenblock",
@@ -755,8 +755,8 @@ def main() -> int:
                  "7.2.3", "LIVE-SAMMLUNGEN", "ASK_CANCELLED", "Strg+Enter",
                  "NOTIFICATION_UNVERIFIED", "notify-diagnose.txt"):
         check(word in notes, f"version.json beschreibt: {word}")
-    check("DocsVersion     = '7.3.1'" in source and 'local ARENA_VERSION  = "7.3.1"' in source,
-          "Alle funktionalen Versionsstellen stehen auf 7.3.1")
+    check("DocsVersion     = '7.3.2'" in source and 'local ARENA_VERSION  = "7.3.2"' in source,
+          "Alle funktionalen Versionsstellen stehen auf 7.3.2")
     for marker in ("Set-StartupStage", "startup-trace.txt", "START-NETZ KOMPLETT",
                    "$script:WindowShown", "function Start-BridgeRuntime",
                    "$window.Add_ContentRendered({", "Start fehlgeschlagen"):
@@ -894,7 +894,7 @@ def main() -> int:
         check(not parse_errors,
               "Tree-sitter-PowerShell-Parse-Gate meldet keine neuen ERROR-Stellen")
 
-    # 7.3.1-Regressionstor: Auf Windows PowerShell 5.1 darf ein Operator (+, *,
+    # 7.3.2-Regressionstor: Auf Windows PowerShell 5.1 darf ein Operator (+, *,
     # /, %, -binary) NICHT am Anfang einer Fortsetzungszeile stehen. Der Parser
     # behandelt einen Zeilenumbruch direkt vor einem Operator als
     # Anweisungsende - das erzeugte in 7.3.0 9 Parse-Fehler ab Zeile 27432.
@@ -959,7 +959,7 @@ def main() -> int:
           "(Parse-Fehler auf Windows PowerShell 5.1)")
 
     check((ROOT / "parse-gate.ps1").is_file(), "Echtes Parser-Gate vorhanden")
-    check("PROOF_OF_LIFE Version=7.3.1" in source,
+    check("PROOF_OF_LIFE Version=7.3.2" in source,
           "Proof-of-Life mit aktueller Version vorhanden")
     engine = shutil.which("powershell") or shutil.which("pwsh")
     if engine:

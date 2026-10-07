@@ -1,5 +1,5 @@
-﻿#!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 7.3.1.
+#!/usr/bin/env python3
+"""Offline structure check for Arena Roblox Bridge 7.3.2.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.3.1"
+VERSION = "7.3.2"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -95,7 +95,10 @@ def main() -> int:
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     require(version["version"] == VERSION, f"version.json is not {VERSION}")
     release_notes = "\n".join(str(note) for note in version.get("notes", []))
-    require("7.2.4" in release_notes
+    require("7.3.2" in release_notes
+            and "Körper und Kopf" in release_notes
+            and "linke/rechte Flügel" in release_notes
+            and "7.2.4" in release_notes
             and "report_done" in release_notes
             and "NOTIFICATION_UNVERIFIED" in release_notes
             and "ask_user" in release_notes
@@ -103,7 +106,7 @@ def main() -> int:
             and "MONOLITH_RISK" in release_notes
             and "StarterGui" in release_notes
             and "progress-diagnose.txt" in release_notes,
-            "version.json does not describe the 7.2.4 release")
+            "version.json does not include the 7.2.4 baseline and 7.3.2 creature release")
 
     # 6.1.1 shipped seven accidental fragments after the intended final exit,
     # including a bare closing parenthesis. Windows PowerShell parses the
@@ -715,29 +718,29 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '7.3.1'": 1,
-        'local ARENA_VERSION  = "7.3.1"': 1,
-        "version = '7.3.1'": 1,
-        "bridgeVersion = '7.3.1'": 3,
-        "bridgeVersion='7.3.1'": 1,
-        "serverVersion = '7.3.1'": 2,
-        "$versionText = '7.3.1'": 1,
-        "$verText = '7.3.1'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 7.3.1)": 1,
-        'Text="Arena Roblox Bridge - Version 7.3.1"': 1,
-        "Version 7.3.1 - aktuell. Beim naechsten Start": 2,
-        "Bridge-Version=7.3.1": 2,
-        "Kurzbericht Fenster-Vorschau (Version 7.3.1)": 1,
-        "Kurzbericht Fortschrittsanzeige (Version 7.3.1)": 1,
-        "Kurzbericht Fertig-Meldung (Version 7.3.1)": 1,
-        "Arena Roblox Bridge - Leistungsbericht (Version 7.3.1)": 1,
-        "Arena Roblox Bridge - Place-Diagnose (Version 7.3.1)": 1,
-        "Version: 7.3.1": 2,
-        "Version=7.3.1": 3,
-        "Bridge/Plugin-Stand: 7.3.1": 1,
-        "Arena Roblox Bridge - Start-Diagnose (Version 7.3.1)": 2,
-        "RuntimeInfo.Version = '7.3.1'": 1,
-        "# Version 7.3.1 (2026-10-06)": 1,
+        "DocsVersion     = '7.3.2'": 1,
+        'local ARENA_VERSION  = "7.3.2"': 1,
+        "version = '7.3.2'": 1,
+        "bridgeVersion = '7.3.2'": 3,
+        "bridgeVersion='7.3.2'": 1,
+        "serverVersion = '7.3.2'": 2,
+        "$versionText = '7.3.2'": 1,
+        "$verText = '7.3.2'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.3.2)": 1,
+        'Text="Arena Roblox Bridge - Version 7.3.2"': 1,
+        "Version 7.3.2 - aktuell. Beim naechsten Start": 2,
+        "Bridge-Version=7.3.2": 2,
+        "Kurzbericht Fenster-Vorschau (Version 7.3.2)": 1,
+        "Kurzbericht Fortschrittsanzeige (Version 7.3.2)": 1,
+        "Kurzbericht Fertig-Meldung (Version 7.3.2)": 1,
+        "Arena Roblox Bridge - Leistungsbericht (Version 7.3.2)": 1,
+        "Arena Roblox Bridge - Place-Diagnose (Version 7.3.2)": 1,
+        "Version: 7.3.2": 2,
+        "Version=7.3.2": 3,
+        "Bridge/Plugin-Stand: 7.3.2": 1,
+        "Arena Roblox Bridge - Start-Diagnose (Version 7.3.2)": 2,
+        "RuntimeInfo.Version = '7.3.2'": 1,
+        "# Version 7.3.2 (2026-10-07)": 1,
     }
     for marker, expected_count in functional_version_counts.items():
         actual_count = source.count(marker)
@@ -1489,14 +1492,36 @@ def main() -> int:
         "autoWeld=@{type='bool';required=$false;default='true'",
         "modelBuildRules = @{",
         "regardless of subject, model name or whether it is organic",
-        "Prefer build_polygon_model for the main silhouette and any custom, freeform, tapered, curved, irregular or hero surface in ANY category",
-        "The builder is preferred, not mandatory for every simple Part.",
+        "For EVERY nontrivial custom visible 3D model in ANY category—not only creatures—the first model-creation/build call MUST be build_polygon_model",
+        "polygonDecision = 'Choose the geometry representation by shape, not by subject",
+        "polygonInputContract = 'Structured form: build_polygon_model",
+        "polygonWorkflow = '1 inspect Place/selection",
+        "polygonPatterns = 'Facade/roof/shield/panel",
+        "polygonBudget = 'Each n-vertex face usually produces n-2 triangles",
+        "polygonTemplate = 'build_polygon_model",
+        "This is not a requirement for truly simple standard Parts",
         "NEVER set autoWeld=false unless physically independent polygon pieces are requested.",
         "organic=true, not by the model name",
+        "NONTRIVIAL 3D BUILD METHOD (ALL CATEGORIES)",
+        "The first model-building call for every nontrivial custom object is build_polygon_model",
+        "verify incomplete=false, facesSkipped=0, skipped=[]",
     ):
         require(marker in source, f"required Polygon/build-policy marker missing: {marker}")
     require('local shouldWeld=args.autoWeld==true' not in source,
             'polygon autoWeld silently defaulted back to false')
+    universal_contract = ROOT / "MODEL_BUILD_CONTRACT.md"
+    require(universal_contract.exists(), "MODEL_BUILD_CONTRACT.md is missing")
+    universal_text = universal_contract.read_text(encoding="utf-8")
+    for marker in ("every nontrivial visible 3D build", "One polygon is **one planar skin**",
+                   "nontrivial custom silhouette", "is the first model-building call",
+                   "unique names", "Working example: a closed low-poly house shell",
+                   "LowPolyHouse", "vehicles", "facesSkipped", "model_audit"):
+        require(marker in universal_text, f"universal model contract is missing: {marker}")
+    house_example = universal_text.split("## Working example:", 1)[1].split("## Shape-specific patterns", 1)[0]
+    for face in ("FrontGable", "BackGable", "LeftWall", "RightWall", "Floor", "LeftSlope", "RightSlope"):
+        require(face in house_example, f"LowPolyHouse shell is missing face {face}")
+    require('name="Back"' in source and 'name="Bottom"' in source,
+            "generic polygon template must not imply a single-front-face shell")
 
     wedge_fn = source[source.index('function MASTER_BUILD.triangleWedges'):source.index('function MASTER_BUILD.weldContainer')]
     require(wedge_fn.index('applyProperties(w,safeProperties)') < wedge_fn.index('w.Size=Vector3.new(') < wedge_fn.index('w.CFrame=cf+shift'),
@@ -1887,8 +1912,12 @@ def main() -> int:
     guides_block = source[source.index("function Get-BridgeGuides"):source.index("function Get-SessionStartPackage")]
     for marker in (
         "organicBuildRules = @{",
-        "Version 7.1.4) - polygon-first, explicit palette, installed motion, measured before done",
-        "the FIRST write targeting that model is build_polygon_model { organic=true }",
+        "Organic Build Engine 1.1 (Version 7.3.2) - typed creature volumes, physical face, bilateral anatomy, measured before done",
+        "the FIRST write targeting that model is build_polygon_model { organic=true, organicKind=... }",
+        "creatureVolumeContract =",
+        "FORBIDDEN - FLAT CREATURE SILHOUETTE",
+        "FORBIDDEN - FACE STICKER",
+        "FORBIDDEN - ONE-SIDED OR HIDDEN WINGS",
         "explicit contrasting palette",
         "enabled motion Script under that same model",
         "FORBIDDEN - BYPASSING THE POLYGON BUILDER",

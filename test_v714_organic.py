@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.3.1"
+VERSION = "7.3.2"
 FAILURES: list[str] = []
 
 
@@ -114,12 +114,12 @@ def main() -> int:
     release_notes = "\n".join(meta.get("notes", []))
 
     # Release identity and release notes.
-    check(meta.get("version") == VERSION, "version.json identifiziert 7.3.1")
+    check(meta.get("version") == VERSION, "version.json identifiziert 7.3.2")
     # 7.2.3 dokumentiert das UI-Mini-Update; 7.2.1 behaelt den Start-/Parser-
     # Fix, und 7.2.0 beschreibt Nutzer-Kanal, Meldungsmessung und Qualitaet.
     # Der organische Vertrag selbst wird weiter unten DIREKT
     # im Quellcode geprueft (und darf dort nicht fehlen).
-    for marker in ("7.3.1", "7.2.4", "7.2.3", "report_done", "DRAFT_GRADE_RISK", "NOTIFICATION_UNVERIFIED"):
+    for marker in ("7.3.2", "7.2.4", "7.2.3", "report_done", "DRAFT_GRADE_RISK", "NOTIFICATION_UNVERIFIED"):
         check(marker in release_notes, f"Release-Notiz nennt {marker}")
 
     # The server guard only enforces explicitly marked organic builds; the
@@ -136,8 +136,11 @@ def main() -> int:
 
     guides = region(source, "function Get-BridgeGuides", "function Get-SessionStartPackage")
     for marker in ("modelBuildRules = @{", "regardless of subject, model name or whether it is organic",
-                   "Prefer build_polygon_model", "in ANY category", "not an animal/tree-only rule",
-                   "primitive-only placeholder", "GLOBAL 3D BUILD BAR, independent of names/examples"):
+                   "polygonPreference = 'For EVERY nontrivial custom visible 3D model in ANY category",
+                   "polygonWorkflow =", "polygonInputContract =", "NONTRIVIAL 3D BUILD METHOD (ALL CATEGORIES)",
+                   "complete distinctive main silhouette",
+                   "in ANY category", "not an animal/tree-only rule", "primitive-only placeholder",
+                   "GLOBAL 3D BUILD BAR, independent of names/examples"):
         check(marker in guides or marker in source,
               f"globaler Modellierungsstandard enthaelt: {marker}")
     check("The builder is preferred, not mandatory for every simple Part." in guides
@@ -145,9 +148,10 @@ def main() -> int:
           "globale Polygon-Praeferenz laesst einfache Aufgaben einfach und bewahrt den Finish-Standard")
     polygon_tool = region(source, "name = 'build_polygon_model';", "name = 'ui_capabilities';")
     check("GLOBALER 3D-BAUSTANDARD" in polygon_tool
-          and "nichttriviale Custom-Modelle aller Kategorien" in polygon_tool
-          and "kein anhand von Namen ausgeloester Zwang" in polygon_tool,
-          "Polygon-Tool beschreibt den allgemeinen Vorrang ohne Namens-Trigger")
+          and "alle nichttrivialen sichtbaren 3D-Kategorien, nicht nur Kreaturen" in polygon_tool
+          and "LowPolyHouse" in polygon_tool
+          and "facesSkipped=0 und skipped=[]" in polygon_tool,
+          "Polygon-Tool describes a specific category-neutral build and verification sequence")
     assembly_tool = region(source, "name = 'build_assembly';", "name = 'build_polygon_model';")
     check("build_polygon_model" in assembly_tool and "Wiederholungen" in assembly_tool,
           "Assembly-Tool ist als Ergaenzung fuer wiederholte/module Strukturen beschrieben")
@@ -266,7 +270,7 @@ def main() -> int:
     if FAILURES:
         print(f"\nFEHLGESCHLAGEN: {len(FAILURES)} Pruefung(en) rot.")
         return 1
-    print("\nOK: 7.3.0: 7.1.4-Organic-Build-, Audit-Frische-, report_done- und UI-Regressionspruefungen bestanden.")
+    print("\nOK: 7.3.2: 7.1.4-Organic-Build-, Audit-Frische-, report_done- und UI-Regressionspruefungen bestanden.")
     return 0
 
 

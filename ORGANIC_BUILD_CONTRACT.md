@@ -1,10 +1,152 @@
+# Organic Build Contract — aktuell 7.3.2
+
+**Aktueller Stand:** Der allgemeine, kategorieneutrale 3D-/Polygon-Bauvertrag
+steht in `MODEL_BUILD_CONTRACT.md` und im Sessionstart unter `modelBuildRules`.
+Diese Datei ergänzt ihn für explizite organische Builds; Abschnitt 0 beschreibt
+den messbaren Creature-Volumen-, Gesichts- und Flügelvertrag. Der historische
+7.1.4-Finish-Vertrag bleibt weiter unten zur Nachverfolgung erhalten.
+
+## 0. Version 7.3.2: Creature-Lofts, physisches Gesicht, bilaterale Flügel
+
+Ein Tier wird beim ersten Build explizit typisiert; Tiernamen lösen keinen
+Build-Pfad aus. Der Aufruf verwendet `organic=true` und
+`organicKind="creature"`. Die gleichzeitige Pflichtmarkierung sorgt dafür,
+dass die Bridge den Build registriert und der bestehende frische
+`model_audit`-/`report_done`-Gate ihn nicht als gewöhnlichen Polygonbau
+behandelt. `organic=true` ohne `organicKind` wird vor dem Studio-Aufruf
+abgewiesen.
+
+### Geschlossene Volumen statt flacher Seitenwedge
+
+`build_polygon_model.volumes` akzeptiert benannte Loft-Volumen. Jede Station
+enthält ein Zentrum sowie zwei positive Radien: `heightRadius` in der
+Querschnitts-Hochrichtung und `depthRadius` in der Quer-/Tiefenrichtung. Der
+Builder erzeugt pro Station einen Ring, verbindet benachbarte Ringe mit
+Polygonflächen und trianguliert beide Endkappen. Die Ausgabe bleibt aus echten
+`ArenaPolygonTriangle`-WedgeParts aufgebaut; sie ist kein Roblox-MeshPart.
+
+```lua
+build_polygon_model {
+    modelName = "Fox",
+    organic = true,
+    organicKind = "creature",
+    volumes = {
+        {
+            name = "Torso",
+            role = "body",
+            sides = 10,
+            style = { color = "#C76B35", material = "SmoothPlastic" },
+            sections = {
+                { center = {x=-2.0,y=2.0,z=0}, heightRadius=0.45, depthRadius=0.40 },
+                { center = {x=-1.0,y=2.0,z=0}, heightRadius=0.80, depthRadius=0.65 },
+                { center = {x= 0.0,y=2.0,z=0}, heightRadius=0.90, depthRadius=0.72 },
+                { center = {x= 1.0,y=2.0,z=0}, heightRadius=0.72, depthRadius=0.58 },
+            },
+        },
+        {
+            name = "Skull",
+            role = "head",
+            sides = 10,
+            style = { color = "#E5A05E", material = "SmoothPlastic" },
+            sections = {
+                { center = {x=1.4,y=3.1,z=0}, heightRadius=0.30, depthRadius=0.27 },
+                { center = {x=2.0,y=3.2,z=0}, heightRadius=0.58, depthRadius=0.48 },
+                { center = {x=2.6,y=3.1,z=0}, heightRadius=0.38, depthRadius=0.34 },
+            },
+        },
+    },
+    -- Add at least one further contrasting region in a volume/submodel/polygon.
+    style = { thickness = 0.04 },
+}
+```
+
+The sample describes the geometry schema, not a finished fox. In actual builds,
+use scales appropriate to the model, enough distinct regions for at least three
+measured colors, and at least eight sides. The creature builder requires a
+`body` volume with >=4 stations and a `head` volume with >=3 stations; loft
+sides are 8–16. Consecutive center points must be at least 0.01 studs apart,
+and both radii at every station must be >=0.025 before global scaling.
+
+The audit independently measures generated part bounds in the model's declared
+forward/up/side axes. Body and head must each have a vertical/lateral bound
+ratio of at least 0.16. That rejects the classic long, thin profile wedge, even
+if its polygon triangle count is high. It also checks that each tagged volume
+contains generated polygon-triangle geometry, the expected number of generated
+faces, no skipped surface, and the required station/side/closed-cap evidence. These are structural and geometric checks;
+they do not certify visual attractiveness or substitute for opening the Place
+in Roblox Studio.
+
+### Physische Augen/Pupillen, keine Bildgesichter
+
+Tag separate BaseParts with `ArenaOrganicRole`. `build_assembly` accepts an
+`attributes` table per item; `set_attribute` can also mark parts after they are
+created:
+
+```lua
+items = {
+  { className="Part", name="Eye_Left", properties={Shape="Ball", Size={x=0.28,y=0.28,z=0.28}},
+    attributes={ArenaOrganicRole="eye_left"} },
+  { className="Part", name="Eye_Right", properties={Shape="Ball", Size={x=0.28,y=0.28,z=0.28}},
+    attributes={ArenaOrganicRole="eye_right"} },
+  { className="Part", name="Pupil_Left", properties={Shape="Ball", Size={x=0.12,y=0.12,z=0.12}},
+    attributes={ArenaOrganicRole="pupil_left"} },
+  { className="Part", name="Pupil_Right", properties={Shape="Ball", Size={x=0.12,y=0.12,z=0.12}},
+    attributes={ArenaOrganicRole="pupil_right"} },
+}
+```
+
+Both eyes must be separate round physical parts on opposite sides of the head
+and spatially near the skull bounds. Both pupils must be physical, non-flat
+BaseParts within a measured distance of their matching eye and offset toward
+the declared forward surface. A `Decal`, `Texture`, image-bearing `SpecialMesh`/`MeshPart`, textured
+`SurfaceAppearance`, `SurfaceGui` or `BillboardGui` under the head/face/muzzle
+role (or a GUI adorned to the skull/eyes) adds `FACE_IMAGE_OVERLAY`; painted
+eyes/pupils therefore cannot stand in for geometry. Image textures elsewhere on a creature are not automatically
+rejected by this face-specific rule.
+
+### Optionale Flügel als linkes/rechtes Paar
+
+Declare `organicTraits=["wings"]` when wings are intended. The presence of
+`wing_left` or `wing_right` semantic roles also activates the pair check. Use
+role-tagged polygon submodels (or loft volumes) for `wing_left` and
+`wing_right`; in the creature's declared local frame, left is +Z and right is
+−Z. Each wing must extend beyond its corresponding torso flank, while both
+wing bounds overlap the torso along forward/up and side axes at the attachment. A
+missing, same-sided, hidden-behind, or spatially detached wing reports a
+blocking `organicQuality.issues` entry.
+
+### Gate and diagnostic issue codes
+
+The per-creature measurements are returned as `organicQuality.models[].creatureMetrics`;
+blocking findings are also included in that model's `issues` and the aggregate
+`organicQuality.issues`. The existing HTTP boundary persists the exact model
+evidence and freshness timestamps. `report_done` already rejects stale audit
+records and any per-model `issues`, so no second/alternate completion path is
+introduced. Key issue codes include:
+
+- `CREATURE_VOLUME_REQUIRED`, `BODY_VOLUME_REQUIRED`, `HEAD_VOLUME_REQUIRED`, `*_LOFT_INCOMPLETE`,
+  `*_LOFT_EMPTY`, `BODY_THIN_PROFILE`, `HEAD_THIN_PROFILE`;
+- `EYES_NOT_3D`, `EYES_NOT_BILATERAL`, `PUPILS_NOT_3D`,
+  `FACE_IMAGE_OVERLAY`;
+- `WING_PAIR_REQUIRED`, `WINGS_NOT_BILATERAL`, `WINGS_NOT_ATTACHED`.
+
+`BODY_VOLUME_REQUIRED`/`HEAD_VOLUME_REQUIRED` and the other model-level findings
+are returned as organic audit issues; `CREATURE_VOLUME_REQUIRED` is the
+pre-build argument rejection for missing or underspecified body/head lofts.
+
+This offline contract proves only the bridge's schema, checks and fail-closed
+wiring. It cannot render Roblox parts. Keep a visual Studio inspection and
+Windows PowerShell 5.1 parse gate as release checks.
+
+---
+
 # 7.1.4 – Globaler Polygon-Vorrang und organischer Qualitätsnachweis
 
 Dieses Update beantwortet einen konkreten Nutzerbericht über eine Bau-Session
 über die Bridge. Es behebt nicht „einen Fehler“, sondern macht die drei
 Ursachen dauerhaft unmöglich – und räumt die Einstellungen auf.
 
-> **Aktueller Vertrag: Version 7.1.4.** Der Polygon-Vorrang gilt jetzt für alle nichttrivialen 3D-Aufgaben, unabhängig vom Modellnamen oder Beispiel. Die strenge serverseitige Proof-Sperre bleibt eine separate Zusatzregel für organische Modelle.
+> **Historischer Stand 7.1.4.** Der Polygon-Vorrang gilt jetzt für alle nichttrivialen 3D-Aufgaben, unabhängig vom Modellnamen oder Beispiel. Die strenge serverseitige Proof-Sperre bleibt eine separate Zusatzregel für organische Modelle.
 
 ## Der Befund
 
