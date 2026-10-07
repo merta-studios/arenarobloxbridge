@@ -97,7 +97,7 @@ Es reicht:
 
     1. ArenaBridge.ps1 aendern
     2. Version ueberall hochziehen - diese Stellen ALLE anfassen
-       (Stand 7.4.1; die Tests zaehlen die funktionalen Literale
+       (Stand 7.4.2; die Tests zaehlen die funktionalen Literale
        in test_v398_structure.py -> functional_version_counts):
        - Changelog-Kommentar ganz oben in ArenaBridge.ps1 fortfuehren
          (NEUER Block oben, alte Bloecke bleiben als Historie stehen)
@@ -422,6 +422,32 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v7.4.2 (07.10.2026): MINI-HOTFIX MESH-RUNNER (Blender-Export). Der
+  Mesh-Runner ($script:MeshRunnerTemplate) importierte bpy NUR innerhalb von
+  main() - das ist eine LOKALE Variable, und die Modulfunktion arena_export()
+  sah kein bpy: "NameError: name 'bpy' is not defined" bei allen drei
+  Exportwegen gleichzeitig (obj_export, obj_export plain, export_scene.obj).
+  Live-Befund: state="failed", probe="failed", ready=false trotz
+  installiertem, funktionierendem Blender 5.0.1 (Faehigkeitsprobe Exit 1).
+  In 7.4.0/7.4.1 war der Fehler unsichtbar, weil der BOM-SyntaxError zuerst
+  zuschlug. Derselbe Runner-Text laeuft auch bei jedem echten Mesh-Job - der
+  Fehler haette jeden Bau getroffen. FIX: "import bpy" steht jetzt auf
+  Modulebene neben json/os/sys, VOR arena_export; der Import in main() ist
+  entfernt. Die leere Szene wird weiterhin VOR dem Laden des Nutzer-Skripts
+  gesetzt (bpy.ops.wm.read_factory_settings(use_empty=True) bleibt in
+  main()). Blender 5.0 akzeptiert die Parameter von bpy.ops.wm.obj_export
+  unveraendert (gegen den Quelltext von Blender 5.0.1 geprueft: filepath,
+  export_selected_objects, apply_modifiers, export_materials,
+  export_triangulated_mesh, export_uv, export_normals, forward_axis,
+  up_axis); die zwei Rueckfallwege bleiben als Sicherheitsnetz. Der
+  Fehlertext unterscheidet jetzt klar NameError (Runner-Fehler: bpy nicht
+  sichtbar) vs. TypeError (Blender kennt einen Parameter nicht mehr).
+  EHRLICHKEIT UNVERAENDERT: ready setzt weiterhin NUR die bestandene Probe
+  (Marker ARENA_MESH_STATS, Laenge exakt 17, fail-closed) - kein neuer
+  Startblocker, nichts an Schritt 4 aufgeweicht. Neuer Offline-Test in
+  test_v740_mesh.py: import bpy auf Modulebene (KEIN eingerueckter Import im
+  Template) + ein Mini-Ausfuehrungstest, der den Runner mit gestubbtem
+  bpy-Modul wirklich durchlaeuft - er haette den Fehler sofort gefunden.
 - v7.4.1 (07.10.2026): BOM-HOTFIX + AUTOMATISCHES MESH-FENSTER + EHRLICHER
   SCHRITT 4. (1) BOM-HOTFIX: alle erzeugten Python-Dateien (Runner, Slot-
   Skripte, Probenskripte) werden BOM-frei geschrieben (WriteAllText +

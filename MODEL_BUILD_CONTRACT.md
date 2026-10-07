@@ -149,6 +149,15 @@ keep it simple and record the requested grade instead of adding needless parts.
 it when the polygon path would end in a poor shape or in thousands of Wedges,
 not as a replacement for it.
 
+The capability probe behind `blender_status` runs **the same runner text** as
+every real build (`runner.py`: empty scene, slot script, OBJ export, centring,
+measurement). Since 7.4.2 the runner imports `bpy` at module level — in
+7.4.0/7.4.1 it was imported only inside `main()`, which made `arena_export()`
+die with `NameError: name 'bpy' is not defined` on all three export paths
+(`state="failed"`, `probe="failed"`, `ready=false` even with a working
+Blender). If the probe fails, read the `detail` text: a `NameError` points at
+the runner, a `TypeError` at a changed `bpy.ops.wm.obj_export` parameter.
+
 Workflow (own the whole loop, never fake it):
 
 1. `blender_status` — is Blender ready? If not, `build_mesh_model` answers

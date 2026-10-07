@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline-Abnahme fuer den 7.4.1-Blender-/Mesh-Weg (ohne Windows/PowerShell).
+"""Offline-Abnahme fuer den 7.4.2-Blender-/Mesh-Weg (ohne Windows/PowerShell).
 
 Geprueft wird, was ohne laufende Bridge pruefbar ist:
 
@@ -19,13 +19,18 @@ Geprueft wird, was ohne laufende Bridge pruefbar ist:
 """
 from __future__ import annotations
 
+import io
 import json
+import os
 import re
+import sys
+import tempfile
+import types
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.4.1"
+VERSION = "7.4.2"
 FAILURES: list[str] = []
 
 
@@ -47,8 +52,8 @@ def main() -> int:
     source = raw.decode("utf-8-sig")
     metadata = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     notes = "\n".join(str(note) for note in metadata.get("notes", []))
-    check(metadata.get("version") == VERSION, "version.json ist 7.4.1")
-    for phrase in ("7.4.0", "Blender", "MESH_UPLOAD_PENDING", "Mesh-Uploads",
+    check(metadata.get("version") == VERSION, "version.json ist 7.4.2")
+    for phrase in ("7.4.2", "7.4.0", "Blender", "MESH_UPLOAD_PENDING", "Mesh-Uploads",
                    "CreateMeshPartAsync"):
         check(phrase in notes, f"Release-Notiz nennt {phrase}")
 
@@ -174,6 +179,98 @@ def main() -> int:
     check(failed_paths >= 4, "jeder Fehlerweg der Probe endet ehrlich als failed (kein stiller Ausgang)")
     check("$state.Foreground = Get-Brush '#FF8AA0'" in splash,
           "failed wird in Zeile 4 ROT gemeldet")
+
+    # ------------------------------------------------------------------
+    # 1b) Mesh-Runner 7.4.2 (Live-Befund: "NameError: name 'bpy' is not
+    #     defined" bei allen drei Exportwegen, Exit 1, probe="failed"):
+    #     Der Runner importierte bpy NUR innerhalb von main() - das ist
+    #     eine LOKALE Variable, arena_export() sah kein bpy. Jetzt steht
+    #     der Import auf Modulebene; derselbe Text laeuft in der Probe
+    #     UND in jedem echten Mesh-Job.
+    # ------------------------------------------------------------------
+    runner_begin = source.index("$script:MeshRunnerTemplate = @'\n")
+    runner_body = runner_begin + len("$script:MeshRunnerTemplate = @'\n")
+    runner_stop = source.index("\n'@\n", runner_body)
+    runner = source[runner_body:runner_stop]
+
+    module_level = [ln for ln in runner.splitlines() if ln == "import bpy"]
+    indented = [ln for ln in runner.splitlines()
+                if ln != "import bpy" and ln.lstrip().startswith("import bpy")]
+    check(len(module_level) == 1 and not indented,
+          "import bpy steht GENAU einmal im Runner: auf Modulebene, KEIN "
+          "eingerueckter Import in einer Funktion (der 7.4.1-Fehler)")
+    check(runner.index("import bpy") < runner.index("def arena_export"),
+          "import bpy steht auf Modulebene VOR arena_export")
+    check("def main()" in runner
+          and runner.index("def main()") < runner.index("bpy.ops.wm.read_factory_settings(use_empty=True)"),
+          "die leere Szene wird weiterhin in main() gesetzt - VOR dem Laden des Nutzer-Skripts")
+
+    # Mini-Ausfuehrung: der Runner wird mit einem gestubbten bpy-Modul
+    # WIRKLICH ausgefuehrt (Szene -> Slot-Skript -> Export -> Messung ->
+    # Markerzeile). Haette es diesen Test in 7.4.1 gegeben, waere der
+    # NameError sofort aufgefallen.
+    calls = []
+
+    def stub_obj_export(filepath=None, **kwargs):
+        calls.append(("obj_export", dict(kwargs, filepath=filepath)))
+        with open(filepath, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write("# Arena Stub OBJ\no Cube\n")
+            handle.write("v 0.0 0.0 0.0\nv 2.0 0.0 0.0\nv 2.0 2.0 0.0\nv 0.0 2.0 0.0\n")
+            handle.write("f 1 2 3\nf 1 3 4\n")
+
+    def stub_read_factory_settings(use_empty=False):
+        calls.append(("read_factory_settings", {"use_empty": use_empty}))
+
+    bpy_stub = types.ModuleType("bpy")
+    bpy_stub.ops = types.SimpleNamespace(
+        wm=types.SimpleNamespace(obj_export=stub_obj_export,
+                                 read_factory_settings=stub_read_factory_settings),
+        mesh=types.SimpleNamespace(
+            primitive_cube_add=lambda **kw: calls.append(("primitive_cube_add", kw)),
+            primitive_uv_sphere_add=lambda **kw: calls.append(("primitive_uv_sphere_add", kw)),
+        ),
+    )
+    slot_code = ("import bpy\n"
+                 "bpy.ops.mesh.primitive_cube_add(size=2.0)\n"
+                 "bpy.ops.mesh.primitive_uv_sphere_add(radius=0.6, location=(0.0, 0.0, 2.0))\n")
+    argv_backup = sys.argv
+    stdout_backup = sys.stdout
+    old_bpy = sys.modules.get("bpy")
+    printed = ""
+    obj_path = ""
+    try:
+        with tempfile.TemporaryDirectory() as workdir:
+            slot_path = os.path.join(workdir, "probe.py")
+            obj_path = os.path.join(workdir, "probe.obj")
+            with open(slot_path, "w", encoding="utf-8", newline="\n") as handle:
+                handle.write(slot_code)
+            # Wie beim echten Blender-Aufruf: die Runner-Argumente stehen
+            # hinter dem "--"-Trenner (--python runner.py -- --script ...).
+            sys.argv = ["runner.py", "--", "--script", slot_path, "--out", obj_path, "--slot", "probe"]
+            sys.modules["bpy"] = bpy_stub
+            buffer = io.StringIO()
+            sys.stdout = buffer
+            try:
+                exec(compile(runner, "runner.py", "exec"), {"__name__": "__arena_runner_test__"})
+            except NameError as exc:
+                check(False, "der Runner wirft NameError (bpy fehlt der Modulfunktion): %s" % exc)
+            printed = buffer.getvalue()
+            stats_seen = "ARENA_MESH_STATS " in printed and "ARENA_MESH_OK probe" in printed
+            obj_written = os.path.isfile(obj_path)
+    finally:
+        sys.stdout = stdout_backup
+        sys.argv = argv_backup
+        if old_bpy is None:
+            sys.modules.pop("bpy", None)
+        else:
+            sys.modules["bpy"] = old_bpy
+    check(any(name == "read_factory_settings" and payload == {"use_empty": True}
+              for name, payload in calls),
+          "der gestubbte Lauf setzt die leere Szene (read_factory_settings use_empty=True)")
+    check(any(name == "obj_export" for name, _payload in calls),
+          "arena_export ruft bpy.ops.wm.obj_export auf - OHNE NameError")
+    check(obj_written, "der Export hat eine OBJ-Datei geschrieben")
+    check(stats_seen, "der Runner gibt die Messzeile ARENA_MESH_STATS aus (Marker + JSON)")
 
     # ------------------------------------------------------------------
     # 2) Werkzeuge: Schema (Tool-Doku) und Handler-Verdrahtung
@@ -349,7 +446,7 @@ def main() -> int:
     if FAILURES:
         print(f"\nFEHLGESCHLAGEN: {len(FAILURES)} Pruefung(en) rot.")
         return 1
-    print("\nOK: 7.4.1 Blender-/Mesh-Weg (Schritt 4, Messung, Platzhalter, Fenster, Gates) bestanden.")
+    print("\nOK: 7.4.2 Blender-/Mesh-Weg (Schritt 4, Runner, Messung, Platzhalter, Fenster, Gates) bestanden.")
     return 0
 
 
