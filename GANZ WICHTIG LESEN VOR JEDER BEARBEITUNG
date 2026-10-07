@@ -96,17 +96,26 @@ Der Starter zieht sich jede Aenderung automatisch aus dem Repository.
 Es reicht:
 
     1. ArenaBridge.ps1 aendern
-    2. Version ueberall hochziehen - diese Stellen ALLE anfassen:
+    2. Version ueberall hochziehen - diese Stellen ALLE anfassen
+       (Stand 7.4.1; die Tests zaehlen die funktionalen Literale
+       in test_v398_structure.py -> functional_version_counts):
        - Changelog-Kommentar ganz oben in ArenaBridge.ps1 fortfuehren
-       - DocsVersion
-       - local ARENA_VERSION
-       - version = '3.x'
-       - bridgeVersion  (kommt 3x vor!)
-       - serverVersion
-       - Plugin-Kommentar "(Version ...)"
-       - Versionszeile/Fusszeile in den Einstellungen
-       - Fallback-Versionsliteral im Update-Hinweisfenster
-         (Show-UpdateNotice)
+         (NEUER Block oben, alte Bloecke bleiben als Historie stehen)
+       - DocsVersion und RuntimeInfo.Version (Shared; 2x)
+       - local ARENA_VERSION + Plugin-Kommentar "(Version ...)"
+       - version = 'x' (Server-Werkzeugliste)
+       - bridgeVersion (3x) + bridgeVersion='x' (Statuszeile)
+       - serverVersion (2x)
+       - Bridge-Version= (2x) und Bridge/Plugin-Stand:
+       - PROOF_OF_LIFE Version=
+       - Versionszeile/Fusszeile in den Einstellungen und Fenstertext
+         "Arena Roblox Bridge - Version x"
+       - Fallback-Versionsliterale im Update-Hinweisfenster
+         ($versionText, $verText, "Version x - aktuell. Beim naechsten
+         Start" 2x)
+       - Ueberschriften Start-Diagnose (2x), Place-Diagnose, Kurzbericht
+         (3x), Leistungsbericht, "Version: x" (2x)
+       - Guide-Titel (Mesh-Build Engine 1.0 / Organic Build Engine 1.1)
        - version.json: "version" erhoehen + "notes" mit den
          Neuigkeiten des Updates (erscheint im Hinweisfenster)
        - (nur falls EXE neu gebaut wird: ps2exe-Versionsangabe in
@@ -145,14 +154,24 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
   (NOTIFICATION_UNVERIFIED statt delivered = true). Seit v7.2.3 gibt es KEINEN
   kuenstlichen Test-Popup mehr in den Einstellungen. Es bleibt bei GENAU
   DIESEM EINEN report_done-Kanal - kein neuer Meldeweg (D4).
-- DAS MESH-FENSTER IST FENSTER Nr. 3 (v7.4.0, ausdruecklicher Nutzerwunsch):
-  "Mesh-Uploads" aus dem Menue (...) der Place-Zeile. Der Nutzer sieht dort je
-  Bauteil die OBJ-Datei mit Dreiecken/Groesse, einen Knopf "Ordner oeffnen",
-  das Mesh-Id-Textfeld, den Blender-Zustand mit Fortschritt sowie
-  "Blender jetzt installieren" / "Schritt ueberspringen". Bauart wie das
-  Nachrichtenfenster: Anthrazit/Grau/Pink, ziehbare Titelleiste, X oben rechts,
-  modal per ShowDialog, KEIN Toast. Es ist bewusst KEIN neuer Meldeweg: der
-  eine report_done-Kanal bleibt unveraendert.
+- DAS MESH-FENSTER IST FENSTER Nr. 3 (v7.4.0, in v7.4.1 NEU GEBAUT -
+  ausdruecklicher Nutzerwunsch): "Mesh-Uploads". Seit v7.4.1 gibt es KEINEN
+  Menue-Eintrag mehr: Sobald mindestens eine gemessene OBJ-Datei auf den
+  Upload wartet, oeffnet sich das Fenster von SELBST, MODELESS (Show, kein
+  ShowDialog - die Hauptoberflaeche bleibt bedienbar), und nach dem
+  Schliessen nur wieder, wenn eine neue Datei dazukommt. Je Bauteil eine
+  Zeile mit OBJ-Datei (Dreiecke/Groesse), Zustand, Mesh-Id-Textfeld,
+  "Fertig" und "Stornieren" (Rueckfrage; der neue interne Befehl
+  tools.mesh_drop entfernt die MeshParts mit ArenaMeshSlot - ein schon
+  EINGESETZTES Mesh kommt NICHT zurueck). "Fertig" loescht danach OBJ und
+  Slot-Skript, "Stornieren" Slot und Dateien. Dazu Titel, Place-Name,
+  Schliessen und "Ordner oeffnen". Bauart wie die anderen Fenster:
+  Anthrazit/Grau/Pink, WindowStyle=None, ziehbare Titelleiste, X oben rechts,
+  KEIN Toast. Die alten Knoepfe (Aktualisieren, "Ids einsetzen", "Blender
+  jetzt installieren", "Schritt ueberspringen") sind WEG; der
+  Blender-Zustand steht auf dem Startbildschirm (Zeile 4, ein Klick
+  wiederholt die ECHTE Probe). Es ist bewusst KEIN neuer Meldeweg: der eine
+  report_done-Kanal bleibt unveraendert.
 - ZWEI NEUE FENSTER SIND AUSDRUECKLICH ERLAUBT (v7.2.0, Entscheidung D2 des
   Owners): (1) "Nachricht an Arena senden" aus dem Menue (…) der Place-Zeile
   (Add-UserMessage/Open-UserMessageWindow) und (2) "Arena fragt" fuer
@@ -293,6 +312,15 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
   (Charakter spawnt nahe der alten Edit-Kamera).
 - ArenaBridge.ps1 und make-updater.ps1 sind UTF-8 MIT BOM - BOM beim
   Speichern erhalten (PowerShell 5.1 braucht ihn fuer die Umlaute).
+- ERZEUGTE PYTHON-DATEIEN IMMER BOM-FREI SCHREIBEN (v7.4.1, Live-Befund):
+  Set-Content/Out-File/Add-Content -Encoding UTF8 setzen unter PowerShell
+  5.1 ein BOM; Python/Blender bricht dann mit "SyntaxError: invalid
+  non-printable character U+FEFF" in Zeile 1 ab. Fuer Dateien, die
+  Blender/Python liest, immer [System.IO.File]::WriteAllText($pfad,$text,
+  (New-Object System.Text.UTF8Encoding($false))) benutzen; der Mesh-Runner
+  liest Modelldateien zusaetzlich BOM-tolerant (encoding="utf-8-sig" +
+  strip eines fuehrenden U+FEFF). Die runtime.log als reine Menschen-Datei
+  darf weiter Add-Content -Encoding UTF8 benutzen.
 - Base64-Bloecke in make-updater.ps1: Marker #==ICON-START== /
   #==ICON-END== und #==LAUNCHER-START== / #==LAUNCHER-END==, Zeilen
   a 110 Zeichen mit #-Praefix. Nach JEDER Aenderung an
@@ -381,6 +409,7 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
   python test_v710_delivery.py, python test_v711_delivery.py,
   python test_v712_toolbox.py, python test_v713_quality.py,
   python test_v714_organic.py, python test_v720_bridge.py,
+  python test_v732_organic_creature.py, python test_v740_mesh.py,
   python test_queue_model_707.py
   (luaparser, tree_sitter und tree_sitter_powershell aus requirements-test.txt). PowerShell/.NET laesst sich in
   der KI-Sandbox NICHT installieren - Semantik per Quelltext (PowerShell-
@@ -393,6 +422,27 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v7.4.1 (07.10.2026): BOM-HOTFIX + AUTOMATISCHES MESH-FENSTER + EHRLICHER
+  SCHRITT 4. (1) BOM-HOTFIX: alle erzeugten Python-Dateien (Runner, Slot-
+  Skripte, Probenskripte) werden BOM-frei geschrieben (WriteAllText +
+  UTF8Encoding($false)); der Runner liest Modelldateien BOM-tolerant.
+  (2) Das Mesh-Fenster hat keinen Menue-Eintrag mehr: es oeffnet sich SELBST
+  und MODELESS, sobald eine OBJ-Datei auf den Upload wartet; je Mesh eine
+  Zeile mit "Fertig" (setzt ein, loescht OBJ + Slot-Skript) und "Stornieren"
+  (Rueckfrage; interner Befehl tools.mesh_drop entfernt die MeshParts mit
+  ArenaMeshSlot - ein schon eingesetztes Mesh kommt NICHT zurueck; danach
+  Slot + Dateien weg). Kein "Aktualisieren"/"Ids einsetzen"/"Blender jetzt
+  installieren"/"Schritt ueberspringen" mehr. (3) Schritt 4 laeuft komplett
+  in EINEM Hintergrund-Runspace (kein Einfrieren), der Tunnel startet erst
+  nach dem Endzustand; ready setzt NUR die bestandene Faehigkeitsprobe
+  (Marker ARENA_MESH_STATS, Laenge exakt geprueft, fail-closed); der
+  Installationsweg und "Blender pruefen" (Klick auf Zeile 4 /
+  blender_status action=check) enden immer in der echten Probe. Fehlschlag =
+  rote Zeile, Mesh-Bau aus, kein Startblocker. EINE Hilfs-Quelle
+  ($script:BridgeBlenderTools) gilt fuer Hauptprogramm UND jeden Runspace
+  (7.4.0 hatte dort Phantom-Funktionen); die tote zweite Probe
+  (Test-BlenderCapability) ist geloescht, der Statusbericht kommt aus EINER
+  Funktion (Get-BlenderReport).
 - v7.4.0 (07.10.2026): BLENDER-MESH-BAU + MESH-UPLOAD-FENSTER. Der Bauweg
   neben build_polygon_model. SCHRITT 4 DES STARTS (vor dem Tunnel): Blender
   wird gesucht (vorhandene Installation zuerst, schnelle Versionspruefung) und

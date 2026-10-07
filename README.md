@@ -31,8 +31,8 @@ sein.
 | `MODEL_BUILD_CONTRACT.md` | Kategorieneutraler Polygon-Bauablauf mit Schema, validem Mehrflächen-Hausbeispiel, Volumen-/Submodel-/Assembly-Auswahl und Ergebnisprüfung für alle 3D-Arten |
 | `ORGANIC_BUILD_CONTRACT.md` | Organic-Bauvertrag (Stand 7.3.2, weiterhin gueltig; der Mesh-Weg kommt in 7.4.0 hinzu): typed Creature-Loft-Volumen, Gesichts-/Flügelrollen und fail-closed Audit; 7.1.4 bleibt als Historie |
 | `test_queue_model_707.py` | Python-Modelltest: reproduziert den Queue-Stillstand von 7.0.4 und prüft die 7.0.5-Regeln (unabhängiger Watchdog, lateResults, Reconnect-Übergabe) **plus** 7.0.6 (Sitzungs-Identität, Fast-Fail, Zustell-Timeline) und 7.0.7 (Place-Zeile: fehlende Eigenschaft bricht den Zeilenaufbau ab) |
-| `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Versions-Checks (`/api/version` 7.4.0, `counters.revivedSessions` konstant, `/api/places` 200, `/api/status` 200), Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `--reset-test` (Reset mit 2 wartenden Befehlen), `--force-fail`, `--ask-sweep` (7.2.4 P0-Abnahme: alle Werkzeuge bei **offener** Frage) und `--message-round` (Nachricht → `_bridge.userMessages` → `ack_user_message`) |
-| `test_v740_mesh.py` | Offline-Abnahme 7.4.0 (Blender-/Mesh-Weg): Skript-Sperrliste, OBJ-Messung mit Dreiecks-/Groessen-/Limit-Pruefung, Register/Job-Zustandsmaschine, Report-Gates (`MESH_UPLOAD_PENDING`) und Beleg, dass `MeshPart.MeshId` nur ueber `CreateMeshPartAsync`/`ApplyMesh` gesetzt wird |
+| `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Versions-Checks (`/api/version` 7.4.1, `counters.revivedSessions` konstant, `/api/places` 200, `/api/status` 200), Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `--reset-test` (Reset mit 2 wartenden Befehlen), `--force-fail`, `--ask-sweep` (7.2.4 P0-Abnahme: alle Werkzeuge bei **offener** Frage) und `--message-round` (Nachricht → `_bridge.userMessages` → `ack_user_message`) |
+| `test_v740_mesh.py` | Offline-Abnahme 7.4.1 (Blender-/Mesh-Weg, BOM-Hotfix, automatisches Mesh-Fenster): BOM-freie WriteAllText-Pfade und BOM-tolerantes Lesen im Runner, Skript-Sperrliste, OBJ-Messung mit Dreiecks-/Groessen-/Limit-Pruefung, Register/Job-Zustandsmaschine, automatisches modeless Fenster (Auto-Oeffnen nur bei neuer Wartemenge, „Fertig“ raeumt auf, „Stornieren“ ueber tools.mesh_drop mit Rueckfrage), Report-Gates (`MESH_UPLOAD_PENDING`) und Beleg, dass `MeshPart.MeshId` nur ueber `CreateMeshPartAsync`/`ApplyMesh` gesetzt wird |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -47,6 +47,36 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 7.4.1 — BOM-Hotfix, automatisches Mesh-Fenster, ehrlicher Schritt 4
+
+1. **BOM-Hotfix (der gemeldete Fehler).** PowerShell 5.1 schrieb die erzeugten
+   Python-Dateien mit BOM; Blender/Python brach mit `SyntaxError: invalid
+   non-printable character U+FEFF` in Zeile 1 ab. Jetzt schreibt die Bridge
+   jede erzeugte `.py`-Datei BOM-frei (`[System.IO.File]::WriteAllText` mit
+   `UTF8Encoding($false)`), und der Runner liest Modelldateien zusätzlich
+   BOM-tolerant (`utf-8-sig` plus Entfernen eines führenden `U+FEFF`).
+2. **Das Mesh-Fenster öffnet sich selbst.** Kein Menü-Eintrag mehr: Sobald
+   mindestens eine gemessene OBJ-Datei auf ihren Upload wartet, erscheint
+   **„Mesh-Uploads“** von allein — **modeless**, die Hauptoberfläche bleibt
+   bedienbar. Nach dem Schließen öffnet es sich nur wieder, wenn eine neue
+   Datei dazukommt. Je Mesh eine Zeile mit Datei, Messwerten und Zustand,
+   Mesh-Id-Feld, **„Fertig“** und **„Stornieren“** (mit Rückfrage). „Fertig“
+   setzt ein und löscht danach OBJ und Slot-Skript; „Stornieren“ sendet den
+   neuen internen Befehl `tools.mesh_drop`, entfernt die MeshParts mit
+   `ArenaMeshSlot` und räumt Slot und Dateien weg. Ehrlich: Ein schon
+   eingesetztes Mesh kommt beim Stornieren **nicht** zurück.
+3. **Schritt 4 friert nicht mehr ein und behauptet nichts.** Suche,
+   Versionsprüfung und die echte Fähigkeitsprobe laufen in **einem**
+   Hintergrund-Runspace; der Tunnel startet erst danach. `ready` gibt es nur
+   nach bestandener Probe (Messmarker `ARENA_MESH_STATS`, Länge exakt geprüft,
+   fail-closed), der Installationsweg kann kein `ready` mehr vortäuschen, und
+   „Blender prüfen“ (Klick auf Zeile 4 oder
+   `blender_status { action: "check" }`) wiederholt immer die echte Probe.
+   Schlägt der Schritt fehl, wird die Zeile rot, der Mesh-Bau ist aus und
+   alles andere läuft normal weiter — kein Startblocker. Eine einzige
+   Hilfs-Quelle (`$script:BridgeBlenderTools`) gilt jetzt für Hauptprogramm und
+   jeden Runspace (7.4.0 hatte dort Phantom-Funktionen).
 
 ## 7.4.0 — Blender-Mesh-Bau plus Mesh-Upload-Fenster
 
@@ -64,7 +94,8 @@ Details und Modelle, die im Place nicht aus tausenden Teilen bestehen sollen.
    **Nie ein neuer Startblocker:** Schlägt der Schritt fehl, wird Zeile 4 des
    Startbildschirms rot, der Mesh-Bau wird deaktiviert und alles andere läuft
    normal weiter. Im Mesh-Fenster gibt es „Blender jetzt installieren“ und
-   „Schritt überspringen“.
+   „Schritt überspringen“ (7.4.1 ersetzt das: Das Fenster öffnet sich selbst,
+   die Prüfung wiederholt man per Klick auf Zeile 4).
 2. **Der Agent baut nichts am Mesh vorbei.** `build_mesh_model` nimmt je Slot
    ein Blender-Python-Skript entgegen (nur Geometrie: `bpy`, `bmesh`, `math`,
    `mathutils`, `random`), startet Blender **im Hintergrund** und antwortet
