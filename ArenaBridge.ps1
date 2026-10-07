@@ -1,5 +1,22 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.3.1
+# Arena Roblox Bridge  -  Version 7.3.2
+#
+# Version 7.3.2 (2026-10-07) - GLOBAL POLYGON GUIDE + CREATURE GEOMETRY CONTRACT
+# -----------------------------------------------------------------------------
+# Der Agent erhaelt einen konkreten, kategorieneutralen Polygon-Bauablauf fuer
+# alle nichttrivialen 3D-Modelle: Schema, Submodels, Flaechen, Volumen-Lofts,
+# funktionierendes House-Beispiel und Pflichtpruefung von ausgelassenen Faces.
+# Kreaturen bekommen zusaetzlich einen fail-closed Geometrievertrag:
+#   1) organic=true verlangt organicKind; creature braucht geschlossene
+#      Body-/Head-Lofts aus echten Querschnittsstationen und Endkappen.
+#   2) model_audit misst Koerper-/Kopftiefe an realen Part-Bounds sowie
+#      >=8 Seiten, getrennte bilaterale 3D-Augen/Pupillen und Face-Overlays.
+#   3) organicTraits=["wings"] (oder Wing-Rollen) verlangt linke/rechte
+#      Fluegel auf entgegengesetzten Seiten, mit gemessener Torso-Ueberlappung.
+#   4) Pro-Modell organicQuality.issues fliessen in den frischen Auditbeleg;
+#      report_done bleibt fail-closed.
+#   5) Offline-Regressionen pruefen den Buildvertrag und Tree-sitter-Parser;
+#      kein echter Roblox-Studio-Render/Visualtest ist Teil der Offline-Suite.
 #
 # Version 7.3.1 (2026-10-06) - PARSER-FIX: Programm startet nicht (Parse-Fehler in 7.2.5-7.3.0)
 # -----------------------------------------------------------------------------
@@ -1910,7 +1927,7 @@ param(
 # Existing LOCALAPPDATA directory; no UI, no new exception net.
 # A parse/policy failure prevents even this marker. Check its timestamp/version.
 # Continue + SilentlyContinue keeps diagnostic I/O from becoming a start blocker.
-Write-Output ("{0:o} PROOF_OF_LIFE Version=7.3.1 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
+Write-Output ("{0:o} PROOF_OF_LIFE Version=7.3.2 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
 
 $ErrorActionPreference = 'Stop'
 
@@ -1945,7 +1962,7 @@ trap {
         }
         $trapPath = Join-Path $trapFolder 'startup-diagnose.txt'
         $trapReport = New-Object System.Text.StringBuilder
-        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.3.1)')
+        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.3.2)')
         [void]$trapReport.AppendLine('Quelle: trap auf Skriptebene (nicht abgefangener Fehler)')
         [void]$trapReport.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$trapReport.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -1984,7 +2001,7 @@ trap {
             try {
                 [System.IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA 'START-CHECK.txt'),
                     ('Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.3.1' + [Environment]::NewLine +
+                     'Version: 7.3.2' + [Environment]::NewLine +
                      'ABBRUCH: ' + $trapMessage + [Environment]::NewLine +
                      'Details: ' + $trapPath + [Environment]::NewLine),
                     [System.Text.Encoding]::UTF8)
@@ -2762,7 +2779,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.3.1'
+    DocsVersion     = '7.3.2'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -2798,7 +2815,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Version 7.0.6: Laufzeit-Identitaet der LAUFENDEN Datei (Version, Pfad,
     # SHA-256, Sprachmodus, Startzeit) fuer GET /api/version.
     RuntimeInfo = [hashtable]::Synchronized(@{
-        Version = '7.3.1'
+        Version = '7.3.2'
         File = ''
         Sha256 = ''
         LanguageMode = ''
@@ -3018,7 +3035,7 @@ function Write-StartupFailureDiagnose {
         try { $trace = [string]$ErrorRecord.ScriptStackTrace } catch {}
         if ($trace.Length -gt 2000) { $trace = $trace.Substring(0, 2000) }
         $report = New-Object System.Text.StringBuilder
-        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.3.1)')
+        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.3.2)')
         [void]$report.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$report.AppendLine('Letzte Startstufe: ' + $stage)
         [void]$report.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -3101,7 +3118,7 @@ function Set-StartupStage {
     try {
         $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
         $checkText = 'Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.3.1' + [Environment]::NewLine +
+                     'Version: 7.3.2' + [Environment]::NewLine +
                      'Zeit: ' + $stamp + [Environment]::NewLine +
                      'PowerShell: ' + [string]$PSVersionTable.PSVersion + ' | CLR ' + [string][Environment]::Version + [Environment]::NewLine +
                      'Skript: ' + [string]$script:ScriptPath + [Environment]::NewLine +
@@ -3167,12 +3184,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.3.1, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.3.1, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.3.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.3.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.3.1'
+$script:Shared.RuntimeInfo.Version = '7.3.2'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -3275,7 +3292,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.3.1)
+  Arena Studio Bridge - Studio Plugin  (Version 7.3.2)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -3348,7 +3365,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.3.1"
+local ARENA_VERSION  = "7.3.2"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -8356,6 +8373,79 @@ function MASTER_BUILD.mergeStyle(base, override)
     return out
 end
 
+-- A loft is a REAL three-dimensional organic volume, not one side-view face.
+-- Each station contributes an elliptical ring; adjacent rings are joined by
+-- quads and both ends are capped. The existing polygon engine then triangulates
+-- this closed skin into WedgeParts. Cross-section radii are deliberately
+-- explicit so the bridge can prove that a creature body/head has depth.
+function MASTER_BUILD.loftVolume(volume)
+    if type(volume)~="table" then return nil,nil,"volume entry must be a table" end
+    local sections=volume.sections or volume.stations or {}
+    if type(sections)~="table" or #sections<3 then return nil,nil,"at least 3 sections are required" end
+    local sides=math.floor(tonumber(volume.sides) or 8)
+    if sides<6 or sides>16 then return nil,nil,"sides must be between 6 and 16" end
+    local centers,radiusUp,radiusSide={},{},{}
+    for i,section in ipairs(sections) do
+        if type(section)~="table" then return nil,nil,"section "..tostring(i).." must be a table" end
+        local center=MASTER_BUILD.vec3(section.center or section.position)
+        local rUp=tonumber(section.heightRadius or section.upRadius or section.radiusY)
+        local rSide=tonumber(section.depthRadius or section.sideRadius or section.radiusZ)
+        if not center then return nil,nil,"section "..tostring(i).." needs center={x,y,z}" end
+        if not rUp or not rSide or rUp<0.025 or rSide<0.025 then
+            return nil,nil,"section "..tostring(i).." needs heightRadius and depthRadius >= 0.025"
+        end
+        centers[i]=center; radiusUp[i]=rUp; radiusSide[i]=rSide
+        if i>1 and (center-centers[i-1]).Magnitude<0.01 then
+            return nil,nil,"adjacent section centers must be at least 0.01 studs apart"
+        end
+    end
+    local rings,previousSide={},nil
+    local minCrossSectionRatio=1
+    local axisLength=0
+    for i,center in ipairs(centers) do
+        if i>1 then axisLength=axisLength+(center-centers[i-1]).Magnitude end
+        local before=centers[math.max(1,i-1)]
+        local after=centers[math.min(#centers,i+1)]
+        local delta=after-before
+        if delta.Magnitude<0.01 then return nil,nil,"section path has no measurable direction" end
+        local tangent=delta.Unit
+        local upReference=Vector3.new(0,1,0)
+        local up=upReference-tangent*upReference:Dot(tangent)
+        if up.Magnitude<0.001 then
+            upReference=Vector3.new(0,0,1)
+            up=upReference-tangent*upReference:Dot(tangent)
+        end
+        if up.Magnitude<0.001 then return nil,nil,"could not construct a stable cross-section frame" end
+        up=up.Unit
+        local side=tangent:Cross(up).Unit
+        -- Keep the ring frame from flipping when the centerline bends.
+        if previousSide and side:Dot(previousSide)<0 then side=-side; up=-up end
+        previousSide=side
+        local ring={}
+        for j=1,sides do
+            local angle=(2*math.pi*(j-1))/sides
+            ring[j]=center+up*(radiusUp[i]*math.cos(angle))+side*(radiusSide[i]*math.sin(angle))
+        end
+        rings[i]=ring
+        local larger=math.max(radiusUp[i],radiusSide[i])
+        minCrossSectionRatio=math.min(minCrossSectionRatio,math.min(radiusUp[i],radiusSide[i])/larger)
+    end
+    local polygons={}
+    table.insert(polygons,{name=tostring(volume.name or "Loft").."_CapA",points=rings[1]})
+    local lastCap={}
+    for j=sides,1,-1 do table.insert(lastCap,rings[#rings][j]) end
+    table.insert(polygons,{name=tostring(volume.name or "Loft").."_CapB",points=lastCap})
+    for i=1,#rings-1 do
+        for j=1,sides do
+            local nextJ=(j%sides)+1
+            table.insert(polygons,{name=tostring(volume.name or "Loft").."_R"..tostring(i).."_S"..tostring(j),points={
+                rings[i][j],rings[i][nextJ],rings[i+1][nextJ],rings[i+1][j]
+            }})
+        end
+    end
+    return polygons,{sections=#sections,sides=sides,faces=#polygons,axisLength=axisLength,minCrossSectionRatio=minCrossSectionRatio,closedEnds=true}
+end
+
 function MASTER_BUILD.pointKey(v)
     -- Shared mesh vertices often arrive as separate JSON objects. Quantising
     -- makes boundary detection stable without moving the actual geometry.
@@ -8553,11 +8643,89 @@ tools.build_polygon_model = function(args)
     local parent,err=resolveRef(args.parentRef or "game.Workspace")
     if not parent then return failCode("REF_NOT_FOUND",err) end
     local rawPolygons=args.polygons or {}
+    local subSpecs=args.submodels or args.groups or {}
+    local rawVolumes=args.volumes or {}
+    if type(rawPolygons)~="table" or type(subSpecs)~="table" or type(rawVolumes)~="table" then
+        return failCode("BAD_ARGS","polygons, submodels and volumes must be arrays/tables.")
+    end
+    for _,spec in ipairs(subSpecs) do
+        if type(spec)~="table" then return failCode("BAD_ARGS","Every submodel entry must be a table.") end
+    end
+    for _,volume in ipairs(rawVolumes) do
+        if type(volume)~="table" then return failCode("BAD_ARGS","Every loft volume entry must be a table.") end
+    end
     local polygonScript=args.script or args.source
     if polygonScript then for _,p in ipairs(MASTER_BUILD.parseScript(polygonScript)) do table.insert(rawPolygons,p) end end
     if args.points then table.insert(rawPolygons,{points=args.points,name=args.polygonName}) end
-    local subSpecs=args.submodels or args.groups or {}
-    if #rawPolygons==0 and #subSpecs==0 then return failCode("BAD_ARGS","Provide polygons/points/script or submodels=[{name,polygons,style}].") end
+    local organicBuild=args.organic==true
+    local organicKind=string.lower(tostring(args.organicKind or ""))
+    local allowedOrganicKinds={creature=true,plant=true,tree=true,prop=true,custom=true}
+    if organicBuild and organicKind=="" then
+        return failCode("ORGANIC_KIND_REQUIRED","organic=true now requires organicKind=creature|plant|tree|prop|custom so the correct measured geometry contract is applied.")
+    end
+    if organicBuild and not allowedOrganicKinds[organicKind] then
+        return failCode("ORGANIC_KIND_INVALID","organicKind must be creature, plant, tree, prop or custom.")
+    end
+    if organicKind=="creature" and not organicBuild then
+        return failCode("ORGANIC_KIND_REQUIRED","organicKind=creature also requires organic=true so the creature is registered for its strict audit.")
+    end
+    local function hasTrait(traits,wanted)
+        if type(traits)=="string" then return string.find(string.lower(traits),wanted,1,true)~=nil end
+        for _,trait in ipairs(type(traits)=="table" and traits or {}) do
+            if string.lower(tostring(trait))==wanted then return true end
+        end
+        return false
+    end
+    local hasWings=hasTrait(args.organicTraits,"wings")
+    for _,volume in ipairs(rawVolumes) do
+        local role=string.lower(tostring(volume.role or ""))
+        if role=="wing_left" or role=="wing_right" then hasWings=true end
+    end
+    for _,spec in ipairs(subSpecs) do
+        local role=string.lower(tostring(spec.role or ""))
+        if role=="wing_left" or role=="wing_right" then hasWings=true end
+    end
+    if #rawPolygons==0 and #subSpecs==0 and #rawVolumes==0 then
+        return failCode("BAD_ARGS","Provide polygons/points/script, submodels, or loft volumes.")
+    end
+    if organicKind=="creature" then
+        local roleSpecs,volumeRoles={},{}
+        for _,volume in ipairs(rawVolumes) do
+            local role=string.lower(tostring(volume.role or ""))
+            if role~="" then roleSpecs[role]=volume; volumeRoles[role]=volume end
+        end
+        for _,spec in ipairs(subSpecs) do
+            local role=string.lower(tostring(spec.role or ""))
+            if role~="" and not roleSpecs[role] then roleSpecs[role]=spec end
+        end
+        local body,head=volumeRoles.body,volumeRoles.head
+        local bodySections=body and (body.sections or body.stations) or {}
+        local headSections=head and (head.sections or head.stations) or {}
+        if type(bodySections)~="table" then bodySections={} end
+        if type(headSections)~="table" then headSections={} end
+        if not body or not head or #bodySections<4 or #headSections<3
+            or (tonumber(body.sides) or 8)<8 or (tonumber(head.sides) or 8)<8 then
+            return failCode("CREATURE_VOLUME_REQUIRED","A creature's first build needs closed loft volumes with role=body (at least 4 cross-section sections) and role=head (at least 3), each with sides >= 8. A side-profile polygon is not a creature body.")
+        end
+        if hasWings and (not roleSpecs.wing_left or not roleSpecs.wing_right) then
+            return failCode("CREATURE_WINGS_REQUIRED","organicTraits=[\"wings\"] requires separate role=wing_left (+Z flank) and role=wing_right (-Z flank) geometry attached to the body.")
+        end
+    end
+    local generatedVolumeSpecs,volumeSummary={},{}
+    for i,volume in ipairs(rawVolumes) do
+        if volume.style~=nil and type(volume.style)~="table" then
+            return failCode("BAD_ARGS","Loft volume style must be a table.")
+        end
+        local polygons,meta,volumeError=MASTER_BUILD.loftVolume(volume)
+        if not polygons then
+            return failCode("BAD_ARGS","Invalid loft volume "..tostring(volume.name or i)..": "..tostring(volumeError))
+        end
+        local role=string.lower(tostring(volume.role or ""))
+        local name=tostring(volume.name or (role~="" and role or ("LoftVolume"..i)))
+        local volumeSpec={name=name,role=role,polygons=polygons,style=volume.style or {},containerClass="Folder",isLoftVolume=true,loftMeta=meta,autoWeld=volume.autoWeld}
+        table.insert(generatedVolumeSpecs,volumeSpec)
+        table.insert(volumeSummary,{name=name,role=role,sections=meta.sections,sides=meta.sides,expectedFaces=meta.faces,axisLength=meta.axisLength,minCrossSectionRatio=meta.minCrossSectionRatio,closedEnds=meta.closedEnds})
+    end
 
     local model=Instance.new("Model"); model.Name=tostring(args.modelName or args.name or "ArenaPolygonModel"); model.Parent=parent
     model:SetAttribute("ArenaMasterBuild",true)
@@ -8567,18 +8735,25 @@ tools.build_polygon_model = function(args)
     if args.grade == "simple" or args.grade == "lowpoly" or args.grade == "blockout" or args.grade == "detailed" then
         model:SetAttribute("ArenaDeclaredGrade", tostring(args.grade))
     end
-    local organicBuild=args.organic==true
     if organicBuild then
         model:SetAttribute("ArenaOrganicBuild",true)
-        model:SetAttribute("ArenaOrganicBuildVersion",2)
+        model:SetAttribute("ArenaOrganicBuildVersion",3)
+        model:SetAttribute("ArenaOrganicKind",organicKind)
+        model:SetAttribute("ArenaOrganicHasWings",hasWings)
     end
     local defaults=args.style or {}
     local origin=MASTER_BUILD.vec3(args.origin) or Vector3.zero
     local scale=tonumber(args.scale) or 1
     local rotation=MASTER_BUILD.vec3(args.rotation) or Vector3.zero
     local transform=CFrame.new(origin)*CFrame.Angles(math.rad(rotation.X),math.rad(rotation.Y),math.rad(rotation.Z))
+    if organicBuild then
+        model:SetAttribute("ArenaOrganicForward",transform.RightVector)
+        model:SetAttribute("ArenaOrganicUp",transform.UpVector)
+        model:SetAttribute("ArenaOrganicSide",transform:VectorToWorldSpace(Vector3.new(0,0,1)))
+    end
     local specs={}
     if #rawPolygons>0 then table.insert(specs,{name=args.defaultSubmodelName or "Surfaces",polygons=rawPolygons,style=defaults,containerClass=args.containerClass}) end
+    for _,spec in ipairs(generatedVolumeSpecs) do table.insert(specs,spec) end
     for _,spec in ipairs(subSpecs) do table.insert(specs,spec) end
 
     local wedgeCount,triCount,weldCount,capCount,skipped=0,0,0,0,{}
@@ -8593,6 +8768,14 @@ tools.build_polygon_model = function(args)
         local className=(string.lower(tostring(spec.containerClass or spec.className or "folder"))=="model") and "Model" or "Folder"
         local container=Instance.new(className); container.Name=tostring(spec.name or ("Submodel"..si)); container.Parent=model
         container:SetAttribute("ArenaPolygonSubmodel",true)
+        if type(spec.role)=="string" and spec.role~="" then container:SetAttribute("ArenaOrganicRole",string.lower(spec.role)) end
+        if spec.isLoftVolume==true then
+            container:SetAttribute("ArenaLoftVolume",true)
+            container:SetAttribute("ArenaLoftSectionCount",tonumber((spec.loftMeta or {}).sections) or 0)
+            container:SetAttribute("ArenaLoftSideCount",tonumber((spec.loftMeta or {}).sides) or 0)
+            container:SetAttribute("ArenaLoftExpectedFaceCount",tonumber((spec.loftMeta or {}).faces) or 0)
+            container:SetAttribute("ArenaLoftClosedEnds",(spec.loftMeta or {}).closedEnds==true)
+        end
         local subStyle=MASTER_BUILD.mergeStyle(defaults,spec.style)
         local entries={}; local centerSum=Vector3.zero; local centerCount=0
         for pi,poly in ipairs(spec.polygons or {}) do
@@ -8623,13 +8806,15 @@ tools.build_polygon_model = function(args)
             for _,cap in ipairs(caps) do cap.style=MASTER_BUILD.mergeStyle(subStyle,spec.capStyle or args.capStyle); table.insert(entries,cap); capCount=capCount+1 end
         end
         local solidCenter=centerCount>0 and centerSum/centerCount or nil
-        local subTriangles=0
+        local subTriangles,subFaceCount,subFacesSkipped=0,0,0
         for _,entry in ipairs(entries) do
             facesTotal=facesTotal+1
+            subFaceCount=subFaceCount+1
             local triangles,why,normal,drop,cleanedPoints,note=MASTER_BUILD.triangulate(entry.points)
-            if not triangles then
+            if not triangles or #triangles==0 then
                 facesSkipped=facesSkipped+1
-                table.insert(skipped,{submodel=container.Name,polygon=entry.name,name=entry.name,index=entry.index,autoCap=entry.autoCap==true,error=why})
+                subFacesSkipped=subFacesSkipped+1
+                table.insert(skipped,{submodel=container.Name,polygon=entry.name,name=entry.name,index=entry.index,autoCap=entry.autoCap==true,error=why or "triangulation produced no triangles"})
             elseif wedgeCount+#triangles*2>maxWedges then model:Destroy(); return failCode("BUDGET_EXCEEDED","Polygon build needs more than "..tostring(maxWedges).." wedges. Raise maxWedges up to 10000 or split the model.")
             else
                 local group=Instance.new("Model"); group.Name=tostring(entry.name); group.Parent=container
@@ -8642,6 +8827,7 @@ tools.build_polygon_model = function(args)
                 for ti,t in ipairs(triangles) do
                     local made,werr=MASTER_BUILD.triangleWedges(usePoints[t[1]],usePoints[t[2]],usePoints[t[3]],group,entry.style,group.Name.."_T"..ti,normal,solidCenter)
                     if werr then
+                        subFacesSkipped=math.max(subFacesSkipped,1)
                         table.insert(skipped,{submodel=container.Name,polygon=entry.name,index=entry.index,triangle=ti,error=werr})
                     else
                         wedgeCount=wedgeCount+#made; triCount=triCount+1; subTriangles=subTriangles+1
@@ -8650,6 +8836,8 @@ tools.build_polygon_model = function(args)
             end
         end
         container:SetAttribute("TriangleCount",subTriangles)
+        container:SetAttribute("ArenaLoftFaceCount",subFaceCount)
+        container:SetAttribute("ArenaLoftFacesSkipped",subFacesSkipped)
         -- Polygon surfaces are one object by default. Without WeldConstraints,
         -- unanchored Wedges become independent physics bodies and immediately
         -- scatter/rotate in play mode. Only explicit false opts out.
@@ -8703,7 +8891,7 @@ tools.build_polygon_model = function(args)
         local note="Ignored geometry-owned style.properties ("..table.concat(ignoredGeometryProperties,", ")..") so polygon Size/CFrame cannot be overwritten."
         warningsText=warningsText and (warningsText.." "..note) or note
     end
-    return ok({model=describeRef(model),organic=organicBuild,submodels=#specs,polygons=#rawPolygons,triangles=triCount,wedges=wedgeCount,autoCaps=capCount,welds=weldCount,weldedSubmodels=weldedSubmodels,autoWeldDefault=true,mainWelds=mainWeldCount,facesTotal=facesTotal,facesBuilt=facesTotal-facesSkipped,facesSkipped=facesSkipped,incomplete=incomplete,skipped=skipped,fallbackFaces=fallbackFaces,ignoredGeometryProperties=ignoredGeometryProperties,geometryInvariant="Size/CFrame applied after safe style properties",geometry=waitMeasurable(sample,2),method="connected geometry-safe, side-corrected skin placement + ear-clipping + two WedgeParts per triangle (auto-welded by default; computed Size/CFrame cannot be overridden)",editable=true},warningsText)
+    return ok({model=describeRef(model),organic=organicBuild,organicKind=organicKind,submodels=#specs,polygons=#rawPolygons,volumesBuilt=#generatedVolumeSpecs,volumeSummary=volumeSummary,triangles=triCount,wedges=wedgeCount,autoCaps=capCount,welds=weldCount,weldedSubmodels=weldedSubmodels,autoWeldDefault=true,mainWelds=mainWeldCount,facesTotal=facesTotal,facesBuilt=facesTotal-facesSkipped,facesSkipped=facesSkipped,incomplete=incomplete,skipped=skipped,fallbackFaces=fallbackFaces,ignoredGeometryProperties=ignoredGeometryProperties,geometryInvariant="Size/CFrame applied after safe style properties",geometry=waitMeasurable(sample,2),method="side-corrected skin placement + ear-clipping + two WedgeParts per triangle (closed loft volumes included; auto-welded by default)",editable=true},warningsText)
 end
 
 tools.build_assembly = function(args)
@@ -8732,8 +8920,20 @@ tools.build_assembly = function(args)
         local okNew,inst=pcall(Instance.new,className)
         if not okNew or not inst then table.insert(errors,{index=i,error="Cannot create "..className})
         else
-            inst.Name=spec.name or className; local problems=applyProperties(inst,spec.properties); inst.Parent=model
-            local d=describeRef(inst); d.propertyProblems=(#problems>0) and problems or nil; table.insert(created,d)
+            inst.Name=spec.name or className
+            local problems=applyProperties(inst,spec.properties)
+            local attributeProblems={}
+            for attributeName,attributeValue in pairs(spec.attributes or {}) do
+                local okAttribute,attributeError=pcall(function()
+                    inst:SetAttribute(tostring(attributeName),decodeValue(attributeValue))
+                end)
+                if not okAttribute then table.insert(attributeProblems,{name=tostring(attributeName),error=tostring(attributeError)}) end
+            end
+            inst.Parent=model
+            local d=describeRef(inst)
+            d.propertyProblems=(#problems>0) and problems or nil
+            d.attributeProblems=(#attributeProblems>0) and attributeProblems or nil
+            table.insert(created,d)
             if inst:IsA("BasePart") and #sample<8 then table.insert(sample,inst) end
         end
     end
@@ -11634,6 +11834,272 @@ tools.prop_list = function(args)
     return ok({ props = list, count = #list, folder = WORLD_ENGINE.PROPS })
 end
 
+-- Version 7.3.2: echte Volumen statt Seitenprofil-/Sticker-Tiere.
+-- Creature builds declare closed lofts (body/head), bilateral physical eyes,
+-- and optional mirrored wing roles. These checks are per-model and use measured
+-- part bounds; part count or a single polygon triangle is not volume evidence.
+WORLD_ENGINE.auditOrganicCreature = function(organicModel)
+    local issues,roleNodes,loftNodes={},{},{}
+    local descendants=organicModel:GetDescendants()
+    for _,node in ipairs(descendants) do
+        local role=nil
+        pcall(function() role=node:GetAttribute("ArenaOrganicRole") end)
+        if type(role)=="string" and role~="" then
+            role=string.lower(role)
+            roleNodes[role]=roleNodes[role] or {}
+            table.insert(roleNodes[role],node)
+        end
+        local isLoft=false
+        pcall(function() isLoft=node:GetAttribute("ArenaLoftVolume")==true end)
+        if isLoft and type(role)=="string" and role~="" then
+            loftNodes[role]=loftNodes[role] or {}
+            table.insert(loftNodes[role],node)
+        end
+    end
+    local function roleParts(role)
+        local found,seen={},{}
+        for _,node in ipairs(roleNodes[role] or {}) do
+            if node:IsA("BasePart") then
+                if not seen[node] then seen[node]=true; table.insert(found,node) end
+            else
+                for _,part in ipairs(collectParts(node,{},8000)) do
+                    if not seen[part] then seen[part]=true; table.insert(found,part) end
+                end
+            end
+        end
+        return found
+    end
+    local forward,up,side=Vector3.new(1,0,0),Vector3.new(0,1,0),Vector3.new(0,0,1)
+    pcall(function()
+        local value=organicModel:GetAttribute("ArenaOrganicForward")
+        if typeof(value)=="Vector3" and value.Magnitude>0.001 then forward=value.Unit end
+    end)
+    pcall(function()
+        local value=organicModel:GetAttribute("ArenaOrganicUp")
+        if typeof(value)=="Vector3" and value.Magnitude>0.001 then up=value.Unit end
+    end)
+    pcall(function()
+        local value=organicModel:GetAttribute("ArenaOrganicSide")
+        if typeof(value)=="Vector3" and value.Magnitude>0.001 then side=value.Unit end
+    end)
+    local function measureBounds(list)
+        if #list==0 then return nil end
+        local minX,minY,minZ=math.huge,math.huge,math.huge
+        local maxX,maxY,maxZ=-math.huge,-math.huge,-math.huge
+        for _,part in ipairs(list) do
+            local size=part.Size
+            local cf=part.CFrame
+            local position=part.Position
+            local x=position:Dot(forward)
+            local y=position:Dot(up)
+            local z=position:Dot(side)
+            local hx=(math.abs(cf.RightVector:Dot(forward))*size.X+math.abs(cf.UpVector:Dot(forward))*size.Y+math.abs(cf.LookVector:Dot(forward))*size.Z)*0.5
+            local hy=(math.abs(cf.RightVector:Dot(up))*size.X+math.abs(cf.UpVector:Dot(up))*size.Y+math.abs(cf.LookVector:Dot(up))*size.Z)*0.5
+            local hz=(math.abs(cf.RightVector:Dot(side))*size.X+math.abs(cf.UpVector:Dot(side))*size.Y+math.abs(cf.LookVector:Dot(side))*size.Z)*0.5
+            minX=math.min(minX,x-hx); maxX=math.max(maxX,x+hx)
+            minY=math.min(minY,y-hy); maxY=math.max(maxY,y+hy)
+            minZ=math.min(minZ,z-hz); maxZ=math.max(maxZ,z+hz)
+        end
+        return {
+            min=Vector3.new(minX,minY,minZ),max=Vector3.new(maxX,maxY,maxZ),
+            center=Vector3.new((minX+maxX)*0.5,(minY+maxY)*0.5,(minZ+maxZ)*0.5),
+            size=Vector3.new(maxX-minX,maxY-minY,maxZ-minZ),
+        }
+    end
+    local function roleBounds(role) return measureBounds(roleParts(role)) end
+    local function validateLoft(role,minimumSections)
+        local candidates=loftNodes[role] or {}
+        if #candidates==0 then
+            table.insert(issues,string.upper(role).."_VOLUME_REQUIRED: use build_polygon_model.volumes with a closed loft; one side-profile polygon/wedge is not a volume.")
+            return nil,0,0
+        end
+        if #candidates>1 then table.insert(issues,"DUPLICATE_VOLUME_ROLE: keep exactly one loft volume for role="..role..".") end
+        local node=candidates[1]
+        local sectionCount=tonumber(node:GetAttribute("ArenaLoftSectionCount")) or 0
+        local sideCount=tonumber(node:GetAttribute("ArenaLoftSideCount")) or 0
+        local expectedFaceCount=tonumber(node:GetAttribute("ArenaLoftExpectedFaceCount")) or 0
+        local builtFaceCount=tonumber(node:GetAttribute("ArenaLoftFaceCount")) or 0
+        local skippedFaceCount=tonumber(node:GetAttribute("ArenaLoftFacesSkipped")) or 0
+        local closedEnds=node:GetAttribute("ArenaLoftClosedEnds")==true
+        local topologyFaceCount=2+math.max(0,sectionCount-1)*sideCount
+        if sectionCount<minimumSections or sideCount<8 or not closedEnds
+            or expectedFaceCount~=topologyFaceCount or builtFaceCount~=expectedFaceCount or skippedFaceCount>0 then
+            table.insert(issues,string.upper(role).."_LOFT_INCOMPLETE: sections="..tostring(sectionCount)..", sides="..tostring(sideCount)..", expectedFaces="..tostring(expectedFaceCount)..", builtFaces="..tostring(builtFaceCount)..", skippedFaces="..tostring(skippedFaceCount)..", closedEnds="..tostring(closedEnds).."; rebuild every loft surface and both end caps.")
+        end
+        local triangleCount=0
+        for _,part in ipairs(collectParts(node,{},8000)) do
+            if part:GetAttribute("ArenaPolygonTriangle")~=nil then triangleCount=triangleCount+1 end
+        end
+        if triangleCount<=0 then table.insert(issues,string.upper(role).."_LOFT_EMPTY: the tagged loft contains no generated polygon triangles.") end
+        return node,sectionCount,sideCount
+    end
+    local bodyNode,bodySections,bodySides=validateLoft("body",4)
+    local headNode,headSections,headSides=validateLoft("head",3)
+    local bodyBounds=roleBounds("body")
+    local headBounds=roleBounds("head")
+    local function crossSectionRatio(bounds)
+        if not bounds then return 0 end
+        local largest=math.max(bounds.size.Y,bounds.size.Z)
+        if largest<0.001 then return 0 end
+        return math.min(bounds.size.Y,bounds.size.Z)/largest
+    end
+    local bodyDepthRatio=crossSectionRatio(bodyBounds)
+    local headDepthRatio=crossSectionRatio(headBounds)
+    if bodyBounds and bodyDepthRatio<0.16 then
+        table.insert(issues,"BODY_THIN_PROFILE: measured body cross-section Y/Z ratio="..string.format("%.3f",bodyDepthRatio).."; add real depth on both sides instead of a flat side silhouette.")
+    end
+    if headBounds and headDepthRatio<0.16 then
+        table.insert(issues,"HEAD_THIN_PROFILE: measured head cross-section Y/Z ratio="..string.format("%.3f",headDepthRatio).."; the head must have front/back depth.")
+    end
+    local function taggedPart(role)
+        for _,part in ipairs(roleParts(role)) do if part:IsA("BasePart") then return part end end
+        return nil
+    end
+    local function isRound(part)
+        if not part then return false end
+        local shapeName=nil
+        pcall(function() shapeName=part.Shape.Name end)
+        local largest=math.max(part.Size.X,part.Size.Y,part.Size.Z)
+        local smallest=math.min(part.Size.X,part.Size.Y,part.Size.Z)
+        if largest<0.04 or smallest/largest<0.62 then return false end
+        -- A cube Part has a perfect aspect ratio too; only accept an unambiguous
+        -- Roblox Ball primitive here. Mesh/union eyes may use measured bounds.
+        if part:IsA("Part") then return shapeName=="Ball" end
+        return part:IsA("MeshPart") or part:IsA("UnionOperation")
+    end
+    local eyeLeft,eyeRight=taggedPart("eye_left"),taggedPart("eye_right")
+    local pupilLeft,pupilRight=taggedPart("pupil_left"),taggedPart("pupil_right")
+    local eyePair=false
+    local function eyeOnHeadFlank(part,positiveSide)
+        if not part or not headBounds then return false end
+        local position=part.Position
+        local x,y,z=position:Dot(forward),position:Dot(up),position:Dot(side)
+        local margin=math.max(0.08,math.max(headBounds.size.X,headBounds.size.Y,headBounds.size.Z)*0.12)
+        local withinSkull=x>=headBounds.min.X-margin and x<=headBounds.max.X+margin
+            and y>=headBounds.min.Y-margin and y<=headBounds.max.Y+margin
+        if positiveSide then return withinSkull and z>headBounds.center.Z+math.max(0.025,headBounds.size.Z*0.06) and z<=headBounds.max.Z+margin end
+        return withinSkull and z<headBounds.center.Z-math.max(0.025,headBounds.size.Z*0.06) and z>=headBounds.min.Z-margin
+    end
+    if not eyeLeft or not eyeRight or not isRound(eyeLeft) or not isRound(eyeRight) then
+        table.insert(issues,"EYES_NOT_3D: add separate round eye_left and eye_right BaseParts (ArenaOrganicRole attributes), not a painted face.")
+    elseif headBounds then
+        if not eyeOnHeadFlank(eyeLeft,true) or not eyeOnHeadFlank(eyeRight,false) then
+            table.insert(issues,"EYES_NOT_BILATERAL: measured eye_left must sit on the +Z head flank and eye_right on the -Z flank, both spatially attached to the skull.")
+        else
+            eyePair=true
+        end
+    end
+    local function physicalPupilNearEye(pupil,eye)
+        if not pupil or not eye or not pupil:IsA("BasePart") then return false end
+        local largest=math.max(pupil.Size.X,pupil.Size.Y,pupil.Size.Z)
+        local smallest=math.min(pupil.Size.X,pupil.Size.Y,pupil.Size.Z)
+        if smallest<0.01 or largest<0.01 or smallest/largest<0.06 then return false end
+        local offset=pupil.Position-eye.Position
+        local eyeScale=math.max(eye.Size.X,eye.Size.Y,eye.Size.Z)
+        return offset.Magnitude<=math.max(0.12,eyeScale*1.75)
+            and offset:Dot(forward)>=math.max(0.01,eyeScale*0.05)
+            and math.abs(offset:Dot(side))<=eyeScale*0.8
+            and math.abs(offset:Dot(up))<=eyeScale*0.8
+    end
+    local pupils3D=physicalPupilNearEye(pupilLeft,eyeLeft) and physicalPupilNearEye(pupilRight,eyeRight)
+    if not pupils3D then
+        table.insert(issues,"PUPILS_NOT_3D: add two non-flat physical pupil_left/pupil_right BaseParts near the forward surface of their matching eyes; do not draw pupils with a decal/texture.")
+    end
+    local faceOverlays,overlaySeen={},{}
+    local faceOverlayCount=0
+    local faceRoots={}
+    if headNode then table.insert(faceRoots,headNode) end
+    for _,role in ipairs({"face","muzzle","nose","mouth","eye_left","eye_right","pupil_left","pupil_right"}) do
+        for _,node in ipairs(roleNodes[role] or {}) do table.insert(faceRoots,node) end
+    end
+    local function isFaceOverlay(node)
+        if node:IsA("Decal") or node:IsA("Texture") or node:IsA("SurfaceGui") or node:IsA("BillboardGui") then return true end
+        if node:IsA("SpecialMesh") then
+            local textureId=""
+            pcall(function() textureId=tostring(node.TextureId or "") end)
+            return textureId~="" and textureId~="0"
+        end
+        if node:IsA("MeshPart") then
+            local textureId=""
+            pcall(function() textureId=tostring(node.TextureID or "") end)
+            return textureId~="" and textureId~="0"
+        end
+        if node:IsA("SurfaceAppearance") then
+            for _,property in ipairs({"ColorMap","NormalMap","RoughnessMap","MetalnessMap"}) do
+                local textureId=""
+                pcall(function() textureId=tostring(node[property] or "") end)
+                if textureId~="" and textureId~="0" then return true end
+            end
+        end
+        return false
+    end
+    local function recordFaceOverlay(node)
+        if node and not overlaySeen[node] and isFaceOverlay(node) then
+            overlaySeen[node]=true
+            faceOverlayCount=faceOverlayCount+1
+            if #faceOverlays<5 then table.insert(faceOverlays,node:GetFullName()) end
+        end
+    end
+    for _,faceRoot in ipairs(faceRoots) do
+        recordFaceOverlay(faceRoot)
+        for _,node in ipairs(faceRoot:GetDescendants()) do recordFaceOverlay(node) end
+    end
+    -- Also catch SurfaceGui/BillboardGui instances kept at model root but
+    -- explicitly adorned to the skull or one of its physical eye parts.
+    for _,node in ipairs(descendants) do
+        if not overlaySeen[node] and (node:IsA("SurfaceGui") or node:IsA("BillboardGui")) then
+            local adornee=nil
+            pcall(function() adornee=node.Adornee end)
+            local targetsHead=false
+            if adornee and headNode then
+                pcall(function() targetsHead=adornee==headNode or adornee:IsDescendantOf(headNode) end)
+            end
+            if adornee==eyeLeft or adornee==eyeRight or targetsHead then recordFaceOverlay(node) end
+        end
+    end
+    if faceOverlayCount>0 then
+        table.insert(issues,"FACE_IMAGE_OVERLAY: creature faces must be physical 3D eye/pupil/muzzle/nose geometry; remove Decal/Texture/SurfaceGui/BillboardGui/MeshPart/PBR texture overlay(s) (count="..tostring(faceOverlayCount)..", sample: "..table.concat(faceOverlays,"; ")..")")
+    end
+    local wingPair=false
+    local hasWings=organicModel:GetAttribute("ArenaOrganicHasWings")==true
+        or #(roleNodes.wing_left or {})>0 or #(roleNodes.wing_right or {})>0
+    if hasWings then
+        local leftWing,rightWing=roleBounds("wing_left"),roleBounds("wing_right")
+        if not leftWing or not rightWing or not bodyBounds then
+            table.insert(issues,"WING_PAIR_REQUIRED: add role=wing_left (+Z) and role=wing_right (-Z), each attached to the body.")
+        else
+            local margin=math.max(0.04,bodyBounds.size.Z*0.12)
+            local spansOppositeSides=leftWing.center.Z>bodyBounds.center.Z+margin
+                and rightWing.center.Z<bodyBounds.center.Z-margin
+                and leftWing.max.Z>bodyBounds.max.Z+margin
+                and rightWing.min.Z<bodyBounds.min.Z-margin
+            local overlapsBody=math.min(leftWing.max.X,bodyBounds.max.X)-math.max(leftWing.min.X,bodyBounds.min.X)>0.02
+                and math.min(leftWing.max.Y,bodyBounds.max.Y)-math.max(leftWing.min.Y,bodyBounds.min.Y)>0.02
+                and math.min(leftWing.max.Z,bodyBounds.max.Z)-math.max(leftWing.min.Z,bodyBounds.min.Z)>0.02
+                and math.min(rightWing.max.X,bodyBounds.max.X)-math.max(rightWing.min.X,bodyBounds.min.X)>0.02
+                and math.min(rightWing.max.Y,bodyBounds.max.Y)-math.max(rightWing.min.Y,bodyBounds.min.Y)>0.02
+                and math.min(rightWing.max.Z,bodyBounds.max.Z)-math.max(rightWing.min.Z,bodyBounds.min.Z)>0.02
+            if not spansOppositeSides then
+                table.insert(issues,"WINGS_NOT_BILATERAL: measured wings must extend from the body on opposite +Z/-Z flanks, not sit behind it as one hidden sheet.")
+            elseif not overlapsBody then
+                table.insert(issues,"WINGS_NOT_ATTACHED: wing bounds must overlap the torso in forward/up axes at the shoulder attachment.")
+            else
+                wingPair=true
+            end
+        end
+    end
+    local function plainBounds(bounds)
+        if not bounds then return nil end
+        return {center={x=bounds.center.X,y=bounds.center.Y,z=bounds.center.Z},size={x=bounds.size.X,y=bounds.size.Y,z=bounds.size.Z}}
+    end
+    return {
+        bodyLoft={present=bodyNode~=nil,sections=bodySections,sides=bodySides,bounds=plainBounds(bodyBounds),crossSectionRatio=bodyDepthRatio},
+        headLoft={present=headNode~=nil,sections=headSections,sides=headSides,bounds=plainBounds(headBounds),crossSectionRatio=headDepthRatio},
+        eyePairBilateral=eyePair,pupils3D=pupils3D,
+        faceOverlayCount=faceOverlayCount,wingPairBilateral=wingPair,
+    },issues
+end
+
 -- Version 7.1.3: BAUQUALITAET MESSEN STATT BEHAUPTEN.
 -- Ein Tier aus sieben Kugeln und ein Baum aus einem Zylinder plus einer Kugel
 -- sind keine Modelle, sondern Entwuerfe. Diese Messung nennt sie beim Namen -
@@ -11823,6 +12289,18 @@ WORLD_ENGINE.auditBuildQuality = function(parts, root)
         for _, node in ipairs(organicModel:GetDescendants()) do inspectMotionScript(node) end
 
         local modelIssues = {}
+        local organicKind=""
+        pcall(function() organicKind=string.lower(tostring(organicModel:GetAttribute("ArenaOrganicKind") or "")) end)
+        local creatureMetrics=nil
+        if organicKind=="" then
+            table.insert(modelIssues,"ORGANIC_KIND_REQUIRED: declare organicKind=creature|plant|tree|prop|custom on the first organic build; model names do not substitute for the geometry contract.")
+        elseif organicKind~="creature" and organicKind~="plant" and organicKind~="tree" and organicKind~="prop" and organicKind~="custom" then
+            table.insert(modelIssues,"ORGANIC_KIND_INVALID: use creature, plant, tree, prop or custom.")
+        elseif organicKind=="creature" then
+            local creatureIssues=nil
+            creatureMetrics,creatureIssues=WORLD_ENGINE.auditOrganicCreature(organicModel)
+            for _,issue in ipairs(creatureIssues or {}) do table.insert(modelIssues,issue) end
+        end
         if modelPolygonTriangles <= 0 then
             table.insert(modelIssues, "NO_POLYGON_GEOMETRY: build the silhouette with build_polygon_model { organic=true }; primitive parts or SpecialMesh spheres are not polygon modelling.")
         end
@@ -11845,6 +12323,7 @@ WORLD_ENGINE.auditBuildQuality = function(parts, root)
         if #organicModels < 20 then
             table.insert(organicModels, {
                 id = idOf(organicModel), name = organicModel.Name, path = organicModel:GetFullName(),
+                organicKind = organicKind, creatureMetrics = creatureMetrics,
                 parts = #modelParts, polygonTriangles = modelPolygonTriangles, sphereMeshes = modelSphereMeshes,
                 uniqueColors = modelUniqueColors,
                 dominantColorShare = math.floor(modelDominantShare * 100 + 0.5) / 100,
@@ -15590,7 +16069,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.3.1 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.3.2 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -19537,7 +20016,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             example = @{ source = 'local x = 1 + ' };
             errors = @('COMPILE_ERROR: mit Zeilennummer.') })
         $t.Add(@{ name = 'run_lua'; category = 'scripts'; summary = 'Lua im Server-/Edit-Kontext ausfuehren (persistent!).';
-            description = 'Fuehrt Lua aus und gibt Rueckgabe + alles, was gedruckt wurde, zurueck. WICHTIG: Die Umgebung ist PERSISTENT - ein Helfer aus einem frueheren Call (z.B. "M = {...}" ohne local) ist im naechsten Call weiter da (lua_state zeigt alle persiste Variablen). Fuer Laeufe ueber 60s: asJob=true oder start_job. Fuer jedes nichttriviale sichtbare 3D-Modell zuerst build_polygon_model fuer Hauptsilhouette und freie/gekruemmte Formen bevorzugen; build_assembly fuer repetitive Module und native Parts fuer einfache Stuetz-/Detailteile kombinieren (modelBuildRules). run_lua ist kein Ersatz fuer die dedizierten Modellbauer; nutze es fuer Logik, Animation oder echte Sonderfaelle. Wenn eigenes Dreieck/WedgePart-Lua noetig ist, gilt polygonEngineRules (get_docs/Sessionstart): lokal X=Dicke/Normale, Y=Hoehe, Z=Basiskante. Fuer organische Modelle organic=true am Polygonbau setzen; danach model_audit auf jedes zurueckgegebene Modell nach dem letzten Schreibaufruf und alle organicQuality.issues beheben. report_done verlangt pro registriertem organischem Modell echte ArenaPolygonTriangle-Geometrie, eine bestandene Palette, ein aktiviertes Bewegungs-Script und einen frischen Audit. Externe Generator-Dateien oder ungemessene Qualitaetsbehauptungen sind kein Place-Build.';
+            description = 'Fuehrt Lua aus und gibt Rueckgabe + alles, was gedruckt wurde, zurueck. WICHTIG: Die Umgebung ist PERSISTENT - ein Helfer aus einem frueheren Call (z.B. "M = {...}" ohne local) ist im naechsten Call weiter da (lua_state zeigt alle persiste Variablen). Fuer Laeufe ueber 60s: asJob=true oder start_job. Fuer jedes nichttriviale sichtbare 3D-Modell modelBuildRules.polygonWorkflow befolgen: build_polygon_model ist der erste Modellbau-Aufruf und baut die vollstaendige Hauptsilhouette; polygons=submodels fuer einzelne Flaechen/Bauteile, volumes fuer veraenderliche Querschnitte. build_assembly fuer Wiederholungen und native Parts fuer Standardstuetzen/Details kombinieren. Nach dem Build result.incomplete/facesSkipped/skipped pruefen und model_audit ausfuehren. run_lua ist kein Ersatz fuer die dedizierten Modellbauer; nutze es fuer Logik, Animation oder echte Sonderfaelle. Wenn eigenes Dreieck/WedgePart-Lua noetig ist, gilt polygonEngineRules (get_docs/Sessionstart): lokal X=Dicke/Normale, Y=Hoehe, Z=Basiskante. Fuer organische Modelle organic=true am Polygonbau setzen; danach model_audit auf jedes zurueckgegebene Modell nach dem letzten Schreibaufruf und alle organicQuality.issues beheben. report_done verlangt pro registriertem organischem Modell echte ArenaPolygonTriangle-Geometrie, eine bestandene Palette, ein aktiviertes Bewegungs-Script und einen frischen Audit. Externe Generator-Dateien oder ungemessene Qualitaetsbehauptungen sind kein Place-Build.';
             params = @{ source = @{ type = 'string'; required = $true; default = '-'; description = 'Oder sourceRef.' }; context = @{ type = "'server'|'auto'"; required = $false; default = "'auto'"; description = 'Client existiert seit 7.0.0 nicht mehr (kein Playtest, kein Client-Agent) - "client" antwortet CONTEXT_UNAVAILABLE.' }; asJob = @{ type = 'bool'; required = $false; default = 'false'; description = 'Im Hintergrund als Job laufen lassen (rueckgibt jobId).' } };
             returns = '{ returned, output: [ { seq, message, type } ], context, environment="persistent", persistentKeys } oder (asJob) { ok, jobId, status="running" }';
             example = @{ source = 'local p = workspace:FindFirstChild("Part"); return p and p.Position' };
@@ -19570,19 +20049,32 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         # ---------------- MASTER BUILD ----------------
         $t.Add(@{ name = 'build_assembly'; category = 'create'; summary = 'Modulare/wiederholte Baugruppe in EINEM Call; mit Polygon-Silhouetten kombinieren.';
             description = 'Erstellt bis zu 2000 Parts/Instanzen, wendet Properties an, erzeugt lineare oder radiale Wiederholungen und gruppiert alles direkt in ein Model. Ideal fuer Gebaeude-Rahmen, Treppen, Zaeune, Saeulenringe, Fassaden und wiederholte Module. Kombiniere die Baugruppe mit build_polygon_model fuer die praegende Hauptsilhouette oder individuelle Formen; build_assembly ersetzt bei einem nichttrivialen Hero-Modell nicht die polygonale Hauptform. Die Bridge berechnet Wiederholungen/Positionen; Arena muss weder Lua-Schleifen noch hunderte Einzelcalls schreiben.';
-            params = @{ grade = @{ type='string'; required=$false; default='null'; description='Version 7.2.0: ''simple'' | ''lowpoly'' | ''blockout'' - Erklaert die Einfachheit AUSDRUECKLICH (Attribut ArenaDeclaredGrade). model_audit benotet das Ergebnis dann nicht mehr als Entwurf und report_done antwortet nicht mit DRAFT_GRADE_RISK.' }; modelName = @{ type='string'; required=$false; default="'ArenaAssembly'"; description='Name des fertigen Models.' }; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'}; items=@{type='array';required=$true;default='-';description='[{className,name,properties,repeat:{count,offset}|{count,radius,startAngle,angleStep,heightStep}}]. {n} im Namen wird ersetzt.'}; pivot=@{type='Vector3|CFrame';required=$false;default='null';description='Optional das ganze Model am Ende versetzen.'} };
+            params = @{ grade = @{ type='string'; required=$false; default='null'; description='Version 7.2.0: ''simple'' | ''lowpoly'' | ''blockout'' - Erklaert die Einfachheit AUSDRUECKLICH (Attribut ArenaDeclaredGrade). model_audit benotet das Ergebnis dann nicht mehr als Entwurf und report_done antwortet nicht mit DRAFT_GRADE_RISK.' }; modelName = @{ type='string'; required=$false; default="'ArenaAssembly'"; description='Name des fertigen Models.' }; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'}; items=@{type='array';required=$true;default='-';description='[{className,name,properties,attributes,repeat:{count,offset}|{count,radius,startAngle,angleStep,heightStep}}]. attributes wird per SetAttribute gesetzt (z.B. {ArenaOrganicRole="eye_left"}); {n} im Namen wird ersetzt.'}; pivot=@{type='Vector3|CFrame';required=$false;default='null';description='Optional das ganze Model am Ende versetzen.'} };
             returns = '{ model, created, count, errors, geometry }';
             example = @{ modelName='Saeulenring'; items=@(@{className='Part';name='Saeule{n}';properties=@{Size=@{x=2;y=12;z=2};Anchored=$true};repeat=@{count=12;radius=20}}) };
             errors = @('BUDGET_EXCEEDED: mehr als 2000 Teile.', 'BAD_ARGS: nichts erstellt.') })
         $t.Add(@{ name = 'build_polygon_model'; category = 'create'; summary = 'BEVORZUGT fuer nichttriviale Custom-3D-Modelle: Hauptsilhouette als Polygon direkt im Place bauen.';
-            description = 'GLOBALER 3D-BAUSTANDARD: Fuer nichttriviale Custom-Modelle aller Kategorien - Figuren, Props, Architektur, Fahrzeuge, Maschinen, Landschaften und Kulissen - build_polygon_model fuer die praegende Hauptsilhouette sowie freie, gekruemmte, verjuengte oder unregelmaessige Formen BEVORZUGEN. Mit benannten Submodels, eigener Part-Farbe/Material je Rolle, mainWelds und refine entsteht ein absichtlich detailliertes Ergebnis statt eines Blockouts. build_assembly ist der passende Partner fuer Wiederholungen/Module; native Parts bleiben fuer einfache Standardformen, Stuetzen und Akzente. Der Builder erstellt echte ArenaPolygonTriangle-Wedges direkt im Place und sorgt fuer Triangulation, Wedge-Orientierung, AutoCaps und Welds. Fuer organische Modelle organic=true setzen; dann sind drei explizite kontrastierende Farben bereits beim Bau Pflicht und der frische per-model Audit mit Polygongeometrie, Palette und aktiviertem Bewegungs-Script ist Voraussetzung fuer report_done. Die Modellwahl ist eine globale Praeferenz, kein anhand von Namen ausgeloester Zwang fuer einfache Parts.';
-            params = @{ grade=@{type='string';required=$false;default='null';description='Version 7.2.0: ''simple'' | ''lowpoly'' | ''blockout'' - Erklaert die Einfachheit AUSDRUECKLICH (Attribut ArenaDeclaredGrade). Ohne das gilt ein Bau mit wenigen Teilen ohne Polygon-/Mesh-/Union-/Detail-Geometrie als Entwurf (DRAFT_GRADE_RISK).'}; modelName=@{type='string';required=$false;default="'ArenaPolygonModel'";description='Oberstes fertiges Model.'}; organic=@{type='bool';required=$false;default='false';description='Fuer jedes bewusst organische Modell true setzen: markiert es im Place, verlangt mindestens drei explizite kontrastierende submodel.style.color-Werte und aktiviert den frischen per-model Geometry/Palette/Enabled-Motion-Audit vor report_done. Kein Modellname loest diese Schreibsperre aus.'}; submodels=@{type='array';required=$false;default='[]';description='EMPFOHLEN: [{name,containerClass="Folder|Model",polygons:[...],style:{...},autoWeld,closeOpenings,capStyle}]. Alles bleibt dem Hauptmodel untergeordnet.'}; polygons=@{type='array';required=$false;default='[]';description='Einfache Flaechen [{name,points,color,material,thickness,...,style}]. Fuer grosse Modelle besser submodels verwenden.'}; points=@{type='Vector3[]';required=$false;default='null';description='Kurzform fuer ein Polygon.'}; script=@{type='string';required=$false;default='null';description='Mehrere Bloecke: POLYGON name=Roof color=#884422 material=Slate thickness=0.03, Punkte, END.'}; style=@{type='table';required=$false;default='{}';description='Globale Part-Defaults: color, material, materialVariant, collisionGroup, thickness, thicknessPlacement (inside Standard|center|positive|negative), anchored, canCollide, canQuery, canTouch, castShadow, transparency, reflectance, properties. Geometrie bleibt Builder-eigen: Position/Orientation/Rotation/CFrame/Size/PivotOffset in properties werden ignoriert, damit keine Flaeche verdreht wird.'}; autoWeld=@{type='bool';required=$false;default='true';description='Standard AN: WeldConstraint-Kette innerhalb jedes Untermodells, damit Polygon-Wedges auch bei anchored=false als ein Objekt verbunden bleiben. Nur autoWeld=false erzeugt bewusst getrennte Teile.'}; mainWeld=@{type='bool';required=$false;default='false';description='Verbindet alle Untermodelle automatisch mit dem ersten.'}; mainWelds=@{type='array';required=$false;default='[]';description='Animierbare Verbindungen [{name,from,to}] zwischen benannten Untermodellen. Erzeugt klassische Welds mit C0/C1 fuer Script-Animation.'}; closeOpenings=@{type='bool';required=$false;default='false';description='Erkennt offene Rand-Loops pro Untermodell und verschliesst sie automatisch mit triangulierten AutoCap-Flaechen.'}; capStyle=@{type='table';required=$false;default='{}';description='Eigener Style fuer automatisch geschlossene Oeffnungen.'}; origin=@{type='Vector3';required=$false;default='{0,0,0}';description='Gesamt-Offset.'}; rotation=@{type='Vector3 degrees';required=$false;default='{0,0,0}';description='Gesamtrotation.'}; scale=@{type='number';required=$false;default='1';description='Gesamtskalierung.'}; maxWedges=@{type='int';required=$false;default='4000';description='Budget, maximal 10000.'}; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'} };
-            returns = '{ model, submodels, polygons, triangles, wedges, autoCaps, welds, weldedSubmodels, autoWeldDefault, mainWelds, skipped, ignoredGeometryProperties, geometryInvariant, geometry, method, editable }';
-            example = @{ modelName='Clocktower'; submodels=@(@{name='StoneBody';style=@{color='#777B80';material='Slate'};polygons=@('... tapered silhouette, buttresses and arches ...')},@{name='CopperRoof';style=@{color='#A65F35';material='Metal'};polygons=@('... roof, eaves and finial ...')},@{name='ClockFace';style=@{color='#E8D9B5';material='SmoothPlastic'};polygons=@('... inset rim and clock face ...')}); mainWelds=@(@{name='RoofToStone';from='StoneBody';to='CopperRoof'}) };
-            errors = @('ORGANIC_COLORS_REQUIRED: organic=true needs at least three explicit colour assignments.', 'ORGANIC_POLYGON_REQUIRED: an explicitly organic build must use this polygon builder with organic=true.', 'POLYGON_INVALID: kein gueltiges Polygon.', 'BUDGET_EXCEEDED', 'BAD_ARGS', 'REF_NOT_FOUND') })
+            description = 'GLOBALER 3D-BAUSTANDARD fuer alle nichttrivialen sichtbaren 3D-Kategorien, nicht nur Kreaturen. modelBuildRules und das Beispiel LowPolyHouse sind die Arbeitsanleitung. Ablauf: erst Bounds/Koordinaten/Stil festlegen, dann eine vollstaendige Hauptsilhouette als benannte Submodels mit Polygonflaechen bauen, danach Wiederholungen mit build_assembly und Akzente/Details ergaenzen, Ergebnis pruefen und model_audit ausfuehren. Ein polygon={name,points=[{x,y,z},...]} ist genau eine planare Flaeche, KEIN ganzer Koerper: fuer ein geschlossenes Objekt alle Seiten/Enden als Flaechen verbinden oder closeOpenings=true fuer offene Rand-Loops setzen. Punkte muessen geordnet, planar, verschieden und nicht selbstschneidend sein. Benutze volumes fuer veraenderliche Querschnitte wie Rumpf, Griff, Saeule, Schaft oder Ast. Ein einzelner Frontumriss mit thickness bleibt eine duenne Platte. Punkte sind die Geometrie; origin/rotation-in-Grad/scale transformieren das ganze Modell, properties.Position/Size/CFrame/Orientation werden ignoriert. Der Builder trianguliert und erzeugt zwei WedgeParts pro Dreieck; AutoWeld ist je Submodel an. Nie nur ok ansehen: result.incomplete=false, facesSkipped=0 und skipped=[] verlangen; fallbackFaces/Warnungen lesen und Fehlerstellen neu bauen. Fuer organic=true bleibt organicKind Pflicht und der Spezialvertrag gilt zusaetzlich. Simple Standardteile und explizite Primitive-/Blockoutwuensche bleiben einfache Ausnahmen.';
+            params = @{ grade=@{type='string';required=$false;default='null';description='Version 7.2.0: ''simple'' | ''lowpoly'' | ''blockout'' - Erklaert die Einfachheit AUSDRUECKLICH (Attribut ArenaDeclaredGrade). Ohne das gilt ein Bau mit wenigen Teilen ohne Polygon-/Mesh-/Union-/Detail-Geometrie als Entwurf (DRAFT_GRADE_RISK).'}; modelName=@{type='string';required=$false;default="'ArenaPolygonModel'";description='Oberstes fertiges Model.'}; organic=@{type='bool';required=$false;default='false';description='Fuer jedes bewusst organische Modell true setzen; zusammen mit organicKind erforderlich. Registriert das Modell fuer frischen per-model Audit und report_done-Gate.'}; organicKind=@{type='string';required=$false;default='null';description='Pflicht bei organic=true: creature|plant|tree|prop|custom. creature aktiviert Volumen-, Gesichts- und optionale Fluegelmessung.'}; organicTraits=@{type='array';required=$false;default='[]';description='Optionale Kreaturenmerkmale, derzeit ["wings"]: verlangt wing_left (+Z) und wing_right (-Z) mit gemessener Anbindung an den Torso.'}; volumes=@{type='array';required=$false;default='[]';description='Allgemeine geschlossene Loft-Volumen [{name,role,sides=6..16,sections:[{center={x,y,z},heightRadius,depthRadius},...],style}]. Fuer veraenderliche Querschnitte in Rumpf/Huelle, Griff, Saeule, Schaft oder Ast; mindestens 3 Stationen, Radien >=0.025 vor globalem scale und benachbarte Zentren >=0.01 Studs. Creature zusaetzlich: body >=4, head >=3 Stationen und beide >=8 Seiten.'}; submodels=@{type='array';required=$false;default='[]';description='EMPFOHLEN fuer jedes zusammengesetzte Modell: [{name,role,containerClass="Folder|Model",polygons:[{name,points:[{x,y,z},...],style?}],style,autoWeld,closeOpenings,capStyle}]. Jede Polygonliste enthaelt einzelne planare Flaechen; groupiere nach Bauteil/Farbe/Material. Alle Submodels liegen unter dem zurueckgegebenen Hauptmodel. role ist ein optionaler semantischer Marker; Spezialrollen nur verwenden, wenn ein Audit sie verlangt.'}; polygons=@{type='array';required=$false;default='[]';description='Planare Flaechen [{name,points:[{x,y,z},...],color,material,thickness,style}]. Jede Flaeche braucht >=3 geordnete, planare, eindeutige Punkte und wird fuer ein Solid mit Rueckseite/Seiten/Enden ergaenzt. Punkte ohne Selbstschnitt und ohne redundante kollineare Ecken; fuer grosse Modelle nach Submodel/Material gruppieren.'}; points=@{type='Vector3[]';required=$false;default='null';description='Kurzform fuer genau EINE planare Flaeche; Punkte sind echte Modellkoordinaten, nicht eine Bild-/Frontskizze.'}; script=@{type='string';required=$false;default='null';description='Textuelle Kurzform fuer mehrere POLYGON-Abschnitte. Fuer nachvollziehbare, mehrteilige Modelle bevorzugt die strukturierte submodels/polygons-Form und das LowPolyHouse-Beispiel verwenden.'}; style=@{type='table';required=$false;default='{}';description='Globale Part-Defaults: color, material, materialVariant, collisionGroup, thickness, thicknessPlacement (inside Standard|center|positive|negative), anchored, canCollide, canQuery, canTouch, castShadow, transparency, reflectance, properties. Geometrie bleibt Builder-eigen: Position/Orientation/Rotation/CFrame/Size/PivotOffset in properties werden ignoriert, damit keine Flaeche verdreht wird.'}; autoWeld=@{type='bool';required=$false;default='true';description='Standard AN: WeldConstraint-Kette innerhalb jedes Untermodells, damit Polygon-Wedges auch bei anchored=false als ein Objekt verbunden bleiben. Nur autoWeld=false erzeugt bewusst getrennte Teile.'}; mainWeld=@{type='bool';required=$false;default='false';description='Verbindet alle Untermodelle automatisch mit dem ersten.'}; mainWelds=@{type='array';required=$false;default='[]';description='Animierbare Verbindungen [{name,from,to}] zwischen benannten Untermodellen. Erzeugt klassische Welds mit C0/C1 fuer Script-Animation.'}; closeOpenings=@{type='bool';required=$false;default='false';description='Erkennt unmatched boundary loops pro Submodel und versucht sie mit triangulierten AutoCaps zu schliessen. Best effort: fuer kritische/geschlossene Objekte alle Flaechen selbst modellieren und facesSkipped/skipped pruefen.'}; capStyle=@{type='table';required=$false;default='{}';description='Eigener Style fuer automatisch geschlossene Oeffnungen.'}; origin=@{type='Vector3';required=$false;default='{0,0,0}';description='Gesamt-Offset.'}; rotation=@{type='Vector3 degrees';required=$false;default='{0,0,0}';description='Gesamtrotation.'}; scale=@{type='number';required=$false;default='1';description='Gesamtskalierung.'}; maxWedges=@{type='int';required=$false;default='4000';description='Budget, maximal 10000.'}; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'} };
+            returns = '{ model, organicKind, submodels, polygons, volumesBuilt, volumeSummary, triangles, wedges, autoCaps, welds, weldedSubmodels, autoWeldDefault, mainWelds, facesTotal, facesBuilt, facesSkipped, incomplete, skipped, fallbackFaces, ignoredGeometryProperties, geometryInvariant, geometry, method, editable }, warnings';
+            example = @{ modelName='LowPolyHouse'; grade='lowpoly'; origin=@{x=0;y=0;z=0}; rotation=@{x=0;y=0;z=0}; scale=1; style=@{thickness=0.04;anchored=$true;canCollide=$true}; submodels=@(
+                @{name='Walls';style=@{color='#D7B77E';material='SmoothPlastic'};polygons=@(
+                    @{name='FrontGable';points=@(@{x=-2;y=0;z=-1},@{x=2;y=0;z=-1},@{x=2;y=3;z=-1},@{x=0;y=5;z=-1},@{x=-2;y=3;z=-1})},
+                    @{name='BackGable';points=@(@{x=2;y=0;z=1},@{x=-2;y=0;z=1},@{x=-2;y=3;z=1},@{x=0;y=5;z=1},@{x=2;y=3;z=1})},
+                    @{name='LeftWall';points=@(@{x=-2;y=0;z=-1},@{x=-2;y=0;z=1},@{x=-2;y=3;z=1},@{x=-2;y=3;z=-1})},
+                    @{name='RightWall';points=@(@{x=2;y=0;z=-1},@{x=2;y=3;z=-1},@{x=2;y=3;z=1},@{x=2;y=0;z=1})},
+                    @{name='Floor';points=@(@{x=-2;y=0;z=-1},@{x=2;y=0;z=-1},@{x=2;y=0;z=1},@{x=-2;y=0;z=1})})},
+                @{name='Roof';style=@{color='#A65F35';material='SmoothPlastic'};polygons=@(
+                    @{name='LeftSlope';points=@(@{x=-2;y=3;z=-1},@{x=0;y=5;z=-1},@{x=0;y=5;z=1},@{x=-2;y=3;z=1})},
+                    @{name='RightSlope';points=@(@{x=0;y=5;z=-1},@{x=2;y=3;z=-1},@{x=2;y=3;z=1},@{x=0;y=5;z=1})})},
+                @{name='FrontDetails';style=@{thickness=0.025;thicknessPlacement='center';canCollide=$false};polygons=@(
+                    @{name='Door';style=@{color='#59402F'};points=@(@{x=-0.45;y=0;z=-1.04},@{x=0.45;y=0;z=-1.04},@{x=0.45;y=1.8;z=-1.04},@{x=-0.45;y=1.8;z=-1.04})},
+                    @{name='Window';style=@{color='#79C9D0'};points=@(@{x=0.75;y=2.0;z=-1.04},@{x=1.35;y=2.0;z=-1.04},@{x=1.35;y=2.6;z=-1.04},@{x=0.75;y=2.6;z=-1.04})})})};
+            errors = @('ORGANIC_KIND_REQUIRED: organic=true needs organicKind.', 'ORGANIC_KIND_INVALID', 'ORGANIC_COLORS_REQUIRED: organic=true needs at least three explicit colour assignments.', 'CREATURE_VOLUME_REQUIRED: body/head need closed lofts.', 'CREATURE_WINGS_REQUIRED: declared wings need left/right geometry.', 'ORGANIC_POLYGON_REQUIRED: an explicitly organic build must use this polygon builder with organic=true.', 'POLYGON_INVALID: kein gueltiges Polygon.', 'BUDGET_EXCEEDED', 'BAD_ARGS', 'REF_NOT_FOUND') })
 
         # ---------------- UI ENGINE 1.0 (6.2) ----------------
-        $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN: misst, welche modernen UI-Instanzen dieses Studio wirklich kann.';
+
+$t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN: misst, welche modernen UI-Instanzen dieses Studio wirklich kann.';
             description = 'Probt mit Instance.new/pcall in GENAU dieser Studio-Version, ob UIShadow, einzelne UICorner-Radien, UIStroke.StrokeSizingMode.ScaledSize, UIStroke.BorderOffset, mehrere UIStrokes pro Objekt, UIFlexItem, UIDragDetector, Path2D, StyleSheet, CanvasGroup und FontFace vorhanden sind. Damit schreibt Arena nie wieder Code aus veraltetem Trainingswissen und nie wieder Code fuer Instanzen, die es nicht gibt. Fehlt etwas, nennt notes den Fallback, den die Engine automatisch verwendet (z.B. gestapelte Halo-Frames statt UIShadow). Liefert ausserdem die verfuegbaren Skins, Eckenprofile und Geraete.';
             params = @{ refresh = @{ type = 'bool'; required = $false; default = 'false'; description = 'Zwischenspeicher verwerfen und neu messen.' } };
             returns = '{ engineVersion, capabilities: { uiShadow, individualCorners, strokeScaledSize, strokeBorderOffset, strokeMulti, uiFlexItem, uiDragDetector, path2D, styleSheet, canvasGroup, fontFace }, notes, skins, corners, devices, measured }';
@@ -19726,9 +20218,9 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             example = @{};
             errors = @() })
         $t.Add(@{ name = 'model_audit'; category = 'world'; summary = 'Modell-Audit: Platzhalter, Blockouts, Phase, Urteil.';
-            description = 'Auditiert jedes 3D-Build: Platzhalter, Blockouts, Modellphase, Meshes/Unions, Materialien, Polygon-/Primitive-Verhaeltnis, echte ArenaPolygonTriangle-Wedges, Zylinderachsen und ArenaDetail. Liefert konkrete Pfade/Messwerte statt einer unbelegten Qualitaetsbehauptung. Fuer organische Modelle (explizit markiert oder als organisch erkannt) wird organicQuality ZUSAETZLICH pro Modell berechnet, damit kein fremdes Polygon oder Script im Workspace die Metriken erfuellt: polygonTriangles, eindeutige Farben, dominanter Farbanteil, nearWhiteShare und enabled motionScripts mit issues je Modell. Fuer mit organic=true gebaute Modelle muss der Audit jedes exakt zurueckgegebene Modell NACH dem letzten Schreibaufruf enthalten; report_done gibt bei fehlendem/stalem Beleg ORGANIC_AUDIT_REQUIRED und bei nicht bestandenen Metriken DETAIL_REQUIRED zurueck. Dieser Messpfad waehlt nicht anhand des Modellnamens das bevorzugte Build-Tool. Version 7.2.0: Das Ergebnis traegt zusaetzlich finishScore (0..100) und grade ("draft", "simple", "detailed", "sculpted" oder die beim Bauen erklaerte Note). grade "draft" heisst: mindestens 4 Teile, KEIN Polygon/Mesh/Union/ArenaDetail und ueber 60 % primitive - also ein Entwurf (genau der Fall "Baum = ein Zylinder plus drei Kugeln"). report_done antwortet dann DRAFT_GRADE_RISK. Ausweg: nachbauen ODER die Einfachheit beim Bauen ausdruecklich erklaeren - build_polygon_model/build_assembly { grade = "simple" | "lowpoly" | "blockout" } setzt das Attribut ArenaDeclaredGrade, und der Audit nennt das Ergebnis dann nicht mehr Entwurf. Regeln: modelBuildRules und organicBuildRules.';
+            description = 'Auditiert jedes 3D-Build: Platzhalter, Blockouts, Modellphase, Meshes/Unions, Materialien, Polygon-/Primitive-Verhaeltnis, echte ArenaPolygonTriangle-Wedges, Zylinderachsen und ArenaDetail. Liefert konkrete Pfade/Messwerte statt einer unbelegten Qualitaetsbehauptung. Fuer organische Modelle (explizit markiert oder als organisch erkannt) wird organicQuality ZUSAETZLICH pro Modell berechnet, damit kein fremdes Polygon oder Script im Workspace die Metriken erfuellt: polygonTriangles, eindeutige Farben, dominanter Farbanteil, nearWhiteShare und enabled motionScripts mit issues je Modell. organicKind=creature misst ausserdem Koerper-/Kopf-Lofts mit realen Querachsen-Bounds, physische bilaterale Augen und Pupillen, Decal-/PBR-/GUI-Texturen am Kopf sowie deklarierte Fluegelrollen und deren Torso-Ueberlappung. Fuer mit organic=true gebaute Modelle muss der Audit jedes exakt zurueckgegebene Modell NACH dem letzten Schreibaufruf enthalten; report_done gibt bei fehlendem/stalem Beleg ORGANIC_AUDIT_REQUIRED und bei nicht bestandenen Metriken DETAIL_REQUIRED zurueck. Dieser Messpfad waehlt nicht anhand des Modellnamens das bevorzugte Build-Tool. Version 7.2.0: Das Ergebnis traegt zusaetzlich finishScore (0..100) und grade ("draft", "simple", "detailed", "sculpted" oder die beim Bauen erklaerte Note). grade "draft" heisst: mindestens 4 Teile, KEIN Polygon/Mesh/Union/ArenaDetail und ueber 60 % primitive - also ein Entwurf (genau der Fall "Baum = ein Zylinder plus drei Kugeln"). report_done antwortet dann DRAFT_GRADE_RISK. Ausweg: nachbauen ODER die Einfachheit beim Bauen ausdruecklich erklaeren - build_polygon_model/build_assembly { grade = "simple" | "lowpoly" | "blockout" } setzt das Attribut ArenaDeclaredGrade, und der Audit nennt das Ergebnis dann nicht mehr Entwurf. Regeln: modelBuildRules und organicBuildRules.';
             params = @{ ref = @{ type = 'string'; required = $false; default = 'game.Workspace'; description = '' } };
-            returns = '{ ok, result: { scope, placeholderCount, phase, verdict, buildQuality: { verdict, organicQuality: { detected, models: [{ id, path, polygonTriangles, uniqueColors, dominantColorShare, nearWhiteShare, motionScripts, issues }] } }, nextStep }, warnings }';
+            returns = '{ ok, result: { scope, placeholderCount, phase, verdict, buildQuality: { verdict, organicQuality: { detected, models: [{ id, path, organicKind, creatureMetrics: { bodyLoft, headLoft, eyePairBilateral, pupils3D, faceOverlayCount, wingPairBilateral }, polygonTriangles, uniqueColors, dominantColorShare, nearWhiteShare, motionScripts, issues }] } }, nextStep }, warnings }';
             example = @{ ref = 'game.Workspace.Stadt' };
             errors = @('REF_NOT_FOUND') })
         $t.Add(@{ name = 'world_audit'; category = 'world'; summary = 'Welt-Audit: Stil-Treue, Licht, Atmosphaere, Phase.';
@@ -19996,6 +20488,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             importantRules = @(
                 'Choose the tools and workflow that best fit the task. The bridge exposes precise read, build, script, asset, playtest and batch tools; these are capabilities, not a mandatory checklist.',
                 'For ANY nontrivial custom 3D model, prefer build_polygon_model for the main silhouette and major freeform/curved/tapered surfaces - across characters, props, architecture, vehicles, landmarks, terrain and set pieces, not only organic examples. It works much like polygon modelling while the bridge handles triangulation, seamless Wedges, named submodels, per-submodel style, hole caps and default-on WeldConstraints. Use build_assembly as a complement for repeated or modular structure, and native Parts for truly simple, repeated, functional or explicitly primitive/low-poly geometry; do not reduce a hero/custom model to primitive blocks. NEVER set autoWeld=false unless physically independent polygon pieces are requested. See modelBuildRules for the universal complexity and finish bar.',
+                'NONTRIVIAL 3D BUILD METHOD (ALL CATEGORIES): follow modelBuildRules.polygonWorkflow. The first model-building call for every nontrivial custom object is build_polygon_model, and that call must contain the complete distinguishing silhouette as multiple named planar faces/submodels or a measured loft—not only one front polygon. One polygon is one thin skin. Use polygons for authored faces, volumes for tapered/curved cross-sections, and build_assembly for repeats. Afterward verify incomplete=false, facesSkipped=0, skipped=[]; inspect fallbackFaces/warnings, run model_audit and fix the findings. This applies equally to architecture, vehicles, furniture, machines, props, terrain, characters and creatures; only truly simple standard shapes or explicit primitive/blockout requests are exceptions.',
                 'For any visual/3D deliverable, make the result intentionally layered and finished: clear primary silhouette, secondary functional forms, tertiary trim/details, coherent palette/materials, and correct joins/placement. Complexity must be purposeful, not random part count. A simple object may remain simple; an unrequested blockout/primitive-only first draft is not a finished build. This standard is global and does not depend on model names or animal/tree examples.',
                 'For ANY visual/GUI work, ALWAYS use build_interface (whole screen in one call) or build_surface unless the user explicitly asks for raw GuiObjects: the bridge owns AnchorPoint, Scale-only UDim2, aspect locking, corner-safe padding, layered shadows, scaled strokes, gradients on strokes, REAL raster textures, CanvasGroup discipline and the runtime motion script. Call ui_capabilities first (it probes this Studio build instead of trusting training data), ui_skin to pick or extract an art direction, ui_glow for glow (never hand-build it), ui_texture for the real-texture-first recipe, ui_radial for radial menus (one image id, both colours engine-owned), and ui_audit afterwards - it measures offsetRatio, contrast, per-device pixel sizes, glow/texture/radial usage and a blandness score. See uiEngineRules below for the hard rules.',
                 'Object ids such as #42 are stable within the current plugin session and avoid ambiguity when names repeat. Paths and selectors are also accepted where documented.',
@@ -20086,22 +20579,31 @@ end
 '@
             }
             modelBuildRules = @{
-                title = 'Model Build Engine 1.0 - universal complexity, polygon-first preference, finished geometry'
+                title = 'Model Build Engine 1.1 - universal polygon workflow for every nontrivial 3D category'
                 whenThisApplies = 'Every task that creates or materially remodels visible 3D geometry, regardless of subject, model name or whether it is organic. This is a global build preference, not an animal/tree-only rule.'
                 default = 'For every nontrivial custom model, aim materially beyond a first-pass primitive sketch. Design a readable primary silhouette, add secondary forms that explain function and proportion, then add restrained tertiary details, trim, joints and surface structure. Use explicit, coherent color/material roles and correct attachment/placement. More parts without design purpose is not more quality.'
-                polygonPreference = 'Prefer build_polygon_model for the main silhouette and any custom, freeform, tapered, curved, irregular or hero surface in ANY category: characters, props, furniture, architecture, vehicles, weapons, machinery, landmarks, terrain and set pieces. Organize the call into named submodels with per-submodel colors/materials; use autoWeld by default and mainWelds for intended animation. The builder is preferred, not mandatory for every simple Part.'
+                polygonPreference = 'For EVERY nontrivial custom visible 3D model in ANY category—not only creatures—the first model-creation/build call MUST be build_polygon_model and must include its complete distinctive main silhouette, not merely one front plate. Prefer it for any freeform, tapered, curved, angled, irregular or hero surface: characters, props, furniture, architecture, vehicles, weapons, machinery, landmarks, terrain and set pieces. Organize the call into named submodels and polygons with per-submodel color/material roles; use volumes for changing cross-sections. Use autoWeld by default and mainWelds only for intended joins/animation. This is not a requirement for truly simple standard Parts or an explicit primitive/blockout request. The builder is preferred, not mandatory for every simple Part.'
+                polygonDecision = 'Choose the geometry representation by shape, not by subject: polygons = individual planar faces/panels; submodels = named components and material/color groups containing faces; volumes = closed lofts for a shape whose cross-section changes along a centerline; build_assembly = repeated modules; native Parts = genuinely standard supports, pivots and accents. A polygon is one skin, not a solid: construct front/back/sides/ends or use closeOpenings for unmatched loops. A single front silhouette plus thickness is still a plate.'
+                polygonInputContract = 'Structured form: build_polygon_model { modelName, origin={x,y,z}, rotation={x,y,z in degrees}, scale, style={...}, submodels=[{name,style,polygons=[{name,points=[{x,y,z},...],style?}]}], volumes=[{name,role,sides=6..16,sections=[{center,heightRadius,depthRadius},...]}], closeOpenings, autoWeld, mainWelds, maxWedges }. Points are actual local geometry. Each face must have >=3 ordered distinct coplanar vertices, no self-crossing/duplicate/collinear runs. origin/rotation/scale transform the model; Position/Size/CFrame/Orientation inside polygon properties are ignored.'
+                polygonWorkflow = '1 inspect Place/selection and choose a stable frame, dimensions, palette/materials. 2 Plan the full silhouette as named large forms and surfaces before writing. 3 Make one structured build_polygon_model call for the principal model; share exact coordinates on adjacent face edges. 4 Add repeated modules via build_assembly and deliberate details/refine; do not replace the hero silhouette with blocks. 5 Read the returned model id, result.incomplete, facesSkipped, skipped, fallbackFaces, triangles, wedges, warnings and geometry. Do NOT accept ok=true as proof when faces are skipped. Fix bad named faces/point loops and rebuild. 6 Run model_audit on the returned model, plus world_audit for scenes; fix findings before report_done. The core build_polygon_model docs include a complete closed LowPolyHouse example.'
+                polygonPatterns = 'Facade/roof/shield/panel = explicit planar polygons; closed box/building/housing = all outer faces sharing exact edge coordinates; tapered curved hull/handle/shaft/column/branch = volume stations with heightRadius+depthRadius; arches/frames can be assembled from individually valid faces plus repeated supports; rails/windows/spokes/ribs = build_assembly. Use closeOpenings=true only as an auto-cap safety net, not as a substitute for planning the shell. For cross-submodel motion, set parts unanchored and use mainWelds; inside each submodel AutoWeld is already on.'
+                polygonBudget = 'Each n-vertex face usually produces n-2 triangles and two WedgeParts per triangle. Budget about 2*(n-2) wedges per polygon plus volume/cap faces. The default maxWedges is 4000 and the hard maximum is 10000; simplify/split into coherent submodels if necessary. A normal OK response may carry incomplete=true or warnings: require facesSkipped=0 and skipped=[] and inspect fallbackFaces.'
+                polygonTemplate = 'build_polygon_model { modelName="<name>", grade="lowpoly|detailed|simple|blockout", origin={x=0,y=0,z=0}, rotation={x=0,y=0,z=0}, scale=1, style={thickness=0.04,anchored=true,canCollide=false}, submodels=[{name="Shell",style={color="#...",material="SmoothPlastic"},polygons=[{name="Front",points=[...]},{name="Back",points=[...]},{name="SideA",points=[...]},{name="SideB",points=[...]},{name="Top",points=[...]},{name="Bottom",points=[...]}]}], autoWeld=true, maxWedges=4000 }. This is a closed-shell skeleton: replace each placeholder with valid ordered planar coordinates and expand to the complete silhouette; the LowPolyHouse tool example is a fully specified call.'
                 complementaryTools = 'Use build_assembly for repeated structural or modular pieces (frames, stairs, rails, facades, ribs, supports) and combine it with a polygon-built hero silhouette when both are useful. Use native Parts for genuinely simple standard shapes, structural supports, joints, pivots and small accents; bulk_create/grid/clone are for repetition, not for replacing the distinctive centerpiece with blocks.'
                 finishBar = 'A nontrivial standalone asset is not complete as one box/cylinder or a primitive-only placeholder: complete the main form, its supporting components, visual details, coherent palette/materials, welds/collision and grounding as relevant. For scenes, add purposeful variation, depth, readable pathways and consistent style. Low-poly is a style, not permission to stop at a primitive blockout.'
                 exceptions = 'Keep inherently simple tasks simple and follow explicit user requests for primitives, blockouts, low part counts or a deliberately plain style. Scale scope to time/tool/part limits; reduce how many assets are built instead of degrading the finish of each delivered asset.'
-                workflow = 'inspect/select/measure -> choose art direction or world_style -> polygon-build the primary custom silhouette -> assembly/native support geometry -> detail/refine -> model_audit (and world_audit for scenes) -> fix measured issues -> report_done. Build directly in the target Place; a generated source file or later unsupported quality claim is not a model.'
+                workflow = 'inspect/select/measure -> choose art direction or world_style -> follow polygonWorkflow and build the complete main custom silhouette with build_polygon_model (first model-build call for nontrivial custom 3D) -> assembly/native support geometry -> detail/refine -> verify the returned face/wedge diagnostics -> model_audit (and world_audit for scenes) -> fix measured issues -> report_done. Build directly in the target Place; a generated source file or later unsupported quality claim is not a model.'
                 motion = 'Add animation only when the task requests motion or the object is inherently living/moving. For organic models, explicitly use organic=true so per-model geometry, palette, enabled-motion and fresh-audit evidence is enforced; see organicBuildRules.'
             }
             organicBuildRules = @{
-                title = 'Organic Build Engine 1.0 (Version 7.1.4) - polygon-first, explicit palette, installed motion, measured before done'
-                whenThisApplies = 'For any model intentionally built as organic (character, creature, plant, tree, prop or other organic free-form shape), this is a hard sequence independent of its name: the FIRST write targeting that model is build_polygon_model { organic=true } and builds its real silhouette in Studio with an explicit contrasting palette. Do not start with run_lua, build_assembly, loose primitives, or an external generator file. Then install an enabled motion Script under that same model, run model_audit on every returned organic model after the final edit, and fix every organicQuality issue. report_done is rejected with ORGANIC_AUDIT_REQUIRED/DETAIL_REQUIRED until every registered model passes.'
-                theOneIdea = 'For an organic model, build_polygon_model { organic=true } must be the FIRST write targeting that model and must create its silhouette directly in Studio. Put anatomy/structure into separately coloured polygon submodels (for example body/back, belly and face, or trunk, foliage and accents); never let the all-default white/grey palette through. Then add joints/details, install the enabled motion Script beneath the model, and audit the exact model. An external source file, an assembly of primitives or a later quality claim is not evidence.'
+                title = 'Organic Build Engine 1.1 (Version 7.3.2) - typed creature volumes, physical face, bilateral anatomy, measured before done'
+                whenThisApplies = 'For any model intentionally built as organic (character, creature, plant, tree, prop or other organic free-form shape), this is a hard sequence independent of its name: the FIRST write targeting that model is build_polygon_model { organic=true, organicKind=... } with an explicit contrasting palette. For organicKind=creature the same first build must create closed role=body and role=head loft volumes; a long flat side-profile wedge is not a body or head volume. Use organicTraits=["wings"] when wings are intended and build role=wing_left/wing_right. Face features are physical 3D geometry, never Decal/Texture/GUI substitutes. Do not start with run_lua, build_assembly, loose primitives, or an external generator file. Then install an enabled motion Script under that same model, run model_audit on every returned organic model after the final edit, and fix every organicQuality issue. report_done is rejected with ORGANIC_AUDIT_REQUIRED/DETAIL_REQUIRED until every registered model passes.'
+                theOneIdea = 'For an organic model, the first write is build_polygon_model { organic=true, organicKind=... }. A creature gets real closed lofts for body and head (at least 4/3 stations, at least 8 sides) plus physical eyes and pupils; winged creatures get a mirrored, torso-attached wing pair. No side-view wedge, face sticker, or unmeasured claim can pass. Then add joints/details, install the enabled motion Script beneath the model, and audit the exact model.'
                 forbidden = @(
-                    'FORBIDDEN - BYPASSING THE POLYGON BUILDER: the first write targeting any explicitly organic model must be build_polygon_model { organic=true }. A build_assembly/run_lua/create_instance organic model first, a local generator script, or an unmarked polygon call is rejected with ORGANIC_POLYGON_REQUIRED; this gate is controlled by organic=true, not by the model name.',
+                    'FORBIDDEN - BYPASSING THE POLYGON BUILDER: the first write targeting any explicitly organic model must be build_polygon_model { organic=true, organicKind=... }. A build_assembly/run_lua/create_instance organic model first, a local generator script, or an unmarked polygon call is rejected with ORGANIC_POLYGON_REQUIRED; this gate is controlled by organic=true, not by the model name.',
+                    'FORBIDDEN - FLAT CREATURE SILHOUETTE: a body/head made from one long side-view wedge or an unclosed sheet is not a volume. Use body/head loft roles with multiple cross-sections, end caps, and measurable depth.',
+                    'FORBIDDEN - FACE STICKER: Decal, Texture, SurfaceGui or BillboardGui on the head/face cannot replace physical bilateral eye and pupil geometry; model_audit reports FACE_IMAGE_OVERLAY/EYES_NOT_3D/PUPILS_NOT_3D.',
+                    'FORBIDDEN - ONE-SIDED OR HIDDEN WINGS: if wings are intended, declare organicTraits=["wings"] and provide role=wing_left / role=wing_right on opposite sides with bounds overlapping the torso.',
                     'FORBIDDEN - BALL ANIMAL: an animal assembled only from Ball parts (body ball + head ball + four leg balls + tail ball). That is the first-minute draft the user can build himself. model_audit reports it as primitiveOnly with primitiveGroups and report_done refuses to accept it.',
                     'FORBIDDEN - CYLINDER TREE: one CylinderPart as trunk plus one Ball as crown. A real trunk is a tapered polygon column with a root flare and 3-6 real branches; a real crown is 3+ irregular polygon clumps with different sizes, colours and rotation, never a single sphere.',
                     'FORBIDDEN - UNTAPERED LIMBS: one stretched block per leg. Every limb has an upper and a lower segment that taper toward the paw/hoof, plus a shoulder/hip connection that overlaps the torso so no gap and no floating part remains.',
@@ -20109,7 +20611,8 @@ end
                     'FORBIDDEN - FORGOTTEN COLOUR OR MOTION: every organic model has an explicit contrasting palette and an enabled motion Script under its model; a generated file elsewhere or source-only animation does not count.',
                     'FORBIDDEN - CLAIMING DONE WITHOUT A FRESH PROOF: after the last build/script/property edit, run model_audit on the returned model. report_done returns ORGANIC_AUDIT_REQUIRED or DETAIL_REQUIRED for stale/missing audit, no polygon triangles, flat/default-white colours, or missing installed motion.'
                 )
-                anatomyMinimum = 'Working order for a creature: (1) torso and chest as tapering polygon volumes, (2) neck + skull + muzzle, (3) four limbs with upper/lower segments and paw/hoof, plus shoulder/hip overlap into the torso, (4) tail as a chain of 4-8 shrinking segments, (5) ears (bent, thick, asymmetric), (6) face detail: eyes (ball + dark pupil + highlight), nose, mouth line, whiskers as thin cylinders, (7) surface character: layered fur/feather/scale plates, colour split between back, belly, muzzle and paws. A finished creature is normally 30-80 parts depending on style - fewer than 15 parts is a draft unless the user explicitly asked for a stylised low-poly toy.'
+                anatomyMinimum = 'Working order for a creature: (1) closed, genuinely 3D body loft with >=4 stations, (2) closed head loft with >=3 stations, (3) neck/muzzle, (4) four limbs with upper/lower segments and paw/hoof plus shoulder/hip overlap, (5) tail chain, (6) bent ears, (7) separate round eye_left/eye_right plus physical pupil_left/pupil_right and nose/mouth geometry, (8) optional wing_left/wing_right with bilateral body attachment, (9) layered surface character and contrasting colours. A finished creature is normally 30-80 parts depending on style - fewer than 15 parts is a draft unless the user explicitly asked for a stylised low-poly toy.'
+                creatureVolumeContract = 'build_polygon_model { organic=true, organicKind="creature", volumes=[{role="body",sides=8..16,sections=[{center={x,y,z},heightRadius,depthRadius},... >=4]},{role="head",sides=8..16,sections=[... >=3]}] }. Each section defines a center and two non-zero perpendicular radii; the builder connects rings and caps both ends into real ArenaPolygonTriangle geometry. Audit requires body/head cross-section Y/Z bounds ratio >=0.16. Tag separate BaseParts with ArenaOrganicRole=eye_left/eye_right/pupil_left/pupil_right via build_assembly.items[].attributes or set_attribute. Eyes must be round and opposite flanks of the skull; pupils must be physical, non-flat, near the matching eye, and offset toward the declared forward surface. Decal/Texture/SurfaceGui/BillboardGui under head/face roots is a blocking issue. For intended wings, organicTraits=["wings"] or either wing role activates the pair check: left is +Z, right -Z, and both must overlap torso bounds in forward/up and side axes at the attachment. These checks are geometry evidence, not a Roblox visual-render test.'
                 cylinderRule = 'ROBLOX CYLINDER AXIS: a CylinderPart runs along its LOCAL X AXIS. Size.X is the LENGTH, Size.Y and Size.Z are the diameter. An unrotated CylinderPart is a barrel lying sideways (axis = world X) - that is the "all cylinders are 90 degrees wrong" error. Upright trunk/leg/column: CFrame.new(pos) * CFrame.Angles(0, 0, math.rad(90)) rotates the local X axis onto world Y. Never try to fix an upright cylinder with Orientation = Vector3.new(0, 90, 0) or with Size = Vector3.new(diameter, height, diameter) - that keeps the axis in X and renders a flat coin instead of a tube.'
                 cylinderDetection = 'model_audit checks every cylinder for you. Hard error (discLikeCylinder): the tube axis lies horizontally while the part is at least 1.5x wider across its round axis than long - it shows up as a disc standing on its edge, which is exactly how the classic 90-degree error looks after the length was typed into Size.Y or Size.Z. Informational (axisSkewDeg): the angle between the X axis and the nearest world axis - a diagonal branch is fine and expected, a trunk at 90 degrees is not. Fix by rebuilding the CFrame, never by nudging Orientation until it looks right.'
                 referenceLua = @'
@@ -20159,8 +20662,11 @@ end
 '@
                 animationRule = 'Organic means: several small motions with DIFFERENT periods, never one rotation. Breathing (torso scale +-2-3 %, 3-4 s), head look/bob (+-4-8 degrees, 2.7 s), ear flicks (short, irregular), tail chain where each segment lags the previous by ~0.1 s and the tip swings furthest, weight shift/sway (+-1.5 degrees, ~6 s), blink every 3-6 s (eye scale to 0.05 for ~0.12 s). Build real joints (Motor6D for animated limbs, WeldConstraint for rigid parts) and drive them with TweenService in a small Script (insert_script) or with run_lua while building. Delete nothing that moves: anchored parts may be tweened directly, unanchored rigs need Motor6D + a Script.'
                 detailBudget = 'Detail is measured, not claimed: build_polygon_model/build_assembly for the volumes, refine for trim/ArenaDetail parts, then model_audit. Add real surface structure (fur plates, feather rows, bark strips, scale rows) in large-to-small order, and give back, belly, muzzle and paws their own colour or material - a single flat colour over 40 parts still reads as a draft.'
-                workflow = 'measure -> FIRST write targeting the organic model: build_polygon_model { organic=true, submodels=[... at least three explicit contrasting style.color values ...] } -> joints/anatomy/details -> install enabled motion Script as a descendant of that model -> model_audit { ref=<returned model id> } AFTER the final edit -> fix every organicQuality.issues -> only then report_done. For repeated animals, save/clone an already-audited organic model; do not create the first animal with build_assembly.'
+                workflow = 'measure -> FIRST write targeting the organic model: build_polygon_model { organic=true, organicKind=creature, volumes=[{role=body,sections=[... >=4 ...]},{role=head,sections=[... >=3 ...]}], style={... at least three contrasting colour assignments ...} } -> add role-tagged physical eyes/pupils, other anatomy and any wing_left/wing_right pair -> install enabled motion Script as a descendant -> model_audit { ref=<returned model id> } AFTER the final edit -> fix every organicQuality.issues -> only then report_done. For repeated animals, save/clone an already-audited organic model; do not create the first animal with build_assembly.'
                 selfCheck = @(
+                    'Creature builds declare organicKind=creature and contain a closed >=4-station body loft plus >=3-station head loft; each has >=8 sides and measured Y/Z depth ratio >=0.16.',
+                    'Eyes/pupils are distinct physical BaseParts with eye_left/eye_right and pupil_left/pupil_right role attributes; no face image overlay remains beneath head/face roots.',
+                    'If wings are intended, both wing_left (+Z) and wing_right (-Z) are role-tagged and their measured bounds attach to the torso.',
                     'No Ball is used as a torso or a whole animal; balls are eyes, joints, berries or accents.',
                     'No CylinderPart stands as a disc on its edge: upright tubes use CFrame.Angles(0, 0, math.rad(90)) and Size = (length, diameter, diameter), never the length in Size.Y or Size.Z.',
                     'Every limb has at least two tapering segments plus a paw/hoof, overlapping the torso.',
@@ -20433,6 +20939,7 @@ end
             welcome = 'Welcome. This first response includes the available capabilities and reference documentation. Use whatever subset helps the current task; details remain available through GET /api/docs or get_docs.'
             quickStart = @(
                 'Inspect the Place when context is needed.',
+                'For nontrivial custom 3D, follow modelBuildRules.polygonWorkflow and its build_polygon_model example; that workflow applies to all categories, not only creatures.',
                 'Choose dedicated tools, master build tools, assets, script editing or run_lua according to the task.',
                 'Use get_docs { tool: "..." } whenever a parameter needs clarification.'
             )
@@ -20459,7 +20966,7 @@ end
         $out.qualityContract = @(
             'No turn has to end with "done". It ends with report_done OR with a handoff - both are complete finishes.',
             'Classify first: single object, scene, or full game. The class decides the minimum scope, never an excuse for primitive-only first drafts.',
-            'GLOBAL 3D BUILD BAR, independent of names/examples: make every nontrivial object or scene deliberately layered and finished (primary silhouette, secondary structure, tertiary details, purposeful color/material design, correct joins and placement). Prefer build_polygon_model for the main custom silhouette across every category; pair with build_assembly for repeated/modular structure and Parts for supports/details.',
+            'GLOBAL 3D BUILD BAR, independent of names/examples: first follow modelBuildRules.polygonDecision, polygonInputContract and polygonWorkflow. For every nontrivial custom 3D model, the first model-building call is build_polygon_model and it builds the complete distinctive main silhouette, in ANY category, not just a creature. Then add secondary structure, tertiary details, purposeful color/material design and correct joins/placement; pair with build_assembly for repeated modules and Parts for simple supports/details. Read the worked LowPolyHouse example in build_polygon_model docs and inspect facesSkipped/skipped before claiming completion.',
             'Do not force polygons onto a truly simple object, repeated standard geometry or an explicit primitive/low-poly request. Low-poly still means intentional silhouette and finish. Do not call a blockout, placeholder or one-box/one-cylinder stand-in complete unless that is what the user asked for.',
             'Single objects and scenes must be completed in this session: inspect/measure, build with the best-fit Bridge tools, refine, model_audit and world_audit where applicable, then fix the reported issues.',
             'Only a full game gets stages: deliver stage 1 completely, then hand off; never hand off in the middle of a stage.',
@@ -20551,13 +21058,13 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.3.1'
+            version = '7.3.2'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
             docsVersion = [string]$Shared.DocsVersion
             role = 'A normal token controls exactly one live Roblox Studio place. The special aggregate token copied from Alle Places controls several places: call GET /api/places first and pass one exact targetPlace in every request; the bridge refuses to guess. This makes switching safe and explicit. Send every request as POST /api/tool with JSON body { "token": "...", "targetPlace": "...", "tool": "...", "args": { ... } }.'
-            firstCallBehavior = 'The FIRST tool response of this session automatically carries _sessionStart: the complete rules (including organicBuildRules), the progress/quality contracts and the full documentation of the core building, audit, read and session tools. The remaining tools are listed there as an index (name, category, summary) because a payload with every single tool documentation would be unnecessarily huge - fetch the exact parameters, defaults, examples and error cases with get_docs { tool = "<name>" } or GET /api/docs?tool=<name> (GET /api/docs with no parameter still returns everything). The session start names the measured size as packageBytes, the limit as budgetBytes and the policy as docsPolicy.'
+            firstCallBehavior = 'The FIRST tool response of this session automatically carries _sessionStart: the complete rules (including modelBuildRules and organicBuildRules), the progress/quality contracts and the full documentation of the core building, audit, read and session tools. The remaining tools are listed there as an index (name, category, summary) because a payload with every single tool documentation would be unnecessarily huge - fetch the exact parameters, defaults, examples and error cases with get_docs { tool = "<name>" } or GET /api/docs?tool=<name> (GET /api/docs with no parameter still returns everything). The session start names the measured size as packageBytes, the limit as budgetBytes and the policy as docsPolicy.'
             authentication = @{
                 headers = @('Authorization: Bearer <token>', 'X-Arena-Token: <token>')
                 query = '?token=<token>'
@@ -20782,7 +21289,7 @@ end
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.3.1'
+            bridgeVersion = '7.3.2'
             executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent is never an error, but the user then sees NO bar and NO percentage at all - only your message as text. Send a real number every few calls. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
@@ -21378,8 +21885,8 @@ end
                                         error = ('Organic quality is not verified as complete: ' + (($organicIssues | Select-Object -Unique) -join ' '))
                                         organicQuality = $organicQuality
                                         expectedModel = @{ id = $expectedModelId; path = $expectedModelPath; name = [string]$organicRecord.modelName }
-                                        measuredModel = @{ polygonTriangles = $modelTriangles; uniqueColors = $modelUniqueColors; dominantColorShare = $modelDominantShare; nearWhiteShare = $modelNearWhiteShare; motionScripts = $modelMotionScripts }
-                                        howToFix = 'Build the silhouette directly with build_polygon_model { organic=true }, assign at least three contrasting polygon submodel colours, install an enabled motion Script under each model, fix every organicQuality issue, then model_audit again.'
+                                        measuredModel = @{ polygonTriangles = $modelTriangles; uniqueColors = $modelUniqueColors; dominantColorShare = $modelDominantShare; nearWhiteShare = $modelNearWhiteShare; motionScripts = $modelMotionScripts; creatureMetrics = $matchingOrganicModel.creatureMetrics }
+                                        howToFix = 'Build with build_polygon_model { organic=true, organicKind=creature } and closed body/head loft volumes, role-tag physical bilateral eyes/pupils and any wings, assign three contrasting colours, install an enabled motion Script under the model, fix every organicQuality issue, then model_audit again.'
                                     }
                                 }
                             }
@@ -21548,7 +22055,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.3.1'
+                        bridgeVersion = '7.3.2'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -21731,7 +22238,30 @@ end
         if (-not $organicFlag) { return $null }
 
         $isOrganicPolygonBuild = ($tool -eq 'build_polygon_model' -and $organicFlag)
+        if ($tool -eq 'build_polygon_model' -and -not $organicFlag -and [string]$toolArgs.organicKind -eq 'creature') {
+            return @{
+                ok = $false; code = 'ORGANIC_KIND_REQUIRED'
+                error = 'organicKind=creature requires organic=true so the model is registered for its per-creature geometry audit.'
+                howToFix = 'Call build_polygon_model with organic=true, organicKind="creature", and closed body/head loft volumes.'
+            }
+        }
         if ($isOrganicPolygonBuild) {
+            $organicKind = ''
+            try { $organicKind = ([string]$toolArgs.organicKind).Trim().ToLowerInvariant() } catch {}
+            if ([string]::IsNullOrWhiteSpace($organicKind)) {
+                return @{
+                    ok = $false; code = 'ORGANIC_KIND_REQUIRED'
+                    error = 'organic=true now requires an explicit organicKind so the measured geometry contract is selected before Studio receives the build.'
+                    howToFix = 'Pass organicKind="creature" for animals, or plant/tree/prop/custom for the matching organic category.'
+                }
+            }
+            if ($organicKind -notin @('creature','plant','tree','prop','custom')) {
+                return @{
+                    ok = $false; code = 'ORGANIC_KIND_INVALID'
+                    error = 'organicKind must be creature, plant, tree, prop or custom.'
+                    howToFix = 'Use one of the supported organicKind values and rebuild.'
+                }
+            }
             if ($ParallelCall -or $isAsyncWrite) {
                 return @{
                     ok = $false; code = 'ORGANIC_SEQUENCE_REQUIRED'
@@ -21745,7 +22275,7 @@ end
                 return @{
                     ok = $false; code = 'ORGANIC_COLORS_REQUIRED'
                     error = 'organic=true requires at least three explicit, contrasting colour assignments across meaningful regions (for example body/back, belly and face/paws or trunk, foliage and accents). The build was NOT sent to Studio.'
-                    howToFix = 'Pass at least three distinct style.color values in submodels (or at least three color= values in the polygon script), then build again. model_audit verifies the actual palette.'
+                    howToFix = 'Pass at least three distinct style.color values across volumes/submodels (or at least three color= values in the polygon script), then build again. model_audit verifies the actual palette.'
                     colorAssignments = $colorAssignments
                 }
             }
@@ -21992,7 +22522,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.3.1'
+                        serverVersion = '7.3.2'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -22351,7 +22881,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.3.1'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.3.2'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -22435,8 +22965,8 @@ end
                 }
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.3.1'
-                    serverVersion = '7.3.1'
+                    bridgeVersion = '7.3.2'
+                    serverVersion = '7.3.2'
                     toolbox = $statusToolbox
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
@@ -25500,7 +26030,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.3.1)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.3.2)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -28321,7 +28851,7 @@ function Write-ChannelDiagnoseFile {
 
         $progressPath = Join-Path $script:AppDataRoot 'progress-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.3.1)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.3.2)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -28356,7 +28886,7 @@ function Write-ChannelDiagnoseFile {
 
         $notifyPath = Join-Path $script:AppDataRoot 'notify-diagnose.txt'
         $sb2 = New-Object System.Text.StringBuilder
-        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.3.1)')
+        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.3.2)')
         [void]$sb2.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb2.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb2.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -28724,7 +29254,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.3.1)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.3.2)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -30921,7 +31451,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.3.1)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.3.2)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -31731,7 +32261,7 @@ Set-StartupStage 'Ereignisse verdrahtet (Fenstersteuerung + Loaded)'
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.3.1'
+    $versionText = '7.3.2'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -32819,7 +33349,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.3.1" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.3.2" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -32867,7 +33397,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.3.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.3.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -32932,7 +33462,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.3.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.3.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -32945,7 +33475,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.3.1'
+    $verText = '7.3.2'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

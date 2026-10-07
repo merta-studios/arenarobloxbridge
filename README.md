@@ -25,12 +25,13 @@ sein.
 | `test_v711_delivery.py` | Python-Modelltest 7.1.1: stellt die 7.1.0-Zustellblockade exakt nach (PowerShell-`@()`-Semantik mit Komma-Operator → Poll-Schleife bricht vor dem Dequeue ab), beweist die Reparatur, den wirksamen Admin-Reset und die Sitzungsauflösung über `instanceGuid` |
 | `test_v712_toolbox.py` | Python-Modelltest 7.1.2 (Toolbox-Hotfix): gemockter Katalog + gemockter Studio-Executor. Stellt die 7.1.1-Symptome exakt nach (automatische Katalog-Wiederholung 2×20 s+1,5 s, 20 s Validierung + 55 s Studio auf **einer** HTTP-Anfrage, `delivery.state='ok'` bei `executorAlive=false`, Verlaufskarte bleibt auf „Macht gerade“, Cache-Schreibsturm) und beweist den Fix: harter Timeout, keine Wiederholung, `TOOLBOX_BUSY`/`TOOLBOX_IMPORT_IN_FLIGHT`/`TOOLBOX_IMPORT_WEDGED`, kein zweiter nativer `LoadAsset`, keine doppelte Einfügung, terminale UI-Zustände, begrenzte Caches |
 | `test_v713_quality.py` | Regressionen aus 7.1.3 (Zylinder-Mathematik, primitive Gruppen, `buildQuality`, Benachrichtigungsschalter und Sessionstart-Budget), weiterhin gegen die aktuelle Bridge ausführbar |
-| `test_v720_bridge.py` | Offline-Abnahme 7.2.4: Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene Fertig-Meldung, robustes `ask_user`-Fenster samt Abbruchsemantik und Rückgabe-Gate für PowerShell-Sammlungen – mit zusätzlichem Tree-sitter-Strukturcheck (zusätzlich zur Klammer-/String-Balance). |
-| `test_v714_organic.py` | 7.1.4-Gegenprüfungen: globaler Polygon-/Finish-Standard ohne Namens-Trigger, explizites `organic=true`-Gate, Farb-/Reihenfolge-Sperren, frische Belege für jedes registrierte Modell (auch Multi-Modell/Stale-Fälle), fail-closed `report_done` und UI |
-
-| `ORGANIC_BUILD_CONTRACT.md` | Der 7.1.4-Bauvertrag zum Nachlesen: globaler Polygon-Vorrang für nichttriviale 3D-Modelle, bewusst höherer Finish-Standard, organischer per-Modell-Nachweis, Zylinder-Achsen-Regel mit Referenz-Lua, `buildQuality`-Messung und UI |
+| `test_v720_bridge.py` | Offline-Abnahme 7.2.4: Nutzer-Kanal, Fortschritt ohne erfundene Zahl, gemessene Fertig-Meldung, robustes `ask_user`-Fenster samt Abbruchsemantik und Rückgabe-Gate für PowerShell-Sammlungen – mit zusätzlichem Tree-sitter-PowerShell-Parsegate (neben der Klammer-/String-Balance). |
+| `test_v714_organic.py` | Regressionen des ursprünglichen 7.1.4-Organic-/Finish-Vertrags: explizites Gate, frische Belege pro Modell und fail-closed `report_done` |
+| `test_v732_organic_creature.py` | 7.3.2-Creature-Abnahme: typed body/head-Lofts, echte Querachsen-Tiefe, physische Augen/Pupillen, Flügelpaar/-Anbindung, Gesichts-Overlays und Audit→`report_done` |
+| `MODEL_BUILD_CONTRACT.md` | Kategorieneutraler Polygon-Bauablauf mit Schema, validem Mehrflächen-Hausbeispiel, Volumen-/Submodel-/Assembly-Auswahl und Ergebnisprüfung für alle 3D-Arten |
+| `ORGANIC_BUILD_CONTRACT.md` | Organic-Bauvertrag (aktuell 7.3.2): typed Creature-Loft-Volumen, Gesichts-/Flügelrollen und fail-closed Audit; 7.1.4 bleibt als Historie |
 | `test_queue_model_707.py` | Python-Modelltest: reproduziert den Queue-Stillstand von 7.0.4 und prüft die 7.0.5-Regeln (unabhängiger Watchdog, lateResults, Reconnect-Übergabe) **plus** 7.0.6 (Sitzungs-Identität, Fast-Fail, Zustell-Timeline) und 7.0.7 (Place-Zeile: fehlende Eigenschaft bricht den Zeilenaufbau ab) |
-| `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Versions-Checks (`/api/version` 7.3.0, `counters.revivedSessions` konstant, `/api/places` 200, `/api/status` 200), Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `--reset-test` (Reset mit 2 wartenden Befehlen), `--force-fail`, `--ask-sweep` (7.2.4 P0-Abnahme: alle Werkzeuge bei **offener** Frage) und `--message-round` (Nachricht → `_bridge.userMessages` → `ack_user_message`) |
+| `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Versions-Checks (`/api/version` 7.3.2, `counters.revivedSessions` konstant, `/api/places` 200, `/api/status` 200), Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `--reset-test` (Reset mit 2 wartenden Befehlen), `--force-fail`, `--ask-sweep` (7.2.4 P0-Abnahme: alle Werkzeuge bei **offener** Frage) und `--message-round` (Nachricht → `_bridge.userMessages` → `ack_user_message`) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -45,6 +46,39 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 7.3.2 — universeller Polygon-Bauablauf plus messbare Creature-Geometrie
+
+Der Agent erhält jetzt in jeder Session eine konkrete, kategorieneutrale
+Anleitung für `build_polygon_model`: Flächenschema, benannte Submodels,
+Querschnitts-Lofts, Koordinatentransforms, Budget- und Weld-Regeln sowie die
+Pflicht, `incomplete`/`facesSkipped`/`skipped` zu prüfen. Das vollständige
+`LowPolyHouse`-Beispiel zeigt, wie mehrere echte Seiten, ein getrenntes Dach
+und Frontdetails in einem strukturierten Aufruf entstehen. Das gilt für
+Architektur, Fahrzeuge, Möbel, Maschinen, Props, Landschaften und andere
+nichttriviale 3D-Arten – nicht nur für Kreaturen. Weitere Details stehen in
+`MODEL_BUILD_CONTRACT.md` und `modelBuildRules` im Sessionstart.
+
+`organic=true` braucht jetzt einen expliziten `organicKind`. Für `creature`
+verlangt `build_polygon_model` geschlossene Mehrstationen-Lofts für `body`
+(mindestens vier Stationen) und `head` (mindestens drei), jeweils mit mindestens
+acht Seiten. Jede Station gibt Zentrum sowie Höhe-/Tiefenradius an; der Builder
+verbindet elliptische Ringe und verschließt beide Enden. Ein langes, flaches
+Seitenprofil ist damit weder der akzeptierte Körper noch der Kopf.
+
+`model_audit` prüft die realen Bounds der erzeugten Parts: Mindestverhältnis
+zwischen vertikaler und seitlicher Ausdehnung, getrennte runde Augen auf
+gegenüberliegenden Kopfseiten, physische nicht-flache Pupillen nahe den Augen
+und Decal-/Texture-/PBR-/GUI-Overlays unter Kopf-/Gesichtsrollen. Wenn Flügel durch
+`organicTraits=["wings"]` oder Wing-Rollen vorgesehen sind, verlangt es
+`wing_left` auf +Z und `wing_right` auf −Z sowie messbare Überlappung mit dem
+Torso. `build_assembly.items[].attributes` kann Rollen beim Erstellen setzen.
+Alle Befunde landen in den bestehenden per-Modell-`organicQuality.issues`; das
+frische `model_audit`-/`report_done`-Gate bleibt fail-closed.
+
+Offline-Regression und Tree-sitter prüfen Quellstruktur/Parserbarkeit, nicht
+Roblox-Rendering oder tatsächliche Studio-Optik. Vor Freigabe bleibt deshalb
+eine visuelle Studio-Prüfung erforderlich.
 
 ## 7.3.0 — STARTGARANTIE: Fenster zuerst, Beweisdatei, gesicherte Assemblies
 
@@ -1064,6 +1098,19 @@ Quellen für den Befund (Roblox Developer Forum):
 
 ### 3.2 / 3.1 / 3.0
 - Siehe Kommentarblock am Anfang von `ArenaBridge.ps1`.
+
+### Prüfprotokoll 7.3.2 (2026-10-07)
+
+- 9 von 9 Python-Offline-Suiten: Exit-Code 0, einschließlich der neuen
+  `test_v732_organic_creature.py`-Regression.
+- `test_v398_structure.py`: Luaparser für den Roblox-Plugin-Code sowie
+  XAML/XML-Prüfungen bestanden.
+- `test_v720_bridge.py`: Tree-sitter-PowerShell meldet 0 neue ERROR-Stellen;
+  Klammer-/String- und Windows-PS-5.1-Zeilenumbruch-Gates bestanden.
+- Der echte PowerShell-Parser wurde übersprungen (`pwsh`/`powershell` fehlen);
+  Windows PowerShell 5.1 bleibt vor einer Windows-Freigabe zu prüfen.
+- Kein Roblox-Studio-/Renderingtest in dieser Offline-Umgebung. Die
+  visuelle Studio-Prüfung des gebauten Creatures bleibt erforderlich.
 
 ### Prüfprotokoll 7.3.0 (2026-10-06)
 
