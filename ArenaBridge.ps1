@@ -39214,7 +39214,7 @@ function Open-SettingsWindow {
         }
     })
 
-    # --- Entfernen ---------------------------------------------------------
+    # --- Entwickler-Fallback (Version 7.5.5) -------------------------------
     $cloudDeveloperButton.Add_Click({
         # Version 7.5.5 (Fallback): Benutzername -> ID bei Roblox, dann merken.
         try {
@@ -39236,6 +39236,7 @@ function Open-SettingsWindow {
         }
     })
 
+    # --- Entfernen ---------------------------------------------------------
     $cloudRemoveButton.Add_Click({
         param($s, $e)
         try {
