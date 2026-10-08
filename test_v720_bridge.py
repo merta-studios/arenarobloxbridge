@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline-Abnahme fuer Arena Roblox Bridge 7.5.0.
+"""Offline-Abnahme fuer Arena Roblox Bridge 7.5.1.
 
 Dieser Test braucht KEIN Windows und keinen PowerShell-Prozess. Er prueft genau
 die fuenf Themen des Owners plus das Fundament:
@@ -29,7 +29,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.5.0"
+VERSION = "7.5.1"
 
 failures: list[str] = []
 
@@ -314,25 +314,25 @@ def main() -> int:
 
     message_ui = source[:source.index("function Get-PlaceOpenCommand")]
     for text in (
-        "'wird gesendet'",
-        "'angekommen",
-        "'von Arena bestaetigt'",
-        "ZURUECKGEZOGEN",
-        "'Abbrechen'",
-        "'Schliessen'",
+        "Nachricht wird gesendet",
+        "Nachricht gesendet!",
+        "Noch eine Nachricht senden",
+        "Deine Nachricht:",
+        "Sende Arena während dem Arbeiten Nachrichten",
+        "Arena bekommt deine Nachricht zugestellt",
     ):
         check(text in message_ui,
               f"Nachricht-Fenster kennt den Zustand: {text}")
     check("$withdrawn = Withdraw-UserMessage $data.SessionId $id" in source
           and "function Withdraw-UserMessage" in source,
           "Abbrechen zieht die Nachricht wirklich zurueck (kein vorgetaeuschter Widerruf)")
-    check("Zu spaet zum Zurueckziehen" in source,
+    check("Zu spät zum Zurückziehen" in source,
           "Das Fenster sagt ehrlich, wenn Zurueckziehen nicht mehr geht")
     # 7.2.4 (3a): Das Nachrichten-Fenster ist aus dem gemeinsamen XAML-
     # Ressourcenblock gebaut - dasselbe Design wie Haupt-/Einstellungsfenster.
     message_window = region(source, "function Get-UserMessageWindowXaml", "function Get-AskStateForUi")
-    check('Width="480" Height="470"' in message_window,
-          "Das Nachricht-Fenster startet kompakt (480 x 470)")
+    check('Width="470" Height="330"' in message_window,
+          "Das Nachricht-Fenster startet kompakt (470 x 330, eine Nachricht auf einmal)")
     message_markup = without_comments(message_window)
     check('Background="{StaticResource SwAppBg}"' in message_markup
           and '#F50B1030' not in message_markup
@@ -340,8 +340,12 @@ def main() -> int:
           "Das Fenster sitzt auf dem SwAppBg-Verlauf des Programms (kein #F50B1030, kein Mint)")
     check('Style="{StaticResource ArenaTextField}"' in message_window
           and 'Style="{StaticResource ArenaPrimaryButton}"' in message_window
-          and 'Style="{StaticResource ArenaCloseButton}"' in message_window,
-          "Textfeld, Senden-Knopf und Kreuz kommen aus dem gemeinsamen Ressourcenblock")
+          and 'Style="{StaticResource ArenaCloseButton}"' in message_window
+          and 'Style="{StaticResource ArenaWarnButton}"' in message_window
+          and 'Style="{StaticResource ArenaQuietButton}"' in message_window,
+          "Textfeld, Senden-, Abbrechen-, Warn- und Kreuz-Knopf kommen aus dem gemeinsamen Ressourcenblock")
+    check("SwWarnBtnBg" in source,
+          "der gelbe Warn-Knopf (SwWarnBtnBg) ist im gemeinsamen Dialog-Stilblock definiert")
     check("$titleBar.Add_MouseLeftButtonDown" in message_window
           and "$s.Tag.DragMove()" in message_window
           and 'x:Name="CloseButton"' in message_window
@@ -747,7 +751,7 @@ def main() -> int:
     ):
         check(marker in source, f"Fundament-Marker vorhanden: {marker}")
     version = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    check(version["version"] == VERSION, "version.json identifiziert 7.5.0")
+    check(version["version"] == VERSION, "version.json identifiziert 7.5.1")
     notes = "\n".join(str(note) for note in version.get("notes", []))
     for word in ("7.2.4", "P0-BLOCKER", ".ToArray()",
                  "gemeinsamen XAML-Ressourcenblock",
@@ -755,8 +759,8 @@ def main() -> int:
                  "7.2.3", "LIVE-SAMMLUNGEN", "ASK_CANCELLED", "Strg+Enter",
                  "NOTIFICATION_UNVERIFIED", "notify-diagnose.txt"):
         check(word in notes, f"version.json beschreibt: {word}")
-    check("DocsVersion     = '7.5.0'" in source and 'local ARENA_VERSION  = "7.5.0"' in source,
-          "Alle funktionalen Versionsstellen stehen auf 7.5.0")
+    check("DocsVersion     = '7.5.1'" in source and 'local ARENA_VERSION  = "7.5.1"' in source,
+          "Alle funktionalen Versionsstellen stehen auf 7.5.1")
     for marker in ("Set-StartupStage", "startup-trace.txt", "START-NETZ KOMPLETT",
                    "$script:WindowShown", "function Start-BridgeRuntime",
                    "$window.Add_ContentRendered({", "Start fehlgeschlagen"):
@@ -959,7 +963,7 @@ def main() -> int:
           "(Parse-Fehler auf Windows PowerShell 5.1)")
 
     check((ROOT / "parse-gate.ps1").is_file(), "Echtes Parser-Gate vorhanden")
-    check("PROOF_OF_LIFE Version=7.5.0" in source,
+    check("PROOF_OF_LIFE Version=7.5.1" in source,
           "Proof-of-Life mit aktueller Version vorhanden")
     engine = shutil.which("powershell") or shutil.which("pwsh")
     if engine:

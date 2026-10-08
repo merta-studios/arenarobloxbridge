@@ -168,8 +168,30 @@ Workflow (own the whole loop, never fake it):
 2. `build_mesh_model` — one Blender script per slot, `offset` per slot,
    `origin` for the model. It returns a `jobId` immediately: **Blender runs in
    the background, so never wait synchronously.** Each slot becomes one
-   MeshPart, so split moving parts (limbs, wheels, doors) into their own slots
-   and join them in Studio with Welds/Motor6D as usual.
+   MeshPart.
+
+   **ONE MODEL = ONE MESH (7.5.1).** A connected model belongs in exactly ONE
+   slot: a tree is ONE mesh, a barrel is ONE mesh, a lantern is ONE mesh —
+   roots, crown, leaves and decorations included, as long as they never move
+   on their own. Multiple slots are allowed only for (a) parts that are
+   ANIMATED (one slot per moving limb — join them in Studio with
+   Welds/Motor6D as usual), (b) parts that need their OWN PROPERTIES (own
+   colour/material/CanCollide that a single MeshPart cannot carry), or
+   (c) a triangle count that exceeds the budget — then split by body part,
+   never by habit. Splitting without one of those three reasons only creates
+   more uploads, more placeholders and more MeshParts for the user.
+
+   **AXES AND UNITS (7.5.1) — the one truth:** 1 Blender unit = 1 stud, and
+   inside the slot script **Z is up** (Blender convention). The runner exports
+   the whole model into the Roblox frame (Blender +Z becomes Roblox +Y, the
+   other axis becomes depth; the FBX/GLB upload comes from the same centred
+   scene as the measured OBJ). So build a tree upright along Z in the script —
+   it arrives upright in Roblox. Never build "up" along Blender Y because
+   Roblox has Y up: that produced the lying tree in 7.4/7.5 (a trunk measured
+   7.96 studs along Z instead of Y). Never rotate axes yourself, never pass
+   your own `forward_axis`/`up_axis`, never convert units. `mesh_status`
+   reports the measured size already in Roblox studs (x width, y height,
+   z depth) — if the measurement looks wrong, fix the SCRIPT, not the export.
 3. `mesh_status` — poll it (not in a tight loop) until the slots show measured
    triangles and size in studs. The bridge measures the OBJ itself: triangles,
    vertices, bounding box in studs, file size. A slot above the limit (~10,000
@@ -186,7 +208,13 @@ Workflow (own the whole loop, never fake it):
    names the required rights: **assets + read + write**). From then on
    `upload_asset { slotKey }` sends the FBX/GLB file the bridge already built
    (`mesh_status` names it under `uploadPath`) to Roblox and answers with the
-   **real asset id**; `mesh_apply_asset { slots = [ { key, assetId } ] }` puts
+   **real asset id**;
+   `POST https://apis.roblox.com/assets/v1/assets` is the only upload path, and
+   the bridge derives the asset owner (user or group) itself from the key via
+   the official introspect endpoint
+   (`POST https://apis.roblox.com/api-keys/v1/introspect`) — the user types
+   neither a name nor an id, and a failed upload always answers with the exact
+   `filePath`/`filePathHint` so the file can be uploaded by hand if needed; `mesh_apply_asset { slots = [ { key, assetId } ] }` puts
    the geometry into the existing placeholders. The mesh window "Mesh-Uploads"
    is **removed** since 7.5.0 — there is no manual step left.
    If the key is missing, `upload_asset` answers `OPENCLOUD_KEY_MISSING` with a
@@ -206,8 +234,10 @@ Workflow (own the whole loop, never fake it):
 
 Hard rules for Blender scripts (the bridge rejects violations before start):
 
-- One slot = one script = one MeshPart. 1 Blender unit = 1 stud, Y is up, the
-  runner centres the bbox automatically and applies modifiers on export.
+- One slot = one script = one MeshPart (ONE MODEL = ONE MESH, see above).
+  1 Blender unit = 1 stud, **Z is up in the script** (the export turns it into
+  Roblox Y), the runner centres the bbox automatically and applies modifiers
+  on export.
 - Allowed: `bpy`, `bmesh`, `math`, `mathutils`, `random` and ordinary mesh
   code. Forbidden: `os`, `sys`, `subprocess`, `shutil`, `socket`, `urllib`,
   `requests`, `ctypes`, `winreg`, `__import__`, `importlib`, `eval`, `exec`,
