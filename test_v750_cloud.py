@@ -36,7 +36,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.5.4"
+VERSION = "7.5.5"
 FAILURES: list[str] = []
 
 
@@ -364,7 +364,7 @@ def main() -> int:
     check("Nichts wird schoengeredet, nichts erfunden" in errors_fn,
           "die Regel steht im Quelltext: nichts wird schoengeredet")
 
-    missing = region(source, "if (-not $config.hasKey) {", "if ([string]::IsNullOrWhiteSpace([string]$config.creatorId)) {")
+    missing = region(source, "if (-not $config.hasKey) {", "$creatorFound = Resolve-OpenCloudCreatorForUpload")
     check("OPENCLOUD_KEY_MISSING" in missing and "userMessage" in missing,
           "ohne Schluessel antwortet das Werkzeug OPENCLOUD_KEY_MISSING MIT einem Nutzer-Satz")
     check("Zahnrad (Einstellungen)" in missing and "Roblox Open Cloud API-Key" in missing,

@@ -1,5 +1,31 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.5.4
+# Arena Roblox Bridge  -  Version 7.5.5
+#
+# Version 7.5.5 (2026-10-08) - BLENDER-FIRST, OPEN-CLOUD-ENTWICKLER, /api/tool REPARIERT
+#   - /api/tool (GET und POST) lieferte fuer JEDEN Werkzeugaufruf HTTP 500 mit
+#     'Die Benennung "=" wurde nicht als Name eines Cmdlet erkannt'. Ursache: in
+#     Get-ArenaActivityText fehlte bei $texts das Zuweisungszeichen, die Zeile
+#     wurde als Befehl gelesen. Behoben; ein Regressionstest prueft jetzt alle
+#     Befehlsnamen der Datei.
+#   - /api/tools/parallel: Bridge-eigene Werkzeuge (blender_status, build_mesh_model,
+#     mesh_status, mesh_cancel, mesh_apply_asset, upload_asset, upload_text,
+#     capture_screenshot, model_audit) laufen jetzt ueber dieselbe Serverlogik wie
+#     /api/tool und nicht mehr am Studio-Plugin vorbei. Ergebnisse bleiben in der
+#     Reihenfolge der Aufrufe.
+#   - describe_orientation (Studio-Plugin) crashte mit 'invalid argument #2 to
+#     format': die Himmelsrichtung war falsch indiziert. Behoben (0 Grad = Nord,
+#     90 Grad = Ost, 180 Grad = Sued, 270 Grad = West).
+#   - BLENDER-FIRST: Arena baut 3D-Modelle ueber build_mesh_model -> upload_asset ->
+#     mesh_apply_asset. build_polygon_model wird ohne userRequestedPolygon=true
+#     blockiert (POLYGON_BLENDER_FIRST). Erlaubt ist es nur, wenn der Nutzer den
+#     Polygon-Bau ausdruecklich verlangt; dann warnt Arena vorher selbst vor Lag durch
+#     viele WedgeParts und empfiehlt Blender. Ab 300 WedgeParts steht die Warnung
+#     auch im Ergebnis.
+#   - OPEN CLOUD ENTWICKLER: Der Entwickler wird bei jedem Upload automatisch
+#     ermittelt (1. Schluessel, 2. Ersteller des verbundenen Place aus dem Studio).
+#     Nur als Fallback traegt der Bridge-Nutzer den Roblox-Benutzernamen im
+#     Einstellungsfenster ein (users.roblox.com, ohne Schluessel). Der Schluessel
+#     bleibt DPAPI-verschluesselt in opencloud.key.
 #
 # Version 7.5.4 (2026-10-08) - MINI-HOTFIX: PARSER-FIX (HASHTABLE-DUPLIKATE), BRIDGE STARTET WIEDER
 #   - Get-ArenaActivityText: Hashtable $texts dedupliziert (82 doppelte Keys entfernt).
@@ -2149,7 +2175,7 @@ param(
 # Existing LOCALAPPDATA directory; no UI, no new exception net.
 # A parse/policy failure prevents even this marker. Check its timestamp/version.
 # Continue + SilentlyContinue keeps diagnostic I/O from becoming a start blocker.
-Write-Output ("{0:o} PROOF_OF_LIFE Version=7.5.4 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
+Write-Output ("{0:o} PROOF_OF_LIFE Version=7.5.5 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
 
 $ErrorActionPreference = 'Stop'
 
@@ -2184,7 +2210,7 @@ trap {
         }
         $trapPath = Join-Path $trapFolder 'startup-diagnose.txt'
         $trapReport = New-Object System.Text.StringBuilder
-        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.4)')
+        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.5)')
         [void]$trapReport.AppendLine('Quelle: trap auf Skriptebene (nicht abgefangener Fehler)')
         [void]$trapReport.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$trapReport.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -2223,7 +2249,7 @@ trap {
             try {
                 [System.IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA 'START-CHECK.txt'),
                     ('Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.5.4' + [Environment]::NewLine +
+                     'Version: 7.5.5' + [Environment]::NewLine +
                      'ABBRUCH: ' + $trapMessage + [Environment]::NewLine +
                      'Details: ' + $trapPath + [Environment]::NewLine),
                     [System.Text.Encoding]::UTF8)
@@ -2875,6 +2901,8 @@ function Get-BridgeSettingsFile {
         openCloudCreatorId  = ''      # numerische Nutzer- oder Gruppen-Id
         openCloudCreatorKind = 'user' # 'user' oder 'group'
         openCloudCreatorName = ''     # Anzeigename (aufgeloest oder leer)
+        openCloudDeveloperId = ''     # 7.5.5: Fallback - vom Nutzer eingetragener Entwickler (ID)
+        openCloudDeveloperName = ''   # 7.5.5: Fallback - eingetippter Roblox-Benutzername
         openCloudSavedAt    = ''      # Zeitpunkt des Speicherns (Anzeige)
         # accessModes aus älteren Versionen werden absichtlich NICHT mehr geladen:
         # Lesezugriff gilt nur für die aktuelle Verbindung und startet immer aus.
@@ -2893,6 +2921,8 @@ function Get-BridgeSettingsFile {
             if ($loaded.PSObject.Properties.Name -contains 'openCloudCreatorId') { $settings.openCloudCreatorId = [string]$loaded.openCloudCreatorId }
             if ($loaded.PSObject.Properties.Name -contains 'openCloudCreatorKind') { $settings.openCloudCreatorKind = [string]$loaded.openCloudCreatorKind }
             if ($loaded.PSObject.Properties.Name -contains 'openCloudCreatorName') { $settings.openCloudCreatorName = [string]$loaded.openCloudCreatorName }
+            if ($loaded.PSObject.Properties.Name -contains 'openCloudDeveloperId') { $settings.openCloudDeveloperId = [string]$loaded.openCloudDeveloperId }
+            if ($loaded.PSObject.Properties.Name -contains 'openCloudDeveloperName') { $settings.openCloudDeveloperName = [string]$loaded.openCloudDeveloperName }
             if ($loaded.PSObject.Properties.Name -contains 'openCloudSavedAt') { $settings.openCloudSavedAt = [string]$loaded.openCloudSavedAt }
             # Version 7.2.2: Der Diagnosebereich ist entfernt; alte opt-ins werden ignoriert.
             # Legacy accessModes are deliberately ignored (Version 5): the
@@ -2918,6 +2948,8 @@ function Save-BridgeSettingsFile {
             openCloudCreatorId = [string]$script:SettingsCache.openCloudCreatorId
             openCloudCreatorKind = [string]$script:SettingsCache.openCloudCreatorKind
             openCloudCreatorName = [string]$script:SettingsCache.openCloudCreatorName
+            openCloudDeveloperId = [string]$script:SettingsCache.openCloudDeveloperId
+            openCloudDeveloperName = [string]$script:SettingsCache.openCloudDeveloperName
             openCloudSavedAt = [string]$script:SettingsCache.openCloudSavedAt
         }
         $json = $out | ConvertTo-Json -Depth 6
@@ -3088,7 +3120,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.5.4'
+    DocsVersion     = '7.5.5'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -3124,7 +3156,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Version 7.0.6: Laufzeit-Identitaet der LAUFENDEN Datei (Version, Pfad,
     # SHA-256, Sprachmodus, Startzeit) fuer GET /api/version.
     RuntimeInfo = [hashtable]::Synchronized(@{
-        Version = '7.5.4'
+        Version = '7.5.5'
         File = ''
         Sha256 = ''
         LanguageMode = ''
@@ -3302,6 +3334,8 @@ try {
     $script:Shared.BridgeSettings.openCloudCreatorId = [string]$script:SettingsCache.openCloudCreatorId
     $script:Shared.BridgeSettings.openCloudCreatorKind = [string]$script:SettingsCache.openCloudCreatorKind
     $script:Shared.BridgeSettings.openCloudCreatorName = [string]$script:SettingsCache.openCloudCreatorName
+    $script:Shared.BridgeSettings.openCloudDeveloperId = [string]$script:SettingsCache.openCloudDeveloperId
+    $script:Shared.BridgeSettings.openCloudDeveloperName = [string]$script:SettingsCache.openCloudDeveloperName
     $script:Shared.BridgeSettings.openCloudSavedAt = [string]$script:SettingsCache.openCloudSavedAt
     # Version 5: legacy per-place accessModes are ignored on purpose.
 } catch {}
@@ -3352,7 +3386,7 @@ function Write-StartupFailureDiagnose {
         try { $trace = [string]$ErrorRecord.ScriptStackTrace } catch {}
         if ($trace.Length -gt 2000) { $trace = $trace.Substring(0, 2000) }
         $report = New-Object System.Text.StringBuilder
-        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.4)')
+        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.5)')
         [void]$report.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$report.AppendLine('Letzte Startstufe: ' + $stage)
         [void]$report.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -3435,7 +3469,7 @@ function Set-StartupStage {
     try {
         $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
         $checkText = 'Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.5.4' + [Environment]::NewLine +
+                     'Version: 7.5.5' + [Environment]::NewLine +
                      'Zeit: ' + $stamp + [Environment]::NewLine +
                      'PowerShell: ' + [string]$PSVersionTable.PSVersion + ' | CLR ' + [string][Environment]::Version + [Environment]::NewLine +
                      'Skript: ' + [string]$script:ScriptPath + [Environment]::NewLine +
@@ -3501,12 +3535,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.5.4, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.5.4, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.5.5, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.5.5, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.5.4'
+$script:Shared.RuntimeInfo.Version = '7.5.5'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -3609,7 +3643,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.5.4)
+  Arena Studio Bridge - Studio Plugin  (Version 7.5.5)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -3682,7 +3716,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.5.4"
+local ARENA_VERSION  = "7.5.5"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -5707,9 +5741,12 @@ local function dirHeading(v)
         "west (toward -X)",
         "north-west",
     }
-    local index = math.floor(angle / 45 + 0.5)
-    if index > 8 then index = 8 end
-    return string.format("%s (heading %.0f degrees from north)", names[index], angle)
+    -- Jede Himmelsrichtung ist 45 Grad breit und um ihre Mitte zentriert
+    -- (Norden = 337,5 bis 22,5 Grad). Modulo 8 faengt 360 Grad ab, sodass
+    -- nie ein Index ausserhalb der Liste entsteht (7.5.5: frueher nil -> format-Fehler).
+    local sector = math.floor((angle + 22.5) / 45) % 8
+    local shown = math.floor(angle + 0.5) % 360
+    return string.format("%s (heading %.0f degrees from north)", names[sector + 1], shown)
 end
 
 local function facesOf(cframe)
@@ -9207,6 +9244,12 @@ tools.build_polygon_model = function(args)
     if #ignoredGeometryProperties>0 then
         local note="Ignored geometry-owned style.properties ("..table.concat(ignoredGeometryProperties,", ")..") so polygon Size/CFrame cannot be overwritten."
         warningsText=warningsText and (warningsText.." "..note) or note
+    end
+    -- Version 7.5.5 (Blender-first): Arena warnt selbst vor Lag durch viele WedgeParts
+    -- und empfiehlt den Blender-Weg. Ab 300 WedgeParts steht die Warnung im Ergebnis.
+    if wedgeCount>=300 then
+        local lagNote="LAG-WARNUNG (7.5.5): "..tostring(wedgeCount).." WedgeParts koennen Roblox Studio stark laggen. Empfehlung: Blender-Weg (build_mesh_model -> upload_asset -> mesh_apply_asset)."
+        warningsText=warningsText and (warningsText.." "..lagNote) or lagNote
     end
     return ok({model=describeRef(model),organic=organicBuild,organicKind=organicKind,submodels=#specs,polygons=#rawPolygons,volumesBuilt=#generatedVolumeSpecs,volumeSummary=volumeSummary,triangles=triCount,wedges=wedgeCount,autoCaps=capCount,welds=weldCount,weldedSubmodels=weldedSubmodels,autoWeldDefault=true,mainWelds=mainWeldCount,facesTotal=facesTotal,facesBuilt=facesTotal-facesSkipped,facesSkipped=facesSkipped,incomplete=incomplete,skipped=skipped,fallbackFaces=fallbackFaces,ignoredGeometryProperties=ignoredGeometryProperties,geometryInvariant="Size/CFrame applied after safe style properties",geometry=waitMeasurable(sample,2),method="side-corrected skin placement + ear-clipping + two WedgeParts per triangle (closed loft volumes included; auto-welded by default)",editable=true},warningsText)
 end
@@ -13042,7 +13085,7 @@ WORLD_ENGINE.auditBuildQuality = function(parts, root)
     elseif #organicIssues > 0 then verdict = "organic_build_incomplete" end
     local advice = "Clean: the geometry is varied and no cylinder looks rotated wrong."
     if verdict == "primitive_abuse" then
-        advice = "Rebuild the flagged group as a silhouette with build_polygon_model (tapering volumes, limb segments, joints, detail) - see organicBuildRules. Primitive-only groups are drafts, not models."
+        advice = "Rebuild the flagged group as a silhouette with build_mesh_model (Blender; polygon only on explicit user request) (tapering volumes, limb segments, joints, detail) - see organicBuildRules. Primitive-only groups are drafts, not models."
     elseif verdict == "cylinder_rotation" then
         advice = "The flagged cylinders stand as discs because their tube axis lies horizontally and the length sits in Size.Y or Size.Z. Rebuild them with CFrame.Angles(0, 0, math.rad(90)) and Size = Vector3.new(length, diameter, diameter), or use cylinderBetween from organicBuildRules."
     elseif verdict == "primitive_abuse_and_cylinder_rotation" then
@@ -13121,7 +13164,7 @@ tools.model_audit = function(args)
     local qualityWarnings = {}
     if quality.primitiveOnly then
         table.insert(qualityWarnings, "PRIMITIVE_ONLY_BUILD: " .. tostring(#quality.primitiveGroups)
-            .. " group(s) consist only of Ball parts (no polygon, assembly, mesh, union or ArenaDetail part). That is a draft, not a model - rebuild the silhouette with build_polygon_model and follow organicBuildRules. report_done answers DETAIL_REQUIRED until this is fixed or honestly handed off.")
+            .. " group(s) consist only of Ball parts (no polygon, assembly, mesh, union or ArenaDetail part). That is a draft, not a model - rebuild the silhouette with build_mesh_model (Blender) and follow organicBuildRules. report_done answers DETAIL_REQUIRED until this is fixed or honestly handed off.")
     end
     if quality.cylinderProblemCount > 0 then
         table.insert(qualityWarnings, "CYLINDER_ROTATION: " .. tostring(quality.cylinderProblemCount)
@@ -13138,7 +13181,7 @@ tools.model_audit = function(args)
         table.insert(qualityWarnings, "DRAFT_GRADE_RISK (grade '" .. tostring(quality.grade) .. "', " .. tostring(quality.finishScore)
             .. "/100): " .. tostring(#parts) .. " part(s), davon " .. tostring(quality.intentionalParts)
             .. " gestaltete(s) (Polygon/Mesh/Union/ArenaDetail), Primitive-Anteil " .. tostring(math.floor(quality.primitiveShare * 100 + 0.5))
-            .. "%. Das ist ein Entwurf, kein Modell. Baue die Silhouette mit build_polygon_model und echten Details nach (organicBuildRules/modelBuildRules) - oder erklaere die Einfachheit AUSDRUECKLICH beim Bauen (grade = \"simple\"/\"lowpoly\"/\"blockout\"), wenn sie so gewollt ist. report_done antwortet bis dahin DRAFT_GRADE_RISK.")
+            .. "%. Das ist ein Entwurf, kein Modell. Baue die Silhouette mit build_mesh_model (Blender) und echten Details nach (organicBuildRules/modelBuildRules) - oder erklaere die Einfachheit AUSDRUECKLICH beim Bauen (grade = \"simple\"/\"lowpoly\"/\"blockout\"), wenn sie so gewollt ist. report_done antwortet bis dahin DRAFT_GRADE_RISK.")
     end
     local phase, verdict
     if #placeholders > 0 then
@@ -13974,6 +14017,9 @@ local function statePayload()
         pluginVersion = ARENA_VERSION,
     }
     pcall(function() payload.gameId = tostring(game.GameId) end)
+    -- Version 7.5.5: der ENTWICKLER des Place (Open Cloud Ersteller, automatisch).
+    pcall(function() payload.creatorId = tostring(game.CreatorId) end)
+    pcall(function() payload.creatorType = game.CreatorType.Name end)
     local okState, stateValue = pcall(playState)
     if okState then payload.state = stateValue end
     local queuedCommandIds = {}
@@ -16747,7 +16793,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.5.4 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.5.5 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -16961,7 +17007,7 @@ $script:BridgeHandlerScript = {
         if ($tool -eq 'sim_stop') { return 'Hat die Studio-Run-Simulation beendet.' }
         if ($tool -eq 'sim_status') { return 'Hat den Simulationsstatus gelesen.' }
         # ---- Jeder verbleibende Werkzeugtyp bekommt einen eigenen Satz -----
-         = @{
+        $texts = @{
             # Version 7.5.4: Jedes Werkzeug bekommt einen eigenen verstaendlichen Satz.
             ack_user_message = 'Hat eine Nutzer-Nachricht bestätigt.'
             add_tag = 'Hat einen Tag an einem Objekt gesetzt.'
@@ -18694,6 +18740,8 @@ $script:BridgeHandlerScript = {
                     placeName     = $placeName
                     placeId       = $placeId
                     gameId        = [string]$body.gameId
+                    creatorId = [string]$body.creatorId
+                    creatorType = [string]$body.creatorType
                     token         = ''
                     accessMode    = 'readwrite'
                     lastSeen      = $now
@@ -18823,6 +18871,8 @@ $script:BridgeHandlerScript = {
                 placeName     = $placeName
                 placeId       = $placeId
                 gameId        = [string]$body.gameId
+                creatorId = [string]$body.creatorId
+                creatorType = [string]$body.creatorType
                 token         = $token
                 accessMode    = $mode
                 lastSeen      = $now
@@ -18869,6 +18919,8 @@ $script:BridgeHandlerScript = {
             placeName     = $placeName
             placeId       = $placeId
             gameId        = [string]$body.gameId
+            creatorId = [string]$body.creatorId
+            creatorType = [string]$body.creatorType
             token         = $token
             accessMode    = $startMode
             lastSeen      = $now
@@ -19038,12 +19090,19 @@ $script:BridgeHandlerScript = {
         if ([string]::IsNullOrWhiteSpace($newPlaceId)) { $newPlaceId = [string]$entry.placeId }
         $newGameId = [string]$body.gameId
         if ([string]::IsNullOrWhiteSpace($newGameId)) { $newGameId = [string]$entry.gameId }
+        # Version 7.5.5: Entwickler des Place (aus dem Plugin-Poll).
+        $newCreatorId = [string]$body.creatorId
+        if ([string]::IsNullOrWhiteSpace($newCreatorId)) { $newCreatorId = [string]$entry.creatorId }
+        $newCreatorType = [string]$body.creatorType
+        if ([string]::IsNullOrWhiteSpace($newCreatorType)) { $newCreatorType = [string]$entry.creatorType }
         $updated = @{
             sessionId     = $sessionId
             instanceGuid  = [string]$entry.instanceGuid
             placeName     = $newName
             placeId       = $newPlaceId
             gameId        = $newGameId
+            creatorId     = $newCreatorId
+            creatorType   = $newCreatorType
             token         = $token
             accessMode    = $mode
             lastSeen      = $now
@@ -20793,9 +20852,9 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             returns = '{ model, created, count, errors, geometry }';
             example = @{ modelName='Saeulenring'; items=@(@{className='Part';name='Saeule{n}';properties=@{Size=@{x=2;y=12;z=2};Anchored=$true};repeat=@{count=12;radius=20}}) };
             errors = @('BUDGET_EXCEEDED: mehr als 2000 Teile.', 'BAD_ARGS: nichts erstellt.') })
-        $t.Add(@{ name = 'build_polygon_model'; category = 'create'; summary = 'BEVORZUGT fuer nichttriviale Custom-3D-Modelle: Hauptsilhouette als Polygon direkt im Place bauen.';
-            description = 'GLOBALER 3D-BAUSTANDARD fuer alle nichttrivialen sichtbaren 3D-Kategorien, nicht nur Kreaturen. modelBuildRules und das Beispiel LowPolyHouse sind die Arbeitsanleitung. Ablauf: erst Bounds/Koordinaten/Stil festlegen, dann eine vollstaendige Hauptsilhouette als benannte Submodels mit Polygonflaechen bauen, danach Wiederholungen mit build_assembly und Akzente/Details ergaenzen, Ergebnis pruefen und model_audit ausfuehren. Ein polygon={name,points=[{x,y,z},...]} ist genau eine planare Flaeche, KEIN ganzer Koerper: fuer ein geschlossenes Objekt alle Seiten/Enden als Flaechen verbinden oder closeOpenings=true fuer offene Rand-Loops setzen. Punkte muessen geordnet, planar, verschieden und nicht selbstschneidend sein. Benutze volumes fuer veraenderliche Querschnitte wie Rumpf, Griff, Saeule, Schaft oder Ast. Ein einzelner Frontumriss mit thickness bleibt eine duenne Platte. Punkte sind die Geometrie; origin/rotation-in-Grad/scale transformieren das ganze Modell, properties.Position/Size/CFrame/Orientation werden ignoriert. Der Builder trianguliert und erzeugt zwei WedgeParts pro Dreieck; AutoWeld ist je Submodel an. Nie nur ok ansehen: result.incomplete=false, facesSkipped=0 und skipped=[] verlangen; fallbackFaces/Warnungen lesen und Fehlerstellen neu bauen. Fuer organic=true bleibt organicKind Pflicht und der Spezialvertrag gilt zusaetzlich. Simple Standardteile und explizite Primitive-/Blockoutwuensche bleiben einfache Ausnahmen.';
-            params = @{ grade=@{type='string';required=$false;default='null';description='Version 7.2.0: ''simple'' | ''lowpoly'' | ''blockout'' - Erklaert die Einfachheit AUSDRUECKLICH (Attribut ArenaDeclaredGrade). Ohne das gilt ein Bau mit wenigen Teilen ohne Polygon-/Mesh-/Union-/Detail-Geometrie als Entwurf (DRAFT_GRADE_RISK).'}; modelName=@{type='string';required=$false;default="'ArenaPolygonModel'";description='Oberstes fertiges Model.'}; organic=@{type='bool';required=$false;default='false';description='Fuer jedes bewusst organische Modell true setzen; zusammen mit organicKind erforderlich. Registriert das Modell fuer frischen per-model Audit und report_done-Gate.'}; organicKind=@{type='string';required=$false;default='null';description='Pflicht bei organic=true: creature|plant|tree|prop|custom. creature aktiviert Volumen-, Gesichts- und optionale Fluegelmessung.'}; organicTraits=@{type='array';required=$false;default='[]';description='Optionale Kreaturenmerkmale, derzeit ["wings"]: verlangt wing_left (+Z) und wing_right (-Z) mit gemessener Anbindung an den Torso.'}; volumes=@{type='array';required=$false;default='[]';description='Allgemeine geschlossene Loft-Volumen [{name,role,sides=6..16,sections:[{center={x,y,z},heightRadius,depthRadius},...],style}]. Fuer veraenderliche Querschnitte in Rumpf/Huelle, Griff, Saeule, Schaft oder Ast; mindestens 3 Stationen, Radien >=0.025 vor globalem scale und benachbarte Zentren >=0.01 Studs. Creature zusaetzlich: body >=4, head >=3 Stationen und beide >=8 Seiten.'}; submodels=@{type='array';required=$false;default='[]';description='EMPFOHLEN fuer jedes zusammengesetzte Modell: [{name,role,containerClass="Folder|Model",polygons:[{name,points:[{x,y,z},...],style?}],style,autoWeld,closeOpenings,capStyle}]. Jede Polygonliste enthaelt einzelne planare Flaechen; groupiere nach Bauteil/Farbe/Material. Alle Submodels liegen unter dem zurueckgegebenen Hauptmodel. role ist ein optionaler semantischer Marker; Spezialrollen nur verwenden, wenn ein Audit sie verlangt.'}; polygons=@{type='array';required=$false;default='[]';description='Planare Flaechen [{name,points:[{x,y,z},...],color,material,thickness,style}]. Jede Flaeche braucht >=3 geordnete, planare, eindeutige Punkte und wird fuer ein Solid mit Rueckseite/Seiten/Enden ergaenzt. Punkte ohne Selbstschnitt und ohne redundante kollineare Ecken; fuer grosse Modelle nach Submodel/Material gruppieren.'}; points=@{type='Vector3[]';required=$false;default='null';description='Kurzform fuer genau EINE planare Flaeche; Punkte sind echte Modellkoordinaten, nicht eine Bild-/Frontskizze.'}; script=@{type='string';required=$false;default='null';description='Textuelle Kurzform fuer mehrere POLYGON-Abschnitte. Fuer nachvollziehbare, mehrteilige Modelle bevorzugt die strukturierte submodels/polygons-Form und das LowPolyHouse-Beispiel verwenden.'}; style=@{type='table';required=$false;default='{}';description='Globale Part-Defaults: color, material, materialVariant, collisionGroup, thickness, thicknessPlacement (inside Standard|center|positive|negative), anchored, canCollide, canQuery, canTouch, castShadow, transparency, reflectance, properties. Geometrie bleibt Builder-eigen: Position/Orientation/Rotation/CFrame/Size/PivotOffset in properties werden ignoriert, damit keine Flaeche verdreht wird.'}; autoWeld=@{type='bool';required=$false;default='true';description='Standard AN: WeldConstraint-Kette innerhalb jedes Untermodells, damit Polygon-Wedges auch bei anchored=false als ein Objekt verbunden bleiben. Nur autoWeld=false erzeugt bewusst getrennte Teile.'}; mainWeld=@{type='bool';required=$false;default='false';description='Verbindet alle Untermodelle automatisch mit dem ersten.'}; mainWelds=@{type='array';required=$false;default='[]';description='Animierbare Verbindungen [{name,from,to}] zwischen benannten Untermodellen. Erzeugt klassische Welds mit C0/C1 fuer Script-Animation.'}; closeOpenings=@{type='bool';required=$false;default='false';description='Erkennt unmatched boundary loops pro Submodel und versucht sie mit triangulierten AutoCaps zu schliessen. Best effort: fuer kritische/geschlossene Objekte alle Flaechen selbst modellieren und facesSkipped/skipped pruefen.'}; capStyle=@{type='table';required=$false;default='{}';description='Eigener Style fuer automatisch geschlossene Oeffnungen.'}; origin=@{type='Vector3';required=$false;default='{0,0,0}';description='Gesamt-Offset.'}; rotation=@{type='Vector3 degrees';required=$false;default='{0,0,0}';description='Gesamtrotation.'}; scale=@{type='number';required=$false;default='1';description='Gesamtskalierung.'}; maxWedges=@{type='int';required=$false;default='4000';description='Budget, maximal 10000.'}; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'} };
+        $t.Add(@{ name = 'build_polygon_model'; category = 'create'; summary = 'NUR auf ausdruecklichen Nutzerwunsch (userRequestedPolygon=true): viele WedgeParts laggen Studio - Standard ist build_mesh_model (Blender).';
+            description = 'POLICY 7.5.5 (Blender-first): Polygon-Bau ist NICHT mehr der Standard. Arena baut 3D-Modelle ueber Blender (build_mesh_model -> upload_asset -> mesh_apply_asset). build_polygon_model nur, wenn der Nutzer den Polygon-Bau ausdruecklich verlangt - dann setzt du userRequestedPolygon=true. Ohne das blockt die Bridge mit POLYGON_BLENDER_FIRST. Vorher warnst du den Nutzer SELBST: viele WedgeParts koennen Roblox Studio stark laggen lassen; empfiehl ihm ausdruecklich den Blender-Weg. modelBuildRules und das Beispiel LowPolyHouse sind die Arbeitsanleitung fuer den erlaubten Fall. Ablauf: erst Bounds/Koordinaten/Stil festlegen, dann eine vollstaendige Hauptsilhouette als benannte Submodels mit Polygonflaechen bauen, danach Wiederholungen mit build_assembly und Akzente/Details ergaenzen, Ergebnis pruefen und model_audit ausfuehren. Ein polygon={name,points=[{x,y,z},...]} ist genau eine planare Flaeche, KEIN ganzer Koerper: fuer ein geschlossenes Objekt alle Seiten/Enden als Flaechen verbinden oder closeOpenings=true fuer offene Rand-Loops setzen. Punkte muessen geordnet, planar, verschieden und nicht selbstschneidend sein. Benutze volumes fuer veraenderliche Querschnitte wie Rumpf, Griff, Saeule, Schaft oder Ast. Ein einzelner Frontumriss mit thickness bleibt eine duenne Platte. Punkte sind die Geometrie; origin/rotation-in-Grad/scale transformieren das ganze Modell, properties.Position/Size/CFrame/Orientation werden ignoriert. Der Builder trianguliert und erzeugt zwei WedgeParts pro Dreieck; AutoWeld ist je Submodel an. Nie nur ok ansehen: result.incomplete=false, facesSkipped=0 und skipped=[] verlangen; fallbackFaces/Warnungen lesen und Fehlerstellen neu bauen. Fuer organic=true bleibt organicKind Pflicht und der Spezialvertrag gilt zusaetzlich. Simple Standardteile und explizite Primitive-/Blockoutwuensche bleiben einfache Ausnahmen.';
+            params = @{ userRequestedPolygon=@{type='bool';required=$false;default='false';description='Version 7.5.5: PFLICHT true, wenn der Nutzer den Polygon-Bau ausdruecklich verlangt. Ohne true blockt die Bridge (POLYGON_BLENDER_FIRST). Standard ist build_mesh_model (Blender).'}; grade=@{type='string';required=$false;default='null';description='Version 7.2.0: ''simple'' | ''lowpoly'' | ''blockout'' - Erklaert die Einfachheit AUSDRUECKLICH (Attribut ArenaDeclaredGrade). Ohne das gilt ein Bau mit wenigen Teilen ohne Polygon-/Mesh-/Union-/Detail-Geometrie als Entwurf (DRAFT_GRADE_RISK).'}; modelName=@{type='string';required=$false;default="'ArenaPolygonModel'";description='Oberstes fertiges Model.'}; organic=@{type='bool';required=$false;default='false';description='Fuer jedes bewusst organische Modell true setzen; zusammen mit organicKind erforderlich. Registriert das Modell fuer frischen per-model Audit und report_done-Gate.'}; organicKind=@{type='string';required=$false;default='null';description='Pflicht bei organic=true: creature|plant|tree|prop|custom. creature aktiviert Volumen-, Gesichts- und optionale Fluegelmessung.'}; organicTraits=@{type='array';required=$false;default='[]';description='Optionale Kreaturenmerkmale, derzeit ["wings"]: verlangt wing_left (+Z) und wing_right (-Z) mit gemessener Anbindung an den Torso.'}; volumes=@{type='array';required=$false;default='[]';description='Allgemeine geschlossene Loft-Volumen [{name,role,sides=6..16,sections:[{center={x,y,z},heightRadius,depthRadius},...],style}]. Fuer veraenderliche Querschnitte in Rumpf/Huelle, Griff, Saeule, Schaft oder Ast; mindestens 3 Stationen, Radien >=0.025 vor globalem scale und benachbarte Zentren >=0.01 Studs. Creature zusaetzlich: body >=4, head >=3 Stationen und beide >=8 Seiten.'}; submodels=@{type='array';required=$false;default='[]';description='EMPFOHLEN fuer jedes zusammengesetzte Modell: [{name,role,containerClass="Folder|Model",polygons:[{name,points:[{x,y,z},...],style?}],style,autoWeld,closeOpenings,capStyle}]. Jede Polygonliste enthaelt einzelne planare Flaechen; groupiere nach Bauteil/Farbe/Material. Alle Submodels liegen unter dem zurueckgegebenen Hauptmodel. role ist ein optionaler semantischer Marker; Spezialrollen nur verwenden, wenn ein Audit sie verlangt.'}; polygons=@{type='array';required=$false;default='[]';description='Planare Flaechen [{name,points:[{x,y,z},...],color,material,thickness,style}]. Jede Flaeche braucht >=3 geordnete, planare, eindeutige Punkte und wird fuer ein Solid mit Rueckseite/Seiten/Enden ergaenzt. Punkte ohne Selbstschnitt und ohne redundante kollineare Ecken; fuer grosse Modelle nach Submodel/Material gruppieren.'}; points=@{type='Vector3[]';required=$false;default='null';description='Kurzform fuer genau EINE planare Flaeche; Punkte sind echte Modellkoordinaten, nicht eine Bild-/Frontskizze.'}; script=@{type='string';required=$false;default='null';description='Textuelle Kurzform fuer mehrere POLYGON-Abschnitte. Fuer nachvollziehbare, mehrteilige Modelle bevorzugt die strukturierte submodels/polygons-Form und das LowPolyHouse-Beispiel verwenden.'}; style=@{type='table';required=$false;default='{}';description='Globale Part-Defaults: color, material, materialVariant, collisionGroup, thickness, thicknessPlacement (inside Standard|center|positive|negative), anchored, canCollide, canQuery, canTouch, castShadow, transparency, reflectance, properties. Geometrie bleibt Builder-eigen: Position/Orientation/Rotation/CFrame/Size/PivotOffset in properties werden ignoriert, damit keine Flaeche verdreht wird.'}; autoWeld=@{type='bool';required=$false;default='true';description='Standard AN: WeldConstraint-Kette innerhalb jedes Untermodells, damit Polygon-Wedges auch bei anchored=false als ein Objekt verbunden bleiben. Nur autoWeld=false erzeugt bewusst getrennte Teile.'}; mainWeld=@{type='bool';required=$false;default='false';description='Verbindet alle Untermodelle automatisch mit dem ersten.'}; mainWelds=@{type='array';required=$false;default='[]';description='Animierbare Verbindungen [{name,from,to}] zwischen benannten Untermodellen. Erzeugt klassische Welds mit C0/C1 fuer Script-Animation.'}; closeOpenings=@{type='bool';required=$false;default='false';description='Erkennt unmatched boundary loops pro Submodel und versucht sie mit triangulierten AutoCaps zu schliessen. Best effort: fuer kritische/geschlossene Objekte alle Flaechen selbst modellieren und facesSkipped/skipped pruefen.'}; capStyle=@{type='table';required=$false;default='{}';description='Eigener Style fuer automatisch geschlossene Oeffnungen.'}; origin=@{type='Vector3';required=$false;default='{0,0,0}';description='Gesamt-Offset.'}; rotation=@{type='Vector3 degrees';required=$false;default='{0,0,0}';description='Gesamtrotation.'}; scale=@{type='number';required=$false;default='1';description='Gesamtskalierung.'}; maxWedges=@{type='int';required=$false;default='4000';description='Budget, maximal 10000.'}; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'} };
             returns = '{ model, organicKind, submodels, polygons, volumesBuilt, volumeSummary, triangles, wedges, autoCaps, welds, weldedSubmodels, autoWeldDefault, mainWelds, facesTotal, facesBuilt, facesSkipped, incomplete, skipped, fallbackFaces, ignoredGeometryProperties, geometryInvariant, geometry, method, editable }, warnings';
             example = @{ modelName='LowPolyHouse'; grade='lowpoly'; origin=@{x=0;y=0;z=0}; rotation=@{x=0;y=0;z=0}; scale=1; style=@{thickness=0.04;anchored=$true;canCollide=$true}; submodels=@(
                 @{name='Walls';style=@{color='#D7B77E';material='SmoothPlastic'};polygons=@(
@@ -21075,8 +21134,8 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
             returns = '{ ok, result { started, blender { state, ready, version, path, source, percent, message, detail, probe, enabled, meshFolder, installLog, uploadExport, uploadExportDetail, uploadHint? }, note } }';
             example = @{};
             errors = @() })
-        $t.Add(@{ name = 'build_mesh_model'; category = 'mesh'; summary = 'Blender baut im Hintergrund ein OBJ (ein Slot = ein MeshPart).';
-            description = 'EMPFOHLEN fuer jede anspruchsvolle Form (glatte oder organische Flaechen, viele Details, hohe Teilzahl): Blender baut sie im HINTERGRUND - dieser Aufruf antwortet sofort mit jobId, also NIEMALS synchron warten. Je Slot liefert der Aufruf ein Blender-Python-Skript (nur Geometrie: bpy, bmesh, math, mathutils, random; Datei-/Netzwerk-/Prozesszugriff, bpy.ops.wm.* und Exportfunktionen werden vor dem Start abgelehnt). 1 Blender-Einheit = 1 Stud; im Skript ist Z DIE HOEHE (Blender-Konvention - Z nach oben bauen, der Export dreht das Modell auf Roblox-Y; NIEMALS in Blender-Y hochbauen, genau das hat in 7.5.0 den liegenden Baum erzeugt). Die bbox-Mitte am Ursprung setzt der Runner der Bridge automatisch, Modifier werden beim Export angewandt. WICHTIG: EIN zusammenhaengendes Modell = EIN Slot (ein Baum ist EIN Mesh); mehrere Slots NUR fuer Animation, eigene Farbe/Material je Teil oder wenn EIN Mesh das Dreiecks-Budget sprengt - siehe meshBuildRules.ONE_MODEL_ONE_MESH. Danach MISST die Bridge das Ergebnis (Dreiecke, Groesse in Studs), legt die viereckigen MeshPart-Platzhalter selbst in den Place UND erzeugt je Slot eine Upload-Datei (FBX, sonst GLB). Danach gehoert der Upload DIR: upload_asset { slotKey } schickt genau diese Datei ueber die Roblox-Open-Cloud-API nach Roblox und nennt die echte Asset-Id; mesh_apply_asset setzt die Geometrie in die Platzhalter. Der Nutzer laedt NICHTS mehr von Hand hoch - er braucht nur einmal seinen Open-Cloud-Schluessel in den Einstellungen (die Antwort OPENCLOUD_KEY_MISSING nennt dir den Satz fuer ihn). Fortschritt und Zahlen mit mesh_status lesen (kurz pollen, nicht in einer engen Schleife). Siehe meshBuildRules und cloudUploadRules in den Guides.';
+        $t.Add(@{ name = 'build_mesh_model'; category = 'mesh'; summary = 'STANDARDWEG fuer 3D-Modelle (7.5.5): Blender baut im Hintergrund ein OBJ (ein Slot = ein MeshPart).';
+            description = 'STANDARDWEG (Version 7.5.5, Blender-first): JEDES 3D-Modell, das Arena baut, geht zuerst hierueber - glatte, organische, detailreiche oder hochteilige Formen ebenso wie Gebaeude, Fahrzeuge und Requisiten. Blender baut sie im HINTERGRUND - dieser Aufruf antwortet sofort mit jobId, also NIEMALS synchron warten. Je Slot liefert der Aufruf ein Blender-Python-Skript (nur Geometrie: bpy, bmesh, math, mathutils, random; Datei-/Netzwerk-/Prozesszugriff, bpy.ops.wm.* und Exportfunktionen werden vor dem Start abgelehnt). 1 Blender-Einheit = 1 Stud; im Skript ist Z DIE HOEHE (Blender-Konvention - Z nach oben bauen, der Export dreht das Modell auf Roblox-Y; NIEMALS in Blender-Y hochbauen, genau das hat in 7.5.0 den liegenden Baum erzeugt). Die bbox-Mitte am Ursprung setzt der Runner der Bridge automatisch, Modifier werden beim Export angewandt. WICHTIG: EIN zusammenhaengendes Modell = EIN Slot (ein Baum ist EIN Mesh); mehrere Slots NUR fuer Animation, eigene Farbe/Material je Teil oder wenn EIN Mesh das Dreiecks-Budget sprengt - siehe meshBuildRules.ONE_MODEL_ONE_MESH. Danach MISST die Bridge das Ergebnis (Dreiecke, Groesse in Studs), legt die viereckigen MeshPart-Platzhalter selbst in den Place UND erzeugt je Slot eine Upload-Datei (FBX, sonst GLB). Danach gehoert der Upload DIR: upload_asset { slotKey } schickt genau diese Datei ueber die Roblox-Open-Cloud-API nach Roblox und nennt die echte Asset-Id; mesh_apply_asset setzt die Geometrie in die Platzhalter. Der Nutzer laedt NICHTS mehr von Hand hoch - er braucht nur einmal seinen Open-Cloud-Schluessel in den Einstellungen (die Antwort OPENCLOUD_KEY_MISSING nennt dir den Satz fuer ihn). Fortschritt und Zahlen mit mesh_status lesen (kurz pollen, nicht in einer engen Schleife). Siehe meshBuildRules und cloudUploadRules in den Guides.';
             params = @{ modelName = @{ type = 'string'; required = $true; default = '-'; description = 'Name des Modells (auch fuer die Platzhalter-Namen).' }; slots = @{ type = 'array'; required = $true; default = '-'; description = 'Array von { name, script, offset {x,y,z}, targetTriangles, color, material, canCollide } - ein Eintrag je MeshPart (max. 12). EIN zusammenhaengendes Modell gehoert in EINEN Slot (siehe meshBuildRules.ONE_MODEL_ONE_MESH); mehrere Slots nur fuer Animation, eigene Farbe/Material oder gesprengtes Dreiecks-Budget.' }; parentRef = @{ type = 'string'; required = $false; default = 'game.Workspace'; description = 'Wohin die Platzhalter kommen.' }; origin = @{ type = 'table'; required = $false; default = '{x=0,y=0,z=0}'; description = 'Weltposition des Modell-Ursprungs; Slot-Offsets kommen darauf.' }; rotationY = @{ type = 'number'; required = $false; default = '0'; description = 'Drehung um Y in Grad.' }; anchored = @{ type = 'boolean'; required = $false; default = 'true'; description = 'Anchored der Platzhalter.' }; timeoutSeconds = @{ type = 'number'; required = $false; default = '300'; description = 'Zeitlimit je Slot (max. 900).' } };
             returns = '{ ok, result { jobId, state="queued", slotCount, blender, meshFolder, note, files } }';
             example = @{ modelName = 'Turret'; origin = @{ x = 12; y = 4; z = -18 }; slots = @( @{ name = 'base'; script = 'bpy.ops.mesh.primitive_cylinder_add(vertices=24, radius=1.4, depth=0.6)'; color = '#8A8F99' } ) };
@@ -21311,8 +21370,8 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
         return @{
             importantRules = @(
                 'Choose the tools and workflow that best fit the task. The bridge exposes precise read, build, script, asset, playtest and batch tools; these are capabilities, not a mandatory checklist.',
-                'For ANY nontrivial custom 3D model, prefer build_polygon_model for the main silhouette and major freeform/curved/tapered surfaces - across characters, props, architecture, vehicles, landmarks, terrain and set pieces, not only organic examples. It works much like polygon modelling while the bridge handles triangulation, seamless Wedges, named submodels, per-submodel style, hole caps and default-on WeldConstraints. Use build_assembly as a complement for repeated or modular structure, and native Parts for truly simple, repeated, functional or explicitly primitive/low-poly geometry; do not reduce a hero/custom model to primitive blocks. NEVER set autoWeld=false unless physically independent polygon pieces are requested. See modelBuildRules for the universal complexity and finish bar.',
-                'NONTRIVIAL 3D BUILD METHOD (ALL CATEGORIES): follow modelBuildRules.polygonWorkflow. The first model-building call for every nontrivial custom object is build_polygon_model, and that call must contain the complete distinguishing silhouette as multiple named planar faces/submodels or a measured loft—not only one front polygon. One polygon is one thin skin. Use polygons for authored faces, volumes for tapered/curved cross-sections, and build_assembly for repeats. Afterward verify incomplete=false, facesSkipped=0, skipped=[]; inspect fallbackFaces/warnings, run model_audit and fix the findings. This applies equally to architecture, vehicles, furniture, machines, props, terrain, characters and creatures; only truly simple standard shapes or explicit primitive/blockout requests are exceptions.',
+                'BLENDER-FIRST (Version 7.5.5): For ANY nontrivial custom 3D model the standard is build_mesh_model (Blender), then upload_asset, then mesh_apply_asset. build_polygon_model is NOT the default any more. Use it ONLY when the user explicitly asks for polygon building - then pass userRequestedPolygon=true. Before that call you warn the user yourself: many WedgeParts can make Roblox Studio lag badly, and you recommend the Blender path. Native Parts stay right for truly simple, repeated or explicitly primitive geometry; build_assembly complements repeats; do not reduce a hero/custom model to primitive blocks. Only in an allowed polygon build (userRequestedPolygon=true): NEVER set autoWeld=false unless physically independent polygon pieces are requested. Afterward verify incomplete=false, facesSkipped=0, skipped=[]; inspect fallbackFaces/warnings, run model_audit. See modelBuildRules for the finish bar.',
+                'NONTRIVIAL 3D BUILD METHOD (ALL CATEGORIES, Version 7.5.5): Blender first. Follow modelBuildRules.blenderWorkflow: build_mesh_model per form (one model = one mesh, see meshBuildRules), wait for mesh_status to report uploadReady, upload_asset, mesh_apply_asset, then model_audit and fix the findings. Polygon building (build_polygon_model) only with userRequestedPolygon=true after the lag warning. This applies equally to architecture, vehicles, furniture, machines, props, terrain, characters and creatures; only truly simple standard shapes or explicit primitive/blockout requests are exceptions.',
                 'For any visual/3D deliverable, make the result intentionally layered and finished: clear primary silhouette, secondary functional forms, tertiary trim/details, coherent palette/materials, and correct joins/placement. Complexity must be purposeful, not random part count. A simple object may remain simple; an unrequested blockout/primitive-only first draft is not a finished build. This standard is global and does not depend on model names or animal/tree examples.',
                 'For ANY visual/GUI work, ALWAYS use build_interface (whole screen in one call) or build_surface unless the user explicitly asks for raw GuiObjects: the bridge owns AnchorPoint, Scale-only UDim2, aspect locking, corner-safe padding, layered shadows, scaled strokes, gradients on strokes, REAL raster textures, CanvasGroup discipline and the runtime motion script. Call ui_capabilities first (it probes this Studio build instead of trusting training data), ui_skin to pick or extract an art direction, ui_glow for glow (never hand-build it), ui_texture for the real-texture-first recipe, ui_radial for radial menus (one image id, both colours engine-owned), and ui_audit afterwards - it measures offsetRatio, contrast, per-device pixel sizes, glow/texture/radial usage and a blandness score. See uiEngineRules below for the hard rules.',
                 'Object ids such as #42 are stable within the current plugin session and avoid ambiguity when names repeat. Paths and selectors are also accepted where documented.',
@@ -21330,7 +21389,7 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
                 'USER CHANNEL (7.2.0): the user can message you WHILE you work ("Nachricht an Arena senden" in the bridge place row). Every response then carries _bridge.userMessages plus _bridge.userMessageContract. Read it first, apply it, tell the user what you changed, and acknowledge with ack_user_message { id } - an unacknowledged message repeats in up to three responses. wait_for_user { maxSeconds <= 50 } blocks until a message arrives; use it only at a real decision point, never as polling. The user can also switch the place to read-only from the same menu, which is reported as WRITE_LOCKED_BY_USER.'
                 'HARD ORGANIC EVIDENCE CONTRACT (separate from the global builder preference): when an organic model is explicitly built with organic=true or is registered from per-model model_audit evidence, build and audit the real model in Studio, use a deliberate palette, install motion under that model, and fix its organicQuality issues. report_done requires fresh passing evidence for every registered organic model, even after a handoff. This is not selected or enforced from animal/tree names; see organicBuildRules for the stricter per-organic-model evidence contract.'
                 'BLENDER-MESH-BAU (7.5.0, der starke Weg fuer anspruchsvolle Modelle - ausdruecklich empfohlen): build_mesh_model laesst Blender im Hintergrund die Form bauen, die Bridge MISST sie (Dreiecke, Groesse in Studs), legt die viereckigen MeshPart-Platzhalter in den Place und erzeugt je Slot eine Upload-Datei (FBX, sonst GLB). Danach ist der Upload DEIN Schritt und keiner des Nutzers mehr: upload_asset { slotKey } schickt die Datei ueber die Roblox-Open-Cloud-API nach Roblox und nennt dir die ECHTE Asset-Id; mesh_apply_asset setzt die Geometrie in die bestehenden Platzhalter (applyPath nennt den Weg). Der Nutzer laedt NICHTS mehr von Hand hoch - das Fenster "Mesh-Uploads" ist seit 7.5.0 entfernt. Braucht er erst einen Open-Cloud-Schluessel, antwortet upload_asset mit OPENCLOUD_KEY_MISSING und einem userMessage-Satz: sage ihn ihm WORTLICH (Einstellungen -> ROBLOX OPEN CLOUD -> Tutorial). Solange ein Platzhalter noch keine Geometrie hat, ist es KEIN fertiges Modell: report_done antwortet MESH_UPLOAD_PENDING. Siehe meshBuildRules und cloudUploadRules.',
-                'BAUEN GEHT VOR SUCHEN UND VOR PRIMITIVEN (7.5.0, ausdrueckliche Empfehlung der Bridge): baue eigene 3D-Geometrie, statt sie im Katalog zu suchen oder aus Baellen und Bloecken zusammenzustecken. Fuer die Hauptform, freie Flaechen und alles Organische nimm build_polygon_model; wird eine Form damit nicht gut (glatte Rundungen, viele Details, hohe Teilzahl), nimm den Blender-Weg (build_mesh_model + upload_asset + mesh_apply_asset). Der Katalog (search_assets/insert_asset) ist ein NOTBEHELFER, den du dem Nutzer anbietest - kein Standard. Bloecke, Kugeln und Zylinder sind Bausteine fuer einfache Stuetzen und Details, nicht fuer das Modell selbst.'
+                'BAUEN GEHT VOR SUCHEN UND VOR PRIMITIVEN (7.5.5, Blender-first): baue eigene 3D-Geometrie, statt sie im Katalog zu suchen oder aus Baellen und Bloecken zusammenzustecken. Fuer jede nichttriviale Form nimm build_mesh_model (Blender) - der Standardweg. build_polygon_model nur auf ausdruecklichen Nutzerwunsch (userRequestedPolygon=true), und dann warnst du vorher vor Lag durch viele WedgeParts und empfiehlst Blender. Der Katalog (search_assets/insert_asset) ist ein NOTBEHELFER, den du dem Nutzer anbietest - kein Standard. Bloecke, Kugeln und Zylinder sind Bausteine fuer einfache Stuetzen und Details, nicht fuer das Modell selbst.'
             )
             worldEngineRules = @{
                 title = 'World Engine 1.0 - the world is a place with rules, not a pile of parts'
@@ -21342,8 +21401,8 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
                 props = 'prop_save stores a selection under workspace.ArenaProps; prop_place clones it with deterministic variation and ground snap. Prefer saved props over rebuilding the same tree ten times by hand.'
             }
             toolboxRules = @{
-                title = 'Toolbox Engine 1.0 (Version 7.1.4) - procedural first, catalog last, never in parallel'
-                default = 'BUILD PROCEDURALLY BY DEFAULT. For every nontrivial user-visible 3D build, prefer build_polygon_model for the distinctive main silhouette in any category, and use build_assembly/native Parts for repeated or supporting geometry. Deliver secondary structure, purposeful details and a coherent palette; do not start with a primitive-only placeholder or search_assets/insert_asset unless the user requests an asset or approves a fallback. Keep simple tasks simple. For any organic model, explicitly set organic=true and install enabled motion under that model; fresh per-model geometry, palette and motion evidence is required before report_done.'
+                title = 'Toolbox Engine 1.0 (Version 7.5.5) - Blender first, catalog last, never in parallel'
+                default = 'BLENDER FIRST (Version 7.5.5): Jedes nichttriviale 3D-Modell baut Arena ueber build_mesh_model (Blender), dann upload_asset und mesh_apply_asset. build_polygon_model ist KEIN Standard mehr: nur auf ausdruecklichen Nutzerwunsch (userRequestedPolygon=true), und dann warnt Arena vorher vor Lag durch viele WedgeParts und empfiehlt Blender. Primitive und Katalog sind Notbehelfe. Keep simple tasks simple. Organic models use the same Blender path with an explicit palette and enabled motion; fresh evidence is required before report_done.'
                 beforeUsingTheCatalog = 'If a procedural shape is genuinely not realistic enough or technically out of reach, say so and OFFER a limited, transparent fallback FIRST. Let the user decide. Do not start catalog calls on your own initiative.'
                 hardLimits = 'Per place the bridge allows at most 2 catalog requests at a time and EXACTLY ONE active asset import. Anything beyond that answers immediately with TOOLBOX_BUSY or TOOLBOX_IMPORT_IN_FLIGHT. Never run asset searches in parallel, never poll in a loop, and never retry automatically after a timeout.'
                 timeouts = 'Every catalog request has a hard time limit (12 s, 8 s for the pre-insert validation) and a 25 s budget per tool call. A failure is FINAL and typed: CATALOG_TIMEOUT or CATALOG_UNAVAILABLE. Say "Katalog nicht verfuegbar" to the user and continue procedurally instead of retrying.'
@@ -21408,7 +21467,7 @@ end
                 title = 'Model Build Engine 1.1 - universal polygon workflow for every nontrivial 3D category'
                 whenThisApplies = 'Every task that creates or materially remodels visible 3D geometry, regardless of subject, model name or whether it is organic. This is a global build preference, not an animal/tree-only rule.'
                 default = 'For every nontrivial custom model, aim materially beyond a first-pass primitive sketch. Design a readable primary silhouette, add secondary forms that explain function and proportion, then add restrained tertiary details, trim, joints and surface structure. Use explicit, coherent color/material roles and correct attachment/placement. More parts without design purpose is not more quality.'
-                polygonPreference = 'For EVERY nontrivial custom visible 3D model in ANY category—not only creatures—the first model-creation/build call MUST be build_polygon_model and must include its complete distinctive main silhouette, not merely one front plate. Prefer it for any freeform, tapered, curved, angled, irregular or hero surface: characters, props, furniture, architecture, vehicles, weapons, machinery, landmarks, terrain and set pieces. Organize the call into named submodels and polygons with per-submodel color/material roles; use volumes for changing cross-sections. Use autoWeld by default and mainWelds only for intended joins/animation. This is not a requirement for truly simple standard Parts or an explicit primitive/blockout request. The builder is preferred, not mandatory for every simple Part.'
+                polygonPreference = 'BLENDER-FIRST (Version 7.5.5): For EVERY nontrivial custom visible 3D model in ANY category the first model-creation call is build_mesh_model (one model = one mesh, see meshBuildRules). build_polygon_model is NOT the first call any more - it needs an explicit user request (userRequestedPolygon=true) and a prior warning to the user about lag from many WedgeParts. Native Parts remain right for genuinely standard supports, pivots and small accents; build_assembly for repeated modules.'
                 polygonDecision = 'Choose the geometry representation by shape, not by subject: polygons = individual planar faces/panels; submodels = named components and material/color groups containing faces; volumes = closed lofts for a shape whose cross-section changes along a centerline; build_assembly = repeated modules; native Parts = genuinely standard supports, pivots and accents. A polygon is one skin, not a solid: construct front/back/sides/ends or use closeOpenings for unmatched loops. A single front silhouette plus thickness is still a plate.'
                 polygonInputContract = 'Structured form: build_polygon_model { modelName, origin={x,y,z}, rotation={x,y,z in degrees}, scale, style={...}, submodels=[{name,style,polygons=[{name,points=[{x,y,z},...],style?}]}], volumes=[{name,role,sides=6..16,sections=[{center,heightRadius,depthRadius},...]}], closeOpenings, autoWeld, mainWelds, maxWedges }. Points are actual local geometry. Each face must have >=3 ordered distinct coplanar vertices, no self-crossing/duplicate/collinear runs. origin/rotation/scale transform the model; Position/Size/CFrame/Orientation inside polygon properties are ignored.'
                 polygonWorkflow = '1 inspect Place/selection and choose a stable frame, dimensions, palette/materials. 2 Plan the full silhouette as named large forms and surfaces before writing. 3 Make one structured build_polygon_model call for the principal model; share exact coordinates on adjacent face edges. 4 Add repeated modules via build_assembly and deliberate details/refine; do not replace the hero silhouette with blocks. 5 Read the returned model id, result.incomplete, facesSkipped, skipped, fallbackFaces, triangles, wedges, warnings and geometry. Do NOT accept ok=true as proof when faces are skipped. Fix bad named faces/point loops and rebuild. 6 Run model_audit on the returned model, plus world_audit for scenes; fix findings before report_done. The core build_polygon_model docs include a complete closed LowPolyHouse example.'
@@ -21418,12 +21477,12 @@ end
                 complementaryTools = 'Use build_assembly for repeated structural or modular pieces (frames, stairs, rails, facades, ribs, supports) and combine it with a polygon-built hero silhouette when both are useful. Use native Parts for genuinely simple standard shapes, structural supports, joints, pivots and small accents; bulk_create/grid/clone are for repetition, not for replacing the distinctive centerpiece with blocks.'
                 finishBar = 'A nontrivial standalone asset is not complete as one box/cylinder or a primitive-only placeholder: complete the main form, its supporting components, visual details, coherent palette/materials, welds/collision and grounding as relevant. For scenes, add purposeful variation, depth, readable pathways and consistent style. Low-poly is a style, not permission to stop at a primitive blockout.'
                 exceptions = 'Keep inherently simple tasks simple and follow explicit user requests for primitives, blockouts, low part counts or a deliberately plain style. Scale scope to time/tool/part limits; reduce how many assets are built instead of degrading the finish of each delivered asset.'
-                workflow = 'inspect/select/measure -> choose art direction or world_style -> follow polygonWorkflow and build the complete main custom silhouette with build_polygon_model (first model-build call for nontrivial custom 3D) -> assembly/native support geometry -> detail/refine -> verify the returned face/wedge diagnostics -> model_audit (and world_audit for scenes) -> fix measured issues -> report_done. Build directly in the target Place; a generated source file or later unsupported quality claim is not a model.'
+                workflow = 'inspect/select/measure -> choose art direction or world_style -> build_mesh_model (Blender, STANDARD) -> mesh_status uploadReady -> upload_asset -> mesh_apply_asset -> assembly/native support geometry -> detail/refine -> model_audit (and world_audit for scenes) -> fix measured issues -> report_done. Build directly in the target Place; a generated source file or later unsupported quality claim is not a model. Polygon building only with userRequestedPolygon=true after the lag warning.'
                 motion = 'Add animation only when the task requests motion or the object is inherently living/moving. For organic models, explicitly use organic=true so per-model geometry, palette, enabled-motion and fresh-audit evidence is enforced; see organicBuildRules.'
             }
             meshBuildRules = @{
-                title = 'Mesh-Build Engine 1.2 (Version 7.5.4) - EIN Modell ist EIN Mesh, Blender baut, der Agent laedt hoch (Open Cloud), die Bridge setzt ein'
-                whenThisApplies = 'Der STARKE Weg neben build_polygon_model und ausdruecklich empfohlen, wenn eine Form mit Dreiecken/Wedges nicht gut wird (glatte oder organische Oberflaechen, viele Details, hohe Teilzahl) oder wenn das Modell im Place nur EIN Bauteil statt tausender Wedges sein soll. Fuer Entwurf, Iteration und fuer alles, was im Studio per Teil editierbar bleiben muss, bleibt build_polygon_model die erste Wahl. Seit 7.5.0 ist der Upload VOLL AUTOMATISIERT - der Nutzer muss nichts mehr hochladen.'
+                title = 'Mesh-Build Engine 1.3 (Version 7.5.5) - STANDARDWEG: EIN Modell ist EIN Mesh, Blender baut, der Agent laedt hoch (Open Cloud), die Bridge setzt ein'
+                whenThisApplies = 'DER STANDARDWEG (Version 7.5.5, Blender-first): Jedes 3D-Modell, das Arena baut, laeuft zuerst ueber Blender - egal ob Form, Organik oder Detailgrad. build_polygon_model gibt es nur noch auf ausdruecklichen Nutzerwunsch (userRequestedPolygon=true) und dann nur nach der Lag-Warnung. Seit 7.5.0 ist der Upload VOLL AUTOMATISIERT - der Nutzer muss nichts mehr hochladen.'
                 ONE_MODEL_ONE_MESH = 'HARTE REGEL SEIT 7.5.1 (Owner-Beschwerde: "Warum baut mir Arena Wurzel, Stamm, Aeste und Kronen einzeln"): EIN zusammenhaengendes Modell wird als EIN Mesh in EINEM Slot gebaut - ein Baum ist EIN Mesh, ein Fass EIN Mesh, eine Laterne EIN Mesh. Mehrere Slots sind NUR in genau drei Faellen erlaubt: (1) bestimmte Teile werden ANIMIERT (je bewegliches Glied ein Slot), (2) bestimmte Teile brauchen EIGENE EIGENSCHAFTEN (eigene Farbe/Material/CanCollide/Transparenz, die ein einzelnes MeshPart nicht tragen kann), (3) die DREIECKSZAHL sprengt das Budget (dann nach Koerperteilen splitten, nicht nach "Wurzel/Stamm/Aeste/Krone"-Raten). Sonst gilt: EIN Blender-Skript, das die ganze Form baut - inklusive Wurzeln, Krone, Blaetter oder Details -, EIN Slot, EIN MeshPart. Wer ohne einen dieser drei Gruende splittet, macht die Arbeit des Nutzers groesser (mehr Uploads, mehr Platzhalter, mehr MeshParts) und hat den Bau nicht verstanden.'
                 slots = 'Mehrere Slots NUR nach der Regel oben. Wenn wirklich geteilt wird, dann nach Funktion: je bewegliches Glied ein Slot (Kreatur, Fahrzeug, Maschine, Tuer, Rad) und die Gelenke wie gewohnt mit Welds/Motor6D verbinden; ein MeshPart traegt genau EINE Farbe/EIN Material (Roblox uebernimmt keine Blender-Materialien) - unterschiedliche Farben sind der zweite legitime Grund. Farbe und Material setzt Roblox ueber die Slot-Angaben color/material. Eine Zierde (Blatt, Blume, Frucht, Zierband) gehoert in DASSELBE Mesh, solange sie sich nicht bewegen muss.'
                 axesAndUnits = 'ACHSEN UND EINHEITEN - hier hat sich 7.5.0 selbst widersprochen, das gilt jetzt eindeutig: 1 Blender-Einheit = 1 Stud. Im Blender-Skript ist Z OBEN (Blender-Konvention; alle Bauten im Skript also mit Z als Hoehe). Der Runner/Export dreht das GANZE Modell beim Export in die Roblox-Welt: Blender +Z (oben) wird Roblox +Y (oben), Blender +Y wird Roblox Z, Blender +X bleibt Roblox X. Deshalb steht ein Baum im Blender-Skript in Z-Richtung aufrecht - und kommt aufrecht in Roblox an. Was du NICHT tust: im Skript auf Y hochbauen ("weil Roblox Y oben hat"), Achsen selbst per Rotation/Rotation_Euler drehen, den Export mit eigenen forward_axis/up_axis-Parametern aufrufen oder Einheiten umrechnen (cm/feet/Inches). Der Runner erzeugt OBJ UND die Upload-Datei (FBX, sonst GLB) aus DERSELBEN Szene und DERSELBEN Mitte - beide Wege zeigen also in dieselbe Richtung, und mesh_status nennt die gemessene Groesse bereits in Studs (X/Y/Z). Wenn die Messung in Roblox passt, passt auch das Mesh.'
@@ -21438,7 +21497,7 @@ end
                 filePathIsMandatory = 'PFLICHT BEI JEDEM GESCHEITERTEN UPLOAD (Owner-Wunsch 7.5.1): Nenne dem Nutzer IMMER den exakten Dateipfad der Datei, die hochgeladen werden sollte - woertlich, in einer eigenen Zeile, kopierbar. Die Antwort von upload_asset traegt ihn als filePath (und sourcePath); mesh_status nennt ihn je Slot als uploadPath. Beispielsatz: "Die Datei liegt hier: C:\\Users\\<du>\\AppData\\Local\\ArenaRobloxBridge\\meshes\\<jobId>\\stamm.fbx - damit kannst du sie selbst in Roblox hochladen (Toolbox -> Import)." Auch wenn der Pfad schon in der Antwort steht: sag ihn im Chat, damit der Nutzer ihn nicht suchen muss.'
             }
             cloudUploadRules = @{
-                title = 'Cloud-Upload Engine 1.0 (Version 7.5.4) - Meshes und Bilder voll automatisch nach Roblox'
+                title = 'Cloud-Upload Engine 1.0 (Version 7.5.5) - Meshes und Bilder voll automatisch nach Roblox'
                 whenThisApplies = 'Immer, wenn ein Mesh (aus Blender) oder ein Bild (z. B. von dir selbst erzeugt) nach Roblox muss. Du brauchst dafuer KEINEN Menschen mehr - nur den einmalig hinterlegten Open-Cloud-Schluessel des Nutzers. Der Nutzer laedt nichts mehr von Hand hoch, es gibt kein Mesh-Fenster mehr.'
                 workflow = '1 Mesh: build_mesh_model -> mesh_status (uploadPath/uploadReady) -> upload_asset { slotKey } -> assetId -> mesh_apply_asset { slots = [ { key, assetId } ] } -> model_audit. Bild: upload_asset { fileName = "name.png", contentBase64 = "<Base64>" } -> assetId -> selbst einsetzen (Decal.Texture, Texture.Texture, ImageLabel.Image, MeshPart.TextureID) -> auditieren.'
                 meshUpload = 'Roblox Open Cloud legt ein hochgeladenes FBX/GLB als MODELL an (nicht als nackte Mesh-Id). Die Bridge kommt damit zurecht: mesh_apply_asset laedt das Modell, nimmt die MeshId aus dem MeshPart darin und setzt sie in den bestehenden Platzhalter ein (applyPath = modelMeshId). Alternativ fuegst du das komplette Modell mit insert_asset ein und positionierst es selbst.'
@@ -21448,11 +21507,11 @@ end
                 honesty = 'Die Asset-Id ist nur dann echt, wenn Roblox sie genannt hat. Steht die Operation noch auf pending, rufst du upload_asset { operationId } erneut auf (kein enger Loop). Fehlertexte von Roblox gehoren unverfaelscht an den Nutzer - die Bridge versteckt und beschoenigt nichts.'
             }
             organicBuildRules = @{
-                title = 'Organic Build Engine 1.1 (Version 7.5.4) - typed creature volumes, physical face, bilateral anatomy, measured before done'
-                whenThisApplies = 'For any model intentionally built as organic (character, creature, plant, tree, prop or other organic free-form shape), this is a hard sequence independent of its name: the FIRST write targeting that model is build_polygon_model { organic=true, organicKind=... } with an explicit contrasting palette. For organicKind=creature the same first build must create closed role=body and role=head loft volumes; a long flat side-profile wedge is not a body or head volume. Use organicTraits=["wings"] when wings are intended and build role=wing_left/wing_right. Face features are physical 3D geometry, never Decal/Texture/GUI substitutes. Do not start with run_lua, build_assembly, loose primitives, or an external generator file. Then install an enabled motion Script under that same model, run model_audit on every returned organic model after the final edit, and fix every organicQuality issue. report_done is rejected with ORGANIC_AUDIT_REQUIRED/DETAIL_REQUIRED until every registered model passes.'
-                theOneIdea = 'For an organic model, the first write is build_polygon_model { organic=true, organicKind=... }. A creature gets real closed lofts for body and head (at least 4/3 stations, at least 8 sides) plus physical eyes and pupils; winged creatures get a mirrored, torso-attached wing pair. No side-view wedge, face sticker, or unmeasured claim can pass. Then add joints/details, install the enabled motion Script beneath the model, and audit the exact model.'
+                title = 'Organic Build Engine 1.1 (Version 7.5.5) - typed creature volumes, physical face, bilateral anatomy, measured before done'
+                whenThisApplies = 'For any model intentionally built as organic (character, creature, plant, tree, prop or other organic free-form shape) the STANDARD path is Blender (build_mesh_model, one mesh per model, see meshBuildRules). Organic models are not registered for the polygon organic audit unless the user explicitly asked for polygon building: then the first write is build_polygon_model { organic=true, organicKind=..., userRequestedPolygon=true } with an explicit contrasting palette. Install an enabled motion Script under the model, run model_audit on every returned organic model after the final edit, and fix findings. report_done is rejected while a registered model lacks fresh passing evidence.'
+                theOneIdea = 'For an organic model the FIRST write targeting that model is build_mesh_model (Blender, STANDARD). Polygon organic (build_polygon_model { organic=true, organicKind=... }) only with userRequestedPolygon=true on explicit user request and after the WedgeParts lag warning. A creature built as polygon needs real closed lofts for body and head plus physical eyes and pupils; winged creatures get a mirrored, torso-attached wing pair. No side-view wedge, face sticker, or unmeasured claim can pass. Then add joints/details, install the enabled motion Script under that same model, and audit the exact model.'
                 forbidden = @(
-                    'FORBIDDEN - BYPASSING THE POLYGON BUILDER: the first write targeting any explicitly organic model must be build_polygon_model { organic=true, organicKind=... }. A build_assembly/run_lua/create_instance organic model first, a local generator script, or an unmarked polygon call is rejected with ORGANIC_POLYGON_REQUIRED; this gate is controlled by organic=true, not by the model name.',
+                    'FORBIDDEN - POLYGON WITHOUT USER REQUEST (7.5.5): build_polygon_model without userRequestedPolygon=true is blocked with POLYGON_BLENDER_FIRST. Organic models go through Blender (build_mesh_model) by default; a local generator script or an unmarked polygon call is rejected with ORGANIC_POLYGON_REQUIRED; this gate is controlled by organic=true, not by the model name.',
                     'FORBIDDEN - FLAT CREATURE SILHOUETTE: a body/head made from one long side-view wedge or an unclosed sheet is not a volume. Use body/head loft roles with multiple cross-sections, end caps, and measurable depth.',
                     'FORBIDDEN - FACE STICKER: Decal, Texture, SurfaceGui or BillboardGui on the head/face cannot replace physical bilateral eye and pupil geometry; model_audit reports FACE_IMAGE_OVERLAY/EYES_NOT_3D/PUPILS_NOT_3D.',
                     'FORBIDDEN - ONE-SIDED OR HIDDEN WINGS: if wings are intended, declare organicTraits=["wings"] and provide role=wing_left / role=wing_right on opposite sides with bounds overlapping the torso.',
@@ -21513,8 +21572,8 @@ local function taperedSegment(parent, a, b, d1, d2, props)
 end
 '@
                 animationRule = 'Organic means: several small motions with DIFFERENT periods, never one rotation. Breathing (torso scale +-2-3 %, 3-4 s), head look/bob (+-4-8 degrees, 2.7 s), ear flicks (short, irregular), tail chain where each segment lags the previous by ~0.1 s and the tip swings furthest, weight shift/sway (+-1.5 degrees, ~6 s), blink every 3-6 s (eye scale to 0.05 for ~0.12 s). Build real joints (Motor6D for animated limbs, WeldConstraint for rigid parts) and drive them with TweenService in a small Script (insert_script) or with run_lua while building. Delete nothing that moves: anchored parts may be tweened directly, unanchored rigs need Motor6D + a Script.'
-                detailBudget = 'Detail is measured, not claimed: build_polygon_model/build_assembly for the volumes, refine for trim/ArenaDetail parts, then model_audit. Add real surface structure (fur plates, feather rows, bark strips, scale rows) in large-to-small order, and give back, belly, muzzle and paws their own colour or material - a single flat colour over 40 parts still reads as a draft.'
-                workflow = 'measure -> FIRST write targeting the organic model: build_polygon_model { organic=true, organicKind=creature, volumes=[{role=body,sections=[... >=4 ...]},{role=head,sections=[... >=3 ...]}], style={... at least three contrasting colour assignments ...} } -> add role-tagged physical eyes/pupils, other anatomy and any wing_left/wing_right pair -> install enabled motion Script as a descendant -> model_audit { ref=<returned model id> } AFTER the final edit -> fix every organicQuality.issues -> only then report_done. For repeated animals, save/clone an already-audited organic model; do not create the first animal with build_assembly.'
+                detailBudget = 'Detail is measured, not claimed: build_mesh_model (Blender) for the form and build_assembly for repeats (polygon volumes only with userRequestedPolygon), refine for trim/ArenaDetail parts, then model_audit. Add real surface structure (fur plates, feather rows, bark strips, scale rows) in large-to-small order, and give back, belly, muzzle and paws their own colour or material - a single flat colour over 40 parts still reads as a draft.'
+                workflow = 'measure -> build the organic form with build_mesh_model (Blender, STANDARD) -> upload_asset -> mesh_apply_asset -> enabled motion Script under the model -> model_audit after the final edit -> fix measured issues -> report_done. Polygon organic (build_polygon_model { organic=true, organicKind=creature, volumes=[...], userRequestedPolygon=true }) only on explicit user request after the WedgeParts lag warning.'
                 selfCheck = @(
                     'Creature builds declare organicKind=creature and contain a closed >=4-station body loft plus >=3-station head loft; each has >=8 sides and measured Y/Z depth ratio >=0.16.',
                     'Eyes/pupils are distinct physical BaseParts with eye_left/eye_right and pupil_left/pupil_right role attributes; no face image overlay remains beneath head/face roots.',
@@ -21730,7 +21789,7 @@ end
             }
             typedValues = 'Complex values are typed JSON: {"type":"Vector3","x":0,"y":5,"z":0}, {"type":"Color3","rgb":[255,0,0]}, {"type":"CFrame","position":{...},"orientation":{...}}, {"type":"EnumItem","enum":"Material","name":"Neon"}. Short forms work too: [0,5,0] for a Vector3, "Neon" for an enum, "#FF0000" for a colour, [255,0,0] for a Color3.'
             workflows = @{
-                buildSomething = @('Understand as much context as the task needs', 'Choose build_assembly / build_polygon_model / bulk_create / unions / regular tools', 'Optionally verify or select the result')
+                buildSomething = @('Understand as much context as the task needs', 'Choose build_mesh_model (Blender) first / build_assembly / bulk_create / unions / regular tools', 'Optionally verify or select the result')
                 editAScript = @('search className=Script', 'get_script (note the hash)', 'patch_script with a unique snippet', 'compile_check the result', 'set/patch with expectHash', 'get_output / get_errors')
                 testASimulation = @('sim_start is disabled; do not call it (the former Studio Run path exits Edit mode)', 'Use compile_check for syntax, run_lua for one-off edit-place logic, and read tools for state', 'sim_status can inspect an existing session; sim_stop only ends an existing bridge-owned session', 'For live physics/server-script behavior, the user must test manually in Roblox Studio until a supported true Edit-mode API exists')
                 manyObjects = @('build_assembly for grouped linear/radial repetition', 'bulk_create or clone_instance for simple arrays', 'batch when combining independent operations')
@@ -21791,7 +21850,7 @@ end
             welcome = 'Welcome. This first response includes the available capabilities and reference documentation. Use whatever subset helps the current task; details remain available through GET /api/docs or get_docs.'
             quickStart = @(
                 'Inspect the Place when context is needed.',
-                'For nontrivial custom 3D, follow modelBuildRules.polygonWorkflow and its build_polygon_model example; that workflow applies to all categories, not only creatures.',
+                'For nontrivial custom 3D, follow modelBuildRules (Blender first: build_mesh_model, upload_asset, mesh_apply_asset); the same rule applies to all categories, not only creatures.',
                 'Choose dedicated tools, master build tools, assets, script editing or run_lua according to the task.',
                 'Use get_docs { tool: "..." } whenever a parameter needs clarification.'
             )
@@ -21818,7 +21877,7 @@ end
         $out.qualityContract = @(
             'No turn has to end with "done". It ends with report_done OR with a handoff - both are complete finishes.',
             'Classify first: single object, scene, or full game. The class decides the minimum scope, never an excuse for primitive-only first drafts.',
-            'GLOBAL 3D BUILD BAR, independent of names/examples: first follow modelBuildRules.polygonDecision, polygonInputContract and polygonWorkflow. For every nontrivial custom 3D model, the first model-building call is build_polygon_model and it builds the complete distinctive main silhouette, in ANY category, not just a creature. Then add secondary structure, tertiary details, purposeful color/material design and correct joins/placement; pair with build_assembly for repeated modules and Parts for simple supports/details. Read the worked LowPolyHouse example in build_polygon_model docs and inspect facesSkipped/skipped before claiming completion.',
+            'GLOBAL 3D BUILD BAR (Version 7.5.5, Blender-first), independent of names/examples: follow modelBuildRules - build_mesh_model per form, upload_asset, mesh_apply_asset, then build_assembly or native Parts for supports and details. build_polygon_model is allowed only on explicit user request (userRequestedPolygon=true) after the lag warning. Read modelBuildRules.axesAndUnits before any Blender script. Inspect the returned mesh diagnostics and model_audit before claiming completion.',
             'Do not force polygons onto a truly simple object, repeated standard geometry or an explicit primitive/low-poly request. Low-poly still means intentional silhouette and finish. Do not call a blockout, placeholder or one-box/one-cylinder stand-in complete unless that is what the user asked for.',
             'Single objects and scenes must be completed in this session: inspect/measure, build with the best-fit Bridge tools, refine, model_audit and world_audit where applicable, then fix the reported issues.',
             'Only a full game gets stages: deliver stage 1 completely, then hand off; never hand off in the middle of a stage.',
@@ -21914,7 +21973,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.5.4'
+            version = '7.5.5'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -22145,7 +22204,7 @@ end
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.5.4'
+            bridgeVersion = '7.5.5'
             executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent is never an error, but the user then sees NO bar and NO percentage at all - only your message as text. Send a real number every few calls. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
@@ -22282,7 +22341,7 @@ end
                     if ($qualityAbuse) { $qualityNote = $qualityNote + 'a primitive-only (Ball-only) group ' }
                     if ($qualityAbuse -and $qualityCylinders -gt 0) { $qualityNote = $qualityNote + 'and ' }
                     if ($qualityCylinders -gt 0) { $qualityNote = $qualityNote + ([string]$qualityCylinders + ' cylinder(s) standing as discs on their edge (90-degree error) ') }
-                    $qualityNote = $qualityNote + '- see organicBuildRules, rebuild with build_polygon_model and the cylinder helper, then run model_audit again. report_done answers DETAIL_REQUIRED until this is fixed or handed off.'
+                    $qualityNote = $qualityNote + '- see organicBuildRules, rebuild with build_mesh_model (Blender; polygon only on explicit user request) and the cylinder helper, then run model_audit again. report_done answers DETAIL_REQUIRED until this is fixed or handed off.'
                     $draftRiskView = $false
                     $draftGradeView = ''
                     $draftScoreView = -1
@@ -23032,7 +23091,7 @@ end
             }
         }
 
-        $started = Invoke-OpenCloudUpload -Shared $Shared -FilePath $filePath -FileName $sourceName -Bytes $bytes -AssetType $assetType -DisplayName $displayName -Description $description
+        $started = Invoke-OpenCloudUpload -Shared $Shared -SessionId $sessionId -FilePath $filePath -FileName $sourceName -Bytes $bytes -AssetType $assetType -DisplayName $displayName -Description $description
         if ($null -eq $started) {
             return @{ ok = $false; code = 'OPENCLOUD_BAD_RESPONSE'; error = 'Der Upload kam ohne Ergebnis zurueck.' }
         }
@@ -23318,7 +23377,7 @@ end
                                     primitiveGroups = $audit.primitiveGroups
                                     cylinderProblemCount = $cylinderProblemsNow
                                 }
-                                howToFix = 'Either rebuild it (build the silhouette with build_polygon_model, use the cylinder rule and the reference helpers from organicBuildRules, then run model_audit again) OR - if this really is a deliberate blockout or the user asked for primitives - call handoff { scope="object"/"scene"/"game", ... } saying exactly that. That is an invitation, not a punishment.'
+                                howToFix = 'Either rebuild it (build the silhouette with build_mesh_model (Blender), use the cylinder rule and the reference helpers from organicBuildRules, then run model_audit again) OR - if this really is a deliberate blockout or the user asked for primitives - call handoff { scope="object"/"scene"/"game", ... } saying exactly that. That is an invitation, not a punishment.'
                             }
                         }
                     }
@@ -23349,7 +23408,7 @@ end
                                     finishScore = $draftScoreNow
                                     draftRisk = $true
                                 }
-                                howToFix = 'Either rebuild it (real silhouette with build_polygon_model, details, palette - see modelBuildRules/organicBuildRules, then model_audit again) OR - if the simplicity is what the user asked for - declare it while building (build_polygon_model/build_assembly { grade = "simple" | "lowpoly" | "blockout" }) and run model_audit again. Or hand off honestly with handoff {...}.'
+                                howToFix = 'Either rebuild it (real silhouette with build_mesh_model (Blender), details, palette - see modelBuildRules/organicBuildRules, then model_audit again) OR - if the simplicity is what the user asked for - declare it while building (build_polygon_model/build_assembly { grade = "simple" | "lowpoly" | "blockout" }) and run model_audit again. Or hand off honestly with handoff {...}.'
                             }
                         }
                     }
@@ -23470,7 +23529,7 @@ end
                                         organicQuality = $organicQuality
                                         expectedModel = @{ id = $expectedModelId; path = $expectedModelPath; name = [string]$organicRecord.modelName }
                                         measuredModel = @{ polygonTriangles = $modelTriangles; uniqueColors = $modelUniqueColors; dominantColorShare = $modelDominantShare; nearWhiteShare = $modelNearWhiteShare; motionScripts = $modelMotionScripts; creatureMetrics = $matchingOrganicModel.creatureMetrics }
-                                        howToFix = 'Build with build_polygon_model { organic=true, organicKind=creature } and closed body/head loft volumes, role-tag physical bilateral eyes/pupils and any wings, assign three contrasting colours, install an enabled motion Script under the model, fix every organicQuality issue, then model_audit again.'
+                                        howToFix = 'Build with build_mesh_model (Blender, the standard). Polygon-organic only on explicit user request: build_polygon_model { organic=true, organicKind=creature, userRequestedPolygon=true } with closed body/head loft volumes, role-tag physical bilateral eyes/pupils and any wings, assign three contrasting colours, install an enabled motion Script under the model, fix every organicQuality issue, then model_audit again.'
                                     }
                                 }
                             }
@@ -23639,7 +23698,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.5.4'
+                        bridgeVersion = '7.5.5'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -23775,6 +23834,21 @@ end
     # preference lives in modelBuildRules for every category and remains a
     # preference rather than forcing every simple Part into polygon geometry.
     # Follow-up writes to registered organic models stay ordered until audited.
+    function Test-PolygonBuildWithoutRequest([string]$tool, $toolArgs) {
+        # Version 7.5.5 (Blender-first): build_polygon_model - direkt oder verschachtelt
+        # in batch/parallel/start_job - braucht userRequestedPolygon=true. Ohne das
+        # geht NICHTS an Studio. Der Polygon-Bau ist nur auf ausdruecklichen Wunsch da.
+        $asked = $false
+        try { $asked = ($null -ne $toolArgs -and $toolArgs.userRequestedPolygon -eq $true) } catch {}
+        if ($tool -eq 'build_polygon_model') { return (-not $asked) }
+        if ($tool -in @('batch', 'parallel', 'start_job')) {
+            $nestedJson = ''
+            try { $nestedJson = ConvertTo-Json -InputObject $toolArgs -Depth 24 -Compress } catch { return $false }
+            if ($nestedJson -match '"tool"\s*:\s*"build_polygon_model"' -and $nestedJson -notmatch '"userRequestedPolygon"\s*:\s*true') { return $true }
+        }
+        return $false
+    }
+
     function Get-OrganicBuildGuardResult([string]$tool, $toolArgs, [switch]$ParallelCall) {
         $organicGuardTools = @('set_property','set_properties','bulk_set_properties','set_attribute',
             'create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance',
@@ -23785,6 +23859,15 @@ end
             'build_assembly','build_surface','build_interface','start_job','model_audit','prop_place','prop_save',
             'refine','world_style','style_lock','world_glow','ui_glow','ui_radial','ui_texture','undo','redo')
         if ($tool -notin $organicGuardTools) { return $null }
+        if (Test-PolygonBuildWithoutRequest $tool $toolArgs) {
+            return @{
+                ok = $false; code = 'POLYGON_BLENDER_FIRST'
+                error = 'build_polygon_model wurde NICHT an Roblox Studio geschickt: Polygon-Bau ist nur noch auf ausdruecklichen Wunsch des Nutzers erlaubt. Standard ist der Blender-Weg (build_mesh_model -> upload_asset -> mesh_apply_asset).'
+                userMessage = 'Ich baue dieses Modell mit Blender statt mit Polygonen, weil viele WedgeParts Roblox Studio stark laggen lassen koennen. Der Blender-Weg ist schneller und sauberer. Soll ich trotzdem den Polygon-Bau nehmen? Dann sag mir das bitte ausdruecklich.'
+                howToFix = 'Nutze build_mesh_model (Blender) fuer die Form, dann upload_asset und mesh_apply_asset. Erst wenn der Nutzer den Polygon-Bau ausdruecklich verlangt: warne ihn vorher selbst vor dem Lag durch viele WedgeParts, empfiehl Blender und setze dann userRequestedPolygon=true.'
+                blockedTool = $tool
+            }
+        }
         if ($null -eq $toolArgs) { return $null }
         $argsJson = ''
         try { $argsJson = ConvertTo-Json -InputObject $toolArgs -Depth 24 -Compress } catch { return $null }
@@ -23826,7 +23909,7 @@ end
             return @{
                 ok = $false; code = 'ORGANIC_KIND_REQUIRED'
                 error = 'organicKind=creature requires organic=true so the model is registered for its per-creature geometry audit.'
-                howToFix = 'Call build_polygon_model with organic=true, organicKind="creature", and closed body/head loft volumes.'
+                howToFix = 'Only on explicit user request (userRequestedPolygon=true): call build_polygon_model with organic=true, organicKind="creature", and closed body/head loft volumes.'
             }
         }
         if ($isOrganicPolygonBuild) {
@@ -23850,7 +23933,7 @@ end
                 return @{
                     ok = $false; code = 'ORGANIC_SEQUENCE_REQUIRED'
                     error = 'An organic model must be built, animated and audited in separate ordered foreground calls; parallel/background execution cannot prove that order.'
-                    howToFix = 'Call build_polygon_model { organic=true } by itself first, use the returned model id, install the enabled motion Script, then run model_audit after the final edit.'
+                    howToFix = 'Build with build_mesh_model (Blender) by itself first - or, only on explicit user request, build_polygon_model { organic=true, userRequestedPolygon=true }, use the returned model id, install the enabled motion Script, then run model_audit after the final edit.'
                 }
             }
             $colorAssignments = ([regex]::Matches($argsJson, '(?i)"color"\s*:')).Count
@@ -23867,8 +23950,8 @@ end
         }
         return @{
             ok = $false; code = 'ORGANIC_POLYGON_REQUIRED'
-            error = 'This write explicitly declares an organic build, but organic models must be created with build_polygon_model { organic=true }. The write was NOT sent to Studio; no model-name or species keyword is used to choose the builder.'
-            howToFix = 'Call build_polygon_model { organic=true, modelName, submodels=[{name="Primary",style={color="#..."},polygons=[...]},{name="Secondary",style={color="#..."},polygons=[...]},{name="Accent",style={color="#..."},polygons=[...]}] } as one non-parallel foreground call. Then add an enabled motion Script under the returned model, run model_audit on that id after the last edit and fix every organicQuality issue.'
+            error = 'This write explicitly declares an organic build. Organic models are built with build_mesh_model (Blender) by default; a polygon organic build needs build_polygon_model { organic=true, userRequestedPolygon=true } on explicit user request. The write was NOT sent to Studio; no model-name or species keyword is used to choose the builder.'
+            howToFix = 'Build the organic form with build_mesh_model (Blender). Only on explicit user request: build_polygon_model { organic=true, userRequestedPolygon=true, modelName, submodels=[{name="Primary",style={color="#..."},polygons=[...]},{name="Secondary",style={color="#..."},polygons=[...]},{name="Accent",style={color="#..."},polygons=[...]}] } as one non-parallel foreground call. Then add an enabled motion Script under the returned model, run model_audit on that id after the last edit and fix every organicQuality issue.'
             blockedTool = $tool
         }
     }
@@ -24106,7 +24189,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.5.4'
+                        serverVersion = '7.5.5'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -24465,7 +24548,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.5.4'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.5.5'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -24549,8 +24632,8 @@ end
                 }
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.5.4'
-                    serverVersion = '7.5.4'
+                    bridgeVersion = '7.5.5'
+                    serverVersion = '7.5.5'
                     toolbox = $statusToolbox
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
@@ -24708,7 +24791,53 @@ end
                 if ($body.timeoutSeconds) { $timeout = [Math]::Min([int]$body.timeoutSeconds, 85) }
                 $parallelProgress = $null
                 try { if ($body.PSObject.Properties['progress']) { $parallelProgress = $body.progress } } catch {}
-                $resultsJson = Invoke-PluginToolsParallel $sessionId $body.calls $timeout $parallelProgress
+                # Version 7.5.5: Bridge-eigene Werkzeuge (Blender/Mesh, Open Cloud,
+                # Screenshot, Toolbox, Nutzerkanal, Docs, Fragen ...) laufen im
+                # Bridge-Prozess und NICHT im Studio-Plugin. Frueher gingen sie hier
+                # ans Plugin, das UNKNOWN_TOOL antwortete. Jetzt gilt dieselbe Regel
+                # wie in /api/tool: erst Invoke-ServerTool, sonst Plugin. Die
+                # Antworten bleiben in der Reihenfolge der calls.
+                $parallelStartedAt = [DateTime]::UtcNow
+                $serverParts = @{}
+                $pluginCalls = New-Object System.Collections.Generic.List[object]
+                $callPosition = 0
+                foreach ($call in @($body.calls)) {
+                    $callTool = [string]$call.tool
+                    $callArgs = $call.args
+                    if ($null -eq $callArgs) { $callArgs = New-Object PSObject }
+                    $serverOut = Invoke-ServerTool $sessionId $callTool $callArgs
+                    if ($null -ne $serverOut) {
+                        $serverActivity = New-ArenaActivity $sessionId $callTool $callArgs
+                        $serverJson = To-Json $serverOut 40
+                        Complete-ArenaActivity $sessionId $serverActivity $callTool $callArgs $serverJson
+                        $serverParts[$callPosition] = '{"tool":' + (To-Json $callTool 3) + ',"response":' + $serverJson + '}'
+                    } else {
+                        $pluginCalls.Add($call)
+                    }
+                    $callPosition = $callPosition + 1
+                }
+                $pluginTimeout = [Math]::Max(5, $timeout - [int](([DateTime]::UtcNow - $parallelStartedAt).TotalSeconds))
+                $pluginJson = '[]'
+                if ($pluginCalls.Count -gt 0) {
+                    $pluginJson = Invoke-PluginToolsParallel $sessionId $pluginCalls.ToArray() $pluginTimeout $parallelProgress
+                }
+                if ($serverParts.Count -eq 0) {
+                    $resultsJson = $pluginJson
+                } else {
+                    $pluginItems = @()
+                    if ($pluginCalls.Count -gt 0) { $pluginItems = @($pluginJson | ConvertFrom-Json) }
+                    $mergedParts = New-Object System.Collections.Generic.List[string]
+                    $pluginPos = 0
+                    for ($pos = 0; $pos -lt $callPosition; $pos++) {
+                        if ($serverParts.ContainsKey($pos)) {
+                            $mergedParts.Add([string]$serverParts[$pos])
+                        } else {
+                            $mergedParts.Add((To-Json $pluginItems[$pluginPos] 40))
+                            $pluginPos = $pluginPos + 1
+                        }
+                    }
+                    $resultsJson = '[' + ($mergedParts -join ',') + ']'
+                }
                 $envelope = New-Envelope $sessionId
                 Send-RawJson $context 200 ('{"_bridge":' + (To-Json $envelope 20) + ',"ok":true,"results":' + $resultsJson + '}')
                 continue
@@ -27212,7 +27341,7 @@ $script:BridgeMeshToolkit = {
 # Bounding-Box-Mitte - danach meldet er die gemessenen Zahlen.
 # ----------------------------------------------------------------------------
 $script:MeshRunnerTemplate = @'
-# Arena Roblox Bridge - Mesh-Runner (Version 7.5.4)
+# Arena Roblox Bridge - Mesh-Runner (Version 7.5.5)
 # Dieses Programm gehoert der Bridge. Der Agent liefert nur den Modellteil
 # (--script); der Runner macht Szene, Export, Zentrierung und Messung - und
 # seit 7.5.0 zusaetzlich die Upload-Datei (FBX, sonst GLB) fuer Roblox Open
@@ -28337,8 +28466,81 @@ $script:BridgeOpenCloudTools = {
         }
     }
 
+    function Get-OpenCloudStudioDeveloper {
+        # Version 7.5.5: der ENTWICKLER des verbundenen Place. Das Studio-Plugin
+        # meldet game.CreatorId und game.CreatorType (User/Group) im Poll.
+        param([string]$SessionId = '')
+        if ([string]::IsNullOrWhiteSpace($SessionId)) { return $null }
+        try {
+            $entry = Get-SessionEntry $SessionId
+            if ($null -eq $entry) { return $null }
+            $cid = [string]$entry.creatorId
+            if ([string]::IsNullOrWhiteSpace($cid) -or $cid -eq '0') { return $null }
+            $kind = 'user'
+            if ([string]$entry.creatorType -eq 'Group') { $kind = 'group' }
+            return @{ ok = $true; creatorId = $cid; creatorKind = $kind; source = 'studio' }
+        } catch {
+            return $null
+        }
+    }
+
+    function Resolve-OpenCloudDeveloperName {
+        # Version 7.5.5 (FALLBACK): Roblox-Benutzername -> Nutzer-ID. Die Users-API
+        # ist oeffentlich - hier geht bewusst KEIN Schluessel an Roblox.
+        param([string]$Name = '')
+        $clean = ([string]$Name).Trim()
+        if ([string]::IsNullOrWhiteSpace($clean)) {
+            return @{ ok = $false; code = 'DEVELOPER_NAME_EMPTY'; error = 'Kein Benutzername eingetragen.' }
+        }
+        if ($clean -notmatch '^[A-Za-z0-9_]{3,20}$') {
+            return @{ ok = $false; code = 'DEVELOPER_NAME_INVALID'; error = 'Roblox-Benutzernamen bestehen aus 3 bis 20 Buchstaben, Zahlen oder Unterstrichen.' }
+        }
+        $payload = (@{ usernames = @($clean); excludeBannedUsers = $true } | ConvertTo-Json -Compress -Depth 4)
+        try {
+            $response = Invoke-RestMethod -Uri 'https://users.roblox.com/v1/usernames/users' -Method Post -Body $payload -ContentType 'application/json' -TimeoutSec 15
+            $rows = @()
+            try { $rows = @($response.data) } catch {}
+            $hit = $null
+            foreach ($row in $rows) {
+                if ($null -ne $row -and ([string]$row.requestedUsername).ToLowerInvariant() -eq $clean.ToLowerInvariant()) { $hit = $row; break }
+            }
+            if ($null -eq $hit -and $rows.Count -gt 0) { $hit = $rows[0] }
+            if ($null -eq $hit -or [string]::IsNullOrWhiteSpace([string]$hit.id)) {
+                return @{ ok = $false; code = 'DEVELOPER_NOT_FOUND'; error = ('Roblox kennt den Benutzernamen ' + $clean + ' nicht.') }
+            }
+            return @{ ok = $true; creatorKind = 'user'; creatorId = [string]$hit.id; name = [string]$hit.name }
+        } catch {
+            return @{ ok = $false; code = 'USERNAME_LOOKUP_FAILED'; error = ('Die Namenssuche bei Roblox ist fehlgeschlagen: ' + $_.Exception.Message) }
+        }
+    }
+
+    function Resolve-OpenCloudCreatorForUpload {
+        # Version 7.5.5: DER ENTWICKLER WIRD BEI JEDEM UPLOAD NEU ERMITTELT.
+        # 1) Schluessel, 2) Entwickler des verbundenen Place, 3) FALLBACK: der
+        # eingetippte Benutzername. Echte Fehler des Schluessels bleiben sichtbar.
+        param($Shared, [string]$SessionId = '')
+        $fromKey = Resolve-OpenCloudCreatorFromKey -Shared $Shared
+        if ($fromKey.ok -eq $true) {
+            return @{ ok = $true; creatorId = [string]$fromKey.creatorId; creatorKind = [string]$fromKey.creatorKind; source = 'key' }
+        }
+        if ([string]$fromKey.code -ne 'OPENCLOUD_CREATOR_MISSING') { return $fromKey }
+        $studio = Get-OpenCloudStudioDeveloper -SessionId $SessionId
+        if ($null -ne $studio) { return $studio }
+        $typedId = ''
+        try { $typedId = [string]$Shared.BridgeSettings.openCloudDeveloperId } catch {}
+        if (-not [string]::IsNullOrWhiteSpace($typedId)) {
+            return @{ ok = $true; creatorId = $typedId; creatorKind = 'user'; source = 'username' }
+        }
+        return @{
+            ok = $false; code = 'OPENCLOUD_CREATOR_MISSING'
+            error = 'Der Entwickler ist weder im Schluessel noch im verbundenen Place bekannt und wurde nicht als Benutzername eingetragen.'
+            userMessage = 'Arena konnte den Entwickler nicht automatisch finden. Bitte trage im Bridge-Fenster unter Einstellungen, Abschnitt ROBLOX OPEN CLOUD, den Roblox-Benutzernamen des Entwicklers ein und klicke auf Entwickler uebernehmen. Danach lade ich das Asset erneut hoch.'
+            howToFix = 'Sage dem Nutzer den Satz aus userMessage WORTLICH auf Deutsch. Der Nutzer tippt nur seinen Roblox-Benutzernamen ein - keine ID.'
+        }
+    }
+
     function Invoke-OpenCloudUpload {
-        param($Shared, [string]$FilePath, [string]$FileName, [byte[]]$Bytes, [string]$AssetType, [string]$DisplayName, [string]$Description, [int]$TimeoutSeconds = 90)
+        param($Shared, [string]$FilePath, [string]$FileName, [byte[]]$Bytes, [string]$AssetType, [string]$DisplayName, [string]$Description, [int]$TimeoutSeconds = 90, [string]$SessionId = '')
 
         $config = Get-OpenCloudConfig $Shared
         if (-not $config.hasKey) {
@@ -28349,26 +28551,21 @@ $script:BridgeOpenCloudTools = {
                 howToFix = 'Sage dem Nutzer den Satz aus userMessage WORTLICH auf Deutsch. Frage nicht nach der Asset-Id und lade nichts von Hand hoch - der Nutzer muss nur einmal den Schluessel hinterlegen.'
             }
         }
-        if ([string]::IsNullOrWhiteSpace([string]$config.creatorId)) {
-            # Version 7.5.2: Der Nutzer gibt KEINEN Ersteller mehr ein - die
-            # Bridge holt ihn sich aus dem Schluessel (Introspect) und merkt
-            # ihn sich. Schlaegt das fehl, kommt trotzdem ein klarer Grund.
-            $autoCreator = Resolve-OpenCloudCreatorFromKey -Shared $Shared
-            if ($autoCreator.ok -eq $true) {
-                $config.creatorId = [string]$autoCreator.creatorId
-                $config.creatorKind = [string]$autoCreator.creatorKind
-                try { $Shared.BridgeSettings.openCloudCreatorId = [string]$autoCreator.creatorId } catch {}
-                try { $Shared.BridgeSettings.openCloudCreatorKind = [string]$autoCreator.creatorKind } catch {}
-            } else {
-                return @{
-                    ok = $false; code = 'OPENCLOUD_CREATOR_MISSING'
-                    error = ('Die Bridge konnte den Roblox-Ersteller nicht automatisch aus dem Schluessel lesen: ' + [string]$autoCreator.error)
-                    userMessage = [string]$autoCreator.userMessage
-                    howToFix = 'Sage dem Nutzer den Satz aus userMessage WORTLICH auf Deutsch. Er muss KEINEN Namen und keine ID eintippen - es fehlt nur das Recht Assets (LESEN + SCHREIBEN) am Schluessel.'
-                    introspect = $autoCreator
-                }
+        # Version 7.5.5: Der Entwickler wird AUTOMATISCH ermittelt (Schluessel,
+        # dann Place-Entwickler aus dem Studio). Nur wenn beides fehlt, greift der
+        # vom Nutzer eingetippte Benutzername. Jeder Upload fragt neu.
+        $creatorFound = Resolve-OpenCloudCreatorForUpload -Shared $Shared -SessionId $SessionId
+        if ($creatorFound.ok -ne $true) {
+            return @{
+                ok = $false; code = [string]$creatorFound.code
+                error = ('Die Bridge konnte den Entwickler nicht ermitteln: ' + [string]$creatorFound.error)
+                userMessage = [string]$creatorFound.userMessage
+                howToFix = [string]$creatorFound.howToFix
+                introspect = $creatorFound
             }
         }
+        $config.creatorId = [string]$creatorFound.creatorId
+        $config.creatorKind = [string]$creatorFound.creatorKind
 
         # --- Datei: entweder aus dem Dateisystem oder direkt aus den Bytes ---
         $content = $null
@@ -30859,7 +31056,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.5.4)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.5.5)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -33819,7 +34016,7 @@ function Write-ChannelDiagnoseFile {
 
         $progressPath = Join-Path $script:AppDataRoot 'progress-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.5.4)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.5.5)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -33854,7 +34051,7 @@ function Write-ChannelDiagnoseFile {
 
         $notifyPath = Join-Path $script:AppDataRoot 'notify-diagnose.txt'
         $sb2 = New-Object System.Text.StringBuilder
-        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.5.4)')
+        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.5.5)')
         [void]$sb2.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb2.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb2.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -34223,7 +34420,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.5.4)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.5.5)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -36544,7 +36741,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.5.4)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.5.5)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -37366,7 +37563,7 @@ Set-StartupStage 'Ereignisse verdrahtet (Fenstersteuerung + Loaded)'
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.5.4'
+    $versionText = '7.5.5'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -38536,6 +38733,22 @@ function Open-SettingsWindow {
                                                FontSize="15.5" FontWeight="Bold" TextWrapping="Wrap"/>
                                     <TextBlock x:Name="CloudReadyNote" Foreground="{StaticResource SwTextFaint}" FontSize="10.5"
                                                TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                    <StackPanel x:Name="CloudDeveloperPanel" Margin="0,14,0,0">
+                                        <TextBlock Text="Entwickler (Fallback)" Foreground="{StaticResource SwTextMain}" FontSize="13" FontWeight="Bold" TextWrapping="Wrap"/>
+                                        <TextBlock Text="Arena ermittelt den Entwickler zuerst automatisch: aus dem Schluessel oder aus dem verbundenen Place. Nur wenn das nicht klappt, tippe hier den Roblox-Benutzernamen des Entwicklers ein." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                        <Grid Margin="0,10,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox x:Name="CloudDeveloperBox" Grid.Column="0" Height="38" Margin="0,0,8,0" VerticalContentAlignment="Center"
+                                                     Background="#0E1730" Foreground="#F4F8FF" CaretBrush="#F4F8FF" BorderBrush="#33FFFFFF"
+                                                     BorderThickness="1" Padding="10,0" FontSize="12.5"/>
+                                            <Button x:Name="CloudDeveloperButton" Grid.Column="1" Height="38" MinWidth="170" Padding="16,0"
+                                                    Content="Entwickler übernehmen" Style="{StaticResource ArenaPrimaryButton}"/>
+                                        </Grid>
+                                        <TextBlock x:Name="CloudDeveloperStatus" Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                    </StackPanel>
                                     <Button x:Name="CloudRemoveButton" Height="38" MinWidth="190" Padding="16,0" Margin="0,12,0,0"
                                             HorizontalAlignment="Left" Content="API-Key entfernen" Style="{StaticResource ArenaQuietButton}"/>
                                 </StackPanel>
@@ -38624,7 +38837,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.5.4" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.5.5" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -38684,6 +38897,10 @@ function Open-SettingsWindow {
     $cloudReadyPanel      = $settingsWindow.FindName('CloudReadyPanel')
     $cloudReadyText       = $settingsWindow.FindName('CloudReadyText')
     $cloudReadyNote       = $settingsWindow.FindName('CloudReadyNote')
+    $cloudDeveloperPanel  = $settingsWindow.FindName('CloudDeveloperPanel')
+    $cloudDeveloperBox    = $settingsWindow.FindName('CloudDeveloperBox')
+    $cloudDeveloperButton = $settingsWindow.FindName('CloudDeveloperButton')
+    $cloudDeveloperStatus = $settingsWindow.FindName('CloudDeveloperStatus')
     $cloudDashboardButton = $settingsWindow.FindName('CloudOpenDashboardButton')
     $cloudTutorialHeader  = $settingsWindow.FindName('CloudTutorialHeader')
     $cloudTutorialChevron = $settingsWindow.FindName('CloudTutorialChevron')
@@ -38704,6 +38921,19 @@ function Open-SettingsWindow {
             $cloudSaveHint.Text = [string]$Text
             $cloudSaveHint.Foreground = Get-Brush ([string]$Hex)
             $cloudSaveHint.Visibility = 'Visible'
+        } catch {}
+    }
+
+    function Update-CloudDeveloperStatus {
+        # Version 7.5.5: Zeile unter dem Entwickler-Feld - was gerade gilt.
+        try {
+            $typedName = [string]$script:SettingsCache.openCloudDeveloperName
+            $typedId = [string]$script:SettingsCache.openCloudDeveloperId
+            if (-not [string]::IsNullOrWhiteSpace($typedId)) {
+                $cloudDeveloperStatus.Text = 'Eingetragen: ' + $typedName + ' (ID ' + $typedId + '). Wird nur genutzt, wenn Arena den Entwickler nicht automatisch findet.'
+            } else {
+                $cloudDeveloperStatus.Text = 'Noch kein Benutzername eingetragen. Arena versucht den Entwickler zuerst automatisch.'
+            }
         } catch {}
     }
 
@@ -38730,6 +38960,8 @@ function Open-SettingsWindow {
                 if (-not [string]::IsNullOrWhiteSpace($hint)) { $line = $line + ' Schlüssel ' + $hint + '.' }
                 if (-not [string]::IsNullOrWhiteSpace($savedAt)) { $line = $line + ' Gespeichert ' + $savedAt + '.' }
                 $cloudReadyNote.Text = $line
+                try { if ([string]::IsNullOrWhiteSpace([string]$cloudDeveloperBox.Text)) { $cloudDeveloperBox.Text = [string]$script:SettingsCache.openCloudDeveloperName } } catch {}
+                try { Update-CloudDeveloperStatus } catch {}
                 # Mit Schluessel verschwindet das Tutorial (Nutzerwunsch).
                 $cloudTutorialHeader.Visibility = 'Collapsed'
                 $cloudTutorialWrap.Visibility = 'Collapsed'
@@ -38758,6 +38990,8 @@ function Open-SettingsWindow {
             $script:Shared.BridgeSettings.openCloudCreatorId = [string]$script:SettingsCache.openCloudCreatorId
             $script:Shared.BridgeSettings.openCloudCreatorKind = [string]$script:SettingsCache.openCloudCreatorKind
             $script:Shared.BridgeSettings.openCloudCreatorName = [string]$script:SettingsCache.openCloudCreatorName
+            $script:Shared.BridgeSettings.openCloudDeveloperId = [string]$script:SettingsCache.openCloudDeveloperId
+            $script:Shared.BridgeSettings.openCloudDeveloperName = [string]$script:SettingsCache.openCloudDeveloperName
             $script:Shared.BridgeSettings.openCloudSavedAt = [string]$script:SettingsCache.openCloudSavedAt
         } catch {}
     }
@@ -38854,7 +39088,7 @@ function Open-SettingsWindow {
             # Der Schluessel IST richtig konfiguriert (sonst waere assetWrite
             # false); es fehlt nur eine konkrete Empfänger-Resource (Gruppe
             # oder Account) im Dashboard.
-            Set-CloudSaveHint 'Roblox nimmt den Schlüssel an und die Rechte passen, aber es ist keine konkrete Gruppe oder kein konkreter Account als Empfänger der Assets eingetragen. Bitte im Dashboard beim Schlüssel unter "Berechtigungen" > "assets" eine bestimmte Gruppe ODER deinen Account als Resource festlegen, dann den Schlüssel hier erneut einfügen.' '#FFD9A0'
+            Set-CloudSaveHint 'Roblox nimmt den Schlüssel an und die Rechte passen. Arena ermittelt den Entwickler automatisch (Schlüssel oder verbundener Place). Findet sie keinen, trägt du unten im Abschnitt den Roblox-Benutzernamen des Entwicklers ein.' '#FFD9A0'
         } else {
             Set-CloudSaveHint 'Schlüssel geprüft: Roblox nimmt ihn an und Arena darf Assets hochladen.' '#7EE2A8'
         }
@@ -38981,6 +39215,27 @@ function Open-SettingsWindow {
     })
 
     # --- Entfernen ---------------------------------------------------------
+    $cloudDeveloperButton.Add_Click({
+        # Version 7.5.5 (Fallback): Benutzername -> ID bei Roblox, dann merken.
+        try {
+            $typedName = ([string]$cloudDeveloperBox.Text).Trim()
+            $cloudDeveloperStatus.Text = 'Suche den Benutzernamen bei Roblox ...'
+            $found = Resolve-OpenCloudDeveloperName $typedName
+            if ($found.ok -ne $true) {
+                $cloudDeveloperStatus.Text = [string]$found.error
+                return
+            }
+            $script:SettingsCache.openCloudDeveloperId = [string]$found.creatorId
+            $script:SettingsCache.openCloudDeveloperName = [string]$found.name
+            Save-BridgeSettingsFile
+            Sync-CloudSharedSettings
+            Update-CloudDeveloperStatus
+            Write-RuntimeLog ('Open Cloud: Entwickler-Fallback eingetragen (Nutzer-ID ' + [string]$found.creatorId + ').')
+        } catch {
+            Write-UiErrorLog 'Open-Cloud-Entwickler' $_
+        }
+    })
+
     $cloudRemoveButton.Add_Click({
         param($s, $e)
         try {
@@ -39026,7 +39281,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.5.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.5.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -39091,7 +39346,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.5.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.5.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -39104,7 +39359,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.5.4'
+    $verText = '7.5.5'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

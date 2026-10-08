@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 7.5.4.
+"""Offline structure check for Arena Roblox Bridge 7.5.5.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.5.4"
+VERSION = "7.5.5"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -719,36 +719,36 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '7.5.4'": 1,
-        'local ARENA_VERSION  = "7.5.4"': 1,
-        "version = '7.5.4'": 1,
-        "bridgeVersion = '7.5.4'": 3,
-        "bridgeVersion='7.5.4'": 1,
-        "serverVersion = '7.5.4'": 2,
-        "$versionText = '7.5.4'": 1,
-        "$verText = '7.5.4'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 7.5.4)": 1,
-        'Text="Arena Roblox Bridge - Version 7.5.4"': 1,
-        "Version 7.5.4 - aktuell. Beim naechsten Start": 2,
-        "Bridge-Version=7.5.4": 2,
-        "Kurzbericht Fenster-Vorschau (Version 7.5.4)": 1,
-        "Kurzbericht Fortschrittsanzeige (Version 7.5.4)": 1,
-        "Kurzbericht Fertig-Meldung (Version 7.5.4)": 1,
-        "Arena Roblox Bridge - Leistungsbericht (Version 7.5.4)": 1,
-        "Arena Roblox Bridge - Place-Diagnose (Version 7.5.4)": 1,
-        "Version: 7.5.4": 2,
-        "Version=7.5.4": 3,
-        "Bridge/Plugin-Stand: 7.5.4": 1,
-        "Arena Roblox Bridge - Start-Diagnose (Version 7.5.4)": 2,
-        "RuntimeInfo.Version = '7.5.4'": 1,
-        "Mesh-Build Engine 1.2 (Version 7.5.4)": 1,
-        "Organic Build Engine 1.1 (Version 7.5.4)": 1,
+        "DocsVersion     = '7.5.5'": 1,
+        'local ARENA_VERSION  = "7.5.5"': 1,
+        "version = '7.5.5'": 1,
+        "bridgeVersion = '7.5.5'": 3,
+        "bridgeVersion='7.5.5'": 1,
+        "serverVersion = '7.5.5'": 2,
+        "$versionText = '7.5.5'": 1,
+        "$verText = '7.5.5'": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.5.5)": 1,
+        'Text="Arena Roblox Bridge - Version 7.5.5"': 1,
+        "Version 7.5.5 - aktuell. Beim naechsten Start": 2,
+        "Bridge-Version=7.5.5": 2,
+        "Kurzbericht Fenster-Vorschau (Version 7.5.5)": 1,
+        "Kurzbericht Fortschrittsanzeige (Version 7.5.5)": 1,
+        "Kurzbericht Fertig-Meldung (Version 7.5.5)": 1,
+        "Arena Roblox Bridge - Leistungsbericht (Version 7.5.5)": 1,
+        "Arena Roblox Bridge - Place-Diagnose (Version 7.5.5)": 1,
+        "Version: 7.5.5": 2,
+        "Version=7.5.5": 3,
+        "Bridge/Plugin-Stand: 7.5.5": 1,
+        "Arena Roblox Bridge - Start-Diagnose (Version 7.5.5)": 2,
+        "RuntimeInfo.Version = '7.5.5'": 1,
+        "Mesh-Build Engine 1.3 (Version 7.5.5)": 1,
+        "Organic Build Engine 1.1 (Version 7.5.5)": 1,
         "# Version 7.3.2 (2026-10-07)": 1,
         "# Version 7.4.0 (2026-10-07)": 1,
         "# Version 7.4.1 (2026-10-07)": 1,
         "# Version 7.5.0 (2026-10-07)": 1,
         "# Version 7.5.3 (2026-10-08)": 1,
-        "# Version 7.5.4 (2026-10-08)": 1,
+        "# Version 7.5.5 (2026-10-08)": 1,
     }
 
     for marker, expected_count in functional_version_counts.items():
@@ -1507,18 +1507,19 @@ def main() -> int:
         "autoWeld=@{type='bool';required=$false;default='true'",
         "modelBuildRules = @{",
         "regardless of subject, model name or whether it is organic",
-        "For EVERY nontrivial custom visible 3D model in ANY category—not only creatures—the first model-creation/build call MUST be build_polygon_model",
+        "BLENDER-FIRST (Version 7.5.5): For EVERY nontrivial custom visible 3D model in ANY category the first model-creation call is build_mesh_model",
+        "userRequestedPolygon=true",
         "polygonDecision = 'Choose the geometry representation by shape, not by subject",
         "polygonInputContract = 'Structured form: build_polygon_model",
         "polygonWorkflow = '1 inspect Place/selection",
         "polygonPatterns = 'Facade/roof/shield/panel",
         "polygonBudget = 'Each n-vertex face usually produces n-2 triangles",
         "polygonTemplate = 'build_polygon_model",
-        "This is not a requirement for truly simple standard Parts",
+        "POLICY 7.5.5 (Blender-first)",
         "NEVER set autoWeld=false unless physically independent polygon pieces are requested.",
         "organic=true, not by the model name",
-        "NONTRIVIAL 3D BUILD METHOD (ALL CATEGORIES)",
-        "The first model-building call for every nontrivial custom object is build_polygon_model",
+        "NONTRIVIAL 3D BUILD METHOD (ALL CATEGORIES, Version 7.5.5)",
+        "Native Parts remain right for genuinely standard supports",
         "verify incomplete=false, facesSkipped=0, skipped=[]",
     ):
         require(marker in source, f"required Polygon/build-policy marker missing: {marker}")
@@ -1927,15 +1928,15 @@ def main() -> int:
     guides_block = source[source.index("function Get-BridgeGuides"):source.index("function Get-SessionStartPackage")]
     for marker in (
         "organicBuildRules = @{",
-        "Organic Build Engine 1.1 (Version 7.5.4) - typed creature volumes, physical face, bilateral anatomy, measured before done",
-        "the FIRST write targeting that model is build_polygon_model { organic=true, organicKind=... }",
+        "Organic Build Engine 1.1 (Version 7.5.5) - typed creature volumes, physical face, bilateral anatomy, measured before done",
+        "the FIRST write targeting that model is build_mesh_model (Blender, STANDARD)",
         "creatureVolumeContract =",
         "FORBIDDEN - FLAT CREATURE SILHOUETTE",
         "FORBIDDEN - FACE STICKER",
         "FORBIDDEN - ONE-SIDED OR HIDDEN WINGS",
         "explicit contrasting palette",
         "enabled motion Script under that same model",
-        "FORBIDDEN - BYPASSING THE POLYGON BUILDER",
+        "FORBIDDEN - POLYGON WITHOUT USER REQUEST (7.5.5)",
         "ORGANIC_POLYGON_REQUIRED",
         "FORBIDDEN - FORGOTTEN COLOUR OR MOTION",
         "FORBIDDEN - CLAIMING DONE WITHOUT A FRESH PROOF",

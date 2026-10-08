@@ -49,6 +49,14 @@ heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestarte
 
 ## Versionsverlauf
 
+## 7.5.5 — Blender-first, Open-Cloud-Entwickler, /api/tool repariert
+
+- `/api/tool` lieferte HTTP 500 fuer jeden Aufruf (`Die Benennung "=" wurde nicht als Name eines Cmdlet erkannt`). Fehlendes Zuweisungszeichen in `Get-ArenaActivityText` behoben; Regressionstest ergaenzt.
+- `/api/tools/parallel` nutzt fuer Bridge-eigene Werkzeuge dieselbe Serverlogik wie `/api/tool`.
+- `describe_orientation` im Studio-Plugin: Himmelsrichtung korrekt indiziert (kein `format`-Fehler mehr).
+- Blender-first: `build_mesh_model` -> `upload_asset` -> `mesh_apply_asset` ist der Standard. `build_polygon_model` nur mit `userRequestedPolygon=true` nach ausdruecklichem Nutzerwunsch; vorher Lag-Warnung.
+- Open Cloud: Entwickler automatisch (Schluessel, dann Ersteller des verbundenen Place). Fallback: Benutzername im Einstellungsfenster.
+
 ## 7.5.4 — Mini-Hotfix: Parser-Fix (Hashtable-Duplikate), Bridge startet wieder
 
 In Version 7.5.3 wurden in `Get-ArenaActivityText` ca. 130 neue Werkzeug-Sätze

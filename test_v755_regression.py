@@ -1,0 +1,334 @@
+#!/usr/bin/env python3
+"""Offline-Regressionstest fuer Arena Roblox Bridge 7.5.5 (ohne Studio, ohne Windows).
+
+Was 7.5.5 repariert und was dieser Test dagegen absichert:
+
+1. /api/tool lieferte HTTP 500 fuer JEDEN Werkzeugaufruf ("Die Benennung "=" wurde
+   nicht als Name eines Cmdlet erkannt"). Ursache: in Get-ArenaActivityText fehlte
+   bei der Hashtable $texts das Zuweisungszeichen. Geprueft werden: die Hashtable
+   ist vollstaendig und eindeutig, und kein Befehl der Datei beginnt mit einem
+   Operator (tree-sitter, command_name-Knoten).
+2. describe_orientation (Studio-Plugin) crashte: dirHeading indizierte die
+   Himmelsrichtungen falsch ("invalid argument #2 to 'format'"). Geprueft wird
+   dirHeading in Lua (lupa) ueber alle Winkel, mit Luau-artiger %s-Strenge.
+3. /api/tools/parallel reichte Bridge-eigene Werkzeuge an das Studio-Plugin weiter,
+   das sie nicht kennt. Geprueft wird die Umleitung ueber Invoke-ServerTool mit
+   Reihenfolge der Antworten.
+4. BLENDER-FIRST: build_polygon_model nur mit userRequestedPolygon=true; ohne das
+   blockt die Bridge (POLYGON_BLENDER_FIRST). Mit dem Flag warnt das Plugin ab 300
+   WedgeParts vor Lag und empfiehlt Blender.
+5. OPEN CLOUD ENTWICKLER: automatisch (Schluessel, dann Ersteller des verbundenen
+   Place aus dem Studio), Benutzername nur als Fallback. Das Einstellungsfenster
+   hat dafuer Feld und Knopf.
+6. Das eingebettete Studio-Plugin (Lua) muss kompilieren.
+
+Abhaengigkeiten: tree_sitter, tree_sitter_powershell, lupa (siehe requirements-test.txt).
+"""
+
+from __future__ import annotations
+
+import math
+import re
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+PS1 = ROOT / "ArenaBridge.ps1"
+VERSION = "7.5.5"
+FAILURES: list[str] = []
+
+
+def check(condition: bool, message: str) -> None:
+    print(("[GRUEN] " if condition else "[ROT]   ") + message)
+    if not condition:
+        FAILURES.append(message)
+
+
+def region(source: str, start: str, end: str) -> str:
+    begin = source.index(start)
+    stop = source.index(end, begin)
+    return source[begin:stop]
+
+
+def load_source() -> tuple[bytes, str]:
+    raw = PS1.read_bytes()
+    assert raw.startswith(b"\xef\xbb\xbf"), "ArenaBridge.ps1 muss mit UTF-8-BOM beginnen"
+    assert b"\r\n" not in raw, "ArenaBridge.ps1 darf keine CRLF-Zeilenenden haben"
+    return raw, raw.decode("utf-8-sig")
+
+
+def plugin_lua(source: str) -> str:
+    match = re.search(r"function Get-PluginSource \{\n@'\n(.*?)\n'@", source, re.S)
+    assert match, "Get-PluginSource-Here-String nicht gefunden"
+    return match.group(1)
+
+
+# ----------------------------------------------------------------------
+# 1) /api/tool-500: $texts und Operator-Befehle
+# ----------------------------------------------------------------------
+def check_texts_and_commands(raw: bytes, source: str) -> None:
+    from tree_sitter import Language, Parser
+    import tree_sitter_powershell as tsp
+
+    lines = source.split("\n")
+    starts = [i for i, line in enumerate(lines) if line == "        $texts = @{"]
+    check(len(starts) == 1, "Hashtable $texts ist genau einmal vorhanden (Ursache des /api/tool-500)")
+    if len(starts) == 1:
+        start = starts[0]
+        end = next(i for i in range(start + 1, len(lines)) if lines[i] == "        }")
+        keys: list[str] = []
+        malformed: list[str] = []
+        for line in lines[start + 1:end]:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            match = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*'", stripped)
+            if match:
+                keys.append(match.group(1))
+            else:
+                malformed.append(stripped[:60])
+        check(not malformed, f"jede Zeile in $texts ist ein Schluessel = 'Satz' (Fehler: {malformed[:3]})")
+        check(len(keys) >= 137, f"$texts enthaelt alle Werkzeugtexte (gezaehlt: {len(keys)}, erwartet mindestens 137)")
+        check(len(keys) == len(set(keys)), "$texts hat keine doppelten Schluessel")
+
+    # Die Operator-Pruefung laeuft IMMER (auch wenn $texts fehlt): sie ist der eigentliche Schutz.
+    tree = Parser(Language(tsp.language())).parse(raw)
+    operators = {"=", "+=", "-=", "*=", "/=", "%=", "-eq", "-ne", "-and", "-or", "-f",
+                 "-lt", "-gt", "-like", "-match", "-contains", "-not"}
+    found: list[tuple[int, str]] = []
+
+    def walk(node) -> None:
+        if node.type == "command_name":
+            text = raw[node.start_byte:node.end_byte].decode("utf-8", "replace").strip()
+            if text.lower() in operators:
+                found.append((raw.count(b"\n", 0, node.start_byte) + 1, text))
+        for child in node.children:
+            walk(child)
+
+    walk(tree.root_node)
+    check(not found, f"kein Befehl beginnt mit einem Operator (gefunden: {found[:5]})")
+
+
+# ----------------------------------------------------------------------
+# 2) describe_orientation: dirHeading in Lua (lupa)
+# ----------------------------------------------------------------------
+HARNESS = r'''
+local realFormat = string.format
+string.format = function(fmt, ...)
+  local args = table.pack(...)
+  local i = 0
+  for spec in string.gmatch(fmt, "%%.-([a-zA-Z%%])") do
+    if spec ~= "%" then
+      i = i + 1
+      if spec == "s" and type(args[i]) ~= "string" then
+        error("invalid argument #" .. (i + 1) .. " to 'format' (string expected, got " .. type(args[i]) .. ")", 0)
+      end
+    end
+  end
+  return realFormat(fmt, ...)
+end
+local V = {}
+V.__index = V
+local function vec(x, y, z)
+  return setmetatable({X = x, Y = y, Z = z, Magnitude = math.sqrt(x*x + y*y + z*z)}, V)
+end
+Vector3 = { new = vec }
+math.atan2 = function(y, x) return math.atan(y, x) end
+'''
+
+
+def check_dir_heading(source: str) -> None:
+    try:
+        from lupa import LuaRuntime
+    except ImportError:
+        check(False, "lupa ist installiert (pip install lupa, siehe requirements-test.txt)")
+        return
+    lua_src = plugin_lua(source)
+    start = lua_src.index("local function dirHeading(v)")
+    end = lua_src.index("\nend\n", start) + len("\nend\n")
+    lua = LuaRuntime(unpack_returned_tuples=True)
+    lua.execute(HARNESS)
+    lua.execute(lua_src[start:end] + "\n__dh = dirHeading\n")
+    dir_heading = lua.eval("__dh")
+    make = lua.eval("function(x, y, z) return Vector3.new(x, y, z) end")
+
+    failures = []
+    for deg in list(range(0, 360)) + [0.0001, 22.4, 22.5, 359.9, 359.99]:
+        rad = math.radians(deg)
+        try:
+            dir_heading(make(math.sin(rad), 0.0, -math.cos(rad)))
+        except Exception as error:  # noqa: BLE001 - jede Lua-Ausnahme ist ein Fehler
+            failures.append((deg, str(error)[:100]))
+    check(not failures, f"dirHeading wirft fuer keinen Winkel 0-359 Grad einen Fehler (Fehler: {failures[:3]})")
+
+    expected = {
+        0: "north (away",
+        30: "north-east",
+        90: "east (toward +X)",
+        180: "south (toward",
+        270: "west (toward -X)",
+        350: "north (away",
+    }
+    for deg, prefix in expected.items():
+        rad = math.radians(deg)
+        try:
+            text = str(dir_heading(make(math.sin(rad), 0.0, -math.cos(rad))))
+        except Exception as error:  # noqa: BLE001
+            check(False, f"dirHeading({deg}) laeuft durch (Lua-Fehler: {str(error)[:80]})")
+            continue
+        check(text.startswith(prefix), f"dirHeading({deg}) beginnt mit '{prefix}' (Ist: {text[:40]})")
+
+
+# ----------------------------------------------------------------------
+# 3) /api/tools/parallel: Bridge-Werkzeuge ueber Invoke-ServerTool
+# ----------------------------------------------------------------------
+def check_parallel_routing(source: str) -> None:
+    block = region(source, "if ($path -eq '/api/tools/parallel') {", "if ($path -eq '/api/tool') {")
+    check("$serverOut = Invoke-ServerTool $sessionId $callTool $callArgs" in block,
+          "/api/tools/parallel fragt jeden Aufruf zuerst bei Invoke-ServerTool an")
+    check("$pluginCalls.Add($call)" in block and "Invoke-PluginToolsParallel $sessionId $pluginCalls.ToArray()" in block,
+          "nur Aufrufe, die die Bridge nicht selbst bedient, gehen ans Studio-Plugin")
+    check(block.index("Invoke-ServerTool $sessionId $callTool $callArgs")
+          < block.index("Invoke-PluginToolsParallel $sessionId $pluginCalls.ToArray()"),
+          "Serverwerkzeuge werden vor dem Plugin-Aufruf ausgefuehrt")
+    check("for ($pos = 0; $pos -lt $callPosition; $pos++)" in block and "$serverParts.ContainsKey($pos)" in block,
+          "Antworten werden in der Reihenfolge der calls zusammengefuehrt")
+    check("Get-OrganicBuildGuardResult $candidateTool $candidateArgs -ParallelCall" in block,
+          "das Organik-/Polygon-Gate gilt auch fuer /api/tools/parallel")
+    check("Complete-ArenaActivity $sessionId $serverActivity $callTool $callArgs $serverJson" in block,
+          "Serverwerkzeuge in parallel schreiben ihre Aktivitaet ins Protokoll")
+
+
+# ----------------------------------------------------------------------
+# 4) Blender-first: build_polygon_model nur auf ausdruecklichen Wunsch
+# ----------------------------------------------------------------------
+def check_blender_first(source: str) -> None:
+    check("function Test-PolygonBuildWithoutRequest" in source,
+          "Gate Test-PolygonBuildWithoutRequest ist definiert")
+    guard_start = source.index("function Get-OrganicBuildGuardResult")
+    guard_block = source[guard_start:guard_start + 2000]
+    check("if (Test-PolygonBuildWithoutRequest $tool $toolArgs) {" in guard_block,
+          "Get-OrganicBuildGuardResult blockt Polygon-Bau ohne userRequestedPolygon")
+    check("POLYGON_BLENDER_FIRST" in source, "Fehlercode POLYGON_BLENDER_FIRST ist vorhanden")
+    check("userRequestedPolygon=@{type='bool'" in source,
+          "build_polygon_model fuehrt den Parameter userRequestedPolygon im Katalog")
+    lua = plugin_lua(source)
+    check("wedgeCount>=300" in lua and "LAG-WARNUNG (7.5.5)" in lua,
+          "das Plugin warnt ab 300 WedgeParts vor Lag und empfiehlt Blender")
+    guides = source[source.index("function Get-BridgeGuides"):source.index("function Get-SessionStartPackage")]
+    check("BLENDER-FIRST (Version 7.5.5)" in guides,
+          "die Leitregeln sagen Blender-first (Version 7.5.5)")
+    check("polygonPreference = 'BLENDER-FIRST (Version 7.5.5)" in guides,
+          "modelBuildRules.polygonPreference ist Blender-first")
+    check("GLOBALER 3D-BAUSTANDARD" not in guides,
+          "der alte Polygon-Standard ('GLOBALER 3D-BAUSTANDARD') steht nicht mehr in den Leitregeln")
+
+
+# ----------------------------------------------------------------------
+# 5) Open Cloud: Entwickler automatisch, Benutzername nur als Fallback
+# ----------------------------------------------------------------------
+def check_open_cloud(source: str) -> None:
+    resolver = region(source, "function Resolve-OpenCloudCreatorForUpload {", "function Invoke-OpenCloudUpload {")
+    order = [
+        "Resolve-OpenCloudCreatorFromKey -Shared $Shared",
+        "Get-OpenCloudStudioDeveloper -SessionId $SessionId",
+        "openCloudDeveloperId",
+        "ok = $false; code = 'OPENCLOUD_CREATOR_MISSING'",  # die finale Rueckgabe, nicht der Vergleich davor
+    ]
+    positions = [resolver.find(item) for item in order]
+    check(all(p >= 0 for p in positions) and positions == sorted(positions),
+          "Entwickler-Reihenfolge: Schluessel, dann Place-Entwickler, dann Benutzername, dann Fehler")
+    check("if ([string]$fromKey.code -ne 'OPENCLOUD_CREATOR_MISSING') { return $fromKey }" in resolver,
+          "echte Schluesselfehler werden nicht als fehlender Ersteller verschleiert")
+
+    upload_start = source.index("function Invoke-OpenCloudUpload {")
+    upload_head = source[upload_start:upload_start + 900]
+    check("[string]$SessionId = ''" in upload_head,
+          "Invoke-OpenCloudUpload bekommt die Sitzung (SessionId)")
+    check("Invoke-OpenCloudUpload -Shared $Shared -SessionId $sessionId" in source,
+          "der Aufrufer reicht die Sitzung weiter")
+    check("$creatorFound = Resolve-OpenCloudCreatorForUpload -Shared $Shared -SessionId $SessionId" in source,
+          "der Upload ermittelt den Entwickler je Aufruf neu")
+
+    dev_name = region(source, "function Resolve-OpenCloudDeveloperName {", "function Resolve-OpenCloudCreatorForUpload {")
+    check("https://users.roblox.com/v1/usernames/users" in dev_name,
+          "Benutzername wird ueber users.roblox.com aufgeloest")
+    check("x-api-key" not in dev_name,
+          "die oeffentliche Benutzer-Suche sendet KEINEN Open-Cloud-Schluessel")
+    check("[A-Za-z0-9_]{3,20}" in dev_name, "Benutzernamen werden auf Roblox-Format geprueft")
+
+    studio = region(source, "function Get-OpenCloudStudioDeveloper {", "function Resolve-OpenCloudDeveloperName {")
+    check("Get-SessionEntry $SessionId" in studio and "creatorType" in studio,
+          "der Place-Entwickler kommt aus der Sitzung (creatorId/creatorType)")
+
+    lua = plugin_lua(source)
+    check("payload.creatorId = tostring(game.CreatorId)" in lua
+          and "payload.creatorType = game.CreatorType.Name" in lua,
+          "das Studio-Plugin meldet den Place-Entwickler im Poll")
+    check(source.count("creatorId = [string]$body.creatorId") >= 3,
+          "Sitzungen speichern creatorId beim Anlegen (alle drei Wege)")
+    check("$newCreatorId = [string]$body.creatorId" in source,
+          "Sitzungs-Update uebernimmt creatorId aus dem Poll")
+
+    check(source.count("openCloudDeveloperId") >= 6 and source.count("openCloudDeveloperName") >= 6,
+          "der Fallback-Entwickler ist in Laden, Speichern und Teilen verdrahtet")
+    check("$cloudDeveloperButton.Add_Click({" in source and "Resolve-OpenCloudDeveloperName $typedName" in source,
+          "das Einstellungsfenster hat den Knopf 'Entwickler uebernehmen' mit Aufloesung")
+    check("CloudDeveloperBox" in source and "CloudDeveloperPanel" in source,
+          "das Einstellungsfenster hat Feld und Panel fuer den Entwickler-Benutzernamen")
+
+
+# ----------------------------------------------------------------------
+# 6) Studio-Plugin kompiliert
+# ----------------------------------------------------------------------
+def check_plugin_compiles(source: str) -> None:
+    from lupa import LuaRuntime
+
+    lua = LuaRuntime(unpack_returned_tuples=True)
+    chunk = lua.eval("function(s) return load(s) end")(plugin_lua(source))
+    check(chunk is not None and callable(chunk), "das eingebettete Studio-Plugin (Lua) kompiliert")
+
+
+# ----------------------------------------------------------------------
+# Versionen
+# ----------------------------------------------------------------------
+def check_versions(source: str) -> None:
+    import json
+
+    data = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
+    check(data.get("version") == VERSION, f"version.json steht auf {VERSION}")
+    check(str(data.get("notes", [""])[0]).startswith(f"• {VERSION}"),
+          f"version.json: die erste Neuigkeit ist die {VERSION}-Notiz")
+    check(f"# Arena Roblox Bridge  -  Version {VERSION}" in source,
+          f"Kopfzeile von ArenaBridge.ps1 nennt {VERSION}")
+
+
+def run_group(name: str, function, *args) -> None:
+    # Jede Pruefgruppe laeuft fuer sich: eine Ausnahme macht nur diese Gruppe rot.
+    try:
+        function(*args)
+    except Exception as error:  # noqa: BLE001
+        check(False, f"{name}: Ausnahme {type(error).__name__}: {str(error)[:120]}")
+
+
+def main() -> int:
+    raw, source = load_source()
+    run_group("texts/Befehle", check_texts_and_commands, raw, source)
+    run_group("dirHeading", check_dir_heading, source)
+    run_group("parallel", check_parallel_routing, source)
+    run_group("Blender-first", check_blender_first, source)
+    run_group("Open Cloud", check_open_cloud, source)
+    run_group("Plugin", check_plugin_compiles, source)
+    run_group("Versionen", check_versions, source)
+
+    if FAILURES:
+        print(f"\nFEHLGESCHLAGEN: {len(FAILURES)} Pruefung(en) rot.")
+        for item in FAILURES:
+            print("  - " + item)
+        return 1
+    print(f"\nOK: 7.5.5 Regressionstest bestanden (/api/tool-Texte, describe_orientation, /api/tools/parallel, "
+          f"Blender-first, Open-Cloud-Entwickler, Plugin-Kompilierung).")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
