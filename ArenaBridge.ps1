@@ -1,12 +1,33 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.5.1
+# Arena Roblox Bridge  -  Version 7.5.2
 #
-# Version 7.5.1 (2026-10-08) - MINI-FIX-UPDATE: NACHRICHTEN KOMMEN AN, EIN MODELL = EIN MESH
+# Version 7.5.2 (2026-10-08) - MINI-UPDATE: EINSTELLUNGEN, VORSCHAU, PLACE-NAMEN, LADEBILDSCHIRM
 # -----------------------------------------------------------------------------
-# Sechs Live-Befunde des Owners aus dem gescheiterten Baum-Bau, alle behoben.
-#   1) "NACHRICHT AN ARENA" IST NEU UND GANZ EINFACH: nur noch EINE Nachricht,
-#      kleineres Fenster. Inhalt: Beschriftung, EIN Textfeld, ein kleiner
-#      Hinweis, Absenden + Abbrechen (Abbrechen schliesst wie das rote X).
+# Vier Dinge auf einmal als Mini-Update:
+#   1) EINSTELLUNGSFENSTER GEHT WIEDER: Im Resources-Block des Einstellungs-
+#      fensters fehlten SwGreenBtnBg/ArenaPrimaryButton/ArenaQuietButton -
+#      XamlReader::Load warf bei jedem Klick eine StaticResourceExtension-
+#      Ausnahme. Die Ressourcen sind jetzt vollstaendig im Settings-XAML
+#      definiert.
+#   2) PLACE-VORSCHAU LAEDT BEI MEHREREN FENSTERN: Bisher blieb der Handle 0
+#      (reason=keinTrefferBeiMehrerenFenstern), weil der Abgleich gegen den
+#      "Place XXXX"-Fallback lief. Der Fallback ist jetzt Qualitaet 0 (darf
+#      von Fenstertiteln ueberschrieben werden), Resolve-PlaceWindowIdentity
+#      bindet bei mehreren Fenstern das ERSTE noch nicht beanspruchte
+#      Studio-Fenster (PID+HWND, stabil), und Resolve-PlacePreviewHandle
+#      probiert zusaetzlich die Identity-Bindung.
+#   3) ECHTE PLACE-NAMEN STATT "Place XXXX": Der 4-Zeichen-Session-Fallback
+#      wird NUR noch angezeigt, wenn weder Plugin-Name (game.Name) noch
+#      Fenstertitel etwas Brauchbares liefern. Jeder Poll/Heartbeat kann ihn
+#      durch den echten Namen ersetzen.
+#   4) ORGANISCHER LADEBILDSCHIRM: Statt der 4-Schritte-Liste (Studio/Plugin/
+#      Blender/Tunnel) gibt es jetzt oben ein sich drehendes Spinner-Icon,
+#      darunter den aktuellen Schritt als Text, darunter einen fliessenden
+#      Progress-Balken mit Glanz-Animation. Farbe: tuerkis-gruen waehrend des
+#      Ladens, rot bei Fehler, gruen bei "Alles bereit".
+#
+#      Inhalt der letzten Version (7.5.1) - NACHRICHTEN KOMMEN AN: nur noch
+#      EINE Nachricht, Absenden + Abbrechen (Abbrechen schliesst wie das rote X).
 #      Beim Senden verschwindet alles ausser dem X: "Nachricht wird
 #      gesendet ...", Hinweis und ein GELBER Abbrechen-Knopf, der zurueck zum
 #      Tippen fuehrt (auch beim erneuten Oeffnen). Nach dem echten Versand:
@@ -2124,7 +2145,7 @@ param(
 # Existing LOCALAPPDATA directory; no UI, no new exception net.
 # A parse/policy failure prevents even this marker. Check its timestamp/version.
 # Continue + SilentlyContinue keeps diagnostic I/O from becoming a start blocker.
-Write-Output ("{0:o} PROOF_OF_LIFE Version=7.5.1 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
+Write-Output ("{0:o} PROOF_OF_LIFE Version=7.5.2 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
 
 $ErrorActionPreference = 'Stop'
 
@@ -2159,7 +2180,7 @@ trap {
         }
         $trapPath = Join-Path $trapFolder 'startup-diagnose.txt'
         $trapReport = New-Object System.Text.StringBuilder
-        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.1)')
+        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.2)')
         [void]$trapReport.AppendLine('Quelle: trap auf Skriptebene (nicht abgefangener Fehler)')
         [void]$trapReport.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$trapReport.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -2198,7 +2219,7 @@ trap {
             try {
                 [System.IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA 'START-CHECK.txt'),
                     ('Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.5.1' + [Environment]::NewLine +
+                     'Version: 7.5.2' + [Environment]::NewLine +
                      'ABBRUCH: ' + $trapMessage + [Environment]::NewLine +
                      'Details: ' + $trapPath + [Environment]::NewLine),
                     [System.Text.Encoding]::UTF8)
@@ -3063,7 +3084,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.5.1'
+    DocsVersion     = '7.5.2'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -3327,7 +3348,7 @@ function Write-StartupFailureDiagnose {
         try { $trace = [string]$ErrorRecord.ScriptStackTrace } catch {}
         if ($trace.Length -gt 2000) { $trace = $trace.Substring(0, 2000) }
         $report = New-Object System.Text.StringBuilder
-        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.1)')
+        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.2)')
         [void]$report.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$report.AppendLine('Letzte Startstufe: ' + $stage)
         [void]$report.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -3410,7 +3431,7 @@ function Set-StartupStage {
     try {
         $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
         $checkText = 'Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.5.1' + [Environment]::NewLine +
+                     'Version: 7.5.2' + [Environment]::NewLine +
                      'Zeit: ' + $stamp + [Environment]::NewLine +
                      'PowerShell: ' + [string]$PSVersionTable.PSVersion + ' | CLR ' + [string][Environment]::Version + [Environment]::NewLine +
                      'Skript: ' + [string]$script:ScriptPath + [Environment]::NewLine +
@@ -3476,12 +3497,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.5.1, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.5.1, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.5.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.5.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.5.1'
+$script:Shared.RuntimeInfo.Version = '7.5.2'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -3584,7 +3605,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.5.1)
+  Arena Studio Bridge - Studio Plugin  (Version 7.5.2)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -3657,7 +3678,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.5.1"
+local ARENA_VERSION  = "7.5.2"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -11115,7 +11136,7 @@ tools.mesh_slots = function(args)
     local buildId = tostring(args.buildId or "")
     local modelName = tostring(args.modelName or "ArenaMesh")
     local created, failed, reused = {}, {}, {}
-    -- Version 7.5.1 (LIVE-FIX gegen den Part-Regen): mesh_slots ist jetzt
+    -- Version 7.5.2 (LIVE-FIX gegen den Part-Regen): mesh_slots ist jetzt
     -- IDEMPOTENT. Existiert im Zielordner schon ein MeshPart mit demselben
     -- ArenaMeshSlot-Schluessel, wird es WIEDERVERWENDET und nur noch
     -- aktualisiert - es entsteht kein zweites. In 7.5.0 hat die Bridge einen
@@ -15936,7 +15957,7 @@ $script:BridgeHandlerScript = {
     }
 
     function Get-PendingUserMessageViewsForDelivery {
-        # Version 7.5.1 - "NIE VERLIEREN" (Live-Befund des Owners: das Fenster
+        # Version 7.5.2 - "NIE VERLIEREN" (Live-Befund des Owners: das Fenster
         # sagte "gesendet", Arena sah den Text aber nie).
         # Deshalb gilt jetzt:
         #   1. zuerst die EIGENE Sitzung (Normalfall),
@@ -16707,7 +16728,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.5.1 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.5.2 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -21021,7 +21042,7 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
             example = @{ slots = @( @{ key = 'mesh_1a2b3c4d5e:base' } ) };
             errors = @('BAD_ARGS: slots fehlt.', 'SIM_RUNNING/USER_PLAYTEST_ACTIVE: im laufenden Playtest sind schreibende Befehle gesperrt.') })
 
-        # ---------------- ROBLOX OPEN CLOUD (Version 7.5.1) ----------------
+        # ---------------- ROBLOX OPEN CLOUD (Version 7.5.2) ----------------
         $t.Add(@{ name = 'upload_asset'; category = 'cloud'; summary = 'Mesh oder Bild per Roblox Open Cloud hochladen - gibt die echte Asset-Id zurueck.';
             description = 'Laedt eine Datei ueber die OFFIZIELLE Roblox-Open-Cloud-Assets-API in das Roblox-Konto des Nutzers hoch und antwortet mit der ASSET-ID, die Roblox selbst genannt hat. Danach setzt DU das Asset selbst in den Place ein: ein Mesh mit mesh_apply_asset in den bestehenden Platzhalter (oder insert_asset fuer das komplette Modell), ein Bild mit set_property auf Decal.Texture / Texture.Texture / ImageLabel.Image / MeshPart.TextureID. Der Nutzer muss NICHTS mehr von Hand hochladen - das Mesh-Fenster gibt es nicht mehr. QUELLE (genau eine): slotKey = ein Mesh-Slot aus mesh_status (die Bridge kennt die fertige FBX/GLB-Datei dazu), filePath = eine Datei im Ordner der Bridge, oder contentBase64 + fileName = ein Bild, das DU erzeugt hast (kein Dateipfad noetig). Optional assetType: Model (Mesh, automatisch aus der Endung), Decal oder Image. Formate: .fbx/.glb/.gltf fuer Meshes, .png/.jpg/.jpeg/.bmp/.tga fuer Bilder. Roblox-Grenzen: 20 MB je Datei, Bilder unter 8000x8000 Pixel. Braucht der Upload laenger, antwortet das Werkzeug mit state=pending und einer operationId - dann einfach upload_asset { operationId } erneut aufrufen (nicht in einer engen Schleife pollen). Fehlt der Schluessel, antwortet das Werkzeug OPENCLOUD_KEY_MISSING mit einem userMessage-Satz: sage ihn dem Nutzer WORTLICH auf Deutsch. Den ERSTELLER (Nutzer oder Gruppe) bestimmt die Bridge SELBST aus dem Schluessel (Introspect) - der Nutzer traegt weder Name noch ID ein. Bei JEDEM gescheiterten Upload steht der EXAKTE Dateipfad in der Antwort (filePath/filePathHint): nenne ihn dem Nutzer woertlich in einer eigenen Zeile, damit er die Datei notfalls selbst in Roblox hochladen kann (Toolbox -> Import).';
             params = @{
@@ -21325,7 +21346,7 @@ end
                 motion = 'Add animation only when the task requests motion or the object is inherently living/moving. For organic models, explicitly use organic=true so per-model geometry, palette, enabled-motion and fresh-audit evidence is enforced; see organicBuildRules.'
             }
             meshBuildRules = @{
-                title = 'Mesh-Build Engine 1.2 (Version 7.5.1) - EIN Modell ist EIN Mesh, Blender baut, der Agent laedt hoch (Open Cloud), die Bridge setzt ein'
+                title = 'Mesh-Build Engine 1.2 (Version 7.5.2) - EIN Modell ist EIN Mesh, Blender baut, der Agent laedt hoch (Open Cloud), die Bridge setzt ein'
                 whenThisApplies = 'Der STARKE Weg neben build_polygon_model und ausdruecklich empfohlen, wenn eine Form mit Dreiecken/Wedges nicht gut wird (glatte oder organische Oberflaechen, viele Details, hohe Teilzahl) oder wenn das Modell im Place nur EIN Bauteil statt tausender Wedges sein soll. Fuer Entwurf, Iteration und fuer alles, was im Studio per Teil editierbar bleiben muss, bleibt build_polygon_model die erste Wahl. Seit 7.5.0 ist der Upload VOLL AUTOMATISIERT - der Nutzer muss nichts mehr hochladen.'
                 ONE_MODEL_ONE_MESH = 'HARTE REGEL SEIT 7.5.1 (Owner-Beschwerde: "Warum baut mir Arena Wurzel, Stamm, Aeste und Kronen einzeln"): EIN zusammenhaengendes Modell wird als EIN Mesh in EINEM Slot gebaut - ein Baum ist EIN Mesh, ein Fass EIN Mesh, eine Laterne EIN Mesh. Mehrere Slots sind NUR in genau drei Faellen erlaubt: (1) bestimmte Teile werden ANIMIERT (je bewegliches Glied ein Slot), (2) bestimmte Teile brauchen EIGENE EIGENSCHAFTEN (eigene Farbe/Material/CanCollide/Transparenz, die ein einzelnes MeshPart nicht tragen kann), (3) die DREIECKSZAHL sprengt das Budget (dann nach Koerperteilen splitten, nicht nach "Wurzel/Stamm/Aeste/Krone"-Raten). Sonst gilt: EIN Blender-Skript, das die ganze Form baut - inklusive Wurzeln, Krone, Blaetter oder Details -, EIN Slot, EIN MeshPart. Wer ohne einen dieser drei Gruende splittet, macht die Arbeit des Nutzers groesser (mehr Uploads, mehr Platzhalter, mehr MeshParts) und hat den Bau nicht verstanden.'
                 slots = 'Mehrere Slots NUR nach der Regel oben. Wenn wirklich geteilt wird, dann nach Funktion: je bewegliches Glied ein Slot (Kreatur, Fahrzeug, Maschine, Tuer, Rad) und die Gelenke wie gewohnt mit Welds/Motor6D verbinden; ein MeshPart traegt genau EINE Farbe/EIN Material (Roblox uebernimmt keine Blender-Materialien) - unterschiedliche Farben sind der zweite legitime Grund. Farbe und Material setzt Roblox ueber die Slot-Angaben color/material. Eine Zierde (Blatt, Blume, Frucht, Zierband) gehoert in DASSELBE Mesh, solange sie sich nicht bewegen muss.'
@@ -21341,7 +21362,7 @@ end
                 filePathIsMandatory = 'PFLICHT BEI JEDEM GESCHEITERTEN UPLOAD (Owner-Wunsch 7.5.1): Nenne dem Nutzer IMMER den exakten Dateipfad der Datei, die hochgeladen werden sollte - woertlich, in einer eigenen Zeile, kopierbar. Die Antwort von upload_asset traegt ihn als filePath (und sourcePath); mesh_status nennt ihn je Slot als uploadPath. Beispielsatz: "Die Datei liegt hier: C:\\Users\\<du>\\AppData\\Local\\ArenaRobloxBridge\\meshes\\<jobId>\\stamm.fbx - damit kannst du sie selbst in Roblox hochladen (Toolbox -> Import)." Auch wenn der Pfad schon in der Antwort steht: sag ihn im Chat, damit der Nutzer ihn nicht suchen muss.'
             }
             cloudUploadRules = @{
-                title = 'Cloud-Upload Engine 1.0 (Version 7.5.1) - Meshes und Bilder voll automatisch nach Roblox'
+                title = 'Cloud-Upload Engine 1.0 (Version 7.5.2) - Meshes und Bilder voll automatisch nach Roblox'
                 whenThisApplies = 'Immer, wenn ein Mesh (aus Blender) oder ein Bild (z. B. von dir selbst erzeugt) nach Roblox muss. Du brauchst dafuer KEINEN Menschen mehr - nur den einmalig hinterlegten Open-Cloud-Schluessel des Nutzers. Der Nutzer laedt nichts mehr von Hand hoch, es gibt kein Mesh-Fenster mehr.'
                 workflow = '1 Mesh: build_mesh_model -> mesh_status (uploadPath/uploadReady) -> upload_asset { slotKey } -> assetId -> mesh_apply_asset { slots = [ { key, assetId } ] } -> model_audit. Bild: upload_asset { fileName = "name.png", contentBase64 = "<Base64>" } -> assetId -> selbst einsetzen (Decal.Texture, Texture.Texture, ImageLabel.Image, MeshPart.TextureID) -> auditieren.'
                 meshUpload = 'Roblox Open Cloud legt ein hochgeladenes FBX/GLB als MODELL an (nicht als nackte Mesh-Id). Die Bridge kommt damit zurecht: mesh_apply_asset laedt das Modell, nimmt die MeshId aus dem MeshPart darin und setzt sie in den bestehenden Platzhalter ein (applyPath = modelMeshId). Alternativ fuegst du das komplette Modell mit insert_asset ein und positionierst es selbst.'
@@ -21351,7 +21372,7 @@ end
                 honesty = 'Die Asset-Id ist nur dann echt, wenn Roblox sie genannt hat. Steht die Operation noch auf pending, rufst du upload_asset { operationId } erneut auf (kein enger Loop). Fehlertexte von Roblox gehoren unverfaelscht an den Nutzer - die Bridge versteckt und beschoenigt nichts.'
             }
             organicBuildRules = @{
-                title = 'Organic Build Engine 1.1 (Version 7.5.1) - typed creature volumes, physical face, bilateral anatomy, measured before done'
+                title = 'Organic Build Engine 1.1 (Version 7.5.2) - typed creature volumes, physical face, bilateral anatomy, measured before done'
                 whenThisApplies = 'For any model intentionally built as organic (character, creature, plant, tree, prop or other organic free-form shape), this is a hard sequence independent of its name: the FIRST write targeting that model is build_polygon_model { organic=true, organicKind=... } with an explicit contrasting palette. For organicKind=creature the same first build must create closed role=body and role=head loft volumes; a long flat side-profile wedge is not a body or head volume. Use organicTraits=["wings"] when wings are intended and build role=wing_left/wing_right. Face features are physical 3D geometry, never Decal/Texture/GUI substitutes. Do not start with run_lua, build_assembly, loose primitives, or an external generator file. Then install an enabled motion Script under that same model, run model_audit on every returned organic model after the final edit, and fix every organicQuality issue. report_done is rejected with ORGANIC_AUDIT_REQUIRED/DETAIL_REQUIRED until every registered model passes.'
                 theOneIdea = 'For an organic model, the first write is build_polygon_model { organic=true, organicKind=... }. A creature gets real closed lofts for body and head (at least 4/3 stations, at least 8 sides) plus physical eyes and pupils; winged creatures get a mirrored, torso-attached wing pair. No side-view wedge, face sticker, or unmeasured claim can pass. Then add joints/details, install the enabled motion Script beneath the model, and audit the exact model.'
                 forbidden = @(
@@ -21817,7 +21838,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.5.1'
+            version = '7.5.2'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -22048,7 +22069,7 @@ end
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.5.1'
+            bridgeVersion = '7.5.2'
             executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent is never an error, but the user then sees NO bar and NO percentage at all - only your message as text. Send a real number every few calls. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
@@ -22282,7 +22303,7 @@ end
         }
         # Version 7.2.4 (P0): .ToArray() statt @( List[object] ) - siehe oben.
         try {
-        # Version 7.5.1: Die Lieferung nimmt JETZT AUCH Nachrichten aus anderen
+        # Version 7.5.2: Die Lieferung nimmt JETZT AUCH Nachrichten aus anderen
         # Sitzungen mit (Reconnect) und stellt den TEXT zusaetzlich in
         # attention - dort geht er zwischen den anderen Feldern nicht unter.
         $pendingUserMessages = Get-PendingUserMessageViewsForDelivery $sessionId 3
@@ -22567,7 +22588,7 @@ end
             if ($action -eq 'placeholders') {
                 # Platzhalter erneut anfordern (z.B. nachdem sie im Studio
                 # geloescht wurden). Der UI-Takt schickt den Befehl - aber
-                # HOECHSTENS einmal je Job (Version 7.5.1): das direkte Setzen
+                # HOECHSTENS einmal je Job (Version 7.5.2): das direkte Setzen
                 # von placeholderCommandId an einem PSCustomObject ohne dieses
                 # Feld warf hier eine Ausnahme (HTTP 500) und liess den Takt
                 # denselben Befehl endlos wiederholen.
@@ -22745,7 +22766,7 @@ end
     # den Place ein (mesh_apply_asset / insert_asset / set_property).
     # ------------------------------------------------------------------
     function Add-OpenCloudFilePathInfo {
-        # Version 7.5.1 (Owner-Wunsch): Bei JEDEM gescheiterten Mesh-/Bild-Upload
+        # Version 7.5.2 (Owner-Wunsch): Bei JEDEM gescheiterten Mesh-/Bild-Upload
         # steht der EXAKTE Dateipfad in der Antwort - der Agent soll ihn dem
         # Nutzer woertlich nennen, damit der die Datei selbst hochladen kann.
         param($Result, [string]$FilePath, [string]$FileName)
@@ -23542,7 +23563,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.5.1'
+                        bridgeVersion = '7.5.2'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -24009,7 +24030,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.5.1'
+                        serverVersion = '7.5.2'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -24368,7 +24389,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.5.1'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.5.2'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -24452,8 +24473,8 @@ end
                 }
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.5.1'
-                    serverVersion = '7.5.1'
+                    bridgeVersion = '7.5.2'
+                    serverVersion = '7.5.2'
                     toolbox = $statusToolbox
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
@@ -26484,7 +26505,7 @@ $script:BridgeMeshToolkit = {
     }
 
     function Set-MeshJobFieldOnObject {
-        # Version 7.5.1 (LIVE-BUG): Ein Job kommt aus ConvertFrom-Json. Ein
+        # Version 7.5.2 (LIVE-BUG): Ein Job kommt aus ConvertFrom-Json. Ein
         # Feld, das im JSON NICHT existiert, laesst sich an einem
         # PSCustomObject nicht einfach setzen - PowerShell wirft dann
         # "Die Eigenschaft konnte nicht gefunden werden ... Ausnahme beim
@@ -26549,7 +26570,7 @@ $script:BridgeMeshToolkit = {
             foreach ($pair in $Shared.MeshRegistry.GetEnumerator()) {
                 try { $rows.Add(($pair.Value | ConvertFrom-Json)) } catch {}
             }
-            $payload = @{ registryVersion = '7.5.1'; updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds(); slots = $rows.ToArray() }
+            $payload = @{ registryVersion = '7.5.2'; updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds(); slots = $rows.ToArray() }
             # Version 7.4.1: BOM-FREI schreiben (WriteAllText statt Set-Content).
             [System.IO.File]::WriteAllText($path, [string]($payload | ConvertTo-Json -Depth 8), (New-Object System.Text.UTF8Encoding($false)))
         } catch {}
@@ -26654,7 +26675,7 @@ $script:BridgeMeshToolkit = {
             origin = $Spec.origin
             rotationY = [double]$Spec.rotationY
             anchored = [bool]$Spec.anchored
-            # Version 7.5.1: Diese drei Felder existieren ab der ersten
+            # Version 7.5.2: Diese drei Felder existieren ab der ersten
             # Sekunde. Fehlten sie, konnte der UI-Takt die Befehls-Id nicht
             # zurueckschreiben (PSCustomObject!) und schickte die Platzhalter
             # endlos neu.
@@ -26874,7 +26895,7 @@ $script:BridgeMeshToolkit = {
         }
         $commandId = New-MeshBridgeCommand -Shared $Shared -SessionId ([string]$job.sessionId) -Tool 'mesh_slots' -ToolArgs $args -BudgetSeconds 150 -Tag ('placeholders:' + [string]$job.id)
         if (-not [string]::IsNullOrWhiteSpace($commandId)) {
-            # Version 7.5.1: NUR ueber den sicheren Setter schreiben (ein
+            # Version 7.5.2: NUR ueber den sicheren Setter schreiben (ein
             # direktes $job.placeholderCommandId warf bei fehlendem Feld eine
             # Ausnahme - der Befehl lief, die Id wurde nie vermerkt, und der
             # Takt schickte ihn endlos erneut: tausende MeshParts in Studio).
@@ -27115,7 +27136,7 @@ $script:BridgeMeshToolkit = {
 # Bounding-Box-Mitte - danach meldet er die gemessenen Zahlen.
 # ----------------------------------------------------------------------------
 $script:MeshRunnerTemplate = @'
-# Arena Roblox Bridge - Mesh-Runner (Version 7.5.1)
+# Arena Roblox Bridge - Mesh-Runner (Version 7.5.2)
 # Dieses Programm gehoert der Bridge. Der Agent liefert nur den Modellteil
 # (--script); der Runner macht Szene, Export, Zentrierung und Messung - und
 # seit 7.5.0 zusaetzlich die Upload-Datei (FBX, sonst GLB) fuer Roblox Open
@@ -27928,7 +27949,7 @@ $script:BridgeOpenCloudTools = {
     }
 
     # ------------------------------------------------------------------
-    # Version 7.5.1 - LIVE-FIX "Der HTTP-Client konnte nicht erzeugt werden."
+    # Version 7.5.2 - LIVE-FIX "Der HTTP-Client konnte nicht erzeugt werden."
     #
     # WAS IN 7.5.0 PASSIERT IST (Live-Befund des Owners, 07.10.2026):
     # upload_asset UND "Pruefen" antworteten nach ~0,6 s mit
@@ -28253,7 +28274,7 @@ $script:BridgeOpenCloudTools = {
             }
         }
         if ([string]::IsNullOrWhiteSpace([string]$config.creatorId)) {
-            # Version 7.5.1: Der Nutzer gibt KEINEN Ersteller mehr ein - die
+            # Version 7.5.2: Der Nutzer gibt KEINEN Ersteller mehr ein - die
             # Bridge holt ihn sich aus dem Schluessel (Introspect) und merkt
             # ihn sich. Schlaegt das fehl, kommt trotzdem ein klarer Grund.
             $autoCreator = Resolve-OpenCloudCreatorFromKey -Shared $Shared
@@ -28318,7 +28339,7 @@ $script:BridgeOpenCloudTools = {
         }
         $metaJson = $meta | ConvertTo-Json -Depth 6 -Compress
 
-        # Version 7.5.1: EIN Transportweg-Aufruf statt eines rohen HttpClient.
+        # Version 7.5.2: EIN Transportweg-Aufruf statt eines rohen HttpClient.
         # Ohne System.Net.Http (Windows PowerShell 5.1 laedt die Assembly nicht
         # von selbst) uebernimmt der HttpWebRequest-Weg - der Upload geht
         # trotzdem raus, statt mit "Client konnte nicht erzeugt werden" zu
@@ -28394,7 +28415,7 @@ $script:BridgeOpenCloudTools = {
         if ([string]::IsNullOrWhiteSpace($clean)) {
             return @{ ok = $false; code = 'BAD_ARGS'; error = 'Keine operationId angegeben.' }
         }
-        # Version 7.5.1: derselbe Transportweg wie beim Upload (HttpClient,
+        # Version 7.5.2: derselbe Transportweg wie beim Upload (HttpClient,
         # sonst HttpWebRequest) - kein "Client konnte nicht erzeugt werden".
         $attempt = Send-OpenCloudHttp -Shared $Shared -Method 'GET' -Url ('https://apis.roblox.com/assets/v1/operations/' + [Uri]::EscapeDataString($clean)) -Key ([string]$config.key) -TimeoutSeconds 30
         if ([int]$attempt.status -le 0) {
@@ -28473,7 +28494,7 @@ $script:BridgeOpenCloudTools = {
     }
 
     function Invoke-OpenCloudIntrospect {
-        # Version 7.5.1: die OFFIZIELLE Selbstauskunft des Schluessels -
+        # Version 7.5.2: die OFFIZIELLE Selbstauskunft des Schluessels -
         # POST https://apis.roblox.com/api-keys/v1/introspect (Roblox-Doku:
         # "Manage API keys -> Introspect API keys"). Sie nennt Name, den
         # autorisierten Nutzer, ALLE Scopes mit Operationen und Ressourcen
@@ -28564,7 +28585,7 @@ $script:BridgeOpenCloudTools = {
     }
 
     function Resolve-OpenCloudCreatorFromKey {
-        # Version 7.5.1 (Nutzerwunsch): DER NUTZER GIBT DEN ERSTELLER NICHT
+        # Version 7.5.2 (Nutzerwunsch): DER NUTZER GIBT DEN ERSTELLER NICHT
         # MEHR EIN. Die Bridge liest ihn aus dem Schluessel selbst - Roblox
         # nennt im Introspect die Ressourcen (userId/groupId) der Scopes.
         # Reihenfolge: genau eine Gruppe -> Gruppe, sonst genau ein Nutzer ->
@@ -28604,7 +28625,7 @@ $script:BridgeOpenCloudTools = {
     }
 
     function Test-OpenCloudKeyAuth {
-        # Version 7.5.1: die Pruefung ist jetzt die ECHTE Selbstauskunft
+        # Version 7.5.2: die Pruefung ist jetzt die ECHTE Selbstauskunft
         # (Introspect) statt eines Stocherns in einer erfundenen Operation.
         # Sie sagt damit nicht nur "Schluessel wird angenommen", sondern auch,
         # was er DARF (Assets lesen/schreiben) - und liefert gleich den
@@ -28689,7 +28710,7 @@ function Update-MeshTick {
                 if ($state -eq 'done') {
                     Update-MeshRegistryFromPlaceholderResult $script:Shared $jobId ([string]$outcome.json)
                 } else {
-                    # Version 7.5.1: Auch im Fehlerfall wird die Befehls-Id
+                    # Version 7.5.2: Auch im Fehlerfall wird die Befehls-Id
                     # GERAEUMT (ueber den sicheren Setter). Blieb sie stehen,
                     # sperrte sie den Job dauerhaft; fehlte sie, lief die
                     # Schleife - beides war falsch.
@@ -28767,7 +28788,7 @@ function Update-MeshTick {
 
         # Nach der Messung: Platzhalter automatisch anlegen lassen.
         #
-        # Version 7.5.1 - DIE ENDLOSSCHLEIFE IST ZU. Live-Befund des Owners:
+        # Version 7.5.2 - DIE ENDLOSSCHLEIFE IST ZU. Live-Befund des Owners:
         # weil das Feld placeholderCommandId am aus JSON gelesenen Job nicht
         # gesetzt werden konnte, war die Id nach dem Absenden wieder leer und
         # dieser Block schickte den Befehl im UI-Takt (etwa 2x je Sekunde)
@@ -29983,74 +30004,70 @@ $xaml = @'
                 <!-- Version 6.0: halbtransparentes Glas - die Aurora-Lichter     -->
                 <!-- scheinen waehrend des Starts lebendig hindurch.              -->
                 <!-- ============================================================ -->
+                <!-- Version 7.5.2: ORGANISCHER LADEBILDSCHIRM - oben Spinner,
+                     darunter der aktuelle Schritt, darunter ein fliessender
+                     Ladebalken. Keine 4-Schritte-Liste mehr. -->
                 <Border x:Name="SplashScreen" Panel.ZIndex="70" Background="#EE0A1030" CornerRadius="16" ClipToBounds="True">
                     <Grid>
-                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="400" Margin="0,-10,0,0">
-                            <Grid Width="86" Height="86" Margin="0,0,0,24" HorizontalAlignment="Center">
-                                <Ellipse Stroke="#26FFFFFF" StrokeThickness="6"/>
-                                <Ellipse x:Name="SplashSpinnerArc" Stroke="#00E5D0" StrokeThickness="6" StrokeDashArray="44 158" StrokeDashCap="Round" RenderTransformOrigin="0.5,0.5">
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="440" Margin="0,-6,0,0">
+                            <!-- Spinning Loading Icon (oben) -->
+                            <Grid Width="72" Height="72" Margin="0,0,0,22" HorizontalAlignment="Center">
+                                <Ellipse Stroke="#22FFFFFF" StrokeThickness="5"/>
+                                <Ellipse x:Name="SplashSpinnerArc" Stroke="#00E5D0" StrokeThickness="5" StrokeDashArray="34 138" StrokeDashCap="Round" RenderTransformOrigin="0.5,0.5">
                                     <Ellipse.Effect>
-                                        <DropShadowEffect Color="#9900E5D0" BlurRadius="14" ShadowDepth="0" Opacity="0.85"/>
+                                        <DropShadowEffect Color="#9900E5D0" BlurRadius="14" ShadowDepth="0" Opacity="0.8"/>
                                     </Ellipse.Effect>
                                     <Ellipse.RenderTransform>
-                                        <RotateTransform Angle="0"/>
+                                        <RotateTransform x:Name="SplashSpinnerRotation" Angle="0"/>
                                     </Ellipse.RenderTransform>
                                 </Ellipse>
-                                <Grid Width="32" Height="30" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                    <Ellipse Width="7" Height="7" Fill="#AFF7EC" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="1,0,0,0"/>
-                                    <Ellipse Width="7" Height="7" Fill="#E8FBFF" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,1,0"/>
-                                    <Rectangle Height="2.6" Fill="#00E5D0" Margin="11,0,11,0" RadiusX="1.3" RadiusY="1.3"/>
-                                </Grid>
+                                <Ellipse Width="6" Height="6" Fill="#AFF7EC" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,2,0,0"/>
                             </Grid>
-                            <TextBlock x:Name="SplashHeadline" Text="Arena Roblox Bridge startet …" Foreground="{StaticResource TextMain}" FontSize="19" FontWeight="Bold" TextAlignment="Center"/>
-                            <TextBlock x:Name="SplashSub" Text="Alles wird automatisch vorbereitet - du musst nichts tun." Foreground="{StaticResource TextMuted}" FontSize="12.5" TextAlignment="Center" TextWrapping="Wrap" Margin="0,9,0,24"/>
-                            <Border CornerRadius="13" Background="#33101838" BorderBrush="#26FFFFFF" BorderThickness="1" Padding="18,14">
-                                <StackPanel>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Ellipse x:Name="SplashStudioDot" Grid.Column="0" Width="9" Height="9" Fill="#8FA3CC" Margin="0,0,12,0" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="1" Text="Roblox Studio" Foreground="#DCE6FF" FontSize="13.5" VerticalAlignment="Center"/>
-                                        <TextBlock x:Name="SplashStudioState" Grid.Column="2" Text="Wird geprüft …" Foreground="#9AA9CE" FontSize="12" VerticalAlignment="Center"/>
-                                    </Grid>
-                                    <Border Height="1" Background="#1FFFFFFF" Margin="0,11,0,11"/>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Ellipse x:Name="SplashPluginDot" Grid.Column="0" Width="9" Height="9" Fill="#8FA3CC" Margin="0,0,12,0" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="1" Text="Studio-Plugin" Foreground="#DCE6FF" FontSize="13.5" VerticalAlignment="Center"/>
-                                        <TextBlock x:Name="SplashPluginState" Grid.Column="2" Text="Wartet …" Foreground="#9AA9CE" FontSize="12" VerticalAlignment="Center"/>
-                                    </Grid>
-                                    <Border Height="1" Background="#1FFFFFFF" Margin="0,11,0,11"/>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Ellipse x:Name="SplashBlenderDot" Grid.Column="0" Width="9" Height="9" Fill="#8FA3CC" Margin="0,0,12,0" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="1" Text="Blender (Mesh-Bau)" Foreground="#DCE6FF" FontSize="13.5" VerticalAlignment="Center"/>
-                                        <TextBlock x:Name="SplashBlenderState" Grid.Column="2" Text="Wartet …" Foreground="#9AA9CE" FontSize="12" VerticalAlignment="Center" Cursor="Hand" ToolTip="Blender erneut pruefen (echte Faehigkeitsprobe)"/>
-                                    </Grid>
-                                    <Border Height="1" Background="#1FFFFFFF" Margin="0,11,0,11"/>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Ellipse x:Name="SplashTunnelDot" Grid.Column="0" Width="9" Height="9" Fill="#8FA3CC" Margin="0,0,12,0" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="1" Text="Cloudflare-Tunnel" Foreground="#DCE6FF" FontSize="13.5" VerticalAlignment="Center"/>
-                                        <TextBlock x:Name="SplashTunnelState" Grid.Column="2" Text="Wartet …" Foreground="#9AA9CE" FontSize="12" VerticalAlignment="Center"/>
-                                    </Grid>
-                                </StackPanel>
-                            </Border>
+                            <!-- Aktueller Schritt (Text ueber dem Balken) -->
+                            <TextBlock x:Name="SplashHeadline" Text="Arena Roblox Bridge startet …" Foreground="{StaticResource TextMain}" FontSize="20" FontWeight="Bold" TextAlignment="Center"/>
+                            <TextBlock x:Name="SplashStep" Text="Start wird vorbereitet …" Foreground="{StaticResource TextMuted}" FontSize="13" TextAlignment="Center" TextWrapping="Wrap" Margin="0,8,0,20"/>
+                            <!-- Organischer Ladebalken -->
+                            <Grid Height="10" Margin="6,0,6,0">
+                                <Border x:Name="SplashBarTrack" CornerRadius="5" Background="#22101838" BorderBrush="#22FFFFFF" BorderThickness="1"/>
+                                <Border x:Name="SplashBarFill" CornerRadius="5" HorizontalAlignment="Left" VerticalAlignment="Stretch" Width="4" ClipToBounds="True">
+                                    <Border.Background>
+                                        <LinearGradientBrush x:Name="SplashBarGradient" StartPoint="0,0" EndPoint="1,0">
+                                            <GradientStop Color="#00C9B5" Offset="0"/>
+                                            <GradientStop Color="#38D16C" Offset="0.55"/>
+                                            <GradientStop Color="#7EE2A8" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Border.Background>
+                                    <Border.Effect>
+                                        <DropShadowEffect Color="#6638D16C" BlurRadius="8" ShadowDepth="0" Opacity="0.7"/>
+                                    </Border.Effect>
+                                    <!-- Fliessender Glanz auf dem Balken ("organisch") -->
+                                    <Rectangle x:Name="SplashBarShine" HorizontalAlignment="Left" Width="60" Margin="-60,0,0,0">
+                                        <Rectangle.Fill>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                                <GradientStop Color="#00FFFFFF" Offset="0"/>
+                                                <GradientStop Color="#44FFFFFF" Offset="0.5"/>
+                                                <GradientStop Color="#00FFFFFF" Offset="1"/>
+                                            </LinearGradientBrush>
+                                        </Rectangle.Fill>
+                                        <Rectangle.RenderTransform>
+                                            <TranslateTransform x:Name="SplashBarShineX" X="0"/>
+                                        </Rectangle.RenderTransform>
+                                    </Rectangle>
+                                </Border>
+                            </Grid>
+                            <!-- Kleiner Prozent/Hinweis-Text unter dem Balken -->
+                            <TextBlock x:Name="SplashSub" Text="" Foreground="{StaticResource TextFaint}" FontSize="11" TextAlignment="Center" Margin="0,10,0,0"/>
+                            <!-- Versteckte Dots fuer Abwaertskompatibilitaet (werden nicht angezeigt,
+                                 aber alte Code-Pfade, die FindName erwarten, laufen ins Leere
+                                 statt eine Ausnahme zu werfen). -->
+                            <Ellipse x:Name="SplashStudioDot" Visibility="Collapsed"/>
+                            <TextBlock x:Name="SplashStudioState" Visibility="Collapsed"/>
+                            <Ellipse x:Name="SplashPluginDot" Visibility="Collapsed"/>
+                            <TextBlock x:Name="SplashPluginState" Visibility="Collapsed"/>
+                            <Ellipse x:Name="SplashBlenderDot" Visibility="Collapsed"/>
+                            <TextBlock x:Name="SplashBlenderState" Visibility="Collapsed"/>
+                            <Ellipse x:Name="SplashTunnelDot" Visibility="Collapsed"/>
+                            <TextBlock x:Name="SplashTunnelState" Visibility="Collapsed"/>
                         </StackPanel>
                     </Grid>
                 </Border>
@@ -30083,14 +30100,21 @@ $CopyConfirm     = $window.FindName('CopyConfirm')
 $CopyConfirmText = $window.FindName('CopyConfirmText')
 $SplashHeadline  = $window.FindName('SplashHeadline')
 $SplashSub       = $window.FindName('SplashSub')
+# Version 7.5.2: neuer organischer Ladebalken + Spinner
+$SplashStep      = $window.FindName('SplashStep')
+$SplashBarFill   = $window.FindName('SplashBarFill')
+$SplashBarGradient = $window.FindName('SplashBarGradient')
+$SplashBarShine  = $window.FindName('SplashBarShine')
+$SplashBarShineX = $window.FindName('SplashBarShineX')
+$SplashSpinnerRotation = $window.FindName('SplashSpinnerRotation')
 $SplashStudioDot    = $window.FindName('SplashStudioDot')
 $SplashStudioState  = $window.FindName('SplashStudioState')
 $SplashPluginDot    = $window.FindName('SplashPluginDot')
 $SplashPluginState  = $window.FindName('SplashPluginState')
 $SplashBlenderDot   = $window.FindName('SplashBlenderDot')
 $SplashBlenderState = $window.FindName('SplashBlenderState')
-# Version 7.4.1: "Blender pruefen" wiederholt die ECHTE Faehigkeitsprobe
-# (nicht nur das Lesen der Version) - im Hintergrund, ohne Einfrieren.
+# Die alten Dots sind jetzt Collapsed; der Klick-Handler fuer Blender-Pruefung
+# bleibt (Click auf eine nicht-sichtbare TextBlock-Instanz tut nichts).
 try {
     $SplashBlenderState.Add_MouseLeftButtonUp({
         try {
@@ -30100,6 +30124,21 @@ try {
 } catch { }
 $SplashTunnelDot    = $window.FindName('SplashTunnelDot')
 $SplashTunnelState  = $window.FindName('SplashTunnelState')
+
+# Spinner-Drehung + Glanz-Animation auf dem Ladebalken (organischer Eindruck)
+try {
+    if ($SplashSpinnerRotation) {
+        $spin = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 360, [TimeSpan]::FromMilliseconds(1100))
+        $spin.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+        $SplashSpinnerRotation.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $spin)
+    }
+    if ($SplashBarShineX) {
+        $shine = [System.Windows.Media.Animation.DoubleAnimation]::new(-60, 520, [TimeSpan]::FromMilliseconds(1800))
+        $shine.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+        $shine.BeginTime = [TimeSpan]::FromMilliseconds(400)
+        $SplashBarShineX.BeginAnimation([System.Windows.Media.TranslateTransform]::XProperty, $shine)
+    }
+} catch {}
 $PlaceList       = $window.FindName('PlaceList')
 $EmptyState      = $window.FindName('EmptyState')
 $EmptyTitle      = $window.FindName('EmptyTitle')
@@ -30512,9 +30551,13 @@ function Get-NormalizedPlaceName {
 function Get-PlaceNameQuality {
     # Kleine, ehrliche Qualitaetsstufe - ein einmal erkannter GUTER Name darf
     # nie durch einen schlechteren ueberschrieben werden.
-    # 0 = unbrauchbar, 1 = Fallback-Titel, 2 = sauberer Titel/Place-Name.
+    # 0 = unbrauchbar/Session-Fallback, 1 = Fallback-Titel, 2 = sauberer Titel/Place-Name.
+    # Version 7.5.2: sessionFallback („Place XXXX“) ist Qualitaet 0 - er darf
+    # spaeter IMMER von Fenstertitel oder Plugin-Namen ueberschrieben werden.
     param([string]$Name, [string]$Source)
     if ([string]::IsNullOrWhiteSpace($Name)) { return 0 }
+    if ($Source -eq 'sessionFallback') { return 0 }
+    if ($Name -match '^Place\s+[A-Za-z0-9]{3,8}\s*$') { return 0 }
     if (Test-StandardPlaceName $Name) { return 0 }
     if ($Source -eq 'plugin') { return 2 }
     if ($Source -eq 'windowTitle' -and $Name -match '\s') { return 1 }
@@ -30637,6 +30680,21 @@ function Resolve-PlaceWindowIdentity {
         Save-PlaceIdentity $SessionId $Studio $infos[0] 'einzelnesFenster' | Out-Null
         return (Get-PlaceIdentity $SessionId)
     }
+    # 4) Version 7.5.2: Bei MEHREREN Fenstern das ERSTE noch nicht beanspruchte
+    #    Fenster binden (Zaehlung: offene Sessions vs. Fenster). Das verhindert
+    #    „keinTrefferBeiMehrerenFenstern“, wenn das Plugin noch keinen echten
+    #    Namen meldet (z. B. direkt nach dem Oeffnen). Die Bindung ist stabil
+    #    (PID+HWND), weitere Namens-Abgleiche aendern sie nicht.
+    foreach ($info in $infos) {
+        if (Test-PreviewHandleClaimed $info.Handle $SessionId) { continue }
+        $script:PreviewHandleClaims[[int64]$info.Handle] = $SessionId
+        $candidate = Get-NormalizedPlaceName ([string]$info.Title)
+        if (-not [string]::IsNullOrWhiteSpace($candidate)) {
+            [void](Save-PlaceName $SessionId $candidate 'windowTitle')
+        }
+        Save-PlaceIdentity $SessionId $Studio $info 'erstesFreiesFenster' | Out-Null
+        return (Get-PlaceIdentity $SessionId)
+    }
     return $identity
 }
 
@@ -30663,7 +30721,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.5.1)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.5.2)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -31188,7 +31246,7 @@ function Get-UserMessageBadgeText {
 }
 
 function Update-UserMessageWindow {
-    # Version 7.5.1: Das Fenster kennt nur noch DREI Zustaende -
+    # Version 7.5.2: Das Fenster kennt nur noch DREI Zustaende -
     #   schreiben -> "Nachricht wird gesendet ..." -> "Nachricht gesendet!"
     # Verlaufsliste und Statusfeld sind WEG (Nutzerwunsch: "viel simpler").
     # Ehrlichkeit bleibt: "gesendet" heisst, dass Arena die Nachricht wirklich
@@ -31345,7 +31403,7 @@ $script:ArenaDialogStyles = @'
             <Setter Property="Foreground" Value="{StaticResource SwTextMuted}"/>
             <Setter Property="Background" Value="{StaticResource SwQuietBtnBg}"/>
         </Style>
-        <!-- Warnen / spaeter abbrechen (Version 7.5.1): gedeckter Gelbton in
+        <!-- Warnen / spaeter abbrechen (Version 7.5.2): gedeckter Gelbton in
              derselben Formensprache wie die anderen Dialogknoepfe - der
              Abbrechen-Knopf der Sendeseite. -->
         <LinearGradientBrush x:Key="SwWarnBtnBg" StartPoint="0,0" EndPoint="0,1">
@@ -31588,7 +31646,7 @@ $script:ArenaDialogStyles = @'
 
 
 # ----------------------------------------------------------------------------
-# Version 7.5.1: NACHFOLGE-TEIL DER NUTZERNACHRICHT (Kurznotiz-Fenster)
+# Version 7.5.2: NACHFOLGE-TEIL DER NUTZERNACHRICHT (Kurznotiz-Fenster)
 # Ergebnis einer Owner-Meldung: "mach es viel simpler". Die Nachricht bleibt
 # eine handgeschriebene Notiz an den Agenten - es gibt weiterhin genau EINEN
 # Kanal (_bridge.userMessages), keinen zweiten Meldeweg.
@@ -31669,7 +31727,7 @@ function Set-UserMessageWindowView {
 }
 
 function Get-UserMessageWindowXaml {
-    # Version 7.5.1 (Owner: "mach es viel simpler", kleinere Hoehe):
+    # Version 7.5.2 (Owner: "mach es viel simpler", kleinere Hoehe):
     #   * nur EIN Textfeld, kein Verlauf, kein Statusfeld,
     #   * darueber "Deine Nachricht:" und der kleine Satz, wofuer das gut ist,
     #   * darunter NUR "Absenden" (gruen) und "Abbrechen" (grau),
@@ -31795,7 +31853,7 @@ function Get-UserMessageWindowXaml {
 }
 
 function Open-UserMessageWindow {
-    # Version 7.5.1: EINE Nachricht auf einmal. Das Fenster ist modal
+    # Version 7.5.2: EINE Nachricht auf einmal. Das Fenster ist modal
     # (ShowDialog), klein, und kennt genau die drei Ansichten aus
     # Get-UserMessageWindowXaml. Ist schon eine Nachricht unterwegs, oeffnet es
     # sich direkt in deren Zustand ("bleibt es so" - Nutzerwunsch). Der
@@ -33611,7 +33669,7 @@ function Write-ChannelDiagnoseFile {
 
         $progressPath = Join-Path $script:AppDataRoot 'progress-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.5.1)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.5.2)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -33646,7 +33704,7 @@ function Write-ChannelDiagnoseFile {
 
         $notifyPath = Join-Path $script:AppDataRoot 'notify-diagnose.txt'
         $sb2 = New-Object System.Text.StringBuilder
-        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.5.1)')
+        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.5.2)')
         [void]$sb2.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb2.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb2.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -33892,12 +33950,13 @@ function Get-PlaceName {
     if (-not [string]::IsNullOrWhiteSpace($reportedName)) {
         [void](Save-PlaceName $sessionId $reportedName 'plugin')
         Save-PlaceIdentity $sessionId $Studio $null 'pluginName' | Out-Null
-        return [string]$script:PlaceNames[$sessionId]
     }
 
-    # 2) Ein einmal erkannter guter Name bleibt - und wird nie durch einen
-    #    schlechteren Titel ueberschrieben (Save-PlaceName prueft das).
-    if ($script:PlaceNames.ContainsKey($sessionId)) { return [string]$script:PlaceNames[$sessionId] }
+    # 2) Version 7.5.2: IMMER versuchen, die Identity (PID+HWND) aufzuloesen
+    #    und daraus den Fenstertitel zu holen. Ein frueherer Return wuerde
+    #    den sessionFallback („Place XXXX“) fuer immer festhalten.
+    #    Save-PlaceName entscheidet allein nach Qualitaet, ob der alte Name
+    #    ersetzt wird.
 
     # 3) FALLBACK: nur der Titel des EIGENEN, exklusiv gebundenen Fensters.
     #    Niemals ein freier Titel aus einer gemeinsamen Liste - genau das
@@ -34014,7 +34073,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.5.1)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.5.2)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -34307,6 +34366,16 @@ function Resolve-PlacePreviewHandle {
                 }
             }
         }
+    }
+    # Version 7.5.2: Letztes Mittel - das ERSTE noch nicht beanspruchte Fenster
+    # binden (Zaehlung). Damit gibt es kein „keinTrefferBeiMehrerenFenstern“
+    # mehr mit hwnd=0, solange noch irgendein Studio-Fenster frei ist.
+    foreach ($info in $infos) {
+        if (Test-PreviewHandleClaimed $info.Handle $sessionId) { continue }
+        $script:PreviewHandleClaims[[int64]$info.Handle] = $sessionId
+        Save-PlaceIdentity $sessionId $Studio $info 'erstesFreiesFenster' | Out-Null
+        Save-PreviewHandleMeta $sessionId $info 'erstesFreiesFenster' $rowTitle
+        return [IntPtr]$info.Handle
     }
     Save-PreviewHandleMeta $sessionId $null 'keinTrefferBeiMehrerenFenstern' $rowTitle
     return [IntPtr]::Zero
@@ -36044,113 +36113,148 @@ function Hide-Splash {
 }
 
 function Update-SplashScreen {
+    # Version 7.5.2: ORGANISCHER LADEBALKEN STATT 4-SCHRITTE-LISTE.
+    # Der Balken wird ueber Headline (Schritt) und Step (laengerer Text)
+    # gefuellt, die Balken-Fuellung passt sich je nach Zustand an.
     if ($script:SplashDismissed) { return }
     if ($null -eq $SplashScreen) { return }
 
-    # 3.5: StartupBlocked = der Start wurde abgebrochen (z.B. Port belegt).
-    # In dem Fall ist "Plugin nicht installiert" KEIN Fehler, sondern Folge
-    # des Abbruchs - der Startbildschirm muss sichtbar bleiben und den
-    # Grund zeigen (genau das machte die 3.4 kaputt: sie blendete sofort aus).
     $studioFound = [bool]$script:RobloxStudioPath
     $blocked = [bool]$script:StartupBlocked
     $pluginFailed = ($studioFound -and -not $blocked -and -not $script:PluginInstalled)
     $tunnelFailed = ((-not $blocked) -and ($script:TunnelInstallFailed -or $script:TunnelFailed -or $script:TunnelMissing))
     $tunnelActive = ($script:TunnelInstalling -or $script:TunnelProcess)
 
-    # Zeile: Roblox Studio
-    if ($studioFound) {
-        Set-Dot $SplashStudioDot $script:ColorGreen
-        Set-Text $SplashStudioState 'Gefunden'
-    } else {
-        Set-Dot $SplashStudioDot $script:ColorRed
-        Set-Text $SplashStudioState 'Nicht gefunden'
-    }
+    # Blender-Zustand holen
+    $blenderState = ''
+    $blenderPercent = 0
+    $blenderMessage = ''
+    $blenderReady = $false
+    $blenderFailed = $false
+    try {
+        $bmap = $script:Shared.BlenderState
+        $blenderState = [string]$bmap.state
+        $blenderPercent = [int]$bmap.percent
+        $blenderMessage = [string]$bmap.message
+    } catch {}
+    if ($blenderState -eq 'ready') { $blenderReady = $true }
+    if ($blenderState -eq 'failed' -or $blenderState -eq 'skipped') { $blenderFailed = $true }
 
-    # Zeile: Studio-Plugin
+    # Zustand -> Schritt, Text, Prozent, Farbe
+    $step = 'Start wird vorbereitet …'
+    $sub = ''
+    $percent = 5.0
+    $colorGood = $true
+    $headline = 'Arena Roblox Bridge startet …'
+
     if ($blocked) {
-        Set-Dot $SplashPluginDot $script:ColorGray
-        Set-Text $SplashPluginState 'Übersprungen'
+        $headline = 'Start fehlgeschlagen'
+        $step = 'Port ist belegt'
+        $sub = "Der lokale Port $($script:Port) konnte nicht freigegeben werden. Bitte schließe dieses Programm und starte es erneut."
+        $percent = 100.0
+        $colorGood = $false
     } elseif (-not $studioFound) {
-        Set-Dot $SplashPluginDot $script:ColorGray
-        Set-Text $SplashPluginState 'Wartet'
-    } elseif ($script:PluginInstalled) {
-        Set-Dot $SplashPluginDot $script:ColorGreen
-        Set-Text $SplashPluginState 'Installiert'
+        $headline = 'Roblox Studio wurde nicht gefunden'
+        $step = 'Roblox Studio wird gesucht'
+        $sub = 'Bitte installiere Roblox Studio und starte dieses Programm danach neu.'
+        $percent = 15.0
+        $colorGood = $false
+    } elseif (-not $script:PluginInstalled) {
+        $step = 'Studio-Plugin wird installiert'
+        $sub = 'Das Plugin wird in deinen Roblox-Studio-Ordner gelegt.'
+        $percent = 35.0
+    } elseif (-not $blenderReady -and -not $blenderFailed -and ($blenderState -eq 'searching' -or $blenderState -eq 'probing')) {
+        $step = 'Blender wird geprüft'
+        $sub = 'Blender wird fuer den Mesh-Bau gesucht und getestet.'
+        $percent = 50.0
+    } elseif ($blenderState -eq 'installing') {
+        $step = 'Blender wird installiert'
+        if ($blenderPercent -gt 0) { $sub = 'Download: ' + [string]$blenderPercent + ' %' } else { $sub = [string]$blenderMessage }
+        $percent = 50.0 + ([double]$blenderPercent * 0.15)
+    } elseif ($blenderFailed) {
+        $step = 'Blender nicht verfuegbar'
+        $sub = 'Der Mesh-Bau ist vorerst aus - alles andere laeuft normal.'
+        $percent = 65.0
+    } elseif ($tunnelFailed) {
+        $headline = 'Cloudflare-Tunnel fehlgeschlagen'
+        $step = 'Tunnel-Verbindung wird wiederholt'
+        $hint = if ($script:TunnelInstallMessage) { $script:TunnelInstallMessage } elseif ($script:LastTunnelMessage) { $script:LastTunnelMessage } else { '' }
+        if ($hint.Length -gt 140) { $hint = $hint.Substring(0, 140) + ' …' }
+        $sub = $hint
+        $percent = 80.0
+        $colorGood = $false
+    } elseif ($script:TunnelInstalling) {
+        $step = 'Cloudflared wird installiert'
+        $sub = 'Der Cloudflare-Tunnel wird automatisch heruntergeladen (dauert je nach Verbindung 1-3 Minuten).'
+        $percent = 80.0
+    } elseif (-not $script:TunnelUrl) {
+        $step = 'Cloudflare-Tunnel wird verbunden'
+        $sub = 'Das dauert normalerweise nur wenige Sekunden.'
+        $percent = 85.0
     } else {
-        Set-Dot $SplashPluginDot $script:ColorRed
-        Set-Text $SplashPluginState 'Fehler'
+        $headline = 'Alles bereit!'
+        $step = 'Verbunden'
+        $sub = 'Öffne ein Place in Roblox Studio - es erscheint automatisch in der Liste.'
+        $percent = 100.0
+        $colorGood = $true
     }
 
-    # Zeile: Cloudflare-Tunnel (der aktive Punkt pulsiert)
-    if ($blocked) {
-        Set-Dot $SplashTunnelDot $script:ColorGray
-        Set-Text $SplashTunnelState 'Nicht gestartet'
-    } elseif ($script:TunnelUrl) {
-        Set-Dot $SplashTunnelDot $script:ColorGreen
-        Set-Text $SplashTunnelState 'Verbunden'
-    } elseif ($tunnelFailed) {
-        Set-Dot $SplashTunnelDot $script:ColorRed
-        Set-Text $SplashTunnelState 'Fehler'
-    } elseif ($script:TunnelInstalling) {
-        Set-Dot $SplashTunnelDot $script:ColorAmber
-        Set-Text $SplashTunnelState 'Wird installiert'
-    } elseif ($script:TunnelProcess) {
-        Set-Dot $SplashTunnelDot $script:ColorAmber
-        Set-Text $SplashTunnelState 'Verbindet'
-    } else {
-        Set-Dot $SplashTunnelDot $script:ColorGray
-        Set-Text $SplashTunnelState 'Wartet'
+    # Wenn Plugin-Fehler vor Studio-Suche (nur bei Studio gefunden aber Plugin fehlt)
+    if ($pluginFailed) {
+        $headline = 'Studio-Plugin konnte nicht installiert werden'
+        $step = 'Plugin-Installation fehlgeschlagen'
+        $sub = 'Details stehen im Protokoll: %LOCALAPPDATA%\ArenaRobloxBridge\runtime.log'
+        $percent = 40.0
+        $colorGood = $false
     }
-    if ($tunnelActive -and -not $script:TunnelUrl) {
-        if (-not $script:SplashTunnelPulse) {
-            $script:SplashTunnelPulse = $true
-            $pulse = [System.Windows.Media.Animation.DoubleAnimation]::new(0.3, 1, [System.TimeSpan]::FromMilliseconds(650))
-            $pulse.AutoReverse = $true
-            $pulse.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
-            $SplashTunnelDot.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $pulse)
+
+    # Auf UI anwenden
+    Set-Text $SplashHeadline $headline
+    if ($SplashStep) { Set-Text $SplashStep $step }
+    Set-Text $SplashSub $sub
+
+    # Balken-Weite animiert setzen (auf 400 px zentriert -> 428 px Gesamtbreite)
+    $trackWidth = 428.0
+    if ($percent -lt 0) { $percent = 0 }
+    if ($percent -gt 100) { $percent = 100 }
+    $barWidth = [Math]::Max(4.0, $trackWidth * [double]$percent / 100.0)
+    try {
+        if ($SplashBarFill) {
+            # Sanftes Animieren zur neuen Breite
+            $currentWidth = [double]$SplashBarFill.Width
+            if ($currentWidth -lt 1) { $currentWidth = 4.0 }
+            if ([Math]::Abs($currentWidth - $barWidth) -gt 0.5) {
+                $wAnim = [System.Windows.Media.Animation.DoubleAnimation]::new($currentWidth, $barWidth, [TimeSpan]::FromMilliseconds(380))
+                $wAnim.EasingFunction = [System.Windows.Media.Animation.CubicEase]::new()
+                $wAnim.EasingFunction.EasingMode = 'EaseOut'
+                $SplashBarFill.BeginAnimation([System.Windows.FrameworkElement]::WidthProperty, $wAnim)
+            }
         }
-    } elseif ($script:SplashTunnelPulse) {
-        $script:SplashTunnelPulse = $false
-        $SplashTunnelDot.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $null)
-        try { $SplashTunnelDot.Opacity = 1 } catch {}
-    }
-
-    # Ueberschrift + Untertext
-    if ($blocked) {
-        Set-Text $SplashHeadline 'Start fehlgeschlagen'
-        Set-Text $SplashSub "Der lokale Port $($script:Port) konnte nicht freigegeben werden. Bitte schließe dieses Programm und starte es erneut - dabei wird die blockierende Instanz jetzt zuverlässig beendet. Hilft das nicht: PC einmal neu starten. Details: Protokoll (runtime.log) im Ordner %LOCALAPPDATA%\ArenaRobloxBridge."
-    } elseif (-not $studioFound) {
-        Set-Text $SplashHeadline 'Roblox Studio wurde nicht gefunden'
-        Set-Text $SplashSub 'Bitte installiere Roblox Studio und starte dieses Programm danach neu.'
-    } elseif ($pluginFailed) {
-        Set-Text $SplashHeadline 'Studio-Plugin konnte nicht installiert werden'
-        Set-Text $SplashSub 'Details stehen im Protokoll: %LOCALAPPDATA%\ArenaRobloxBridge\runtime.log'
-    } elseif ($script:TunnelUrl) {
-        Set-Text $SplashHeadline 'Alles bereit!'
-        Set-Text $SplashSub 'Öffne ein Place in Roblox Studio - es erscheint automatisch in der Liste.'
-    } elseif ($script:TunnelInstalling) {
-        Set-Text $SplashHeadline 'Cloudflared wird installiert …'
-        Set-Text $SplashSub 'Der Cloudflare-Tunnel wird automatisch heruntergeladen (dauert je nach Verbindung 1-3 Minuten).'
-    } elseif ($tunnelFailed) {
-        Set-Text $SplashHeadline 'Cloudflare-Tunnel fehlgeschlagen'
-        $hint = if ($script:TunnelInstallMessage) { $script:TunnelInstallMessage } elseif ($script:LastTunnelMessage) { $script:LastTunnelMessage } else { 'Details stehen im Protokoll.' }
-        if ($hint.Length -gt 220) { $hint = $hint.Substring(0, 220) + ' …' }
-        Set-Text $SplashSub $hint
-    } else {
-        Set-Text $SplashHeadline 'Cloudflare-Tunnel wird verbunden …'
-        Set-Text $SplashSub 'Das dauert normalerweise nur wenige Sekunden.'
-    }
+        # Balken-Farbe bei Fehler rot, bei Erfolg gruen
+        if ($SplashBarGradient) {
+            if (-not $colorGood) {
+                $SplashBarGradient.GradientStops[0].Color = [System.Windows.Media.ColorConverter]::ConvertFromString('#FF5C77')
+                $SplashBarGradient.GradientStops[1].Color = [System.Windows.Media.ColorConverter]::ConvertFromString('#E11D48')
+                $SplashBarGradient.GradientStops[2].Color = [System.Windows.Media.ColorConverter]::ConvertFromString('#FF8AA0')
+            } elseif ($percent -ge 100) {
+                $SplashBarGradient.GradientStops[0].Color = [System.Windows.Media.ColorConverter]::ConvertFromString('#38D16C')
+                $SplashBarGradient.GradientStops[1].Color = [System.Windows.Media.ColorConverter]::ConvertFromString('#22A55A')
+                $SplashBarGradient.GradientStops[2].Color = [System.Windows.Media.ColorConverter]::ConvertFromString('#7EE2A8')
+            } else {
+                $SplashBarGradient.GradientStops[0].Color = [System.Windows.Media.ColorConverter]::ConvertFromString('#00C9B5')
+                $SplashBarGradient.GradientStops[1].Color = [System.Windows.Media.ColorConverter]::ConvertFromString('#38D16C')
+                $SplashBarGradient.GradientStops[2].Color = [System.Windows.Media.ColorConverter]::ConvertFromString('#7EE2A8')
+            }
+        }
+    } catch {}
 
     # Ausblenden, wenn alles fertig ist (kurz "Alles bereit!" zeigen).
-    # Bei einem endgueltigen Fehler bleibt der Startbildschirm ZUERST 10
-    # Sekunden stehen (3.5: damit die Fehlermeldung auch gelesen werden
-    # kann), danach blendet er aus und gibt die Oberflaeche frei.
     $allDone = ($studioFound -and $script:PluginInstalled -and $script:TunnelUrl)
     $terminal = ((-not $studioFound) -or $blocked -or $pluginFailed -or $tunnelFailed)
     $timedOut = (((Get-Date) - $script:StartTime).TotalSeconds -gt 150)
     if ($allDone) {
         if (-not $script:SplashReadyAt) { $script:SplashReadyAt = Get-Date }
-        if (((Get-Date) - $script:SplashReadyAt).TotalMilliseconds -ge 700) { Hide-Splash }
+        if (((Get-Date) - $script:SplashReadyAt).TotalMilliseconds -ge 900) { Hide-Splash }
     } elseif ($terminal -or $timedOut) {
         if (-not $script:SplashTerminalAt) { $script:SplashTerminalAt = Get-Date }
         if (((Get-Date) - $script:SplashTerminalAt).TotalMilliseconds -ge 10000) { Hide-Splash }
@@ -36211,7 +36315,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.5.1)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.5.2)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -37031,7 +37135,7 @@ Set-StartupStage 'Ereignisse verdrahtet (Fenstersteuerung + Loaded)'
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.5.1'
+    $versionText = '7.5.2'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -37868,6 +37972,57 @@ function Open-SettingsWindow {
             <GradientStop Color="#F2FF5C77" Offset="0"/>
             <GradientStop Color="#E6E11D48" Offset="1"/>
         </LinearGradientBrush>
+        <!-- Version 7.5.2: Fehlende Ressourcen fuer die API-Key-Knoepfe -->
+        <LinearGradientBrush x:Key="SwGreenBtnBg" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#F238D16C" Offset="0"/>
+            <GradientStop Color="#E61F9A4C" Offset="1"/>
+        </LinearGradientBrush>
+        <SolidColorBrush x:Key="SwQuietBtnBg" Color="#0E1428"/>
+        <Style x:Key="ArenaDialogButton" TargetType="Button">
+            <Setter Property="Foreground" Value="{StaticResource SwTextMain}"/>
+            <Setter Property="Background" Value="{StaticResource SwQuietBtnBg}"/>
+            <Setter Property="BorderBrush" Value="#33FFFFFF"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Focusable" Value="True"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" CornerRadius="9"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              Margin="{TemplateBinding Padding}" RecognizesAccessKey="True"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="BorderBrush" Value="#66FFFFFF"/>
+                                <Setter TargetName="bd" Property="Opacity" Value="0.92"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bd" Property="Opacity" Value="0.75"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="bd" Property="Opacity" Value="0.38"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="ArenaPrimaryButton" TargetType="Button" BasedOn="{StaticResource ArenaDialogButton}">
+            <Setter Property="Foreground" Value="#08131A"/>
+            <Setter Property="Background" Value="{StaticResource SwGreenBtnBg}"/>
+            <Setter Property="BorderBrush" Value="#662FCB6C"/>
+        </Style>
+        <Style x:Key="ArenaQuietButton" TargetType="Button" BasedOn="{StaticResource ArenaDialogButton}">
+            <Setter Property="Foreground" Value="{StaticResource SwTextMuted}"/>
+            <Setter Property="Background" Value="{StaticResource SwQuietBtnBg}"/>
+        </Style>
         <Style x:Key="ArenaSwitch" TargetType="CheckBox">
             <Setter Property="Foreground" Value="#F4F8FF"/>
             <Setter Property="FontSize" Value="13.5"/>
@@ -38123,7 +38278,7 @@ function Open-SettingsWindow {
                                 <TextBlock Text="Mach es möglich, dass Arena Meshes und Bilder selber generieren und hochladen kann. Er bekommt somit automatisch die Asset ID und kann die Assets direkt in deinem Workspace einfügen, ohne dass du irgendwas machen musst."
                                            Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"/>
 
-                                <!-- ZUSTAND 1 (Version 7.5.1): noch kein Schlüssel.
+                                <!-- ZUSTAND 1 (Version 7.5.2): noch kein Schlüssel.
                                      Grosser roter Text, Eingabefeld, grüner
                                      Speichern-Knopf, darunter NUR noch das
                                      aufklappbare Tutorial - kein Status, kein
@@ -38240,7 +38395,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.5.1" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.5.2" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -38273,7 +38428,7 @@ function Open-SettingsWindow {
     $editorIconsSwitch = $settingsWindow.FindName('EditorIconsSwitch')
     $updateText      = $settingsWindow.FindName('UpdateInfoText')
     # ----------------------------------------------------------------
-    # Version 7.5.1: ROBLOX OPEN CLOUD im Einstellungsfenster -
+    # Version 7.5.2: ROBLOX OPEN CLOUD im Einstellungsfenster -
     # AUSDRUECKLICHER NUTZERWUNSCH, absichtlich viel einfacher:
     #   * NUR der Titel "Roblox Open Cloud API-Key" und ein Satz, was er
     #     bringt,
@@ -38638,7 +38793,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.5.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.5.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -38703,7 +38858,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.5.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.5.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -38716,7 +38871,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.5.1'
+    $verText = '7.5.2'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
