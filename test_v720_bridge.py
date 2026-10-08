@@ -29,7 +29,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.5.3"
+VERSION = "7.5.4"
 
 failures: list[str] = []
 
@@ -763,8 +763,8 @@ def main() -> int:
                  "7.2.3", "LIVE-SAMMLUNGEN", "ASK_CANCELLED", "Strg+Enter",
                  "NOTIFICATION_UNVERIFIED", "notify-diagnose.txt"):
         check(word in notes, f"version.json beschreibt: {word}")
-    check("DocsVersion     = '7.5.3'" in source and 'local ARENA_VERSION  = "7.5.3"' in source,
-          "Alle funktionalen Versionsstellen stehen auf 7.5.3")
+    check("DocsVersion     = '7.5.4'" in source and 'local ARENA_VERSION  = "7.5.4"' in source,
+          "Alle funktionalen Versionsstellen stehen auf 7.5.4")
     for marker in ("Set-StartupStage", "startup-trace.txt", "START-NETZ KOMPLETT",
                    "$script:WindowShown", "function Start-BridgeRuntime",
                    "$window.Add_ContentRendered({", "Start fehlgeschlagen"):
@@ -966,8 +966,166 @@ def main() -> int:
           "Kein Operator (+, *, /, %, -bin.) steht am Anfang einer Fortsetzungszeile "
           "(Parse-Fehler auf Windows PowerShell 5.1)")
 
+    # 7.5.4-Regressionstor: In PowerShell-Hashtable-Literalen (@{ ... })
+    # sind doppelte Schluessel ein schwerer Parser-Fehler (Parse-Fehler
+    # "Duplicate keys are not allowed in hash literals").
+    def hashtable_duplicate_key_problems(text: str) -> list[str]:
+        n = len(text)
+        duplicates: list[str] = []
+
+        def scan_hash(start_pos: int, start_line: int):
+            pos = start_pos + 1
+            cur_line = start_line
+            brace_depth = 1
+            entries: list[tuple[str, int]] = []
+
+            while pos < n and brace_depth > 0:
+                ch = text[pos]
+                if ch == "\n":
+                    cur_line += 1
+                    pos += 1
+                    continue
+                if ch == "#":
+                    next_nl = text.find("\n", pos)
+                    if next_nl == -1:
+                        break
+                    cur_line += 1
+                    pos = next_nl + 1
+                    continue
+                if ch == "@" and pos + 1 < n and text[pos + 1] in ("'", '"'):
+                    quote = text[pos + 1]
+                    term = "\n" + quote + "@"
+                    end = text.find(term, pos + 2)
+                    if end == -1:
+                        break
+                    cur_line += text.count("\n", pos, end + len(term))
+                    pos = end + len(term)
+                    continue
+                if ch == "'":
+                    pos += 1
+                    while pos < n:
+                        if text[pos] == "\n":
+                            cur_line += 1
+                        if text[pos] == "'":
+                            if pos + 1 < n and text[pos + 1] == "'":
+                                pos += 2
+                                continue
+                            pos += 1
+                            break
+                        pos += 1
+                    continue
+                if ch == '"':
+                    pos += 1
+                    while pos < n:
+                        if text[pos] == "\n":
+                            cur_line += 1
+                        if text[pos] == "`":
+                            pos += 2
+                            continue
+                        if text[pos] == '"':
+                            pos += 1
+                            break
+                        pos += 1
+                    continue
+                if ch == "@" and pos + 1 < n and text[pos + 1] == "{":
+                    scan_hash(pos + 1, cur_line)
+                    pos += 2
+                    brace_depth += 1
+                    continue
+                if ch == "{":
+                    brace_depth += 1
+                    pos += 1
+                    continue
+                if ch == "}":
+                    brace_depth -= 1
+                    pos += 1
+                    continue
+                if brace_depth == 1:
+                    if ch.isalnum() or ch in ("_", "$", "'", '"'):
+                        k_start = pos
+                        while pos < n and (text[pos].isalnum() or text[pos] in ("_", "-", ".", ":", "$", "'", '"')):
+                            pos += 1
+                        k_text = text[k_start:pos].strip().strip("'\"")
+                        while pos < n and text[pos] in (" ", "\t"):
+                            pos += 1
+                        if pos < n and text[pos] == "=" and (pos + 1 == n or text[pos + 1] != "="):
+                            entries.append((k_text, cur_line))
+                            pos += 1
+                        continue
+                pos += 1
+
+            seen: dict[str, int] = {}
+            for k, l in entries:
+                if k in seen:
+                    duplicates.append(f"Hashtable ab Zeile {start_line}: doppelter Schluessel {k!r} in Zeile {l} (bereits in Zeile {seen[k]})")
+                else:
+                    seen[k] = l
+
+        pos = 0
+        line = 1
+        while pos < n:
+            if text[pos] == "\n":
+                line += 1
+                pos += 1
+                continue
+            if text[pos] == "#":
+                next_nl = text.find("\n", pos)
+                if next_nl == -1:
+                    break
+                line += 1
+                pos = next_nl + 1
+                continue
+            if text[pos] == "@" and pos + 1 < n and text[pos + 1] in ("'", '"'):
+                quote = text[pos + 1]
+                term = "\n" + quote + "@"
+                end = text.find(term, pos + 2)
+                if end == -1:
+                    break
+                line += text.count("\n", pos, end + len(term))
+                pos = end + len(term)
+                continue
+            if text[pos] == "'":
+                pos += 1
+                while pos < n:
+                    if text[pos] == "\n":
+                        line += 1
+                    if text[pos] == "'":
+                        if pos + 1 < n and text[pos + 1] == "'":
+                            pos += 2
+                            continue
+                        pos += 1
+                        break
+                    pos += 1
+                continue
+            if text[pos] == '"':
+                pos += 1
+                while pos < n:
+                    if text[pos] == "\n":
+                        line += 1
+                    if text[pos] == "`":
+                        pos += 2
+                        continue
+                    if text[pos] == '"':
+                        pos += 1
+                        break
+                    pos += 1
+                continue
+            if text[pos] == "@" and pos + 1 < n and text[pos + 1] == "{":
+                scan_hash(pos + 1, line)
+                pos += 2
+                continue
+            pos += 1
+
+        return duplicates
+
+    hash_problems = hashtable_duplicate_key_problems(source)
+    for problem in hash_problems:
+        print(f"    {problem}")
+    check(not hash_problems,
+          "Keine doppelten Schluessel in PowerShell-Hashtable-Literalen (Parse-Fehler auf PowerShell 5.1/7)")
+
     check((ROOT / "parse-gate.ps1").is_file(), "Echtes Parser-Gate vorhanden")
-    check("PROOF_OF_LIFE Version=7.5.3" in source,
+    check("PROOF_OF_LIFE Version=7.5.4" in source,
           "Proof-of-Life mit aktueller Version vorhanden")
     engine = shutil.which("powershell") or shutil.which("pwsh")
     if engine:

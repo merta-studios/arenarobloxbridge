@@ -49,6 +49,21 @@ heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestarte
 
 ## Versionsverlauf
 
+## 7.5.4 — Mini-Hotfix: Parser-Fix (Hashtable-Duplikate), Bridge startet wieder
+
+In Version 7.5.3 wurden in `Get-ArenaActivityText` ca. 130 neue Werkzeug-Sätze
+eingefügt, dabei aber versehentlich die alten ~85 Zeilen in derselben Hashtable
+belassen. PowerShell verbietet doppelte Schlüssel in Hashtable-Literalen strikt
+mit einem Parser-Fehler (`Duplicate keys are not allowed in hash literals`).
+Dadurch schlug das Parsen der gesamten Datei vor jeglicher Ausführung fehl
+(die Bridge startete gar nicht erst, nicht einmal `runtime.log` wurde angelegt).
+
+1. **Hashtable dedupliziert.** Alle 137 Werkzeuge sind nun genau einmal in
+   `$texts` definiert.
+2. **Offline-Parser-Gate erweitert.** Ein Hashtable-Duplikatsschlüssel-Wächter
+   stellt sicher, dass solche Syntaxfehler künftig auch ohne Windows-PowerShell
+   in der Testsuite auffallen.
+
 ## 7.5.3 — Mini-Update: Acht Live-Befunde auf einmal behoben
 
 Der „Schlüssel-richtig-aber-Roblox-findet-trotzdem-keinen-Empfänger“-Bug war der
