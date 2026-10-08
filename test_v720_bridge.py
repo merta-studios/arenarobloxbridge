@@ -29,7 +29,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.5.1"
+VERSION = "7.5.3"
 
 failures: list[str] = []
 
@@ -388,11 +388,15 @@ def main() -> int:
     check("ProgressMissingPercent" in state_fn and "PERCENT_MISSING" in state_fn,
           "Fehlende Prozentzahl wird gezaehlt und als Station gemeldet")
     visual = region(source, "function Update-PlaceProgressVisual", "function Get-ProgressDiagnoseLines")
-    check("$Row.ProgressBar.Visibility = 'Collapsed'" in visual
-          and "$Row.ProgressPercent.Visibility = 'Collapsed'" in visual,
-          "Ohne Zahl wird kein Balken und keine erfundene 0 % gezeichnet")
+    # Version 7.5.3: bei fehlender Prozentzahl ist der Balken jetzt sichtbar
+    # (bei 0 %), nicht mehr komplett versteckt. Der Text erklaert weiterhin
+    # Zustand + Werkzeug + Alter - nur steht er jetzt UNTER dem 0-%-Balken.
+    check("$Row.ProgressBar.Visibility = 'Visible'" in visual,
+          "Balken wird jetzt sichtbar gezeichnet - auch ohne Prozentzahl steht er bei 0 %, statt zu verschwinden (Nutzerwunsch 7.5.3)")
+    check("$Row.ProgressBar.Value = 0" in visual,
+          "Balken faellt bei fehlender Prozentzahl auf 0 % zurueck, statt zu verschwinden")
     check("$textLine = $label" in visual and "vor '" in visual,
-          "Stattdessen erscheint eine Textzeile (Zustand, Werkzeug, Alter)")
+          "Die Textzeile unter dem Balken nennt weiterhin Zustand, Werkzeug, Alter")
     check("$label = 'Befehl: ' + [string]$openCmd.tool" not in source,
           "Ein offener Befehl verdraengt die Anzeige nicht mehr (D7)")
     check("$Row.CommandCancelButton.Visibility = 'Collapsed'" in visual,
@@ -759,8 +763,8 @@ def main() -> int:
                  "7.2.3", "LIVE-SAMMLUNGEN", "ASK_CANCELLED", "Strg+Enter",
                  "NOTIFICATION_UNVERIFIED", "notify-diagnose.txt"):
         check(word in notes, f"version.json beschreibt: {word}")
-    check("DocsVersion     = '7.5.1'" in source and 'local ARENA_VERSION  = "7.5.1"' in source,
-          "Alle funktionalen Versionsstellen stehen auf 7.5.1")
+    check("DocsVersion     = '7.5.3'" in source and 'local ARENA_VERSION  = "7.5.3"' in source,
+          "Alle funktionalen Versionsstellen stehen auf 7.5.3")
     for marker in ("Set-StartupStage", "startup-trace.txt", "START-NETZ KOMPLETT",
                    "$script:WindowShown", "function Start-BridgeRuntime",
                    "$window.Add_ContentRendered({", "Start fehlgeschlagen"):
@@ -963,7 +967,7 @@ def main() -> int:
           "(Parse-Fehler auf Windows PowerShell 5.1)")
 
     check((ROOT / "parse-gate.ps1").is_file(), "Echtes Parser-Gate vorhanden")
-    check("PROOF_OF_LIFE Version=7.5.1" in source,
+    check("PROOF_OF_LIFE Version=7.5.3" in source,
           "Proof-of-Life mit aktueller Version vorhanden")
     engine = shutil.which("powershell") or shutil.which("pwsh")
     if engine:

@@ -1,7 +1,7 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.5.2
+# Arena Roblox Bridge  -  Version 7.5.3
 #
-# Version 7.5.2 (2026-10-08) - MINI-UPDATE: EINSTELLUNGEN, VORSCHAU, PLACE-NAMEN, LADEBILDSCHIRM
+# Version 7.5.3 (2026-10-08) - MINI-UPDATE: EMPFÄNGER, ORGANISCHER SPLASH, FARBEN, OFFENE FRAGEN
 # -----------------------------------------------------------------------------
 # Vier Dinge auf einmal als Mini-Update:
 #   1) EINSTELLUNGSFENSTER GEHT WIEDER: Im Resources-Block des Einstellungs-
@@ -2145,7 +2145,7 @@ param(
 # Existing LOCALAPPDATA directory; no UI, no new exception net.
 # A parse/policy failure prevents even this marker. Check its timestamp/version.
 # Continue + SilentlyContinue keeps diagnostic I/O from becoming a start blocker.
-Write-Output ("{0:o} PROOF_OF_LIFE Version=7.5.2 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
+Write-Output ("{0:o} PROOF_OF_LIFE Version=7.5.3 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
 
 $ErrorActionPreference = 'Stop'
 
@@ -2180,7 +2180,7 @@ trap {
         }
         $trapPath = Join-Path $trapFolder 'startup-diagnose.txt'
         $trapReport = New-Object System.Text.StringBuilder
-        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.2)')
+        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.3)')
         [void]$trapReport.AppendLine('Quelle: trap auf Skriptebene (nicht abgefangener Fehler)')
         [void]$trapReport.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$trapReport.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -2219,7 +2219,7 @@ trap {
             try {
                 [System.IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA 'START-CHECK.txt'),
                     ('Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.5.2' + [Environment]::NewLine +
+                     'Version: 7.5.3' + [Environment]::NewLine +
                      'ABBRUCH: ' + $trapMessage + [Environment]::NewLine +
                      'Details: ' + $trapPath + [Environment]::NewLine),
                     [System.Text.Encoding]::UTF8)
@@ -3084,7 +3084,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.5.2'
+    DocsVersion     = '7.5.3'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -3348,7 +3348,7 @@ function Write-StartupFailureDiagnose {
         try { $trace = [string]$ErrorRecord.ScriptStackTrace } catch {}
         if ($trace.Length -gt 2000) { $trace = $trace.Substring(0, 2000) }
         $report = New-Object System.Text.StringBuilder
-        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.2)')
+        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.3)')
         [void]$report.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$report.AppendLine('Letzte Startstufe: ' + $stage)
         [void]$report.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -3431,7 +3431,7 @@ function Set-StartupStage {
     try {
         $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
         $checkText = 'Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.5.2' + [Environment]::NewLine +
+                     'Version: 7.5.3' + [Environment]::NewLine +
                      'Zeit: ' + $stamp + [Environment]::NewLine +
                      'PowerShell: ' + [string]$PSVersionTable.PSVersion + ' | CLR ' + [string][Environment]::Version + [Environment]::NewLine +
                      'Skript: ' + [string]$script:ScriptPath + [Environment]::NewLine +
@@ -3497,12 +3497,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.5.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.5.2, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.5.3, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.5.3, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.5.2'
+$script:Shared.RuntimeInfo.Version = '7.5.3'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -3605,7 +3605,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.5.2)
+  Arena Studio Bridge - Studio Plugin  (Version 7.5.3)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -3678,7 +3678,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.5.2"
+local ARENA_VERSION  = "7.5.3"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -11136,7 +11136,7 @@ tools.mesh_slots = function(args)
     local buildId = tostring(args.buildId or "")
     local modelName = tostring(args.modelName or "ArenaMesh")
     local created, failed, reused = {}, {}, {}
-    -- Version 7.5.2 (LIVE-FIX gegen den Part-Regen): mesh_slots ist jetzt
+    -- Version 7.5.3 (LIVE-FIX gegen den Part-Regen): mesh_slots ist jetzt
     -- IDEMPOTENT. Existiert im Zielordner schon ein MeshPart mit demselben
     -- ArenaMeshSlot-Schluessel, wird es WIEDERVERWENDET und nur noch
     -- aktualisiert - es entsteht kein zweites. In 7.5.0 hat die Bridge einen
@@ -15281,11 +15281,20 @@ $script:BridgeHandlerScript = {
     }
 
     function Get-AskExpirySeconds {
-        param($ToolArgs, [int]$Default = 180)
+        # Version 7.5.3: Vorher 180 s Default, jetzt 24 h. Der Nutzer hat
+        # gemeldet, dass die Fragen nach einiger Zeit einfach verschwinden
+        # - das war das harten 180-Sekunden-Auto-Close. Jetzt bleibt die
+        # Frage bis der Nutzer sie beantwortet ODER bis der Studio-Lauf
+        # endet. Wer frueher schliessen will, nutzt weiterhin den "Abbrechen"-
+        # Knopf oder den X-Knopf im Fragenfenster.
+        param($ToolArgs, [int]$Default = 86400)
         $seconds = $Default
         try { if ($null -ne $ToolArgs -and $ToolArgs.PSObject.Properties['expiresInSeconds']) { $seconds = [int]$ToolArgs.expiresInSeconds } } catch {}
         if ($seconds -lt 30) { $seconds = 30 }
-        if ($seconds -gt 1800) { $seconds = 1800 }
+        # Obergrenze 24 h - nach 24 h gilt die Frage als veraltet (das Studio
+        # laeuft eh nicht ewig durch, und wenn doch, ist die Antwort nicht
+        # mehr aktuell).
+        if ($seconds -gt 86400) { $seconds = 86400 }
         return $seconds
     }
 
@@ -16434,8 +16443,14 @@ $script:BridgeHandlerScript = {
     }
 
     function Get-SourceLineCount($args) {
-        $source = Get-ActivityArgument $args @('source','text') ''
-        if ([string]::IsNullOrEmpty($source)) { return '?' }
+        # Version 7.5.3: Vorher lieferte die Funktion '?' als Platzhalter,
+        # wenn kein 'source' oder 'text' im Aufruf war. Das wirkte im
+        # Verlauf-Fenster als "Hat ? Zeilen in der Konsole ausgefuehrt" - ein
+        # Ratsel fuer den Nutzer. Jetzt wird auch 'code' akzeptiert (das ist
+        # der Alias, den run_lua tatsaechlich verwendet), und statt '?' kommt
+        # '0' (was ehrlich ist: ohne Quelltext ist nichts ausgefuehrt worden).
+        $source = Get-ActivityArgument $args @('source','text','code') ''
+        if ([string]::IsNullOrEmpty($source)) { return '0' }
         return [string]([Math]::Max(1, (($source -split "`r?`n").Count)))
     }
 
@@ -16728,7 +16743,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.5.2 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.5.3 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -16913,8 +16928,12 @@ $script:BridgeHandlerScript = {
             return 'Hat mehrere Objekte erstellt.'
         }
         if ($tool -eq 'run_lua') { return 'Hat ' + (Get-SourceLineCount $args) + ' Zeilen in der Konsole ausgeführt.' }
-        if ($tool -eq 'rename_instance') { return 'Hat „' + $ref + '“ in „' + (Get-ActivityArgument $args @('name') '?') + '“ umbenannt.' }
-        if ($tool -eq 'group_instances') { return 'Hat Objekte in „' + (Get-ActivityArgument $args @('name') 'einer Gruppe') + '“ gruppiert.' }
+        if ($tool -eq 'rename_instance') {
+            $newName = Get-ActivityArgument $args @('name') ''
+            if ([string]::IsNullOrWhiteSpace($newName)) { $newName = 'einen neuen Namen' }
+            return 'Hat „' + $ref + '“ in „' + $newName + '“ umbenannt.'
+        }
+        if ($tool -eq 'group_instances') { return 'Hat Objekte in „' + (Get-ActivityArgument $args @('name') 'eine Gruppe') + '“ gruppiert.' }
         if ($tool -eq 'batch' -or $tool -eq 'parallel') {
             $callCount = $null
             try { $calls = Get-ResultField $args @('commands'); if ($calls) { $callCount = @($calls).Count } } catch {}
@@ -17024,6 +17043,145 @@ $script:BridgeHandlerScript = {
             get_docs = 'Hat die Dokumentation gelesen.'
             capture_screenshot = 'Hat einen Screenshot gemacht.'
             report_done = 'Hat fertig gemeldet.'
+            # Version 7.5.3: Hier stand vorher nichts Konkretes - der Fallback
+            # gab dann "Hat <tool> ausgefuehrt" aus. Jedes Werkzeug bekommt
+            # jetzt einen eigenen verstaendlichen Satz; neue Tools muessen
+            # hier ebenfalls eingetragen werden, sonst gilt der generische
+            # Fallback.
+            ack_user_message = 'Hat eine Nutzer-Nachricht bestätigt.'
+            add_tag = 'Hat einen Tag an einem Objekt gesetzt.'
+            align = 'Hat ein Objekt an einem anderen ausgerichtet.'
+            apply_asset = 'Hat ein Asset auf ein Objekt gelegt.'
+            ask_user = 'Hat eine Frage an dich gestellt.'
+            asset_details = 'Hat Asset-Details abgerufen.'
+            batch = 'Hat mehrere Werkzeuge gebündelt ausgeführt.'
+            bridge_status = 'Hat den Status der Bridge abgerufen.'
+            build_assembly = 'Hat ein Bauteil als Baugruppe erzeugt.'
+            build_interface = 'Hat ein komplettes GUI samt Bewegung gebaut.'
+            build_polygon_model = 'Hat ein Polygon-Modell aus Wedges gebaut.'
+            build_surface = 'Hat eine komposite Oberfläche gebaut.'
+            bulk_create = 'Hat mehrere Objekte auf einmal erstellt.'
+            bulk_delete = 'Hat mehrere Objekte auf einmal gelöscht.'
+            bulk_insert_scripts = 'Hat mehrere Skripte auf einmal angelegt.'
+            bulk_set_properties = 'Hat Eigenschaften an mehreren Objekten geändert.'
+            cancel_job = 'Hat einen Hintergrundjob abgebrochen.'
+            catalog_status = 'Hat geprüft, ob der Katalog erreichbar ist.'
+            clear_lua_state = 'Hat den Lua-Status zurückgesetzt.'
+            clear_output = 'Hat die Ausgabe geleert.'
+            clone_instance = 'Hat ein Objekt geklont.'
+            compile_check = 'Hat Lua-Code auf Syntaxfehler geprüft.'
+            confirm_action = 'Hat eine Bestätigung von dir angefordert.'
+            coordinate_guide = 'Hat das Koordinatensystem des Places erklärt.'
+            create_instance = 'Hat ein neues Objekt erstellt.'
+            delete_instance = 'Hat ein Objekt gelöscht.'
+            describe_orientation = 'Hat die Ausrichtung eines Objekts bestimmt.'
+            describe_scene = 'Hat die Szene im Place beschrieben.'
+            distribute = 'Hat Objekte gleichmäßig verteilt.'
+            fill_region = 'Hat einen Bereich mit Voxeln gefüllt.'
+            find_in_script = 'Hat in einem Skript nach einem Text gesucht.'
+            fit_between = 'Hat ein Objekt zwischen zwei Punkte gespannt.'
+            get_bounds = 'Hat Größe und Begrenzungen gemessen.'
+            get_children = 'Hat die Kinder eines Objekts abgerufen.'
+            get_chunk = 'Hat einen Teil eines großen Ergebnisses geholt.'
+            get_errors = 'Hat die Fehlerzeilen der Konsole gelesen.'
+            get_events = 'Hat die Bridge-Ereignisse abgefragt.'
+            get_instance = 'Hat sich ein einzelnes Objekt angesehen.'
+            get_notices = 'Hat die Hinweise der Bridge abgefragt.'
+            get_output = 'Hat die Konsolenausgabe gelesen.'
+            get_pending = 'Hat die offenen Befehle in der Warteschlange abgefragt.'
+            get_place_info = 'Hat Informationen über den Place abgerufen.'
+            get_properties = 'Hat die Eigenschaften eines Objekts abgerufen.'
+            get_script = 'Hat den Quelltext eines Skripts gelesen.'
+            get_selection = 'Hat die aktuell ausgewählten Objekte abgefragt.'
+            get_tree = 'Hat den Explorer-Baum des Places abgerufen.'
+            grid_arrange = 'Hat Objekte in einem Raster angeordnet.'
+            ground_height = 'Hat die Bodenhöhe an mehreren Punkten gemessen.'
+            group_instances = 'Hat mehrere Objekte in eine Gruppe gepackt.'
+            insert_asset = 'Hat ein Katalog-Asset in den Place eingefügt.'
+            insert_script = 'Hat ein neues Skript angelegt.'
+            intersect = 'Hat nur den gemeinsamen Teil von Objekten behalten.'
+            job_result = 'Hat das Ergebnis eines Hintergrundjobs abgeholt.'
+            job_status = 'Hat den Status eines Hintergrundjobs abgefragt.'
+            list_jobs = 'Hat die laufenden Hintergrundjobs aufgelistet.'
+            list_tools = 'Hat die Liste der verfügbaren Werkzeuge abgefragt.'
+            look_at = 'Hat ein Objekt auf ein anderes ausgerichtet.'
+            lua_state = 'Hat den Lua-Status abgefragt.'
+            measure = 'Hat eine Entfernung gemessen.'
+            measure_height = 'Hat eine Höhe gemessen.'
+            mesh_apply = 'Hat hochgeladene Meshes in Platzhalter gesetzt.'
+            mesh_apply_asset = 'Hat eine Mesh-Asset-Id in den Platzhalter gesetzt.'
+            mesh_drop = 'Hat einen Mesh-Slot storniert (Platzhalter entfernt).'
+            mesh_slots = 'Hat Platzhalter für den Blender-Bau angelegt.'
+            model_audit = 'Hat ein gebautes Modell auf Qualität geprüft.'
+            move_instance = 'Hat ein Objekt an eine andere Position verschoben.'
+            move_relative = 'Hat ein Objekt relativ verschoben.'
+            nearest_parts = 'Hat die nächsten Nachbarobjekte gesucht.'
+            overlap_check = 'Hat eine Kollision geprüft.'
+            parallel = 'Hat mehrere Werkzeuge parallel ausgeführt.'
+            parts_in_box = 'Hat Objekte in einem Quader gesucht.'
+            parts_in_sphere = 'Hat Objekte in einer Kugel gesucht.'
+            patch_script = 'Hat punktgenaue Änderungen an einem Skript gemacht.'
+            place_on = 'Hat ein Objekt auf einem anderen platziert.'
+            point_at = 'Hat ein Objekt auf ein anderes ausgerichtet.'
+            probe_world = 'Hat die Welt an einem Raster vermessen.'
+            prop_list = 'Hat die gespeicherten Bausteine aufgelistet.'
+            prop_place = 'Hat einen gespeicherten Baustein eingesetzt.'
+            prop_save = 'Hat einen Baustein zur Wiederverwendung gespeichert.'
+            raycast = 'Hat einen Strahl durch die Welt geschossen.'
+            raycast_many = 'Hat mehrere Strahlen geschossen.'
+            read = 'Hat einen Lese-Aufruf gemacht.'
+            redo = 'Hat eine Änderung wiederholt.'
+            refine = 'Hat Details an einem Modell verfeinert.'
+            remove_tag = 'Hat einen Tag von einem Objekt entfernt.'
+            rename_instance = 'Hat ein Objekt umbenannt.'
+            report_done = 'Hat den Auftrag als fertig gemeldet.'
+            resize_part = 'Hat die Größe eines Teils geändert.'
+            resolve_ref = 'Hat den genauen Ablageort eines Objekts aufgelöst.'
+            rotate_around = 'Hat ein Objekt um einen Punkt gedreht.'
+            run_lua = 'Hat Lua-Code in der Konsole ausgeführt.'
+            running = 'Hat einen laufenden Aufruf bearbeitet.'
+            scaffold_ui_scripts = 'Hat die nötigen GUI-Steuerskripte angelegt.'
+            scene_stats = 'Hat die Szenenstatistik gemessen.'
+            search = 'Hat im Explorer gesucht.'
+            search_assets = 'Hat im Roblox-Katalog nach Assets gesucht.'
+            select_instance = 'Hat Objekte in Studio ausgewählt.'
+            separate = 'Hat eine Union wieder in einzelne Teile zerlegt.'
+            set_attribute = 'Hat ein Attribut an einem Objekt gesetzt.'
+            set_context = 'Hat den Kontext (Server/Client) gewechselt.'
+            set_properties = 'Hat mehrere Eigenschaften auf einmal geändert.'
+            set_property = 'Hat eine einzelne Eigenschaft geändert.'
+            set_script_source = 'Hat den Quelltext eines Skripts ersetzt.'
+            set_waypoint = 'Hat einen Wiederherstellungspunkt gesetzt.'
+            sim_start = 'Hat die Studio-Simulation gestartet.'
+            sim_status = 'Hat den Status der Simulation abgefragt.'
+            site_survey = 'Hat den Bauplatz vor dem Bau vermessen.'
+            snap_to_ground = 'Hat ein Objekt auf dem Boden abgesetzt.'
+            stack = 'Hat Objekte vertikal gestapelt.'
+            start_job = 'Hat einen Hintergrundjob gestartet.'
+            style_lock = 'Hat den Stil eines Modells gesperrt.'
+            subtract = 'Hat eine Form aus einem Objekt herausgestanzt.'
+            ui_audit = 'Hat ein GUI auf Qualität und Kontrast geprüft.'
+            ui_capabilities = 'Hat gemessen, welche UI-Features das Studio kann.'
+            ui_glow = 'Hat einen Schein um ein GUI-Element gelegt.'
+            ui_radial = 'Hat ein kreisförmiges Menü gebaut.'
+            ui_skin = 'Hat den visuellen Stil eines GUI gesetzt.'
+            ui_texture = 'Hat eine Textur für ein GUI vorbereitet.'
+            undo = 'Hat die letzte Änderung rückgängig gemacht.'
+            ungroup = 'Hat eine Gruppe wieder aufgelöst.'
+            union = 'Hat mehrere Teile zu einem verschmolzen.'
+            union_info = 'Hat eine Union untersucht.'
+            upload_text = 'Hat einen Text in die Bridge geladen.'
+            validate_asset = 'Hat ein Asset auf Gültigkeit geprüft.'
+            variation = 'Hat eine Variante eines Modells erzeugt.'
+            verify_measurable = 'Hat gewartet, bis Objekte messbar sind.'
+            viewport_info = 'Hat Kamera und Blickrichtung gemessen.'
+            wait = 'Hat im Playtest gewartet.'
+            wait_for_output = 'Hat auf eine Konsolenausgabe gewartet.'
+            wait_for_user = 'Hat auf eine Antwort von dir gewartet.'
+            what_is_in_the_way = 'Hat geprüft, was zwischen zwei Punkten steht.'
+            world_audit = 'Hat die Welt auf Qualität geprüft.'
+            world_glow = 'Hat einen Schein in die Welt gelegt.'
+            world_style = 'Hat den visuellen Stil der Welt gesetzt.'
         }
         if ($texts.ContainsKey($tool)) { return [string]$texts[$tool] }
         # Theoretisch unerreichbar - aber falls doch: nie mehr ein Platzhalter.
@@ -21173,13 +21331,13 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
             errors = @('BAD_ARGS: ui fehlt.') })
         $t.Add(@{ name = 'ask_user'; category = 'session'; summary = 'Den Nutzer etwas fragen - mit Entscheidungsbaum, Fenster am Mauszeiger.';
             description = 'Statt im Chat zu fragen (der Nutzer ist oft weg und uebersieht es): ein Fenster erscheint in der Naehe des Mauszeigers mit Haekchen/Knopf-Optionen und eigener Antwort. Der ganze Baum kommt in EINER Anfrage. Bedingungen erlaubt: when = [ { questionId = "fruehererId", anyOf = ["optionA"], allOf = [...], custom = true } ] auf eine FRUEHERE Frage (mehrere Ebenen tief). Der gesamte Baum zaehlt: max 12 Fragen, max 6 Optionen je Frage, max 400 Zeichen je Text, Ids eindeutig. Du kannst dabei schlafen: waitSeconds (max 50) blockiert; kommt keine Antwort, liefert der Aufruf { state: "waiting", askId, nextCall } und du rufst spaeter mit resume=true erneut auf. Antworten kommen notfalls als _bridge.userAnswers mit.';
-            params = @{ title = @{ type = 'string'; required = $true; default = '-'; description = 'Kurze Ueberschrift (max 90 Zeichen).' }; message = @{ type = 'string'; required = $false; default = 'null'; description = 'Einleitungssatz (max 600 Zeichen).' }; questions = @{ type = 'object[]'; required = $true; default = '-'; description = 'Je Frage: { id, text, options: [ { id, label, description? } ], allowCustomResponse?, required?, multi?, when? }.' }; expiresInSeconds = @{ type = 'int'; required = $false; default = '180'; description = '30..1800: so lange bleibt das Fenster offen.' }; waitSeconds = @{ type = 'int'; required = $false; default = '0'; description = '0..50: aktiv auf die Antwort warten (0 = sofort zurueck und spaeter mit resume=true fortsetzen).' }; askId = @{ type = 'string'; required = $false; default = 'null'; description = 'Zum Fortsetzen einer offenen Frage.' }; resume = @{ type = 'bool'; required = $false; default = 'false'; description = 'true = erneut auf diese Frage warten.' } };
+            params = @{ title = @{ type = 'string'; required = $true; default = '-'; description = 'Kurze Ueberschrift (max 90 Zeichen).' }; message = @{ type = 'string'; required = $false; default = 'null'; description = 'Einleitungssatz (max 600 Zeichen).' }; questions = @{ type = 'object[]'; required = $true; default = '-'; description = 'Je Frage: { id, text, options: [ { id, label, description? } ], allowCustomResponse?, required?, multi?, when? }.' }; expiresInSeconds = @{ type = 'int'; required = $false; default = '86400'; description = '30..86400 (24 h): das Fenster bleibt offen, bis der Nutzer antwortet, abbricht oder Studio endet.' }; waitSeconds = @{ type = 'int'; required = $false; default = '0'; description = '0..50: aktiv auf die Antwort warten (0 = sofort zurueck und spaeter mit resume=true fortsetzen).' }; askId = @{ type = 'string'; required = $false; default = 'null'; description = 'Zum Fortsetzen einer offenen Frage.' }; resume = @{ type = 'bool'; required = $false; default = 'false'; description = 'true = erneut auf diese Frage warten.' } };
             returns = '{ state: waiting|answered, askId, answers: { frageId: { optionIds, labels, custom } }, path, notShown, summary, secondsLeft, nextCall }';
             example = @{ title = 'Welcher Baumstil?'; waitSeconds = 45; questions = @( @{ id = 'style'; text = 'Welchen Stil willst du?'; options = @( @{ id = 'organic'; label = 'Organisch' }, @{ id = 'lowpoly'; label = 'Low-Poly' } ) }, @{ id = 'detail'; text = 'Welche Details?'; multi = $true; when = @( @{ questionId = 'style'; anyOf = @('organic') } ); options = @( @{ id = 'leaves'; label = 'Laub' }, @{ id = 'branches'; label = 'Zweige' } ) } ) };
             errors = @('ASK_TOO_MANY_QUESTIONS: mehr als 12 Fragen oder mehr als 6 Optionen je Frage.', 'ASK_GRAPH_INVALID: doppelte/fehlende Ids, unbekannte Bedingung, weniger als 2 Optionen.', 'ASK_CYCLE: eine Frage haengt von sich selbst oder einer SPAETEREN Frage ab.', 'ASK_EXPIRED: das Fenster lief ab, ohne dass geantwortet wurde.', 'ASK_UNKNOWN: unbekannte askId.') })
         $t.Add(@{ name = 'confirm_action'; category = 'session'; summary = 'Kurz nachfragen: soll Arena das wirklich tun? (Ja/Nein)';
             description = 'Abkuerzung fuer ask_user mit genau einer Frage und zwei Optionen. Fuer Loeschungen, Umbauten, Ueberschreiben von Nutzerarbeit oder teure Schritte. Der Nutzer kann auch eine eigene Antwort schreiben.';
-            params = @{ title = @{ type = 'string'; required = $true; default = '-'; description = 'Was bestaetigt werden soll.' }; message = @{ type = 'string'; required = $false; default = 'null'; description = 'Was passiert, wenn der Nutzer zustimmt.' }; confirmLabel = @{ type = 'string'; required = $false; default = 'Ja, mach das'; description = '' }; cancelLabel = @{ type = 'string'; required = $false; default = 'Nein, nicht'; description = '' }; expiresInSeconds = @{ type = 'int'; required = $false; default = '120'; description = '' }; waitSeconds = @{ type = 'int'; required = $false; default = '0'; description = '0..50, wie ask_user.' } };
+            params = @{ title = @{ type = 'string'; required = $true; default = '-'; description = 'Was bestaetigt werden soll.' }; message = @{ type = 'string'; required = $false; default = 'null'; description = 'Was passiert, wenn der Nutzer zustimmt.' }; confirmLabel = @{ type = 'string'; required = $false; default = 'Ja, mach das'; description = '' }; cancelLabel = @{ type = 'string'; required = $false; default = 'Nein, nicht'; description = '' }; expiresInSeconds = @{ type = 'int'; required = $false; default = '86400'; description = '30..86400 (24 h): das Fenster bleibt offen, bis der Nutzer antwortet oder abbricht.' }; waitSeconds = @{ type = 'int'; required = $false; default = '0'; description = '0..50, wie ask_user.' } };
             returns = '{ state, askId, confirmed: true/false, customResponse, answers, path, notShown, summary }';
             example = @{ title = 'Darf ich das bestehende Gebaeude ersetzen?'; message = 'Alle Teile des alten Hauses werden geloescht und neu gebaut.'; waitSeconds = 45 };
             errors = @('ASK_EXPIRED: keine Antwort im Zeitfenster.', 'ASK_UNKNOWN: unbekannte askId.') })
@@ -21346,7 +21504,7 @@ end
                 motion = 'Add animation only when the task requests motion or the object is inherently living/moving. For organic models, explicitly use organic=true so per-model geometry, palette, enabled-motion and fresh-audit evidence is enforced; see organicBuildRules.'
             }
             meshBuildRules = @{
-                title = 'Mesh-Build Engine 1.2 (Version 7.5.2) - EIN Modell ist EIN Mesh, Blender baut, der Agent laedt hoch (Open Cloud), die Bridge setzt ein'
+                title = 'Mesh-Build Engine 1.2 (Version 7.5.3) - EIN Modell ist EIN Mesh, Blender baut, der Agent laedt hoch (Open Cloud), die Bridge setzt ein'
                 whenThisApplies = 'Der STARKE Weg neben build_polygon_model und ausdruecklich empfohlen, wenn eine Form mit Dreiecken/Wedges nicht gut wird (glatte oder organische Oberflaechen, viele Details, hohe Teilzahl) oder wenn das Modell im Place nur EIN Bauteil statt tausender Wedges sein soll. Fuer Entwurf, Iteration und fuer alles, was im Studio per Teil editierbar bleiben muss, bleibt build_polygon_model die erste Wahl. Seit 7.5.0 ist der Upload VOLL AUTOMATISIERT - der Nutzer muss nichts mehr hochladen.'
                 ONE_MODEL_ONE_MESH = 'HARTE REGEL SEIT 7.5.1 (Owner-Beschwerde: "Warum baut mir Arena Wurzel, Stamm, Aeste und Kronen einzeln"): EIN zusammenhaengendes Modell wird als EIN Mesh in EINEM Slot gebaut - ein Baum ist EIN Mesh, ein Fass EIN Mesh, eine Laterne EIN Mesh. Mehrere Slots sind NUR in genau drei Faellen erlaubt: (1) bestimmte Teile werden ANIMIERT (je bewegliches Glied ein Slot), (2) bestimmte Teile brauchen EIGENE EIGENSCHAFTEN (eigene Farbe/Material/CanCollide/Transparenz, die ein einzelnes MeshPart nicht tragen kann), (3) die DREIECKSZAHL sprengt das Budget (dann nach Koerperteilen splitten, nicht nach "Wurzel/Stamm/Aeste/Krone"-Raten). Sonst gilt: EIN Blender-Skript, das die ganze Form baut - inklusive Wurzeln, Krone, Blaetter oder Details -, EIN Slot, EIN MeshPart. Wer ohne einen dieser drei Gruende splittet, macht die Arbeit des Nutzers groesser (mehr Uploads, mehr Platzhalter, mehr MeshParts) und hat den Bau nicht verstanden.'
                 slots = 'Mehrere Slots NUR nach der Regel oben. Wenn wirklich geteilt wird, dann nach Funktion: je bewegliches Glied ein Slot (Kreatur, Fahrzeug, Maschine, Tuer, Rad) und die Gelenke wie gewohnt mit Welds/Motor6D verbinden; ein MeshPart traegt genau EINE Farbe/EIN Material (Roblox uebernimmt keine Blender-Materialien) - unterschiedliche Farben sind der zweite legitime Grund. Farbe und Material setzt Roblox ueber die Slot-Angaben color/material. Eine Zierde (Blatt, Blume, Frucht, Zierband) gehoert in DASSELBE Mesh, solange sie sich nicht bewegen muss.'
@@ -21362,7 +21520,7 @@ end
                 filePathIsMandatory = 'PFLICHT BEI JEDEM GESCHEITERTEN UPLOAD (Owner-Wunsch 7.5.1): Nenne dem Nutzer IMMER den exakten Dateipfad der Datei, die hochgeladen werden sollte - woertlich, in einer eigenen Zeile, kopierbar. Die Antwort von upload_asset traegt ihn als filePath (und sourcePath); mesh_status nennt ihn je Slot als uploadPath. Beispielsatz: "Die Datei liegt hier: C:\\Users\\<du>\\AppData\\Local\\ArenaRobloxBridge\\meshes\\<jobId>\\stamm.fbx - damit kannst du sie selbst in Roblox hochladen (Toolbox -> Import)." Auch wenn der Pfad schon in der Antwort steht: sag ihn im Chat, damit der Nutzer ihn nicht suchen muss.'
             }
             cloudUploadRules = @{
-                title = 'Cloud-Upload Engine 1.0 (Version 7.5.2) - Meshes und Bilder voll automatisch nach Roblox'
+                title = 'Cloud-Upload Engine 1.0 (Version 7.5.3) - Meshes und Bilder voll automatisch nach Roblox'
                 whenThisApplies = 'Immer, wenn ein Mesh (aus Blender) oder ein Bild (z. B. von dir selbst erzeugt) nach Roblox muss. Du brauchst dafuer KEINEN Menschen mehr - nur den einmalig hinterlegten Open-Cloud-Schluessel des Nutzers. Der Nutzer laedt nichts mehr von Hand hoch, es gibt kein Mesh-Fenster mehr.'
                 workflow = '1 Mesh: build_mesh_model -> mesh_status (uploadPath/uploadReady) -> upload_asset { slotKey } -> assetId -> mesh_apply_asset { slots = [ { key, assetId } ] } -> model_audit. Bild: upload_asset { fileName = "name.png", contentBase64 = "<Base64>" } -> assetId -> selbst einsetzen (Decal.Texture, Texture.Texture, ImageLabel.Image, MeshPart.TextureID) -> auditieren.'
                 meshUpload = 'Roblox Open Cloud legt ein hochgeladenes FBX/GLB als MODELL an (nicht als nackte Mesh-Id). Die Bridge kommt damit zurecht: mesh_apply_asset laedt das Modell, nimmt die MeshId aus dem MeshPart darin und setzt sie in den bestehenden Platzhalter ein (applyPath = modelMeshId). Alternativ fuegst du das komplette Modell mit insert_asset ein und positionierst es selbst.'
@@ -21372,7 +21530,7 @@ end
                 honesty = 'Die Asset-Id ist nur dann echt, wenn Roblox sie genannt hat. Steht die Operation noch auf pending, rufst du upload_asset { operationId } erneut auf (kein enger Loop). Fehlertexte von Roblox gehoren unverfaelscht an den Nutzer - die Bridge versteckt und beschoenigt nichts.'
             }
             organicBuildRules = @{
-                title = 'Organic Build Engine 1.1 (Version 7.5.2) - typed creature volumes, physical face, bilateral anatomy, measured before done'
+                title = 'Organic Build Engine 1.1 (Version 7.5.3) - typed creature volumes, physical face, bilateral anatomy, measured before done'
                 whenThisApplies = 'For any model intentionally built as organic (character, creature, plant, tree, prop or other organic free-form shape), this is a hard sequence independent of its name: the FIRST write targeting that model is build_polygon_model { organic=true, organicKind=... } with an explicit contrasting palette. For organicKind=creature the same first build must create closed role=body and role=head loft volumes; a long flat side-profile wedge is not a body or head volume. Use organicTraits=["wings"] when wings are intended and build role=wing_left/wing_right. Face features are physical 3D geometry, never Decal/Texture/GUI substitutes. Do not start with run_lua, build_assembly, loose primitives, or an external generator file. Then install an enabled motion Script under that same model, run model_audit on every returned organic model after the final edit, and fix every organicQuality issue. report_done is rejected with ORGANIC_AUDIT_REQUIRED/DETAIL_REQUIRED until every registered model passes.'
                 theOneIdea = 'For an organic model, the first write is build_polygon_model { organic=true, organicKind=... }. A creature gets real closed lofts for body and head (at least 4/3 stations, at least 8 sides) plus physical eyes and pupils; winged creatures get a mirrored, torso-attached wing pair. No side-view wedge, face sticker, or unmeasured claim can pass. Then add joints/details, install the enabled motion Script beneath the model, and audit the exact model.'
                 forbidden = @(
@@ -21838,7 +21996,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.5.2'
+            version = '7.5.3'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -22069,7 +22227,7 @@ end
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.5.2'
+            bridgeVersion = '7.5.3'
             executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent is never an error, but the user then sees NO bar and NO percentage at all - only your message as text. Send a real number every few calls. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
@@ -23563,7 +23721,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.5.2'
+                        bridgeVersion = '7.5.3'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -24030,7 +24188,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.5.2'
+                        serverVersion = '7.5.3'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -24389,7 +24547,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.5.2'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.5.3'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -24473,8 +24631,8 @@ end
                 }
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.5.2'
-                    serverVersion = '7.5.2'
+                    bridgeVersion = '7.5.3'
+                    serverVersion = '7.5.3'
                     toolbox = $statusToolbox
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
@@ -26570,7 +26728,7 @@ $script:BridgeMeshToolkit = {
             foreach ($pair in $Shared.MeshRegistry.GetEnumerator()) {
                 try { $rows.Add(($pair.Value | ConvertFrom-Json)) } catch {}
             }
-            $payload = @{ registryVersion = '7.5.2'; updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds(); slots = $rows.ToArray() }
+            $payload = @{ registryVersion = '7.5.3'; updatedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds(); slots = $rows.ToArray() }
             # Version 7.4.1: BOM-FREI schreiben (WriteAllText statt Set-Content).
             [System.IO.File]::WriteAllText($path, [string]($payload | ConvertTo-Json -Depth 8), (New-Object System.Text.UTF8Encoding($false)))
         } catch {}
@@ -27136,7 +27294,7 @@ $script:BridgeMeshToolkit = {
 # Bounding-Box-Mitte - danach meldet er die gemessenen Zahlen.
 # ----------------------------------------------------------------------------
 $script:MeshRunnerTemplate = @'
-# Arena Roblox Bridge - Mesh-Runner (Version 7.5.2)
+# Arena Roblox Bridge - Mesh-Runner (Version 7.5.3)
 # Dieses Programm gehoert der Bridge. Der Agent liefert nur den Modellteil
 # (--script); der Runner macht Szene, Export, Zentrierung und Messung - und
 # seit 7.5.0 zusaetzlich die Upload-Datei (FBX, sonst GLB) fuer Roblox Open
@@ -28585,12 +28743,23 @@ $script:BridgeOpenCloudTools = {
     }
 
     function Resolve-OpenCloudCreatorFromKey {
-        # Version 7.5.2 (Nutzerwunsch): DER NUTZER GIBT DEN ERSTELLER NICHT
+        # Version 7.5.3 (Nutzer-Fix): DER NUTZER GIBT DEN ERSTELLER NICHT
         # MEHR EIN. Die Bridge liest ihn aus dem Schluessel selbst - Roblox
         # nennt im Introspect die Ressourcen (userId/groupId) der Scopes.
-        # Reihenfolge: genau eine Gruppe -> Gruppe, sonst genau ein Nutzer ->
-        # Nutzer, sonst erste konkrete Ressource; steht ueberall nur '*', ist
-        # der autorisierte Nutzer des Schluessels der Ersteller.
+        # Reihenfolge:
+        # 1) Genau eine Gruppe -> Gruppe, sonst genau ein Nutzer -> Nutzer.
+        # 2) Mehrere konkrete Ressourcen -> erste konkrete nehmen.
+        # 3) Eine Seite steht auf "*" (alle Ressourcen) UND die andere nennt
+        #    nichts Konkretes -> Fallback auf authorizedUserId (User, der den
+        #    Schluessel erstellt hat - genau der, fuer den die Assets dann
+        #    auch tatsaechlich gehoeren, auch wenn der Schluessel von einer
+        #    Gruppe aus agiert).
+        # 4) Wenn authorizedUserId fehlt/0/leer ist UND die Scopes keine
+        #    konkrete Resource nennen -> Roblox hat schlicht keinen
+        #    Verfuegungsempfaenger im Schluessel eingetragen. Der Nutzer muss
+        #    dann im Creator-Dashboard beim Schluessel eine bestimmte Gruppe
+        #    ODER seinen Account als Resource festlegen - sonst weiss Roblox
+        #    nicht, wem das hochgeladene Asset gehoeren soll.
         param($Shared, $Introspect = $null)
         $info = $Introspect
         if ($null -eq $info) { $info = Invoke-OpenCloudIntrospect $Shared }
@@ -28601,17 +28770,30 @@ $script:BridgeOpenCloudTools = {
         try { $users = @($info.writeUserIds) } catch {}
         $kind = ''
         $id = ''
+        # Bevorzuge eine EINZELNE konkrete Ressource - das ist die uebliche
+        # Konfiguration und der Schluessel-Ersteller hat sie bewusst gewaehlt.
         if ($groups.Count -eq 1) { $kind = 'group'; $id = [string]$groups[0] }
         elseif ($users.Count -eq 1) { $kind = 'user'; $id = [string]$users[0] }
         elseif ($groups.Count -gt 1) { $kind = 'group'; $id = [string]$groups[0] }
         elseif ($users.Count -gt 1) { $kind = 'user'; $id = [string]$users[0] }
-        elseif (-not [string]::IsNullOrWhiteSpace([string]$info.authorizedUserId)) { $kind = 'user'; $id = [string]$info.authorizedUserId }
+        else {
+            # Keine konkrete Ressource gefunden. Pruefen, ob authorizedUserId
+            # nutzbar ist (Roblox liefert das als Zahl, eine 0 waere ein
+            # ungueltiger Platzhalter, also verwerfen).
+            $authRaw = $null
+            try { $authRaw = $info.authorizedUserId } catch {}
+            $authString = ''
+            try { if ($null -ne $authRaw) { $authString = [string]$authRaw } } catch {}
+            if (-not [string]::IsNullOrWhiteSpace($authString) -and $authString -ne '0') {
+                $kind = 'user'; $id = $authString
+            }
+        }
         if ([string]::IsNullOrWhiteSpace($id)) {
             return @{
                 ok = $false; code = 'OPENCLOUD_CREATOR_MISSING'
-                error = 'Roblox nennt im Schluessel keinen Ersteller (weder Nutzer- noch Gruppen-ID).'
-                userMessage = 'Dein Open-Cloud-Schluessel hat noch keine Schreib-Berechtigung fuer Assets. Bitte in den Einstellungen im Abschnitt "Roblox Open Cloud API-Key" den Schluessel neu erstellen und dabei Tutorial Schritt 4 und 5 befolgen: unter den Berechtigungen den Punkt "assets" hinzufuegen und bei der Hauptberechtigung "read" UND "write" setzen - dann kann ich wieder hochladen.'
-                howToFix = 'Sage dem Nutzer den Satz aus userMessage WORTLICH auf Deutsch.'
+                error = 'Roblox nennt im Schluessel keinen Empfänger fuer die Assets (weder konkrete Nutzer-/Gruppen-ID noch ein autorisierter Nutzer).'
+                userMessage = 'Roblox kann im Schluessel keinen eindeutigen Empfänger fuer die hochgeladenen Assets finden. Bitte oeffne https://create.roblox.com/dashboard/credentials , bearbeite den Schluessel, und stelle im Bereich "Berechtigungen" unter "assets" eine bestimmte Gruppe ODER deinen Account als Resource ein. Speichere ihn danach erneut und fuege ihn hier wieder ein - der bisherige Schluessel bleibt unbenutzt.'
+                howToFix = 'Sage dem Nutzer den Satz aus userMessage WORTLICH auf Deutsch. Er muss KEINEN Namen oder keine ID hier eintippen - nur im Dashboard beim Schluessel eine konkrete Resource waehlen.'
             }
         }
         try {
@@ -30004,7 +30186,7 @@ $xaml = @'
                 <!-- Version 6.0: halbtransparentes Glas - die Aurora-Lichter     -->
                 <!-- scheinen waehrend des Starts lebendig hindurch.              -->
                 <!-- ============================================================ -->
-                <!-- Version 7.5.2: ORGANISCHER LADEBILDSCHIRM - oben Spinner,
+                <!-- Version 7.5.3: ORGANISCHER LADEBILDSCHIRM - oben Spinner,
                      darunter der aktuelle Schritt, darunter ein fliessender
                      Ladebalken. Keine 4-Schritte-Liste mehr. -->
                 <Border x:Name="SplashScreen" Panel.ZIndex="70" Background="#EE0A1030" CornerRadius="16" ClipToBounds="True">
@@ -30126,6 +30308,12 @@ $SplashTunnelDot    = $window.FindName('SplashTunnelDot')
 $SplashTunnelState  = $window.FindName('SplashTunnelState')
 
 # Spinner-Drehung + Glanz-Animation auf dem Ladebalken (organischer Eindruck)
+# Version 7.5.3: Die Spinner-Animation wird NUR EINMAL gestartet und laeuft
+# ab dann ununterbrochen (RepeatBehavior=Forever) - auch ueber Phasen hinweg,
+# in denen sich der Schritt nicht aendert. Der Nutzer soll nicht sehen, dass
+# das Icon zwischen den Schritten kurz stillsteht. Ein 3-Sekunden-Waechter
+# startet die Animation neu, falls sie eingefroren ist (z.B. nach WindowState
+# Minimized -> Normal).
 try {
     if ($SplashSpinnerRotation) {
         $spin = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 360, [TimeSpan]::FromMilliseconds(1100))
@@ -30138,6 +30326,31 @@ try {
         $shine.BeginTime = [TimeSpan]::FromMilliseconds(400)
         $SplashBarShineX.BeginAnimation([System.Windows.Media.TranslateTransform]::XProperty, $shine)
     }
+    # Spinner-Waechter: haengt der Render-Thread mal (WindowState-Wechsel,
+    # langer Dispatcher-Tick), steht die Animation optisch still. Ein
+    # 3-Sekunden-Timer misst den Winkel - bewegt er sich nicht, wird die
+    # Animation neu gestartet, ohne dass der Nutzer merkt, dass sie
+    # eingefroren war.
+    $spinnerGuard = [System.Windows.Threading.DispatcherTimer]::new()
+    $spinnerGuard.Interval = [TimeSpan]::FromMilliseconds(3000)
+    $spinnerGuard.Tag = @{ Spinner = $SplashSpinnerRotation; LastAngle = -1.0 }
+    $spinnerGuard.Add_Tick({
+        param($s, $e)
+        $info = $s.Tag
+        try {
+            if ($script:SplashDismissed) { $s.Stop(); return }
+            $currentAngle = 0.0
+            try { $currentAngle = [double]$info.Spinner.Angle } catch {}
+            if ($info.LastAngle -ge 0 -and [Math]::Abs($currentAngle - $info.LastAngle) -lt 0.01) {
+                # Stillstand - Animation neu starten.
+                $spin = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 360, [TimeSpan]::FromMilliseconds(1100))
+                $spin.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+                $info.Spinner.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $spin)
+            }
+            $info.LastAngle = $currentAngle
+        } catch {}
+    })
+    $spinnerGuard.Start()
 } catch {}
 $PlaceList       = $window.FindName('PlaceList')
 $EmptyState      = $window.FindName('EmptyState')
@@ -30149,6 +30362,13 @@ $LiveBadge       = $window.FindName('LiveBadge')
 $LiveDot         = $window.FindName('LiveDot')
 $LiveText        = $window.FindName('LiveText')
 $SettingsButton  = $window.FindName('SettingsButton')
+# Version 7.5.3: Waehrend des Splashs ist der Hauptinhalt absichtlich
+# deaktiviert - die Liste wuerde sonst leer flackern, der Einstellungs-
+# Knopf wuerde in ein halbfertiges Fenster oeffnen. Hide-Splash macht das
+# wieder sichtbar / bedienbar.
+try { if ($null -ne $PlaceList) { $PlaceList.Visibility = 'Collapsed' } } catch {}
+try { if ($null -ne $EmptyState) { $EmptyState.Visibility = 'Collapsed' } } catch {}
+try { if ($null -ne $SettingsButton) { $SettingsButton.IsEnabled = $false } } catch {}
 $ArenaAiButton   = $window.FindName('ArenaAiButton')
 $UpdateBadge     = $window.FindName('UpdateBadge')
 $MinimizeButton  = $window.FindName('MinimizeButton')
@@ -30721,7 +30941,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.5.2)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.5.3)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -31403,7 +31623,7 @@ $script:ArenaDialogStyles = @'
             <Setter Property="Foreground" Value="{StaticResource SwTextMuted}"/>
             <Setter Property="Background" Value="{StaticResource SwQuietBtnBg}"/>
         </Style>
-        <!-- Warnen / spaeter abbrechen (Version 7.5.2): gedeckter Gelbton in
+        <!-- Warnen / spaeter abbrechen (Version 7.5.3): gedeckter Gelbton in
              derselben Formensprache wie die anderen Dialogknoepfe - der
              Abbrechen-Knopf der Sendeseite. -->
         <LinearGradientBrush x:Key="SwWarnBtnBg" StartPoint="0,0" EndPoint="0,1">
@@ -33541,11 +33761,15 @@ function Update-PlaceProgressVisual {
     $userBadgeText = ''
     try { $userBadgeText = Get-UserMessageBadgeText $sessionId } catch {}
 
-    $color = '#FF4C9BFF'      # arbeitet = blau
+    # Version 7.5.3: kräftige, volle Farben statt ausgewaschene Pastelltöne.
+    # Auf der Teal-Karte mit hellem Lila-Glas-Hintergrund wirkten die alten
+    # Werte blass; jetzt kräftiges Blau / Grün / Grau / Rot mit voller
+    # Sättigung.
+    $color = '#0B57D0'      # arbeitet = sattes Royalblau
     $label = 'Arena arbeitet gerade...'
-    if ($state -eq 'done') { $color = '#FF38D16C'; $label = 'Fertig!' }
-    elseif ($state -eq 'waiting') { $color = '#FF8A93A6'; $label = 'Seit über einer Minute kein Bridge Aufruf mehr' }
-    elseif ($state -eq 'error') { $color = '#FFE11D48'; $label = 'Fehler' }
+    if ($state -eq 'done') { $color = '#166534'; $label = 'Fertig!' }
+    elseif ($state -eq 'waiting') { $color = '#1F2937'; $label = 'Seit über einer Minute kein Bridge Aufruf mehr' }
+    elseif ($state -eq 'error') { $color = '#9F1239'; $label = 'Fehler' }
     # Version 7.2.0: Die Nachricht der KI wird SICHTBAR (sie stand bis hier nur
     # im Tooltip, deshalb sah die Zeile aus, als ob nichts passiert).
     if ($state -ne 'done' -and $state -ne 'waiting' -and -not [string]::IsNullOrWhiteSpace($message)) { $label = $message }
@@ -33579,19 +33803,27 @@ function Update-PlaceProgressVisual {
         Add-UiChannelCount 'ProgressPaintedPercent' 1
         Write-UiStationThrottled 'PROGRESS' ($sessionId.Substring(0, [Math]::Min(8, $sessionId.Length))) 'UI_PAINTED' @{ mode = 'percent'; percent = $percent; state = $state; tool = $lastTool; sidSource = $sourceSid; command = $(if ($null -ne $openCmd) { [string]$openCmd.tool + ':' + [string]$openCmd.status } else { '-' }) } 5
     } else {
-        # KEINE Zahl gemeldet (D5/D6): kein Balken und keine erfundene 0 %,
-        # sondern Klartext darueber, was messbar passiert.
+        # Version 7.5.3 (Nutzerwunsch): Wenn der Snapshot zwar existiert, aber
+        # noch keine Prozentzahl gemeldet wurde, ist der Balken trotzdem
+        # sichtbar - nur eben bei 0 %, mit dem Text darunter. Vorher wurde er
+        # in diesem Fall komplett ausgeblendet, was den Nutzer glauben liess,
+        # die Fortschrittsanzeige waere kaputt. Jetzt: Balken da, Prozent 0 %,
+        # Text erklaert, was Arena gerade macht.
         $textLine = $label
         if (-not [string]::IsNullOrWhiteSpace($lastTool)) { $textLine = $textLine + ' - ' + $lastTool }
         if ($silent -gt 0) { $textLine = $textLine + ' - vor ' + [string]$silent + ' s' }
         Set-Text $Row.ProgressText $textLine
         $Row.ProgressText.Visibility = 'Visible'
         $Row.ProgressText.Foreground = Get-Brush $color
-        $Row.ProgressBar.Visibility = 'Collapsed'
-        $Row.ProgressPercent.Visibility = 'Collapsed'
-        if ($null -ne $snapshot) { $tooltip = $tooltip + [Environment]::NewLine + ('Kein Prozent gemeldet (' + [string]$callsWithoutPercent + ' Aufruf(e) ohne Zahl) - deshalb zeigt die Zeile keinen Balken und keine erfundene 0 %. Arena bekommt in jeder Antwort PERCENT_MISSING.') }
+        $Row.ProgressBar.Visibility = 'Visible'
+        $Row.ProgressBar.Value = 0
+        $Row.ProgressBar.Foreground = Get-Brush $color
+        $Row.ProgressPercent.Visibility = 'Visible'
+        $Row.ProgressPercent.Text = ('0 % • ' + $textLine)
+        $Row.ProgressPercent.Foreground = Get-Brush $color
+        if ($null -ne $snapshot) { $tooltip = $tooltip + [Environment]::NewLine + ('Noch keine Prozentzahl gemeldet (' + [string]$callsWithoutPercent + ' Aufruf(e) ohne Zahl) - der Balken steht deshalb auf 0 %. Arena bekommt in jeder Antwort PERCENT_MISSING.') }
         Add-UiChannelCount 'ProgressPaintedNoPercent' 1
-        Write-UiStationThrottled 'PROGRESS' ($sessionId.Substring(0, [Math]::Min(8, $sessionId.Length))) 'UI_PAINTED' @{ mode = 'text_no_percent'; percent = '-'; state = $state; tool = $lastTool; callsWithoutPercent = $callsWithoutPercent; sidSource = $sourceSid } 5
+        Write-UiStationThrottled 'PROGRESS' ($sessionId.Substring(0, [Math]::Min(8, $sessionId.Length))) 'UI_PAINTED' @{ mode = 'text_no_percent'; percent = '0'; state = $state; tool = $lastTool; callsWithoutPercent = $callsWithoutPercent; sidSource = $sourceSid } 5
     }
     try { if ($Row.CommandCancelButton) { if ($null -eq $openCmd) { $Row.CommandCancelButton.Visibility = 'Collapsed' } } } catch {}
     $Row.ProgressText.ToolTip = $tooltip
@@ -33669,7 +33901,7 @@ function Write-ChannelDiagnoseFile {
 
         $progressPath = Join-Path $script:AppDataRoot 'progress-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.5.2)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.5.3)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -33704,7 +33936,7 @@ function Write-ChannelDiagnoseFile {
 
         $notifyPath = Join-Path $script:AppDataRoot 'notify-diagnose.txt'
         $sb2 = New-Object System.Text.StringBuilder
-        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.5.2)')
+        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.5.3)')
         [void]$sb2.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb2.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb2.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -34073,7 +34305,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.5.2)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.5.3)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -34556,6 +34788,10 @@ function Invoke-PlacePreviewUiSelfTest {
     # das Testbild nicht, liegt der Fehler in WPF/UI (nicht in der
     # Fensteraufnahme). Erscheint es, prueft ~2,5 s spaeter die echte
     # Aufnahme sichtbar dagegen. Ergebnis: PREVIEW_UI_SELFTEST_OK/FAILED.
+    # Version 7.5.3: Wird NIE laenger als 2,5 s angezeigt. Bleibt die echte
+    # Vorschau in dieser Zeit aus, wird das Testbild durch den Spinning-Icon
+    # ersetzt - sonst sieht der Nutzer das bunte Schachbrett dauerhaft als
+    # "kaputte" Vorschau.
     $flow = 'selftest-1'
     Write-PreviewTrace $flow 'CAPTURE_START' @{ sid = [string]$SessionId; pid = '-'; hwnd = '-'; title = '(in Speicher gezeichnetes Testbild)'; type = 'in-memory-png'; w = 64; h = 44 } 'origin=PREVIEW_UI_SELFTEST'
     try {
@@ -34564,6 +34800,33 @@ function Invoke-PlacePreviewUiSelfTest {
         if (-not $bytes -or $bytes.Length -eq 0) { throw 'Testbild konnte nicht erzeugt werden (0 Bytes)' }
         Write-PreviewTrace $flow 'RESULT_RECEIVED' @{ sid = [string]$SessionId; type = [string]$bytes.GetType().FullName; bytes = $bytes.Length; w = 64; h = 44 } 'method=in-memory'
         Set-PlacePreviewImage $Row $bytes $flow
+        # 2,5-Sekunden-Waechter: ist bis dahin keine echte Vorschau da
+        # (PreviewHasFrame waere dann true), Testbild ausblenden und
+        # Spinner wieder zeigen. So sieht der Nutzer nie ein buntes
+        # Schachbrett dauerhaft in der Liste.
+        try {
+            $selfTestTimer = [System.Windows.Threading.DispatcherTimer]::new()
+            $selfTestTimer.Interval = [System.TimeSpan]::FromMilliseconds(2500)
+            $selfTestTimer.Tag = $Row
+            $selfTestTimer.Add_Tick({
+                param($s, $e)
+                $s.Stop()
+                $r = $s.Tag
+                if ($null -eq $r) { return }
+                # Echte Vorschau ist da (PreviewHasFrame wurde durch
+                # Set-PlacePreviewImage gesetzt) - Testbild darf bleiben.
+                if ([bool]$r.PreviewHasFrame) { return }
+                # Keine echte Vorschau nach 2,5 s - Testbild aus, Spinner an.
+                try {
+                    if ($null -ne $r.IconImage) { $r.IconImage.Source = $null }
+                    if ($null -ne $r.IconImage) { $r.IconImage.Visibility = 'Collapsed' }
+                    if ($null -ne $r.IconSpinner) { $r.IconSpinner.Visibility = 'Visible' }
+                    if ($null -ne $r.IconFallback) { $r.IconFallback.Visibility = 'Collapsed' }
+                    try { Set-PlacePreviewSpinnerAnimation $r.IconVisual $true } catch {}
+                } catch {}
+            })
+            $selfTestTimer.Start()
+        } catch {}
     } catch {
         Write-PreviewTrace $flow 'RESULT_RECEIVED' @{ sid = [string]$SessionId; error = [string]$_.Exception.Message }
         $verdictEarly = 'PREVIEW_UI_SELFTEST_FAILED sid=' + [string]$SessionId + ' error=' + [string]$_.Exception.Message
@@ -35568,7 +35831,10 @@ function New-Row {
     # Plugin-veraltet-Hinweis in ROT (statt angehaengt im Titel, wie bisher).
     $staleText = [System.Windows.Controls.TextBlock]::new()
     $staleText.Text = ''
-    $staleText.Foreground = Get-Brush '#FFFF5C77'
+    # Version 7.5.3: kräftiges, volles Rot statt ausgewaschenes Pastell-Rosa.
+    # Der bisherige Wert '#FFFF5C77' wirkte auf der Teal-Karte blass und
+    # schlecht lesbar. Jetzt sattes Rot mit voller Sättigung.
+    $staleText.Foreground = Get-Brush '#FF1744'
     $staleText.FontSize = 11.5
     $staleText.FontWeight = 'SemiBold'
     $staleText.Visibility = 'Collapsed'
@@ -35590,9 +35856,13 @@ function New-Row {
     # gewuenscht, nicht ins Pink-Schema umbiegen) direkt in der Place-Zeile.
     # Die konkrete Nachricht steht als Tooltip an der Leiste, damit die
     # Zeilenhoehe bei jedem Aufruf nicht springt.
+    # Version 7.5.3: kräftige, sattes Blau statt ausgewaschenes Pastell.
+    # Vorher '#FF6FB6FF' / '#FF4C9BFF' / '#FF9CCBFF' - auf der helleren
+    # Mitte des Hintergrunds kaum lesbar. Jetzt sattes Royalblau, das auf
+    # jedem Bereich der Karte Kontrast hat.
     $progressText = [System.Windows.Controls.TextBlock]::new()
     $progressText.Text = ''
-    $progressText.Foreground = Get-Brush '#FF6FB6FF'
+    $progressText.Foreground = Get-Brush '#0B57D0'
     $progressText.FontSize = 11.5
     $progressText.FontWeight = 'SemiBold'
     $progressText.VerticalAlignment = 'Center'
@@ -35606,12 +35876,12 @@ function New-Row {
     $progressBar.Width = 150
     $progressBar.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
     $progressBar.Visibility = 'Collapsed'
-    $progressBar.Foreground = Get-Brush '#FF4C9BFF'
+    $progressBar.Foreground = Get-Brush '#0B57D0'
     $progressBar.Background = Get-Brush '#33000000'
     $progressBar.BorderThickness = [System.Windows.Thickness]::new(0)
     $progressPercent = [System.Windows.Controls.TextBlock]::new()
     $progressPercent.Text = ''
-    $progressPercent.Foreground = Get-Brush '#FF9CCBFF'
+    $progressPercent.Foreground = Get-Brush '#0B57D0'
     $progressPercent.FontSize = 11
     $progressPercent.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
     $progressPercent.VerticalAlignment = 'Center'
@@ -36095,6 +36365,22 @@ function Show-CopyConfirm {
 function Hide-Splash {
     if ($script:SplashDismissed) { return }
     $script:SplashDismissed = $true
+    # Version 7.5.3: Sobald der Splash weg ist, wird der Hauptinhalt
+    # sichtbar und der Einstellungs-Knopf bedienbar. Waehrend des Splashs
+    # ist beides absichtlich deaktiviert (die Liste wuerde sonst leer
+    # flackern, der Einstellungs-Knopf wuerde in ein halbfertiges Fenster
+    # oeffnen).
+    try {
+        if ($null -ne $PlaceList) {
+            try { $PlaceList.Visibility = 'Visible' } catch {}
+        }
+        if ($null -ne $EmptyState) {
+            try { $EmptyState.Visibility = 'Visible' } catch {}
+        }
+        if ($null -ne $SettingsButton) {
+            try { $SettingsButton.IsEnabled = $true } catch {}
+        }
+    } catch {}
     try {
         $fade = [System.Windows.Media.Animation.DoubleAnimation]::new(1, 0, [System.TimeSpan]::FromMilliseconds(420))
         $SplashScreen.BeginAnimation([System.Windows.UIElement]::OpacityProperty, $fade)
@@ -36213,6 +36499,31 @@ function Update-SplashScreen {
     if ($SplashStep) { Set-Text $SplashStep $step }
     Set-Text $SplashSub $sub
 
+    # Version 7.5.3: Organischer Ladebalken mit "faken" Zwischenschritten.
+    # Der ECHTE Prozentwert (von den 4 realen Schritten) wird gespeichert;
+    # was der Nutzer sieht, ist ein Wert knapp darunter, der zusaetzlich
+    # zwischen den Schritten kleine "Atembewegungen" macht - so wirkt es,
+    # als wuerde staendig irgendetwas getan, obwohl die 4 grossen Schritte
+    # selbst nur 4-5 Mal den Wert sprunghaft anheben. Der Balken laeuft
+    # also am Ende exakt auf den ECHTEN Wert zu, sieht aber lebendig aus.
+    $realPercent = [double]$percent
+    if ($realPercent -lt 0) { $realPercent = 0 }
+    if ($realPercent -gt 100) { $realPercent = 100 }
+    if ($realPercent -ge 100) {
+        $percent = 100.0
+    } else {
+        # Pseudobewegung: nutzt die aktuelle Millisekunde als pseudo-zufaelligen
+        # Versatz, sodass der Balken zwischen den echten Schritten leicht
+        # atmet, aber nie den Zielwert ueberschreitet.
+        $now = Get-Date
+        $ms = ([int]$now.Millisecond)
+        $swing = (([double]($ms % 100)) / 100.0 - 0.5) * 1.5
+        $withSwing = $realPercent + $swing
+        if ($withSwing -lt 0) { $withSwing = 0 }
+        if ($withSwing -gt 99.0) { $withSwing = 99.0 }
+        $percent = $withSwing
+    }
+
     # Balken-Weite animiert setzen (auf 400 px zentriert -> 428 px Gesamtbreite)
     $trackWidth = 428.0
     if ($percent -lt 0) { $percent = 0 }
@@ -36315,7 +36626,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.5.2)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.5.3)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -36736,14 +37047,16 @@ function New-MinimalPlaceRow {
     $title.ToolTip = $title.Text
     $staleText = [System.Windows.Controls.TextBlock]::new()
     $staleText.Text = if ($Studio.versionMismatch -eq $true) { 'Plugin veraltet - Studio neustarten' } else { '' }
-    $staleText.Foreground = Get-Brush '#FFFF8C9F'
+    # Version 7.5.3: kräftiges, volles Rot statt ausgewaschenes Pastell-Rosa.
+    $staleText.Foreground = Get-Brush '#B91C1C'
     $staleText.FontSize = 10.5
     $staleText.Margin = [System.Windows.Thickness]::new(0, 2, 0, 0)
     $staleText.Visibility = if ($Studio.versionMismatch -eq $true) { 'Visible' } else { 'Collapsed' }
     $namePanel.Children.Add($title) | Out-Null
     $namePanel.Children.Add($staleText) | Out-Null
     $progressText = [System.Windows.Controls.TextBlock]::new()
-    $progressText.Foreground = Get-Brush '#FF6FB6FF'
+    # Version 7.5.3: kräftiges Blau statt ausgewaschenes Pastell.
+    $progressText.Foreground = Get-Brush '#0B57D0'
     $progressText.FontSize = 11
     $progressText.FontWeight = 'SemiBold'
     $progressText.VerticalAlignment = 'Center'
@@ -36754,7 +37067,7 @@ function New-MinimalPlaceRow {
     $progressBar.Width = 120
     $progressBar.VerticalAlignment = 'Center'
     $progressBar.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
-    $progressBar.Foreground = Get-Brush '#FF4C9BFF'
+    $progressBar.Foreground = Get-Brush '#0B57D0'
     $progressBar.Background = Get-Brush '#33000000'
     $progressBar.BorderThickness = [System.Windows.Thickness]::new(0)
     $progressPercent = [System.Windows.Controls.TextBlock]::new()
@@ -37135,7 +37448,7 @@ Set-StartupStage 'Ereignisse verdrahtet (Fenstersteuerung + Loaded)'
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.5.2'
+    $versionText = '7.5.3'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -37972,7 +38285,7 @@ function Open-SettingsWindow {
             <GradientStop Color="#F2FF5C77" Offset="0"/>
             <GradientStop Color="#E6E11D48" Offset="1"/>
         </LinearGradientBrush>
-        <!-- Version 7.5.2: Fehlende Ressourcen fuer die API-Key-Knoepfe -->
+        <!-- Version 7.5.3: Fehlende Ressourcen fuer die API-Key-Knoepfe -->
         <LinearGradientBrush x:Key="SwGreenBtnBg" StartPoint="0,0" EndPoint="0,1">
             <GradientStop Color="#F238D16C" Offset="0"/>
             <GradientStop Color="#E61F9A4C" Offset="1"/>
@@ -38255,7 +38568,6 @@ function Open-SettingsWindow {
                         <Border Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="14" Padding="16,12">
                             <StackPanel>
                                 <CheckBox x:Name="EditorIconsSwitch" Style="{StaticResource ArenaSwitch}" Content="Live-Vorschau-Icons im Editor anzeigen"/>
-                                <TextBlock Text="Aus spart Leistung: Fensteraufnahmen werden vollständig gestoppt." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" Margin="0,7,0,0"/>
                             </StackPanel>
                         </Border>
 
@@ -38266,7 +38578,6 @@ function Open-SettingsWindow {
                                 <!-- Version 7.1.3: Fertig-Benachrichtigung als eigener
                                      Schalter direkt unter der Fortschrittsanzeige. -->
                                 <CheckBox x:Name="DoneNotifySwitch" Style="{StaticResource ArenaSwitch}" Content="Benachrichtigung, wenn Arena fertig ist" Margin="0,14,0,0"/>
-                                <TextBlock Text="Zeigt am Ende der Arbeit die Windows-Meldung von Arena (Titel und kurzer Text). Standard: aus." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,7,0,0"/>
                             </StackPanel>
                         </Border>
 
@@ -38278,7 +38589,7 @@ function Open-SettingsWindow {
                                 <TextBlock Text="Mach es möglich, dass Arena Meshes und Bilder selber generieren und hochladen kann. Er bekommt somit automatisch die Asset ID und kann die Assets direkt in deinem Workspace einfügen, ohne dass du irgendwas machen musst."
                                            Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"/>
 
-                                <!-- ZUSTAND 1 (Version 7.5.2): noch kein Schlüssel.
+                                <!-- ZUSTAND 1 (Version 7.5.3): noch kein Schlüssel.
                                      Grosser roter Text, Eingabefeld, grüner
                                      Speichern-Knopf, darunter NUR noch das
                                      aufklappbare Tutorial - kein Status, kein
@@ -38395,7 +38706,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.5.2" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.5.3" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -38621,7 +38932,11 @@ function Open-SettingsWindow {
         if (-not $assetWrite -or -not $assetRead) {
             Set-CloudSaveHint 'Roblox nimmt den Schlüssel an, aber ihm fehlt noch das Recht "assets" mit read UND write (Tutorial Schritt 4 und 5). Ohne das lehnt Roblox jeden Upload ab.' '#FFD9A0'
         } elseif (-not $creatorOk) {
-            Set-CloudSaveHint 'Roblox nimmt den Schlüssel an, nennt aber keinen Empfänger für die Assets. Bitte den Schlüssel neu erstellen - mit "assets" und read + write.' '#FFD9A0'
+            # Version 7.5.3: genauer Hinweis statt Schluessel-neu-erstellen.
+            # Der Schluessel IST richtig konfiguriert (sonst waere assetWrite
+            # false); es fehlt nur eine konkrete Empfänger-Resource (Gruppe
+            # oder Account) im Dashboard.
+            Set-CloudSaveHint 'Roblox nimmt den Schlüssel an und die Rechte passen, aber es ist keine konkrete Gruppe oder kein konkreter Account als Empfänger der Assets eingetragen. Bitte im Dashboard beim Schlüssel unter "Berechtigungen" > "assets" eine bestimmte Gruppe ODER deinen Account als Resource festlegen, dann den Schlüssel hier erneut einfügen.' '#FFD9A0'
         } else {
             Set-CloudSaveHint 'Schlüssel geprüft: Roblox nimmt ihn an und Arena darf Assets hochladen.' '#7EE2A8'
         }
@@ -38793,7 +39108,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.5.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.5.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -38858,7 +39173,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.5.2 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.5.3 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -38871,7 +39186,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.5.2'
+    $verText = '7.5.3'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

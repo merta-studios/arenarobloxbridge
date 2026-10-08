@@ -49,6 +49,50 @@ heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestarte
 
 ## Versionsverlauf
 
+## 7.5.3 — Mini-Update: Acht Live-Befunde auf einmal behoben
+
+Der „Schlüssel-richtig-aber-Roblox-findet-trotzdem-keinen-Empfänger“-Bug war der
+teuerste: drei Mal den Open-Cloud-Schlüssel mit assets+read+write neu erstellt
+und der Fehler kam jedes Mal wieder. Die Bridge hat beim Introspect die Felder
+`userIds`/`groupIds` ausgewertet, aber den `*`-Fallback (Schlüssel ohne konkrete
+Resource-Auswahl) nicht zuverlässig auf `authorizedUserId` zurückgeführt. Jetzt
+unterscheidet sie sauber: konkrete Resource → die, eine Seite auf `*` →
+`authorizedUserId`, alles leer und kein autorisierter Nutzer → klarer Hinweis
+„du musst im Dashboard eine Gruppe oder deinen Account als Empfänger festlegen“.
+
+Dazu sieben weitere Punkte:
+
+1. **Einstellungen aufgeräumt.** Die zwei erklärenden Hinweise unter
+   „Live-Vorschau-Icons im Editor anzeigen“ und „Benachrichtigung, wenn Arena
+   fertig ist“ sind weg — sie wiederholten nur, was die Schalter-Beschriftung
+   schon sagte.
+2. **Ladebildschirm organisch.** Der Spinner dreht jetzt durchgehend (nicht
+   nur bei Schrittwechsel); ein 3-Sekunden-Wächter startet ihn neu, falls der
+   Render-Thread mal hängt. Der Ladebalken atmet zwischen den echten Schritten
+   mit einer Pseudobewegung, sodass er lebendig wirkt, aber am Ende exakt auf
+   den echten Prozentwert zuläuft. Die Place-Liste und der Einstellungs-Knopf
+   sind während des Splashs ausgeblendet / deaktiviert — die Liste flackert
+   nicht mehr leer, der Knopf öffnet nicht mehr in ein halbfertiges Fenster.
+3. **Place-Listen-Farben kräftig.** Die ausgewaschenen Pastelltöne (rosa Rot,
+   hellblau, hellgrün, mattes Grau) unter den Place-Namen sind durch satte
+   Vollfarben ersetzt (kräftiges Blau `#0B57D0`, sattes Grün `#166534`,
+   sattes Rot `#B91C1C`, dunkles Anthrazit `#1F2937`) — auf der Teal-Karte
+   jetzt klar lesbar.
+4. **Vorschau-Selbsttest sauber.** Das magenta-grüne Schachbrett aus dem
+   internen UI-Selbsttest verschwindet nach 2,5 s automatisch wieder und
+   wird durch den Spinner ersetzt, wenn keine echte Vorschau ankommt —
+   kein dauerhaft verbuggtes Raster mehr.
+5. **Verlauf-Texte vollständig.** „Hat ? Zeilen in der Konsole ausgeführt“
+   und „Hat `<TOOL>` ausgeführt“-Platzhalter sind weg; `Get-SourceLineCount`
+   akzeptiert jetzt auch das run_lua-Feld „code“, und jedes Werkzeug (alle
+   ~130) hat einen eigenen verständlichen Satz.
+6. **Fragen bleiben offen.** Das Auto-Timeout wurde von 180 s auf 24 h
+   hochgesetzt; das Fragenfenster verschwindet nicht mehr von alleine.
+7. **Fortschrittsbalken mit % wieder da.** Wenn ein Snapshot existiert
+   aber noch keine Prozentzahl gemeldet wurde, wird der Balken jetzt
+   trotzdem sichtbar (bei 0 %) angezeigt — vorher war er in genau diesem
+   Fall Collapsed und der Nutzer dachte, die Anzeige wäre kaputt.
+
 ## 7.5.1 — Mini-Fix-Update: Nachrichten kommen an, ein Modell = ein Mesh
 
 Sechs Live-Befunde aus dem gescheiterten Baum-Bau, alle behoben — das Programm-Design

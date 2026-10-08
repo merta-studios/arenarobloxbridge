@@ -38,7 +38,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.5.1"
+VERSION = "7.5.3"
 FAILURES: list[str] = []
 
 
@@ -61,7 +61,7 @@ def main() -> int:
     metadata = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     notes = "\n".join(str(note) for note in metadata.get("notes", []))
     check(metadata.get("version") == VERSION, "version.json ist 7.5.1")
-    for phrase in ("7.5.1", "7.5.0", "7.4.0", "Blender", "MESH_UPLOAD_PENDING", "upload_asset",
+    for phrase in ("7.5.3", "7.5.0", "7.4.0", "Blender", "MESH_UPLOAD_PENDING", "upload_asset",
                    "Open Cloud", "CreateMeshPartAsync"):
         check(phrase in notes, f"Release-Notiz nennt {phrase}")
 
