@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline-Abnahme fuer Arena Roblox Bridge 7.5.0 - ROBLOX OPEN CLOUD UPLOAD.
+"""Offline-Abnahme fuer Arena Roblox Bridge 7.5.1 - ROBLOX OPEN CLOUD UPLOAD.
 
 Was dieses Update ausmacht (und was hier geprueft wird):
 
@@ -36,7 +36,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.5.0"
+VERSION = "7.5.1"
 FAILURES: list[str] = []
 
 
@@ -236,7 +236,7 @@ def main() -> int:
 
     metadata = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     notes = "\n".join(str(note) for note in metadata.get("notes", []))
-    check(metadata.get("version") == VERSION, "version.json ist 7.5.0")
+    check(metadata.get("version") == VERSION, "version.json ist 7.5.1")
     for phrase in ("Open Cloud", "upload_asset", "MESH-FENSTER", "ASSETS", "Asset-Id"):
         check(phrase in notes, f"Release-Notiz nennt {phrase}")
 
@@ -281,16 +281,25 @@ def main() -> int:
     # ------------------------------------------------------------------
     # 3) Ersteller: Roblox ordnet jedes Asset jemandem zu
     # ------------------------------------------------------------------
-    print("\n3) Ersteller (Nutzer oder Gruppe)")
-    resolve = region(source, "function Resolve-OpenCloudCreatorId {", "function Get-OpenCloudAssetSpec {")
-    check("users.roblox.com/v1/usernames/users" in resolve,
-          "ein Roblox-NAME wird ueber users.roblox.com in eine ID uebersetzt")
-    check('"usernames"' in resolve.replace("'", '"') or "usernames" in resolve,
-          "die Anfrage nutzt den offiziellen usernames-Endpunkt")
+    print("\n3) Ersteller: aus dem Schluessel selbst (kein Eingabefeld mehr)")
+    introspect = region(source, "function Invoke-OpenCloudIntrospect {", "function Resolve-OpenCloudCreatorFromKey {")
+    check("https://apis.roblox.com/api-keys/v1/introspect" in introspect,
+          "die Selbstauskunft nutzt den offiziellen Introspect-Endpunkt")
+    check("apiKey = $clean" in introspect,
+          "die Selbstauskunft schickt den Schluessel im JSON-Body (apiKey)")
+    check("assetRead" in introspect and "assetWrite" in introspect,
+          "die Scopes werden in ASSETS read/write uebersetzt")
+    check("writeUserIds" in introspect and "writeGroupIds" in introspect,
+          "die erlaubten Nutzer-/Gruppen-Ressourcen werden gelesen")
+    resolve = region(source, "function Resolve-OpenCloudCreatorFromKey {", "function Test-OpenCloudKeyAuth {")
+    check("authorizedUserId" in resolve,
+          "als Rueckfall dient der autorisierte Nutzer des Schluessels")
+    check("openCloudCreatorId" in resolve and "openCloudCreatorKind" in resolve,
+          "der Ersteller wird aus dem Schluessel in die Einstellungen geschrieben")
+    check("Resolve-OpenCloudCreatorId" not in source,
+          "der alte Namens-/ID-Pfad ist entfernt (der Nutzer traegt nichts ein)")
     check("'group'" in source and "openCloudCreatorKind" in source,
-          "auch eine GRUPPE kann Ersteller sein (Umschalter Nutzer/Gruppe)")
-    check("Roblox-Name oder Zahlen-ID" in source and "(oder dieser Gruppe)" in source,
-          "der Hinweis sagt, dass bei einer Gruppe die Zahlen-ID einzutragen ist")
+          "auch eine GRUPPE kann Ersteller sein (wird gemessen)")
     check("$creator['groupId']" in source and "$creator['userId']" in source,
           "der Upload unterscheidet Nutzer- und Gruppen-Ersteller")
     check("creationContext" in source and "creator = $creator" in source,
@@ -303,13 +312,18 @@ def main() -> int:
     upload = region(source, "function Invoke-OpenCloudUpload {", "function Get-OpenCloudOperation {")
     check("https://apis.roblox.com/assets/v1/assets" in upload,
           "hochgeladen wird ueber POST https://apis.roblox.com/assets/v1/assets")
-    client_fn = region(source, "function New-OpenCloudHttpClient {", "function Get-OpenCloudErrorBody {")
+    transport = region(source, "function Send-OpenCloudHttp {", "function Get-OpenCloudTransportError {")
+    client_fn = region(source, "function New-OpenCloudHttpClient {", "function New-OpenCloudMultipartBytes {")
+    multipart = region(source, "function New-OpenCloudMultipartBytes {", "function Send-OpenCloudRequestFallback {")
     check("x-api-key" in client_fn and "TryAddWithoutValidation" in client_fn,
           "der Schluessel reist als Header x-api-key")
-    check("'x-api-key'" in upload or "config.key" in upload,
-          "der Upload uebergibt den Schluessel an den Client")
-    check("MultipartFormDataContent" in upload, "die Anfrage ist multipart/form-data")
-    check("$form.Add($requestPart, 'request')" in upload and "$form.Add($filePart, 'fileContent', $name)" in upload,
+    check("Send-OpenCloudHttp" in upload and "config.key" in upload,
+          "der Upload uebergibt den Schluessel an den Transport")
+    check("'multipart/form-data; boundary='" in transport
+          and "New-OpenCloudMultipartBytes" in transport,
+          "die Anfrage ist multipart/form-data (fuer den zweiten Transportweg von Hand gebaut)")
+    field_marker = r'''name="' + [string]$FieldName + '"; filename="'''
+    check('name="request"' in multipart and field_marker in multipart,
           "die Anfrage hat die zwei Felder request und fileContent")
     check("assets/v1/operations/" in source,
           "die asynchrone Operation wird ueber /assets/v1/operations/<id> abgefragt")
@@ -353,14 +367,15 @@ def main() -> int:
     missing = region(source, "if (-not $config.hasKey) {", "if ([string]::IsNullOrWhiteSpace([string]$config.creatorId)) {")
     check("OPENCLOUD_KEY_MISSING" in missing and "userMessage" in missing,
           "ohne Schluessel antwortet das Werkzeug OPENCLOUD_KEY_MISSING MIT einem Nutzer-Satz")
-    check("Zahnrad (Einstellungen)" in missing and "ROBLOX OPEN CLOUD" in missing,
-          "der Satz nennt den Weg: Einstellungen -> ROBLOX OPEN CLOUD")
+    check("Zahnrad (Einstellungen)" in missing and "Roblox Open Cloud API-Key" in missing,
+          "der Satz nennt den Weg: Einstellungen -> Roblox Open Cloud API-Key")
     check("WORTLICH" in missing, "der Agent wird angewiesen, den Satz WOERTLICH zu sagen")
     check("OPENCLOUD_CREATOR_MISSING" in source, "fehlt der Ersteller, meldet das Werkzeug das getrennt")
     for code in ("OPENCLOUD_UNREACHABLE", "OPENCLOUD_BAD_RESPONSE", "OPENCLOUD_OPERATION_FAILED",
                  "NO_UPLOAD_FILE", "UNKNOWN_SLOT", "PATH_OUTSIDE_BRIDGE"):
         check(code in source, f"Fehlercode vorhanden: {code}")
-    check("Der Schluessel wurde NICHT verbraucht" in upload,
+    transport_error = region(source, "function Get-OpenCloudTransportError {", "function Get-OpenCloudErrorBody {")
+    check("Der Schluessel wurde NICHT verbraucht" in transport_error,
           "bei einem Netzfehler sagt das Werkzeug ehrlich, dass der Schluessel nicht verbraucht wurde")
 
     # ------------------------------------------------------------------
@@ -392,7 +407,7 @@ def main() -> int:
     # ------------------------------------------------------------------
     # 7) Einstellungsfenster: Karte, Tutorial, Animation
     # ------------------------------------------------------------------
-    print("\n7) Einstellungsfenster: ROBLOX OPEN CLOUD")
+    print("\n7) Einstellungsfenster: ROBLOX OPEN CLOUD (7.5.1: nur zwei Zustaende)")
     settings_xaml = region(source, "$settingsXaml = @'", "\n'@")
     # Die erste Zeile ist noch PowerShell ($settingsXaml = @') - weg damit.
     settings_xaml = settings_xaml[settings_xaml.index("\n") + 1:]
@@ -404,33 +419,50 @@ def main() -> int:
         xml_ok = False
         print("       XML-Fehler:", exc)
     check(xml_ok, "das Einstellungs-XAML ist wohlgeformt (XML-Parse)")
-    for name in ("CloudKeyBox", "CloudSaveButton", "CloudTestButton", "CloudRemoveButton",
-                 "CloudStatusText", "CloudCreatorBox", "CloudCreatorKind", "CloudCreatorHint",
+    for name in ("CloudMissingPanel", "CloudMissingText", "CloudKeyBox", "CloudSaveButton",
+                 "CloudSaveHint", "CloudReadyPanel", "CloudReadyText", "CloudReadyNote",
+                 "CloudRemoveButton", "CloudOpenDashboardButton",
                  "CloudTutorialHeader", "CloudTutorialChevron", "CloudTutorialToggle",
                  "CloudTutorialWrap", "CloudTutorialBody"):
         check(f'x:Name="{name}"' in settings_xaml, f"Einstellungen enthalten {name}")
-    for step in range(1, 7):
-        check(f'x:Name="CloudStep{step}"' in settings_xaml, f"Tutorial-Schritt CloudStep{step} vorhanden")
-    check('Content="Nutzer"' in settings_xaml and 'Content="Gruppe"' in settings_xaml,
-          "beim Ersteller ist zwischen Nutzer und Gruppe waehlbar")
-    check("PasswordBox" in settings_xaml, "der Schluessel wird in einem PasswordBox-Feld eingegeben")
+    for gone in ("CloudTestButton", "CloudStatusText", "CloudCreatorBox", "CloudCreatorKind",
+                 "CloudCreatorHint"):
+        check(f'x:Name="{gone}"' not in settings_xaml,
+              f"das alte Element {gone} ist aus den Einstellungen verschwunden")
+    for step in range(1, 8):
+        check(f'x:Name="CloudStep{step}"' in settings_xaml,
+              f"Tutorial-Schritt CloudStep{step} vorhanden")
+    check('Text="Roblox Open Cloud API-Key"' in settings_xaml,
+          "der Abschnitt heisst Roblox Open Cloud API-Key")
+    check("Mach es möglich, dass Arena Meshes und Bilder selber generieren" in settings_xaml,
+          "der Zweck-Satz steht wortgetreu im Abschnitt")
+    check('Text="Noch kein API-Key hinzugefügt!"' in settings_xaml,
+          "ohne Schluessel steht der rote Hinweis Noch kein API-Key hinzugefügt!")
+    check('Text="API-Key ist eingerichtet!"' in settings_xaml,
+          "mit Schluessel steht der gruene Hinweis API-Key ist eingerichtet!")
+    check("PasswordBox" in settings_xaml,
+          "der Schluessel wird in einem PasswordBox-Feld eingegeben")
 
     tutorial = region(settings_xaml, 'x:Name="CloudTutorialWrap"', '<TextBlock Text="UPDATES"')
-    for right in ("ASSETS", "READ", "WRITE", "asset:read", "asset:write", "Access Permissions"):
-        check(right in tutorial, f"das Tutorial nennt das Recht {right}")
-    check("create.roblox.com/credentials" in tutorial, "das Tutorial nennt die echte Adresse create.roblox.com/credentials")
-    check("Save &amp; Generate Key" in tutorial or "Save & Generate Key" in tutorial,
-          "das Tutorial endet beim Erzeugen des Schluessels")
+    for piece in ("1. Öffne diese Seite:", "API-Schlüssel erstellen",
+                  "irgendeinen Namen und eine Beschreibung",
+                  "den Punkt „assets“ hinzu", "„read“ und „write“",
+                  "API-Schlüssel generieren", "Füge den kopierten Schlüssel hier ein."):
+        check(piece in tutorial, f"das Tutorial nennt: {piece}")
+    check("create.roblox.com/dashboard/credentials" in tutorial,
+          "das Tutorial nennt die echte Adresse create.roblox.com/dashboard/credentials")
+    check('Text="&#xE71B;"' in tutorial,
+          "der Link-Knopf nutzt dasselbe Glyph wie der Stil 'Arena AI oeffnen'")
     check("Ablaufdatum" in tutorial, "das Tutorial warnt vor einem Ablaufdatum (stiller Stop)")
-    check("MaxHeight=\"0\"" in tutorial and "Opacity=\"0\"" in tutorial,
+    check('MaxHeight="0"' in tutorial and 'Opacity="0"' in tutorial,
           "das Tutorial startet eingeklappt (MaxHeight/Opacity 0)")
-    check("ClipToBounds=\"True\"" in tutorial, "der Aufklapp-Bereich clippt (kein Herauslaufen)")
+    check('ClipToBounds="True"' in tutorial, "der Aufklapp-Bereich clippt (kein Herauslaufen)")
 
     code_start = source.index("$settingsWindow.FindName('CloudKeyBox')")
     code = source[code_start:source.index("# 7.2.3: Die Test-Benachrichtigung ist vollstaendig")]
-    check("$cloudSaveButton.Add_Click" in code and "$cloudTestButton.Add_Click" in code
-          and "$cloudRemoveButton.Add_Click" in code,
-          "Speichern, Prüfen und Entfernen sind verdrahtet")
+    check("$cloudSaveButton.Add_Click" in code and "$cloudRemoveButton.Add_Click" in code
+          and "$cloudDashboardButton.Add_Click" in code,
+          "Speichern, Entfernen und der Dashboard-Link sind verdrahtet")
     check("Set-OpenCloudKey" in code and "Get-OpenCloudKey" in code and "Remove-OpenCloudKey" in code,
           "die Knoepfe benutzen die eine Schluessel-Quelle")
     check("Save-BridgeSettingsFile" in code, "Speichern legt die Einstellungen dauerhaft ab")
@@ -440,13 +472,19 @@ def main() -> int:
                    "openCloudCreatorName", "openCloudSavedAt", "openCloudKeyHint"):
         check(marker in code, f"Sync-CloudSharedSettings uebergibt {marker}")
     check("Length -lt 20" in code, "zu kurze Schluessel werden abgelehnt (kein sinnloser Speicherlauf)")
-    check("Resolve-OpenCloudCreatorId" in code, "Speichern loest den Ersteller-Namen in eine ID auf")
-    check("Test-OpenCloudKeyAuth" in code, "Prüfen fragt Roblox, ob der Schluessel angenommen wird")
+    check("Update-CloudPanelState" in code and "CloudMissingPanel" in code and "CloudReadyPanel" in code,
+          "die zwei Zustaende schaltet Update-CloudPanelState")
+    check("Start-CloudIntrospectRun" in code and "Invoke-OpenCloudIntrospect" in code,
+          "Speichern holt den Ersteller per Introspect aus dem Schluessel")
+    check("Apply-CloudIntrospectVerdict" in code,
+          "das Ergebnis der Selbstauskunft wird ehrlich angezeigt")
+    check("Tutorial Schritt 4 und 5" in source,
+          "fehlende Rechte werden mit Hinweis auf Tutorial Schritt 4 und 5 gemeldet")
     check("DispatcherTimer" in code and "BeginInvoke" in code,
-          "die Prüfung laeuft im Hintergrund (kein eingefrorenes Fenster)")
+          "die Pruefung laeuft im Hintergrund (kein eingefrorenes Fenster)")
 
     anim = region(source, "$cloudSteps = New-Object System.Collections.Generic.List[object]",
-                  "$cloudKeyBox.Add_Click" if "$cloudKeyBox.Add_Click" in source else "$cloudSaveButton.Add_Click")
+                  "$cloudDashboardButton.Add_Click")
     check("DoubleAnimation" in anim and "MaxHeightProperty" in anim,
           "das Aufklappen animiert die Hoehe (DoubleAnimation auf MaxHeight)")
     check("MaxHeight = 100000" in anim and "UpdateLayout()" in anim,
@@ -490,7 +528,7 @@ def main() -> int:
         for item in FAILURES:
             print("  - " + item)
         return 1
-    print("\nOK: 7.5.0 Open Cloud Upload bestanden (Fenster weg, Schluessel, Tutorial, upload_asset, Fehlerwege, Modelltest).")
+    print("\nOK: 7.5.1 Open Cloud Upload bestanden (Fenster weg, Schluessel, Introspect-Ersteller, Tutorial, upload_asset, Dateipfad, Fehlerwege, Modelltest).")
     return 0
 
 

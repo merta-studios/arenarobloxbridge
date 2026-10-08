@@ -32,8 +32,8 @@ sein.
 | `ORGANIC_BUILD_CONTRACT.md` | Organic-Bauvertrag (Stand 7.3.2, weiterhin gueltig; der Mesh-Weg kommt in 7.4.0 hinzu): typed Creature-Loft-Volumen, Gesichts-/Flügelrollen und fail-closed Audit; 7.1.4 bleibt als Historie |
 | `test_queue_model_707.py` | Python-Modelltest: reproduziert den Queue-Stillstand von 7.0.4 und prüft die 7.0.5-Regeln (unabhängiger Watchdog, lateResults, Reconnect-Übergabe) **plus** 7.0.6 (Sitzungs-Identität, Fast-Fail, Zustell-Timeline) und 7.0.7 (Place-Zeile: fehlende Eigenschaft bricht den Zeilenaufbau ab) |
 | `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Versions-Checks (`/api/version` 7.4.2, `counters.revivedSessions` konstant, `/api/places` 200, `/api/status` 200), Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `--reset-test` (Reset mit 2 wartenden Befehlen), `--force-fail`, `--ask-sweep` (7.2.4 P0-Abnahme: alle Werkzeuge bei **offener** Frage) und `--message-round` (Nachricht → `_bridge.userMessages` → `ack_user_message`) |
-| `test_v740_mesh.py` | Offline-Abnahme des Blender-/Mesh-Wegs (fortgeschrieben auf 7.5.0): BOM-freie WriteAllText-Pfade und BOM-tolerantes Lesen im Runner, Skript-Sperrliste, OBJ-Messung mit Dreiecks-/Groessen-/Limit-Pruefung, Register/Job-Zustandsmaschine, Report-Gates (`MESH_UPLOAD_PENDING`), Beleg, dass `MeshPart.MeshId` nur ueber `CreateMeshPartAsync`/`ApplyMesh` gesetzt wird, `import bpy` auf Modulebene und ein Mini-Ausfuehrungstest mit gestubbtem `bpy`; **seit 7.5.0**: das Mesh-Fenster ist entfernt (13 Funktionen, Fenster-Zustand und Auto-Oeffnen geloescht) und der Upload ist ein Werkzeugaufruf |
-| `test_v750_cloud.py` | Offline-Abnahme 7.5.0 (Roblox Open Cloud Upload): Schluessel verschluesselt in `opencloud.key` (DPAPI CurrentUser), nie in `settings.json`, nie im Log; Ersteller als Nutzer oder Gruppe; das Upload-Protokoll (`POST https://apis.roblox.com/assets/v1/assets`, `x-api-key`, multipart `request` + `fileContent`, Polling ueber `/assets/v1/operations/<id>`, 20 MB, Endungs-Tabelle, OBJ abgelehnt); die Fehlerwege (429/401/403/5xx/400/Netz -> `OPENCLOUD_*` mit Originalantwort) und der deutsche Nutzer-Satz bei fehlendem Schluessel; das Einstellungsfenster (Karte, Ersteller, aufklappbares Tutorial mit Animation, Pruefen im Hintergrund); die Empfehlung an den Agenten. Dazu ein **ausfuehrbarer Modelltest** gegen eine nachgespielte Roblox-API (Upload mit Asset-Id, Rate-Limit, abgelehnter Schluessel) |
+| `test_v740_mesh.py` | Offline-Abnahme des Blender-/Mesh-Wegs (fortgeschrieben auf 7.5.1): BOM-freie WriteAllText-Pfade und BOM-tolerantes Lesen im Runner, Skript-Sperrliste, OBJ-Messung mit Dreiecks-/Groessen-/Limit-Pruefung, Register/Job-Zustandsmaschine, Report-Gates (`MESH_UPLOAD_PENDING`), Beleg, dass `MeshPart.MeshId` nur ueber `CreateMeshPartAsync`/`ApplyMesh` gesetzt wird, `import bpy` auf Modulebene und ein Mini-Ausfuehrungstest mit gestubbtem `bpy`; **seit 7.5.0**: das Mesh-Fenster ist entfernt (13 Funktionen, Fenster-Zustand und Auto-Oeffnen geloescht) und der Upload ist ein Werkzeugaufruf |
+| `test_v750_cloud.py` | Offline-Abnahme 7.5.1 (Roblox Open Cloud Upload): Schluessel verschluesselt in `opencloud.key` (DPAPI CurrentUser), nie in `settings.json`, nie im Log; **Ersteller jetzt aus dem Schluessel selbst** (offizieller Introspect-Endpunkt `POST https://apis.roblox.com/api-keys/v1/introspect`, Scopes in assets read/write, Autor/`authorizedUserId` als Rueckfall – kein Eingabefeld mehr); das Upload-Protokoll (`POST https://apis.roblox.com/assets/v1/assets`, `x-api-key`, multipart `request` + `fileContent`, Polling ueber `/assets/v1/operations/<id>`, 20 MB, Endungs-Tabelle, OBJ abgelehnt); die Fehlerwege (429/401/403/5xx/400/Netz -> `OPENCLOUD_*` mit Originalantwort) und der deutsche Nutzer-Satz bei fehlendem Schluessel; das Einstellungsfenster (zwei Zustaende – rotes „Noch kein API-Key hinzugefügt!“ mit Feld und grünem Speichern bzw. grünes „API-Key ist eingerichtet!“ mit grauem Entfernen, aufklappbares 7-Schritte-Tutorial mit Animation und Dashboard-Link); die Empfehlung an den Agenten; der exakte Dateipfad in jeder Upload-Antwort (`filePath`/`filePathHint`). Dazu ein **ausfuehrbarer Modelltest** gegen eine nachgespielte Roblox-API (Upload mit Asset-Id, Rate-Limit, abgelehnter Schluessel) | Dazu ein **ausfuehrbarer Modelltest** gegen eine nachgespielte Roblox-API (Upload mit Asset-Id, Rate-Limit, abgelehnter Schluessel) |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -48,6 +48,52 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 7.5.1 — Mini-Fix-Update: Nachrichten kommen an, ein Modell = ein Mesh
+
+Sechs Live-Befunde aus dem gescheiterten Baum-Bau, alle behoben — das Programm-Design
+ist unverändert (Anthrazit/Grau/Pink, abgerundete Knöpfe, ruhige Animationen).
+
+1. **„Nachricht an Arena“ ist jetzt ganz einfach.** Nur noch **eine** Nachricht,
+   kleineres Fenster: Beschriftung „Deine Nachricht:“, **ein** Textfeld, der kleine
+   Hinweis, dass Arena mitten in der Arbeit korrigiert werden kann, und nur
+   **Absenden** (grün) + **Abbrechen** (grau, schließt wie das rote X). Beim Absenden
+   verschwindet alles außer dem X: in der Mitte „Nachricht wird gesendet…“, darunter
+   der Satz, wann Arena sie bekommt, und ein **gelber Abbrechen-Knopf**, der zurück
+   zum Tippen führt — auch wenn das Fenster zwischendurch geschlossen und wieder
+   geöffnet wird. Erst wenn Arena die Nachricht wirklich mitgenommen hat, steht dort
+   „Nachricht gesendet! ✅“ mit grünem „Noch eine Nachricht senden“. Der getippte Text
+   bleibt beim Schließen erhalten.
+2. **Nachrichten kommen wirklich an.** Die Antwort an Arena nimmt wartende Nachrichten
+   jetzt auch aus einer früheren Sitzung mit (z. B. nach einem Verbindungs-Neuaufbau)
+   und stellt den Text **zusätzlich wörtlich** in das auffällige `attention`-Feld —
+   dort kann er nicht mehr zwischen den anderen Feldern untergehen. In 7.5.0 war genau
+   das die Ursache, wenn Arena sagte, er habe nichts gesehen.
+3. **Open Cloud ohne Ersteller-Feld.** Der Abschnitt heißt „Roblox Open Cloud API-Key“
+   und zeigt nur noch: den Zweck-Satz, ohne Schlüssel den großen roten Hinweis
+   „Noch kein API-Key hinzugefügt!“ mit **einem** Feld und **einem** grünen
+   Speichern-Knopf, mit Schlüssel das grüne „API-Key ist eingerichtet!“ und nur noch
+   den grauen Knopf „API-Key entfernen“. Das Tutorial ist auf **7 Schritte** gekürzt
+   und öffnet die offizielle Seite über einen Link-Knopf im Stil von „Arena AI öffnen“
+   (`create.roblox.com/dashboard/credentials`). **Wer die Assets bekommt, liest die
+   Bridge selbst aus dem Schlüssel** (offizieller Introspect-Endpunkt) und sagt
+   ehrlich, wenn ihm `assets` mit `read`/`write` fehlt.
+4. **„Der HTTP-Client konnte nicht erzeugt werden“ ist behoben.** Die Bridge lädt
+   `System.Net.Http` jetzt ausdrücklich nach, misst den Transport einmal und weicht
+   automatisch auf einen zweiten Weg aus — mit ehrlicher Angabe des benutzten Wegs.
+   Ein Upload, der den Rechner schon verlassen hat, wird nie doppelt gesendet.
+5. **Kein Platzhalter-Regen mehr.** Der Fehler, der den Platzhalter-Befehl ~4×/s
+   wiederholte und hunderte identische `ArenaMesh_*`-Teile anlegte, ist an der Wurzel
+   behoben; jetzt gilt höchstens ein Versuch pro 20 Sekunden, höchstens 3 Versuche,
+   danach ein ehrliches „failed“ mit Protokollzeile. Das Platzhalter-Werkzeug legt
+   außerdem nie ein zweites Teil an — es benutzt ein vorhandenes wieder.
+6. **Bessere Bau-Regeln für Arena.** Ein zusammenhängendes Modell ist **ein Mesh in
+   einem Slot** (mehrere Slots nur bei Animation, eigenen Eigenschaften je Teil oder
+   zu vielen Dreiecken). Die Achsen stehen eindeutig im Guide: im Blender-Skript ist
+   **Z oben**, der Export dreht auf Roblox-Y — wer in Blender-Y hochbaut, bekommt sein
+   Modell liegend (genau der Stamm mit 7,96 Studs auf Z). Bei jedem gescheiterten
+   Mesh-/Bild-Upload nennt die Antwort den **exakten Dateipfad**, damit die Datei
+   notfalls von Hand hochgeladen werden kann.
 
 ## 7.5.0 — Open Cloud Upload: Mesh-Fenster weg, Arena lädt selbst hoch
 
