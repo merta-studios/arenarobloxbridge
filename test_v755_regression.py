@@ -89,6 +89,8 @@ def check_texts_and_commands(raw: bytes, source: str) -> None:
         check(not malformed, f"jede Zeile in $texts ist ein Schluessel = 'Satz' (Fehler: {malformed[:3]})")
         check(len(keys) >= 137, f"$texts enthaelt alle Werkzeugtexte (gezaehlt: {len(keys)}, erwartet mindestens 137)")
         check(len(keys) == len(set(keys)), "$texts hat keine doppelten Schluessel")
+        # PowerShell-Hashtables vergleichen Schluessel OHNE Gross-/Kleinschreibung.
+        check(len({k.lower() for k in keys}) == len(keys), "$texts hat keine Schluessel, die sich nur in Gross-/Kleinschreibung unterscheiden")
 
     # Die Operator-Pruefung laeuft IMMER (auch wenn $texts fehlt): sie ist der eigentliche Schutz.
     tree = Parser(Language(tsp.language())).parse(raw)
