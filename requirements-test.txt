@@ -2,3 +2,4 @@
 luaparser>=4.0,<5
 tree_sitter>=0.25,<0.27
 tree_sitter_powershell>=0.25,<0.27
+lupa>=2.4

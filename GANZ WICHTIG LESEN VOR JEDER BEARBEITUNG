@@ -1,7 +1,7 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 7.2.3 - 05.10.2026)                                #
+#   (Stand: Version 7.5.5 - 08.10.2026)                                #
 #                                                                      #
 ##########################################################################
 
@@ -297,7 +297,9 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 - TOOLBOX IST NICHT DIE ABKUERZUNG (seit 7.1.2 feste Regel, auch in
   Get-BridgeGuides -> toolboxRules, erreicht jede neue KI-Session):
   Tiere, Kreaturen, Pflanzen, Props und organische Freiformen werden
-  PROZEDURAL gebaut - bevorzugt build_polygon_model fuer freie
+  PROZEDURAL gebaut - SEIT 7.5.5 BLENDER-FIRST (build_mesh_model, Polygon nur auf
+  ausdruecklichen Nutzerwunsch mit userRequestedPolygon=true). Frueher galt: bevorzugt
+  build_polygon_model fuer freie
   Koerperformen und Untermodelle, ergaenzt durch build_assembly bzw.
   normale Parts, wo das einfacher/stabiler ist. Organische Bewegung
   ueber selbst erstellte Gelenke/Welds und eine kleine Lua-Animation
@@ -453,6 +455,27 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v7.5.5 (08.10.2026): BLENDER-FIRST, OPEN-CLOUD-ENTWICKLER, /api/tool REPARIERT.
+  (1) /api/tool lieferte HTTP 500 fuer JEDEN Aufruf (Benennung "=" wurde nicht als
+  Cmdlet erkannt): in Get-ArenaActivityText fehlte bei $texts das Zuweisungszeichen.
+  Behoben. test_v755_regression.py prueft $texts und alle command_name-Knoten
+  (tree-sitter) - diese Pruefung NICHT entfernen.
+  (2) /api/tools/parallel: Bridge-eigene Werkzeuge laufen ueber Invoke-ServerTool
+  wie in /api/tool; nur der Rest geht ans Studio-Plugin. Antworten in Aufrufreihenfolge.
+  (3) describe_orientation: dirHeading indiziert die 8 Himmelsrichtungen korrekt
+  (sector = floor((angle+22.5)/45) % 8). Test ueber lupa gegen Luau-%s-Strenge.
+  (4) BLENDER-FIRST: Standard fuer 3D-Modelle ist build_mesh_model -> upload_asset ->
+  mesh_apply_asset. build_polygon_model NUR mit userRequestedPolygon=true (ausdruecklicher
+  Nutzerwunsch), sonst POLYGON_BLENDER_FIRST (Test-PolygonBuildWithoutRequest, auch in
+  batch/parallel/start_job). Ab 300 WedgeParts warnt das Plugin vor Lag und empfiehlt
+  Blender. ALLE AELTEREN STELLEN DIESES DOKUMENTS, DIE build_polygon_model ALS STANDARD
+  NENNEN, GELTEN SEIT 7.5.5 NICHT MEHR.
+  (5) OPEN CLOUD: Der Entwickler wird bei jedem Upload AUTOMATISCH ermittelt: 1. Schluessel
+  (Introspect), 2. Ersteller des verbundenen Place (Plugin: game.CreatorId/CreatorType,
+  in der Sitzung), 3. FALLBACK: Roblox-Benutzername im Einstellungsfenster (users.roblox.com,
+  ohne Schluessel). Der Schluessel bleibt DPAPI-verschluesselt in opencloud.key. Den
+  Zwang, die ID zu tippen, NICHT wieder einfuehren.
+  Tests: alle 12 Offline-Dateien (inkl. test_v755_regression.py; braucht lupa, tree_sitter).
 - v7.5.0 (07.10.2026): OPEN CLOUD UPLOAD - MESH-FENSTER WEG, DER AGENT
   LAEDT SELBST HOCH. (1) DAS MESH-FENSTER IST GELOSCHT (ausdruecklicher
   Nutzerwunsch, Umkehrung von v7.4.0/v7.4.1): alle 13 Funktionen, die

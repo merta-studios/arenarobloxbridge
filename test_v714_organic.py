@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.5.4"
+VERSION = "7.5.5"
 FAILURES: list[str] = []
 
 
@@ -136,19 +136,18 @@ def main() -> int:
 
     guides = region(source, "function Get-BridgeGuides", "function Get-SessionStartPackage")
     for marker in ("modelBuildRules = @{", "regardless of subject, model name or whether it is organic",
-                   "polygonPreference = 'For EVERY nontrivial custom visible 3D model in ANY category",
-                   "polygonWorkflow =", "polygonInputContract =", "NONTRIVIAL 3D BUILD METHOD (ALL CATEGORIES)",
-                   "complete distinctive main silhouette",
+                   "polygonPreference = 'BLENDER-FIRST (Version 7.5.5): For EVERY nontrivial custom visible 3D model in ANY category",
+                   "polygonWorkflow =", "polygonInputContract =", "NONTRIVIAL 3D BUILD METHOD (ALL CATEGORIES, Version 7.5.5)", "userRequestedPolygon=true",
                    "in ANY category", "not an animal/tree-only rule", "primitive-only placeholder",
-                   "GLOBAL 3D BUILD BAR, independent of names/examples"):
+                   "GLOBAL 3D BUILD BAR (Version 7.5.5, Blender-first), independent of names/examples"):
         check(marker in guides or marker in source,
               f"globaler Modellierungsstandard enthaelt: {marker}")
-    check("The builder is preferred, not mandatory for every simple Part." in guides
+    check("Native Parts remain right for genuinely standard supports" in guides
           and "reduce how many assets are built instead of degrading the finish" in guides,
           "globale Polygon-Praeferenz laesst einfache Aufgaben einfach und bewahrt den Finish-Standard")
     polygon_tool = region(source, "name = 'build_polygon_model';", "name = 'ui_capabilities';")
-    check("GLOBALER 3D-BAUSTANDARD" in polygon_tool
-          and "alle nichttrivialen sichtbaren 3D-Kategorien, nicht nur Kreaturen" in polygon_tool
+    check("POLICY 7.5.5 (Blender-first)" in polygon_tool
+          and "userRequestedPolygon=true" in polygon_tool
           and "LowPolyHouse" in polygon_tool
           and "facesSkipped=0 und skipped=[]" in polygon_tool,
           "Polygon-Tool describes a specific category-neutral build and verification sequence")
