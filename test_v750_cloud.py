@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline-Abnahme fuer Arena Roblox Bridge 7.5.8 - ROBLOX OPEN CLOUD UPLOAD.
+"""Offline-Abnahme fuer Arena Roblox Bridge 7.5.9 - ROBLOX OPEN CLOUD UPLOAD.
 
 Was dieses Update ausmacht (und was hier geprueft wird):
 
@@ -36,7 +36,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.5.8"
+VERSION = "7.5.9"
 FAILURES: list[str] = []
 
 
@@ -237,7 +237,8 @@ def main() -> int:
     metadata = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     notes = "\n".join(str(note) for note in metadata.get("notes", []))
     check(metadata.get("version") == VERSION, f"version.json steht auf {VERSION}")
-    for phrase in ("Open Cloud", "upload_asset", "MESH-FENSTER", "ASSETS", "Asset-Id"):
+    for phrase in ("Open Cloud", "upload_asset", "MESH-FENSTER", "ASSETS", "Asset-Id",
+                   "creator_dashboard", "game-pass:read", "developer-product:write"):
         check(phrase in notes, f"Release-Notiz nennt {phrase}")
 
     # ------------------------------------------------------------------
@@ -447,13 +448,16 @@ def main() -> int:
                  "CloudDeveloperPanel", "CloudDeveloperStatus"):
         check(f'x:Name="{gone}"' not in settings_xaml,
               f"das alte Element {gone} ist aus den Einstellungen verschwunden")
-    for step in range(1, 8):
+    for step in range(1, 11):
         check(f'x:Name="CloudStep{step}"' in settings_xaml,
               f"Tutorial-Schritt CloudStep{step} vorhanden")
     check('Text="Roblox Open Cloud API-Key"' in settings_xaml,
           "der Abschnitt heisst Roblox Open Cloud API-Key")
-    check("Mach es möglich, dass Arena Meshes und Bilder selber generieren" in settings_xaml,
-          "der Zweck-Satz steht wortgetreu im Abschnitt")
+    check("Creator-Dashboard-Verwaltung (Experience-/Place-Metadaten, Gamepasses und Developer-Produkte samt Icons) ist getrennt und standardmäßig ausgeschaltet." in settings_xaml,
+          "die getrennte Creator-Dashboard-Verwaltung und ihr Standard AUS werden im Key-Abschnitt erklärt")
+    check('x:Name="CreatorDashboardSwitch"' in settings_xaml
+          and "standardmäßig ausgeschaltet" in settings_xaml,
+          "der Creator-Dashboard-Opt-in-Schalter steht im Open-Cloud-Key-Abschnitt und ist standardmäßig aus")
     check('Text="Noch kein API-Key hinzugefügt!"' in settings_xaml,
           "ohne Schluessel steht der rote Hinweis Noch kein API-Key hinzugefügt!")
     check('Text="API-Key ist eingerichtet!"' in settings_xaml,
@@ -464,8 +468,10 @@ def main() -> int:
     tutorial = region(settings_xaml, 'x:Name="CloudTutorialWrap"', '<TextBlock Text="UPDATES"')
     for piece in ("1. Öffne diese Seite:", "API-Schlüssel erstellen",
                   "irgendeinen Namen und eine Beschreibung",
-                  "den Punkt „assets“ hinzu", "„read“ und „write“",
-                  "API-Schlüssel generieren", "Füge den kopierten Schlüssel hier ein."):
+                  "Füge „assets“ mit read UND write hinzu.",
+                  "universe.place“ (universe.place:write)", "game-pass:read + game-pass:write",
+                  "developer-product:read + developer-product:write", "Speichere und generiere den API-Schlüssel.",
+                  "Füge den kopierten Schlüssel hier ein."):
         check(piece in tutorial, f"das Tutorial nennt: {piece}")
     check("create.roblox.com/dashboard/credentials" in tutorial,
           "das Tutorial nennt die echte Adresse create.roblox.com/dashboard/credentials")
@@ -479,15 +485,17 @@ def main() -> int:
     code_start = source.index("$settingsWindow.FindName('CloudKeyBox')")
     code = source[code_start:source.index("# 7.2.3: Die Test-Benachrichtigung ist vollstaendig")]
     check("$cloudSaveButton.Add_Click" in code and "$cloudRemoveButton.Add_Click" in code
-          and "$cloudDashboardButton.Add_Click" in code,
-          "Speichern, Entfernen und der Dashboard-Link sind verdrahtet")
+          and "$cloudDashboardButton.Add_Click" in code
+          and "$creatorDashboardSwitch.Add_Click" in code,
+          "Speichern, Entfernen, der Dashboard-Link und der Creator-Dashboard-Opt-in sind verdrahtet")
     check("Set-OpenCloudKey" in code and "Get-OpenCloudKey" in code and "Remove-OpenCloudKey" in code,
           "die Knoepfe benutzen die eine Schluessel-Quelle")
     check("Save-BridgeSettingsFile" in code, "Speichern legt die Einstellungen dauerhaft ab")
     check("Sync-CloudSharedSettings" in code,
           "die Werte werden nach $Shared gespiegelt (Handler laufen in eigenen Runspaces)")
     for marker in ("openCloudKeySet", "openCloudCreatorId", "openCloudCreatorKind",
-                   "openCloudCreatorName", "openCloudSavedAt", "openCloudKeyHint"):
+                   "openCloudCreatorName", "openCloudSavedAt", "openCloudKeyHint",
+                   "creatorDashboardEnabled"):
         check(marker in code, f"Sync-CloudSharedSettings uebergibt {marker}")
     check("Length -lt 20" in code, "zu kurze Schluessel werden abgelehnt (kein sinnloser Speicherlauf)")
     check("Update-CloudPanelState" in code and "CloudMissingPanel" in code and "CloudReadyPanel" in code,
@@ -496,8 +504,9 @@ def main() -> int:
           "Speichern holt den Ersteller per Introspect aus dem Schluessel")
     check("Apply-CloudIntrospectVerdict" in code,
           "das Ergebnis der Selbstauskunft wird ehrlich angezeigt")
-    check("Tutorial Schritt 4 und 5" in source,
-          "fehlende Rechte werden mit Hinweis auf Tutorial Schritt 4 und 5 gemeldet")
+    check("developer-product:write" in source and "universe.place:write" in source
+          and "missingPermissions" in source,
+          "Introspect und UI-Feedback berücksichtigen die zusätzlichen Creator-Dashboard-Scopes")
     check("DispatcherTimer" in code and "BeginInvoke" in code,
           "die Pruefung laeuft im Hintergrund (kein eingefrorenes Fenster)")
     check("StudioService:GetUserId()" in source and "angemeldete Roblox-Studio-Konto" in code,
@@ -548,7 +557,7 @@ def main() -> int:
         for item in FAILURES:
             print("  - " + item)
         return 1
-    print("\nOK: 7.5.8 Open Cloud Upload bestanden (Studio-ID-Prioritaet, automatischer Rueckfall, Tutorial, upload_asset, Dateipfad, Fehlerwege, Modelltest).")
+    print("\nOK: 7.5.9 Open Cloud Upload + Creator-Dashboard-Tutorial bestanden (Studio-ID-Prioritaet, automatischer Rueckfall, Tutorial, upload_asset, Dateipfad, Fehlerwege, Modelltest).")
     return 0
 
 

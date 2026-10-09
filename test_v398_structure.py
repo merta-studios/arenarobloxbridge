@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 7.5.8.
+"""Offline structure check for Arena Roblox Bridge 7.5.9.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.5.8"
+VERSION = "7.5.9"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -106,7 +106,10 @@ def main() -> int:
             and "DRAFT_GRADE_RISK" in release_notes
             and "MONOLITH_RISK" in release_notes
             and "StarterGui" in release_notes
-            and "progress-diagnose.txt" in release_notes,
+            and "progress-diagnose.txt" in release_notes
+            and "7.5.9" in release_notes
+            and "creator_dashboard" in release_notes
+            and "game-pass:read" in release_notes,
             "version.json does not include the 7.2.4 baseline, the 7.3.2 creature release, the 7.4.1 hotfix release and the 7.4.2 mesh-runner hotfix release")
 
     # 6.1.1 shipped seven accidental fragments after the intended final exit,
@@ -719,29 +722,29 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '7.5.8'": 1,
-        'local ARENA_VERSION  = "7.5.8"': 1,
-        "version = '7.5.8'": 1,
-        "bridgeVersion = '7.5.8'": 3,
-        "bridgeVersion='7.5.8'": 1,
-        "serverVersion = '7.5.8'": 2,
-        "$versionText = '7.5.8'": 1,
-        "$verText = '7.5.8'": 1,
-        "ArenaRobloxBridge/7.5.8": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 7.5.8)": 1,
-        'Text="Arena Roblox Bridge - Version 7.5.8"': 1,
-        "Version 7.5.8 - aktuell. Beim naechsten Start": 2,
-        "Bridge-Version=7.5.8": 2,
-        "Kurzbericht Fenster-Vorschau (Version 7.5.8)": 1,
-        "Kurzbericht Fortschrittsanzeige (Version 7.5.8)": 1,
-        "Kurzbericht Fertig-Meldung (Version 7.5.8)": 1,
-        "Arena Roblox Bridge - Leistungsbericht (Version 7.5.8)": 1,
-        "Arena Roblox Bridge - Place-Diagnose (Version 7.5.8)": 1,
-        "Version: 7.5.8": 2,
-        "Version=7.5.8": 3,
-        "Bridge/Plugin-Stand: 7.5.8": 1,
-        "Arena Roblox Bridge - Start-Diagnose (Version 7.5.8)": 2,
-        "RuntimeInfo.Version = '7.5.8'": 1,
+        "DocsVersion     = '7.5.9'": 1,
+        'local ARENA_VERSION  = "7.5.9"': 1,
+        "version = '7.5.9'": 1,
+        "bridgeVersion = '7.5.9'": 3,
+        "bridgeVersion='7.5.9'": 1,
+        "serverVersion = '7.5.9'": 2,
+        "$versionText = '7.5.9'": 1,
+        "$verText = '7.5.9'": 1,
+        "ArenaRobloxBridge/7.5.9": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.5.9)": 1,
+        'Text="Arena Roblox Bridge - Version 7.5.9"': 1,
+        "Version 7.5.9 - aktuell. Beim naechsten Start": 2,
+        "Bridge-Version=7.5.9": 2,
+        "Kurzbericht Fenster-Vorschau (Version 7.5.9)": 1,
+        "Kurzbericht Fortschrittsanzeige (Version 7.5.9)": 1,
+        "Kurzbericht Fertig-Meldung (Version 7.5.9)": 1,
+        "Arena Roblox Bridge - Leistungsbericht (Version 7.5.9)": 1,
+        "Arena Roblox Bridge - Place-Diagnose (Version 7.5.9)": 1,
+        "Version: 7.5.9": 2,
+        "Version=7.5.9": 3,
+        "Bridge/Plugin-Stand: 7.5.9": 1,
+        "Arena Roblox Bridge - Start-Diagnose (Version 7.5.9)": 2,
+        "RuntimeInfo.Version = '7.5.9'": 1,
         "Mesh-Build Engine 1.3 (Version 7.5.8)": 1,
         "Organic Build Engine 1.1 (Version 7.5.8)": 1,
         "# Version 7.3.2 (2026-10-07)": 1,
@@ -752,6 +755,7 @@ def main() -> int:
         "# Version 7.5.6 (2026-10-09)": 1,
         "# Version 7.5.7 (2026-10-09)": 1,
         "# Version 7.5.8 (2026-10-09)": 1,
+        "# Version 7.5.9 (2026-10-09)": 1,
         "# Version 7.5.5 (2026-10-08)": 1,
     }
 

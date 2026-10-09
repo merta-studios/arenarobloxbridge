@@ -1,5 +1,15 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.5.8
+# Arena Roblox Bridge  -  Version 7.5.9
+#
+# Version 7.5.9 (2026-10-09) - CREATOR-DASHBOARD-VERWALTUNG UEBER OFFIZIELLE OPEN CLOUD APIs
+#   - Persistenter, standardmaessig AUS geschalteter Opt-in direkt unter dem
+#     Open-Cloud-Key. Schreibaktionen bleiben zusaetzlich im Read-only-Modus gesperrt.
+#   - Nur das aktive, bereits veroeffentlichte Studio-Spiel; Universe-/Place-
+#     Metadaten, Gamepasses und Developer-Produkte ueber dokumentierte Roblox-APIs.
+#     Icons werden als validierte PNG/JPEG-Multipart-Datei gesendet.
+#   - Das Open-Cloud-Tutorial nennt die zusaetzlichen Scopes; keine
+#     undokumentierten Creator-Hub-Funktionen oder Place-Erstellung/-Publizierung.
+#   - Offline-Regressionen, PowerShell-Parsetest und Versionsmarker aktualisiert.
 #
 # Version 7.5.8 (2026-10-09) - MINI-UPDATE: BRIDGE-FRAGEN + AUTOSTART NUR UPDATER
 #   - Wenn Arena eine Rueckfrage oder Entscheidung braucht, MUSS sie sie ueber
@@ -2200,7 +2210,7 @@ param(
 # Existing LOCALAPPDATA directory; no UI, no new exception net.
 # A parse/policy failure prevents even this marker. Check its timestamp/version.
 # Continue + SilentlyContinue keeps diagnostic I/O from becoming a start blocker.
-Write-Output ("{0:o} PROOF_OF_LIFE Version=7.5.8 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
+Write-Output ("{0:o} PROOF_OF_LIFE Version=7.5.9 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
 
 # Version 7.5.8: Ein Autostart kann alte Run-Eintraege parallel ausloesen.
 # Nur EIN PowerShell-Kind darf die Bridge-Oberflaeche/Dienste starten. Die
@@ -2278,7 +2288,7 @@ trap {
         }
         $trapPath = Join-Path $trapFolder 'startup-diagnose.txt'
         $trapReport = New-Object System.Text.StringBuilder
-        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.8)')
+        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.9)')
         [void]$trapReport.AppendLine('Quelle: trap auf Skriptebene (nicht abgefangener Fehler)')
         [void]$trapReport.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$trapReport.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -2317,7 +2327,7 @@ trap {
             try {
                 [System.IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA 'START-CHECK.txt'),
                     ('Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.5.8' + [Environment]::NewLine +
+                     'Version: 7.5.9' + [Environment]::NewLine +
                      'ABBRUCH: ' + $trapMessage + [Environment]::NewLine +
                      'Details: ' + $trapPath + [Environment]::NewLine),
                     [System.Text.Encoding]::UTF8)
@@ -3155,6 +3165,7 @@ function Get-BridgeSettingsFile {
         # Metadaten (ob einer hinterlegt ist) und der ERSTELLER, dem Roblox
         # jedes hochgeladene Asset zuordnet (Pflichtfeld der Assets-API).
         openCloudKeySet     = $false
+        creatorDashboardEnabled = $false # Creator-Dashboard-Verwaltung ist Opt-in (Standard: aus)
         openCloudKeyHint    = ''      # z. B. "…7Hf9" - nur die letzten Zeichen
         openCloudCreatorId  = ''      # numerische Nutzer- oder Gruppen-Id
         openCloudCreatorKind = 'user' # 'user' oder 'group'
@@ -3173,6 +3184,7 @@ function Get-BridgeSettingsFile {
             # Version 7.5.0: Open-Cloud-Metadaten + Ersteller. Der SCHLUESSEL
             # selbst wird von Get-OpenCloudKey aus opencloud.key gelesen.
             if ($loaded.PSObject.Properties.Name -contains 'openCloudKeySet') { $settings.openCloudKeySet = [bool]$loaded.openCloudKeySet }
+            if ($loaded.PSObject.Properties.Name -contains 'creatorDashboardEnabled') { $settings.creatorDashboardEnabled = [bool]$loaded.creatorDashboardEnabled }
             if ($loaded.PSObject.Properties.Name -contains 'openCloudKeyHint') { $settings.openCloudKeyHint = [string]$loaded.openCloudKeyHint }
             if ($loaded.PSObject.Properties.Name -contains 'openCloudCreatorId') { $settings.openCloudCreatorId = [string]$loaded.openCloudCreatorId }
             if ($loaded.PSObject.Properties.Name -contains 'openCloudCreatorKind') { $settings.openCloudCreatorKind = [string]$loaded.openCloudCreatorKind }
@@ -3198,6 +3210,7 @@ function Save-BridgeSettingsFile {
             # Version 7.5.0: NUR Metadaten - der Schluessel bleibt in
             # opencloud.key (verschluesselt) und wird dort gesetzt.
             openCloudKeySet = [bool]$script:SettingsCache.openCloudKeySet
+            creatorDashboardEnabled = [bool]$script:SettingsCache.creatorDashboardEnabled
             openCloudKeyHint = [string]$script:SettingsCache.openCloudKeyHint
             openCloudCreatorId = [string]$script:SettingsCache.openCloudCreatorId
             openCloudCreatorKind = [string]$script:SettingsCache.openCloudCreatorKind
@@ -3372,7 +3385,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.5.8'
+    DocsVersion     = '7.5.9'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -3425,6 +3438,8 @@ $script:Shared = [hashtable]::Synchronized(@{
         # Version 7.0.3: Laufzeitdiagnostik fuer die Leistungsmessung.
         # Standard AUS: ohne diese Zustimmung wird nichts gemessen/geloggt.
         perfDiagnostics = $false
+        # Creator-Dashboard-Verwaltung ist eine getrennte, dauerhafte Opt-in-Einstellung.
+        creatorDashboardEnabled = $false
         # Read-only is session-local only. It is intentionally not persisted.
     })
     # Verstaendliche Aktionsnamen fuer Verlauf und Fortschrittsanzeigen.
@@ -3549,6 +3564,7 @@ $script:Shared = [hashtable]::Synchronized(@{
         mesh_apply = 'Mesh-Geometrie einsetzen'
         mesh_drop = 'Mesh-Platzhalter entfernen'
         upload_asset = 'Asset zu Roblox hochladen'
+        creator_dashboard = 'Creator-Dashboard-Verwaltung'
         start_job = 'Hintergrundaufgabe starten'
         job_status = 'Hintergrundaufgabe prüfen'
         job_result = 'Ergebnis der Hintergrundaufgabe abrufen'
@@ -3734,6 +3750,7 @@ try {
     $script:Shared.BridgeSettings.openCloudCreatorKind = [string]$script:SettingsCache.openCloudCreatorKind
     $script:Shared.BridgeSettings.openCloudCreatorName = [string]$script:SettingsCache.openCloudCreatorName
     $script:Shared.BridgeSettings.openCloudSavedAt = [string]$script:SettingsCache.openCloudSavedAt
+    $script:Shared.BridgeSettings.creatorDashboardEnabled = [bool]$script:SettingsCache.creatorDashboardEnabled
     # Version 5: legacy per-place accessModes are ignored on purpose.
 } catch {}
 
@@ -3783,7 +3800,7 @@ function Write-StartupFailureDiagnose {
         try { $trace = [string]$ErrorRecord.ScriptStackTrace } catch {}
         if ($trace.Length -gt 2000) { $trace = $trace.Substring(0, 2000) }
         $report = New-Object System.Text.StringBuilder
-        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.8)')
+        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.9)')
         [void]$report.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$report.AppendLine('Letzte Startstufe: ' + $stage)
         [void]$report.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -3866,7 +3883,7 @@ function Set-StartupStage {
     try {
         $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
         $checkText = 'Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.5.8' + [Environment]::NewLine +
+                     'Version: 7.5.9' + [Environment]::NewLine +
                      'Zeit: ' + $stamp + [Environment]::NewLine +
                      'PowerShell: ' + [string]$PSVersionTable.PSVersion + ' | CLR ' + [string][Environment]::Version + [Environment]::NewLine +
                      'Skript: ' + [string]$script:ScriptPath + [Environment]::NewLine +
@@ -3932,12 +3949,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.5.8, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.5.8, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.5.9, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.5.9, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.5.8'
+$script:Shared.RuntimeInfo.Version = '7.5.9'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -4040,7 +4057,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.5.8)
+  Arena Studio Bridge - Studio Plugin  (Version 7.5.9)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -4113,7 +4130,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.5.8"
+local ARENA_VERSION  = "7.5.9"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -17308,7 +17325,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.5.8 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.5.9 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -17713,6 +17730,11 @@ $script:BridgeHandlerScript = {
                 Add-ActivityResultDetail $parts $result 'Pfad:' @('path','executable')
             }
             'mesh_apply_asset' { Add-ActivityDetailPart $parts $arguments 'Mesh-Slots:' @('slots','slotKeys') }
+            'creator_dashboard' {
+                Add-ActivityDetailPart $parts $arguments 'Creator-Dashboard-Aktion:' @('action')
+                Add-ActivityDetailPart $parts $arguments 'Produkt-ID:' @('gamePassId','productId','id')
+                Add-ActivityDetailPart $parts $arguments 'Name:' @('displayName','name')
+            }
             'force_fail' { Add-ActivityDetailPart $parts $arguments 'Grund:' @('reason','message') }
             'clear_pending' { Add-ActivityResultCount $parts $result 'Entfernte Befehle:' @('clearedCount','count','removed') }
             'get_pending' { Add-ActivityResultCount $parts $result 'Offene Befehle:' @('pendingCount','count','queued') }
@@ -17755,7 +17777,7 @@ $script:BridgeHandlerScript = {
 
     function Get-ActivityToolSets {
         $read = @('get_bridge_log','get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','sim_status','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait','ui_capabilities','ui_skin','ui_audit','ui_texture','world_style','site_survey','variation','model_audit','world_audit','prop_list','wait_for_user','ack_user_message','ask_user','confirm_action','scaffold_ui_scripts','blender_status','mesh_status')
-        $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','build_polygon_model','build_assembly','mesh_slots','mesh_apply','mesh_drop','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','sim_start','set_context','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute','build_surface','build_interface','ui_glow','ui_radial','prop_place','prop_save','refine','style_lock','world_glow','sim_stop','mesh_cancel','build_mesh_model','mesh_apply_asset','upload_asset','force_fail','clear_pending')
+        $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','build_polygon_model','build_assembly','mesh_slots','mesh_apply','mesh_drop','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','sim_start','set_context','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute','build_surface','build_interface','ui_glow','ui_radial','prop_place','prop_save','refine','style_lock','world_glow','sim_stop','mesh_cancel','build_mesh_model','mesh_apply_asset','upload_asset','creator_dashboard','force_fail','clear_pending')
         return @{ read = $read; write = $write }
     }
 
@@ -17881,6 +17903,7 @@ $script:BridgeHandlerScript = {
             mesh_apply = 'Hat die angeforderte Mesh-Geometrie in die Platzhalter eingesetzt.'
             mesh_drop = 'Hat die angeforderten Mesh-Platzhalter aus dem Place entfernt.'
             upload_asset = 'Hat die angeforderte Datei über Roblox Open Cloud hochgeladen.'
+            creator_dashboard = 'Hat die angeforderte Creator-Dashboard-Aktion über offizielle Roblox Open Cloud APIs ausgeführt.'
             start_job = 'Hat die angeforderte Hintergrundaufgabe gestartet.'
             job_status = 'Hat Status und Fortschritt der Hintergrundaufgabe gelesen.'
             job_result = 'Hat das Ergebnis der fertigen Hintergrundaufgabe abgerufen.'
@@ -21443,6 +21466,11 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         }
         $argumentError = $null
         switch ($tool) {
+            'creator_dashboard' {
+                $actionArg = Get-CommandArgumentValue $toolArgs 'action'
+                $dashboardActions = @('universe_get','universe_update','place_get','place_update','gamepass_list','gamepass_get','gamepass_create','gamepass_update','developer_product_list','developer_product_get','developer_product_create','developer_product_update')
+                if (-not $actionArg.found -or [string]$actionArg.value -notin $dashboardActions) { $argumentError = ('creator_dashboard action must be one of: ' + ($dashboardActions -join ', ') + '.') }
+            }
             'ground_height' {
                 $hasPositions = (Test-CommandArgumentPresent $toolArgs 'points') -or (Test-CommandArgumentPresent $toolArgs 'positions')
                 $hasGrid = (Test-CommandArgumentPresent $toolArgs 'min') -and (Test-CommandArgumentPresent $toolArgs 'max')
@@ -22433,6 +22461,30 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
                 'BAD_ARGS: keine Quelle angegeben oder contentBase64 ohne fileName.'
             ) })
 
+
+        $t.Add(@{ name = 'creator_dashboard'; category = 'cloud'; summary = 'Offizielle Roblox-Open-Cloud-Metadaten, Gamepasses und Developer-Produkte verwalten.';
+            description = 'Verwaltet ausschließlich das aktuelle, bereits veröffentlichte Spiel der verbundenen Roblox-Studio-Sitzung. Pflicht-Opt-in: Einstellungen -> ROBLOX OPEN CLOUD API-KEY -> „Arena darf den aktuellen Place im Creator Dashboard verwalten“ (Standard: AUS). Verwendet universeId/gameId und placeId nur aus der aktiven Sitzung; frei übergebene Ziel-IDs werden abgelehnt. Unterstützt die offiziellen Open Cloud Universe-/Place-GETs und Updates für displayName/description sowie die dokumentierten Game-pass- und Developer-product-APIs (auflisten, Details lesen, erstellen, aktualisieren). Gamepass-/Produkt-Icons gehen beim Erstellen/Aktualisieren als PNG/JPEG über das dokumentierte imageFile-Multipart-Feld mit. Keine Creator-Hub-Cookies, keine undokumentierten Seiten, kein Erstellen/Löschen/Veröffentlichen von Places oder Universes. Schreibaktionen werden zusätzlich vom Read-only-Modus der aktuellen Sitzung blockiert. upload_asset ist unabhängig von diesem Schalter.';
+            params = @{
+                action = @{ type = 'string'; required = $true; default = '-'; description = 'universe_get|universe_update|place_get|place_update|gamepass_list|gamepass_get|gamepass_create|gamepass_update|developer_product_list|developer_product_get|developer_product_create|developer_product_update.' }
+                displayName = @{ type = 'string'; required = $false; default = '-'; description = 'Für universe_update/place_update: nur den Anzeigenamen ändern.' }
+                description = @{ type = 'string'; required = $false; default = '-'; description = 'Für universe_update/place_update: Beschreibung ändern (leerer Text löscht sie, falls Roblox das zulässt).' }
+                id = @{ type = 'string'; required = $false; default = '-'; description = 'Positive numerische ID für gamepass_get/gamepass_update/developer_product_get/developer_product_update; alternativ gamePassId oder productId.' }
+                gamePassId = @{ type = 'string'; required = $false; default = '-'; description = 'Gamepass-ID für gamepass_get/gamepass_update.' }
+                productId = @{ type = 'string'; required = $false; default = '-'; description = 'Developer-Product-ID für developer_product_get/developer_product_update.' }
+                name = @{ type = 'string'; required = $false; default = '-'; description = 'Für gamepass_create/developer_product_create erforderlich; bei Updates optional.' }
+                isForSale = @{ type = 'boolean'; required = $false; default = '-'; description = 'Gamepass/Developer-Product zum Verkauf anbieten oder deaktivieren.' }
+                price = @{ type = 'integer'; required = $false; default = '-'; description = 'Standardpreis als nichtnegative int64-Robux-Zahl; Roblox prüft weitere Produktregeln.' }
+                isRegionalPricingEnabled = @{ type = 'boolean'; required = $false; default = '-'; description = 'Regionale Preisgestaltung des Gamepasses/Produkts.' }
+                storePageEnabled = @{ type = 'boolean'; required = $false; default = '-'; description = 'Nur für developer_product_update: externe Store-Seite aktivieren/deaktivieren.' }
+                iconBase64 = @{ type = 'string'; required = $false; default = '-'; description = 'PNG/JPEG-Dateiinhalt in Base64; wird als imageFile multipart gesendet (max. 10 MiB).' }
+                iconFileName = @{ type = 'string'; required = $false; default = '-'; description = 'Dateiname mit .png/.jpg/.jpeg, zusammen mit iconBase64.' }
+                pageSize = @{ type = 'integer'; required = $false; default = 50; description = 'Listenseite 1-100 Einträge.' }
+                pageToken = @{ type = 'string'; required = $false; default = '-'; description = 'nextPageToken aus der vorigen Listenantwort.' }
+            };
+            returns = '{ ok, action, status, universeId, placeId, requiredScopes, result } bzw. { ok=false, code, error, status?, robloxResponse?, howToFix? }';
+            example = @{ action = 'gamepass_list'; pageSize = 50 };
+            errors = @('CREATOR_DASHBOARD_DISABLED: Schalter ist standardmäßig aus.', 'PUBLISHED_PLACE_REQUIRED: aktive Studio-Sitzung hat keine veröffentlichten IDs.', 'READONLY_TOKEN: schreibende Aktion in einer Read-only-Sitzung.', 'OPENCLOUD_SCOPE_MISSING: Roblox nennt den erforderlichen Scope.', 'CREATOR_DASHBOARD_CONFLICT: z. B. Place in aktiver Team-Create-Sitzung.', 'BAD_ARGS/UNSUPPORTED_ICON_FORMAT/ICON_FORMAT_MISMATCH: ungültige Eingabe.') })
+
         # ---------------- JOBS ----------------
         $t.Add(@{ name = 'start_job'; category = 'jobs'; summary = 'Arbeit im Hintergrund starten (keine 60s-Grenze).';
             description = 'Startet Lua-Code ODER einen Tool-Call als Job im Studio. Laeuft unabhaengig weiter, auch wenn der HTTP-Call timet-out. Fortschritt: job kann job.progress(percent, message) rufen (im Code als job-Parameter: job:progress(...)). Ergebnis: job_result. Abbruch: cancel_job (kooperativ).';
@@ -22616,6 +22668,7 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
                 'Normal GET and POST tool calls use the same bridge code path. Queue cancellation/reset are mutating controls and require POST.',
                 'After an HTTP timeout, a Studio command remains tracked by commandId and may return through _bridge.lateResults. A plugin execution budget and an INDEPENDENT server-side watchdog (queue.sweep) abandon stalled commands so they cannot block the serial queue forever; inspect the Place before retrying because partial changes may exist. Use asJob=true when a long task should deliberately continue in the background. HTTP answers are capped at 55 seconds by default (85 seconds maximum) so a Cloudflare 524 can never cut the connection before the bridge replies.',
                 'Asset search covers the Creator Store categories including 3D models, models, meshes/MeshParts, plugins, fonts, audio, images/decals, video and animation. Insertion still reports Roblox permission/privacy errors and warns before inserting scripts.',
+                'CREATOR-DASHBOARD-OPT-IN (7.5.9): creator_dashboard works only on the currently connected, already-published Studio game. Its settings switch under ROBLOX OPEN CLOUD API-KEY is persistent and defaults OFF; every request checks it. The existing upload_asset is separate. Only documented Open Cloud Universe/Place metadata and game-pass/developer-product get/list/create/update operations are supported; mutations also enforce the session Read-only mode. Never accept caller-supplied target IDs or claim that Arena can create/publish/delete Places or manage undocumented Creator Hub pages. For icons pass iconBase64 + iconFileName to the documented imageFile multipart field.',
                 'sim_start is disabled because the former official Studio Run simulation exits Edit mode (EditModeActive=false), and the documented Studio API has no supported true Edit-mode physics/script path. A USER-started Play/F5 test is separate, blocks building (USER_PLAYTEST_ACTIVE), and can only be ended by the user.',
                 'Windows finish notifications use report_done { title, message }. Arena writes a lively title (max 70 characters) and an inviting body (max 140); avoid dry changelog lists.',
                 'Responses include typed error codes and concrete diagnostics. Use those details to decide the next step.',
@@ -22741,6 +22794,15 @@ end
                 limits = 'Roblox-Grenzen je Upload: 20 MB, ein Asset je Aufruf, Bilder unter 8000x8000 Pixel, Formate FBX/GLB/GLTF (Mesh) und PNG/JPG/JPEG/BMP/TGA (Bild). Ein Rate Limit (429) ist ein echter Roblox-Zustand: sage dem Nutzer, dass Roblox gerade drosselt, und versuche es spaeter erneut - nicht sofort wieder.'
                 missingKey = 'Fehlt der Schluessel, bleibt das Werkzeug ganz normal verfuegbar und antwortet erst beim Aufruf mit OPENCLOUD_KEY_MISSING. Die Antwort enthaelt userMessage: sage diesen Satz dem Nutzer WORTLICH auf Deutsch. Danach wartest du - du erfindest keine Asset-Id und behauptest keinen Erfolg.'
                 honesty = 'Die Asset-Id ist nur dann echt, wenn Roblox sie genannt hat. Steht die Operation noch auf pending, rufst du upload_asset { operationId } erneut auf (kein enger Loop). Fehlertexte von Roblox gehoren unverfaelscht an den Nutzer - die Bridge versteckt und beschoenigt nichts.'
+            }
+            creatorDashboardRules = @{
+                title = 'Creator Dashboard via Roblox Open Cloud (7.5.9) - explicit opt-in, active published game only'
+                setting = 'The switch is in Settings -> ROBLOX OPEN CLOUD API-KEY, is saved in settings.json, and defaults to false. When off, creator_dashboard sends no Roblox request. upload_asset remains independent.'
+                target = 'Take universeId from gameId and placeId from the active connected Studio session. Do not accept a caller-supplied Universe/Place ID, do not use the Alle-Places token as a wildcard, and require positive IDs from an already-published Place.'
+                supported = 'Official documented Open Cloud endpoints only: GET/PATCH Universe /cloud/v2/universes/{id}; GET/PATCH Place /cloud/v2/universes/{id}/places/{placeId}; list/get/create/update game passes; list/get/create/update developer products. Metadata edits are limited to displayName and description. Product create/update can send PNG/JPEG icons as multipart imageFile.'
+                permissions = 'For updates: universe:write and universe.place:write. For game passes: game-pass:read + game-pass:write. For developer products: developer-product:read + developer-product:write. Existing mesh/image uploads still require their separate assets permissions. Roblox role/resource access must also allow the selected active game.'
+                safety = 'Every mutating action independently rejects accessMode=readonly before network I/O. An HTTP 409 is reported without retry (Place updates can conflict with active Team Create); 429 and all transport/API errors are explicit. Never retry automatically.'
+                notSupported = 'Do not claim cookie-only Creator Hub support, listing every Place, creating/deleting/publishing Places or Universes, or settings/social fields outside the documented and implemented metadata subset. Do not claim changes succeeded unless Roblox returned a successful response.'
             }
             organicBuildRules = @{
                 title = 'Organic Build Engine 1.1 (Version 7.5.8) - typed creature volumes, physical face, bilateral anatomy, measured before done'
@@ -23213,7 +23275,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.5.8'
+            version = '7.5.9'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -23445,7 +23507,7 @@ end
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $askUserProtocol = Get-BridgeAskUserProtocol
         $envelope = @{
-            bridgeVersion = '7.5.8'
+            bridgeVersion = '7.5.9'
             executor = $executorSnapshot
             askUserProtocol = $askUserProtocol
             progressContract = @{
@@ -24172,6 +24234,9 @@ end
         }
         try { . ([scriptblock]::Create([string]$Shared.MeshToolkitText)) } catch {}
         $sid = [string]$sessionId
+        if ($tool -eq 'creator_dashboard') {
+            return (Invoke-CreatorDashboardTool -Shared $Shared -SessionId $sid -Arguments $toolArgs)
+        }
         if ($tool -ne 'upload_asset') { return $null }
 
         # ---- Argumente (alle optional bis auf EINE Quelle) ----------------
@@ -24425,6 +24490,7 @@ end
             'mesh_apply_asset'   { return (Invoke-MeshServerTool $sessionId $tool $toolArgs) }
             # Version 7.5.0: ROBLOX OPEN CLOUD (Meshes und Bilder hochladen).
             'upload_asset'       { return (Invoke-OpenCloudServerTool $sessionId $tool $toolArgs) }
+            'creator_dashboard'  { return (Invoke-OpenCloudServerTool $sessionId $tool $toolArgs) }
             'get_docs' {
                 $qTool = if ($toolArgs.tool) { [string]$toolArgs.tool } else { $null }
                 $qCategory = if ($toolArgs.category) { [string]$toolArgs.category } else { $null }
@@ -24940,7 +25006,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.5.8'
+                        bridgeVersion = '7.5.9'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -25431,7 +25497,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.5.8'
+                        serverVersion = '7.5.9'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -25790,7 +25856,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.5.8'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.5.9'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -25874,8 +25940,8 @@ end
                 }
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.5.8'
-                    serverVersion = '7.5.8'
+                    bridgeVersion = '7.5.9'
+                    serverVersion = '7.5.9'
                     toolbox = $statusToolbox
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
@@ -26244,7 +26310,7 @@ end
                     'separate','insert_asset','apply_asset','group_instances','ungroup','add_tag','remove_tag','place_on','align','stack',
                     'grid_arrange','distribute','snap_to_ground','look_at','rotate_around','move_relative','resize_part','fit_between','point_at',
                     'sim_start','undo','redo','clear_output','fill_region','probe_world','start_job',
-                    'cancel_job','clear_lua_state','build_polygon_model','build_assembly','mesh_slots','mesh_apply','build_surface','build_interface')
+                    'cancel_job','clear_lua_state','build_polygon_model','build_assembly','mesh_slots','mesh_apply','build_surface','build_interface','creator_dashboard')
                 $persistentEditTools = @('set_property','set_properties','bulk_set_properties','set_attribute','create_instance','bulk_create',
                     'clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','set_script_source','patch_script',
                     'insert_script','bulk_insert_scripts','run_lua','batch','parallel','union','subtract','negate','intersect','separate',
@@ -29483,28 +29549,49 @@ $script:BridgeOpenCloudTools = {
     }
 
     function New-OpenCloudMultipartBytes {
-        # multipart/form-data von Hand (fuer den HttpWebRequest-Weg): exakt
-        # dieselben zwei Felder wie beim HttpClient - "request" mit dem JSON
-        # und "fileContent" mit der Datei.
-        param([string]$JsonBody, [byte[]]$Bytes, [string]$FileName, [string]$FileContentType, [string]$FieldName = 'fileContent', [string]$Boundary = '')
+        # multipart/form-data fuer beide offiziellen Open Cloud-Formate:
+        # Assets-API: JSON-Teil "request" + "fileContent"; Monetization-APIs:
+        # eigenstaendige Formularfelder + optional "imageFile".
+        param([string]$JsonBody, [byte[]]$Bytes = $null, [string]$FileName = '', [string]$FileContentType = '', [string]$FieldName = 'fileContent', [string]$Boundary = '', [System.Collections.IDictionary]$FormFields = $null, [switch]$IncludeRequestPart)
         $encoding = New-Object System.Text.UTF8Encoding($false)
         $safeName = [string]$FileName
         if ([string]::IsNullOrWhiteSpace($safeName)) { $safeName = 'upload.bin' }
         $safeName = $safeName.Replace('"', '').Replace("`r", '').Replace("`n", '')
         $safeType = [string]$FileContentType
         if ([string]::IsNullOrWhiteSpace($safeType)) { $safeType = 'application/octet-stream' }
-        $headRequest = '--' + $Boundary + "`r`n" +
-            'Content-Disposition: form-data; name="request"' + "`r`n" +
-            'Content-Type: application/json' + "`r`n`r`n"
-        $headFile = "`r`n--" + $Boundary + "`r`n" +
-            'Content-Disposition: form-data; name="' + [string]$FieldName + '"; filename="' + $safeName + '"' + "`r`n" +
-            'Content-Type: ' + $safeType + "`r`n`r`n"
-        $tail = "`r`n--" + $Boundary + '--' + "`r`n"
         $parts = New-Object System.Collections.Generic.List[byte]
-        $parts.AddRange($encoding.GetBytes($headRequest))
-        $parts.AddRange($encoding.GetBytes([string]$JsonBody))
-        $parts.AddRange($encoding.GetBytes($headFile))
-        $parts.AddRange($Bytes)
+        $hasPart = $false
+        if ($IncludeRequestPart) {
+            $headRequest = '--' + $Boundary + "`r`n" +
+                'Content-Disposition: form-data; name="request"' + "`r`n" +
+                'Content-Type: application/json' + "`r`n`r`n"
+            $parts.AddRange($encoding.GetBytes($headRequest))
+            $parts.AddRange($encoding.GetBytes([string]$JsonBody))
+            $hasPart = $true
+        }
+        if ($null -ne $FormFields) {
+            foreach ($fieldKey in $FormFields.Keys) {
+                $fieldName = ([string]$fieldKey).Replace('"', '').Replace("`r", '').Replace("`n", '')
+                if ([string]::IsNullOrWhiteSpace($fieldName)) { continue }
+                if ($hasPart) { $headField = "`r`n--" + $Boundary + "`r`n" }
+                else { $headField = '--' + $Boundary + "`r`n" }
+                $headField += 'Content-Disposition: form-data; name="' + $fieldName + '"' + "`r`n`r`n"
+                $parts.AddRange($encoding.GetBytes($headField))
+                $parts.AddRange($encoding.GetBytes([string]$FormFields[$fieldKey]))
+                $hasPart = $true
+            }
+        }
+        if ($null -ne $Bytes -and $Bytes.Length -gt 0) {
+            if ($hasPart) { $headFile = "`r`n--" + $Boundary + "`r`n" }
+            else { $headFile = '--' + $Boundary + "`r`n" }
+            $headFile += 'Content-Disposition: form-data; name="' + [string]$FieldName + '"; filename="' + $safeName + '"' + "`r`n" +
+                'Content-Type: ' + $safeType + "`r`n`r`n"
+            $parts.AddRange($encoding.GetBytes($headFile))
+            $parts.AddRange($Bytes)
+            $hasPart = $true
+        }
+        if ($hasPart) { $tail = "`r`n--" + $Boundary + '--' + "`r`n" }
+        else { $tail = '--' + $Boundary + '--' + "`r`n" }
         $parts.AddRange($encoding.GetBytes($tail))
         return ,$parts.ToArray()
     }
@@ -29570,52 +29657,74 @@ $script:BridgeOpenCloudTools = {
     }
 
     function Send-OpenCloudHttp {
-        # EIN Aufruf nach Roblox (GET oder POST, JSON oder multipart).
-        # Rueckgabe ist immer ehrlich: status (0 = nichts rausgegangen),
-        # body, transport ('httpclient' | 'httpwebrequest') und error.
-        param($Shared, [string]$Method, [string]$Url, [string]$Key, [string]$JsonBody = '', [byte[]]$Bytes = $null, [string]$FileName = '', [string]$FileContentType = '', [string]$FileFieldName = 'fileContent', [int]$TimeoutSeconds = 90)
-        $out = @{ transport = ''; status = 0; body = ''; error = ''; clientError = '' }
+        # EIN Aufruf nach Roblox (beliebige HTTP-Methode, JSON oder multipart).
+        # Multipart unterstuetzt sowohl die Assets-API als auch Formularfelder
+        # der offiziellen Pass-/Developer-Product-APIs.
+        param($Shared, [string]$Method, [string]$Url, [string]$Key, [string]$JsonBody = '', [byte[]]$Bytes = $null, [string]$FileName = '', [string]$FileContentType = '', [string]$FileFieldName = 'fileContent', [int]$TimeoutSeconds = 90, [System.Collections.IDictionary]$FormFields = $null, [int]$MaxResponseChars = 600)
+        $out = @{ transport = ''; status = 0; body = ''; error = ''; clientError = ''; bodyTruncated = $false }
         $methodUp = ([string]$Method).ToUpperInvariant()
+        $hasFormFields = ($null -ne $FormFields)
+        $hasFile = ($null -ne $Bytes -and $Bytes.Length -gt 0)
+        $responseLimit = [Math]::Max(1, [int]$MaxResponseChars)
         if (Initialize-OpenCloudHttp $Shared) {
             $client = $null
+            $request = $null
+            $response = $null
             $sent = $false
             try {
                 $client = New-OpenCloudHttpClient -Shared $Shared -Key $Key -TimeoutSeconds $TimeoutSeconds
                 if ($null -ne $client) {
                     $content = $null
                     $form = $null
-                    if ($null -ne $Bytes -and $Bytes.Length -gt 0) {
+                    if ($hasFormFields -or $hasFile) {
                         $form = [System.Net.Http.MultipartFormDataContent]::new()
-                        $requestPart = [System.Net.Http.StringContent]::new($JsonBody, [System.Text.Encoding]::UTF8, 'application/json')
-                        $form.Add($requestPart, 'request')
-                        $filePart = [System.Net.Http.ByteArrayContent]::new($Bytes)
-                        $filePart.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse($FileContentType)
-                        $form.Add($filePart, $FileFieldName, $FileName)
+                        if (-not $hasFormFields) {
+                            $requestPart = [System.Net.Http.StringContent]::new([string]$JsonBody, [System.Text.Encoding]::UTF8, 'application/json')
+                            $form.Add($requestPart, 'request')
+                        }
+                        if ($hasFormFields) {
+                            foreach ($fieldKey in $FormFields.Keys) {
+                                $fieldName = ([string]$fieldKey).Replace('"', '').Replace("`r", '').Replace("`n", '')
+                                if ([string]::IsNullOrWhiteSpace($fieldName)) { continue }
+                                $fieldPart = [System.Net.Http.StringContent]::new([string]$FormFields[$fieldKey], [System.Text.Encoding]::UTF8, 'text/plain')
+                                $form.Add($fieldPart, $fieldName)
+                            }
+                        }
+                        if ($hasFile) {
+                            $filePart = [System.Net.Http.ByteArrayContent]::new($Bytes)
+                            $safeType = [string]$FileContentType
+                            if ([string]::IsNullOrWhiteSpace($safeType)) { $safeType = 'application/octet-stream' }
+                            $filePart.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse($safeType)
+                            $safeFileName = [string]$FileName
+                            if ([string]::IsNullOrWhiteSpace($safeFileName)) { $safeFileName = 'upload.bin' }
+                            $safeFileName = $safeFileName.Replace('"', '').Replace("`r", '').Replace("`n", '')
+                            $form.Add($filePart, [string]$FileFieldName, $safeFileName)
+                        }
                         $content = $form
                     } elseif (-not [string]::IsNullOrWhiteSpace($JsonBody)) {
                         $content = [System.Net.Http.StringContent]::new($JsonBody, [System.Text.Encoding]::UTF8, 'application/json')
                     }
+                    $httpMethod = [System.Net.Http.HttpMethod]::new($methodUp)
+                    $request = [System.Net.Http.HttpRequestMessage]::new($httpMethod, [Uri]$Url)
+                    if ($null -ne $content) { $request.Content = $content }
                     $sent = $true
-                    $response = $null
-                    if ($methodUp -eq 'GET') { $response = $client.GetAsync($Url).GetAwaiter().GetResult() }
-                    else { $response = $client.PostAsync($Url, $content).GetAwaiter().GetResult() }
+                    $response = $client.SendAsync($request).GetAwaiter().GetResult()
                     $out.transport = 'httpclient'
-                    $statusCode = 0
-                    try { $statusCode = [int]$response.StatusCode } catch {}
-                    $out.status = $statusCode
-                    try { $out.body = Get-OpenCloudErrorBody $response } catch {}
+                    try { $out.status = [int]$response.StatusCode } catch {}
+                    try { $out.body = Get-OpenCloudErrorBody $response $responseLimit } catch {}
                     try { $response.Dispose() } catch {}
-                    if ($null -ne $form) { try { $form.Dispose() } catch {} }
+                    try { $request.Dispose() } catch {}
                     try { $client.Dispose() } catch {}
                     return $out
                 }
             } catch {
                 $out.clientError = $_.Exception.Message
                 try { if ($_.Exception.InnerException) { $out.clientError = $out.clientError + ' / ' + $_.Exception.InnerException.Message } } catch {}
+                if ($null -ne $response) { try { $response.Dispose() } catch {} }
+                if ($null -ne $request) { try { $request.Dispose() } catch {} }
                 if ($null -ne $client) { try { $client.Dispose() } catch {} }
                 if ($sent) {
-                    # Die Anfrage war schon unterwegs - NICHT ein zweites Mal
-                    # senden (sonst entstehen zwei Assets). Ehrlich melden.
+                    # Die Anfrage war schon unterwegs - NICHT blind erneut senden.
                     $out.status = 0
                     $out.transport = 'httpclient'
                     $out.error = $out.clientError
@@ -29625,15 +29734,20 @@ $script:BridgeOpenCloudTools = {
         }
         $multipart = $null
         $multipartType = ''
-        if ($null -ne $Bytes -and $Bytes.Length -gt 0) {
+        if ($hasFormFields -or $hasFile) {
             $boundary = '----ArenaBridgeBoundary' + [guid]::NewGuid().ToString('N')
-            $multipart = New-OpenCloudMultipartBytes -JsonBody $JsonBody -Bytes $Bytes -FileName $FileName -FileContentType $FileContentType -FieldName $FileFieldName -Boundary $boundary
+            $includeRequestPart = (-not $hasFormFields)
+            $multipart = New-OpenCloudMultipartBytes -JsonBody $JsonBody -Bytes $Bytes -FileName $FileName -FileContentType $FileContentType -FieldName $FileFieldName -Boundary $boundary -FormFields $FormFields -IncludeRequestPart:$includeRequestPart
             $multipartType = 'multipart/form-data; boundary=' + $boundary
         }
         $fallback = Send-OpenCloudRequestFallback -Method $methodUp -Url $Url -Key $Key -JsonBody $JsonBody -MultipartBytes $multipart -MultipartContentType $multipartType -TimeoutSeconds $TimeoutSeconds
         $out.transport = [string]$fallback.transport
         $out.status = [int]$fallback.status
         $out.body = [string]$fallback.body
+        if ($out.body.Length -gt $responseLimit) {
+            $out.body = $out.body.Substring(0, $responseLimit)
+            $out.bodyTruncated = $true
+        }
         if ([int]$out.status -le 0) {
             if (-not [string]::IsNullOrWhiteSpace([string]$fallback.error)) { $out.error = [string]$fallback.error }
             elseif (-not [string]::IsNullOrWhiteSpace([string]$out.clientError)) { $out.error = [string]$out.clientError }
@@ -29662,12 +29776,13 @@ $script:BridgeOpenCloudTools = {
     }
 
     function Get-OpenCloudErrorBody {
-        param($Response)
+        param($Response, [int]$MaxCharacters = 600)
         try {
             if ($null -eq $Response) { return '' }
             $text = $Response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
             if ([string]::IsNullOrWhiteSpace($text)) { return '' }
-            if ($text.Length -gt 600) { $text = $text.Substring(0, 600) }
+            $limit = [Math]::Max(1, [int]$MaxCharacters)
+            if ($text.Length -gt $limit) { $text = $text.Substring(0, $limit) }
             return $text
         } catch { return '' }
     }
@@ -30006,6 +30121,12 @@ $script:BridgeOpenCloudTools = {
         $scopes = New-Object System.Collections.Generic.List[object]
         $assetWrite = $false
         $assetRead = $false
+        $universeWrite = $false
+        $universePlaceWrite = $false
+        $gamePassRead = $false
+        $gamePassWrite = $false
+        $developerProductRead = $false
+        $developerProductWrite = $false
         $scopeNames = New-Object System.Collections.Generic.List[string]
         $writeUsers = New-Object System.Collections.Generic.List[string]
         $writeGroups = New-Object System.Collections.Generic.List[string]
@@ -30013,18 +30134,31 @@ $script:BridgeOpenCloudTools = {
             foreach ($scope in @($parsed.scopes)) {
                 if ($null -eq $scope) { continue }
                 $name = ([string]$scope.name).Trim()
+                $lowerName = $name.ToLowerInvariant()
                 if (-not [string]::IsNullOrWhiteSpace($name)) { $scopeNames.Add($name) }
                 $operations = New-Object System.Collections.Generic.List[string]
                 try { foreach ($operation in @($scope.operations)) { $operations.Add((([string]$operation).Trim().ToLowerInvariant())) } } catch {}
-                $isAsset = $name.ToLowerInvariant().Contains('asset')
-                $writes = $operations.Contains('write') -or $operations.Contains('create') -or $operations.Contains('update')
-                $reads = $operations.Contains('read')
+                $scopeBase = $lowerName
+                $scopeSuffix = ''
+                if ($lowerName.Contains(':')) {
+                    $scopeBase = $lowerName.Substring(0, $lowerName.IndexOf(':'))
+                    $scopeSuffix = $lowerName.Substring($lowerName.IndexOf(':') + 1)
+                }
+                $writes = $operations.Contains('write') -or $operations.Contains('create') -or $operations.Contains('update') -or $scopeSuffix -eq 'write'
+                $reads = $operations.Contains('read') -or $scopeSuffix -eq 'read'
+                $isAsset = $scopeBase.Contains('asset')
                 if ($isAsset -and $writes) {
                     $assetWrite = $true
                     try { foreach ($entry in @($scope.userIds)) { $value = ([string]$entry).Trim(); if (-not [string]::IsNullOrWhiteSpace($value) -and $value -ne '*') { $writeUsers.Add($value) } } } catch {}
                     try { foreach ($entry in @($scope.groupIds)) { $value = ([string]$entry).Trim(); if (-not [string]::IsNullOrWhiteSpace($value) -and $value -ne '*') { $writeGroups.Add($value) } } } catch {}
                 }
                 if ($isAsset -and $reads) { $assetRead = $true }
+                if ($scopeBase -eq 'universe' -and $writes) { $universeWrite = $true }
+                if ($scopeBase -eq 'universe.place' -and $writes) { $universePlaceWrite = $true }
+                if ($scopeBase -in @('game-pass','game-passes') -and $reads) { $gamePassRead = $true }
+                if ($scopeBase -in @('game-pass','game-passes') -and $writes) { $gamePassWrite = $true }
+                if ($scopeBase -in @('developer-product','developer-products') -and $reads) { $developerProductRead = $true }
+                if ($scopeBase -in @('developer-product','developer-products') -and $writes) { $developerProductWrite = $true }
                 $scopes.Add(@{
                     name = $name
                     operations = $operations.ToArray()
@@ -30051,10 +30185,374 @@ $script:BridgeOpenCloudTools = {
             scopeNames = $scopeNames.ToArray()
             assetRead = $assetRead
             assetWrite = $assetWrite
+            universeWrite = $universeWrite
+            universePlaceWrite = $universePlaceWrite
+            gamePassRead = $gamePassRead
+            gamePassWrite = $gamePassWrite
+            developerProductRead = $developerProductRead
+            developerProductWrite = $developerProductWrite
             writeUserIds = $writeUsers.ToArray()
             writeGroupIds = $writeGroups.ToArray()
             robloxResponse = $body
         }
+    }
+
+    function Get-OpenCloudArgumentValue {
+        param($Arguments, [string]$Name)
+        $found = $false
+        $value = $null
+        if ($null -eq $Arguments -or [string]::IsNullOrWhiteSpace($Name)) { return @{ found = $false; value = $null } }
+        if ($Arguments -is [System.Collections.IDictionary]) {
+            try {
+                if ($Arguments.Contains($Name)) { $found = $true; $value = $Arguments[$Name] }
+            } catch {}
+        }
+        if (-not $found) {
+            try {
+                $property = $Arguments.PSObject.Properties[$Name]
+                if ($null -ne $property) { $found = $true; $value = $property.Value }
+            } catch {}
+        }
+        return @{ found = $found; value = $value }
+    }
+
+    function Get-CreatorDashboardImage {
+        # Game-pass/developer-product APIs accept an icon as the multipart
+        # "imageFile" field. Accept PNG/JPEG only and verify the actual header.
+        param($Arguments)
+        $encodedArg = Get-OpenCloudArgumentValue -Arguments $Arguments -Name 'iconBase64'
+        if (-not $encodedArg.found) { return @{ ok = $true; supplied = $false; bytes = $null; fileName = ''; contentType = '' } }
+        $encoded = ([string]$encodedArg.value).Trim()
+        if ([string]::IsNullOrWhiteSpace($encoded)) {
+            return @{ ok = $false; code = 'BAD_ARGS'; error = 'iconBase64 wurde angegeben, ist aber leer.' }
+        }
+        if ($encoded -match '^data:[^;]+;base64,') { $encoded = $encoded.Substring($encoded.IndexOf(',') + 1) }
+        if ($encoded.Length -gt 14000000) {
+            return @{ ok = $false; code = 'ICON_TOO_LARGE'; error = 'Das Icon ist zu groß. Arena akzeptiert hier höchstens 10 MiB (PNG/JPEG), bevor Roblox es erhält.' }
+        }
+        $nameArg = Get-OpenCloudArgumentValue -Arguments $Arguments -Name 'iconFileName'
+        $fileName = ''
+        if ($nameArg.found) { $fileName = ([string]$nameArg.value).Trim() }
+        if ([string]::IsNullOrWhiteSpace($fileName)) {
+            return @{ ok = $false; code = 'BAD_ARGS'; error = 'iconFileName ist zusammen mit iconBase64 erforderlich (zum Beispiel "icon.png" oder "icon.jpg").' }
+        }
+        if ($fileName.Length -gt 128 -or $fileName -match '[\\/\r\n"\0]') {
+            return @{ ok = $false; code = 'BAD_ARGS'; error = 'iconFileName darf höchstens 128 Zeichen lang sein und keine Pfadtrenner, Anführungszeichen oder Steuerzeichen enthalten.' }
+        }
+        $extension = ''
+        try { $extension = [System.IO.Path]::GetExtension($fileName).ToLowerInvariant() } catch {}
+        $contentType = ''
+        if ($extension -eq '.png') { $contentType = 'image/png' }
+        elseif ($extension -eq '.jpg' -or $extension -eq '.jpeg') { $contentType = 'image/jpeg' }
+        else { return @{ ok = $false; code = 'UNSUPPORTED_ICON_FORMAT'; error = 'Creator-Dashboard-Icons müssen hier PNG oder JPEG sein; SVG und andere Formate werden nicht gesendet.' } }
+        $bytes = $null
+        try { $bytes = [Convert]::FromBase64String($encoded) } catch {
+            return @{ ok = $false; code = 'BAD_ARGS'; error = 'iconBase64 ist kein gültiger Base64-Inhalt.' }
+        }
+        if ($null -eq $bytes -or $bytes.Length -le 0) { return @{ ok = $false; code = 'BAD_ARGS'; error = 'Das Icon ist leer.' } }
+        if ($bytes.Length -gt 10485760) { return @{ ok = $false; code = 'ICON_TOO_LARGE'; error = 'Das Icon ist zu groß. Arena akzeptiert hier höchstens 10 MiB (PNG/JPEG), bevor Roblox es erhält.' } }
+        $signatureOk = $false
+        if ($extension -eq '.png' -and $bytes.Length -ge 8) {
+            $pngSignature = @(137, 80, 78, 71, 13, 10, 26, 10)
+            $signatureOk = $true
+            for ($i = 0; $i -lt $pngSignature.Count; $i++) { if ([int]$bytes[$i] -ne [int]$pngSignature[$i]) { $signatureOk = $false; break } }
+        } elseif (($extension -eq '.jpg' -or $extension -eq '.jpeg') -and $bytes.Length -ge 3) {
+            $signatureOk = ([int]$bytes[0] -eq 255 -and [int]$bytes[1] -eq 216 -and [int]$bytes[2] -eq 255)
+        }
+        if (-not $signatureOk) { return @{ ok = $false; code = 'ICON_FORMAT_MISMATCH'; error = 'Dateiendung und Dateiinhalte des Icons stimmen nicht überein; erwartet wird eine echte PNG- oder JPEG-Datei.' } }
+        return @{ ok = $true; supplied = $true; bytes = $bytes; fileName = $fileName; contentType = $contentType }
+    }
+
+    function Get-CreatorDashboardFormFields {
+        param($Arguments, [string[]]$AllowedFields, [bool]$RequireName = $false)
+        $fields = [ordered]@{}
+        foreach ($fieldName in $AllowedFields) {
+            $arg = Get-OpenCloudArgumentValue -Arguments $Arguments -Name $fieldName
+            if (-not $arg.found -or $null -eq $arg.value) { continue }
+            if ($fieldName -in @('isForSale','isRegionalPricingEnabled','storePageEnabled')) {
+                $booleanValue = $false
+                if ($arg.value -is [bool]) { $booleanValue = [bool]$arg.value }
+                else {
+                    $parsedBoolean = $false
+                    if (-not [bool]::TryParse(([string]$arg.value).Trim(), [ref]$parsedBoolean)) {
+                        return @{ ok = $false; code = 'BAD_ARGS'; error = ($fieldName + ' muss true oder false sein.') }
+                    }
+                    $booleanValue = $parsedBoolean
+                }
+                $fields[$fieldName] = $booleanValue.ToString().ToLowerInvariant()
+            } elseif ($fieldName -eq 'price') {
+                $price = [long]0
+                $rawPrice = ([string]$arg.value).Trim()
+                $style = [System.Globalization.NumberStyles]::Integer
+                $culture = [System.Globalization.CultureInfo]::InvariantCulture
+                if (-not [long]::TryParse($rawPrice, $style, $culture, [ref]$price) -or $price -lt 0) {
+                    return @{ ok = $false; code = 'BAD_ARGS'; error = 'price muss eine nichtnegative int64-Ganzzahl sein.' }
+                }
+                $fields[$fieldName] = [string]$price
+            } else {
+                if ($arg.value -is [System.Collections.IDictionary] -or $arg.value -is [System.Array]) {
+                    return @{ ok = $false; code = 'BAD_ARGS'; error = ($fieldName + ' muss Text sein.') }
+                }
+                $textValue = [string]$arg.value
+                if ($fieldName -eq 'name' -and [string]::IsNullOrWhiteSpace($textValue)) {
+                    return @{ ok = $false; code = 'BAD_ARGS'; error = 'name darf nicht leer sein.' }
+                }
+                if ($textValue.Length -gt 4000) { return @{ ok = $false; code = 'BAD_ARGS'; error = ($fieldName + ' darf höchstens 4000 Zeichen enthalten.') } }
+                $fields[$fieldName] = $textValue
+            }
+        }
+        if ($RequireName -and (-not $fields.Contains('name') -or [string]::IsNullOrWhiteSpace([string]$fields['name']))) {
+            return @{ ok = $false; code = 'BAD_ARGS'; error = 'name ist für das Erstellen eines Gamepasses/Developer-Produkts erforderlich.' }
+        }
+        return @{ ok = $true; fields = $fields }
+    }
+
+    function Invoke-CreatorDashboardHttp {
+        param($Shared, [string]$Action, [string]$Url, [string]$Method, [string]$Key, [string]$JsonBody = '', [System.Collections.IDictionary]$FormFields = $null, [byte[]]$Bytes = $null, [string]$FileName = '', [string]$FileContentType = '', [string]$FileFieldName = 'imageFile', [string[]]$RequiredScopes = @(), [string]$UniverseId = '', [string]$PlaceId = '', [int]$TimeoutSeconds = 35)
+        $attempt = Send-OpenCloudHttp -Shared $Shared -Method $Method -Url $Url -Key $Key -JsonBody $JsonBody -FormFields $FormFields -Bytes $Bytes -FileName $FileName -FileContentType $FileContentType -FileFieldName $FileFieldName -TimeoutSeconds $TimeoutSeconds -MaxResponseChars 2000000
+        if ([int]$attempt.status -le 0) { return (Get-OpenCloudTransportError -Attempt $attempt -What 'Der Creator-Dashboard-Aufruf') }
+        $status = [int]$attempt.status
+        $body = [string]$attempt.body
+        if ($status -eq 401) {
+            return @{ ok = $false; code = 'OPENCLOUD_KEY_REJECTED'; status = $status; action = $Action; error = 'Roblox hat den Open Cloud API-Key beim Creator-Dashboard-Aufruf abgelehnt (HTTP 401).'; robloxResponse = $body; howToFix = 'Prüfe den gespeicherten Key und erstelle ihn bei Bedarf neu. Der Key bleibt verschlüsselt in der Bridge.' }
+        }
+        if ($status -eq 403) {
+            return @{ ok = $false; code = 'OPENCLOUD_SCOPE_MISSING'; status = $status; action = $Action; requiredScopes = @($RequiredScopes); error = ('Roblox verweigert diese Creator-Dashboard-Aktion (HTTP 403). Erforderliche Berechtigungen: ' + (@($RequiredScopes) -join ', ') + '.'); robloxResponse = $body; howToFix = 'Prüfe die angegebenen Scopes am Open-Cloud-Key und die Roblox-Rolle für dieses Erlebnis. Nach einer Rechteänderung den neuen Key in Arena speichern.' }
+        }
+        if ($status -eq 429) {
+            return @{ ok = $false; code = 'OPENCLOUD_RATE_LIMITED'; status = $status; action = $Action; error = 'Roblox drosselt Open-Cloud-Anfragen (HTTP 429). Arena hat nicht automatisch wiederholt.'; robloxResponse = $body; howToFix = 'Warte, bevor du dieselbe Anfrage erneut startest; wiederhole nicht in einer engen Schleife.' }
+        }
+        if ($status -ge 500) {
+            return @{ ok = $false; code = 'OPENCLOUD_SERVER_ERROR'; status = $status; action = $Action; error = ('Roblox meldet einen Serverfehler (HTTP ' + [string]$status + ') beim Creator-Dashboard-Aufruf.'); robloxResponse = $body; howToFix = 'Roblox antwortet gerade mit einem Serverfehler. Nicht automatisch wiederholen; später erneut versuchen.' }
+        }
+        if ($status -eq 409) {
+            return @{ ok = $false; code = 'CREATOR_DASHBOARD_CONFLICT'; status = $status; action = $Action; error = 'Roblox meldet einen Konflikt (HTTP 409). Beim Place-Update kann das bedeuten, dass der Place in einer aktiven Team-Create-Sitzung geöffnet ist; es wurde nichts automatisch wiederholt.'; robloxResponse = $body; howToFix = 'Beende/prüfe eine aktive Team-Create-Sitzung und kontrolliere den aktuellen Dashboard-Zustand, bevor du die Änderung erneut sendest.' }
+        }
+        if ($status -eq 404) {
+            return @{ ok = $false; code = 'CREATOR_DASHBOARD_NOT_FOUND'; status = $status; action = $Action; error = 'Roblox hat den aktiven Place, Universe oder das angeforderte Monetarisierungsprodukt nicht gefunden (HTTP 404).'; robloxResponse = $body; howToFix = 'Prüfe, ob das Studio-Fenster mit dem richtigen bereits veröffentlichten Place verbunden ist und ob die Produkt-ID zu diesem Spiel gehört.' }
+        }
+        if ($status -lt 200 -or $status -gt 299) {
+            return @{ ok = $false; code = 'CREATOR_DASHBOARD_REJECTED'; status = $status; action = $Action; error = ('Roblox hat die Creator-Dashboard-Aktion abgelehnt (HTTP ' + [string]$status + ').'); robloxResponse = $body; howToFix = 'Prüfe die Roblox-Antwort in robloxResponse. Arena hat nur die dokumentierte Aktion gesendet und nicht automatisch wiederholt.' }
+        }
+        if ($attempt.bodyTruncated -eq $true) {
+            return @{ ok = $false; code = 'CREATOR_DASHBOARD_RESPONSE_TOO_LARGE'; status = $status; action = $Action; error = 'Die erfolgreiche Roblox-Antwort überschritt die lokale 2-MiB-Antwortgrenze und wurde abgeschnitten; Arena kann sie nicht sicher als JSON auswerten.'; robloxResponse = $body }
+        }
+        $parsed = $null
+        if (-not [string]::IsNullOrWhiteSpace($body)) {
+            try { $parsed = $body | ConvertFrom-Json } catch {
+                return @{ ok = $false; code = 'OPENCLOUD_BAD_RESPONSE'; status = $status; action = $Action; error = 'Roblox antwortete erfolgreich, aber der Antwortinhalt war kein lesbares JSON.'; robloxResponse = $body }
+            }
+        }
+        return @{
+            ok = $true
+            code = 'CREATOR_DASHBOARD_OK'
+            action = $Action
+            status = $status
+            transport = [string]$attempt.transport
+            universeId = $UniverseId
+            placeId = $PlaceId
+            requiredScopes = @($RequiredScopes)
+            result = $parsed
+            note = 'Direkte Antwort der offiziellen Roblox Open Cloud API. Es wurde kein Creator-Hub-Cookie-Endpunkt verwendet.'
+        }
+    }
+
+    function Invoke-CreatorDashboardTool {
+        # Nur Open-Cloud-Endpunkte, nur das derzeit verbundene Studio-Spiel.
+        # Creator-Dashboard ist ein ausdrückliches Opt-in; diese Prüfung bleibt
+        # lokal im Serverwerkzeug, weil der Server-Dispatch vor writeTools liegt.
+        param($Shared, [string]$SessionId, $Arguments)
+        $actionArg = Get-OpenCloudArgumentValue -Arguments $Arguments -Name 'action'
+        $action = ''
+        if ($actionArg.found) { $action = ([string]$actionArg.value).Trim().ToLowerInvariant() }
+        $actions = @('universe_get','universe_update','place_get','place_update','gamepass_list','gamepass_get','gamepass_create','gamepass_update','developer_product_list','developer_product_get','developer_product_create','developer_product_update')
+        if ($action -notin $actions) {
+            return @{ ok = $false; code = 'BAD_ARGS'; error = 'Ungültige action. Erlaubt: ' + ($actions -join ', ') + '.' }
+        }
+        $dashboardEnabled = $false
+        try { $dashboardEnabled = [bool]$Shared.BridgeSettings.creatorDashboardEnabled } catch {}
+        if (-not $dashboardEnabled) {
+            return @{ ok = $false; code = 'CREATOR_DASHBOARD_DISABLED'; error = 'Creator-Dashboard-Verwaltung ist ausgeschaltet. Es wurde keine Anfrage an Roblox gesendet.'; howToFix = 'Schalte in Arena unter Einstellungen → ROBLOX OPEN CLOUD API-KEY den Schalter „Arena darf den aktuellen Place im Creator Dashboard verwalten“ ein. Standardmäßig ist er aus.' }
+        }
+        $managedPricingArg = Get-OpenCloudArgumentValue -Arguments $Arguments -Name 'isManagedPricingEnabled'
+        if ($managedPricingArg.found -and $null -ne $managedPricingArg.value) {
+            return @{ ok = $false; code = 'UNSUPPORTED_FIELD'; error = 'isManagedPricingEnabled ist kein Feld der dokumentierten Creator-Dashboard-Open-Cloud-Endpunkte. Es wurde keine Anfrage an Roblox gesendet.' }
+        }
+        $writeActions = @('universe_update','place_update','gamepass_create','gamepass_update','developer_product_create','developer_product_update')
+        $accessMode = 'readwrite'
+        try { [void]$Shared.AccessModes.TryGetValue([string]$SessionId, [ref]$accessMode) } catch {}
+        if ($action -in $writeActions -and [string]$accessMode -eq 'readonly') {
+            return @{ ok = $false; code = 'READONLY_TOKEN'; error = ('Die Aktion ' + $action + ' ändert Roblox-Creator-Dashboard-Daten, aber diese Studio-Sitzung ist auf „nur lesen“ gestellt. Es wurde nichts gesendet.'); howToFix = 'Der Nutzer muss für diese Place-Sitzung in der Bridge Vollzugriff einschalten. Die Creator-Dashboard-Einstellung ersetzt den Read-only-Schutz nicht.' }
+        }
+        foreach ($targetField in @('universeId','placeId','gameId','targetPlace')) {
+            $targetArg = Get-OpenCloudArgumentValue -Arguments $Arguments -Name $targetField
+            if ($targetArg.found -and $null -ne $targetArg.value -and -not [string]::IsNullOrWhiteSpace([string]$targetArg.value)) {
+                return @{ ok = $false; code = 'BAD_ARGS'; error = ($targetField + ' darf nicht angegeben werden. Creator-Dashboard-Werkzeuge zielen ausschließlich auf die aktuell verbundene Studio-Sitzung; es werden keine fremden IDs angenommen.') }
+            }
+        }
+        $entry = $null
+        try { $entry = Get-SessionEntry ([string]$SessionId) } catch {}
+        if ($null -eq $entry) {
+            return @{ ok = $false; code = 'NO_ACTIVE_STUDIO_PLACE'; error = 'Es gibt keine aktive Studio-Sitzung für dieses Token. Es wurde keine Anfrage an Roblox gesendet.' }
+        }
+        $universeId = ([string]$entry.gameId).Trim()
+        $placeId = ([string]$entry.placeId).Trim()
+        if ($universeId -notmatch '^[1-9][0-9]{0,19}$' -or $placeId -notmatch '^[1-9][0-9]{0,19}$') {
+            return @{ ok = $false; code = 'PUBLISHED_PLACE_REQUIRED'; error = 'Die aktive Studio-Sitzung meldet keine gültige Universe-ID und Place-ID. Creator-Dashboard-Verwaltung ist nur für einen bereits veröffentlichten Place mit echten IDs verfügbar; Arena veröffentlicht oder erstellt keine Places.'; howToFix = 'Veröffentliche/speichere den Place zuerst in Roblox Studio, verbinde dieses Fenster erneut und versuche es dann.' }
+        }
+        $config = Get-OpenCloudConfig $Shared
+        if (-not $config.hasKey) {
+            return @{ ok = $false; code = 'OPENCLOUD_KEY_MISSING'; error = 'Für die Creator-Dashboard-Verwaltung ist ein Roblox Open Cloud API-Key erforderlich.'; userMessage = 'Bitte hinterlege in Arena unter Einstellungen → ROBLOX OPEN CLOUD API-KEY einen Open-Cloud-Key mit den Creator-Dashboard-Rechten aus dem Tutorial. Die Creator-Dashboard-Verwaltung ist standardmäßig ausgeschaltet und muss dort zusätzlich eingeschaltet werden.' }
+        }
+        $base = 'https://apis.roblox.com'
+        $url = ''
+        $method = 'GET'
+        $jsonBody = ''
+        $formFields = $null
+        $iconBytes = $null
+        $iconFileName = ''
+        $iconContentType = ''
+        $requiredScopes = @()
+        switch ($action) {
+            'universe_get' {
+                $url = $base + '/cloud/v2/universes/' + $universeId
+            }
+            'universe_update' {
+                $fields = [ordered]@{}
+                foreach ($fieldName in @('displayName','description')) {
+                    $arg = Get-OpenCloudArgumentValue -Arguments $Arguments -Name $fieldName
+                    if (-not $arg.found -or $null -eq $arg.value) { continue }
+                    if ($arg.value -is [System.Collections.IDictionary] -or $arg.value -is [System.Array]) { return @{ ok = $false; code = 'BAD_ARGS'; error = ($fieldName + ' muss Text sein.') } }
+                    $textValue = [string]$arg.value
+                    if ($fieldName -eq 'displayName' -and [string]::IsNullOrWhiteSpace($textValue)) { return @{ ok = $false; code = 'BAD_ARGS'; error = 'displayName darf nicht leer sein.' } }
+                    if ($textValue.Length -gt 4000) { return @{ ok = $false; code = 'BAD_ARGS'; error = ($fieldName + ' darf höchstens 4000 Zeichen enthalten.') } }
+                    $fields[$fieldName] = $textValue
+                }
+                if ($fields.Count -eq 0) { return @{ ok = $false; code = 'BAD_ARGS'; error = 'universe_update benötigt mindestens displayName oder description.' } }
+                $updateMask = [Uri]::EscapeDataString(($fields.Keys -join ','))
+                $url = $base + '/cloud/v2/universes/' + $universeId + '?updateMask=' + $updateMask
+                $method = 'PATCH'
+                $jsonBody = ConvertTo-Json -InputObject $fields -Compress -Depth 6
+                $requiredScopes = @('universe:write')
+            }
+            'place_get' {
+                $url = $base + '/cloud/v2/universes/' + $universeId + '/places/' + $placeId
+            }
+            'place_update' {
+                $fields = [ordered]@{}
+                foreach ($fieldName in @('displayName','description')) {
+                    $arg = Get-OpenCloudArgumentValue -Arguments $Arguments -Name $fieldName
+                    if (-not $arg.found -or $null -eq $arg.value) { continue }
+                    if ($arg.value -is [System.Collections.IDictionary] -or $arg.value -is [System.Array]) { return @{ ok = $false; code = 'BAD_ARGS'; error = ($fieldName + ' muss Text sein.') } }
+                    $textValue = [string]$arg.value
+                    if ($fieldName -eq 'displayName' -and [string]::IsNullOrWhiteSpace($textValue)) { return @{ ok = $false; code = 'BAD_ARGS'; error = 'displayName darf nicht leer sein.' } }
+                    if ($textValue.Length -gt 4000) { return @{ ok = $false; code = 'BAD_ARGS'; error = ($fieldName + ' darf höchstens 4000 Zeichen enthalten.') } }
+                    $fields[$fieldName] = $textValue
+                }
+                if ($fields.Count -eq 0) { return @{ ok = $false; code = 'BAD_ARGS'; error = 'place_update benötigt mindestens displayName oder description.' } }
+                $updateMask = [Uri]::EscapeDataString(($fields.Keys -join ','))
+                $url = $base + '/cloud/v2/universes/' + $universeId + '/places/' + $placeId + '?updateMask=' + $updateMask
+                $method = 'PATCH'
+                $jsonBody = ConvertTo-Json -InputObject $fields -Compress -Depth 6
+                $requiredScopes = @('universe.place:write')
+            }
+            { $_ -like 'gamepass_*' } {
+                $root = $base + '/game-passes/v1/universes/' + $universeId + '/game-passes'
+                if ($action -eq 'gamepass_list') {
+                    $pageSize = 50
+                    $pageSizeArg = Get-OpenCloudArgumentValue -Arguments $Arguments -Name 'pageSize'
+                    if ($pageSizeArg.found -and $null -ne $pageSizeArg.value) {
+                        $parsedPageSize = 0
+                        if (-not [int]::TryParse(([string]$pageSizeArg.value), [ref]$parsedPageSize) -or $parsedPageSize -lt 1 -or $parsedPageSize -gt 100) { return @{ ok = $false; code = 'BAD_ARGS'; error = 'pageSize muss eine ganze Zahl von 1 bis 100 sein.' } }
+                        $pageSize = $parsedPageSize
+                    }
+                    $url = $root + '/creator?pageSize=' + [string]$pageSize
+                    $pageTokenArg = Get-OpenCloudArgumentValue -Arguments $Arguments -Name 'pageToken'
+                    if ($pageTokenArg.found -and -not [string]::IsNullOrWhiteSpace([string]$pageTokenArg.value)) { $url += '&pageToken=' + [Uri]::EscapeDataString([string]$pageTokenArg.value) }
+                    $requiredScopes = @('game-pass:read')
+                    break
+                }
+                if ($action -eq 'gamepass_get' -or $action -eq 'gamepass_update') {
+                    $idArg = Get-OpenCloudArgumentValue -Arguments $Arguments -Name 'gamePassId'
+                    if (-not $idArg.found) { $idArg = Get-OpenCloudArgumentValue -Arguments $Arguments -Name 'id' }
+                    $productId = ''
+                    if ($idArg.found) { $productId = ([string]$idArg.value).Trim() }
+                    if ($productId -notmatch '^[1-9][0-9]{0,19}$') { return @{ ok = $false; code = 'BAD_ARGS'; error = 'gamePassId/id muss eine positive numerische Roblox-ID sein.' } }
+                    $root += '/' + $productId
+                    if ($action -eq 'gamepass_get') {
+                        $url = $root + '/creator'
+                        $requiredScopes = @('game-pass:read')
+                        break
+                    }
+                    $url = $root
+                    $method = 'PATCH'
+                    $requiredScopes = @('game-pass:write')
+                } else {
+                    $url = $root
+                    $method = 'POST'
+                    $requiredScopes = @('game-pass:write')
+                }
+                $allowed = @('name','description','isForSale','price','isRegionalPricingEnabled')
+                $formResult = Get-CreatorDashboardFormFields -Arguments $Arguments -AllowedFields $allowed -RequireName ($action -eq 'gamepass_create')
+                if ($formResult.ok -ne $true) { return $formResult }
+                $formFields = $formResult.fields
+                $image = Get-CreatorDashboardImage -Arguments $Arguments
+                if ($image.ok -ne $true) { return $image }
+                $iconNameArg = Get-OpenCloudArgumentValue -Arguments $Arguments -Name 'iconFileName'
+                if (-not $image.supplied -and $iconNameArg.found -and -not [string]::IsNullOrWhiteSpace([string]$iconNameArg.value)) { return @{ ok = $false; code = 'BAD_ARGS'; error = 'iconFileName erfordert iconBase64.' } }
+                if ($image.supplied) { $iconBytes = $image.bytes; $iconFileName = $image.fileName; $iconContentType = $image.contentType }
+                if ($action -eq 'gamepass_update' -and $formFields.Count -eq 0 -and -not $image.supplied) { return @{ ok = $false; code = 'BAD_ARGS'; error = 'gamepass_update benötigt mindestens ein änderbares Feld oder iconBase64.' } }
+            }
+            { $_ -like 'developer_product_*' } {
+                $root = $base + '/developer-products/v2/universes/' + $universeId + '/developer-products'
+                if ($action -eq 'developer_product_list') {
+                    $pageSize = 50
+                    $pageSizeArg = Get-OpenCloudArgumentValue -Arguments $Arguments -Name 'pageSize'
+                    if ($pageSizeArg.found -and $null -ne $pageSizeArg.value) {
+                        $parsedPageSize = 0
+                        if (-not [int]::TryParse(([string]$pageSizeArg.value), [ref]$parsedPageSize) -or $parsedPageSize -lt 1 -or $parsedPageSize -gt 100) { return @{ ok = $false; code = 'BAD_ARGS'; error = 'pageSize muss eine ganze Zahl von 1 bis 100 sein.' } }
+                        $pageSize = $parsedPageSize
+                    }
+                    $url = $root + '/creator?pageSize=' + [string]$pageSize
+                    $pageTokenArg = Get-OpenCloudArgumentValue -Arguments $Arguments -Name 'pageToken'
+                    if ($pageTokenArg.found -and -not [string]::IsNullOrWhiteSpace([string]$pageTokenArg.value)) { $url += '&pageToken=' + [Uri]::EscapeDataString([string]$pageTokenArg.value) }
+                    $requiredScopes = @('developer-product:read')
+                    break
+                }
+                if ($action -eq 'developer_product_get' -or $action -eq 'developer_product_update') {
+                    $idArg = Get-OpenCloudArgumentValue -Arguments $Arguments -Name 'productId'
+                    if (-not $idArg.found) { $idArg = Get-OpenCloudArgumentValue -Arguments $Arguments -Name 'id' }
+                    $productId = ''
+                    if ($idArg.found) { $productId = ([string]$idArg.value).Trim() }
+                    if ($productId -notmatch '^[1-9][0-9]{0,19}$') { return @{ ok = $false; code = 'BAD_ARGS'; error = 'productId/id muss eine positive numerische Roblox-ID sein.' } }
+                    $root += '/' + $productId
+                    if ($action -eq 'developer_product_get') {
+                        $url = $root + '/creator'
+                        $requiredScopes = @('developer-product:read')
+                        break
+                    }
+                    $url = $root
+                    $method = 'PATCH'
+                    $requiredScopes = @('developer-product:write')
+                } else {
+                    $url = $root
+                    $method = 'POST'
+                    $requiredScopes = @('developer-product:write')
+                }
+                $allowed = @('name','description','isForSale','price','isRegionalPricingEnabled')
+                if ($action -eq 'developer_product_update') { $allowed += 'storePageEnabled' }
+                $formResult = Get-CreatorDashboardFormFields -Arguments $Arguments -AllowedFields $allowed -RequireName ($action -eq 'developer_product_create')
+                if ($formResult.ok -ne $true) { return $formResult }
+                $formFields = $formResult.fields
+                $image = Get-CreatorDashboardImage -Arguments $Arguments
+                if ($image.ok -ne $true) { return $image }
+                $iconNameArg = Get-OpenCloudArgumentValue -Arguments $Arguments -Name 'iconFileName'
+                if (-not $image.supplied -and $iconNameArg.found -and -not [string]::IsNullOrWhiteSpace([string]$iconNameArg.value)) { return @{ ok = $false; code = 'BAD_ARGS'; error = 'iconFileName erfordert iconBase64.' } }
+                if ($image.supplied) { $iconBytes = $image.bytes; $iconFileName = $image.fileName; $iconContentType = $image.contentType }
+                if ($action -eq 'developer_product_update' -and $formFields.Count -eq 0 -and -not $image.supplied) { return @{ ok = $false; code = 'BAD_ARGS'; error = 'developer_product_update benötigt mindestens ein änderbares Feld oder iconBase64.' } }
+            }
+        }
+        return (Invoke-CreatorDashboardHttp -Shared $Shared -Action $action -Url $url -Method $method -Key ([string]$config.key) -JsonBody $jsonBody -FormFields $formFields -Bytes $iconBytes -FileName $iconFileName -FileContentType $iconContentType -FileFieldName 'imageFile' -RequiredScopes $requiredScopes -UniverseId $universeId -PlaceId $placeId)
     }
 
     function Resolve-OpenCloudCreatorFromKey {
@@ -30144,6 +30642,12 @@ $script:BridgeOpenCloudTools = {
             scopes = $info.scopes
             assetRead = [bool]$info.assetRead
             assetWrite = [bool]$info.assetWrite
+            universeWrite = [bool]$info.universeWrite
+            universePlaceWrite = [bool]$info.universePlaceWrite
+            gamePassRead = [bool]$info.gamePassRead
+            gamePassWrite = [bool]$info.gamePassWrite
+            developerProductRead = [bool]$info.developerProductRead
+            developerProductWrite = [bool]$info.developerProductWrite
             creatorOk = [bool]$creator.ok
             creatorKind = [string]$creator.creatorKind
             creatorId = [string]$creator.creatorId
@@ -32334,7 +32838,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.5.8)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.5.9)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -35325,7 +35829,7 @@ function Write-ChannelDiagnoseFile {
 
         $progressPath = Join-Path $script:AppDataRoot 'progress-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.5.8)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.5.9)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -35360,7 +35864,7 @@ function Write-ChannelDiagnoseFile {
 
         $notifyPath = Join-Path $script:AppDataRoot 'notify-diagnose.txt'
         $sb2 = New-Object System.Text.StringBuilder
-        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.5.8)')
+        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.5.9)')
         [void]$sb2.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb2.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb2.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -35729,7 +36233,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.5.8)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.5.9)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -38306,7 +38810,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.5.8)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.5.9)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -38472,7 +38976,7 @@ function Start-StudioProfileLookup {
                     $request.Method = 'GET'
                     $request.Timeout = 10000
                     $request.ReadWriteTimeout = 10000
-                    if ($request -is [System.Net.HttpWebRequest]) { $request.UserAgent = 'ArenaRobloxBridge/7.5.8' }
+                    if ($request -is [System.Net.HttpWebRequest]) { $request.UserAgent = 'ArenaRobloxBridge/7.5.9' }
                     $response = $request.GetResponse()
                     try {
                         $responseStream = $response.GetResponseStream()
@@ -39321,7 +39825,7 @@ Set-StartupStage 'Ereignisse verdrahtet (Fenstersteuerung + Loaded)'
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.5.8'
+    $versionText = '7.5.9'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -40459,8 +40963,12 @@ function Open-SettingsWindow {
                         <Border Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="14" Padding="16,14">
                             <StackPanel>
                                 <TextBlock Text="Roblox Open Cloud API-Key" Foreground="{StaticResource SwTextMain}" FontSize="15" FontWeight="Bold" TextWrapping="Wrap"/>
-                                <TextBlock Text="Mach es möglich, dass Arena Meshes und Bilder selber generieren und hochladen kann. Er bekommt somit automatisch die Asset ID und kann die Assets direkt in deinem Workspace einfügen, ohne dass du irgendwas machen musst."
+                                <TextBlock Text="Der Key ermöglicht Mesh- und Bild-Uploads. Creator-Dashboard-Verwaltung (Experience-/Place-Metadaten, Gamepasses und Developer-Produkte samt Icons) ist getrennt und standardmäßig ausgeschaltet."
                                            Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                <CheckBox x:Name="CreatorDashboardSwitch" Style="{StaticResource ArenaSwitch}"
+                                          Content="Arena darf den aktuellen Place im Creator Dashboard verwalten" Margin="0,14,0,0"/>
+                                <TextBlock Text="Opt-in: nur das aktive, bereits veröffentlichte Spiel aus der Studio-Sitzung. Unterstützt werden Metadaten und die offiziellen Gamepass-/Developer-Product-APIs; der bestehende Asset-Upload bleibt davon unabhängig."
+                                           Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
 
                                 <!-- ZUSTAND 1 (Version 7.5.3): noch kein Schlüssel.
                                      Grosser roter Text, Eingabefeld, grüner
@@ -40517,7 +41025,7 @@ function Open-SettingsWindow {
                                                 <RotateTransform Angle="0"/>
                                             </TextBlock.RenderTransform>
                                         </TextBlock>
-                                        <TextBlock Grid.Column="1" Text="Tutorial: API-Key in 7 Schritten erstellen" Foreground="{StaticResource SwTextMain}" FontSize="12.5" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                        <TextBlock Grid.Column="1" Text="Tutorial: API-Key in 10 Schritten erstellen" Foreground="{StaticResource SwTextMain}" FontSize="12.5" VerticalAlignment="Center" TextWrapping="Wrap"/>
                                         <TextBlock x:Name="CloudTutorialToggle" Grid.Column="2" Text="anzeigen" Foreground="#FF5C77" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" Margin="10,0,0,0"/>
                                     </Grid>
                                 </Border>
@@ -40551,23 +41059,47 @@ function Open-SettingsWindow {
 
                                         <Border x:Name="CloudStep4" Background="#2A1020" CornerRadius="10" Padding="12,10" Margin="0,0,0,8" BorderBrush="#66FF5C77" BorderThickness="1">
                                             <StackPanel>
-                                                <TextBlock Text="4. Füge bei den Berechtigungen den Punkt „assets“ hinzu." Foreground="#FFC7D3" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                                                <TextBlock Text="Bei Assets sind read und write Pflicht – sonst lehnt Roblox jeden Upload mit 403 ab." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                                <TextBlock Text="4. Füge „assets“ mit read UND write hinzu." Foreground="#FFC7D3" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                                <TextBlock Text="Diese Rechte bleiben für Mesh- und Bild-Uploads nötig. Die nächsten Creator-Dashboard-Rechte brauchst du nur, wenn der Schalter oben eingeschaltet ist." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
                                             </StackPanel>
                                         </Border>
 
                                         <Border x:Name="CloudStep5" Background="#2A1020" CornerRadius="10" Padding="12,10" Margin="0,0,0,8" BorderBrush="#66FF5C77" BorderThickness="1">
-                                            <TextBlock Text="5. Füge zu der Hauptberechtigung „read“ und „write“ hinzu." Foreground="#FFC7D3" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                                        </Border>
-
-                                        <Border x:Name="CloudStep6" Background="#0C1730" CornerRadius="10" Padding="12,10" Margin="0,0,0,8" BorderBrush="#26FFFFFF" BorderThickness="1">
-                                            <TextBlock Text="6. Klicke auf speichern und API-Schlüssel generieren." Foreground="{StaticResource SwTextMain}" FontSize="12.5" TextWrapping="Wrap"/>
-                                        </Border>
-
-                                        <Border x:Name="CloudStep7" Background="#0C1730" CornerRadius="10" Padding="12,10" BorderBrush="#26FFFFFF" BorderThickness="1">
                                             <StackPanel>
-                                                <TextBlock Text="7. Füge den kopierten Schlüssel hier ein." Foreground="{StaticResource SwTextMain}" FontSize="12.5" TextWrapping="Wrap"/>
-                                                <TextBlock Text="Den Schlüssel zeigt Roblox nur EINMAL. Ohne Ablaufdatum, sonst hört der Upload irgendwann still auf. Deinen Roblox-Namen musst du nirgends eintragen: Die Bridge verwendet das aktuell in Roblox Studio angemeldete Konto. Nur wenn Studio keine Nutzer-ID meldet, nutzt sie die Resource aus dem API-Key als automatischen Rückfall." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                                <TextBlock Text="5. Für Experience-Metadaten: „universe“ (universe:write)." Foreground="#FFC7D3" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                                <TextBlock Text="Damit kann Arena über Open Cloud den Namen und die Beschreibung des aktuellen Spiels ändern." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border x:Name="CloudStep6" Background="#2A1020" CornerRadius="10" Padding="12,10" Margin="0,0,0,8" BorderBrush="#66FF5C77" BorderThickness="1">
+                                            <StackPanel>
+                                                <TextBlock Text="6. Für Place-Metadaten: „universe.place“ (universe.place:write)." Foreground="#FFC7D3" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                                <TextBlock Text="Roblox kann ein Place-Update ablehnen, wenn dieser Place in einer aktiven Team-Create-Sitzung geöffnet ist." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border x:Name="CloudStep7" Background="#2A1020" CornerRadius="10" Padding="12,10" Margin="0,0,0,8" BorderBrush="#66FF5C77" BorderThickness="1">
+                                            <StackPanel>
+                                                <TextBlock Text="7. Für Gamepasses: game-pass:read + game-pass:write." Foreground="#FFC7D3" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                                <TextBlock Text="Die Rechte erlauben Auflisten, Lesen, Erstellen und Ändern – einschließlich PNG/JPEG-Icon und Preis." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border x:Name="CloudStep8" Background="#2A1020" CornerRadius="10" Padding="12,10" Margin="0,0,0,8" BorderBrush="#66FF5C77" BorderThickness="1">
+                                            <StackPanel>
+                                                <TextBlock Text="8. Für Developer-Produkte: developer-product:read + developer-product:write." Foreground="#FFC7D3" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                                <TextBlock Text="Auch hier umfassen die offiziellen APIs Auflisten, Lesen, Erstellen und Ändern einschließlich PNG/JPEG-Icon und Preis." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                            </StackPanel>
+                                        </Border>
+
+                                        <Border x:Name="CloudStep9" Background="#0C1730" CornerRadius="10" Padding="12,10" Margin="0,0,0,8" BorderBrush="#26FFFFFF" BorderThickness="1">
+                                            <TextBlock Text="9. Speichere und generiere den API-Schlüssel." Foreground="{StaticResource SwTextMain}" FontSize="12.5" TextWrapping="Wrap"/>
+                                        </Border>
+
+                                        <Border x:Name="CloudStep10" Background="#0C1730" CornerRadius="10" Padding="12,10" BorderBrush="#26FFFFFF" BorderThickness="1">
+                                            <StackPanel>
+                                                <TextBlock Text="10. Füge den kopierten Schlüssel hier ein." Foreground="{StaticResource SwTextMain}" FontSize="12.5" TextWrapping="Wrap"/>
+                                                <TextBlock Text="Den Schlüssel zeigt Roblox nur EINMAL. Ohne Ablaufdatum, sonst hört der Upload irgendwann still auf. Deinen Roblox-Namen musst du nirgends eintragen: Die Bridge verwendet das aktuell in Roblox Studio angemeldete Konto. Nur wenn Studio keine Nutzer-ID meldet, nutzt sie die Resource aus dem API-Key als automatischen Rückfall. Für Creator-Dashboard-Verwaltung zusätzlich den Schalter oberhalb dieses Tutorials einschalten (Standard: AUS)." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
                                             </StackPanel>
                                         </Border>
 
@@ -40579,7 +41111,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.5.8" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.5.9" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -40610,6 +41142,8 @@ function Open-SettingsWindow {
     $progressSwitch  = $settingsWindow.FindName('ProgressSwitch')
     $doneNotifySwitch = $settingsWindow.FindName('DoneNotifySwitch')
     $editorIconsSwitch = $settingsWindow.FindName('EditorIconsSwitch')
+    $creatorDashboardSwitch = $settingsWindow.FindName('CreatorDashboardSwitch')
+    try { $creatorDashboardSwitch.IsChecked = [bool]$script:SettingsCache.creatorDashboardEnabled } catch {}
     $updateText      = $settingsWindow.FindName('UpdateInfoText')
     # ----------------------------------------------------------------
     # Version 7.5.6: Open Cloud ohne manuelle Entwickler-Eingabe.
@@ -40694,8 +41228,20 @@ function Open-SettingsWindow {
             $script:Shared.BridgeSettings.openCloudCreatorKind = [string]$script:SettingsCache.openCloudCreatorKind
             $script:Shared.BridgeSettings.openCloudCreatorName = [string]$script:SettingsCache.openCloudCreatorName
             $script:Shared.BridgeSettings.openCloudSavedAt = [string]$script:SettingsCache.openCloudSavedAt
+            $script:Shared.BridgeSettings.creatorDashboardEnabled = [bool]$script:SettingsCache.creatorDashboardEnabled
         } catch {}
     }
+
+    $creatorDashboardSwitch.Add_Click({
+        param($s, $e)
+        $enabled = [bool]$s.IsChecked
+        $script:SettingsCache.creatorDashboardEnabled = $enabled
+        $script:Shared.BridgeSettings.creatorDashboardEnabled = $enabled
+        Save-BridgeSettingsFile
+        $stateText = 'aus'
+        if ($enabled) { $stateText = 'an' }
+        Write-RuntimeLog "Creator-Dashboard-Verwaltung ist jetzt $stateText (Einstellungen, Standard: aus)."
+    })
 
     # --- Startzustand: steht schon ein Schluessel bereit? -------------------
     $script:CloudTutorialOpen = $false
@@ -40782,21 +41328,36 @@ function Open-SettingsWindow {
             } catch {}
         }
         Sync-CloudSharedSettings
-        if (-not $assetWrite -or -not $assetRead) {
-            Set-CloudSaveHint 'Roblox nimmt den Schlüssel an, aber ihm fehlt noch das Recht "assets" mit read UND write (Tutorial Schritt 4 und 5). Ohne das lehnt Roblox jeden Upload ab.' '#FFD9A0'
+        $missingPermissions = New-Object System.Collections.Generic.List[string]
+        if (-not $assetRead -or -not $assetWrite) { $missingPermissions.Add('assets read + write (Mesh-/Bild-Uploads)') }
+        $dashboardEnabled = $false
+        try { $dashboardEnabled = [bool]$script:SettingsCache.creatorDashboardEnabled } catch {}
+        if ($dashboardEnabled) {
+            if (-not [bool]$Verdict.universeWrite) { $missingPermissions.Add('universe:write (Experience-Metadaten)') }
+            if (-not [bool]$Verdict.universePlaceWrite) { $missingPermissions.Add('universe.place:write (Place-Metadaten)') }
+            if (-not [bool]$Verdict.gamePassRead) { $missingPermissions.Add('game-pass:read (Gamepasses auflisten/lesen)') }
+            if (-not [bool]$Verdict.gamePassWrite) { $missingPermissions.Add('game-pass:write (Gamepasses erstellen/ändern)') }
+            if (-not [bool]$Verdict.developerProductRead) { $missingPermissions.Add('developer-product:read (Developer-Produkte auflisten/lesen)') }
+            if (-not [bool]$Verdict.developerProductWrite) { $missingPermissions.Add('developer-product:write (Developer-Produkte erstellen/ändern)') }
+        }
+        if ($missingPermissions.Count -gt 0) {
+            $hint = 'Roblox nimmt den Schlüssel an, aber folgende Open-Cloud-Rechte fehlen ggf.: ' + ($missingPermissions -join '; ') + '. Prüfe die zum gewünschten Funktionsumfang passenden Schritte im Tutorial. Roblox prüft die Rechte zusätzlich je Erlebnis und API-Aufruf.'
+            Set-CloudSaveHint $hint '#FFD9A0'
         } elseif (-not $creatorOk) {
             # Ein fehlender Resource-Eintrag im Introspect ist kein Upload-Blocker:
             # im verbundenen Place liefert StudioService die angemeldete Nutzer-ID.
-            Set-CloudSaveHint 'Roblox nimmt den Schlüssel an und die Rechte passen. Beim Upload verwendet die Bridge automatisch das aktuell angemeldete Roblox-Studio-Konto.' '#7EE2A8'
+            Set-CloudSaveHint 'Roblox nimmt den Schlüssel an. Beim Upload verwendet die Bridge automatisch das aktuell angemeldete Roblox-Studio-Konto.' '#7EE2A8'
+        } elseif ($dashboardEnabled) {
+            Set-CloudSaveHint 'Schlüssel geprüft: Roblox nimmt ihn an. Die Creator-Dashboard-Scopes sind vorhanden; der aktuelle Studio-Nutzer wird für Asset-Uploads verwendet.' '#7EE2A8'
         } else {
-            Set-CloudSaveHint 'Schlüssel geprüft: Roblox nimmt ihn an und Arena darf Assets hochladen. Beim Upload wird das aktuelle Roblox-Studio-Konto verwendet.' '#7EE2A8'
+            Set-CloudSaveHint 'Schlüssel geprüft: Roblox nimmt ihn an und Arena darf Assets hochladen. Creator-Dashboard-Scopes werden nur geprüft, wenn der separate Verwaltungsschalter eingeschaltet ist.' '#7EE2A8'
         }
-        try { Write-RuntimeLog ('Open Cloud: Pruefung ok (assets read=' + [string]$assetRead + ', write=' + [string]$assetWrite + ', Ersteller=' + [string]$creatorOk + ').') } catch {}
+        try { Write-RuntimeLog ('Open Cloud: Pruefung ok (assets read=' + [string]$assetRead + ', write=' + [string]$assetWrite + ', dashboard enabled=' + [string]$dashboardEnabled + ', universe write=' + [string]$Verdict.universeWrite + ', place write=' + [string]$Verdict.universePlaceWrite + ', game-pass read=' + [string]$Verdict.gamePassRead + ', write=' + [string]$Verdict.gamePassWrite + ', developer-product read=' + [string]$Verdict.developerProductRead + ', write=' + [string]$Verdict.developerProductWrite + ', Ersteller=' + [string]$creatorOk + ').') } catch {}
     }
 
     # --- Tutorial: ANIMIERT auf- und zuklappen ------------------------------
     $cloudSteps = New-Object System.Collections.Generic.List[object]
-    for ($stepIndex = 1; $stepIndex -le 7; $stepIndex = $stepIndex + 1) {
+    for ($stepIndex = 1; $stepIndex -le 10; $stepIndex = $stepIndex + 1) {
         $stepElement = $settingsWindow.FindName('CloudStep' + [string]$stepIndex)
         if ($null -ne $stepElement) { $cloudSteps.Add($stepElement) }
     }
@@ -40951,7 +41512,8 @@ function Open-SettingsWindow {
     $progressSwitch.IsChecked = $progressNow
     $doneNotifySwitch.IsChecked = $doneNotifyNow
     $editorIconsSwitch.IsChecked = $editorIconsNow
-    foreach ($toggleSwitch in @($startupSwitch, $progressSwitch, $doneNotifySwitch, $editorIconsSwitch)) {
+    $creatorDashboardSwitch.IsChecked = [bool]$script:SettingsCache.creatorDashboardEnabled
+    foreach ($toggleSwitch in @($startupSwitch, $progressSwitch, $doneNotifySwitch, $editorIconsSwitch, $creatorDashboardSwitch)) {
         Set-ArenaSwitchVisualState $toggleSwitch
         $toggleSwitch.Add_Loaded({ param($s, $e) Set-ArenaSwitchVisualState $s })
     }
@@ -40959,7 +41521,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.5.8 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.5.9 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -41024,7 +41586,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.5.8 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.5.9 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -41037,7 +41599,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.5.8'
+    $verText = '7.5.9'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

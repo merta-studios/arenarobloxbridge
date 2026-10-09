@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Offline-Regressionstest fuer Arena Roblox Bridge 7.5.8 (ohne Studio, ohne Windows).
+"""Offline-Regressionstest fuer Arena Roblox Bridge 7.5.9 (ohne Studio, ohne Windows).
 
-Was 7.5.8 prueft (und weiterhin die 7.5.5-Regressionswaechter):
+Was 7.5.9 prueft (und weiterhin die 7.5.5-Regressionswaechter):
 
 1. /api/tool lieferte HTTP 500 fuer JEDEN Werkzeugaufruf ("Die Benennung "=" wurde
    nicht als Name eines Cmdlet erkannt"). Ursache: in Get-ArenaActivityText fehlte
@@ -34,7 +34,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.5.8"
+VERSION = "7.5.9"
 FAILURES: list[str] = []
 
 
@@ -88,13 +88,13 @@ def check_texts_and_commands(raw: bytes, source: str) -> None:
             else:
                 malformed.append(stripped[:60])
         check(not malformed, f"jede Zeile in $texts ist ein Schluessel = 'Satz' (Fehler: {malformed[:3]})")
-        check(len(keys) == 143, f"$texts enthaelt genau 143 Aktions-Texte (gezaehlt: {len(keys)})")
+        check(len(keys) == 144, f"$texts enthaelt genau 144 Aktions-Texte (gezaehlt: {len(keys)})")
         check(len(keys) == len(set(keys)), "$texts hat keine doppelten Schluessel")
         # PowerShell-Hashtables vergleichen Schluessel OHNE Gross-/Kleinschreibung.
         check(len({k.lower() for k in keys}) == len(keys), "$texts hat keine Schluessel, die sich nur in Gross-/Kleinschreibung unterscheiden")
         docs = region(source, "function Get-ToolDocs {", "function Get-BridgeGuides {")
         catalog = re.findall(r"\$t\.Add\(\@\{\s*name\s*=\s*'([a-z][a-z0-9_]*)'", docs)
-        check(len(catalog) == 143, f"Werkzeugkatalog enthaelt 143 Aktionen (gezaehlt: {len(catalog)})")
+        check(len(catalog) == 144, f"Werkzeugkatalog enthaelt 144 Aktionen (gezaehlt: {len(catalog)})")
         check(set(keys) == set(catalog), f"$texts deckt exakt den Werkzeugkatalog ab (fehlend: {sorted(set(catalog)-set(keys))}, extra: {sorted(set(keys)-set(catalog))})")
 
     # Die Operator-Pruefung laeuft IMMER (auch wenn $texts fehlt): sie ist der eigentliche Schutz.
@@ -122,8 +122,8 @@ def check_activity_history_progress(source: str) -> None:
     activity = region(source, "function Get-ArenaActivityText", "function Get-ArenaActivityKind")
     tool_texts = re.findall(r"^\s{12}([A-Za-z_][A-Za-z0-9_]*)\s*=\s*'([^']*)'", activity, re.M)
     tool_texts = [(key, text) for key, text in tool_texts if key not in {"read", "running"}]
-    check(len(tool_texts) == 143 and len({key for key, _ in tool_texts}) == 143,
-          f"alle 143 Toolschluessel besitzen genau einen festen deutschen Text (gezaehlt: {len(tool_texts)})")
+    check(len(tool_texts) == 144 and len({key for key, _ in tool_texts}) == 144,
+          f"alle 144 Toolschluessel besitzen genau einen festen deutschen Text (gezaehlt: {len(tool_texts)})")
     texts = "\n".join(text for _, text in tool_texts).casefold()
     check("ein objekt" not in texts and "tool_hier" not in texts and "hat tool" not in texts,
           "keine generischen Objekt-/TOOL-Platzhalter im deutschen Aktionskatalog")
@@ -143,8 +143,8 @@ def check_activity_history_progress(source: str) -> None:
 
     labels_match = re.search(r"ActivityToolLabels = @\{(.*?)^    \}", source, re.S | re.M)
     labels = re.findall(r"^\s{8}([A-Za-z_][A-Za-z0-9_]*)\s*=\s*'([^']*)'", labels_match.group(1), re.M) if labels_match else []
-    check(len(labels) == 143 and len({key for key, _ in labels}) == 143,
-          f"Fortschrittsanzeige hat 143 verstaendliche Aktionsnamen (gezaehlt: {len(labels)})")
+    check(len(labels) == 144 and len({key for key, _ in labels}) == 144,
+          f"Fortschrittsanzeige hat 144 verstaendliche Aktionsnamen (gezaehlt: {len(labels)})")
     check("function Get-ArenaActivityDisplayLabel" in source
           and "return 'Bridge-Aktion'" in source,
           "Fortschrittsanzeige faellt bei unbekannten Tools auf einen freundlichen Namen zurueck")
@@ -413,7 +413,7 @@ def main() -> int:
         for item in FAILURES:
             print("  - " + item)
         return 1
-    print(f"\nOK: 7.5.8 Regressionstest bestanden (143 Tooltexte, Verlauf/Fortschritt, describe_orientation, "
+    print(f"\nOK: 7.5.9 Regressionstest bestanden (144 Tooltexte, Verlauf/Fortschritt, describe_orientation, "
           f"/api/tools/parallel, Blender-first, Studio-Identitaet, Profilkarte, Plugin-Kompilierung).")
     return 0
 

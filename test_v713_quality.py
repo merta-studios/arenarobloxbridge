@@ -43,7 +43,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.5.8"
+VERSION = "7.5.9"
 
 SESSION_BUDGET_BYTES = 300000
 PRIMITIVE_MIN_PARTS = 6
@@ -397,8 +397,8 @@ def main() -> int:
           and "Fertig-Meldung verworfen: der Schalter" in source,
           "Clear-NotifyQueue existiert und die Anzeige prueft den Schalter unmittelbar vor dem Anzeigen")
 
-    for marker in ("# Arena Roblox Bridge  -  Version 7.5.8", "KRITISCHER START-HOTFIX 7.1.5",
-                   "DocsVersion     = '7.5.8'", 'local ARENA_VERSION  = "7.5.8"'):
+    for marker in ("# Arena Roblox Bridge  -  Version 7.5.9", "KRITISCHER START-HOTFIX 7.1.5",
+                   "DocsVersion     = '7.5.9'", 'local ARENA_VERSION  = "7.5.9"'):
         check(marker in source, f"Versionsmarker ist vorhanden: {marker}")
 
     if FAILURES:
