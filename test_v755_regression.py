@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Offline-Regressionstest fuer Arena Roblox Bridge 7.5.5 (ohne Studio, ohne Windows).
+"""Offline-Regressionstest fuer Arena Roblox Bridge 7.5.7 (ohne Studio, ohne Windows).
 
-Was 7.5.5 repariert und was dieser Test dagegen absichert:
+Was 7.5.7 prueft (und weiterhin die 7.5.5-Regressionswaechter):
 
 1. /api/tool lieferte HTTP 500 fuer JEDEN Werkzeugaufruf ("Die Benennung "=" wurde
    nicht als Name eines Cmdlet erkannt"). Ursache: in Get-ArenaActivityText fehlte
@@ -17,10 +17,11 @@ Was 7.5.5 repariert und was dieser Test dagegen absichert:
 4. BLENDER-FIRST: build_polygon_model nur mit userRequestedPolygon=true; ohne das
    blockt die Bridge (POLYGON_BLENDER_FIRST). Mit dem Flag warnt das Plugin ab 300
    WedgeParts vor Lag und empfiehlt Blender.
-5. OPEN CLOUD ENTWICKLER: automatisch (Schluessel, dann Ersteller des verbundenen
-   Place aus dem Studio), Benutzername nur als Fallback. Das Einstellungsfenster
-   hat dafuer Feld und Knopf.
-6. Das eingebettete Studio-Plugin (Lua) muss kompilieren.
+5. OPEN CLOUD: StudioService:GetUserId() wird gemeldet, gespeichert und vor der
+   Key-Resource als creator.userId verwendet. Die manuelle Fallback-Textbox ist weg.
+6. Die Bridge zeigt Avatar und Anzeigename im Footer; Profil/Thumbnail laden
+   asynchron ohne UI-Blockade.
+7. Das eingebettete Studio-Plugin (Lua) muss kompilieren.
 
 Abhaengigkeiten: tree_sitter, tree_sitter_powershell, lupa (siehe requirements-test.txt).
 """
@@ -33,7 +34,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.5.5"
+VERSION = "7.5.7"
 FAILURES: list[str] = []
 
 
@@ -87,10 +88,14 @@ def check_texts_and_commands(raw: bytes, source: str) -> None:
             else:
                 malformed.append(stripped[:60])
         check(not malformed, f"jede Zeile in $texts ist ein Schluessel = 'Satz' (Fehler: {malformed[:3]})")
-        check(len(keys) >= 137, f"$texts enthaelt alle Werkzeugtexte (gezaehlt: {len(keys)}, erwartet mindestens 137)")
+        check(len(keys) == 143, f"$texts enthaelt genau 143 Aktions-Texte (gezaehlt: {len(keys)})")
         check(len(keys) == len(set(keys)), "$texts hat keine doppelten Schluessel")
         # PowerShell-Hashtables vergleichen Schluessel OHNE Gross-/Kleinschreibung.
         check(len({k.lower() for k in keys}) == len(keys), "$texts hat keine Schluessel, die sich nur in Gross-/Kleinschreibung unterscheiden")
+        docs = region(source, "function Get-ToolDocs {", "function Get-BridgeGuides {")
+        catalog = re.findall(r"\$t\.Add\(\@\{\s*name\s*=\s*'([a-z][a-z0-9_]*)'", docs)
+        check(len(catalog) == 143, f"Werkzeugkatalog enthaelt 143 Aktionen (gezaehlt: {len(catalog)})")
+        check(set(keys) == set(catalog), f"$texts deckt exakt den Werkzeugkatalog ab (fehlend: {sorted(set(catalog)-set(keys))}, extra: {sorted(set(keys)-set(catalog))})")
 
     # Die Operator-Pruefung laeuft IMMER (auch wenn $texts fehlt): sie ist der eigentliche Schutz.
     tree = Parser(Language(tsp.language())).parse(raw)
@@ -111,7 +116,64 @@ def check_texts_and_commands(raw: bytes, source: str) -> None:
 
 
 # ----------------------------------------------------------------------
-# 2) describe_orientation: dirHeading in Lua (lupa)
+# 2) Activity copy and Arena-Verlauf progress UI
+# ----------------------------------------------------------------------
+def check_activity_history_progress(source: str) -> None:
+    activity = region(source, "function Get-ArenaActivityText", "function Get-ArenaActivityKind")
+    tool_texts = re.findall(r"^\s{12}([A-Za-z_][A-Za-z0-9_]*)\s*=\s*'([^']*)'", activity, re.M)
+    tool_texts = [(key, text) for key, text in tool_texts if key not in {"read", "running"}]
+    check(len(tool_texts) == 143 and len({key for key, _ in tool_texts}) == 143,
+          f"alle 143 Toolschluessel besitzen genau einen festen deutschen Text (gezaehlt: {len(tool_texts)})")
+    texts = "\n".join(text for _, text in tool_texts).casefold()
+    check("ein objekt" not in texts and "tool_hier" not in texts and "hat tool" not in texts,
+          "keine generischen Objekt-/TOOL-Platzhalter im deutschen Aktionskatalog")
+    check("$tool +" not in activity and "+ $tool" not in activity,
+          "unbekannte Aktionen werden nicht mit dem rohen Tool-Schluessel angezeigt")
+
+    search = region(source, "function Get-ActivitySearchDescription", "function Add-ActivityDetailPart")
+    check("@('query','name')" in search and "@('className','class')" in search and "@('tag')" in search,
+          "Explorer-Suche benennt Suchbegriff, Klasse und Tag statt eines generischen Objekts")
+    check("Get-ActivitySearchDescription $args $false" in activity
+          and "@('rootRef')" in activity and "exakte Namen" in activity,
+          "Explorer-Verlauf enthaelt Suchbereich und exakte/Teiltreffer-Art")
+    check("Get-ActivityActionDetailText" in activity
+          and "Get-ResultNumber" in activity
+          and "Get-ActivityArgument" in activity,
+          "Verlaufstexte koennen echte Argumente und Ergebniszahlen aufnehmen")
+
+    labels_match = re.search(r"ActivityToolLabels = @\{(.*?)^    \}", source, re.S | re.M)
+    labels = re.findall(r"^\s{8}([A-Za-z_][A-Za-z0-9_]*)\s*=\s*'([^']*)'", labels_match.group(1), re.M) if labels_match else []
+    check(len(labels) == 143 and len({key for key, _ in labels}) == 143,
+          f"Fortschrittsanzeige hat 143 verstaendliche Aktionsnamen (gezaehlt: {len(labels)})")
+    check("function Get-ArenaActivityDisplayLabel" in source
+          and "return 'Bridge-Aktion'" in source,
+          "Fortschrittsanzeige faellt bei unbekannten Tools auf einen freundlichen Namen zurueck")
+
+    progress = region(source, "function Get-ArenaHistoryProgressTargets", "function Add-ArenaHistoryCard {")
+    window = region(source, "function Open-ArenaHistoryWindow {", "function Copy-Prompt {")
+    history_update = region(source, "function Update-ArenaHistoryWindow {", "function New-HistoryButton {")
+    card = region(source, "function Add-ArenaHistoryCard {", "function Update-ArenaHistoryWindow {")
+    place_progress = region(source, "function Update-PlaceProgressVisual {", "function Get-ProgressDiagnoseLines {")
+    check("ProgressBar" in progress and "PercentKnown" in progress and "0 %" in progress,
+          "Verlaufsfenster zeichnet einen ehrlichen Balken samt Prozentstatus")
+    check("ProgressHost" in window and "ProgressScroll" in window and "ProgressCards=@{}" in window,
+          "Arena-Verlauf besitzt einen separaten, je Place aktualisierten Fortschrittsbereich")
+    check("Update-ArenaHistoryProgress $State $entries" in history_update,
+          "Fortschritt aktualisiert sich unabhaengig von neuen Verlaufskarten")
+    check("$main.FontSize=14" in card and "$main.TextWrapping='Wrap'" in card,
+          "Aktionskarten sind groesser und umbrechen lesbar")
+    check("Get-ArenaActivityDisplayLabel" in place_progress
+          and "Get-PendingCommandStatusLabel" in place_progress
+          and "[string]$openCmd.tool + ' - ' + $status" not in place_progress,
+          "Place-Fortschritt zeigt deutsche Toolnamen statt rohe Werkzeug-Schluessel")
+    check("$progressText.FontSize = 13" in source
+          and "$progressText.TextWrapping = 'Wrap'" in source
+          and "$progressRow.Orientation = 'Vertical'" in source,
+          "Place-Status unter dem Namen ist groesser, mehrzeilig und zeigt den Balken darunter")
+
+
+# ----------------------------------------------------------------------
+# 3) describe_orientation: dirHeading in Lua (lupa)
 # ----------------------------------------------------------------------
 HARNESS = r'''
 local realFormat = string.format
@@ -181,7 +243,7 @@ def check_dir_heading(source: str) -> None:
 
 
 # ----------------------------------------------------------------------
-# 3) /api/tools/parallel: Bridge-Werkzeuge ueber Invoke-ServerTool
+# 4) /api/tools/parallel: Bridge-Werkzeuge ueber Invoke-ServerTool
 # ----------------------------------------------------------------------
 def check_parallel_routing(source: str) -> None:
     block = region(source, "if ($path -eq '/api/tools/parallel') {", "if ($path -eq '/api/tool') {")
@@ -201,7 +263,7 @@ def check_parallel_routing(source: str) -> None:
 
 
 # ----------------------------------------------------------------------
-# 4) Blender-first: build_polygon_model nur auf ausdruecklichen Wunsch
+# 5) Blender-first: build_polygon_model nur auf ausdruecklichen Wunsch
 # ----------------------------------------------------------------------
 def check_blender_first(source: str) -> None:
     check("function Test-PolygonBuildWithoutRequest" in source,
@@ -226,61 +288,83 @@ def check_blender_first(source: str) -> None:
 
 
 # ----------------------------------------------------------------------
-# 5) Open Cloud: Entwickler automatisch, Benutzername nur als Fallback
+# 6) Open Cloud: Studio-Login ist der Upload-Ersteller, kein manuelles Feld
 # ----------------------------------------------------------------------
 def check_open_cloud(source: str) -> None:
     resolver = region(source, "function Resolve-OpenCloudCreatorForUpload {", "function Invoke-OpenCloudUpload {")
-    order = [
-        "Resolve-OpenCloudCreatorFromKey -Shared $Shared",
-        "Get-OpenCloudStudioDeveloper -SessionId $SessionId",
-        "openCloudDeveloperId",
-        "ok = $false; code = 'OPENCLOUD_CREATOR_MISSING'",  # die finale Rueckgabe, nicht der Vergleich davor
-    ]
-    positions = [resolver.find(item) for item in order]
-    check(all(p >= 0 for p in positions) and positions == sorted(positions),
-          "Entwickler-Reihenfolge: Schluessel, dann Place-Entwickler, dann Benutzername, dann Fehler")
-    check("if ([string]$fromKey.code -ne 'OPENCLOUD_CREATOR_MISSING') { return $fromKey }" in resolver,
-          "echte Schluesselfehler werden nicht als fehlender Ersteller verschleiert")
+    studio_pos = resolver.find("Get-OpenCloudStudioDeveloper -SessionId $SessionId")
+    key_pos = resolver.find("Resolve-OpenCloudCreatorFromKey -Shared $Shared")
+    early_return_pos = resolver.find("if ($null -ne $studio) { return $studio }")
+    check(studio_pos >= 0 and key_pos >= 0 and early_return_pos >= 0
+          and studio_pos < key_pos and early_return_pos < key_pos,
+          "Upload-Reihenfolge: angemeldeter Studio-Nutzer zuerst, Key-Resource nur als Rueckfall")
+    check("return $fromKey" in resolver,
+          "wenn Studio keine ID liefert, bleibt der automatische Key-Introspect-Rueckfall")
+
+    studio = region(source, "function Get-OpenCloudStudioDeveloper {", "function Resolve-OpenCloudCreatorForUpload {")
+    check("Get-SessionEntry $SessionId" in studio and "$entry.editorUserId" in studio,
+          "die Upload-ID kommt aus editorUserId der verbundenen Sitzung (nicht game.CreatorId)")
+    check("creatorKind = 'user'" in studio and "-notmatch '^\\d+$'" in studio,
+          "nur eine gueltige numerische Studio-User-ID wird als user creator verwendet")
 
     upload_start = source.index("function Invoke-OpenCloudUpload {")
-    upload_head = source[upload_start:upload_start + 900]
+    upload_head = source[upload_start:upload_start + 1200]
     check("[string]$SessionId = ''" in upload_head,
           "Invoke-OpenCloudUpload bekommt die Sitzung (SessionId)")
     check("Invoke-OpenCloudUpload -Shared $Shared -SessionId $sessionId" in source,
           "der Aufrufer reicht die Sitzung weiter")
     check("$creatorFound = Resolve-OpenCloudCreatorForUpload -Shared $Shared -SessionId $SessionId" in source,
-          "der Upload ermittelt den Entwickler je Aufruf neu")
-
-    dev_name = region(source, "function Resolve-OpenCloudDeveloperName {", "function Resolve-OpenCloudCreatorForUpload {")
-    check("https://users.roblox.com/v1/usernames/users" in dev_name,
-          "Benutzername wird ueber users.roblox.com aufgeloest")
-    check("x-api-key" not in dev_name,
-          "die oeffentliche Benutzer-Suche sendet KEINEN Open-Cloud-Schluessel")
-    check("[A-Za-z0-9_]{3,20}" in dev_name, "Benutzernamen werden auf Roblox-Format geprueft")
-
-    studio = region(source, "function Get-OpenCloudStudioDeveloper {", "function Resolve-OpenCloudDeveloperName {")
-    check("Get-SessionEntry $SessionId" in studio and "creatorType" in studio,
-          "der Place-Entwickler kommt aus der Sitzung (creatorId/creatorType)")
+          "jeder Upload ermittelt den aktuellen Creator aus der Sitzung")
+    check("$creator['userId'] = [string]$config.creatorId" in source,
+          "die Studio-ID landet als creationContext.creator.userId in Open Cloud")
 
     lua = plugin_lua(source)
-    check("payload.creatorId = tostring(game.CreatorId)" in lua
-          and "payload.creatorType = game.CreatorType.Name" in lua,
-          "das Studio-Plugin meldet den Place-Entwickler im Poll")
-    check(source.count("creatorId = [string]$body.creatorId") >= 3,
-          "Sitzungen speichern creatorId beim Anlegen (alle drei Wege)")
-    check("$newCreatorId = [string]$body.creatorId" in source,
-          "Sitzungs-Update uebernimmt creatorId aus dem Poll")
+    state_payload = region(lua, "local function statePayload()", "local function handshake()")
+    check("StudioService:GetUserId()" in state_payload
+          and 'payload.editorUserId = "0"' in state_payload
+          and "payload.editorUserId = tostring(math.floor(signedInUserId))" in state_payload,
+          "das Studio-Plugin meldet GetUserId() (0 = nicht angemeldet) getrennt vom Place-Creator")
+    check("payload.creatorId = tostring(game.CreatorId)" in state_payload
+          and "payload.creatorType = game.CreatorType.Name" in state_payload,
+          "der Eigentumer des Places bleibt als getrennte Information erhalten")
+    check(source.count("editorUserId = [string]$body.editorUserId") >= 3,
+          "alle drei Session-Registrierungspfade speichern die Studio-ID")
+    check("$newEditorUserId = [string]$body.editorUserId" in source
+          and "editorUserId  = $newEditorUserId" in source,
+          "Session-Updates uebernehmen/loeschen die aktuelle ID (0 = abgemeldet)")
 
-    check(source.count("openCloudDeveloperId") >= 6 and source.count("openCloudDeveloperName") >= 6,
-          "der Fallback-Entwickler ist in Laden, Speichern und Teilen verdrahtet")
-    check("$cloudDeveloperButton.Add_Click({" in source and "Resolve-OpenCloudDeveloperName $typedName" in source,
-          "das Einstellungsfenster hat den Knopf 'Entwickler uebernehmen' mit Aufloesung")
-    check("CloudDeveloperBox" in source and "CloudDeveloperPanel" in source,
-          "das Einstellungsfenster hat Feld und Panel fuer den Entwickler-Benutzernamen")
+    obsolete = ("openCloudDeveloperId", "openCloudDeveloperName", "Resolve-OpenCloudDeveloperName",
+                "CloudDeveloperBox", "CloudDeveloperButton", "CloudDeveloperPanel", "CloudDeveloperStatus")
+    for marker in obsolete:
+        check(marker not in source, f"manueller Entwickler-Fallback entfernt: {marker}")
+
+
+def check_studio_profile_ui(source: str) -> None:
+    for marker in ("x:Name=\"StudioEditorProfile\"", "x:Name=\"StudioEditorAvatarImage\"",
+                   "x:Name=\"StudioEditorNameText\"", "StudioEditorCaptionText"):
+        check(marker in source, f"Footer-Profilkarte enthaelt {marker}")
+    check('x:Name="StudioEditorProfile" Orientation="Horizontal" HorizontalAlignment="Left"' in source,
+          "die Studio-Profilkarte bleibt unten links im Footer")
+    check('x:Name="ArenaAiButton" Width="178" Height="40" HorizontalAlignment="Right"' in source
+          and 'Text="Arena AI öffnen"' in source,
+          "der bestehende Arena-AI-Button bleibt unten rechts erhalten")
+    check("https://users.roblox.com/v1/users/" in source
+          and "https://thumbnails.roblox.com/v1/users/avatar-headshot" in source,
+          "Anzeigename und Roblox-Headshot werden ueber die offiziellen oeffentlichen Endpunkte geladen")
+    check("function Start-StudioProfileLookup" in source and ".BeginInvoke()" in source
+          and ".EndInvoke($lookup.Handle)" in source,
+          "Profilabfrage laeuft in einem Hintergrund-Runspace und wird erst fertig ausgewertet")
+    check("-TimeoutSec 10" in source and "$request.Timeout = 10000" in source,
+          "Profil- und Avatar-Netzwerkzugriffe haben Zeitlimits")
+    check("Update-StudioEditorProfile $activeStudios" in source
+          and "editorUserId" in source[source.index("function Update-StudioEditorProfile"):source.index("function Refresh-Ui {")],
+          "der UI-Takt zeigt das Profil der aktuell verbundenen Studio-Anmeldung")
+    check("$StudioEditorProfile.Visibility = 'Collapsed'" in source,
+          "ohne angemeldeten Studio-Nutzer bleibt die Profilkarte verborgen")
 
 
 # ----------------------------------------------------------------------
-# 6) Studio-Plugin kompiliert
+# 7) Studio-Plugin kompiliert
 # ----------------------------------------------------------------------
 def check_plugin_compiles(source: str) -> None:
     from lupa import LuaRuntime
@@ -315,10 +399,12 @@ def run_group(name: str, function, *args) -> None:
 def main() -> int:
     raw, source = load_source()
     run_group("texts/Befehle", check_texts_and_commands, raw, source)
+    run_group("Aktivitäten/Verlauf", check_activity_history_progress, source)
     run_group("dirHeading", check_dir_heading, source)
     run_group("parallel", check_parallel_routing, source)
     run_group("Blender-first", check_blender_first, source)
     run_group("Open Cloud", check_open_cloud, source)
+    run_group("Studio-Profil UI", check_studio_profile_ui, source)
     run_group("Plugin", check_plugin_compiles, source)
     run_group("Versionen", check_versions, source)
 
@@ -327,8 +413,8 @@ def main() -> int:
         for item in FAILURES:
             print("  - " + item)
         return 1
-    print(f"\nOK: 7.5.5 Regressionstest bestanden (/api/tool-Texte, describe_orientation, /api/tools/parallel, "
-          f"Blender-first, Open-Cloud-Entwickler, Plugin-Kompilierung).")
+    print(f"\nOK: 7.5.7 Regressionstest bestanden (143 Tooltexte, Verlauf/Fortschritt, describe_orientation, "
+          f"/api/tools/parallel, Blender-first, Studio-Identitaet, Profilkarte, Plugin-Kompilierung).")
     return 0
 
 

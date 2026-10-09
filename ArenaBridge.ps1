@@ -1,5 +1,17 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.5.5
+# Arena Roblox Bridge  -  Version 7.5.7
+#
+# Version 7.5.6 (2026-10-09) - STUDIO-KONTO ALS ASSET-ERSTELLER, PROFIL IN DER BRIDGE
+# Version 7.5.7 (2026-10-09) - ARENA-VERLAUF MIT FORTSCHRITTSBALKEN, PLACE-STATUS UND 143 KLAREN AKTIONSTEXTEN
+#   - Open Cloud nimmt jetzt zuerst die Roblox-User-ID, die das Studio-Plugin
+#     offiziell ueber StudioService:GetUserId() abfragt. Der Upload nutzt damit
+#     das gerade in Studio angemeldete Konto statt eines Place-Erstellers oder
+#     eines manuell eingetippten Fallback-Namens. Die Key-Resource bleibt als
+#     Rueckfall erhalten, wenn kein Studio-Konto gemeldet wird.
+#   - Die Entwickler-Fallback-Textbox samt Speicherung ist entfernt. Der Key
+#     muss fuer ASSETS write den in Studio angemeldeten Nutzer zulassen.
+#   - Unten links im Bridge-Fenster erscheinen Headshot und Anzeigename des
+#     angemeldeten Studio-Nutzers; Name und Bild werden asynchron geladen.
 #
 # Version 7.5.5 (2026-10-08) - BLENDER-FIRST, OPEN-CLOUD-ENTWICKLER, /api/tool REPARIERT
 #   - /api/tool (GET und POST) lieferte fuer JEDEN Werkzeugaufruf HTTP 500 mit
@@ -2175,7 +2187,7 @@ param(
 # Existing LOCALAPPDATA directory; no UI, no new exception net.
 # A parse/policy failure prevents even this marker. Check its timestamp/version.
 # Continue + SilentlyContinue keeps diagnostic I/O from becoming a start blocker.
-Write-Output ("{0:o} PROOF_OF_LIFE Version=7.5.5 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
+Write-Output ("{0:o} PROOF_OF_LIFE Version=7.5.7 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
 
 $ErrorActionPreference = 'Stop'
 
@@ -2210,7 +2222,7 @@ trap {
         }
         $trapPath = Join-Path $trapFolder 'startup-diagnose.txt'
         $trapReport = New-Object System.Text.StringBuilder
-        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.5)')
+        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.7)')
         [void]$trapReport.AppendLine('Quelle: trap auf Skriptebene (nicht abgefangener Fehler)')
         [void]$trapReport.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$trapReport.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -2249,7 +2261,7 @@ trap {
             try {
                 [System.IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA 'START-CHECK.txt'),
                     ('Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.5.5' + [Environment]::NewLine +
+                     'Version: 7.5.7' + [Environment]::NewLine +
                      'ABBRUCH: ' + $trapMessage + [Environment]::NewLine +
                      'Details: ' + $trapPath + [Environment]::NewLine),
                     [System.Text.Encoding]::UTF8)
@@ -2901,8 +2913,6 @@ function Get-BridgeSettingsFile {
         openCloudCreatorId  = ''      # numerische Nutzer- oder Gruppen-Id
         openCloudCreatorKind = 'user' # 'user' oder 'group'
         openCloudCreatorName = ''     # Anzeigename (aufgeloest oder leer)
-        openCloudDeveloperId = ''     # 7.5.5: Fallback - vom Nutzer eingetragener Entwickler (ID)
-        openCloudDeveloperName = ''   # 7.5.5: Fallback - eingetippter Roblox-Benutzername
         openCloudSavedAt    = ''      # Zeitpunkt des Speicherns (Anzeige)
         # accessModes aus älteren Versionen werden absichtlich NICHT mehr geladen:
         # Lesezugriff gilt nur für die aktuelle Verbindung und startet immer aus.
@@ -2921,8 +2931,6 @@ function Get-BridgeSettingsFile {
             if ($loaded.PSObject.Properties.Name -contains 'openCloudCreatorId') { $settings.openCloudCreatorId = [string]$loaded.openCloudCreatorId }
             if ($loaded.PSObject.Properties.Name -contains 'openCloudCreatorKind') { $settings.openCloudCreatorKind = [string]$loaded.openCloudCreatorKind }
             if ($loaded.PSObject.Properties.Name -contains 'openCloudCreatorName') { $settings.openCloudCreatorName = [string]$loaded.openCloudCreatorName }
-            if ($loaded.PSObject.Properties.Name -contains 'openCloudDeveloperId') { $settings.openCloudDeveloperId = [string]$loaded.openCloudDeveloperId }
-            if ($loaded.PSObject.Properties.Name -contains 'openCloudDeveloperName') { $settings.openCloudDeveloperName = [string]$loaded.openCloudDeveloperName }
             if ($loaded.PSObject.Properties.Name -contains 'openCloudSavedAt') { $settings.openCloudSavedAt = [string]$loaded.openCloudSavedAt }
             # Version 7.2.2: Der Diagnosebereich ist entfernt; alte opt-ins werden ignoriert.
             # Legacy accessModes are deliberately ignored (Version 5): the
@@ -2948,8 +2956,6 @@ function Save-BridgeSettingsFile {
             openCloudCreatorId = [string]$script:SettingsCache.openCloudCreatorId
             openCloudCreatorKind = [string]$script:SettingsCache.openCloudCreatorKind
             openCloudCreatorName = [string]$script:SettingsCache.openCloudCreatorName
-            openCloudDeveloperId = [string]$script:SettingsCache.openCloudDeveloperId
-            openCloudDeveloperName = [string]$script:SettingsCache.openCloudDeveloperName
             openCloudSavedAt = [string]$script:SettingsCache.openCloudSavedAt
         }
         $json = $out | ConvertTo-Json -Depth 6
@@ -3120,7 +3126,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.5.5'
+    DocsVersion     = '7.5.7'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -3175,6 +3181,153 @@ $script:Shared = [hashtable]::Synchronized(@{
         perfDiagnostics = $false
         # Read-only is session-local only. It is intentionally not persisted.
     })
+    # Verstaendliche Aktionsnamen fuer Verlauf und Fortschrittsanzeigen.
+    # Wird vom HTTP-Runspace und von der WPF-Oberflaeche gemeinsam gelesen.
+    ActivityToolLabels = @{
+        get_bridge_log = 'Bridge-Protokoll und Leistungsbericht'
+        get_place_info = 'Place-Informationen'
+        get_tree = 'Explorer-Struktur'
+        search = 'Explorer-Suche'
+        get_instance = 'Objektprüfung'
+        get_children = 'Unterobjekt-Liste'
+        get_properties = 'Eigenschaftsprüfung'
+        resolve_ref = 'Objektpfad-Auflösung'
+        get_selection = 'Studio-Auswahl'
+        select_instance = 'Objektauswahl in Studio'
+        describe_scene = 'Szenenbeschreibung'
+        viewport_info = 'Kamera- und Blickrichtungsprüfung'
+        get_bounds = 'Maßprüfung'
+        scene_stats = 'Szenenstatistik'
+        list_tools = 'Werkzeugliste'
+        bridge_status = 'Bridge-Statusprüfung'
+        raycast = 'Strahlmessung'
+        raycast_many = 'Mehrfach-Strahlmessung'
+        ground_height = 'Bodenhöhenmessung'
+        measure = 'Abstandsmessung'
+        measure_height = 'Höhenmessung'
+        parts_in_box = 'Objektsuche im Quader'
+        parts_in_sphere = 'Objektsuche im Kugelbereich'
+        nearest_parts = 'Suche nach nächsten Objekten'
+        what_is_in_the_way = 'Hindernisprüfung'
+        overlap_check = 'Kollisionsprüfung'
+        snap_to_ground = 'Bodenplatzierung'
+        verify_measurable = 'Messbarkeitsprüfung'
+        coordinate_guide = 'Koordinatenprüfung'
+        describe_orientation = 'Ausrichtungsprüfung'
+        point_at = 'Zielausrichtung'
+        look_at = 'Blickausrichtung'
+        rotate_around = 'Drehung um einen Punkt'
+        move_relative = 'Relative Verschiebung'
+        resize_part = 'Größenänderung'
+        fit_between = 'Verbindung zwischen zwei Punkten'
+        place_on = 'Flächenplatzierung'
+        align = 'Objektausrichtung'
+        stack = 'Objektstapel'
+        grid_arrange = 'Rasteranordnung'
+        distribute = 'Gleichmäßige Verteilung'
+        create_instance = 'Objekterstellung'
+        bulk_create = 'Erstellung mehrerer Objekte'
+        clone_instance = 'Objektkopie'
+        delete_instance = 'Objektlöschung'
+        bulk_delete = 'Löschung mehrerer Objekte'
+        rename_instance = 'Umbenennung'
+        move_instance = 'Verschieben in einen anderen Ordner'
+        group_instances = 'Gruppierung'
+        ungroup = 'Auflösen einer Gruppe'
+        set_property = 'Änderung einer Eigenschaft'
+        set_properties = 'Änderung mehrerer Eigenschaften'
+        bulk_set_properties = 'Eigenschaftsänderung an mehreren Objekten'
+        set_attribute = 'Attributänderung'
+        add_tag = 'Tag hinzufügen'
+        remove_tag = 'Tag entfernen'
+        get_script = 'Skripttext lesen'
+        find_in_script = 'Skriptsuche'
+        patch_script = 'Gezielte Skriptänderung'
+        set_script_source = 'Skripttext ersetzen'
+        insert_script = 'Skript erstellen'
+        bulk_insert_scripts = 'Mehrere Skripte erstellen'
+        compile_check = 'Syntaxprüfung'
+        run_lua = 'Lua-Code ausführen'
+        lua_state = 'Lua-Statusprüfung'
+        clear_lua_state = 'Lua-Status zurücksetzen'
+        probe_world = 'Vermessung der Spielwelt'
+        fill_region = 'Voxelbereich füllen'
+        build_assembly = 'Baugruppe erstellen'
+        build_polygon_model = 'Polygonmodell erstellen'
+        ui_capabilities = 'Prüfung der Studio-Oberfläche'
+        ui_skin = 'Oberflächenstil'
+        build_surface = 'Oberfläche erstellen'
+        build_interface = 'Benutzeroberfläche erstellen'
+        ui_audit = 'Oberflächenprüfung'
+        union = 'Teile verbinden'
+        subtract = 'Form abziehen'
+        intersect = 'Gemeinsame Form berechnen'
+        separate = 'Verbund wieder trennen'
+        union_info = 'Verbund prüfen'
+        search_assets = 'Roblox-Katalogsuche'
+        asset_details = 'Asset-Details prüfen'
+        validate_asset = 'Asset-Typ prüfen'
+        ui_glow = 'UI-Leuchteffekt erstellen'
+        ui_texture = 'UI-Textur vorbereiten'
+        ui_radial = 'Kreis-Menü erstellen'
+        world_style = 'Weltstil anwenden'
+        style_lock = 'Weltstil festhalten'
+        site_survey = 'Bauplatz vermessen'
+        variation = 'Modellvariante erzeugen'
+        prop_place = 'Baustein platzieren'
+        prop_save = 'Baustein speichern'
+        prop_list = 'Gespeicherte Bausteine auflisten'
+        model_audit = 'Modellprüfung'
+        world_audit = 'Weltprüfung'
+        world_glow = 'Lichteffekt in der Welt erstellen'
+        refine = 'Modell verfeinern'
+        insert_asset = 'Katalog-Asset einfügen'
+        apply_asset = 'Asset auf Objekt anwenden'
+        catalog_status = 'Roblox-Katalog prüfen'
+        get_output = 'Studio-Ausgabe lesen'
+        wait_for_output = 'Auf Studio-Ausgabe warten'
+        clear_output = 'Studio-Ausgabe leeren'
+        get_errors = 'Studio-Fehler lesen'
+        report_done = 'Auftrag abschließen und prüfen'
+        set_context = 'Arbeitskontext wechseln'
+        wait = 'Warten'
+        sim_start = 'Deaktivierten Simulationsstart prüfen'
+        sim_stop = 'Bridge-eigene Simulation beenden'
+        sim_status = 'Studio-Teststatus prüfen'
+        blender_status = 'Blender-Verfügbarkeit prüfen'
+        build_mesh_model = '3D-Modell mit Blender bauen'
+        mesh_status = 'Mesh-Baufortschritt prüfen'
+        mesh_cancel = 'Mesh-Bau abbrechen'
+        mesh_apply_asset = 'Mesh-Assets in den Place einsetzen'
+        mesh_slots = 'Mesh-Platzhalter anlegen'
+        mesh_apply = 'Mesh-Geometrie einsetzen'
+        mesh_drop = 'Mesh-Platzhalter entfernen'
+        upload_asset = 'Asset zu Roblox hochladen'
+        start_job = 'Hintergrundaufgabe starten'
+        job_status = 'Hintergrundaufgabe prüfen'
+        job_result = 'Ergebnis der Hintergrundaufgabe abrufen'
+        list_jobs = 'Hintergrundaufgaben auflisten'
+        cancel_job = 'Hintergrundaufgabe abbrechen'
+        force_fail = 'Hängende Studio-Warteschlange zurücksetzen'
+        clear_pending = 'Offene Studio-Befehle zurücksetzen'
+        get_pending = 'Offene Studio-Befehle prüfen'
+        batch = 'Mehrere Aktionen zusammen ausführen'
+        parallel = 'Mehrere Aktionen parallel ausführen'
+        undo = 'Letzte Änderung rückgängig machen'
+        redo = 'Änderung wiederholen'
+        set_waypoint = 'Wiederherstellungspunkt setzen'
+        get_notices = 'Bridge-Hinweise lesen'
+        get_events = 'Bridge-Ereignisse lesen'
+        scaffold_ui_scripts = 'UI-Skripte planen'
+        ask_user = 'Rückfrage stellen'
+        confirm_action = 'Bestätigung einholen'
+        wait_for_user = 'Auf deine Antwort warten'
+        ack_user_message = 'Deine Nachricht bestätigen'
+        get_chunk = 'Ergebnisabschnitt abrufen'
+        upload_text = 'Längeren Text an die Bridge übertragen'
+        get_docs = 'Werkzeugdokumentation lesen'
+        capture_screenshot = 'Studio-Fenster aufnehmen'
+    }
     # report_done-Meldungen: der Server legt sie ab, die Oberflaeche zeigt sie an
     NotifyQueue     = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
 
@@ -3334,8 +3487,6 @@ try {
     $script:Shared.BridgeSettings.openCloudCreatorId = [string]$script:SettingsCache.openCloudCreatorId
     $script:Shared.BridgeSettings.openCloudCreatorKind = [string]$script:SettingsCache.openCloudCreatorKind
     $script:Shared.BridgeSettings.openCloudCreatorName = [string]$script:SettingsCache.openCloudCreatorName
-    $script:Shared.BridgeSettings.openCloudDeveloperId = [string]$script:SettingsCache.openCloudDeveloperId
-    $script:Shared.BridgeSettings.openCloudDeveloperName = [string]$script:SettingsCache.openCloudDeveloperName
     $script:Shared.BridgeSettings.openCloudSavedAt = [string]$script:SettingsCache.openCloudSavedAt
     # Version 5: legacy per-place accessModes are ignored on purpose.
 } catch {}
@@ -3386,7 +3537,7 @@ function Write-StartupFailureDiagnose {
         try { $trace = [string]$ErrorRecord.ScriptStackTrace } catch {}
         if ($trace.Length -gt 2000) { $trace = $trace.Substring(0, 2000) }
         $report = New-Object System.Text.StringBuilder
-        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.5)')
+        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.7)')
         [void]$report.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$report.AppendLine('Letzte Startstufe: ' + $stage)
         [void]$report.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -3469,7 +3620,7 @@ function Set-StartupStage {
     try {
         $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
         $checkText = 'Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.5.5' + [Environment]::NewLine +
+                     'Version: 7.5.7' + [Environment]::NewLine +
                      'Zeit: ' + $stamp + [Environment]::NewLine +
                      'PowerShell: ' + [string]$PSVersionTable.PSVersion + ' | CLR ' + [string][Environment]::Version + [Environment]::NewLine +
                      'Skript: ' + [string]$script:ScriptPath + [Environment]::NewLine +
@@ -3535,12 +3686,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.5.5, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.5.5, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.5.7, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.5.7, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.5.5'
+$script:Shared.RuntimeInfo.Version = '7.5.7'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -3643,7 +3794,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.5.5)
+  Arena Studio Bridge - Studio Plugin  (Version 7.5.7)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -3716,7 +3867,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.5.5"
+local ARENA_VERSION  = "7.5.7"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -14017,7 +14168,16 @@ local function statePayload()
         pluginVersion = ARENA_VERSION,
     }
     pcall(function() payload.gameId = tostring(game.GameId) end)
-    -- Version 7.5.5: der ENTWICKLER des Place (Open Cloud Ersteller, automatisch).
+    -- Version 7.5.6: Der angemeldete Studio-Nutzer ist der Asset-Ersteller.
+    -- StudioService:GetUserId() ist die offizielle Plugin-API; 0 bedeutet
+    -- abgemeldet/nicht verfuegbar. Der Place-Ersteller bleibt getrennt davon.
+    payload.editorUserId = "0"
+    pcall(function()
+        if StudioService ~= nil then
+            local signedInUserId = tonumber(StudioService:GetUserId()) or 0
+            if signedInUserId > 0 then payload.editorUserId = tostring(math.floor(signedInUserId)) end
+        end
+    end)
     pcall(function() payload.creatorId = tostring(game.CreatorId) end)
     pcall(function() payload.creatorType = game.CreatorType.Name end)
     local okState, stateValue = pcall(playState)
@@ -16481,36 +16641,130 @@ $script:BridgeHandlerScript = {
         return $bag
     }
 
-    function Get-ActivityArgument($args, [string[]]$names, [string]$fallback = '') {
-        if ($null -eq $args) { return $fallback }
+    function Get-ActivityRawArgument($arguments, [string[]]$names) {
+        if ($null -eq $arguments) { return $null }
         foreach ($name in $names) {
             try {
-                if ($args -is [System.Collections.IDictionary] -and $args.Contains($name) -and $null -ne $args[$name]) { return [string]$args[$name] }
-                if ($args.PSObject.Properties[$name] -and $null -ne $args.$name) { return [string]$args.$name }
+                if ($arguments -is [System.Collections.IDictionary]) {
+                    if ($arguments.Contains($name) -and $null -ne $arguments[$name]) { return ,$arguments[$name] }
+                } elseif ($arguments.PSObject.Properties[$name] -and $null -ne $arguments.PSObject.Properties[$name].Value) {
+                    return ,$arguments.PSObject.Properties[$name].Value
+                }
             } catch {}
         }
-        return $fallback
+        return $null
     }
 
-    function Get-SourceLineCount($args) {
-        # Version 7.5.3: Vorher lieferte die Funktion '?' als Platzhalter,
-        # wenn kein 'source' oder 'text' im Aufruf war. Das wirkte im
-        # Verlauf-Fenster als "Hat ? Zeilen in der Konsole ausgefuehrt" - ein
-        # Ratsel fuer den Nutzer. Jetzt wird auch 'code' akzeptiert (das ist
-        # der Alias, den run_lua tatsaechlich verwendet), und statt '?' kommt
-        # '0' (was ehrlich ist: ohne Quelltext ist nichts ausgefuehrt worden).
-        $source = Get-ActivityArgument $args @('source','text','code') ''
-        if ([string]::IsNullOrEmpty($source)) { return '0' }
+    function Format-ActivityValue($value, [int]$MaxItems = 4, [int]$MaxChars = 120) {
+        if ($null -eq $value) { return '' }
+        $text = ''
+        if ($value -is [string]) {
+            $text = ([string]$value).Trim()
+        } elseif ($value -is [bool]) {
+            $text = if ($value) { 'ja' } else { 'nein' }
+        } elseif ($value -is [ValueType]) {
+            $text = [string]$value
+        } elseif ($value -is [System.Collections.IDictionary]) {
+            $keys = @($value.Keys)
+            if (@('x','y','z' | Where-Object { $keys -contains $_ }).Count -ge 2) {
+                $parts = New-Object System.Collections.Generic.List[string]
+                foreach ($axis in @('x','y','z')) { if ($value.Contains($axis)) { $parts.Add(([string]$axis.ToUpperInvariant() + ' ' + (Format-ActivityValue $value[$axis] 1 24))) } }
+                $text = '(' + ($parts.ToArray() -join ', ') + ')'
+            } else {
+                $parts = New-Object System.Collections.Generic.List[string]
+                foreach ($key in @($keys | Select-Object -First $MaxItems)) {
+                    $formatted = Format-ActivityValue $value[$key] 2 48
+                    if ($formatted) { $parts.Add(([string]$key + ': ' + $formatted)) }
+                }
+                $text = ($parts.ToArray() -join ', ')
+                if ($keys.Count -gt $MaxItems) { $text += ' und ' + [string]($keys.Count - $MaxItems) + ' weitere Werte' }
+            }
+        } elseif ($value -is [System.Collections.IEnumerable] -and $value -isnot [string]) {
+            $items = New-Object System.Collections.Generic.List[string]
+            $count = 0
+            foreach ($item in $value) {
+                $count++
+                if ($items.Count -ge $MaxItems) { continue }
+                $formatted = Format-ActivityValue $item 2 48
+                if ($formatted) { $items.Add($formatted) }
+            }
+            $text = ($items.ToArray() -join ', ')
+            if ($count -gt $MaxItems) { $text += ' und ' + [string]($count - $MaxItems) + ' weitere' }
+        } elseif ($value.PSObject -and $value.PSObject.Properties.Count -gt 0) {
+            $get = {
+                param($Object, [string[]]$PropertyNames)
+                foreach ($propertyName in $PropertyNames) {
+                    try { if ($Object.PSObject.Properties[$propertyName] -and $null -ne $Object.PSObject.Properties[$propertyName].Value) { return [string]$Object.PSObject.Properties[$propertyName].Value } } catch {}
+                }
+                return ''
+            }
+            $x = & $get $value @('x','X'); $y = & $get $value @('y','Y'); $z = & $get $value @('z','Z')
+            if ($x -ne '' -and $y -ne '' -and $z -ne '') {
+                $text = '(X ' + $x + ', Y ' + $y + ', Z ' + $z + ')'
+            } else {
+                $name = & $get $value @('name','Name','displayName','title')
+                $path = & $get $value @('path','fullName','ref','id','assetId','jobId')
+                $className = & $get $value @('className','ClassName','type','kind')
+                if ($name -and $className) { $text = $className + ' „' + $name + '“' }
+                elseif ($name) { $text = $name }
+                elseif ($path) { $text = $path }
+                else {
+                    try { $text = ConvertTo-Json -InputObject $value -Compress -Depth 3 } catch { $text = '' }
+                }
+            }
+        } else {
+            try { $text = [string]$value } catch { $text = '' }
+        }
+        $text = ($text -replace '[\r\n\t]+', ' ' -replace '\s{2,}', ' ').Trim()
+        if ($text.Length -gt $MaxChars) { $text = $text.Substring(0, [Math]::Max(0, $MaxChars - 1)) + '…' }
+        return $text
+    }
+
+    function Get-ActivityArgument($arguments, [string[]]$names, [string]$fallback = '') {
+        $value = Get-ActivityRawArgument $arguments $names
+        if ($null -eq $value) { return $fallback }
+        $formatted = Format-ActivityValue $value
+        if ([string]::IsNullOrWhiteSpace($formatted)) { return $fallback }
+        return $formatted
+    }
+
+    function Get-ActivityArgumentCount($arguments, [string[]]$names) {
+        $value = Get-ActivityRawArgument $arguments $names
+        if ($null -eq $value) { return $null }
+        try {
+            if ($value -is [string]) { return 1 }
+            return [int64]@($value).Count
+        } catch { return $null }
+    }
+
+    function Get-SourceLineCount($arguments) {
+        $source = Get-ActivityRawArgument $arguments @('source','text','code')
+        if ($null -eq $source -or [string]::IsNullOrEmpty([string]$source)) { return '0' }
         return [string]([Math]::Max(1, (($source -split "`r?`n").Count)))
     }
 
     function Get-ResultField($result, [string[]]$names) {
-        if ($null -eq $result) { return $null }
-        foreach ($name in $names) {
-            try {
-                if ($result -is [System.Collections.IDictionary]) { if ($result.Contains($name) -and $null -ne $result[$name]) { return $result[$name] } }
-                elseif ($result.PSObject.Properties[$name] -and $null -ne $result.$name) { return $result.$name }
-            } catch {}
+        $current = $result
+        for ($depth = 0; $depth -lt 3 -and $null -ne $current; $depth++) {
+            foreach ($name in $names) {
+                try {
+                    if ($current -is [System.Collections.IDictionary]) {
+                        if ($current.Contains($name) -and $null -ne $current[$name]) { return ,$current[$name] }
+                    } elseif ($current.PSObject.Properties[$name] -and $null -ne $current.PSObject.Properties[$name].Value) {
+                        return ,$current.PSObject.Properties[$name].Value
+                    }
+                } catch {}
+            }
+            $next = $null
+            foreach ($wrapper in @('result','data','payload')) {
+                try {
+                    if ($current -is [System.Collections.IDictionary] -and $current.Contains($wrapper)) { $next = $current[$wrapper] }
+                    elseif ($current.PSObject.Properties[$wrapper]) { $next = $current.PSObject.Properties[$wrapper].Value }
+                } catch {}
+                if ($null -ne $next -and $next -ne $current) { break }
+                $next = $null
+            }
+            $current = $next
         }
         return $null
     }
@@ -16521,8 +16775,23 @@ $script:BridgeHandlerScript = {
         try { return [int64]$value } catch { return $null }
     }
 
-    # Version 5.2: vollstaendige Werkzeuglisten (jedes vorhandene Werkzeug).
-    # ------------------------------------------------------------------
+    function Get-ActivityTarget($arguments, $result, [string[]]$names = @('ref','rootRef','parentRef','targetRef','sourceRef'), [string]$fallback = 'im aktuellen Place') {
+        $target = Get-ActivityArgument $arguments $names ''
+        if (-not [string]::IsNullOrWhiteSpace($target)) { return $target }
+        $fromResult = Get-ResultField $result @('path','fullName','ref','id','name')
+        if ($null -ne $fromResult) {
+            $formatted = Format-ActivityValue $fromResult
+            if (-not [string]::IsNullOrWhiteSpace($formatted)) { return $formatted }
+        }
+        return $fallback
+    }
+
+    function Get-ActivityResultCountText($result, [string[]]$names, [string]$noun) {
+        $count = Get-ResultNumber $result $names
+        if ($null -eq $count) { return '' }
+        return ' (' + [string]$count + ' ' + $noun + ')'
+    }
+
     # Version 7.0.0: FORTSCHRITTSVERTRAG (progress)
     # Jeder Aufruf traegt progress = { percent = 43, message = "..." } auf
     # derselben Ebene wie token/targetPlace/tool ODER innerhalb von args.
@@ -16793,7 +17062,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.5.5 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.5.7 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -16881,276 +17150,976 @@ $script:BridgeHandlerScript = {
         return $null
     }
 
+
+    function Get-ActivitySearchDescription($arguments, [bool]$Catalog) {
+        if ($Catalog) {
+            $type = Get-ActivityArgument $arguments @('type','assetType') 'Asset'
+            $typeLabel = switch -Regex ($type.ToLowerInvariant()) {
+                '^(mesh|meshpart)$' { 'Mesh-Assets'; break }
+                '^(image|texture|decal)$' { 'Bilder und Decals'; break }
+                '^model$' { 'Modelle'; break }
+                '^audio$|^music$' { 'Audio'; break }
+                '^animation$' { 'Animationen'; break }
+                '^plugin$' { 'Plugins'; break }
+                '^font$' { 'Schriftarten'; break }
+                '^video$' { 'Videos'; break }
+                default { if ($type -eq 'Asset') { 'Roblox-Assets' } else { $type } }
+            }
+            $query = Get-ActivityArgument $arguments @('query','keyword') ''
+            if ($query) { return $typeLabel + ' „' + $query + '“' }
+            return 'alle ' + $typeLabel
+        }
+        $criteria = New-Object System.Collections.Generic.List[string]
+        $query = Get-ActivityArgument $arguments @('query','name') ''
+        if ($query) { $criteria.Add('Name „' + $query + '“') }
+        $className = Get-ActivityArgument $arguments @('className','class') ''
+        if ($className) { $criteria.Add('Klasse „' + $className + '“') }
+        $tag = Get-ActivityArgument $arguments @('tag') ''
+        if ($tag) { $criteria.Add('Tag „' + $tag + '“') }
+        if ($criteria.Count -eq 0) { return 'allen Instanzen' }
+        return ($criteria.ToArray() -join ' und ')
+    }
+
+    function Add-ActivityDetailPart($parts, $arguments, [string]$label, [string[]]$names) {
+        $value = Get-ActivityArgument $arguments $names ''
+        if (-not [string]::IsNullOrWhiteSpace($value)) { $parts.Add($label + ' ' + $value) }
+    }
+
+    function Add-ActivityResultDetail($parts, $result, [string]$label, [string[]]$names) {
+        $value = Get-ResultField $result $names
+        if ($null -eq $value) { return }
+        $formatted = Format-ActivityValue $value 3 90
+        if (-not [string]::IsNullOrWhiteSpace($formatted)) { $parts.Add($label + ' ' + $formatted) }
+    }
+
+    function Add-ActivityResultCount($parts, $result, [string]$label, [string[]]$names) {
+        $value = Get-ResultNumber $result $names
+        if ($null -ne $value) { $parts.Add($label + ' ' + [string]$value) }
+    }
+
+    function Get-ActivityActionDetailText([string]$tool, $arguments, $result) {
+        $parts = New-Object System.Collections.Generic.List[string]
+        switch -Exact ($tool) {
+            'get_bridge_log' {
+                Add-ActivityDetailPart $parts $arguments 'Limit:' @('limit','lines','count')
+                Add-ActivityResultCount $parts $result 'Einträge:' @('count','returned','lineCount')
+            }
+            'get_place_info' {
+                Add-ActivityResultDetail $parts $result 'Place:' @('placeName','name')
+                Add-ActivityResultDetail $parts $result 'Place-ID:' @('placeId')
+                Add-ActivityResultDetail $parts $result 'Ersteller:' @('creatorName','creatorId')
+            }
+            'describe_scene' {
+                Add-ActivityDetailPart $parts $arguments 'Bereich:' @('rootRef','ref')
+                Add-ActivityDetailPart $parts $arguments 'Maximale Tiefe:' @('maxDepth','depth')
+                Add-ActivityResultCount $parts $result 'Objekte beschrieben:' @('count','objectCount','returned')
+            }
+            'viewport_info' {
+                Add-ActivityResultDetail $parts $result 'Kameraposition:' @('cameraPosition','position')
+                Add-ActivityResultDetail $parts $result 'Blickrichtung:' @('lookVector','lookAt','direction')
+                Add-ActivityResultDetail $parts $result 'Sichtfeld:' @('fieldOfView','fov')
+            }
+            'scene_stats' {
+                Add-ActivityResultCount $parts $result 'Instanzen:' @('totalInstances','count','instanceCount')
+                Add-ActivityResultCount $parts $result 'Bauteile:' @('partCount','parts')
+                Add-ActivityResultCount $parts $result 'Skripte:' @('scriptCount','scripts')
+            }
+            'list_tools' {
+                Add-ActivityDetailPart $parts $arguments 'Bereich:' @('category','filter')
+                Add-ActivityResultCount $parts $result 'Werkzeuge:' @('count','total','returned')
+            }
+            'bridge_status' {
+                Add-ActivityResultDetail $parts $result 'Verbindung:' @('status','state')
+                Add-ActivityResultCount $parts $result 'Wartende Befehle:' @('queueDepth','pendingCount')
+            }
+            'raycast' {
+                Add-ActivityDetailPart $parts $arguments 'Ursprung:' @('origin','position')
+                Add-ActivityDetailPart $parts $arguments 'Richtung:' @('direction','vector')
+                Add-ActivityResultDetail $parts $result 'Treffer:' @('hitRef','instance','path')
+                Add-ActivityResultDetail $parts $result 'Trefferpunkt:' @('position','hitPosition')
+            }
+            'raycast_many' {
+                Add-ActivityDetailPart $parts $arguments 'Strahlen:' @('rays','origins')
+                Add-ActivityResultCount $parts $result 'Treffer:' @('hitCount','count','returned')
+            }
+            'ground_height' {
+                Add-ActivityDetailPart $parts $arguments 'Punkte:' @('points','positions')
+                Add-ActivityResultCount $parts $result 'Höhenwerte:' @('count','returned')
+            }
+            'overlap_check' {
+                Add-ActivityDetailPart $parts $arguments 'Instanz:' @('ref','targetRef')
+                Add-ActivityResultCount $parts $result 'Überlappungen:' @('overlapCount','count','returned')
+            }
+            'snap_to_ground' {
+                Add-ActivityDetailPart $parts $arguments 'Instanzen:' @('refs','ref')
+                Add-ActivityResultCount $parts $result 'Auf den Boden gesetzt:' @('movedCount','count','updated')
+            }
+            'verify_measurable' {
+                Add-ActivityDetailPart $parts $arguments 'Zu prüfende Instanzen:' @('refs','ref')
+                Add-ActivityResultCount $parts $result 'Geprüft:' @('count','checkedCount','returned')
+            }
+            'coordinate_guide' {
+                Add-ActivityDetailPart $parts $arguments 'Bereich:' @('rootRef','ref')
+                Add-ActivityDetailPart $parts $arguments 'Frage:' @('question','query','goal')
+                Add-ActivityResultDetail $parts $result 'Koordinatenhinweis:' @('guide','summary')
+            }
+            'describe_orientation' {
+                Add-ActivityDetailPart $parts $arguments 'Bauteil:' @('ref','targetRef')
+                Add-ActivityResultDetail $parts $result 'Ausrichtung:' @('orientation','upVector','lookVector')
+            }
+            'point_at' {
+                Add-ActivityDetailPart $parts $arguments 'Ausgangspunkt:' @('ref','sourceRef')
+                Add-ActivityDetailPart $parts $arguments 'Ziel:' @('targetRef','target','position')
+            }
+            'look_at' {
+                Add-ActivityDetailPart $parts $arguments 'Ausgangspunkt:' @('ref','sourceRef')
+                Add-ActivityDetailPart $parts $arguments 'Blickziel:' @('targetRef','target','position')
+            }
+            'rotate_around' {
+                Add-ActivityDetailPart $parts $arguments 'Instanzen:' @('refs','ref')
+                Add-ActivityDetailPart $parts $arguments 'Drehpunkt:' @('pivot','center','around')
+                Add-ActivityDetailPart $parts $arguments 'Winkel:' @('degrees','angle')
+                Add-ActivityDetailPart $parts $arguments 'Achse:' @('axis')
+            }
+            'move_relative' {
+                Add-ActivityDetailPart $parts $arguments 'Instanzen:' @('refs','ref')
+                Add-ActivityDetailPart $parts $arguments 'Versatz:' @('offset','delta','translation')
+                Add-ActivityDetailPart $parts $arguments 'Koordinatensystem:' @('space','relativeTo')
+            }
+            'resize_part' {
+                Add-ActivityDetailPart $parts $arguments 'Bauteil:' @('ref','targetRef')
+                Add-ActivityDetailPart $parts $arguments 'Neue Größe:' @('size','dimensions')
+            }
+            'fit_between' {
+                Add-ActivityDetailPart $parts $arguments 'Bauteil:' @('ref','targetRef')
+                Add-ActivityDetailPart $parts $arguments 'Start:' @('from','fromRef','start')
+                Add-ActivityDetailPart $parts $arguments 'Ende:' @('to','toRef','finish')
+            }
+            'place_on' {
+                Add-ActivityDetailPart $parts $arguments 'Instanz:' @('ref','sourceRef')
+                Add-ActivityDetailPart $parts $arguments 'Zielfläche:' @('targetRef','surfaceRef','target')
+                Add-ActivityDetailPart $parts $arguments 'Seite:' @('face','side')
+            }
+            'align' {
+                Add-ActivityDetailPart $parts $arguments 'Instanzen:' @('refs','ref')
+                Add-ActivityDetailPart $parts $arguments 'Achse:' @('axis','axes')
+                Add-ActivityDetailPart $parts $arguments 'Ausrichtung:' @('mode','alignment')
+            }
+            'stack' {
+                Add-ActivityDetailPart $parts $arguments 'Instanzen:' @('refs','ref')
+                Add-ActivityDetailPart $parts $arguments 'Abstand:' @('gap','spacing')
+                Add-ActivityDetailPart $parts $arguments 'Richtung:' @('axis','direction')
+            }
+            'grid_arrange' {
+                Add-ActivityDetailPart $parts $arguments 'Instanzen:' @('refs','instances')
+                Add-ActivityDetailPart $parts $arguments 'Spalten:' @('columns','columnCount')
+                Add-ActivityDetailPart $parts $arguments 'Abstand:' @('spacing','gap')
+            }
+            'distribute' {
+                Add-ActivityDetailPart $parts $arguments 'Instanzen:' @('refs','instances')
+                Add-ActivityDetailPart $parts $arguments 'Achse:' @('axis')
+                Add-ActivityDetailPart $parts $arguments 'Abstand:' @('spacing','distance')
+            }
+            'move_instance' {
+                Add-ActivityDetailPart $parts $arguments 'Instanzen:' @('refs','ref')
+                Add-ActivityDetailPart $parts $arguments 'Neuer Ablageort:' @('parentRef','newParentRef')
+            }
+            'ungroup' { Add-ActivityDetailPart $parts $arguments 'Gruppe:' @('ref','groupRef') }
+            'compile_check' {
+                Add-ActivityDetailPart $parts $arguments 'Skript:' @('ref','scriptRef','name')
+                $sourceLines = Get-SourceLineCount $arguments
+                if ($sourceLines -ne '0') { $parts.Add('Quelltext: ' + $sourceLines + ' Zeilen') }
+                Add-ActivityResultCount $parts $result 'Syntaxfehler:' @('errorCount','errors')
+            }
+            'lua_state' { Add-ActivityDetailPart $parts $arguments 'Bereich:' @('namespace','key','name') }
+            'clear_lua_state' { Add-ActivityDetailPart $parts $arguments 'Bereich:' @('namespace','key') }
+            'probe_world' {
+                Add-ActivityDetailPart $parts $arguments 'Mittelpunkt:' @('center','origin','position')
+                Add-ActivityDetailPart $parts $arguments 'Radius:' @('radius')
+                Add-ActivityDetailPart $parts $arguments 'Rasterabstand:' @('step','gridStep')
+                Add-ActivityResultCount $parts $result 'Messpunkte:' @('sampleCount','count','returned')
+            }
+            'fill_region' {
+                Add-ActivityDetailPart $parts $arguments 'Von:' @('min','from')
+                Add-ActivityDetailPart $parts $arguments 'Bis:' @('max','to')
+                Add-ActivityDetailPart $parts $arguments 'Material:' @('material')
+                Add-ActivityDetailPart $parts $arguments 'Voxelgröße:' @('resolution','voxelSize')
+                Add-ActivityResultCount $parts $result 'Geänderte Voxel:' @('voxelCount','count','filledCount')
+            }
+            'build_assembly' {
+                Add-ActivityDetailPart $parts $arguments 'Name:' @('name','modelName')
+                Add-ActivityDetailPart $parts $arguments 'Teile:' @('parts','items','components')
+                Add-ActivityResultCount $parts $result 'Erstellt:' @('partCount','count','createdCount')
+            }
+            'ui_capabilities' { Add-ActivityResultDetail $parts $result 'Verfügbare Funktionen:' @('features','capabilities','supported') }
+            'ui_skin' {
+                Add-ActivityDetailPart $parts $arguments 'Stil:' @('skin','skinName','style','name')
+                Add-ActivityDetailPart $parts $arguments 'Aktion:' @('action','mode')
+                Add-ActivityDetailPart $parts $arguments 'Ziel:' @('rootRef','targetRef')
+            }
+            'build_surface' {
+                Add-ActivityDetailPart $parts $arguments 'Name:' @('name','surfaceName','modelName')
+                Add-ActivityDetailPart $parts $arguments 'Ziel:' @('parentRef','targetRef','ref')
+                Add-ActivityDetailPart $parts $arguments 'Flächen:' @('faces','surfaces','segments')
+                Add-ActivityResultCount $parts $result 'Erstellt:' @('partCount','count','createdCount')
+            }
+            'build_interface' {
+                Add-ActivityDetailPart $parts $arguments 'Name:' @('name','interfaceName','screenName')
+                Add-ActivityDetailPart $parts $arguments 'Elemente:' @('components','elements','controls')
+                Add-ActivityDetailPart $parts $arguments 'Animationen:' @('animations')
+                Add-ActivityResultCount $parts $result 'Erstellt:' @('elementCount','count','createdCount')
+            }
+            'ui_audit' {
+                Add-ActivityDetailPart $parts $arguments 'Oberfläche:' @('ref','rootRef','screenRef')
+                Add-ActivityResultCount $parts $result 'Hinweise:' @('issueCount','warningCount','count')
+                Add-ActivityResultDetail $parts $result 'Bewertung:' @('score','grade')
+            }
+            'union' { Add-ActivityDetailPart $parts $arguments 'Teile:' @('refs','parts','baseRef') }
+            'subtract' {
+                Add-ActivityDetailPart $parts $arguments 'Grundteil:' @('baseRef','ref')
+                Add-ActivityDetailPart $parts $arguments 'Abzuziehen:' @('toolRef','subtractRef','cutterRef')
+            }
+            'intersect' { Add-ActivityDetailPart $parts $arguments 'Teile:' @('refs','parts') }
+            'separate' { Add-ActivityDetailPart $parts $arguments 'Verbund:' @('ref','unionRef') }
+            'union_info' {
+                Add-ActivityDetailPart $parts $arguments 'Instanz:' @('ref','targetRef')
+                Add-ActivityResultCount $parts $result 'Einzelteile:' @('partCount','count')
+            }
+            'ui_glow' {
+                Add-ActivityDetailPart $parts $arguments 'UI-Element:' @('ref','targetRef','elementRef')
+                Add-ActivityDetailPart $parts $arguments 'Farbe:' @('color','tint')
+                Add-ActivityDetailPart $parts $arguments 'Stärke:' @('intensity','strength')
+            }
+            'ui_texture' {
+                Add-ActivityDetailPart $parts $arguments 'UI-Element:' @('ref','targetRef','elementRef')
+                Add-ActivityDetailPart $parts $arguments 'Bild/Asset:' @('assetId','imageId','textureId')
+                Add-ActivityDetailPart $parts $arguments 'Stil:' @('style','preset')
+            }
+            'ui_radial' {
+                Add-ActivityDetailPart $parts $arguments 'Name:' @('name','menuName')
+                Add-ActivityDetailPart $parts $arguments 'Einträge:' @('items','options','buttons')
+                Add-ActivityDetailPart $parts $arguments 'Ziel:' @('parentRef','targetRef')
+            }
+            'world_style' {
+                Add-ActivityDetailPart $parts $arguments 'Stil:' @('preset','style','name')
+                Add-ActivityDetailPart $parts $arguments 'Seed:' @('seed')
+                Add-ActivityDetailPart $parts $arguments 'Bereich:' @('rootRef','targetRef')
+            }
+            'style_lock' {
+                Add-ActivityDetailPart $parts $arguments 'Seed:' @('seed')
+                Add-ActivityResultDetail $parts $result 'Stil:' @('style','preset')
+            }
+            'site_survey' {
+                Add-ActivityDetailPart $parts $arguments 'Mittelpunkt:' @('center','origin','position')
+                Add-ActivityDetailPart $parts $arguments 'Radius:' @('radius')
+                Add-ActivityResultCount $parts $result 'Messpunkte:' @('sampleCount','count','returned')
+            }
+            'variation' {
+                Add-ActivityDetailPart $parts $arguments 'Modell:' @('ref','modelName','name')
+                Add-ActivityDetailPart $parts $arguments 'Variante:' @('variation','kind','style')
+                Add-ActivityDetailPart $parts $arguments 'Seed:' @('seed')
+            }
+            'prop_place' {
+                Add-ActivityDetailPart $parts $arguments 'Baustein:' @('prop','propName','name','kind')
+                Add-ActivityDetailPart $parts $arguments 'Anzahl:' @('count')
+                Add-ActivityDetailPart $parts $arguments 'Seed:' @('seed')
+                Add-ActivityResultCount $parts $result 'Platziert:' @('placedCount','count','createdCount')
+            }
+            'prop_save' { Add-ActivityDetailPart $parts $arguments 'Name:' @('name','propName') }
+            'model_audit' {
+                Add-ActivityDetailPart $parts $arguments 'Modell:' @('ref','modelRef','name')
+                Add-ActivityResultCount $parts $result 'Befunde:' @('issueCount','placeholderCount','count')
+                Add-ActivityResultDetail $parts $result 'Bewertung:' @('score','grade')
+            }
+            'world_audit' {
+                Add-ActivityDetailPart $parts $arguments 'Bereich:' @('rootRef','region','center')
+                Add-ActivityResultCount $parts $result 'Befunde:' @('issueCount','warningCount','count')
+                Add-ActivityResultDetail $parts $result 'Bewertung:' @('score','grade')
+            }
+            'world_glow' {
+                Add-ActivityDetailPart $parts $arguments 'Lichtname:' @('name','lightName')
+                Add-ActivityDetailPart $parts $arguments 'Position:' @('position','center')
+                Add-ActivityDetailPart $parts $arguments 'Farbe:' @('color')
+                Add-ActivityDetailPart $parts $arguments 'Reichweite:' @('range')
+            }
+            'refine' {
+                Add-ActivityDetailPart $parts $arguments 'Modell:' @('ref','modelRef','name')
+                Add-ActivityDetailPart $parts $arguments 'Detailgrad:' @('level','detail','quality')
+                Add-ActivityDetailPart $parts $arguments 'Seed:' @('seed')
+            }
+            'catalog_status' { Add-ActivityResultDetail $parts $result 'Status:' @('status','state','available') }
+            'clear_output' { Add-ActivityDetailPart $parts $arguments 'Filter:' @('filter','pattern','query') }
+            'report_done' {
+                Add-ActivityResultDetail $parts $result 'Abschluss:' @('status','grade','summary')
+                Add-ActivityResultDetail $parts $result 'Qualität:' @('qualityScore','score')
+            }
+            'set_context' { Add-ActivityDetailPart $parts $arguments 'Neuer Kontext:' @('context','name','targetPlace') }
+            'wait' {
+                Add-ActivityDetailPart $parts $arguments 'Dauer:' @('seconds','duration','milliseconds')
+                Add-ActivityDetailPart $parts $arguments 'Grund:' @('reason','message')
+            }
+            'sim_start' { Add-ActivityDetailPart $parts $arguments 'Grund:' @('reason','message') }
+            'sim_stop' { Add-ActivityResultDetail $parts $result 'Status:' @('status','state','stopped') }
+            'sim_status' { Add-ActivityResultDetail $parts $result 'Teststatus:' @('status','state','runState') }
+            'blender_status' {
+                Add-ActivityResultDetail $parts $result 'Verfügbar:' @('available','installed')
+                Add-ActivityResultDetail $parts $result 'Version:' @('version')
+                Add-ActivityResultDetail $parts $result 'Pfad:' @('path','executable')
+            }
+            'mesh_apply_asset' { Add-ActivityDetailPart $parts $arguments 'Mesh-Slots:' @('slots','slotKeys') }
+            'force_fail' { Add-ActivityDetailPart $parts $arguments 'Grund:' @('reason','message') }
+            'clear_pending' { Add-ActivityResultCount $parts $result 'Entfernte Befehle:' @('clearedCount','count','removed') }
+            'get_pending' { Add-ActivityResultCount $parts $result 'Offene Befehle:' @('pendingCount','count','queued') }
+            'undo' { Add-ActivityResultDetail $parts $result 'Änderung:' @('name','description','target') }
+            'redo' { Add-ActivityResultDetail $parts $result 'Änderung:' @('name','description','target') }
+            'set_waypoint' {
+                Add-ActivityDetailPart $parts $arguments 'Name:' @('name','label')
+                Add-ActivityResultDetail $parts $result 'Wiederherstellungspunkt:' @('waypoint','id')
+            }
+            'get_notices' {
+                Add-ActivityDetailPart $parts $arguments 'Filter:' @('since','type','category')
+                Add-ActivityResultCount $parts $result 'Hinweise:' @('count','returned')
+            }
+            'get_events' {
+                Add-ActivityDetailPart $parts $arguments 'Filter:' @('since','type','category')
+                Add-ActivityResultCount $parts $result 'Ereignisse:' @('count','returned')
+            }
+            'scaffold_ui_scripts' {
+                Add-ActivityDetailPart $parts $arguments 'Oberfläche:' @('name','screenName','ref')
+                Add-ActivityDetailPart $parts $arguments 'Skripte:' @('scripts','roles')
+                Add-ActivityResultCount $parts $result 'Geplante Skripte:' @('count','scriptCount')
+            }
+            'list_jobs' { Add-ActivityResultCount $parts $result 'Aufgaben:' @('count','returned','total') }
+            'get_chunk' {
+                Add-ActivityDetailPart $parts $arguments 'Ergebnis:' @('blobId','id')
+                Add-ActivityDetailPart $parts $arguments 'Abschnitt ab Zeichen:' @('offset','start')
+            }
+            'get_docs' { Add-ActivityDetailPart $parts $arguments 'Dokumentation:' @('tool','category','topic') }
+            'capture_screenshot' { Add-ActivityDetailPart $parts $arguments 'Fenster:' @('window','title','placeName') }
+            default {
+                Add-ActivityDetailPart $parts $arguments 'Ziel:' @('ref','rootRef','targetRef','parentRef','sourceRef')
+                Add-ActivityDetailPart $parts $arguments 'Name:' @('name','modelName','title')
+                Add-ActivityDetailPart $parts $arguments 'Suchbegriff:' @('query')
+                Add-ActivityDetailPart $parts $arguments 'Asset-ID:' @('assetId')
+                Add-ActivityResultCount $parts $result 'Ergebnisse:' @('count','returned','totalMatches')
+            }
+        }
+        return ($parts.ToArray() -join ' · ')
+    }
+
     function Get-ActivityToolSets {
-        $read = @('get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','sim_status','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait','ui_capabilities','ui_skin','ui_audit','ui_texture','world_style','site_survey','variation','model_audit','world_audit','prop_list','wait_for_user','ack_user_message','ask_user','confirm_action','scaffold_ui_scripts')
-        $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','build_polygon_model','build_assembly','mesh_slots','mesh_apply','mesh_drop','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','sim_start','set_context','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute','build_surface','build_interface','ui_glow','ui_radial','prop_place','prop_save','refine','style_lock','world_glow')
+        $read = @('get_bridge_log','get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','sim_status','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait','ui_capabilities','ui_skin','ui_audit','ui_texture','world_style','site_survey','variation','model_audit','world_audit','prop_list','wait_for_user','ack_user_message','ask_user','confirm_action','scaffold_ui_scripts','blender_status','mesh_status')
+        $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','build_polygon_model','build_assembly','mesh_slots','mesh_apply','mesh_drop','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','sim_start','set_context','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute','build_surface','build_interface','ui_glow','ui_radial','prop_place','prop_save','refine','style_lock','world_glow','sim_stop','mesh_cancel','build_mesh_model','mesh_apply_asset','upload_asset','force_fail','clear_pending')
         return @{ read = $read; write = $write }
     }
 
-    # Version 5.2: Jede abgeschlossene Aktion bekommt einen verstaendlichen
-    # deutschen Satz mit den ECHTEN Werten aus dem Werkzeug-Ergebnis.
-    # Kein [PLATZHALTER] mehr - schlaegt etwas fehl, steht die Ursache im Satz.
+    # Vollständige, deutsch formulierte Texte für alle Werkzeuge im Katalog.
     function Get-ArenaActivityText([string]$tool, $args, [string]$phase, $result) {
-        $ref = Get-ActivityArgument $args @('ref','rootRef','parentRef','targetRef','query') 'ein Objekt'
-        $sets = Get-ActivityToolSets
-        $read = $sets.read
-        $writes = $sets.write
-        if ($phase -eq 'running') {
-            if ($tool -eq 'run_lua') { return 'Arena führt gerade Lua-Code in der Konsole aus.' }
-            if ($tool -eq 'patch_script') { return 'Arena bearbeitet gerade das Skript „' + $ref + '“.' }
-            if ($tool -eq 'set_script_source') { return 'Arena ersetzt gerade das Skript „' + $ref + '“.' }
-            if ($tool -eq 'insert_script' -or $tool -eq 'bulk_insert_scripts') { return 'Arena erstellt gerade ein Skript.' }
-            if ($tool -eq 'fill_region' -or $tool -eq 'probe_world') { return 'Arena arbeitet gerade an „' + $tool + '“ (kann etwas dauern).' }
-            if ($read -contains $tool) { return 'Arena ruft gerade ' + $tool + ' ab.' }
-            if ($writes -contains $tool) { return 'Arena führt gerade ' + $tool + ' aus.' }
-            return 'Arena führt gerade „' + $tool + '“ aus.'
+        $texts = @{
+            get_bridge_log = 'Hat die letzten Einträge aus Bridge-Protokoll und Leistungsbericht gelesen.'
+            get_place_info = 'Hat Place-Name, ID, Eigentümer und Studio-Zustand geprüft.'
+            get_tree = 'Hat die Explorer-Struktur des Places abgerufen.'
+            search = 'Hat im Explorer nach den angegebenen Kriterien gesucht.'
+            get_instance = 'Hat die angefragte Instanz und ihre Eigenschaften geprüft.'
+            get_children = 'Hat die Unterobjekte der angegebenen Instanz aufgelistet.'
+            get_properties = 'Hat die angeforderten Eigenschaften der Instanzen ausgelesen.'
+            resolve_ref = 'Hat den Pfad und die stabile Studio-ID der angefragten Instanz ermittelt.'
+            get_selection = 'Hat die aktuelle Studio-Auswahl ausgelesen.'
+            select_instance = 'Hat die angeforderten Instanzen in Studio ausgewählt.'
+            describe_scene = 'Hat den Aufbau der Szene im Place beschrieben.'
+            viewport_info = 'Hat Kameraposition, Blickrichtung und Sichtfeld geprüft.'
+            get_bounds = 'Hat Mittelpunkt und Ausmaße der angeforderten Instanzen gemessen.'
+            scene_stats = 'Hat die Anzahl und Typen der Objekte im Place gezählt.'
+            list_tools = 'Hat die verfügbaren Bridge-Werkzeuge aufgelistet.'
+            bridge_status = 'Hat Verbindung und Auslastung der Bridge geprüft.'
+            raycast = 'Hat einen Strahl durch den Place verfolgt.'
+            raycast_many = 'Hat mehrere Strahlen durch den Place verfolgt.'
+            ground_height = 'Hat die Bodenhöhe an den angefragten Punkten gemessen.'
+            measure = 'Hat den Abstand zwischen den angegebenen Instanzen gemessen.'
+            measure_height = 'Hat die Höhe der angegebenen Instanz über dem Boden gemessen.'
+            parts_in_box = 'Hat Instanzen innerhalb des angegebenen Quaders gesucht.'
+            parts_in_sphere = 'Hat Instanzen im angegebenen Kugelbereich gesucht.'
+            nearest_parts = 'Hat die nächsten Instanzen zur angegebenen Position gesucht.'
+            what_is_in_the_way = 'Hat Hindernisse zwischen den angegebenen Punkten gesucht.'
+            overlap_check = 'Hat geprüft, ob die angefragte Instanz andere Objekte berührt.'
+            snap_to_ground = 'Hat die ausgewählten Instanzen auf den Boden gesetzt.'
+            verify_measurable = 'Hat geprüft, ob die angegebenen Instanzen zuverlässig messbar sind.'
+            coordinate_guide = 'Hat Koordinaten, Achsen und Maße im Place geprüft.'
+            describe_orientation = 'Hat die Ausrichtung des angegebenen Bauteils bestimmt.'
+            point_at = 'Hat das angegebene Bauteil zum Ziel ausgerichtet.'
+            look_at = 'Hat das angegebene Bauteil zum Ziel gedreht.'
+            rotate_around = 'Hat die angegebenen Instanzen um einen Punkt gedreht.'
+            move_relative = 'Hat die angegebenen Instanzen relativ verschoben.'
+            resize_part = 'Hat die Größe des angegebenen Bauteils geändert.'
+            fit_between = 'Hat das angegebene Bauteil zwischen zwei Punkten ausgerichtet.'
+            place_on = 'Hat die angegebene Instanz auf einer Fläche platziert.'
+            align = 'Hat die angegebenen Instanzen aufeinander ausgerichtet.'
+            stack = 'Hat die angegebenen Instanzen gestapelt.'
+            grid_arrange = 'Hat die angegebenen Instanzen in einem Raster angeordnet.'
+            distribute = 'Hat die angegebenen Instanzen gleichmäßig verteilt.'
+            create_instance = 'Hat eine Instanz mit den angeforderten Eigenschaften erstellt.'
+            bulk_create = 'Hat mehrere unterschiedliche Instanzen in einem Schritt erstellt.'
+            clone_instance = 'Hat die angeforderte Instanz kopiert.'
+            delete_instance = 'Hat die angeforderte Instanz aus dem Place gelöscht.'
+            bulk_delete = 'Hat die angeforderten Instanzen aus dem Place gelöscht.'
+            rename_instance = 'Hat die angeforderte Instanz umbenannt.'
+            move_instance = 'Hat die angeforderten Instanzen an einen anderen Ablageort verschoben.'
+            group_instances = 'Hat die angeforderten Instanzen in einer Gruppe zusammengefasst.'
+            ungroup = 'Hat die angeforderte Gruppe aufgelöst und ihre Kinder behalten.'
+            set_property = 'Hat eine Eigenschaft der angeforderten Instanzen geändert.'
+            set_properties = 'Hat mehrere Eigenschaften der angeforderten Instanzen geändert.'
+            bulk_set_properties = 'Hat unterschiedliche Eigenschaften an mehreren Instanzen geändert.'
+            set_attribute = 'Hat ein Attribut an den angeforderten Instanzen gesetzt.'
+            add_tag = 'Hat den angegebenen Tag an den angeforderten Instanzen angebracht.'
+            remove_tag = 'Hat den angegebenen Tag von den angeforderten Instanzen entfernt.'
+            get_script = 'Hat den Quelltext des angegebenen Skripts gelesen.'
+            find_in_script = 'Hat im angegebenen Skript nach dem Suchtext gesucht.'
+            patch_script = 'Hat gezielte Änderungen am angegebenen Skript vorgenommen.'
+            set_script_source = 'Hat den gesamten Quelltext des angegebenen Skripts ersetzt.'
+            insert_script = 'Hat das angeforderte Skript im Place erstellt.'
+            bulk_insert_scripts = 'Hat mehrere angeforderte Skripte im Place erstellt.'
+            compile_check = 'Hat den angeforderten Lua-Code auf Syntaxfehler geprüft.'
+            run_lua = 'Hat Lua-Code im angeforderten Studio-Kontext ausgeführt.'
+            lua_state = 'Hat Variablen und laufende Aufgaben der Lua-Umgebung ausgelesen.'
+            clear_lua_state = 'Hat die persistente Lua-Umgebung und ihre Aufgaben zurückgesetzt.'
+            probe_world = 'Hat die Spielwelt an den angefragten Punkten vermessen.'
+            fill_region = 'Hat den angegebenen Bereich mit den angeforderten Voxeln gefüllt.'
+            build_assembly = 'Hat die angeforderte Baugruppe mit ihren Bauteilen erstellt.'
+            build_polygon_model = 'Hat das angeforderte Polygonmodell aus Flächen und Wedges gebaut.'
+            ui_capabilities = 'Hat geprüft, welche Oberflächenfunktionen Roblox Studio unterstützt.'
+            ui_skin = 'Hat einen Oberflächenstil ausgewählt oder die vorhandene Oberfläche ausgelesen.'
+            build_surface = 'Hat die angeforderte zusammengesetzte Oberfläche erstellt.'
+            build_interface = 'Hat die angeforderte Benutzeroberfläche samt Steuerelementen erstellt.'
+            ui_audit = 'Hat die Benutzeroberfläche auf Lesbarkeit, Kontrast und Anordnung geprüft.'
+            union = 'Hat die angeforderten Teile zu einem Teil verbunden.'
+            subtract = 'Hat die angeforderte Form aus einem Grundteil herausgeschnitten.'
+            intersect = 'Hat bei den angeforderten Teilen nur den gemeinsamen Bereich behalten.'
+            separate = 'Hat den angeforderten Verbund wieder in einzelne Teile zerlegt.'
+            union_info = 'Hat geprüft, ob die angefragte Instanz ein Verbund ist und wie komplex sie ist.'
+            search_assets = 'Hat im Roblox-Katalog nach dem angegebenen Asset-Typ gesucht.'
+            asset_details = 'Hat die Details der angeforderten Roblox-Assets abgerufen.'
+            validate_asset = 'Hat geprüft, ob das angeforderte Asset existiert und zum erwarteten Typ passt.'
+            ui_glow = 'Hat den angeforderten Leuchteffekt für ein UI-Element erstellt.'
+            ui_texture = 'Hat ein Texturrezept für das angeforderte UI-Element vorbereitet.'
+            ui_radial = 'Hat das angeforderte kreisförmige UI-Menü erstellt.'
+            world_style = 'Hat den angeforderten Stil auf die Welt angewendet.'
+            style_lock = 'Hat den Stil der Welt mit dem angegebenen Seed festgehalten.'
+            site_survey = 'Hat den Bauplatz an den angefragten Punkten vermessen.'
+            variation = 'Hat mit dem angegebenen Seed eine reproduzierbare Modellvariante erzeugt.'
+            prop_place = 'Hat die angeforderten Bausteine auf dem Bauplatz platziert.'
+            prop_save = 'Hat die aktuelle Auswahl als wiederverwendbaren Baustein gespeichert.'
+            prop_list = 'Hat die gespeicherten wiederverwendbaren Bausteine aufgelistet.'
+            model_audit = 'Hat das angefragte Modell auf Platzhalter, Blockouts und Bauqualität geprüft.'
+            world_audit = 'Hat Stil, Beleuchtung und Atmosphäre der Welt geprüft.'
+            world_glow = 'Hat den angeforderten Lichteffekt in der Welt eingerichtet.'
+            refine = 'Hat das angefragte Modell um messbare Details verfeinert.'
+            insert_asset = 'Hat das angeforderte Roblox-Asset in den Place eingefügt.'
+            apply_asset = 'Hat das angeforderte Asset auf die angegebenen Instanzen angewendet.'
+            catalog_status = 'Hat geprüft, ob der Roblox-Katalog erreichbar ist.'
+            get_output = 'Hat die angeforderten Zeilen aus der Studio-Ausgabe gelesen.'
+            wait_for_output = 'Hat auf eine passende Zeile in der Studio-Ausgabe gewartet.'
+            clear_output = 'Hat die Studio-Ausgabe geleert.'
+            get_errors = 'Hat die Fehlerzeilen aus der Studio-Ausgabe gelesen.'
+            report_done = 'Hat den Auftrag als abgeschlossen gemeldet und die Abschlussregeln geprüft.'
+            set_context = 'Hat den Arbeitskontext für weitere Studio-Befehle geändert.'
+            wait = 'Hat im angeforderten Kontext gewartet.'
+            sim_start = 'Hat den nicht unterstützten Start einer Studio-Simulation angefragt.'
+            sim_stop = 'Hat eine bestätigte, von der Bridge gestartete Studio-Simulation beendet.'
+            sim_status = 'Hat den aktuellen Studio-Teststatus gelesen.'
+            blender_status = 'Hat geprüft, ob Blender installiert und für den Bau bereit ist.'
+            build_mesh_model = 'Hat den 3D-Modellbau in Blender gestartet.'
+            mesh_status = 'Hat Baufortschritt, Messwerte und Platzhalter der Mesh-Aufgaben geprüft.'
+            mesh_cancel = 'Hat die angeforderte Blender-Mesh-Aufgabe abgebrochen.'
+            mesh_apply_asset = 'Hat die hochgeladenen Mesh-Assets in die vorhandenen Platzhalter eingesetzt.'
+            mesh_slots = 'Hat Platzhalter für die angeforderten Mesh-Bauteile angelegt.'
+            mesh_apply = 'Hat die angeforderte Mesh-Geometrie in die Platzhalter eingesetzt.'
+            mesh_drop = 'Hat die angeforderten Mesh-Platzhalter aus dem Place entfernt.'
+            upload_asset = 'Hat die angeforderte Datei über Roblox Open Cloud hochgeladen.'
+            start_job = 'Hat die angeforderte Hintergrundaufgabe gestartet.'
+            job_status = 'Hat Status und Fortschritt der Hintergrundaufgabe gelesen.'
+            job_result = 'Hat das Ergebnis der fertigen Hintergrundaufgabe abgerufen.'
+            list_jobs = 'Hat die laufenden und abgeschlossenen Hintergrundaufgaben aufgelistet.'
+            cancel_job = 'Hat die angeforderte Hintergrundaufgabe abgebrochen.'
+            force_fail = 'Hat die hängende Studio-Warteschlange zurückgesetzt.'
+            clear_pending = 'Hat offene Studio-Befehle aus der Warteschlange entfernt.'
+            get_pending = 'Hat noch offene oder verspätete Studio-Befehle geprüft.'
+            batch = 'Hat mehrere angeforderte Bridge-Aktionen in einem Aufruf gebündelt.'
+            parallel = 'Hat mehrere angeforderte Bridge-Aktionen parallel ausgeführt.'
+            undo = 'Hat die letzte Änderung in Studio rückgängig gemacht.'
+            redo = 'Hat die zuletzt rückgängig gemachte Änderung in Studio wiederholt.'
+            set_waypoint = 'Hat einen benannten Wiederherstellungspunkt in Studio gesetzt.'
+            get_notices = 'Hat Hinweise zu Bridge-Ereignissen und Änderungen abgerufen.'
+            get_events = 'Hat die letzten Ereignisse der Bridge abgerufen.'
+            scaffold_ui_scripts = 'Hat einen Plan für die benötigten UI-Steuerskripte erstellt.'
+            ask_user = 'Hat dir eine Frage mit den angebotenen Antwortmöglichkeiten gestellt.'
+            confirm_action = 'Hat vor der angeforderten Änderung deine Bestätigung eingeholt.'
+            wait_for_user = 'Hat bis zur nächsten Nachricht von dir gewartet.'
+            ack_user_message = 'Hat deine Nachricht als gelesen bestätigt.'
+            get_chunk = 'Hat einen weiteren Abschnitt eines großen Ergebnisses abgerufen.'
+            upload_text = 'Hat längeren Text zur sicheren Übergabe an die Bridge übertragen.'
+            get_docs = 'Hat die angeforderte Werkzeug- oder Kategorien-Dokumentation gelesen.'
+            capture_screenshot = 'Hat nach Bestätigung einen Screenshot des Roblox-Studio-Fensters aufgenommen.'
         }
-        # ---- Aktionen mit echten Zahlen aus dem Ergebnis -------------------
+
+        if ($phase -eq 'running') {
+            $runningLabel = ''
+            try { if ($Shared.ActivityToolLabels.ContainsKey($tool)) { $runningLabel = [string]$Shared.ActivityToolLabels[$tool] } } catch {}
+            if ([string]::IsNullOrWhiteSpace($runningLabel)) { return 'Arena bearbeitet gerade eine nicht erkannte Studio-Aktion.' }
+            if ($tool -eq 'search') { return ('Arena arbeitet gerade an der Explorer-Suche: ' + (Get-ActivitySearchDescription $args $false) + '.') }
+            if ($tool -eq 'search_assets') { return ('Arena arbeitet gerade an der Roblox-Katalogsuche: ' + (Get-ActivitySearchDescription $args $true) + '.') }
+            $focus = Get-ActivityArgument $args @('name','modelName','query','slotKey','jobId','assetId','ref','rootRef','title') ''
+            $text = 'Arena arbeitet gerade: ' + $runningLabel
+            if (-not [string]::IsNullOrWhiteSpace($focus)) { $text += ' · ' + $focus }
+            return $text + '.'
+        }
+        if (-not $texts.ContainsKey($tool)) { return 'Hat eine nicht erkannte Studio-Aktion angefragt.' }
+        $target = Get-ActivityTarget $args $result @('ref','rootRef','parentRef','targetRef','sourceRef') 'im aktuellen Place'
+        $targets = Get-ActivityArgument $args @('refs','targets','instances') ''
+        $resultCount = Get-ResultNumber $result @('count','returned','totalMatches','createdCount','deletedCount','appliedCount','measuredCount')
+
+        if ($tool -eq 'search') {
+            $criteria = Get-ActivitySearchDescription $args $false
+            $root = Get-ActivityArgument $args @('rootRef') ''
+            $rootText = if ($root) { ' im Bereich „' + $root + '“' } else { ' im gesamten Place' }
+            $exact = Get-ActivityArgument $args @('exact') 'nein'
+            $mode = if ($exact -eq 'ja' -or $exact -eq 'true') { 'exakte Namen' } else { 'Teiltreffer' }
+            $countText = if ($null -ne $resultCount) { ' (' + [string]$resultCount + ' Treffer)' } else { '' }
+            return 'Hat im Explorer nach ' + $criteria + $rootText + ' gesucht (' + $mode + ')' + $countText + '.'
+        }
+        if ($tool -eq 'search_assets') {
+            $criteria = Get-ActivitySearchDescription $args $true
+            $count = Get-ResultNumber $result @('count','totalResults')
+            $countText = if ($null -ne $count) { ' (' + [string]$count + ' Treffer)' } else { '' }
+            return 'Hat im Roblox-Katalog nach ' + $criteria + ' gesucht' + $countText + '.'
+        }
         if ($tool -eq 'patch_script') {
             $oldLines = Get-ResultNumber $result @('oldLines')
             $newLines = Get-ResultNumber $result @('newLines')
+            $scriptRef = Get-ActivityTarget $args $result @('ref','scriptRef','targetRef') 'Skript ohne angegebenen Pfad'
             if ($null -ne $oldLines -and $null -ne $newLines) {
                 $delta = $newLines - $oldLines
                 $deltaText = if ($delta -gt 0) { '+' + [string]$delta } elseif ($delta -lt 0) { [string]$delta } else { '±0' }
-                $opCount = $null
-                try { $ops = Get-ResultField $result @('operations'); if ($ops) { $opCount = @($ops).Count } } catch {}
-                $suffix = if ($null -ne $opCount) { $opCount } else { 1 }
-                return 'Hat das Skript „' + $ref + '“ bearbeitet: ' + [string]$oldLines + ' → ' + [string]$newLines + ' Zeilen (' + $deltaText + ' in ' + [string]$suffix + ' Änderung(en)).'
+                $opCount = Get-ActivityArgumentCount $args @('operations')
+                if ($null -eq $opCount) { $opCount = Get-ResultNumber $result @('operationCount') }
+                if ($null -eq $opCount) { $opCount = 1 }
+                return 'Hat das Skript „' + $scriptRef + '“ gezielt geändert: ' + [string]$oldLines + ' → ' + [string]$newLines + ' Zeilen (' + $deltaText + ', ' + [string]$opCount + ' Änderungen).'
             }
-            return 'Hat das Skript „' + $ref + '“ bearbeitet.'
+            $operations = Get-ActivityArgument $args @('operations') ''
+            if ($operations) { return 'Hat das Skript „' + $scriptRef + '“ mit diesen Änderungen bearbeitet: ' + $operations + '.' }
+            return 'Hat gezielte Änderungen am Skript „' + $scriptRef + '“ vorgenommen.'
         }
         if ($tool -eq 'set_script_source') {
-            $newLines = Get-ResultNumber $result @('lines')
-            $oldLines = Get-ResultNumber $result @('previousLines')
-            if ($null -ne $newLines -and $null -ne $oldLines) { return 'Hat das Skript „' + $ref + '“ ersetzt: +' + [string]$newLines + ' Zeilen (vorher -' + [string]$oldLines + ' Zeilen).' }
-            if ($null -ne $newLines) { return 'Hat das Skript „' + $ref + '“ ersetzt (' + [string]$newLines + ' Zeilen).' }
-            return 'Hat das Skript „' + $ref + '“ ersetzt (' + (Get-SourceLineCount $args) + ' Zeilen).'
+            $scriptRef = Get-ActivityTarget $args $result @('ref','scriptRef','targetRef') 'Skript ohne angegebenen Pfad'
+            $newLines = Get-ResultNumber $result @('lines','newLines')
+            if ($null -eq $newLines) { $newLines = [int64](Get-SourceLineCount $args) }
+            $oldLines = Get-ResultNumber $result @('previousLines','oldLines')
+            $lineText = if ($null -ne $oldLines) { [string]$oldLines + ' auf ' + [string]$newLines } else { [string]$newLines }
+            return 'Hat den Quelltext von „' + $scriptRef + '“ vollständig ersetzt (' + $lineText + ' Zeilen).'
         }
         if ($tool -eq 'insert_script') {
-            $scriptName = Get-ActivityArgument $args @('name') 'Skript'
+            $scriptName = Get-ActivityArgument $args @('name','className') ''
+            $parent = Get-ActivityArgument $args @('parentRef') ''
             $lines = Get-ResultNumber $result @('lines')
-            if ($null -ne $lines) { return 'Hat das Skript „' + $scriptName + '“ erstellt (' + [string]$lines + ' Zeilen).' }
-            return 'Hat das Skript „' + $scriptName + '“ erstellt (' + (Get-SourceLineCount $args) + ' Zeilen).'
+            if ($null -eq $lines) { $lines = [int64](Get-SourceLineCount $args) }
+            $parentText = if ($parent) { ' unter ' + $parent } else { '' }
+            if ($scriptName) { return 'Hat das Skript „' + $scriptName + '“' + $parentText + ' erstellt (' + [string]$lines + ' Zeilen).' }
+            return 'Hat ein Skript erstellt; der Name wurde nicht angegeben' + $parentText + ' (' + [string]$lines + ' Zeilen).'
         }
         if ($tool -eq 'bulk_insert_scripts') {
-            $createdCount = Get-ResultNumber $result @('count')
-            $totalLines = 0
-            $hasLines = $false
+            $scripts = Get-ActivityRawArgument $args @('items','scripts')
+            $count = Get-ResultNumber $result @('count','createdCount')
+            if ($null -eq $count -and $null -ne $scripts) { $count = [int64]$scripts.Count }
+            if ($null -eq $count) { $count = 0 }
+            $names = Get-ActivityArgument $args @('items','scripts') ''
+            $lineTotal = 0; $lineKnown = $false
             try {
-                $createdList = Get-ResultField $result @('created')
-                if ($createdList) {
-                    foreach ($entry in @($createdList)) {
-                        $lineCount = Get-ResultNumber $entry @('lines')
-                        if ($null -ne $lineCount) { $totalLines += $lineCount; $hasLines = $true }
-                    }
+                $created = Get-ResultField $result @('created')
+                foreach ($entry in @($created)) {
+                    $lineCount = Get-ResultNumber $entry @('lines')
+                    if ($null -ne $lineCount) { $lineTotal += $lineCount; $lineKnown = $true }
                 }
             } catch {}
-            if ($null -ne $createdCount) {
-                if ($hasLines) { return 'Hat ' + [string]$createdCount + ' Skripte erstellt (insgesamt ' + [string]$totalLines + ' Zeilen).' }
-                return 'Hat ' + [string]$createdCount + ' Skripte erstellt.'
-            }
-            return 'Hat mehrere Skripte erstellt.'
+            $lineText = if ($lineKnown) { ' (' + [string]$lineTotal + ' Zeilen insgesamt)' } else { '' }
+            $nameText = if ($names) { ': ' + $names } else { '' }
+            return 'Hat ' + [string]$count + ' Skripte erstellt' + $nameText + $lineText + '.'
         }
-        if ($tool -eq 'delete_instance') { return 'Hat „' + $ref + '“ gelöscht.' }
+        if ($tool -eq 'delete_instance') {
+            $deleteTarget = Get-ActivityArgument $args @('ref','targetRef') ''
+            if ($deleteTarget) { return 'Hat „' + $deleteTarget + '“ aus dem Place gelöscht.' }
+            return 'Hat die angeforderte Instanz aus dem Place gelöscht.'
+        }
         if ($tool -eq 'bulk_delete') {
-            $deletedCount = Get-ResultNumber $result @('count')
-            if ($null -ne $deletedCount) { return 'Hat ' + [string]$deletedCount + ' Objekte gelöscht.' }
-            return 'Hat mehrere Objekte gelöscht.'
+            $count = if ($null -ne $resultCount) { $resultCount } else { Get-ActivityArgumentCount $args @('refs','targets','instances') }
+            $countText = if ($null -ne $count) { ' (' + [string]$count + ' Instanzen)' } else { '' }
+            return 'Hat die angeforderten Instanzen aus dem Place gelöscht' + $countText + '.'
         }
         if ($tool -eq 'clone_instance') {
-            $copyCount = Get-ResultNumber $result @('count')
-            if ($null -eq $copyCount) { try { $copyCount = [int64](Get-ActivityArgument $args @('count') '1') } catch { $copyCount = 1 } }
-            if ([int64]$copyCount -gt 1) { return 'Hat „' + $ref + '“ geklont (' + [string]$copyCount + ' Kopien).' }
-            return 'Hat „' + $ref + '“ geklont.'
+            $copyTarget = Get-ActivityArgument $args @('ref','targetRef') ''
+            if (-not $copyTarget) { $copyTarget = Get-ActivityTarget $args $result @('ref','targetRef') '' }
+            $copyCount = Get-ResultNumber $result @('count','createdCount')
+            if ($null -eq $copyCount) { $copyCount = Get-ActivityArgumentCount $args @('count') }
+            if ($copyTarget -and $null -ne $copyCount -and [int64]$copyCount -gt 1) { return 'Hat „' + $copyTarget + '“ kopiert (' + [string]$copyCount + ' Kopien).' }
+            if ($copyTarget) { return 'Hat „' + $copyTarget + '“ kopiert.' }
+            return 'Hat die angeforderte Instanz kopiert.'
         }
         if ($tool -eq 'create_instance') {
-            $createdName = Get-ActivityArgument $args @('name','className') 'Objekt'
-            $itemCount = $null
-            try { $itemCount = [int64](Get-ActivityArgument $args @('count') '1') } catch { $itemCount = 1 }
-            $resultCount = Get-ResultNumber $result @('count')
-            if ($null -ne $resultCount) { $itemCount = $resultCount }
-            if ($null -ne $itemCount -and [int64]$itemCount -gt 1) { return 'Hat ' + [string]$itemCount + 'x „' + $createdName + '“ erstellt.' }
-            return 'Hat „' + $createdName + '“ erstellt.'
+            $createdName = Get-ActivityArgument $args @('name') ''
+            $className = Get-ActivityArgument $args @('className') ''
+            $itemCount = Get-ResultNumber $result @('count','createdCount')
+            if ($null -eq $itemCount) { $itemCount = Get-ActivityArgumentCount $args @('count') }
+            $classText = if ($className) { ' der Klasse „' + $className + '“' } else { '' }
+            $nameText = if ($createdName) { ' „' + $createdName + '“' } else { '' }
+            $parent = Get-ActivityArgument $args @('parentRef') ''
+            $parentText = if ($parent) { ' unter ' + $parent } else { '' }
+            if ($null -ne $itemCount -and [int64]$itemCount -gt 1) { return 'Hat ' + [string]$itemCount + ' Instanzen' + $nameText + $classText + $parentText + ' erstellt.' }
+            if ($createdName -or $className) { return 'Hat eine Instanz' + $nameText + $classText + $parentText + ' erstellt.' }
+            return 'Hat eine Instanz erstellt; Name und Klasse waren nicht angegeben' + $parentText + '.'
         }
         if ($tool -eq 'bulk_create') {
-            $bulkCount = Get-ResultNumber $result @('count')
-            if ($null -ne $bulkCount) { return 'Hat ' + [string]$bulkCount + ' Objekte erstellt.' }
-            return 'Hat mehrere Objekte erstellt.'
+            $items = Get-ActivityRawArgument $args @('items','instances')
+            $count = Get-ResultNumber $result @('count','createdCount')
+            if ($null -eq $count -and $null -ne $items) { $count = [int64]$items.Count }
+            if ($null -eq $count) { $count = 0 }
+            $summary = Get-ActivityArgument $args @('items','instances') ''
+            $summaryText = if ($summary) { ': ' + $summary } else { '' }
+            return 'Hat ' + [string]$count + ' unterschiedliche Instanzen erstellt' + $summaryText + '.'
         }
-        if ($tool -eq 'run_lua') { return 'Hat ' + (Get-SourceLineCount $args) + ' Zeilen in der Konsole ausgeführt.' }
+        if ($tool -eq 'run_lua') {
+            $lineCount = Get-SourceLineCount $args
+            $context = Get-ActivityArgument $args @('context','runContext') 'Studio-Bearbeitung'
+            $purpose = Get-ActivityArgument $args @('name','title','description','purpose') ''
+            $purposeText = if ($purpose) { ' – ' + $purpose } else { '' }
+            return 'Hat Lua-Code im Kontext „' + $context + '“ ausgeführt (' + $lineCount + ' Zeilen' + $purposeText + ').'
+        }
         if ($tool -eq 'rename_instance') {
-            $newName = Get-ActivityArgument $args @('name') ''
-            if ([string]::IsNullOrWhiteSpace($newName)) { $newName = 'einen neuen Namen' }
-            return 'Hat „' + $ref + '“ in „' + $newName + '“ umbenannt.'
+            $newName = Get-ActivityArgument $args @('name','newName') 'neuer Name nicht angegeben'
+            return 'Hat „' + $target + '“ in „' + $newName + '“ umbenannt.'
         }
-        if ($tool -eq 'group_instances') { return 'Hat Objekte in „' + (Get-ActivityArgument $args @('name') 'eine Gruppe') + '“ gruppiert.' }
+        if ($tool -eq 'group_instances') {
+            $name = Get-ActivityArgument $args @('name','modelName') ''
+            $refs = Get-ActivityArgument $args @('refs','instances') ''
+            $count = Get-ActivityArgumentCount $args @('refs','instances')
+            $countText = if ($null -ne $count) { ' (' + [string]$count + ' Instanzen)' } else { '' }
+            if ($name -and $refs) { return 'Hat ' + $refs + ' in der Gruppe „' + $name + '“ zusammengefasst' + $countText + '.' }
+            if ($name) { return 'Hat die angeforderten Instanzen in der Gruppe „' + $name + '“ zusammengefasst' + $countText + '.' }
+            return 'Hat die angeforderten Instanzen gruppiert' + $countText + '; ein Gruppenname wurde nicht angegeben.'
+        }
         if ($tool -eq 'batch' -or $tool -eq 'parallel') {
-            $callCount = $null
-            try { $calls = Get-ResultField $args @('commands'); if ($calls) { $callCount = @($calls).Count } } catch {}
-            if ($null -ne $callCount) { return 'Hat ' + [string]$callCount + ' Werkzeuge gebündelt ausgeführt.' }
-            return 'Hat mehrere Werkzeuge gebündelt ausgeführt.'
+            $calls = Get-ActivityRawArgument $args @('commands','calls')
+            $labels = New-Object System.Collections.Generic.List[string]
+            foreach ($call in @($calls)) {
+                $childTool = [string](Get-ResultField $call @('tool','name'))
+                if (-not $childTool) { continue }
+                $childLabel = ''
+                try { if ($Shared.ActivityToolLabels.ContainsKey($childTool)) { $childLabel = [string]$Shared.ActivityToolLabels[$childTool] } } catch {}
+                if ($childLabel -and $labels.Count -lt 4) { $labels.Add($childLabel) }
+            }
+            $count = if ($null -ne $calls) { [int64]@($calls).Count } else { Get-ResultNumber $result @('count','completedCount') }
+            if ($null -eq $count) { $count = 0 }
+            $detail = if ($labels.Count -gt 0) { ': ' + ($labels.ToArray() -join '; ') } else { '' }
+            if ($count -gt $labels.Count -and $labels.Count -gt 0) { $detail += '; und ' + [string]($count - $labels.Count) + ' weitere' }
+            return 'Hat ' + [string]$count + ' Aktionen in einer Anfrage gebündelt' + $detail + '.'
         }
-        if ($tool -eq 'search') { return 'Hat nach „' + $ref + '“ im Explorer gesucht.' }
-        if ($tool -eq 'get_instance') { return 'Hat sich die Instance „' + $ref + '“ angesehen.' }
-        if ($tool -eq 'get_children') { return 'Hat die Children von „' + $ref + '“ abgerufen.' }
-        if ($tool -eq 'resolve_ref') { return 'Hat den genauen Ablageort von „' + $ref + '“ abgerufen.' }
-        if ($tool -eq 'get_script') { return 'Hat den Quelltext von „' + $ref + '“ gelesen.' }
-        if ($tool -eq 'find_in_script') { return 'Hat im Skript „' + $ref + '“ gesucht.' }
-        if ($tool -eq 'move_relative' -or $tool -eq 'move_instance') { return 'Hat „' + $ref + '“ verschoben.' }
-        if ($tool -eq 'resize_part') { return 'Hat die Größe von „' + $ref + '“ geändert.' }
-        if ($tool -eq 'snap_to_ground') { return 'Hat „' + $ref + '“ auf dem Boden abgesetzt.' }
-        if ($tool -eq 'point_at' -or $tool -eq 'look_at' -or $tool -eq 'align') { return 'Hat „' + $ref + '“ ausgerichtet.' }
-        if ($tool -eq 'rotate_around') { return 'Hat „' + $ref + '“ gedreht.' }
-        if ($tool -eq 'fit_between') { return 'Hat „' + $ref + '“ zwischen zwei Punkte gespannt.' }
-        if ($tool -eq 'place_on') { return 'Hat „' + $ref + '“ platziert.' }
-        if ($tool -eq 'sim_start') { return 'Hat den deaktivierten Studio-Run-Start angefragt.' }
-        if ($tool -eq 'sim_stop') { return 'Hat die Studio-Run-Simulation beendet.' }
-        if ($tool -eq 'sim_status') { return 'Hat den Simulationsstatus gelesen.' }
-        # ---- Jeder verbleibende Werkzeugtyp bekommt einen eigenen Satz -----
-        $texts = @{
-            # Version 7.5.4: Jedes Werkzeug bekommt einen eigenen verstaendlichen Satz.
-            ack_user_message = 'Hat eine Nutzer-Nachricht bestätigt.'
-            add_tag = 'Hat einen Tag an einem Objekt gesetzt.'
-            align = 'Hat ein Objekt an einem anderen ausgerichtet.'
-            apply_asset = 'Hat ein Asset auf ein Objekt gelegt.'
-            ask_user = 'Hat eine Frage an dich gestellt.'
-            asset_details = 'Hat Asset-Details abgerufen.'
-            batch = 'Hat mehrere Werkzeuge gebündelt ausgeführt.'
-            bridge_status = 'Hat den Status der Bridge abgerufen.'
-            build_assembly = 'Hat ein Bauteil als Baugruppe erzeugt.'
-            build_interface = 'Hat ein komplettes GUI samt Bewegung gebaut.'
-            build_polygon_model = 'Hat ein Polygon-Modell aus Wedges gebaut.'
-            build_surface = 'Hat eine komposite Oberfläche gebaut.'
-            bulk_create = 'Hat mehrere Objekte auf einmal erstellt.'
-            bulk_delete = 'Hat mehrere Objekte auf einmal gelöscht.'
-            bulk_insert_scripts = 'Hat mehrere Skripte auf einmal angelegt.'
-            bulk_set_properties = 'Hat Eigenschaften an mehreren Objekten geändert.'
-            cancel_job = 'Hat einen Hintergrundjob abgebrochen.'
-            capture_screenshot = 'Hat einen Screenshot gemacht.'
-            catalog_status = 'Hat geprüft, ob der Katalog erreichbar ist.'
-            clear_lua_state = 'Hat den Lua-Status zurückgesetzt.'
-            clear_output = 'Hat die Ausgabe geleert.'
-            clone_instance = 'Hat ein Objekt geklont.'
-            compile_check = 'Hat Lua-Code auf Syntaxfehler geprüft.'
-            confirm_action = 'Hat eine Bestätigung von dir angefordert.'
-            coordinate_guide = 'Hat das Koordinatensystem des Places erklärt.'
-            create_instance = 'Hat ein neues Objekt erstellt.'
-            delete_instance = 'Hat ein Objekt gelöscht.'
-            describe_orientation = 'Hat die Ausrichtung eines Objekts bestimmt.'
-            describe_scene = 'Hat die Szene im Place beschrieben.'
-            distribute = 'Hat Objekte gleichmäßig verteilt.'
-            fill_region = 'Hat einen Bereich mit Voxeln gefüllt.'
-            find_in_script = 'Hat in einem Skript nach einem Text gesucht.'
-            fit_between = 'Hat ein Objekt zwischen zwei Punkte gespannt.'
-            get_bounds = 'Hat Größe und Begrenzungen gemessen.'
-            get_children = 'Hat die Kinder eines Objekts abgerufen.'
-            get_chunk = 'Hat einen Teil eines großen Ergebnisses geholt.'
-            get_docs = 'Hat die Dokumentation gelesen.'
-            get_errors = 'Hat die Fehlerzeilen der Konsole gelesen.'
-            get_events = 'Hat die Bridge-Ereignisse abgefragt.'
-            get_instance = 'Hat sich ein einzelnes Objekt angesehen.'
-            get_notices = 'Hat die Hinweise der Bridge abgefragt.'
-            get_output = 'Hat die Konsolenausgabe gelesen.'
-            get_pending = 'Hat die offenen Befehle in der Warteschlange abgefragt.'
-            get_place_info = 'Hat Informationen über den Place abgerufen.'
-            get_properties = 'Hat die Eigenschaften eines Objekts abgerufen.'
-            get_script = 'Hat den Quelltext eines Skripts gelesen.'
-            get_selection = 'Hat die aktuell ausgewählten Objekte abgefragt.'
-            get_tree = 'Hat den Explorer-Baum des Places abgerufen.'
-            grid_arrange = 'Hat Objekte in einem Raster angeordnet.'
-            ground_height = 'Hat die Bodenhöhe an mehreren Punkten gemessen.'
-            group_instances = 'Hat mehrere Objekte in eine Gruppe gepackt.'
-            insert_asset = 'Hat ein Katalog-Asset in den Place eingefügt.'
-            insert_script = 'Hat ein neues Skript angelegt.'
-            intersect = 'Hat nur den gemeinsamen Teil von Objekten behalten.'
-            job_result = 'Hat das Ergebnis eines Hintergrundjobs abgeholt.'
-            job_status = 'Hat den Status eines Hintergrundjobs abgefragt.'
-            list_jobs = 'Hat die laufenden Hintergrundjobs aufgelistet.'
-            list_tools = 'Hat die Liste der verfügbaren Werkzeuge abgefragt.'
-            look_at = 'Hat ein Objekt auf ein anderes ausgerichtet.'
-            lua_state = 'Hat den Lua-Status abgefragt.'
-            measure = 'Hat eine Entfernung gemessen.'
-            measure_height = 'Hat eine Höhe gemessen.'
-            mesh_apply = 'Hat hochgeladene Meshes in Platzhalter gesetzt.'
-            mesh_apply_asset = 'Hat eine Mesh-Asset-Id in den Platzhalter gesetzt.'
-            mesh_drop = 'Hat einen Mesh-Slot storniert (Platzhalter entfernt).'
-            mesh_slots = 'Hat Platzhalter für den Blender-Bau angelegt.'
-            model_audit = 'Hat ein gebautes Modell auf Qualität geprüft.'
-            move_instance = 'Hat ein Objekt an eine andere Position verschoben.'
-            move_relative = 'Hat ein Objekt relativ verschoben.'
-            nearest_parts = 'Hat die nächsten Nachbarobjekte gesucht.'
-            overlap_check = 'Hat eine Kollision geprüft.'
-            parallel = 'Hat mehrere Werkzeuge parallel ausgeführt.'
-            parts_in_box = 'Hat Objekte in einem Quader gesucht.'
-            parts_in_sphere = 'Hat Objekte in einer Kugel gesucht.'
-            patch_script = 'Hat punktgenaue Änderungen an einem Skript gemacht.'
-            place_on = 'Hat ein Objekt auf einem anderen platziert.'
-            point_at = 'Hat ein Objekt auf ein anderes ausgerichtet.'
-            probe_world = 'Hat die Welt an einem Raster vermessen.'
-            prop_list = 'Hat die gespeicherten Bausteine aufgelistet.'
-            prop_place = 'Hat einen gespeicherten Baustein eingesetzt.'
-            prop_save = 'Hat einen Baustein zur Wiederverwendung gespeichert.'
-            raycast = 'Hat einen Strahl durch die Welt geschossen.'
-            raycast_many = 'Hat mehrere Strahlen geschossen.'
-            read = 'Hat einen Lese-Aufruf gemacht.'
-            redo = 'Hat eine Änderung wiederholt.'
-            refine = 'Hat Details an einem Modell verfeinert.'
-            remove_tag = 'Hat einen Tag von einem Objekt entfernt.'
-            rename_instance = 'Hat ein Objekt umbenannt.'
-            report_done = 'Hat den Auftrag als fertig gemeldet.'
-            resize_part = 'Hat die Größe eines Teils geändert.'
-            resolve_ref = 'Hat den genauen Ablageort eines Objekts aufgelöst.'
-            rotate_around = 'Hat ein Objekt um einen Punkt gedreht.'
-            run_lua = 'Hat Lua-Code in der Konsole ausgeführt.'
-            running = 'Hat einen laufenden Aufruf bearbeitet.'
-            scaffold_ui_scripts = 'Hat die nötigen GUI-Steuerskripte angelegt.'
-            scene_stats = 'Hat die Szenenstatistik gemessen.'
-            search = 'Hat im Explorer gesucht.'
-            search_assets = 'Hat im Roblox-Katalog nach Assets gesucht.'
-            select_instance = 'Hat Objekte in Studio ausgewählt.'
-            separate = 'Hat eine Union wieder in einzelne Teile zerlegt.'
-            set_attribute = 'Hat ein Attribut an einem Objekt gesetzt.'
-            set_context = 'Hat den Kontext (Server/Client) gewechselt.'
-            set_properties = 'Hat mehrere Eigenschaften auf einmal geändert.'
-            set_property = 'Hat eine einzelne Eigenschaft geändert.'
-            set_script_source = 'Hat den Quelltext eines Skripts ersetzt.'
-            set_waypoint = 'Hat einen Wiederherstellungspunkt gesetzt.'
-            sim_start = 'Hat die Studio-Simulation gestartet.'
-            sim_status = 'Hat den Status der Simulation abgefragt.'
-            site_survey = 'Hat den Bauplatz vor dem Bau vermessen.'
-            snap_to_ground = 'Hat ein Objekt auf dem Boden abgesetzt.'
-            stack = 'Hat Objekte vertikal gestapelt.'
-            start_job = 'Hat einen Hintergrundjob gestartet.'
-            style_lock = 'Hat den Stil eines Modells gesperrt.'
-            subtract = 'Hat eine Form aus einem Objekt herausgestanzt.'
-            ui_audit = 'Hat ein GUI auf Qualität und Kontrast geprüft.'
-            ui_capabilities = 'Hat gemessen, welche UI-Features das Studio kann.'
-            ui_glow = 'Hat einen Schein um ein GUI-Element gelegt.'
-            ui_radial = 'Hat ein kreisförmiges Menü gebaut.'
-            ui_skin = 'Hat den visuellen Stil eines GUI gesetzt.'
-            ui_texture = 'Hat eine Textur für ein GUI vorbereitet.'
-            undo = 'Hat die letzte Änderung rückgängig gemacht.'
-            ungroup = 'Hat eine Gruppe wieder aufgelöst.'
-            union = 'Hat mehrere Teile zu einem verschmolzen.'
-            union_info = 'Hat eine Union untersucht.'
-            upload_asset = 'Hat ein Asset per Roblox Open Cloud hochgeladen.'
-            upload_text = 'Hat einen Text in die Bridge geladen.'
-            validate_asset = 'Hat ein Asset auf Gültigkeit geprüft.'
-            variation = 'Hat eine Variante eines Modells erzeugt.'
-            verify_measurable = 'Hat gewartet, bis Objekte messbar sind.'
-            viewport_info = 'Hat Kamera und Blickrichtung gemessen.'
-            wait = 'Hat im Playtest gewartet.'
-            wait_for_output = 'Hat auf eine Konsolenausgabe gewartet.'
-            wait_for_user = 'Hat auf eine Antwort von dir gewartet.'
-            what_is_in_the_way = 'Hat geprüft, was zwischen zwei Punkten steht.'
-            world_audit = 'Hat die Welt auf Qualität geprüft.'
-            world_glow = 'Hat einen Schein in die Welt gelegt.'
-            world_style = 'Hat den visuellen Stil der Welt gesetzt.'
+        if ($tool -eq 'get_tree') {
+            $root = Get-ActivityArgument $args @('rootRef') 'gesamten Place'
+            $depth = Get-ActivityArgument $args @('maxDepth') '6'
+            $limit = Get-ActivityArgument $args @('maxNodes') '3000'
+            $nodes = Get-ResultNumber $result @('nodeCount','count')
+            $countText = if ($null -ne $nodes) { ' (' + [string]$nodes + ' Einträge zurückgegeben)' } else { '' }
+            return 'Hat den Explorer-Baum ab „' + $root + '“ gelesen (Tiefe ' + $depth + ', höchstens ' + $limit + ' Einträge)' + $countText + '.'
         }
-        if ($texts.ContainsKey($tool)) { return [string]$texts[$tool] }
-        # Theoretisch unerreichbar - aber falls doch: nie mehr ein Platzhalter.
-        if ($read -contains $tool) { return 'Hat „' + $tool + '“ abgerufen.' }
-        return 'Hat „' + $tool + '“ ausgeführt.'
+        if ($tool -eq 'get_instance') {
+            $identity = Get-ActivityArgument $args @('ref') ''
+            if (-not $identity) { $identity = Get-ActivityTarget $args $result @('ref') 'die angefragte Instanz' }
+            $className = Get-ResultField $result @('className')
+            $classText = if ($className) { ' (' + [string]$className + ')' } else { '' }
+            $path = Get-ResultField $result @('path','fullName')
+            $pathText = if ($path -and [string]$path -ne $identity) { ' unter „' + [string]$path + '“' } else { '' }
+            return 'Hat die Instanz „' + $identity + '“' + $classText + $pathText + ' und ihre Eigenschaften geprüft.'
+        }
+        if ($tool -eq 'get_children') {
+            $ref = Get-ActivityTarget $args $result @('ref','parentRef') 'gesamten Place'
+            $offset = Get-ActivityArgument $args @('offset') '0'
+            $limit = Get-ActivityArgument $args @('limit') '500'
+            $total = Get-ResultNumber $result @('total')
+            $returned = Get-ResultNumber $result @('returned','count')
+            $pageText = if ($null -ne $returned) { ' (' + [string]$returned + ' Einträge' + $(if ($null -ne $total) { ' von ' + [string]$total } else { '' }) + ')' } else { '' }
+            return 'Hat die Unterobjekte von „' + $ref + '“ aufgelistet (ab Eintrag ' + $offset + ', höchstens ' + $limit + ')' + $pageText + '.'
+        }
+        if ($tool -eq 'get_properties') {
+            $refList = Get-ActivityArgument $args @('refs') 'den angefragten Instanzen'
+            $properties = Get-ActivityArgument $args @('properties') 'die angeforderten Eigenschaften'
+            $count = Get-ResultNumber $result @('returned','count')
+            $countText = if ($null -ne $count) { ' (' + [string]$count + ' Ergebnisse)' } else { '' }
+            return 'Hat ' + $properties + ' von ' + $refList + ' ausgelesen' + $countText + '.'
+        }
+        if ($tool -eq 'resolve_ref') {
+            $selector = Get-ActivityArgument $args @('ref','path','selector') 'die angefragte Referenz'
+            $path = Get-ResultField $result @('path','fullName')
+            $id = Get-ResultField $result @('id','ref')
+            $resolved = @(); if ($path) { $resolved += [string]$path }; if ($id) { $resolved += 'ID ' + [string]$id }
+            $resolvedText = if ($resolved.Count -gt 0) { ' → ' + ($resolved -join ', ') } else { '' }
+            return 'Hat die Referenz „' + $selector + '“ aufgelöst' + $resolvedText + '.'
+        }
+        if ($tool -eq 'get_script') {
+            $scriptRef = Get-ActivityTarget $args $result @('ref','scriptRef') 'das angefragte Skript'
+            $lines = Get-ResultNumber $result @('lines','lineCount')
+            $lineText = if ($null -ne $lines) { ' (' + [string]$lines + ' Zeilen)' } else { '' }
+            return 'Hat den Quelltext von „' + $scriptRef + '“ gelesen' + $lineText + '.'
+        }
+        if ($tool -eq 'find_in_script') {
+            $scriptRef = Get-ActivityTarget $args $result @('ref','scriptRef') 'dem angefragten Skript'
+            $needle = Get-ActivityArgument $args @('query','text','search','needle','pattern') 'den angegebenen Suchtext'
+            $count = Get-ResultNumber $result @('matchCount','count','returned')
+            $countText = if ($null -ne $count) { ' (' + [string]$count + ' Fundstellen)' } else { '' }
+            return 'Hat im Skript „' + $scriptRef + '“ nach „' + $needle + '“ gesucht' + $countText + '.'
+        }
+        if ($tool -eq 'measure') {
+            $a = Get-ActivityArgument $args @('refA','a','fromRef') 'Startpunkt nicht angegeben'
+            $b = Get-ActivityArgument $args @('refB','b','toRef') 'Endpunkt nicht angegeben'
+            $distance = Get-ResultField $result @('distance','distanceStuds','magnitude')
+            $distanceText = if ($null -ne $distance) { ' (' + (Format-ActivityValue $distance 1 32) + ' Studs)' } else { '' }
+            return 'Hat den Abstand zwischen „' + $a + '“ und „' + $b + '“ gemessen' + $distanceText + '.'
+        }
+        if ($tool -eq 'measure_height') {
+            $ref = Get-ActivityTarget $args $result @('ref','targetRef') 'der angefragten Instanz'
+            $height = Get-ResultField $result @('height','heightStuds','distance')
+            $heightText = if ($null -ne $height) { ' (' + (Format-ActivityValue $height 1 32) + ' Studs)' } else { '' }
+            return 'Hat die Höhe von „' + $ref + '“ über dem Boden gemessen' + $heightText + '.'
+        }
+        if ($tool -eq 'search_assets') { return $texts[$tool] }
+        if ($tool -eq 'get_output' -or $tool -eq 'get_errors') {
+            $limit = Get-ActivityArgument $args @('limit') '50'
+            $count = Get-ResultNumber $result @('count','returned','lineCount')
+            $countText = if ($null -ne $count) { ' (' + [string]$count + ' Zeilen)' } else { '' }
+            return $texts[$tool].TrimEnd('.') + ' (höchstens ' + $limit + ' Zeilen)' + $countText + '.'
+        }
+        if ($tool -eq 'wait_for_output') {
+            $pattern = Get-ActivityArgument $args @('pattern','query') 'eine passende Ausgabezeile'
+            $timeout = Get-ActivityArgument $args @('timeoutSeconds','timeout') 'die Standardfrist'
+            return 'Hat in der Studio-Ausgabe auf „' + $pattern + '“ gewartet (Zeitlimit ' + $timeout + ' Sekunden).'
+        }
+        if ($tool -eq 'create_instance') { return $texts[$tool] }
+        if ($tool -eq 'set_property') {
+            $property = Get-ActivityArgument $args @('property','propertyName','name') 'Eigenschaft nicht angegeben'
+            $value = Get-ActivityArgument $args @('value') ''
+            $valueText = if ($value) { ' auf ' + $value } else { '' }
+            $refs = Get-ActivityArgument $args @('refs','ref') 'die angefragten Instanzen'
+            return 'Hat „' + $property + '“ von ' + $refs + ' geändert' + $valueText + '.'
+        }
+        if ($tool -eq 'set_properties') {
+            $refs = Get-ActivityArgument $args @('refs') 'die angefragten Instanzen'
+            $properties = Get-ActivityArgument $args @('properties') 'die angegebenen Werte'
+            return 'Hat Eigenschaften von ' + $refs + ' geändert: ' + $properties + '.'
+        }
+        if ($tool -eq 'bulk_set_properties') {
+            $items = Get-ActivityArgument $args @('items') ''
+            $count = Get-ActivityArgumentCount $args @('items')
+            $countText = if ($null -ne $count) { [string]$count + ' Instanzen' } else { 'die angeforderten Instanzen' }
+            $detail = if ($items) { ': ' + $items } else { '' }
+            return 'Hat Eigenschaften an ' + $countText + ' unterschiedlich geändert' + $detail + '.'
+        }
+        if ($tool -eq 'set_attribute') {
+            $key = Get-ActivityArgument $args @('attribute','attributeName','name') 'Attributname nicht angegeben'
+            $value = Get-ActivityArgument $args @('value') ''
+            $refs = Get-ActivityArgument $args @('refs','ref') 'den angefragten Instanzen'
+            $valueText = if ($value) { ' auf ' + $value } else { '' }
+            return 'Hat Attribut „' + $key + '“ an ' + $refs + ' gesetzt' + $valueText + '.'
+        }
+        if ($tool -eq 'add_tag' -or $tool -eq 'remove_tag') {
+            $tag = Get-ActivityArgument $args @('tag','name') 'Tag nicht angegeben'
+            $refs = Get-ActivityArgument $args @('refs','ref') 'den angefragten Instanzen'
+            $verb = if ($tool -eq 'add_tag') { 'hinzugefügt' } else { 'entfernt' }
+            return 'Hat den Tag „' + $tag + '“ an ' + $refs + ' ' + $verb + '.'
+        }
+        if ($tool -eq 'get_selection') {
+            $count = Get-ResultNumber $result @('count','selectedCount','returned')
+            $refs = Get-ResultField $result @('selected','instances','items')
+            $detail = if ($null -ne $refs) { ': ' + (Format-ActivityValue $refs 4 120) } else { '' }
+            if ($null -ne $count) { return 'Hat die aktuelle Studio-Auswahl ausgelesen (' + [string]$count + ' Instanzen)' + $detail + '.' }
+            return 'Hat die aktuelle Studio-Auswahl ausgelesen' + $detail + '.'
+        }
+        if ($tool -eq 'select_instance') {
+            $refs = Get-ActivityArgument $args @('refs','ref') 'die angefragten Instanzen'
+            $count = Get-ResultNumber $result @('count','selectedCount')
+            $countText = if ($null -ne $count) { ' (' + [string]$count + ' ausgewählt)' } else { '' }
+            return 'Hat in Studio ' + $refs + ' ausgewählt' + $countText + '.'
+        }
+        if ($tool -eq 'get_bounds') {
+            $refs = Get-ActivityArgument $args @('refs','ref') 'die angefragten Instanzen'
+            $count = Get-ResultNumber $result @('count','returned')
+            $countText = if ($null -ne $count) { ' (' + [string]$count + ' Messungen)' } else { '' }
+            return 'Hat Mittelpunkt und Ausmaße von ' + $refs + ' gemessen' + $countText + '.'
+        }
+        if ($tool -eq 'parts_in_box') {
+            $bounds = Get-ActivityArgument $args @('min') ''
+            $max = Get-ActivityArgument $args @('max') ''
+            $area = if ($bounds -and $max) { 'zwischen ' + $bounds + ' und ' + $max } else { Get-ActivityArgument $args @('center','size') 'im angegebenen Quader' }
+            $count = Get-ResultNumber $result @('count','returned')
+            $countText = if ($null -ne $count) { ' (' + [string]$count + ' Instanzen)' } else { '' }
+            return 'Hat im Quader ' + $area + ' nach Instanzen gesucht' + $countText + '.'
+        }
+        if ($tool -eq 'parts_in_sphere') {
+            $center = Get-ActivityArgument $args @('center') 'Mittelpunkt nicht angegeben'
+            $radius = Get-ActivityArgument $args @('radius') 'Radius nicht angegeben'
+            $count = Get-ResultNumber $result @('count','returned')
+            $countText = if ($null -ne $count) { ' (' + [string]$count + ' Instanzen)' } else { '' }
+            return 'Hat um ' + $center + ' im Radius ' + $radius + ' Studs nach Instanzen gesucht' + $countText + '.'
+        }
+        if ($tool -eq 'nearest_parts') {
+            $origin = Get-ActivityArgument $args @('origin','position','center') 'Startposition nicht angegeben'
+            $limit = Get-ActivityArgument $args @('limit','count') '10'
+            $count = Get-ResultNumber $result @('count','returned')
+            $countText = if ($null -ne $count) { ' (' + [string]$count + ' Treffer)' } else { '' }
+            return 'Hat ab Position ' + $origin + ' die nächsten ' + $limit + ' Instanzen gesucht' + $countText + '.'
+        }
+        if ($tool -eq 'what_is_in_the_way') {
+            $from = Get-ActivityArgument $args @('fromRef','startRef','origin') 'Startpunkt nicht angegeben'
+            $to = Get-ActivityArgument $args @('toRef','endRef','targetRef') 'Endpunkt nicht angegeben'
+            $count = Get-ResultNumber $result @('count','hitCount','returned')
+            $countText = if ($null -ne $count) { ' (' + [string]$count + ' Hindernisse)' } else { '' }
+            return 'Hat den Weg von „' + $from + '“ zu „' + $to + '“ auf Hindernisse geprüft' + $countText + '.'
+        }
+        if ($tool -eq 'measure_height') { return $texts[$tool] }
+        if ($tool -eq 'create_instance') { return $texts[$tool] }
+        if ($tool -eq 'insert_asset') {
+            $asset = Get-ActivityArgument $args @('assetId','id') 'Asset-ID nicht angegeben'
+            $name = Get-ActivityArgument $args @('name','displayName') ''
+            $detail = if ($name) { ' („' + $name + '“)' } else { '' }
+            return 'Hat Roblox-Asset ' + $asset + $detail + ' in den Place eingefügt.'
+        }
+        if ($tool -eq 'apply_asset') {
+            $asset = Get-ActivityArgument $args @('assetId','asset','textureId','imageId') 'Asset-ID nicht angegeben'
+            $refs = Get-ActivityArgument $args @('refs','ref','targetRef') 'die angefragten Instanzen'
+            return 'Hat Asset ' + $asset + ' auf ' + $refs + ' angewendet.'
+        }
+        if ($tool -eq 'validate_asset') {
+            $asset = Get-ActivityArgument $args @('assetId','id') 'Asset-ID nicht angegeben'
+            $expected = Get-ActivityArgument $args @('expectType','type') ''
+            $expectedText = if ($expected) { ' (erwarteter Typ: ' + $expected + ')' } else { '' }
+            $actual = Get-ResultField $result @('typeName','assetName')
+            $actualText = if ($actual) { '; Roblox meldet: ' + [string]$actual } else { '' }
+            return 'Hat Asset ' + $asset + ' auf Existenz und passenden Typ geprüft' + $expectedText + $actualText + '.'
+        }
+        if ($tool -eq 'asset_details') {
+            $ids = Get-ActivityArgument $args @('assetIds','assetId','id') 'keine Asset-ID angegeben'
+            $count = Get-ResultNumber $result @('count','returned')
+            $countText = if ($null -ne $count) { ' (' + [string]$count + ' Assets)' } else { '' }
+            return 'Hat Details zu den Roblox-Assets ' + $ids + ' abgerufen' + $countText + '.'
+        }
+        if ($tool -eq 'build_mesh_model') {
+            $name = Get-ActivityArgument $args @('modelName','name') ''
+            $slots = Get-ActivityRawArgument $args @('slots')
+            $slotCount = if ($null -ne $slots) { $slots.Count } else { $null }
+            $jobId = Get-ResultField $result @('jobId','buildId')
+            $slotText = if ($null -ne $slotCount) { ' mit ' + [string]$slotCount + ' Mesh-Bauteilen' } else { '' }
+            $jobText = if ($jobId) { ' (Aufgabe ' + [string]$jobId + ')' } else { '' }
+            $nameText = if ($name) { ' für „' + $name + '“' } else { '' }
+            return 'Hat den Blender-Bau gestartet' + $nameText + $slotText + $jobText + '.'
+        }
+        if ($tool -eq 'mesh_status') {
+            $jobId = Get-ActivityArgument $args @('jobId') 'alle Mesh-Aufgaben'
+            $state = Get-ResultField $result @('state','status')
+            $stateText = if ($state) { ': ' + [string]$state } else { '' }
+            $percent = Get-ResultField $result @('percent','progress')
+            $percentText = if ($null -ne $percent) { ', ' + (Format-ActivityValue $percent 1 20) + ' %' } else { '' }
+            return 'Hat den Mesh-Baufortschritt für „' + $jobId + '“ geprüft' + $stateText + $percentText + '.'
+        }
+        if ($tool -eq 'mesh_cancel') {
+            $jobId = Get-ActivityArgument $args @('jobId') 'die angeforderte Mesh-Aufgabe'
+            return 'Hat den Blender-Mesh-Bau „' + $jobId + '“ abgebrochen.'
+        }
+        if ($tool -eq 'mesh_slots' -or $tool -eq 'mesh_apply' -or $tool -eq 'mesh_apply_asset' -or $tool -eq 'mesh_drop') {
+            $slots = Get-ActivityRawArgument $args @('slots')
+            $count = Get-ResultNumber $result @('count','createdCount','appliedCount','droppedCount')
+            if ($null -eq $count -and $null -ne $slots) { $count = [int64]$slots.Count }
+            $countText = if ($null -ne $count) { ' (' + [string]$count + ' Slots)' } else { '' }
+            $slotKeys = Get-ActivityArgument $args @('slots','keys','slotKeys') ''
+            $keysText = if ($slotKeys) { ': ' + $slotKeys } else { '' }
+            return $texts[$tool].TrimEnd('.') + $countText + $keysText + '.'
+        }
+        if ($tool -eq 'upload_asset') {
+            $source = Get-ActivityArgument $args @('slotKey','filePath','fileName') ''
+            if (-not $source) { $source = 'die übergebene Datei' }
+            $assetType = Get-ActivityArgument $args @('assetType','type') ''
+            $assetName = Get-ActivityArgument $args @('displayName','name','fileName') ''
+            $assetId = Get-ResultField $result @('assetId','id')
+            $typeText = if ($assetType) { ' (' + $assetType + ')' } else { '' }
+            $nameText = if ($assetName) { ' als „' + $assetName + '“' } else { '' }
+            $idText = if ($assetId) { ' → Asset-ID ' + [string]$assetId } else { '' }
+            $byteLength = $null
+            $payload = Get-ActivityRawArgument $args @('contentBase64','data')
+            if ($null -ne $payload) { try { $byteLength = [int64]([string]$payload).Length } catch {} }
+            $sizeText = if ($null -ne $byteLength) { ' (' + [string]$byteLength + ' Zeichen kodierte Nutzdaten)' } else { '' }
+            return 'Hat ' + $source + $nameText + $typeText + ' über Roblox Open Cloud hochgeladen' + $idText + $sizeText + '.'
+        }
+        if ($tool -eq 'start_job') {
+            $name = Get-ActivityArgument $args @('name','jobName','tool') 'Hintergrundaufgabe'
+            $jobId = Get-ResultField $result @('jobId','id')
+            $jobText = if ($jobId) { ' (Aufgabe ' + [string]$jobId + ')' } else { '' }
+            return 'Hat die Hintergrundaufgabe „' + $name + '“ gestartet' + $jobText + '.'
+        }
+        if ($tool -eq 'job_status' -or $tool -eq 'job_result' -or $tool -eq 'cancel_job') {
+            $jobId = Get-ActivityArgument $args @('jobId','id') 'die angeforderte Aufgabe'
+            $verb = if ($tool -eq 'job_status') { 'den Status geprüft' } elseif ($tool -eq 'job_result') { 'das Ergebnis abgerufen' } else { 'abgebrochen' }
+            $status = Get-ResultField $result @('status','state')
+            $statusText = if ($status) { ' (Status: ' + [string]$status + ')' } else { '' }
+            $progress = Get-ResultField $result @('progress','percent')
+            $progressText = if ($null -ne $progress -and $tool -eq 'job_status') { ', ' + (Format-ActivityValue $progress 1 20) + ' %' } else { '' }
+            return 'Hat bei Aufgabe „' + $jobId + '“ ' + $verb + $statusText + $progressText + '.'
+        }
+        if ($tool -eq 'batch' -or $tool -eq 'parallel') { return $texts[$tool] }
+        if ($tool -eq 'ask_user' -or $tool -eq 'confirm_action') {
+            $title = Get-ActivityArgument $args @('title','question','prompt','message') 'Rückfrage zum aktuellen Auftrag'
+            $questions = Get-ActivityArgumentCount $args @('questions')
+            $countText = if ($null -ne $questions) { ' (' + [string]$questions + ' Fragen)' } else { '' }
+            $verb = if ($tool -eq 'ask_user') { 'Hat dich gefragt: „' } else { 'Hat deine Bestätigung eingeholt: „' }
+            return $verb + $title + '“' + $countText + '.'
+        }
+        if ($tool -eq 'wait_for_user') {
+            $seconds = Get-ActivityArgument $args @('maxSeconds','timeoutSeconds') '50'
+            return 'Hat bis zu ' + $seconds + ' Sekunden auf deine nächste Nachricht gewartet.'
+        }
+        if ($tool -eq 'ack_user_message') {
+            $id = Get-ActivityArgument $args @('id','messageId') 'die eingegangene Nachricht'
+            return 'Hat deine Nachricht „' + $id + '“ als gelesen bestätigt.'
+        }
+        if ($tool -eq 'get_chunk') {
+            $blob = Get-ActivityArgument $args @('blobId','id') 'das angeforderte Ergebnis'
+            $offset = Get-ActivityArgument $args @('offset','start') '0'
+            return 'Hat Abschnitt ab Zeichen ' + $offset + ' aus Ergebnis „' + $blob + '“ abgerufen.'
+        }
+        if ($tool -eq 'upload_text') {
+            $text = Get-ActivityRawArgument $args @('text','content','source')
+            $length = if ($null -ne $text) { ([string]$text).Length } else { 0 }
+            $ref = Get-ResultField $result @('sourceRef','ref','uploadId')
+            $refText = if ($ref) { ' (Referenz ' + [string]$ref + ')' } else { '' }
+            return 'Hat längeren Text an die Bridge übertragen (' + [string]$length + ' Zeichen' + $refText + ').'
+        }
+        if ($tool -eq 'get_docs') {
+            $subject = Get-ActivityArgument $args @('tool','category','topic') 'alle angefragten Werkzeuge'
+            return 'Hat Dokumentation für „' + $subject + '“ abgerufen.'
+        }
+        if ($tool -eq 'capture_screenshot') {
+            $targetWindow = Get-ActivityArgument $args @('window','title','placeName') 'das Roblox-Studio-Fenster'
+            return 'Hat einen Screenshot von „' + $targetWindow + '“ aufgenommen.'
+        }
+        if ($tool -eq 'build_polygon_model') {
+            $name = Get-ActivityArgument $args @('modelName','name') 'das angeforderte Polygonmodell'
+            $polygons = Get-ActivityRawArgument $args @('polygons','faces')
+            $count = if ($null -ne $polygons) { [int64]@($polygons).Count } else { $null }
+            if ($null -eq $count) { $count = Get-ResultNumber $result @('faceCount','count','createdCount') }
+            $countText = if ($null -ne $count) { ' (' + [string]$count + ' Flächen)' } else { '' }
+            return 'Hat das Polygonmodell „' + $name + '“ aus WedgeParts gebaut' + $countText + '.'
+        }
+        if ($tool -eq 'get_output' -or $tool -eq 'get_errors') { return $texts[$tool] }
+        if ($texts.ContainsKey($tool)) {
+            $baseText = [string]$texts[$tool]
+            $detailText = Get-ActivityActionDetailText $tool $args $result
+            if (-not [string]::IsNullOrWhiteSpace($detailText)) { return $baseText.TrimEnd('.') + ' Details: ' + $detailText + '.' }
+            return $baseText
+        }
+        return 'Hat eine nicht erkannte Studio-Aktion angefragt.'
     }
 
     function Get-ArenaActivityKind([string]$tool, [string]$phase, $result) {
@@ -18742,6 +19711,7 @@ $script:BridgeHandlerScript = {
                     gameId        = [string]$body.gameId
                     creatorId = [string]$body.creatorId
                     creatorType = [string]$body.creatorType
+                    editorUserId = [string]$body.editorUserId
                     token         = ''
                     accessMode    = 'readwrite'
                     lastSeen      = $now
@@ -18873,6 +19843,7 @@ $script:BridgeHandlerScript = {
                 gameId        = [string]$body.gameId
                 creatorId = [string]$body.creatorId
                 creatorType = [string]$body.creatorType
+                editorUserId = [string]$body.editorUserId
                 token         = $token
                 accessMode    = $mode
                 lastSeen      = $now
@@ -18921,6 +19892,7 @@ $script:BridgeHandlerScript = {
             gameId        = [string]$body.gameId
             creatorId = [string]$body.creatorId
             creatorType = [string]$body.creatorType
+            editorUserId = [string]$body.editorUserId
             token         = $token
             accessMode    = $startMode
             lastSeen      = $now
@@ -19095,6 +20067,9 @@ $script:BridgeHandlerScript = {
         if ([string]::IsNullOrWhiteSpace($newCreatorId)) { $newCreatorId = [string]$entry.creatorId }
         $newCreatorType = [string]$body.creatorType
         if ([string]::IsNullOrWhiteSpace($newCreatorType)) { $newCreatorType = [string]$entry.creatorType }
+        $newEditorUserId = [string]$body.editorUserId
+        if ([string]::IsNullOrWhiteSpace($newEditorUserId)) { $newEditorUserId = [string]$entry.editorUserId }
+        if ($newEditorUserId -notmatch '^\d+$' -or $newEditorUserId -eq '0') { $newEditorUserId = '' }
         $updated = @{
             sessionId     = $sessionId
             instanceGuid  = [string]$entry.instanceGuid
@@ -19103,6 +20078,7 @@ $script:BridgeHandlerScript = {
             gameId        = $newGameId
             creatorId     = $newCreatorId
             creatorType   = $newCreatorType
+            editorUserId  = $newEditorUserId
             token         = $token
             accessMode    = $mode
             lastSeen      = $now
@@ -21179,7 +22155,7 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
 
         # ---------------- ROBLOX OPEN CLOUD (Version 7.5.2) ----------------
         $t.Add(@{ name = 'upload_asset'; category = 'cloud'; summary = 'Mesh oder Bild per Roblox Open Cloud hochladen - gibt die echte Asset-Id zurueck.';
-            description = 'Laedt eine Datei ueber die OFFIZIELLE Roblox-Open-Cloud-Assets-API in das Roblox-Konto des Nutzers hoch und antwortet mit der ASSET-ID, die Roblox selbst genannt hat. Danach setzt DU das Asset selbst in den Place ein: ein Mesh mit mesh_apply_asset in den bestehenden Platzhalter (oder insert_asset fuer das komplette Modell), ein Bild mit set_property auf Decal.Texture / Texture.Texture / ImageLabel.Image / MeshPart.TextureID. Der Nutzer muss NICHTS mehr von Hand hochladen - das Mesh-Fenster gibt es nicht mehr. QUELLE (genau eine): slotKey = ein Mesh-Slot aus mesh_status (die Bridge kennt die fertige FBX/GLB-Datei dazu), filePath = eine Datei im Ordner der Bridge, oder contentBase64 + fileName = ein Bild, das DU erzeugt hast (kein Dateipfad noetig). Optional assetType: Model (Mesh, automatisch aus der Endung), Decal oder Image. Formate: .fbx/.glb/.gltf fuer Meshes, .png/.jpg/.jpeg/.bmp/.tga fuer Bilder. Roblox-Grenzen: 20 MB je Datei, Bilder unter 8000x8000 Pixel. Braucht der Upload laenger, antwortet das Werkzeug mit state=pending und einer operationId - dann einfach upload_asset { operationId } erneut aufrufen (nicht in einer engen Schleife pollen). Fehlt der Schluessel, antwortet das Werkzeug OPENCLOUD_KEY_MISSING mit einem userMessage-Satz: sage ihn dem Nutzer WORTLICH auf Deutsch. Den ERSTELLER (Nutzer oder Gruppe) bestimmt die Bridge SELBST aus dem Schluessel (Introspect) - der Nutzer traegt weder Name noch ID ein. Bei JEDEM gescheiterten Upload steht der EXAKTE Dateipfad in der Antwort (filePath/filePathHint): nenne ihn dem Nutzer woertlich in einer eigenen Zeile, damit er die Datei notfalls selbst in Roblox hochladen kann (Toolbox -> Import).';
+            description = 'Laedt eine Datei ueber die OFFIZIELLE Roblox-Open-Cloud-Assets-API in das Roblox-Konto des Nutzers hoch und antwortet mit der ASSET-ID, die Roblox selbst genannt hat. Danach setzt DU das Asset selbst in den Place ein: ein Mesh mit mesh_apply_asset in den bestehenden Platzhalter (oder insert_asset fuer das komplette Modell), ein Bild mit set_property auf Decal.Texture / Texture.Texture / ImageLabel.Image / MeshPart.TextureID. Der Nutzer muss NICHTS mehr von Hand hochladen - das Mesh-Fenster gibt es nicht mehr. QUELLE (genau eine): slotKey = ein Mesh-Slot aus mesh_status (die Bridge kennt die fertige FBX/GLB-Datei dazu), filePath = eine Datei im Ordner der Bridge, oder contentBase64 + fileName = ein Bild, das DU erzeugt hast (kein Dateipfad noetig). Optional assetType: Model (Mesh, automatisch aus der Endung), Decal oder Image. Formate: .fbx/.glb/.gltf fuer Meshes, .png/.jpg/.jpeg/.bmp/.tga fuer Bilder. Roblox-Grenzen: 20 MB je Datei, Bilder unter 8000x8000 Pixel. Braucht der Upload laenger, antwortet das Werkzeug mit state=pending und einer operationId - dann einfach upload_asset { operationId } erneut aufrufen (nicht in einer engen Schleife pollen). Fehlt der Schluessel, antwortet das Werkzeug OPENCLOUD_KEY_MISSING mit einem userMessage-Satz: sage ihn dem Nutzer WORTLICH auf Deutsch. Der Asset-Ersteller ist standardmaessig das Roblox-Konto, das gerade in Studio angemeldet ist: Das Plugin meldet dafuer StudioService:GetUserId() als editorUserId. Nur wenn keine gueltige Studio-ID vorliegt, nutzt die Bridge automatisch die Resource aus dem API-Key (Introspect). Der Key muss ASSETS write fuer das angemeldete Studio-Konto erlauben; es gibt kein manuelles Entwickler-Feld. Bei JEDEM gescheiterten Upload steht der EXAKTE Dateipfad in der Antwort (filePath/filePathHint): nenne ihn dem Nutzer woertlich in einer eigenen Zeile, damit er die Datei notfalls selbst in Roblox hochladen kann (Toolbox -> Import).';
             params = @{
                 slotKey = @{ type = 'string'; required = $false; default = '-'; description = 'Mesh-Slot aus mesh_status (z. B. mesh_1a2b3c4d5e:base). Die Bridge sucht die passende FBX/GLB-Datei selbst und traegt die Asset-Id danach in den Slot ein.' }
                 filePath = @{ type = 'string'; required = $false; default = '-'; description = 'Absoluter Pfad oder Pfad relativ zum Mesh-Ordner der Bridge. Nur Dateien aus dem Bridge-Ordner werden hochgeladen (Sicherheit) - eigene Bilder stattdessen als contentBase64 schicken.' }
@@ -21196,7 +22172,7 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
             example = @{ slotKey = 'mesh_1a2b3c4d5e:base'; displayName = 'Turm Sockel' };
             errors = @(
                 'OPENCLOUD_KEY_MISSING: kein API-Schluessel hinterlegt - userMessage WORTLICH an den Nutzer (Einstellungen -> ROBLOX OPEN CLOUD -> Tutorial).',
-                'OPENCLOUD_CREATOR_MISSING: der Schluessel nennt keinen Empfaenger fuer die Assets (keine Nutzer-/Gruppen-ID in den Scopes) - userMessage WORTLICH an den Nutzer (Schluessel neu erstellen, Tutorial Schritt 4 und 5).',
+                'OPENCLOUD_CREATOR_MISSING: Studio hat keine angemeldete Nutzer-ID gemeldet und Introspect hat keine passende Key-Resource geliefert - melde dich in Studio an oder pruefe den Key-Empfaenger; userMessage WORTLICH an den Nutzer.',
                 'Bei jedem Fehler nennt die Antwort filePath/filePathHint - diesen Pfad dem Nutzer IMMER woertlich sagen, damit er die Datei selbst hochladen kann.',
                 'OPENCLOUD_KEY_REJECTED: Roblox hat den Schluessel abgelehnt (401/403) - ungueltig, abgelaufen oder ohne die Rechte Assets + Lesen + Schreiben.',
                 'OPENCLOUD_RATE_LIMITED: Roblox drosselt (429) - spaeter erneut versuchen, dem Nutzer ehrlich sagen.',
@@ -21481,7 +22457,7 @@ end
                 motion = 'Add animation only when the task requests motion or the object is inherently living/moving. For organic models, explicitly use organic=true so per-model geometry, palette, enabled-motion and fresh-audit evidence is enforced; see organicBuildRules.'
             }
             meshBuildRules = @{
-                title = 'Mesh-Build Engine 1.3 (Version 7.5.5) - STANDARDWEG: EIN Modell ist EIN Mesh, Blender baut, der Agent laedt hoch (Open Cloud), die Bridge setzt ein'
+                title = 'Mesh-Build Engine 1.3 (Version 7.5.7) - STANDARDWEG: EIN Modell ist EIN Mesh, Blender baut, der Agent laedt hoch (Open Cloud), die Bridge setzt ein'
                 whenThisApplies = 'DER STANDARDWEG (Version 7.5.5, Blender-first): Jedes 3D-Modell, das Arena baut, laeuft zuerst ueber Blender - egal ob Form, Organik oder Detailgrad. build_polygon_model gibt es nur noch auf ausdruecklichen Nutzerwunsch (userRequestedPolygon=true) und dann nur nach der Lag-Warnung. Seit 7.5.0 ist der Upload VOLL AUTOMATISIERT - der Nutzer muss nichts mehr hochladen.'
                 ONE_MODEL_ONE_MESH = 'HARTE REGEL SEIT 7.5.1 (Owner-Beschwerde: "Warum baut mir Arena Wurzel, Stamm, Aeste und Kronen einzeln"): EIN zusammenhaengendes Modell wird als EIN Mesh in EINEM Slot gebaut - ein Baum ist EIN Mesh, ein Fass EIN Mesh, eine Laterne EIN Mesh. Mehrere Slots sind NUR in genau drei Faellen erlaubt: (1) bestimmte Teile werden ANIMIERT (je bewegliches Glied ein Slot), (2) bestimmte Teile brauchen EIGENE EIGENSCHAFTEN (eigene Farbe/Material/CanCollide/Transparenz, die ein einzelnes MeshPart nicht tragen kann), (3) die DREIECKSZAHL sprengt das Budget (dann nach Koerperteilen splitten, nicht nach "Wurzel/Stamm/Aeste/Krone"-Raten). Sonst gilt: EIN Blender-Skript, das die ganze Form baut - inklusive Wurzeln, Krone, Blaetter oder Details -, EIN Slot, EIN MeshPart. Wer ohne einen dieser drei Gruende splittet, macht die Arbeit des Nutzers groesser (mehr Uploads, mehr Platzhalter, mehr MeshParts) und hat den Bau nicht verstanden.'
                 slots = 'Mehrere Slots NUR nach der Regel oben. Wenn wirklich geteilt wird, dann nach Funktion: je bewegliches Glied ein Slot (Kreatur, Fahrzeug, Maschine, Tuer, Rad) und die Gelenke wie gewohnt mit Welds/Motor6D verbinden; ein MeshPart traegt genau EINE Farbe/EIN Material (Roblox uebernimmt keine Blender-Materialien) - unterschiedliche Farben sind der zweite legitime Grund. Farbe und Material setzt Roblox ueber die Slot-Angaben color/material. Eine Zierde (Blatt, Blume, Frucht, Zierband) gehoert in DASSELBE Mesh, solange sie sich nicht bewegen muss.'
@@ -21507,7 +22483,7 @@ end
                 honesty = 'Die Asset-Id ist nur dann echt, wenn Roblox sie genannt hat. Steht die Operation noch auf pending, rufst du upload_asset { operationId } erneut auf (kein enger Loop). Fehlertexte von Roblox gehoren unverfaelscht an den Nutzer - die Bridge versteckt und beschoenigt nichts.'
             }
             organicBuildRules = @{
-                title = 'Organic Build Engine 1.1 (Version 7.5.5) - typed creature volumes, physical face, bilateral anatomy, measured before done'
+                title = 'Organic Build Engine 1.1 (Version 7.5.7) - typed creature volumes, physical face, bilateral anatomy, measured before done'
                 whenThisApplies = 'For any model intentionally built as organic (character, creature, plant, tree, prop or other organic free-form shape) the STANDARD path is Blender (build_mesh_model, one mesh per model, see meshBuildRules). Organic models are not registered for the polygon organic audit unless the user explicitly asked for polygon building: then the first write is build_polygon_model { organic=true, organicKind=..., userRequestedPolygon=true } with an explicit contrasting palette. Install an enabled motion Script under the model, run model_audit on every returned organic model after the final edit, and fix findings. report_done is rejected while a registered model lacks fresh passing evidence.'
                 theOneIdea = 'For an organic model the FIRST write targeting that model is build_mesh_model (Blender, STANDARD). Polygon organic (build_polygon_model { organic=true, organicKind=... }) only with userRequestedPolygon=true on explicit user request and after the WedgeParts lag warning. A creature built as polygon needs real closed lofts for body and head plus physical eyes and pupils; winged creatures get a mirrored, torso-attached wing pair. No side-view wedge, face sticker, or unmeasured claim can pass. Then add joints/details, install the enabled motion Script under that same model, and audit the exact model.'
                 forbidden = @(
@@ -21973,7 +22949,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.5.5'
+            version = '7.5.7'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -22204,7 +23180,7 @@ end
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $envelope = @{
-            bridgeVersion = '7.5.5'
+            bridgeVersion = '7.5.7'
             executor = $executorSnapshot
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent is never an error, but the user then sees NO bar and NO percentage at all - only your message as text. Send a real number every few calls. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
@@ -23698,7 +24674,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.5.5'
+                        bridgeVersion = '7.5.7'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -24189,7 +25165,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.5.5'
+                        serverVersion = '7.5.7'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -24548,7 +25524,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.5.5'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.5.7'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -24632,8 +25608,8 @@ end
                 }
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.5.5'
-                    serverVersion = '7.5.5'
+                    bridgeVersion = '7.5.7'
+                    serverVersion = '7.5.7'
                     toolbox = $statusToolbox
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
@@ -28467,76 +29443,35 @@ $script:BridgeOpenCloudTools = {
     }
 
     function Get-OpenCloudStudioDeveloper {
-        # Version 7.5.5: der ENTWICKLER des verbundenen Place. Das Studio-Plugin
-        # meldet game.CreatorId und game.CreatorType (User/Group) im Poll.
+        # Version 7.5.6: Der Asset-Ersteller ist das Konto, das in Roblox Studio
+        # angemeldet ist. Das Plugin meldet StudioService:GetUserId() getrennt
+        # von game.CreatorId/game.CreatorType (Eigentuemer des Places).
         param([string]$SessionId = '')
         if ([string]::IsNullOrWhiteSpace($SessionId)) { return $null }
         try {
             $entry = Get-SessionEntry $SessionId
             if ($null -eq $entry) { return $null }
-            $cid = [string]$entry.creatorId
-            if ([string]::IsNullOrWhiteSpace($cid) -or $cid -eq '0') { return $null }
-            $kind = 'user'
-            if ([string]$entry.creatorType -eq 'Group') { $kind = 'group' }
-            return @{ ok = $true; creatorId = $cid; creatorKind = $kind; source = 'studio' }
+            $userId = ([string]$entry.editorUserId).Trim()
+            if ($userId -notmatch '^\d+$' -or $userId -eq '0') { return $null }
+            return @{ ok = $true; creatorId = $userId; creatorKind = 'user'; source = 'studio_login' }
         } catch {
             return $null
         }
     }
 
-    function Resolve-OpenCloudDeveloperName {
-        # Version 7.5.5 (FALLBACK): Roblox-Benutzername -> Nutzer-ID. Die Users-API
-        # ist oeffentlich - hier geht bewusst KEIN Schluessel an Roblox.
-        param([string]$Name = '')
-        $clean = ([string]$Name).Trim()
-        if ([string]::IsNullOrWhiteSpace($clean)) {
-            return @{ ok = $false; code = 'DEVELOPER_NAME_EMPTY'; error = 'Kein Benutzername eingetragen.' }
-        }
-        if ($clean -notmatch '^[A-Za-z0-9_]{3,20}$') {
-            return @{ ok = $false; code = 'DEVELOPER_NAME_INVALID'; error = 'Roblox-Benutzernamen bestehen aus 3 bis 20 Buchstaben, Zahlen oder Unterstrichen.' }
-        }
-        $payload = (@{ usernames = @($clean); excludeBannedUsers = $true } | ConvertTo-Json -Compress -Depth 4)
-        try {
-            $response = Invoke-RestMethod -Uri 'https://users.roblox.com/v1/usernames/users' -Method Post -Body $payload -ContentType 'application/json' -TimeoutSec 15
-            $rows = @()
-            try { $rows = @($response.data) } catch {}
-            $hit = $null
-            foreach ($row in $rows) {
-                if ($null -ne $row -and ([string]$row.requestedUsername).ToLowerInvariant() -eq $clean.ToLowerInvariant()) { $hit = $row; break }
-            }
-            if ($null -eq $hit -and $rows.Count -gt 0) { $hit = $rows[0] }
-            if ($null -eq $hit -or [string]::IsNullOrWhiteSpace([string]$hit.id)) {
-                return @{ ok = $false; code = 'DEVELOPER_NOT_FOUND'; error = ('Roblox kennt den Benutzernamen ' + $clean + ' nicht.') }
-            }
-            return @{ ok = $true; creatorKind = 'user'; creatorId = [string]$hit.id; name = [string]$hit.name }
-        } catch {
-            return @{ ok = $false; code = 'USERNAME_LOOKUP_FAILED'; error = ('Die Namenssuche bei Roblox ist fehlgeschlagen: ' + $_.Exception.Message) }
-        }
-    }
-
     function Resolve-OpenCloudCreatorForUpload {
-        # Version 7.5.5: DER ENTWICKLER WIRD BEI JEDEM UPLOAD NEU ERMITTELT.
-        # 1) Schluessel, 2) Entwickler des verbundenen Place, 3) FALLBACK: der
-        # eingetippte Benutzername. Echte Fehler des Schluessels bleiben sichtbar.
+        # Version 7.5.6: ZUERST die echte Studio-Anmeldung (StudioService:GetUserId),
+        # damit Open Cloud als der angemeldete Nutzer hochlaedt. Nur wenn Studio
+        # keine User-ID meldet, bleibt die aus dem API-Key gelesene Resource der
+        # automatische Rueckfall. Es gibt kein manuelles Entwickler-Feld mehr.
         param($Shared, [string]$SessionId = '')
+        $studio = Get-OpenCloudStudioDeveloper -SessionId $SessionId
+        if ($null -ne $studio) { return $studio }
         $fromKey = Resolve-OpenCloudCreatorFromKey -Shared $Shared
         if ($fromKey.ok -eq $true) {
             return @{ ok = $true; creatorId = [string]$fromKey.creatorId; creatorKind = [string]$fromKey.creatorKind; source = 'key' }
         }
-        if ([string]$fromKey.code -ne 'OPENCLOUD_CREATOR_MISSING') { return $fromKey }
-        $studio = Get-OpenCloudStudioDeveloper -SessionId $SessionId
-        if ($null -ne $studio) { return $studio }
-        $typedId = ''
-        try { $typedId = [string]$Shared.BridgeSettings.openCloudDeveloperId } catch {}
-        if (-not [string]::IsNullOrWhiteSpace($typedId)) {
-            return @{ ok = $true; creatorId = $typedId; creatorKind = 'user'; source = 'username' }
-        }
-        return @{
-            ok = $false; code = 'OPENCLOUD_CREATOR_MISSING'
-            error = 'Der Entwickler ist weder im Schluessel noch im verbundenen Place bekannt und wurde nicht als Benutzername eingetragen.'
-            userMessage = 'Arena konnte den Entwickler nicht automatisch finden. Bitte trage im Bridge-Fenster unter Einstellungen, Abschnitt ROBLOX OPEN CLOUD, den Roblox-Benutzernamen des Entwicklers ein und klicke auf Entwickler uebernehmen. Danach lade ich das Asset erneut hoch.'
-            howToFix = 'Sage dem Nutzer den Satz aus userMessage WORTLICH auf Deutsch. Der Nutzer tippt nur seinen Roblox-Benutzernamen ein - keine ID.'
-        }
+        return $fromKey
     }
 
     function Invoke-OpenCloudUpload {
@@ -28547,13 +29482,12 @@ $script:BridgeOpenCloudTools = {
             return @{
                 ok = $false; code = 'OPENCLOUD_KEY_MISSING'
                 error = 'In diesem Bridge-Programm ist noch KEIN Roblox-Open-Cloud-API-Schluessel hinterlegt. Ohne ihn kann ich nichts nach Roblox hochladen.'
-                userMessage = 'Du hast in deiner Bridge noch keinen Roblox Open Cloud API-Key hinterlegt. Damit ich Meshes und Bilder automatisch hochladen kann, gehe bitte kurz oben rechts auf das Zahnrad (Einstellungen) und dort in den Abschnitt "Roblox Open Cloud API-Key": klappe das Tutorial auf, erstelle den Schluessel mit den Rechten assets + read + write, kopiere ihn in das Feld und druecke Speichern - dann kann ich direkt weiterarbeiten. Wer die Assets bekommt, liest die Bridge selbst aus dem Schluessel - du musst deinen Namen nirgends eintragen.'
+                userMessage = 'Du hast in deiner Bridge noch keinen Roblox Open Cloud API-Key hinterlegt. Damit ich Meshes und Bilder automatisch hochladen kann, gehe bitte kurz oben rechts auf das Zahnrad (Einstellungen) und dort in den Abschnitt "Roblox Open Cloud API-Key": klappe das Tutorial auf, erstelle den Schluessel mit den Rechten assets + read + write, kopiere ihn in das Feld und druecke Speichern - dann kann ich direkt weiterarbeiten. Die Bridge nutzt beim Upload automatisch das Konto, mit dem du in Roblox Studio angemeldet bist; ein Entwicklernamen muss nicht eingetragen werden.'
                 howToFix = 'Sage dem Nutzer den Satz aus userMessage WORTLICH auf Deutsch. Frage nicht nach der Asset-Id und lade nichts von Hand hoch - der Nutzer muss nur einmal den Schluessel hinterlegen.'
             }
         }
-        # Version 7.5.5: Der Entwickler wird AUTOMATISCH ermittelt (Schluessel,
-        # dann Place-Entwickler aus dem Studio). Nur wenn beides fehlt, greift der
-        # vom Nutzer eingetippte Benutzername. Jeder Upload fragt neu.
+        # Version 7.5.6: Der angemeldete Studio-Nutzer ist der primaere
+        # Asset-Ersteller; ohne Studio-ID wird die Resource aus dem API-Key genutzt.
         $creatorFound = Resolve-OpenCloudCreatorForUpload -Shared $Shared -SessionId $SessionId
         if ($creatorFound.ok -ne $true) {
             return @{
@@ -28717,7 +29651,7 @@ $script:BridgeOpenCloudTools = {
                     ok = $false; code = 'OPENCLOUD_OPERATION_FAILED'
                     error = ('Roblox hat den Upload abgelehnt: ' + $errText)
                     robloxResponse = $errText
-                    howToFix = 'Haeufige Gruende: Datei zu gross, Format nicht erlaubt, Bild ueber 8000x8000, Ersteller gehoert nicht zum Schluessel. Melde dem Nutzer den Roblox-Text unverfaelscht.'
+                    howToFix = 'Haeufige Gruende: Datei zu gross, Format nicht erlaubt, Bild ueber 8000x8000 oder der Key erlaubt ASSETS write nicht fuer das angemeldete Studio-Konto. Melde dem Nutzer den Roblox-Text unverfaelscht.'
                 }
             }
             $assetId = ''
@@ -28858,9 +29792,9 @@ $script:BridgeOpenCloudTools = {
     }
 
     function Resolve-OpenCloudCreatorFromKey {
-        # Version 7.5.3 (Nutzer-Fix): DER NUTZER GIBT DEN ERSTELLER NICHT
-        # MEHR EIN. Die Bridge liest ihn aus dem Schluessel selbst - Roblox
-        # nennt im Introspect die Ressourcen (userId/groupId) der Scopes.
+        # Version 7.5.6: Key-Resource als Rueckfall, falls Studio keine
+        # angemeldete Nutzer-ID meldet. Roblox nennt im Introspect die
+        # Ressourcen (userId/groupId) der Scopes.
         # Reihenfolge:
         # 1) Genau eine Gruppe -> Gruppe, sonst genau ein Nutzer -> Nutzer.
         # 2) Mehrere konkrete Ressourcen -> erste konkrete nehmen.
@@ -28871,10 +29805,10 @@ $script:BridgeOpenCloudTools = {
         #    Gruppe aus agiert).
         # 4) Wenn authorizedUserId fehlt/0/leer ist UND die Scopes keine
         #    konkrete Resource nennen -> Roblox hat schlicht keinen
-        #    Verfuegungsempfaenger im Schluessel eingetragen. Der Nutzer muss
-        #    dann im Creator-Dashboard beim Schluessel eine bestimmte Gruppe
-        #    ODER seinen Account als Resource festlegen - sonst weiss Roblox
-        #    nicht, wem das hochgeladene Asset gehoeren soll.
+        #    Verfuegungsempfaenger im Schluessel eingetragen. Falls auch keine
+        #    Studio-Anmeldung vorliegt, muss der Nutzer im Creator-Dashboard
+        #    eine Resource festlegen - sonst weiss Roblox nicht, wem das Asset
+        #    gehoeren soll.
         param($Shared, $Introspect = $null)
         $info = $Introspect
         if ($null -eq $info) { $info = Invoke-OpenCloudIntrospect $Shared }
@@ -28906,9 +29840,9 @@ $script:BridgeOpenCloudTools = {
         if ([string]::IsNullOrWhiteSpace($id)) {
             return @{
                 ok = $false; code = 'OPENCLOUD_CREATOR_MISSING'
-                error = 'Roblox nennt im Schluessel keinen Empfänger fuer die Assets (weder konkrete Nutzer-/Gruppen-ID noch ein autorisierter Nutzer).'
-                userMessage = 'Roblox kann im Schluessel keinen eindeutigen Empfänger fuer die hochgeladenen Assets finden. Bitte oeffne https://create.roblox.com/dashboard/credentials , bearbeite den Schluessel, und stelle im Bereich "Berechtigungen" unter "assets" eine bestimmte Gruppe ODER deinen Account als Resource ein. Speichere ihn danach erneut und fuege ihn hier wieder ein - der bisherige Schluessel bleibt unbenutzt.'
-                howToFix = 'Sage dem Nutzer den Satz aus userMessage WORTLICH auf Deutsch. Er muss KEINEN Namen oder keine ID hier eintippen - nur im Dashboard beim Schluessel eine konkrete Resource waehlen.'
+                error = 'Roblox nennt im Schluessel keinen Empfaenger fuer die Assets und das Studio-Plugin hat keine angemeldete Nutzer-ID gemeldet.'
+                userMessage = 'Die Bridge konnte den Asset-Ersteller noch nicht erkennen. Bitte melde dich in Roblox Studio mit deinem Roblox-Konto an und öffne ein Place, bis unten links in der Bridge dein Profilbild und Anzeigename erscheinen. Danach nutzt die Bridge automatisch genau dieses Konto; du musst keinen Entwicklernamen eintragen. Wenn Roblox den Upload trotzdem mit 403 ablehnt, muss der Open-Cloud-Key das Recht assets:write fuer dieses Studio-Konto haben.'
+                howToFix = 'Sage dem Nutzer den Satz aus userMessage WORTLICH auf Deutsch. Falls das Studio-Profil sichtbar ist und Roblox dennoch 403 meldet, muss der API-Key ASSETS write fuer die angezeigte Nutzer-ID erlauben.'
             }
         }
         try {
@@ -28926,7 +29860,7 @@ $script:BridgeOpenCloudTools = {
         # (Introspect) statt eines Stocherns in einer erfundenen Operation.
         # Sie sagt damit nicht nur "Schluessel wird angenommen", sondern auch,
         # was er DARF (Assets lesen/schreiben) - und liefert gleich den
-        # Ersteller mit, den der Nutzer nicht mehr eintippen muss.
+        # Key-Resource mit, die bei fehlender Studio-ID als Upload-Rueckfall dient.
         param($Shared)
         $config = Get-OpenCloudConfig $Shared
         if (-not $config.hasKey) { return @{ ok = $false; code = 'OPENCLOUD_KEY_MISSING'; error = 'Kein Schluessel hinterlegt.' } }
@@ -30256,16 +31190,38 @@ $xaml = @'
                                 </ScrollViewer>
                             </Grid>
                             <Border Grid.Row="1" Background="#12FFFFFF" BorderBrush="#1FFFFFFF" BorderThickness="0,1,0,0" Padding="14,10,14,12">
-                                <Button x:Name="ArenaAiButton" Width="178" Height="40" HorizontalAlignment="Right"
-                                        Background="{StaticResource GreenBtnBg}" BorderBrush="#4DFFFFFF" BorderThickness="1"
-                                        Foreground="#FFFFFF" ToolTip="Arena AI im Browser öffnen">
-                                    <Button.Content>
-                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                            <TextBlock Text="&#xE71B;" FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="#FFFFFF" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                            <TextBlock Text="Arena AI öffnen" Foreground="#FFFFFF" VerticalAlignment="Center"/>
+                                <Grid>
+                                    <StackPanel x:Name="StudioEditorProfile" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center" Visibility="Collapsed"
+                                                ToolTip="Bevorzugtes Roblox-Studio-Konto fuer Open-Cloud-Uploads; ohne Studio-ID dient die Key-Resource als Rueckfall">
+                                        <Border Width="40" Height="40" CornerRadius="20" Background="#1A2B3F68" BorderBrush="#44FFFFFF" BorderThickness="1" ClipToBounds="True">
+                                            <Grid>
+                                                <TextBlock x:Name="StudioEditorAvatarFallback" Text="&#xE77B;" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="#9CB2DC"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                <Image x:Name="StudioEditorAvatarImage" Width="38" Height="38" Stretch="UniformToFill" Visibility="Collapsed">
+                                                    <Image.Clip>
+                                                        <EllipseGeometry Center="19,19" RadiusX="19" RadiusY="19"/>
+                                                    </Image.Clip>
+                                                </Image>
+                                            </Grid>
+                                        </Border>
+                                        <StackPanel VerticalAlignment="Center" Margin="10,0,0,0" MaxWidth="300">
+                                            <TextBlock x:Name="StudioEditorNameText" Text="Roblox Studio-Nutzer" Foreground="{StaticResource TextMain}" FontSize="12.5" FontWeight="SemiBold"
+                                                       TextTrimming="CharacterEllipsis" MaxWidth="290"/>
+                                            <TextBlock x:Name="StudioEditorCaptionText" Text="In Roblox Studio angemeldet" Foreground="{StaticResource TextFaint}" FontSize="10.5"
+                                                       TextTrimming="CharacterEllipsis" MaxWidth="290" Margin="0,2,0,0"/>
                                         </StackPanel>
-                                    </Button.Content>
-                                </Button>
+                                    </StackPanel>
+                                    <Button x:Name="ArenaAiButton" Width="178" Height="40" HorizontalAlignment="Right"
+                                            Background="{StaticResource GreenBtnBg}" BorderBrush="#4DFFFFFF" BorderThickness="1"
+                                            Foreground="#FFFFFF" ToolTip="Arena AI im Browser öffnen">
+                                        <Button.Content>
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                <TextBlock Text="&#xE71B;" FontFamily="Segoe MDL2 Assets" FontSize="13" Foreground="#FFFFFF" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                <TextBlock Text="Arena AI öffnen" Foreground="#FFFFFF" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button.Content>
+                                    </Button>
+                                </Grid>
                             </Border>
                         </Grid>
                     </Grid>
@@ -30485,6 +31441,11 @@ try { if ($null -ne $PlaceList) { $PlaceList.Visibility = 'Collapsed' } } catch 
 try { if ($null -ne $EmptyState) { $EmptyState.Visibility = 'Collapsed' } } catch {}
 try { if ($null -ne $SettingsButton) { $SettingsButton.IsEnabled = $false } } catch {}
 $ArenaAiButton   = $window.FindName('ArenaAiButton')
+$StudioEditorProfile = $window.FindName('StudioEditorProfile')
+$StudioEditorAvatarFallback = $window.FindName('StudioEditorAvatarFallback')
+$StudioEditorAvatarImage = $window.FindName('StudioEditorAvatarImage')
+$StudioEditorNameText = $window.FindName('StudioEditorNameText')
+$StudioEditorCaptionText = $window.FindName('StudioEditorCaptionText')
 $UpdateBadge     = $window.FindName('UpdateBadge')
 $MinimizeButton  = $window.FindName('MinimizeButton')
 $CloseButton     = $window.FindName('CloseButton')
@@ -31056,7 +32017,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.5.5)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.5.7)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -31194,6 +32155,29 @@ function Get-ProgressStateSnapshot {
         if ($null -eq $best -or $callAt -gt $bestCall) { $best = $view; $bestCall = $callAt }
     }
     return $best
+}
+
+function Get-ArenaActivityDisplayLabel {
+    param([string]$Tool)
+    if ([string]::IsNullOrWhiteSpace($Tool)) { return 'Bridge-Aktion' }
+    try {
+        $labels = $script:Shared.ActivityToolLabels
+        if ($null -ne $labels -and $labels.ContainsKey($Tool)) { return [string]$labels[$Tool] }
+    } catch {}
+    return 'Bridge-Aktion'
+}
+
+function Get-PendingCommandStatusLabel {
+    param([string]$Status)
+    switch -Exact ($Status) {
+        'queued' { return 'wartet in der Warteschlange' }
+        'delivered' { return 'an Studio gesendet' }
+        'received' { return 'von Studio empfangen' }
+        'started' { return 'wird in Studio gestartet' }
+        'running' { return 'läuft in Studio' }
+        'cancel_requested' { return 'Abbruch angefordert' }
+        default { return 'Status nicht verfügbar' }
+    }
 }
 
 function Format-ProgressMessage {
@@ -33858,7 +34842,9 @@ function Update-PlaceProgressVisual {
         if ($ageBase -le 0) { $ageBase = [int64]$openCmd.queuedAt }
         $age = 0
         try { if ($ageBase -gt 0) { $age = [int][Math]::Max(0, ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - $ageBase)) } } catch {}
-        $commandText = ('Studio-Befehl: ' + [string]$openCmd.tool + ' - ' + $status + ' seit ' + [string]$age + ' s.')
+        $commandLabel = Get-ArenaActivityDisplayLabel ([string]$openCmd.tool)
+        $statusLabel = Get-PendingCommandStatusLabel $status
+        $commandText = ('Studio-Befehl: ' + $commandLabel + ' (' + $statusLabel + ', seit ' + [string]$age + ' s).')
         try {
             if ($Row.CommandCancelButton) {
                 $Row.CommandCancelButton.Tag = $sessionId
@@ -33882,12 +34868,19 @@ function Update-PlaceProgressVisual {
     # Sättigung.
     $color = '#0B57D0'      # arbeitet = sattes Royalblau
     $label = 'Arena arbeitet gerade...'
+    if ($null -eq $snapshot -and $null -ne $openCmd) {
+        $label = 'Studio-Befehl läuft: ' + (Get-ArenaActivityDisplayLabel ([string]$openCmd.tool))
+    }
     if ($state -eq 'done') { $color = '#166534'; $label = 'Fertig!' }
     elseif ($state -eq 'waiting') { $color = '#1F2937'; $label = 'Seit über einer Minute kein Bridge Aufruf mehr' }
     elseif ($state -eq 'error') { $color = '#9F1239'; $label = 'Fehler' }
     # Version 7.2.0: Die Nachricht der KI wird SICHTBAR (sie stand bis hier nur
     # im Tooltip, deshalb sah die Zeile aus, als ob nichts passiert).
     if ($state -ne 'done' -and $state -ne 'waiting' -and -not [string]::IsNullOrWhiteSpace($message)) { $label = $message }
+    if (-not [string]::IsNullOrWhiteSpace($lastTool)) {
+        $friendlyAction = Get-ArenaActivityDisplayLabel $lastTool
+        if ($label.IndexOf($friendlyAction,[StringComparison]::OrdinalIgnoreCase) -lt 0) { $label += ' · Letzte Aktion: ' + $friendlyAction }
+    }
 
     # 100% bleibt nach report_done exakt 60 s sichtbar, danach verschwindet
     # nur die Zeilenanzeige; der Verlauf bleibt fuer Diagnose/Prompt erhalten.
@@ -33907,13 +34900,13 @@ function Update-PlaceProgressVisual {
     if ($percentKnown -or $state -eq 'done') {
         # ECHTE Zahl gemeldet: Balken + Prozent wie gewohnt.
         Set-Text $Row.ProgressText $label
-        $Row.ProgressText.Visibility = 'Collapsed'
+        $Row.ProgressText.Visibility = 'Visible'
         $Row.ProgressText.Foreground = Get-Brush $color
         $Row.ProgressBar.Visibility = 'Visible'
         $Row.ProgressPercent.Visibility = 'Visible'
         $Row.ProgressBar.Value = $percent
         $Row.ProgressBar.Foreground = Get-Brush $color
-        $Row.ProgressPercent.Text = ($percent.ToString() + ' % • ' + $label)
+        $Row.ProgressPercent.Text = ($percent.ToString() + ' %')
         $Row.ProgressPercent.Foreground = Get-Brush $color
         Add-UiChannelCount 'ProgressPaintedPercent' 1
         Write-UiStationThrottled 'PROGRESS' ($sessionId.Substring(0, [Math]::Min(8, $sessionId.Length))) 'UI_PAINTED' @{ mode = 'percent'; percent = $percent; state = $state; tool = $lastTool; sidSource = $sourceSid; command = $(if ($null -ne $openCmd) { [string]$openCmd.tool + ':' + [string]$openCmd.status } else { '-' }) } 5
@@ -33925,8 +34918,7 @@ function Update-PlaceProgressVisual {
         # die Fortschrittsanzeige waere kaputt. Jetzt: Balken da, Prozent 0 %,
         # Text erklaert, was Arena gerade macht.
         $textLine = $label
-        if (-not [string]::IsNullOrWhiteSpace($lastTool)) { $textLine = $textLine + ' - ' + $lastTool }
-        if ($silent -gt 0) { $textLine = $textLine + ' - vor ' + [string]$silent + ' s' }
+        if ($silent -gt 0) { $textLine += ' · zuletzt vor ' + [string]$silent + ' s' }
         Set-Text $Row.ProgressText $textLine
         $Row.ProgressText.Visibility = 'Visible'
         $Row.ProgressText.Foreground = Get-Brush $color
@@ -33934,7 +34926,7 @@ function Update-PlaceProgressVisual {
         $Row.ProgressBar.Value = 0
         $Row.ProgressBar.Foreground = Get-Brush $color
         $Row.ProgressPercent.Visibility = 'Visible'
-        $Row.ProgressPercent.Text = ('0 % • ' + $textLine)
+        $Row.ProgressPercent.Text = '0 %'
         $Row.ProgressPercent.Foreground = Get-Brush $color
         if ($null -ne $snapshot) { $tooltip = $tooltip + [Environment]::NewLine + ('Noch keine Prozentzahl gemeldet (' + [string]$callsWithoutPercent + ' Aufruf(e) ohne Zahl) - der Balken steht deshalb auf 0 %. Arena bekommt in jeder Antwort PERCENT_MISSING.') }
         Add-UiChannelCount 'ProgressPaintedNoPercent' 1
@@ -34016,7 +35008,7 @@ function Write-ChannelDiagnoseFile {
 
         $progressPath = Join-Path $script:AppDataRoot 'progress-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.5.5)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.5.7)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -34051,7 +35043,7 @@ function Write-ChannelDiagnoseFile {
 
         $notifyPath = Join-Path $script:AppDataRoot 'notify-diagnose.txt'
         $sb2 = New-Object System.Text.StringBuilder
-        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.5.5)')
+        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.5.7)')
         [void]$sb2.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb2.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb2.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -34420,7 +35412,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.5.5)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.5.7)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -35459,6 +36451,7 @@ function Get-ArenaHistoryEntries {
             try {
                 $entry = $pair.Value | ConvertFrom-Json
                 $entry | Add-Member -NotePropertyName 'placeName' -NotePropertyValue $place -Force
+                $entry | Add-Member -NotePropertyName 'sessionId' -NotePropertyValue ([string]$sid) -Force
                 $entries.Add($entry)
             } catch {}
         }
@@ -35524,6 +36517,242 @@ function New-AuroraLayer {
     return $layer
 }
 
+function Get-ArenaHistoryProgressTargets {
+    param($State, $Entries)
+    $sessionIds = New-Object System.Collections.Generic.List[string]
+    if (-not [bool]$State.AllPlaces) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$State.SessionId)) { $sessionIds.Add([string]$State.SessionId) }
+    } else {
+        # Prefer live Studio sessions; retain a recent progress snapshot too,
+        # so the history still shows the last task after a brief reconnect.
+        try {
+            foreach ($studio in @(Get-ActiveStudios)) {
+                $sid = [string]$studio.sessionId
+                if (-not [string]::IsNullOrWhiteSpace($sid) -and -not $sessionIds.Contains($sid)) { $sessionIds.Add($sid) }
+            }
+        } catch {}
+        try {
+            $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+            foreach ($pair in $script:Shared.ProgressStates.GetEnumerator()) {
+                $sid = [string]$pair.Key
+                if ([string]::IsNullOrWhiteSpace($sid) -or $sessionIds.Contains($sid)) { continue }
+                $snapshot = Get-ProgressStateSnapshotForId $sid
+                if ($null -ne $snapshot -and [int64]$snapshot.LastCallAt -gt 0 -and ($now - [int64]$snapshot.LastCallAt) -le 600) { $sessionIds.Add($sid) }
+            }
+        } catch {}
+        foreach ($entry in @($Entries)) {
+            $sid = ''
+            try { $sid = [string]$entry.sessionId } catch {}
+            if (-not [string]::IsNullOrWhiteSpace($sid) -and -not $sessionIds.Contains($sid)) {
+                $snapshot = Get-ProgressStateSnapshotForId $sid
+                if ($null -ne $snapshot -and [int64]$snapshot.SilentSeconds -le 600) { $sessionIds.Add($sid) }
+            }
+        }
+    }
+
+    $targets = New-Object System.Collections.Generic.List[object]
+    foreach ($sid in $sessionIds) {
+        $snapshot = Get-ProgressStateSnapshot ([string]$sid)
+        $placeName = ''
+        try {
+            $latest = @($Entries | Where-Object { [string]$_.sessionId -eq [string]$sid } | Sort-Object @{Expression={ [int64]$_.updatedAt }; Descending=$true} | Select-Object -First 1)
+            if ($latest.Count -gt 0) { $placeName = [string]$latest[0].placeName }
+        } catch {}
+        if ([string]::IsNullOrWhiteSpace($placeName) -or $placeName -eq 'Unbekannter Place') {
+            try {
+                $raw = $null
+                if ($script:Shared.Sessions.TryGetValue([string]$sid, [ref]$raw)) {
+                    $sessionInfo = $raw | ConvertFrom-Json
+                    if ($sessionInfo.placeName) { $placeName = [string]$sessionInfo.placeName }
+                }
+            } catch {}
+        }
+        if ([string]::IsNullOrWhiteSpace($placeName) -or $placeName -eq 'Unbekannter Place') {
+            try { if ($script:PlaceNames.ContainsKey([string]$sid)) { $placeName = [string]$script:PlaceNames[[string]$sid] } } catch {}
+        }
+        if ([string]::IsNullOrWhiteSpace($placeName)) { $placeName = 'Place' }
+        $latestEntry = $null
+        try { $latestEntry = @($Entries | Where-Object { [string]$_.sessionId -eq [string]$sid } | Sort-Object @{Expression={ [int64]$_.updatedAt }; Descending=$true} | Select-Object -First 1)[0] } catch {}
+        $openCommand = $null
+        try {
+            $delivery = Get-UiDeliverySession ([string]$sid)
+            if ([string]::IsNullOrWhiteSpace($delivery)) { $delivery = [string]$sid }
+            $openCommand = Get-PlaceOpenCommand $delivery
+        } catch {}
+        $targets.Add([pscustomobject]@{SessionId=[string]$sid;PlaceName=$placeName;Snapshot=$snapshot;LatestEntry=$latestEntry;OpenCommand=$openCommand})
+    }
+    if ([bool]$State.AllPlaces) {
+        $orderedTargets = @($targets.ToArray() | Sort-Object @{Expression={ if ($null -ne $_.Snapshot) { [int64]$_.Snapshot.LastCallAt } else { 0 } }; Descending=$true} | Select-Object -First 4)
+        $targets = New-Object System.Collections.Generic.List[object]
+        foreach ($target in $orderedTargets) { [void]$targets.Add($target) }
+    }
+    if ($targets.Count -eq 0) {
+        $waitingName = if ([bool]$State.AllPlaces) { 'Alle Places' } else { 'Place' }
+        $targets.Add([pscustomobject]@{SessionId='__history_waiting__';PlaceName=$waitingName;Snapshot=$null;LatestEntry=$null;OpenCommand=$null})
+    }
+    return $targets.ToArray()
+}
+
+function New-ArenaHistoryProgressCard {
+    param($HostPanel)
+    $border = [System.Windows.Controls.Border]::new()
+    $border.Background = Get-Brush '#52131D43'
+    $border.BorderBrush = Get-Brush '#3FFFFFFF'
+    $border.BorderThickness = [System.Windows.Thickness]::new(1)
+    $border.CornerRadius = [System.Windows.CornerRadius]::new(12)
+    $border.Padding = [System.Windows.Thickness]::new(14,10,14,10)
+    $border.Margin = [System.Windows.Thickness]::new(0,0,0,8)
+
+    $stack = [System.Windows.Controls.StackPanel]::new()
+    $place = [System.Windows.Controls.TextBlock]::new()
+    $place.Foreground = Get-Brush '#AFC2FF'
+    $place.FontSize = 12.5
+    $place.FontWeight = 'SemiBold'
+    $place.TextTrimming = 'CharacterEllipsis'
+    $status = [System.Windows.Controls.TextBlock]::new()
+    $status.Foreground = Get-Brush '#F4F7FF'
+    $status.FontSize = 16
+    $status.FontWeight = 'SemiBold'
+    $status.TextWrapping = 'Wrap'
+    $status.MaxHeight = 48
+    $status.Margin = [System.Windows.Thickness]::new(0,3,0,5)
+
+    $meter = [System.Windows.Controls.Grid]::new()
+    $meterColumn = [System.Windows.Controls.ColumnDefinition]::new()
+    $meterColumn.Width = [System.Windows.GridLength]::new(1,[System.Windows.GridUnitType]::Star)
+    $percentColumn = [System.Windows.Controls.ColumnDefinition]::new()
+    $percentColumn.Width = [System.Windows.GridLength]::new(62)
+    $meter.ColumnDefinitions.Add($meterColumn); $meter.ColumnDefinitions.Add($percentColumn)
+    $bar = [System.Windows.Controls.ProgressBar]::new()
+    $bar.Minimum = 0; $bar.Maximum = 100; $bar.Value = 0
+    $bar.Height = 10; $bar.VerticalAlignment = 'Center'
+    $bar.Foreground = Get-Brush '#2F81F7'; $bar.Background = Get-Brush '#33242C48'
+    $bar.BorderThickness = [System.Windows.Thickness]::new(0)
+    [System.Windows.Controls.Grid]::SetColumn($bar,0); [void]$meter.Children.Add($bar)
+    $percent = [System.Windows.Controls.TextBlock]::new()
+    $percent.Foreground = Get-Brush '#D8E2FF'; $percent.FontSize = 13
+    $percent.FontWeight = 'Bold'; $percent.TextAlignment = 'Right'
+    $percent.VerticalAlignment = 'Center'; $percent.Margin = [System.Windows.Thickness]::new(8,0,0,0)
+    [System.Windows.Controls.Grid]::SetColumn($percent,1); [void]$meter.Children.Add($percent)
+
+    $action = [System.Windows.Controls.TextBlock]::new()
+    $action.Foreground = Get-Brush '#E4EAFE'
+    $action.FontSize = 13
+    $action.TextWrapping = 'Wrap'
+    $action.MaxHeight = 46
+    $action.Margin = [System.Windows.Thickness]::new(0,6,0,0)
+    $meta = [System.Windows.Controls.TextBlock]::new()
+    $meta.Foreground = Get-Brush '#A5B3D1'
+    $meta.FontSize = 11.5
+    $meta.TextWrapping = 'Wrap'
+    $meta.MaxHeight = 34
+    $meta.Margin = [System.Windows.Thickness]::new(0,3,0,0)
+
+    [void]$stack.Children.Add($place); [void]$stack.Children.Add($status)
+    [void]$stack.Children.Add($meter); [void]$stack.Children.Add($action); [void]$stack.Children.Add($meta)
+    $border.Child = $stack
+    [void]$HostPanel.Children.Add($border)
+    return [pscustomobject]@{Border=$border;Place=$place;Status=$status;Bar=$bar;Percent=$percent;Action=$action;Meta=$meta;Signature=''}
+}
+
+function Update-ArenaHistoryProgressCard {
+    param($Card, $Target)
+    $snapshot = $Target.Snapshot
+    $entry = $Target.LatestEntry
+    $openCommand = $Target.OpenCommand
+    $percent = 0
+    $percentKnown = $false
+    $state = 'waiting'
+    $message = 'Noch keine Fortschrittsmeldung von Arena. Der Balken startet bei 0 % und zeigt hier den nächsten Arbeitsschritt.'
+    $silent = 0
+    $calls = 0
+    $callsWithPercent = 0
+    $lastTool = ''
+    if ($null -ne $snapshot) {
+        $state = [string]$snapshot.State
+        $percentKnown = [bool]$snapshot.PercentKnown
+        $percent = [int][Math]::Round([double]$snapshot.Percent,0)
+        if ($percent -lt 0) { $percent = 0 }; if ($percent -gt 100) { $percent = 100 }
+        if ($state -eq 'done' -and -not $percentKnown) { $percent = 100 }
+        $message = Format-ProgressMessage $snapshot
+        if ([string]::IsNullOrWhiteSpace($message)) { $message = 'Arena arbeitet gerade im Place.' }
+        $silent = [int]$snapshot.SilentSeconds
+        $calls = [int]$snapshot.Calls
+        $callsWithPercent = [int]$snapshot.CallsWithPercent
+        $lastTool = [string]$snapshot.LastTool
+    }
+    $statusLabel = switch -Exact ($state) {
+        'done' { 'Fertig' }
+        'waiting' { 'Wartet auf Arena' }
+        'error' { 'Fehler' }
+        default { 'In Arbeit' }
+    }
+    $statusText = if ($state -eq 'done') { 'Arena hat den Auftrag abgeschlossen: ' + $message } elseif ($state -eq 'error') { 'Arena meldet einen Fehler: ' + $message } else { 'Aktueller Status: ' + $message }
+    $actionText = ''
+    if ($null -ne $entry -and -not [string]::IsNullOrWhiteSpace([string]$entry.text)) {
+        $actionText = 'Letzter Arbeitsschritt: ' + [string]$entry.text
+    } elseif ($lastTool) {
+        $actionText = 'Zuletzt ausgeführte Aktion: ' + (Get-ArenaActivityDisplayLabel $lastTool)
+    } else {
+        $actionText = 'Noch keine Aktion von Arena für diesen Place aufgezeichnet.'
+    }
+    $metaParts = New-Object System.Collections.Generic.List[string]
+    $metaParts.Add($statusLabel)
+    if ($null -ne $snapshot) {
+        $metaParts.Add([string]$calls + ' Bridge-Aufrufe; ' + [string]$callsWithPercent + ' mit Prozent')
+        if ($silent -gt 0) { $metaParts.Add('letztes Update vor ' + [string]$silent + ' s') }
+        if (-not $percentKnown -and $state -ne 'done') { $metaParts.Add('Prozent noch nicht gemeldet') }
+    } else { $metaParts.Add('wartet auf den ersten Bridge-Aufruf') }
+    if ($null -ne $openCommand) {
+        $toolLabel = Get-ArenaActivityDisplayLabel ([string]$openCommand.tool)
+        $commandStatus = Get-PendingCommandStatusLabel ([string]$openCommand.status)
+        $metaParts.Add('Studio-Befehl: ' + $toolLabel + ' (' + $commandStatus + ')')
+    }
+    $signature = @($Target.PlaceName,$statusText,$percent,$percentKnown,$state,$actionText,($metaParts.ToArray() -join ' · ')) -join '|'
+    if ([string]$Card.Signature -eq $signature) { return }
+    $Card.Signature = $signature
+    $Card.Place.Text = 'FORTSCHRITT · ' + [string]$Target.PlaceName
+    $Card.Status.Text = $statusText
+    $Card.Bar.Value = $percent
+    $Card.Percent.Text = if ($percentKnown -or $state -eq 'done') { [string]$percent + ' %' } else { '0 %' }
+    $Card.Action.Text = $actionText
+    $Card.Meta.Text = $metaParts.ToArray() -join ' · '
+    $color = switch -Exact ($state) {
+        'done' { '#22C55E' }
+        'waiting' { '#94A3B8' }
+        'error' { '#FB7185' }
+        default { '#38BDF8' }
+    }
+    $Card.Bar.Foreground = Get-Brush $color
+    $Card.Percent.Foreground = Get-Brush $color
+    if ($state -eq 'error') { $Card.Border.BorderBrush = Get-Brush '#70FB7185' }
+    elseif ($state -eq 'done') { $Card.Border.BorderBrush = Get-Brush '#7022C55E' }
+    else { $Card.Border.BorderBrush = Get-Brush '#3FFFFFFF' }
+}
+
+function Update-ArenaHistoryProgress {
+    param($State, $Entries)
+    if ($null -eq $State.ProgressHost) { return }
+    $targets = @(Get-ArenaHistoryProgressTargets $State $Entries)
+    $wanted = @{}
+    foreach ($target in $targets) { $wanted[[string]$target.SessionId] = $true }
+    foreach ($key in @($State.ProgressCards.Keys)) {
+        if (-not $wanted.ContainsKey([string]$key)) {
+            try { [void]$State.ProgressHost.Children.Remove($State.ProgressCards[$key].Border) } catch {}
+            [void]$State.ProgressCards.Remove([string]$key)
+        }
+    }
+    foreach ($target in $targets) {
+        $sid = [string]$target.SessionId
+        $card = $null
+        if (-not $State.ProgressCards.ContainsKey($sid)) {
+            $card = New-ArenaHistoryProgressCard $State.ProgressHost
+            $State.ProgressCards[$sid] = $card
+        } else { $card = $State.ProgressCards[$sid] }
+        Update-ArenaHistoryProgressCard $card $target
+    }
+}
+
 function Add-ArenaHistoryCard {
     param($HostPanel, $Entry, [bool]$AllPlaces)
     $kind = [string]$Entry.kind
@@ -35547,9 +36776,9 @@ function Add-ArenaHistoryCard {
     $line=[System.Windows.Controls.Border]::new();$line.Background=Get-Brush $colour;$line.CornerRadius=[System.Windows.CornerRadius]::new(2)
     [System.Windows.Controls.Grid]::SetColumn($line,0);$grid.Children.Add($line)|Out-Null
     $stack=[System.Windows.Controls.StackPanel]::new();$stack.Margin=[System.Windows.Thickness]::new(9,0,0,0)
-    $main=[System.Windows.Controls.TextBlock]::new();$main.Foreground=Get-Brush '#EAF0FF';$main.FontSize=11.5;$main.TextWrapping='Wrap'
+    $main=[System.Windows.Controls.TextBlock]::new();$main.Foreground=Get-Brush '#F0F4FF';$main.FontSize=14;$main.FontWeight='SemiBold';$main.TextWrapping='Wrap'
     $prefix=if($AllPlaces){ ([string]$Entry.placeName + ' · ') }else{''};$main.Text=$prefix + [string]$Entry.text
-    $meta=[System.Windows.Controls.TextBlock]::new();$meta.Foreground=Get-Brush '#8FA3CC';$meta.FontSize=10;$meta.Margin=[System.Windows.Thickness]::new(0,2,0,0)
+    $meta=[System.Windows.Controls.TextBlock]::new();$meta.Foreground=Get-Brush '#AAB9D8';$meta.FontSize=11.5;$meta.Margin=[System.Windows.Thickness]::new(0,4,0,0)
     $when='';try{$when=[DateTimeOffset]::FromUnixTimeSeconds([int64]$Entry.updatedAt).LocalDateTime.ToString('HH:mm:ss')}catch{}
     $state='Abgeschlossen'
     if ([int64]$Entry.updatedAt -eq 0) {
@@ -35589,8 +36818,9 @@ function Update-ArenaHistoryWindow {
     } catch {}
     # Version 5.2: bei unveraendertem Inhalt gar nichts umbauen (kein Flackern).
     $entries = @(Get-ArenaHistoryEntries ([string]$State.SessionId))
+    Update-ArenaHistoryProgress $State $entries
     $contentSig = [string]$entries.Count
-    foreach ($sigEntry in $entries) { try { $contentSig += '.' + [string]$sigEntry.updatedAt + [string]$sigEntry.kind } catch {} }
+    foreach ($sigEntry in $entries) { try { $contentSig += '.' + [string]$sigEntry.id + ':' + [string]$sigEntry.updatedAt + ':' + [string]$sigEntry.kind + ':' + [string]$sigEntry.text } catch {} }
     if (-not $State.FirstRender -and $null -ne $State.Signature -and $State.Signature -eq $contentSig) { return }
     $State.Signature = $contentSig
     $scroll=$State.Scroll
@@ -35668,7 +36898,7 @@ function New-HistoryButton {
 }
 function Open-ArenaHistoryWindow {
     param([string]$SessionId, [string]$Title = 'Arena-Verlauf')
-    $history=[System.Windows.Window]::new();$history.Title=$Title;$history.Width=660;$history.Height=620;$history.MinWidth=660;$history.MinHeight=620;$history.MaxWidth=660;$history.MaxHeight=620
+    $history=[System.Windows.Window]::new();$history.Title=$Title;$history.Width=880;$history.Height=760;$history.MinWidth=880;$history.MinHeight=760;$history.MaxWidth=880;$history.MaxHeight=760
     $history.WindowStartupLocation='CenterOwner';$history.WindowStyle='None';$history.AllowsTransparency=$true;$history.Background=[System.Windows.Media.Brushes]::Transparent;$history.FontFamily=[System.Windows.Media.FontFamily]::new('Segoe UI')
     try{$history.Owner=$window}catch{}
     # Version 6.0 (Liquid Glass): dunkle Glas-Schale auf navy-violettem
@@ -35681,17 +36911,21 @@ function Open-ArenaHistoryWindow {
     try { $shellBg.Freeze() } catch {}
     $shell.Background=$shellBg
     $shell.BorderBrush=Get-Brush '#33FFFFFF';$shell.BorderThickness=[System.Windows.Thickness]::new(1);$shell.Padding=[System.Windows.Thickness]::new(20)
-    try { $shell.Clip = [System.Windows.Media.RectangleGeometry]::new([System.Windows.Rect]::new(0,0,660,620), 18, 18) } catch {}
+    try { $shell.Clip = [System.Windows.Media.RectangleGeometry]::new([System.Windows.Rect]::new(0,0,880,760), 18, 18) } catch {}
     try { $shell.Effect = New-Shadow -Blur 28 -Opacity 0.45 } catch {}
-    $grid=[System.Windows.Controls.Grid]::new();$r0=[System.Windows.Controls.RowDefinition]::new();$r0.Height=[System.Windows.GridLength]::Auto;$r1=[System.Windows.Controls.RowDefinition]::new();$grid.RowDefinitions.Add($r0);$grid.RowDefinitions.Add($r1)
+    $grid=[System.Windows.Controls.Grid]::new()
+    $r0=[System.Windows.Controls.RowDefinition]::new();$r0.Height=[System.Windows.GridLength]::Auto
+    $r1=[System.Windows.Controls.RowDefinition]::new();$r1.Height=[System.Windows.GridLength]::Auto
+    $r2=[System.Windows.Controls.RowDefinition]::new();$r2.Height=[System.Windows.GridLength]::new(1,[System.Windows.GridUnitType]::Star)
+    $grid.RowDefinitions.Add($r0);$grid.RowDefinitions.Add($r1);$grid.RowDefinitions.Add($r2)
     try {
-        $aurora = New-AuroraLayer -Width 660 -Height 620
+        $aurora = New-AuroraLayer -Width 880 -Height 760
         [System.Windows.Controls.Grid]::SetRow($aurora,0)
-        [System.Windows.Controls.Grid]::SetRowSpan($aurora,2)
+        [System.Windows.Controls.Grid]::SetRowSpan($aurora,3)
         $grid.Children.Add($aurora)|Out-Null
     } catch {}
     $head=[System.Windows.Controls.Grid]::new();$hc0=[System.Windows.Controls.ColumnDefinition]::new();$hc1=[System.Windows.Controls.ColumnDefinition]::new();$hc1.Width=[System.Windows.GridLength]::Auto;$hc2=[System.Windows.Controls.ColumnDefinition]::new();$hc2.Width=[System.Windows.GridLength]::Auto;$head.ColumnDefinitions.Add($hc0);$head.ColumnDefinitions.Add($hc1);$head.ColumnDefinitions.Add($hc2)
-    $texts=[System.Windows.Controls.StackPanel]::new();$titleText=[System.Windows.Controls.TextBlock]::new();$titleText.Text=$Title;$titleText.Foreground=Get-Brush '#F4F8FF';$titleText.FontSize=18;$titleText.FontWeight='Bold';$sub=[System.Windows.Controls.TextBlock]::new();$sub.Text='Alle Aktionen von Arena in zeitlicher Reihenfolge - Fenster ist frei verschiebbar';$sub.Foreground=Get-Brush '#9AA9CE';$sub.FontSize=11.5;$sub.Margin=[System.Windows.Thickness]::new(0,4,0,0);$texts.Children.Add($titleText)|Out-Null;$texts.Children.Add($sub)|Out-Null;$head.Children.Add($texts)|Out-Null
+    $texts=[System.Windows.Controls.StackPanel]::new();$titleText=[System.Windows.Controls.TextBlock]::new();$titleText.Text=$Title;$titleText.Foreground=Get-Brush '#F4F8FF';$titleText.FontSize=20;$titleText.FontWeight='Bold';$sub=[System.Windows.Controls.TextBlock]::new();$sub.Text='Aktueller Arena-Fortschritt und verständlicher Aktivitätsverlauf - Fenster ist frei verschiebbar';$sub.Foreground=Get-Brush '#AAB9D8';$sub.FontSize=12.5;$sub.Margin=[System.Windows.Thickness]::new(0,4,0,0);$texts.Children.Add($titleText)|Out-Null;$texts.Children.Add($sub)|Out-Null;$head.Children.Add($texts)|Out-Null
     # Version 5.2: Die Knoepfe tragen das normale Titelleisten-Design des
     # Programms (dunkel, abgerundet, Hover-Farbe; Schliessen-Knopf wird rot) -
     # bis 5.0.2 waren es ungestylte Windows-Standardknoepfe.
@@ -35701,9 +36935,15 @@ function Open-ArenaHistoryWindow {
     $close=New-HistoryButton -Glyph ([char]0xE8BB) -GlyphSize 12 -ToolTip 'Schließen' -HoverBg '#66FF4D6D' -HoverBorder '#99FF4D6D' -PressBg '#40D91A47'
     [System.Windows.Controls.Grid]::SetColumn($close,2);$head.Children.Add($close)|Out-Null
     [System.Windows.Controls.Grid]::SetRow($head,0);$grid.Children.Add($head)|Out-Null
-    $scroll=[System.Windows.Controls.ScrollViewer]::new();$scroll.Margin=[System.Windows.Thickness]::new(0,14,0,0);$scroll.VerticalScrollBarVisibility='Auto';$scroll.HorizontalScrollBarVisibility='Disabled';$historyHost=[System.Windows.Controls.StackPanel]::new();$scroll.Content=$historyHost;[System.Windows.Controls.Grid]::SetRow($scroll,1);$grid.Children.Add($scroll)|Out-Null
+    $progressScroll=[System.Windows.Controls.ScrollViewer]::new()
+    $progressScroll.Margin=[System.Windows.Thickness]::new(0,10,0,0)
+    $progressScroll.MaxHeight=240
+    $progressScroll.VerticalScrollBarVisibility='Auto';$progressScroll.HorizontalScrollBarVisibility='Disabled'
+    $progressHost=[System.Windows.Controls.StackPanel]::new();$progressScroll.Content=$progressHost
+    [System.Windows.Controls.Grid]::SetRow($progressScroll,1);$grid.Children.Add($progressScroll)|Out-Null
+    $scroll=[System.Windows.Controls.ScrollViewer]::new();$scroll.Margin=[System.Windows.Thickness]::new(0,8,0,0);$scroll.VerticalScrollBarVisibility='Auto';$scroll.HorizontalScrollBarVisibility='Disabled';$historyHost=[System.Windows.Controls.StackPanel]::new();$scroll.Content=$historyHost;[System.Windows.Controls.Grid]::SetRow($scroll,2);$grid.Children.Add($scroll)|Out-Null
     $shell.Child=$grid;$history.Content=$shell
-    $state=[pscustomobject]@{Window=$history;Scroll=$scroll;Host=$historyHost;SessionId=$SessionId;AllPlaces=[string]::IsNullOrWhiteSpace($SessionId);FirstRender=$true;Signature=$null;Timer=$null}
+    $state=[pscustomobject]@{Window=$history;Scroll=$scroll;Host=$historyHost;ProgressScroll=$progressScroll;ProgressHost=$progressHost;ProgressCards=@{};SessionId=$SessionId;AllPlaces=[string]::IsNullOrWhiteSpace($SessionId);FirstRender=$true;Signature=$null;Timer=$null}
     $history.Tag=$state;$trash.Tag=$state;$close.Tag=$history
     $trash.Add_Click({param($sender,$e) Clear-ArenaHistory ([string]$sender.Tag.SessionId);$sender.Tag.FirstRender=$true;$sender.Tag.Signature=$null;Update-ArenaHistoryWindow $sender.Tag})
     $close.Add_Click({param($sender,$e) $sender.Tag.Close()})
@@ -35978,18 +37218,20 @@ function New-Row {
     $progressText = [System.Windows.Controls.TextBlock]::new()
     $progressText.Text = ''
     $progressText.Foreground = Get-Brush '#0B57D0'
-    $progressText.FontSize = 11.5
+    $progressText.FontSize = 13
     $progressText.FontWeight = 'SemiBold'
+    $progressText.TextWrapping = 'Wrap'
+    $progressText.MaxHeight = 42
     $progressText.VerticalAlignment = 'Center'
     $progressText.Visibility = 'Collapsed'
     $progressBar = [System.Windows.Controls.ProgressBar]::new()
     $progressBar.Minimum = 0
     $progressBar.Maximum = 100
     $progressBar.Value = 0
-    $progressBar.Height = 6
+    $progressBar.Height = 8
     $progressBar.VerticalAlignment = 'Center'
     $progressBar.Width = 150
-    $progressBar.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
+    $progressBar.Margin = [System.Windows.Thickness]::new(0, 0, 10, 0)
     $progressBar.Visibility = 'Collapsed'
     $progressBar.Foreground = Get-Brush '#0B57D0'
     $progressBar.Background = Get-Brush '#33000000'
@@ -35997,18 +37239,24 @@ function New-Row {
     $progressPercent = [System.Windows.Controls.TextBlock]::new()
     $progressPercent.Text = ''
     $progressPercent.Foreground = Get-Brush '#0B57D0'
-    $progressPercent.FontSize = 11
-    $progressPercent.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
+    $progressPercent.FontSize = 12
+    $progressPercent.FontWeight = 'SemiBold'
+    $progressPercent.Margin = [System.Windows.Thickness]::new(0, 0, 0, 0)
     $progressPercent.VerticalAlignment = 'Center'
     $progressPercent.Visibility = 'Collapsed'
     $progressRow = [System.Windows.Controls.StackPanel]::new()
-    $progressRow.Orientation = 'Horizontal'
+    $progressRow.Orientation = 'Vertical'
     $progressRow.VerticalAlignment = 'Center'
-    $progressRow.Margin = [System.Windows.Thickness]::new(0, 1, 0, 0)
+    $progressRow.Margin = [System.Windows.Thickness]::new(0, 3, 0, 0)
     $progressRow.Visibility = 'Collapsed'
     $progressRow.Children.Add($progressText) | Out-Null
-    $progressRow.Children.Add($progressBar) | Out-Null
-    $progressRow.Children.Add($progressPercent) | Out-Null
+    $progressMeterRow = [System.Windows.Controls.StackPanel]::new()
+    $progressMeterRow.Orientation = 'Horizontal'
+    $progressMeterRow.VerticalAlignment = 'Center'
+    $progressMeterRow.Margin = [System.Windows.Thickness]::new(0, 3, 0, 0)
+    $progressMeterRow.Children.Add($progressBar) | Out-Null
+    $progressMeterRow.Children.Add($progressPercent) | Out-Null
+    $progressRow.Children.Add($progressMeterRow) | Out-Null
     # Version 7.0.6/7.0.7: Abbrechen direkt neben dem Befehlszustand. Der Knopf
     # ist OPTIONAL - er wird deshalb in try/catch gebaut. Ein Extra darf NIE
     # den Aufbau der ganzen Zeile kosten (genau das war der Live-Fehler in 7.0.6).
@@ -36741,7 +37989,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.5.5)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.5.7)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -36815,6 +38063,197 @@ function Write-PerfReport {
         }
     } catch {
         try { Write-RuntimeLog ('Leistungsbericht konnte nicht geschrieben werden: ' + $_.Exception.Message) } catch {}
+    }
+}
+
+$script:StudioProfileCache = @{}
+$script:StudioProfileRetryAt = @{}
+$script:StudioProfileLookup = $null
+$script:StudioProfileCurrentUserId = ''
+$script:StudioProfileAppliedUserId = ''
+
+function Set-StudioProfileAvatar {
+    param([byte[]]$Bytes)
+    try {
+        if ($null -eq $StudioEditorAvatarImage) { return }
+        if ($null -eq $Bytes -or $Bytes.Length -lt 16) {
+            $StudioEditorAvatarImage.Source = $null
+            $StudioEditorAvatarImage.Visibility = 'Collapsed'
+            if ($StudioEditorAvatarFallback) { $StudioEditorAvatarFallback.Visibility = 'Visible' }
+            return
+        }
+        $stream = [System.IO.MemoryStream]::new($Bytes)
+        try {
+            $bitmap = [System.Windows.Media.Imaging.BitmapImage]::new()
+            $bitmap.BeginInit()
+            $bitmap.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+            $bitmap.StreamSource = $stream
+            $bitmap.EndInit()
+            $bitmap.Freeze()
+            $StudioEditorAvatarImage.Source = $bitmap
+            $StudioEditorAvatarImage.Visibility = 'Visible'
+            if ($StudioEditorAvatarFallback) { $StudioEditorAvatarFallback.Visibility = 'Collapsed' }
+        } finally {
+            $stream.Dispose()
+        }
+    } catch {
+        try { $StudioEditorAvatarImage.Source = $null; $StudioEditorAvatarImage.Visibility = 'Collapsed' } catch {}
+        try { if ($StudioEditorAvatarFallback) { $StudioEditorAvatarFallback.Visibility = 'Visible' } } catch {}
+    }
+}
+
+function Set-StudioEditorProfileCard {
+    param($Profile)
+    try {
+        if ($null -eq $StudioEditorProfile) { return }
+        $displayName = ''
+        $userName = ''
+        $userId = ''
+        $avatarBytes = $null
+        try { $displayName = [string]$Profile.displayName } catch {}
+        try { $userName = [string]$Profile.userName } catch {}
+        try { $userId = [string]$Profile.userId } catch {}
+        try { $avatarBytes = [byte[]]$Profile.avatarBytes } catch {}
+        if ([string]::IsNullOrWhiteSpace($displayName)) { $displayName = $userName }
+        if ([string]::IsNullOrWhiteSpace($displayName)) { $displayName = ('Roblox Studio-Nutzer ' + $userId) }
+        $StudioEditorNameText.Text = $displayName
+        if (-not [string]::IsNullOrWhiteSpace($userName) -and $userName -ne $displayName) {
+            $StudioEditorCaptionText.Text = ('@' + $userName + ' · Roblox Studio')
+        } else {
+            $StudioEditorCaptionText.Text = ('Roblox Studio · ID ' + $userId)
+        }
+        $StudioEditorProfile.ToolTip = ('Angemeldet in Roblox Studio: ' + $displayName + ' (ID ' + $userId + '). Dieser Nutzer wird fuer Open-Cloud-Uploads verwendet.')
+        Set-StudioProfileAvatar $avatarBytes
+        $StudioEditorProfile.Visibility = 'Visible'
+    } catch {
+        try { Write-RuntimeLog ('Studio-Profil konnte nicht angezeigt werden: ' + $_.Exception.Message) } catch {}
+    }
+}
+
+function Start-StudioProfileLookup {
+    param([string]$UserId)
+    if ([string]::IsNullOrWhiteSpace($UserId) -or $UserId -notmatch '^\d+$' -or $UserId -eq '0') { return }
+    if ($null -ne $script:StudioProfileLookup) { return }
+    $ps = [System.Management.Automation.PowerShell]::Create()
+    [void]$ps.AddScript({
+        param([string]$Id)
+        try {
+            $profile = Invoke-RestMethod -Uri ('https://users.roblox.com/v1/users/' + $Id) -Method Get -TimeoutSec 10
+            if ($null -eq $profile -or [string]::IsNullOrWhiteSpace([string]$profile.name)) {
+                return @{ ok = $false; userId = $Id; error = 'Roblox hat kein Profil fuer diese ID zurueckgegeben.' }
+            }
+            $displayName = [string]$profile.displayName
+            if ([string]::IsNullOrWhiteSpace($displayName)) { $displayName = [string]$profile.name }
+            $avatarBytes = [byte[]]@()
+            try {
+                $thumbUrl = 'https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=' + $Id + '&size=150x150&format=Png&isCircular=true'
+                $thumbnail = Invoke-RestMethod -Uri $thumbUrl -Method Get -TimeoutSec 10
+                $imageUrl = ''
+                try { if (@($thumbnail.data).Count -gt 0) { $imageUrl = [string]$thumbnail.data[0].imageUrl } } catch {}
+                if (-not [string]::IsNullOrWhiteSpace($imageUrl)) {
+                    $request = [System.Net.WebRequest]::Create($imageUrl)
+                    $request.Method = 'GET'
+                    $request.Timeout = 10000
+                    $request.ReadWriteTimeout = 10000
+                    if ($request -is [System.Net.HttpWebRequest]) { $request.UserAgent = 'ArenaRobloxBridge/7.5.7' }
+                    $response = $request.GetResponse()
+                    try {
+                        $responseStream = $response.GetResponseStream()
+                        $memory = [System.IO.MemoryStream]::new()
+                        try {
+                            $responseStream.CopyTo($memory)
+                            if ($memory.Length -le 2097152) { $avatarBytes = $memory.ToArray() }
+                        } finally {
+                            $memory.Dispose()
+                            $responseStream.Dispose()
+                        }
+                    } finally {
+                        $response.Dispose()
+                    }
+                }
+            } catch {}
+            return @{ ok = $true; userId = $Id; displayName = $displayName; userName = [string]$profile.name; avatarBytes = $avatarBytes }
+        } catch {
+            return @{ ok = $false; userId = $Id; error = $_.Exception.Message }
+        }
+    }).AddArgument($UserId)
+    try {
+        $handle = $ps.BeginInvoke()
+        $script:StudioProfileLookup = [pscustomobject]@{ UserId = $UserId; Ps = $ps; Handle = $handle }
+    } catch {
+        try { $ps.Dispose() } catch {}
+        $script:StudioProfileRetryAt[$UserId] = [DateTime]::UtcNow.AddSeconds(60)
+    }
+}
+
+function Update-StudioEditorProfile {
+    param($Studios)
+    $wantedUserId = ''
+    $latest = [int64]0
+    foreach ($studio in $Studios) {
+        $candidate = ''
+        try { $candidate = ([string]$studio.editorUserId).Trim() } catch {}
+        if ($candidate -notmatch '^\d{1,20}$' -or $candidate -eq '0') { continue }
+        $seen = [int64]0
+        try { $seen = [int64]$studio.lastSeen } catch {}
+        if ([string]::IsNullOrWhiteSpace($wantedUserId) -or $seen -gt $latest) {
+            $wantedUserId = $candidate
+            $latest = $seen
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($wantedUserId)) {
+        $script:StudioProfileCurrentUserId = ''
+        $script:StudioProfileAppliedUserId = ''
+        try { $StudioEditorProfile.Visibility = 'Collapsed' } catch {}
+    } else {
+        $script:StudioProfileCurrentUserId = $wantedUserId
+        try { $StudioEditorProfile.Visibility = 'Visible' } catch {}
+        if ($script:StudioProfileCache.ContainsKey($wantedUserId)) {
+            if ($script:StudioProfileAppliedUserId -ne $wantedUserId) {
+                Set-StudioEditorProfileCard $script:StudioProfileCache[$wantedUserId]
+                $script:StudioProfileAppliedUserId = $wantedUserId
+            }
+        } elseif ($script:StudioProfileAppliedUserId -ne $wantedUserId) {
+            $placeholder = [pscustomobject]@{ userId = $wantedUserId; displayName = ('Roblox Studio-Nutzer ' + $wantedUserId); userName = ''; avatarBytes = [byte[]]@() }
+            Set-StudioEditorProfileCard $placeholder
+            $script:StudioProfileAppliedUserId = $wantedUserId
+        }
+        if (-not $script:StudioProfileCache.ContainsKey($wantedUserId)) {
+            $retryAt = [DateTime]::MinValue
+            if ($script:StudioProfileRetryAt.ContainsKey($wantedUserId)) { $retryAt = [DateTime]$script:StudioProfileRetryAt[$wantedUserId] }
+            if ($null -eq $script:StudioProfileLookup -and [DateTime]::UtcNow -ge $retryAt) {
+                Start-StudioProfileLookup $wantedUserId
+            }
+        }
+    }
+
+    $lookup = $script:StudioProfileLookup
+    if ($null -eq $lookup -or $lookup.Handle.IsCompleted -ne $true) { return }
+    $result = $null
+    try {
+        $out = $lookup.Ps.EndInvoke($lookup.Handle)
+        if ($null -ne $out -and $out.Count -gt 0) { $result = $out[0] }
+    } catch {
+        $result = $null
+    } finally {
+        try { $lookup.Ps.Dispose() } catch {}
+        $script:StudioProfileLookup = $null
+    }
+    if ($null -ne $result -and $result.ok -eq $true) {
+        $script:StudioProfileCache[[string]$lookup.UserId] = $result
+        [void]$script:StudioProfileRetryAt.Remove([string]$lookup.UserId)
+        if ([string]$script:StudioProfileCurrentUserId -eq [string]$lookup.UserId) {
+            Set-StudioEditorProfileCard $result
+            $script:StudioProfileAppliedUserId = [string]$lookup.UserId
+        }
+    } else {
+        $script:StudioProfileRetryAt[[string]$lookup.UserId] = [DateTime]::UtcNow.AddSeconds(60)
+        if ([string]$script:StudioProfileCurrentUserId -eq [string]$lookup.UserId) {
+            $placeholder = [pscustomobject]@{ userId = [string]$lookup.UserId; displayName = ('Roblox Studio-Nutzer ' + [string]$lookup.UserId); userName = ''; avatarBytes = [byte[]]@() }
+            Set-StudioEditorProfileCard $placeholder
+            $script:StudioProfileAppliedUserId = [string]$lookup.UserId
+        }
+        try { Write-RuntimeLog ('Roblox-Studio-Profil nicht abrufbar fuer UserId ' + [string]$lookup.UserId + '. Ein neuer Versuch folgt in 60 Sekunden.') } catch {}
     }
 }
 
@@ -36921,6 +38360,7 @@ function Refresh-Ui {
         Set-Text $EmptyTitle 'Roblox Studio wurde nicht gefunden'
         Set-Text $EmptyBody 'Installiere Roblox Studio, schließe dieses Fenster und öffne Arena Roblox Bridge danach erneut.'
         $EmptyState.Visibility = 'Visible'
+        Update-StudioEditorProfile @()
         Sync-PlaceList @()
         return
     }
@@ -37034,6 +38474,7 @@ function Refresh-Ui {
     Sync-AskWindows
     Update-PlacePreviewCaptures
     $activeStudios = @(Get-ActiveStudios)
+    Update-StudioEditorProfile $activeStudios
     Update-HandoffCard
     Sync-PlaceList $activeStudios
 }
@@ -37563,7 +39004,7 @@ Set-StartupStage 'Ereignisse verdrahtet (Fenstersteuerung + Loaded)'
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.5.5'
+    $versionText = '7.5.7'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -38733,22 +40174,6 @@ function Open-SettingsWindow {
                                                FontSize="15.5" FontWeight="Bold" TextWrapping="Wrap"/>
                                     <TextBlock x:Name="CloudReadyNote" Foreground="{StaticResource SwTextFaint}" FontSize="10.5"
                                                TextWrapping="Wrap" Margin="0,8,0,0"/>
-                                    <StackPanel x:Name="CloudDeveloperPanel" Margin="0,14,0,0">
-                                        <TextBlock Text="Entwickler (Fallback)" Foreground="{StaticResource SwTextMain}" FontSize="13" FontWeight="Bold" TextWrapping="Wrap"/>
-                                        <TextBlock Text="Arena ermittelt den Entwickler zuerst automatisch: aus dem Schluessel oder aus dem verbundenen Place. Nur wenn das nicht klappt, tippe hier den Roblox-Benutzernamen des Entwicklers ein." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
-                                        <Grid Margin="0,10,0,0">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBox x:Name="CloudDeveloperBox" Grid.Column="0" Height="38" Margin="0,0,8,0" VerticalContentAlignment="Center"
-                                                     Background="#0E1730" Foreground="#F4F8FF" CaretBrush="#F4F8FF" BorderBrush="#33FFFFFF"
-                                                     BorderThickness="1" Padding="10,0" FontSize="12.5"/>
-                                            <Button x:Name="CloudDeveloperButton" Grid.Column="1" Height="38" MinWidth="170" Padding="16,0"
-                                                    Content="Entwickler übernehmen" Style="{StaticResource ArenaPrimaryButton}"/>
-                                        </Grid>
-                                        <TextBlock x:Name="CloudDeveloperStatus" Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,8,0,0"/>
-                                    </StackPanel>
                                     <Button x:Name="CloudRemoveButton" Height="38" MinWidth="190" Padding="16,0" Margin="0,12,0,0"
                                             HorizontalAlignment="Left" Content="API-Key entfernen" Style="{StaticResource ArenaQuietButton}"/>
                                 </StackPanel>
@@ -38825,7 +40250,7 @@ function Open-SettingsWindow {
                                         <Border x:Name="CloudStep7" Background="#0C1730" CornerRadius="10" Padding="12,10" BorderBrush="#26FFFFFF" BorderThickness="1">
                                             <StackPanel>
                                                 <TextBlock Text="7. Füge den kopierten Schlüssel hier ein." Foreground="{StaticResource SwTextMain}" FontSize="12.5" TextWrapping="Wrap"/>
-                                                <TextBlock Text="Den Schlüssel zeigt Roblox nur EINMAL. Ohne Ablaufdatum, sonst hört der Upload irgendwann still auf. Deinen Roblox-Namen musst du nirgends eintragen – die Bridge liest aus dem Schlüssel selbst, wer die Assets bekommt." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                                <TextBlock Text="Den Schlüssel zeigt Roblox nur EINMAL. Ohne Ablaufdatum, sonst hört der Upload irgendwann still auf. Deinen Roblox-Namen musst du nirgends eintragen: Die Bridge verwendet das aktuell in Roblox Studio angemeldete Konto. Nur wenn Studio keine Nutzer-ID meldet, nutzt sie die Resource aus dem API-Key als automatischen Rückfall." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
                                             </StackPanel>
                                         </Border>
 
@@ -38837,7 +40262,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.5.5" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.5.7" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -38870,23 +40295,11 @@ function Open-SettingsWindow {
     $editorIconsSwitch = $settingsWindow.FindName('EditorIconsSwitch')
     $updateText      = $settingsWindow.FindName('UpdateInfoText')
     # ----------------------------------------------------------------
-    # Version 7.5.2: ROBLOX OPEN CLOUD im Einstellungsfenster -
-    # AUSDRUECKLICHER NUTZERWUNSCH, absichtlich viel einfacher:
-    #   * NUR der Titel "Roblox Open Cloud API-Key" und ein Satz, was er
-    #     bringt,
-    #   * ohne Schluessel: grosser ROTER Text "Noch kein API-Key
-    #     hinzugefuegt!", die Textbox und daneben der gruene Speichern-Knopf,
-    #     darunter NICHTS weiter ausser dem aufklappbaren Tutorial
-    #     (kein Status, kein Pruefen, kein Ersteller-Feld),
-    #   * mit Schluessel: gruener Text "API-Key ist eingerichtet!" und NUR
-    #     noch der graue "API-Key entfernen"-Knopf (kein Feld, kein
-    #     Speichern, kein Tutorial),
-    #   * DEN ERSTELLER GIBT DER NUTZER NICHT MEHR EIN: die Bridge liest ihn
-    #     beim Speichern aus dem Schluessel selbst (POST
-    #     apis.roblox.com/api-keys/v1/introspect - Name, autorisierter
-    #     Nutzer, Scopes, userIds/groupIds).
-    # Der Schluessel wird verschluesselt abgelegt (DPAPI/CurrentUser in
-    # opencloud.key) und liegt im Betrieb NUR im Speicher.
+    # Version 7.5.6: Open Cloud ohne manuelle Entwickler-Eingabe.
+    # Das Plugin liefert StudioService:GetUserId(); dieser angemeldete
+    # Studio-Nutzer wird beim Upload als Asset-Ersteller verwendet. Die Resource
+    # aus dem Key bleibt nur automatische Rueckfalloption, falls Studio keine
+    # ID meldet. Der Schluessel selbst bleibt DPAPI-verschluesselt.
     # ----------------------------------------------------------------
     $cloudKeyBox          = $settingsWindow.FindName('CloudKeyBox')
     $cloudSaveButton      = $settingsWindow.FindName('CloudSaveButton')
@@ -38897,10 +40310,6 @@ function Open-SettingsWindow {
     $cloudReadyPanel      = $settingsWindow.FindName('CloudReadyPanel')
     $cloudReadyText       = $settingsWindow.FindName('CloudReadyText')
     $cloudReadyNote       = $settingsWindow.FindName('CloudReadyNote')
-    $cloudDeveloperPanel  = $settingsWindow.FindName('CloudDeveloperPanel')
-    $cloudDeveloperBox    = $settingsWindow.FindName('CloudDeveloperBox')
-    $cloudDeveloperButton = $settingsWindow.FindName('CloudDeveloperButton')
-    $cloudDeveloperStatus = $settingsWindow.FindName('CloudDeveloperStatus')
     $cloudDashboardButton = $settingsWindow.FindName('CloudOpenDashboardButton')
     $cloudTutorialHeader  = $settingsWindow.FindName('CloudTutorialHeader')
     $cloudTutorialChevron = $settingsWindow.FindName('CloudTutorialChevron')
@@ -38924,19 +40333,6 @@ function Open-SettingsWindow {
         } catch {}
     }
 
-    function Update-CloudDeveloperStatus {
-        # Version 7.5.5: Zeile unter dem Entwickler-Feld - was gerade gilt.
-        try {
-            $typedName = [string]$script:SettingsCache.openCloudDeveloperName
-            $typedId = [string]$script:SettingsCache.openCloudDeveloperId
-            if (-not [string]::IsNullOrWhiteSpace($typedId)) {
-                $cloudDeveloperStatus.Text = 'Eingetragen: ' + $typedName + ' (ID ' + $typedId + '). Wird nur genutzt, wenn Arena den Entwickler nicht automatisch findet.'
-            } else {
-                $cloudDeveloperStatus.Text = 'Noch kein Benutzername eingetragen. Arena versucht den Entwickler zuerst automatisch.'
-            }
-        } catch {}
-    }
-
     function Update-CloudPanelState {
         # Die zwei Zustaende des Abschnitts - mehr gibt es nicht.
         param([bool]$HasKey)
@@ -38948,20 +40344,10 @@ function Open-SettingsWindow {
                 try { $hint = [string]$script:SettingsCache.openCloudKeyHint } catch {}
                 $savedAt = ''
                 try { $savedAt = [string]$script:SettingsCache.openCloudSavedAt } catch {}
-                $who = ''
-                try {
-                    $creatorId = [string]$script:SettingsCache.openCloudCreatorId
-                    if (-not [string]::IsNullOrWhiteSpace($creatorId)) {
-                        if ([string]$script:SettingsCache.openCloudCreatorKind -eq 'group') { $who = 'Gruppe ' + $creatorId } else { $who = 'Nutzer ' + $creatorId }
-                    }
-                } catch {}
-                $line = 'Arena kann Meshes und Bilder jetzt selbst hochladen und einsetzen.'
-                if (-not [string]::IsNullOrWhiteSpace($who)) { $line = $line + ' Ziel: ' + $who + '.' }
+                $line = 'Arena kann Meshes und Bilder jetzt selbst hochladen und einsetzen. Bevorzugt wird das Konto, das gerade in Roblox Studio angemeldet ist; nur ohne Studio-ID dient die Key-Resource als Rueckfall.'
                 if (-not [string]::IsNullOrWhiteSpace($hint)) { $line = $line + ' Schlüssel ' + $hint + '.' }
                 if (-not [string]::IsNullOrWhiteSpace($savedAt)) { $line = $line + ' Gespeichert ' + $savedAt + '.' }
                 $cloudReadyNote.Text = $line
-                try { if ([string]::IsNullOrWhiteSpace([string]$cloudDeveloperBox.Text)) { $cloudDeveloperBox.Text = [string]$script:SettingsCache.openCloudDeveloperName } } catch {}
-                try { Update-CloudDeveloperStatus } catch {}
                 # Mit Schluessel verschwindet das Tutorial (Nutzerwunsch).
                 $cloudTutorialHeader.Visibility = 'Collapsed'
                 $cloudTutorialWrap.Visibility = 'Collapsed'
@@ -38990,8 +40376,6 @@ function Open-SettingsWindow {
             $script:Shared.BridgeSettings.openCloudCreatorId = [string]$script:SettingsCache.openCloudCreatorId
             $script:Shared.BridgeSettings.openCloudCreatorKind = [string]$script:SettingsCache.openCloudCreatorKind
             $script:Shared.BridgeSettings.openCloudCreatorName = [string]$script:SettingsCache.openCloudCreatorName
-            $script:Shared.BridgeSettings.openCloudDeveloperId = [string]$script:SettingsCache.openCloudDeveloperId
-            $script:Shared.BridgeSettings.openCloudDeveloperName = [string]$script:SettingsCache.openCloudDeveloperName
             $script:Shared.BridgeSettings.openCloudSavedAt = [string]$script:SettingsCache.openCloudSavedAt
         } catch {}
     }
@@ -39053,8 +40437,8 @@ function Open-SettingsWindow {
     }
 
     function Apply-CloudIntrospectVerdict {
-        # Ergebnis der Selbstauskunft: Ersteller merken, ehrlich melden, was
-        # der Schluessel darf. Nichts wird beschoenigt.
+        # Ergebnis der Selbstauskunft: die Key-Resource als Rueckfall merken
+        # und ehrlich melden, was der Schluessel darf. Nichts wird beschoenigt.
         param($Verdict)
         $ok = $false
         try { $ok = ([bool]$Verdict.ok -eq $true) } catch {}
@@ -39084,13 +40468,11 @@ function Open-SettingsWindow {
         if (-not $assetWrite -or -not $assetRead) {
             Set-CloudSaveHint 'Roblox nimmt den Schlüssel an, aber ihm fehlt noch das Recht "assets" mit read UND write (Tutorial Schritt 4 und 5). Ohne das lehnt Roblox jeden Upload ab.' '#FFD9A0'
         } elseif (-not $creatorOk) {
-            # Version 7.5.3: genauer Hinweis statt Schluessel-neu-erstellen.
-            # Der Schluessel IST richtig konfiguriert (sonst waere assetWrite
-            # false); es fehlt nur eine konkrete Empfänger-Resource (Gruppe
-            # oder Account) im Dashboard.
-            Set-CloudSaveHint 'Roblox nimmt den Schlüssel an und die Rechte passen. Arena ermittelt den Entwickler automatisch (Schlüssel oder verbundener Place). Findet sie keinen, trägt du unten im Abschnitt den Roblox-Benutzernamen des Entwicklers ein.' '#FFD9A0'
+            # Ein fehlender Resource-Eintrag im Introspect ist kein Upload-Blocker:
+            # im verbundenen Place liefert StudioService die angemeldete Nutzer-ID.
+            Set-CloudSaveHint 'Roblox nimmt den Schlüssel an und die Rechte passen. Beim Upload verwendet die Bridge automatisch das aktuell angemeldete Roblox-Studio-Konto.' '#7EE2A8'
         } else {
-            Set-CloudSaveHint 'Schlüssel geprüft: Roblox nimmt ihn an und Arena darf Assets hochladen.' '#7EE2A8'
+            Set-CloudSaveHint 'Schlüssel geprüft: Roblox nimmt ihn an und Arena darf Assets hochladen. Beim Upload wird das aktuelle Roblox-Studio-Konto verwendet.' '#7EE2A8'
         }
         try { Write-RuntimeLog ('Open Cloud: Pruefung ok (assets read=' + [string]$assetRead + ', write=' + [string]$assetWrite + ', Ersteller=' + [string]$creatorOk + ').') } catch {}
     }
@@ -39203,36 +40585,14 @@ function Open-SettingsWindow {
             Save-BridgeSettingsFile
             Sync-CloudSharedSettings
             try { $cloudKeyBox.Clear() } catch {}
-            # Der Ersteller kommt aus dem Schluessel selbst - kein Feld, keine
-            # Eingabe. Die Selbstauskunft laeuft im Hintergrund.
+            # Die Selbstauskunft laeuft im Hintergrund; ihre Resource bleibt
+            # der automatische Rueckfall, wenn keine Studio-ID gemeldet wird.
             Update-CloudPanelState -HasKey $true
             Set-CloudSaveHint 'Schlüssel gespeichert. Die Bridge fragt jetzt bei Roblox nach, was er darf …' '#94A3B8'
             Start-CloudIntrospectRun { param($verdict) Apply-CloudIntrospectVerdict $verdict }
             Write-RuntimeLog 'Open Cloud: Schluessel gespeichert (verschluesselt in opencloud.key).'
         } catch {
             Write-UiErrorLog 'Open-Cloud-Speichern' $_
-        }
-    })
-
-    # --- Entwickler-Fallback (Version 7.5.5) -------------------------------
-    $cloudDeveloperButton.Add_Click({
-        # Version 7.5.5 (Fallback): Benutzername -> ID bei Roblox, dann merken.
-        try {
-            $typedName = ([string]$cloudDeveloperBox.Text).Trim()
-            $cloudDeveloperStatus.Text = 'Suche den Benutzernamen bei Roblox ...'
-            $found = Resolve-OpenCloudDeveloperName $typedName
-            if ($found.ok -ne $true) {
-                $cloudDeveloperStatus.Text = [string]$found.error
-                return
-            }
-            $script:SettingsCache.openCloudDeveloperId = [string]$found.creatorId
-            $script:SettingsCache.openCloudDeveloperName = [string]$found.name
-            Save-BridgeSettingsFile
-            Sync-CloudSharedSettings
-            Update-CloudDeveloperStatus
-            Write-RuntimeLog ('Open Cloud: Entwickler-Fallback eingetragen (Nutzer-ID ' + [string]$found.creatorId + ').')
-        } catch {
-            Write-UiErrorLog 'Open-Cloud-Entwickler' $_
         }
     })
 
@@ -39282,7 +40642,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.5.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.5.7 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -39347,7 +40707,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.5.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.5.7 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -39360,7 +40720,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.5.5'
+    $verText = '7.5.7'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

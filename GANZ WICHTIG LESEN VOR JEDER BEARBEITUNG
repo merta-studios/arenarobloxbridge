@@ -1,7 +1,7 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 7.5.5 - 08.10.2026)                                #
+#   (Stand: Version 7.5.7 - 09.10.2026)                                #
 #                                                                      #
 ##########################################################################
 
@@ -162,15 +162,23 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
   build_mesh_model, mesh_status, mesh_cancel), die von der Bridge GEMESSENEN
   viereckigen MeshPart-Platzhalter, mesh_apply_asset und mesh_drop als ganz
   normale Werkzeuge. Hochgeladen wird nicht mehr von Hand.
-- DER UPLOAD LAEUFT UEBER DIE ROBLOX-OPEN-CLOUD-API (v7.5.0). Der Nutzer
+- DER UPLOAD LAEUFT UEBER DIE ROBLOX-OPEN-CLOUD-API (v7.5.0+). Der Nutzer
   hinterlegt EINMAL seinen eigenen API-Schluessel im Einstellungsfenster im
-  neuen Abschnitt "ROBLOX OPEN CLOUD" (Set-OpenCloudKey / Get-OpenCloudKey /
+  Abschnitt "ROBLOX OPEN CLOUD" (Set-OpenCloudKey / Get-OpenCloudKey /
   Remove-OpenCloudKey; verschluesselt per DPAPI CurrentUser in
   %LOCALAPPDATA%\ArenaRobloxBridge\opencloud.key - NIE im Klartext und NIE in
-  settings.json). Dazu gehoert der ERSTELLER (Nutzer oder Gruppe) samt
-  aufgeloester ID (Resolve-OpenCloudCreatorId ueber
-  users.roblox.com/v1/usernames/users). Im selben Abschnitt liegt ein
-  AUFKLAPPBARES TUTORIAL MIT ANIMATION (Hoehe, Einblenden, Pfeil,
+  settings.json). SEIT v7.5.6 liest das Studio-Plugin den angemeldeten
+  Studio-Nutzer ueber die offizielle Plugin-API StudioService:GetUserId()
+  und meldet dessen ID als editorUserId. Diese ID wird BEVOR einer Resource
+  aus dem Key als creator.userId fuer den Asset-Upload genutzt; der Place-
+  Ersteller (game.CreatorId) ist eine andere Identitaet. Die manuelle
+  Entwickler-Fallback-Textbox und ihre Speicherung sind entfernt. Nur wenn
+  Studio keine angemeldete ID meldet, nutzt die Bridge die automatisch
+  aus dem Key introspektierte Resource. Der Key muss ASSETS write fuer den
+  angemeldeten Studio-Nutzer erlauben. Sobald die ID bekannt ist, zeigt die
+  Bridge unten links asynchron Avatar und Anzeigename; Profilbilddaten kommen
+  von den oeffentlichen Roblox-Profil-/Thumbnail-Endpunkten. Im selben
+  Abschnitt liegt ein AUFKLAPPBARES TUTORIAL MIT ANIMATION (Hoehe, Einblenden, Pfeil,
   gestaffelte Schritte), das die Anlage Schritt fuer Schritt zeigt und die
   PFLICHT-RECHTE nennt: ASSETS, dann LESEN (asset:read) und SCHREIBEN
   (asset:write). "Pruefen" fragt Roblox IM HINTERGRUND
@@ -443,7 +451,7 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
   python test_v712_toolbox.py, python test_v713_quality.py,
   python test_v714_organic.py, python test_v720_bridge.py,
   python test_v732_organic_creature.py, python test_v740_mesh.py,
-  python test_queue_model_707.py
+  python test_queue_model_707.py, python test_v755_regression.py
   (luaparser, tree_sitter und tree_sitter_powershell aus requirements-test.txt). PowerShell/.NET laesst sich in
   der KI-Sandbox NICHT installieren - Semantik per Quelltext (PowerShell-
   Repository auf GitHub) nachlesen statt raten.
@@ -455,6 +463,27 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v7.5.7 (09.10.2026): ARENA-VERLAUF MIT PLACE-FORTSCHRITT + VOLLSTÄNDIGE AKTIONSTEXTE.
+  Das Verlaufsfenster hat jetzt einen eigenen Live-Fortschrittsbereich je Place
+  (Balken, Prozent, Status, letzter Arbeitsschritt, Aufrufzahlen und Studio-Befehl).
+  Die Statuszeile unter Place-Namen ist größer und zeigt freundliche deutsche
+  Aktionsbezeichnungen statt interner Tool-Schlüssel. Alle 143 Werkzeuge aus dem
+  Katalog haben klare deutsche Verlaufssätze; Suchtexte, Klassen/Tags, Place- und
+  Objektziele, Skriptzeilen, Asset-IDs und Ergebniszahlen werden aus Argumenten/
+  Ergebnissen ergänzt. Generische „ein Objekt“-Suchtexte und „Hat TOOL ausgeführt“
+  sind entfernt. Offline-Regressionsabnahme: test_v755_regression.py. Es wurde
+  KEIN Live-Test mit Windows/Roblox Studio durchgeführt. Es wurde KEIN Pull
+  Request erstellt (Nutzer möchte zuerst weitere Änderungen prüfen).
+- v7.5.6 (09.10.2026): STUDIO-LOGIN ALS OPEN-CLOUD-ASSET-ERSTELLER + PROFIL.
+  Das Plugin meldet StudioService:GetUserId() getrennt von game.CreatorId.
+  upload_asset priorisiert die ID des aktuell in Studio angemeldeten Nutzers
+  als creator.userId; Key-Introspect bleibt nur automatischer Rueckfall, wenn
+  Studio keine Anmeldung meldet. Die manuelle Entwickler-Fallback-Textbox und
+  -Einstellungen sind entfernt. Das Hauptfenster zeigt unten links Avatar und
+  Anzeigename, aus users.roblox.com und thumbnails.roblox.com asynchron geladen.
+  Der Key muss ASSETS write fuer diesen Studio-Nutzer erlauben. Neue Abnahme:
+  test_v755_regression.py (Studio-ID wird gepollt/gespeichert, Upload-Prioritaet,
+  keine Fallback-Textbox, Profilkarte und asynchroner Abruf).
 - v7.5.5 (08.10.2026): BLENDER-FIRST, OPEN-CLOUD-ENTWICKLER, /api/tool REPARIERT.
   (1) /api/tool lieferte HTTP 500 fuer JEDEN Aufruf (Benennung "=" wurde nicht als
   Cmdlet erkannt): in Get-ArenaActivityText fehlte bei $texts das Zuweisungszeichen.

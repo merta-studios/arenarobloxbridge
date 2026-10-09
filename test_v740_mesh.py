@@ -38,7 +38,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.5.5"
+VERSION = "7.5.7"
 FAILURES: list[str] = []
 
 
@@ -60,7 +60,7 @@ def main() -> int:
     source = raw.decode("utf-8-sig")
     metadata = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     notes = "\n".join(str(note) for note in metadata.get("notes", []))
-    check(metadata.get("version") == VERSION, "version.json ist 7.5.1")
+    check(metadata.get("version") == VERSION, f"version.json steht auf {VERSION}")
     for phrase in ("7.5.5", "7.5.0", "7.4.0", "Blender", "MESH_UPLOAD_PENDING", "upload_asset",
                    "Open Cloud", "CreateMeshPartAsync"):
         check(phrase in notes, f"Release-Notiz nennt {phrase}")
@@ -346,7 +346,7 @@ def main() -> int:
           "model_audit meldet Mesh-Platzhalter getrennt")
     check("if isPlaceholder and meshKey == nil then" in audit,
           "Mesh-Platzhalter werden nicht als vergessene Platzhalter gezaehlt")
-    report_start = source.index("            'report_done' {")
+    report_start = source.index("            'report_done' {", source.index("function Invoke-ServerTool"))
     # Der Fall endet mit der schliessenden Klammer auf gleicher Ebene; das
     # naechste Werkzeug im Handler ist 'clear_pending' (inline, VOR
     # Invoke-ServerTool) - deshalb hier die naechste 12er-Ebene als Grenze.
@@ -427,7 +427,7 @@ def main() -> int:
           "mesh_drop steht in der writeTools-Liste")
     check("name = 'mesh_drop'" in region(source, "# ---------------- MESH / BLENDER", "# ---------------- JOBS ----------------"),
           "mesh_drop hat einen Doku-Eintrag (Kategorie mesh)")
-    check("mesh_drop = 'Hat einen Mesh-Slot storniert" in source,
+    check("mesh_drop = 'Hat die angeforderten Mesh-Platzhalter aus dem Place entfernt." in source,
           "mesh_drop hat einen Aktivitaetstext fuer die Place-Zeile")
 
     if FAILURES:

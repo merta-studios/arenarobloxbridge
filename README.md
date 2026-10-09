@@ -32,8 +32,9 @@ sein.
 | `ORGANIC_BUILD_CONTRACT.md` | Organic-Bauvertrag (Stand 7.3.2, weiterhin gueltig; der Mesh-Weg kommt in 7.4.0 hinzu): typed Creature-Loft-Volumen, Gesichts-/Flügelrollen und fail-closed Audit; 7.1.4 bleibt als Historie |
 | `test_queue_model_707.py` | Python-Modelltest: reproduziert den Queue-Stillstand von 7.0.4 und prüft die 7.0.5-Regeln (unabhängiger Watchdog, lateResults, Reconnect-Übergabe) **plus** 7.0.6 (Sitzungs-Identität, Fast-Fail, Zustell-Timeline) und 7.0.7 (Place-Zeile: fehlende Eigenschaft bricht den Zeilenaufbau ab) |
 | `bridge_live_check.py` | Live-Abnahme gegen die laufende Bridge (URL + Token): Versions-Checks (`/api/version` 7.4.2, `counters.revivedSessions` konstant, `/api/places` 200, `/api/status` 200), Status/Wächter, normaler Befehl, Hänger-Reproduktion, Regression, optional `--reset-test` (Reset mit 2 wartenden Befehlen), `--force-fail`, `--ask-sweep` (7.2.4 P0-Abnahme: alle Werkzeuge bei **offener** Frage) und `--message-round` (Nachricht → `_bridge.userMessages` → `ack_user_message`) |
-| `test_v740_mesh.py` | Offline-Abnahme des Blender-/Mesh-Wegs (fortgeschrieben auf 7.5.1): BOM-freie WriteAllText-Pfade und BOM-tolerantes Lesen im Runner, Skript-Sperrliste, OBJ-Messung mit Dreiecks-/Groessen-/Limit-Pruefung, Register/Job-Zustandsmaschine, Report-Gates (`MESH_UPLOAD_PENDING`), Beleg, dass `MeshPart.MeshId` nur ueber `CreateMeshPartAsync`/`ApplyMesh` gesetzt wird, `import bpy` auf Modulebene und ein Mini-Ausfuehrungstest mit gestubbtem `bpy`; **seit 7.5.0**: das Mesh-Fenster ist entfernt (13 Funktionen, Fenster-Zustand und Auto-Oeffnen geloescht) und der Upload ist ein Werkzeugaufruf |
-| `test_v750_cloud.py` | Offline-Abnahme 7.5.1 (Roblox Open Cloud Upload): Schluessel verschluesselt in `opencloud.key` (DPAPI CurrentUser), nie in `settings.json`, nie im Log; **Ersteller jetzt aus dem Schluessel selbst** (offizieller Introspect-Endpunkt `POST https://apis.roblox.com/api-keys/v1/introspect`, Scopes in assets read/write, Autor/`authorizedUserId` als Rueckfall – kein Eingabefeld mehr); das Upload-Protokoll (`POST https://apis.roblox.com/assets/v1/assets`, `x-api-key`, multipart `request` + `fileContent`, Polling ueber `/assets/v1/operations/<id>`, 20 MB, Endungs-Tabelle, OBJ abgelehnt); die Fehlerwege (429/401/403/5xx/400/Netz -> `OPENCLOUD_*` mit Originalantwort) und der deutsche Nutzer-Satz bei fehlendem Schluessel; das Einstellungsfenster (zwei Zustaende – rotes „Noch kein API-Key hinzugefügt!“ mit Feld und grünem Speichern bzw. grünes „API-Key ist eingerichtet!“ mit grauem Entfernen, aufklappbares 7-Schritte-Tutorial mit Animation und Dashboard-Link); die Empfehlung an den Agenten; der exakte Dateipfad in jeder Upload-Antwort (`filePath`/`filePathHint`). Dazu ein **ausfuehrbarer Modelltest** gegen eine nachgespielte Roblox-API (Upload mit Asset-Id, Rate-Limit, abgelehnter Schluessel) | Dazu ein **ausfuehrbarer Modelltest** gegen eine nachgespielte Roblox-API (Upload mit Asset-Id, Rate-Limit, abgelehnter Schluessel) |
+| `test_v740_mesh.py` | Offline-Abnahme des Blender-/Mesh-Wegs (fortgeschrieben auf 7.5.7): BOM-freie WriteAllText-Pfade und BOM-tolerantes Lesen im Runner, Skript-Sperrliste, OBJ-Messung mit Dreiecks-/Groessen-/Limit-Pruefung, Register/Job-Zustandsmaschine, Report-Gates (`MESH_UPLOAD_PENDING`), Beleg, dass `MeshPart.MeshId` nur ueber `CreateMeshPartAsync`/`ApplyMesh` gesetzt wird, `import bpy` auf Modulebene und ein Mini-Ausfuehrungstest mit gestubbtem `bpy`; **seit 7.5.0**: das Mesh-Fenster ist entfernt (13 Funktionen, Fenster-Zustand und Auto-Oeffnen geloescht) und der Upload ist ein Werkzeugaufruf |
+| `test_v750_cloud.py` | Offline-Abnahme des Roblox-Open-Cloud-Uploads: DPAPI-Schlüssel, Introspect/Scopes, Studio-Konto als `creator.userId` (7.5.6), automatischer Key-Resource-Rückfall ohne manuelles Namensfeld, Multipart-/Operations-Protokoll, Dateigrenzen, Fehlercodes, Einstellungen/Tutorial und gemockte Upload-/Rate-Limit-/403-Abnahme. |
+| `test_v755_regression.py` | Regressionen 7.5.5–7.5.7: alle 143 Tooltexte decken den Katalog ab; Arena-Verlauf mit Fortschrittskarten, größeren lesbaren Aktionskarten und argument-/ergebnisbezogenen deutschen Beschreibungen; zusätzlich PowerShell-Struktur und eingebettetes Lua, Studio-User-ID in Sessions, Upload-Priorität und Key-Rückfall sowie Footer-Profilkarte mit asynchronem Profil-/Headshot-Lookup. |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
 ## So wird ein Update veröffentlicht
@@ -48,6 +49,27 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 7.5.7 — Arena-Verlauf mit Fortschritt und vollständigen Aktivitätstexten
+
+- Das Fenster **Arena-Verlauf** zeigt jetzt oben je Place den aktuellen Arena-Fortschritt mit sichtbarem Balken, Prozentwert, Statusmeldung, letzter beschriebener Arbeitsschritt, Bridge-Aufrufzahlen und Studio-Befehlsstatus. Bei fehlenden Prozentangaben bleibt ein ehrlicher 0-%-Balken sichtbar.
+- Die Place-Liste zeigt unter jedem Place-Namen größere, umbrechende Statuszeilen. Werkzeug-Schlüssel werden dort als klare deutsche Aktionsnamen angezeigt.
+- Alle **143** Aktionen aus dem Werkzeugkatalog besitzen einen deutschen Verlaufstext. Wo sinnvoll, ergänzt die Bridge echte Argumente und Ergebnisse – etwa Suchbegriff, Klasse/Tag, Suchbereich, Instanzpfad, Skriptzeilen, betroffene Instanzen, Asset-ID, Aufgabennummer, Treffer oder Messwerte. Unbekannte Aktionen geben keinen rohen Tool-Schlüssel aus.
+- Offline-Abnahme: `test_v755_regression.py` prüft die vollständige Katalogabdeckung, verständliche Fallbacks, Fortschrittsanzeige und die Darstellung des Verlaufstextes. Eine Live-Ausführung in Windows/Roblox Studio wurde nicht durchgeführt.
+
+## 7.5.6 — Studio-Konto als Asset-Ersteller + Profil unten links
+
+- Das Studio-Plugin liest mit `StudioService:GetUserId()` die ID des gerade in
+  Roblox Studio angemeldeten Kontos aus und meldet sie an die Bridge. Open Cloud
+  verwendet diese ID beim Asset-Upload zuerst als `creator.userId`; der Place-
+  Ersteller ist davon getrennt.
+- Die manuelle Entwickler-Fallback-Textbox ist entfernt. Nur wenn Studio keine
+  angemeldete User-ID meldet, greift weiterhin die automatisch aus dem API-Key
+  ermittelte Resource. Der Key muss `ASSETS write` für das angemeldete
+  Studio-Konto erlauben.
+- Unten links im Bridge-Fenster erscheinen Avatar und Anzeigename des
+  angemeldeten Studio-Nutzers. Roblox-Profil und Headshot werden asynchron
+  geladen, damit die Oberfläche bedienbar bleibt.
 
 ## 7.5.5 — Blender-first, Open-Cloud-Entwickler, /api/tool repariert
 
