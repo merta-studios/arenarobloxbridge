@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline-Abnahme fuer Arena Roblox Bridge 7.5.9.
+"""Offline-Abnahme fuer Arena Roblox Bridge 7.6.0.
 
 Dieser Test braucht KEIN Windows und keinen PowerShell-Prozess. Er prueft genau
 die fuenf Themen des Owners plus das Fundament:
@@ -29,7 +29,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.5.9"
+VERSION = "7.6.0"
 
 failures: list[str] = []
 
@@ -310,7 +310,7 @@ def main() -> int:
     check("_bridge.userMessages" in source and "ack_user_message" in source
           and "userMessageContract" in source,
           "Die KI wird auf _bridge.userMessages und ack_user_message hingewiesen")
-    check("USER CHANNEL (7.2.0)" in source, "Session-Regel USER CHANNEL ist vorhanden")
+    check("USER CHANNEL (7.2.0" in source, "Session-Regel USER CHANNEL ist vorhanden")
 
     message_ui = source[:source.index("function Get-PlaceOpenCommand")]
     for text in (
@@ -763,8 +763,8 @@ def main() -> int:
                  "7.2.3", "LIVE-SAMMLUNGEN", "ASK_CANCELLED", "Strg+Enter",
                  "NOTIFICATION_UNVERIFIED", "notify-diagnose.txt"):
         check(word in notes, f"version.json beschreibt: {word}")
-    check("DocsVersion     = '7.5.9'" in source and 'local ARENA_VERSION  = "7.5.9"' in source,
-          "Alle funktionalen Versionsstellen stehen auf 7.5.9")
+    check("DocsVersion     = '7.6.0'" in source and 'local ARENA_VERSION  = "7.6.0"' in source,
+          "Alle funktionalen Versionsstellen stehen auf " + VERSION)
     for marker in ("Set-StartupStage", "startup-trace.txt", "START-NETZ KOMPLETT",
                    "$script:WindowShown", "function Start-BridgeRuntime",
                    "$window.Add_ContentRendered({", "Start fehlgeschlagen"):
@@ -1125,7 +1125,7 @@ def main() -> int:
           "Keine doppelten Schluessel in PowerShell-Hashtable-Literalen (Parse-Fehler auf PowerShell 5.1/7)")
 
     check((ROOT / "parse-gate.ps1").is_file(), "Echtes Parser-Gate vorhanden")
-    check("PROOF_OF_LIFE Version=7.5.9" in source,
+    check("PROOF_OF_LIFE Version=" + VERSION in source,
           "Proof-of-Life mit aktueller Version vorhanden")
     engine = shutil.which("powershell") or shutil.which("pwsh")
     if engine:

@@ -1,7 +1,7 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 7.5.7 - 09.10.2026)                                #
+#   (Stand: Version 7.6.0 - 09.10.2026)                                #
 #                                                                      #
 ##########################################################################
 
@@ -463,6 +463,26 @@ muss die EXE neu gebaut und neu an alle verteilt werden.
 
 6) KURZER VERSIONSSTAND
 =======================
+- v7.6.0 (09.10.2026): NACHRICHTEN UNUEBERSEHBAR + OPEN-CLOUD-KEY ALS ALLEINIGES RECHTESYSTEM.
+  (1) Nutzernachrichten: Banner oben UND userMessageReminder unten in JEDEM Umschlag,
+  bis zu 10 Wiederholungen (vorher 3), openUserMessageCount in jeder Antwort, und
+  report_done blockiert mit UNACKED_USER_MESSAGE, solange eine Nachricht offen ist.
+  (2) Der Creator-Dashboard-Schalter (creatorDashboardEnabled) ist KOMPLETT entfernt -
+  Einstellungen, Shared, Werkzeug-Gate und UI. Was Arena darf, entscheidet allein der
+  Open-Cloud-Key (Scopes); Roblox 403 -> OPENCLOUD_SCOPE_MISSING nennt den Scope.
+  (3) Das Tutorial (7 Schritte) zeigt den kompletten Berechtigungs-Katalog
+  (Get-CloudPermissionCatalog: 13 Gruppen, core/nicht-core, ehrliche Beschreibungen).
+  (4) SPEICHERN PRUEFT ERST: CloudSaveButton ruft Start-CloudIntrospectRun -Key
+  (POST apis.roblox.com/api-keys/v1/introspect) und oeffnet Show-CloudPermissionsWindow
+  mit gruen/rot je Berechtigung und den Knoepfen "Oh, das aendere ich nochmal!" /
+  "Ja, alles richtig! Key speichern!" (erst dann Save-OpenCloudKeyFromText).
+  Gespeicherte Keys: Knopf "Berechtigungen ansehen" prueft erneut.
+  (5) NEUES WERKZEUG datastore (Invoke-DatastoreTool): stabile Cloud-v2-DataStore-API
+  (list_datastores, list_entries, get_entry, create_entry, update_entry,
+  increment_entry, delete_entry, list_versions), nur aktive Sitzung, Read-only sperrt
+  Schreiben, Scopes universe-datastores.control/.objects/.versions.
+  Abnahme: test_v760_user_messages_opencloud.py (neu) + angepasste test_v750/755/759.
+  KEIN Live-Test mit Windows/Roblox Studio durchgefuehrt.
 - v7.5.7 (09.10.2026): ARENA-VERLAUF MIT PLACE-FORTSCHRITT + VOLLSTÄNDIGE AKTIONSTEXTE.
   Das Verlaufsfenster hat jetzt einen eigenen Live-Fortschrittsbereich je Place
   (Balken, Prozent, Status, letzter Arbeitsschritt, Aufrufzahlen und Studio-Befehl).
