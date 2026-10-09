@@ -43,7 +43,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.5.7"
+VERSION = "7.5.8"
 
 SESSION_BUDGET_BYTES = 300000
 PRIMITIVE_MIN_PARTS = 6
@@ -313,7 +313,8 @@ def main() -> int:
     # Test 6: Nutzlast-Budget des Sessionstarts
     # ------------------------------------------------------------------
     core_names = ["build_polygon_model", "build_assembly", "model_audit", "world_audit", "run_lua",
-                  "report_done", "get_docs", "refine", "insert_script", "get_place_info"]
+                  "report_done", "get_docs", "refine", "insert_script", "get_place_info",
+                  "ask_user", "confirm_action"]
     docs = []
     for index in range(129):
         name = core_names[index] if index < len(core_names) else f"tool_{index}"
@@ -375,6 +376,7 @@ def main() -> int:
           "Nutzlast-Budget (Grenze, Kern/Index, Notbremse, ehrliche Messung) ist verdrahtet")
     core_list = region(source, "$coreToolNames = @(", "$coreDocs = New-Object")
     check("'build_polygon_model'" in core_list and "'model_audit'" in core_list and "'run_lua'" in core_list
+          and "'ask_user'" in core_list and "'confirm_action'" in core_list
           and "'search_assets'" not in core_list and "'insert_asset'" not in core_list,
           "die Kernliste enthaelt die Bau-/Audit-Werkzeuge und schiebt die Toolbox-Pfade in den Index")
 
@@ -395,8 +397,8 @@ def main() -> int:
           and "Fertig-Meldung verworfen: der Schalter" in source,
           "Clear-NotifyQueue existiert und die Anzeige prueft den Schalter unmittelbar vor dem Anzeigen")
 
-    for marker in ("# Arena Roblox Bridge  -  Version 7.5.7", "KRITISCHER START-HOTFIX 7.1.5",
-                   "DocsVersion     = '7.5.7'", 'local ARENA_VERSION  = "7.5.7"'):
+    for marker in ("# Arena Roblox Bridge  -  Version 7.5.8", "KRITISCHER START-HOTFIX 7.1.5",
+                   "DocsVersion     = '7.5.8'", 'local ARENA_VERSION  = "7.5.8"'):
         check(marker in source, f"Versionsmarker ist vorhanden: {marker}")
 
     if FAILURES:
