@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 7.5.7.
+"""Offline structure check for Arena Roblox Bridge 7.5.8.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.5.7"
+VERSION = "7.5.8"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -719,30 +719,31 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '7.5.7'": 1,
-        'local ARENA_VERSION  = "7.5.7"': 1,
-        "version = '7.5.7'": 1,
-        "bridgeVersion = '7.5.7'": 3,
-        "bridgeVersion='7.5.7'": 1,
-        "serverVersion = '7.5.7'": 2,
-        "$versionText = '7.5.7'": 1,
-        "$verText = '7.5.7'": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 7.5.7)": 1,
-        'Text="Arena Roblox Bridge - Version 7.5.7"': 1,
-        "Version 7.5.7 - aktuell. Beim naechsten Start": 2,
-        "Bridge-Version=7.5.7": 2,
-        "Kurzbericht Fenster-Vorschau (Version 7.5.7)": 1,
-        "Kurzbericht Fortschrittsanzeige (Version 7.5.7)": 1,
-        "Kurzbericht Fertig-Meldung (Version 7.5.7)": 1,
-        "Arena Roblox Bridge - Leistungsbericht (Version 7.5.7)": 1,
-        "Arena Roblox Bridge - Place-Diagnose (Version 7.5.7)": 1,
-        "Version: 7.5.7": 2,
-        "Version=7.5.7": 3,
-        "Bridge/Plugin-Stand: 7.5.7": 1,
-        "Arena Roblox Bridge - Start-Diagnose (Version 7.5.7)": 2,
-        "RuntimeInfo.Version = '7.5.7'": 1,
-        "Mesh-Build Engine 1.3 (Version 7.5.7)": 1,
-        "Organic Build Engine 1.1 (Version 7.5.7)": 1,
+        "DocsVersion     = '7.5.8'": 1,
+        'local ARENA_VERSION  = "7.5.8"': 1,
+        "version = '7.5.8'": 1,
+        "bridgeVersion = '7.5.8'": 3,
+        "bridgeVersion='7.5.8'": 1,
+        "serverVersion = '7.5.8'": 2,
+        "$versionText = '7.5.8'": 1,
+        "$verText = '7.5.8'": 1,
+        "ArenaRobloxBridge/7.5.8": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.5.8)": 1,
+        'Text="Arena Roblox Bridge - Version 7.5.8"': 1,
+        "Version 7.5.8 - aktuell. Beim naechsten Start": 2,
+        "Bridge-Version=7.5.8": 2,
+        "Kurzbericht Fenster-Vorschau (Version 7.5.8)": 1,
+        "Kurzbericht Fortschrittsanzeige (Version 7.5.8)": 1,
+        "Kurzbericht Fertig-Meldung (Version 7.5.8)": 1,
+        "Arena Roblox Bridge - Leistungsbericht (Version 7.5.8)": 1,
+        "Arena Roblox Bridge - Place-Diagnose (Version 7.5.8)": 1,
+        "Version: 7.5.8": 2,
+        "Version=7.5.8": 3,
+        "Bridge/Plugin-Stand: 7.5.8": 1,
+        "Arena Roblox Bridge - Start-Diagnose (Version 7.5.8)": 2,
+        "RuntimeInfo.Version = '7.5.8'": 1,
+        "Mesh-Build Engine 1.3 (Version 7.5.8)": 1,
+        "Organic Build Engine 1.1 (Version 7.5.8)": 1,
         "# Version 7.3.2 (2026-10-07)": 1,
         "# Version 7.4.0 (2026-10-07)": 1,
         "# Version 7.4.1 (2026-10-07)": 1,
@@ -750,6 +751,7 @@ def main() -> int:
         "# Version 7.5.3 (2026-10-08)": 1,
         "# Version 7.5.6 (2026-10-09)": 1,
         "# Version 7.5.7 (2026-10-09)": 1,
+        "# Version 7.5.8 (2026-10-09)": 1,
         "# Version 7.5.5 (2026-10-08)": 1,
     }
 
@@ -1931,7 +1933,7 @@ def main() -> int:
     guides_block = source[source.index("function Get-BridgeGuides"):source.index("function Get-SessionStartPackage")]
     for marker in (
         "organicBuildRules = @{",
-        "Organic Build Engine 1.1 (Version 7.5.7) - typed creature volumes, physical face, bilateral anatomy, measured before done",
+        "Organic Build Engine 1.1 (Version 7.5.8) - typed creature volumes, physical face, bilateral anatomy, measured before done",
         "the FIRST write targeting that model is build_mesh_model (Blender, STANDARD)",
         "creatureVolumeContract =",
         "FORBIDDEN - FLAT CREATURE SILHOUETTE",
@@ -2011,7 +2013,7 @@ def main() -> int:
             "the hard session payload budget is not defined in $Shared (handler runspace)")
     core_list = source[source.index("$coreToolNames = @("):source.index("$coreDocs = New-Object")]
     for tool in ("build_polygon_model", "build_assembly", "model_audit", "world_audit", "run_lua",
-                 "report_done", "get_docs", "refine", "insert_script"):
+                 "report_done", "get_docs", "refine", "insert_script", "ask_user", "confirm_action"):
         require(f"'{tool}'" in core_list, f"core tool {tool} is missing from the session start core list")
     for deferred in ("search_assets", "insert_asset", "fill_region", "sim_start"):
         require(f"'{deferred}'" not in core_list, f"{deferred} must stay in the compact index, not in the core list")

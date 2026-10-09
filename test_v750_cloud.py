@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline-Abnahme fuer Arena Roblox Bridge 7.5.7 - ROBLOX OPEN CLOUD UPLOAD.
+"""Offline-Abnahme fuer Arena Roblox Bridge 7.5.8 - ROBLOX OPEN CLOUD UPLOAD.
 
 Was dieses Update ausmacht (und was hier geprueft wird):
 
@@ -36,7 +36,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.5.7"
+VERSION = "7.5.8"
 FAILURES: list[str] = []
 
 
@@ -548,7 +548,7 @@ def main() -> int:
         for item in FAILURES:
             print("  - " + item)
         return 1
-    print("\nOK: 7.5.7 Open Cloud Upload bestanden (Studio-ID-Prioritaet, automatischer Rueckfall, Tutorial, upload_asset, Dateipfad, Fehlerwege, Modelltest).")
+    print("\nOK: 7.5.8 Open Cloud Upload bestanden (Studio-ID-Prioritaet, automatischer Rueckfall, Tutorial, upload_asset, Dateipfad, Fehlerwege, Modelltest).")
     return 0
 
 

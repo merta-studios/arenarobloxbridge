@@ -1,8 +1,20 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.5.7
+# Arena Roblox Bridge  -  Version 7.5.8
 #
-# Version 7.5.6 (2026-10-09) - STUDIO-KONTO ALS ASSET-ERSTELLER, PROFIL IN DER BRIDGE
+# Version 7.5.8 (2026-10-09) - MINI-UPDATE: BRIDGE-FRAGEN + AUTOSTART NUR UPDATER
+#   - Wenn Arena eine Rueckfrage oder Entscheidung braucht, MUSS sie sie ueber
+#     ask_user/confirm_action im Bridge-Fenster stellen. Die kompletten Frage-
+#     Werkzeuge stehen schon in der ersten Session-Antwort; Chat ist kein Ersatz.
+#   - Der Windows-Autostart startet nur noch ArenaBridge.exe. Der Updater-Pfad
+#     wird aus dem Starter-Prozess, alten Run-Eintraegen/Verknuepfungen oder dem
+#     gespeicherten Pfad ermittelt; PowerShell-Autostarts und Duplikate werden
+#     entfernt und durch genau einen HKCU-Run-Eintrag fuer den Updater ersetzt.
+#   - Eine benutzerbezogene Ein-Instanz-Sperre verhindert doppelte Bridge-
+#     Fenster auch dann, wenn Windows vor der Bereinigung alte Eintraege startet.
+#     Der Selbst-Update-Neustart gibt die Sperre vorher frei.
+#
 # Version 7.5.7 (2026-10-09) - ARENA-VERLAUF MIT FORTSCHRITTSBALKEN, PLACE-STATUS UND 143 KLAREN AKTIONSTEXTEN
+# Version 7.5.6 (2026-10-09) - STUDIO-KONTO ALS ASSET-ERSTELLER, PROFIL IN DER BRIDGE
 #   - Open Cloud nimmt jetzt zuerst die Roblox-User-ID, die das Studio-Plugin
 #     offiziell ueber StudioService:GetUserId() abfragt. Der Upload nutzt damit
 #     das gerade in Studio angemeldete Konto statt eines Place-Erstellers oder
@@ -2180,14 +2192,58 @@
 # Ohne Parameter (direkter Start) gibt es keinen Update-Hinweis.
 # ----------------------------------------------------------------------------
 param(
-    [string]$UpdateStatus = ''
+    [string]$UpdateStatus = '',
+    [string]$UpdaterPath = ''
 )
 
 # 7.2.9 PROOF_OF_LIFE: first executable statement after param.
 # Existing LOCALAPPDATA directory; no UI, no new exception net.
 # A parse/policy failure prevents even this marker. Check its timestamp/version.
 # Continue + SilentlyContinue keeps diagnostic I/O from becoming a start blocker.
-Write-Output ("{0:o} PROOF_OF_LIFE Version=7.5.7 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
+Write-Output ("{0:o} PROOF_OF_LIFE Version=7.5.8 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
+
+# Version 7.5.8: Ein Autostart kann alte Run-Eintraege parallel ausloesen.
+# Nur EIN PowerShell-Kind darf die Bridge-Oberflaeche/Dienste starten. Die
+# Sperre ist pro Windows-Konto und wird beim Prozessende automatisch freigegeben.
+$script:BridgeSingleInstanceMutex = $null
+$script:BridgeSingleInstanceOwned = $false
+try {
+    $mutexIdentity = [string]$env:USERNAME
+    try {
+        $currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        if (-not [string]::IsNullOrWhiteSpace([string]$currentSid)) { $mutexIdentity = [string]$currentSid }
+    } catch {}
+    if ([string]::IsNullOrWhiteSpace($mutexIdentity)) { $mutexIdentity = 'current-user' }
+    $mutexIdentity = $mutexIdentity -replace '[^A-Za-z0-9_.-]', '_'
+    $mutexName = 'Local\ArenaRobloxBridge-' + $mutexIdentity
+    $script:BridgeSingleInstanceMutex = [System.Threading.Mutex]::new($false, $mutexName)
+    try {
+        $script:BridgeSingleInstanceOwned = $script:BridgeSingleInstanceMutex.WaitOne(0)
+    } catch [System.Threading.AbandonedMutexException] {
+        $script:BridgeSingleInstanceOwned = $true
+    }
+    if (-not $script:BridgeSingleInstanceOwned) {
+        try {
+            Add-Content -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Value ('{0:o} SINGLE_INSTANCE_DUPLICATE PID={1} UpdateStatus={2}' -f (Get-Date), $PID, $UpdateStatus) -Encoding UTF8 -ErrorAction SilentlyContinue
+        } catch {}
+        try { $script:BridgeSingleInstanceMutex.Dispose() } catch {}
+        exit 0
+    }
+} catch {
+    # Die Sicherung darf eine Bridge nicht am Start hindern, falls Windows die
+    # benannte Mutex-API unerwartet blockiert.
+    try { Add-Content -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Value ('{0:o} SINGLE_INSTANCE_GUARD_WARNING {1}' -f (Get-Date), $_.Exception.Message) -Encoding UTF8 -ErrorAction SilentlyContinue } catch {}
+}
+
+function Release-BridgeSingleInstanceMutex {
+    if (-not $script:BridgeSingleInstanceOwned -or $null -eq $script:BridgeSingleInstanceMutex) { return }
+    try {
+        $script:BridgeSingleInstanceMutex.ReleaseMutex()
+        $script:BridgeSingleInstanceOwned = $false
+    } catch {}
+    try { $script:BridgeSingleInstanceMutex.Dispose() } catch {}
+    $script:BridgeSingleInstanceMutex = $null
+}
 
 $ErrorActionPreference = 'Stop'
 
@@ -2222,7 +2278,7 @@ trap {
         }
         $trapPath = Join-Path $trapFolder 'startup-diagnose.txt'
         $trapReport = New-Object System.Text.StringBuilder
-        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.7)')
+        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.8)')
         [void]$trapReport.AppendLine('Quelle: trap auf Skriptebene (nicht abgefangener Fehler)')
         [void]$trapReport.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$trapReport.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -2261,7 +2317,7 @@ trap {
             try {
                 [System.IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA 'START-CHECK.txt'),
                     ('Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.5.7' + [Environment]::NewLine +
+                     'Version: 7.5.8' + [Environment]::NewLine +
                      'ABBRUCH: ' + $trapMessage + [Environment]::NewLine +
                      'Details: ' + $trapPath + [Environment]::NewLine),
                     [System.Text.Encoding]::UTF8)
@@ -2407,6 +2463,193 @@ $script:RepoRoot = Split-Path -Parent $script:AppRoot
 $script:LauncherPath = Join-Path $script:RepoRoot 'Arena Roblox Bridge.cmd'
 $script:AppDataRoot = Join-Path $env:LOCALAPPDATA 'ArenaRobloxBridge'
 $script:BinFolder = Join-Path $script:AppDataRoot 'bin'
+$script:UpdaterPathFile = Join-Path $script:AppDataRoot 'updater-path.txt'
+$script:UpdaterExePath = $null
+$script:BridgeStartupRegistryPaths = @(
+    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run',
+    'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce',
+    'HKCU:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run',
+    'HKCU:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\RunOnce'
+)
+$script:BridgeStartupApprovedPaths = @(
+    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run',
+    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run32',
+    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\RunOnce',
+    'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder'
+)
+
+function Test-BridgeUpdaterExecutable {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $null }
+    $candidate = ([string]$Path).Trim()
+    if ($candidate -match '^"([^"]+\.exe)"') { $candidate = [string]$matches[1] }
+    elseif ($candidate -match '(?i)^(.+?\.exe)(?:\s|$)') { $candidate = [string]$matches[1] }
+    $candidate = $candidate.Trim('"')
+    try {
+        if ([System.IO.Path]::GetExtension($candidate) -ine '.exe') { return $null }
+        $baseName = [System.IO.Path]::GetFileNameWithoutExtension($candidate)
+        if ($baseName -ine 'ArenaBridge') { return $null }
+        if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { return $null }
+        return [System.IO.Path]::GetFullPath($candidate)
+    } catch { return $null }
+}
+
+function Get-BridgeUpdaterPathFromCommandLine {
+    param([string]$CommandLine)
+    if ([string]::IsNullOrWhiteSpace($CommandLine)) { return $null }
+    $matchesExe = [regex]::Matches([string]$CommandLine, '(?i)"(?<quoted>[^"\r\n]+\.exe)"|(?<plain>(?:[A-Z]:\\|\\\\)[^"\r\n]*?\.exe)')
+    foreach ($matchExe in $matchesExe) {
+        $pathValue = [string]$matchExe.Groups['quoted'].Value
+        if ([string]::IsNullOrWhiteSpace($pathValue)) { $pathValue = [string]$matchExe.Groups['plain'].Value }
+        $validPath = Test-BridgeUpdaterExecutable $pathValue
+        if (-not [string]::IsNullOrWhiteSpace([string]$validPath)) { return $validPath }
+    }
+    return $null
+}
+
+function Get-BridgeStartupItems {
+    # Nur Eintraege des aktuellen Windows-Kontos: Run/RunOnce und die
+    # benutzerspezifischen Verknuepfungen/Skripte im Startup-Ordner.
+    $items = New-Object System.Collections.Generic.List[object]
+    $bridgePattern = '(?i)Arena(?:[\s._-]*Roblox)?[\s._-]*Bridge'
+    foreach ($registryPath in $script:BridgeStartupRegistryPaths) {
+        try {
+            $props = Get-ItemProperty -Path $registryPath -ErrorAction Stop
+            foreach ($property in $props.PSObject.Properties) {
+                $name = [string]$property.Name
+                if ($name -match '^PS[A-Z]') { continue }
+                $value = [string]$property.Value
+                if ([regex]::IsMatch(($name + ' ' + $value), $bridgePattern)) {
+                    $items.Add([pscustomobject]@{ kind = 'registry'; key = $registryPath; name = $name; value = $value; path = ''; target = ''; arguments = ''; extension = '' })
+                }
+            }
+        } catch {}
+    }
+
+    $startupFolder = ''
+    try { $startupFolder = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup' } catch {}
+    if (-not [string]::IsNullOrWhiteSpace($startupFolder) -and (Test-Path -LiteralPath $startupFolder)) {
+        $shell = $null
+        try { $shell = New-Object -ComObject WScript.Shell } catch {}
+        try {
+            foreach ($file in (Get-ChildItem -LiteralPath $startupFolder -Force -ErrorAction SilentlyContinue)) {
+                $extension = [string]$file.Extension
+                # Niemals die eigentliche EXE aus dem Startup-Ordner loeschen;
+                # nur deren Verknuepfung bzw. Wrapper sind Registrierungen.
+                if ($extension -notin @('.lnk', '.cmd', '.bat', '.ps1', '.vbs', '.url')) { continue }
+                $target = ''
+                $arguments = ''
+                $content = ''
+                if ($extension -eq '.lnk' -and $null -ne $shell) {
+                    try {
+                        $shortcut = $shell.CreateShortcut([string]$file.FullName)
+                        $target = [string]$shortcut.TargetPath
+                        $arguments = [string]$shortcut.Arguments
+                    } catch {}
+                } elseif ($extension -in @('.cmd', '.bat', '.ps1', '.vbs')) {
+                    try { $content = [string](Get-Content -LiteralPath $file.FullName -Raw -ErrorAction Stop) } catch {}
+                }
+                $label = [string]$file.Name + ' ' + $target + ' ' + $arguments + ' ' + $content
+                if ([regex]::IsMatch($label, $bridgePattern)) {
+                    $items.Add([pscustomobject]@{ kind = 'file'; key = ''; name = [string]$file.Name; value = $content; path = [string]$file.FullName; target = $target; arguments = $arguments; extension = $extension })
+                }
+            }
+        } catch {} finally {
+            if ($null -ne $shell) { try { [void][System.Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) } catch {} }
+        }
+    }
+    return ,$items.ToArray()
+}
+
+function Get-BridgeUpdaterPathFromParent {
+    # ArenaBridge.exe startet powershell.exe als Kind. Die Pfad-Erkennung wird
+    # gleich am Skriptstart ausgefuehrt, waehrend der Starter noch existiert.
+    $currentPid = [int]$PID
+    for ($depth = 0; $depth -lt 6; $depth++) {
+        $current = $null
+        try { $current = Get-CimInstance Win32_Process -Filter ('ProcessId = ' + [string]$currentPid) -ErrorAction Stop } catch {
+            try { $current = Get-WmiObject Win32_Process -Filter ('ProcessId = ' + [string]$currentPid) -ErrorAction Stop } catch {}
+        }
+        if ($null -eq $current) { break }
+        $parentPid = 0
+        try { $parentPid = [int]$current.ParentProcessId } catch {}
+        if ($parentPid -le 0 -or $parentPid -eq $currentPid) { break }
+        $parent = $null
+        try { $parent = Get-CimInstance Win32_Process -Filter ('ProcessId = ' + [string]$parentPid) -ErrorAction Stop } catch {
+            try { $parent = Get-WmiObject Win32_Process -Filter ('ProcessId = ' + [string]$parentPid) -ErrorAction Stop } catch {}
+        }
+        if ($null -eq $parent) { break }
+        $parentPath = Test-BridgeUpdaterExecutable ([string]$parent.ExecutablePath)
+        if (-not [string]::IsNullOrWhiteSpace([string]$parentPath)) { return $parentPath }
+        $currentPid = $parentPid
+    }
+    return $null
+}
+
+function Resolve-BridgeUpdaterExePath {
+    param([string]$PreferredPath = '')
+    $candidates = New-Object System.Collections.Generic.List[string]
+    if (-not [string]::IsNullOrWhiteSpace($PreferredPath)) { $candidates.Add([string]$PreferredPath) }
+    if ($script:IsExeMode -and -not [string]::IsNullOrWhiteSpace([string]$script:ExePath)) { $candidates.Add([string]$script:ExePath) }
+    if (-not [string]::IsNullOrWhiteSpace([string]$env:ARENABRIDGE_UPDATER_PATH)) { $candidates.Add([string]$env:ARENABRIDGE_UPDATER_PATH) }
+
+    try {
+        $parentPath = Get-BridgeUpdaterPathFromParent
+        if (-not [string]::IsNullOrWhiteSpace([string]$parentPath)) { $candidates.Add([string]$parentPath) }
+    } catch {}
+
+    $startupItems = Get-BridgeStartupItems
+    foreach ($item in $startupItems) {
+        if ([string]$item.kind -eq 'registry') {
+            $candidates.Add([string]$item.value)
+        } else {
+            if (-not [string]::IsNullOrWhiteSpace([string]$item.target)) { $candidates.Add([string]$item.target) }
+            if (-not [string]::IsNullOrWhiteSpace([string]$item.arguments)) { $candidates.Add([string]$item.arguments) }
+            if (-not [string]::IsNullOrWhiteSpace([string]$item.value)) { $candidates.Add([string]$item.value) }
+        }
+    }
+
+    foreach ($candidatePath in @(
+        (Join-Path $script:AppRoot 'ArenaBridge.exe'),
+        (Join-Path $script:RepoRoot 'ArenaBridge.exe'),
+        (Join-Path $script:AppDataRoot 'ArenaBridge.exe'),
+        (Join-Path $script:BinFolder 'ArenaBridge.exe')
+    )) { $candidates.Add([string]$candidatePath) }
+
+    try {
+        if (Test-Path -LiteralPath $script:UpdaterPathFile) {
+            $cachedPath = [string](Get-Content -LiteralPath $script:UpdaterPathFile -Raw -Encoding UTF8 -ErrorAction Stop)
+            if (-not [string]::IsNullOrWhiteSpace($cachedPath)) { $candidates.Add($cachedPath.Trim()) }
+        }
+    } catch {}
+
+    try {
+        $runningStarters = @(Get-CimInstance Win32_Process -Filter "Name='ArenaBridge.exe'" -ErrorAction SilentlyContinue)
+        foreach ($starter in $runningStarters) { $candidates.Add([string]$starter.ExecutablePath) }
+    } catch {}
+
+    foreach ($candidate in $candidates) {
+        $path = Test-BridgeUpdaterExecutable ([string]$candidate)
+        if ([string]::IsNullOrWhiteSpace([string]$path)) { $path = Get-BridgeUpdaterPathFromCommandLine ([string]$candidate) }
+        if (-not [string]::IsNullOrWhiteSpace([string]$path)) { return $path }
+    }
+    return $null
+}
+
+function Save-BridgeUpdaterExePath {
+    param([string]$Path)
+    $validPath = Test-BridgeUpdaterExecutable $Path
+    if ([string]::IsNullOrWhiteSpace([string]$validPath)) { return $false }
+    try {
+        New-Item -ItemType Directory -Path $script:AppDataRoot -Force | Out-Null
+        [System.IO.File]::WriteAllText($script:UpdaterPathFile, [string]$validPath, [System.Text.UTF8Encoding]::new($false))
+        $script:UpdaterExePath = [string]$validPath
+        return $true
+    } catch { return $false }
+}
+
+$script:UpdaterExePath = Resolve-BridgeUpdaterExePath -PreferredPath $UpdaterPath
+if (-not [string]::IsNullOrWhiteSpace([string]$script:UpdaterExePath)) { [void](Save-BridgeUpdaterExePath $script:UpdaterExePath) }
 $script:Port = 17681
 $script:LocalBaseUrl = "http://127.0.0.1:$script:Port"
 $script:TunnelUrl = $null
@@ -2836,7 +3079,10 @@ function Invoke-AutostartSelfUpdate {
                 }
             } catch {}
 
-            # 5) Neu starten - mit Update-Hinweis.
+            # 5) Neu starten - mit Update-Hinweis. Die neue Instanz muss die
+            # benannte Ein-Instanz-Sperre uebernehmen koennen, bevor dieser
+            # Prozess nach der Installation beendet wird.
+            Release-BridgeSingleInstanceMutex
             $psExe = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
             if (-not (Test-Path -LiteralPath $psExe)) { $psExe = 'powershell.exe' }
             # Version 7.3.0 (STARTGARANTIE): Neustart wird geprueft statt blind
@@ -3126,7 +3372,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.5.7'
+    DocsVersion     = '7.5.8'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -3319,7 +3565,7 @@ $script:Shared = [hashtable]::Synchronized(@{
         get_notices = 'Bridge-Hinweise lesen'
         get_events = 'Bridge-Ereignisse lesen'
         scaffold_ui_scripts = 'UI-Skripte planen'
-        ask_user = 'Rückfrage stellen'
+        ask_user = 'Rückfrage im Bridge-Fenster stellen'
         confirm_action = 'Bestätigung einholen'
         wait_for_user = 'Auf deine Antwort warten'
         ack_user_message = 'Deine Nachricht bestätigen'
@@ -3537,7 +3783,7 @@ function Write-StartupFailureDiagnose {
         try { $trace = [string]$ErrorRecord.ScriptStackTrace } catch {}
         if ($trace.Length -gt 2000) { $trace = $trace.Substring(0, 2000) }
         $report = New-Object System.Text.StringBuilder
-        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.7)')
+        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.5.8)')
         [void]$report.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$report.AppendLine('Letzte Startstufe: ' + $stage)
         [void]$report.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -3620,7 +3866,7 @@ function Set-StartupStage {
     try {
         $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
         $checkText = 'Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.5.7' + [Environment]::NewLine +
+                     'Version: 7.5.8' + [Environment]::NewLine +
                      'Zeit: ' + $stamp + [Environment]::NewLine +
                      'PowerShell: ' + [string]$PSVersionTable.PSVersion + ' | CLR ' + [string][Environment]::Version + [Environment]::NewLine +
                      'Skript: ' + [string]$script:ScriptPath + [Environment]::NewLine +
@@ -3686,12 +3932,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.5.7, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.5.7, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.5.8, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.5.8, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.5.7'
+$script:Shared.RuntimeInfo.Version = '7.5.8'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -3794,7 +4040,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.5.7)
+  Arena Studio Bridge - Studio Plugin  (Version 7.5.8)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -3867,7 +4113,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.5.7"
+local ARENA_VERSION  = "7.5.8"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -15567,7 +15813,7 @@ $script:BridgeHandlerScript = {
             result = (Get-AskView $state)
         }
         $result.result.nextCall = 'ask_user { askId: "' + $askId + '", resume: true, waitSeconds: 45 }'
-        $result.result.hint = 'The question window is open at the user''s mouse cursor. It stays open for ' + [string]$expiresIn + ' seconds. Do NOT guess: call ask_user again with askId and resume=true to wait for the answers (max 50 seconds per call), or continue with other work and resume later. Answers also arrive automatically as _bridge.userAnswers.'
+        $result.result.hint = 'The question window is open at the user''s mouse cursor. It stays open for ' + [string]$expiresIn + ' seconds. Do NOT ask in normal chat and do NOT guess: call ask_user again with the same askId and resume=true to wait for the answer (max 50 seconds per call), or continue with unrelated work and resume later. Answers also arrive automatically as _bridge.userAnswers.'
         if ($tree.warnings.Count -gt 0) { $result.result.askWarning = 'ASK_UNREACHABLE'; $result.result.warnings = @($tree.warnings) }
         return $result
     }
@@ -17062,7 +17308,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.5.7 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.5.8 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -22282,14 +22528,14 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
             returns = '{ ui, mode, structure, scripts: [ { name, className, responsibility, why, order } ], buildOrder, limits, note }';
             example = @{ ui = 'Shop'; screens = @( 'Shop', 'Inventory' ); mode = 'extend' };
             errors = @('BAD_ARGS: ui fehlt.') })
-        $t.Add(@{ name = 'ask_user'; category = 'session'; summary = 'Den Nutzer etwas fragen - mit Entscheidungsbaum, Fenster am Mauszeiger.';
-            description = 'Statt im Chat zu fragen (der Nutzer ist oft weg und uebersieht es): ein Fenster erscheint in der Naehe des Mauszeigers mit Haekchen/Knopf-Optionen und eigener Antwort. Der ganze Baum kommt in EINER Anfrage. Bedingungen erlaubt: when = [ { questionId = "fruehererId", anyOf = ["optionA"], allOf = [...], custom = true } ] auf eine FRUEHERE Frage (mehrere Ebenen tief). Der gesamte Baum zaehlt: max 12 Fragen, max 6 Optionen je Frage, max 400 Zeichen je Text, Ids eindeutig. Du kannst dabei schlafen: waitSeconds (max 50) blockiert; kommt keine Antwort, liefert der Aufruf { state: "waiting", askId, nextCall } und du rufst spaeter mit resume=true erneut auf. Antworten kommen notfalls als _bridge.userAnswers mit.';
+        $t.Add(@{ name = 'ask_user'; category = 'session'; summary = 'PFLICHT statt Chat-Frage: den Nutzer im Bridge-Fenster fragen.';
+            description = 'Wenn du eine echte Nutzerantwort brauchst, verwende dieses Bridge-Werkzeug statt einer Frage im normalen Chat. Das Fenster erscheint nahe des Mauszeigers; der Nutzer antwortet dort ueber Optionen oder eigene Antwort. Chat darf nur mitteilen, dass eine Bridge-Frage offen ist. Der ganze Baum kommt in EINER Anfrage. Bedingungen erlaubt: when = [ { questionId = "fruehererId", anyOf = ["optionA"], allOf = [...], custom = true } ] auf eine FRUEHERE Frage (mehrere Ebenen tief). Der gesamte Baum zaehlt: max 12 Fragen, max 6 Optionen je Frage, max 400 Zeichen je Text, Ids eindeutig. waitSeconds (max 50) wartet; sonst liefert der Aufruf { state: "waiting", askId, nextCall } und du setzt mit derselben askId und resume=true fort. Antworten kommen notfalls als _bridge.userAnswers mit. Wenn das Werkzeug fehlschlaegt: Fehler melden und abhaengige Arbeit anhalten, nicht in den Chat ausweichen.';
             params = @{ title = @{ type = 'string'; required = $true; default = '-'; description = 'Kurze Ueberschrift (max 90 Zeichen).' }; message = @{ type = 'string'; required = $false; default = 'null'; description = 'Einleitungssatz (max 600 Zeichen).' }; questions = @{ type = 'object[]'; required = $true; default = '-'; description = 'Je Frage: { id, text, options: [ { id, label, description? } ], allowCustomResponse?, required?, multi?, when? }.' }; expiresInSeconds = @{ type = 'int'; required = $false; default = '86400'; description = '30..86400 (24 h): das Fenster bleibt offen, bis der Nutzer antwortet, abbricht oder Studio endet.' }; waitSeconds = @{ type = 'int'; required = $false; default = '0'; description = '0..50: aktiv auf die Antwort warten (0 = sofort zurueck und spaeter mit resume=true fortsetzen).' }; askId = @{ type = 'string'; required = $false; default = 'null'; description = 'Zum Fortsetzen einer offenen Frage.' }; resume = @{ type = 'bool'; required = $false; default = 'false'; description = 'true = erneut auf diese Frage warten.' } };
             returns = '{ state: waiting|answered, askId, answers: { frageId: { optionIds, labels, custom } }, path, notShown, summary, secondsLeft, nextCall }';
             example = @{ title = 'Welcher Baumstil?'; waitSeconds = 45; questions = @( @{ id = 'style'; text = 'Welchen Stil willst du?'; options = @( @{ id = 'organic'; label = 'Organisch' }, @{ id = 'lowpoly'; label = 'Low-Poly' } ) }, @{ id = 'detail'; text = 'Welche Details?'; multi = $true; when = @( @{ questionId = 'style'; anyOf = @('organic') } ); options = @( @{ id = 'leaves'; label = 'Laub' }, @{ id = 'branches'; label = 'Zweige' } ) } ) };
             errors = @('ASK_TOO_MANY_QUESTIONS: mehr als 12 Fragen oder mehr als 6 Optionen je Frage.', 'ASK_GRAPH_INVALID: doppelte/fehlende Ids, unbekannte Bedingung, weniger als 2 Optionen.', 'ASK_CYCLE: eine Frage haengt von sich selbst oder einer SPAETEREN Frage ab.', 'ASK_EXPIRED: das Fenster lief ab, ohne dass geantwortet wurde.', 'ASK_UNKNOWN: unbekannte askId.') })
-        $t.Add(@{ name = 'confirm_action'; category = 'session'; summary = 'Kurz nachfragen: soll Arena das wirklich tun? (Ja/Nein)';
-            description = 'Abkuerzung fuer ask_user mit genau einer Frage und zwei Optionen. Fuer Loeschungen, Umbauten, Ueberschreiben von Nutzerarbeit oder teure Schritte. Der Nutzer kann auch eine eigene Antwort schreiben.';
+        $t.Add(@{ name = 'confirm_action'; category = 'session'; summary = 'PFLICHT statt Chat-Frage: Ja/Nein im Bridge-Fenster bestaetigen lassen.';
+            description = 'Abkuerzung fuer ask_user mit genau einer Frage und zwei Optionen. Verwende sie fuer erforderliche Ja/Nein-Entscheidungen und riskante Schritte statt in normalem Chat um eine Antwort zu bitten. Fuer Loeschungen, Umbauten, Ueberschreiben von Nutzerarbeit oder teure Schritte. Der Nutzer kann auch eine eigene Antwort schreiben.';
             params = @{ title = @{ type = 'string'; required = $true; default = '-'; description = 'Was bestaetigt werden soll.' }; message = @{ type = 'string'; required = $false; default = 'null'; description = 'Was passiert, wenn der Nutzer zustimmt.' }; confirmLabel = @{ type = 'string'; required = $false; default = 'Ja, mach das'; description = '' }; cancelLabel = @{ type = 'string'; required = $false; default = 'Nein, nicht'; description = '' }; expiresInSeconds = @{ type = 'int'; required = $false; default = '86400'; description = '30..86400 (24 h): das Fenster bleibt offen, bis der Nutzer antwortet oder abbricht.' }; waitSeconds = @{ type = 'int'; required = $false; default = '0'; description = '0..50, wie ask_user.' } };
             returns = '{ state, askId, confirmed: true/false, customResponse, answers, path, notShown, summary }';
             example = @{ title = 'Darf ich das bestehende Gebaeude ersetzen?'; message = 'Alle Teile des alten Hauses werden geloescht und neu gebaut.'; waitSeconds = 45 };
@@ -22342,8 +22588,22 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
     # GELEITINFORMATIONEN: Regeln, Koordinaten, Play-Modi, Jobs, Fehler-
     # Codes, Workflows. Stecken in Manifest, /api/docs und _sessionStart.
     # ==================================================================
-    function Get-BridgeGuides {
+    function Get-BridgeAskUserProtocol {
         return @{
+            required = $true
+            channel = 'Arena Roblox Bridge ask_user/confirm_action window'
+            whenToUse = 'Use the Bridge question tools whenever a real user choice or clarification is needed to continue safely or correctly; do not ask routine questions whose answers are already known.'
+            toolChoice = 'Use confirm_action for one yes/no confirmation and ask_user for clarification, custom text, or multiple/conditional choices. Put related choices into one ask_user decision tree.'
+            chatRule = 'Never ask the user to answer a question in ordinary chat and never wait for a chat reply. Chat may only announce that the Bridge question window is open and ask the user to answer there.'
+            waiting = 'Keep the same askId open and resume it with ask_user { askId, resume: true } until answered or cancelled. Read _bridge.userAnswers and never guess while openQuestions is present.'
+            toolFailure = 'If a Bridge question tool fails or is unavailable, explain the exact error and stop work that depends on the answer. Do not fall back to a normal chat question.'
+        }
+    }
+
+    function Get-BridgeGuides {
+        $askUserProtocol = Get-BridgeAskUserProtocol
+        return @{
+            askUserProtocol = $askUserProtocol
             importantRules = @(
                 'Choose the tools and workflow that best fit the task. The bridge exposes precise read, build, script, asset, playtest and batch tools; these are capabilities, not a mandatory checklist.',
                 'BLENDER-FIRST (Version 7.5.5): For ANY nontrivial custom 3D model the standard is build_mesh_model (Blender), then upload_asset, then mesh_apply_asset. build_polygon_model is NOT the default any more. Use it ONLY when the user explicitly asks for polygon building - then pass userRequestedPolygon=true. Before that call you warn the user yourself: many WedgeParts can make Roblox Studio lag badly, and you recommend the Blender path. Native Parts stay right for truly simple, repeated or explicitly primitive geometry; build_assembly complements repeats; do not reduce a hero/custom model to primitive blocks. Only in an allowed polygon build (userRequestedPolygon=true): NEVER set autoWeld=false unless physically independent polygon pieces are requested. Afterward verify incomplete=false, facesSkipped=0, skipped=[]; inspect fallbackFaces/warnings, run model_audit. See modelBuildRules for the finish bar.',
@@ -22360,7 +22620,7 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
                 'Windows finish notifications use report_done { title, message }. Arena writes a lively title (max 70 characters) and an inviting body (max 140); avoid dry changelog lists.',
                 'Responses include typed error codes and concrete diagnostics. Use those details to decide the next step.',
                 'HARD CONSTRAINT for any hand-written WedgePart/triangle geometry (build_polygon_model already does this correctly - this rule is for genuinely custom run_lua geometry code only): see polygonEngineRules below for the mandatory WedgePart axis convention and the canonical seamless-triangle formula. Getting the axis order wrong is the single most common cause of 90-degree rotation errors and gaping seams in procedural low-poly builds.',
-                'ASK THE USER (7.2.0): when you need a real decision, use ask_user (decision tree, window appears at the user''s mouse cursor) or confirm_action (plain yes/no) instead of only asking in chat - the user is often away and misses chat questions. The WHOLE tree goes into ONE ask_user call; conditions use when = [ { questionId = "<earlier question id>", anyOf = ["optionId"] } ] and may nest several levels. Pass waitSeconds (max 50) to wait actively; if nothing arrives you get { state = "waiting", askId, nextCall } - resume later with ask_user { askId, resume: true }. Late answers arrive as _bridge.userAnswers. Never guess while an openQuestions field is present.',
+                'BRIDGE-ONLY QUESTIONS (mandatory, 7.5.8): whenever a user answer is needed to continue safely or correctly, ask via ask_user in the Bridge for clarification/choices or confirm_action for yes/no. Never pose the question in normal chat and never wait for a chat reply. Chat may only say that a Bridge question window is open and ask the user to answer there. Put related decisions in one ask_user tree; resume the same askId until answered/cancelled; read _bridge.userAnswers and never guess while openQuestions is present. If the Bridge tool fails, report the exact error and stop dependent work - do not fall back to chat.',
                 'FINISH GRADE (7.2.0): model_audit now grades every build (finishScore 0..100, grade draft/simple/detailed/sculpted). grade "draft" means at least 4 parts, no polygon/mesh/union/detail geometry and more than 60 % primitives - report_done answers DRAFT_GRADE_RISK until you rebuild the silhouette with real structure. If the simplicity IS what the user asked for, declare it while building: build_polygon_model/build_assembly { grade = "simple" | "lowpoly" | "blockout" } writes the attribute ArenaDeclaredGrade and the audit stops calling it a draft. report_done also returns buildRegister: it lists what you built and what model_audit has not measured yet.',
                 'USER CHANNEL (7.2.0): the user can message you WHILE you work ("Nachricht an Arena senden" in the bridge place row). Every response then carries _bridge.userMessages plus _bridge.userMessageContract. Read it first, apply it, tell the user what you changed, and acknowledge with ack_user_message { id } - an unacknowledged message repeats in up to three responses. wait_for_user { maxSeconds <= 50 } blocks until a message arrives; use it only at a real decision point, never as polling. The user can also switch the place to read-only from the same menu, which is reported as WRITE_LOCKED_BY_USER.'
                 'HARD ORGANIC EVIDENCE CONTRACT (separate from the global builder preference): when an organic model is explicitly built with organic=true or is registered from per-model model_audit evidence, build and audit the real model in Studio, use a deliberate palette, install motion under that model, and fix its organicQuality issues. report_done requires fresh passing evidence for every registered organic model, even after a handoff. This is not selected or enforced from animal/tree names; see organicBuildRules for the stricter per-organic-model evidence contract.'
@@ -22457,7 +22717,7 @@ end
                 motion = 'Add animation only when the task requests motion or the object is inherently living/moving. For organic models, explicitly use organic=true so per-model geometry, palette, enabled-motion and fresh-audit evidence is enforced; see organicBuildRules.'
             }
             meshBuildRules = @{
-                title = 'Mesh-Build Engine 1.3 (Version 7.5.7) - STANDARDWEG: EIN Modell ist EIN Mesh, Blender baut, der Agent laedt hoch (Open Cloud), die Bridge setzt ein'
+                title = 'Mesh-Build Engine 1.3 (Version 7.5.8) - STANDARDWEG: EIN Modell ist EIN Mesh, Blender baut, der Agent laedt hoch (Open Cloud), die Bridge setzt ein'
                 whenThisApplies = 'DER STANDARDWEG (Version 7.5.5, Blender-first): Jedes 3D-Modell, das Arena baut, laeuft zuerst ueber Blender - egal ob Form, Organik oder Detailgrad. build_polygon_model gibt es nur noch auf ausdruecklichen Nutzerwunsch (userRequestedPolygon=true) und dann nur nach der Lag-Warnung. Seit 7.5.0 ist der Upload VOLL AUTOMATISIERT - der Nutzer muss nichts mehr hochladen.'
                 ONE_MODEL_ONE_MESH = 'HARTE REGEL SEIT 7.5.1 (Owner-Beschwerde: "Warum baut mir Arena Wurzel, Stamm, Aeste und Kronen einzeln"): EIN zusammenhaengendes Modell wird als EIN Mesh in EINEM Slot gebaut - ein Baum ist EIN Mesh, ein Fass EIN Mesh, eine Laterne EIN Mesh. Mehrere Slots sind NUR in genau drei Faellen erlaubt: (1) bestimmte Teile werden ANIMIERT (je bewegliches Glied ein Slot), (2) bestimmte Teile brauchen EIGENE EIGENSCHAFTEN (eigene Farbe/Material/CanCollide/Transparenz, die ein einzelnes MeshPart nicht tragen kann), (3) die DREIECKSZAHL sprengt das Budget (dann nach Koerperteilen splitten, nicht nach "Wurzel/Stamm/Aeste/Krone"-Raten). Sonst gilt: EIN Blender-Skript, das die ganze Form baut - inklusive Wurzeln, Krone, Blaetter oder Details -, EIN Slot, EIN MeshPart. Wer ohne einen dieser drei Gruende splittet, macht die Arbeit des Nutzers groesser (mehr Uploads, mehr Platzhalter, mehr MeshParts) und hat den Bau nicht verstanden.'
                 slots = 'Mehrere Slots NUR nach der Regel oben. Wenn wirklich geteilt wird, dann nach Funktion: je bewegliches Glied ein Slot (Kreatur, Fahrzeug, Maschine, Tuer, Rad) und die Gelenke wie gewohnt mit Welds/Motor6D verbinden; ein MeshPart traegt genau EINE Farbe/EIN Material (Roblox uebernimmt keine Blender-Materialien) - unterschiedliche Farben sind der zweite legitime Grund. Farbe und Material setzt Roblox ueber die Slot-Angaben color/material. Eine Zierde (Blatt, Blume, Frucht, Zierband) gehoert in DASSELBE Mesh, solange sie sich nicht bewegen muss.'
@@ -22483,7 +22743,7 @@ end
                 honesty = 'Die Asset-Id ist nur dann echt, wenn Roblox sie genannt hat. Steht die Operation noch auf pending, rufst du upload_asset { operationId } erneut auf (kein enger Loop). Fehlertexte von Roblox gehoren unverfaelscht an den Nutzer - die Bridge versteckt und beschoenigt nichts.'
             }
             organicBuildRules = @{
-                title = 'Organic Build Engine 1.1 (Version 7.5.7) - typed creature volumes, physical face, bilateral anatomy, measured before done'
+                title = 'Organic Build Engine 1.1 (Version 7.5.8) - typed creature volumes, physical face, bilateral anatomy, measured before done'
                 whenThisApplies = 'For any model intentionally built as organic (character, creature, plant, tree, prop or other organic free-form shape) the STANDARD path is Blender (build_mesh_model, one mesh per model, see meshBuildRules). Organic models are not registered for the polygon organic audit unless the user explicitly asked for polygon building: then the first write is build_polygon_model { organic=true, organicKind=..., userRequestedPolygon=true } with an explicit contrasting palette. Install an enabled motion Script under the model, run model_audit on every returned organic model after the final edit, and fix findings. report_done is rejected while a registered model lacks fresh passing evidence.'
                 theOneIdea = 'For an organic model the FIRST write targeting that model is build_mesh_model (Blender, STANDARD). Polygon organic (build_polygon_model { organic=true, organicKind=... }) only with userRequestedPolygon=true on explicit user request and after the WedgeParts lag warning. A creature built as polygon needs real closed lofts for body and head plus physical eyes and pupils; winged creatures get a mirrored, torso-attached wing pair. No side-view wedge, face sticker, or unmeasured claim can pass. Then add joints/details, install the enabled motion Script under that same model, and audit the exact model.'
                 forbidden = @(
@@ -22825,6 +23085,7 @@ end
             docsVersion = [string]$Shared.DocsVersion
             welcome = 'Welcome. This first response includes the available capabilities and reference documentation. Use whatever subset helps the current task; details remain available through GET /api/docs or get_docs.'
             quickStart = @(
+                'If you need a user choice or clarification, ALWAYS use ask_user/confirm_action through this Bridge; never ask in normal chat. Full question-tool documentation is included below.',
                 'Inspect the Place when context is needed.',
                 'For nontrivial custom 3D, follow modelBuildRules (Blender first: build_mesh_model, upload_asset, mesh_apply_asset); the same rule applies to all categories, not only creatures.',
                 'Choose dedicated tools, master build tools, assets, script editing or run_lua according to the task.',
@@ -22893,7 +23154,10 @@ end
             # Version 7.5.0: der Bau- und Upload-Weg gehoert VOLLSTAENDIG in
             # jede Session - die Bridge empfiehlt Bauen und den Blender-Weg
             # ausdruecklich, und ohne upload_asset bleibt jedes Mesh Handarbeit.
-            'blender_status','build_mesh_model','mesh_status','mesh_apply_asset','upload_asset'
+            'blender_status','build_mesh_model','mesh_status','mesh_apply_asset','upload_asset',
+            # Version 7.5.8: The Bridge question channel is mandatory, so the
+            # complete question-tool contract is present in the very first reply.
+            'ask_user','confirm_action'
         )
         $coreDocs = New-Object System.Collections.Generic.List[object]
         $indexDocs = New-Object System.Collections.Generic.List[object]
@@ -22949,13 +23213,13 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.5.7'
+            version = '7.5.8'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
             docsVersion = [string]$Shared.DocsVersion
             role = 'A normal token controls exactly one live Roblox Studio place. The special aggregate token copied from Alle Places controls several places: call GET /api/places first and pass one exact targetPlace in every request; the bridge refuses to guess. This makes switching safe and explicit. Send every request as POST /api/tool with JSON body { "token": "...", "targetPlace": "...", "tool": "...", "args": { ... } }.'
-            firstCallBehavior = 'The FIRST tool response of this session automatically carries _sessionStart: the complete rules (including modelBuildRules and organicBuildRules), the progress/quality contracts and the full documentation of the core building, audit, read and session tools. The remaining tools are listed there as an index (name, category, summary) because a payload with every single tool documentation would be unnecessarily huge - fetch the exact parameters, defaults, examples and error cases with get_docs { tool = "<name>" } or GET /api/docs?tool=<name> (GET /api/docs with no parameter still returns everything). The session start names the measured size as packageBytes, the limit as budgetBytes and the policy as docsPolicy.'
+            firstCallBehavior = 'The FIRST tool response of this session automatically carries _sessionStart: the complete rules (including the mandatory Bridge-only ask_user/confirm_action question protocol, modelBuildRules and organicBuildRules), the progress/quality contracts and the full documentation of the core building, audit, read and session tools. The full question-tool docs are included in that first response. The remaining tools are listed there as an index (name, category, summary) because a payload with every single tool documentation would be unnecessarily huge - fetch the exact parameters, defaults, examples and error cases with get_docs { tool = "<name>" } or GET /api/docs?tool=<name> (GET /api/docs with no parameter still returns everything). The session start names the measured size as packageBytes, the limit as budgetBytes and the policy as docsPolicy.'
             authentication = @{
                 headers = @('Authorization: Bearer <token>', 'X-Arena-Token: <token>')
                 query = '?token=<token>'
@@ -23179,9 +23443,11 @@ end
         # Version 7.0.5: describe the session that currently EXECUTES (a reconnect
         # may have moved delivery to a successor while the caller keeps its token).
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
+        $askUserProtocol = Get-BridgeAskUserProtocol
         $envelope = @{
-            bridgeVersion = '7.5.7'
+            bridgeVersion = '7.5.8'
             executor = $executorSnapshot
+            askUserProtocol = $askUserProtocol
             progressContract = @{
                 rule = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or inside args - the bridge removes it before the plugin sees it). Missing percent is never an error, but the user then sees NO bar and NO percentage at all - only your message as text. Send a real number every few calls. The last call of a finished task carries report_done (100, automatically filled in if omitted).'
                 lastPercent = $(if ($progressView) { [double]$progressView.percent } else { 0 })
@@ -24674,7 +24940,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.5.7'
+                        bridgeVersion = '7.5.8'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -25165,7 +25431,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.5.7'
+                        serverVersion = '7.5.8'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -25524,7 +25790,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.5.7'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.5.8'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -25608,8 +25874,8 @@ end
                 }
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.5.7'
-                    serverVersion = '7.5.7'
+                    bridgeVersion = '7.5.8'
+                    serverVersion = '7.5.8'
                     toolbox = $statusToolbox
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
@@ -30286,31 +30552,82 @@ function Restart-CloudflareTunnel {
     Start-CloudflareTunnel -Protocol $Protocol
 }
 
-function Get-StartupEnabled {
-    $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-    $props = Get-ItemProperty -Path $runKey -Name 'ArenaRobloxBridge' -ErrorAction SilentlyContinue
-    if (-not $props) { return $false }
-    $property = $props.PSObject.Properties['ArenaRobloxBridge']
-    if (-not $property) { return $false }
-    $value = [string]$property.Value
-    return -not [string]::IsNullOrWhiteSpace($value)
+function Remove-BridgeStartupEntries {
+    # Raeumt nur Bridge-Eintraege des aktuellen Benutzers weg - keine anderen
+    # Programme und keine systemweiten (HKLM) Startprogramme.
+    foreach ($item in (Get-BridgeStartupItems)) {
+        try {
+            if ([string]$item.kind -eq 'registry') {
+                Remove-ItemProperty -Path ([string]$item.key) -Name ([string]$item.name) -Force -ErrorAction SilentlyContinue
+            } elseif ([string]$item.kind -eq 'file' -and -not [string]::IsNullOrWhiteSpace([string]$item.path)) {
+                Remove-Item -LiteralPath ([string]$item.path) -Force -ErrorAction SilentlyContinue
+            }
+        } catch {}
+    }
+    # Ein alter Task-Manager-Schalter kann einen neuen Run-Eintrag sonst weiter
+    # als deaktiviert markieren. Ohne diesen Marker ist der eine neue Eintrag an.
+    foreach ($approvedPath in $script:BridgeStartupApprovedPaths) {
+        try {
+            $approved = Get-ItemProperty -Path $approvedPath -ErrorAction Stop
+            foreach ($property in $approved.PSObject.Properties) {
+                $name = [string]$property.Name
+                if ($name -match '^PS[A-Z]') { continue }
+                if ($name -match '(?i)Arena(?:[\s._-]*Roblox)?[\s._-]*Bridge') {
+                    Remove-ItemProperty -Path $approvedPath -Name $name -Force -ErrorAction SilentlyContinue
+                }
+            }
+        } catch {}
+    }
 }
 
 function Set-StartupEnabled {
-    param([bool]$Enabled)
+    param([bool]$Enabled, [string]$UpdaterPath = '')
     $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
     if ($Enabled) {
-        if ($script:IsExeMode -and $script:ExePath) {
-            # EXE-Modus: die EXE selbst starten (kein PowerShell-Aufruf noetig).
-            $value = "`"$($script:ExePath)`""
-        } else {
-            $value = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -STA -File `"$($script:AppRoot)\ArenaBridge.ps1`""
+        $updater = Resolve-BridgeUpdaterExePath -PreferredPath $UpdaterPath
+        if ([string]::IsNullOrWhiteSpace([string]$updater)) {
+            throw 'ArenaBridge.exe (der Starter/Updater) wurde nicht gefunden. Es wird absichtlich kein PowerShell-Autostart eingerichtet. Starte zuerst die ArenaBridge.exe und aktiviere den Schalter danach erneut.'
         }
+        # Alte Powershell-/Skript- und Mehrfach-Eintraege entfernen, bevor die
+        # eine kanonische Registrierung geschrieben wird.
+        Remove-BridgeStartupEntries
         New-Item -Path $runKey -Force | Out-Null
-        Set-ItemProperty -Path $runKey -Name 'ArenaRobloxBridge' -Value $value
-    } else {
-        Remove-ItemProperty -Path $runKey -Name 'ArenaRobloxBridge' -ErrorAction SilentlyContinue
+        Set-ItemProperty -Path $runKey -Name 'ArenaRobloxBridge' -Value ('"' + [string]$updater + '"')
+        $script:UpdaterExePath = [string]$updater
+        [void](Save-BridgeUpdaterExePath $script:UpdaterExePath)
+        Write-RuntimeLog ('Autostart aktiviert: nur ArenaBridge.exe/Updater wird gestartet (' + [string]$updater + '); alte Bridge-Startvarianten wurden bereinigt.')
+        return $true
     }
+    Remove-BridgeStartupEntries
+    Write-RuntimeLog 'Autostart deaktiviert: Bridge-Run-/RunOnce-Eintraege und Benutzer-Startup-Verknuepfungen entfernt.'
+    return $true
+}
+
+function Get-StartupEnabled {
+    $items = Get-BridgeStartupItems
+    if ($items.Count -le 0) { return $false }
+    $updater = Resolve-BridgeUpdaterExePath -PreferredPath ([string]$script:UpdaterExePath)
+    if (-not [string]::IsNullOrWhiteSpace([string]$updater)) {
+        try {
+            [void](Set-StartupEnabled -Enabled $true -UpdaterPath $updater)
+            return $true
+        } catch {
+            try { Write-RuntimeLog ('Autostart konnte nicht auf den Updater umgestellt werden: ' + $_.Exception.Message) } catch {}
+        }
+    }
+    # Ein verwaister PowerShell-Eintrag ist genau das unerwuenschte Verhalten:
+    # nicht weiter starten lassen, wenn kein echter Updater-Pfad existiert.
+    try {
+        Remove-BridgeStartupEntries
+        Write-RuntimeLog 'Autostart deaktiviert: alter Bridge-Eintrag entfernt, aber ArenaBridge.exe/Updater wurde nicht gefunden. Bitte den Updater einmal starten und Autostart erneut einschalten.'
+    } catch {}
+    return $false
+}
+
+# Alte Installationen werden beim naechsten Bridge-Start still auf genau einen
+# Updater-Eintrag migriert, statt erst beim naechsten PC-Neustart aufzufallen.
+try { [void](Get-StartupEnabled) } catch {
+    try { Write-RuntimeLog ('Autostart-Pruefung fehlgeschlagen: ' + $_.Exception.Message) } catch {}
 }
 
 # ----------------------------------------------------------------------------
@@ -32017,7 +32334,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.5.7)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.5.8)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -35008,7 +35325,7 @@ function Write-ChannelDiagnoseFile {
 
         $progressPath = Join-Path $script:AppDataRoot 'progress-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.5.7)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.5.8)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -35043,7 +35360,7 @@ function Write-ChannelDiagnoseFile {
 
         $notifyPath = Join-Path $script:AppDataRoot 'notify-diagnose.txt'
         $sb2 = New-Object System.Text.StringBuilder
-        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.5.7)')
+        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.5.8)')
         [void]$sb2.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb2.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb2.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -35412,7 +35729,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.5.7)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.5.8)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -37989,7 +38306,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.5.7)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.5.8)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -38155,7 +38472,7 @@ function Start-StudioProfileLookup {
                     $request.Method = 'GET'
                     $request.Timeout = 10000
                     $request.ReadWriteTimeout = 10000
-                    if ($request -is [System.Net.HttpWebRequest]) { $request.UserAgent = 'ArenaRobloxBridge/7.5.7' }
+                    if ($request -is [System.Net.HttpWebRequest]) { $request.UserAgent = 'ArenaRobloxBridge/7.5.8' }
                     $response = $request.GetResponse()
                     try {
                         $responseStream = $response.GetResponseStream()
@@ -39004,7 +39321,7 @@ Set-StartupStage 'Ereignisse verdrahtet (Fenstersteuerung + Loaded)'
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.5.7'
+    $versionText = '7.5.8'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -40262,7 +40579,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.5.7" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.5.8" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -40642,7 +40959,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.5.7 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.5.8 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -40707,7 +41024,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.5.7 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.5.8 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -40720,7 +41037,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.5.7'
+    $verText = '7.5.8'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
