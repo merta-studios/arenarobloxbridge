@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline regression checks for Arena Roblox Bridge 7.5.8.
+"""Offline regression checks for Arena Roblox Bridge 7.5.9.
 
 Covers the two requested mini-update areas without requiring Windows, Arena,
 Roblox Studio, or a compiled updater EXE:
@@ -23,7 +23,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.5.8"
+VERSION = "7.5.9"
 FAILURES: list[str] = []
 
 
@@ -45,10 +45,15 @@ def main() -> int:
     check(b"\r\n" not in raw, "PowerShell source retains LF line endings")
     source = raw.decode("utf-8-sig")
     metadata = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
-    check(metadata.get("version") == VERSION, "version.json matches 7.5.8")
+    check(metadata.get("version") == VERSION, "version.json matches 7.5.9")
     latest_note = str(metadata.get("notes", [""])[0])
-    check("7.5.8" in latest_note and "ask_user" in latest_note and "ArenaBridge.exe" in latest_note,
-          "the newest release note documents both requested changes")
+    check("7.5.9" in latest_note and "creator_dashboard" in latest_note
+          and "game-pass:read" in latest_note and "standardmäßig ausgeschaltet" in latest_note,
+          "the newest release note documents the default-off Creator Dashboard feature")
+    prior_notes = [str(note) for note in metadata.get("notes", [])[1:]]
+    check(any("7.5.8" in note and "ask_user" in note and "ArenaBridge.exe" in note
+              for note in prior_notes),
+          "the historical 7.5.8 question/updater release note remains available")
 
     # ------------------------------------------------------------------
     # 1) Ask through the Bridge, never as a normal chat question
@@ -140,7 +145,7 @@ def main() -> int:
     if FAILURES:
         print(f"\n{len(FAILURES)} regression check(s) failed.")
         return 1
-    print("\nOK: 7.5.8 Bridge question protocol, updater-only startup and single-instance checks passed.")
+    print("\nOK: 7.5.8 Bridge question protocol, updater-only startup and single-instance checks passed in the 7.5.9 release.")
     return 0
 
 
