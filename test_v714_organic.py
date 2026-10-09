@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.5.5"
+VERSION = "7.5.7"
 FAILURES: list[str] = []
 
 
@@ -114,7 +114,7 @@ def main() -> int:
     release_notes = "\n".join(meta.get("notes", []))
 
     # Release identity and release notes.
-    check(meta.get("version") == VERSION, "version.json identifiziert 7.5.1")
+    check(meta.get("version") == VERSION, f"version.json steht auf {VERSION}")
     # 7.2.3 dokumentiert das UI-Mini-Update; 7.2.1 behaelt den Start-/Parser-
     # Fix, und 7.2.0 beschreibt Nutzer-Kanal, Meldungsmessung und Qualitaet.
     # Der organische Vertrag selbst wird weiter unten DIREKT
@@ -252,7 +252,8 @@ def main() -> int:
     progress = region(source, "function Update-PlaceProgressVisual", "function Get-ProgressDiagnoseLines")
     for marker in ("'Fertig!'", "'Arena arbeitet gerade...'",
                    "'Seit über einer Minute kein Bridge Aufruf mehr'",
-                   "ProgressPercent.Text = ($percent.ToString() + ' % • ' + $label)",
+                   "ProgressText.Visibility = 'Visible'",
+                   "ProgressPercent.Text = ($percent.ToString() + ' %')",
                    "SilentSeconds -ge 60"):
         check(marker in progress, f"Place-Fortschrittsvertrag enthaelt: {marker}")
     row_builder = region(source, "function New-Row {", "function New-MinimalPlaceRow")
@@ -269,7 +270,7 @@ def main() -> int:
     if FAILURES:
         print(f"\nFEHLGESCHLAGEN: {len(FAILURES)} Pruefung(en) rot.")
         return 1
-    print("\nOK: 7.5.1: 7.1.4-Organic-Build-, Audit-Frische-, report_done- und UI-Regressionspruefungen bestanden.")
+    print("\nOK: aktuelle Bridge: 7.1.4-Organic-Build-, Audit-Frische-, report_done- und UI-Regressionspruefungen bestanden.")
     return 0
 
 

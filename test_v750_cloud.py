@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline-Abnahme fuer Arena Roblox Bridge 7.5.1 - ROBLOX OPEN CLOUD UPLOAD.
+"""Offline-Abnahme fuer Arena Roblox Bridge 7.5.7 - ROBLOX OPEN CLOUD UPLOAD.
 
 Was dieses Update ausmacht (und was hier geprueft wird):
 
@@ -36,7 +36,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.5.5"
+VERSION = "7.5.7"
 FAILURES: list[str] = []
 
 
@@ -236,7 +236,7 @@ def main() -> int:
 
     metadata = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     notes = "\n".join(str(note) for note in metadata.get("notes", []))
-    check(metadata.get("version") == VERSION, "version.json ist 7.5.1")
+    check(metadata.get("version") == VERSION, f"version.json steht auf {VERSION}")
     for phrase in ("Open Cloud", "upload_asset", "MESH-FENSTER", "ASSETS", "Asset-Id"):
         check(phrase in notes, f"Release-Notiz nennt {phrase}")
 
@@ -281,7 +281,7 @@ def main() -> int:
     # ------------------------------------------------------------------
     # 3) Ersteller: Roblox ordnet jedes Asset jemandem zu
     # ------------------------------------------------------------------
-    print("\n3) Ersteller: aus dem Schluessel selbst (kein Eingabefeld mehr)")
+    print("\n3) Ersteller: Studio-Anmeldung zuerst, Key-Resource als automatischer Rueckfall (kein manuelles Feld)")
     introspect = region(source, "function Invoke-OpenCloudIntrospect {", "function Resolve-OpenCloudCreatorFromKey {")
     check("https://apis.roblox.com/api-keys/v1/introspect" in introspect,
           "die Selbstauskunft nutzt den offiziellen Introspect-Endpunkt")
@@ -298,12 +298,29 @@ def main() -> int:
           "der Ersteller wird aus dem Schluessel in die Einstellungen geschrieben")
     check("Resolve-OpenCloudCreatorId" not in source,
           "der alte Namens-/ID-Pfad ist entfernt (der Nutzer traegt nichts ein)")
+    studio = region(source, "function Get-OpenCloudStudioDeveloper {", "function Resolve-OpenCloudCreatorForUpload {")
+    creator_for_upload = region(source, "function Resolve-OpenCloudCreatorForUpload {", "function Invoke-OpenCloudUpload {")
+    check("$entry.editorUserId" in studio and "creatorKind = 'user'" in studio,
+          "StudioService-User-ID wird aus der Sitzung als Nutzer-Creator verwendet")
+    check(creator_for_upload.index("Get-OpenCloudStudioDeveloper") < creator_for_upload.index("Resolve-OpenCloudCreatorFromKey"),
+          "die in Roblox Studio angemeldete Person hat Vorrang vor der Key-Resource")
+    check("StudioService:GetUserId()" in source and "payload.editorUserId" in source,
+          "das Plugin meldet die echte Roblox-Studio-Anmeldung")
+    for gone in ("openCloudDeveloperId", "openCloudDeveloperName", "CloudDeveloperBox",
+                 "CloudDeveloperButton", "CloudDeveloperPanel", "CloudDeveloperStatus"):
+        check(gone not in source, f"manuelle Entwickler-Fallback-Eingabe entfernt: {gone}")
     check("'group'" in source and "openCloudCreatorKind" in source,
           "auch eine GRUPPE kann Ersteller sein (wird gemessen)")
     check("$creator['groupId']" in source and "$creator['userId']" in source,
           "der Upload unterscheidet Nutzer- und Gruppen-Ersteller")
     check("creationContext" in source and "creator = $creator" in source,
           "die Metadaten tragen creationContext.creator (so verlangt es die API)")
+    upload_catalog = region(source, "$t.Add(@{ name = 'upload_asset'", "# ---------------- JOBS ----------------")
+    check("StudioService:GetUserId()" in upload_catalog and "editorUserId" in upload_catalog
+          and "Nur wenn keine gueltige Studio-ID vorliegt" in upload_catalog,
+          "upload_asset dokumentiert die Studio-ID-Prioritaet und den automatischen Key-Rueckfall")
+    check("ASSETS write fuer das angemeldete Studio-Konto" in upload_catalog,
+          "upload_asset erklaert das erforderliche Recht fuer den Studio-Nutzer")
 
     # ------------------------------------------------------------------
     # 4) Das Protokoll: Endpunkt, Multipart, Polling, Grenzen
@@ -407,7 +424,7 @@ def main() -> int:
     # ------------------------------------------------------------------
     # 7) Einstellungsfenster: Karte, Tutorial, Animation
     # ------------------------------------------------------------------
-    print("\n7) Einstellungsfenster: ROBLOX OPEN CLOUD (7.5.1: nur zwei Zustaende)")
+    print("\n7) Einstellungsfenster: ROBLOX OPEN CLOUD (Studio-ID + Key-Speicherung)")
     settings_xaml = region(source, "$settingsXaml = @'", "\n'@")
     # Die erste Zeile ist noch PowerShell ($settingsXaml = @') - weg damit.
     settings_xaml = settings_xaml[settings_xaml.index("\n") + 1:]
@@ -426,7 +443,8 @@ def main() -> int:
                  "CloudTutorialWrap", "CloudTutorialBody"):
         check(f'x:Name="{name}"' in settings_xaml, f"Einstellungen enthalten {name}")
     for gone in ("CloudTestButton", "CloudStatusText", "CloudCreatorBox", "CloudCreatorKind",
-                 "CloudCreatorHint"):
+                 "CloudCreatorHint", "CloudDeveloperBox", "CloudDeveloperButton",
+                 "CloudDeveloperPanel", "CloudDeveloperStatus"):
         check(f'x:Name="{gone}"' not in settings_xaml,
               f"das alte Element {gone} ist aus den Einstellungen verschwunden")
     for step in range(1, 8):
@@ -482,6 +500,8 @@ def main() -> int:
           "fehlende Rechte werden mit Hinweis auf Tutorial Schritt 4 und 5 gemeldet")
     check("DispatcherTimer" in code and "BeginInvoke" in code,
           "die Pruefung laeuft im Hintergrund (kein eingefrorenes Fenster)")
+    check("StudioService:GetUserId()" in source and "angemeldete Roblox-Studio-Konto" in code,
+          "die gespeicherte-Key-Ansicht nennt den automatisch verwendeten Studio-Nutzer")
 
     anim = region(source, "$cloudSteps = New-Object System.Collections.Generic.List[object]",
                   "$cloudDashboardButton.Add_Click")
@@ -513,7 +533,7 @@ def main() -> int:
           "die wichtigen Regeln nennen den Blender-Weg")
     check("BAUEN GEHT VOR SUCHEN" in source,
           "die Regeln sagen: bauen geht vor Katalogsuche und vor Primitiven")
-    report_start = source.index("            'report_done' {")
+    report_start = source.index("            'report_done' {", source.index("function Invoke-ServerTool"))
     report = source[report_start:report_start + 30000]
     check("upload_asset" in report and "userMessage" in report,
           "report_done nennt den Weg aus MESH_UPLOAD_PENDING (upload_asset + Nutzer-Satz)")
@@ -528,7 +548,7 @@ def main() -> int:
         for item in FAILURES:
             print("  - " + item)
         return 1
-    print("\nOK: 7.5.1 Open Cloud Upload bestanden (Fenster weg, Schluessel, Introspect-Ersteller, Tutorial, upload_asset, Dateipfad, Fehlerwege, Modelltest).")
+    print("\nOK: 7.5.7 Open Cloud Upload bestanden (Studio-ID-Prioritaet, automatischer Rueckfall, Tutorial, upload_asset, Dateipfad, Fehlerwege, Modelltest).")
     return 0
 
 
