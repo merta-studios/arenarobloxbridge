@@ -59,3 +59,12 @@ Eine Änderung ist nur zulässig, wenn ALLE Punkte erfüllt sind:
   eingebettet, Testbau, Schutzregeln). Die Erstfestlegung des Locks erfolgte mit
   der Freigabe des Nutzers für diesen Arbeitsauftrag. Auf Windows wurde das
   Verfahren zu diesem Zeitpunkt noch NICHT ausgeführt. Kanäle bleiben deaktiviert.
+- 2026-10-10, Fehlerkorrektur am Builder (ohne Versionsaenderung, 7.7.0 bleibt): Der Nutzer hat
+  die Korrektur von `builder/Build-EXE.ps1` in dieser Session ausdruecklich beauftragt.
+  Grund: Build-EXE.bat brach mit "-OutputDirectory is only accepted together with
+  -TestFixtureBuild" ab. Ursache: PowerShell-Variablen sind nicht gross-/kleinschreibungs-
+  sensitiv; die lokale Variable `$outputDirectory` ueberschrieb den Parameter
+  `$OutputDirectory`. Behoben durch Umbenennung in `$buildOutputDirectory`. Betroffene
+  Dateien: `builder/Build-EXE.ps1`, `developer/tests/test_v800_update_system_guard.py`
+  (neue Pruefung gegen Parameter-Ueberschattung), diese Datei, die Lock-Datei. Kanaele
+  bleiben deaktiviert. Der Windows-Lauf (Build, Smoke, Selbst-Update-Test) steht aus.

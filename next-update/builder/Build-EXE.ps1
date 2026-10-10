@@ -217,12 +217,12 @@ $titleArtworkPath = Join-Path $assetsDirectory 'arena-bridge-title.jpg'
 $programLogoPath = Join-Path $assetsDirectory 'neueslogo.png'
 $updaterPath = Join-Path $repoRoot 'update-system\updater\Update-Bridge.ps1'
 $releaseDirectory = Join-Path $repoRoot 'release'
-$outputDirectory = $releaseDirectory
+$buildOutputDirectory = $releaseDirectory
 if ($TestFixtureBuild) {
     if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { throw '-TestFixtureBuild requires -OutputDirectory outside the repository (for example a folder under %TEMP%).' }
-    $outputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
+    $buildOutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
     $repoPrefix = $repoRoot.TrimEnd('\') + '\'
-    if ($outputDirectory.TrimEnd('\') -ieq $releaseDirectory.TrimEnd('\') -or $outputDirectory.StartsWith($repoPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+    if ($buildOutputDirectory.TrimEnd('\') -ieq $releaseDirectory.TrimEnd('\') -or $buildOutputDirectory.StartsWith($repoPrefix, [StringComparison]::OrdinalIgnoreCase)) {
         throw 'A test-fixture build must never write inside the repository (release\ is the publication folder).'
     }
     if ($Channel -ne 'beta') { throw 'A test-fixture build is only allowed for channel beta.' }
@@ -233,9 +233,9 @@ if (-not [string]::IsNullOrWhiteSpace($TestFileVersion)) {
     if (-not $TestFixtureBuild) { throw '-TestFileVersion is only accepted together with -TestFixtureBuild.' }
     if ($TestFileVersion -cnotmatch '^\d+\.\d+\.\d+\.\d+$') { throw '-TestFileVersion must be a four-part numeric version such as 7.7.1.0.' }
 }
-$exePath = Join-Path $outputDirectory 'ArenaBridge.exe'
-$diagnosticExePath = Join-Path $outputDirectory 'ArenaBridge-Diagnose.exe'
-$diagnosticBatPath = Join-Path $outputDirectory 'Start-Diagnostic.bat'
+$exePath = Join-Path $buildOutputDirectory 'ArenaBridge.exe'
+$diagnosticExePath = Join-Path $buildOutputDirectory 'ArenaBridge-Diagnose.exe'
+$diagnosticBatPath = Join-Path $buildOutputDirectory 'Start-Diagnostic.bat'
 
 foreach ($requiredPath in @($sourcePath,$versionPath,$parseGatePath,$iconPath,$titleArtworkPath,$programLogoPath,$updaterPath)) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
@@ -321,14 +321,14 @@ foreach ($requiredParameter in @('inputFile','outputFile','noConsole','STA','x64
     }
 }
 
-if (-not (Test-Path -LiteralPath $outputDirectory -PathType Container)) {
-    New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
+if (-not (Test-Path -LiteralPath $buildOutputDirectory -PathType Container)) {
+    New-Item -ItemType Directory -Path $buildOutputDirectory -Force | Out-Null
 }
 $tempBuildDirectory = Join-Path $env:TEMP ('ArenaRobloxBridge-build-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $tempBuildDirectory -Force | Out-Null
 $preparedSourcePath = Join-Path $tempBuildDirectory 'ArenaBridge.compile.ps1'
-$stagingExePath = Join-Path $outputDirectory 'ArenaBridge.building.exe'
-$stagingDiagnosticExePath = Join-Path $outputDirectory 'ArenaBridge-Diagnose.building.exe'
+$stagingExePath = Join-Path $buildOutputDirectory 'ArenaBridge.building.exe'
+$stagingDiagnosticExePath = Join-Path $buildOutputDirectory 'ArenaBridge-Diagnose.building.exe'
 $smokeReportPath = Join-Path $tempBuildDirectory 'smoke-report.json'
 
 try {
@@ -431,10 +431,10 @@ try {
         published = $false
         note = 'Local private-test build only. Never publish during review/testing. After explicit release approval, use the exact tested ArenaBridge.exe at next-update/release/ArenaBridge.exe; diagnostic files and metadata are local-only. testFixtureBuild=true means a non-publishable test EXE that must never be placed in release\\.'
     }
-    $metadataPath = Join-Path $outputDirectory 'release-metadata.json'
+    $metadataPath = Join-Path $buildOutputDirectory 'release-metadata.json'
     Write-Utf8NoBom $metadataPath ($metadata | ConvertTo-Json -Depth 6)
-    Write-Utf8NoBom (Join-Path $outputDirectory 'ArenaBridge.exe.sha256') ($sha256 + '  ArenaBridge.exe' + [Environment]::NewLine)
-    Write-Utf8NoBom (Join-Path $outputDirectory 'ArenaBridge-Diagnose.exe.sha256') ($diagnosticSha256 + '  ArenaBridge-Diagnose.exe' + [Environment]::NewLine)
+    Write-Utf8NoBom (Join-Path $buildOutputDirectory 'ArenaBridge.exe.sha256') ($sha256 + '  ArenaBridge.exe' + [Environment]::NewLine)
+    Write-Utf8NoBom (Join-Path $buildOutputDirectory 'ArenaBridge-Diagnose.exe.sha256') ($diagnosticSha256 + '  ArenaBridge-Diagnose.exe' + [Environment]::NewLine)
 
     Write-Step 'LOCAL TEST BUILD COMPLETED. No GitHub upload/release or update-channel manifest was changed.'
     Write-Host ''
