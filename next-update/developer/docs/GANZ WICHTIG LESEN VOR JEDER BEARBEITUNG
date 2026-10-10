@@ -25,13 +25,17 @@ STATUS (ehrlich):
 - Repo-Root-Schutz (CODEOWNERS, Branch-Protection, .github-Workflows) ist
   NICHT umgesetzt und NICHT freigegeben. Alles liegt in next-update/.
 
-BUILD-FIX (10.10.2026, Version bleibt 7.7.0): Build-EXE.bat scheiterte mit
-"-OutputDirectory is only accepted together with -TestFixtureBuild", obwohl die BAT
-nur "-Channel beta" uebergibt. Ursache: PowerShell-Variablen sind NICHT gross-/
-kleinschreibungssensitiv - die lokale Variable $outputDirectory ueberschrieb den
-Parameter $OutputDirectory. Fix: lokale Variable heisst $buildOutputDirectory.
+BUILD-FIX & KANAL-ENTSCHEIDUNG (10.10.2026, Version bleibt 7.7.0):
+Build-EXE.bat baut ab sofort standardmaessig den Kanal stable (-Channel stable -NonInteractive),
+damit die EXE auf stable.json hoert und keine interaktive Eingabe verlangt.
+HINWEIS: Die bereits getestete 7.7.0-EXE ist ein beta-Kanal-Build und erhaelt kein
+Stable-Update. Neu gebaute EXEs nutzen automatisch stable.
+Zuvor scheiterte Build-EXE.bat mit "-OutputDirectory is only accepted together with -TestFixtureBuild".
+Ursache: PowerShell-Variablen sind NICHT gross-/kleinschreibungssensitiv - die lokale Variable
+$outputDirectory ueberschrieb den Parameter $OutputDirectory. Fix: lokale Variable heisst $buildOutputDirectory.
 REGEL: Kein Skript-Variablenname darf einen Parameternamen ausser durch Gross-/
 Kleinschreibung unterscheiden (Guard-Test prueft das). Windows-Lauf des Builds steht aus.
+PFLICHTLEKTUERE: developer/docs/RELEASE-ABLAUF.md und developer/docs/RELEASE-SESSION-PROMPT.md.
 
 SCHUTZREGELN FUER DAS UPDATE-SYSTEM (gelten fuer jede kuenftige Aenderung):
 - Geschuetzt sind: next-update/update-system/** (Updater, Manifeste, Schema),
@@ -116,13 +120,15 @@ IP-Einrichtung. Diese Regeln aus Version 7.6.3 bleiben in Kraft.
 WENN DER NUTZER DIE VEROEFFENTLICHUNG ANKUENDIGT: PROMPT-VERHALTEN
 ------------------------------------------------------------------
 Wenn der Nutzer in der gemergten Test-Session ausdruecklich sagt, dass alles
-perfekt ist und die Version fuer alle bereitgestellt werden soll, beende diese
-Session mit GENAU EINEM kopierbaren Codeblock/Textfeld. Fuell aus dem Kontext
-die echte Version, den gemergten PR/die Revision und den Artefaktpfad aus.
-Gib ausserhalb des Codeblocks keinerlei Kommentar aus. Verwende diese Vorlage
-und lasse keine bekannten Werte als Platzhalter stehen:
+perfekt ist und die Version fuer alle bereitgestellt werden soll („perfekt, als neue Version und Update rausbringen“),
+beende diese Session mit GENAU EINEM kopierbaren Codeblock/Textfeld.
+Eine Aenderungs-Session fuellt bei der Freigabe developer/docs/RELEASE-SESSION-PROMPT.md
+mit <VERSION> und <KURZBESCHREIBUNG DER GEMERGTEN AENDERUNG> und gibt AUSSCHLIESSLICH diesen Codeblock aus.
+Gib ausserhalb des Codeblocks keinerlei Kommentar aus.
+Verbindlicher Ablauf: Siehe developer/docs/RELEASE-ABLAUF.md.
 
 --- PROMPT-VORLAGE FUER DIE NAECHSTE SESSION ---
+(Vollstaendige Vorlage siehe developer/docs/RELEASE-SESSION-PROMPT.md)
 Du bist jetzt die Release-Session fuer Arena Roblox Bridge. Der Nutzer hat den
 privaten Test von Version <VERSION> ausdruecklich bestanden und die
 Veroeffentlichung fuer alle freigegeben. Der zugehoerige Code-PR ist bereits

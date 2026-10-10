@@ -18,7 +18,7 @@ und vergleicht sie mit `update-system/update_system_guard.lock.json`:
 Zusätzlich prüft der Guard unabhängig vom Lock feste Invarianten, z. B.:
 kein `Stop-Process`/`taskkill`/Kill im Updater, Download nur über genehmigte
 Hosts ohne automatische Weiterleitung, der Test-Manifestpfad nur im Testbau,
-Kanäle `beta`/`stable` deaktiviert.
+Kanäle `beta`/`stable` standardmäßig deaktiviert (Aktivierung nur bei vollständiger Release-Validierung gemäß RELEASE-ABLAUF.md).
 
 ## Feste Regeln
 
@@ -29,8 +29,7 @@ Kanäle `beta`/`stable` deaktiviert.
 3. Der Test-Manifestpfad (`-TestFixtureMode`, `ARENABRIDGE_SELFUPDATE_TEST_MANIFEST`)
    ist nur in einem Testbau (`-TestFixtureBuild`) aktiv. Normale Builds setzen `'0'`.
 4. Testbau-Ausgaben gehen NIE nach `release/`.
-5. `channels/beta.json` und `channels/stable.json` bleiben in Feature-PRs `enabled: false`.
-   Eine Aktivierung braucht eine eigene, ausdrücklich freigegebene Release-Session.
+5. `channels/beta.json` und `channels/stable.json` bleiben `enabled: false`, außer alle Release-Bedingungen sind nachweislich erfüllt: Schema-Gültigkeit, version == app/version.json und echt höher als die zuletzt veröffentlichte Version, sha256 und sizeBytes identisch mit der echten release/ArenaBridge.exe, kanonische URL und eine Release-Freigabe von heute in der Lock-Datei. In Feature-PRs bleibt enabled: false Pflicht.
 6. Ein Feature-PR außerhalb des Update-Systems darf diese Dateien nicht beiläufig
    ändern.
 
@@ -68,3 +67,13 @@ Eine Änderung ist nur zulässig, wenn ALLE Punkte erfüllt sind:
   Dateien: `builder/Build-EXE.ps1`, `developer/tests/test_v800_update_system_guard.py`
   (neue Pruefung gegen Parameter-Ueberschattung), diese Datei, die Lock-Datei. Kanaele
   bleiben deaktiviert. Der Windows-Lauf (Build, Smoke, Selbst-Update-Test) steht aus.
+
+- 2026-10-10, Release-Ablauf & Guard-Erweiterung (7.7.0): Der Nutzer hat den
+  Release- und Versionsablauf ausdruecklich beauftragt. Build-EXE.bat baut nun standardmaessig
+  den Kanal stable mit -NonInteractive (ohne interaktive Bestaetigung). Der Guard erlaubt
+  die Aktivierung eines Manifests nur noch unter strengen Release-Bedingungen (Schema, Version >
+  letzte veroeffentlichte Version, Hash/Groesse == reale release/ArenaBridge.exe, kanonische URL,
+  heutige Release-Freigabe im Lock). RELEASE-ABLAUF.md und RELEASE-SESSION-PROMPT.md erstellt.
+  Neuer Test test_v770_release_flow.py hinzugefuegt. Betroffene geschuetzte Dateien:
+  `builder/Build-EXE.ps1`, `update-system/PROTECTED.md`, `update-system/README.md`,
+  `developer/tests/test_v800_update_system_guard.py`, Lock-Datei. Kanaele bleiben deaktiviert.

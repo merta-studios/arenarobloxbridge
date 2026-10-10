@@ -17,6 +17,10 @@ weder verwendet noch verändert.
 - Bereits installierte Kopien ohne Updater erhalten dieses System **nicht** automatisch.
   Eine einmalige manuelle Migration ist offen und wird in der Release-Session entschieden.
 
+## Letzte veröffentlichte Version
+
+Letzte veröffentlichte Version: keine (anfangs: keine; wird bei der ersten Release-Aktivierung gefüllt)
+
 ## Bestandteile
 
 | Datei | Zweck |

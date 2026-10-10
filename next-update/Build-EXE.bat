@@ -14,7 +14,7 @@ echo EXE-Symbol als auch im Bridge-Fenster eingebettet.
 echo.
 echo Vor dem spaeteren Test bitte andere ArenaBridge-Fenster schliessen.
 echo.
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0builder\Build-EXE.ps1" -Channel beta
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0builder\Build-EXE.ps1" -Channel stable -NonInteractive
 set "RESULT=%ERRORLEVEL%"
 if not "%RESULT%"=="0" goto build_failed
 

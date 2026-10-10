@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Guard for the protected self-update system (see update-system/PROTECTED.md).
+"""Guard for the protected self-update system (see update-system/PROTECTED.md and RELEASE-ABLAUF.md).
 
 Normal run (default):
     Compares every protected file with update-system/update_system_guard.lock.json
@@ -73,6 +73,83 @@ def protected_hashes() -> dict[str, str]:
     return hashes
 
 
+def parse_semver(v: str) -> tuple | None:
+    m = re.match(r"^(\d+)\.(\d+)\.(\d+)(?:-(.+))?$", v.strip())
+    if not m:
+        return None
+    major, minor, patch, prerelease = m.groups()
+    return (int(major), int(minor), int(patch), prerelease or "")
+
+
+def semver_gt(v1: str, v2: str) -> bool:
+    p1 = parse_semver(v1)
+    p2 = parse_semver(v2)
+    if not p1 or not p2:
+        return False
+    if p1[:3] != p2[:3]:
+        return p1[:3] > p2[:3]
+    if not p1[3] and p2[3]:
+        return True
+    if p1[3] and not p2[3]:
+        return False
+    return p1[3] > p2[3]
+
+
+def get_last_published_version(readme_text: str) -> str:
+    m = re.search(r"Letzte ver[öo]ffentlichte Version:\s*([^\s\n\(\)]+)", readme_text, re.IGNORECASE)
+    if m:
+        val = m.group(1).strip()
+        if val.lower() in ("keine", "none", ""):
+            return ""
+        return val
+    return ""
+
+
+def validate_release_manifest_data(data: dict, exe_path: Path, current_version: str,
+                                   last_pub_version: str, lock_data: dict) -> list[str]:
+    import jsonschema  # type: ignore
+    schema = json.loads((CHANNELS / "manifest.schema.json").read_text(encoding="utf-8"))
+    validator = jsonschema.Draft202012Validator(schema)
+    errors = [e.message for e in validator.iter_errors(data)]
+    if errors:
+        return [f"schema error: {errors[0]}"]
+
+    errs: list[str] = []
+    ver = data.get("version", "")
+    if ver != current_version:
+        errs.append(f"version ({ver}) != app/version.json ({current_version})")
+
+    if last_pub_version and not semver_gt(ver, last_pub_version):
+        errs.append(f"version ({ver}) not higher than last published ({last_pub_version})")
+
+    if not exe_path.is_file():
+        errs.append(f"release EXE missing at {exe_path}")
+    else:
+        exe_bytes = exe_path.read_bytes()
+        actual_sha = hashlib.sha256(exe_bytes).hexdigest().lower()
+        actual_size = len(exe_bytes)
+        art = data.get("artifact", {})
+        if str(art.get("sha256", "")).lower() != actual_sha:
+            errs.append(f"sha256 ({art.get('sha256')}) != EXE sha256 ({actual_sha})")
+        if art.get("sizeBytes") != actual_size:
+            errs.append(f"sizeBytes ({art.get('sizeBytes')}) != EXE size ({actual_size})")
+
+    canonical_url = "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/main/next-update/release/ArenaBridge.exe"
+    if data.get("artifact", {}).get("url") != canonical_url:
+        errs.append(f"URL is not canonical: {data.get('artifact', {}).get('url')}")
+
+    today_iso = _dt.date.today().isoformat()
+    approvals = lock_data.get("approvals", [])
+    has_release_approval = any(
+        a.get("date") == today_iso and ("release" in a.get("note", "").lower() or "freigabe" in a.get("note", "").lower())
+        for a in approvals
+    )
+    if not has_release_approval:
+        errs.append(f"lock file has no release approval dated today ({today_iso})")
+
+    return errs
+
+
 def static_invariants() -> None:
     updater = UPDATER.read_text(encoding="ascii")
     check("Stop-Process" not in updater and "taskkill" not in updater and ".Kill(" not in updater,
@@ -123,14 +200,30 @@ def static_invariants() -> None:
           "-OutputDirectory is rejected only when a non-empty value was supplied")
     bat = (ROOT / "Build-EXE.bat").read_text(encoding="utf-8")
     ps_calls = [line for line in bat.splitlines() if "Build-EXE.ps1" in line]
-    check(len(ps_calls) == 1 and ps_calls[0].rstrip().endswith("-Channel beta")
+    check(len(ps_calls) == 1 and "-Channel stable" in ps_calls[0] and "-NonInteractive" in ps_calls[0]
           and "-OutputDirectory" not in bat and "-TestFixtureBuild" not in bat and "-TestFileVersion" not in bat,
-          "Build-EXE.bat passes only -Channel beta (no test parameters)")
+          "Build-EXE.bat passes -Channel stable -NonInteractive (no test parameters)")
+
+    readme_text = (ROOT / "update-system" / "README.md").read_text(encoding="utf-8")
+    version_json = json.loads((ROOT / "app" / "version.json").read_text(encoding="utf-8"))
+    current_source_version = str(version_json.get("version", ""))
+    last_pub_version = get_last_published_version(readme_text)
+    lock_data = load_lock()
 
     for channel in ("beta", "stable"):
         data = json.loads((CHANNELS / f"{channel}.json").read_text(encoding="utf-8"))
-        check(data.get("enabled") is False and data.get("testFixture") is False,
-              f"{channel}.json is disabled and not a fixture")
+        check(data.get("testFixture") is False, f"{channel}.json is not a test fixture")
+        if not data.get("enabled", False):
+            check(data.get("enabled") is False, f"{channel}.json is disabled and not a fixture")
+        else:
+            rel_errors = validate_release_manifest_data(
+                data=data,
+                exe_path=ROOT / "release" / "ArenaBridge.exe",
+                current_version=current_source_version,
+                last_pub_version=last_pub_version,
+                lock_data=lock_data
+            )
+            check(not rel_errors, f"{channel}.json release activation valid: " + (", ".join(rel_errors) if rel_errors else "ok"))
 
     schema = json.loads((CHANNELS / "manifest.schema.json").read_text(encoding="utf-8"))
     check("testFixture" in schema.get("properties", {}) and schema.get("additionalProperties") is False,
