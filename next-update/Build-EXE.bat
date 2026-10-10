@@ -6,13 +6,17 @@ echo.
 echo ================================================================
 echo ARENA ROBLOX BRIDGE - BETA-EXE BAUEN
 echo ================================================================
-echo Dies ist die einzige BAT-Datei, die du im Ordner next-update
-echo ausfuehren musst. Sie baut nur die lokale Beta und veroeffentlicht
-echo nichts.
+echo Das ist der einzige normale Startknopf. Er baut die lokale Beta,
+echo laedt keine Release-Datei hoch und aendert keine Update-Manifeste.
+echo.
+echo EIGENES EXE-LOGO (optional):
+echo Lege deine Windows-ICO-Datei unter diesem Namen ab:
+echo "%~dp0app\assets\ArenaBridge.custom.ico"
+echo Wenn die Datei fehlt, wird das Standard-Logo verwendet.
 echo.
 echo Vor dem spaeteren Test bitte andere ArenaBridge-Fenster schliessen.
 echo.
-powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0Build-EXE.ps1" -Channel beta
+powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%~dp0builder\Build-EXE.ps1" -Channel beta
 set "RESULT=%ERRORLEVEL%"
 if not "%RESULT%"=="0" goto build_failed
 
@@ -26,7 +30,7 @@ echo Wenn beim Start kein Fenster erscheint, erst andere ArenaBridge-
 echo Fenster schliessen und dann die Diagnose starten:
 echo "%~dp0user-builds\beta\Start-Diagnostic.bat"
 echo.
-echo NICHTS wurde hochgeladen. Die Release-Schritte stehen in:
+echo NICHTS wurde hochgeladen. Anleitung:
 echo "%~dp0START-HIER.txt"
 echo ================================================================
 goto done

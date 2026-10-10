@@ -1,48 +1,47 @@
 ARENA ROBLOX BRIDGE — START HIER
 ================================
 
-WENN DU NUR DIE BETA-EXE BAUEN UND TESTEN WILLST:
+NUR BAUEN UND TESTEN? DANN GENAU DIESE SCHRITTE:
 
 1. Öffne den Ordner next-update.
-2. Führe GENAU diese Datei per Doppelklick aus:
-       Build-EXE.bat
-   Nicht Build-EXE.ps1 und nicht updater\Update-Bridge.ps1 starten.
-3. Warte, bis im schwarzen Fenster BUILD ERFOLGREICH steht. Der Builder prüft
-   die fertige EXE zuerst selbst (64-Bit-Start, PowerShell, WPF/STA und Titelbild).
-4. Die normale Beta-App liegt danach genau hier:
-       next-update\user-builds\beta\ArenaBridge.exe
-   Die BAT zeigt dir zusätzlich den vollständigen PC-Pfad. Starte diese EXE
-   von Hand und teste sie. Vorher alle anderen ArenaBridge-Fenster schließen;
-   es darf nur eine Bridge-Instanz laufen.
-5. Wenn beim Doppelklick scheinbar nichts passiert: erst andere Bridge-Fenster
-   schließen. Falls es dann weiter nicht startet, führe diese Diagnose-BAT aus:
-       next-update\user-builds\beta\Start-Diagnostic.bat
-   Lass das Konsolenfenster offen und notiere die Ausgabe. Die wichtigste
-   Startdatei ist:
+2. Doppelklicke Build-EXE.bat. Das ist der einzige normale Startknopf.
+3. Warte auf BUILD ERFOLGREICH. Die BAT zeigt dir den vollständigen Pfad.
+4. Die zu startende Beta liegt anschließend hier:
+
+       user-builds\beta\ArenaBridge.exe
+
+   Starte diese Datei per Doppelklick. Schließe vorher alle älteren
+   ArenaBridge-Fenster.
+5. Wenn kein Fenster erscheint: andere Bridge-Fenster schließen und dann
+   ausführen:
+
+       user-builds\beta\Start-Diagnostic.bat
+
+   Lass das Diagnose-Konsolenfenster offen. Die wichtigste Startdatei ist:
+
        %LOCALAPPDATA%\START-CHECK.txt
-   Weitere Dateien nennt die Diagnose-BAT.
 
-FÜR ALLE NUTZER BEREITSTELLEN — ERST NACH DEINEM TEST:
+EIGENES LOGO FUER DIE EXE (OPTIONAL):
 
-- Die EXE NICHT in Git committen und NICHT nach next-update\user-builds\
-  hochladen. Dieser Ordner ist nur dein lokaler Build-Ordner und wird ignoriert.
-- Nach erfolgreichem Test und deiner Freigabe kommt ausschließlich
-  ArenaBridge.exe als Asset in einen GitHub-Release des Repositories
-  merta-studios/arenarobloxbridge. Die Diagnose-EXE und Diagnose-BAT bleiben
-  privat/lokal. Hash und Dateigröße stehen in release-metadata.json.
-- Das Beta-Manifest liegt bei next-update\channels\beta.json. Es bleibt
-  deaktiviert, bis der neue Updater ausdrücklich integriert und freigegeben
-  wurde. Der neue Updater ist aktuell noch NICHT in der laufenden Root-Bridge
-  eingebaut; ein Release allein schaltet also kein automatisches Update frei.
-- Stable bleibt aus, bis Beta erfolgreich getestet und Stable ausdrücklich
-  freigegeben wurde.
+Kopiere dein eigenes Windows-Icon als ArenaBridge.custom.ico hierhin:
 
-BEI EINEM SPÄTEREN UPDATE:
+       app\assets\ArenaBridge.custom.ico
 
-Ich ändere weiterhin nur next-update. Ich nenne dir dann die neue Version,
-welche Beta du bauen sollst, den exakten EXE-Pfad, die PC-Testschritte und —
-erst nach deinem Okay — den passenden Release-/Manifest-Schritt. Bis dahin
-musst du keine EXE hochladen und keine Manifest-Datei aktivieren.
+Beim nächsten Build wird es automatisch verwendet. Nur eine gültige .ico-Datei
+funktioniert direkt (PNG/JPG vorher umwandeln). Lösche ArenaBridge.custom.ico,
+um wieder das Standard-Logo zu verwenden. Deine eigene Icon-Datei wird nicht in
+Git aufgenommen.
 
-Mehr Details, Ordnerkarte und Fehlerhilfe: README.md im selben next-update-
-Ordner.
+WICHTIG:
+
+- Nicht builder\Build-EXE.ps1 und nicht den Updater starten.
+- Zum Bauen brauchst du 64-Bit-Windows, Windows PowerShell 5.1 und beim ersten
+  Build eine Internetverbindung für ps2exe. Keine Administratorrechte nötig.
+- Der Build lädt nichts hoch. Hier in der Sandbox wurde keine Windows-EXE
+  gebaut.
+- Die alte Update-Struktur im Hauptordner bleibt unangetastet. Der neue
+  Updater in update-system ist nur vorbereitet und noch nicht integriert; seine
+  Channel-Manifeste stehen auf enabled: false.
+- Keine EXE, Diagnose-Datei oder persönliche ICO-Datei in Git committen.
+
+Mehr Details, Fehlerhilfe und Ordnerübersicht: README.md

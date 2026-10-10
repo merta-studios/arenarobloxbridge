@@ -1,0 +1,23 @@
+# Example workflow fragment when this repository is checked out at the workspace root.
+name: Windows PowerShell parser
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  parse:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse the isolated next-update Bridge with Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          & ./next-update/builder/parse-gate.ps1 -Path ./next-update/app/ArenaBridge.ps1
+          exit $LASTEXITCODE
+      - name: Gate rejects malformed input
+        shell: powershell
+        run: |
+          $bad = Join-Path $env:RUNNER_TEMP 'bad.ps1'
+          Set-Content -LiteralPath $bad -Value 'function Broken {' -Encoding UTF8
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./next-update/builder/parse-gate.ps1 -Path $bad
+          if ($LASTEXITCODE -ne 1) { throw 'Parser gate did not reject malformed input' }
+          exit 0

@@ -12,6 +12,9 @@
 !/release-inbox/*/.gitkeep
 !/release-inbox/*/README.txt
 
+# Optional user-owned executable icon; keep personal branding out of source control.
+/app/assets/ArenaBridge.custom.ico
+
 # Local updater cache/state from manual testing.
-/updater/.cache/
+/update-system/updater/.cache/
 *.update.lock
