@@ -16,7 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = ROOT / "app"
 PS1 = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.6.5"
+VERSION = "7.7.0"
 FAILURES: list[str] = []
 
 
@@ -46,8 +46,8 @@ def main() -> int:
     source = raw.decode("utf-8-sig")
     metadata = json.loads((APP_ROOT / "version.json").read_text(encoding="utf-8"))
     latest = str(metadata.get("notes", [""])[0])
-    check(metadata.get("version") == VERSION, "version.json is 7.6.5")
-    check(latest.startswith("• 7.6.5") and "PROJEKT ZUERST" in latest,
+    check(metadata.get("version") == VERSION, "version.json is 7.7.0")
+    check(latest.startswith("• 7.7.0") and "PROJEKT ZUERST" in latest,
           "current release note documents the project-first update")
     check(any(str(note).startswith("• 7.6.2") and "open_cloud" in str(note)
               for note in metadata.get("notes", [])),
@@ -266,10 +266,10 @@ def main() -> int:
           "the HTTP tool dispatcher routes creator_dashboard through the Open Cloud helper")
     check("creator_dashboard" in source[source.index("$writeTools = @("):source.index("$persistentEditTools = @(")],
           "creator_dashboard is protected by the write-tool dispatch path")
-    check("# Arena Roblox Bridge  -  Version 7.6.5" in source
-          and "DocsVersion     = '7.6.5'" in source
-          and "RuntimeInfo.Version = '7.6.5'" in source,
-          "runtime, docs and plugin version metadata are synchronized to 7.6.5")
+    check("# Arena Roblox Bridge  -  Version 7.7.0" in source
+          and "DocsVersion     = '7.7.0'" in source
+          and "RuntimeInfo.Version = '7.7.0'" in source,
+          "runtime, docs and plugin version metadata are synchronized to 7.7.0")
 
     if FAILURES:
         print(f"\n{len(FAILURES)} Creator Dashboard regression check(s) failed.")

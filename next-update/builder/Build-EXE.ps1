@@ -2,7 +2,14 @@
 param(
     [ValidateSet('beta','stable')]
     [string]$Channel = 'beta',
-    [string]$BuildVersion = ''
+    [string]$BuildVersion = '',
+    # Nur fuer den privaten Selbst-Update-Test (Harness developer/tests/Invoke-SelfUpdateSmoke.ps1).
+    # Erzeugt einen Testbau mit aktivierter Test-Manifestfunktion und schreibt NIE nach release\.
+    [switch]$TestFixtureBuild,
+    [string]$OutputDirectory = '',
+    # Test-only: numeric FileVersion of a test-fixture EXE (e.g. 7.7.1.0) so the
+    # self-update test can serve a genuinely newer artifact. Requires -TestFixtureBuild.
+    [string]$TestFileVersion = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -208,12 +215,29 @@ $parseGatePath = Join-Path $builderRoot 'parse-gate.ps1'
 $iconPath = Join-Path $assetsDirectory 'ArenaBridge.ico'
 $titleArtworkPath = Join-Path $assetsDirectory 'arena-bridge-title.jpg'
 $programLogoPath = Join-Path $assetsDirectory 'neueslogo.png'
-$outputDirectory = Join-Path $repoRoot 'release'
+$updaterPath = Join-Path $repoRoot 'update-system\updater\Update-Bridge.ps1'
+$releaseDirectory = Join-Path $repoRoot 'release'
+$outputDirectory = $releaseDirectory
+if ($TestFixtureBuild) {
+    if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { throw '-TestFixtureBuild requires -OutputDirectory outside the repository (for example a folder under %TEMP%).' }
+    $outputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
+    $repoPrefix = $repoRoot.TrimEnd('\') + '\'
+    if ($outputDirectory.TrimEnd('\') -ieq $releaseDirectory.TrimEnd('\') -or $outputDirectory.StartsWith($repoPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'A test-fixture build must never write inside the repository (release\ is the publication folder).'
+    }
+    if ($Channel -ne 'beta') { throw 'A test-fixture build is only allowed for channel beta.' }
+} elseif (-not [string]::IsNullOrWhiteSpace($OutputDirectory)) {
+    throw '-OutputDirectory is only accepted together with -TestFixtureBuild. Normal builds always write to release\.'
+}
+if (-not [string]::IsNullOrWhiteSpace($TestFileVersion)) {
+    if (-not $TestFixtureBuild) { throw '-TestFileVersion is only accepted together with -TestFixtureBuild.' }
+    if ($TestFileVersion -cnotmatch '^\d+\.\d+\.\d+\.\d+$') { throw '-TestFileVersion must be a four-part numeric version such as 7.7.1.0.' }
+}
 $exePath = Join-Path $outputDirectory 'ArenaBridge.exe'
 $diagnosticExePath = Join-Path $outputDirectory 'ArenaBridge-Diagnose.exe'
 $diagnosticBatPath = Join-Path $outputDirectory 'Start-Diagnostic.bat'
 
-foreach ($requiredPath in @($sourcePath,$versionPath,$parseGatePath,$iconPath,$titleArtworkPath,$programLogoPath)) {
+foreach ($requiredPath in @($sourcePath,$versionPath,$parseGatePath,$iconPath,$titleArtworkPath,$programLogoPath,$updaterPath)) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
         throw ("Required build input is missing: " + $requiredPath)
     }
@@ -259,9 +283,28 @@ $windowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\
 if (-not (Test-Path -LiteralPath $windowsPowerShell -PathType Leaf)) {
     throw 'Windows PowerShell 5.1 was not found. Run this build from a Windows installation with PowerShell.'
 }
-Write-Step 'Running the real PowerShell parser before compilation...'
+Write-Step 'Running the real PowerShell parser before compilation (app and updater)...'
 & $windowsPowerShell -NoLogo -NoProfile -ExecutionPolicy Bypass -File $parseGatePath -Path $sourcePath
 if ($LASTEXITCODE -ne 0) { throw 'PowerShell parse gate failed; no EXE was produced.' }
+& $windowsPowerShell -NoLogo -NoProfile -ExecutionPolicy Bypass -File $parseGatePath -Path $updaterPath
+if ($LASTEXITCODE -ne 0) { throw 'PowerShell parse gate failed for Update-Bridge.ps1; no EXE was produced.' }
+
+# Updater: strict checks before it is embedded. PS 5.1 reads BOM-less UTF-8 as ANSI, so the
+# embedded updater must be pure ASCII. Its version is taken from its own source.
+$updaterBytes = [IO.File]::ReadAllBytes($updaterPath)
+if ($updaterBytes.Length -lt 2000 -or $updaterBytes.Length -gt 1048576) {
+    throw ('The updater has an unexpected size: ' + [string]$updaterBytes.Length + ' bytes.')
+}
+foreach ($byte in $updaterBytes) {
+    if ($byte -gt 127) { throw 'Update-Bridge.ps1 must be pure ASCII (PS 5.1 reads BOM-less UTF-8 as ANSI). Build aborted.' }
+}
+$updaterSourceText = [Text.Encoding]::ASCII.GetString($updaterBytes)
+$updaterVersionMatch = [regex]::Match($updaterSourceText, '(?m)^\$script:UpdaterVersion = ''(\d+\.\d+\.\d+)''\r?$')
+if (-not $updaterVersionMatch.Success) { throw 'Update-Bridge.ps1 does not declare $script:UpdaterVersion as a three-part version.' }
+$updaterVersion = $updaterVersionMatch.Groups[1].Value
+$updaterSha256 = ([BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($updaterBytes))).Replace('-', '').ToLowerInvariant()
+$updaterBase64 = [Convert]::ToBase64String($updaterBytes)
+Write-Step ('Updater ' + $updaterVersion + ' embedded (SHA-256 ' + $updaterSha256 + ').')
 
 $ps2exeModule = Get-Module -ListAvailable -Name ps2exe | Select-Object -First 1
 if ($null -eq $ps2exeModule) {
@@ -308,6 +351,17 @@ try {
     if ($titleArtworkBytes.Length -le 1000 -or $titleArtworkBytes.Length -gt 10485760) {
         throw ("The title artwork has an unexpected size: " + [string]$titleArtworkBytes.Length + ' bytes.')
     }
+    $updateMarkers = @(
+        @{ Marker = '$script:UpdateChannel = ''__ARENA_UPDATE_CHANNEL__'''; Value = ('$script:UpdateChannel = ''' + $Channel + '''') },
+        @{ Marker = '$script:EmbeddedUpdaterBase64 = ''__ARENA_UPDATER_BASE64__'''; Value = ('$script:EmbeddedUpdaterBase64 = ''' + $updaterBase64 + '''') },
+        @{ Marker = '$script:EmbeddedUpdaterSha256 = ''__ARENA_UPDATER_SHA256__'''; Value = ('$script:EmbeddedUpdaterSha256 = ''' + $updaterSha256 + '''') },
+        @{ Marker = '$script:TestFixtureBuild = ''__ARENA_TEST_FIXTURE_BUILD__'''; Value = $(if ($TestFixtureBuild) { '$script:TestFixtureBuild = ''1''' } else { '$script:TestFixtureBuild = ''0''' }) }
+    )
+    foreach ($entry in $updateMarkers) {
+        if (([regex]::Matches($sourceText, [regex]::Escape($entry.Marker))).Count -ne 1) {
+            throw ('The update-system marker must appear exactly once in ArenaBridge.ps1: ' + $entry.Marker)
+        }
+    }
     $titleArtworkBase64 = [Convert]::ToBase64String($titleArtworkBytes)
     $programLogoBytes = [IO.File]::ReadAllBytes($programLogoPath)
     $programLogoBase64 = [Convert]::ToBase64String($programLogoBytes)
@@ -315,6 +369,10 @@ try {
     $preparedSource = $sourceText.Replace($sourceMarker,$sourceReplacement)
     $logoReplacement = '$script:ProgramLogoBase64 = ''' + $programLogoBase64 + ''''
     $preparedSource = $preparedSource.Replace($logoMarker,$logoReplacement)
+    foreach ($entry in $updateMarkers) { $preparedSource = $preparedSource.Replace($entry.Marker, $entry.Value) }
+    foreach ($leftover in @('__ARENA_UPDATE_CHANNEL__','__ARENA_UPDATER_BASE64__','__ARENA_UPDATER_SHA256__','__ARENA_TEST_FIXTURE_BUILD__')) {
+        if ($preparedSource.Contains($leftover)) { throw ('Update-system placeholder was not replaced: ' + $leftover) }
+    }
     [IO.File]::WriteAllText($preparedSourcePath,$preparedSource,[Text.UTF8Encoding]::new($true))
     Write-Step ("Prepared self-contained source with title artwork (" + [string]$titleArtworkBytes.Length + " bytes) and the program logo (" + [string]$programLogoBytes.Length + " bytes). No external runtime image is required.")
     Write-Step 'Re-running the real Windows PowerShell parser against the exact embedded compile copy...'
@@ -325,6 +383,7 @@ try {
         if (Test-Path -LiteralPath $oldStagingPath) { Remove-Item -LiteralPath $oldStagingPath -Force }
     }
     $numericVersion = $sourceVersion + '.0'
+    if (-not [string]::IsNullOrWhiteSpace($TestFileVersion)) { $numericVersion = $TestFileVersion }
     Write-Step ("Compiling " + $BuildVersion + ' for channel ' + $Channel + ' (hidden-console release EXE)...')
     Invoke-BridgeCompiler -InputPath $preparedSourcePath -OutputPath $stagingExePath -IconPath $iconPath -NumericVersion $numericVersion -NoConsole $true -WindowTitle 'Arena Roblox Bridge'
     Write-Step 'Compiling a separate console-enabled diagnostic EXE for local troubleshooting...'
@@ -362,9 +421,15 @@ try {
         titleArtworkSha256 = $artworkSha256
         programLogoFileName = 'neueslogo.png'
         programLogoSha256 = $programLogoSha256
+        updateChannel = $Channel
+        updaterFileName = 'Update-Bridge.ps1 (embedded in ArenaBridge.exe, not published separately)'
+        updaterVersion = $updaterVersion
+        updaterSha256 = $updaterSha256
+        updaterSizeBytes = [long]$updaterBytes.Length
+        testFixtureBuild = [bool]$TestFixtureBuild
         builtAtUtc = [DateTime]::UtcNow.ToString('o')
         published = $false
-        note = 'Local private-test build only. Never publish during review/testing. After explicit release approval, use the exact tested ArenaBridge.exe at next-update/release/ArenaBridge.exe; diagnostic files and metadata are local-only.'
+        note = 'Local private-test build only. Never publish during review/testing. After explicit release approval, use the exact tested ArenaBridge.exe at next-update/release/ArenaBridge.exe; diagnostic files and metadata are local-only. testFixtureBuild=true means a non-publishable test EXE that must never be placed in release\\.'
     }
     $metadataPath = Join-Path $outputDirectory 'release-metadata.json'
     Write-Utf8NoBom $metadataPath ($metadata | ConvertTo-Json -Depth 6)

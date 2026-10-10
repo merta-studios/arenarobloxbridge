@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "channel": "beta",
+  "enabled": true,
+  "testFixture": false,
+  "version": "7.7.1",
+  "publishedAtUtc": "2026-10-10T12:00:00Z",
+  "minimumUpdaterVersion": "1.1.0",
+  "mandatory": false,
+  "artifact": {
+    "fileName": "ArenaBridge.exe",
+    "url": "https://evil.example.com/ArenaBridge.exe",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sizeBytes": 4096
+  },
+  "notes": [
+    "Fixture"
+  ]
+}

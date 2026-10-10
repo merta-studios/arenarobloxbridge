@@ -1,13 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "urn:arena-roblox-bridge:channel-manifest:1",
-  "title": "Arena Roblox Bridge channel manifest",
+  "title": "Arena Roblox Bridge channel manifest (update-system, schemaVersion 1)",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schemaVersion",
     "channel",
     "enabled",
+    "testFixture",
     "version",
     "publishedAtUtc",
     "artifact",
@@ -17,9 +18,15 @@
     "schemaVersion": { "const": 1 },
     "channel": { "enum": ["beta", "stable"] },
     "enabled": { "type": "boolean" },
+    "testFixture": {
+      "type": "boolean",
+      "default": false,
+      "description": "true ONLY for offline test fixtures. The updater refuses such manifests unless it runs in its explicit -TestFixtureMode. Channel files in this repository must be false."
+    },
     "version": { "type": "string" },
     "publishedAtUtc": { "type": "string" },
     "minimumUpdaterVersion": { "type": "string", "default": "1.0.0" },
+    "mandatory": { "type": "boolean", "default": false },
     "artifact": {
       "type": "object",
       "additionalProperties": false,
@@ -28,15 +35,14 @@
         "fileName": { "const": "ArenaBridge.exe" },
         "url": { "type": "string" },
         "sha256": { "type": "string" },
-        "sizeBytes": { "type": "integer", "minimum": 0, "maximum": 209715200 }
+        "sizeBytes": { "type": "integer", "minimum": 0, "maximum": 67108864 }
       }
     },
     "notes": {
       "type": "array",
       "items": { "type": "string", "maxLength": 800 }
     },
-    "minimumVersion": { "type": "string" },
-    "mandatory": { "type": "boolean", "default": false }
+    "minimumVersion": { "type": "string" }
   },
   "allOf": [
     {
@@ -48,9 +54,48 @@
           },
           "artifact": {
             "properties": {
-              "url": { "format": "uri", "pattern": "^https://" },
               "sha256": { "pattern": "^[A-Fa-f0-9]{64}$" },
-              "sizeBytes": { "minimum": 1 }
+              "sizeBytes": { "minimum": 1024 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "enabled": { "const": false } }, "required": ["enabled"] },
+      "then": {
+        "properties": {
+          "artifact": {
+            "properties": {
+              "url": { "const": "" },
+              "sha256": { "const": "" },
+              "sizeBytes": { "const": 0 }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "testFixture": { "const": true } }, "required": ["testFixture"] },
+      "then": {
+        "properties": {
+          "artifact": {
+            "properties": {
+              "url": { "pattern": "^http://127\\.0\\.0\\.1:[0-9]{4,5}/ArenaBridge\\.exe$" }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "artifact": {
+            "properties": {
+              "url": {
+                "enum": [
+                  "",
+                  "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/main/next-update/release/ArenaBridge.exe"
+                ]
+              }
             }
           }
         }

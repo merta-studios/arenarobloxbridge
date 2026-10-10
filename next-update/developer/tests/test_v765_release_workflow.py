@@ -17,7 +17,7 @@ from xml.etree import ElementTree as ET
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = ROOT / "app"
 SOURCE = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.6.5"
+VERSION = "7.7.0"
 FAILURES: list[str] = []
 
 
@@ -55,7 +55,7 @@ def main() -> int:
     metadata = json.loads((APP_ROOT / "version.json").read_text(encoding="utf-8"))
     source_bytes = SOURCE.read_bytes()
     source = source_bytes.decode("utf-8-sig")
-    check(metadata.get("version") == VERSION, "the prepared copy and release metadata agree on 7.6.5")
+    check(metadata.get("version") == VERSION, "the prepared copy and release metadata agree on 7.7.0")
     check(source_bytes.startswith(b"\xef\xbb\xbf") and len(source_bytes) > 2_000_000,
           "next-update/app/ArenaBridge.ps1 is a complete UTF-8-BOM PowerShell bridge source")
     check("function Get-PluginSource {" in source and "function Start-BridgeRuntime {" in source,
@@ -280,27 +280,35 @@ def main() -> int:
         errors = powershell_parse_errors(powershell_path)
         check(not errors,
               f"Tree-sitter parses {powershell_path.relative_to(ROOT)} without syntax/error nodes: {errors[:3]}")
-    for marker in ("Test-GitHubHost", "github.com", "githubusercontent.com",
-                   "Test-ApprovedGitHubUri", "$Uri.IsDefaultPort", "$script:MaxManifestBytes = 1048576",
-                   "$script:MaxArtifactBytes", "no embedded credentials", "Compare-UpdateVersion",
-                   "Refusing downgrade", "Wait-ForTargetProcessToExit", "the updater will not terminate it",
-                   "$request.AllowAutoRedirect = $false", "$redirectCount -ge $MaxRedirects",
-                   "redirect target is outside the approved HTTPS host set", "$declaredLength -gt $MaxBytes",
-                   "$receivedBytes -gt $MaxBytes", "Streamed response exceeded", "-TimeoutSeconds 180",
-                   "ConvertFrom-Json -ErrorAction Stop", "schemaVersion is missing or unsupported",
-                   "channel is invalid", "version is invalid", "refusing to update without trustworthy version history",
-                   "[IO.File]::Open($DestinationPath,[IO.FileMode]::CreateNew", "Get-ApprovedGitHubDownload -Uri $artifactUri",
-                   "ArenaBridge.exe.new", "Get-FileHash -LiteralPath $stagingPath -Algorithm SHA256",
-                   "does not match the channel manifest", "[IO.File]::Replace($stagingPath,$targetPath,$backupPath,$true)",
-                   "rollback was attempted", "Start-Process -FilePath $targetPath"):
-        check(marker in updater, f"standalone updater safely stages/replaces a stopped EXE: {marker}")
+    for marker in ("Test-AllowedUri", "Get-ApprovedDownload", "Get-ChannelManifest", "Test-ChannelManifest",
+                   "$script:MaxManifestBytes = 1048576", "$script:MaxArtifactBytes = 67108864",
+                   "$script:MaxRedirects = 3", "Compare-UpdateVersion", "Get-UpdateDecision",
+                   "downgrade-refused", "Wait-ForTargetToExit", "[IO.FileMode]::CreateNew",
+                   "ArenaBridge.exe.new", "Get-Sha256Hex", "$request.AllowAutoRedirect = $false",
+                   "[IO.File]::Replace($stagingPath, $TargetPath, $backupPath, $true)", "Restore-Previous",
+                   "-UpdateStatus update-erfolgreich", "Test-WindowsX64Executable", "Enter-UpdateLock",
+                   "Remove-OldFiles", "IsDefaultPort", "minimumUpdaterVersion", "update-state.json",
+                   "update-status.json", "update-fehler", "kein-update", "0x8664",
+                   "$script:UpdaterVersion = '1.1.0'", "objects.githubusercontent.com"):
+        check(marker in updater, f"v1.1.0 updater keeps its safety/staging contract: {marker}")
     check("Invoke-WebRequest" not in updater,
           "updater streams and validates redirects instead of following unchecked web requests")
-    check("Stop-Process" not in updater and "taskkill" not in updater,
+    check("Stop-Process" not in updater and "taskkill" not in updater and ".Kill(" not in updater,
           "updater never terminates a running Bridge process")
-    check("Update-Bridge.ps1" not in source and "channels/beta.json" not in source
-          and "channels/stable.json" not in source,
-          "future updater/manifests are not integrated into the isolated Bridge executable")
+    # 7.7.0: the updater is embedded only through the protected integration block.
+    # The app never reads channel files directly and the legacy root updater is retired.
+    integ = region(source, "# >>> ARENA-UPDATE-INTEGRATION >>>", "# <<< ARENA-UPDATE-INTEGRATION <<<")
+    check("channels/beta.json" not in source and "channels/stable.json" not in source,
+          "the app never reads channel manifests directly (only the updater does, from a fixed repository URL)")
+    check(all(marker in integ for marker in ("__ARENA_UPDATE_CHANNEL__", "__ARENA_UPDATER_BASE64__",
+                                             "__ARENA_UPDATER_SHA256__", "__ARENA_TEST_FIXTURE_BUILD__",
+                                             "Start-ArenaUpdateCheck", "Start-ArenaUpdateInstall")),
+          "update integration block contains all builder placeholders and the check/install entry points")
+    check("\n    Invoke-AutostartSelfUpdate" not in source and "$selfUpdated = Invoke-AutostartSelfUpdate" not in source
+          and "STILLGELEGT (7.7.0)" in source and "Start-ArenaUpdateCheck" in source,
+          "the legacy root self-update call is removed from the startup path")
+    check("ARENABRIDGE_SELFUPDATE_TEST_MANIFEST" in integ and "if ([string]$script:TestFixtureBuild -cne '1') { return '' }" in integ,
+          "the test-manifest path is only reachable in a -TestFixtureBuild, never in a normal build")
 
     # Verify the exact one-folder build/test/freigabe workflow and the future-session gate.
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
@@ -321,7 +329,7 @@ def main() -> int:
           "app, builder, developer, update-system and the single release folder exist")
     for marker in ("Build-EXE.bat", r"release\ArenaBridge.exe", "Start-Diagnostic.bat",
                    "neueslogo.png", "Channel-Manifeste bleiben aus",
-                   "kopierbaren", "Update-Bridge.ps1 ist aktuell noch nicht"):
+                   "kopierbaren", "Update-Bridge.ps1 ist in die EXE eingebettet"):
         check(marker in start_guide, f"START-HIER gives the exact current user action: {marker}")
     for marker in ("AUSSCHLIESSLICH in next-update/", "KEIN next-update/release-inbox/",
                    "KEIN next-update/user-builds/", "Korrekturwunsch", "AUSSCHLIESSLICH mit",
@@ -331,10 +339,11 @@ def main() -> int:
     update_readme = (ROOT / "update-system" / "README.md").read_text(encoding="utf-8")
     update_readme_plain = re.sub(r"\s+", " ", re.sub(r"[*`]", "", update_readme))
     check("Update-Bridge.ps1" in update_readme
-          and "Er ist aktuell noch nicht in die ArenaBridge-EXE integriert" in update_readme_plain
+          and "noch nichts ausgeführt" in update_readme_plain
+          and "erhalten dieses System nicht automatisch" in update_readme_plain
           and "release/ArenaBridge.exe" in update_readme
           and "enabled: false" in update_readme,
-          "new update-system README does not claim that user auto-updates are already active")
+          "update-system README states the honest status: not tested on Windows, no automatic reach of existing installs")
 
     if FAILURES:
         print(f"\nFAILED: {len(FAILURES)} preparation check(s).")

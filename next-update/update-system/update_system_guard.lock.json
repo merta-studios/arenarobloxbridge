@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "scope": "update-system/ and the update integration points listed in update-system/PROTECTED.md",
+  "approvals": [
+    {
+      "date": "2026-10-10",
+      "approvedBy": "Nutzer (Owner) - ausdrueckliche Freigabe",
+      "note": "Erstfestlegung: Der Nutzer hat das Selbst-Update-System 7.7.0 ausdruecklich beauftragt; Schutz gilt ab diesem Stand."
+    }
+  ],
+  "files": {
+    "update-system/PROTECTED.md": "45d3c80ad9ace4a8269c724e55fb6346614edcfdc66670e3d2710ed4c1b4429e",
+    "update-system/README.md": "d9e9fb248ac3ddfd83a367c9733b3afd99933f93a28e1c3e6ebef3aa0c426ea5",
+    "update-system/channels/beta.json": "62a6c0d86da796faf5044632149ff28049656d23ef50ec8035acd70fd8dd152c",
+    "update-system/channels/manifest.schema.json": "241a49080863e5727d5ee9f946d9f85679b4473b5dd112d9b6df1fbecd81a158",
+    "update-system/channels/stable.json": "3f25d11dcb384e2b7716c96b681e5af0d6bdb2bed23e71d8df949eed145210f1",
+    "update-system/updater/README.md": "ecff0576ef3912bb3897af1829cca1c58dd1dbfde5cca0ce04db6f554c8e1ffb",
+    "update-system/updater/Update-Bridge.ps1": "b172faa012a84cb7fdd8567bdef7c3cdfccc8950be06844f4bb1bba4f84e2528",
+    "builder/Build-EXE.ps1": "091efabf793d47146e2a2fb777b3c87f5157b4a535fd5a01be623f3568bf8f31",
+    "developer/tests/run_offline_tests.py": "255c6acb04d9052516089fa1a41d33da591ff1f762231f05ec0c40359784bf5a",
+    "developer/tests/requirements-test.txt": "267bcd9035ba02b51b5f33ae96e389e73426260f83f5fdebb4051afe9645e5d3",
+    "developer/tests/Invoke-SelfUpdateSmoke.ps1": "10483d2588e50a179afedddbbfff55c43f4c759adc3960b1f1676de1849ddcbb",
+    "developer/tests/test_v800_selfupdate_smoke.py": "6448450364df928ac5f283b43c2d7af1e095264682d580c4c3e8035660ac88d4",
+    "developer/tests/test_v800_update_manifest.py": "90320377ff053596c4ad08240c7464acc3bb6728f3f43d27f4e69d2bde01fc2c",
+    "developer/tests/test_v800_update_system_guard.py": "03f856c87fe089e2f62c470e41d4fc49c9d1aff5aa3412e927198521da26c8ef",
+    "developer/tests/fixtures/update/invalid-bad-version.json": "6e00638d1e6431a8fb0f3765c646ffcef7aecdfea2925867f5475526ed6b20d5",
+    "developer/tests/fixtures/update/invalid-disabled-with-url.json": "7699ad96b2d18bbdac95d9af6f43c3baff6d0dba6650f9211eb05d5cd3094f52",
+    "developer/tests/fixtures/update/invalid-evil-url.json": "8cefb36acaac23c59dcf5242530c00859b85f8f60d279fe513aab75808fcc435",
+    "developer/tests/fixtures/update/invalid-extra-field.json": "ba9cd7dc741f6710b9961371f89b3a57871c107475798d166453dd8258d061d3",
+    "developer/tests/fixtures/update/invalid-fixture-https.json": "5a3d092f29576025275d085ac242f17332e6d9462879df5831f2d4c8ae6def0b",
+    "developer/tests/fixtures/update/invalid-http-production-url.json": "ba5c29aad6f48421e73f334257eba6b5731cbc9b82a38f9922f3009a03dfcb3d",
+    "developer/tests/fixtures/update/invalid-oversize.json": "3401085135cf30a82082c4c2439618e7ca8a1e06b907f06fff3d4b6a0b3daaa8",
+    "developer/tests/fixtures/update/invalid-short-sha.json": "41a594435ff619ec73a83bf965e1831fc1d82b2e7745f5d84dd2ef01ec51bcdc",
+    "developer/tests/fixtures/update/invalid-wrong-filename.json": "df3ec6d656f19ea4e541c3a0adc9b134c6bd743d3b1a1935b11f495edea4e99b",
+    "developer/tests/fixtures/update/valid-disabled-empty.json": "103d2053179b4f67c206a48cf88b3c81ed947a133a33df1c8a48b54d7ef943fc",
+    "developer/tests/fixtures/update/valid-fixture-loopback.json": "1ca5261dcd7d144af4634bdde27a4447845c4ae19de763799cc74aa528cef9db",
+    "developer/tests/fixtures/update/valid-production-enabled.json": "89415efd6f65898531117b7ebbffd3707366dfb616c4996d379bef712bda6b0a",
+    "app/ArenaBridge.ps1#ARENA-UPDATE-INTEGRATION": "da0e442fc5659f090418dfcacdd55a5f755b1a81ca78b66d1a5fcd03d7af0e29"
+  }
+}

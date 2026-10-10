@@ -1,49 +1,52 @@
-# Neues Update-System — Veröffentlichung nur nach Testfreigabe
+# Update-System (next-update, Stand 7.7.0)
 
-Dieser Ordner ist die **einzige** Update-/Verteilungsstrecke für `next-update`.
-Die alte Update-Struktur im Repository-Hauptordner wird nicht verwendet und
-bleibt unverändert.
+Dieser Ordner enthält das **neue** Selbst-Update-System. Er ist der einzige
+Ort für Updates dieses Ablaufs. Das alte System im Repository-Hauptordner wird
+weder verwendet noch verändert.
 
-## Jetztiger Zustand
+**Status (ehrlich):**
 
-- `channels/stable.json` und `channels/beta.json` stehen auf
-  `enabled: false`. Beide enthalten absichtlich keine Artefakt-URL, Größe oder
-  SHA-256. Code-Merges und lokale Builds lösen deshalb keine geplanten Updates
-  über dieses System aus.
-- `updater/Update-Bridge.ps1` ist derzeit ein eigenständiger PowerShell-Updater.
-  Er prüft GitHub-HTTPS-Host, Größenlimit, Versionsnummer und SHA-256 und tauscht
-  die EXE mit Backup/Rollback aus. **Er ist aktuell noch nicht in die
-  ArenaBridge-EXE integriert.** Das ist eine harte Sperre: erst Integration,
-  tatsächlicher Startpfad und Bootstrap bestehender Installationen prüfen und
-  testen, dann darf Stable aktiviert werden.
-- Private PR-/ZIP-/Build-/Test-Zyklen verwenden keinen öffentlichen Beta-Kanal.
-  `beta.json` bleibt ausgeschaltet; die lokale EXE liegt direkt in
-  `../release/ArenaBridge.exe`, nicht in einem Kanal-Unterordner.
+- Der Updater `updater/Update-Bridge.ps1` (Version 1.1.0) ist in `app/ArenaBridge.ps1`
+  integriert und wird vom Builder in die EXE eingebettet. Die EXE braucht keine
+  separate Updater-Datei.
+- Auf Windows wurde davon noch **nichts** ausgeführt (die Entwicklungssandbox hat kein
+  PowerShell). Parse-Gate, EXE-Build, Smoke-Test und Selbst-Update-Test sind offen,
+  bis sie auf einem Windows-PC gelaufen sind.
+- `channels/beta.json` und `channels/stable.json` sind **deaktiviert** (`enabled: false`).
+  Es gibt keine Veröffentlichung und keinen Nutzer des neuen Systems.
+- Bereits installierte Kopien ohne Updater erhalten dieses System **nicht** automatisch.
+  Eine einmalige manuelle Migration ist offen und wird in der Release-Session entschieden.
 
-## Freigabe an alle Nutzer
+## Bestandteile
 
-Nach dem privaten Test und der ausdrücklichen Freigabe durch den Nutzer gilt:
+| Datei | Zweck |
+|---|---|
+| `updater/Update-Bridge.ps1` | Der Helfer: prüft Manifest, lädt in Staging, prüft Größe und SHA-256, ersetzt atomar mit Backup, startet neu oder rollt zurück. |
+| `updater/README.md` | Verhalten, Grenzen und Testfälle des Updaters. |
+| `channels/manifest.schema.json` | JSON-Schema (Draft 2020-12) für Kanal-Manifeste. Feste Repository-URL, Größenlimit 64 MiB, `testFixture` nur für Tests. |
+| `channels/beta.json`, `channels/stable.json` | Kanal-Manifeste. Beide **deaktiviert**. |
+| `PROTECTED.md` | Schutzregeln und Verfahren für Änderungen am geschützten Bereich. |
+| `update_system_guard.lock.json` | Hashes des geschützten Bereichs und Freigabeprotokoll. |
 
-1. Die **identische, getestete** `ArenaBridge.exe` kommt an den einen
-   Repository-Pfad `next-update/release/ArenaBridge.exe`. Diagnose-EXE,
-   Diagnose-BAT, Prüfsummen und lokale Build-Metadaten kommen nicht mit.
-2. Die Release-Session verifiziert Versionsnummer, Dateigröße und SHA-256 der
-   vorhandenen Datei; sie baut nicht stillschweigend eine andere EXE.
-3. Vor der Aktivierung muss sie den neuen Updater in die gebaute Anwendung
-   integrieren und durch echte Tests absichern. Zusätzlich muss klar sein,
-   wie bereits installierte Benutzer auf die neue Updater-fähige EXE kommen.
-   Wenn dafür ein einmaliger Bootstrap nötig ist, darf die Session keine
-   vollautomatische Auslieferung versprechen, bevor dieser Weg geklärt ist.
-4. Erst dann wird `channels/stable.json` für die endgültige Version mit
-   tatsächlichem Veröffentlichungszeitpunkt, stabiler Version und geprüftem
-   Artefakt befüllt. Die URL zeigt auf die öffentliche Datei im Repository,
-   beispielsweise `https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/main/next-update/release/ArenaBridge.exe`.
-   Die SHA-256 und `sizeBytes` müssen exakt zur hochgeladenen Datei passen.
-5. Änderungen an Quelle/Manifest werden als PR vorbereitet und erst nach dem
-   Merge öffentlich wirksam. Stable niemals während des privaten Tests
-   aktivieren. Es gibt keinen separaten `release-inbox/`- oder
-   `user-builds/`-Kanalordner.
+## Ablauf (Ziel, nach Windows-Tests und Freigabe)
 
-Die neue Session muss das **neue** `update-system/` prüfen und verwenden; sie
-muss die alte Root-Update-Struktur ignorieren. Sicherheitsgrenzen und
-Parameter: [`updater/README.md`](updater/README.md).
+1. Ein Kanal-Manifest verweist auf genau eine Datei: `release/ArenaBridge.exe` im Repository,
+   mit Version, Größe und SHA-256.
+2. Die Bridge prüft im Hintergrund das Manifest und fragt nur nach Bestätigung.
+3. Die Bridge beendet sich regulär. Der Helfer wartet darauf und beendet nie einen Prozess.
+4. Download nur über HTTPS auf GitHub-Hosts. Größe und Hash werden geprüft, die alte EXE
+   bleibt bei jedem Fehler unverändert.
+5. Atomarer Austausch mit Backup, Neustart und Rückrollung bei Startfehler.
+
+Ein Update für Nutzer entsteht erst, wenn der PR gemergt ist, das Manifest aktiviert wurde
+und die Release-Session die getestete EXE bereitgestellt hat. Merge, ZIP-Download und
+lokaler Build sind **keine** Veröffentlichung.
+
+## Tests
+
+- Offline: `developer/tests/test_v800_update_manifest.py` (Schema, Fixtures, deaktivierte Kanäle)
+  und `developer/tests/test_v800_update_system_guard.py` (Schutz des geschützten Bereichs).
+- Windows: `developer/tests/Invoke-SelfUpdateSmoke.ps1`, aufgerufen durch
+  `test_v800_selfupdate_smoke.py`. Er baut zwei Test-EXEs und prüft Installation, Backup,
+  Neustart, Downgrade, falschen Hash, Größe, deaktiviertes/ungültiges Manifest,
+  Netzwerkfehler, laufende EXE und Rollback in isolierten Ordnern unter `%TEMP%`.

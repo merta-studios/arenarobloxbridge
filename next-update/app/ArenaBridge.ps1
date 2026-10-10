@@ -1,5 +1,26 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.6.5
+# Arena Roblox Bridge  -  Version 7.7.0
+#
+# Version 7.7.0 (2026-10-10) - SELBST-UPDATE ÜBER DAS NEUE UPDATE-SYSTEM (NOCH UNGETESTET, siehe START-HIER.txt)
+#   1) EINGEBETTETER UPDATER: Der Builder bettet update-system/updater/
+#      Update-Bridge.ps1 (Base64 + feste SHA-256) in die EXE ein. Die EXE
+#      haengt nicht von einer separaten Updater-Datei ab.
+#   2) UPDATE-PRUEFUNG NUR IN DER EXE: Beim Start prueft die EXE im Hintergrund
+#      das feste Kanal-Manifest des Updaters (Repository-URL steht im Updater, nicht in der App).
+#      Ist eine neuere Version freigegeben, fragt die Bridge nach. "Ja" beendet
+#      die Bridge REGULAER; der Helfer wartet, laedt in einen Staging-Ordner,
+#      prueft Groesse, SHA-256 und Windows-x64-EXE, ersetzt die Datei atomar
+#      mit Backup und startet neu. Bei Fehlern wird die alte Fassung behalten.
+#      Laufende Prozesse werden NIE beendet.
+#   3) TEST-MODUS: Nur ueber die Umgebungsvariable ARENABRIDGE_SELFUPDATE_TEST_
+#      MANIFEST mit einem lokalen Test-Manifest (testFixture=true, Loopback).
+#      Normale Nutzerstarts setzen sie nicht.
+#   4) ALTER ROOT-UPDATE-PFAD STILLGELEGT: Invoke-AutostartSelfUpdate laedt nicht
+#      mehr von main/Root. Das alte System wird von dieser Bridge nicht genutzt.
+#   5) Kanaele beta und stable bleiben DEAKTIVIERT (enabled=false). Bestehende
+#      Installationen ohne diesen Updater muessen einmalig manuell ersetzt werden.
+#   6) BRANDING unveraendert: app/assets/neueslogo.png ist Fenster- und
+#      EXE-Symbol-Quelle. Release-Ordner bleibt next-update/release/.
 #
 # Version 7.6.5 (2026-10-10) - EIN LOGO + EINER TEST-/RELEASE-ORDNER + FREIGABE-GATE
 #   1) BRANDING: app/assets/neueslogo.png ist sowohl das EXE-Symbol (aus dem
@@ -12,9 +33,6 @@
 #      Bei Problemen beginnt ein Korrektur-PR-Zyklus; erst ausdrueckliche
 #      Freigabe startet eine separate Session fuer next-update/update-system.
 #      Root-Dateien und das alte Update-System bleiben unangetastet.
-#   4) DER NEUE UPDATER IST NOCH NICHT IN DIESE APP INTEGRIERT. Die naechste
-#      Release-Session muss Integration, Bootstrap fuer bestehende Nutzer,
-#      Hash/Version und Manifest erst pruefen, bevor Stable aktiviert wird.
 #
 # Historisch: Version 7.6.4 (2026-10-10) behob den EXE-Startpfad, sortierte
 # den damaligen Build-Aufbau und fuehrte den isolierten EXE-Smoke-Test ein.
@@ -2195,7 +2213,7 @@ if ($env:ARENABRIDGE_BUILD_SMOKE -eq '1') {
     $smokeLogoImage = $null
     $smokeReport = [ordered]@{
         status = 'failed'
-        version = '7.6.5'
+        version = '7.7.0'
         processId = $PID
         is64BitProcess = [Environment]::Is64BitProcess
         apartmentState = [string][System.Threading.Thread]::CurrentThread.ApartmentState
@@ -2285,7 +2303,7 @@ if ($env:ARENABRIDGE_BUILD_SMOKE -eq '1') {
 # Existing LOCALAPPDATA directory; no UI, no new exception net.
 # A parse/policy failure prevents even this marker. Check its timestamp/version.
 # Continue + SilentlyContinue keeps diagnostic I/O from becoming a start blocker.
-Write-Output ("{0:o} PROOF_OF_LIFE Version=7.6.5 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
+Write-Output ("{0:o} PROOF_OF_LIFE Version=7.7.0 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
 
 # Version 7.5.8: Ein Autostart kann alte Run-Eintraege parallel ausloesen.
 # Nur EIN PowerShell-Kind darf die Bridge-Oberflaeche/Dienste starten. Die
@@ -2315,7 +2333,7 @@ try {
         try {
             [System.IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA 'START-CHECK.txt'),
                 ('Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                 'Version: 7.6.5' + [Environment]::NewLine +
+                 'Version: 7.7.0' + [Environment]::NewLine +
                  'ABBRUCH: SINGLE_INSTANCE_DUPLICATE' + [Environment]::NewLine +
                  $duplicateMessage + [Environment]::NewLine +
                  'Log: ' + (Join-Path $env:LOCALAPPDATA 'ArenaRobloxBridge-start-entry.txt') + [Environment]::NewLine),
@@ -2383,7 +2401,7 @@ trap {
         }
         $trapPath = Join-Path $trapFolder 'startup-diagnose.txt'
         $trapReport = New-Object System.Text.StringBuilder
-        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.6.5)')
+        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.7.0)')
         [void]$trapReport.AppendLine('Quelle: trap auf Skriptebene (nicht abgefangener Fehler)')
         [void]$trapReport.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$trapReport.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -2422,7 +2440,7 @@ trap {
             try {
                 [System.IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA 'START-CHECK.txt'),
                     ('Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.6.5' + [Environment]::NewLine +
+                     'Version: 7.7.0' + [Environment]::NewLine +
                      'ABBRUCH: ' + $trapMessage + [Environment]::NewLine +
                      'Details: ' + $trapPath + [Environment]::NewLine),
                     [System.Text.Encoding]::UTF8)
@@ -3108,6 +3126,10 @@ function Invoke-AutostartSelfUpdate {
     # Zeitlimit knapp halten und nach dem ersten unerreichbaren Branch
     # aufhoeren: Der normale Programmstart darf nie spuerbar warten.
     param([switch]$VerifyMode)
+    # STILLGELEGT (7.7.0): Dieser Pfad lud frueher version.json und ArenaBridge.ps1 vom
+    # Repository-Root (main/master) - also aus dem alten Update-Bereich. Er wird nicht
+    # mehr ausgefuehrt. Das neue Update laeuft ausschliesslich ueber Start-ArenaUpdateCheck.
+    return $false
     if ($script:IsExeMode) { return $false }           # EXE aktualisiert der Starter
     if (-not $script:ScriptPath) { return $false }
     if (-not (Test-Path -LiteralPath $script:ScriptPath)) { return $false }
@@ -3488,7 +3510,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.6.5'
+    DocsVersion     = '7.7.0'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -3904,7 +3926,7 @@ function Write-StartupFailureDiagnose {
         try { $trace = [string]$ErrorRecord.ScriptStackTrace } catch {}
         if ($trace.Length -gt 2000) { $trace = $trace.Substring(0, 2000) }
         $report = New-Object System.Text.StringBuilder
-        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.6.5)')
+        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.7.0)')
         [void]$report.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$report.AppendLine('Letzte Startstufe: ' + $stage)
         [void]$report.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -3987,7 +4009,7 @@ function Set-StartupStage {
     try {
         $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
         $checkText = 'Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.6.5' + [Environment]::NewLine +
+                     'Version: 7.7.0' + [Environment]::NewLine +
                      'Zeit: ' + $stamp + [Environment]::NewLine +
                      'PowerShell: ' + [string]$PSVersionTable.PSVersion + ' | CLR ' + [string][Environment]::Version + [Environment]::NewLine +
                      'Skript: ' + [string]$script:ScriptPath + [Environment]::NewLine +
@@ -4053,12 +4075,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.6.5, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.6.5, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.7.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.7.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.6.5'
+$script:Shared.RuntimeInfo.Version = '7.7.0'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -4161,7 +4183,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.6.5)
+  Arena Studio Bridge - Studio Plugin  (Version 7.7.0)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -4234,7 +4256,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.6.5"
+local ARENA_VERSION  = "7.7.0"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -17450,7 +17472,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.6.5 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.7.0 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -23548,7 +23570,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.6.5'
+            version = '7.7.0'
             progress = 'For measurable work, report a genuine progress = { percent, message }. For simple read/observation work use { mode = "hidden", message = "what you checked" }; the bar is hidden and progress is not applicable. Missing percentages never create a 0% bar or an inactivity claim. report_done sets 100 only for normal measurable-progress mode.'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -23782,7 +23804,7 @@ end
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $askUserProtocol = Get-BridgeAskUserProtocol
         $envelope = @{
-            bridgeVersion = '7.6.5'
+            bridgeVersion = '7.7.0'
             executor = $executorSnapshot
             askUserProtocol = $askUserProtocol
             progressContract = @{
@@ -25115,7 +25137,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.6.5'
+                        bridgeVersion = '7.7.0'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -25486,7 +25508,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.6.5'
+                        serverVersion = '7.7.0'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -25845,7 +25867,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.6.5'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.7.0'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -25929,8 +25951,8 @@ end
                 }
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.6.5'
-                    serverVersion = '7.6.5'
+                    bridgeVersion = '7.7.0'
+                    serverVersion = '7.7.0'
                     toolbox = $statusToolbox
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
@@ -33615,7 +33637,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.6.5)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.7.0)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -36617,7 +36639,7 @@ function Write-ChannelDiagnoseFile {
 
         $progressPath = Join-Path $script:AppDataRoot 'progress-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.6.5)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.7.0)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -36652,7 +36674,7 @@ function Write-ChannelDiagnoseFile {
 
         $notifyPath = Join-Path $script:AppDataRoot 'notify-diagnose.txt'
         $sb2 = New-Object System.Text.StringBuilder
-        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.6.5)')
+        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.7.0)')
         [void]$sb2.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb2.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb2.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -37021,7 +37043,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.6.5)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.7.0)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -39627,7 +39649,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.6.5)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.7.0)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -39793,7 +39815,7 @@ function Start-StudioProfileLookup {
                     $request.Method = 'GET'
                     $request.Timeout = 10000
                     $request.ReadWriteTimeout = 10000
-                    if ($request -is [System.Net.HttpWebRequest]) { $request.UserAgent = 'ArenaRobloxBridge/7.6.5' }
+                    if ($request -is [System.Net.HttpWebRequest]) { $request.UserAgent = 'ArenaRobloxBridge/7.7.0' }
                     $response = $request.GetResponse()
                     try {
                         $responseStream = $response.GetResponseStream()
@@ -40641,7 +40663,7 @@ Set-StartupStage 'Ereignisse verdrahtet (Fenstersteuerung + Loaded)'
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.6.5'
+    $versionText = '7.7.0'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -41899,7 +41921,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.6.5" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.7.0" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -42674,7 +42696,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.6.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.7.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -42739,7 +42761,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.6.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.7.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -42752,7 +42774,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.6.5'
+    $verText = '7.7.0'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
@@ -42787,28 +42809,207 @@ function Set-UiRefreshCadence {
     if ($script:UiRefreshTimer.Interval -ne $interval) { $script:UiRefreshTimer.Interval = $interval }
 }
 
+# ============================================================================
+# >>> ARENA-UPDATE-INTEGRATION >>>   GESCHUETZT - siehe update-system/PROTECTED.md
+# Nur mit ausdruecklicher Nutzerfreigabe aendern. test_v800_update_system_guard.py
+# ueberwacht diesen Block per SHA-256. Der Builder ersetzt genau die drei Marker
+# unten; im PS1-Quelltext bleibt der Updater ausgeschaltet.
+# Das alte Root-Update (Invoke-AutostartSelfUpdate) wird nicht mehr genutzt.
+# ============================================================================
+$script:UpdateChannel = '__ARENA_UPDATE_CHANNEL__'
+$script:EmbeddedUpdaterBase64 = '__ARENA_UPDATER_BASE64__'
+$script:EmbeddedUpdaterSha256 = '__ARENA_UPDATER_SHA256__'
+# 1 nur fuer den separaten, nicht veroeffentlichten Testbau (Build-EXE.ps1 -TestFixtureBuild).
+# Normale Builds setzen 0; dann ist der Test-Manifestpfad in der EXE nicht erreichbar.
+$script:TestFixtureBuild = '__ARENA_TEST_FIXTURE_BUILD__'
+$script:UpdateCheckTimer = $null
+$script:UpdateCheckProcess = $null
+$script:UpdateCheckResultPath = ''
+$script:UpdateCheckDeadlineUtc = [DateTime]::MinValue
+$script:UpdateCheckPromptShown = $false
+
+function Test-ArenaUpdateIntegrationBuilt {
+    # Nur ein echter Build (Kanal und Updater-Hash eingesetzt) darf pruefen.
+    if (@('beta', 'stable') -cnotcontains [string]$script:UpdateChannel) { return $false }
+    if ([string]$script:EmbeddedUpdaterSha256 -cnotmatch '^[0-9a-f]{64}$') { return $false }
+    if ([string]::IsNullOrWhiteSpace([string]$script:EmbeddedUpdaterBase64)) { return $false }
+    return $true
+}
+
+function ConvertTo-ArenaArgument([string]$Value) {
+    return ('"' + ([string]$Value).Replace('"', '') + '"')
+}
+
+function Get-ArenaWindowsPowerShell {
+    $exe = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    if (Test-Path -LiteralPath $exe -PathType Leaf) { return $exe }
+    return 'powershell.exe'
+}
+
+function Get-ArenaUpdateTestManifest {
+    # Nur fuer den privaten Test: eine vorhandene lokale Test-Manifestdatei.
+    # Fehlt sie oder ist die Variable leer, gilt automatisch das feste Repository-Manifest.
+    if ([string]$script:TestFixtureBuild -cne '1') { return '' }   # normale Builds: niemals
+    $candidate = [string]$env:ARENABRIDGE_SELFUPDATE_TEST_MANIFEST
+    if ([string]::IsNullOrWhiteSpace($candidate)) { return '' }
+    if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { return '' }
+    return [IO.Path]::GetFullPath($candidate)
+}
+
+function Write-ArenaEmbeddedUpdater {
+    # Extrahiert den eingebetteten Updater; der Inhalt wird vorher gegen die feste SHA-256 geprueft.
+    $bytes = [Convert]::FromBase64String([string]$script:EmbeddedUpdaterBase64)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { $hex = ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant() }
+    finally { $sha.Dispose() }
+    if ($hex -cne [string]$script:EmbeddedUpdaterSha256) { throw 'Eingebetteter Updater ist beschaedigt (SHA-256 stimmt nicht).' }
+    $dir = Join-Path $script:AppDataRoot 'updater'
+    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $path = Join-Path $dir ('Update-Bridge-' + $hex.Substring(0, 16) + '.ps1')
+    $needsWrite = $true
+    if (Test-Path -LiteralPath $path -PathType Leaf) {
+        $existingHash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($existingHash -ceq $hex) { $needsWrite = $false }
+    }
+    if ($needsWrite) {
+        $temp = $path + '.' + [Guid]::NewGuid().ToString('N') + '.tmp'
+        [IO.File]::WriteAllBytes($temp, $bytes)
+        if (Test-Path -LiteralPath $path -PathType Leaf) { Remove-Item -LiteralPath $path -Force }
+        [IO.File]::Move($temp, $path)
+    }
+    return $path
+}
+
+function Get-ArenaUpdaterArgumentString([string]$UpdaterPath, [string[]]$Extra) {
+    $parts = New-Object System.Collections.Generic.List[string]
+    $parts.Add('-NoProfile')
+    $parts.Add('-NonInteractive')
+    $parts.Add('-ExecutionPolicy')
+    $parts.Add('Bypass')
+    $parts.Add('-File')
+    $parts.Add((ConvertTo-ArenaArgument $UpdaterPath))
+    foreach ($item in $Extra) { $parts.Add([string]$item) }
+    return [string]::Join(' ', $parts.ToArray())
+}
+
+function Start-ArenaUpdateCheck {
+    # Startet die Pruefung als eigenen Hintergrundprozess. Der Programmstart wartet nicht darauf.
+    if (-not $script:IsExeMode) { return }                    # PS1-Entwicklungsstart: kein Selbst-Update
+    if (-not (Test-ArenaUpdateIntegrationBuilt)) { return }  # Quelltext ohne Build-Marker
+    if ($script:DiagnosticMode) { Write-RuntimeLog 'Update-Pruefung uebersprungen (Diagnosemodus).'; return }
+    if ($env:ARENABRIDGE_BUILD_SMOKE -eq '1') { return }
+    try {
+        $updater = Write-ArenaEmbeddedUpdater
+        $script:UpdateCheckResultPath = Join-Path $script:BinFolder ('update-check-' + [Guid]::NewGuid().ToString('N') + '.json')
+        $extra = @(
+            '-Mode', 'check',
+            '-Channel', [string]$script:UpdateChannel,
+            '-InstallDirectory', (ConvertTo-ArenaArgument $script:AppFolder),
+            '-ResultPath', (ConvertTo-ArenaArgument $script:UpdateCheckResultPath),
+            '-LogPath', (ConvertTo-ArenaArgument (Join-Path $script:BinFolder 'update-helper.log'))
+        )
+        $testManifest = Get-ArenaUpdateTestManifest
+        if (-not [string]::IsNullOrWhiteSpace($testManifest)) {
+            $extra += @('-TestFixtureMode', '-ManifestPath', (ConvertTo-ArenaArgument $testManifest))
+        }
+        $arguments = Get-ArenaUpdaterArgumentString $updater $extra
+        $script:UpdateCheckProcess = Start-Process -FilePath (Get-ArenaWindowsPowerShell) -ArgumentList $arguments -WindowStyle Hidden -PassThru
+        $script:UpdateCheckDeadlineUtc = [DateTime]::UtcNow.AddSeconds(75)
+        Write-RuntimeLog ('Update-Pruefung im Hintergrund gestartet (Kanal ' + [string]$script:UpdateChannel + ').')
+        if ($null -eq $script:UpdateCheckTimer) {
+            $script:UpdateCheckTimer = [System.Windows.Threading.DispatcherTimer]::new()
+            $script:UpdateCheckTimer.Interval = [TimeSpan]::FromSeconds(1)
+            $script:UpdateCheckTimer.Add_Tick({
+                try { Test-ArenaUpdateCheckResult }
+                catch {
+                    try { $script:UpdateCheckTimer.Stop() } catch {}
+                    Write-RuntimeLog ('Update-Pruefung Auswertung fehlgeschlagen: ' + $_.Exception.Message)
+                }
+            })
+        }
+        $script:UpdateCheckTimer.Start()
+    } catch {
+        Write-RuntimeLog ('Update-Pruefung nicht gestartet: ' + $_.Exception.Message)
+    }
+}
+
+function Test-ArenaUpdateCheckResult {
+    $resultPath = [string]$script:UpdateCheckResultPath
+    $finished = $false
+    $record = $null
+    if (-not [string]::IsNullOrWhiteSpace($resultPath) -and (Test-Path -LiteralPath $resultPath -PathType Leaf)) {
+        try { $record = Get-Content -LiteralPath $resultPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop } catch { $record = $null }
+        Remove-Item -LiteralPath $resultPath -Force -ErrorAction SilentlyContinue
+        $finished = $true
+    } elseif ($null -ne $script:UpdateCheckProcess -and $script:UpdateCheckProcess.HasExited) {
+        $finished = $true
+    } elseif ([DateTime]::UtcNow -gt $script:UpdateCheckDeadlineUtc) {
+        $finished = $true
+    }
+    if (-not $finished) { return }
+    try { $script:UpdateCheckTimer.Stop() } catch {}
+    if ($null -eq $record) {
+        Write-RuntimeLog 'Update-Pruefung: kein auswertbares Ergebnis; die Bridge startet normal weiter.'
+        return
+    }
+    $status = [string]$record.status
+    Write-RuntimeLog ('Update-Pruefung Ergebnis: ' + $status + ' (installiert ' + [string]$record.installedVersion + ', verfuegbar ' + [string]$record.availableVersion + ').')
+    if ($status -ceq 'update-available' -and -not $script:UpdateCheckPromptShown) {
+        $script:UpdateCheckPromptShown = $true
+        Show-ArenaUpdatePrompt $record
+    }
+}
+
+function Show-ArenaUpdatePrompt($Record) {
+    $text = 'Version ' + [string]$Record.availableVersion + ' ist verfuegbar (installiert: ' + [string]$Record.installedVersion + ').' +
+        [Environment]::NewLine + [Environment]::NewLine +
+        'Jetzt aktualisieren? Die Bridge wird geschlossen, die neue Version wird geprueft (Groesse und SHA-256) und danach automatisch neu gestartet. Schlaegt etwas fehl, bleibt die bisherige Version erhalten.'
+    $answer = [System.Windows.MessageBox]::Show($text, 'Arena Roblox Bridge - Update', [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+    if ($answer -ne [System.Windows.MessageBoxResult]::Yes) {
+        Write-RuntimeLog 'Update-Hinweis: Das Update wurde auf spaeter verschoben.'
+        return
+    }
+    Start-ArenaUpdateInstall $Record
+}
+
+function Start-ArenaUpdateInstall($Record) {
+    try {
+        $exeName = [IO.Path]::GetFileName([string]$script:ExePath)
+        if ($exeName -cne 'ArenaBridge.exe') { throw 'Die Programmdatei heisst nicht exakt ArenaBridge.exe; das Update wurde nicht gestartet.' }
+        $updater = Write-ArenaEmbeddedUpdater
+        $extra = @(
+            '-Mode', 'install',
+            '-Channel', [string]$script:UpdateChannel,
+            '-InstallDirectory', (ConvertTo-ArenaArgument $script:AppFolder),
+            '-WaitForProcessId', [string]$PID,
+            '-StartAfterUpdate',
+            '-LogPath', (ConvertTo-ArenaArgument (Join-Path $script:BinFolder 'update-helper.log'))
+        )
+        $testManifest = Get-ArenaUpdateTestManifest
+        if (-not [string]::IsNullOrWhiteSpace($testManifest)) {
+            $extra += @('-TestFixtureMode', '-ManifestPath', (ConvertTo-ArenaArgument $testManifest))
+        }
+        $arguments = Get-ArenaUpdaterArgumentString $updater $extra
+        $helper = Start-Process -FilePath (Get-ArenaWindowsPowerShell) -ArgumentList $arguments -WindowStyle Hidden -PassThru
+        Write-RuntimeLog ('Update-Installation gestartet (Helfer PID ' + [string]$helper.Id + '). Die Bridge wird regulaer beendet; der Helfer wartet darauf.')
+        if ($null -ne $script:MainWindow) { $script:MainWindow.Close() }
+        else { [System.Environment]::Exit(0) }
+    } catch {
+        Write-RuntimeLog ('Update konnte nicht gestartet werden: ' + $_.Exception.Message)
+        try { Add-PendingToast ('Update konnte nicht gestartet werden: ' + $_.Exception.Message) 'Error' 8 } catch {}
+    }
+}
+# <<< ARENA-UPDATE-INTEGRATION <<<
+
 function Start-BridgeRuntime {
     Set-StartupStage 'Hauptfenster gerendert; Startinitialisierung beginnt'
     if (-not $script:EncodingOk) {
         Add-PendingToast 'Achtung: Die Skriptdatei ist nicht als "UTF-8 mit BOM" gespeichert. Umlaute koennen falsch aussehen.' 'Warn' 9
         Write-RuntimeLog 'ACHTUNG: Skriptdatei ist falsch codiert - Umlaute werden ggf. falsch angezeigt.'
     }
-    Set-StartupStage 'Selbst-Update-Pruefung'
-    $starterProvesFreshInstall = ((@('update-erfolgreich', 'erster-start') -contains $UpdateStatus) -eq $true)
-    if (-not $starterProvesFreshInstall) {
-        $selfUpdated = $false
-        try {
-            $selfUpdated = Invoke-AutostartSelfUpdate -VerifyMode:([bool]$UpdateStatus)
-        } catch {
-            $selfUpdated = $false
-            try { Write-RuntimeLog "Update-Suche uebersprungen: $($_.Exception.Message)" } catch {}
-        }
-        if ($selfUpdated) {
-            # Die neue Fassung laeuft bereits - dieser Prozess wird beendet.
-            exit 0
-        }
-    }
-
+    Set-StartupStage 'Update-Pruefung (neues Update-System, im Hintergrund)'
+    # Der alte Root-Updatepfad ist stillgelegt (Invoke-AutostartSelfUpdate laeuft nicht mehr).
+    try { Start-ArenaUpdateCheck } catch { Write-RuntimeLog ('Update-Pruefung uebersprungen: ' + $_.Exception.Message) }
     Set-StartupStage 'Roblox-Studio-Suche und Plugin-/Server-Start'
     $script:RobloxStudioPath = Find-RobloxStudio
     if ($script:RobloxStudioPath) {

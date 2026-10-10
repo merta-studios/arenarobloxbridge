@@ -24,6 +24,15 @@ Es gibt keine beta/stable-Unterordner, keinen release-inbox-Ordner und keinen
 user-builds-Ordner. Das neue Logo aus app\assets\neueslogo.png wird sowohl als
 Windows-EXE-Symbol als auch im Bridge-Fenster neben dem Titel verwendet.
 
+SELBST-UPDATE PRIVAT TESTEN (nur Windows, optional, nach dem Build):
+
+   powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\developer\tests\Invoke-SelfUpdateSmoke.ps1
+
+   Der Test baut zwei Test-EXEs unter %TEMP% (nie in release\), startet einen
+   lokalen Test-Server auf 127.0.0.1 und prueft das Update isoliert. Er aendert
+   weder die echte Bridge noch die Kanaele. Das Ergebnis steht am Ende der Ausgabe.
+   Bis dieser Test auf deinem PC gelaufen ist, gilt das Selbst-Update als NICHT getestet.
+
 WICHTIG — TEST IST KEINE VEROEFFENTLICHUNG:
 
 - Ein PR, dessen Merge, ein ZIP-Download und dein lokaler Build aktualisieren
@@ -39,20 +48,23 @@ WICHTIG — TEST IST KEINE VEROEFFENTLICHUNG:
   abgelegt: next-update\release\ArenaBridge.exe. Diagnose-EXE, BAT,
   Pruefsummen, Metadaten und temporaere Build-Dateien werden nicht hochgeladen.
 - Die Release-Session verwendet ausschliesslich next-update\update-system\ und
-  den neuen Updater. Der neue Update-Bridge.ps1 ist aktuell noch nicht in die
-  EXE integriert. Integration und Bootstrap fuer bestehende Nutzer muessen
-  geprueft und getestet sein, bevor Stable aktiviert wird oder automatische
-  Nutzer-Updates behauptet werden. Die alte Root-Update-Struktur bleibt
-  unberuehrt und wird nicht benutzt.
+  den neuen Updater. Update-Bridge.ps1 ist in die EXE eingebettet, aber auf
+  Windows noch nicht getestet. Bereits installierte Kopien ohne Updater erhalten
+  das System nicht automatisch; eine einmalige Migration ist offen. Stable bleibt
+  deaktiviert, bis diese Punkte geprueft sind. Die alte Root-Update-Struktur
+  bleibt unberuehrt und wird nicht benutzt.
+- Der Update-Schutz (update-system\PROTECTED.md) gilt: Aenderungen am Update-System
+  brauchen eine ausdrueckliche Freigabe.
 
 FUER DEN BUILD:
 
 - Benoetigt werden 64-Bit-Windows, Windows PowerShell 5.1, WPF/.NET und beim
   ersten Build eine Internetverbindung fuer ps2exe. Administratorrechte sind
   nicht noetig.
-- Der Build prueft den Windows-PowerShell-Parser und startet die EXE danach in
-  einem isolierten Smoke-Test. Dabei werden EXE-Startpfad, x64, STA/WPF,
-  Startbild und eingebettetes Programmlogo geprueft. Es wird nichts hochgeladen.
-- Hier in der Sandbox wurde keine Windows-EXE gebaut.
+- Der Build prueft den Windows-PowerShell-Parser fuer Bridge und Updater und
+  startet die EXE danach in einem isolierten Smoke-Test. Dabei werden
+  EXE-Startpfad, x64, STA/WPF, Startbild und eingebettetes Programmlogo geprueft.
+  Es wird nichts hochgeladen.
+- Hier in der Entwicklungssandbox wurde keine Windows-EXE gebaut.
 
 Mehr Details, Release-Ablauf, Ordneruebersicht und Offline-Tests: README.md
