@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 7.6.5.
+"""Offline structure check for Arena Roblox Bridge 7.7.0.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -20,7 +20,7 @@ from xml.etree import ElementTree as ET
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = ROOT / "app"
 PS1 = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.6.5"
+VERSION = "7.7.0"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -97,10 +97,10 @@ def main() -> int:
     require(version["version"] == VERSION, f"version.json is not {VERSION}")
     release_notes = "\n".join(str(note) for note in version.get("notes", []))
     latest_note = str(version.get("notes", [""])[0])
-    for marker in ("7.6.5", "Nutzerwünsche", "Place-Konventionen", "keine Pflicht",
+    for marker in ("7.7.0", "Nutzerwünsche", "Place-Konventionen", "keine Pflicht",
                    "keine erfundene 0 %", "API-Pfade", "IP-Einrichtung",
                    "Root-Updater bleibt unangetastet", "EXEs baut der Nutzer selbst"):
-        require(marker in latest_note, f"7.6.5 release note omits current scope: {marker}")
+        require(marker in latest_note, f"7.7.0 release note omits current scope: {marker}")
     require("7.6.2" in release_notes and "creator_dashboard" in release_notes
             and "game-pass:read" in release_notes and "ask_user" in release_notes,
             "version history omits the Open Cloud/user-channel technical baseline")
@@ -607,8 +607,11 @@ def main() -> int:
         'Aufnahme-Worker nach 10 Sekunden beendet',
         'kein passendes Roblox-Studio-Fenster gefunden',
         '$script:SelfUpdateVerifyTimeout = 6',
-        'Invoke-AutostartSelfUpdate -VerifyMode',
-        "$starterProvesFreshInstall = ((@('update-erfolgreich', 'erster-start') -contains $UpdateStatus) -eq $true)",
+        'Start-ArenaUpdateCheck',
+        'Test-ArenaUpdateCheckResult',
+        "$script:TestFixtureBuild = '__ARENA_TEST_FIXTURE_BUILD__'",
+        "$script:EmbeddedUpdaterSha256 = '__ARENA_UPDATER_SHA256__'",
+        'ARENA-UPDATE-INTEGRATION >>>',
         'param([string]$Branch, [string]$File, [int]$TimeoutSec = 0)',
         'function Write-PreviewTrace',
         'function New-PreviewFlowId',
@@ -719,29 +722,29 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '7.6.5'": 1,
-        'local ARENA_VERSION  = "7.6.5"': 1,
-        "version = '7.6.5'": 2,  # normal health response plus isolated build smoke report
-        "bridgeVersion = '7.6.5'": 3,
-        "bridgeVersion='7.6.5'": 1,
-        "serverVersion = '7.6.5'": 2,
-        "$versionText = '7.6.5'": 1,
-        "$verText = '7.6.5'": 1,
-        "ArenaRobloxBridge/7.6.5": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 7.6.5)": 1,
-        'Text="Arena Roblox Bridge - Version 7.6.5"': 1,
-        "Version 7.6.5 - aktuell. Beim naechsten Start": 2,
-        "Bridge-Version=7.6.5": 2,
-        "Kurzbericht Fenster-Vorschau (Version 7.6.5)": 1,
-        "Kurzbericht Fortschrittsanzeige (Version 7.6.5)": 1,
-        "Kurzbericht Fertig-Meldung (Version 7.6.5)": 1,
-        "Arena Roblox Bridge - Leistungsbericht (Version 7.6.5)": 1,
-        "Arena Roblox Bridge - Place-Diagnose (Version 7.6.5)": 1,
-        "Version: 7.6.5": 3,  # existing diagnostics plus duplicate-start report
-        "Version=7.6.5": 3,
-        "Bridge/Plugin-Stand: 7.6.5": 1,
-        "Arena Roblox Bridge - Start-Diagnose (Version 7.6.5)": 2,
-        "RuntimeInfo.Version = '7.6.5'": 1,
+        "DocsVersion     = '7.7.0'": 1,
+        'local ARENA_VERSION  = "7.7.0"': 1,
+        "version = '7.7.0'": 2,  # normal health response plus isolated build smoke report
+        "bridgeVersion = '7.7.0'": 3,
+        "bridgeVersion='7.7.0'": 1,
+        "serverVersion = '7.7.0'": 2,
+        "$versionText = '7.7.0'": 1,
+        "$verText = '7.7.0'": 1,
+        "ArenaRobloxBridge/7.7.0": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.7.0)": 1,
+        'Text="Arena Roblox Bridge - Version 7.7.0"': 1,
+        "Version 7.7.0 - aktuell. Beim naechsten Start": 2,
+        "Bridge-Version=7.7.0": 2,
+        "Kurzbericht Fenster-Vorschau (Version 7.7.0)": 1,
+        "Kurzbericht Fortschrittsanzeige (Version 7.7.0)": 1,
+        "Kurzbericht Fertig-Meldung (Version 7.7.0)": 1,
+        "Arena Roblox Bridge - Leistungsbericht (Version 7.7.0)": 1,
+        "Arena Roblox Bridge - Place-Diagnose (Version 7.7.0)": 1,
+        "Version: 7.7.0": 3,  # existing diagnostics plus duplicate-start report
+        "Version=7.7.0": 3,
+        "Bridge/Plugin-Stand: 7.7.0": 1,
+        "Arena Roblox Bridge - Start-Diagnose (Version 7.7.0)": 2,
+        "RuntimeInfo.Version = '7.7.0'": 1,
         "# Version 7.3.2 (HISTORICAL; superseded by project-first policy 7.6.3).": 1,
         "# Version 7.4.0 (2026-10-07)": 1,
         "# Version 7.4.1 (2026-10-07)": 1,

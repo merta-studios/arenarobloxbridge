@@ -1,9 +1,44 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 7.6.5 - 10.10.2026)                                #
+#   (Stand: Version 7.7.0 - 10.10.2026)                                #
 #                                                                      #
 ##########################################################################
+
+AKTUELLER NACHTRAG 7.7.0 (10.10.2026) - SELBST-UPDATE-SYSTEM, SCHUTZREGELN
+=============================================================================
+DIESER NACHTRAG HAT VORRANG vor 7.6.5 und allen aelteren Abschnitten.
+
+STATUS (ehrlich):
+- ArenaBridge.ps1 enthaelt den Updater 1.1.0 als geschuetzten Block
+  (ARENA-UPDATE-INTEGRATION). Der Builder bettet update-system/updater/
+  Update-Bridge.ps1 als Base64 mit fester SHA-256 in die EXE ein.
+- Auf Windows wurde davon NICHTS ausgefuehrt: Die Sandbox hat kein PowerShell.
+  PS-5.1-Parse-Gate, EXE-Build, Smoke- und Selbst-Update-Test sind OFFEN, bis
+  sie auf einem Windows-PC gelaufen sind.
+- Kanaele beta.json und stable.json sind DEAKTIVIERT (enabled=false).
+- Es gibt aktuell KEINE Nutzer des neuen Systems. Bereits installierte Kopien
+  ohne Updater erhalten es NICHT automatisch. Eine einmalige manuelle Migration
+  ist OFFEN und wird in der Release-Session entschieden.
+- Die getrackte alte release/ArenaBridge.exe (7.6.5, ohne Updater) wurde
+  entfernt. Die Release-Session braucht die exakt getestete neue Datei.
+- Repo-Root-Schutz (CODEOWNERS, Branch-Protection, .github-Workflows) ist
+  NICHT umgesetzt und NICHT freigegeben. Alles liegt in next-update/.
+
+SCHUTZREGELN FUER DAS UPDATE-SYSTEM (gelten fuer jede kuenftige Aenderung):
+- Geschuetzt sind: next-update/update-system/** (Updater, Manifeste, Schema),
+  der Block ARENA-UPDATE-INTEGRATION in app/ArenaBridge.ps1, die
+  Update-Abschnitte in builder/Build-EXE.ps1, developer/tests/test_v800_* und
+  die Lock-Datei update-system/update_system_guard.lock.json.
+- Eine Feature- oder Bugfix-Aenderung darf diese Dateien NICHT beilaeufig
+  veraendern. Wer sie aendert, braucht eine ausdrueckliche Nutzeranweisung
+  dazu, einen Eintrag in update-system/PROTECTED.md und eine neu erzeugte Lock-
+  Datei mit Freigabevermerk. Der Guard-Test scheitert sonst.
+- Verboten: Stop-Process, taskkill oder Kill-Aufrufe fuer laufende Bridges;
+  vom Nutzer waehlbare Download-URLs; Zugangsdaten in URLs; ein Test-Manifest-
+  Pfad in normalen Builds; Aktivierung von beta/stable in einem Feature-PR.
+- Testbau mit -TestFixtureBuild nur fuer den privaten Test ausserhalb von
+  release/. Er darf nie als Release-Artefakt verwendet werden.
 
 AKTUELLER NACHTRAG 7.6.5 (10.10.2026) - LOGO, EIN ORDNER, TEST VOR RELEASE
 =============================================================================
@@ -51,9 +86,10 @@ FESTER PRIVATTEST-/FREIGABE-ABLAUF:
    verfuegbar, bittet die KI um genau diese Datei zum Upload/Anhang; sie baut
    keinen stillen Ersatz und erfindet weder Version noch Hash.
 6. Veroeffentlichung laeuft nur ueber next-update/update-system/. Update-Bridge.ps1
-   ist aktuell noch NICHT in die EXE integriert. Integration, echter Startpfad
-   und Bootstrap/Migration fuer bestehende Installationen muessen zuerst
-   geprueft und getestet sein. Solange irgendein Gate offen ist, bleibt
+   (1.1.0) ist seit 7.7.0 in die EXE eingebettet, aber auf Windows noch NICHT
+   getestet. Integration, echter Start-/Update-/Rollback-Pfad und
+   Bootstrap/Migration fuer bestehende Installationen muessen vor einer
+   Aktivierung nachgewiesen sein. Solange irgendein Gate offen ist, bleibt
    channels/stable.json deaktiviert und die KI darf nicht behaupten, alle
    Nutzer erhielten automatisch das Update. Die alte Root-Update-Strecke ist
    kein Fallback.
@@ -94,11 +130,12 @@ Identitaet nicht bewiesen werden kann, STOPPE und bitte den Nutzer um genau
 diese Datei.
 
 Bereite die Auslieferung ausschliesslich ueber next-update/update-system/ vor.
-Pruefe, ob Update-Bridge.ps1 in die echte ArenaBridge.exe integriert ist, ob
-der Start-/Update-/Rollback-Pfad auf Windows funktioniert und ob bereits
-installierte Nutzer ohne das alte System auf den neuen Updater migrieren
-koennen. Der Updater ist derzeit noch nicht integriert: schliesse diese
-Luecke samt Regressionstests in next-update/, bevor Stable aktiviert wird.
+Pruefe, ob Update-Bridge.ps1 in der echten ArenaBridge.exe steckt, ob der
+Start-/Update-/Rollback-Pfad auf Windows funktioniert (Smoke- und Selbst-
+Update-Test gelaufen und dokumentiert) und ob bereits installierte Nutzer ohne
+das alte System auf den neuen Updater migrieren koennen (Bootstrap/Migration).
+Fehlt einer dieser Nachweise, schliesse die Luecke samt Regressionstests in
+next-update/, bevor Stable aktiviert wird.
 Falls Bootstrap/Migration nicht sicher moeglich oder noch nicht bestaetigt ist,
 aktiviere nichts und sage ehrlich, was noch fehlt.
 

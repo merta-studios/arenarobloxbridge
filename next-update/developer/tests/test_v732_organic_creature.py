@@ -14,7 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = ROOT / "app"
 PS1 = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.6.5"
+VERSION = "7.7.0"
 FAILURES: list[str] = []
 
 
@@ -54,7 +54,7 @@ def main() -> int:
     check(raw.startswith(b"\xef\xbb\xbf"), "ArenaBridge.ps1 retains its UTF-8 BOM")
     source = raw.decode("utf-8-sig")
     metadata = json.loads((APP_ROOT / "version.json").read_text(encoding="utf-8"))
-    check(metadata.get("version") == VERSION, "release metadata targets 7.6.5")
+    check(metadata.get("version") == VERSION, "release metadata targets 7.7.0")
 
     # Preserve the independent topology and shape-measurement checks.
     check(expected_loft_face_count(4, 8) == 26,
