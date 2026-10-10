@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "channel": "beta",
+  "enabled": false,
+  "version": "",
+  "publishedAtUtc": "",
+  "minimumUpdaterVersion": "1.0.0",
+  "mandatory": false,
+  "artifact": {
+    "fileName": "ArenaBridge.exe",
+    "url": "",
+    "sha256": "",
+    "sizeBytes": 0
+  },
+  "notes": [
+    "Beta-Kanal ist vorbereitet, aber noch nicht veröffentlicht."
+  ]
+}

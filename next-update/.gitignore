@@ -1,0 +1,15 @@
+# Locally generated EXEs and their release metadata are never committed.
+/user-builds/*/*.exe
+/user-builds/*/*.sha256
+/user-builds/*/release-metadata.json
+/user-builds/*/*.building.exe
+/user-builds/*/*.previous-*.exe
+
+# Release packages are staged locally; publish only through an intentional release workflow.
+/release-inbox/*/*
+!/release-inbox/*/.gitkeep
+!/release-inbox/*/README.txt
+
+# Local updater cache/state from manual testing.
+/updater/.cache/
+*.update.lock

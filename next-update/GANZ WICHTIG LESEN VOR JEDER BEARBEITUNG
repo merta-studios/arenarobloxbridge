@@ -1,0 +1,1203 @@
+##########################################################################
+#                                                                      #
+#   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
+#   (Stand: Version 7.6.2 - 10.10.2026)                                #
+#                                                                      #
+##########################################################################
+
+AKTUELLER NACHRAG 7.6.3 (10.10.2026) - VORRANG VOR AELTEREN REGELN
+====================================================================
+Diese Version wird ausschliesslich in next-update/ vorbereitet. Die Root-
+Bridge und ihr bestehender Updater bleiben unveraendert; eine spaetere
+Integration ist eine separate Nutzerentscheidung. Der Nutzer baut eine EXE
+selbst; Beta-Test kommt vor Stable-Verteilung.
+
+Methoden- und Qualitaetsregel: zuerst ausdrueckliche Nutzerwuensche, dann die
+bestehenden Place-Konventionen, danach passende Empfehlungen. Blender ist nur
+eine Empfehlung fuer geeignete neue Geometrie. Parts, Assemblies, Polygone,
+Meshes, bestehende Skript-/GUI-Architekturen, neutrale Farben, statische und
+einfache Blockouts bleiben gueltig, wenn sie zum Auftrag passen. Kein
+shape/part-count/finishScore/grade/UI-structure-Audit darf allein eine
+Umgestaltung, Mehrkomplexitaet oder Fertigstellungssperre ausloesen.
+model_audit, world_audit und ui_audit liefern optionale Messwerte; nur echte
+Fehler, explizite Nutzeranforderungen und Place-Konventionen leiten Aenderungen.
+Der einzige Geometrie-Pending-Pfad ist ein ausdruecklich mit
+build_mesh_model erzeugter, noch nicht angewandter Mesh-Slot.
+
+Fortschritt: Bei einfacher Lese-/Beobachtungsarbeit progress.mode="hidden"
+mit konkreter Aktion senden; Anzeige ist "nicht anwendbar", ohne Balken, 0 %
+oder erfundene Inaktivitaet. Ein Verlaufsbalken nutzt eine deutlich helle Spur.
+Open-Cloud-Verlauf nennt Aktion/Funktion und einen konkreten,
+datenminimierenden Status, nicht API-Pfade, Resource-IDs, Keys oder
+Antwortwerte. Tutorial-Schritt 4 lautet exakt: "Füge die Berechtigungen hinzu,
+die du willst! Hier siehst du eine ausführliche Liste, was jede Berechtigung
+kann:". Keine IP-Konfiguration oder konkreten IP-Beispiele ins Tutorial;
+vorhandene IP-Einstellungen bleiben unangetastet.
+
+Alle widersprechenden historischen Hinweise in dieser Datei (insbesondere
+Blender-first, Polygon-permission gates, Pflicht-Anatomie/Farbe/Motion,
+DRAFT_GRADE_RISK/DETAIL_REQUIRED/HANDOFF_REQUIRED, Pflicht-Audits,
+MONOLITH_RISK-Rewrite, erfundener 0-%-Balken und alte Tutorials) sind
+ueberholt. Sie sind kein Arbeitsauftrag fuer next-update/.
+
+AKTUELLER NACHTRAG 7.6.2 (10.10.2026) - HAT VORRANG BEI OPEN CLOUD
+=================================================================
+Die Nutzerfreigabe ist jetzt eine feste Allowlist mit 41 EINZELRECHTEN.
+KEIN ZUGRIFF bleibt gesperrt, selbst wenn der Key dieses Recht hat.
+Kein pauschales Read+Write-Gate mehr: jede Aktion prueft ihre echten Scopes.
+open_cloud list/describe/call stellt 172 gepruefte API-Key-Endpunkte bereit.
+Quelle, Grenzen, komplette Matrix: OPEN_CLOUD_7_6_2.md.
+Katalog: opencloud/permissions.json + opencloud/catalog.json; Generator unter
+ci/generate_opencloud_catalog.py. Fuer den Updater ist alles im PS1 eingebettet!
+Key bleibt DPAPI-geschuetzt. Keine freie URL-/Methodenwahl, keine Auth-Redirects.
+600-Zeichen-Introspect-Bug behoben (2 Mio Zeichen + expliziter Truncation-Fehler).
+universe.analytics:write ist erlaubt, aber ohne dokumentierten Endpunkt.
+Komfort-Tools bleiben sessiongebunden; open_cloud nimmt dokumentierte Ziel-IDs
+fuer den Auftrag an. Roblox prueft Ressourcen, die Bridge den Read-only-Modus.
+Offline-Tests vorhanden; test_v762_runtime.ps1 MUSS auf Windows 5.1 noch laufen.
+Keine Windows-/Roblox-Live-Abnahme in dieser Sandbox behaupten.
+
+WOFUER IST DIESE DATEI?
+=======================
+Eine neue KI-Session (neuer Chat) hat KEIN Gedaechtnis an fruehere
+Chats und auch nicht automatisch den alten Workspace. Wenn du daher
+spaeter in einem NEUEN Chat mit einer KI an diesem Projekt weiter-
+arbeiten willst: Haenge die ArenaBridge.zip an - oder mindestens diese
+Datei hier - an deine erste Nachricht an. Damit weiss die KI sofort,
+wie das Projekt aufgebaut ist und worauf sie achten muss.
+
+Diese Datei ist NICHT fuer das GitHub-Repository gedacht (nur fuer
+dich und deine KI-Sessions).
+
+
+1) ARCHITEKTUR (DAS WICHTIGSTE)
+===============================
+- ArenaBridge.exe ist NUR ein Starter/Updater (mit ps2exe kompiliert).
+  Sie enthaelt NICHT das Programm selbst!
+- Das komplette Programm liegt als ArenaBridge.ps1 in einem
+  OEFFENTLICHEN GitHub-Repository (Quelle: Ordner GitHub-Repository\).
+- Ablauf bei jedem EXE-Start:
+    1. EXE laedt version.json aus dem GitHub-Repo
+       (raw.githubusercontent.com, Branch-Kette: konfigurierter
+       Branch -> main -> master)
+    2. Vergleicht die Online-Version mit der lokal gespeicherten
+       Version (Ordner: %LOCALAPPDATA%\ArenaRobloxBridge\app)
+    3. Neuer Stand online -> ArenaBridge.ps1 wird heruntergeladen und
+       atomar getauscht (ueber .new-Datei, laufende Alt-Prozesse
+       werden vorher beendet)
+    4. EXE schreibt update-status.json in den App-Ordner und startet:
+       powershell.exe -File ArenaBridge.ps1 -UpdateStatus <STATUS>
+
+STATUS-PARAMETER (6 Stueck):
+    update-erfolgreich    -> Update wurde installiert
+    erster-start          -> Programm zum ersten Mal geladen
+    kein-update           -> Version war schon aktuell
+    keine-verbindung      -> offline, altes Programm gestartet
+    update-fehler         -> Download fehlgeschlagen, altes Programm
+    update-suche-fehler   -> version.json nicht erreichbar/lesbar
+
+Reaktion des Programms (ArenaBridge.ps1, ab v3.7):
+    - update-erfolgreich / erster-start: ZUERST Hinweisfenster mit
+      den Neuigkeiten (aus version.json, Feld "notes") + OK-Button.
+      Das Fenster wartet ohne Zeitlimit und ist nur per OK schliessbar.
+      DANACH erst startet das Programm (Studio/Plugin/Server/Tunnel, Splash).
+    - Fehler-Status (keine-verbindung / update-fehler /
+      update-suche-fehler): rote "1" am Einstellungs-Button; in den
+      Einstellungen steht unter "UPDATES - PROBLEM" der konkrete
+      Fehler mit Uhrzeit des letzten Checks.
+    - Bei Erfolg/kein-update: Versionszeile in den Einstellungen
+      zeigt "aktuell".
+
+
+2) DATEIEN IN DIESER ZIP
+========================
+ArenaBridge\
+ |- START-HIER.txt          Gesamtanleitung fuer den Nutzer
+ |                          (Schritte 1-4, Update-Verteilung, SmartScreen)
+ |- KI-UEBERGABE.txt        diese Datei
+ |- EXE-Builder\
+ |   |- Build-Exe.cmd       selbstextrahierend (205 KB): erzeugt
+ |   |                      make-updater.ps1 aus eingebettetem Base64
+ |   |                      und ruft es dann auf.
+ |   |                      WICHTIG: strikt ASCII + CRLF! Im
+ |   |                      Extraktions-Command KEINE Zeichen \ % ! "
+ |   |                      erlauben! Base64-Zeilen a 120 Zeichen,
+ |   |                      Marker #==BUILD-SCRIPT-START== und
+ |   |                      #==BUILD-SCRIPT-END== (je genau 1x).
+ |   |- REPOSITORY-LINK.txt hier traegt der Nutzer NACH dem
+ |   |                      Veroeffentlichen seinen GitHub-Link ein
+ |   |                      (Platzhalter-Zeile ersetzen; Parser
+ |   |                      akzeptiert github.com/OWNER/REPO[.git]
+ |   |                      [/tree/BRANCH])
+ |   |- make-updater.ps1    liest den Link, extrahiert icon.ico +
+ |                          Launcher-Vorlage aus eigenen Base64-
+ |                          Bloecken, besorgt ps2exe (Modul ->
+ |                          Install-Module -> GitHub-Download mit
+ |                          14-Tage-Cache), kompiliert
+ |                          dist\ArenaBridge.exe (Version 3.6.0.0)
+ |- GitHub-Repository\      KOMPLETT ins GitHub-Repo hochladen:
+     |- ArenaBridge.ps1    das Programm (v3.7, UTF-8 MIT BOM)
+     |- version.json       {"version":"3.7","notes":[...Neuigkeiten...]}
+     |- README.md          Repo-Doku + Update-Anleitung + Versionsverlauf
+
+
+3) SO VERTEILST DU PROGRAMM-UPDATES (z. B. v3.7)  -  WICHTIG!
+==============================================================
+Die EXE muss dafuer NICHT neu gebaut oder neu verschickt werden!
+Der Starter zieht sich jede Aenderung automatisch aus dem Repository.
+Es reicht:
+
+    1. ArenaBridge.ps1 aendern
+    2. Version ueberall hochziehen - diese Stellen ALLE anfassen
+       (Stand 7.4.2; die Tests zaehlen die funktionalen Literale
+       in test_v398_structure.py -> functional_version_counts):
+       - Changelog-Kommentar ganz oben in ArenaBridge.ps1 fortfuehren
+         (NEUER Block oben, alte Bloecke bleiben als Historie stehen)
+       - DocsVersion und RuntimeInfo.Version (Shared; 2x)
+       - local ARENA_VERSION + Plugin-Kommentar "(Version ...)"
+       - version = 'x' (Server-Werkzeugliste)
+       - bridgeVersion (3x) + bridgeVersion='x' (Statuszeile)
+       - serverVersion (2x)
+       - Bridge-Version= (2x) und Bridge/Plugin-Stand:
+       - PROOF_OF_LIFE Version=
+       - Versionszeile/Fusszeile in den Einstellungen und Fenstertext
+         "Arena Roblox Bridge - Version x"
+       - Fallback-Versionsliterale im Update-Hinweisfenster
+         ($versionText, $verText, "Version x - aktuell. Beim naechsten
+         Start" 2x)
+       - Ueberschriften Start-Diagnose (2x), Place-Diagnose, Kurzbericht
+         (3x), Leistungsbericht, "Version: x" (2x)
+       - Guide-Titel (Mesh-Build Engine 1.0 / Organic Build Engine 1.1)
+       - version.json: "version" erhoehen + "notes" mit den
+         Neuigkeiten des Updates (erscheint im Hinweisfenster)
+       - (nur falls EXE neu gebaut wird: ps2exe-Versionsangabe in
+         make-updater.ps1, z. B. 3.7.0.0)
+    3. Beide Dateien (ArenaBridge.ps1 + version.json) ins Repo
+       pushen, ins ROOT-Verzeichnis (nicht in Unterordner!)
+    4. Fertig - beim naechsten Start ihrer EXE bekommen alle Nutzer
+       das Update automatisch + das Hinweisfenster mit den
+       Neuigkeiten.
+
+Nur wenn sich die STARTER-LOGIK aendert (nicht das Programm selbst),
+muss die EXE neu gebaut und neu an alle verteilt werden.
+
+
+4) FESTE REGELN DES NUTZERS (NICHT ANFASSEN!)
+=============================================
+- KEINE Toast-/Popup-Meldungen unten rechts! Show-Toast und
+  Add-PendingToast sind absichtlich stumme No-op-Stummel fuer alte
+  Aufrufstellen. NICHT wiederbeleben.
+  EINZIGE Ausnahme (seit v3.8, vom Nutzer ausdruecklich gewuenscht):
+  Show-ArenaDoneNotification - die Windows-Benachrichtigung fuer den
+  report_done-Befehl der KI ("Arena ist fertig"). Sie ist an die
+  Einstellung "Benachrichtigung, wenn Arena fertig ist" gebunden
+  (Standard: AUS) und darf fuer nichts anderes verwendet werden.
+  SEIT v7.1.3 liegt dieser Schalter wieder sichtbar in den Einstellungen,
+  direkt unter "Fortschritt in der Place-Liste anzeigen" (der Nutzer hat
+  ihn ausdruecklich dort verlangt). An/Aus wirkt SOFORT: Clear-NotifyQueue
+  verwirft wartende Meldungen, der Anzeige-Takt ueberspringt sie und
+  Show-ArenaDoneNotification prueft den Schalter unmittelbar vor dem
+  Anzeigen. NICHT entfernen und NICHT an eine andere Stelle verschieben.
+  SEIT v7.2.0 wird gemessen statt behauptet: Test-NotifyPlatform nennt vor
+  dem Anzeigen ein Urteil samt Grund, die App-Id wird bei Bedarf registriert
+  (Arena.ArenaRobloxBridge, Startmenue-Verknuepfung + HKCU, NUR wenn der
+  Schalter an ist), jede Meldung laeuft ueber NOTIFY-Stationen, notify.sweep
+  misst danach erneut und report_done antwortet ohne Blindvertrauen
+  (NOTIFICATION_UNVERIFIED statt delivered = true). Seit v7.2.3 gibt es KEINEN
+  kuenstlichen Test-Popup mehr in den Einstellungen. Es bleibt bei GENAU
+  DIESEM EINEN report_done-Kanal - kein neuer Meldeweg (D4).
+- DAS MESH-FENSTER IST SEIT v7.5.0 ENTFERNT (ausdruecklicher Nutzerwunsch;
+  dieser Satz LOEST die Regel "DAS MESH-FENSTER IST FENSTER Nr. 3" aus
+  v7.4.0/v7.4.1 AB). Es gibt kein Fenster "Mesh-Uploads" mehr, keinen
+  Menue-Eintrag, kein automatisches Aufgehen und kein Abtippen von Mesh-Ids
+  durch den Nutzer. Was BLEIBT: der Blender-Bau (blender_status,
+  build_mesh_model, mesh_status, mesh_cancel), die von der Bridge GEMESSENEN
+  viereckigen MeshPart-Platzhalter, mesh_apply_asset und mesh_drop als ganz
+  normale Werkzeuge. Hochgeladen wird nicht mehr von Hand.
+- DER UPLOAD LAEUFT UEBER DIE ROBLOX-OPEN-CLOUD-API (v7.5.0+). Der Nutzer
+  hinterlegt EINMAL seinen eigenen API-Schluessel im Einstellungsfenster im
+  Abschnitt "ROBLOX OPEN CLOUD" (Set-OpenCloudKey / Get-OpenCloudKey /
+  Remove-OpenCloudKey; verschluesselt per DPAPI CurrentUser in
+  %LOCALAPPDATA%\ArenaRobloxBridge\opencloud.key - NIE im Klartext und NIE in
+  settings.json). SEIT v7.5.6 liest das Studio-Plugin den angemeldeten
+  Studio-Nutzer ueber die offizielle Plugin-API StudioService:GetUserId()
+  und meldet dessen ID als editorUserId. Diese ID wird BEVOR einer Resource
+  aus dem Key als creator.userId fuer den Asset-Upload genutzt; der Place-
+  Ersteller (game.CreatorId) ist eine andere Identitaet. Die manuelle
+  Entwickler-Fallback-Textbox und ihre Speicherung sind entfernt. Nur wenn
+  Studio keine angemeldete ID meldet, nutzt die Bridge die automatisch
+  aus dem Key introspektierte Resource. Der Key muss ASSETS write fuer den
+  angemeldeten Studio-Nutzer erlauben. Sobald die ID bekannt ist, zeigt die
+  Bridge unten links asynchron Avatar und Anzeigename; Profilbilddaten kommen
+  von den oeffentlichen Roblox-Profil-/Thumbnail-Endpunkten. Im selben
+  Abschnitt liegt ein AUFKLAPPBARES TUTORIAL MIT ANIMATION (Hoehe, Einblenden, Pfeil,
+  gestaffelte Schritte), das die Anlage Schritt fuer Schritt zeigt und die
+  PFLICHT-RECHTE nennt: ASSETS, dann LESEN (asset:read) und SCHREIBEN
+  (asset:write). "Pruefen" fragt Roblox IM HINTERGRUND
+  (Test-OpenCloudKeyAuth, DispatcherTimer, kein Einfrieren) - und sagt
+  ehrlich, dass diese Pruefung nur die ANMELDUNG bestaetigt, nicht die
+  Upload-Rechte.
+- NEUES WERKZEUG upload_asset (Kategorie cloud, v7.5.0): laedt MESHES
+  (.fbx/.glb/.gltf aus Blender, max. 20 MB) und BILDER (.png/.jpg/.jpeg/
+  .bmp/.tga, unter 8000x8000) hoch - aus einem Mesh-Slot (slotKey), aus
+  einer Datei im Bridge-Ordner (filePath) oder direkt als contentBase64
+  (Bilder, die der Agent SELBST erzeugt hat, ohne Umweg ueber die
+  Festplatte). Bei Erfolg antwortet das Werkzeug mit der ECHTEN Asset-Id aus
+  der Roblox-Antwort (nie geraten); der Agent setzt sie danach SELBST ein
+  (mesh_apply_asset / insert_asset / set_property). Dauert der Upload
+  laenger, kommt state=pending mit operationId - dann upload_asset {
+  operationId } erneut aufrufen, nicht eng pollen.
+- FEHLENDE VORAUSSETZUNGEN SIND KEIN AUS-BEFEHL (v7.5.0): ohne Schluessel
+  (OPENCLOUD_KEY_MISSING) oder ohne Ersteller (OPENCLOUD_CREATOR_MISSING)
+  bleibt das Werkzeug ganz normal verfuegbar und meldet den Fehler erst beim
+  Aufruf - zusammen mit einem deutschen userMessage-Satz, den der Agent dem
+  Nutzer WOERTLICH sagt (Einstellungen -> ROBLOX OPEN CLOUD -> Tutorial).
+  Roblox-Fehler gehen unverfaelscht an den Agent weiter:
+  OPENCLOUD_RATE_LIMITED (429), OPENCLOUD_KEY_REJECTED (401/403),
+  OPENCLOUD_UPLOAD_REJECTED (400), OPENCLOUD_SERVER_ERROR (5xx),
+  OPENCLOUD_UNREACHABLE, OPENCLOUD_OPERATION_FAILED, OPENCLOUD_BAD_RESPONSE.
+  Es ist bewusst KEIN neuer Meldeweg: der eine report_done-Kanal bleibt
+  unveraendert.
+- BLENDER UND BAUEN SIND AUSDRUECKLICH EMPFOHLEN (v7.5.0): Sessionstart,
+  Guides (meshBuildRules und die neue cloudUploadRules), die wichtigen
+  Regeln und die Werkzeugtexte nennen den Weg "Blender baut -> upload_asset
+  -> einsetzen -> pruefen" als EMPFEHLUNG und den Katalog
+  (search_assets/insert_asset) als Notbehelf.
+- ZWEI NEUE FENSTER SIND AUSDRUECKLICH ERLAUBT (v7.2.0, Entscheidung D2 des
+  Owners): (1) "Nachricht an Arena senden" aus dem Menue (…) der Place-Zeile
+  (Add-UserMessage/Open-UserMessageWindow) und (2) "Arena fragt" fuer
+  ask_user/confirm_action (Open-AskWindow, erscheint mit Versatz am
+  Mauszeiger). Seit v7.2.2 ist das Nachrichtenfenster kompakt (460x440), im
+  Anthrazit/Grau/Pink-Stil, an der Titelleiste verschiebbar, hat oben rechts
+  einen X-Knopf und ist modal (ShowDialog sperrt die Hauptoberflaeche). Der
+  Abbrechen-Knopf in diesem Fenster zieht NUR die Nachricht zurueck, solange
+  sie noch queued ist. Die Place-Option "Laufenden Befehl abbrechen" gibt es
+  seit v7.2.2 nicht mehr. Beide Fenster sind KEINE Toasts und ersetzen NICHT
+  die Place-Liste. Die alte Regel "keine Popups" bezog sich auf die haesslichen
+  Toast-Meldungen aus ~v3 - diese Fenster sind vom Nutzer gewollt.
+- DER SIMULATIONS-WARNKASTEN BLEIBT WEG (v7.1.3): Der Abschnitt
+  "SIMULATION" mit dem sim_start-Hinweis ist aus dem Einstellungsfenster
+  ENTFERNT (Nutzerwunsch). sim_start bleibt trotzdem deaktiviert - die
+  Begruendung gehoert in die Doku/Manifest/Antworten, NICHT als
+  Dauerwarnung ins Fenster. Nicht wieder einbauen.
+- ORGANIC-/MODELL-AUDITS (aktuell 7.6.3): organic=true/organicKind sind
+  optionale Diagnose-Metadaten. Weder Namen noch Marker schreiben Parts,
+  Polygon/Blender, Loft, Farben, Gesichter, Fluegel, Bewegung oder frische
+  Audits vor. Messwerte unter observations sind beratend; einfache, primitive,
+  monochrome, statische und Blockout-Ergebnisse koennen zum Nutzerwunsch passen.
+- FORTSCHRITT: NICHTS ERFINDEN (aktuell): Ohne echte Prozentzahl KEINEN
+  Balken und KEINE 0 % zeigen. Fuer einfache Lese-/Beobachtungsarbeit
+  progress={mode="hidden",message="<gepruefte Aktion>"} senden; UI meldet
+  "nicht anwendbar" und blendet Balken/PERCENT_MISSING aus. Andere Arbeit ohne
+  Zahl zeigt nur konkrete Wahrheit, keine Inaktivitaetsbehauptung. Verlaufs-
+  balken haben eine deutlich helle Spur.
+- EINSTELLUNGEN (v7.2.2): Der Abschnitt "DIAGNOSE" ist entfernt. Alte
+  perfDiagnostics-Opt-ins werden ignoriert, die Leistungsaufzeichnung bleibt
+  AUS. Der Fertig-Meldungs-Test sitzt direkt beim zugehoerigen Schalter unter
+  PLACE-LISTE. Den Diagnosebereich nicht wieder einbauen.
+- MODEL-/UI-/WELT-QUALITAET (aktuell 7.6.3): finishScore, grade, primitive-
+  und Zylinder-Muster, organische Messwerte, Farb-/Kontrastwerte, Weltphasen
+  und Skriptlaenge sind optionale, nicht-blockierende Beobachtungen. Kein
+  Modell-Audit oder Build-Register erzwingt mehr Geometrie, Farbe, Motion,
+  Refactoring oder einen Audit-Aufruf. report_done ignoriert diese Heuristiken;
+  nur ein explizit gebauter und noch nicht angewandter Mesh-Slot kann den
+  konkreten MESH_UPLOAD_PENDING-Schritt melden.
+- GUI-/SKRIPT-ARCHITEKTUR (aktuell 7.6.3): Vorhandene Place- und Nutzer-
+  Muster beibehalten. StarterGui, Laufzeit-GUI, einzelne/grosse Skripte,
+  Frames, Offsets, neutrale Farben, geringe Kontraste, Corner-Padding und
+  Animation sind keine universellen Vorgaben. UI-Builder/Audit und
+  scaffold_ui_scripts sind optional; explizite Textfarben und Padding werden
+  respektiert, Motion ist nur bei motion.enabled=true aktiv.
+- NUTZER-KANAL (v7.2.0, Thema 3 des Owners): Wartende Nutzernachrichten liegen
+  in $Shared.UserMessages (JSON je Sitzung) und werden von New-Envelope als
+  _bridge.userMessages + userMessageContract in JEDE Antwort gehaengt
+  (at-least-once, max. 3 Versuche, Bestaetigung per ack_user_message).
+  Withdraw-UserMessage zieht eine Nachricht NUR zurueck, solange sie noch
+  "queued" ist - alles andere waere eine Luege im Fenster.
+- FRAGEN (v7.2.0, Thema 5/D3): ask_user nimmt den GANZEN Entscheidungsbaum in
+  einer Anfrage ($Shared.AskRequests je askId). Bedingungen (when) zeigen nur
+  auf FRUEHERE Fragen, Fehler sind typisiert, das Warten ist wiederaufnehmbar
+  (max. 50 s je Aufruf wegen des harten HTTP-Deckels 55/85 s), spaete Antworten
+  kommen als _bridge.userAnswers, offene Fragen als _bridge.openQuestions.
+  Antworten speichert die Oberflaeche mit Submit-AskAnswers (state=answered);
+  wer wartet, wird ueber $Shared.AskSignals geweckt.
+- STATIONEN + ZAEHLER (v7.2.0): Format wie die PREVIEW-Stationen aus 6.0.4:
+  "<BEREICH> [<flowId>] <STATION> feld=wert feld=wert" - Server:
+  Write-FlowStation (Handler-Runspace), Oberflaeche: Write-FlowTrace. Bereiche:
+  PROGRESS, NOTIFY, USERMSG, ASK, BUILD, UISTRUCTURE. Zaehler in
+  $Shared.Channel laufen IMMER mit (wie Telemetry seit 7.0.6). Auswertung in
+  progress-diagnose.txt bzw. notify-diagnose.txt (klein, weitergebbar).
+  WICHTIG: Write-FlowStation/Write-FlowTrace duerfen NICHTS zurueckgeben -
+  eine Ausgabe im Pipeline-Ergebnis wuerde die Rueckgabewerte der Aufrufer
+  (Nachrichten-Id, Fortschrittszustand) zu Arrays machen.
+  Die Roblox-Cylinder-Achse ist lokale X (Size.X = Laenge); das ist eine
+  Koordinatenreferenz fuer tatsaechliche CylinderParts, kein globaler Bauweg.
+  Toolbox/Katalog, Polygon-Builder, Blender und bestehende Assets sind nach
+  Nutzerwuensch/Place waehlbar. Kein Builder ist pauschal verboten oder
+  verpflichtend; Katalogsuche darf bei Nutzerwunsch oder passendem Task-Fit
+  verwendet werden.
+- "..."-Auswahlmenue: erneuter Klick auf den Menue-Button schliesst
+  das Menue (echtes Toggle). Klick auf "Nur Lesezugriff" laesst das
+  Menue OFFEN (schliesst es NICHT).
+- Bedienung der Spieleliste NICHT veraendern. Seit v3.7 gilt fuer das gesamte
+  Programm einschliesslich Liste das Anthrazit-/Grau-/Pink-Farbschema.
+  Seit v3.8 sind die Einstellungen ein GROSSES eigenes Fenster mit
+  AN/AUS-Schaltern (rot/gruen statt Kaestchen) - das Design behalten.
+- ZIP-Struktur: genau EIN Ordner (ArenaBridge\) mit ZWEI Unterordnern
+  (EXE-Builder\, GitHub-Repository\) plus TXT-Dateien.
+- REPOSITORY-LINK.txt-Mechanismus so lassen (auffaellige TXT, Nutzer
+  traegt den Link selbst ein).
+- Changelog-Kommentar oben in ArenaBridge.ps1 bei jeder Version
+  fortfuehren (... -> 3.7 -> 3.8 -> ...).
+- Seit v3.8: Alle Einstellungen liegen dauerhaft in
+  %LOCALAPPDATA%\ArenaRobloxBridge\settings.json (autoStart,
+  selfTestAllowed, notifyOnDone, accessModes je Place). Eine Aenderung
+  muss IMMER beides aktualisieren: $script:SettingsCache (UI) UND
+  $script:Shared.BridgeSettings (Server-Threads), plus
+  Save-BridgeSettingsFile.
+
+
+5) TECHNISCHE STOLPERSTEINE FUER DIE KI
+=======================================
+- StudioTestService (offizielle API seit Studio Ende 2025): Plugins
+  koennen damit Play- und Run-Tests STARTEN (ExecutePlayModeAsync /
+  ExecuteRunModeAsync - beide yielden bis zum Testende, also in
+  task.spawn packen) und aus dem Server-DataModel eines laufenden
+  Tests BEENDEN (EndTest). EditModeActive=true heisst "kein Test
+  laeuft". Die Bridge nutzt das seit v3.8 als bevorzugten Weg; aeltere
+  Studio-Versionen ohne den Service fallen auf Tastenkuerzel (F5/F8,
+  Shift+F5) zurueck. "Play Here" hat KEINEN API-Aufruf - die Bridge
+  loest das, indem sie nach dem Play-Start den Charakter an die zuvor
+  gemerkte Edit-Kamera-Position setzt; erkannt wird es heuristisch
+  (Charakter spawnt nahe der alten Edit-Kamera).
+- ArenaBridge.ps1 und make-updater.ps1 sind UTF-8 MIT BOM - BOM beim
+  Speichern erhalten (PowerShell 5.1 braucht ihn fuer die Umlaute).
+- ERZEUGTE PYTHON-DATEIEN IMMER BOM-FREI SCHREIBEN (v7.4.1, Live-Befund):
+  Set-Content/Out-File/Add-Content -Encoding UTF8 setzen unter PowerShell
+  5.1 ein BOM; Python/Blender bricht dann mit "SyntaxError: invalid
+  non-printable character U+FEFF" in Zeile 1 ab. Fuer Dateien, die
+  Blender/Python liest, immer [System.IO.File]::WriteAllText($pfad,$text,
+  (New-Object System.Text.UTF8Encoding($false))) benutzen; der Mesh-Runner
+  liest Modelldateien zusaetzlich BOM-tolerant (encoding="utf-8-sig" +
+  strip eines fuehrenden U+FEFF). Die runtime.log als reine Menschen-Datei
+  darf weiter Add-Content -Encoding UTF8 benutzen.
+- Base64-Bloecke in make-updater.ps1: Marker #==ICON-START== /
+  #==ICON-END== und #==LAUNCHER-START== / #==LAUNCHER-END==, Zeilen
+  a 110 Zeichen mit #-Praefix. Nach JEDER Aenderung an
+  make-updater.ps1 muss Build-Exe.cmd neu generiert werden (Base64
+  neu einbetten) und per Rueck-Dekodierung validiert werden
+  (byte-identisch!).
+- Launcher-Vorlage mit Platzhaltern __REPO_OWNER__ / __REPO_NAME__ /
+  __REPO_BRANCH__.
+- Build-Exe.cmd-Generator: siehe Regeln in Abschnitt 2.
+- Groessere Code-Aenderungen lieber per Python-String-Replacement
+  machen und Ersetzungen danach per grep gegenpruefen (direkte
+  Editier-Werkzeuge waren unzuverlaessig).
+- TOOLBOX-/KATALOG-FALLEN (7.1.2, live aufgetreten):
+  a) Katalogaufrufe laufen SYNCHRON im HTTP-Runspace. Jede Sekunde dort
+     geht vom ~100-s-Fenster des Cloudflare-Tunnels ab. Deshalb gibt es
+     seit 7.1.2 nur noch EINEN Weg in den Katalog: Invoke-CatalogHttp mit
+     hartem -TimeoutSec, ohne automatische Wiederholung. NIE wieder
+     Invoke-RestMethod direkt in einer Asset-Funktion aufrufen und NIE
+     eine Retry-Schleife mit Start-Sleep einbauen.
+  b) Eine Schleife "je Asset-Id eine eigene Anfrage" ist unbegrenzt.
+     Immer eine Id-Obergrenze UND ein Gesamtbudget setzen.
+  c) InsertService:LoadAsset ist ein nativer, yieldender Aufruf. task.cancel
+     beendet nur den Luau-Thread - der Ladevorgang laeuft weiter und kann
+     spaeter zurueckkommen. Niemals einen Abbruch vortaeuschen, nie einen
+     zweiten Import starten, Zustand ehrlich als TOOLBOX_IMPORT_WEDGED
+     melden und den Nutzer um einen kompletten Studio-Neustart bitten.
+  d) delivery.state darf nie 'ok' melden, wenn executorAlive false ist
+     (das war der Live-Widerspruch in 7.1.1). Dafuer gibt es jetzt den
+     eigenen Zustand 'executor_down'.
+  e) Jeder Werkzeugaufruf MUSS in der Oberflaeche terminal werden
+     (completed/failed/timed_out/cancelled). Complete-ArenaActivity hat
+     dafuer den Parameter -terminalPhase.
+  f) asset_cache.json hat harte Grenzen (400 Eintraege / 2 MB,
+     Limit-AssetCache). Mehrere Eintraege IMMER mit Add-CacheEntries in
+     EINEM Schreibvorgang ablegen, nie in einer Schleife mit
+     Add-CacheEntry (das schreibt die ganze Datei je Eintrag).
+- POWERSHELL-5.1-FALLEN (beide haben in 7.0.6-7.1.0 LIVE Schaden
+  angerichtet, Strukturtest wacht darueber):
+  a) NIE @($var) um eine Variable legen, die eine
+     System.Collections.Generic.List[object] haelt (leer oder gefuellt).
+     Windows PowerShell 5.1 wirft dafuer "Die Argumenttypen stimmen nicht
+     ueberein." (ArgumentException im PSToObjectArrayBinder; der Fehler
+     taucht eine Ebene hoeher auf, z. B. am Anfang eines Hashtable-
+     Literals). Das war der 500 von /api/status und /api/queue seit
+     7.0.6. Richtig: $liste.ToArray(), [object[]]$liste, direktes
+     foreach ($x in $liste) oder eine Pipeline. List[string] ist nicht
+     betroffen, @(Befehl) und @($liste.ToArray()) auch nicht.
+  b) Komma-Operator + @(): Gibt eine Funktion ", $array" oder ", $liste"
+     zurueck (Get-PendingCommands, Take-Events, Take-LateResults), dann
+     ergibt @(Funktion ...) beim Aufrufer IMMER ein 1-elementiges Array
+     mit dem (auch leeren) Array/der Liste als Element. .Count ist dann
+     1, foreach laeuft einmal ueber die ganze Liste, [string]$item.id
+     wird die leerzeichen-verbundene ID-Liste. Das hat in 7.1.0 JEDE
+     Befehlszustellung blockiert (Get-SessionCancellationIds) und den
+     Admin-Reset wirkungslos gemacht (Force-FailSessionQueue /
+     Reset-SessionQueue). Richtig: erst zuweisen ($x = Funktion ...),
+     dann $x direkt benutzen - oder die Funktion flach zurueckgeben lassen,
+     wenn ALLE Aufrufer @() verwenden (so jetzt Get-SessionCancellationIds).
+     Faustregel: Komma-Rueckgabe und @() am Aufrufer schliessen sich aus.
+- Lua-Plugin: statePayload() MUSS sessionId (und instanceGuid) tragen;
+  ohne sessionId laeuft jeder Poll als Reconnect durch Register-Session
+  (seit 7.0.0 bis 7.1.0 so passiert). Update-Session loest seit 7.1.1
+  zusaetzlich ueber die instanceGuid auf, und jede Poll-/Heartbeat-
+  Antwort nennt die gueltige sessionId (das Plugin uebernimmt sie).
+- HANDLER-RUNSPACE (v7.1.3 live relevant): $script:BridgeHandlerScript
+  laeuft in EIGENEN Runspaces (CreateRunspacePool). $script:-Variablen des
+  Hauptskripts sind dort NICHT vorhanden - alles, was der Handler braucht,
+  muss ueber $Shared gehen (Beispiel: SessionPayloadHardBudgetBytes liegt
+  deshalb in $Shared, nicht als $script:-Variable). Bestehende
+  $script:PreviewCaptureMode-Zugriffe dort sind absichtlich defensiv
+  (try/catch mit Rueckfallwert).
+- SESSIONSTART-NUTZLAST (v7.1.3): Die erste Antwort traegt NICHT mehr die
+  volle Doku aller 129 Werkzeuge. Kernwerkzeuge kommen vollstaendig, der
+  Rest als Index; der Kern darf nur bei Bedarf erweitert werden, sonst
+  waechst das Paket wieder in den Bereich, der abgelehnte KI-Anfragen
+  ausgeloest hat. Neue Felder: packageBytes (echt gemessen), budgetBytes,
+  docsPolicy (core-full/index-only), toolsIndex + toolsIndexNote.
+- WERKZEUG-DOKU-INDEX UND PROMPT-KOPIE: Der Prompt/Place-Text nennt die
+  Kernwerkzeug-Idee absichtlich nicht mehr als "komplette Doku" - wer die
+  Parameter eines Index-Werkzeugs braucht, ruft get_docs { tool = "..." }.
+- NACHBARSCHAFTSDOKU: next-update/ORGANIC_BUILD_CONTRACT.md beschreibt
+  die optionale aktuelle Diagnose im Klartext - wer eine Regel im Programm
+  aendert (Get-BridgeGuides/organicBuildRules, WORLD_ENGINE.
+  auditBuildQuality, report_done-Wache), muss dieses Dokument mitziehen.
+- Offline-Pruefung ohne Windows: python -m unittest discover -s next-update -p 'test_*.py'
+  (luaparser, tree_sitter und tree_sitter_powershell aus requirements-test.txt). PowerShell/.NET laesst sich in
+  der KI-Sandbox NICHT installieren - Semantik per Quelltext (PowerShell-
+  Repository auf GitHub) nachlesen statt raten.
+- Tests mit PowerShell-Mocks: Mock-Status als $global:-Variablen
+  anlegen (Dynamic Scoping!), Tests als eigene .ps1-Datei schreiben
+  (nicht inline quoten), $env:TEMP setzen, Szenario-Verzeichnisse
+  zwischen Laeufen leeren (sonst False Negatives).
+
+
+6) KURZER VERSIONSSTAND
+=======================
+- v7.6.0 (09.10.2026): NACHRICHTEN UNUEBERSEHBAR + OPEN-CLOUD-KEY ALS ALLEINIGES RECHTESYSTEM.
+  (1) Nutzernachrichten: Banner oben UND userMessageReminder unten in JEDEM Umschlag,
+  bis zu 10 Wiederholungen (vorher 3), openUserMessageCount in jeder Antwort, und
+  report_done blockiert mit UNACKED_USER_MESSAGE, solange eine Nachricht offen ist.
+  (2) Der Creator-Dashboard-Schalter (creatorDashboardEnabled) ist KOMPLETT entfernt -
+  Einstellungen, Shared, Werkzeug-Gate und UI. Was Arena darf, entscheidet allein der
+  Open-Cloud-Key (Scopes); Roblox 403 -> OPENCLOUD_SCOPE_MISSING nennt den Scope.
+  (3) Das Tutorial (7 Schritte) zeigt den kompletten Berechtigungs-Katalog
+  (Get-CloudPermissionCatalog: 13 Gruppen, core/nicht-core, ehrliche Beschreibungen).
+  (4) SPEICHERN PRUEFT ERST: CloudSaveButton ruft Start-CloudIntrospectRun -Key
+  (POST apis.roblox.com/api-keys/v1/introspect) und oeffnet Show-CloudPermissionsWindow
+  mit gruen/rot je Berechtigung und den Knoepfen "Oh, das aendere ich nochmal!" /
+  "Ja, alles richtig! Key speichern!" (erst dann Save-OpenCloudKeyFromText).
+  Gespeicherte Keys: Knopf "Berechtigungen ansehen" prueft erneut.
+  (5) NEUES WERKZEUG datastore (Invoke-DatastoreTool): stabile Cloud-v2-DataStore-API
+  (list_datastores, list_entries, get_entry, create_entry, update_entry,
+  increment_entry, delete_entry, list_versions), nur aktive Sitzung, Read-only sperrt
+  Schreiben, Scopes universe-datastores.control/.objects/.versions.
+  Abnahme: test_v760_user_messages_opencloud.py (neu) + angepasste test_v750/755/759.
+  KEIN Live-Test mit Windows/Roblox Studio durchgefuehrt.
+- v7.5.7 (09.10.2026): ARENA-VERLAUF MIT PLACE-FORTSCHRITT + VOLLSTÄNDIGE AKTIONSTEXTE.
+  Das Verlaufsfenster hat jetzt einen eigenen Live-Fortschrittsbereich je Place
+  (Balken, Prozent, Status, letzter Arbeitsschritt, Aufrufzahlen und Studio-Befehl).
+  Die Statuszeile unter Place-Namen ist größer und zeigt freundliche deutsche
+  Aktionsbezeichnungen statt interner Tool-Schlüssel. Alle 143 Werkzeuge aus dem
+  Katalog haben klare deutsche Verlaufssätze; Suchtexte, Klassen/Tags, Place- und
+  Objektziele, Skriptzeilen, Asset-IDs und Ergebniszahlen werden aus Argumenten/
+  Ergebnissen ergänzt. Generische „ein Objekt“-Suchtexte und „Hat TOOL ausgeführt“
+  sind entfernt. Offline-Regressionsabnahme: test_v755_regression.py. Es wurde
+  KEIN Live-Test mit Windows/Roblox Studio durchgeführt. Es wurde KEIN Pull
+  Request erstellt (Nutzer möchte zuerst weitere Änderungen prüfen).
+- v7.5.6 (09.10.2026): STUDIO-LOGIN ALS OPEN-CLOUD-ASSET-ERSTELLER + PROFIL.
+  Das Plugin meldet StudioService:GetUserId() getrennt von game.CreatorId.
+  upload_asset priorisiert die ID des aktuell in Studio angemeldeten Nutzers
+  als creator.userId; Key-Introspect bleibt nur automatischer Rueckfall, wenn
+  Studio keine Anmeldung meldet. Die manuelle Entwickler-Fallback-Textbox und
+  -Einstellungen sind entfernt. Das Hauptfenster zeigt unten links Avatar und
+  Anzeigename, aus users.roblox.com und thumbnails.roblox.com asynchron geladen.
+  Der Key muss ASSETS write fuer diesen Studio-Nutzer erlauben. Neue Abnahme:
+  test_v755_regression.py (Studio-ID wird gepollt/gespeichert, Upload-Prioritaet,
+  keine Fallback-Textbox, Profilkarte und asynchroner Abruf).
+- v7.5.5 (08.10.2026): BLENDER-FIRST, OPEN-CLOUD-ENTWICKLER, /api/tool REPARIERT.
+  (1) /api/tool lieferte HTTP 500 fuer JEDEN Aufruf (Benennung "=" wurde nicht als
+  Cmdlet erkannt): in Get-ArenaActivityText fehlte bei $texts das Zuweisungszeichen.
+  Behoben. test_v755_regression.py prueft $texts und alle command_name-Knoten
+  (tree-sitter) - diese Pruefung NICHT entfernen.
+  (2) /api/tools/parallel: Bridge-eigene Werkzeuge laufen ueber Invoke-ServerTool
+  wie in /api/tool; nur der Rest geht ans Studio-Plugin. Antworten in Aufrufreihenfolge.
+  (3) describe_orientation: dirHeading indiziert die 8 Himmelsrichtungen korrekt
+  (sector = floor((angle+22.5)/45) % 8). Test ueber lupa gegen Luau-%s-Strenge.
+  (4) BLENDER-FIRST: Standard fuer 3D-Modelle ist build_mesh_model -> upload_asset ->
+  mesh_apply_asset. build_polygon_model NUR mit userRequestedPolygon=true (ausdruecklicher
+  Nutzerwunsch), sonst POLYGON_BLENDER_FIRST (Test-PolygonBuildWithoutRequest, auch in
+  batch/parallel/start_job). Ab 300 WedgeParts warnt das Plugin vor Lag und empfiehlt
+  Blender. ALLE AELTEREN STELLEN DIESES DOKUMENTS, DIE build_polygon_model ALS STANDARD
+  NENNEN, GELTEN SEIT 7.5.5 NICHT MEHR.
+  (5) OPEN CLOUD: Der Entwickler wird bei jedem Upload AUTOMATISCH ermittelt: 1. Schluessel
+  (Introspect), 2. Ersteller des verbundenen Place (Plugin: game.CreatorId/CreatorType,
+  in der Sitzung), 3. FALLBACK: Roblox-Benutzername im Einstellungsfenster (users.roblox.com,
+  ohne Schluessel). Der Schluessel bleibt DPAPI-verschluesselt in opencloud.key. Den
+  Zwang, die ID zu tippen, NICHT wieder einfuehren.
+  Tests: alle 12 Offline-Dateien (inkl. test_v755_regression.py; braucht lupa, tree_sitter).
+- v7.5.0 (07.10.2026): OPEN CLOUD UPLOAD - MESH-FENSTER WEG, DER AGENT
+  LAEDT SELBST HOCH. (1) DAS MESH-FENSTER IST GELOSCHT (ausdruecklicher
+  Nutzerwunsch, Umkehrung von v7.4.0/v7.4.1): alle 13 Funktionen, die
+  Fenster-Zustandsvariablen und die Aufrufe im UI-Takt sind aus
+  ArenaBridge.ps1 entfernt; der Takt pflegt nur noch die Mesh-Zeilen und
+  Platzhalter. (2) NEUER ABSCHNITT "ROBLOX OPEN CLOUD" IM
+  EINSTELLUNGSFENSTER: Schluessel (PasswordBox), Speichern / Pruefen /
+  Entfernen, Statuszeile, ERSTELLER (Nutzer oder Gruppe, ID wird aus dem
+  Namen aufgeloest) und ein AUFKLAPPBARES TUTORIAL MIT ANIMATION
+  (MaxHeight-Messung, Einblenden, Pfeil-Drehung, gestaffelte Schritte), das
+  die PFLICHT-RECHTE ASSETS + LESEN + SCHREIBEN nennt. Der Schluessel liegt
+  verschluesselt (DPAPI CurrentUser) in opencloud.key. Die Einstellungen
+  werden zusaetzlich nach $script:Shared.BridgeSettings gespiegelt, weil die
+  HTTP-Handler in einem eigenen Runspace laufen. (3) upload_asset laedt
+  Meshes und Bilder ueber apis.roblox.com/assets/v1/assets hoch und nennt
+  die echte Asset-Id; multipart request + fileContent, x-api-key,
+  Operations-Polling. (4) Fehlende Voraussetzungen melden erst beim Aufruf,
+  mit einem Satz, den der Agent dem Nutzer wortlich sagt. (5) Ehrlichkeit
+  bleibt: report_done antwortet MESH_UPLOAD_PENDING, solange ein Platzhalter
+  noch keine Geometrie hat.
+- v7.4.2 (07.10.2026): MINI-HOTFIX MESH-RUNNER (Blender-Export). Der
+  Mesh-Runner ($script:MeshRunnerTemplate) importierte bpy NUR innerhalb von
+  main() - das ist eine LOKALE Variable, und die Modulfunktion arena_export()
+  sah kein bpy: "NameError: name 'bpy' is not defined" bei allen drei
+  Exportwegen gleichzeitig (obj_export, obj_export plain, export_scene.obj).
+  Live-Befund: state="failed", probe="failed", ready=false trotz
+  installiertem, funktionierendem Blender 5.0.1 (Faehigkeitsprobe Exit 1).
+  In 7.4.0/7.4.1 war der Fehler unsichtbar, weil der BOM-SyntaxError zuerst
+  zuschlug. Derselbe Runner-Text laeuft auch bei jedem echten Mesh-Job - der
+  Fehler haette jeden Bau getroffen. FIX: "import bpy" steht jetzt auf
+  Modulebene neben json/os/sys, VOR arena_export; der Import in main() ist
+  entfernt. Die leere Szene wird weiterhin VOR dem Laden des Nutzer-Skripts
+  gesetzt (bpy.ops.wm.read_factory_settings(use_empty=True) bleibt in
+  main()). Blender 5.0 akzeptiert die Parameter von bpy.ops.wm.obj_export
+  unveraendert (gegen den Quelltext von Blender 5.0.1 geprueft: filepath,
+  export_selected_objects, apply_modifiers, export_materials,
+  export_triangulated_mesh, export_uv, export_normals, forward_axis,
+  up_axis); die zwei Rueckfallwege bleiben als Sicherheitsnetz. Der
+  Fehlertext unterscheidet jetzt klar NameError (Runner-Fehler: bpy nicht
+  sichtbar) vs. TypeError (Blender kennt einen Parameter nicht mehr).
+  EHRLICHKEIT UNVERAENDERT: ready setzt weiterhin NUR die bestandene Probe
+  (Marker ARENA_MESH_STATS, Laenge exakt 17, fail-closed) - kein neuer
+  Startblocker, nichts an Schritt 4 aufgeweicht. Neuer Offline-Test in
+  test_v740_mesh.py: import bpy auf Modulebene (KEIN eingerueckter Import im
+  Template) + ein Mini-Ausfuehrungstest, der den Runner mit gestubbtem
+  bpy-Modul wirklich durchlaeuft - er haette den Fehler sofort gefunden.
+- v7.4.1 (07.10.2026): BOM-HOTFIX + AUTOMATISCHES MESH-FENSTER + EHRLICHER
+  SCHRITT 4. (1) BOM-HOTFIX: alle erzeugten Python-Dateien (Runner, Slot-
+  Skripte, Probenskripte) werden BOM-frei geschrieben (WriteAllText +
+  UTF8Encoding($false)); der Runner liest Modelldateien BOM-tolerant.
+  (2) Das Mesh-Fenster hat keinen Menue-Eintrag mehr: es oeffnet sich SELBST
+  und MODELESS, sobald eine OBJ-Datei auf den Upload wartet; je Mesh eine
+  Zeile mit "Fertig" (setzt ein, loescht OBJ + Slot-Skript) und "Stornieren"
+  (Rueckfrage; interner Befehl tools.mesh_drop entfernt die MeshParts mit
+  ArenaMeshSlot - ein schon eingesetztes Mesh kommt NICHT zurueck; danach
+  Slot + Dateien weg). Kein "Aktualisieren"/"Ids einsetzen"/"Blender jetzt
+  installieren"/"Schritt ueberspringen" mehr. (3) Schritt 4 laeuft komplett
+  in EINEM Hintergrund-Runspace (kein Einfrieren), der Tunnel startet erst
+  nach dem Endzustand; ready setzt NUR die bestandene Faehigkeitsprobe
+  (Marker ARENA_MESH_STATS, Laenge exakt geprueft, fail-closed); der
+  Installationsweg und "Blender pruefen" (Klick auf Zeile 4 /
+  blender_status action=check) enden immer in der echten Probe. Fehlschlag =
+  rote Zeile, Mesh-Bau aus, kein Startblocker. EINE Hilfs-Quelle
+  ($script:BridgeBlenderTools) gilt fuer Hauptprogramm UND jeden Runspace
+  (7.4.0 hatte dort Phantom-Funktionen); die tote zweite Probe
+  (Test-BlenderCapability) ist geloescht, der Statusbericht kommt aus EINER
+  Funktion (Get-BlenderReport).
+- v7.4.0 (07.10.2026): BLENDER-MESH-BAU + MESH-UPLOAD-FENSTER. Der Bauweg
+  neben build_polygon_model. SCHRITT 4 DES STARTS (vor dem Tunnel): Blender
+  wird gesucht (vorhandene Installation zuerst, schnelle Versionspruefung) und
+  sonst als offizielles PORTABLES ZIP im Hintergrund geladen (kein Admin,
+  kein UAC, SHA-256 wenn erreichbar); danach echte Faehigkeitsprobe. Schlaegt
+  der Schritt fehl, wird Zeile 4 des Startbildschirms ROT, der Mesh-Bau wird
+  deaktiviert und alles andere laeuft normal weiter - KEIN neuer Startblocker.
+  Der Nutzer kann ihn im Fenster "Mesh-Uploads" ueberspringen. Neue Werkzeuge:
+  blender_status, build_mesh_model (Blender im Hintergrund, sofort jobId),
+  mesh_status (gemessene Dreiecke/Groesse je Slot), mesh_cancel,
+  mesh_apply_asset (CreateMeshPartAsync + ApplyMesh in die BESTEHENDEN
+  Platzhalter), intern mesh_slots/mesh_apply. Der Nutzer laedt die OBJ-Dateien
+  selbst hoch (Roblox hat keine Mesh-Upload-API) und traegt die Ids im neuen
+  Fenster "Mesh-Uploads" ein; die Bridge setzt sie automatisch ein.
+  model_audit zaehlt Mesh-Platzhalter getrennt (meshSlotCount/meshSlots),
+  report_done antwortet MESH_UPLOAD_PENDING, solange ein Platzhalter wartet -
+  "fertig" waere hier eine Luege. Blender-Skripte werden VOR dem Start
+  geprueft (Sperrliste: Datei-, Netzwerk-, Prozess-, Systemzugriff,
+  bpy.ops.wm.*, Exportfunktionen); ein Blender-Prozess je Slot, Zeitlimit,
+  Abbruch. Offline-Abnahme: test_v740_mesh.py plus die aktualisierten
+  Versionsmarken der uebrigen Tests. Mesh-Dateien liegen unter
+  %LOCALAPPDATA%\ArenaRobloxBridge\meshes (je Job ein Unterordner).
+- v7.2.3 (05.10.2026): FRAGENFENSTER, NUTZER-KANAL, LIVE-SAMMLUNGEN.
+  Generic List/Queue/Stack/Dictionary-Helfer geben ihre Sammlung als EINEN
+  Wert (`return ,$liste`) zurueck, sodass der 0/1/n-Pipelinefehler keine
+  Optionen, Antworten, Nutzernachrichten oder Bau-Register mehr in Hashtables
+  verwandelt. ask_user ist kompakt, ziehbar und nur waehrend waiting modal;
+  X/Esc/Abbrechen schreibt cancelled, die KI bekommt cancelled:true und
+  ASK_CANCELLED. Nachricht an Arena nennt kurze Fehler direkt, Strg+Enter
+  sendet. Die Test-Benachrichtigung ist aus den Einstellungen entfernt;
+  report_done/NOTIFICATION_UNVERIFIED/notify-diagnose bleiben unveraendert.
+  Eine nach Prozessende tote Quick-Tunnel-URL wird verworfen; cloudflared
+  heilt sich gedrosselt und faellt nach Auto/QUIC auf HTTP/2 zurueck.
+- v7.2.2 (05.10.2026): MINI-UPDATE - DIAGNOSEBEREICH ENTFERNT,
+  PLACE-MENUE BEREINIGT, NACHRICHTENFENSTER UEBERARBEITET. Das Diagnosepanel
+  ist aus den Einstellungen entfernt; alte perfDiagnostics-Werte werden
+  ignoriert und die Leistungsaufzeichnung bleibt aus. Der Fertig-Meldungs-Test
+  bleibt beim passenden Schalter unter PLACE-LISTE. "Laufenden Befehl
+  abbrechen" wurde aus Place-Optionen und Fortschritts-Tooltip entfernt
+  (interne Queue-/Recovery-Wege bleiben erhalten). "Nachricht an Arena senden"
+  ist kompakter (460x440), Anthrazit/Grau/Pink statt Liquid Glass, per Titelzeile
+  verschiebbar, mit X oben rechts und modal via ShowDialog. Offline-Abnahme:
+  test_v720_bridge.py (Message-UI, Modalitaet, Place-Menue, Diagnosepanel),
+  test_v398_structure.py sowie die bisherigen Regressionen.
+- v7.2.1 (05.10.2026): KRITISCHER START-/PARSER-HOTFIX fuer 7.2.0.
+  In der report_done-Werkzeugdokumentation war der errors-Array nicht
+  geschlossen und ein doppeltes notes2-Feld stand daneben; ausserdem beendeten
+  Backslashes vor einfachen Quotes die grade-Beschreibungen von
+  build_assembly/build_polygon_model zu frueh. Die Bridge konnte dadurch vor
+  dem Start nicht geparst werden. Fix: Array mit `);` schliessen, notes2 in
+  den vorhandenen buildRegisterNote-Text integrieren und einfache Quotes als
+  `''simple'' | ''lowpoly'' | ''blockout''` schreiben. VERSIONSTAND: Bridge,
+  Plugin, Manifest, Endpunkte, Einstellungen und Diagnose-Kopfzeilen sind
+  7.2.1. `test_v720_bridge.py` hat jetzt zusaetzlich zum Balance-Check einen
+  echten Tree-sitter-PowerShell-Parse-Gate; tree_sitter/tree_sitter_powershell
+  stehen in requirements-test.txt.
+- v7.2.0 (05.10.2026): NUTZER-KANAL, ehrlicher Fortschritt ohne erfundene
+  Zahl, gemessene Fertig-Meldung, Fragen-Baum sowie Qualitaets-/GUI-Vertrag
+  sind umgesetzt; die detaillierten festen Regeln stehen oben in Abschnitt 4.
+- v7.1.3 (03.10.2026): MINI-UPDATE - QUALITAETSVERTRAG, MESSUNG,
+  EINSTELLUNGEN. Nutzerbericht: Tiere nur aus Kugeln, Baeume aus
+  Cylinder+Kugel, ALLE Cylinder um 90 Grad falsch, Sitzung brach mit
+  "The AI service rejected this request" ab, Fertig-Schalter fehlte, der
+  sim_start-Warnkasten stand noch in den Einstellungen. Antwort darauf:
+  (1) Get-BridgeGuides liefert organicBuildRules in JEDER Session
+  (verbotene Abkuerzungen, Mindest-Anatomie, Cylinder-Achsenregel mit
+  Referenz-Lua uprightCylinder/cylinderBetween/taperedSegment, Pflicht zu
+  organischer Bewegung, Selbsttest) und importantRules zeigt darauf.
+  (2) model_audit misst buildQuality: Zahlen je Form, primitiveGroups
+  (Gruppen aus NUR Kugeln), discLikeCylinder (Achse waagerecht, Teil quer
+  >= 1,5x laenger als lang = klassischer 90-Grad-Dreher), axisSkewDeg als
+  Info; verdict clean|primitive_abuse|cylinder_rotation|
+  primitive_abuse_and_cylinder_rotation. Ergebnis in jeder Antwort unter
+  _bridge.buildQuality. (3) report_done antwortet bei Verstoss
+  DETAIL_REQUIRED (Ausweg: nachbauen oder handoff), Platzhalter behalten
+  Vorrang (HANDOFF_REQUIRED). (4) Sessionstart-Paket gedeckelt: 47
+  Kernwerkzeuge voll, Rest als Index, harte Grenze
+  $Shared.SessionPayloadHardBudgetBytes = 300000, packageBytes/
+  budgetBytes/docsPolicy in jeder Sitzung. (5) Neuer Schalter
+  "Benachrichtigung, wenn Arena fertig ist" direkt unter "Fortschritt in
+  der Place-Liste anzeigen" (Standard AUS, wirkt sofort inkl.
+  Clear-NotifyQueue); SIMULATION-Warnkasten komplett entfernt.
+  Tests: test_v713_quality.py neu; test_v398_structure.py auf 7.1.3
+  gezogen; test_v712_toolbox.py prueft nur noch "mindestens 7.1.2"
+  (Versionsnagel liegt beim Struktur- und beim neuesten Test).
+  WINDOWS-LIVE-ABNAHME OFFEN: /api/version 7.1.3, Modelleinstieg ohne
+  Ball-only (model_audit buildQuality clean), report_done ohne
+  DETAIL_REQUIRED bei sauberer Arbeit, Sitzungsstart nennt packageBytes/
+  docsPolicy, Schalter in den Einstellungen an/aus.
+- v7.1.2 (03.10.2026): MINI-HOTFIX - TOOLBOX-/ASSET-BEFEHLE HAENGEN NICHT
+  MEHR. Live-Befund mit 7.1.1: nach mehreren Katalogsuchen liefen
+  Detail-/Folgeaufrufe in Timeouts, ein insert_asset (14124432577) kehrte
+  nie zurueck, /api/tool endete nach ca. 125,8 s im Cloudflare-524, danach
+  executor.alive=false bei gleichzeitig delivery.state='ok', Toolbox-Karten
+  dauerhaft auf "Macht gerade", Studio mit jedem weiteren Toolbox-Aufruf
+  traeger (Nutzerbeobachtung RAM ~70 % - KEIN Bridge-Messwert). Vier
+  Ursachen, alle am Quellcode belegt: (1) unbegrenzte Katalogzeit auf der
+  HTTP-Anfrage (eigene Retry-Schleife 2x20 s+1,5 s, dann 20 s Details; im
+  404-Fall 20 s JE Id; vor jedem insert_asset zusaetzlich 20 s Validierung
+  VOR den 55 s Studio-Wartezeit). (2) keine Obergrenze fuer gleichzeitige
+  Toolbox-Arbeit. (3) Get-StudioDeliveryHealth prueft executorAlive erst ab
+  45 s Funkstille -> 'ok' trotz totem Executor. (4) der STUDIO_TIMEOUT-Pfad
+  liess den Verlaufseintrag absichtlich auf 'running'. Fix: Invoke-CatalogHttp
+  (12 s / 8 s, Budget 25 s, keine Wiederholung, CATALOG_TIMEOUT),
+  Enter-ToolboxSlot (max. 2) + Enter-ToolboxImport (genau 1, Freigabe in
+  finally), ehrlicher Zustand 'executor_down', terminale UI-Zustaende,
+  Idempotenz gegen doppelte Einfuegung (120 s), Plugin-Einzelbelegung
+  assetImportState mit TOOLBOX_IMPORT_WEDGED (nativer LoadAsset ist NICHT
+  abbrechbar), Asset-Cache auf 400 Eintraege / 2 MB begrenzt und
+  Sammel-Schreiben statt Schreibsturm. Neuer Test test_v712_toolbox.py
+  (gemockter Katalog + Executor, 7.1.1 reproduziert, 7.1.2 gruen).
+  WINDOWS-LIVE-ABNAHME OFFEN: /api/version 7.1.2, toolbox-Block im Status,
+  search_assets < 25 s oder CATALOG_TIMEOUT, zweiter paralleler Aufruf
+  TOOLBOX_BUSY, keine Karte bleibt auf "Macht gerade".
+- v7.1.1 (03.10.2026): HOTFIX - STUDIO FUEHRT WIEDER BEFEHLE AUS. Live-Test
+  gegen 7.1.0 (Tunnel + Token): jedes Studio-Werkzeug STUDIO_TIMEOUT, obwohl
+  das Plugin alle 2 s pollte (poll=279, result=0, deliveryAttempts=0,
+  openPolls=0, revivedSessions=278 bei EINER Sitzung), /api/status und
+  /api/queue 500 "Die Argumenttypen stimmen nicht ueberein.", /api/places
+  404, clear_pending/reset liessen 5 Befehle stehen. Vier Ursachen, alle am
+  Quellcode bewiesen: (1) Get-SessionCancellationIds gab in 7.1.0
+  ", $items.ToArray()" zurueck -> @(...) an allen Aufrufern = IMMER
+  1-elementig -> Poll-Schleife brach vor dem Dequeue ab (jetzt flaches
+  Array). (2) @($pending)/@($recentCommands) in Get-QueueSnapshot und
+  commands=@($items) im Agent-Heartbeat = PowerShell-5.1-Binderfehler
+  (jetzt .ToArray()/direktes foreach; /api/status degradiert statt 500).
+  (3) Force-FailSessionQueue/Reset-SessionQueue mit @(Get-PendingCommands)
+  trafen ab 2 Befehlen keinen (jetzt echte Liste, echte Anzahl).
+  (4) Plugin-statePayload() ohne sessionId seit 7.0.0 -> jeder Poll ein
+  "Reconnect", Ersatz-Heartbeat "Sitzung unbekannt" (jetzt sessionId+gameId
+  im Payload, Update-Session loest ueber instanceGuid auf, Poll-/Heartbeat-
+  Antwort nennt sessionId, Plugin uebernimmt sie, Register-Session
+  same-instance <= 30 s behaelt den Lesemodus). Dazu: GET /api/places fuer
+  normale Tokens, Waechter COMMAND_NEVER_DELIVERED (120 s queued trotz
+  Polls), delivery.undeliveredCommands, neuer Modelltest
+  test_v711_delivery.py. WINDOWS-LIVE-ABNAHME OFFEN: revivedSessions muss
+  bei laufendem Studio konstant bleiben, /api/status 200, normaler Befehl
+  < 5 s, reset mit 2+ Befehlen = echte Anzahl.
+- v7.1.0: Ack-Outbox (received_batch vor enqueue), Re-Delivery bis 3x,
+  Selbstheilung bei verlorenen Acks, To-Json fuer 0/1-Element-Arrays,
+  BindReason-Vorschaufehler behoben. ENTHIELT die 7.1.1-Regression
+  (Komma-Operator in Get-SessionCancellationIds).
+- v7.0.8: Vier fehlende Lua-Namen (findByPath, resolveGroups,
+  runSolidOperation, firstNonEmpty) wieder da, tplName-Scope, Poll-
+  Schleife mit xpcall fehlerfest.
+- v7.0.3-7.0.7: kurze Polls mit Pause (7.0.3), unabhaengiger Server-
+  Waechter + lateResults + Admin-Reset (7.0.5), Sitzungsidentitaet ueber
+  instanceGuid + Fast-Fail + Zustell-Timeline + /api/version (7.0.6),
+  Place-Zeilen-Hotfix CommandCancelButton (7.0.7).
+- v7.0.2: LEERLAUF-LAG REDUZIERT. Im transparenten Hauptfenster liefen neun
+  dauerhaft wiederholte XAML-Loaded-Storyboards (Aurora/Glanz/Splash) plus
+  zwei endlose Punkt-Pulse; sie sind entfernt bzw. statisch, Farbgestaltung
+  und kurze Hover-/Einblend-Effekte bleiben. Place/UI-Abgleich von 0,9 auf
+  1,8 s; minimiert 5 s und Rueckkehr vor Session-/Zeilenabfragen. Vorschau AUS
+  stoppt auch die Spinner-Animationsuhr und ueberspringt den visuellen
+  Selbsttest. Handoff wird einmal pro UI-Tick statt je Place-Zeile geprueft;
+  Studio-Leerlaufwaechter 1,5 statt 0,5 s. WINDOWS-LIVE-ABNAHME OFFEN: Nach
+  Update mit einem verbundenen Place und deaktivierter Vorschau Task-Manager-
+  CPU der Bridge vergleichen; Place-Liste muss beim Restore sofort nachziehen.
+- v7.0.1: Place-Zeilen-Fallback/Diagnose verbessert, Einstellungs-Padding und
+  Schalterzustand repariert; Studio-Run-Simulation als ausserhalb des Edit-Modus
+  belegt und sim_start gesperrt.
+- v6.1.5: POLYGON-SYSTEM TATSAECHLICH VERBUNDEN UND UNVERDREHBAR. Ursache
+  fuer Teile an richtiger Position mit anschliessender kreuz-und-quer Rotation:
+  build_polygon_model liess autoWeld standardmaessig AUS. Bei anchored=false
+  simulierte Roblox deshalb jeden Wedge als eigenen Koerper. autoWeld ist nun
+  standardmaessig AN (nur explizites false schaltet ab). Zweite reale Ursache:
+  style.properties wurde nach berechnetem Size/CFrame angewandt und konnte mit
+  Position/Orientation/Rotation/CFrame/Size/PivotOffset die Geometrie wieder
+  zerstoeren. Diese Felder werden gefiltert und Size/CFrame zuletzt gesetzt.
+  Rueckgabe: autoWeldDefault, weldedSubmodels, ignoredGeometryProperties,
+  geometryInvariant. Session-Regel: Polygon-/Freiformflaechen immer ueber
+  build_polygon_model, ausser der Nutzer verlangt ausdruecklich Low-Level-Wedges.
+- v6.1.4: POLYGON ENGINE 2.0 - dauerhafte KI-Regel gegen 90-Grad-Drehfehler
+  und Nahtspalten. build_polygon_model trianguliert seit v6.1.3 korrekt, aber
+  die richtige WedgePart-Achsenkonvention (lokal X=Dicke/Normale,
+  Y=Hoehe/Orthogonale zur Basiskante, Z=Basiskanten-Richtung,
+  CFrame.fromMatrix(position, normal, up, dir)) war nirgends als feste Regel
+  fuer die KI hinterlegt - schrieb Arena statt des Tools eigenen Wedge-/
+  Dreieck-Code ueber run_lua, konnte sie die Achsen vertauschen. Die Regel
+  samt geprueftem Referenz-Lua-Schnipsel (drawSeamlessTriangle: laengste
+  Kante als Basis, Lotfusspunkt-Teilung, nach innen versetzter Skin-Offset)
+  liegt jetzt in Get-BridgeGuides (polygonEngineRules) und erreicht dadurch
+  JEDE neue Session automatisch ueber Sessionstart/get_docs/api-docs. Kein
+  Verhaltenswechsel an build_polygon_model selbst - reine Doku-Ergaenzung.
+- v6.1.3: POLYGON-BUILDER-LUECKEN GESCHLOSSEN. triangleWedges rotierte die
+  drei Dreieckspunkte beim Umsortieren auf die laengste Basiskante zuvor nur
+  unvollstaendig (nur 2 von 3 Variablen neu gesetzt) - dadurch fielen ganze
+  Flaechen (z. B. alle 16 Wedges eines achteckigen Baumstamms) als
+  "entartet" durch, rein abhaengig von der Eingabe-Punktreihenfolge. pointKey
+  normalisiert jetzt ausserdem negative Null (sin(2*pi)-Rundungsfehler), was
+  offene Rundungsnaehte an Staemmen/Kronen verschweisst. triangulate hat
+  Retry-/Fallback-Stufen (gelockerte Toleranz, umgekehrte Orientierung,
+  Fan-Triangulierung) statt Flaechen kommentarlos wegzulassen; die
+  Rueckgabe von build_polygon_model nennt facesTotal/facesBuilt/
+  facesSkipped/incomplete/warnings ehrlich statt vollen Erfolg vorzutaeuschen.
+- v6.1.2: KRITISCHER START-HOTFIX. Die 6.1.1-Auslieferung enthielt nach
+  dem vorgesehenen letzten [System.Environment]::Exit(0) sieben versehentlich
+  angehängte, beschädigte Textfragmente (inklusive einer alleinstehenden `)`).
+  Windows PowerShell parst die ganze Datei vor dem ersten Fenster; dadurch
+  startete nach dem funktionierenden EXE-Updater gar nichts. Der Anhang ist
+  entfernt, alle 6.1.1-Funktionen bleiben. `test_v398_structure.py` prüft die
+  exakte Schlusssequenz des Skripts, damit kein Fragment mehr angehängt wird.
+- v6.1.1: Polygon-Modelle, Wedge-Haut, Asset-Säuberung und Vorschau-Schalter.
+- v6.1.0: MITTEILUNGEN + TOOLBOX + VERLAUF + MEISTER-BAUEN. report_done
+  verlangt einen lebendigen Titel (70 Zeichen) und Inhalt (140 Zeichen).
+  Vorschauen laufen bei geoeffneter Bridge alle 3 s weiter und blockieren
+  minimierte Studio-Fenster nicht mehr vor PrintWindow. Toolbox-Kategorien
+  einschliesslich 3D-Modelle, Meshes/MeshParts, Plugins und Fonts sind frei.
+  Der leere Arena-Verlauf ist als verschachtelte Array-Rueckgabe repariert.
+  Neu: build_assembly fuer bis zu 2000 gruppierte Teile und
+  build_polygon_model fuer konkave 3D-Polygone; die Bridge trianguliert per
+  Ear-Clipping und baut ausschliesslich ultraduenne WedgeParts (2/Dreieck).
+  Die Arena-Anleitung ist kuerzer und faehigkeitsorientiert statt starr.
+- v6.0.6: FENSTER-VORSCHAU - UI-VISUAL BRACH VOR JEDER AUFNAHME AB.
+  HARTER LAUFZEITBELEG AUS 6.0.5: Identitaet 6.0.5 mit SHA-256
+  7433925B060FDD21A699936B3B8267E899EF1BB80A1673119D1DDFFB9B20E588,
+  FullLanguage und C#-Helfer waren korrekt. New-PlacePreviewVisual warf aber
+  an Laufzeitzeile 16101 `MethodException: Fuer "new" und die folgende
+  Argumenteanzahl kann keine Ueberladung gefunden werden: "1"`; direkt danach
+  `IMAGE_ASSIGN_SKIPPED ... grund=Zeile/IconImage fehlt`. Ursache war
+  `[System.Windows.Media.DoubleCollection]::new(@(4.0, 8.0))`: Windows
+  PowerShell 5.1 konnte das object[] nicht an den typisierten
+  Ein-Argument-Konstruktor binden. Gezielte Aenderung: parameterlos erzeugen,
+  beide double-Werte einzeln per Add eintragen, dann StrokeDashArray zuweisen.
+  Kein UI-Umbau, Capture-Pfad unveraendert. Strukturtest verbietet die
+  Regression. LIVE-ABNAHME 6.0.6 IST OFFEN: Erst Identitaet/Hash,
+  PREVIEW_UI_VERIFY + SELFTEST_OK und danach cap-N/PNG belegen Erfolg.
+- v6.0.5: VORSCHAU - "ZUGEWIESEN, ABER UNSICHTBAR" BEHOBEN. Messbefund statt
+  Vermutung: (1) Die Einstellungen zeigten beim Nutzer "Version 6.0.4" -> es
+  lief wirklich 6.0.4, der Updater-Verdacht ist widerlegt. (2) Die pinke
+  Selbsttest-Kachel erschien trotzdem NIE. Da ein einmal gesetztes Bild im
+  Programm durch nichts mehr entfernt wird (PreviewHasFrame=$true sperrt das
+  Platzhalter-Symbol, IconImage.Source wird nirgends zurueckgesetzt), haette
+  es dauerhaft stehen bleiben MUESSEN -> es war nie sichtbar -> Fehler im
+  Anzeigepfad, nicht in der Fensteraufnahme.
+  URSACHE: Set-PlacePreviewImage setzte beim ERSTEN Bild Opacity = 0 und
+  ueberliess das Sichtbarwerden allein der DoubleAnimation (0->1). Laeuft die
+  Animation nicht an, bleibt die Kachel fuer immer leer. Derselbe Ausfall ist
+  fuer die Place-ZEILE seit 5.0.2 belegt (Waechter "Einblend-Animation kam nie
+  an") - das Vorschaubild hatte keinen Waechter.
+  FIX: Opacity = 1 zuerst, Animation nur noch Deko (FillBehavior=Stop),
+  Waechter nach 400 ms (PREVIEW_OPACITY_RESCUE). Selbsttest-Urteil erst nach
+  1,5 s und nur bei gemessener Sichtbarkeit (neue Station PREVIEW_UI_VERIFY
+  misst Bild+Rahmen+Zeile und die effektive Deckkraft). Neuer Kurzbericht
+  %LOCALAPPDATA%\ArenaRobloxBridge\preview-diagnose.txt (klein, komplett
+  weitergebbar - ersetzt das Verschicken der grossen runtime.log).
+  LIVE-ABNAHME 6.0.5 (NUTZER-PC):
+  1. Update starten, Einstellungen oeffnen: Fusszeile muss 6.0.5 zeigen.
+  2. Ein Place/Studio-Fenster oeffnen: die PINKE Testkachel muss erscheinen
+     UND stehen bleiben, bis ein echtes Fensterbild kommt.
+  3. preview-diagnose.txt oeffnen: "UI-Selbsttest:" muss
+     PREVIEW_UI_SELFTEST_OK zeigen. Steht dort FAILED, nennt derselbe Eintrag
+     den Grund (Deckkraft/Flaeche/Baum/Bildquelle).
+  4. Fehlt PREVIEW_UI_VERIFY komplett -> in diesem Prozess laufen keine
+     Dispatcher-Timer/Animationen (dann ist DAS die naechste Spur).
+  5. Kommt danach kein echtes Studio-Bild, sind nur noch die
+     PREVIEW [cap-N]-Zeilen im Kurzbericht massgeblich (RESULT_RECEIVED
+     ok=False mit attempts=[...]).
+- v6.0.4: VORSCHAU: ENDE DES RATENS - LAUFZEIT-DIAGNOSE + ROBUSTE AUFNAHME.
+  Lagearbeit 6.0.1-6.0.3: Die Kachel blieb beim Nutzer leer, ohne dass ein
+  einziger Aufnahmeversuch im runtime.log belegt war; alle bisherigen Fixes
+  waren Quellcode-Mutmassungen. 6.0.4 baut stattdessen Messpunkte und einen
+  Selbsttest direkt in den Pfad:
+  * ABLAUF-ID + 9 STATIONEN je Aufnahmeversuch in runtime.log:
+    CAPTURE_START -> WINDOWS_ENUMERATED -> HANDLE_RESOLVED -> WORKER_STARTED
+    -> WORKER_COMPLETED -> RESULT_RECEIVED -> PNG_DECODED -> IMAGE_ASSIGNED
+    -> IMAGE_VISIBLE, je Zeile mit sid/PID/HWND/Titel/Datentyp/Bytes/Groesse/
+    Fehler. Write-PreviewTrace + PreviewFlowContexts halten die Zeilenfelder.
+    Kein stiller catch mehr im Vorschaupfad.
+  * UI-SELBSTTEST: Invoke-PlacePreviewUiSelfTest zeichnet ein 64x44
+    Pink/Limette-Schachbrett im Speicher und schickt es ueber denselben
+    Set-PlacePreviewImage-Pfad. Log: PREVIEW_UI_SELFTEST_OK/FAILED. Testbild
+    unsichtbar => Fehler in WPF/UI. Testbild sichtbar, echtes Bild nicht =>
+    Fehler in der Fensteraufnahme (Stationen nennen den Weg).
+  * ROBUSTE UEBERGABE: Aufnahme durch kompilierten C#-Helfer
+    Arena.PreviewCapture IM HAUPTPROZESS (Add-Type, Task.Run - kein
+    Runspace-Grenzuebergang des byte[] mehr). UI-Zuweisung nur ueber den
+    WPF-Dispatcher (CheckAccess -> BeginInvoke). Zusaetzlich atomare PNG-
+    Ablage %LOCALAPPDATA%\ArenaRobloxBridge\preview-cache\<sid>.png mit
+    SHA-256-Kurzhash im Log. Scheitert das Kompilieren (LanguageMode!),
+    greift begruendet der 6.0.3-ps-runspace-fallback.
+  * 4 AUFNAHMEWEGE: PrintWindow(PW_RENDERFULLCONTENT) -> PrintWindow(0) ->
+    WindowDcBitBlt (DWM-Umleitflaeche) -> CopyFromScreen. Erfolg nur, wenn
+    die Bitmap nicht schwarz/transparent ist (Sichtbarkeitsprobe,
+    Zwischenbefunde im AttemptLog).
+  * LAUFZEIT-IDENTITAET beim Start: Bridge-Version, absoluter Dateipfad,
+    SHA-256 der laufenden Datei, PowerShell-Sprachmodus -> beweist, ob
+    6.0.4 wirklich laeuft oder eine alte Kopie.
+  * runtime.log-Groessenbremse: ueber 4 MB -> runtime.log.old.
+  KEIN synchroner Netzwerkzugriff im UI-Thread; kein Worker.Stop/Dispose im
+  UI-Thread (Task-Jobs werden nur fallengelassen). Strukturtest
+  test_v398_structure.py assertet alle 6.0.4-Marker.
+  LIVE-ABNAHME 6.0.4 (NUTZER-PC):
+  1. Update auf 6.0.4 starten, dann %LOCALAPPDATA%\ArenaRobloxBridge\
+     runtime.log oeffnen: Zeile "Laufzeit-Identitaet" muss Version=6.0.4
+     zeigen (SHA-256 mit dem im PR notierten Wert vergleichen!).
+  2. Ein Studio-Fenster/Place oeffnen: innerhalb weniger Sekunden muss das
+     PINKE SELBSTTESTBILD in der Kachel erscheinen; Log zeigt
+     PREVIEW_UI_SELFTEST_OK (sonst UI-Fehler - Stationszeilen senden!).
+  3. Danach muss pro Place spaetestens nach ~3-5 s die echte Fenster-Vorschau
+     folgen. Wenn nicht: runtime.log nach "PREVIEW [cap-" durchsuchen und die
+     letzte Station + error= lesen (z. B. RESULT_RECEIVED ok=False mit
+     attempts=[pwRenderFullContent=true-aber-nichts-sichtbar ...]).
+  4. preview-cache\<sid>.png oeffnen: zeigt die Datei ein schwarzes/
+     leeres Bild, liefert die GPU-Darstellung schlicht nichts -> naechster
+     Weg im AttemptLog massgeblich. Wird eine PNG-Datei erwartet, aber keine
+     geschrieben, PNG_STORE_FAILED-Zeile suchen.
+  5. Zwei Studio-Fenster parallel: beide Zeilen muessen jeweils ihr eigenes
+     Fenster zeigen (HANDLE_RESOLVED reason=titelExakt/titelTolerant pruefen).
+- v6.0.3: FENSTER-VORSCHAU ENDGUELTIG REPARIERT. Live-Ursache aus 6.0.2:
+  Get-StudioWindowInfos (und derselbe Altfehler in Get-StudioWindowName) gab
+  per `return , $cache` ein verschachteltes object[][] zurueck. Bei mehreren
+  Studio-Fenstern war Count deshalb 1 und ein Handle-ARRAY wurde nach IntPtr
+  gecastet; Start-PlacePreviewCapture brach vor jedem Worker ab. Beide Caches
+  werden jetzt ohne unitaeres Komma flach ausgegeben; Strukturtest verbietet
+  die Regression. Aufnahme primaer per PrintWindow(PW_RENDERFULLCONTENT),
+  damit die Bridge/andere Fenster Studio nicht im Bild verdecken;
+  CopyFromScreen bleibt Fallback. Synchrone thumbnails.roblox.com-Abfrage aus
+  dem UI-Thread komplett entfernt (nur echte Fenster-Vorschau). Worker haben
+  10-s-Watchdog; fehlende Fenster werden schon vor Worker-Start begruendet
+  geloggt; Remove-DeadSession stoppt Worker und leert alle Vorschau-Caches.
+  LIVE-ABNAHME: Zwei Studio-Fenster oeffnen, Bridge davor legen: beide Zeilen
+  muessen innerhalb weniger Sekunden unterschiedliche Studio-Bilder zeigen;
+  runtime.log meldet je sid "Live-Vorschau aktiv (..., PrintWindow)". Danach
+  ein Studio schliessen und pruefen, dass seine Zeile/Worker verschwinden.
+- v6.0.2: ICON-/VORSCHAU-REPARATUR + UPDATE-SICHERHEITSNETZ. Live-Befund:
+  Beim Nutzer erschien "seit vielen Versionen nie ein Bild" in der Kachel.
+  Zwei Ursachen angegangen: (a) 6.0.1 blieb bei JEDEM gescheiterten Aufnahme-
+  versuch einfach stehen (endloser Ladekreis, kein Fallback, kein Log) -
+  jetzt: nach 3 Fehlversuchen Platzhalter-Symbol, weiterlaufende Aufnahmen,
+  jede fehlgeschlagene Aufnahme begruendet in runtime.log (gedrosselt,
+  $script:PlacePreviewFailLogAt), erste erfolgreiche Aufnahme je Sitzung
+  wird einmalig protokolliert ("Place-Vorschau (<sid>): Live-Vorschau aktiv
+  (WxH px)"). Zusaetzlich null-sicherer Handle (vorher warf $handle.ToInt64()
+  still im aufrufenden try/catch), tolerante Titel-Zuordnung (Trim, Gross-/
+  Klein, StartsWith, versionMismatch-Suffix entfernt), flaches object[] im
+  Fenster-Cache (bewaehrtes Get-StudioWindowName-Muster), Worker mit eigenem
+  ScreenHelper-Add-Type-Fallback. (b) UPDATE-SICHERHEITSNETZ: Startet der
+  Starter (EXE) mit einem Status, der kein frisches Update beweist
+  ('kein-update'/'keine-verbindung'/'update-fehler'/'update-suche-fehler'),
+  prueft das Programm SELBST kurz gegen version.json (Zeitlimit
+  $script:SelfUpdateVerifyTimeout = 6 s, nach erstem toten Branch Abbruch)
+  und zieht das Update notfalls direkt (Invoke-AutostartSelfUpdate
+  -VerifyMode, Neustart mit Hinweisfenster). Grund: ein defekter Starter
+  konnte vorher JEDE Repo-Version fuer immer beim Nutzer nicht ankommen
+  lassen - die plausibelste Erklaerung fuer "10 Prompts lang passiert
+  nichts". OFFEN/TODO bleibt: make-updater.ps1 der Starter-EXE auf den
+  3.9.8-Fehler pruefen (UTF8.GetString auf String-.Content) und ggf. neu
+  bauen/verteilen.
+  LIVE-ABNAHME 6.0.2: (1) Studio oeffnen -> innerhalb ~3 s muss eine echte
+  Vorschau erscheinen ODER (falls minimiert/fehlerhaft) nach ~3 Versuchen das
+  Platzhalter-Symbol; runtime.log zeigt "Live-Vorschau aktiv (WxH px)" bzw.
+  den Fehlergrund. (2) Studio minimieren -> Vorschau friert ein (keine
+  neuen Aufnahmen, kein schwarzes Bild). (3) Zwei Studio-Fenster -> beide
+  Zeilen zeigen JE ihr Fenster (Titel-Zuordnung auch mit angehaengtem
+  "Studio neu starten"-Hinweis testen). (4) Nach dem Update Studio einmal
+  neu starten (Plugin 6.0.2). (5) Starter mitabschalten: lokale Fassung
+  alt machen, EXE starten, die "kein-update"-Meldung ignorieren -> die
+  Bridge muss das Update selbst ziehen und mit Hinweisfenster neu starten.
+- v6.0.1: Spiel-Icons (thumbnails.roblox.com, an gameId gebunden - bei
+  unveroeffentlichten Places GameId=0, immer leer) ersetzt durch echte
+  Live-Fenster-Vorschau per GDI+ CopyFromScreen im Hintergrund-Runspace
+  ($script:PlacePreview*). "Alle Places" bewusst ohne Vorschau.
+- v6.0: Liquid-Glass-Redesign (Optik/Animationen nur).
+- v5.0.0: Mega-Update: frische Session-Schlüssel werden vor jedem Play registriert (Stop/Move blockieren nicht mehr durch einen alten Schlüssel), Humanoid-Bewegung wird über die volle Dauer gehalten und der EndTest-Stop wartet robuster. Ab zwei Places erscheint "Alle Places" mit stabilem Token pro Programmstart, explizitem GET /api/places -> targetPlace-Wechsel für Arena, Icon-Mosaik und temporärem globalem Lesezugriff. Place-Icons laden mit Animation/Fallback; temporärer Lesezugriff wird nie gespeichert. Neuer scrollbarer, farbcodierter Arena-Verlauf je Place/gesamt.
+- v3.3: Basis-Release (bestaetigt: "danke alles klappt")
+- v3.4: Feature-Release
+- v3.5: Port-/Splash-Bugfixes (Geisterprozesse, Free-Port-Diagnose,
+  Splash-blocked-Handling)
+- v3.6: Update-System ueber GitHub: Starter-EXE, Status-Parameter,
+  Update-Hinweisfenster, rote "1", Toasts entfernt, Menue-Toggle
+- v3.7: Grau-/Pink-Design, Update-Fenster wartet zwingend auf OK;
+  Playtest-Schutz fordert Arena zum Antwort-Stopp und zur Nutzer-Bitte auf
+- v3.8: Grosse Einstellungen mit rot/gruen-Schaltern + dauerhafte
+  Speicherung (settings.json); neue Schalter "Arena darf sich selbst
+  testen" (Standard an; aus = Run/Play/Play Here gesperrt als
+  SELF_TEST_DISABLED, Arena wird informiert) und "Benachrichtigung
+  wenn Arena fertig" (Standard aus; neuer Befehl report_done ->
+  Windows-Meldung mit Arenas Text); Playtests stark verbessert:
+  StudioTestService zum Start/Stop, kein Run-Fallback mehr bei Play
+  (=> "kein Charakter spawnt" behoben), der SERVER verfolgt selbst, wer
+  den Test gestartet hat (Nutzer-Playtests kommen zuverlaessig an,
+  auch nach Plugin-Neuladen), neuer Modus play_here, Nutzer-Aktivitaet
+  im Editor wird als user_active gemeldet
+- v3.9.6: Playtest ohne HTTP: getrennte DataModels via EditModeActive true->
+  false als Start-Orakel, #ARENA#-LogStream-Reporter, VIM Tasten/Maus,
+  edit RunService:Stop() als Standard-Stop, Reparaturen (UTC-Pending,
+  LateResults, UTF-8-GET, Retry-Dedupe, Plugin/Bridge-Versionswarnung).
+- v3.9.8: AUTOSTART-SELBST-UPDATE REPARIERT: Get-RawGitHubText rief UTF8.GetString()
+  auf einem bereits als String dekodierten .Content auf (raw.githubusercontent
+  liefert text/plain;charset=utf-8) - der Selbst-Update lud seit 3.9 NIE etwas
+  (stiller catch -> $null -> "Branch nicht erreichbar" -> immer lokale Fassung,
+  nur im Runtime-Log sichtbar). Fix: beide Rueckgabetypen (byte[]/String)
+  verarbeiten + U+FEFF vor dem Neuschreiben mit UTF-8-BOM strippen.
+- v3.9.7: LETZTE PLAYTEST-KLEMMEN GEFIXT (Live-Befunde B1-B6 aus 3.9.6):
+  Reporter-Injektion repariert (normale klon-sichere Scripts, Loeschung der
+  Edit-Kopien erst nach editModeActive=false + Sweeps), sofortige #ARENA#
+  hello-Zeile als Injektionsbeweis, Stop-Leiter (Reporter-EndTest ueber
+  Befehlskanal > edit RunService:Stop() > PLAY_STOP_NEEDS_USER), Befehlskanal
+  ohne HTTP (http-Agent > SharedTableRegistry > VIM-Kombos > GetTestArgs),
+  neues Werkzeug session_diag, alle Play-Guards session-bewusst
+  (REPORTER_NOT_CONNECTED statt falschem "No test running").
+- v3.9: KOMPLETTE STEUERUNG PER HTTP GET (wichtigstes Feature): jeder
+  Endpunkt nimmt jetzt auch GET an und laeuft ueber DENSELBEN
+  Programmpfad wie POST (GET /api/tool?token=&tool=&args=<URL-JSON>
+  &timeoutSeconds=, GET /api/tools/parallel?calls=<URL-JSON>,
+  GET /api/upload?uploadId=&chunkIndex=&chunkCount=&text=). Grund:
+  manche KI-Umgebungen erreichen trycloudflare.com nur ueber ihren
+  Web-Abruf-Dienst (nur GET, kein POST-Koerper). _bridge, _sessionStart,
+  Stueckelung/Blobs, SELF_TEST_DISABLED, Play-Absichten und report_done
+  verhalten sich identisch; Doku/Manifest/Guides sagen der KI, dass sie
+  ausschliesslich ueber GET arbeiten kann. Ausserdem: Kopier-
+  Bestaetigung im Fenster nach "Prompt kopieren" (blendet nach ein paar
+  Sekunden aus, KEIN Popup), und der Autostart sucht selbst nach
+  Updates (version.json von GitHub, Branch-Kette, .new-Tausch, alte
+  Prozesse beenden, Neustart mit -UpdateStatus update-erfolgreich) -
+  Netzfehler blockieren den Start nie.
+
+Der vollstaendige Versionsverlauf steht als Kommentar ganz oben in
+ArenaBridge.ps1 (bis zur aktuellen Version fortfuehren!).
+
+
+7) LIVE-BEWEISLAGE 3.9.6 UND PLAYTEST-ARCHITEKTUR 3.9.7
+=========================================================
+DIESE ERKENNTNISSE SIND LIVE GEPRUEFT. NICHT WIEDER AUF DIE ALTE
+IsRunning-/Players-HEURISTIK ZURUECKBAUEN.
+
+BEFUNDE AUS DEM LIVE-TEST GEGEN 3.9.6 (Place1, frisches Studio,
+httpEnabled=false, agentMode logStream, Session lief: editModeActive=false,
+mode=play, context=session):
+----------------------------------------------------------------------------
+B1. Der Reporter kam NIE in der Session an: sessionPlayers:0,
+    reporterActive:false, null #ARENA#-Zeilen im Output, auch im Edit-DM
+    keine Arena-Suche-Treffer. Ursache: Injektion mit Archivable=false UND
+    Sofort-Loeschung im Edit-DM (Loesch-Race) - der Reporter wurde schon
+    entfernt, bevor Studio den Place in die Session klonte (bzw.
+    Archivable=false verbietet das Klonen ohnehin).
+B2. Ohne Reporter kein Remote-Stop: play_stop = PLAY_STOP_FAILED
+    ("Studio still reports an active test after RunService:Stop()",
+    usedPath editRunServiceStop). HARTE ERKENNTNIS: Sessions, die per
+    ExecutePlayModeAsync gestartet wurden, lassen sich aus dem Edit-DM NICHT
+    per RunService:Stop() beenden (bei F5-gestarteten Sessions ging das!).
+    Shift+F5 per VirtualInputManager erreichte die Session nie. EndTest
+    funktioniert NUR aus dem Server-DataModel der Session -> der Reporter
+    IST der Stopp-Weg.
+B3. Waehrend der Session kamen im Edit-DM GAR KEINE neuen Output-Zeilen an
+    (Cursor blieb stehen) - ob LogService im Edit-DM Session-Zeilen liefert,
+    war damit unbewiesen; in 3.9.7 liefert session_diag den Beweis.
+B4. character_state antwortete trotz laufender Session "No test running" -
+    der Guard pruefte RunService:IsRunning() im Edit-DM. In 3.9.7 pruefen
+    ALLE Play-Guards das Sessions-Orakel.
+B5. UTF-8-GET war diesmal nicht getestet; 3.9.5 zeigte "->" als kaputtes
+    Latin-1. Der Fix aus 3.9.6 (explizite UTF-8-Dekodierung der Roh-Query)
+    ist im Code verifiziert (UrlDecode(..., UTF8) ueber
+    Request.Url.Query), Live-Abnahme per report_done mit Umlauten steht in
+    der Checkliste unten.
+B6. Es liefen zeitweise 2 Places in 2 Studio-Fenstern - Verhalten ok
+    (Parallelbetrieb), nur zur Info.
+
+WAS 3.9.7 GEBAUT HAT (A-F):
+----------------------------------------------------------------------------
+A. REPORTER-REPARATUR. Zwei Varianten per Diagnose-Schalter:
+   - reporterVariant=2 (STANDARD): NORMALE klon-sichere Scripts
+     (Archivable bleibt Standard/true) - sie liegen beim Snapshot sicher in
+     der Session. Die Edit-Kopien werden erst geloescht, NACHDEM
+     editModeActive=false die Session bewiesen hat (+1,5s Marge), plus
+     Sicherheits-Sweeps in play_stop und plugin.Unloading, damit der Place
+     nie mit Helferskripten gespeichert wird.
+   - reporterVariant=1: die 3.9.6-Variante (Archivable=false) als
+     Diagnose-Sonde zum empirischen Gegentest
+     (play_start { reporterVariant=1 }).
+   Der Reporter druckt sofort "#ARENA# hello" (Server UND Client) und
+   danach Snapshots (0,5s am Anfang, dann 2s): players, Charakter-Position/
+   Gesundheit, GUI-Baum mit Screen-Positionen. startDiagnostics enthaelt
+   reporterInjected + reporterSeenInOutput; session_diag enthaelt
+   reporterAktiv, letzte #ARENA#-Zeile + Alter, sessionPlayers und die
+   genutzte Injektions-Variante (variantInjected vs. variantInSession -
+   letztere meldet der hello der Session selbst).
+B. STOP-PFAD (Leiter, kein Endlos-Probieren): (1) Reporter aktiv ->
+   end_test-Befehl ueber den Befehlskanal; der Reporter ruft
+   StudioTestService:EndTest("stopped_by_arena_bridge") IM Session-Server-DM
+   auf; (2) Fallback RunService:Stop() + editModeActive-Kontrolle;
+   (3) sonst sauberer Fehler PLAY_STOP_NEEDS_USER mit deutscher userMessage
+   ("Bitte in Studio Stop druecken (Shift+F5)"). Nach Erfolg:
+   editModeActive==true, play_stopped-Event (Server-Zustandswatcher), RunOwner-
+   Aufraeumung (Server), Sweeps - ein SOFORTIGER zweiter play_start klappt.
+C. BEFEHLSKANAL INS SESSION-DM OHNE HTTP (Prioritaet):
+   (1) HttpEnabled=true: bisheriger HTTP-Agent (Schnellpfad).
+   (2) SharedTableRegistry als Cross-DM-Kanal: IMPLEMENTIERT in Plugin
+       (Schreiben st.command / Lesen st.lastResult, Client-Slot
+       st.clientCommand/st.clientResult) und im Reporter (Polling + Echo-
+       Probe). session_diag > sharedTableProbe.crossDm entscheidet LIVE, ob
+       die Tabelle zwischen Edit- und Session-DataModel geteilt ist - bei
+       false dokumentieren und auf (3)/(4) zurueckfallen. [LIVE-NACHWEIS
+       STEHT NOCH AUS - nach dem naechsten Playtest hier festhalten.]
+   (3) VirtualInputManager-Tastenprotokoll: Plugin sendet unsichtbare
+       Kombos Strg+Alt+Umschalt+E (end_test) / R (respawn_character) / P
+       (character_state-Zustand). Der CLIENT-Reporter hoert per
+       UserInputService und leitet per RemoteEvent ArenaSessionCmd an den
+       Server-Reporter weiter. Lebend-Nachweis: session_diag >
+       channels.vimCommandsSeen / vimCommandsSeen steigt nach einer Probe.
+       [LIVE-NACHWEIS STEHT NOCH AUS.]
+   (4) Notfall: Neustart mit GetTestArgs (arenaSpawn=..., mode=...,
+       reporterVariant=...) - der Reporter liest StudioTestService:GetTestArgs.
+   Genutzt wird, was funktioniert, fuer end_test, teleport_character,
+   respawn_character, character_state und set_camera (Client-Kanal).
+   move_character und gui_click bleiben direkte VIM-Eingaben aus dem Edit-DM.
+D. ALLE PLAY-TOOL-GUARDS nutzen testSessionActive()
+   (editModeActive=false ODER IsRunning()). Ohne Reporter-Snapshot bei
+   aktiver Session: REPORTER_NOT_CONNECTED mit sessionDiag statt "No test
+   running". play_status zeigt sessionPlayers, reporterActive, agentMode,
+   httpEnabled und Reporter-Frische (reporterLastKind/-AgeSeconds).
+E. UTF-8-GET: Fix aus 3.9.6 ist im Code verifiziert (Roh-Query wird selbst
+   mit [System.Web.HttpUtility]::UrlDecode(..., UTF8) dekodiert). Live-
+   Abnahme: report_done mit Umlauten per GET -> korrekt in den Events.
+F. Doku/Manifest/Guides beschreiben die neue Session-DM-Architektur,
+   die Kanal-Prioritaet, die Stop-Wege und PLAY_STOP_NEEDS_USER.
+
+WICHTIG NACH DEM UPDATE: Roblox Studio EINMAL NEU STARTEN, damit das neue
+Plugin laedt. Die Bridge zeigt ein veraltetes Plugin als versionMismatch
+(UI-Hinweis + /api/status + KI-Envelope "plugin outdated - Tests warten").
+
+PFLICHT-DIAGNOSE BEI JEDER AENDERUNG
+------------------------------------
+- startDiagnostics in play_start UND play_stop enthaelt:
+  editModeActiveBefore/After, serviceError wortgetreu, usedPath,
+  sessionPlayers, reporterActive, reporterSeenInOutput, reporterInjected,
+  reporterVariantUsed, channelAttempts (beim Stop), agentMode und httpEnabled.
+- Bei einem Live-Fehler ZUERST session_diag und danach get_output filter
+  "ARENA" lesen. NIE anhand von RunService/Players im Edit-DataModel raten.
+- session_diag-Felder: reporter { active, seenInOutput, arenaLineCount,
+  lastKind, lastAgeSeconds, variantInjected, variantInSession },
+  channels { httpConnected, sharedTableAvailable, sharedTableCrossDm,
+  vimAvailable, vimCommandsSeen }, Output-Cursor + Zaehler, kompletter
+  play_status. skipProbe=true ueberspringt die 2.5s-SharedTable-Sonde.
+
+LIVE-ABNAHME NACH DEM UPDATE (GET-only ueber Tunnel; Token kommt vom
+Nutzer; Web-Abruf-Retry-Dedup einkalkulieren - Server dedupliziert gleiche
+play_start/play_stop innerhalb 3s bereits):
+ 1. /api/status + play_status: alles 3.9.7, editModeActive:true, kein
+    Zombie, kein versionMismatch (sonst: Studio neu starten!).
+ 2. play_start mode=play => ok:true UND
+    startDiagnostics.reporterSeenInOutput=true, sessionPlayers>=1 MIT
+    Charakter-Position im Snapshot.
+ 3. character_state => echte Position/Gesundheit aus der Session.
+ 4. move_character => Position aendert sich messbar (vorher/nachher lesen).
+ 5. play_stop => ok:true (bevorzugt stopMethod reporterEndTest),
+    editModeActive:true, play_stopped-Event.
+ 6. SOFORT play_start erneut => klappt wieder (Zombie-Freiheit).
+ 7. Nutzer startet selbst Play in Studio => play_started startedBy=user;
+    KI-Stop (play_stop) funktioniert danach.
+ 8. report_done mit Umlauten per GET => korrekt dekodiert in den Events.
+ 9. Alles in einem zweiten Studio-Fenster / anderem Place wiederholen
+    (Parallelbetrieb). Bei Problemen: session_diag + #ARENA#-Zeilen lesen,
+    NICHT raten. Ergebnisse der Kanal-Sonden (crossDm/vim) hier im Abschnitt
+    C dokumentieren!
+
+TEST- UND DATEI-REGELN FUER 3.9.8
+---------------------------------
+- In dieser Sandbox KEIN pwsh/PowerShell fuer Tests benutzen. Stattdessen
+  `python test_v398_structure.py`: Versions-/Strukturpruefung, Lua mit
+  `luaparser` (Plugin UND alle eingebetteten Reporter-/Agent-Sources), XAML
+  als XML und in test_v720 einen echten PowerShell-Parse mit `tree_sitter` +
+  `tree_sitter_powershell`. Python muss diese Abhaengigkeiten aus
+  requirements-test.txt installiert haben.
+  HINWEIS: pip --user-Installationen landen in ~/.local und ueberleben
+  Sandbox-Snapshots NICHT - in einer frischen Sandbox luaparser einfach
+  neu installieren.
+- ArenaBridge.ps1 bleibt UTF-8 MIT BOM. Nach jeder Version alle in Abschnitt
+  3 genannten Literale pruefen: DocsVersion, ARENA_VERSION, Manifest,
+  bridgeVersion (3x), serverVersion, Plugin-Kommentar, Update-Fallback,
+  Einstellungsfusszeile. Der Strukturtest assertet sie plus die 3.9.7-
+  Marker (PLAY_STOP_NEEDS_USER, REPORTER_NOT_CONNECTED, session_diag,
+  SharedTableRegistry, stop-Leiter, Forward-Deklarationen-Stolperstein)
+  und die 3.9.8-Marker (Get-RawGitHubText, byte[]-Verzweigung,
+  U+FEFF-Strip).
+- LIVE-BEFUND 3.9.8 (Autostart-Selbst-Update war seit 3.9 tot):
+  Get-RawGitHubText rief UTF8.GetString() auf einem bereits als String
+  dekodierten .Content auf (raw.githubusercontent.com liefert
+  text/plain;charset=utf-8 - Invoke-WebRequest dekodiert selbst) - der
+  Aufruf warf still im catch, jeder Branch galt als "nicht erreichbar",
+  es startete IMMER die lokale Fassung (nur im Runtime-Log sichtbar).
+  Fix 3.9.8: beide Rueckgabetypen (byte[]/String) verarbeiten und U+FEFF
+  vor dem Neuschreiben mit UTF-8-BOM strippen (kein Doppel-BOM).
+  OFFEN/TODO: make-updater.ps1 der Starter-EXE spaeter auf dasselbe
+  Muster pruefen (UTF8.GetString auf .Content einer Invoke-WebRequest-
+  Antwort koennte denselben stillen Fehler haben).
+- LUA-STOLPERSTEIN: in Lua sind `local function`-Definitionen erst AB ihrer
+  Zeile sichtbar. Wer einen Helfer vor seiner Definition aufruft, bekommt
+  global nil. Deshalb Deklaration-Reihenfolge pruefen; echte
+  Vorwaertsnutzung per Forward-Deklaration loesen (siehe
+  writeClientCommand/readClientResult, die logStreamClientAction nutzt).
+- Commit und Push nur auf der Arena-Session-Branch; keine grossen
+  Testartefakte oder virtuelle Umgebungen einchecken.
