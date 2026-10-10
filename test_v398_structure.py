@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline structure check for Arena Roblox Bridge 7.6.0.
+"""Offline structure check for Arena Roblox Bridge 7.6.1.
 
 No PowerShell is invoked. The generated Roblox plugin is parsed with
 luaparser, each XAML here-string is parsed as XML, and high-risk architecture
@@ -19,7 +19,7 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.6.0"
+VERSION = "7.6.1"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -722,29 +722,29 @@ def main() -> int:
     # Every functional version location is intentional. Exact counts catch a
     # forgotten endpoint, footer or fallback while allowing historical notes.
     functional_version_counts = {
-        "DocsVersion     = '7.6.0'": 1,
-        'local ARENA_VERSION  = "7.6.0"': 1,
-        "version = '7.6.0'": 1,
-        "bridgeVersion = '7.6.0'": 3,
-        "bridgeVersion='7.6.0'": 1,
-        "serverVersion = '7.6.0'": 2,
-        "$versionText = '7.6.0'": 1,
-        "$verText = '7.6.0'": 1,
-        "ArenaRobloxBridge/7.6.0": 1,
-        "Arena Studio Bridge - Studio Plugin  (Version 7.6.0)": 1,
-        'Text="Arena Roblox Bridge - Version 7.6.0"': 1,
-        "Version 7.6.0 - aktuell. Beim naechsten Start": 2,
-        "Bridge-Version=7.6.0": 2,
-        "Kurzbericht Fenster-Vorschau (Version 7.6.0)": 1,
-        "Kurzbericht Fortschrittsanzeige (Version 7.6.0)": 1,
-        "Kurzbericht Fertig-Meldung (Version 7.6.0)": 1,
-        "Arena Roblox Bridge - Leistungsbericht (Version 7.6.0)": 1,
-        "Arena Roblox Bridge - Place-Diagnose (Version 7.6.0)": 1,
-        "Version: 7.6.0": 2,
-        "Version=7.6.0": 3,
-        "Bridge/Plugin-Stand: 7.6.0": 1,
-        "Arena Roblox Bridge - Start-Diagnose (Version 7.6.0)": 2,
-        "RuntimeInfo.Version = '7.6.0'": 1,
+        "DocsVersion     = '7.6.1'": 1,
+        'local ARENA_VERSION  = "7.6.1"': 1,
+        "version = '7.6.1'": 1,
+        "bridgeVersion = '7.6.1'": 3,
+        "bridgeVersion='7.6.1'": 1,
+        "serverVersion = '7.6.1'": 2,
+        "$versionText = '7.6.1'": 1,
+        "$verText = '7.6.1'": 1,
+        "ArenaRobloxBridge/7.6.1": 1,
+        "Arena Studio Bridge - Studio Plugin  (Version 7.6.1)": 1,
+        'Text="Arena Roblox Bridge - Version 7.6.1"': 1,
+        "Version 7.6.1 - aktuell. Beim naechsten Start": 2,
+        "Bridge-Version=7.6.1": 2,
+        "Kurzbericht Fenster-Vorschau (Version 7.6.1)": 1,
+        "Kurzbericht Fortschrittsanzeige (Version 7.6.1)": 1,
+        "Kurzbericht Fertig-Meldung (Version 7.6.1)": 1,
+        "Arena Roblox Bridge - Leistungsbericht (Version 7.6.1)": 1,
+        "Arena Roblox Bridge - Place-Diagnose (Version 7.6.1)": 1,
+        "Version: 7.6.1": 2,
+        "Version=7.6.1": 3,
+        "Bridge/Plugin-Stand: 7.6.1": 1,
+        "Arena Roblox Bridge - Start-Diagnose (Version 7.6.1)": 2,
+        "RuntimeInfo.Version = '7.6.1'": 1,
         "Mesh-Build Engine 1.3 (Version 7.5.8)": 1,
         "Organic Build Engine 1.1 (Version 7.5.8)": 1,
         "# Version 7.3.2 (2026-10-07)": 1,
@@ -756,6 +756,7 @@ def main() -> int:
         "# Version 7.5.7 (2026-10-09)": 1,
         "# Version 7.5.8 (2026-10-09)": 1,
         "# Version 7.5.9 (2026-10-09)": 1,
+        "# Version 7.6.1 (2026-10-10)": 1,
         "# Version 7.6.0 (2026-10-09)": 1,
         "# Version 7.5.5 (2026-10-08)": 1,
     }
@@ -1433,7 +1434,7 @@ def main() -> int:
     # five Window here-strings (main, settings, handoff, user message,
     # question); 7.4.0 added a sixth (Mesh-Uploads) and 7.5.0 REMOVED it
     # again - the mesh upload is a tool call now (upload_asset), the user
-    # uploads nothing by hand and needs no window. 7.6.0 adds the Open Cloud
+    # uploads nothing by hand and needs no window. 7.6.1 adds the Open Cloud
     # permission window (Introspect result before saving), so six is the
     # truth now. Every block is parsed here - that is what catches a broken
     # dialog before PowerShell ever sees the file.

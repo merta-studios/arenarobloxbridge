@@ -1,5 +1,24 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.6.0
+# Arena Roblox Bridge  -  Version 7.6.1
+#
+# Version 7.6.1 (2026-10-10) - OPEN-CLOUD-KEY KLARER, KEIN ABLAUFDATUM, SOFORTIGES BERECHTIGUNGSFENSTER
+#   1) TUTORIAL NUR MIT NUTZBAREN SCOPES: Jeder Stichpunkt heisst wie der
+#      Scope im Creator Dashboard (kein extra Scope-Unterpunkt, nirgendwo
+#      "Pflicht"). Entfernt: Nutzer-Benachrichtigungen, Place-Instances,
+#      Messaging, Memory Stores. Neu, weil Arena sie per Tools nutzen darf:
+#      Ordered DataStores, Place Publishing, Uebersetzungen,
+#      creator-store-product, universe.user-restriction, universe.thumbnail,
+#      universe.places, universe.event, universe.analytics, thumbnails.
+#   2) BERECHTIGUNGSFENSTER SOFORT: Speichern oeffnet das Fenster sofort mit
+#      einem drehenden Ladekreis; die Rechte erscheinen, sobald Roblox
+#      geantwortet hat. Keine Warnung mehr zu fehlenden Kern-Rechten -
+#      der Nutzer entscheidet selbst, was der Key darf.
+#   3) KEIN ABLAUFDATUM: Hat der Key ein Ablaufdatum, weigert sich die Bridge
+#      komplett, ihn zu speichern und zu benutzen. Arena bekommt einen klaren
+#      Satz fuer den Nutzer (Expiration = No Expiration).
+#   4) WERKZEUG-GATE: Jedes Open-Cloud-Werkzeug prueft zuerst: Ist ein Key
+#      gespeichert? Hat er ein Ablaufdatum? Sind fuer den Scope Read UND Write
+#      da? Sonst blocken mit genauer Anleitung, was der Nutzer aendern muss.
 #
 # Version 7.6.0 (2026-10-09) - NUTZER-NACHRICHTEN UNUEBERSEHBAR + OPEN-CLOUD-KEY MIT VOLLEM UMFANG
 #   1) NACHRICHTEN AN ARENA GEHEN NICHT MEHR UNTER: Eine Nutzernachricht steht
@@ -2236,7 +2255,7 @@ param(
 # Existing LOCALAPPDATA directory; no UI, no new exception net.
 # A parse/policy failure prevents even this marker. Check its timestamp/version.
 # Continue + SilentlyContinue keeps diagnostic I/O from becoming a start blocker.
-Write-Output ("{0:o} PROOF_OF_LIFE Version=7.6.0 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
+Write-Output ("{0:o} PROOF_OF_LIFE Version=7.6.1 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
 
 # Version 7.5.8: Ein Autostart kann alte Run-Eintraege parallel ausloesen.
 # Nur EIN PowerShell-Kind darf die Bridge-Oberflaeche/Dienste starten. Die
@@ -2314,7 +2333,7 @@ trap {
         }
         $trapPath = Join-Path $trapFolder 'startup-diagnose.txt'
         $trapReport = New-Object System.Text.StringBuilder
-        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.6.0)')
+        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.6.1)')
         [void]$trapReport.AppendLine('Quelle: trap auf Skriptebene (nicht abgefangener Fehler)')
         [void]$trapReport.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$trapReport.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -2353,7 +2372,7 @@ trap {
             try {
                 [System.IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA 'START-CHECK.txt'),
                     ('Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.6.0' + [Environment]::NewLine +
+                     'Version: 7.6.1' + [Environment]::NewLine +
                      'ABBRUCH: ' + $trapMessage + [Environment]::NewLine +
                      'Details: ' + $trapPath + [Environment]::NewLine),
                     [System.Text.Encoding]::UTF8)
@@ -3382,6 +3401,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     OpenCloudToolsText = ''
     OpenCloudKeyFile   = ''
     OpenCloudKeyCache  = ''
+    OpenCloudIntrospectCache = $null
     # Pfad des lokalen Asset-Caches (Suche/Details, damit pro Session nichts neu geladen wird)
     AssetCachePath  = Join-Path $script:AppDataRoot 'asset_cache.json'
     # Version 7.1.2: TOOLBOX-DROSSEL je Place. Ohne sie lief jeder Katalog-/
@@ -3411,7 +3431,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.6.0'
+    DocsVersion     = '7.6.1'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -3826,7 +3846,7 @@ function Write-StartupFailureDiagnose {
         try { $trace = [string]$ErrorRecord.ScriptStackTrace } catch {}
         if ($trace.Length -gt 2000) { $trace = $trace.Substring(0, 2000) }
         $report = New-Object System.Text.StringBuilder
-        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.6.0)')
+        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.6.1)')
         [void]$report.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$report.AppendLine('Letzte Startstufe: ' + $stage)
         [void]$report.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -3909,7 +3929,7 @@ function Set-StartupStage {
     try {
         $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
         $checkText = 'Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.6.0' + [Environment]::NewLine +
+                     'Version: 7.6.1' + [Environment]::NewLine +
                      'Zeit: ' + $stamp + [Environment]::NewLine +
                      'PowerShell: ' + [string]$PSVersionTable.PSVersion + ' | CLR ' + [string][Environment]::Version + [Environment]::NewLine +
                      'Skript: ' + [string]$script:ScriptPath + [Environment]::NewLine +
@@ -3975,12 +3995,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.6.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.6.0, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.6.1, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.6.1, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.6.0'
+$script:Shared.RuntimeInfo.Version = '7.6.1'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -4083,7 +4103,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.6.0)
+  Arena Studio Bridge - Studio Plugin  (Version 7.6.1)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -4156,7 +4176,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.6.0"
+local ARENA_VERSION  = "7.6.1"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -17401,7 +17421,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.6.0 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.6.1 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -22775,7 +22795,7 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
                 'Normal GET and POST tool calls use the same bridge code path. Queue cancellation/reset are mutating controls and require POST.',
                 'After an HTTP timeout, a Studio command remains tracked by commandId and may return through _bridge.lateResults. A plugin execution budget and an INDEPENDENT server-side watchdog (queue.sweep) abandon stalled commands so they cannot block the serial queue forever; inspect the Place before retrying because partial changes may exist. Use asJob=true when a long task should deliberately continue in the background. HTTP answers are capped at 55 seconds by default (85 seconds maximum) so a Cloudflare 524 can never cut the connection before the bridge replies.',
                 'Asset search covers the Creator Store categories including 3D models, models, meshes/MeshParts, plugins, fonts, audio, images/decals, video and animation. Insertion still reports Roblox permission/privacy errors and warns before inserting scripts.',
-                'OPEN-CLOUD-FULL-POWER (7.6.0): the API key IS the permission system - the old local creator_dashboard switch is GONE. creator_dashboard, datastore and upload_asset all work on the currently connected, already-published Studio game and are limited only by the key''s scopes (Roblox answers 403 and the tool names the missing scope via OPENCLOUD_SCOPE_MISSING - tell the user the missing scope verbatim so he can recreate the key; the save flow shows every permission up front). creator_dashboard: documented Open Cloud Universe/Place metadata and game-pass/developer-product get/list/create/update operations. datastore: the stable /cloud/v2 data-store APIs (list stores, list/read/create/update/increment/delete entries, list revisions) for player data support work. Mutations still enforce the session Read-only mode. Never accept caller-supplied target IDs or claim that Arena can create/publish/delete Places or manage undocumented Creator Hub pages. For icons pass iconBase64 + iconFileName to the documented imageFile multipart field.',
+                'OPEN-CLOUD-FULL-POWER (7.6.1): the API key IS the permission system. Before every Open Cloud tool the bridge checks: is a key stored (else OPENCLOUD_KEY_MISSING + userMessage), does it have an expiration date (then the bridge REFUSES with OPENCLOUD_KEY_HAS_EXPIRATION - tell the user to recreate with No Expiration), and does the needed scope have BOTH read and write (else OPENCLOUD_SCOPE_INCOMPLETE with the exact scope name). creator_dashboard, datastore and upload_asset work on the currently connected, already-published Studio game. Roblox 403 still names missing scopes via OPENCLOUD_SCOPE_MISSING. Mutations still enforce session Read-only. Never accept caller-supplied target IDs. For icons pass iconBase64 + iconFileName to imageFile.',
                 'sim_start is disabled because the former official Studio Run simulation exits Edit mode (EditModeActive=false), and the documented Studio API has no supported true Edit-mode physics/script path. A USER-started Play/F5 test is separate, blocks building (USER_PLAYTEST_ACTIVE), and can only be ended by the user.',
                 'Windows finish notifications use report_done { title, message }. Arena writes a lively title (max 70 characters) and an inviting body (max 140); avoid dry changelog lists.',
                 'Responses include typed error codes and concrete diagnostics. Use those details to decide the next step.',
@@ -23382,7 +23402,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.6.0'
+            version = '7.6.1'
             progress = 'Every call carries progress = { percent, message } on the same level as token/targetPlace/tool (or in args; the bridge strips it there). Missing percent = 0, never an error. The last call of a finished task is report_done (100, filled in automatically).'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -23614,7 +23634,7 @@ end
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $askUserProtocol = Get-BridgeAskUserProtocol
         $envelope = @{
-            bridgeVersion = '7.6.0'
+            bridgeVersion = '7.6.1'
             executor = $executorSnapshot
             askUserProtocol = $askUserProtocol
             progressContract = @{
@@ -25165,7 +25185,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.6.0'
+                        bridgeVersion = '7.6.1'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -25656,7 +25676,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.6.0'
+                        serverVersion = '7.6.1'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -26015,7 +26035,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.6.0'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.6.1'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -26099,8 +26119,8 @@ end
                 }
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.6.0'
-                    serverVersion = '7.6.0'
+                    bridgeVersion = '7.6.1'
+                    serverVersion = '7.6.1'
                     toolbox = $statusToolbox
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
@@ -29540,6 +29560,7 @@ $script:BridgeOpenCloudTools = {
             $protected = Protect-OpenCloudSecret $clean
             [System.IO.File]::WriteAllText($path, $protected, (New-Object System.Text.UTF8Encoding($false)))
             $Shared.OpenCloudKeyCache = $clean
+            try { $Shared.OpenCloudIntrospectCache = $null } catch {}
             return $true
         } catch {
             try { Write-BridgeLog ('Open Cloud: Schluessel konnte nicht gespeichert werden: ' + $_.Exception.Message) } catch {}
@@ -29550,6 +29571,7 @@ $script:BridgeOpenCloudTools = {
     function Remove-OpenCloudKey {
         param($Shared)
         try { $Shared.OpenCloudKeyCache = '' } catch {}
+        try { $Shared.OpenCloudIntrospectCache = $null } catch {}
         $path = Get-OpenCloudKeyPath $Shared
         try {
             if (-not [string]::IsNullOrWhiteSpace($path) -and (Test-Path -LiteralPath $path)) {
@@ -29581,6 +29603,168 @@ $script:BridgeOpenCloudTools = {
             savedAt     = $savedAt
             keyHint     = $hint
         }
+    }
+
+    function Test-OpenCloudKeyHasExpiration {
+        # Version 7.6.1: JEDES Ablaufdatum ist ein Nein. Die Bridge benutzt
+        # den Key dann gar nicht - der Nutzer muss No Expiration setzen.
+        param($Info)
+        if ($null -eq $Info) { return $false }
+        try { if ([bool]$Info.hasExpiration -eq $true) { return $true } } catch {}
+        try { if ([bool]$Info.expired -eq $true) { return $true } } catch {}
+        $expiry = ''
+        try { $expiry = ([string]$Info.expirationTimeUtc).Trim() } catch {}
+        if ([string]::IsNullOrWhiteSpace($expiry)) { return $false }
+        $lower = $expiry.ToLowerInvariant()
+        if ($lower -eq 'null' -or $lower -eq 'none' -or $lower.StartsWith('0001-01-01')) { return $false }
+        return $true
+    }
+
+    function Set-OpenCloudIntrospectCache {
+        param($Shared, $Info)
+        if ($null -eq $Shared -or $null -eq $Info) { return }
+        try {
+            $copy = @{}
+            foreach ($entry in @($Info.GetEnumerator())) { $copy[$entry.Key] = $entry.Value }
+            $copy.cachedAtUtc = [DateTime]::UtcNow.ToString('o')
+            $Shared.OpenCloudIntrospectCache = $copy
+        } catch {
+            try { $Shared.OpenCloudIntrospectCache = $Info } catch {}
+        }
+    }
+
+    function Get-OpenCloudIntrospectCached {
+        param($Shared, [int]$MaxAgeSeconds = 90)
+        try {
+            $cached = $Shared.OpenCloudIntrospectCache
+            if ($null -eq $cached) { return $null }
+            $stamp = ''
+            try { $stamp = [string]$cached.cachedAtUtc } catch {}
+            if ([string]::IsNullOrWhiteSpace($stamp)) { return $null }
+            $at = [DateTime]::Parse($stamp, $null, [System.Globalization.DateTimeStyles]::RoundtripKind)
+            if (([DateTime]::UtcNow - $at).TotalSeconds -gt $MaxAgeSeconds) { return $null }
+            return $cached
+        } catch { return $null }
+    }
+
+    function Get-OpenCloudFamilyCoverage {
+        # Read + Write fuer genau EINE Scope-Familie. 'alle' heisst hier:
+        # beides muss da sein, sonst blockt das Werkzeug.
+        param($Info, [string]$Family)
+        $family = ([string]$Family).Trim().ToLowerInvariant()
+        $read = $false
+        $write = $false
+        if ($family -eq 'asset') { try { $read = [bool]$Info.assetRead } catch {}; try { $write = [bool]$Info.assetWrite } catch {} }
+        elseif ($family -eq 'universe') { try { $read = [bool]$Info.universeRead } catch {}; try { $write = [bool]$Info.universeWrite } catch {} }
+        elseif ($family -eq 'universe.place') { try { $read = [bool]$Info.universePlaceRead } catch {}; try { $write = [bool]$Info.universePlaceWrite } catch {} }
+        elseif ($family -eq 'game-pass') { try { $read = [bool]$Info.gamePassRead } catch {}; try { $write = [bool]$Info.gamePassWrite } catch {} }
+        elseif ($family -eq 'developer-product') { try { $read = [bool]$Info.developerProductRead } catch {}; try { $write = [bool]$Info.developerProductWrite } catch {} }
+        elseif ($family -eq 'universe-datastores') {
+            try { $read = ([bool]$Info.datastoreObjectsRead -or [bool]$Info.datastoreObjectsList -or [bool]$Info.datastoreControlList) } catch {}
+            try { $write = ([bool]$Info.datastoreObjectsCreate -or [bool]$Info.datastoreObjectsUpdate -or [bool]$Info.datastoreObjectsDelete) } catch {}
+        }
+        elseif ($family -eq 'universe.ordered-data-store.scope.entry') { try { $read = [bool]$Info.orderedDatastoreRead } catch {}; try { $write = [bool]$Info.orderedDatastoreWrite } catch {} }
+        elseif ($family -eq 'universe-places') { try { $read = [bool]$Info.placePublishRead } catch {}; try { $write = [bool]$Info.placePublishWrite } catch {} }
+        elseif ($family -eq 'localization-table') { try { $read = [bool]$Info.localizationRead } catch {}; try { $write = [bool]$Info.localizationWrite } catch {} }
+        elseif ($family -eq 'creator-store-product') { try { $read = [bool]$Info.creatorStoreProductRead } catch {}; try { $write = [bool]$Info.creatorStoreProductWrite } catch {} }
+        elseif ($family -eq 'universe.user-restriction') { try { $read = [bool]$Info.userRestrictionRead } catch {}; try { $write = [bool]$Info.userRestrictionWrite } catch {} }
+        elseif ($family -eq 'universe.thumbnail') { try { $read = [bool]$Info.universeThumbnailRead } catch {}; try { $write = [bool]$Info.universeThumbnailWrite } catch {} }
+        elseif ($family -eq 'universe.places') { try { $read = [bool]$Info.universePlacesRead } catch {}; try { $write = [bool]$Info.universePlacesWrite } catch {} }
+        elseif ($family -eq 'universe.event') { try { $read = [bool]$Info.universeEventRead } catch {}; try { $write = [bool]$Info.universeEventWrite } catch {} }
+        elseif ($family -eq 'universe.analytics') { try { $read = [bool]$Info.universeAnalyticsRead } catch {}; try { $write = [bool]$Info.universeAnalyticsWrite } catch {} }
+        elseif ($family -eq 'thumbnails') { try { $read = [bool]$Info.thumbnailsRead } catch {}; try { $write = [bool]$Info.thumbnailsWrite } catch {} }
+        try {
+            foreach ($scope in @($Info.scopes)) {
+                if ($null -eq $scope) { continue }
+                $name = ([string]$scope.name).Trim().ToLowerInvariant()
+                if ([string]::IsNullOrWhiteSpace($name)) { continue }
+                $base = $name
+                $suffix = ''
+                if ($name.Contains(':')) {
+                    $base = $name.Substring(0, $name.IndexOf(':'))
+                    $suffix = $name.Substring($name.IndexOf(':') + 1)
+                }
+                $hit = $false
+                if ($family -eq 'asset') { $hit = ($base.Contains('asset') -and -not $base.Contains('generate-speech')) }
+                elseif ($family -eq 'universe-datastores') { $hit = $base.StartsWith('universe-datastores') }
+                elseif ($family -eq 'universe.ordered-data-store.scope.entry') { $hit = $base.StartsWith('universe.ordered-data-store') }
+                elseif ($family -eq 'creator-store-product') { $hit = $base.StartsWith('creator-store-product') }
+                elseif ($family -eq 'universe.user-restriction') { $hit = ($base -eq 'universe.user-restriction' -or $base.Contains('user-restriction')) }
+                elseif ($family -eq 'universe.thumbnail') { $hit = ($base -eq 'universe.thumbnail' -or $base.StartsWith('universe.thumbnails') -or $base.Contains('thumbnail-personalization')) }
+                elseif ($family -eq 'universe.event') { $hit = ($base -eq 'universe.event' -or $base -eq 'universe.events' -or $base.Contains('virtual-event')) }
+                elseif ($family -eq 'universe.analytics') { $hit = ($base -eq 'universe.analytics' -or $base.StartsWith('universe.analytics')) }
+                elseif ($family -eq 'thumbnails') { $hit = ($base -eq 'thumbnails' -or $base -eq 'thumbnail') }
+                elseif ($family -eq 'localization-table') { $hit = $base.StartsWith('localization') }
+                else { $hit = ($base -eq $family) }
+                if (-not $hit) { continue }
+                $ops = New-Object System.Collections.Generic.List[string]
+                try { foreach ($operation in @($scope.operations)) { $ops.Add((([string]$operation).Trim().ToLowerInvariant())) } } catch {}
+                if ($suffix -eq 'read' -or $ops.Contains('read') -or $ops.Contains('list')) { $read = $true }
+                if ($suffix -eq 'write' -or $ops.Contains('write') -or $ops.Contains('create') -or $ops.Contains('update') -or $ops.Contains('delete') -or $ops.Contains('publish')) { $write = $true }
+            }
+        } catch {}
+        return @{ family = $family; read = [bool]$read; write = [bool]$write; complete = ([bool]$read -and [bool]$write) }
+    }
+
+    function Assert-OpenCloudToolAccess {
+        # Version 7.6.1: EIN Gate fuer jedes Open-Cloud-Werkzeug.
+        # 1) Key gespeichert? 2) Kein Ablaufdatum? 3) Scope hat Read UND Write?
+        param($Shared, [string]$Family, [string]$What = '')
+        $config = Get-OpenCloudConfig $Shared
+        if (-not $config.hasKey) {
+            return @{
+                ok = $false; code = 'OPENCLOUD_KEY_MISSING'
+                error = 'In der Bridge ist kein Roblox Open Cloud API-Key gespeichert.'
+                userMessage = 'Sage dem Nutzer wortwoertlich: In der Bridge ist noch kein Open-Cloud-Key gespeichert. Oben rechts auf das Zahnrad (Einstellungen), Abschnitt "Roblox Open Cloud API-Key", Tutorial aufklappen, Key im Creator Dashboard OHNE Ablaufdatum anlegen, die API-Systeme mit Read und Write hinzufuegen, Key hier einfuegen und Speichern druecken. Danach kann ich weitermachen.'
+                howToFix = 'Sage dem Nutzer den Satz aus userMessage WORTLICH auf Deutsch.'
+                family = [string]$Family
+                what = [string]$What
+            }
+        }
+        $info = Get-OpenCloudIntrospectCached $Shared
+        if ($null -eq $info) {
+            $info = Invoke-OpenCloudIntrospect $Shared
+            if ($info.ok -eq $true) { Set-OpenCloudIntrospectCache $Shared $info }
+        }
+        if ($null -ne $info -and $info.ok -eq $true) {
+            if (Test-OpenCloudKeyHasExpiration $info) {
+                return @{
+                    ok = $false; code = 'OPENCLOUD_KEY_HAS_EXPIRATION'
+                    error = 'Die Bridge weigert sich, diesen Open-Cloud-Key zu benutzen, weil er ein Ablaufdatum hat.'
+                    userMessage = 'Sage dem Nutzer wortwoertlich: Die Bridge weigert sich, deinen Open-Cloud-Key zu benutzen, weil er ein Ablaufdatum hat. Bitte im Creator Dashboard (create.roblox.com/dashboard/credentials) einen neuen Key mit Expiration = No Expiration erstellen und in der Bridge unter Einstellungen neu speichern. Keys mit Ablaufdatum werden komplett abgelehnt.'
+                    howToFix = 'Sage dem Nutzer den Satz aus userMessage WORTLICH auf Deutsch.'
+                    expirationTimeUtc = $(try { [string]$info.expirationTimeUtc } catch { '' })
+                    family = [string]$Family
+                    what = [string]$What
+                }
+            }
+            if (-not [string]::IsNullOrWhiteSpace($Family)) {
+                $cov = Get-OpenCloudFamilyCoverage -Info $info -Family $Family
+                if ($cov.complete -ne $true) {
+                    $have = New-Object System.Collections.Generic.List[string]
+                    if ($cov.read) { $have.Add('Read') }
+                    if ($cov.write) { $have.Add('Write') }
+                    $haveText = 'keine'
+                    if ($have.Count -gt 0) { $haveText = ($have.ToArray() -join ' + ') }
+                    return @{
+                        ok = $false; code = 'OPENCLOUD_SCOPE_INCOMPLETE'
+                        error = ('Dem Open-Cloud-Key fehlen Rechte fuer ' + $Family + ' (vorhanden: ' + $haveText + ', gebraucht: Read und Write).')
+                        userMessage = ('Sage dem Nutzer wortwoertlich: Dem Open-Cloud-Key fehlen Rechte fuer ' + $Family + '. Im Creator Dashboard bei diesem API-System Read UND Write setzen, den Key neu speichern (Einstellungen -> ROBLOX OPEN CLOUD API-KEY). Aktuell vorhanden: ' + $haveText + '.')
+                        howToFix = 'Sage dem Nutzer den Satz aus userMessage WORTLICH auf Deutsch.'
+                        family = [string]$Family
+                        hasRead = [bool]$cov.read
+                        hasWrite = [bool]$cov.write
+                        what = [string]$What
+                    }
+                }
+            }
+        } elseif ($null -ne $info -and [string]$info.code -eq 'OPENCLOUD_KEY_REJECTED') {
+            if (-not $info.userMessage) {
+                try { $info.userMessage = 'Sage dem Nutzer wortwoertlich: Roblox hat den gespeicherten Open-Cloud-Key abgelehnt. Bitte in den Bridge-Einstellungen unter ROBLOX OPEN CLOUD API-KEY einen neuen Key ohne Ablaufdatum speichern.' } catch {}
+            }
+            return $info
+        }
+        return @{ ok = $true; code = 'OPENCLOUD_KEY_READY'; family = [string]$Family }
     }
 
     function Get-OpenCloudAssetSpec {
@@ -30017,15 +30201,9 @@ $script:BridgeOpenCloudTools = {
     function Invoke-OpenCloudUpload {
         param($Shared, [string]$FilePath, [string]$FileName, [byte[]]$Bytes, [string]$AssetType, [string]$DisplayName, [string]$Description, [int]$TimeoutSeconds = 90, [string]$SessionId = '')
 
+        $gate = Assert-OpenCloudToolAccess -Shared $Shared -Family 'asset' -What 'upload_asset'
+        if ($gate.ok -ne $true) { return $gate }
         $config = Get-OpenCloudConfig $Shared
-        if (-not $config.hasKey) {
-            return @{
-                ok = $false; code = 'OPENCLOUD_KEY_MISSING'
-                error = 'In diesem Bridge-Programm ist noch KEIN Roblox-Open-Cloud-API-Schluessel hinterlegt. Ohne ihn kann ich nichts nach Roblox hochladen.'
-                userMessage = 'Du hast in deiner Bridge noch keinen Roblox Open Cloud API-Key hinterlegt. Damit ich Meshes, Bilder, Spiel-Infos und DataStores automatisch bearbeiten kann, gehe bitte kurz oben rechts auf das Zahnrad (Einstellungen) und dort in den Abschnitt "Roblox Open Cloud API-Key": klappe das Tutorial auf (es erklaert jede Berechtigung), erstelle den Schluessel, kopiere ihn in das Feld und druecke Speichern. Arena prueft den Schluessel zuerst bei Roblox und zeigt dir ein Fenster mit allen Berechtigungen (gruen = darf Arena, rot = fehlt) - erst nach deinem "Ja, alles richtig!" wird er gespeichert. Dann kann ich direkt weiterarbeiten. Die Bridge nutzt beim Upload automatisch das Konto, mit dem du in Roblox Studio angemeldet bist.'
-                howToFix = 'Sage dem Nutzer den Satz aus userMessage WORTLICH auf Deutsch. Frage nicht nach der Asset-Id und lade nichts von Hand hoch - der Nutzer muss nur einmal den Schluessel hinterlegen.'
-            }
-        }
         # Version 7.5.6: Der angemeldete Studio-Nutzer ist der primaere
         # Asset-Ersteller; ohne Studio-ID wird die Resource aus dem API-Key genutzt.
         $creatorFound = Resolve-OpenCloudCreatorForUpload -Shared $Shared -SessionId $SessionId
@@ -30148,15 +30326,9 @@ $script:BridgeOpenCloudTools = {
         # Einmaliger Blick auf die asynchrone Operation. Ergebnis ist immer
         # ehrlich: pending, done (mit assetId) oder failed (mit Roblox-Text).
         param($Shared, [string]$OperationId)
+        $gate = Assert-OpenCloudToolAccess -Shared $Shared -Family 'asset' -What 'upload_asset'
+        if ($gate.ok -ne $true) { return $gate }
         $config = Get-OpenCloudConfig $Shared
-        if (-not $config.hasKey) {
-            return @{
-                ok = $false; code = 'OPENCLOUD_KEY_MISSING'
-                error = 'In diesem Bridge-Programm ist noch KEIN Roblox-Open-Cloud-API-Schluessel hinterlegt.'
-                userMessage = 'Du hast in deiner Bridge noch keinen Roblox Open Cloud API-Key hinterlegt. Bitte kurz auf das Zahnrad (Einstellungen) gehen, im Abschnitt "Roblox Open Cloud API-Key" das Tutorial machen und den Schluessel speichern - dann geht es direkt weiter.'
-                howToFix = 'Sage dem Nutzer den Satz aus userMessage WORTLICH auf Deutsch.'
-            }
-        }
         $clean = ([string]$OperationId).Trim()
         if ($clean -match '/([^/]+)$') { $clean = $Matches[1] }
         if ([string]::IsNullOrWhiteSpace($clean)) {
@@ -30296,7 +30468,9 @@ $script:BridgeOpenCloudTools = {
         # DataStores (control/objects/versions), Ordered DataStores,
         # Memory-Stores, Messaging, Lokalisierung und Nutzer-Benachrichtigungen.
         $universeRead = $false
+        $universePlaceRead = $false
         $placePublishWrite = $false
+        $placePublishRead = $false
         $placeInstanceRead = $false
         $placeInstanceWrite = $false
         $datastoreControlList = $false
@@ -30313,6 +30487,20 @@ $script:BridgeOpenCloudTools = {
         $localizationRead = $false
         $localizationWrite = $false
         $userNotificationWrite = $false
+        $creatorStoreProductRead = $false
+        $creatorStoreProductWrite = $false
+        $userRestrictionRead = $false
+        $userRestrictionWrite = $false
+        $universeThumbnailRead = $false
+        $universeThumbnailWrite = $false
+        $universePlacesRead = $false
+        $universePlacesWrite = $false
+        $universeEventRead = $false
+        $universeEventWrite = $false
+        $universeAnalyticsRead = $false
+        $universeAnalyticsWrite = $false
+        $thumbnailsRead = $false
+        $thumbnailsWrite = $false
         try {
             foreach ($scope in @($parsed.scopes)) {
                 if ($null -eq $scope) { continue }
@@ -30343,11 +30531,15 @@ $script:BridgeOpenCloudTools = {
                 if ($scopeBase -eq 'universe' -and $writes) { $universeWrite = $true }
                 if ($scopeBase -eq 'universe' -and $reads) { $universeRead = $true }
                 if ($scopeBase -eq 'universe.place' -and $writes) { $universePlaceWrite = $true }
+                if ($scopeBase -eq 'universe.place' -and $reads) { $universePlaceRead = $true }
                 if ($scopeBase -in @('game-pass','game-passes') -and $reads) { $gamePassRead = $true }
                 if ($scopeBase -in @('game-pass','game-passes') -and $writes) { $gamePassWrite = $true }
                 if ($scopeBase -in @('developer-product','developer-products') -and $reads) { $developerProductRead = $true }
                 if ($scopeBase -in @('developer-product','developer-products') -and $writes) { $developerProductWrite = $true }
-                if ($scopeBase -in @('universe-places','universe.places') -and ($writes -or $creates)) { $placePublishWrite = $true }
+                if ($scopeBase -eq 'universe-places' -and ($writes -or $creates)) { $placePublishWrite = $true }
+                if ($scopeBase -eq 'universe-places' -and $reads) { $placePublishRead = $true }
+                if ($scopeBase -eq 'universe.places' -and $reads) { $universePlacesRead = $true }
+                if ($scopeBase -eq 'universe.places' -and ($writes -or $creates)) { $universePlacesWrite = $true }
                 if ($scopeBase -eq 'universe.place.instance' -and $reads) { $placeInstanceRead = $true }
                 if ($scopeBase -eq 'universe.place.instance' -and $writes) { $placeInstanceWrite = $true }
                 if ($scopeBase -eq 'universe-datastores.control' -and ($lists -or $reads)) { $datastoreControlList = $true }
@@ -30366,6 +30558,18 @@ $script:BridgeOpenCloudTools = {
                 if ($scopeBase -like 'localization*' -and $reads) { $localizationRead = $true }
                 if ($scopeBase -like 'localization*' -and $writes) { $localizationWrite = $true }
                 if ($scopeBase -eq 'user.user-notification' -and $writes) { $userNotificationWrite = $true }
+                if ($scopeBase.StartsWith('creator-store-product') -and $reads) { $creatorStoreProductRead = $true }
+                if ($scopeBase.StartsWith('creator-store-product') -and $writes) { $creatorStoreProductWrite = $true }
+                if (($scopeBase -eq 'universe.user-restriction' -or $scopeBase.Contains('user-restriction')) -and $reads) { $userRestrictionRead = $true }
+                if (($scopeBase -eq 'universe.user-restriction' -or $scopeBase.Contains('user-restriction')) -and $writes) { $userRestrictionWrite = $true }
+                if (($scopeBase -eq 'universe.thumbnail' -or $scopeBase.StartsWith('universe.thumbnails') -or $scopeBase.Contains('thumbnail-personalization')) -and $reads) { $universeThumbnailRead = $true }
+                if (($scopeBase -eq 'universe.thumbnail' -or $scopeBase.StartsWith('universe.thumbnails') -or $scopeBase.Contains('thumbnail-personalization')) -and $writes) { $universeThumbnailWrite = $true }
+                if (($scopeBase -eq 'universe.event' -or $scopeBase -eq 'universe.events' -or $scopeBase.Contains('virtual-event')) -and $reads) { $universeEventRead = $true }
+                if (($scopeBase -eq 'universe.event' -or $scopeBase -eq 'universe.events' -or $scopeBase.Contains('virtual-event')) -and $writes) { $universeEventWrite = $true }
+                if (($scopeBase -eq 'universe.analytics' -or $scopeBase.StartsWith('universe.analytics')) -and $reads) { $universeAnalyticsRead = $true }
+                if (($scopeBase -eq 'universe.analytics' -or $scopeBase.StartsWith('universe.analytics')) -and $writes) { $universeAnalyticsWrite = $true }
+                if (($scopeBase -eq 'thumbnails' -or $scopeBase -eq 'thumbnail') -and $reads) { $thumbnailsRead = $true }
+                if (($scopeBase -eq 'thumbnails' -or $scopeBase -eq 'thumbnail') -and $writes) { $thumbnailsWrite = $true }
                 $scopes.Add(@{
                     name = $name
                     operations = $operations.ToArray()
@@ -30380,6 +30584,13 @@ $script:BridgeOpenCloudTools = {
         try { $enabled = [bool]$parsed.enabled } catch {}
         $expired = $false
         try { $expired = [bool]$parsed.expired } catch {}
+        $expirationTimeUtc = ''
+        try { $expirationTimeUtc = [string]$parsed.expirationTimeUtc } catch {}
+        $hasExpiration = $expired
+        if (-not $hasExpiration -and -not [string]::IsNullOrWhiteSpace($expirationTimeUtc)) {
+            $expiryLower = $expirationTimeUtc.Trim().ToLowerInvariant()
+            if ($expiryLower -ne 'null' -and $expiryLower -ne 'none' -and -not $expiryLower.StartsWith('0001-01-01')) { $hasExpiration = $true }
+        }
         $authorizedUserId = ''
         try { if ($null -ne $parsed.authorizedUserId) { $authorizedUserId = [string]$parsed.authorizedUserId } } catch {}
         return @{
@@ -30389,19 +30600,22 @@ $script:BridgeOpenCloudTools = {
             authorizedUserId = $authorizedUserId
             enabled = $enabled
             expired = $expired
-            expirationTimeUtc = $(try { [string]$parsed.expirationTimeUtc } catch { '' })
+            expirationTimeUtc = $expirationTimeUtc
+            hasExpiration = $hasExpiration
             scopes = $scopes.ToArray()
             scopeNames = $scopeNames.ToArray()
             assetRead = $assetRead
             assetWrite = $assetWrite
             universeWrite = $universeWrite
             universePlaceWrite = $universePlaceWrite
+            universePlaceRead = $universePlaceRead
             gamePassRead = $gamePassRead
             gamePassWrite = $gamePassWrite
             developerProductRead = $developerProductRead
             developerProductWrite = $developerProductWrite
             universeRead = $universeRead
             placePublishWrite = $placePublishWrite
+            placePublishRead = $placePublishRead
             placeInstanceRead = $placeInstanceRead
             placeInstanceWrite = $placeInstanceWrite
             datastoreControlList = $datastoreControlList
@@ -30418,6 +30632,20 @@ $script:BridgeOpenCloudTools = {
             localizationRead = $localizationRead
             localizationWrite = $localizationWrite
             userNotificationWrite = $userNotificationWrite
+            creatorStoreProductRead = $creatorStoreProductRead
+            creatorStoreProductWrite = $creatorStoreProductWrite
+            userRestrictionRead = $userRestrictionRead
+            userRestrictionWrite = $userRestrictionWrite
+            universeThumbnailRead = $universeThumbnailRead
+            universeThumbnailWrite = $universeThumbnailWrite
+            universePlacesRead = $universePlacesRead
+            universePlacesWrite = $universePlacesWrite
+            universeEventRead = $universeEventRead
+            universeEventWrite = $universeEventWrite
+            universeAnalyticsRead = $universeAnalyticsRead
+            universeAnalyticsWrite = $universeAnalyticsWrite
+            thumbnailsRead = $thumbnailsRead
+            thumbnailsWrite = $thumbnailsWrite
             writeUserIds = $writeUsers.ToArray()
             writeGroupIds = $writeGroups.ToArray()
             robloxResponse = $body
@@ -30626,10 +30854,13 @@ $script:BridgeOpenCloudTools = {
         if ($universeId -notmatch '^[1-9][0-9]{0,19}$' -or $placeId -notmatch '^[1-9][0-9]{0,19}$') {
             return @{ ok = $false; code = 'PUBLISHED_PLACE_REQUIRED'; error = 'Die aktive Studio-Sitzung meldet keine gültige Universe-ID und Place-ID. Creator-Dashboard-Verwaltung ist nur für einen bereits veröffentlichten Place mit echten IDs verfügbar; Arena veröffentlicht oder erstellt keine Places.'; howToFix = 'Veröffentliche/speichere den Place zuerst in Roblox Studio, verbinde dieses Fenster erneut und versuche es dann.' }
         }
+        $family = 'universe'
+        if ($action -like 'place_*') { $family = 'universe.place' }
+        elseif ($action -like 'gamepass_*') { $family = 'game-pass' }
+        elseif ($action -like 'developer_product_*') { $family = 'developer-product' }
+        $gate = Assert-OpenCloudToolAccess -Shared $Shared -Family $family -What ('creator_dashboard:' + $action)
+        if ($gate.ok -ne $true) { return $gate }
         $config = Get-OpenCloudConfig $Shared
-        if (-not $config.hasKey) {
-            return @{ ok = $false; code = 'OPENCLOUD_KEY_MISSING'; error = 'Für die Creator-Dashboard-Verwaltung ist ein Roblox Open Cloud API-Key erforderlich.'; userMessage = 'Bitte hinterlege in Arena unter Einstellungen → ROBLOX OPEN CLOUD API-KEY einen Open-Cloud-Key mit den Creator-Dashboard-Rechten aus dem Tutorial (universe, universe.place, game-pass, developer-product). Vor dem Speichern zeigt Arena dir genau, welche Berechtigungen der Schlüssel hat.' }
-        }
         $base = 'https://apis.roblox.com'
         $url = ''
         $method = 'GET'
@@ -30848,10 +31079,9 @@ $script:BridgeOpenCloudTools = {
         if ($universeId -notmatch '^[1-9][0-9]{0,19}$') {
             return @{ ok = $false; code = 'PUBLISHED_PLACE_REQUIRED'; error = 'Die aktive Studio-Sitzung meldet keine gueltige Universe-ID. Datastore-Zugriff ueber Open Cloud ist nur fuer einen bereits veroeffentlichten Place mit echter Universe-ID verfuegbar.'; howToFix = 'Veroeffentliche/speichere den Place zuerst in Roblox Studio, verbinde dieses Fenster erneut und versuche es dann.' }
         }
+        $gate = Assert-OpenCloudToolAccess -Shared $Shared -Family 'universe-datastores' -What 'datastore'
+        if ($gate.ok -ne $true) { return $gate }
         $config = Get-OpenCloudConfig $Shared
-        if (-not $config.hasKey) {
-            return @{ ok = $false; code = 'OPENCLOUD_KEY_MISSING'; error = 'Fuer Datastore-Zugriff ist ein Roblox Open Cloud API-Key erforderlich.'; userMessage = 'Bitte hinterlege in Arena unter Einstellungen -> ROBLOX OPEN CLOUD API-KEY einen Open-Cloud-Key mit den DataStore-Rechten aus dem Tutorial (universe-datastores mit list/read/create/update/delete). Vor dem Speichern zeigt Arena dir genau, welche Berechtigungen der Schluessel hat.' }
-        }
         $base = 'https://apis.roblox.com/cloud/v2/universes/' + $universeId
         # Datastore-Ziel: Name (empfohlen, wie in Studio) oder die ID aus
         # list_datastores. Beides wird als Pfadsegment verwendet - genau wie
@@ -33284,7 +33514,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.6.0)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.6.1)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -36275,7 +36505,7 @@ function Write-ChannelDiagnoseFile {
 
         $progressPath = Join-Path $script:AppDataRoot 'progress-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.6.0)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.6.1)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -36310,7 +36540,7 @@ function Write-ChannelDiagnoseFile {
 
         $notifyPath = Join-Path $script:AppDataRoot 'notify-diagnose.txt'
         $sb2 = New-Object System.Text.StringBuilder
-        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.6.0)')
+        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.6.1)')
         [void]$sb2.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb2.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb2.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -36679,7 +36909,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.6.0)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.6.1)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -39256,7 +39486,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.6.0)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.6.1)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -39422,7 +39652,7 @@ function Start-StudioProfileLookup {
                     $request.Method = 'GET'
                     $request.Timeout = 10000
                     $request.ReadWriteTimeout = 10000
-                    if ($request -is [System.Net.HttpWebRequest]) { $request.UserAgent = 'ArenaRobloxBridge/7.6.0' }
+                    if ($request -is [System.Net.HttpWebRequest]) { $request.UserAgent = 'ArenaRobloxBridge/7.6.1' }
                     $response = $request.GetResponse()
                     try {
                         $responseStream = $response.GetResponseStream()
@@ -40271,7 +40501,7 @@ Set-StartupStage 'Ereignisse verdrahtet (Fenstersteuerung + Loaded)'
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.6.0'
+    $versionText = '7.6.1'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -41409,7 +41639,7 @@ function Open-SettingsWindow {
                         <Border Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="14" Padding="16,14">
                             <StackPanel>
                                 <TextBlock Text="Roblox Open Cloud API-Key" Foreground="{StaticResource SwTextMain}" FontSize="15" FontWeight="Bold" TextWrapping="Wrap"/>
-                                <TextBlock Text="Der Key ist Arenas Zugang zu Roblox: Mesh-/Bild-Uploads, Creator-Dashboard (Spiel-Infos, Gamepasses, Produkte) UND DataStores (Spielerdaten). Was Arena genau darf, entscheidet allein der Key mit seinen Berechtigungen – es gibt keinen extra Schalter mehr. Beim Speichern prüft Arena den Key zuerst bei Roblox und zeigt dir in einem eigenen Fenster jede Berechtigung: grün = darf Arena, rot = fehlt."
+                                <TextBlock Text="Der Key ist Arenas Zugang zu Roblox (Uploads, Creator Dashboard, DataStores und mehr). Speichern öffnet sofort ein Fenster: zuerst ein Ladekreis, dann die Rechte. Grün = vorhanden, rot = fehlt. Du entscheidest selbst, was du gibst. Wichtig: kein Ablaufdatum – sonst weigert sich die Bridge komplett."
                                            Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"/>
 
                                 <!-- ZUSTAND 1 (Version 7.5.3): noch kein Schlüssel.
@@ -41469,7 +41699,7 @@ function Open-SettingsWindow {
                                                 <RotateTransform Angle="0"/>
                                             </TextBlock.RenderTransform>
                                         </TextBlock>
-                                        <TextBlock Grid.Column="1" Text="Tutorial: API-Key erstellen – alle Berechtigungen erklärt" Foreground="{StaticResource SwTextMain}" FontSize="12.5" VerticalAlignment="Center" TextWrapping="Wrap"/>
+                                        <TextBlock Grid.Column="1" Text="Tutorial: API-Key in 7 Schritten" Foreground="{StaticResource SwTextMain}" FontSize="12.5" VerticalAlignment="Center" TextWrapping="Wrap"/>
                                         <TextBlock x:Name="CloudTutorialToggle" Grid.Column="2" Text="anzeigen" Foreground="#FF5C77" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" Margin="10,0,0,0"/>
                                     </Grid>
                                 </Border>
@@ -41503,16 +41733,16 @@ function Open-SettingsWindow {
 
                                         <Border x:Name="CloudStep4" Background="#2A1020" CornerRadius="10" Padding="12,10" Margin="0,0,0,8" BorderBrush="#66FF5C77" BorderThickness="1">
                                             <StackPanel>
-                                                <TextBlock Text="4. Füge die API-Systeme mit ihren Operationen hinzu." Foreground="#FFC7D3" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap"/>
-                                                <TextBlock Text="Unter „Access Permissions“ wählst du aus, was der Key darf. Hier ist jede Berechtigung und was sie Arena ermöglicht – je mehr du hinzufügst, desto mehr kann Arena für dich erledigen. Fehlt später eine, sagt Arena dir genau welche:" Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                                <TextBlock Text="4. Füge diese API-Systeme hinzu – jeweils Read und Write." Foreground="#FFC7D3" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                                                <TextBlock Text="Die Namen sind genau so, wie du sie im Creator Dashboard siehst. Arena darf sie per Tools nutzen. Fehlt später eines, sagt Arena dir genau welches:" Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
                                                 <StackPanel x:Name="CloudPermissionList" Margin="0,10,0,0"/>
                                             </StackPanel>
                                         </Border>
 
                                         <Border x:Name="CloudStep5" Background="#0C1730" CornerRadius="10" Padding="12,10" Margin="0,0,0,8" BorderBrush="#26FFFFFF" BorderThickness="1">
                                             <StackPanel>
-                                                <TextBlock Text="5. Sicherheit: IP-Adressen und Ablaufdatum." Foreground="{StaticResource SwTextMain}" FontSize="12.5" TextWrapping="Wrap"/>
-                                                <TextBlock Text="Unter „Accepted IP Addresses“ erlaube deine IP – am einfachsten 0.0.0.0/0 (jede IP; nur dein Key, deine Verantwortung). Bei „Expiration“ wähle „No Expiration“, sonst hört Arena irgendwann still auf zu funktionieren." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                                <TextBlock Text="5. Sicherheit: IP-Adressen. Ablaufdatum NICHT setzen." Foreground="{StaticResource SwTextMain}" FontSize="12.5" TextWrapping="Wrap"/>
+                                                <TextBlock Text="Unter „Accepted IP Addresses“ erlaube deine IP – am einfachsten 0.0.0.0/0. Bei Expiration unbedingt „No Expiration“ wählen. Hat der Key ein Ablaufdatum, weigert sich die Bridge komplett, ihn zu benutzen." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
                                             </StackPanel>
                                         </Border>
 
@@ -41523,7 +41753,7 @@ function Open-SettingsWindow {
                                         <Border x:Name="CloudStep7" Background="#0C1730" CornerRadius="10" Padding="12,10" BorderBrush="#26FFFFFF" BorderThickness="1">
                                             <StackPanel>
                                                 <TextBlock Text="7. Füge den Schlüssel hier ein und drücke Speichern." Foreground="{StaticResource SwTextMain}" FontSize="12.5" TextWrapping="Wrap"/>
-                                                <TextBlock Text="Arena speichert nicht blind: Sie fragt zuerst bei Roblox nach (offizieller Introspect-Endpunkt) und zeigt dir in einem eigenen Fenster GENAU, welche Berechtigungen der Key hat und welche fehlen. Erst nach deinem „Ja, alles richtig! Key speichern!“ wird er verschlüsselt gespeichert. Deinen Roblox-Namen musst du nirgends eintragen: Die Bridge verwendet das in Roblox Studio angemeldete Konto." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                                <TextBlock Text="Speichern öffnet sofort ein Fenster mit Ladekreis, danach siehst du GENAU welche Rechte der Key hat. Erst nach „Ja, alles richtig! Key speichern!“ wird er verschlüsselt gespeichert. Deinen Roblox-Namen musst du nirgends eintragen." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,6,0,0"/>
                                             </StackPanel>
                                         </Border>
 
@@ -41535,7 +41765,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.6.0" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.6.1" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -41595,53 +41825,58 @@ function Open-SettingsWindow {
     $cloudPermissionsButton = $settingsWindow.FindName('CloudPermissionsButton')
 
     function Get-CloudPermissionCatalog {
-        # Version 7.6.0: DER offizielle Open-Cloud-Berechtigungs-Katalog
-        # (Roblox-OpenAPI-Spezifikation, Stand 10/2026). Jede Zeile nennt die
-        # Berechtigung, ihre echten Scope-Namen und in einem Satz, was sie
-        # Arena ermoeglicht. 'test' prueft das Introspect-Ergebnis; 'core'
-        # markiert die von Arena aktiv genutzten Rechte, der Rest ist ehrlich
-        # als "noch nicht genutzt" beschrieben - nichts wird versprochen,
-        # was die Bridge nicht kann.
+        # Version 7.6.1: Nur die Scopes, die Arena per Tools nutzen darf.
+        # Der Stichpunkt HEISST wie der Scope im Creator Dashboard - kein extra
+        # Scope-Unterpunkt, ohne Rangfolge. Der Nutzer entscheidet selbst.
         return @(
-            @{ id = 'assets'; core = $true; title = 'Assets (Read + Write)'; scope = 'asset';
-               desc = 'Meshes, Bilder und Audio hochladen und aendern. Pflicht: So bringt Arena fertige 3D-Modelle und Texturen selbst ins Spiel.';
+            @{ id = 'assets'; title = 'asset';
+               desc = 'Meshes und Bilder hochladen.';
                test = { param($v) ([bool]$v.assetRead -and [bool]$v.assetWrite) } }
-            @{ id = 'universe'; core = $true; title = 'Experiences (Read + Write)'; scope = 'universe';
-               desc = 'Name und Beschreibung des Spiels lesen und aendern, Server neu starten und Texte uebersetzen lassen.';
-               test = { param($v) ([bool]$v.universeWrite -or [bool]$v.universeRead) } }
-            @{ id = 'place'; core = $true; title = 'Place-Metadaten (Write)'; scope = 'universe.place';
-               desc = 'Name und Beschreibung einzelner Places des Spiels aendern.';
-               test = { param($v) [bool]$v.universePlaceWrite } }
-            @{ id = 'gamepass'; core = $true; title = 'Gamepasse (Read + Write)'; scope = 'game-pass';
-               desc = 'Gamepasse auflisten, lesen, erstellen und aendern - einschliesslich Preis und PNG/JPEG-Icon.';
-               test = { param($v) ([bool]$v.gamePassRead -or [bool]$v.gamePassWrite) } }
-            @{ id = 'devproduct'; core = $true; title = 'Developer-Produkte (Read + Write)'; scope = 'developer-product';
-               desc = 'Developer-Produkte (z. B. Coins-Pakete) auflisten, lesen, erstellen und aendern - mit Preis und Icon.';
-               test = { param($v) ([bool]$v.developerProductRead -or [bool]$v.developerProductWrite) } }
-            @{ id = 'datastore'; core = $true; title = 'DataStores (Read + Write)'; scope = 'universe-datastores.control / .objects / .versions';
-               desc = 'Spielerdaten von aussen lesen und aendern: Stores auflisten, Eintraege (Savedaten, Coins) lesen/anlegen/aendern/erhoehen/loeschen und alte Versionen ansehen.';
-               test = { param($v) ([bool]$v.datastoreControlList -or [bool]$v.datastoreObjectsList -or [bool]$v.datastoreObjectsRead -or [bool]$v.datastoreObjectsCreate -or [bool]$v.datastoreObjectsUpdate -or [bool]$v.datastoreObjectsDelete -or [bool]$v.datastoreVersionsList) } }
-            @{ id = 'orderedstore'; core = $false; title = 'Ordered DataStores (Read + Write)'; scope = 'universe.ordered-data-store.scope.entry';
-               desc = 'Geordnete Leaderboard-Daten (Sortier-DataStores) lesen und schreiben. Von Arena noch nicht genutzt - kannst du trotzdem schon freischalten.';
-               test = { param($v) ([bool]$v.orderedDatastoreRead -or [bool]$v.orderedDatastoreWrite) } }
-            @{ id = 'memorystore'; core = $false; title = 'Memory Stores (Read + Write + Flush)'; scope = 'memory-store';
-               desc = 'Fluechtige Warteschlangen und sortierte Maps des Spiels bedienen und zuruecksetzen. Von Arena noch nicht genutzt.';
-               test = { param($v) [bool]$v.memoryStoreAny } }
-            @{ id = 'messaging'; core = $false; title = 'Messaging (Publish)'; scope = 'universe-messaging-service';
-               desc = 'Nachrichten an die laufenden Server des Spiels senden (MessagingService). Von Arena noch nicht genutzt.';
-               test = { param($v) [bool]$v.messagingPublish } }
-            @{ id = 'placeinstance'; core = $false; title = 'Place-Instances (Read + Write)'; scope = 'universe.place.instance';
-               desc = 'Skripte eines Places per Cloud lesen und aendern (braucht eine Collaborative-Session). Von Arena noch nicht genutzt - Arena aendert Skripte direkt in Studio.';
-               test = { param($v) ([bool]$v.placeInstanceRead -or [bool]$v.placeInstanceWrite) } }
-            @{ id = 'publish'; core = $false; title = 'Place Publishing (Write)'; scope = 'universe-places';
-               desc = 'Neue Versionen eines Places veroeffentlichen. Von Arena noch nicht genutzt; Arena veroeffentlicht niemals von selbst etwas.';
-               test = { param($v) [bool]$v.placePublishWrite } }
-            @{ id = 'localization'; core = $false; title = 'Uebersetzungen (Read + Write)'; scope = 'localization-table';
-               desc = 'Uebersetzungstabellen des Spiels lesen und aendern. Von Arena noch nicht genutzt.';
-               test = { param($v) ([bool]$v.localizationRead -or [bool]$v.localizationWrite) } }
-            @{ id = 'notification'; core = $false; title = 'Nutzer-Benachrichtigungen (Write)'; scope = 'user.user-notification';
-               desc = 'Benachrichtigungen an Roblox-Nutzer senden. Von Arena noch nicht genutzt.';
-               test = { param($v) [bool]$v.userNotificationWrite } }
+            @{ id = 'universe'; title = 'universe';
+               desc = 'Name und Beschreibung des Spiels lesen und ändern.';
+               test = { param($v) ([bool]$v.universeRead -and [bool]$v.universeWrite) } }
+            @{ id = 'place'; title = 'universe.place';
+               desc = 'Name und Beschreibung einzelner Places lesen und ändern.';
+               test = { param($v) ([bool]$v.universePlaceRead -and [bool]$v.universePlaceWrite) } }
+            @{ id = 'gamepass'; title = 'game-pass';
+               desc = 'Gamepässe auflisten, erstellen und ändern.';
+               test = { param($v) ([bool]$v.gamePassRead -and [bool]$v.gamePassWrite) } }
+            @{ id = 'devproduct'; title = 'developer-product';
+               desc = 'Developer-Produkte auflisten, erstellen und ändern.';
+               test = { param($v) ([bool]$v.developerProductRead -and [bool]$v.developerProductWrite) } }
+            @{ id = 'datastore'; title = 'universe-datastores';
+               desc = 'Spielerdaten (Savedaten, Coins) lesen und ändern.';
+               test = { param($v) (([bool]$v.datastoreObjectsRead -or [bool]$v.datastoreObjectsList) -and ([bool]$v.datastoreObjectsCreate -or [bool]$v.datastoreObjectsUpdate)) } }
+            @{ id = 'orderedstore'; title = 'universe.ordered-data-store.scope.entry';
+               desc = 'Leaderboards und sortierte Daten lesen und ändern.';
+               test = { param($v) ([bool]$v.orderedDatastoreRead -and [bool]$v.orderedDatastoreWrite) } }
+            @{ id = 'publish'; title = 'universe-places';
+               desc = 'Place-Versionen veröffentlichen.';
+               test = { param($v) ([bool]$v.placePublishRead -and [bool]$v.placePublishWrite) } }
+            @{ id = 'localization'; title = 'localization-table';
+               desc = 'Übersetzungen des Spiels lesen und ändern.';
+               test = { param($v) ([bool]$v.localizationRead -and [bool]$v.localizationWrite) } }
+            @{ id = 'creatorstore'; title = 'creator-store-product';
+               desc = 'Creator-Store-Produkte lesen und ändern.';
+               test = { param($v) ([bool]$v.creatorStoreProductRead -and [bool]$v.creatorStoreProductWrite) } }
+            @{ id = 'restriction'; title = 'universe.user-restriction';
+               desc = 'Spieler sperren und entsperren.';
+               test = { param($v) ([bool]$v.userRestrictionRead -and [bool]$v.userRestrictionWrite) } }
+            @{ id = 'univthumb'; title = 'universe.thumbnail';
+               desc = 'Spiel-Thumbnails verwalten.';
+               test = { param($v) ([bool]$v.universeThumbnailRead -and [bool]$v.universeThumbnailWrite) } }
+            @{ id = 'univplaces'; title = 'universe.places';
+               desc = 'Places der Experience verwalten.';
+               test = { param($v) ([bool]$v.universePlacesRead -and [bool]$v.universePlacesWrite) } }
+            @{ id = 'events'; title = 'universe.event';
+               desc = 'Events und Updates planen.';
+               test = { param($v) ([bool]$v.universeEventRead -and [bool]$v.universeEventWrite) } }
+            @{ id = 'analytics'; title = 'universe.analytics';
+               desc = 'Spiel-Statistiken abfragen.';
+               test = { param($v) ([bool]$v.universeAnalyticsRead -and [bool]$v.universeAnalyticsWrite) } }
+            @{ id = 'thumbnails'; title = 'thumbnails';
+               desc = 'Vorschaubilder abrufen.';
+               test = { param($v) ([bool]$v.thumbnailsRead -and [bool]$v.thumbnailsWrite) } }
         )
     }
 
@@ -41665,7 +41900,7 @@ function Open-SettingsWindow {
         $mark.VerticalAlignment = 'Center'
         if ($null -eq $Verdict) {
             $mark.Text = [string]([char]0x25CF)
-            if ($Item.core) { $mark.Foreground = Get-Brush '#7EE2A8' } else { $mark.Foreground = Get-Brush '#6E7FA8' }
+            $mark.Foreground = Get-Brush '#7EE2A8'
         } elseif ($granted) {
             $mark.Text = [string]([char]0x2714)
             $mark.Foreground = Get-Brush '#7EE2A8'
@@ -41679,16 +41914,9 @@ function Open-SettingsWindow {
         $title.FontSize = 12
         $title.FontWeight = 'SemiBold'
         $title.TextWrapping = 'Wrap'
-        if ($null -eq $Verdict -and -not $Item.core) { $title.Foreground = Get-Brush '#9AA9CE' } else { $title.Foreground = Get-Brush '#F4F8FF' }
+        $title.Foreground = Get-Brush '#F4F8FF'
         [void]$head.Children.Add($title)
         [void]$row.Children.Add($head)
-        $scopeText = [System.Windows.Controls.TextBlock]::new()
-        $scopeText.Text = ('Scope: ' + [string]$Item.scope)
-        $scopeText.FontSize = 10
-        $scopeText.Foreground = Get-Brush '#6E7FA8'
-        $scopeText.TextWrapping = 'Wrap'
-        $scopeText.Margin = [System.Windows.Thickness]::new(21, 1, 0, 0)
-        [void]$row.Children.Add($scopeText)
         $descText = [System.Windows.Controls.TextBlock]::new()
         $descText.Text = [string]$Item.desc
         $descText.FontSize = 10.5
@@ -41735,7 +41963,7 @@ function Open-SettingsWindow {
                 try { $hint = [string]$script:SettingsCache.openCloudKeyHint } catch {}
                 $savedAt = ''
                 try { $savedAt = [string]$script:SettingsCache.openCloudSavedAt } catch {}
-                $line = 'Arena kann Meshes und Bilder jetzt selbst hochladen und einsetzen. Bevorzugt wird das Konto, das gerade in Roblox Studio angemeldet ist; nur ohne Studio-ID dient die Key-Resource als Rueckfall.'
+                $line = 'Arena kann mit diesem Key arbeiten. Rechte siehst du unter „Berechtigungen ansehen“. Keys mit Ablaufdatum werden abgelehnt.'
                 if (-not [string]::IsNullOrWhiteSpace($hint)) { $line = $line + ' Schlüssel ' + $hint + '.' }
                 if (-not [string]::IsNullOrWhiteSpace($savedAt)) { $line = $line + ' Gespeichert ' + $savedAt + '.' }
                 $cloudReadyNote.Text = $line
@@ -41858,26 +42086,12 @@ function Open-SettingsWindow {
             } catch {}
         }
         Sync-CloudSharedSettings
-        # Version 7.6.0: Ehrliche Kurz-Bilanz aus dem vollen Katalog. Die
-        # ausfuehrliche Anzeige mit jeder Berechtigung zeigt das
-        # Berechtigungs-Fenster (Knopf "Berechtigungen ansehen").
-        $missingPermissions = New-Object System.Collections.Generic.List[string]
-        if (-not $assetRead -or -not $assetWrite) { $missingPermissions.Add('Assets read+write (Uploads)') }
-        foreach ($catalogItem in (Get-CloudPermissionCatalog)) {
-            if (-not $catalogItem.core) { continue }
-            $itemGranted = $false
-            try { $itemGranted = [bool](& $catalogItem.test $Verdict) } catch {}
-            if (-not $itemGranted) { $missingPermissions.Add(([string]$catalogItem.title)) }
-        }
-        if ($missingPermissions.Count -gt 0) {
-            $hint = 'Roblox nimmt den Schlüssel an, aber folgende Rechte fehlen: ' + (($missingPermissions | Select-Object -Unique) -join '; ') + '. Öffne „Berechtigungen ansehen“ für die komplette Übersicht oder erstelle den Key mit mehr API-Systemen neu.'
-            Set-CloudSaveHint $hint '#FFD9A0'
-        } elseif (-not $creatorOk) {
-            # Ein fehlender Resource-Eintrag im Introspect ist kein Upload-Blocker:
-            # im verbundenen Place liefert StudioService die angemeldete Nutzer-ID.
-            Set-CloudSaveHint 'Roblox nimmt den Schlüssel an und alle Kern-Berechtigungen sind da. Beim Upload verwendet die Bridge automatisch das aktuell angemeldete Roblox-Studio-Konto.' '#7EE2A8'
+        $hasExpiration = $false
+        try { $hasExpiration = [bool](Test-OpenCloudKeyHasExpiration $Verdict) } catch {}
+        if ($hasExpiration) {
+            Set-CloudSaveHint 'Dieser Key hat ein Ablaufdatum. Die Bridge weigert sich komplett, ihn zu benutzen. Bitte im Creator Dashboard einen neuen Key mit Expiration = No Expiration erstellen und hier neu speichern.' '#FF5C77'
         } else {
-            Set-CloudSaveHint 'Schlüssel geprüft: Roblox nimmt ihn an und alle Kern-Berechtigungen (Uploads, Creator-Dashboard, DataStores) sind vorhanden.' '#7EE2A8'
+            Set-CloudSaveHint 'Schlüssel geprüft. Welche Rechte Arena damit hat, siehst du unter „Berechtigungen ansehen“.' '#7EE2A8'
         }
         try { Write-RuntimeLog ('Open Cloud: Pruefung ok (assets read=' + [string]$assetRead + ', write=' + [string]$assetWrite + ', universe=' + [string]$Verdict.universeWrite + ', place=' + [string]$Verdict.universePlaceWrite + ', game-pass=' + [string]$Verdict.gamePassWrite + ', dev-product=' + [string]$Verdict.developerProductWrite + ', datastore=' + [string]$Verdict.datastoreObjectsUpdate + ', Ersteller=' + [string]$creatorOk + ').') } catch {}
     }
@@ -41908,17 +42122,12 @@ function Open-SettingsWindow {
     }
 
     function Show-CloudPermissionsWindow {
-        # Version 7.6.0: DAS Berechtigungs-Fenster. Zeigt nach der
-        # Introspect-Pruefung JEDE Berechtigung mit gruenem Haekchen (darf
-        # Arena) oder rotem Kreuz (fehlt) plus Kurzbeschreibung - klar fuer
-        # Vibe-Coder. Vor dem Speichern mit den beiden Entscheidungs-Knoepfen:
-        #   "Oh, das aendere ich nochmal!"  -> Fenster zu, Feld bleibt gefuellt
-        #   "Ja, alles richtig! Key speichern!" -> jetzt erst wird gespeichert
-        # Bei $PendingKey = '' ist es reine Ansicht (gespeicherter Schluessel).
-        param($Verdict, [string]$PendingKey = '')
+        # Version 7.6.1: Das Fenster erscheint SOFORT mit Ladekreis. Die
+        # Berechtigungen kommen nach, sobald Roblox geantwortet hat. Keine
+        # Kern-Rechte-Warnung - der Nutzer entscheidet selbst. Keys mit
+        # Ablaufdatum werden nicht gespeichert und nicht benutzt.
+        param([string]$PendingKey = '')
         $isPreSave = (-not [string]::IsNullOrWhiteSpace($PendingKey))
-        $ok = $false
-        try { $ok = ([bool]$Verdict.ok -eq $true) } catch {}
         $permXaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -41968,37 +42177,54 @@ function Open-SettingsWindow {
                         <TextBlock Text="Was darf Arena mit diesem Key?" Foreground="{StaticResource SwTextMain}"
                                    FontSize="17" FontWeight="Bold" TextWrapping="Wrap"/>
                         <TextBlock x:Name="PermSubTitle" Foreground="{StaticResource SwTextFaint}"
-                                   FontSize="10.5" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                                   FontSize="10.5" Margin="0,3,0,0" TextWrapping="Wrap"
+                                   Text="Arena fragt Roblox …"/>
                     </StackPanel>
                     <Button x:Name="PermCloseButton" Grid.Column="1" Style="{StaticResource ArenaCloseButton}"
                             Content="&#xE8BB;" FontFamily="Segoe MDL2 Assets" FontSize="11"
                             ToolTip="Schließen"/>
                 </Grid>
-                <ScrollViewer Grid.Row="1" Margin="0,14,0,0" VerticalScrollBarVisibility="Auto">
-                    <StackPanel>
-                        <Border x:Name="PermVerdictCard" Background="#0C1730" CornerRadius="12" Padding="14,12"
-                                Margin="0,0,0,12" BorderBrush="#26FFFFFF" BorderThickness="1">
-                            <StackPanel>
-                                <TextBlock x:Name="PermVerdictTitle" Foreground="{StaticResource SwTextMain}"
-                                           FontSize="13.5" FontWeight="Bold" TextWrapping="Wrap"/>
-                                <TextBlock x:Name="PermVerdictBody" Foreground="{StaticResource SwTextFaint}"
-                                           FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"/>
-                            </StackPanel>
-                        </Border>
-                        <StackPanel x:Name="PermList"/>
-                        <TextBlock x:Name="PermFootNote" Foreground="{StaticResource SwTextFaint}" FontSize="10"
-                                   TextWrapping="Wrap" Margin="0,4,0,0"/>
-                    </StackPanel>
-                </ScrollViewer>
+                <Grid Grid.Row="1" Margin="0,14,0,0">
+                    <Grid x:Name="PermLoadingPanel" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <StackPanel>
+                            <Grid Width="56" Height="56" Margin="0,12,0,16" HorizontalAlignment="Center">
+                                <Ellipse Stroke="#22FFFFFF" StrokeThickness="4"/>
+                                <Ellipse x:Name="PermSpinnerArc" Stroke="#00E5D0" StrokeThickness="4" StrokeDashArray="26 110" StrokeDashCap="Round" RenderTransformOrigin="0.5,0.5">
+                                    <Ellipse.RenderTransform>
+                                        <RotateTransform x:Name="PermSpinnerRotation" Angle="0"/>
+                                    </Ellipse.RenderTransform>
+                                </Ellipse>
+                            </Grid>
+                            <TextBlock Text="Arena fragt Roblox nach den Berechtigungen …" Foreground="{StaticResource SwTextFaint}"
+                                       FontSize="12.5" TextWrapping="Wrap" TextAlignment="Center" MaxWidth="320"/>
+                        </StackPanel>
+                    </Grid>
+                    <ScrollViewer x:Name="PermContentPanel" Visibility="Collapsed" VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
+                            <Border x:Name="PermVerdictCard" Background="#0C1730" CornerRadius="12" Padding="14,12"
+                                    Margin="0,0,0,12" BorderBrush="#26FFFFFF" BorderThickness="1">
+                                <StackPanel>
+                                    <TextBlock x:Name="PermVerdictTitle" Foreground="{StaticResource SwTextMain}"
+                                               FontSize="13.5" FontWeight="Bold" TextWrapping="Wrap"/>
+                                    <TextBlock x:Name="PermVerdictBody" Foreground="{StaticResource SwTextFaint}"
+                                               FontSize="11" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                                </StackPanel>
+                            </Border>
+                            <StackPanel x:Name="PermList"/>
+                            <TextBlock x:Name="PermFootNote" Foreground="{StaticResource SwTextFaint}" FontSize="10"
+                                       TextWrapping="Wrap" Margin="0,4,0,0"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
                 <Grid x:Name="PermButtonRow" Grid.Row="2" Margin="0,14,0,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <Button x:Name="PermEditButton" Grid.Column="0" MinHeight="42" Padding="14,8" Margin="0,0,8,0"
-                            Content="Oh, das ändere ich nochmal!" Style="{StaticResource ArenaQuietButton}"/>
+                            Content="Oh, das ändere ich nochmal!" Style="{StaticResource ArenaQuietButton}" IsEnabled="False"/>
                     <Button x:Name="PermSaveButton" Grid.Column="1" MinHeight="42" Padding="14,8" Margin="8,0,0,0"
-                            Content="Ja, alles richtig! Key speichern!" Style="{StaticResource ArenaPrimaryButton}"/>
+                            Content="Ja, alles richtig! Key speichern!" Style="{StaticResource ArenaPrimaryButton}" IsEnabled="False"/>
                     <Button x:Name="PermRetryButton" Grid.Column="1" MinHeight="42" Padding="14,8" Margin="8,0,0,0"
                             Content="Erneut prüfen" Style="{StaticResource ArenaWarnButton}" Visibility="Collapsed"/>
                 </Grid>
@@ -42021,114 +42247,177 @@ function Open-SettingsWindow {
             $permRetryButton  = $permWindow.FindName('PermRetryButton')
             $permCloseButton  = $permWindow.FindName('PermCloseButton')
             $permTitleBar     = $permWindow.FindName('PermTitleBar')
+            $permLoadingPanel = $permWindow.FindName('PermLoadingPanel')
+            $permContentPanel = $permWindow.FindName('PermContentPanel')
+            $permSpinnerRotation = $permWindow.FindName('PermSpinnerRotation')
             $permTitleBar.Add_MouseLeftButtonDown({
                 if ($_.ButtonState -eq [System.Windows.Input.MouseButtonState]::Pressed) {
                     try { $permWindow.DragMove() } catch {}
                 }
             })
             $permCloseButton.Add_Click({ try { $permWindow.Close() } catch {} })
-            if ($ok) {
-                # Kopfzeile: Key-Name, Besitzer, Ablauf, Ressourcen.
-                $keyName = ''
-                try { $keyName = [string]$Verdict.name } catch {}
-                if ([string]::IsNullOrWhiteSpace($keyName)) { $keyName = '(ohne Namen)' }
-                $authUser = ''
-                try { $authUser = [string]$Verdict.authorizedUserId } catch {}
-                $expiry = ''
-                try { $expiry = [string]$Verdict.expirationTimeUtc } catch {}
-                $expired = $false
-                try { $expired = [bool]$Verdict.expired } catch {}
-                $sub = 'Key: ' + $keyName
-                if (-not [string]::IsNullOrWhiteSpace($authUser) -and $authUser -ne '0') { $sub = $sub + ' · Roblox-Nutzer-ID ' + $authUser }
-                if ($expired) { $sub = $sub + ' · ABGELAUFEN' }
-                elseif (-not [string]::IsNullOrWhiteSpace($expiry)) { $sub = $sub + ' · läuft ab: ' + $expiry.Substring(0, [Math]::Min(10, $expiry.Length)) }
-                else { $sub = $sub + ' · kein Ablaufdatum' }
-                $permSubTitle.Text = $sub
-                $grantedCount = 0
-                $total = 0
-                foreach ($catalogItem in (Get-CloudPermissionCatalog)) {
-                    $total = $total + 1
-                    $itemGranted = $false
-                    try { $itemGranted = [bool](& $catalogItem.test $Verdict) } catch {}
-                    if ($itemGranted) { $grantedCount = $grantedCount + 1 }
-                    $permList.Children.Add((New-CloudPermissionRow -Item $catalogItem -Verdict $Verdict)) | Out-Null
-                }
-                $missingCore = New-Object System.Collections.Generic.List[string]
-                foreach ($catalogItem in (Get-CloudPermissionCatalog)) {
-                    if (-not $catalogItem.core) { continue }
-                    $itemGranted = $false
-                    try { $itemGranted = [bool](& $catalogItem.test $Verdict) } catch {}
-                    if (-not $itemGranted) { $missingCore.Add(([string]$catalogItem.title)) }
-                }
-                if ($missingCore.Count -eq 0) {
-                    $permVerdictTitle.Text = 'Perfekt – dieser Key kann alles, was Arena heute nutzt. ✔'
-                    try { $permVerdictTitle.Foreground = Get-Brush '#7EE2A8' } catch {}
-                    $permVerdictBody.Text = 'Roblox hat den Schlüssel angenommen. Arena darf damit Meshes und Bilder hochladen, Spiel-Infos, Gamepasse und Produkte verwalten und DataStores lesen und schreiben.'
+
+            function Show-PermLoading {
+                try {
+                    $permLoadingPanel.Visibility = 'Visible'
+                    $permContentPanel.Visibility = 'Collapsed'
+                    $permEditButton.IsEnabled = $false
+                    $permSaveButton.IsEnabled = $false
+                    $permRetryButton.Visibility = 'Collapsed'
+                    $permSaveButton.Visibility = 'Visible'
+                    $spin = [System.Windows.Media.Animation.DoubleAnimation]::new(0.0, 360.0, [TimeSpan]::FromMilliseconds(900))
+                    $spin.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+                    $permSpinnerRotation.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $spin)
+                } catch {}
+            }
+
+            function Hide-PermLoading {
+                try {
+                    $permSpinnerRotation.BeginAnimation([System.Windows.Media.RotateTransform]::AngleProperty, $null)
+                    $permLoadingPanel.Visibility = 'Collapsed'
+                    $permContentPanel.Visibility = 'Visible'
+                } catch {}
+            }
+
+            function Fill-CloudPermissionsFromVerdict {
+                param($Verdict)
+                Hide-PermLoading
+                try { $permList.Children.Clear() } catch {}
+                $ok = $false
+                try { $ok = ([bool]$Verdict.ok -eq $true) } catch {}
+                if ($ok) {
+                    $keyName = ''
+                    try { $keyName = [string]$Verdict.name } catch {}
+                    if ([string]::IsNullOrWhiteSpace($keyName)) { $keyName = '(ohne Namen)' }
+                    $authUser = ''
+                    try { $authUser = [string]$Verdict.authorizedUserId } catch {}
+                    $expiry = ''
+                    try { $expiry = [string]$Verdict.expirationTimeUtc } catch {}
+                    $hasExpiration = $false
+                    try { $hasExpiration = [bool](Test-OpenCloudKeyHasExpiration $Verdict) } catch {}
+                    $sub = 'Key: ' + $keyName
+                    if (-not [string]::IsNullOrWhiteSpace($authUser) -and $authUser -ne '0') { $sub = $sub + ' · Roblox-Nutzer-ID ' + $authUser }
+                    if ($hasExpiration) { $sub = $sub + ' · ABLAUFDATUM - Bridge weigert sich' }
+                    else { $sub = $sub + ' · kein Ablaufdatum' }
+                    $permSubTitle.Text = $sub
+                    $grantedCount = 0
+                    $total = 0
+                    foreach ($catalogItem in (Get-CloudPermissionCatalog)) {
+                        $total = $total + 1
+                        $itemGranted = $false
+                        try { $itemGranted = [bool](& $catalogItem.test $Verdict) } catch {}
+                        if ($itemGranted) { $grantedCount = $grantedCount + 1 }
+                        $permList.Children.Add((New-CloudPermissionRow -Item $catalogItem -Verdict $Verdict)) | Out-Null
+                    }
+                    if ($hasExpiration) {
+                        $permVerdictTitle.Text = 'Die Bridge weigert sich, diesen Key zu benutzen.'
+                        try { $permVerdictTitle.Foreground = Get-Brush '#FF5C77' } catch {}
+                        $permVerdictBody.Text = 'Der Key hat ein Ablaufdatum. Bitte im Creator Dashboard (create.roblox.com/dashboard/credentials) einen neuen Key mit Expiration = No Expiration erstellen und hier neu einfügen. Keys mit Ablaufdatum werden komplett abgelehnt.'
+                    } else {
+                        $permVerdictTitle.Text = 'So sieht dein Key aus. Du entscheidest selbst, ob das reicht.'
+                        try { $permVerdictTitle.Foreground = Get-Brush '#F4F8FF' } catch {}
+                        $permVerdictBody.Text = 'Grün = vorhanden, rot = fehlt. Arena nutzt nur die Rechte, die der Key wirklich hat. Speichere, wenn die Liste für dich stimmt.'
+                    }
+                    $permFootNote.Text = ('Geprüft über den offiziellen Roblox-Introspect-Endpunkt (api-keys/v1/introspect). ' + [string]$grantedCount + ' von ' + [string]$total + ' API-Systemen mit Read und Write. Roblox prüft zusätzlich je Erlebnis, ob dein Konto dort die nötige Rolle hat.')
+                    $permEditButton.IsEnabled = $true
+                    if ($isPreSave) {
+                        $permEditButton.Add_Click({
+                            try { $permWindow.Close() } catch {}
+                            try { Set-CloudSaveHint 'Nichts gespeichert. Ändere den Schlüssel im Feld oben und drücke erneut Speichern – Arena prüft dann neu.' '#94A3B8' } catch {}
+                        })
+                        if ($hasExpiration) {
+                            $permSaveButton.Visibility = 'Collapsed'
+                            $permRetryButton.Visibility = 'Collapsed'
+                        } else {
+                            $permSaveButton.IsEnabled = $true
+                            $permSaveButton.Add_Click({
+                                try { $permWindow.Close() } catch {}
+                                try { [void](Save-OpenCloudKeyFromText $PendingKey) } catch { Write-UiErrorLog 'Open-Cloud-Speichern' $_ }
+                            })
+                        }
+                    } else {
+                        $permEditButton.Visibility = 'Collapsed'
+                        $permSaveButton.Content = 'Verstanden'
+                        $permSaveButton.IsEnabled = $true
+                        $permSaveButton.Add_Click({ try { $permWindow.Close() } catch {} })
+                    }
                 } else {
-                    $permVerdictTitle.Text = 'Roblox nimmt den Key an – aber es fehlen Kern-Rechte.'
-                    try { $permVerdictTitle.Foreground = Get-Brush '#FFD9A0' } catch {}
-                    $permVerdictBody.Text = ('Ohne die roten Einträge kann Arena weniger: es fehlt ' + ($missingCore -join ', ') + '. Du kannst den Key trotzdem speichern – oder im Creator Dashboard einen neuen mit allen API-Systemen erstellen (Tutorial in den Einstellungen).')
-                }
-                $permFootNote.Text = ('Geprüft über den offiziellen Roblox-Introspect-Endpunkt (api-keys/v1/introspect). ' + [string]$grantedCount + ' von ' + [string]$total + ' Berechtigungsgruppen vorhanden. Roblox prüft zusätzlich je Erlebnis und Aufruf, ob dein Konto dort die nötige Rolle hat.')
-                if ($isPreSave) {
-                    # Der Entscheidungs-Moment: zwei Knöpfe, klare Worte.
-                    $permEditButton.Add_Click({
-                        try { $permWindow.Close() } catch {}
-                        try { Set-CloudSaveHint 'Nichts gespeichert. Ändere den Schlüssel im Feld oben und drücke erneut Speichern – Arena prüft dann neu.' '#94A3B8' } catch {}
-                    })
-                    $permSaveButton.Add_Click({
-                        try { $permWindow.Close() } catch {}
-                        try { [void](Save-OpenCloudKeyFromText $PendingKey) } catch { Write-UiErrorLog 'Open-Cloud-Speichern' $_ }
-                    })
-                } else {
-                    # Reine Ansicht des gespeicherten Schluessels: ein Knopf.
-                    $permEditButton.Visibility = 'Collapsed'
-                    $permSaveButton.Content = 'Verstanden'
-                    $permSaveButton.Add_Click({ try { $permWindow.Close() } catch {} })
-                }
-            } else {
-                # Pruefung fehlgeschlagen: EHRLICH sagen warum. Nichts gespeichert.
-                $reason = ''
-                try { $reason = [string]$Verdict.error } catch {}
-                if ([string]::IsNullOrWhiteSpace($reason)) { $reason = 'Roblox hat nicht geantwortet.' }
-                $code = ''
-                try { $code = [string]$Verdict.code } catch {}
-                $permSubTitle.Text = 'Prüfung über api-keys/v1/introspect'
-                $permVerdictTitle.Text = 'Die Prüfung ist fehlgeschlagen – nichts wurde gespeichert.'
-                try { $permVerdictTitle.Foreground = Get-Brush '#FF5C77' } catch {}
-                $body = $reason
-                if ($code -eq 'OPENCLOUD_KEY_REJECTED') {
-                    $body = $body + ' Häufige Ursachen: Tippfehler beim Kopieren, der Schlüssel wurde gelöscht, die erlaubten IP-Adressen passen nicht oder der Schlüssel ist abgelaufen.'
-                } elseif ($code -eq 'OPENCLOUD_UNREACHABLE') {
-                    $body = $body + ' Das sieht nach einem Verbindungsproblem aus (Internet, Firewall, Proxy).'
-                }
-                $permVerdictBody.Text = $body
-                $permFootNote.Text = 'Dein Schlüssel bleibt im Feld stehen, du kannst ihn direkt korrigieren. Es wurde NICHTS gespeichert.'
-                if ($isPreSave) {
-                    $permEditButton.Add_Click({
-                        try { $permWindow.Close() } catch {}
-                        try { Set-CloudSaveHint 'Nichts gespeichert – bitte den Schlüssel prüfen und erneut Speichern drücken.' '#94A3B8' } catch {}
-                    })
-                    $permSaveButton.Visibility = 'Collapsed'
-                    $permRetryButton.Visibility = 'Visible'
-                    $permRetryButton.Add_Click({
-                        try { $permWindow.Close() } catch {}
-                        try {
-                            Set-CloudSaveHint 'Arena fragt Roblox erneut …' '#94A3B8'
-                            Start-CloudIntrospectRun { param($verdict) Show-CloudPermissionsWindow -Verdict $verdict -PendingKey $PendingKey } -Key $PendingKey
-                        } catch { Write-UiErrorLog 'Open-Cloud-Pruefung' $_ }
-                    })
-                } else {
-                    $permEditButton.Visibility = 'Collapsed'
-                    $permSaveButton.Content = 'Verstanden'
-                    $permSaveButton.Add_Click({ try { $permWindow.Close() } catch {} })
+                    $reason = ''
+                    try { $reason = [string]$Verdict.error } catch {}
+                    if ([string]::IsNullOrWhiteSpace($reason)) { $reason = 'Roblox hat nicht geantwortet.' }
+                    $code = ''
+                    try { $code = [string]$Verdict.code } catch {}
+                    $permSubTitle.Text = 'Prüfung über api-keys/v1/introspect'
+                    $permVerdictTitle.Text = 'Die Prüfung ist fehlgeschlagen – nichts wurde gespeichert.'
+                    try { $permVerdictTitle.Foreground = Get-Brush '#FF5C77' } catch {}
+                    $body = $reason
+                    if ($code -eq 'OPENCLOUD_KEY_REJECTED') {
+                        $body = $body + ' Häufige Ursachen: Tippfehler beim Kopieren, der Schlüssel wurde gelöscht, die erlaubten IP-Adressen passen nicht oder der Schlüssel ist abgelaufen.'
+                    } elseif ($code -eq 'OPENCLOUD_UNREACHABLE') {
+                        $body = $body + ' Das sieht nach einem Verbindungsproblem aus (Internet, Firewall, Proxy).'
+                    }
+                    $permVerdictBody.Text = $body
+                    $permFootNote.Text = 'Dein Schlüssel bleibt im Feld stehen, du kannst ihn direkt korrigieren. Es wurde NICHTS gespeichert.'
+                    $permEditButton.IsEnabled = $true
+                    if ($isPreSave) {
+                        $permEditButton.Add_Click({
+                            try { $permWindow.Close() } catch {}
+                            try { Set-CloudSaveHint 'Nichts gespeichert – bitte den Schlüssel prüfen und erneut Speichern drücken.' '#94A3B8' } catch {}
+                        })
+                        $permSaveButton.Visibility = 'Collapsed'
+                        $permRetryButton.Visibility = 'Visible'
+                        $permRetryButton.Add_Click({
+                            try {
+                                Show-PermLoading
+                                Start-PermIntrospect
+                            } catch { Write-UiErrorLog 'Open-Cloud-Pruefung' $_ }
+                        })
+                    } else {
+                        $permEditButton.Visibility = 'Collapsed'
+                        $permSaveButton.Content = 'Verstanden'
+                        $permSaveButton.IsEnabled = $true
+                        $permSaveButton.Add_Click({ try { $permWindow.Close() } catch {} })
+                    }
                 }
             }
+
+            function Start-PermIntrospect {
+                $ps = [PowerShell]::Create()
+                [void]$ps.AddScript({
+                    param($SharedObject, $ToolsText, $PendingKey)
+                    try { . ([scriptblock]::Create([string]$ToolsText)) } catch {}
+                    try { return (Invoke-OpenCloudIntrospect -Shared $SharedObject -Key ([string]$PendingKey)) } catch {
+                        return @{ ok = $false; code = 'OPENCLOUD_UNREACHABLE'; error = $_.Exception.Message; status = 0 }
+                    }
+                }).AddArgument($script:Shared).AddArgument([string]$script:Shared.OpenCloudToolsText).AddArgument([string]$PendingKey)
+                $handle = $ps.BeginInvoke()
+                $timer = [System.Windows.Threading.DispatcherTimer]::new()
+                $timer.Interval = [TimeSpan]::FromMilliseconds(200)
+                $timer.Tag = [pscustomobject]@{ Ps = $ps; Handle = $handle }
+                $timer.Add_Tick({
+                    param($ts, $te)
+                    $data = $ts.Tag
+                    try {
+                        if ($data.Handle.IsCompleted -ne $true) { return }
+                        $ts.Stop()
+                        $verdict = $null
+                        try { $verdict = $data.Ps.EndInvoke($data.Handle) } catch {}
+                        try { $data.Ps.Dispose() } catch {}
+                        if ($null -eq $verdict) { $verdict = @{ ok = $false; code = 'OPENCLOUD_UNREACHABLE'; error = 'Roblox hat nicht geantwortet.' } }
+                        Fill-CloudPermissionsFromVerdict $verdict
+                    } catch {
+                        try { $ts.Stop() } catch {}
+                        Fill-CloudPermissionsFromVerdict @{ ok = $false; code = 'OPENCLOUD_UNREACHABLE'; error = $_.Exception.Message }
+                    }
+                })
+                $timer.Start()
+            }
+
+            Show-PermLoading
+            Start-PermIntrospect
             $permWindow.ShowDialog() | Out-Null
         } catch {
             Write-UiErrorLog 'Open-Cloud-Berechtigungsfenster' $_
-            # Fallback: Wenn das Fenster nicht kann, wenigstens ehrlich im
-            # Abschnitt melden - und VOR dem Speichern NICHTS speichern.
             if ($isPreSave) {
                 Set-CloudSaveHint 'Das Berechtigungs-Fenster konnte nicht geöffnet werden – der Schlüssel wurde NICHT gespeichert. Bitte erneut versuchen (siehe runtime.log).' '#FFC7D3'
             }
@@ -42235,9 +42524,9 @@ function Open-SettingsWindow {
                 Set-CloudSaveHint 'Das sieht nicht nach einem Roblox-Open-Cloud-Schlüssel aus (er ist deutlich länger). Bitte kopiere ihn komplett aus dem Creator Dashboard.' '#FFC7D3'
                 return
             }
-            Set-CloudSaveHint 'Noch nichts gespeichert – Arena fragt Roblox, was dieser Schlüssel darf …' '#94A3B8'
-            Write-RuntimeLog 'Open Cloud: Berechtigungs-Pruefung vor dem Speichern gestartet (Introspect).'
-            Start-CloudIntrospectRun { param($verdict) Show-CloudPermissionsWindow -Verdict $verdict -PendingKey $keyText } -Key $keyText
+            Set-CloudSaveHint 'Fenster ist offen – Arena fragt Roblox nach den Berechtigungen …' '#94A3B8'
+            Write-RuntimeLog 'Open Cloud: Berechtigungs-Fenster sofort geoeffnet (Introspect laeuft im Fenster).'
+            Show-CloudPermissionsWindow -PendingKey $keyText
         } catch {
             Write-UiErrorLog 'Open-Cloud-Speichern' $_
         }
@@ -42247,8 +42536,8 @@ function Open-SettingsWindow {
     $cloudPermissionsButton.Add_Click({
         param($s, $e)
         try {
-            Set-CloudSaveHint 'Arena fragt Roblox nach den aktuellen Berechtigungen …' '#94A3B8'
-            Start-CloudIntrospectRun { param($verdict) Show-CloudPermissionsWindow -Verdict $verdict }
+            Set-CloudSaveHint 'Fenster ist offen – Arena fragt Roblox nach den aktuellen Berechtigungen …' '#94A3B8'
+            Show-CloudPermissionsWindow
         } catch {
             Write-UiErrorLog 'Open-Cloud-Berechtigungen' $_
         }
@@ -42300,7 +42589,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.6.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.6.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -42365,7 +42654,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.6.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.6.1 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -42378,7 +42667,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.6.0'
+    $verText = '7.6.1'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }

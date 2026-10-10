@@ -43,7 +43,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.6.0"
+VERSION = "7.6.1"
 
 SESSION_BUDGET_BYTES = 300000
 PRIMITIVE_MIN_PARTS = 6

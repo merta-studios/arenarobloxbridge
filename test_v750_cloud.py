@@ -36,7 +36,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.6.0"
+VERSION = "7.6.1"
 FAILURES: list[str] = []
 
 
@@ -382,12 +382,16 @@ def main() -> int:
     check("Nichts wird schoengeredet, nichts erfunden" in errors_fn,
           "die Regel steht im Quelltext: nichts wird schoengeredet")
 
-    missing = region(source, "if (-not $config.hasKey) {", "$creatorFound = Resolve-OpenCloudCreatorForUpload")
+    missing = region(source, "function Assert-OpenCloudToolAccess {", "function Get-OpenCloudAssetSpec {")
     check("OPENCLOUD_KEY_MISSING" in missing and "userMessage" in missing,
           "ohne Schluessel antwortet das Werkzeug OPENCLOUD_KEY_MISSING MIT einem Nutzer-Satz")
     check("Zahnrad (Einstellungen)" in missing and "Roblox Open Cloud API-Key" in missing,
           "der Satz nennt den Weg: Einstellungen -> Roblox Open Cloud API-Key")
     check("WORTLICH" in missing, "der Agent wird angewiesen, den Satz WOERTLICH zu sagen")
+    check("OPENCLOUD_KEY_HAS_EXPIRATION" in missing and "No Expiration" in missing,
+          "ein Key mit Ablaufdatum wird komplett abgelehnt")
+    check("OPENCLOUD_SCOPE_INCOMPLETE" in missing and "Read und Write" in missing,
+          "fehlende Read/Write-Rechte am Scope werden vor dem Aufruf blockiert")
     check("OPENCLOUD_CREATOR_MISSING" in source, "fehlt der Ersteller, meldet das Werkzeug das getrennt")
     for code in ("OPENCLOUD_UNREACHABLE", "OPENCLOUD_BAD_RESPONSE", "OPENCLOUD_OPERATION_FAILED",
                  "NO_UPLOAD_FILE", "UNKNOWN_SLOT", "PATH_OUTSIDE_BRIDGE"):
@@ -457,8 +461,8 @@ def main() -> int:
     check('Text="Roblox Open Cloud API-Key"' in settings_xaml,
           "der Abschnitt heisst Roblox Open Cloud API-Key")
     check("Der Key ist Arenas Zugang zu Roblox" in settings_xaml
-          and "es gibt keinen extra Schalter mehr" in settings_xaml,
-          "der Key-Abschnitt erklaert: der Schluessel allein entscheidet, kein Schalter")
+          and "kein Ablaufdatum" in settings_xaml,
+          "der Key-Abschnitt erklaert den Key und dass ein Ablaufdatum abgelehnt wird")
     check('x:Name="CreatorDashboardSwitch"' not in settings_xaml,
           "der Creator-Dashboard-Opt-in-Schalter ist aus den Einstellungen entfernt (7.6.0)")
     check('x:Name="CloudPermissionList"' in settings_xaml
@@ -474,26 +478,26 @@ def main() -> int:
     tutorial = region(settings_xaml, 'x:Name="CloudTutorialWrap"', '<TextBlock Text="UPDATES"')
     for piece in ("1. Öffne diese Seite:", "API-Schlüssel erstellen",
                   "irgendeinen Namen und eine Beschreibung",
-                  "Füge die API-Systeme mit ihren Operationen hinzu.",
-                  "Sicherheit: IP-Adressen und Ablaufdatum.",
+                  "Füge diese API-Systeme hinzu",
+                  "Ablaufdatum NICHT setzen",
                   "Erstelle den Schlüssel und kopiere ihn sofort",
                   "Füge den Schlüssel hier ein und drücke Speichern.",
-                  "eigenen Fenster GENAU, welche Berechtigungen"):
+                  "Speichern öffnet sofort ein Fenster"):
         check(piece in tutorial, f"das Tutorial nennt: {piece}")
     catalog = region(source, "function Get-CloudPermissionCatalog {", "function New-CloudPermissionRow {")
     for scope in ("asset", "universe", "universe.place", "game-pass", "developer-product",
-                  "universe-datastores.control / .objects / .versions",
-                  "universe.ordered-data-store.scope.entry", "memory-store",
-                  "universe-messaging-service", "universe.place.instance",
-                  "universe-places", "localization-table", "user.user-notification"):
+                  "universe-datastores", "universe.ordered-data-store.scope.entry",
+                  "universe-places", "localization-table", "creator-store-product",
+                  "universe.user-restriction", "universe.thumbnail", "universe.places",
+                  "universe.event", "universe.analytics", "thumbnails"):
         check(scope in catalog, f"der Berechtigungs-Katalog nennt den Scope {scope}")
-    check("Von Arena noch nicht genutzt" in catalog,
-          "der Katalog ist ehrlich: nicht genutzte Rechte sind als solche markiert")
+    check("memory-store" not in catalog and "user.user-notification" not in catalog,
+          "ungenutzte Scopes sind aus dem Tutorial-Katalog entfernt")
     check("create.roblox.com/dashboard/credentials" in tutorial,
           "das Tutorial nennt die echte Adresse create.roblox.com/dashboard/credentials")
     check('Text="&#xE71B;"' in tutorial,
           "der Link-Knopf nutzt dasselbe Glyph wie der Stil 'Arena AI oeffnen'")
-    check("Ablaufdatum" in tutorial, "das Tutorial warnt vor einem Ablaufdatum (stiller Stop)")
+    check("weigert sich die Bridge komplett" in tutorial, "das Tutorial sagt klar: Ablaufdatum = Bridge weigert sich")
     check('MaxHeight="0"' in tutorial and 'Opacity="0"' in tutorial,
           "das Tutorial startet eingeklappt (MaxHeight/Opacity 0)")
     check('ClipToBounds="True"' in tutorial, "der Aufklapp-Bereich clippt (kein Herauslaufen)")
@@ -511,9 +515,9 @@ def main() -> int:
     save_click = region(code, "$cloudSaveButton.Add_Click({", "# --- Berechtigungen des gespeicherten Schluessels ansehen")
     check("Set-OpenCloudKey" not in save_click and "Save-BridgeSettingsFile" not in save_click,
           "Speichern speichert NICHT sofort - erst Introspect, dann das Berechtigungs-Fenster")
-    check("Start-CloudIntrospectRun" in save_click and "-Key $keyText" in save_click
-          and "Show-CloudPermissionsWindow" in save_click,
-          "Speichern prueft den eingegebenen Schluessel per Introspect und oeffnet das Berechtigungs-Fenster")
+    check("Show-CloudPermissionsWindow -PendingKey $keyText" in save_click
+          and "Start-CloudIntrospectRun" not in save_click,
+          "Speichern oeffnet das Berechtigungs-Fenster sofort; Introspect laeuft im Fenster")
     perm_window = region(code, "function Show-CloudPermissionsWindow {", "# --- Tutorial: ANIMIERT auf- und zuklappen")
     check("Oh, das ändere ich nochmal!" in perm_window
           and "Ja, alles richtig! Key speichern!" in perm_window,
@@ -538,12 +542,12 @@ def main() -> int:
     check("Apply-CloudIntrospectVerdict" in code,
           "das Ergebnis der Selbstauskunft wird ehrlich angezeigt")
     check("developer-product:write" in source and "universe.place:write" in source
-          and "missingPermissions" in source,
+          and "OPENCLOUD_SCOPE_INCOMPLETE" in source,
           "Introspect und UI-Feedback berücksichtigen die zusätzlichen Creator-Dashboard-Scopes")
     check("DispatcherTimer" in code and "BeginInvoke" in code,
           "die Pruefung laeuft im Hintergrund (kein eingefrorenes Fenster)")
-    check("StudioService:GetUserId()" in source and "angemeldete Roblox-Studio-Konto" in code,
-          "die gespeicherte-Key-Ansicht nennt den automatisch verwendeten Studio-Nutzer")
+    check("StudioService:GetUserId()" in source and "Berechtigungen ansehen" in code,
+          "die gespeicherte-Key-Ansicht bleibt und Studio liefert weiter die Upload-Identitaet")
 
     anim = region(source, "$cloudSteps = New-Object System.Collections.Generic.List[object]",
                   "$cloudDashboardButton.Add_Click")

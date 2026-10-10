@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline regression checks for Arena Roblox Bridge 7.6.0.
+"""Offline regression checks for Arena Roblox Bridge 7.6.1.
 
 Covers the two owner-requested areas without Windows/Roblox:
 
@@ -27,7 +27,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.6.0"
+VERSION = "7.6.1"
 FAILURES: list[str] = []
 
 
@@ -57,10 +57,12 @@ def main() -> int:
     source = raw.decode("utf-8-sig")
     metadata = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     latest = str(metadata.get("notes", [""])[0])
-    check(metadata.get("version") == VERSION, "version.json is 7.6.0")
-    check(latest.startswith("• 7.6.0") and "UNACKED_USER_MESSAGE" in latest
-          and "introspect" in latest.lower() and "datastore" in latest,
-          "release note documents the message gate, the Introspect save flow and the datastore tool")
+    check(metadata.get("version") == VERSION, "version.json is 7.6.1")
+    check(latest.startswith("• 7.6.1") and "OPENCLOUD_KEY_HAS_EXPIRATION" in latest,
+          "release note documents the 7.6.1 Open Cloud key gate")
+    check(any(str(note).startswith("• 7.6.0") and "UNACKED_USER_MESSAGE" in str(note)
+              for note in metadata.get("notes", [])),
+          "historical 7.6.0 note still documents the message gate")
 
     # ------------------------------------------------------------------
     # 1) User messages: repeat ten times, banner top and bottom, gate.
@@ -113,8 +115,8 @@ def main() -> int:
           "the removed XAML switch appears nowhere in the script")
     check("CREATOR_DASHBOARD_DISABLED" not in source,
           "the local fail-closed gate code is gone (Roblox 403 is the only gate)")
-    check("OPEN-CLOUD-FULL-POWER (7.6.0)" in source,
-          "the session rules explain that the key's scopes are the only permission system")
+    check("OPEN-CLOUD-FULL-POWER (7.6.1)" in source,
+          "the session rules explain the key gate including expiration and read+write")
 
     # ------------------------------------------------------------------
     # 3) Save flow: Introspect first, permission window, then save.
@@ -123,10 +125,10 @@ def main() -> int:
                         "# --- Berechtigungen des gespeicherten Schluessels ansehen")
     check("Set-OpenCloudKey" not in save_click and "Save-BridgeSettingsFile" not in save_click,
           "the save button stores nothing by itself")
-    check("Start-CloudIntrospectRun" in save_click and "-Key $keyText" in save_click,
-          "the save button verifies the typed key via Introspect in the background")
-    check("Show-CloudPermissionsWindow" in save_click,
-          "the verification result opens the dedicated permission window")
+    check("Show-CloudPermissionsWindow -PendingKey $keyText" in save_click,
+          "the save button opens the permission window immediately")
+    check("Start-CloudIntrospectRun" not in save_click,
+          "Introspect no longer delays the window; it runs inside the already-open dialog")
 
     introspect_run = region(source, "function Start-CloudIntrospectRun {",
                             "function Apply-CloudIntrospectVerdict {")
@@ -159,27 +161,38 @@ def main() -> int:
           and "<!--ARENA_DIALOG_STYLES-->" in window
           and 'x:Name="PermList"' in window,
           "the permission window is a styled WPF dialog with a generated permission list")
+    check('x:Name="PermSpinnerRotation"' in window and "Show-PermLoading" in window
+          and "RepeatBehavior]::Forever" in window,
+          "the permission window appears immediately with a spinning load icon")
+    check("Test-OpenCloudKeyHasExpiration" in window and "ABLAUFDATUM" in window,
+          "a key with an expiration date is refused in the permission window")
+    check("Kern-Rechte" not in window.replace("Kern-Rechte-Warnung", ""),
+          "the missing-core-rights warning is gone from the permission window")
 
     # ------------------------------------------------------------------
-    # 4) The permission catalog covers the official Open Cloud systems.
+    # 4) The permission catalog covers the Open Cloud systems Arena may use.
     # ------------------------------------------------------------------
     catalog = region(source, "function Get-CloudPermissionCatalog {",
                      "function New-CloudPermissionRow {")
     expected_scopes = ("asset", "universe", "universe.place", "game-pass", "developer-product",
-                       "universe-datastores.control / .objects / .versions",
-                       "universe.ordered-data-store.scope.entry", "memory-store",
-                       "universe-messaging-service", "universe.place.instance",
-                       "universe-places", "localization-table", "user.user-notification")
+                       "universe-datastores", "universe.ordered-data-store.scope.entry",
+                       "universe-places", "localization-table", "creator-store-product",
+                       "universe.user-restriction", "universe.thumbnail", "universe.places",
+                       "universe.event", "universe.analytics", "thumbnails")
     for scope in expected_scopes:
         check(scope in catalog, f"the permission catalog documents the scope {scope}")
-    check(catalog.count("core = $true") == 6,
-          "exactly the six permissions Arena actively uses are marked core")
-    check("Von Arena noch nicht genutzt" in catalog,
-          "permissions Arena does not use yet are honestly marked")
+    for gone in ("memory-store", "universe-messaging-service", "universe.place.instance",
+                 "user.user-notification"):
+        check(gone not in catalog, f"unused scope {gone} is gone from the tutorial catalog")
+    check("core = $true" not in catalog and "Pflicht" not in catalog,
+          "the catalog has no required/core ranking")
+    check("Von Arena noch nicht genutzt" not in catalog,
+          "unused-permission asides are gone")
     row = region(source, "function New-CloudPermissionRow {",
                  "# Tutorial-Schritt 4: die komplette Berechtigungs-Uebersicht fuellen.")
     check("0x2714" in row and "0x2716" in row,
           "granted/missing permissions render as green check / red cross glyphs")
+    check("Scope: " not in row, "the scope is the row title, not a subtitle")
     tutorial_xaml = region(source, "$settingsXaml = @'", "\n'@")
     check('x:Name="CloudPermissionList"' in tutorial_xaml,
           "tutorial step four hosts the generated catalog")
@@ -205,8 +218,9 @@ def main() -> int:
           and "scopeBase -eq 'universe-datastores.control'" in introspect
           and "scopeBase -eq 'universe-datastores.versions'" in introspect,
           "the stable v2 data-store scopes are recognized")
-    check("scopeBase -in @('universe-places','universe.places')" in introspect,
-          "the place-publishing scope is recognized")
+    check("scopeBase -eq 'universe-places'" in introspect
+          and "scopeBase -eq 'universe.places'" in introspect,
+          "place-publishing (universe-places) and universe.places are recognized separately")
     check("universeDatastores = $(try { @($scope.universeDatastores)" in introspect,
           "data-store resource bindings (universeId/datastoreName) are kept per scope")
 
@@ -239,8 +253,8 @@ def main() -> int:
           "mutating data-store actions honor the session read-only lock")
     check("foreach ($targetField in @('universeId','placeId','gameId','targetPlace'))" in helper,
           "caller-supplied target IDs are rejected (connected session only)")
-    check("PUBLISHED_PLACE_REQUIRED" in helper and "OPENCLOUD_KEY_MISSING" in helper,
-          "missing publish IDs or a missing key fail closed with typed errors")
+    check("PUBLISHED_PLACE_REQUIRED" in helper and "Assert-OpenCloudToolAccess" in helper,
+          "missing publish IDs or a missing/expired/incomplete key fail closed with typed errors")
     check("'universe-datastores.objects:create'" in helper
           and "'universe-datastores.objects:update'" in helper
           and "'universe-datastores.objects:delete'" in helper
