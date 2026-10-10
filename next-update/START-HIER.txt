@@ -5,6 +5,7 @@ NUR BAUEN UND PRIVAT TESTEN?
 
 1. Oeffne den Ordner next-update.
 2. Doppelklicke Build-EXE.bat. Das ist der einzige normale Startknopf.
+   Build-EXE.bat baut standardmaessig den Kanal stable (ohne interaktive Rueckfrage).
 3. Warte auf BUILD ERFOLGREICH.
 4. Starte genau diese Test-EXE:
 
@@ -23,6 +24,11 @@ Der normale Build schreibt ALLE Ausgaben in den einzigen Ordner release\.
 Es gibt keine beta/stable-Unterordner, keinen release-inbox-Ordner und keinen
 user-builds-Ordner. Das neue Logo aus app\assets\neueslogo.png wird sowohl als
 Windows-EXE-Symbol als auch im Bridge-Fenster neben dem Titel verwendet.
+
+KANAL-HINWEIS:
+Der Standard-Buildkanal ist stable. Die gebaute EXE hoert auf stable.json.
+Hinweis: Die bereits getestete 7.7.0-EXE ist ein beta-Kanal-Build und erhaelt kein
+Stable-Update. Neu gebaute EXEs nutzen automatisch stable.
 
 SELBST-UPDATE PRIVAT TESTEN (nur Windows, optional, nach dem Build):
 
@@ -47,6 +53,7 @@ WICHTIG — TEST IST KEINE VEROEFFENTLICHUNG:
 - Die getestete Datei wird nur nach Freigabe unter genau diesem Repository-Pfad
   abgelegt: next-update\release\ArenaBridge.exe. Diagnose-EXE, BAT,
   Pruefsummen, Metadaten und temporaere Build-Dateien werden nicht hochgeladen.
+- Der verbindliche Ablauf steht in developer\docs\RELEASE-ABLAUF.md.
 - Die Release-Session verwendet ausschliesslich next-update\update-system\ und
   den neuen Updater. Update-Bridge.ps1 ist in die EXE eingebettet, aber auf
   Windows noch nicht getestet. Bereits installierte Kopien ohne Updater erhalten
@@ -68,3 +75,4 @@ FUER DEN BUILD:
 - Hier in der Entwicklungssandbox wurde keine Windows-EXE gebaut.
 
 Mehr Details, Release-Ablauf, Ordneruebersicht und Offline-Tests: README.md
+Pflichtlektuere zum Release-Ablauf: developer\docs\RELEASE-ABLAUF.md

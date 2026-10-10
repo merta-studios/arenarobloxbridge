@@ -2,6 +2,9 @@
 
 > **Arbeite nur in `next-update/`.** Der alte Bereich im Repository-Hauptordner
 > bleibt unverändert und wird für diesen Ablauf vollständig ignoriert.
+>
+> **Pflichtlektüre zum Release-Ablauf:** Siehe `developer/docs/RELEASE-ABLAUF.md`.
+> Die Prompt-Vorlage für die Release-Session liegt in `developer/docs/RELEASE-SESSION-PROMPT.md`.
 
 ## Lokal bauen und testen
 
@@ -11,7 +14,8 @@
    Kanal-Manifeste bleiben deaktiviert und es wird keine EXE an Nutzer verteilt.
 2. Du mergst den PR und lädst danach das Repository-ZIP herunter.
 3. Öffne darin `next-update` und doppelklicke **`Build-EXE.bat`**. Das ist der
-   einzige normale Build-Knopf. Der lokale Test-Build braucht 64-Bit-Windows,
+   einzige normale Build-Knopf. `Build-EXE.bat` baut standardmäßig den Kanal **`stable`**
+   (ohne interaktive Rückfrage). Der lokale Test-Build braucht 64-Bit-Windows,
    Windows PowerShell 5.1, WPF/.NET und beim ersten Build eine Internetverbindung
    für `ps2exe`.
 4. Die zu testende App liegt immer hier — ohne beta/stable-Unterordner:
@@ -26,6 +30,10 @@
 5. `release\ArenaBridge-Diagnose.exe`, Diagnose-BAT, Prüfsummen und
    `release-metadata.json` sind Hilfsdateien. Nur `release\ArenaBridge.exe`
    ist später als App-Artefakt vorgesehen.
+
+> **Kanal-Hinweis:** Build-EXE.bat baut standardmäßig den Kanal `stable` (die EXE
+> liest `stable.json`). Hinweis: Die bereits getestete 7.7.0-EXE ist ein beta-Kanal-Build
+> und erhält kein Stable-Update.
 
 Das Build-Skript prüft zuerst den Windows-PowerShell-Parser (Bridge **und** Updater).
 Danach startet es die EXE in einem isolierten Smoke-Test; dabei werden x64, STA/WPF,
@@ -71,13 +79,11 @@ Windows-PC gelaufen ist und das Ergebnis dokumentiert wurde.
 ## Wenn du den getesteten Stand ausdrücklich freigibst
 
 1. Schreibe **im Chat, in dem der Änderungs-PR bereits gemergt wurde**, dass
-   dir der Test gefällt und du die Version für alle freigibst.
+   dir der Test gefällt und du die Version für alle freigibst („perfekt, als neue Version und Update rausbringen“).
 2. In genau diesem Chat darf die KI **nicht veröffentlichen und nichts weiter
    erklären**. Sie muss als Antwort ausschließlich **eine kopierbare Textbox
    (einen Codeblock) mit einem vollständigen Prompt für die nächste Session**
-   ausgeben. Der Prompt nennt die gemergte Änderung/Version, fordert die
-   nächste Session auf, ausschließlich `next-update/` und das neue
-   `update-system/` zu verwenden, und verbietet ausdrücklich das alte System.
+   ausgeben (Vorlage: `developer/docs/RELEASE-SESSION-PROMPT.md`).
 3. In der Release-Session wird die **bereits getestete** EXE verwendet — keine
    unbemerkte Neu-Kompilierung und kein anderer Build. Nach deiner ausdrücklichen
    Freigabe kommt genau diese Datei an diesen einen Repository-Pfad:
@@ -105,7 +111,7 @@ Windows-PC gelaufen ist und das Ergebnis dokumentiert wurde.
 
 Damit gilt die klare Trennung: **Merge + ZIP + lokaler Build = Test.** Nur die
 spätere ausdrückliche Freigabe und der abgeschlossene Release-Schritt über den
-neuen Updater können ein Update für Nutzer bereitstellen.
+neuen Updater können ein Update für Nutzer bereitstellen. Details: `developer/docs/RELEASE-ABLAUF.md`.
 
 ## Schutz des Update-Systems
 
@@ -126,7 +132,7 @@ Der Guard-Test schlägt bei jeder ungeprüften Änderung fehl.
 | `release/` | Einziger Ausgabeordner; hier liegt `ArenaBridge.exe` (nach dem Build). |
 | `update-system/` | Neues Manifest-/Updater-System (geschützt, Kanäle deaktiviert). |
 | `developer/tests/` | Offline-Regressionstests; für den normalen EXE-Build nicht nötig. |
-| `developer/docs/` | Arbeitsregeln, technische Verträge und Hintergründe. |
+| `developer/docs/` | Arbeitsregeln, technische Verträge und Hintergründe (`RELEASE-ABLAUF.md`). |
 | `developer/ci/`, `developer/tools/` | Wartungs- und Prüfwerkzeuge. |
 
 Es gibt in `next-update/` **keinen** `release-inbox/`-Ordner und **keinen**

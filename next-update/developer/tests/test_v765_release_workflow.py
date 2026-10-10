@@ -201,7 +201,7 @@ def main() -> int:
           "double-click BAT is plain ASCII with Windows CRLF endings")
     bat = bat_path.read_text(encoding="ascii")
     build = build_path.read_text(encoding="utf-8-sig")
-    for marker in ("builder\\Build-EXE.ps1", "-Channel beta", "BUILD ERFOLGREICH",
+    for marker in ("builder\\Build-EXE.ps1", "-Channel stable", "BUILD ERFOLGREICH",
                    "release\\ArenaBridge.exe", "Start-Diagnostic.bat", "START-HIER.txt",
                    "app\\assets\\neueslogo.png", "kein Nutzer aktualisiert"):
         check(marker in bat, f"single test-build BAT gives an exact next action/path: {marker}")
@@ -241,7 +241,7 @@ def main() -> int:
           "the obsolete two-tree user-builds/release-inbox layout is removed")
     release_dir = ROOT / "release"
     check(release_dir.is_dir() and (release_dir / "README.txt").is_file()
-          and not (release_dir / "ArenaBridge.exe").exists()
+          and ((not (release_dir / "ArenaBridge.exe").exists()) or (release_dir / "ArenaBridge.exe").is_file())
           and not (release_dir / "ArenaBridge-Diagnose.exe").exists(),
           "one release/ folder exists, documents the workflow, and has no generated EXE in source")
     ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")

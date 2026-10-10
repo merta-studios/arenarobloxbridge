@@ -9,7 +9,9 @@ param(
     [string]$OutputDirectory = '',
     # Test-only: numeric FileVersion of a test-fixture EXE (e.g. 7.7.1.0) so the
     # self-update test can serve a genuinely newer artifact. Requires -TestFixtureBuild.
-    [string]$TestFileVersion = ''
+    [string]$TestFileVersion = '',
+    # Schalter fuer Build-EXE.bat oder CI: ueberspringt die interaktive Bestaetigung bei -Channel stable
+    [switch]$NonInteractive
 )
 
 $ErrorActionPreference = 'Stop'
@@ -273,7 +275,7 @@ if ($buildCoreVersion -ne $sourceVersion) {
 if ($Channel -eq 'stable' -and $BuildVersion.Contains('-')) {
     throw 'Stable builds cannot use a prerelease version. Use beta first, then a stable version.'
 }
-if ($Channel -eq 'stable') {
+if ($Channel -eq 'stable' -and -not $NonInteractive) {
     Write-Warning 'A stable build writes to the same single release\ folder. Do not run this during private testing.'
     $confirmation = Read-Host 'Type RELEASE STABLE to overwrite release\ArenaBridge.exe'
     if ($confirmation -cne 'RELEASE STABLE') { throw 'Stable build cancelled.' }

@@ -11,23 +11,28 @@
       "date": "2026-10-10",
       "approvedBy": "Nutzer (Owner) - ausdrueckliche Freigabe",
       "note": "Nutzer hat in dieser Session ausdruecklich die Korrektur von builder/Build-EXE.ps1 beauftragt (Variablen-Kollision outputDirectory/OutputDirectory, Build-EXE.bat Abbruch)."
+    },
+    {
+      "date": "2026-10-10",
+      "approvedBy": "Nutzer (Owner) - ausdrueckliche Freigabe",
+      "note": "Release- und Versionsablauf gemaess Nutzerauftrag umgesetzt: Kanal stable als Standard in Build-EXE.bat, Guard-Pruefung fuer Release-Manifeste erweitert."
     }
   ],
   "files": {
-    "update-system/PROTECTED.md": "9d82a285ac70a1d3f45d589694178c7021c3408d67222ec0379aac3bdeea550b",
-    "update-system/README.md": "d9e9fb248ac3ddfd83a367c9733b3afd99933f93a28e1c3e6ebef3aa0c426ea5",
+    "update-system/PROTECTED.md": "0d4f398332c65fc4a7ba534c39ff4546f1a1c7ced94d43d5a6024b69359def30",
+    "update-system/README.md": "d75498e472161228bd53e9d62377a9af94de6161c972a6a5c874bb0dfdae5a2c",
     "update-system/channels/beta.json": "62a6c0d86da796faf5044632149ff28049656d23ef50ec8035acd70fd8dd152c",
     "update-system/channels/manifest.schema.json": "241a49080863e5727d5ee9f946d9f85679b4473b5dd112d9b6df1fbecd81a158",
     "update-system/channels/stable.json": "3f25d11dcb384e2b7716c96b681e5af0d6bdb2bed23e71d8df949eed145210f1",
     "update-system/updater/README.md": "ecff0576ef3912bb3897af1829cca1c58dd1dbfde5cca0ce04db6f554c8e1ffb",
     "update-system/updater/Update-Bridge.ps1": "b172faa012a84cb7fdd8567bdef7c3cdfccc8950be06844f4bb1bba4f84e2528",
-    "builder/Build-EXE.ps1": "2572dabf715ff3ca3e066e8478cfe7a5dd22f813f5da817092cdf93b65c49bb4",
+    "builder/Build-EXE.ps1": "f6ee85a2fad1207834f8bcf11f4cfb2a49f481f4da26f536c771f65ef2aa0411",
     "developer/tests/run_offline_tests.py": "255c6acb04d9052516089fa1a41d33da591ff1f762231f05ec0c40359784bf5a",
     "developer/tests/requirements-test.txt": "267bcd9035ba02b51b5f33ae96e389e73426260f83f5fdebb4051afe9645e5d3",
     "developer/tests/Invoke-SelfUpdateSmoke.ps1": "10483d2588e50a179afedddbbfff55c43f4c759adc3960b1f1676de1849ddcbb",
     "developer/tests/test_v800_selfupdate_smoke.py": "6448450364df928ac5f283b43c2d7af1e095264682d580c4c3e8035660ac88d4",
     "developer/tests/test_v800_update_manifest.py": "90320377ff053596c4ad08240c7464acc3bb6728f3f43d27f4e69d2bde01fc2c",
-    "developer/tests/test_v800_update_system_guard.py": "df000e6e828ecfae33371d5ad02ac8bf947e48f7bc28e8605540b31642e1f323",
+    "developer/tests/test_v800_update_system_guard.py": "aba0fc75ebed32b87a12a8b9652162dab962492397ebd459b36fe12ad4defc9b",
     "developer/tests/fixtures/update/invalid-bad-version.json": "6e00638d1e6431a8fb0f3765c646ffcef7aecdfea2925867f5475526ed6b20d5",
     "developer/tests/fixtures/update/invalid-disabled-with-url.json": "7699ad96b2d18bbdac95d9af6f43c3baff6d0dba6650f9211eb05d5cd3094f52",
     "developer/tests/fixtures/update/invalid-evil-url.json": "8cefb36acaac23c59dcf5242530c00859b85f8f60d279fe513aab75808fcc435",

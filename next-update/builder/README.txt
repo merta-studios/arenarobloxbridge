@@ -5,6 +5,8 @@ Build-EXE.ps1 und parse-gate.ps1 sind interne Helfer. Fuer den normalen
 Ablauf keine dieser Dateien direkt starten. Gehe eine Ebene nach oben und
 doppelklicke Build-EXE.bat.
 
+Build-EXE.bat baut standardmaessig den Kanal stable (mit -Channel stable -NonInteractive),
+sodass die fertige EXE auf stable.json hoert und keine interaktive Eingabe verlangt.
 Der lokale Test-Build wird immer in den einzigen Ausgabeordner geschrieben:
 
     ..\release\ArenaBridge.exe
@@ -31,3 +33,6 @@ Kanal beta, und schreibt nie nach release\. Normale Builds setzen den Testschalt
 fest auf 0; dann ist der Test-Manifestpfad in der EXE nicht erreichbar.
 -TestFileVersion (z. B. 7.7.1.0) setzt nur die Dateiversion eines solchen Testbaus.
 Siehe developer\tests\Invoke-SelfUpdateSmoke.ps1.
+
+HINWEIS ZU 7.7.0: Die bereits getestete 7.7.0-EXE ist ein beta-Kanal-Build und
+erhaelt kein Stable-Update. Kuenftige Builds aus Build-EXE.bat nutzen den Kanal stable.
