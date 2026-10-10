@@ -25,8 +25,13 @@ Die Tests bauen oder starten keine EXE. Für Windows PowerShell 5.1 zusätzlich:
 .\developer\tests\test_v762_runtime.ps1
 ```
 
-Zum bloßen Bauen/Testen der Beta brauchst du den Ordner `developer` nicht:
+Zum bloßen Bauen/Testen des privaten Kandidaten brauchst du den Ordner `developer` nicht:
 
 ```text
 Build-EXE.bat
 ```
+
+Der Build-Ausgang liegt im einzigen Ordner `next-update/release/`. Ein Merge
+oder lokaler Build löst kein öffentliches Nutzer-Update aus. Die Regeln für
+Korrektur-PRs, explizite Freigabe und die spätere Nutzung des neuen
+`update-system/` stehen in `../README.md` und `docs/GANZ WICHTIG LESEN VOR JEDER BEARBEITUNG`.

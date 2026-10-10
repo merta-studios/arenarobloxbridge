@@ -1,19 +1,16 @@
-# User-built executables, diagnostic launchers, hashes and release metadata are local-only.
-/user-builds/*/*.exe
-/user-builds/*/*.sha256
-/user-builds/*/release-metadata.json
-/user-builds/*/*.building.exe
-/user-builds/*/*.previous-*.exe
-/user-builds/*/Start-Diagnostic.bat
-/user-builds/*/*.smoke.json
+# The private test build is created in the one shared release/ directory.
+# Keep the normal app artifact trackable: it is uploaded to this exact path
+# only after explicit all-user release approval.
+# Do not add /release/ArenaBridge.exe to this ignore file.
 
-# Release packages are staged locally; publish only through an intentional release workflow.
-/release-inbox/*/*
-!/release-inbox/*/.gitkeep
-!/release-inbox/*/README.txt
-
-# Optional user-owned executable icon; keep personal branding out of source control.
-/app/assets/ArenaBridge.custom.ico
+# Local-only diagnosis/build outputs (never distribution artifacts).
+/release/ArenaBridge-Diagnose.exe
+/release/*.sha256
+/release/release-metadata.json
+/release/*.building.exe
+/release/*.previous-*.exe
+/release/*.smoke.json
+/release/Start-Diagnostic.bat
 
 # Local updater cache/state from manual testing.
 /update-system/updater/.cache/

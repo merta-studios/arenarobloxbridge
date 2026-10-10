@@ -1,47 +1,58 @@
 ARENA ROBLOX BRIDGE — START HIER
 ================================
 
-NUR BAUEN UND TESTEN? DANN GENAU DIESE SCHRITTE:
+NUR BAUEN UND PRIVAT TESTEN?
 
-1. Öffne den Ordner next-update.
+1. Oeffne den Ordner next-update.
 2. Doppelklicke Build-EXE.bat. Das ist der einzige normale Startknopf.
-3. Warte auf BUILD ERFOLGREICH. Die BAT zeigt dir den vollständigen Pfad.
-4. Die zu startende Beta liegt anschließend hier:
+3. Warte auf BUILD ERFOLGREICH.
+4. Starte genau diese Test-EXE:
 
-       user-builds\beta\ArenaBridge.exe
+       release\ArenaBridge.exe
 
-   Starte diese Datei per Doppelklick. Schließe vorher alle älteren
-   ArenaBridge-Fenster.
-5. Wenn kein Fenster erscheint: andere Bridge-Fenster schließen und dann
-   ausführen:
+   Vorher andere ArenaBridge-Fenster schliessen. Falls beim Start kein
+   Fenster erscheint, schliesse andere ArenaBridge-Prozesse und starte:
 
-       user-builds\beta\Start-Diagnostic.bat
+       release\Start-Diagnostic.bat
 
    Lass das Diagnose-Konsolenfenster offen. Die wichtigste Startdatei ist:
 
        %LOCALAPPDATA%\START-CHECK.txt
 
-EIGENES LOGO FUER DIE EXE (OPTIONAL):
+Der normale Build schreibt ALLE Ausgaben in den einzigen Ordner release\.
+Es gibt keine beta/stable-Unterordner, keinen release-inbox-Ordner und keinen
+user-builds-Ordner. Das neue Logo aus app\assets\neueslogo.png wird sowohl als
+Windows-EXE-Symbol als auch im Bridge-Fenster neben dem Titel verwendet.
 
-Kopiere dein eigenes Windows-Icon als ArenaBridge.custom.ico hierhin:
+WICHTIG — TEST IST KEINE VEROEFFENTLICHUNG:
 
-       app\assets\ArenaBridge.custom.ico
+- Ein PR, dessen Merge, ein ZIP-Download und dein lokaler Build aktualisieren
+  keine Nutzer. Channel-Manifeste bleiben aus.
+- Wenn die Aenderung kaputt ist oder dir nicht gefaellt: Test-EXE NICHT
+  hochladen. Starte einen neuen Chat, fordere Korrekturen als neuen PR an und
+  beginne nach dem Merge wieder mit ZIP, Build und Test.
+- Wenn alles perfekt ist: Sage das ausdruecklich in der Session, deren PR
+  bereits gemergt wurde. Diese Session antwortet dann NUR mit einer kopierbaren
+  Textbox/einem Codeblock, der den vollstaendigen Prompt fuer die naechste
+  Release-Session enthaelt. Hier wird noch nichts veroeffentlicht.
+- Die getestete Datei wird nur nach Freigabe unter genau diesem Repository-Pfad
+  abgelegt: next-update\release\ArenaBridge.exe. Diagnose-EXE, BAT,
+  Pruefsummen, Metadaten und temporaere Build-Dateien werden nicht hochgeladen.
+- Die Release-Session verwendet ausschliesslich next-update\update-system\ und
+  den neuen Updater. Der neue Update-Bridge.ps1 ist aktuell noch nicht in die
+  EXE integriert. Integration und Bootstrap fuer bestehende Nutzer muessen
+  geprueft und getestet sein, bevor Stable aktiviert wird oder automatische
+  Nutzer-Updates behauptet werden. Die alte Root-Update-Struktur bleibt
+  unberuehrt und wird nicht benutzt.
 
-Beim nächsten Build wird es automatisch verwendet. Nur eine gültige .ico-Datei
-funktioniert direkt (PNG/JPG vorher umwandeln). Lösche ArenaBridge.custom.ico,
-um wieder das Standard-Logo zu verwenden. Deine eigene Icon-Datei wird nicht in
-Git aufgenommen.
+FUER DEN BUILD:
 
-WICHTIG:
+- Benoetigt werden 64-Bit-Windows, Windows PowerShell 5.1, WPF/.NET und beim
+  ersten Build eine Internetverbindung fuer ps2exe. Administratorrechte sind
+  nicht noetig.
+- Der Build prueft den Windows-PowerShell-Parser und startet die EXE danach in
+  einem isolierten Smoke-Test. Dabei werden EXE-Startpfad, x64, STA/WPF,
+  Startbild und eingebettetes Programmlogo geprueft. Es wird nichts hochgeladen.
+- Hier in der Sandbox wurde keine Windows-EXE gebaut.
 
-- Nicht builder\Build-EXE.ps1 und nicht den Updater starten.
-- Zum Bauen brauchst du 64-Bit-Windows, Windows PowerShell 5.1 und beim ersten
-  Build eine Internetverbindung für ps2exe. Keine Administratorrechte nötig.
-- Der Build lädt nichts hoch. Hier in der Sandbox wurde keine Windows-EXE
-  gebaut.
-- Die alte Update-Struktur im Hauptordner bleibt unangetastet. Der neue
-  Updater in update-system ist nur vorbereitet und noch nicht integriert; seine
-  Channel-Manifeste stehen auf enabled: false.
-- Keine EXE, Diagnose-Datei oder persönliche ICO-Datei in Git committen.
-
-Mehr Details, Fehlerhilfe und Ordnerübersicht: README.md
+Mehr Details, Release-Ablauf, Ordneruebersicht und Offline-Tests: README.md

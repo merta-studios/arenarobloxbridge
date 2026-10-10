@@ -16,7 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = ROOT / "app"
 PS1 = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.6.4"
+VERSION = "7.6.5"
 SESSION_BUDGET_BYTES = 300000
 FAILURES: list[str] = []
 
@@ -136,7 +136,7 @@ def main() -> int:
     source = load_source()
     lua = extract_plugin_lua(source)
     metadata = json.loads((APP_ROOT / "version.json").read_text(encoding="utf-8"))
-    check(metadata.get("version") == VERSION, "release metadata points at the prepared 7.6.4 source")
+    check(metadata.get("version") == VERSION, "release metadata points at the prepared 7.6.5 source")
 
     # Independent regression: Roblox CylinderParts run along local X.
     x_axis = rot_z(math.pi / 2, (1.0, 0.0, 0.0))

@@ -1,18 +1,16 @@
 @echo off
 setlocal
-title Arena Roblox Bridge - Beta EXE Builder
+title Arena Roblox Bridge - lokaler Test-Build
 
 echo.
 echo ================================================================
-echo ARENA ROBLOX BRIDGE - BETA-EXE BAUEN
+echo ARENA ROBLOX BRIDGE - LOKALEN TEST-BUILD BAUEN
 echo ================================================================
-echo Das ist der einzige normale Startknopf. Er baut die lokale Beta,
-echo laedt keine Release-Datei hoch und aendert keine Update-Manifeste.
+echo Dies baut nur deine private Test-EXE. Es wird nichts veroeffentlicht,
+echo kein Nutzer aktualisiert und kein Update-Manifest geaendert.
 echo.
-echo EIGENES EXE-LOGO (optional):
-echo Lege deine Windows-ICO-Datei unter diesem Namen ab:
-echo "%~dp0app\assets\ArenaBridge.custom.ico"
-echo Wenn die Datei fehlt, wird das Standard-Logo verwendet.
+echo Das neue Logo aus app\assets\neueslogo.png wird sowohl als
+echo EXE-Symbol als auch im Bridge-Fenster eingebettet.
 echo.
 echo Vor dem spaeteren Test bitte andere ArenaBridge-Fenster schliessen.
 echo.
@@ -23,15 +21,15 @@ if not "%RESULT%"=="0" goto build_failed
 echo.
 echo ================================================================
 echo BUILD ERFOLGREICH
-echo Normale Beta-EXE - diese Datei auf dem PC testen:
-echo "%~dp0user-builds\beta\ArenaBridge.exe"
+echo Diese EXE lokal testen:
+echo "%~dp0release\ArenaBridge.exe"
 echo.
 echo Wenn beim Start kein Fenster erscheint, erst andere ArenaBridge-
 echo Fenster schliessen und dann die Diagnose starten:
-echo "%~dp0user-builds\beta\Start-Diagnostic.bat"
+echo "%~dp0release\Start-Diagnostic.bat"
 echo.
-echo NICHTS wurde hochgeladen. Anleitung:
-echo "%~dp0START-HIER.txt"
+echo Dieser private Test-Build wurde NICHT hochgeladen.
+echo Anleitung: "%~dp0START-HIER.txt"
 echo ================================================================
 goto done
 
@@ -39,7 +37,7 @@ goto done
 echo.
 echo BUILD FEHLGESCHLAGEN (Exit-Code %RESULT%).
 echo Lies die Fehlermeldung direkt ueber dieser Zeile.
-echo Es wurde keine neue Beta veroeffentlicht.
+echo Es wurde keine neue Version veroeffentlicht.
 echo Hilfe: "%~dp0START-HIER.txt"
 
 :done

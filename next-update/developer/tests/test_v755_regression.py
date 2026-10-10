@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Offline-Regressionstest fuer Arena Roblox Bridge 7.6.4 (ohne Studio, ohne Windows).
+"""Offline-Regressionstest fuer Arena Roblox Bridge 7.6.5 (ohne Studio, ohne Windows).
 
-Was 7.6.4 prueft (neben unabhaengigen 7.5.x-Regressionen):
+Was 7.6.5 prueft (neben unabhaengigen 7.5.x-Regressionen):
 
 1. /api/tool lieferte HTTP 500 fuer JEDEN Werkzeugaufruf ("Die Benennung "=" wurde
    nicht als Name eines Cmdlet erkannt"). Ursache: in Get-ArenaActivityText fehlte
@@ -35,7 +35,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = ROOT / "app"
 PS1 = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.6.4"
+VERSION = "7.6.5"
 FAILURES: list[str] = []
 
 
@@ -440,7 +440,7 @@ def main() -> int:
         for item in FAILURES:
             print("  - " + item)
         return 1
-    print(f"\nOK: 7.6.4 Regressionstest bestanden (146 Tooltexte, Verlauf/Fortschritt, describe_orientation, "
+    print(f"\nOK: 7.6.5 Regressionstest bestanden (146 Tooltexte, Verlauf/Fortschritt, describe_orientation, "
           f"/api/tools/parallel, project-first method choice, Studio identity, profile card, plugin compilation).")
     return 0
 

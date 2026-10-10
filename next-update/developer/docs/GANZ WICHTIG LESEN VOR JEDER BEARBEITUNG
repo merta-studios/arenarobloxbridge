@@ -1,66 +1,119 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 7.6.4 - 10.10.2026)                              #
+#   (Stand: Version 7.6.5 - 10.10.2026)                                #
 #                                                                      #
 ##########################################################################
 
-AKTUELLER NACHTRAG 7.6.4 (10.10.2026) - STARTPFAD + ORDNER + EIGENES ICON
-============================================================================
-Arbeite ausschließlich in next-update/; ändere weder die Dateien im
-Repository-Hauptordner noch dessen alte Update-Struktur. Die Oberfläche für
-den Build-Nutzer bleibt klein und eindeutig:
-- next-update/Build-EXE.bat ist der einzige normale Klick.
-- Die fertige Beta startet unter next-update/user-builds/beta/ArenaBridge.exe.
-- Der interne Build liegt in next-update/builder/; Quellcode und Assets in
-  next-update/app/; Wartung, Tests und historische Verträge unter
-  next-update/developer/; der getrennte neue Updater unter
-  next-update/update-system/.
-- Ein eigenes Windows-Symbol kommt als app/assets/ArenaBridge.custom.ico dazu.
-  Der Builder nimmt es automatisch, validiert es und ignoriert die lokale Datei
-  in Git. Das Standard-Logo wird nicht überschrieben.
+AKTUELLER NACHTRAG 7.6.5 (10.10.2026) - LOGO, EIN ORDNER, TEST VOR RELEASE
+=============================================================================
+DIESES UPDATE HAT VORRANG vor allen aelteren Abschnitten weiter unten.
+Arbeite fuer diese neue Update-Strecke AUSSCHLIESSLICH in next-update/.
+Aendere weder den Repository-Hauptordner noch dessen altes Update-System und
+verwende es nicht als Ersatz. Alle alten Architektur-, Starter-, Root-Update-
+und Verteilungsanweisungen weiter unten sind historisch. Bei Widerspruch gilt
+immer dieser aktuelle Nachtrag und next-update/README.md.
 
-EXE-STARTFEHLER 7.6.4: ps2exe lässt ScriptPath leer. AppFolder darf dann
-niemals Split-Path mit null bekommen, sondern muss aus Process.MainModule.FileName
-abgeleitet werden. Resolve-BridgeAppFolder ist der gemeinsame null-sichere
-Resolver für normalen Programmstart und den isolierten EXE-Smoke-Test. Der
-Smoke-Test muss auch appFolderResolved prüfen; nur WPF/STA/Titelbild reicht
-nicht, weil der Fehler vor dem Bridge-Fenster im normalen Startpfad auftrat.
+VERBINDLICHES PROGRAMM-LOGO:
+- next-update/app/assets/neueslogo.png ist die vom Nutzer bereitgestellte,
+  einzige Logo-Quelle. next-update/app/assets/ArenaBridge.ico ist das daraus
+  erzeugte mehrgroessige Windows-Icon, das ps2exe in die EXE einbaut.
+- Der Builder bettet dieselbe PNG in die Bridge-Oberflaeche ein. Sie ersetzt
+  oben links neben dem Fenstertitel das Fake-Logo und wird auch im
+  Update-Hinweisfenster angezeigt. Der isolierte EXE-Smoke-Test dekodiert die
+  eingebettete PNG; kein separates Logo muss neben der fertigen EXE liegen.
 
-AKTUELLER NACHRAG 7.6.3 (10.10.2026) - VORRANG VOR AELTEREN REGELN
-====================================================================
-Diese Version wird ausschliesslich in next-update/ vorbereitet. Die Root-
-Bridge und ihr bestehender Updater bleiben unveraendert; eine spaetere
-Integration ist eine separate Nutzerentscheidung. Der Nutzer baut eine EXE
-selbst; Beta-Test kommt vor Stable-Verteilung.
+EINZIGER BUILD-/ARTEFAKT-ORDNER:
+- Build-EXE.bat erzeugt den privaten Test-Build in
+  next-update/release/ArenaBridge.exe.
+- Es gibt KEIN next-update/release-inbox/ und KEIN next-update/user-builds/;
+  insbesondere keine beta/stable-Unterordner. Diagnosedateien, Hashes und
+  lokale Build-Metadaten liegen nur als lokale Hilfsdateien im selben release/
+  Ordner. Nur ArenaBridge.exe ist fuer einen spaeteren Upload vorgesehen.
 
-Methoden- und Qualitaetsregel: zuerst ausdrueckliche Nutzerwuensche, dann die
-bestehenden Place-Konventionen, danach passende Empfehlungen. Blender ist nur
-eine Empfehlung fuer geeignete neue Geometrie. Parts, Assemblies, Polygone,
-Meshes, bestehende Skript-/GUI-Architekturen, neutrale Farben, statische und
-einfache Blockouts bleiben gueltig, wenn sie zum Auftrag passen. Kein
-shape/part-count/finishScore/grade/UI-structure-Audit darf allein eine
-Umgestaltung, Mehrkomplexitaet oder Fertigstellungssperre ausloesen.
-model_audit, world_audit und ui_audit liefern optionale Messwerte; nur echte
-Fehler, explizite Nutzeranforderungen und Place-Konventionen leiten Aenderungen.
-Der einzige Geometrie-Pending-Pfad ist ein ausdruecklich mit
-build_mesh_model erzeugter, noch nicht angewandter Mesh-Slot.
+FESTER PRIVATTEST-/FREIGABE-ABLAUF:
+1. Normale Aenderung: Nutzerauftrag -> nur next-update/ bearbeiten -> passende
+   Tests ausfuehren -> PR erstellen. PR/Merge ist KEINE Veroeffentlichung.
+2. Nutzer mergt den PR, laedt das ZIP herunter, baut mit Build-EXE.bat und
+   testet release/ArenaBridge.exe privat. Stable- und Beta-Manifeste bleiben
+   aus; kein Nutzer wird benachrichtigt oder aktualisiert.
+3. Ist der Build kaputt oder gefaellt er nicht: KEINE EXE hochladen und kein
+   Release ausloesen. Der Nutzer startet einen neuen Chat mit dem
+   Korrekturwunsch. Neuer PR, Merge, ZIP, Build, privater Test; der Zyklus
+   beginnt von vorn, ohne Nutzer-Update.
+4. Nur wenn der Nutzer den Stand ausdruecklich freigibt, wechselt der Ablauf:
+   In der Session mit dem bereits gemergten Aenderungs-PR antwortet die KI
+   AUSSCHLIESSLICH mit einer einzelnen kopierbaren Textbox/einem Codeblock,
+   der einen vollstaendigen Prompt fuer die naechste Release-Session enthaelt.
+   Keine Erklaerung, kein zweiter Text und noch keine Veroeffentlichung.
+5. Die Release-Session verwendet die IDENTISCHE, bereits getestete Datei unter
+   next-update/release/ArenaBridge.exe. Ist diese Datei in der Session nicht
+   verfuegbar, bittet die KI um genau diese Datei zum Upload/Anhang; sie baut
+   keinen stillen Ersatz und erfindet weder Version noch Hash.
+6. Veroeffentlichung laeuft nur ueber next-update/update-system/. Update-Bridge.ps1
+   ist aktuell noch NICHT in die EXE integriert. Integration, echter Startpfad
+   und Bootstrap/Migration fuer bestehende Installationen muessen zuerst
+   geprueft und getestet sein. Solange irgendein Gate offen ist, bleibt
+   channels/stable.json deaktiviert und die KI darf nicht behaupten, alle
+   Nutzer erhielten automatisch das Update. Die alte Root-Update-Strecke ist
+   kein Fallback.
+7. Nach bestandenen Gates muessen Version, Datei, Groesse und SHA-256 exakt
+   uebereinstimmen. Aenderungen an Quelle/Manifest kommen als separater PR und
+   werden erst nach Merge fuer Nutzer aktiv. Das Stable-Manifest zeigt auf genau
+   die hochgeladene next-update/release/ArenaBridge.exe. Diagnose-EXE/BAT,
+   SHA-Dateien und release-metadata.json werden niemals veroeffentlicht.
 
-Fortschritt: Bei einfacher Lese-/Beobachtungsarbeit progress.mode="hidden"
-mit konkreter Aktion senden; Anzeige ist "nicht anwendbar", ohne Balken, 0 %
-oder erfundene Inaktivitaet. Ein Verlaufsbalken nutzt eine deutlich helle Spur.
-Open-Cloud-Verlauf nennt Aktion/Funktion und einen konkreten,
-datenminimierenden Status, nicht API-Pfade, Resource-IDs, Keys oder
-Antwortwerte. Tutorial-Schritt 4 lautet exakt: "Füge die Berechtigungen hinzu,
-die du willst! Hier siehst du eine ausführliche Liste, was jede Berechtigung
-kann:". Keine IP-Konfiguration oder konkreten IP-Beispiele ins Tutorial;
-vorhandene IP-Einstellungen bleiben unangetastet.
+PROJEKT-/QUALITAETSREGEL (weiterhin gueltig): Nutzerwuensche und bestehende
+Place-Konventionen haben Vorrang; Blender ist eine passende Empfehlung, keine
+Pflicht. Einfache Lese-/Beobachtungsarbeit bleibt ohne erfundene 0 %. Open-
+Cloud-Verlauf enthaelt keine API-Pfade/Nutzdaten; das Tutorial enthaelt keine
+IP-Einrichtung. Diese Regeln aus Version 7.6.3 bleiben in Kraft.
 
-Alle widersprechenden historischen Hinweise in dieser Datei (insbesondere
-Blender-first, Polygon-permission gates, Pflicht-Anatomie/Farbe/Motion,
-DRAFT_GRADE_RISK/DETAIL_REQUIRED/HANDOFF_REQUIRED, Pflicht-Audits,
-MONOLITH_RISK-Rewrite, erfundener 0-%-Balken und alte Tutorials) sind
-ueberholt. Sie sind kein Arbeitsauftrag fuer next-update/.
+WENN DER NUTZER DIE VEROEFFENTLICHUNG ANKUENDIGT: PROMPT-VERHALTEN
+------------------------------------------------------------------
+Wenn der Nutzer in der gemergten Test-Session ausdruecklich sagt, dass alles
+perfekt ist und die Version fuer alle bereitgestellt werden soll, beende diese
+Session mit GENAU EINEM kopierbaren Codeblock/Textfeld. Fuell aus dem Kontext
+die echte Version, den gemergten PR/die Revision und den Artefaktpfad aus.
+Gib ausserhalb des Codeblocks keinerlei Kommentar aus. Verwende diese Vorlage
+und lasse keine bekannten Werte als Platzhalter stehen:
+
+--- PROMPT-VORLAGE FUER DIE NAECHSTE SESSION ---
+Du bist jetzt die Release-Session fuer Arena Roblox Bridge. Der Nutzer hat den
+privaten Test von Version <VERSION> ausdruecklich bestanden und die
+Veroeffentlichung fuer alle freigegeben. Der zugehoerige Code-PR ist bereits
+gemergt: <PR/REVISION, WENN BEKANNT>. Die IDENTISCH getestete Windows-EXE muss
+unter next-update/release/ArenaBridge.exe liegen oder vom Nutzer als genau
+diese Datei angehaengt/hochgeladen werden.
+
+Arbeite ausschliesslich in next-update/. Aendere oder verwende weder Dateien
+im Repository-Hauptordner noch das alte Update-System. Pruefe zuerst den
+gemergten Quellstand und die vorhandene EXE: Version, Groesse und SHA-256.
+Baue nicht still eine andere EXE. Wenn die getestete Datei fehlt oder ihre
+Identitaet nicht bewiesen werden kann, STOPPE und bitte den Nutzer um genau
+diese Datei.
+
+Bereite die Auslieferung ausschliesslich ueber next-update/update-system/ vor.
+Pruefe, ob Update-Bridge.ps1 in die echte ArenaBridge.exe integriert ist, ob
+der Start-/Update-/Rollback-Pfad auf Windows funktioniert und ob bereits
+installierte Nutzer ohne das alte System auf den neuen Updater migrieren
+koennen. Der Updater ist derzeit noch nicht integriert: schliesse diese
+Luecke samt Regressionstests in next-update/, bevor Stable aktiviert wird.
+Falls Bootstrap/Migration nicht sicher moeglich oder noch nicht bestaetigt ist,
+aktiviere nichts und sage ehrlich, was noch fehlt.
+
+Erst wenn alle Gates bestanden sind, bereite Version, publishedAtUtc,
+Artefakt-URL auf next-update/release/ArenaBridge.exe, exakte Dateigroesse,
+SHA-256, Hinweise und Stable-Manifest vor. Halte beta deaktiviert. Quelle oder
+Manifest als PR vorbereiten und auf den Merge warten; danach nur die neue
+Update-Strecke verwenden. Niemals behaupten, alle Nutzer seien aktualisiert,
+bevor das Manifest im Standard-Branch erreichbar ist und ein echter Client
+den neuen Updater nachweislich verwendet.
+--- ENDE PROMPT-VORLAGE ---
+
+HISTORISCHER NACHTRAG 7.6.4 (10.10.2026): Der damalige EXE-Startpfad-Hotfix
+war korrekt. Die zu diesem Zeitpunkt dokumentierte beta/stable-Ordnerstruktur
+und der optionale ArenaBridge.custom.ico-Mechanismus sind durch 7.6.5 ersetzt.
 
 AKTUELLER NACHTRAG 7.6.2 (10.10.2026) - HAT VORRANG BEI OPEN CLOUD
 =================================================================
@@ -81,15 +134,14 @@ Keine Windows-/Roblox-Live-Abnahme in dieser Sandbox behaupten.
 
 WOFUER IST DIESE DATEI?
 =======================
-Eine neue KI-Session (neuer Chat) hat KEIN Gedaechtnis an fruehere
-Chats und auch nicht automatisch den alten Workspace. Wenn du daher
-spaeter in einem NEUEN Chat mit einer KI an diesem Projekt weiter-
-arbeiten willst: Haenge die ArenaBridge.zip an - oder mindestens diese
-Datei hier - an deine erste Nachricht an. Damit weiss die KI sofort,
-wie das Projekt aufgebaut ist und worauf sie achten muss.
-
-Diese Datei ist NICHT fuer das GitHub-Repository gedacht (nur fuer
-dich und deine KI-Sessions).
+Eine neue KI-Session hat kein Gedaechtnis an fruehere Chats. Diese aktuelle
+Kopie liegt bewusst unter next-update/developer/docs/ und wird zusammen mit
+dem next-update-Ordner gepflegt. Haenge fuer eine spaetere Session den
+aktuellen Repository-Stand/ZIP und bei einer Release-Session die bereits
+testete release/ArenaBridge.exe an oder stelle sicher, dass genau diese Datei
+im Repository-Pfad next-update/release/ArenaBridge.exe liegt. Die alte
+Root-Kopie gehoert zum alten Bereich und wird nicht als Arbeitsanweisung fuer
+das neue System verwendet.
 
 
 1) ARCHITEKTUR (DAS WICHTIGSTE)

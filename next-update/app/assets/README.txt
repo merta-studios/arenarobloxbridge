@@ -1,17 +1,17 @@
-BRAND-ASSETS FUER next-update/app
+ARENA ROBLOX BRIDGE — MARKEN-ASSETS
+===================================
 
-- arena-bridge-title.jpg: Titel-/Startbild im Bridge-Fenster. Der Builder bettet
-  es in eine temporaere Kopie von ArenaBridge.ps1 ein; die fertige EXE braucht
-  diese Datei nicht neben sich.
-- ArenaBridge.ico: mitgeliefertes Standard-Logo fuer das Windows-EXE-Symbol.
-- ArenaBridge.custom.ico: optionales eigenes Windows-Symbol. Lege dein Logo
-  als gueltige .ico-Datei unter genau diesem Namen hier ab. Der Build nimmt
-  diese Datei automatisch statt ArenaBridge.ico. Sie wird lokal ignoriert und
-  nicht in Git aufgenommen. Entferne sie, um wieder das Standard-Logo zu nutzen.
+- neueslogo.png ist das vom Nutzer bereitgestellte, verbindliche Logo. Der
+  EXE-Builder bettet genau diese PNG-Datei in den Programmcode ein; sie wird
+  im Bridge-Fenster neben dem Titel und im Update-Hinweis angezeigt.
+- ArenaBridge.ico ist das passende mehrgroessige Windows-Icon, das aus
+  neueslogo.png erzeugt wurde. Build-EXE.ps1 validiert das ICO und gibt es
+  an ps2exe weiter, damit auch die ArenaBridge.exe dieses Logo als
+  Dateisymbol traegt.
+- arena-bridge-title.jpg bleibt das separate grosse Start-/Titelbild; es ist
+  nicht das Programm-Logo.
 
-Eine normale PNG-/JPG-Datei kann ps2exe nicht direkt als EXE-Symbol verwenden;
-vorher in eine Windows-ICO-Datei umwandeln. Empfehlenswert ist ein ICO mit
-transparentem Hintergrund und mehreren Groessen (16, 24, 32, 48, 64, 128 und
-256 Pixel). Der Builder prueft den ICO-Header und alle Bildbereiche, bevor er
-kompiliert. Alternativ kann Build-EXE.ps1 mit -CustomIconPath "C:\\Pfad\\Logo.ico"
-aufgerufen werden; fuer den normalen Ablauf genuegt die Datei ArenaBridge.custom.ico.
+Die PNG wird beim Build in eine temporaere Kopie von ArenaBridge.ps1
+eingebettet. Weder Logo noch Startbild muessen neben der fertigen EXE liegen.
+Das Branding wird nicht ueber ein optionales ArenaBridge.custom.ico
+ueberschrieben: neueslogo.png ist die einzige Logo-Quelle.

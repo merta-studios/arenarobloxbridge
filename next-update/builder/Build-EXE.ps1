@@ -2,8 +2,7 @@
 param(
     [ValidateSet('beta','stable')]
     [string]$Channel = 'beta',
-    [string]$BuildVersion = '',
-    [string]$CustomIconPath = ''
+    [string]$BuildVersion = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -33,7 +32,7 @@ function Invoke-BridgeCompiler {
         STA = $true
         x64 = $true
         title = $WindowTitle
-        description = 'Arena Roblox Bridge - lokale Beta-Testfassung'
+        description = 'Arena Roblox Bridge - lokaler Test-Build'
         company = 'Arena Roblox Bridge'
         product = 'Arena Roblox Bridge'
         version = $NumericVersion
@@ -88,7 +87,10 @@ function Test-StagedExecutable {
         if ([int]$report.titleImageWidth -lt 100 -or [int]$report.titleImageHeight -lt 50) {
             throw 'The staged EXE smoke test did not decode the embedded title image.'
         }
-        Write-Step ("Compiled EXE launched successfully: PowerShell " + [string]$report.powershell + ', WPF/STA OK, title image ' + [string]$report.titleImageWidth + 'x' + [string]$report.titleImageHeight + '.')
+        if ([int]$report.programLogoWidth -lt 32 -or [int]$report.programLogoHeight -lt 32) {
+            throw 'The staged EXE smoke test did not decode the embedded neueslogo.png branding.'
+        }
+        Write-Step ("Compiled EXE launched successfully: PowerShell " + [string]$report.powershell + ', WPF/STA OK, title image ' + [string]$report.titleImageWidth + 'x' + [string]$report.titleImageHeight + ', app logo ' + [string]$report.programLogoWidth + 'x' + [string]$report.programLogoHeight + '.')
     } finally {
         if ($null -ne $process) { try { $process.Dispose() } catch {} }
         if ($null -eq $previousSmokeFlag) { Remove-Item Env:\ARENABRIDGE_BUILD_SMOKE -ErrorAction SilentlyContinue }
@@ -203,33 +205,30 @@ $assetsDirectory = Join-Path $appRoot 'assets'
 $sourcePath = Join-Path $appRoot 'ArenaBridge.ps1'
 $versionPath = Join-Path $appRoot 'version.json'
 $parseGatePath = Join-Path $builderRoot 'parse-gate.ps1'
-$defaultIconPath = Join-Path $assetsDirectory 'ArenaBridge.ico'
-$customIconCandidate = Join-Path $assetsDirectory 'ArenaBridge.custom.ico'
-if (-not [string]::IsNullOrWhiteSpace($CustomIconPath)) {
-    $selectedIconPath = [string]$CustomIconPath
-    if (-not [IO.Path]::IsPathRooted($selectedIconPath)) {
-        $workingDirectory = [string](Get-Location).Path
-        $selectedIconPath = Join-Path $workingDirectory $selectedIconPath
-    }
-    $iconPath = [string](Resolve-Path -LiteralPath $selectedIconPath -ErrorAction Stop).ProviderPath
-} elseif (Test-Path -LiteralPath $customIconCandidate -PathType Leaf) {
-    $iconPath = $customIconCandidate
-} else {
-    $iconPath = $defaultIconPath
-}
+$iconPath = Join-Path $assetsDirectory 'ArenaBridge.ico'
 $titleArtworkPath = Join-Path $assetsDirectory 'arena-bridge-title.jpg'
-$outputDirectory = Join-Path (Join-Path $repoRoot 'user-builds') $Channel
+$programLogoPath = Join-Path $assetsDirectory 'neueslogo.png'
+$outputDirectory = Join-Path $repoRoot 'release'
 $exePath = Join-Path $outputDirectory 'ArenaBridge.exe'
 $diagnosticExePath = Join-Path $outputDirectory 'ArenaBridge-Diagnose.exe'
 $diagnosticBatPath = Join-Path $outputDirectory 'Start-Diagnostic.bat'
 
-foreach ($requiredPath in @($sourcePath,$versionPath,$parseGatePath,$iconPath,$titleArtworkPath)) {
+foreach ($requiredPath in @($sourcePath,$versionPath,$parseGatePath,$iconPath,$titleArtworkPath,$programLogoPath)) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
         throw ("Required build input is missing: " + $requiredPath)
     }
 }
 [void](Test-WindowsIconFile -Path $iconPath)
-Write-Step ("Using EXE icon: " + $iconPath)
+$programLogoHeader = [IO.File]::ReadAllBytes($programLogoPath)
+if ($programLogoHeader.Length -lt 1000 -or $programLogoHeader.Length -gt 10485760 -or
+    $programLogoHeader[0] -ne 137 -or $programLogoHeader[1] -ne 80 -or
+    $programLogoHeader[2] -ne 78 -or $programLogoHeader[3] -ne 71 -or
+    $programLogoHeader[4] -ne 13 -or $programLogoHeader[5] -ne 10 -or
+    $programLogoHeader[6] -ne 26 -or $programLogoHeader[7] -ne 10) {
+    throw 'app\assets\neueslogo.png is missing, too small/large, or is not a valid PNG file.'
+}
+Write-Step ("Using the EXE icon generated from the supplied logo: " + $iconPath)
+Write-Step ("Embedding the same app logo into the Bridge window: " + $programLogoPath)
 
 $versionInfo = Get-Content -LiteralPath $versionPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
 $sourceVersion = [string]$versionInfo.version
@@ -251,8 +250,8 @@ if ($Channel -eq 'stable' -and $BuildVersion.Contains('-')) {
     throw 'Stable builds cannot use a prerelease version. Use beta first, then a stable version.'
 }
 if ($Channel -eq 'stable') {
-    Write-Warning 'Stable builds are for a later release. They are not published automatically.'
-    $confirmation = Read-Host 'Type RELEASE STABLE to build into user-builds/stable'
+    Write-Warning 'A stable build writes to the same single release\ folder. Do not run this during private testing.'
+    $confirmation = Read-Host 'Type RELEASE STABLE to overwrite release\ArenaBridge.exe'
     if ($confirmation -cne 'RELEASE STABLE') { throw 'Stable build cancelled.' }
 }
 
@@ -298,15 +297,26 @@ try {
     if ($sourceText.IndexOf($sourceMarker,[StringComparison]::Ordinal) -ne $sourceText.LastIndexOf($sourceMarker,[StringComparison]::Ordinal)) {
         throw 'The title-artwork injection marker must appear exactly once.'
     }
+    $logoMarker = '$script:ProgramLogoBase64 = ''__ARENA_PROGRAM_LOGO_BASE64__'''
+    if (-not $sourceText.Contains($logoMarker)) {
+        throw 'The unique program-logo injection marker is missing from ArenaBridge.ps1.'
+    }
+    if ($sourceText.IndexOf($logoMarker,[StringComparison]::Ordinal) -ne $sourceText.LastIndexOf($logoMarker,[StringComparison]::Ordinal)) {
+        throw 'The program-logo injection marker must appear exactly once.'
+    }
     $titleArtworkBytes = [IO.File]::ReadAllBytes($titleArtworkPath)
     if ($titleArtworkBytes.Length -le 1000 -or $titleArtworkBytes.Length -gt 10485760) {
         throw ("The title artwork has an unexpected size: " + [string]$titleArtworkBytes.Length + ' bytes.')
     }
     $titleArtworkBase64 = [Convert]::ToBase64String($titleArtworkBytes)
+    $programLogoBytes = [IO.File]::ReadAllBytes($programLogoPath)
+    $programLogoBase64 = [Convert]::ToBase64String($programLogoBytes)
     $sourceReplacement = '$script:TitleArtworkBase64 = ''' + $titleArtworkBase64 + ''''
     $preparedSource = $sourceText.Replace($sourceMarker,$sourceReplacement)
+    $logoReplacement = '$script:ProgramLogoBase64 = ''' + $programLogoBase64 + ''''
+    $preparedSource = $preparedSource.Replace($logoMarker,$logoReplacement)
     [IO.File]::WriteAllText($preparedSourcePath,$preparedSource,[Text.UTF8Encoding]::new($true))
-    Write-Step ("Prepared self-contained source with title artwork (" + [string]$titleArtworkBytes.Length + ' bytes) and no extra runtime image file.')
+    Write-Step ("Prepared self-contained source with title artwork (" + [string]$titleArtworkBytes.Length + " bytes) and the program logo (" + [string]$programLogoBytes.Length + " bytes). No external runtime image is required.")
     Write-Step 'Re-running the real Windows PowerShell parser against the exact embedded compile copy...'
     & $windowsPowerShell -NoLogo -NoProfile -ExecutionPolicy Bypass -File $parseGatePath -Path $preparedSourcePath
     if ($LASTEXITCODE -ne 0) { throw 'PowerShell parse gate failed for the embedded compile copy; no EXE was produced.' }
@@ -334,8 +344,7 @@ try {
     $diagnosticSha256 = (Get-FileHash -LiteralPath $diagnosticExePath -Algorithm SHA256).Hash.ToLowerInvariant()
     $iconSha256 = (Get-FileHash -LiteralPath $iconPath -Algorithm SHA256).Hash.ToLowerInvariant()
     $artworkSha256 = (Get-FileHash -LiteralPath $titleArtworkPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    $iconSelection = 'default'
-    if ($iconPath -ieq $customIconCandidate -or -not [string]::IsNullOrWhiteSpace($CustomIconPath)) { $iconSelection = 'custom' }
+    $programLogoSha256 = (Get-FileHash -LiteralPath $programLogoPath -Algorithm SHA256).Hash.ToLowerInvariant()
     $metadata = [ordered]@{
         schemaVersion = 1
         channel = $Channel
@@ -349,26 +358,27 @@ try {
         diagnosticSha256 = $diagnosticSha256
         iconFileName = [IO.Path]::GetFileName($iconPath)
         iconSha256 = $iconSha256
-        iconSelection = $iconSelection
         titleArtworkFileName = 'arena-bridge-title.jpg'
         titleArtworkSha256 = $artworkSha256
+        programLogoFileName = 'neueslogo.png'
+        programLogoSha256 = $programLogoSha256
         builtAtUtc = [DateTime]::UtcNow.ToString('o')
         published = $false
-        note = 'Local user build only. Publish only ArenaBridge.exe after the user test and explicit release approval. Diagnostic EXE/BAT are local-only.'
+        note = 'Local private-test build only. Never publish during review/testing. After explicit release approval, use the exact tested ArenaBridge.exe at next-update/release/ArenaBridge.exe; diagnostic files and metadata are local-only.'
     }
     $metadataPath = Join-Path $outputDirectory 'release-metadata.json'
     Write-Utf8NoBom $metadataPath ($metadata | ConvertTo-Json -Depth 6)
     Write-Utf8NoBom (Join-Path $outputDirectory 'ArenaBridge.exe.sha256') ($sha256 + '  ArenaBridge.exe' + [Environment]::NewLine)
     Write-Utf8NoBom (Join-Path $outputDirectory 'ArenaBridge-Diagnose.exe.sha256') ($diagnosticSha256 + '  ArenaBridge-Diagnose.exe' + [Environment]::NewLine)
 
-    Write-Step 'BETA BUILD COMPLETED. No GitHub release, upload, channel manifest, or stable build was changed.'
+    Write-Step 'LOCAL TEST BUILD COMPLETED. No GitHub upload/release or update-channel manifest was changed.'
     Write-Host ''
     Write-Host 'NOW RUN THIS FILE ON YOUR PC TO TEST THE APP:' -ForegroundColor Green
     Write-Host ('  ' + $exePath) -ForegroundColor White
     Write-Host 'If the normal EXE shows nothing, close other ArenaBridge windows and run:' -ForegroundColor Yellow
     Write-Host ('  ' + $diagnosticBatPath) -ForegroundColor White
     Write-Host ('Local-only metadata: ' + $metadataPath)
-    Write-Host 'For all-user distribution, publish only ArenaBridge.exe as a GitHub Release asset after testing; do not commit the EXE or diagnostic files.'
+    Write-Host 'No users were updated. Only after explicit approval may the exact tested ArenaBridge.exe be uploaded to next-update/release/ArenaBridge.exe; do not upload diagnostic files or metadata.'
 } finally {
     foreach ($stagingPath in @($stagingExePath,$stagingDiagnosticExePath)) {
         if ($stagingPath -and (Test-Path -LiteralPath $stagingPath)) {

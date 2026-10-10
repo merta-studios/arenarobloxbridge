@@ -1,15 +1,23 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.6.4
+# Arena Roblox Bridge  -  Version 7.6.5
 #
-# Version 7.6.4 (2026-10-10) - EXE-START-HOTFIX + BUILD-ORDNUNG + EIGENES EXE-ICON
-#   1) EXE-START REPARIERT: ps2exe stellt keinen Skriptpfad bereit. AppFolder wird
-#      jetzt sicher aus dem EXE-Verzeichnis ermittelt; kein Split-Path mit NULL.
-#      Derselbe Resolver wird im isolierten EXE-Smoke-Test geprueft.
-#   2) BUILD-ORDNUNG: Quellcode, Builder, Update-System und Wartungstests sind in
-#      app/, builder/, update-system/ und developer/ getrennt. Build-EXE.bat
-#      bleibt der einzige normale Startknopf; die Beta liegt in user-builds/beta/.
-#   3) EIGENES LOGO: app/assets/ArenaBridge.custom.ico wird bei Vorhandensein
-#      automatisch als EXE-Icon eingebettet; das Standard-Logo bleibt erhalten.
+# Version 7.6.5 (2026-10-10) - EIN LOGO + EINER TEST-/RELEASE-ORDNER + FREIGABE-GATE
+#   1) BRANDING: app/assets/neueslogo.png ist sowohl das EXE-Symbol (aus dem
+#      dazu erzeugten ArenaBridge.ico) als auch das eingebettete Logo neben
+#      dem Fenstertitel und im Update-Hinweisfenster.
+#   2) EIN ARTEFAKT-ORDNER: Build-EXE.bat legt Kandidat und lokale Diagnose-
+#      Dateien gemeinsam unter release/ ab. release/ArenaBridge.exe ist der
+#      einzige spaeter absichtlich einzucheckende/veroeffentlichte Build.
+#   3) FREIGABE: PR, Merge, ZIP-Build und privater Test veroeffentlichen nichts.
+#      Bei Problemen beginnt ein Korrektur-PR-Zyklus; erst ausdrueckliche
+#      Freigabe startet eine separate Session fuer next-update/update-system.
+#      Root-Dateien und das alte Update-System bleiben unangetastet.
+#   4) DER NEUE UPDATER IST NOCH NICHT IN DIESE APP INTEGRIERT. Die naechste
+#      Release-Session muss Integration, Bootstrap fuer bestehende Nutzer,
+#      Hash/Version und Manifest erst pruefen, bevor Stable aktiviert wird.
+#
+# Historisch: Version 7.6.4 (2026-10-10) behob den EXE-Startpfad, sortierte
+# den damaligen Build-Aufbau und fuehrte den isolierten EXE-Smoke-Test ein.
 #
 # Version 7.6.3 (2026-10-10) - PROJECT-FIRST + OPEN-CLOUD-VERLAUF + UPDATE-VORBEREITUNG
 #   1) USER UND PLACE ZUERST: konkrete Nutzerwuensche, vorhandene Place-Konventionen
@@ -2152,6 +2160,7 @@ param(
 # The builder replaces this one unique marker in a temporary compile-only copy.
 # The repository source stays small and loads the adjacent JPG when run as a PS1.
 $script:TitleArtworkBase64 = '__ARENA_TITLE_ARTWORK_BASE64__'
+$script:ProgramLogoBase64 = '__ARENA_PROGRAM_LOGO_BASE64__'
 $script:DiagnosticMode = ([bool]$DiagnosticMode -or $env:ARENABRIDGE_DIAGNOSTIC_MODE -eq '1')
 
 # ps2exe has no script-file path at runtime. Always prefer a non-empty PS1 or
@@ -2182,9 +2191,11 @@ if ($env:ARENABRIDGE_BUILD_SMOKE -eq '1') {
     $smokeExitCode = 0
     $smokeStream = $null
     $smokeImage = $null
+    $smokeLogoStream = $null
+    $smokeLogoImage = $null
     $smokeReport = [ordered]@{
         status = 'failed'
-        version = '7.6.4'
+        version = '7.6.5'
         processId = $PID
         is64BitProcess = [Environment]::Is64BitProcess
         apartmentState = [string][System.Threading.Thread]::CurrentThread.ApartmentState
@@ -2192,6 +2203,8 @@ if ($env:ARENABRIDGE_BUILD_SMOKE -eq '1') {
         clr = [string][Environment]::Version
         titleImageWidth = 0
         titleImageHeight = 0
+        programLogoWidth = 0
+        programLogoHeight = 0
         appFolderResolved = $false
         error = ''
     }
@@ -2232,15 +2245,31 @@ if ($env:ARENABRIDGE_BUILD_SMOKE -eq '1') {
         $smokeImage.EndInit()
         $smokeImage.Freeze()
         if ($smokeImage.PixelWidth -lt 100 -or $smokeImage.PixelHeight -lt 50) { throw 'The embedded title image decoded with an unexpected size.' }
+        if ([string]::IsNullOrWhiteSpace([string]$script:ProgramLogoBase64) -or
+            [string]$script:ProgramLogoBase64 -eq '__ARENA_PROGRAM_LOGO_BASE64__') {
+            throw 'The program logo was not embedded into the compiled EXE.'
+        }
+        $smokeLogoBytes = [Convert]::FromBase64String([string]$script:ProgramLogoBase64)
+        $smokeLogoStream = [System.IO.MemoryStream]::new([byte[]]$smokeLogoBytes)
+        $smokeLogoImage = [System.Windows.Media.Imaging.BitmapImage]::new()
+        $smokeLogoImage.BeginInit()
+        $smokeLogoImage.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+        $smokeLogoImage.StreamSource = $smokeLogoStream
+        $smokeLogoImage.EndInit()
+        $smokeLogoImage.Freeze()
+        if ($smokeLogoImage.PixelWidth -lt 32 -or $smokeLogoImage.PixelHeight -lt 32) { throw 'The embedded program logo decoded with an unexpected size.' }
         $smokeReport.status = 'passed'
         $smokeReport.titleImageWidth = [int]$smokeImage.PixelWidth
         $smokeReport.titleImageHeight = [int]$smokeImage.PixelHeight
+        $smokeReport.programLogoWidth = [int]$smokeLogoImage.PixelWidth
+        $smokeReport.programLogoHeight = [int]$smokeLogoImage.PixelHeight
     } catch {
         $smokeExitCode = 1
         $smokeReport.error = [string]$_.Exception.Message
         try { [Console]::Error.WriteLine('ARENA_BUILD_SMOKE_FAILED: ' + $smokeReport.error) } catch {}
     } finally {
         if ($null -ne $smokeStream) { try { $smokeStream.Dispose() } catch {} }
+        if ($null -ne $smokeLogoStream) { try { $smokeLogoStream.Dispose() } catch {} }
     }
     try {
         if ([string]::IsNullOrWhiteSpace($smokePath)) { throw 'ARENABRIDGE_BUILD_SMOKE_PATH was not set.' }
@@ -2256,7 +2285,7 @@ if ($env:ARENABRIDGE_BUILD_SMOKE -eq '1') {
 # Existing LOCALAPPDATA directory; no UI, no new exception net.
 # A parse/policy failure prevents even this marker. Check its timestamp/version.
 # Continue + SilentlyContinue keeps diagnostic I/O from becoming a start blocker.
-Write-Output ("{0:o} PROOF_OF_LIFE Version=7.6.4 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
+Write-Output ("{0:o} PROOF_OF_LIFE Version=7.6.5 PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
 
 # Version 7.5.8: Ein Autostart kann alte Run-Eintraege parallel ausloesen.
 # Nur EIN PowerShell-Kind darf die Bridge-Oberflaeche/Dienste starten. Die
@@ -2286,7 +2315,7 @@ try {
         try {
             [System.IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA 'START-CHECK.txt'),
                 ('Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                 'Version: 7.6.4' + [Environment]::NewLine +
+                 'Version: 7.6.5' + [Environment]::NewLine +
                  'ABBRUCH: SINGLE_INSTANCE_DUPLICATE' + [Environment]::NewLine +
                  $duplicateMessage + [Environment]::NewLine +
                  'Log: ' + (Join-Path $env:LOCALAPPDATA 'ArenaRobloxBridge-start-entry.txt') + [Environment]::NewLine),
@@ -2354,7 +2383,7 @@ trap {
         }
         $trapPath = Join-Path $trapFolder 'startup-diagnose.txt'
         $trapReport = New-Object System.Text.StringBuilder
-        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.6.4)')
+        [void]$trapReport.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.6.5)')
         [void]$trapReport.AppendLine('Quelle: trap auf Skriptebene (nicht abgefangener Fehler)')
         [void]$trapReport.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$trapReport.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -2393,7 +2422,7 @@ trap {
             try {
                 [System.IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA 'START-CHECK.txt'),
                     ('Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.6.4' + [Environment]::NewLine +
+                     'Version: 7.6.5' + [Environment]::NewLine +
                      'ABBRUCH: ' + $trapMessage + [Environment]::NewLine +
                      'Details: ' + $trapPath + [Environment]::NewLine),
                     [System.Text.Encoding]::UTF8)
@@ -3459,7 +3488,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     LogFile         = $script:RuntimeLog
     ShotFolder      = $script:ShotFolder
     Port            = $script:Port
-    DocsVersion     = '7.6.4'
+    DocsVersion     = '7.6.5'
     # Version 7.0.6: SELBSTAUSKUNFT, die das Deployment BEWEIST. Diese Zaehler
     # laufen IMMER mit - unabhaengig von der Leistungsdiagnose. GET /api/version
     # liefert sie zusammen mit Datei-Pfad und SHA-256 der laufenden Datei, damit
@@ -3875,7 +3904,7 @@ function Write-StartupFailureDiagnose {
         try { $trace = [string]$ErrorRecord.ScriptStackTrace } catch {}
         if ($trace.Length -gt 2000) { $trace = $trace.Substring(0, 2000) }
         $report = New-Object System.Text.StringBuilder
-        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.6.4)')
+        [void]$report.AppendLine('Arena Roblox Bridge - Start-Diagnose (Version 7.6.5)')
         [void]$report.AppendLine('Zeitstempel: ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))
         [void]$report.AppendLine('Letzte Startstufe: ' + $stage)
         [void]$report.AppendLine('PowerShell: ' + [string]$PSVersionTable.PSVersion)
@@ -3958,7 +3987,7 @@ function Set-StartupStage {
     try {
         $stamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
         $checkText = 'Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                     'Version: 7.6.4' + [Environment]::NewLine +
+                     'Version: 7.6.5' + [Environment]::NewLine +
                      'Zeit: ' + $stamp + [Environment]::NewLine +
                      'PowerShell: ' + [string]$PSVersionTable.PSVersion + ' | CLR ' + [string][Environment]::Version + [Environment]::NewLine +
                      'Skript: ' + [string]$script:ScriptPath + [Environment]::NewLine +
@@ -4024,12 +4053,12 @@ try {
     } catch {}
     $langMode = '-'
     try { $langMode = [string]$ExecutionContext.SessionState.LanguageMode } catch {}
-$script:PreviewDiagIdentity = ("Bridge-Version=7.6.4, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
-    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.6.4, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+$script:PreviewDiagIdentity = ("Bridge-Version=7.6.5, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
+    Write-RuntimeLog ("Laufzeit-Identitaet: Bridge-Version=7.6.5, Datei='{0}', SHA-256={1}, LanguageMode={2}, CLR={3}" -f $runFile, $runHash, $langMode, [Environment]::Version)
     # Version 7.0.6: dieselbe Identitaet auch fuer GET /api/version bereitstellen.
     # Sie ist der einzige Beweis, dass die 7.0.6-Datei wirklich laeuft (H1).
     try {
-$script:Shared.RuntimeInfo.Version = '7.6.4'
+$script:Shared.RuntimeInfo.Version = '7.6.5'
         $script:Shared.RuntimeInfo.File = [string]$runFile
         $script:Shared.RuntimeInfo.Sha256 = [string]$runHash
         $script:Shared.RuntimeInfo.LanguageMode = [string]$langMode
@@ -4132,7 +4161,7 @@ function Find-RobloxStudio {
 function Get-PluginSource {
 @'
 --[[============================================================================
-  Arena Studio Bridge - Studio Plugin  (Version 7.6.4)
+  Arena Studio Bridge - Studio Plugin  (Version 7.6.5)
 
   Dieses Plugin verbindet ein Roblox-Studio-Fenster mit dem Programm
   "Arena Roblox Bridge" auf dem PC. Jedes Studio-Fenster bekommt eine eigene
@@ -4205,7 +4234,7 @@ local StudioTestService = nil
 pcall(function() StudioTestService = game:GetService("StudioTestService") end)
 
 local BASE_URL       = "__BASE_URL__"
-local ARENA_VERSION  = "7.6.4"
+local ARENA_VERSION  = "7.6.5"
 -- Version 4.0.0: Konstanten in EINER Tabelle buendeln. Luau erlaubt maximal
 -- 200 lokale Variablen je Funktions-Scope; der Haupt-Chunk des Plugins war in
 -- 3.9.7/3.9.8 auf 202 gewachsen ("Out of local registers ... exceeded limit
@@ -17421,7 +17450,7 @@ $script:BridgeHandlerScript = {
         [void]$md.AppendLine('# Uebergabe - ' + $placeName)
         [void]$md.AppendLine('')
         [void]$md.AppendLine('## Rahmen (von der Bruecke gefuellt - nicht raten)')
-        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.6.4 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
+        [void]$md.AppendLine(('- Bridge/Plugin-Stand: 7.6.5 / ' + $(if ($pluginVersion) { $pluginVersion } else { 'unbekannt' })))
         [void]$md.AppendLine(('- Place: "' + $placeName + '", placeId ' + $(if ($placeId) { $placeId } else { '0' })))
         [void]$md.AppendLine(('- Zeitpunkt: ' + $now.ToString('yyyy-MM-dd HH:mm:ss')))
         [void]$md.AppendLine(('- Etappe: ' + $(if ($stageIndex -gt 0) { [string]$stageIndex + ' von ' + [string]$stageTotal + ' - ' + $stageTitle } else { 'nicht angegeben' })))
@@ -23519,7 +23548,7 @@ end
         try { $manifestNotify = [bool]$Shared.BridgeSettings.notifyOnDone } catch {}
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
-            version = '7.6.4'
+            version = '7.6.5'
             progress = 'For measurable work, report a genuine progress = { percent, message }. For simple read/observation work use { mode = "hidden", message = "what you checked" }; the bar is hidden and progress is not applicable. Missing percentages never create a 0% bar or an inactivity claim. report_done sets 100 only for normal measurable-progress mode.'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
@@ -23753,7 +23782,7 @@ end
         $executorSnapshot = Get-SessionExecutorSnapshot (Get-DeliverySession ([string]$sessionId))
         $askUserProtocol = Get-BridgeAskUserProtocol
         $envelope = @{
-            bridgeVersion = '7.6.4'
+            bridgeVersion = '7.6.5'
             executor = $executorSnapshot
             askUserProtocol = $askUserProtocol
             progressContract = @{
@@ -25086,7 +25115,7 @@ end
                 return @{
                     ok = $true
                     result = @{
-                        bridgeVersion = '7.6.4'
+                        bridgeVersion = '7.6.5'
                         docsVersion = [string]$Shared.DocsVersion
                         place = if ($entry) { $entry.placeName } else { $null }
                         placeId = if ($entry) { $entry.placeId } else { $null }
@@ -25457,7 +25486,7 @@ end
                         sessionId = $entry.sessionId
                         token = $entry.token
                         accessMode = $entry.accessMode
-                        serverVersion = '7.6.4'
+                        serverVersion = '7.6.5'
                         docsVersion = [string]$Shared.DocsVersion
                         pluginOutdated = $outdated
                         restartStudioHint = if ($outdated) { 'Studio neu starten: Plugin-Version stimmt nicht mit der Bridge ueberein. Simulationen warten.' } else { $null }
@@ -25816,7 +25845,7 @@ end
                 try { $hasRequestedTarget = ($body -and $body.PSObject.Properties['targetPlace']) -or ($body -and $body.args -and $body.args.PSObject.Properties['targetPlace']) } catch {}
                 if (($path -eq '/api/status' -or $path -eq '/api/place') -and -not $hasRequestedTarget) {
                     Send-Json $context 200 @{
-                        ok=$true; multiPlace=$true; bridgeVersion='7.6.4'; docsVersion=[string]$Shared.DocsVersion
+                        ok=$true; multiPlace=$true; bridgeVersion='7.6.5'; docsVersion=[string]$Shared.DocsVersion
                         connectedPlaces=$allPlaces; count=$allPlaces.Count
                         instruction='This is an aggregate token. Call GET /api/places and pass targetPlace with every tool request to work in one selected Place.'
                     }
@@ -25900,8 +25929,8 @@ end
                 }
                 Send-Json $context 200 @{
                     ok = $true
-                    bridgeVersion = '7.6.4'
-                    serverVersion = '7.6.4'
+                    bridgeVersion = '7.6.5'
+                    serverVersion = '7.6.5'
                     toolbox = $statusToolbox
                     docsVersion = [string]$Shared.DocsVersion
                     place = $sessionEntry
@@ -32091,6 +32120,43 @@ function Set-SplashTitleArtwork {
     }
 }
 
+function Set-ProgramBrandLogo {
+    param($ImageControl, $Window)
+    if ($null -eq $ImageControl) { return $false }
+    $imageBytes = $null
+    $imageStream = $null
+    try {
+        $encoded = [string]$script:ProgramLogoBase64
+        if (-not [string]::IsNullOrWhiteSpace($encoded) -and $encoded -ne '__ARENA_PROGRAM_LOGO_BASE64__') {
+            $imageBytes = [Convert]::FromBase64String($encoded)
+        } elseif ($script:AppRoot) {
+            $imagePath = Join-Path $script:AppRoot 'assets\neueslogo.png'
+            if (Test-Path -LiteralPath $imagePath -PathType Leaf) { $imageBytes = [System.IO.File]::ReadAllBytes($imagePath) }
+        }
+        if ($null -eq $imageBytes -or $imageBytes.Length -eq 0) {
+            $ImageControl.Visibility = 'Collapsed'
+            return $false
+        }
+        $imageStream = [System.IO.MemoryStream]::new([byte[]]$imageBytes)
+        $bitmap = [System.Windows.Media.Imaging.BitmapImage]::new()
+        $bitmap.BeginInit()
+        $bitmap.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+        $bitmap.StreamSource = $imageStream
+        $bitmap.EndInit()
+        $bitmap.Freeze()
+        $ImageControl.Source = $bitmap
+        $ImageControl.Visibility = 'Visible'
+        if ($null -ne $Window) { $Window.Icon = $bitmap }
+        return $true
+    } catch {
+        try { Write-RuntimeLog ('Programmlogo konnte nicht geladen werden: ' + $_.Exception.Message) } catch {}
+        try { $ImageControl.Visibility = 'Collapsed' } catch {}
+        return $false
+    } finally {
+        if ($null -ne $imageStream) { try { $imageStream.Dispose() } catch {} }
+    }
+}
+
 # ----------------------------------------------------------------------------
 # OBERFLAECHE (XAML)
 # ----------------------------------------------------------------------------
@@ -32131,10 +32197,6 @@ $xaml = @'
         <LinearGradientBrush x:Key="TitleGlass" StartPoint="0,0" EndPoint="0,1">
             <GradientStop Color="#2BFFFFFF" Offset="0"/>
             <GradientStop Color="#0DFFFFFF" Offset="1"/>
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="LogoBrush" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#8B6BFF" Offset="0"/>
-            <GradientStop Color="#00D0BE" Offset="1"/>
         </LinearGradientBrush>
         <LinearGradientBrush x:Key="SweepBrush" StartPoint="0,0" EndPoint="1,0">
             <GradientStop Color="#0000E5D0" Offset="0"/>
@@ -32574,16 +32636,12 @@ $xaml = @'
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Grid Width="38" Height="38" Margin="0,0,13,0">
-                            <Border Width="38" Height="38" CornerRadius="13" Background="{StaticResource LogoBrush}" BorderBrush="#4DFFFFFF" BorderThickness="1"/>
-                            <Ellipse Width="7" Height="7" Fill="#FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="6,0,0,0"/>
-                            <Ellipse Width="7" Height="7" Fill="#FFFFFF" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <Ellipse x:Name="PulseDot" Width="9" Height="9" Fill="#2FE8D6" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <Ellipse.Effect>
-                                    <DropShadowEffect Color="#CC00E5D0" BlurRadius="12" ShadowDepth="0" Opacity="0.9"/>
-                                </Ellipse.Effect>
-                            </Ellipse>
-                        </Grid>
+                        <Border Width="38" Height="38" Margin="0,0,13,0" CornerRadius="13"
+                                Background="{StaticResource AppBg}" BorderBrush="#4DFFFFFF"
+                                BorderThickness="1" ClipToBounds="True">
+                            <Image x:Name="ProgramLogoImage" Width="38" Height="38"
+                                   Stretch="UniformToFill" SnapsToDevicePixels="True"/>
+                        </Border>
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="Arena Roblox Bridge" Foreground="{StaticResource TextMain}" FontSize="18.5" FontWeight="Bold"/>
                             <TextBlock x:Name="SubtitleText" Text="bereit für verbundene Places" Foreground="{StaticResource TextMuted}" FontSize="11.5" Margin="0,3,0,0"/>
@@ -32877,6 +32935,8 @@ $window = [Windows.Markup.XamlReader]::Load($reader)
 $script:MainWindow = $window
 $SplashHeroImage = $window.FindName('SplashHeroImage')
 [void](Set-SplashTitleArtwork -Image $SplashHeroImage)
+$ProgramLogoImage = $window.FindName('ProgramLogoImage')
+[void](Set-ProgramBrandLogo -ImageControl $ProgramLogoImage -Window $window)
 
 $window.Dispatcher.add_UnhandledException({
     param($sender, $eventArgs)
@@ -32988,7 +33048,6 @@ $StudioEditorCaptionText = $window.FindName('StudioEditorCaptionText')
 $UpdateBadge     = $window.FindName('UpdateBadge')
 $MinimizeButton  = $window.FindName('MinimizeButton')
 $CloseButton     = $window.FindName('CloseButton')
-$PulseDot        = $window.FindName('PulseDot')
 $RootShell       = $window.FindName('RootShell')
 Set-StartupStage 'Fensteraufbau: fertig (FindName)'
 
@@ -33556,7 +33615,7 @@ function Write-PlacesDiagnoseFile {
     $script:PlacesDiagLastWrite = Get-Date
     try {
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.6.4)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Place-Diagnose (Version 7.6.5)')
         [void]$sb.AppendLine(('Zeit: {0:yyyy-MM-dd HH:mm:ss}' -f (Get-Date)))
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('STUDIO-FENSTER (PID + HWND = stabile Identitaet)')
@@ -36558,7 +36617,7 @@ function Write-ChannelDiagnoseFile {
 
         $progressPath = Join-Path $script:AppDataRoot 'progress-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.6.4)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fortschrittsanzeige (Version 7.6.5)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -36593,7 +36652,7 @@ function Write-ChannelDiagnoseFile {
 
         $notifyPath = Join-Path $script:AppDataRoot 'notify-diagnose.txt'
         $sb2 = New-Object System.Text.StringBuilder
-        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.6.4)')
+        [void]$sb2.AppendLine('Arena Roblox Bridge - Kurzbericht Fertig-Meldung (Version 7.6.5)')
         [void]$sb2.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb2.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb2.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($identity) { $identity } else { '(noch nicht ermittelt)' })))
@@ -36962,7 +37021,7 @@ function Write-PreviewDiagnoseFile {
         $script:PreviewDiagLastWrite = $now
         $path = Join-Path $script:AppDataRoot 'preview-diagnose.txt'
         $sb = New-Object System.Text.StringBuilder
-        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.6.4)')
+        [void]$sb.AppendLine('Arena Roblox Bridge - Kurzbericht Fenster-Vorschau (Version 7.6.5)')
         [void]$sb.AppendLine('Diese Datei ist klein und kann komplett weitergegeben werden.')
         [void]$sb.AppendLine(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         [void]$sb.AppendLine(('Laufzeit-Identitaet: {0}' -f $(if ($script:PreviewDiagIdentity) { [string]$script:PreviewDiagIdentity } else { '(noch nicht ermittelt)' })))
@@ -39568,7 +39627,7 @@ function Write-PerfReport {
         $perf = $script:Shared.Perf
         if ($null -eq $perf) { return }
         $lines = New-Object System.Collections.Generic.List[string]
-        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.6.4)')
+        $lines.Add('Arena Roblox Bridge - Leistungsbericht (Version 7.6.5)')
         $lines.Add('Diese Datei ist klein und kann komplett weitergegeben werden.')
         $lines.Add(('Erstellt: {0:yyyy-MM-dd HH:mm:ss}' -f $now))
         $lines.Add('Diagnose: in den Einstellungen eingeschaltet (standardmaessig aus).')
@@ -39734,7 +39793,7 @@ function Start-StudioProfileLookup {
                     $request.Method = 'GET'
                     $request.Timeout = 10000
                     $request.ReadWriteTimeout = 10000
-                    if ($request -is [System.Net.HttpWebRequest]) { $request.UserAgent = 'ArenaRobloxBridge/7.6.4' }
+                    if ($request -is [System.Net.HttpWebRequest]) { $request.UserAgent = 'ArenaRobloxBridge/7.6.5' }
                     $response = $request.GetResponse()
                     try {
                         $responseStream = $response.GetResponseStream()
@@ -40565,7 +40624,6 @@ $window.Add_Loaded({
     } catch {}
 
     # Version 7.0.2: Static status dots avoid perpetual per-frame WPF redraws.
-    $PulseDot.Opacity = 1
     $LiveDot.Opacity = 1
 
     foreach ($toast in $script:PendingToasts) {
@@ -40583,7 +40641,7 @@ Set-StartupStage 'Ereignisse verdrahtet (Fenstersteuerung + Loaded)'
 # ----------------------------------------------------------------------------
 function Show-UpdateNotice {
     $isNewInstall = ($UpdateStatus -eq 'erster-start')
-    $versionText = '7.6.4'
+    $versionText = '7.6.5'
     $notesText = 'Keine Details verfuegbar.'
     try {
         if ($script:UpdateDetails) {
@@ -40690,19 +40748,12 @@ function Show-UpdateNotice {
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,16">
-                    <Grid Width="44" Height="44" Margin="0,0,14,0">
-                        <Border Width="44" Height="44" CornerRadius="13" BorderBrush="#4DFFFFFF" BorderThickness="1">
-                            <Border.Background>
-                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                    <GradientStop Color="#8B6BFF" Offset="0"/>
-                                    <GradientStop Color="#00D0BE" Offset="1"/>
-                                </LinearGradientBrush>
-                            </Border.Background>
-                        </Border>
-                        <Ellipse Width="8" Height="8" Fill="#FFFFFF" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="7,0,0,0"/>
-                        <Ellipse Width="8" Height="8" Fill="#FFFFFF" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,7,0"/>
-                        <Rectangle Height="3" Fill="#0A1128" Margin="15,0,15,0" RadiusX="1.5" RadiusY="1.5"/>
-                    </Grid>
+                    <Border Width="44" Height="44" Margin="0,0,14,0" CornerRadius="13"
+                            Background="#08102A" BorderBrush="#4DFFFFFF" BorderThickness="1"
+                            ClipToBounds="True">
+                        <Image x:Name="NoticeLogoImage" Width="44" Height="44"
+                               Stretch="UniformToFill" SnapsToDevicePixels="True"/>
+                    </Border>
                     <StackPanel VerticalAlignment="Center">
                         <TextBlock Text="ARENA ROBLOX BRIDGE" Foreground="#6E7FA8" FontSize="10.5" FontWeight="Bold"/>
                         <TextBlock x:Name="NoticeTitle" Foreground="#F4F8FF" FontSize="19" FontWeight="Bold" Margin="0,3,0,0"/>
@@ -40798,6 +40849,8 @@ function Show-UpdateNotice {
 '@
     $noticeReader = [System.Xml.XmlNodeReader]::new([xml]$noticeXaml)
     $noticeWindow = [Windows.Markup.XamlReader]::Load($noticeReader)
+    $noticeLogoImage = $noticeWindow.FindName('NoticeLogoImage')
+    [void](Set-ProgramBrandLogo -ImageControl $noticeLogoImage -Window $noticeWindow)
     $script:UpdateNoticeWindow = $noticeWindow
     $script:UpdateNoticeAccepted = $false
     # Version 7.3.0 (STARTGARANTIE): Das Hinweisfenster gehoert ab jetzt dem
@@ -41846,7 +41899,7 @@ function Open-SettingsWindow {
                         <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version 7.6.4" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <TextBlock Text="Arena Roblox Bridge - Version 7.6.5" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -42621,7 +42674,7 @@ function Open-SettingsWindow {
         $updateText.Text = [string]$script:UpdateInfoState.Body
         $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
     } else {
-        $updateText.Text = 'Version 7.6.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+        $updateText.Text = 'Version 7.6.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     }
 
     $swTitleBar.Add_MouseLeftButtonDown({
@@ -42686,7 +42739,7 @@ function Open-SettingsWindow {
 # Oeffnen der Einstellungen angezeigt.
 $script:UpdateInfoState = @{
     IsError  = $false
-    Body     = 'Version 7.6.4 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
+    Body     = 'Version 7.6.5 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
     BodyHex  = '#94A3B8'
 }
 if (Test-UpdateError) {
@@ -42699,7 +42752,7 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.6.4'
+    $verText = '7.6.5'
     if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
