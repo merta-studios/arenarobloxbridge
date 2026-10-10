@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline regression checks for the 7.5.9 Creator Dashboard Open Cloud tool.
+"""Offline regression checks for the 7.6.0 Creator Dashboard / Open Cloud key tool.
 
 The test is deliberately network-free: it verifies the exact integration,
 security gates, action inventory, scopes, metadata fields, and multipart icon
@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.5.9"
+VERSION = "7.6.0"
 FAILURES: list[str] = []
 
 
@@ -45,56 +45,48 @@ def main() -> int:
     source = raw.decode("utf-8-sig")
     metadata = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     latest = str(metadata.get("notes", [""])[0])
-    check(metadata.get("version") == VERSION, "version.json is 7.5.9")
-    check(latest.startswith("• 7.5.9") and "creator_dashboard" in latest
-          and "standardmäßig ausgeschaltet" in latest and "imageFile" in latest,
-          "release note documents the default-off opt-in and supported icon upload")
-    check(any("7.5.8" in str(note) and "ask_user" in str(note)
+    check(metadata.get("version") == VERSION, "version.json is 7.6.0")
+    check(latest.startswith("• 7.6.0") and "SCHALTER ENTFERNT" in latest
+          and "introspect" in latest.lower() and "datastore" in latest,
+          "release note documents the removed switch, the Introspect save flow and the datastore tool")
+    check(any("7.5.9" in str(note) and "creator_dashboard" in str(note)
               for note in metadata.get("notes", [])[1:]),
-          "the prior 7.5.8 release note remains historical")
+          "the prior 7.5.9 Creator Dashboard release note remains historical")
 
-    # Persistent opt-in: missing/legacy settings must resolve to disabled.
+    # 7.6.0: the local opt-in is GONE - the key's scopes are the only gate.
     settings = region(source, "function Get-BridgeSettingsFile {", "function Save-BridgeSettingsFile {")
     save = region(source, "function Save-BridgeSettingsFile {", "function Write-RuntimeLog {")
-    check(re.search(r"creatorDashboardEnabled\s*=\s*\$false", settings) is not None,
-          "a fresh or legacy settings file defaults the management switch to false")
-    check("-contains 'creatorDashboardEnabled'" in settings
-          and "$settings.creatorDashboardEnabled = [bool]$loaded.creatorDashboardEnabled" in settings,
-          "the opt-in is loaded only when an explicit saved value exists")
-    check("creatorDashboardEnabled = [bool]$script:SettingsCache.creatorDashboardEnabled" in save,
-          "the opt-in is persisted in settings.json")
-    shared_settings = region(source, "function Sync-CloudSharedSettings {", "$creatorDashboardSwitch.Add_Click")
-    check("creatorDashboardEnabled = [bool]$script:SettingsCache.creatorDashboardEnabled" in shared_settings,
-          "the saved opt-in is synchronized to the HTTP server's shared settings")
-
-    # UI placement and durable toggle behavior.
+    check("creatorDashboardEnabled" not in settings,
+          "a fresh or legacy settings file no longer carries the management switch")
+    check("creatorDashboardEnabled" not in save,
+          "settings.json no longer persists the removed opt-in")
+    check("creatorDashboardEnabled" not in source,
+          "creatorDashboardEnabled is removed from the whole script")
     settings_xaml = region(source, "$settingsXaml = @'", "\n'@")
     cloud_card = region(settings_xaml, 'TextBlock Text="ROBLOX OPEN CLOUD API-KEY"', 'TextBlock Text="UPDATES"')
     tutorial_xaml = region(settings_xaml, 'x:Name="CloudTutorialWrap"', 'TextBlock Text="UPDATES"')
-    check('x:Name="CreatorDashboardSwitch"' in cloud_card
-          and "Arena darf den aktuellen Place im Creator Dashboard verwalten" in cloud_card,
-          "the switch is placed inside the Open Cloud API-key settings card")
-    check("standardmäßig ausgeschaltet" in cloud_card and "bereits veröffentlichte" in cloud_card,
-          "settings UI states default-off and published-place-only behavior")
-    click = region(source, "$creatorDashboardSwitch.Add_Click({", "# --- Startzustand: steht schon ein Schluessel bereit?")
-    check("Save-BridgeSettingsFile" in click and "Sync-CloudSharedSettings" not in click,
-          "click handler saves the toggle immediately; the event synchronizes the shared value")
-    check("$script:Shared.BridgeSettings.creatorDashboardEnabled = $enabled" in click
-          and "Standard: aus" in click,
-          "the clicked value reaches the active runtime immediately and is logged")
+    check('x:Name="CreatorDashboardSwitch"' not in cloud_card
+          and "Arena darf den aktuellen Place im Creator Dashboard verwalten" not in cloud_card,
+          "the opt-in switch is removed from the Open Cloud API-key settings card")
+    check("entscheidet allein der Key" in cloud_card and "grün = darf Arena, rot = fehlt" in cloud_card,
+          "settings UI explains that the key alone decides and the save flow shows every permission")
 
-    # Tutorial names all and only the additional rights.
-    check('for ($stepIndex = 1; $stepIndex -le 10;' in source,
-          "the animated key tutorial enumerates all ten steps")
+    # Tutorial: seven steps plus the full permission catalog in step four.
+    check('for ($stepIndex = 1; $stepIndex -le 7;' in source,
+          "the animated key tutorial enumerates all seven steps")
     tutorial_steps = [int(value) for value in re.findall(r'x:Name="CloudStep(\d+)"', tutorial_xaml)]
-    check(tutorial_steps == list(range(1, 11)), "all ten XAML tutorial cards are present in order")
-    tutorial_text = "\n".join(re.findall(r'<TextBlock Text="([^"]*)"', tutorial_xaml))
-    for scope in ("universe:write", "universe.place:write", "game-pass:read", "developer-product:read"):
-        check(scope in tutorial_xaml, f"the setup tutorial names the additional scope {scope}")
-    check("game-pass:write" in tutorial_xaml and "developer-product:write" in tutorial_xaml,
-          "the tutorial includes write scopes for both monetization APIs")
-    check("read UND write" in tutorial_xaml and "Creator-Dashboard-Rechte" in tutorial_xaml,
-          "the tutorial distinguishes the read/write monetization permissions from asset-upload scopes")
+    check(tutorial_steps == list(range(1, 8)), "all seven XAML tutorial cards are present in order")
+    check('x:Name="CloudPermissionList"' in tutorial_xaml,
+          "tutorial step four hosts the generated permission catalog list")
+    catalog = region(source, "function Get-CloudPermissionCatalog {", "function New-CloudPermissionRow {")
+    for scope in ("asset", "universe", "universe.place", "game-pass", "developer-product",
+                  "universe-datastores.control / .objects / .versions",
+                  "universe.ordered-data-store.scope.entry", "memory-store",
+                  "universe-messaging-service", "universe.place.instance",
+                  "universe-places", "localization-table", "user.user-notification"):
+        check(scope in catalog, f"the permission catalog names the scope {scope}")
+    check("core = $true" in catalog and "core = $false" in catalog,
+          "the catalog marks the permissions Arena actively uses versus optional ones")
     check("creatorDashboardRules" in source and "universe.place:write" in source
           and "developer-product:read" in source and "game-pass:write" in source,
           "agent-facing Creator Dashboard guide documents the exact required scopes")
@@ -105,15 +97,34 @@ def main() -> int:
                    "$gamePassRead = $false", "$gamePassWrite = $false",
                    "$developerProductRead = $false", "$developerProductWrite = $false",
                    "scopeBase -eq 'universe'", "scopeBase -eq 'universe.place'",
-                   "'game-pass','game-passes'", "'developer-product','developer-products'"):
+                   "'game-pass','game-passes'", "'developer-product','developer-products'",
+                   "$datastoreObjectsRead = $false", "$datastoreObjectsCreate = $false",
+                   "$datastoreObjectsUpdate = $false", "$datastoreObjectsDelete = $false",
+                   "$datastoreControlList = $false", "$datastoreVersionsList = $false",
+                   "$orderedDatastoreRead = $false", "$memoryStoreAny = $false",
+                   "$messagingPublish = $false", "$placePublishWrite = $false",
+                   "$placeInstanceRead = $false", "$localizationRead = $false",
+                   "$userNotificationWrite = $false",
+                   "scopeBase -eq 'universe-datastores.control'",
+                   "scopeBase -eq 'universe-datastores.objects'",
+                   "scopeBase -eq 'universe-datastores.versions'",
+                   "scopeBase -eq 'universe.ordered-data-store.scope.entry'",
+                   "scopeBase -like 'memory-store*'",
+                   "scopeBase -eq 'universe-messaging-service'",
+                   "scopeBase -eq 'universe.place.instance'",
+                   "scopeBase -like 'localization*'",
+                   "scopeBase -eq 'user.user-notification'"):
         check(marker in introspect, f"Open Cloud introspection recognizes {marker}")
     check("universeWrite = $universeWrite" in introspect
-          and "developerProductWrite = $developerProductWrite" in introspect,
-          "scope results are returned for settings feedback")
-    verdict = region(source, "function Apply-CloudIntrospectVerdict {", "# --- Tutorial: ANIMIERT")
-    check("missingPermissions" in verdict and "game-pass:read" in verdict
-          and "developer-product:write" in verdict and "universe.place:write" in verdict,
-          "settings feedback warns about each missing scope only when dashboard opt-in is on")
+          and "developerProductWrite = $developerProductWrite" in introspect
+          and "datastoreObjectsUpdate = $datastoreObjectsUpdate" in introspect
+          and "placePublishWrite = $placePublishWrite" in introspect,
+          "scope results are returned for the permission window and settings feedback")
+    check("universeDatastores = $(try { @($scope.universeDatastores)" in introspect,
+          "introspection keeps the universe-datastore resource bindings of each scope")
+    verdict = region(source, "function Apply-CloudIntrospectVerdict {", "function Save-OpenCloudKeyFromText {")
+    check("missingPermissions" in verdict and "Get-CloudPermissionCatalog" in verdict,
+          "settings feedback lists every missing core permission from the shared catalog")
 
     # One inventory is shared by docs, preflight, and the server-side handler.
     docs = region(source, "function Get-ToolDocs {", "function Get-BridgeAskUserProtocol {")
@@ -143,16 +154,16 @@ def main() -> int:
         check(not_supported in tool_docs,
               f"documentation clearly restricts unsupported Creator Dashboard features: {not_supported}")
 
-    # Settings gate, active Studio identity, target-id rejection, and read-only.
-    gate = helper.index("if (-not $dashboardEnabled)")
+    # No local gate any more; active Studio identity, target-id rejection and
+    # read-only stay, and a missing key still fails closed before network I/O.
     net = helper.index("return (Invoke-CreatorDashboardHttp")
     readonly = helper.index("if ($action -in $writeActions")
     active_session = helper.index("Get-SessionEntry ([string]$SessionId)")
-    check(gate < active_session < net, "opt-in and active-session checks precede every outbound request")
-    check("$dashboardEnabled = [bool]$Shared.BridgeSettings.creatorDashboardEnabled" in helper
-          and "CREATOR_DASHBOARD_DISABLED" in helper
-          and "Es wurde keine Anfrage an Roblox gesendet" in helper,
-          "disabled-by-default gate fails closed before network I/O")
+    check("CREATOR_DASHBOARD_DISABLED" not in helper
+          and "dashboardEnabled" not in helper,
+          "the local opt-in gate is removed - only the key's scopes decide")
+    check(readonly < active_session < net,
+          "read-only and active-session checks precede every outbound request")
     check("$writeActions = @(" in helper and readonly < net
           and "[string]$accessMode -eq 'readonly'" in helper
           and "READONLY_TOKEN" in helper,
@@ -236,21 +247,21 @@ def main() -> int:
           "activity history reports a clear German operation summary")
     check("'creator_dashboard' {" in source and "Creator-Dashboard-Aktion:" in source,
           "activity detail adds the requested action and product id")
-    check("'upload_asset','creator_dashboard','force_fail'" in sets,
-          "creator_dashboard is classified as a server-side write-capable activity")
+    check("'upload_asset','creator_dashboard','datastore','force_fail'" in sets,
+          "creator_dashboard and datastore are classified as server-side write-capable activities")
     check("'creator_dashboard'  { return (Invoke-OpenCloudServerTool" in server_dispatch,
           "the HTTP tool dispatcher routes creator_dashboard through the Open Cloud helper")
     check("creator_dashboard" in source[source.index("$writeTools = @("):source.index("$persistentEditTools = @(")],
           "creator_dashboard is protected by the write-tool dispatch path")
-    check("# Arena Roblox Bridge  -  Version 7.5.9" in source
-          and "DocsVersion     = '7.5.9'" in source
-          and "RuntimeInfo.Version = '7.5.9'" in source,
-          "runtime, docs and plugin version metadata are synchronized to 7.5.9")
+    check("# Arena Roblox Bridge  -  Version 7.6.0" in source
+          and "DocsVersion     = '7.6.0'" in source
+          and "RuntimeInfo.Version = '7.6.0'" in source,
+          "runtime, docs and plugin version metadata are synchronized to 7.6.0")
 
     if FAILURES:
         print(f"\n{len(FAILURES)} Creator Dashboard regression check(s) failed.")
         return 1
-    print("\nOK: 7.5.9 Creator Dashboard opt-in, security gates, Open Cloud routes/scopes, multipart icons, docs and activity checks passed.")
+    print("\nOK: 7.6.0 key-scope-only gating, removed opt-in, permission catalog, Introspect save flow, Open Cloud routes/scopes, multipart icons, docs and activity checks passed.")
     return 0
 
 

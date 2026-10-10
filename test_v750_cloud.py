@@ -36,7 +36,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.5.9"
+VERSION = "7.6.0"
 FAILURES: list[str] = []
 
 
@@ -448,16 +448,22 @@ def main() -> int:
                  "CloudDeveloperPanel", "CloudDeveloperStatus"):
         check(f'x:Name="{gone}"' not in settings_xaml,
               f"das alte Element {gone} ist aus den Einstellungen verschwunden")
-    for step in range(1, 11):
+    for step in range(1, 8):
         check(f'x:Name="CloudStep{step}"' in settings_xaml,
               f"Tutorial-Schritt CloudStep{step} vorhanden")
+    for step in range(8, 11):
+        check(f'x:Name="CloudStep{step}"' not in settings_xaml,
+              f"das alte Tutorial hat nur noch 7 Schritte (CloudStep{step} ist weg)")
     check('Text="Roblox Open Cloud API-Key"' in settings_xaml,
           "der Abschnitt heisst Roblox Open Cloud API-Key")
-    check("Creator-Dashboard-Verwaltung (Experience-/Place-Metadaten, Gamepasses und Developer-Produkte samt Icons) ist getrennt und standardmäßig ausgeschaltet." in settings_xaml,
-          "die getrennte Creator-Dashboard-Verwaltung und ihr Standard AUS werden im Key-Abschnitt erklärt")
-    check('x:Name="CreatorDashboardSwitch"' in settings_xaml
-          and "standardmäßig ausgeschaltet" in settings_xaml,
-          "der Creator-Dashboard-Opt-in-Schalter steht im Open-Cloud-Key-Abschnitt und ist standardmäßig aus")
+    check("Der Key ist Arenas Zugang zu Roblox" in settings_xaml
+          and "es gibt keinen extra Schalter mehr" in settings_xaml,
+          "der Key-Abschnitt erklaert: der Schluessel allein entscheidet, kein Schalter")
+    check('x:Name="CreatorDashboardSwitch"' not in settings_xaml,
+          "der Creator-Dashboard-Opt-in-Schalter ist aus den Einstellungen entfernt (7.6.0)")
+    check('x:Name="CloudPermissionList"' in settings_xaml
+          and 'x:Name="CloudPermissionsButton"' in settings_xaml,
+          "Tutorial-Berechtigungsliste und der Knopf Berechtigungen ansehen sind im XAML")
     check('Text="Noch kein API-Key hinzugefügt!"' in settings_xaml,
           "ohne Schluessel steht der rote Hinweis Noch kein API-Key hinzugefügt!")
     check('Text="API-Key ist eingerichtet!"' in settings_xaml,
@@ -468,11 +474,21 @@ def main() -> int:
     tutorial = region(settings_xaml, 'x:Name="CloudTutorialWrap"', '<TextBlock Text="UPDATES"')
     for piece in ("1. Öffne diese Seite:", "API-Schlüssel erstellen",
                   "irgendeinen Namen und eine Beschreibung",
-                  "Füge „assets“ mit read UND write hinzu.",
-                  "universe.place“ (universe.place:write)", "game-pass:read + game-pass:write",
-                  "developer-product:read + developer-product:write", "Speichere und generiere den API-Schlüssel.",
-                  "Füge den kopierten Schlüssel hier ein."):
+                  "Füge die API-Systeme mit ihren Operationen hinzu.",
+                  "Sicherheit: IP-Adressen und Ablaufdatum.",
+                  "Erstelle den Schlüssel und kopiere ihn sofort",
+                  "Füge den Schlüssel hier ein und drücke Speichern.",
+                  "eigenen Fenster GENAU, welche Berechtigungen"):
         check(piece in tutorial, f"das Tutorial nennt: {piece}")
+    catalog = region(source, "function Get-CloudPermissionCatalog {", "function New-CloudPermissionRow {")
+    for scope in ("asset", "universe", "universe.place", "game-pass", "developer-product",
+                  "universe-datastores.control / .objects / .versions",
+                  "universe.ordered-data-store.scope.entry", "memory-store",
+                  "universe-messaging-service", "universe.place.instance",
+                  "universe-places", "localization-table", "user.user-notification"):
+        check(scope in catalog, f"der Berechtigungs-Katalog nennt den Scope {scope}")
+    check("Von Arena noch nicht genutzt" in catalog,
+          "der Katalog ist ehrlich: nicht genutzte Rechte sind als solche markiert")
     check("create.roblox.com/dashboard/credentials" in tutorial,
           "das Tutorial nennt die echte Adresse create.roblox.com/dashboard/credentials")
     check('Text="&#xE71B;"' in tutorial,
@@ -486,22 +502,39 @@ def main() -> int:
     code = source[code_start:source.index("# 7.2.3: Die Test-Benachrichtigung ist vollstaendig")]
     check("$cloudSaveButton.Add_Click" in code and "$cloudRemoveButton.Add_Click" in code
           and "$cloudDashboardButton.Add_Click" in code
-          and "$creatorDashboardSwitch.Add_Click" in code,
-          "Speichern, Entfernen, der Dashboard-Link und der Creator-Dashboard-Opt-in sind verdrahtet")
+          and "$cloudPermissionsButton.Add_Click" in code,
+          "Speichern, Entfernen, der Dashboard-Link und Berechtigungen ansehen sind verdrahtet")
+    check("$creatorDashboardSwitch" not in code,
+          "der entfernte Creator-Dashboard-Schalter ist nirgends mehr verdrahtet")
     check("Set-OpenCloudKey" in code and "Get-OpenCloudKey" in code and "Remove-OpenCloudKey" in code,
           "die Knoepfe benutzen die eine Schluessel-Quelle")
+    save_click = region(code, "$cloudSaveButton.Add_Click({", "# --- Berechtigungen des gespeicherten Schluessels ansehen")
+    check("Set-OpenCloudKey" not in save_click and "Save-BridgeSettingsFile" not in save_click,
+          "Speichern speichert NICHT sofort - erst Introspect, dann das Berechtigungs-Fenster")
+    check("Start-CloudIntrospectRun" in save_click and "-Key $keyText" in save_click
+          and "Show-CloudPermissionsWindow" in save_click,
+          "Speichern prueft den eingegebenen Schluessel per Introspect und oeffnet das Berechtigungs-Fenster")
+    perm_window = region(code, "function Show-CloudPermissionsWindow {", "# --- Tutorial: ANIMIERT auf- und zuklappen")
+    check("Oh, das ändere ich nochmal!" in perm_window
+          and "Ja, alles richtig! Key speichern!" in perm_window,
+          "das Berechtigungs-Fenster hat die beiden Entscheidungs-Knoepfe")
+    check("Save-OpenCloudKeyFromText" in perm_window,
+          "gespeichert wird erst nach dem Ja-Knopf (Save-OpenCloudKeyFromText)")
+    check("nichts wurde gespeichert" in perm_window,
+          "bei fehlgeschlagener Pruefung sagt das Fenster ehrlich, dass nichts gespeichert wurde")
     check("Save-BridgeSettingsFile" in code, "Speichern legt die Einstellungen dauerhaft ab")
     check("Sync-CloudSharedSettings" in code,
           "die Werte werden nach $Shared gespiegelt (Handler laufen in eigenen Runspaces)")
     for marker in ("openCloudKeySet", "openCloudCreatorId", "openCloudCreatorKind",
-                   "openCloudCreatorName", "openCloudSavedAt", "openCloudKeyHint",
-                   "creatorDashboardEnabled"):
+                   "openCloudCreatorName", "openCloudSavedAt", "openCloudKeyHint"):
         check(marker in code, f"Sync-CloudSharedSettings uebergibt {marker}")
+    check("creatorDashboardEnabled" not in code,
+          "die entfernte Einstellung creatorDashboardEnabled taucht im Code nicht mehr auf")
     check("Length -lt 20" in code, "zu kurze Schluessel werden abgelehnt (kein sinnloser Speicherlauf)")
     check("Update-CloudPanelState" in code and "CloudMissingPanel" in code and "CloudReadyPanel" in code,
           "die zwei Zustaende schaltet Update-CloudPanelState")
     check("Start-CloudIntrospectRun" in code and "Invoke-OpenCloudIntrospect" in code,
-          "Speichern holt den Ersteller per Introspect aus dem Schluessel")
+          "die Pruefung laeuft ueber den offiziellen Introspect-Endpunkt")
     check("Apply-CloudIntrospectVerdict" in code,
           "das Ergebnis der Selbstauskunft wird ehrlich angezeigt")
     check("developer-product:write" in source and "universe.place:write" in source
