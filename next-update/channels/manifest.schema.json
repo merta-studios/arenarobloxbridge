@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:arena-roblox-bridge:channel-manifest:1",
+  "title": "Arena Roblox Bridge channel manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "channel",
+    "enabled",
+    "version",
+    "publishedAtUtc",
+    "artifact",
+    "notes"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "channel": { "enum": ["beta", "stable"] },
+    "enabled": { "type": "boolean" },
+    "version": { "type": "string" },
+    "publishedAtUtc": { "type": "string" },
+    "minimumUpdaterVersion": { "type": "string", "default": "1.0.0" },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fileName", "url", "sha256", "sizeBytes"],
+      "properties": {
+        "fileName": { "const": "ArenaBridge.exe" },
+        "url": { "type": "string" },
+        "sha256": { "type": "string" },
+        "sizeBytes": { "type": "integer", "minimum": 0, "maximum": 209715200 }
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": { "type": "string", "maxLength": 800 }
+    },
+    "minimumVersion": { "type": "string" },
+    "mandatory": { "type": "boolean", "default": false }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "enabled": { "const": true } }, "required": ["enabled"] },
+      "then": {
+        "properties": {
+          "version": {
+            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$"
+          },
+          "artifact": {
+            "properties": {
+              "url": { "format": "uri", "pattern": "^https://" },
+              "sha256": { "pattern": "^[A-Fa-f0-9]{64}$" },
+              "sizeBytes": { "minimum": 1 }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
