@@ -13,6 +13,6 @@
     "sizeBytes": 0
   },
   "notes": [
-    "Stable bleibt bis nach erfolgreichem Beta-Test und ausdruecklicher Freigabe deaktiviert. Keine Stable-EXE oder automatische Verteilung vorbereitet."
+    "All-user delivery is off. Keep disabled until the privately tested EXE is explicitly approved and the new updater is integrated, bootstrap-tested, and independently validated."
   ]
 }

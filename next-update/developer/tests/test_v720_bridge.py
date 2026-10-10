@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline-Abnahme fuer Arena Roblox Bridge 7.6.4.
+"""Offline-Abnahme fuer Arena Roblox Bridge 7.6.5.
 
 Dieser Test braucht KEIN Windows und keinen PowerShell-Prozess. Er prueft
 Nutzer-Kanal, ehrlichen/optional ausblendbaren Fortschritt, Completion-UI,
@@ -31,7 +31,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = ROOT / "app"
 PS1 = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.6.4"
+VERSION = "7.6.5"
 
 failures: list[str] = []
 
@@ -770,7 +770,7 @@ def main() -> int:
     for marker in (".ToArray()", "gemeinsamen Ressourcenblock", "Eigene Antwort", "runtime.log",
                    "ASK_CANCELLED", "Strg+Enter", "NOTIFICATION_UNVERIFIED", "notify-diagnose.txt"):
         check(marker in source, f"active Bridge source retains regression marker: {marker}")
-    check("DocsVersion     = '7.6.4'" in source and 'local ARENA_VERSION  = "7.6.4"' in source,
+    check("DocsVersion     = '7.6.5'" in source and 'local ARENA_VERSION  = "7.6.5"' in source,
           "Alle funktionalen Versionsstellen stehen auf " + VERSION)
     for marker in ("Set-StartupStage", "startup-trace.txt", "START-NETZ KOMPLETT",
                    "$script:WindowShown", "function Start-BridgeRuntime",
