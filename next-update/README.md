@@ -1,186 +1,139 @@
-# Next Update — Beta bauen, testen und später veröffentlichen
+# Arena Roblox Bridge — Beta bauen und testen
 
-`next-update/` ist eine **isolierte Arbeitskopie** für die nächste Bridge-Version
-und das vorbereitete Beta-/Stable-Update-System. Der Ordner `next-update/` ist
-der einzige Arbeitsbereich dieser Vorbereitung. Die Root-Bridge, der bestehende
-Updater und die bisherige Auslieferung bleiben unverändert.
+## Wenn du nur die EXE starten willst
 
-> **Wichtig:** In dieser Änderung wurde keine Windows-EXE gebaut oder
-> veröffentlicht. Die EXE baut der Nutzer auf seinem Windows-PC mit der BAT in
-> diesem Ordner. Der neue Updater ist noch nicht in die laufende Root-Bridge
-> integriert; beide Channel-Manifeste sind deshalb deaktiviert.
+1. Öffne den Ordner **`next-update`**.
+2. Doppelklicke **`Build-EXE.bat`** — das ist der einzige normale Startknopf.
+3. Warte auf **`BUILD ERFOLGREICH`**. Die fertige Test-App liegt danach genau hier:
 
-## Schnellstart: genau eine BAT-Datei
+   ```text
+   next-update\user-builds\beta\ArenaBridge.exe
+   ```
 
-1. Lade das Repository als ZIP herunter, entpacke es und öffne den Ordner
-   `next-update`. Die Kurz-Anleitung dafür liegt zusätzlich in `START-HIER.txt`.
-2. Führe **genau `Build-EXE.bat`** per Doppelklick aus. Sie baut immer die
-   lokale Beta. Keine andere BAT im `next-update`-Hauptordner ist für den
-   normalen Build vorgesehen. `Build-EXE.ps1` ist ein internes Skript und soll
-   nicht per Doppelklick gestartet werden.
-3. Warte auf `BUILD ERFOLGREICH`. Der Builder führt vor der Ablage zusätzlich
-   einen echten Start der temporären EXE im isolierten Smoke-Test aus: x64,
-   STA, WPF und das eingebettete Titelbild müssen funktionieren. Bei einem
-   Fehler wird die neue EXE nicht als fertige Ausgabe übernommen.
-4. Die normale Beta zum manuellen Test liegt anschließend exakt hier:
-   `next-update/user-builds/beta/ArenaBridge.exe`. Sowohl BAT als auch
-   PowerShell-Ausgabe zeigen den vollständigen PC-Pfad.
-5. Schließe vor dem Test alle älteren ArenaBridge-Fenster vollständig und starte
-   dann diese `ArenaBridge.exe` von Hand. Die Bridge erlaubt absichtlich nur
-   eine laufende Instanz. Bei einer schon geöffneten Bridge zeigt die neue
-   Beta jetzt einen Hinweis statt kommentarlos zu enden.
-6. Wenn nach dem Schließen anderer Bridge-Fenster weiterhin kein Fenster
-   erscheint, starte
-   `next-update/user-builds/beta/Start-Diagnostic.bat`. Die Konsole bleibt
-   sichtbar. Lass sie geöffnet und notiere den Fehlertext. Die erste Datei zum
-   Prüfen ist `%LOCALAPPDATA%\START-CHECK.txt`; die BAT nennt auch die weiteren
-   Startdateien.
+   Die BAT und der Builder zeigen zusätzlich den vollständigen Pfad auf deinem
+   PC. Starte anschließend diese `ArenaBridge.exe` per Doppelklick. Schließe
+   vorher andere bereits laufende ArenaBridge-Fenster.
 
-### Was der Build erzeugt
+4. Falls Windows beim Start keinen Bridge-Bildschirm zeigt, starte nach dem
+   Schließen anderer Bridge-Fenster:
 
-Unter `next-update/user-builds/beta/` liegen nach einem erfolgreichen Build:
+   ```text
+   next-update\user-builds\beta\Start-Diagnostic.bat
+   ```
 
-- `ArenaBridge.exe` — **die normale App**, die du auf deinem PC testen sollst.
-- `ArenaBridge-Diagnose.exe` — lokale Konsole-Ausgabe für die Fehlersuche.
-- `Start-Diagnostic.bat` — startet nur die Diagnose-EXE sichtbar.
-- `release-metadata.json` und `*.sha256` — Größe und SHA-256 der beiden EXEs;
-  beim späteren Release ist nur der Wert für die normale `ArenaBridge.exe`
-  relevant.
-- Zeitgestempelte Backups älterer lokaler Builds, falls bereits welche da sind.
+   Das Konsolenfenster bleibt offen. Die Diagnose nennt auch die Datei
+   `%LOCALAPPDATA%\START-CHECK.txt`.
 
-Das Titelbild wird beim Build in die EXE eingebettet; die normale EXE braucht
-keine zusätzliche Bilddatei neben sich. Das Programm erhält außerdem das
-Anwendungssymbol aus `assets/ArenaBridge.ico`. Die Diagnose-EXE und die
-Diagnose-BAT sind **nur für dich**, nicht für einen Release-Upload.
+**Nicht** `builder\Build-EXE.ps1` oder den vorbereiteten Updater starten. Der
+Build lädt nichts hoch und ändert keine Update-Manifeste.
 
-### Voraussetzungen
+## Eigenes Logo für die EXE
 
-- 64-Bit-Windows mit Windows PowerShell 5.1, WPF und .NET Framework.
-- Internetverbindung für die Installation des `ps2exe`-Moduls beim ersten
-  Build. Das Modul wird nur für dein Windows-Benutzerkonto installiert, nicht
-  systemweit.
-- Falls Windows SmartScreen bei einer selbst gebauten/unsignierten Beta warnt,
-  veröffentliche oder starte die Datei nur, wenn du dieser lokalen Build-Quelle
-  vertraust. Der Builder signiert die EXE nicht.
+Du musst das mitgelieferte Logo nicht überschreiben. Kopiere dein eigenes
+Windows-Symbol als **`ArenaBridge.custom.ico`** hierhin:
 
-Der Builder prüft `next-update/ArenaBridge.ps1` zuerst mit dem echten
-Windows-PowerShell-5.1-Parser. Er kompiliert ausschließlich diese Kopie — nie
-die Root-Datei. Das Beta-Build-Skript veröffentlicht nichts und ändert keine
-Channel-Datei.
-
-## Für alle Nutzer bereitstellen — erst nach deinem PC-Test
-
-**Nicht** `ArenaBridge.exe` in Git committen, nicht in `user-builds/beta/`
-liegen lassen und nicht als Quelltext-Datei ins Repository legen. Der
-`user-builds`-Ordner wird absichtlich von Git ignoriert und ist nur dein lokaler
-Build-/Testordner.
-
-Nach einem erfolgreichen Test und deiner ausdrücklichen Freigabe ist der
-öffentliche Ablageort ein **GitHub-Release** im Repository
-`merta-studios/arenarobloxbridge`:
-
-1. Erstelle für die geprüfte Beta einen eigenen Release-Tag, beispielsweise
-   `v7.6.3-beta.1` (bei späteren Builds jeweils eine neue Beta-Nummer).
-2. Hänge als einziges App-Artefakt `ArenaBridge.exe` aus
-   `next-update/user-builds/beta/` an den Release an.
-3. Vergleiche Dateigröße und SHA-256 mit `release-metadata.json` bzw.
-   `ArenaBridge.exe.sha256`. Lade nicht `ArenaBridge-Diagnose.exe`, die
-   Diagnose-BAT, den lokalen Metadatenordner oder eine alte Backup-EXE hoch.
-
-Ein Release macht die EXE öffentlich herunterladbar, aber **aktiviert nicht
-automatisch den neuen Updater**. `channels/beta.json` und
-`channels/stable.json` bleiben absichtlich `enabled: false`, bis der Updater in
-einem eigenen, ausdrücklich freigegebenen Schritt in die laufende Bridge
-integriert und auf Windows abgenommen ist. Bitte die Manifeste jetzt nicht
-manuell aktivieren. Stable bleibt bis nach erfolgreichem Beta-Test und
-separater Freigabe deaktiviert.
-
-## Ordnerkarte: was ist für dich wichtig?
-
-| Pfad | Zweck | Was tun? |
-|---|---|---|
-| `START-HIER.txt` | Kurze Nutzer-Anleitung | Lesen, falls du nur bauen/testen willst. |
-| `Build-EXE.bat` | Einziger normaler Build-Klick | Doppelklicken; baut nur Beta. |
-| `ArenaBridge.ps1` | Bridge-Quelltext der nächsten Version | Änderungen werden ausschließlich hier vorbereitet. |
-| `Build-EXE.ps1` / `parse-gate.ps1` | Interner Build und Parserprüfung | Nicht separat zum normalen Bauen starten. |
-| `assets/` | Eingebettetes Titelbild und EXE-Symbol | Wird vom Builder verwendet; neben der EXE nicht nötig. |
-| `user-builds/beta/` | Lokale Beta- und Diagnose-Ausgaben | EXE testen; nicht committen. |
-| `user-builds/stable/` | Lokaler Stable-Build, derzeit gesperrt | Nicht verwenden, bis Stable ausdrücklich freigegeben ist. |
-| `release-inbox/` | Optionaler lokaler Ablage-/Prüfbereich | Kein Git- oder Upload-Ziel. |
-| `channels/*.json` | Spätere Beta-/Stable-Manifeste | Beide aus; jetzt nicht aktivieren. |
-| `updater/Update-Bridge.ps1` | Separater zukünftiger Updater | Noch nicht integriert; nicht als App starten. |
-| `test_*.py`, `run_offline_tests.py` | Offline-Regressionsprüfungen | Für Wartung/Entwicklung, nicht für den EXE-Build nötig. |
-| `*_CONTRACT.md`, weitere Versionsdokumente | Entwicklungs-/Funktionsverträge | Kontext für spätere Änderungen. |
-
-## Was bei einem späteren Update zu tun ist
-
-Ich arbeite auch bei späteren Änderungen nur in `next-update/` und schreibe dir
-bei jeder Beta konkret dazu:
-
-- welche Versionsnummer und welche Dateien geändert wurden;
-- dass du wieder ausschließlich `Build-EXE.bat` im `next-update`-Ordner
-  ausführen sollst;
-- den exakten Pfad der neu gebauten Test-EXE;
-- was du auf deinem Windows-PC testen sollst;
-- erst nach deiner Freigabe: welcher GitHub-Release-Tag und welche Datei
-  veröffentlicht werden sollen.
-
-Du musst keine EXE hochladen, keine Stable-Fassung erstellen und kein Manifest
-aktivieren, bevor ich es ausdrücklich als nächsten Schritt beschreibe und du
-zustimmst.
-
-## Beta vor Stable und Manifest-Status
-
-`channels/beta.json` und `channels/stable.json` sind momentan absichtlich
-`enabled: false`; beide enthalten keine Download-URL und keinen Hash. Das
-Schema liegt in `channels/manifest.schema.json`. Es gibt weder einen
-automatischen Upload noch ein automatisches Umschalten auf Stable.
-
-Geplante Reihenfolge: lokaler Beta-Build → PC-Test → deine Freigabe →
-GitHub-Release-Asset → späterer, separater Updater-Handoff/Windows-Test → erst
-danach gegebenenfalls Beta-Manifest. Stable folgt nur nach eigenem Beta-Test
-und ausdrücklicher Freigabe.
-
-## Separater Updater — vorbereitet, nicht integriert
-
-`updater/Update-Bridge.ps1` ist ein eigenständiger Windows-Updater. Er wird
-nicht von `Build-EXE.bat` ausgeführt und ist noch nicht in `ArenaBridge.ps1`
-eingebunden. Details und Sicherheitsgrenzen stehen in
-[`updater/README.md`](updater/README.md).
-
-Der vorbereitete Ablauf:
-
-- akzeptiert nur den angeforderten Kanal und verweigert deaktivierte oder
-  widersprüchliche Manifeste;
-- verlangt HTTPS auf GitHub/GitHubusercontent ohne Zugangsdaten oder fremden
-  Port und prüft jedes Redirect-Ziel erneut;
-- begrenzt Manifeste, Dateigröße, Redirects und Downloadzeit;
-- verlangt exakt `ArenaBridge.exe`, prüft Dateigröße und SHA-256 und verweigert
-  Downgrades oder ungültigen lokalen Update-Status;
-- wartet auf die beendete Ziel-EXE, beendet sie aber niemals selbst;
-- lädt erst in ein Staging-Verzeichnis, verifiziert vor dem Austausch, nutzt
-  `File.Replace`, bewahrt ein Backup und versucht bei Fehlern einen Rollback.
-
-Ein Live-Rollout darf erst nach Integration in die Bridge und einem echten
-Windows-Testkonto beginnen. Der aktuelle Arbeitsstand legt das Fundament,
-verknüpft es aber absichtlich nicht mit dem alten Updater.
-
-## Offline-Tests und Grenzen
-
-Die Offline-Regressions- und Strukturtests sind eigenständige Skripte (keine
-`unittest`-`TestCase`-Klassen). Im Ordner `next-update/` installierst du bei
-Bedarf die Test-Extras und startest dann den Runner:
-
-```powershell
-python -m pip install -r requirements-test.txt
-python run_offline_tests.py
+```text
+next-update\app\assets\ArenaBridge.custom.ico
 ```
 
-Der Runner führt alle `test_*.py`-Skripte nacheinander aus und liefert einen
-Fehlerstatus zurück, sobald ein Test fehlschlägt. `parse-gate.ps1` sowie
-`test_v762_runtime.ps1` benötigen zusätzlich Windows PowerShell; letzterer ist
-ein isolierter Open-Cloud-Laufzeittest ohne Live-Netzwerk. Ein erfolgreicher
-Offline-Test belegt weder eine echte Roblox-Studio-Abnahme noch eine
-Kompilierung auf dem Windows-PC des Nutzers. Der lokale Build-Smoke-Test belegt
-nur das Starten der EXE im PS2EXE/WPF-Host, nicht die vollständige Roblox-
-Studio-Funktion.
+Beim nächsten Doppelklick auf `Build-EXE.bat` wird diese Datei automatisch
+statt `ArenaBridge.ico` in die EXE eingebaut. Der Builder prüft, ob es eine
+gültige `.ico`-Datei ist. Eine PNG- oder JPG-Datei funktioniert nicht direkt;
+wandle sie zuerst in ein Windows-ICO um. Empfohlen sind transparente Icons mit
+mehreren Größen bis 256 × 256 Pixel. Die eigene `ArenaBridge.custom.ico` wird
+lokal ignoriert und nicht in Git aufgenommen. Lösche sie, um wieder das
+mitgelieferte Standard-Logo zu verwenden.
+
+Für einen einmaligen Build mit einer ICO-Datei an einem anderen Ort kann der
+interne Builder auch direkt aufgerufen werden:
+
+```powershell
+.\builder\Build-EXE.ps1 -Channel beta -CustomIconPath "C:\Pfad\MeinLogo.ico"
+```
+
+Im normalen Ablauf genügt die `ArenaBridge.custom.ico` neben dem Standard-Icon.
+
+## Was der Build prüft und erzeugt
+
+- Voraussetzungen: **64-Bit-Windows**, Windows PowerShell 5.1, WPF/.NET
+  Framework und beim ersten Build eine Internetverbindung für das
+  `ps2exe`-Modul. Eine Administratorinstallation ist nicht nötig.
+- Vor der Kompilierung prüft der echte Windows-PowerShell-Parser
+  `app\ArenaBridge.ps1` und die eingebettete Build-Kopie.
+- Vor der Ablage startet der Builder die neu kompilierte EXE im isolierten
+  Smoke-Test. Er prüft den ausführbaren Ordnerpfad (der in einer EXE statt
+  eines Skriptpfads verwendet werden muss), x64, STA/WPF und das eingebettete
+  Titelbild. Dabei werden weder Roblox Studio noch Bridge-Server, Netzwerk,
+  Nutzereinstellungen oder Updater gestartet.
+- Der behobene Startfehler entstand, weil das kompilierte Programm keinen
+  `$script:ScriptPath` besitzt, beim Einrichten von `AppFolder` aber trotzdem
+  `Split-Path` mit diesem leeren Wert aufgerufen wurde. Die Bridge nimmt nun
+  den Verzeichnisnamen der gestarteten EXE; derselbe Resolver wird im
+  Build-Smoke-Test geprüft.
+- Nach erfolgreichem Build liegen unter `user-builds\beta\` die normale
+  `ArenaBridge.exe`, eine separate `ArenaBridge-Diagnose.exe`,
+  `Start-Diagnostic.bat`, Prüfsummen und lokale Build-Metadaten. Für einen
+  späteren öffentlichen Release ist ausschließlich die normale
+  `ArenaBridge.exe` vorgesehen.
+
+Die EXE ist unsigniert. Falls SmartScreen warnt, starte sie nur, wenn du dieser
+lokalen Build-Quelle vertraust.
+
+## Ordnerübersicht
+
+| Pfad | Zweck |
+|---|---|
+| `Build-EXE.bat` | Einziger Klick zum lokalen Beta-Build. |
+| `START-HIER.txt` | Kurzanleitung für Bauen, Pfad und Start. |
+| `app\` | Programmquelle, Version, Startbild, EXE-Icons und Open-Cloud-Daten. |
+| `builder\` | Interner PowerShell-Builder und Parser — nicht separat starten. |
+| `user-builds\beta\` | Hier erscheint nach dem Build die zu testende EXE. |
+| `user-builds\stable\` | Für den normalen Ablauf gesperrt; erst nach Beta-Test und Freigabe. |
+| `update-system\` | Vorbereitete Channel-Manifeste und separater, noch nicht integrierter Updater. |
+| `developer\tests\` | Offline-Regressionstests und ihre Python-Anforderungen. Für den EXE-Build nicht nötig. |
+| `developer\docs\` | Entwicklungsverträge und Hintergrunddokumente. |
+| `developer\ci\`, `developer\tools\` | Wartungs-/Prüfwerkzeuge, nicht Teil des normalen Builds. |
+| `release-inbox\` | Optionaler lokaler Prüfbereich; kein Commit- oder Upload-Ort. |
+
+So ist der heruntergeladene Ordner absichtlich geteilt: **oben liegen nur
+Startanleitung, BAT und die wenigen Arbeitsbereiche; technische Tests,
+Verträge und Werkzeuge sind unter `developer` gesammelt.**
+
+## Beta zuerst — nichts automatisch veröffentlichen
+
+Die vorbereitete Bridge ist **Version 7.6.4**. Der normale Doppelklick baut
+`7.6.4-beta.1` lokal. Hier in der Sandbox wurde keine Windows-EXE gebaut oder
+veröffentlicht.
+
+Die Channel-Dateien in `update-system\channels\` bleiben `enabled: false` und
+enthalten keine Download-URL oder Hash. Der separate Updater in
+`update-system\updater\` ist noch nicht in die laufende
+`app\ArenaBridge.ps1` integriert und wird von `Build-EXE.bat` nicht gestartet.
+Der alte Updater und die alte Struktur im Hauptordner des Repositorys bleiben
+unangetastet.
+
+Erst nach deinem Windows-Test und deiner ausdrücklichen Freigabe darf die
+normale `ArenaBridge.exe` als einziges App-Artefakt an einen GitHub-Release im
+Repository `merta-studios/arenarobloxbridge` angehängt werden. Keine EXE,
+Diagnose-Datei, persönliche ICO-Datei oder lokalen Build-Metadaten in Git
+committen; Stable nicht vor dem Beta-Test aktivieren.
+
+## Offline-Tests (nur Wartung/Entwicklung)
+
+Im Ordner `next-update`:
+
+```powershell
+python -m pip install -r developer\tests\requirements-test.txt
+python developer\tests\run_offline_tests.py
+```
+
+Der Runner führt die Offline-Regressionsskripte aus. Für Windows-spezifische
+Parser-/Open-Cloud-Prüfungen:
+
+```powershell
+.\builder\parse-gate.ps1 -Path .\app\ArenaBridge.ps1
+.\developer\tests\test_v762_runtime.ps1
+```
+
+Ein erfolgreicher Offline-Test ist keine Roblox-Studio-Live-Abnahme. Auch der
+Build-Smoke-Test ersetzt nicht deinen anschließenden Test der normalen Beta-EXE.
