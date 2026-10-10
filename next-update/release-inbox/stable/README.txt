@@ -1,3 +1,6 @@
-Stable release staging area (local only).
-Keep disabled until beta testing is complete and a stable release is explicitly approved.
-Do not commit binaries or publish the channel manifest automatically.
+Optionaler lokaler Stable-Release-Sammelordner. Stable ist aktuell gesperrt.
+
+Nur nach erfolgreichem Beta-Test und ausdruecklicher Freigabe verwenden. Die
+normale ArenaBridge.exe wird als GitHub-Release-Asset veroeffentlicht, nicht
+als Git-Datei committet. Diagnose-EXE und Diagnose-BAT sind keine Release-
+Artefakte. Inhalte dieses Ordners werden von Git ignoriert.

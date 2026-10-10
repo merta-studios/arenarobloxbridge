@@ -1,0 +1,2 @@
+# Keep Windows command launchers usable on a direct ZIP download.
+*.bat text eol=crlf

@@ -1,2 +1,6 @@
-Local stable EXE output goes here only after the stable confirmation prompt.
-The assistant does not build or store EXEs.
+Lokale Stable-Builds sind derzeit nicht Teil des normalen Workflows.
+
+Die einzige BAT im next-update-Hauptordner baut Beta. Erstelle oder
+veroeffentliche Stable erst nach erfolgreichem Beta-Test und ausdruecklicher
+Nutzerfreigabe. EXE-Dateien und Build-Metadaten aus diesem Ordner duerfen nicht
+in Git committet werden.
