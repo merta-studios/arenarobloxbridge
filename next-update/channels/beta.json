@@ -13,6 +13,6 @@
     "sizeBytes": 0
   },
   "notes": [
-    "Beta-Kanal ist vorbereitet, aber noch nicht veröffentlicht."
+    "Beta ist noch nicht getestet oder freigegeben. Manifest bleibt deaktiviert; nach dem PC-Test zunaechst nur ArenaBridge.exe als GitHub-Release-Asset veroeffentlichen. Der neue Updater ist noch nicht in die laufende Bridge integriert."
   ]
 }

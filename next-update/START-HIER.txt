@@ -1,0 +1,48 @@
+ARENA ROBLOX BRIDGE — START HIER
+================================
+
+WENN DU NUR DIE BETA-EXE BAUEN UND TESTEN WILLST:
+
+1. Öffne den Ordner next-update.
+2. Führe GENAU diese Datei per Doppelklick aus:
+       Build-EXE.bat
+   Nicht Build-EXE.ps1 und nicht updater\Update-Bridge.ps1 starten.
+3. Warte, bis im schwarzen Fenster BUILD ERFOLGREICH steht. Der Builder prüft
+   die fertige EXE zuerst selbst (64-Bit-Start, PowerShell, WPF/STA und Titelbild).
+4. Die normale Beta-App liegt danach genau hier:
+       next-update\user-builds\beta\ArenaBridge.exe
+   Die BAT zeigt dir zusätzlich den vollständigen PC-Pfad. Starte diese EXE
+   von Hand und teste sie. Vorher alle anderen ArenaBridge-Fenster schließen;
+   es darf nur eine Bridge-Instanz laufen.
+5. Wenn beim Doppelklick scheinbar nichts passiert: erst andere Bridge-Fenster
+   schließen. Falls es dann weiter nicht startet, führe diese Diagnose-BAT aus:
+       next-update\user-builds\beta\Start-Diagnostic.bat
+   Lass das Konsolenfenster offen und notiere die Ausgabe. Die wichtigste
+   Startdatei ist:
+       %LOCALAPPDATA%\START-CHECK.txt
+   Weitere Dateien nennt die Diagnose-BAT.
+
+FÜR ALLE NUTZER BEREITSTELLEN — ERST NACH DEINEM TEST:
+
+- Die EXE NICHT in Git committen und NICHT nach next-update\user-builds\
+  hochladen. Dieser Ordner ist nur dein lokaler Build-Ordner und wird ignoriert.
+- Nach erfolgreichem Test und deiner Freigabe kommt ausschließlich
+  ArenaBridge.exe als Asset in einen GitHub-Release des Repositories
+  merta-studios/arenarobloxbridge. Die Diagnose-EXE und Diagnose-BAT bleiben
+  privat/lokal. Hash und Dateigröße stehen in release-metadata.json.
+- Das Beta-Manifest liegt bei next-update\channels\beta.json. Es bleibt
+  deaktiviert, bis der neue Updater ausdrücklich integriert und freigegeben
+  wurde. Der neue Updater ist aktuell noch NICHT in der laufenden Root-Bridge
+  eingebaut; ein Release allein schaltet also kein automatisches Update frei.
+- Stable bleibt aus, bis Beta erfolgreich getestet und Stable ausdrücklich
+  freigegeben wurde.
+
+BEI EINEM SPÄTEREN UPDATE:
+
+Ich ändere weiterhin nur next-update. Ich nenne dir dann die neue Version,
+welche Beta du bauen sollst, den exakten EXE-Pfad, die PC-Testschritte und —
+erst nach deinem Okay — den passenden Release-/Manifest-Schritt. Bis dahin
+musst du keine EXE hochladen und keine Manifest-Datei aktivieren.
+
+Mehr Details, Ordnerkarte und Fehlerhilfe: README.md im selben next-update-
+Ordner.

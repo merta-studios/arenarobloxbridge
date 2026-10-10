@@ -20,6 +20,10 @@
 #   6) NEXT-UPDATE: isolierte Build-/Beta-/Stable-Dateien und separater
 #      Hash-pruefender Updater; Root-Updater bleibt unveraendert. EXEs baut der
 #      Nutzer lokal selbst; Beta kommt vor Stable.
+#   7) BETA-START: Die Beta bekommt ein eingebettetes Titelbild und EXE-Icon.
+#      Der Builder prueft die kompilierte EXE vor der Ablage mit einem
+#      isolierten PowerShell-/WPF-/Bild-Smoke-Test; bei Startproblemen gibt es
+#      zusaetzlich eine lokale Konsolen-Diagnosefassung.
 #
 # Version 7.6.2 (2026-10-10) - EXAKTE OPEN-CLOUD-FREIGABEN + VOLLSTAENDIGE KEY-PRUEFUNG
 #   1) Introspect wird nicht mehr bei 600 Zeichen abgeschnitten; beide
@@ -2131,10 +2135,77 @@
 # ----------------------------------------------------------------------------
 param(
     [string]$UpdateStatus = '',
-    [string]$UpdaterPath = ''
+    [string]$UpdaterPath = '',
+    [switch]$DiagnosticMode
 )
 
-# 7.2.9 PROOF_OF_LIFE: first executable statement after param.
+# The builder replaces this one unique marker in a temporary compile-only copy.
+# The repository source stays small and loads the adjacent JPG when run as a PS1.
+$script:TitleArtworkBase64 = '__ARENA_TITLE_ARTWORK_BASE64__'
+$script:DiagnosticMode = ([bool]$DiagnosticMode -or $env:ARENABRIDGE_DIAGNOSTIC_MODE -eq '1')
+
+# Isolated build smoke test: the compiler launches the actual staged EXE in a
+# no-side-effect mode before publishing it. This proves the embedded PS host,
+# x64/STA setting, WPF initialization and title-image decoding all work.
+if ($env:ARENABRIDGE_BUILD_SMOKE -eq '1') {
+    $smokePath = [string]$env:ARENABRIDGE_BUILD_SMOKE_PATH
+    $smokeExitCode = 0
+    $smokeStream = $null
+    $smokeImage = $null
+    $smokeReport = [ordered]@{
+        status = 'failed'
+        version = '7.6.3'
+        processId = $PID
+        is64BitProcess = [Environment]::Is64BitProcess
+        apartmentState = [string][System.Threading.Thread]::CurrentThread.ApartmentState
+        powershell = [string]$PSVersionTable.PSVersion
+        clr = [string][Environment]::Version
+        titleImageWidth = 0
+        titleImageHeight = 0
+        error = ''
+    }
+    try {
+        if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) { throw 'The compiled smoke test is Windows-only.' }
+        if (-not [Environment]::Is64BitProcess) { throw 'The staged EXE did not start as a 64-bit process.' }
+        if ([System.Threading.Thread]::CurrentThread.ApartmentState -ne [System.Threading.ApartmentState]::STA) { throw 'The staged EXE did not start in STA mode; WPF requires STA.' }
+        Add-Type -AssemblyName PresentationCore -ErrorAction Stop
+        Add-Type -AssemblyName PresentationFramework -ErrorAction Stop
+        $smokeWindow = [System.Windows.Window]::new()
+        $smokeWindow.Title = 'Arena Roblox Bridge build smoke test'
+        if ([string]::IsNullOrWhiteSpace([string]$script:TitleArtworkBase64) -or
+            [string]$script:TitleArtworkBase64 -eq '__ARENA_TITLE_ARTWORK_BASE64__') {
+            throw 'The title image was not embedded into the compiled EXE.'
+        }
+        $smokeBytes = [Convert]::FromBase64String([string]$script:TitleArtworkBase64)
+        $smokeStream = [System.IO.MemoryStream]::new([byte[]]$smokeBytes)
+        $smokeImage = [System.Windows.Media.Imaging.BitmapImage]::new()
+        $smokeImage.BeginInit()
+        $smokeImage.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+        $smokeImage.StreamSource = $smokeStream
+        $smokeImage.EndInit()
+        $smokeImage.Freeze()
+        if ($smokeImage.PixelWidth -lt 100 -or $smokeImage.PixelHeight -lt 50) { throw 'The embedded title image decoded with an unexpected size.' }
+        $smokeReport.status = 'passed'
+        $smokeReport.titleImageWidth = [int]$smokeImage.PixelWidth
+        $smokeReport.titleImageHeight = [int]$smokeImage.PixelHeight
+    } catch {
+        $smokeExitCode = 1
+        $smokeReport.error = [string]$_.Exception.Message
+        try { [Console]::Error.WriteLine('ARENA_BUILD_SMOKE_FAILED: ' + $smokeReport.error) } catch {}
+    } finally {
+        if ($null -ne $smokeStream) { try { $smokeStream.Dispose() } catch {} }
+    }
+    try {
+        if ([string]::IsNullOrWhiteSpace($smokePath)) { throw 'ARENABRIDGE_BUILD_SMOKE_PATH was not set.' }
+        [System.IO.File]::WriteAllText($smokePath, ($smokeReport | ConvertTo-Json -Depth 5), [System.Text.UTF8Encoding]::new($false))
+    } catch {
+        $smokeExitCode = 2
+        try { [Console]::Error.WriteLine('ARENA_BUILD_SMOKE_REPORT_FAILED: ' + $_.Exception.Message) } catch {}
+    }
+    exit $smokeExitCode
+}
+
+# 7.2.9 PROOF_OF_LIFE: first normal-startup marker after the opt-in smoke test.
 # Existing LOCALAPPDATA directory; no UI, no new exception net.
 # A parse/policy failure prevents even this marker. Check its timestamp/version.
 # Continue + SilentlyContinue keeps diagnostic I/O from becoming a start blocker.
@@ -2161,9 +2232,29 @@ try {
         $script:BridgeSingleInstanceOwned = $true
     }
     if (-not $script:BridgeSingleInstanceOwned) {
+        $duplicateMessage = 'Arena Roblox Bridge laeuft bereits. Schliesse das vorhandene Fenster vollstaendig und starte die Beta-EXE danach erneut.'
         try {
             Add-Content -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Value ('{0:o} SINGLE_INSTANCE_DUPLICATE PID={1} UpdateStatus={2}' -f (Get-Date), $PID, $UpdateStatus) -Encoding UTF8 -ErrorAction SilentlyContinue
         } catch {}
+        try {
+            [System.IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA 'START-CHECK.txt'),
+                ('Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
+                 'Version: 7.6.3' + [Environment]::NewLine +
+                 'ABBRUCH: SINGLE_INSTANCE_DUPLICATE' + [Environment]::NewLine +
+                 $duplicateMessage + [Environment]::NewLine +
+                 'Log: ' + (Join-Path $env:LOCALAPPDATA 'ArenaRobloxBridge-start-entry.txt') + [Environment]::NewLine),
+                [System.Text.Encoding]::UTF8)
+        } catch {}
+        if ($script:DiagnosticMode) {
+            try { [Console]::Error.WriteLine('SINGLE_INSTANCE_DUPLICATE: ' + $duplicateMessage) } catch {}
+        } elseif ([string]::IsNullOrWhiteSpace($UpdateStatus)) {
+            # Das COM-Popup erklaert den Doppelstart, ohne WPF vor dem
+            # Single-Instance-Gate zu laden oder ein zweites Bridge-Fenster zu bauen.
+            try {
+                $duplicateNotice = New-Object -ComObject WScript.Shell
+                [void]$duplicateNotice.Popup($duplicateMessage, 0, 'Arena Roblox Bridge - bereits geoeffnet', 48)
+            } catch {}
+        }
         try { $script:BridgeSingleInstanceMutex.Dispose() } catch {}
         exit 0
     }
@@ -2356,7 +2447,7 @@ try {
     $processBuffer = New-Object uint32[] 64
     $attached = $consoleHelper::GetConsoleProcessList($processBuffer, 64)
     $consoleHandle = $consoleHelper::GetConsoleWindow()
-    if ($attached -eq 1 -and $consoleHandle -ne [IntPtr]::Zero) {
+    if (-not $script:DiagnosticMode -and $attached -eq 1 -and $consoleHandle -ne [IntPtr]::Zero) {
         [void]$consoleHelper::ShowWindow($consoleHandle, 0)
     }
 } catch {}
@@ -31910,6 +32001,41 @@ $script:ColorRed    = '#FF5C77'
 $script:ColorBlue   = '#5B8CFF'
 $script:ColorGray   = '#8FA3CC'
 
+function Set-SplashTitleArtwork {
+    param($ImageControl)
+    if ($null -eq $ImageControl) { return $false }
+    $imageBytes = $null
+    $imageStream = $null
+    try {
+        $encoded = [string]$script:TitleArtworkBase64
+        if (-not [string]::IsNullOrWhiteSpace($encoded) -and $encoded -ne '__ARENA_TITLE_ARTWORK_BASE64__') {
+            $imageBytes = [Convert]::FromBase64String($encoded)
+        } elseif ($script:AppRoot) {
+            $imagePath = Join-Path $script:AppRoot 'assets\arena-bridge-title.jpg'
+            if (Test-Path -LiteralPath $imagePath -PathType Leaf) { $imageBytes = [System.IO.File]::ReadAllBytes($imagePath) }
+        }
+        if ($null -eq $imageBytes -or $imageBytes.Length -eq 0) {
+            $ImageControl.Visibility = 'Collapsed'
+            return $false
+        }
+        $imageStream = [System.IO.MemoryStream]::new([byte[]]$imageBytes)
+        $bitmap = [System.Windows.Media.Imaging.BitmapImage]::new()
+        $bitmap.BeginInit()
+        $bitmap.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+        $bitmap.StreamSource = $imageStream
+        $bitmap.EndInit()
+        $bitmap.Freeze()
+        $ImageControl.Source = $bitmap
+        $ImageControl.Visibility = 'Visible'
+        return $true
+    } catch {
+        try { Write-RuntimeLog ('Titelbild konnte nicht geladen werden: ' + $_.Exception.Message) } catch {}
+        try { $ImageControl.Visibility = 'Collapsed' } catch {}
+        return $false
+    } finally {
+        if ($null -ne $imageStream) { try { $imageStream.Dispose() } catch {} }
+    }
+}
 
 # ----------------------------------------------------------------------------
 # OBERFLAECHE (XAML)
@@ -32572,6 +32698,54 @@ $xaml = @'
                 <Border x:Name="SplashScreen" Panel.ZIndex="70" Background="#EE0A1030" CornerRadius="16" ClipToBounds="True">
                     <Grid>
                         <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Width="440" Margin="0,-6,0,0">
+                            <!-- Eingebettetes Titelbild; Build-EXE.ps1 bettet es in die Einzeldatei ein. -->
+                            <Border Width="392" Height="154" Margin="0,0,0,18" CornerRadius="17"
+                                    BorderBrush="#66A9C9FF" BorderThickness="1" ClipToBounds="True"
+                                    Background="#0B1531">
+                                <Border.Effect>
+                                    <DropShadowEffect Color="#7700CFC0" BlurRadius="24" ShadowDepth="0" Opacity="0.34"/>
+                                </Border.Effect>
+                                <Grid>
+                                    <Image x:Name="SplashHeroImage" Stretch="UniformToFill" Opacity="0.92"
+                                           SnapsToDevicePixels="True" RenderOptions.BitmapScalingMode="HighQuality"/>
+                                    <Border IsHitTestVisible="False">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                <GradientStop Color="#6B071027" Offset="0"/>
+                                                <GradientStop Color="#1808122A" Offset="0.52"/>
+                                                <GradientStop Color="#A6081026" Offset="1"/>
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                    </Border>
+                                    <Border VerticalAlignment="Bottom" Height="78" IsHitTestVisible="False">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                <GradientStop Color="#00060C20" Offset="0"/>
+                                                <GradientStop Color="#D9060B21" Offset="1"/>
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                    </Border>
+                                    <StackPanel HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="21,0,0,15"
+                                                IsHitTestVisible="False">
+                                        <TextBlock Text="ARENA" Foreground="#79EFE6" FontSize="10.5"
+                                                   FontWeight="Bold"/>
+                                        <TextBlock Text="ROBLOX BRIDGE" Foreground="#F5F8FF" FontSize="21"
+                                                   FontWeight="Bold" Margin="0,2,0,0"/>
+                                        <TextBlock Text="DEIN STUDIO. DEINE WELT. VERBUNDEN."
+                                                   Foreground="#C6D5F5" FontSize="8.5" FontWeight="SemiBold"
+                                                   Margin="1,3,0,0"/>
+                                    </StackPanel>
+                                    <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,13,13,0"
+                                            CornerRadius="9" Padding="8,4" Background="#AE0C1733"
+                                            BorderBrush="#668EE7FF" BorderThickness="1" IsHitTestVisible="False">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Ellipse Width="6" Height="6" Fill="#54E6D0" Margin="0,0,6,0"/>
+                                            <TextBlock Text="BETA BUILD" Foreground="#E8F5FF" FontSize="8.5"
+                                                       FontWeight="Bold" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </Border>
                             <!-- Spinning Loading Icon (oben) -->
                             <Grid Width="72" Height="72" Margin="0,0,0,22" HorizontalAlignment="Center">
                                 <Ellipse Stroke="#22FFFFFF" StrokeThickness="5"/>
@@ -32647,6 +32821,8 @@ try {
 $reader = [System.Xml.XmlNodeReader]::new([xml]$xaml)
 $window = [Windows.Markup.XamlReader]::Load($reader)
 $script:MainWindow = $window
+$SplashHeroImage = $window.FindName('SplashHeroImage')
+[void](Set-SplashTitleArtwork -Image $SplashHeroImage)
 
 $window.Dispatcher.add_UnhandledException({
     param($sender, $eventArgs)
@@ -42687,7 +42863,7 @@ try {
             }
         } catch {}
         try { Write-RuntimeLog 'Fenster geschlossen - Programm wird vollstaendig beendet.' } catch {}
-        [System.Environment]::Exit(0)
+        if (-not $script:DiagnosticMode) { [System.Environment]::Exit(0) }
     })
     $window.Add_ContentRendered({
         if ($script:StartupRuntimeStarted) { return }
@@ -42726,6 +42902,15 @@ try {
     [void]$window.ShowDialog()
 } catch {
     Write-StartupFailureDiagnose $_
+}
+if ($script:DiagnosticMode) {
+    try {
+        Write-Host ''
+        Write-Host 'Diagnosemodus: Das Bridge-Fenster wurde geschlossen.' -ForegroundColor Yellow
+        Write-Host ('Startkontrolle: ' + (Join-Path $env:LOCALAPPDATA 'START-CHECK.txt'))
+        Write-Host ('Startdiagnose:  ' + (Join-Path $script:BinFolder 'startup-diagnose.txt'))
+        [void](Read-Host 'Enter druecken, um dieses Diagnosefenster zu schliessen')
+    } catch {}
 }
 # Sicherheitsnetz (Version 3.4): Falls das Closed-Ereignis doch nicht zum
 # Exit gefuehrt haben sollte, wird der Prozess hier garantiert beendet.

@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import json
 import re
+import struct
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 SOURCE = ROOT / "ArenaBridge.ps1"
@@ -110,37 +112,96 @@ def main() -> int:
           and '$listener.Prefixes.Add("http://127.0.0.1:$Port/")' in source,
           "existing local Bridge connection settings remain present and unchanged by tutorial copy edits")
 
-    # User builds only: BAT -> PowerShell builder -> parse gate -> exact copy;
-    # no build is run in this test or by the preparation script.
+    # Branded startup image and EXE icon are valid inputs; the main splash XAML
+    # contains a named image target and the embedded image is wired in code.
+    title_art = ROOT / "assets" / "arena-bridge-title.jpg"
+    icon_path = ROOT / "assets" / "ArenaBridge.ico"
+    title_bytes = title_art.read_bytes()
+    icon_bytes = icon_path.read_bytes()
+    check(title_bytes.startswith(b"\xff\xd8\xff") and title_bytes.endswith(b"\xff\xd9")
+          and len(title_bytes) > 1000,
+          "optimized hero image is a non-empty JPEG asset")
+    icon_header = struct.unpack("<HHH", icon_bytes[:6]) if len(icon_bytes) >= 6 else (1, 0, 0)
+    icon_ok = icon_header[:2] == (0, 1) and icon_header[2] >= 1
+    if icon_ok:
+        icon_ok = all(
+            struct.unpack("<I", icon_bytes[6 + 16 * i + 8:6 + 16 * i + 12])[0] > 0
+            and struct.unpack("<I", icon_bytes[6 + 16 * i + 12:6 + 16 * i + 16])[0] +
+                struct.unpack("<I", icon_bytes[6 + 16 * i + 8:6 + 16 * i + 12])[0] <= len(icon_bytes)
+            for i in range(icon_header[2])
+        )
+    check(icon_ok, "multi-size Windows ICO resource has valid entries")
+    xaml_start = source.index("$xaml = @'") + len("$xaml = @'")
+    xaml_end = source.index("\n'@", xaml_start)
+    main_xaml = source[xaml_start:xaml_end]
+    try:
+        root_element = ET.fromstring(main_xaml)
+        xaml_valid = root_element.tag.endswith("Window")
+    except ET.ParseError as error:
+        xaml_valid = False
+        print(f"[FAIL] main WPF XAML is valid XML: {error}")
+    check(xaml_valid, "main splash WPF markup is parseable XML")
+    namespaced_name = "{http://schemas.microsoft.com/winfx/2006/xaml}Name"
+    splash_image = next((node for node in root_element.iter() if node.attrib.get(namespaced_name) == "SplashHeroImage"), None) if xaml_valid else None
+    check(splash_image is not None and "Set-SplashTitleArtwork" in source
+          and "BitmapCacheOption]::OnLoad" in source,
+          "startup splash loads the embedded hero image safely from memory")
+    check("SINGLE_INSTANCE_DUPLICATE" in source and "already open" not in source
+          and "WScript.Shell" in source and "Popup($duplicateMessage" in source,
+          "launching a second instance creates a START-CHECK and a visible explanation")
+    smoke_region = region(source, "if ($env:ARENABRIDGE_BUILD_SMOKE -eq '1') {", "# 7.2.9 PROOF_OF_LIFE")
+    for marker in ("PresentationFramework", "ApartmentState]::STA", "FromBase64String",
+                   "BitmapImage]::new()", "ARENABRIDGE_BUILD_SMOKE_PATH", "exit $smokeExitCode"):
+        check(marker in smoke_region, f"compiled EXE smoke test validates host/WPF/image: {marker}")
+    check("Invoke-WebRequest" not in smoke_region and "Start-BridgeRuntime" not in smoke_region,
+          "build smoke test has no network, Studio or Bridge-runtime side effects")
+
+    # User builds only: one root BAT -> PowerShell builder -> real parser ->
+    # injected, temporary compile copy. This test never builds or runs an EXE.
     bat_path = ROOT / "Build-EXE.bat"
     build_path = ROOT / "Build-EXE.ps1"
     check(bat_path.is_file() and build_path.is_file(), "BAT launcher and PowerShell build script are prepared")
-    bat = bat_path.read_text(encoding="utf-8-sig")
+    root_bats = list(ROOT.glob("*.bat"))
+    check(root_bats == [bat_path], "Build-EXE.bat is the only BAT in the downloaded next-update folder")
+    bat_bytes = bat_path.read_bytes()
+    check(b"\xef\xbb\xbf" not in bat_bytes[:3] and bat_bytes.count(b"\r\n") == bat_bytes.count(b"\n"),
+          "double-click BAT is plain ASCII with Windows CRLF endings")
+    bat = bat_path.read_text(encoding="ascii")
     build = build_path.read_text(encoding="utf-8-sig")
-    for marker in ("Build-EXE.ps1", "-Channel", "beta", "stable"):
-        check(marker in bat, f"BAT offers the user's selected build channel: {marker}")
-    for marker in ("The EXE build must run on Windows", "does not build an EXE in the Arena sandbox",
+    for marker in ("Build-EXE.ps1", "-Channel beta", "BUILD ERFOLGREICH",
+                   "user-builds\\beta\\ArenaBridge.exe", "Start-Diagnostic.bat", "START-HIER.txt"):
+        check(marker in bat, f"single beta BAT gives an exact next action/path: {marker}")
+    for marker in ("The EXE build must run on Windows", "64-bit Windows",
                    "Join-Path $repoRoot 'ArenaBridge.ps1'", "Join-Path $repoRoot 'parse-gate.ps1'",
                    "Join-Path (Join-Path $repoRoot 'user-builds') $Channel",
-                   "-File $parseGatePath -Path $sourcePath", "Invoke-ps2exe",
-                   "$buildCoreVersion = ($BuildVersion -split '-',2)[0]",
-                   "BuildVersion core must match version.json source version",
-                   "$ps2exeArguments = @{", "noConsole = $true", "STA = $true", "x64 = $true",
-                   "Invoke-ps2exe @ps2exeArguments", "version = $numericVersion",
-                   "[long]209715200", "Staging output removed",
-                   "Type RELEASE STABLE", "[IO.File]::Replace($stagingExePath,$exePath,$backupPath,$true)",
-                   "Previous build is preserved", "no release or channel manifest was changed"):
+                   "Join-Path (Join-Path $repoRoot 'assets') 'ArenaBridge.ico'",
+                   "arena-bridge-title.jpg", "Invoke-ps2exe @arguments", "iconFile = $IconPath",
+                   "STA = $true", "x64 = $true", "noConsole = $NoConsole",
+                   "The unique title-artwork injection marker is missing",
+                   "TitleArtworkBase64 = ''__ARENA_TITLE_ARTWORK_BASE64__''",
+                   "[IO.File]::WriteAllText($preparedSourcePath,$preparedSource,[Text.UTF8Encoding]::new($true))",
+                   "Test-StagedExecutable -ExecutablePath $stagingExePath",
+                   "ARENABRIDGE_BUILD_SMOKE", "30-second build smoke test",
+                   "ArenaBridge-Diagnose.building.exe", "Start-Diagnostic.bat",
+                   "release-metadata.json", "No GitHub release, upload, channel manifest",
+                   "only ArenaBridge.exe after the user test and explicit release approval"):
         check(marker in build, f"user-owned EXE build safety step is present: {marker}")
-    check("Build-EXE.ps1" in bat and "ArenaBridge.ps1" in build,
-          "build pipeline reads only the source beside the new script under next-update")
-    check(not list(ROOT.rglob("*.exe")), "no EXE was built or left in next-update")
+    check("Invoke-ps2exe @arguments" in build and "-InputPath $preparedSourcePath" in build
+          and "ArenaBridge.ps1" in build,
+          "build compiles only an artwork-injected temporary copy of next-update source")
+    check(not list((ROOT / "user-builds").rglob("*.exe"))
+          and not list((ROOT / "release-inbox").rglob("*.exe")),
+          "no user or release EXE was built or left in next-update")
     ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
-    check("/user-builds/*/*.exe" in ignore and "/release-inbox/*/*" in ignore,
-          "local EXEs, metadata and release inbox artifacts stay out of Git")
+    check("/user-builds/*/*.exe" in ignore and "/user-builds/*/Start-Diagnostic.bat" in ignore
+          and "/release-inbox/*/*" in ignore,
+          "local EXEs, diagnostic BAT, metadata and release inbox artifacts stay out of Git")
     for channel in ("beta", "stable"):
         folder = ROOT / "user-builds" / channel
         check(folder.is_dir() and (folder / ".gitkeep").is_file(),
               f"user-builds/{channel}/ exists for local builds")
+    check((ROOT / "START-HIER.txt").is_file(), "downloaded next-update folder has a prominent German start guide")
+    check((ROOT / "updater" / "README.md").is_file(), "future updater folder explains that it is not integrated")
 
     # Beta first, stable later; neither channel is enabled or published yet.
     for channel in ("beta", "stable"):
@@ -187,23 +248,27 @@ def main() -> int:
           and "channels/stable.json" not in source,
           "future updater/manifests are not integrated into the root-copied Bridge executable")
 
-    # Keep tutorial text exact and ensure the updater handoff remains described
-    # as not yet integrated; no release publication is implied.
+    # The downloaded folder and public release path are explicit, while no
+    # binary is committed and no not-yet-integrated updater is activated.
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    start_guide = (ROOT / "START-HIER.txt").read_text(encoding="utf-8")
     runner_path = ROOT / "run_offline_tests.py"
     runner = runner_path.read_text(encoding="utf-8") if runner_path.is_file() else ""
     check('ROOT.glob("test_*.py")' in runner and "subprocess.run(" in runner
           and "[sys.executable, \"-u\", str(script)]" in runner
           and "result.returncode" in runner,
           "offline regression runner executes each script and propagates failures")
-    for marker in ("Root-Bridge, der bestehende Updater", "baut EXEs selbst",
-                   "beide\nabsichtlich `enabled: false`", "Der Nutzer baut selbst eine Beta-EXE",
-                   "Stable bleibt\n   deaktiviert.", "noch nicht in `ArenaBridge.ps1` eingebunden",
-                   "Versionskern muss mit `version.json` übereinstimmen",
-                   "prüft auch jedes Redirect-Ziel erneut", "streamt EXE-Downloads mit fester",
-                   "ungültigem\n  lokalem Update-Status", "python run_offline_tests.py",
-                   "`unittest`-TestCase-Klassen"):
-        check(marker in readme, f"handoff README preserves rollout/test instructions: {marker}")
+    for marker in ("genau `Build-EXE.bat`", "user-builds/beta/ArenaBridge.exe",
+                   "Start-Diagnostic.bat", "%LOCALAPPDATA%\\START-CHECK.txt",
+                   "merta-studios/arenarobloxbridge", "GitHub-Release",
+                   "Git committen", "enabled: false", "noch nicht in `ArenaBridge.ps1`",
+                   "als einziges App-Artefakt `ArenaBridge.exe`", "Stable bleibt", "python run_offline_tests.py",
+                   "`unittest`-`TestCase`-Klassen"):
+        check(marker in readme, f"README makes the beta build/release workflow explicit: {marker}")
+    for marker in ("Build-EXE.bat", "user-builds\\beta\\ArenaBridge.exe",
+                   "Start-Diagnostic.bat", "merta-studios/arenarobloxbridge", "deaktiviert",
+                   "Ich ändere weiterhin nur next-update" ):
+        check(marker in start_guide, f"START-HIER gives the user the exact next step: {marker}")
 
     if FAILURES:
         print(f"\nFAILED: {len(FAILURES)} preparation check(s).")

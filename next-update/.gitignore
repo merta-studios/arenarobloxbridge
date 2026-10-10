@@ -1,9 +1,11 @@
-# Locally generated EXEs and their release metadata are never committed.
+# User-built executables, diagnostic launchers, hashes and release metadata are local-only.
 /user-builds/*/*.exe
 /user-builds/*/*.sha256
 /user-builds/*/release-metadata.json
 /user-builds/*/*.building.exe
 /user-builds/*/*.previous-*.exe
+/user-builds/*/Start-Diagnostic.bat
+/user-builds/*/*.smoke.json
 
 # Release packages are staged locally; publish only through an intentional release workflow.
 /release-inbox/*/*

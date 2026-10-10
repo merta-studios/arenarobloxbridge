@@ -720,7 +720,7 @@ def main() -> int:
     functional_version_counts = {
         "DocsVersion     = '7.6.3'": 1,
         'local ARENA_VERSION  = "7.6.3"': 1,
-        "version = '7.6.3'": 1,
+        "version = '7.6.3'": 2,  # normal health response plus isolated build smoke report
         "bridgeVersion = '7.6.3'": 3,
         "bridgeVersion='7.6.3'": 1,
         "serverVersion = '7.6.3'": 2,
@@ -736,7 +736,7 @@ def main() -> int:
         "Kurzbericht Fertig-Meldung (Version 7.6.3)": 1,
         "Arena Roblox Bridge - Leistungsbericht (Version 7.6.3)": 1,
         "Arena Roblox Bridge - Place-Diagnose (Version 7.6.3)": 1,
-        "Version: 7.6.3": 2,
+        "Version: 7.6.3": 3,  # existing diagnostics plus duplicate-start report
         "Version=7.6.3": 3,
         "Bridge/Plugin-Stand: 7.6.3": 1,
         "Arena Roblox Bridge - Start-Diagnose (Version 7.6.3)": 2,

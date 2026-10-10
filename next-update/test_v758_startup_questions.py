@@ -134,7 +134,10 @@ def main() -> int:
     # 3) Duplicate process protection and update handoff
     # ------------------------------------------------------------------
     lock_start = source.index("$script:BridgeSingleInstanceMutex = $null")
-    wpf_load = source.index("Add-Type -AssemblyName PresentationFramework")
+    # The isolated EXE smoke-test branch may load WPF before the normal
+    # single-instance guard, then exits without starting the Bridge. Check the
+    # first WPF load on the normal path, after the guard itself.
+    wpf_load = source.index("Add-Type -AssemblyName PresentationFramework", lock_start)
     check(lock_start < wpf_load
           and "[System.Threading.Mutex]::new($false, $mutexName)" in source
           and "$script:BridgeSingleInstanceMutex.WaitOne(0)" in source
