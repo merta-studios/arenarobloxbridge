@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.6.0"
+VERSION = "7.6.1"
 FAILURES: list[str] = []
 
 
@@ -45,10 +45,12 @@ def main() -> int:
     source = raw.decode("utf-8-sig")
     metadata = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     latest = str(metadata.get("notes", [""])[0])
-    check(metadata.get("version") == VERSION, "version.json is 7.6.0")
-    check(latest.startswith("• 7.6.0") and "SCHALTER ENTFERNT" in latest
-          and "introspect" in latest.lower() and "datastore" in latest,
-          "release note documents the removed switch, the Introspect save flow and the datastore tool")
+    check(metadata.get("version") == VERSION, "version.json is 7.6.1")
+    check(latest.startswith("• 7.6.1") and "OPENCLOUD_KEY_HAS_EXPIRATION" in latest,
+          "release note documents the 7.6.1 Open Cloud key gate")
+    check(any(str(note).startswith("• 7.6.0") and "SCHALTER ENTFERNT" in str(note)
+              for note in metadata.get("notes", [])),
+          "historical 7.6.0 note still documents the removed switch")
     check(any("7.5.9" in str(note) and "creator_dashboard" in str(note)
               for note in metadata.get("notes", [])[1:]),
           "the prior 7.5.9 Creator Dashboard release note remains historical")
@@ -68,8 +70,8 @@ def main() -> int:
     check('x:Name="CreatorDashboardSwitch"' not in cloud_card
           and "Arena darf den aktuellen Place im Creator Dashboard verwalten" not in cloud_card,
           "the opt-in switch is removed from the Open Cloud API-key settings card")
-    check("entscheidet allein der Key" in cloud_card and "grün = darf Arena, rot = fehlt" in cloud_card,
-          "settings UI explains that the key alone decides and the save flow shows every permission")
+    check("kein Ablaufdatum" in cloud_card and "Grün = vorhanden, rot = fehlt" in cloud_card,
+          "settings UI explains the immediate permission window and that expiration is refused")
 
     # Tutorial: seven steps plus the full permission catalog in step four.
     check('for ($stepIndex = 1; $stepIndex -le 7;' in source,
@@ -80,13 +82,16 @@ def main() -> int:
           "tutorial step four hosts the generated permission catalog list")
     catalog = region(source, "function Get-CloudPermissionCatalog {", "function New-CloudPermissionRow {")
     for scope in ("asset", "universe", "universe.place", "game-pass", "developer-product",
-                  "universe-datastores.control / .objects / .versions",
-                  "universe.ordered-data-store.scope.entry", "memory-store",
-                  "universe-messaging-service", "universe.place.instance",
-                  "universe-places", "localization-table", "user.user-notification"):
+                  "universe-datastores", "universe.ordered-data-store.scope.entry",
+                  "universe-places", "localization-table", "creator-store-product",
+                  "universe.user-restriction", "universe.thumbnail", "universe.places",
+                  "universe.event", "universe.analytics", "thumbnails"):
         check(scope in catalog, f"the permission catalog names the scope {scope}")
-    check("core = $true" in catalog and "core = $false" in catalog,
-          "the catalog marks the permissions Arena actively uses versus optional ones")
+    for gone in ("memory-store", "universe-messaging-service", "universe.place.instance",
+                 "user.user-notification"):
+        check(gone not in catalog, f"unused scope {gone} is gone from the tutorial catalog")
+    check("core = $true" not in catalog and "Pflicht" not in catalog,
+          "the catalog has no required/core ranking")
     check("creatorDashboardRules" in source and "universe.place:write" in source
           and "developer-product:read" in source and "game-pass:write" in source,
           "agent-facing Creator Dashboard guide documents the exact required scopes")
@@ -123,8 +128,9 @@ def main() -> int:
     check("universeDatastores = $(try { @($scope.universeDatastores)" in introspect,
           "introspection keeps the universe-datastore resource bindings of each scope")
     verdict = region(source, "function Apply-CloudIntrospectVerdict {", "function Save-OpenCloudKeyFromText {")
-    check("missingPermissions" in verdict and "Get-CloudPermissionCatalog" in verdict,
-          "settings feedback lists every missing core permission from the shared catalog")
+    check("Test-OpenCloudKeyHasExpiration" in verdict
+          and "weigert sich komplett" in verdict,
+          "settings feedback refuses keys with an expiration date instead of ranking core rights")
 
     # One inventory is shared by docs, preflight, and the server-side handler.
     docs = region(source, "function Get-ToolDocs {", "function Get-BridgeAskUserProtocol {")
@@ -174,8 +180,8 @@ def main() -> int:
     check("$entry.gameId" in helper and "$entry.placeId" in helper
           and "PUBLISHED_PLACE_REQUIRED" in helper,
           "only real Universe/Place IDs from the connected, published Studio session are used")
-    check("OPENCLOUD_KEY_MISSING" in helper and "Get-OpenCloudConfig $Shared" in helper,
-          "API-key absence returns a typed error and setup instructions")
+    check("Assert-OpenCloudToolAccess" in helper and "Get-OpenCloudConfig $Shared" in helper,
+          "API-key absence and expiration/scope checks run before any dashboard request")
 
     # Exact official endpoints, supported operations, and least-privilege scopes.
     expected_endpoints = (
@@ -253,10 +259,10 @@ def main() -> int:
           "the HTTP tool dispatcher routes creator_dashboard through the Open Cloud helper")
     check("creator_dashboard" in source[source.index("$writeTools = @("):source.index("$persistentEditTools = @(")],
           "creator_dashboard is protected by the write-tool dispatch path")
-    check("# Arena Roblox Bridge  -  Version 7.6.0" in source
-          and "DocsVersion     = '7.6.0'" in source
-          and "RuntimeInfo.Version = '7.6.0'" in source,
-          "runtime, docs and plugin version metadata are synchronized to 7.6.0")
+    check("# Arena Roblox Bridge  -  Version 7.6.1" in source
+          and "DocsVersion     = '7.6.1'" in source
+          and "RuntimeInfo.Version = '7.6.1'" in source,
+          "runtime, docs and plugin version metadata are synchronized to 7.6.1")
 
     if FAILURES:
         print(f"\n{len(FAILURES)} Creator Dashboard regression check(s) failed.")

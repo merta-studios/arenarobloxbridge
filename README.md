@@ -37,6 +37,7 @@ sein.
 | `test_v755_regression.py` | Regressionen 7.5.5–7.6.0: alle 145 Tooltexte decken den Katalog ab; Arena-Verlauf mit Fortschrittskarten, 145 deutschen Tooltexten einschließlich Creator Dashboard und DataStore, größeren lesbaren Aktionskarten und argument-/ergebnisbezogenen Beschreibungen; zusätzlich PowerShell-Struktur und eingebettetes Lua, Studio-User-ID in Sessions, Upload-Priorität und Key-Rückfall sowie Footer-Profilkarte mit asynchronem Profil-/Headshot-Lookup. |
 | `test_v759_creator_dashboard.py` | Offline-Abnahme (fortgeschrieben auf 7.6.0): der Opt-in-Schalter ist entfernt – der Schlüssel und seine Scopes entscheiden allein; Berechtigungs-Katalog im Tutorial, aktiver veröffentlichter Place, Read-only-Schutz, offizielle Endpunkte/Scopes, Gamepass-/Developer-Product-Aktionen, sichere PNG/JPEG-Multipart-Icons, Tool-Doku und Aktivitätszuordnung. |
 | `test_v760_user_messages_opencloud.py` | Offline-Abnahme 7.6.0: Nutzernachrichten unübersehbar (Banner oben + `userMessageReminder` unten, 10 Wiederholungen, `UNACKED_USER_MESSAGE`-Gate in `report_done`), Speichern-mit-Berechtigungsprüfung (Introspect vor dem Speichern, Entscheidungs-Fenster mit „Oh, das ändere ich nochmal!“ / „Ja, alles richtig! Key speichern!“), vollständiger Berechtigungs-Katalog und das neue `datastore`-Werkzeug (stabile Cloud-v2-DataStore-API, nur aktive Sitzung, Read-only-Schutz). |
+| `test_v761_opencloud_key.py` | Offline-Abnahme 7.6.1: Tutorial mit Scope-Namen, sofortiges Berechtigungsfenster mit Ladekreis, kein Ablaufdatum (`OPENCLOUD_KEY_HAS_EXPIRATION`), Read+Write-Gate vor jedem Open-Cloud-Werkzeug. |
 | `test_v758_startup_questions.py` | Regression 7.5.8: Autostart startet ausschließlich den ermittelten Updater (`ArenaBridge.exe`), migriert/entfernt alte PowerShell- und Duplikat-Einträge, schützt mit einer Ein-Instanz-Sperre und prüft den verpflichtenden `ask_user`-/`confirm_action`-Bridge-Kanal (auch in Sessionstart und Antwort-Umschlag). |
 | `test-v39.ps1` | Ergänzende Windows-PowerShell-Mock-Tests für 5.2 (optional; wird NICHT vom Starter geladen) |
 
@@ -52,6 +53,13 @@ Beim nächsten Start der ArenaBridge.exe wird das Update automatisch erkannt,
 heruntergeladen und mit dem Hinweis-Fenster („Update installiert!“) gestartet.
 
 ## Versionsverlauf
+
+## 7.6.1 — Open-Cloud-Key klarer, kein Ablaufdatum, Berechtigungsfenster sofort
+
+- **Tutorial nur mit nutzbaren Scopes.** Jeder Stichpunkt heisst wie der Scope im Creator Dashboard. Kein extra Scope-Unterpunkt, nirgendwo „Pflicht“. Entfernt: Nutzer-Benachrichtigungen, Place-Instances, Messaging, Memory Stores. Neu: Ordered DataStores, Place Publishing, Übersetzungen, creator-store-product, universe.user-restriction, universe.thumbnail, universe.places, universe.event, universe.analytics, thumbnails.
+- **Berechtigungsfenster sofort.** Speichern öffnet das Fenster direkt mit einem drehenden Ladekreis; die Rechte erscheinen, sobald Roblox geantwortet hat. Keine Warnung mehr zu fehlenden Kern-Rechten.
+- **Kein Ablaufdatum.** Hat der Key ein Ablaufdatum, weigert sich die Bridge komplett, ihn zu speichern und zu benutzen (`OPENCLOUD_KEY_HAS_EXPIRATION`). Expiration muss „No Expiration“ sein.
+- **Werkzeug-Gate.** Jedes Open-Cloud-Werkzeug prüft: Key gespeichert? Kein Ablaufdatum? Scope hat Read und Write? Sonst blocken mit genauer Anleitung, was der Nutzer ändern muss (`OPENCLOUD_KEY_MISSING`, `OPENCLOUD_SCOPE_INCOMPLETE`).
 
 ## 7.6.0 — Nachrichten an Arena unübersehbar + Open-Cloud-Key mit vollem Umfang
 
