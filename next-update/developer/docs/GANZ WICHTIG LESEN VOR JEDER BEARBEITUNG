@@ -25,6 +25,14 @@ STATUS (ehrlich):
 - Repo-Root-Schutz (CODEOWNERS, Branch-Protection, .github-Workflows) ist
   NICHT umgesetzt und NICHT freigegeben. Alles liegt in next-update/.
 
+BUILD-FIX (10.10.2026, Version bleibt 7.7.0): Build-EXE.bat scheiterte mit
+"-OutputDirectory is only accepted together with -TestFixtureBuild", obwohl die BAT
+nur "-Channel beta" uebergibt. Ursache: PowerShell-Variablen sind NICHT gross-/
+kleinschreibungssensitiv - die lokale Variable $outputDirectory ueberschrieb den
+Parameter $OutputDirectory. Fix: lokale Variable heisst $buildOutputDirectory.
+REGEL: Kein Skript-Variablenname darf einen Parameternamen ausser durch Gross-/
+Kleinschreibung unterscheiden (Guard-Test prueft das). Windows-Lauf des Builds steht aus.
+
 SCHUTZREGELN FUER DAS UPDATE-SYSTEM (gelten fuer jede kuenftige Aenderung):
 - Geschuetzt sind: next-update/update-system/** (Updater, Manifeste, Schema),
   der Block ARENA-UPDATE-INTEGRATION in app/ArenaBridge.ps1, die

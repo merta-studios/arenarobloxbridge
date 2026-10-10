@@ -103,6 +103,30 @@ def static_invariants() -> None:
     check("'$script:TestFixtureBuild = ''0'''" in builder,
           "normal builds inject the test flag as 0 (no test path in a normal EXE)")
 
+    # Regression 7.7.1: PowerShell variables are case-INsensitive. A local `$outputDirectory`
+    # silently overwrote the parameter `$OutputDirectory`, so every normal build saw a
+    # "supplied" -OutputDirectory and aborted. No script variable may shadow a parameter.
+    param_block = re.search(r"(?s)\bparam\((.*?)\n\)", builder)
+    check(param_block is not None, "builder has a param() block")
+    param_names = {name.lower() for name in re.findall(r"\$([A-Za-z_]\w*)\s*(?:=[^\n,]*)?(?:,|$)",
+                                                      param_block.group(1), flags=re.M)} if param_block else set()
+    check({"outputdirectory", "testfixturebuild", "testfileversion", "channel"} <= param_names,
+          "builder parameters were parsed (OutputDirectory, TestFixtureBuild, TestFileVersion, Channel)")
+    body = builder[param_block.end():] if param_block else builder
+    allowed_reassign = {"buildversion"}  # documented: derived default when not supplied
+    shadowed = sorted({m.group(1) for m in re.finditer(r"(?mi)^\s*\$(\w+)\s*(?:[-+*/]?=)(?!=)", body)
+                       if m.group(1).lower() in param_names and m.group(1).lower() not in allowed_reassign})
+    check(not shadowed, "no script variable shadows a builder parameter (case-insensitive): " + ", ".join(shadowed))
+    check("$buildOutputDirectory = $releaseDirectory" in builder,
+          "normal builds write to release\\ through a non-parameter variable")
+    check("elseif (-not [string]::IsNullOrWhiteSpace($OutputDirectory))" in builder,
+          "-OutputDirectory is rejected only when a non-empty value was supplied")
+    bat = (ROOT / "Build-EXE.bat").read_text(encoding="utf-8")
+    ps_calls = [line for line in bat.splitlines() if "Build-EXE.ps1" in line]
+    check(len(ps_calls) == 1 and ps_calls[0].rstrip().endswith("-Channel beta")
+          and "-OutputDirectory" not in bat and "-TestFixtureBuild" not in bat and "-TestFileVersion" not in bat,
+          "Build-EXE.bat passes only -Channel beta (no test parameters)")
+
     for channel in ("beta", "stable"):
         data = json.loads((CHANNELS / f"{channel}.json").read_text(encoding="utf-8"))
         check(data.get("enabled") is False and data.get("testFixture") is False,
