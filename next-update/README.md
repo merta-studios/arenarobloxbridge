@@ -44,12 +44,39 @@ Voraussetzungen:
   `RELEASE STABLE` erforderlich. Die Stable-Datei ist zunächst trotzdem nur
   ein lokaler Build, keine Veröffentlichung.
 
-Der Build führt zuerst `parse-gate.ps1` auf genau der Kopie
-`next-update/ArenaBridge.ps1` aus, kompiliert danach und legt lokale Ausgaben
-unter `user-builds/beta/` oder `user-builds/stable/` ab. Dort erscheinen auch
-`release-metadata.json` und die SHA-256-Datei. Vorherige lokale EXEs werden als
-Backup aufgehoben. `next-update/.gitignore` hält erzeugte EXEs, Metadaten und
-Release-Pakete aus Git heraus.
+Der Build führt zuerst `parse-gate.ps1` mit dem echten Windows-PowerShell-5.1-
+Parser auf genau der Kopie `next-update/ArenaBridge.ps1` aus. Nur wenn sie
+syntaktisch sauber ist, startet `ps2exe`. Lokale Ausgaben liegen danach unter
+`user-builds/beta/` oder `user-builds/stable/`; dort erscheinen außerdem
+`release-metadata.json` und `ArenaBridge.exe.sha256`. Eine vorherige EXE wird
+als zeitgestempeltes Backup aufgehoben. `next-update/.gitignore` hält erzeugte
+EXEs, Metadaten und Release-Pakete aus Git heraus.
+
+### Dateien und Ablageorte
+
+- `ArenaBridge.ps1`: der Programmquelltext, den dieser Builder kompiliert.
+  Für diese getrennte Vorbereitung nur diese Datei unter `next-update/`
+  bearbeiten; der Build nimmt nicht die Root-Kopie.
+- `version.json`: dreiteilige Quellversion plus Update-Notizen. Der Builder
+  verlangt, dass der Versionskern in `-BuildVersion` genau dazu passt.
+- `Build-EXE.bat`, `Build-EXE.ps1` und `parse-gate.ps1`: Startskript,
+  Build/Validierung und Parserprüfung. Diese bleiben zusammen in `next-update/`.
+- `user-builds/beta/ArenaBridge.exe`: Standardausgabe von `Build-EXE.bat`
+  (Beta); daneben liegen Hash und `release-metadata.json`. `user-builds/stable/`
+  ist ausschließlich für den später ausdrücklich bestätigten Stable-Build.
+- `release-inbox/beta/` und `release-inbox/stable/`: optionale, lokale
+  Sammelordner. Nach eigenem Test kannst du eine Kopie der EXE dort für deine
+  manuelle Release-Vorbereitung ablegen. Das ist **kein** Upload-Ort des
+  Builders; die Dateien bleiben lokal und werden nicht committet.
+- `channels/beta.json` und `channels/stable.json`: spätere Download-Manifeste,
+  momentan beide deaktiviert. Erst nach einem echten GitHub-Release und deiner
+  Freigabe werden URL, Größe und SHA-256 des tatsächlich veröffentlichten
+  Artefakts eingetragen und der betreffende Kanal aktiviert.
+- `updater/Update-Bridge.ps1`: eigenständiger zukünftiger Updater. Er ist noch
+  nicht in die Bridge-EXE eingebunden und wird beim Bauen nicht ausgeführt.
+
+Der Build ist **kein** Upload: Er veröffentlicht nichts, ändert keine
+Channel-Datei und startet nicht automatisch den Updater.
 
 Direkter Aufruf des PowerShell-Builders, falls ein Beta-Suffix gesetzt werden
 soll. Der dreiteilige Versionskern muss mit `version.json` übereinstimmen;
