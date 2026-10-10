@@ -23,7 +23,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.6.1"
+VERSION = "7.6.2"
 FAILURES: list[str] = []
 
 
@@ -47,8 +47,8 @@ def main() -> int:
     metadata = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     check(metadata.get("version") == VERSION, f"version.json matches {VERSION}")
     latest_note = str(metadata.get("notes", [""])[0])
-    check(latest_note.startswith("• 7.6.1") and "OPENCLOUD_KEY_HAS_EXPIRATION" in latest_note,
-          "the newest release note documents the 7.6.1 Open Cloud key gate")
+    check(latest_note.startswith("• 7.6.2") and "open_cloud" in latest_note,
+          "the newest release note documents the 7.6.2 Open Cloud key gate")
     prior_notes = [str(note) for note in metadata.get("notes", [])[1:]]
     check(any("7.5.9" in note and "creator_dashboard" in note for note in prior_notes),
           "the historical 7.5.9 Creator Dashboard release note remains available")

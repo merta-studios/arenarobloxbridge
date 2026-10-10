@@ -36,7 +36,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.6.1"
+VERSION = "7.6.2"
 FAILURES: list[str] = []
 
 
@@ -357,7 +357,7 @@ def main() -> int:
                       ".jpg": ("Decal", "image/jpeg"),
                       ".jpeg": ("Decal", "image/jpeg"),
                       ".bmp": ("Decal", "image/bmp"),
-                      ".tga": ("Decal", "image/x-targa")}
+                      ".tga": ("Decal", "image/tga")}
     found_types = parse_extension_map(spec)
     check(found_types == expected_types,
           f"die Endungs-Tabelle stimmt ({len(found_types)} Eintraege, Meshes=Model, Bilder=Decal)")
@@ -385,12 +385,12 @@ def main() -> int:
     missing = region(source, "function Assert-OpenCloudToolAccess {", "function Get-OpenCloudAssetSpec {")
     check("OPENCLOUD_KEY_MISSING" in missing and "userMessage" in missing,
           "ohne Schluessel antwortet das Werkzeug OPENCLOUD_KEY_MISSING MIT einem Nutzer-Satz")
-    check("Zahnrad (Einstellungen)" in missing and "Roblox Open Cloud API-Key" in missing,
+    check("Bridge-Einstellungen" in missing and "Roblox Open Cloud API-Key" in missing,
           "der Satz nennt den Weg: Einstellungen -> Roblox Open Cloud API-Key")
     check("WORTLICH" in missing, "der Agent wird angewiesen, den Satz WOERTLICH zu sagen")
     check("OPENCLOUD_KEY_HAS_EXPIRATION" in missing and "No Expiration" in missing,
           "ein Key mit Ablaufdatum wird komplett abgelehnt")
-    check("OPENCLOUD_SCOPE_INCOMPLETE" in missing and "Read und Write" in missing,
+    check("OPENCLOUD_SCOPE_INCOMPLETE" in missing and "Test-OpenCloudPermission" in missing,
           "fehlende Read/Write-Rechte am Scope werden vor dem Aufruf blockiert")
     check("OPENCLOUD_CREATOR_MISSING" in source, "fehlt der Ersteller, meldet das Werkzeug das getrennt")
     for code in ("OPENCLOUD_UNREACHABLE", "OPENCLOUD_BAD_RESPONSE", "OPENCLOUD_OPERATION_FAILED",
@@ -485,12 +485,11 @@ def main() -> int:
                   "Speichern öffnet sofort ein Fenster"):
         check(piece in tutorial, f"das Tutorial nennt: {piece}")
     catalog = region(source, "function Get-CloudPermissionCatalog {", "function New-CloudPermissionRow {")
-    for scope in ("asset", "universe", "universe.place", "game-pass", "developer-product",
-                  "universe-datastores", "universe.ordered-data-store.scope.entry",
-                  "universe-places", "localization-table", "creator-store-product",
-                  "universe.user-restriction", "universe.thumbnail", "universe.places",
-                  "universe.event", "universe.analytics", "thumbnails"):
-        check(scope in catalog, f"der Berechtigungs-Katalog nennt den Scope {scope}")
+    permissions = json.loads((ROOT / "opencloud/permissions.json").read_text(encoding="utf-8"))
+    check("(Get-OpenCloudCatalog).permissions.PSObject.Properties" in catalog,
+          "permission UI uses the shared exact-permission catalog")
+    check(len(permissions) == 41 and "asset:read" in permissions and "asset:write" in permissions,
+          "all 41 individual permissions are documented, read/write separately")
     check("memory-store" not in catalog and "user.user-notification" not in catalog,
           "ungenutzte Scopes sind aus dem Tutorial-Katalog entfernt")
     check("create.roblox.com/dashboard/credentials" in tutorial,

@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.6.1"
+VERSION = "7.6.2"
 FAILURES: list[str] = []
 
 
@@ -45,9 +45,9 @@ def main() -> int:
     source = raw.decode("utf-8-sig")
     metadata = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     latest = str(metadata.get("notes", [""])[0])
-    check(metadata.get("version") == VERSION, "version.json is 7.6.1")
-    check(latest.startswith("• 7.6.1") and "OPENCLOUD_KEY_HAS_EXPIRATION" in latest,
-          "release note documents the 7.6.1 Open Cloud key gate")
+    check(metadata.get("version") == VERSION, "version.json is 7.6.2")
+    check(latest.startswith("• 7.6.2") and "open_cloud" in latest,
+          "release note documents the 7.6.2 Open Cloud key gate")
     check(any(str(note).startswith("• 7.6.0") and "SCHALTER ENTFERNT" in str(note)
               for note in metadata.get("notes", [])),
           "historical 7.6.0 note still documents the removed switch")
@@ -81,12 +81,11 @@ def main() -> int:
     check('x:Name="CloudPermissionList"' in tutorial_xaml,
           "tutorial step four hosts the generated permission catalog list")
     catalog = region(source, "function Get-CloudPermissionCatalog {", "function New-CloudPermissionRow {")
-    for scope in ("asset", "universe", "universe.place", "game-pass", "developer-product",
-                  "universe-datastores", "universe.ordered-data-store.scope.entry",
-                  "universe-places", "localization-table", "creator-store-product",
-                  "universe.user-restriction", "universe.thumbnail", "universe.places",
-                  "universe.event", "universe.analytics", "thumbnails"):
-        check(scope in catalog, f"the permission catalog names the scope {scope}")
+    permissions = json.loads((ROOT / "opencloud/permissions.json").read_text(encoding="utf-8"))
+    check("(Get-OpenCloudCatalog).permissions.PSObject.Properties" in catalog,
+          "permission UI uses the shared exact-permission catalog")
+    check(len(permissions) == 41 and "asset:read" in permissions and "asset:write" in permissions,
+          "all 41 individual permissions are documented, read/write separately")
     for gone in ("memory-store", "universe-messaging-service", "universe.place.instance",
                  "user.user-notification"):
         check(gone not in catalog, f"unused scope {gone} is gone from the tutorial catalog")
@@ -171,7 +170,7 @@ def main() -> int:
     check(readonly < active_session < net,
           "read-only and active-session checks precede every outbound request")
     check("$writeActions = @(" in helper and readonly < net
-          and "[string]$accessMode -eq 'readonly'" in helper
+          and "[string]$accessMode -ne 'readwrite'" in helper
           and "READONLY_TOKEN" in helper,
           "all mutating dashboard actions honor the active session's read-only lock")
     check("foreach ($targetField in @('universeId','placeId','gameId','targetPlace'))" in helper
@@ -259,10 +258,10 @@ def main() -> int:
           "the HTTP tool dispatcher routes creator_dashboard through the Open Cloud helper")
     check("creator_dashboard" in source[source.index("$writeTools = @("):source.index("$persistentEditTools = @(")],
           "creator_dashboard is protected by the write-tool dispatch path")
-    check("# Arena Roblox Bridge  -  Version 7.6.1" in source
-          and "DocsVersion     = '7.6.1'" in source
-          and "RuntimeInfo.Version = '7.6.1'" in source,
-          "runtime, docs and plugin version metadata are synchronized to 7.6.1")
+    check("# Arena Roblox Bridge  -  Version 7.6.2" in source
+          and "DocsVersion     = '7.6.2'" in source
+          and "RuntimeInfo.Version = '7.6.2'" in source,
+          "runtime, docs and plugin version metadata are synchronized to 7.6.2")
 
     if FAILURES:
         print(f"\n{len(FAILURES)} Creator Dashboard regression check(s) failed.")
