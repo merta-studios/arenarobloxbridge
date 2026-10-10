@@ -578,7 +578,7 @@ def main() -> int:
     check("upload_asset" in cloud_rules, "cloudUploadRules nennt upload_asset")
     check("PROJECT-FIRST 3D (7.6.3)" in guides
           and "explicit user method first" in guides
-          and "target Place’s established geometry and style" in guides,
+          and "target Place''s established geometry and style" in guides,
           "the active method policy prioritizes the user request and Place convention")
     check("Blender is recommended for suitable new custom geometry" in guides
           and "but not mandatory" in guides,

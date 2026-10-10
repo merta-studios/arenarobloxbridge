@@ -58,6 +58,10 @@ def main() -> int:
           "next-update/ArenaBridge.ps1 is a complete UTF-8-BOM PowerShell bridge source")
     check("function Get-PluginSource {" in source and "function Start-BridgeRuntime {" in source,
           "the copied source contains the embedded Studio plugin and Bridge entrypoint")
+    guide_source = region(source, "function Get-BridgeGuides {", "function Get-DocsResponse")
+    # PowerShell 5.1 accepts U+2019 as a quote delimiter, even inside ASCII-quoted prose.
+    check(chr(0x2019) not in guide_source and "Place''s" in guide_source and "user''s" in guide_source,
+          "Bridge guide strings escape apostrophes safely for the Windows PowerShell 5.1 parser")
 
     latest = str(metadata.get("notes", [""])[0])
     for marker in ("Nutzerwünsche", "Place-Konventionen", "Blender ist eine passende Empfehlung, keine Pflicht",
