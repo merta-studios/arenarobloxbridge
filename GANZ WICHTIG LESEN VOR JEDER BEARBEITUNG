@@ -1,9 +1,26 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 7.6.0 - 09.10.2026)                                #
+#   (Stand: Version 7.6.2 - 10.10.2026)                                #
 #                                                                      #
 ##########################################################################
+
+AKTUELLER NACHTRAG 7.6.2 (10.10.2026) - HAT VORRANG BEI OPEN CLOUD
+=================================================================
+Die Nutzerfreigabe ist jetzt eine feste Allowlist mit 41 EINZELRECHTEN.
+KEIN ZUGRIFF bleibt gesperrt, selbst wenn der Key dieses Recht hat.
+Kein pauschales Read+Write-Gate mehr: jede Aktion prueft ihre echten Scopes.
+open_cloud list/describe/call stellt 172 gepruefte API-Key-Endpunkte bereit.
+Quelle, Grenzen, komplette Matrix: OPEN_CLOUD_7_6_2.md.
+Katalog: opencloud/permissions.json + opencloud/catalog.json; Generator unter
+ci/generate_opencloud_catalog.py. Fuer den Updater ist alles im PS1 eingebettet!
+Key bleibt DPAPI-geschuetzt. Keine freie URL-/Methodenwahl, keine Auth-Redirects.
+600-Zeichen-Introspect-Bug behoben (2 Mio Zeichen + expliziter Truncation-Fehler).
+universe.analytics:write ist erlaubt, aber ohne dokumentierten Endpunkt.
+Komfort-Tools bleiben sessiongebunden; open_cloud nimmt dokumentierte Ziel-IDs
+fuer den Auftrag an. Roblox prueft Ressourcen, die Bridge den Read-only-Modus.
+Offline-Tests vorhanden; test_v762_runtime.ps1 MUSS auf Windows 5.1 noch laufen.
+Keine Windows-/Roblox-Live-Abnahme in dieser Sandbox behaupten.
 
 WOFUER IST DIESE DATEI?
 =======================

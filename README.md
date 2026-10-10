@@ -13,6 +13,19 @@ weitergegeben. Sie lädt das Programm **aus diesem Repository** herunter und
 hält es automatisch aktuell – deshalb muss dieses Repository **öffentlich**
 sein.
 
+## Mini-Update 7.6.2: exakte Open-Cloud-Freigaben
+
+- **Prüfungsbug behoben:** große Introspect-Antworten werden nicht mehr nach 600 Zeichen abgeschnitten.
+- **41 einzelne Berechtigungen**, getrennt geprüft und verständlich beschrieben.
+- Neues Werkzeug **`open_cloud`**: `list` → `describe` → `call`, mit **172 fest freigegebenen API-Key-Endpunkten**. Keine freie URL-/Methodenwahl und keine Weitergabe des Keys.
+- Gesperrte Funktionen bleiben ausgeschlossen, auch bei einem Key mit allen Rechten. Lesen braucht nicht pauschal Schreiben; Sitzungs-Read-only bleibt wirksam.
+- Asset-Verwaltung, Audio/Animation/Video-Uploads, Place-Publishing, DataStore-Versionen/Snapshots, Asset-Freigaben, Events, Inventar und Creator Store sind im erlaubten Umfang erreichbar.
+- `universe.analytics:write` wird angezeigt, hat aber in der geprüften offiziellen Spezifikation keinen Endpunkt. Es wird nichts erfunden.
+
+**[Vollständige Änderungsdokumentation, Grenzen, Quellen, 41 Berechtigungen und 172 Endpunkte](OPEN_CLOUD_7_6_2.md)**.
+Die aktuelle Freigabeliste ersetzt die älteren Aussagen „der Key allein entscheidet“ und pauschal „Read UND Write“ in der Versionshistorie.
+Windows-/Roblox-Live-Abnahme steht noch aus; dafür gibt es `test_v762_runtime.ps1` mit isolierten PowerShell-Mocks. Der Starter muss nicht neu gebaut werden.
+
 ## Dateien
 
 | Datei | Zweck |

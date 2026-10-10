@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline regression checks for Arena Roblox Bridge 7.6.1 Open Cloud key UX."""
+"""Offline regression checks for Arena Roblox Bridge 7.6.2 Open Cloud key UX."""
 from __future__ import annotations
 
 import json
@@ -7,7 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.6.1"
+VERSION = "7.6.2"
 FAILURES: list[str] = []
 
 
@@ -30,39 +30,38 @@ def main() -> int:
     source = raw.decode("utf-8-sig")
     metadata = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     latest = str(metadata.get("notes", [""])[0])
-    check(metadata.get("version") == VERSION, "version.json is 7.6.1")
-    check(latest.startswith("• 7.6.1") and "OPENCLOUD_KEY_HAS_EXPIRATION" in latest
-          and "Ladekreis" in latest,
+    check(metadata.get("version") == VERSION, "version.json is 7.6.2")
+    check(latest.startswith("• 7.6.2") and "open_cloud" in latest
+          and "600 Zeichen" in latest,
           "release note documents spinner, expiration refuse and the tool gate")
 
     gate = region(source, "function Assert-OpenCloudToolAccess {", "function Get-OpenCloudAssetSpec {")
     check("OPENCLOUD_KEY_MISSING" in gate and "OPENCLOUD_KEY_HAS_EXPIRATION" in gate
           and "OPENCLOUD_SCOPE_INCOMPLETE" in gate,
           "the shared gate has the three fail-closed codes")
-    check("Test-OpenCloudKeyHasExpiration" in gate and "Get-OpenCloudFamilyCoverage" in gate,
-          "expiration and read+write coverage are checked before any Open Cloud call")
+    check("Test-OpenCloudKeyHasExpiration" in gate and "Test-OpenCloudPermission" in gate,
+          "expiration and exact per-operation scopes are checked before Open Cloud calls")
     check("userMessage" in gate and "WORTLICH" in gate,
           "every gate failure tells Arena exactly what to say to the user")
 
     upload = region(source, "function Invoke-OpenCloudUpload {", "function Get-OpenCloudOperation {")
-    check("Assert-OpenCloudToolAccess -Shared $Shared -Family 'asset'" in upload,
-          "upload_asset goes through the asset read+write gate")
+    check("Assert-OpenCloudToolAccess -Shared $Shared -RequiredScopes @('asset:read','asset:write')" in upload,
+          "upload_asset goes through the asset-specific gate")
     dashboard = region(source, "function Invoke-CreatorDashboardTool {", "function Invoke-DatastoreHttp {")
-    check("Assert-OpenCloudToolAccess -Shared $Shared -Family $family" in dashboard,
+    check("Assert-OpenCloudToolAccess -Shared $Shared -What" in dashboard,
           "creator_dashboard goes through the per-action scope gate")
     datastore = region(source, "function Invoke-DatastoreTool {", "function Get-DatastoreValueBody {")
-    check("Assert-OpenCloudToolAccess -Shared $Shared -Family 'universe-datastores'" in datastore,
-          "datastore goes through the universe-datastores read+write gate")
+    check("Assert-OpenCloudToolAccess -Shared $Shared -What 'datastore'" in datastore,
+          "datastore goes through the key validity gate; exact scopes checked by HTTP helper")
 
     catalog = region(source, "function Get-CloudPermissionCatalog {", "function New-CloudPermissionRow {")
-    for scope in ("creator-store-product", "universe.user-restriction", "universe.thumbnail",
-                  "universe.places", "universe.event", "universe.analytics", "thumbnails",
-                  "universe.ordered-data-store.scope.entry", "universe-places", "localization-table"):
-        check(f"title = '{scope}'" in catalog, f"tutorial names the scope {scope} as the bullet title")
-    for gone in ("memory-store", "universe-messaging-service", "user.user-notification"):
-        check(gone not in catalog, f"{gone} is not in the tutorial catalog")
-    check("Pflicht" not in catalog, "tutorial catalog does not say Pflicht")
-
+    check("(Get-OpenCloudCatalog).permissions.PSObject.Properties" in catalog,
+          "tutorial displays the complete shared per-permission catalog")
+    permissions = json.loads((ROOT / "opencloud/permissions.json").read_text(encoding="utf-8"))
+    check(len(permissions) == 41 and "asset:read" in permissions and "asset:write" in permissions,
+          "read and write appear as separate permissions")
+    check("thumbnail:read" not in permissions and "universe.user-restriction:write" not in permissions,
+          "explicitly forbidden permissions are not advertised")
     row = region(source, "function New-CloudPermissionRow {",
                  "# Tutorial-Schritt 4: die komplette Berechtigungs-Uebersicht fuellen.")
     check("Scope: " not in row, "permission rows do not repeat the scope under the title")
@@ -86,9 +85,9 @@ def main() -> int:
           "save still does not persist the key until the yes-button")
 
     if FAILURES:
-        print(f"\n{len(FAILURES)} 7.6.1 regression check(s) failed.")
+        print(f"\n{len(FAILURES)} 7.6.2 regression check(s) failed.")
         return 1
-    print("\nOK: 7.6.1 Open Cloud key tutorial, spinner window, expiration refuse and tool gate.")
+    print("\nOK: 7.6.2 Open Cloud key tutorial, spinner window, expiration refuse and tool gate.")
     return 0
 
 

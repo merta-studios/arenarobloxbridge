@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline regression checks for Arena Roblox Bridge 7.6.1.
+"""Offline regression checks for Arena Roblox Bridge 7.6.2.
 
 Covers the two owner-requested areas without Windows/Roblox:
 
@@ -27,7 +27,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PS1 = ROOT / "ArenaBridge.ps1"
-VERSION = "7.6.1"
+VERSION = "7.6.2"
 FAILURES: list[str] = []
 
 
@@ -57,9 +57,9 @@ def main() -> int:
     source = raw.decode("utf-8-sig")
     metadata = json.loads((ROOT / "version.json").read_text(encoding="utf-8"))
     latest = str(metadata.get("notes", [""])[0])
-    check(metadata.get("version") == VERSION, "version.json is 7.6.1")
-    check(latest.startswith("• 7.6.1") and "OPENCLOUD_KEY_HAS_EXPIRATION" in latest,
-          "release note documents the 7.6.1 Open Cloud key gate")
+    check(metadata.get("version") == VERSION, "version.json is 7.6.2")
+    check(latest.startswith("• 7.6.2") and "open_cloud" in latest,
+          "release note documents the 7.6.2 Open Cloud key gate")
     check(any(str(note).startswith("• 7.6.0") and "UNACKED_USER_MESSAGE" in str(note)
               for note in metadata.get("notes", [])),
           "historical 7.6.0 note still documents the message gate")
@@ -115,7 +115,7 @@ def main() -> int:
           "the removed XAML switch appears nowhere in the script")
     check("CREATOR_DASHBOARD_DISABLED" not in source,
           "the local fail-closed gate code is gone (Roblox 403 is the only gate)")
-    check("OPEN-CLOUD-FULL-POWER (7.6.1)" in source,
+    check("OPEN-CLOUD-POLICY (7.6.2)" in source,
           "the session rules explain the key gate including expiration and read+write")
 
     # ------------------------------------------------------------------
@@ -174,20 +174,12 @@ def main() -> int:
     # ------------------------------------------------------------------
     catalog = region(source, "function Get-CloudPermissionCatalog {",
                      "function New-CloudPermissionRow {")
-    expected_scopes = ("asset", "universe", "universe.place", "game-pass", "developer-product",
-                       "universe-datastores", "universe.ordered-data-store.scope.entry",
-                       "universe-places", "localization-table", "creator-store-product",
-                       "universe.user-restriction", "universe.thumbnail", "universe.places",
-                       "universe.event", "universe.analytics", "thumbnails")
-    for scope in expected_scopes:
-        check(scope in catalog, f"the permission catalog documents the scope {scope}")
-    for gone in ("memory-store", "universe-messaging-service", "universe.place.instance",
-                 "user.user-notification"):
-        check(gone not in catalog, f"unused scope {gone} is gone from the tutorial catalog")
-    check("core = $true" not in catalog and "Pflicht" not in catalog,
-          "the catalog has no required/core ranking")
-    check("Von Arena noch nicht genutzt" not in catalog,
-          "unused-permission asides are gone")
+    permissions = json.loads((ROOT / "opencloud/permissions.json").read_text(encoding="utf-8"))
+    check("(Get-OpenCloudCatalog).permissions.PSObject.Properties" in catalog,
+          "UI delegates to the shared exact permission catalog")
+    check(len(permissions) == 41, "41 individual permissions replace the old broad scope groups")
+    check("universe.user-restriction:write" not in permissions and "thumbnail:read" not in permissions,
+          "forbidden rights are not offered")
     row = region(source, "function New-CloudPermissionRow {",
                  "# Tutorial-Schritt 4: die komplette Berechtigungs-Uebersicht fuellen.")
     check("0x2714" in row and "0x2716" in row,
@@ -249,7 +241,7 @@ def main() -> int:
           "store names, scopes and entry keys are URL-escaped path segments")
     check("$entryKey.Length -gt 50" in helper,
           "entry keys respect the documented 50-character limit")
-    check("READONLY_TOKEN" in helper and "[string]$accessMode -eq 'readonly'" in helper,
+    check("READONLY_TOKEN" in helper and "[string]$accessMode -ne 'readwrite'" in helper,
           "mutating data-store actions honor the session read-only lock")
     check("foreach ($targetField in @('universeId','placeId','gameId','targetPlace'))" in helper,
           "caller-supplied target IDs are rejected (connected session only)")
