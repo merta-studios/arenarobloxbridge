@@ -36,7 +36,7 @@ Mit 7.8.0 gilt ein Vertrag, der genau diese Fehler unmöglich macht:
 
 ## Status (Stand 2026-10-11)
 
-- Kanal **stable** ist **aktiviert** (7.8.0, sequence 2, vom Nutzer freigegeben).
+- Kanal **stable** ist **deaktiviert** (sequence 2 bleibt). Grund: Das Manifest zeigte auf die alte 7.8.0-EXE mit Updater 2.0.0. Aktivierung erst bei einer neuen Veröffentlichung über `release.py stage`.
   Kanal **beta** ist deaktiviert (`enabled: false`). (Ein früherer Satz hier sagte fälschlich,
   beide Kanäle seien deaktiviert.)
 - `updater/Update-Bridge.ps1` ist Version **3.0.0** und wird vom Builder als
@@ -60,7 +60,7 @@ Mit 7.8.0 gilt ein Vertrag, der genau diese Fehler unmöglich macht:
 
 ## Letzte veröffentlichte Version
 
-Letzte veröffentlichte Version: 7.8.0 (freigegeben am 2026-10-11, Kanal stable)
+Letzte veröffentlichte Version: 7.8.0 (Manifest; Kanal stable jetzt deaktiviert, siehe oben)
 | Version | Datum (UTC) | Kanal | Sequence | Artefakt |
 |---|---|---|---|---|
 | 7.8.0 | 2026-10-11 | stable | 2 | `release/ArenaBridge-7.8.0.exe`, 5.897.728 Bytes, SHA-256 `4026cff81a681d4e200503c5a072a720e598963f69ac4d252b98397b45067a7d` |

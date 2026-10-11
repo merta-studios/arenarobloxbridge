@@ -66,14 +66,19 @@
       "date": "2026-10-11",
       "approvedBy": "Nutzer (Owner) - ausdrueckliche Freigabe",
       "note": "Nutzer-Freigabe 2026-10-11: Komplettueberarbeitung des Update-Systems auf Updater 3.0.0 (Pflicht-Update ohne Spaeter/Ueberspringen/Abbruch, Pruefung bei jedem Start vor den Diensten, Ladehaenger-Fix, gleiche Version = aktuell). Details in PROTECTED.md."
+    },
+    {
+      "date": "2026-10-11",
+      "approvedBy": "Nutzer (Owner) - ausdrueckliche Freigabe",
+      "note": "Nutzer-Freigabe 2026-10-11: Stable-Kanal deaktiviert, README-Kanalstatus korrigiert (Manifest zeigte auf alte 7.8.0-EXE)."
     }
   ],
   "files": {
     "update-system/PROTECTED.md": "8388c9dd464f9060a9f05985bfcd90064eca9b549f9aab4a0271b56c9855165e",
-    "update-system/README.md": "f4971ec732dab7c6926aca6d02300e4126dd108b40365690301746052b6a34dd",
+    "update-system/README.md": "929d2f8c74cc0ccb756ecedb136f243d9c5d2402f49de528f32d738fce011ce5",
     "update-system/channels/beta.json": "efc935515c3ca3e3b3dbc0e6877c8dc9ddfffd951c47ffa69a203be9844ee1db",
     "update-system/channels/manifest.schema.json": "3e4e84d1c6547ba3f096a4becc27ece29fcd5512376d6cf5c7fd49d7d8a2bb77",
-    "update-system/channels/stable.json": "21bce8fed72d47f935b38a6f16df8b157a1bd92b94517e30bb7e09acb71bbd97",
+    "update-system/channels/stable.json": "719be3a4d98a574a79f3cebed82053b8cda9413c1177e19bcd925e2a9d037f09",
     "update-system/updater/README.md": "ecff0576ef3912bb3897af1829cca1c58dd1dbfde5cca0ce04db6f554c8e1ffb",
     "update-system/updater/Update-Bridge.ps1": "209075faacacb373b06fd9b53eb3571b36a3f03c2fe33976d26ee9951fffce60",
     "builder/Build-EXE.ps1": "b40585b4139be3f1079aa8215b2436ad2164e20c585396ad83e235feaf74b9db",
