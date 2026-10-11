@@ -13,9 +13,10 @@ Damit das nie wieder passiert, prüft dieser Test die Oberfläche als echte Stru
   3. Alle erwarteten Bedienelemente existieren: Fortschritt, Abbrechen, Später,
      Überspringen, Protokoll, Installieren.
   4. Die deutschen Beschriftungen sind korrekt kodiert (Umlaute, kein "Spaeter").
-  5. Der Updates-Bereich im Einstellungsfenster hat genau drei Knöpfe und nutzt für
-     die neuen Elemente keine Fenster-Styles; die Knöpfe rufen die Blockfunktionen auf
-     und diese Funktionen existieren wirklich.
+  5. Der Updates-Bereich im Einstellungsfenster hat genau einen Knopf (die manuelle
+     Suche) und nutzt für die neuen Elemente keine Fenster-Styles; der Knopf ruft die
+     Blockfunktion auf, und diese Funktion existiert wirklich. Die 7.8.0 entfernten
+     Knöpfe "Update-Diagnose" und "Protokoll" dürfen nicht zurückkommen.
   6. Der Block kann nie einen Prozess beenden und hat immer einen Rückfall
      (MessageBox), falls der Fensterbau scheitert.
 """
@@ -111,21 +112,28 @@ def main() -> int:
     check("Show-ArenaUpdateFallbackPrompt" in block and "MessageBox" in block,
           "bei einem Fensterfehler gibt es einen MessageBox-Rückfall (kein stiller Ausfall)")
 
-    # 5) Einstellungsbereich: genau drei Knöpfe, keine Fenster-Styles für die neuen
-    #    Elemente, und die Verdrahtung ruft echte Blockfunktionen auf.
+    # 5) Einstellungsbereich: genau ein Knopf, keine Fenster-Styles für die neuen
+    #    Elemente, und die Verdrahtung ruft eine echte Blockfunktion auf.
+    #    7.8.0: "Update-Diagnose" und "Protokoll" sind auf Nutzerwunsch entfernt.
     settings_ui = marker_slice(source, SETTINGS_UI_START, SETTINGS_UI_END)
     settings_code = marker_slice(source, SETTINGS_CODE_START, SETTINGS_CODE_END)
     check(bool(settings_ui) and bool(settings_code), "Updates-Bereich und Verdrahtung gefunden")
-    check(settings_ui.count("<Button ") == 3,
-          f"genau drei Knöpfe im Updates-Bereich (gefunden: {settings_ui.count('<Button ')})")
+    check(settings_ui.count("<Button ") == 1,
+          f"genau ein Knopf im Updates-Bereich (gefunden: {settings_ui.count('<Button ')})")
     check('UpdateCheckResultText' in settings_ui,
           "der Updates-Bereich hat ein Ergebnisfeld für die manuelle Prüfung")
+    for removed in ("UpdateDiagnoseButton", "UpdateLogButton"):
+        check(removed not in settings_ui and removed not in settings_code,
+              f"{removed} ist aus den Einstellungen entfernt (kein Knopf, keine Verdrahtung)")
     new_elements = re.findall(r"<(?:Button|TextBlock)[^>]*x:Name=\"Update(?:Check|Diagnose|Log|CheckResult)[^\"]*\"[^>]*>", settings_ui)
     check(all('Style="{StaticResource' not in element for element in new_elements),
           "die neuen Elemente nutzen keine Fenster-Styles (kein StaticResource-Absturz)")
-    for function in ("Start-ArenaManualUpdateCheck", "Show-ArenaUpdateDiagnose", "Open-ArenaUpdateLog"):
-        check(function in settings_code, f"Knopf ruft {function} auf")
-        check(f"function {function}" in block, f"{function} existiert im Update-Block")
+    check("Start-ArenaManualUpdateCheck" in settings_code, "Knopf ruft Start-ArenaManualUpdateCheck auf")
+    check("function Start-ArenaManualUpdateCheck" in block, "Start-ArenaManualUpdateCheck existiert im Update-Block")
+    for function in ("Show-ArenaUpdateDiagnose", "Open-ArenaUpdateLog"):
+        check(function not in settings_code,
+              f"{function} ist nicht mehr an einen Einstellungs-Knopf gebunden")
+        check(f"function {function}" in block, f"{function} bleibt im Update-Block erhalten")
 
     if FAILURES:
         print(f"\nFAILED: {len(FAILURES)} Oberflächen-Prüfung(en).")

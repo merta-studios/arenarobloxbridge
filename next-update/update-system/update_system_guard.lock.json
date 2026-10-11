@@ -41,10 +41,15 @@
       "date": "2026-10-11",
       "approvedBy": "Nutzer (Owner) - ausdrueckliche Freigabe",
       "note": "Freigabe 2026-10-11 (Nachtrag): Beschreibung der Windows-Rauchtest-Huelle an den neuen Testumfang (15 Faelle) angepasst."
+    },
+    {
+      "date": "2026-10-11",
+      "approvedBy": "Nutzer (Owner) - ausdrueckliche Freigabe",
+      "note": "Der Nutzer hat in dieser Session ausdruecklich nur das Entfernen der Knoepfe Update-Diagnose und Protokoll im Bereich UPDATES des Einstellungsfensters beauftragt (mehr nicht). Die beiden v800-Tests wurden auf den neuen Stand gezogen, PROTECTED.md enthaelt den Aenderungseintrag; Updater, Kanaele und Sicherheitspruefungen bleiben unveraendert."
     }
   ],
   "files": {
-    "update-system/PROTECTED.md": "c2d07cebf35128b8ba810b0954053b0582464ef55e90845d6d79accec9b4df9b",
+    "update-system/PROTECTED.md": "d186ac88fce3b6f0424044b975ad89f2842c41b40dbcb5687a31fb654d140948",
     "update-system/README.md": "bb942045e928e25814d8b2a6c15ebcf9b589fd47d52df20fd5e47a1fdb461220",
     "update-system/channels/beta.json": "efc935515c3ca3e3b3dbc0e6877c8dc9ddfffd951c47ffa69a203be9844ee1db",
     "update-system/channels/manifest.schema.json": "3e4e84d1c6547ba3f096a4becc27ece29fcd5512376d6cf5c7fd49d7d8a2bb77",
@@ -60,8 +65,8 @@
     "developer/tests/Invoke-SelfUpdateSmoke.ps1": "8d5704509220095a05b6c9a8439cfe0460dd27a797f144db09fa08a53ec44497",
     "developer/tests/test_v800_selfupdate_smoke.py": "e459eca9bc294f032f8fca3e7c8cc0ed4d710716f253e46d696f1553ac6a1f7c",
     "developer/tests/test_v800_update_manifest.py": "aea7fe15efdfe972ea986f58257f1be51d9bdfcfbbd78218a233d8670c96dfca",
-    "developer/tests/test_v800_update_system_guard.py": "f2ea71058a2ce0da05d70a5263dd1285af411d2fc1aaaa5c33c5d4b416b878cf",
-    "developer/tests/test_v800_update_window.py": "3fad80aa513516669bf2367b1528d6ed4a8b10931bafc63a047673e10890a88d",
+    "developer/tests/test_v800_update_system_guard.py": "9708ec47639097763f911ffce646d928d41c3f7f097f4c087963a7943c11ce78",
+    "developer/tests/test_v800_update_window.py": "01f172ce171b541ebee151d655d8e9e4ce39182f29639b85998748f908a8ba4b",
     "developer/tests/fixtures/update/invalid-bad-published.json": "832967036254f61e69686457da0bffa04c37903b78fe776098e4f02b7644f9dd",
     "developer/tests/fixtures/update/invalid-bad-version.json": "f6e541021ee2b826c0b2713f9181afaeccd1e1c7029151935bd5cae29d19ea7f",
     "developer/tests/fixtures/update/invalid-disabled-with-url.json": "a5d92099fa206dfd4cfe782b165c0cf2e01aae403f3fc2d53594e12375efe9bd",
@@ -84,7 +89,7 @@
     "developer/tests/fixtures/update/valid-production-enabled.json": "88eb8cb25c189661f3c0d2435653c8f64a370a99eb76c0cbffa6c3d15f265e85",
     "developer/tests/fixtures/update/valid-stable-release.json": "007a3b0df73bb6fc0c7a909f156a6fb55eebcc849d2d7e20269f147cfb83adfb",
     "app/ArenaBridge.ps1#ARENA-UPDATE-INTEGRATION": "0f5bf013f4e14ecb91ab51181c9b04ff2ace233edf74781e9d795b51285a7f96",
-    "app/ArenaBridge.ps1#ARENA-UPDATE-SETTINGS-UI": "24d5faef362acd20120f27e6c48e1a8da26912abae16a6a9395e907b8aff3b52",
-    "app/ArenaBridge.ps1#ARENA-UPDATE-SETTINGS-CODE": "2a2b1946e79c55cf2db65fcce5dec0008962da2266df59937942579e41464aca"
+    "app/ArenaBridge.ps1#ARENA-UPDATE-SETTINGS-UI": "f18dc8def59ec226f5dcf8a9e7ea0105410e1c3f03e92d241f663f4c0188b4ec",
+    "app/ArenaBridge.ps1#ARENA-UPDATE-SETTINGS-CODE": "b9df562c43d531998521e47d9cf4d6d67c4b76af334be8e7925c688c14d57fca"
   }
 }

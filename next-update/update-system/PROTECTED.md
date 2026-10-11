@@ -135,3 +135,22 @@ Eine Änderung ist nur zulässig, wenn ALLE Punkte erfüllt sind:
   Dateien: `builder/Build-EXE.ps1`, diese Datei und die Lock-Datei. Updater, Kanal-Manifeste und
   der Integrationsblock bleiben unveraendert. Kanaele bleiben deaktiviert. Der Windows-Lauf
   (Build, Smoke, Selbst-Update-Test) steht weiterhin aus.
+
+- 2026-10-11, Knoepfe "Update-Diagnose" und "Protokoll" aus den Einstellungen entfernt
+  (Version bleibt 7.8.0): Der Nutzer hat in dieser Session ausdruecklich nur das Entfernen
+  dieser beiden Knoepfe im Bereich UPDATES des Einstellungsfensters beauftragt
+  ("entferne den update diagnose und protokoll button in den einstellungen. mehr nicht").
+  Entfernt wurden genau diese zwei Knoepfe und ihre Verdrahtung in Open-SettingsWindow.
+  Unveraendert bleiben: der Knopf "Jetzt nach Updates suchen" samt Ergebnisfeld, der
+  Update-Block ARENA-UPDATE-INTEGRATION, die Funktionen Show-ArenaUpdateDiagnose und
+  Open-ArenaUpdateLog (das Update-Fenster nutzt das Protokoll weiterhin), der Updater,
+  die Kanal-Manifeste (weiterhin deaktiviert) und alle Sicherheitspruefungen. Die beiden
+  v800-Tests wurden auf den neuen Stand gezogen: der Updates-Bereich hat genau EINEN Knopf,
+  und fuer Diagnose/Protokoll darf es dort keine Verdrahtung mehr geben. Betroffene
+  geschuetzte Dateien: `app/ArenaBridge.ps1` (Bloecke ARENA-UPDATE-SETTINGS-UI und
+  ARENA-UPDATE-SETTINGS-CODE), `developer/tests/test_v800_update_system_guard.py`,
+  `developer/tests/test_v800_update_window.py`, diese Datei und die Lock-Datei.
+  Bewusst NICHT mitgeaendert (Auftrag "mehr nicht"): die sichtbaren Versionshinweise in
+  `app/version.json` und der Kopfkommentar der App nennen die beiden Knoepfe weiterhin.
+  Der Windows-Lauf (Build, EXE-Smoke-Test, Invoke-SelfUpdateSmoke.ps1) steht aus und wird
+  hier nicht behauptet; die Offline-Tests laufen gruen.
