@@ -10,6 +10,10 @@ ARENA ROBLOX BRIDGE — MARKEN-ASSETS
   Dateisymbol traegt.
 - arena-bridge-title.jpg bleibt das separate grosse Start-/Titelbild; es ist
   nicht das Programm-Logo.
+- liquidglasbackground.png ist das vom Nutzer bereitgestellte
+  Fensterhintergrund-Bild. Build-EXE.ps1 bettet es ebenso ein; es faellt den
+  gesamten Fensterbereich aus und wird proportional beschnitten, also nie
+  verzerrt. Die frueheren farbigen Verlaufskreise im Fenster sind entfernt.
 
 Die PNG wird beim Build in eine temporaere Kopie von ArenaBridge.ps1
 eingebettet. Weder Logo noch Startbild muessen neben der fertigen EXE liegen.

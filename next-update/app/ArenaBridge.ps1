@@ -2179,6 +2179,11 @@ param(
 # The repository source stays small and loads the adjacent JPG when run as a PS1.
 $script:TitleArtworkBase64 = '__ARENA_TITLE_ARTWORK_BASE64__'
 $script:ProgramLogoBase64 = '__ARENA_PROGRAM_LOGO_BASE64__'
+# Version 7.7.1: Der Fensterhintergrund ist das vom Nutzer bereitgestellte
+# Liquid-Glass-Bild (app/assets/liquidglasbackground.png). Wie Titelbild und
+# Logo wird es vom Builder in die EXE eingebettet; als PS1 wird die Datei
+# neben dem Skript gelesen.
+$script:BackgroundImageBase64 = '__ARENA_BACKGROUND_IMAGE_BASE64__'
 $script:DiagnosticMode = ([bool]$DiagnosticMode -or $env:ARENABRIDGE_DIAGNOSTIC_MODE -eq '1')
 
 # ps2exe has no script-file path at runtime. Always prefer a non-empty PS1 or
@@ -2211,6 +2216,8 @@ if ($env:ARENABRIDGE_BUILD_SMOKE -eq '1') {
     $smokeImage = $null
     $smokeLogoStream = $null
     $smokeLogoImage = $null
+    $smokeBackgroundStream = $null
+    $smokeBackgroundImage = $null
     $smokeReport = [ordered]@{
         status = 'failed'
         version = '7.7.0'
@@ -2223,6 +2230,8 @@ if ($env:ARENABRIDGE_BUILD_SMOKE -eq '1') {
         titleImageHeight = 0
         programLogoWidth = 0
         programLogoHeight = 0
+        backgroundImageWidth = 0
+        backgroundImageHeight = 0
         appFolderResolved = $false
         error = ''
     }
@@ -2276,11 +2285,28 @@ if ($env:ARENABRIDGE_BUILD_SMOKE -eq '1') {
         $smokeLogoImage.EndInit()
         $smokeLogoImage.Freeze()
         if ($smokeLogoImage.PixelWidth -lt 32 -or $smokeLogoImage.PixelHeight -lt 32) { throw 'The embedded program logo decoded with an unexpected size.' }
+        # Version 7.7.1: Der Fensterhintergrund ist Pflicht-Branding. Decodiert
+        # er nicht, wird die EXE nicht veroeffentlicht.
+        if ([string]::IsNullOrWhiteSpace([string]$script:BackgroundImageBase64) -or
+            [string]$script:BackgroundImageBase64 -eq '__ARENA_BACKGROUND_IMAGE_BASE64__') {
+            throw 'The window background image was not embedded into the compiled EXE.'
+        }
+        $smokeBackgroundBytes = [Convert]::FromBase64String([string]$script:BackgroundImageBase64)
+        $smokeBackgroundStream = [System.IO.MemoryStream]::new([byte[]]$smokeBackgroundBytes)
+        $smokeBackgroundImage = [System.Windows.Media.Imaging.BitmapImage]::new()
+        $smokeBackgroundImage.BeginInit()
+        $smokeBackgroundImage.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+        $smokeBackgroundImage.StreamSource = $smokeBackgroundStream
+        $smokeBackgroundImage.EndInit()
+        $smokeBackgroundImage.Freeze()
+        if ($smokeBackgroundImage.PixelWidth -lt 640 -or $smokeBackgroundImage.PixelHeight -lt 360) { throw 'The embedded window background decoded with an unexpected size.' }
         $smokeReport.status = 'passed'
         $smokeReport.titleImageWidth = [int]$smokeImage.PixelWidth
         $smokeReport.titleImageHeight = [int]$smokeImage.PixelHeight
         $smokeReport.programLogoWidth = [int]$smokeLogoImage.PixelWidth
         $smokeReport.programLogoHeight = [int]$smokeLogoImage.PixelHeight
+        $smokeReport.backgroundImageWidth = [int]$smokeBackgroundImage.PixelWidth
+        $smokeReport.backgroundImageHeight = [int]$smokeBackgroundImage.PixelHeight
     } catch {
         $smokeExitCode = 1
         $smokeReport.error = [string]$_.Exception.Message
@@ -2288,6 +2314,7 @@ if ($env:ARENABRIDGE_BUILD_SMOKE -eq '1') {
     } finally {
         if ($null -ne $smokeStream) { try { $smokeStream.Dispose() } catch {} }
         if ($null -ne $smokeLogoStream) { try { $smokeLogoStream.Dispose() } catch {} }
+        if ($null -ne $smokeBackgroundStream) { try { $smokeBackgroundStream.Dispose() } catch {} }
     }
     try {
         if ([string]::IsNullOrWhiteSpace($smokePath)) { throw 'ARENABRIDGE_BUILD_SMOKE_PATH was not set.' }
@@ -32142,17 +32169,17 @@ function Set-SplashTitleArtwork {
     }
 }
 
-function Set-ProgramBrandLogo {
-    param($ImageControl, $Window)
+function Set-BackgroundArtwork {
+    param($ImageControl)
     if ($null -eq $ImageControl) { return $false }
     $imageBytes = $null
     $imageStream = $null
     try {
-        $encoded = [string]$script:ProgramLogoBase64
-        if (-not [string]::IsNullOrWhiteSpace($encoded) -and $encoded -ne '__ARENA_PROGRAM_LOGO_BASE64__') {
+        $encoded = [string]$script:BackgroundImageBase64
+        if (-not [string]::IsNullOrWhiteSpace($encoded) -and $encoded -ne '__ARENA_BACKGROUND_IMAGE_BASE64__') {
             $imageBytes = [Convert]::FromBase64String($encoded)
         } elseif ($script:AppRoot) {
-            $imagePath = Join-Path $script:AppRoot 'assets\neueslogo.png'
+            $imagePath = Join-Path $script:AppRoot 'assets\liquidglasbackground.png'
             if (Test-Path -LiteralPath $imagePath -PathType Leaf) { $imageBytes = [System.IO.File]::ReadAllBytes($imagePath) }
         }
         if ($null -eq $imageBytes -or $imageBytes.Length -eq 0) {
@@ -32168,14 +32195,90 @@ function Set-ProgramBrandLogo {
         $bitmap.Freeze()
         $ImageControl.Source = $bitmap
         $ImageControl.Visibility = 'Visible'
-        if ($null -ne $Window) { $Window.Icon = $bitmap }
         return $true
     } catch {
-        try { Write-RuntimeLog ('Programmlogo konnte nicht geladen werden: ' + $_.Exception.Message) } catch {}
+        try { Write-RuntimeLog ('Hintergrundbild konnte nicht geladen werden: ' + $_.Exception.Message) } catch {}
         try { $ImageControl.Visibility = 'Collapsed' } catch {}
         return $false
     } finally {
         if ($null -ne $imageStream) { try { $imageStream.Dispose() } catch {} }
+    }
+}
+
+# Version 7.7.1: Das Programmlogo wird an mehreren Stellen gezeigt (Titelzeile,
+# Update-Hinweisfenster und das Platzhalter-Icon der Place-Liste). Es wird
+# deshalb nur EINMAL dekodiert und danach als eingefrorene Bitmap
+# wiederverwendet (Freeze macht sie threadsicher und mehrfach verwendbar).
+$script:ProgramBrandBitmap = $null
+
+function Get-ProgramBrandBitmap {
+    if ($null -ne $script:ProgramBrandBitmap) { return $script:ProgramBrandBitmap }
+    $imageBytes = $null
+    $imageStream = $null
+    try {
+        $encoded = [string]$script:ProgramLogoBase64
+        if (-not [string]::IsNullOrWhiteSpace($encoded) -and $encoded -ne '__ARENA_PROGRAM_LOGO_BASE64__') {
+            $imageBytes = [Convert]::FromBase64String($encoded)
+        } elseif ($script:AppRoot) {
+            $imagePath = Join-Path $script:AppRoot 'assets\neueslogo.png'
+            if (Test-Path -LiteralPath $imagePath -PathType Leaf) { $imageBytes = [System.IO.File]::ReadAllBytes($imagePath) }
+        }
+        if ($null -eq $imageBytes -or $imageBytes.Length -eq 0) { return $null }
+        $imageStream = [System.IO.MemoryStream]::new([byte[]]$imageBytes)
+        $bitmap = [System.Windows.Media.Imaging.BitmapImage]::new()
+        $bitmap.BeginInit()
+        $bitmap.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+        $bitmap.StreamSource = $imageStream
+        $bitmap.EndInit()
+        $bitmap.Freeze()
+        $script:ProgramBrandBitmap = $bitmap
+        return $bitmap
+    } catch {
+        try { Write-RuntimeLog ('Programmlogo konnte nicht geladen werden: ' + $_.Exception.Message) } catch {}
+        return $null
+    } finally {
+        if ($null -ne $imageStream) { try { $imageStream.Dispose() } catch {} }
+    }
+}
+
+function Set-ProgramBrandLogo {
+    param($ImageControl, $Window)
+    if ($null -eq $ImageControl) { return $false }
+    try {
+        $bitmap = Get-ProgramBrandBitmap
+        if ($null -eq $bitmap) {
+            $ImageControl.Visibility = 'Collapsed'
+            return $false
+        }
+        $ImageControl.Source = $bitmap
+        $ImageControl.Visibility = 'Visible'
+        if ($null -ne $Window) { $Window.Icon = $bitmap }
+        return $true
+    } catch {
+        try { Write-RuntimeLog ('Programmlogo konnte nicht angezeigt werden: ' + $_.Exception.Message) } catch {}
+        try { $ImageControl.Visibility = 'Collapsed' } catch {}
+        return $false
+    }
+}
+
+# Dieselbe Logo-Bitmap fuer weitere Bildplaetze im Fenster (z. B. das
+# Platzhalter-Icon der Place-Liste). Das Fenstersymbol wird hier NICHT gesetzt.
+function Set-ProgramBrandImage {
+    param($ImageControl)
+    if ($null -eq $ImageControl) { return $false }
+    try {
+        $bitmap = Get-ProgramBrandBitmap
+        if ($null -eq $bitmap) {
+            $ImageControl.Visibility = 'Collapsed'
+            return $false
+        }
+        $ImageControl.Source = $bitmap
+        $ImageControl.Visibility = 'Visible'
+        return $true
+    } catch {
+        try { Write-RuntimeLog ('Programmlogo konnte nicht angezeigt werden: ' + $_.Exception.Message) } catch {}
+        try { $ImageControl.Visibility = 'Collapsed' } catch {}
+        return $false
     }
 }
 
@@ -32569,76 +32672,17 @@ $xaml = @'
             </Grid.RowDefinitions>
 
             <!-- ======================================================== -->
-            <!-- AURORA: langsam driftende Farblichter hinter dem Glas     -->
-            <!-- (Liquid Glass braucht ein lebendiges, farbiges Fundament) -->
+            <!-- HINTERGRUNDBILD (Version 7.7.1): Das vom Nutzer gelieferte  -->
+            <!-- Liquid-Glass-Bild (app/assets/liquidglasbackground.png)     -->
+            <!-- faellt den gesamten Fensterbereich aus. Es wird mit         -->
+            <!-- UniformToFill proportional beschnitten, also niemals        -->
+            <!-- verzerrt oder gestaucht. Die frueheren farbigen             -->
+            <!-- Verlaufskreise (Aurora) sind vollstaendig entfernt.         -->
             <!-- ======================================================== -->
             <Grid Grid.Row="0" Grid.RowSpan="2" IsHitTestVisible="False">
-                <Ellipse Width="560" Height="560" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-190,-230,0,0">
-                    <Ellipse.Fill>
-                        <RadialGradientBrush>
-                            <GradientStop Color="#547B5CFF" Offset="0"/>
-                            <GradientStop Color="#007B5CFF" Offset="1"/>
-                        </RadialGradientBrush>
-                    </Ellipse.Fill>
-                    <Ellipse.RenderTransform>
-                        <TranslateTransform X="0" Y="0"/>
-                    </Ellipse.RenderTransform>
-                </Ellipse>
-                <Ellipse Width="500" Height="500" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-180,-170,0">
-                    <Ellipse.Fill>
-                        <RadialGradientBrush>
-                            <GradientStop Color="#4D2E4FFF" Offset="0"/>
-                            <GradientStop Color="#002E4FFF" Offset="1"/>
-                        </RadialGradientBrush>
-                    </Ellipse.Fill>
-                    <Ellipse.RenderTransform>
-                        <TranslateTransform X="0" Y="0"/>
-                    </Ellipse.RenderTransform>
-                </Ellipse>
-                <Ellipse Width="440" Height="440" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-150,-180">
-                    <Ellipse.Fill>
-                        <RadialGradientBrush>
-                            <GradientStop Color="#4000CFC0" Offset="0"/>
-                            <GradientStop Color="#0000CFC0" Offset="1"/>
-                        </RadialGradientBrush>
-                    </Ellipse.Fill>
-                    <Ellipse.RenderTransform>
-                        <TranslateTransform X="0" Y="0"/>
-                    </Ellipse.RenderTransform>
-                </Ellipse>
-                <Ellipse Width="320" Height="320" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-110,210,0,0">
-                    <Ellipse.Fill>
-                        <RadialGradientBrush>
-                            <GradientStop Color="#47C13FF0" Offset="0"/>
-                            <GradientStop Color="#00C13FF0" Offset="1"/>
-                        </RadialGradientBrush>
-                    </Ellipse.Fill>
-                    <Ellipse.RenderTransform>
-                        <TranslateTransform X="0" Y="0"/>
-                    </Ellipse.RenderTransform>
-                </Ellipse>
-                <Ellipse Width="280" Height="280" HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="90,0,0,-150">
-                    <Ellipse.Fill>
-                        <RadialGradientBrush>
-                            <GradientStop Color="#3D21C55D" Offset="0"/>
-                            <GradientStop Color="#0021C55D" Offset="1"/>
-                        </RadialGradientBrush>
-                    </Ellipse.Fill>
-                    <Ellipse.RenderTransform>
-                        <TranslateTransform X="0" Y="0"/>
-                    </Ellipse.RenderTransform>
-                </Ellipse>
-                <Ellipse Width="240" Height="240" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="400,-140,0,0">
-                    <Ellipse.Fill>
-                        <RadialGradientBrush>
-                            <GradientStop Color="#29FF4D6D" Offset="0"/>
-                            <GradientStop Color="#00FF4D6D" Offset="1"/>
-                        </RadialGradientBrush>
-                    </Ellipse.Fill>
-                    <Ellipse.RenderTransform>
-                        <TranslateTransform X="0" Y="0"/>
-                    </Ellipse.RenderTransform>
-                </Ellipse>
+                <Image x:Name="BackgroundImage" Stretch="UniformToFill"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       SnapsToDevicePixels="True" RenderOptions.BitmapScalingMode="HighQuality"/>
                 <!-- Sanfter Glas-Schein am oberen Fensterrand -->
                 <Border Height="120" VerticalAlignment="Top" IsHitTestVisible="False">
                     <Border.Background>
@@ -32658,11 +32702,13 @@ $xaml = @'
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Border Width="38" Height="38" Margin="0,0,13,0" CornerRadius="13"
-                                Background="{StaticResource AppBg}" BorderBrush="#4DFFFFFF"
+                        <!-- Version 7.7.1: groesseres Programmlogo, eckig (kein CornerRadius). -->
+                        <Border Width="52" Height="52" Margin="0,0,14,0" CornerRadius="0"
+                                Background="{StaticResource AppBg}" BorderBrush="#59FFFFFF"
                                 BorderThickness="1" ClipToBounds="True">
-                            <Image x:Name="ProgramLogoImage" Width="38" Height="38"
-                                   Stretch="UniformToFill" SnapsToDevicePixels="True"/>
+                            <Image x:Name="ProgramLogoImage" Width="52" Height="52"
+                                   Stretch="Uniform" SnapsToDevicePixels="True"
+                                   RenderOptions.BitmapScalingMode="HighQuality"/>
                         </Border>
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="Arena Roblox Bridge" Foreground="{StaticResource TextMain}" FontSize="18.5" FontWeight="Bold"/>
@@ -32731,25 +32777,14 @@ $xaml = @'
                             </Grid.RowDefinitions>
                             <Grid Grid.Row="0">
                                 <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Width="430">
-                                    <Border Width="76" Height="76" CornerRadius="22" HorizontalAlignment="Center" RenderTransformOrigin="0.5,0.5">
-                                        <Border.Background>
-                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                                <GradientStop Color="#331B2C6E" Offset="0"/>
-                                                <GradientStop Color="#1A0E1F44" Offset="1"/>
-                                            </LinearGradientBrush>
-                                        </Border.Background>
-                                        <Border.BorderBrush>
-                                            <SolidColorBrush Color="#40FFFFFF"/>
-                                        </Border.BorderBrush>
-                                        <Border.BorderThickness>1</Border.BorderThickness>
-                                        <Border.RenderTransform>
-                                            <TranslateTransform X="0" Y="0"/>
-                                        </Border.RenderTransform>
-                                        <Grid>
-                                            <Ellipse Width="10" Height="10" Fill="#8FF5E9" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="15,0,0,0"/>
-                                            <Ellipse Width="10" Height="10" Fill="#00E5D0" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,15,0"/>
-                                            <Rectangle Height="3" Fill="#8B6BFF" Margin="30,0,30,0" RadiusX="1.5" RadiusY="1.5"/>
-                                        </Grid>
+                                    <!-- Version 7.7.1: derselbe Programmlogo-Auftritt wie oben links
+                                         in der Titelzeile - eckig, gross, kein gezeichnetes Ersatzsymbol. -->
+                                    <Border Width="96" Height="96" CornerRadius="0" HorizontalAlignment="Center"
+                                            Background="{StaticResource AppBg}" BorderBrush="#40FFFFFF"
+                                            BorderThickness="1" ClipToBounds="True">
+                                        <Image x:Name="EmptyStateLogoImage" Width="96" Height="96"
+                                               Stretch="Uniform" SnapsToDevicePixels="True"
+                                               RenderOptions.BitmapScalingMode="HighQuality"/>
                                     </Border>
                                     <TextBlock x:Name="EmptyTitle" Text="Öffne ein Place in Roblox Studio" Foreground="{StaticResource TextMain}" FontSize="21" FontWeight="Bold" TextAlignment="Center" Margin="0,22,0,0"/>
                                     <TextBlock x:Name="EmptyBody" Text="Sobald sich ein Studio-Fenster mit einem geladenen Place verbindet, erscheint es hier automatisch." Foreground="{StaticResource TextMuted}" FontSize="13.5" TextAlignment="Center" TextWrapping="Wrap" Margin="0,10,0,0"/>
@@ -32869,15 +32904,9 @@ $xaml = @'
                                                    Foreground="#C6D5F5" FontSize="8.5" FontWeight="SemiBold"
                                                    Margin="1,3,0,0"/>
                                     </StackPanel>
-                                    <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,13,13,0"
-                                            CornerRadius="9" Padding="8,4" Background="#AE0C1733"
-                                            BorderBrush="#668EE7FF" BorderThickness="1" IsHitTestVisible="False">
-                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                            <Ellipse Width="6" Height="6" Fill="#54E6D0" Margin="0,0,6,0"/>
-                                            <TextBlock Text="BETA BUILD" Foreground="#E8F5FF" FontSize="8.5"
-                                                       FontWeight="Bold" VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                    </Border>
+                                    <!-- Version 7.7.1: Das fruehere Beta-Abzeichen oben rechts
+                                         ist entfernt. Die Bridge ist keine Beta mehr; darum
+                                         bleibt diese Ecke des Startbildes absichtlich leer. -->
                                 </Grid>
                             </Border>
                             <!-- Spinning Loading Icon (oben) -->
@@ -32957,6 +32986,10 @@ $window = [Windows.Markup.XamlReader]::Load($reader)
 $script:MainWindow = $window
 $SplashHeroImage = $window.FindName('SplashHeroImage')
 [void](Set-SplashTitleArtwork -Image $SplashHeroImage)
+# Version 7.7.1: Hintergrundbild des Nutzer-Assets vor dem Logo laden, damit
+# das Fenster nie ohne Hintergrund kurz aufblitzt.
+$BackgroundImage = $window.FindName('BackgroundImage')
+[void](Set-BackgroundArtwork -ImageControl $BackgroundImage)
 $ProgramLogoImage = $window.FindName('ProgramLogoImage')
 [void](Set-ProgramBrandLogo -ImageControl $ProgramLogoImage -Window $window)
 
@@ -33045,6 +33078,10 @@ try {
     $spinnerGuard.Start()
 } catch {}
 $PlaceList       = $window.FindName('PlaceList')
+# Version 7.7.1: das Platzhalter-Icon der Place-Liste zeigt dasselbe Logo
+# wie die Titelzeile (vorher ein gezeichneter Strich mit zwei Kreisen).
+$EmptyStateLogoImage = $window.FindName('EmptyStateLogoImage')
+[void](Set-ProgramBrandImage -ImageControl $EmptyStateLogoImage)
 $EmptyState      = $window.FindName('EmptyState')
 $EmptyTitle      = $window.FindName('EmptyTitle')
 $EmptyBody       = $window.FindName('EmptyBody')

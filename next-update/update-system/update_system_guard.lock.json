@@ -16,17 +16,22 @@
       "date": "2026-10-10",
       "approvedBy": "Nutzer (Owner) - ausdrueckliche Freigabe",
       "note": "Release- und Versionsablauf gemaess Nutzerauftrag umgesetzt: Kanal stable als Standard in Build-EXE.bat, Guard-Pruefung fuer Release-Manifeste erweitert."
+    },
+    {
+      "date": "2026-10-10",
+      "approvedBy": "Nutzer (Owner) - ausdrueckliche Freigabe",
+      "note": "Nutzer hat am 2026-10-11 ausdruecklich zugestimmt, dass builder/Build-EXE.ps1 fuer das neue Hintergrundbild liquidglasbackground.png ergaenzt wird. Updater, Update-Bridge.ps1, Kanal-Manifeste und der Integrationsblock ARENA-UPDATE-INTEGRATION bleiben unveraendert; die Kanaele bleiben deaktiviert."
     }
   ],
   "files": {
-    "update-system/PROTECTED.md": "0d4f398332c65fc4a7ba534c39ff4546f1a1c7ced94d43d5a6024b69359def30",
+    "update-system/PROTECTED.md": "7af9a5264ca972deb1bf634d453c385ef5ffe934e9639ffe6dddd8c723135ddc",
     "update-system/README.md": "d75498e472161228bd53e9d62377a9af94de6161c972a6a5c874bb0dfdae5a2c",
     "update-system/channels/beta.json": "62a6c0d86da796faf5044632149ff28049656d23ef50ec8035acd70fd8dd152c",
     "update-system/channels/manifest.schema.json": "241a49080863e5727d5ee9f946d9f85679b4473b5dd112d9b6df1fbecd81a158",
     "update-system/channels/stable.json": "3f25d11dcb384e2b7716c96b681e5af0d6bdb2bed23e71d8df949eed145210f1",
     "update-system/updater/README.md": "ecff0576ef3912bb3897af1829cca1c58dd1dbfde5cca0ce04db6f554c8e1ffb",
     "update-system/updater/Update-Bridge.ps1": "b172faa012a84cb7fdd8567bdef7c3cdfccc8950be06844f4bb1bba4f84e2528",
-    "builder/Build-EXE.ps1": "f6ee85a2fad1207834f8bcf11f4cfb2a49f481f4da26f536c771f65ef2aa0411",
+    "builder/Build-EXE.ps1": "20f7a6d669d6f37c217c3793f0cf6dc725587f8a5dde29e1289510a298885503",
     "developer/tests/run_offline_tests.py": "255c6acb04d9052516089fa1a41d33da591ff1f762231f05ec0c40359784bf5a",
     "developer/tests/requirements-test.txt": "267bcd9035ba02b51b5f33ae96e389e73426260f83f5fdebb4051afe9645e5d3",
     "developer/tests/Invoke-SelfUpdateSmoke.ps1": "10483d2588e50a179afedddbbfff55c43f4c759adc3960b1f1676de1849ddcbb",
