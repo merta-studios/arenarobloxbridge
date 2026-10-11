@@ -69,8 +69,8 @@ def main() -> int:
     check("creatorDashboardEnabled" not in source,
           "creatorDashboardEnabled is removed from the whole script")
     settings_xaml = region(source, "$settingsXaml = @'", "\n'@")
-    cloud_card = region(settings_xaml, 'TextBlock Text="ROBLOX OPEN CLOUD API-KEY"', 'TextBlock Text="UPDATES"')
-    tutorial_xaml = region(settings_xaml, 'x:Name="CloudTutorialWrap"', 'TextBlock Text="UPDATES"')
+    cloud_card = region(settings_xaml, 'TextBlock Text="ROBLOX OPEN CLOUD API-KEY"', '<Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>')
+    tutorial_xaml = region(settings_xaml, 'x:Name="CloudTutorialWrap"', '<Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>')
     check('x:Name="CreatorDashboardSwitch"' not in cloud_card
           and "Arena darf den aktuellen Place im Creator Dashboard verwalten" not in cloud_card,
           "the opt-in switch is removed from the Open Cloud API-key settings card")

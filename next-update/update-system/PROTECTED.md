@@ -196,3 +196,40 @@ Eine Änderung ist nur zulässig, wenn ALLE Punkte erfüllt sind:
   `ARENA-UPDATE-INTEGRATION` in `app/ArenaBridge.ps1`, `builder/Build-EXE.ps1` und
   `developer/tools/release.py`. Betroffene geschuetzte Dateien: die drei Testdateien,
   diese Datei und die Lock-Datei.
+
+- 2026-10-11, Komplettueberarbeitung des Update-Systems auf Updater 3.0.0 (App-Version bleibt
+  7.8.0; eine neue Version braucht ein eigenes Release ueber release.py):
+  Der Nutzer hat die Ueberarbeitung des Update-Systems ausdruecklich beauftragt. Anlass sind
+  drei gemeldete Fehler aus dem Betrieb von 7.8.0: (1) "neue Version 7.8.0 / alte Version 7.8.0"
+  bei gleicher Versionsnummer, (2) Fortschrittsanzeige bleibt stehen und die Installation
+  haengt nach "Warte auf das regulaere Beenden", (3) Bedienbarkeit der Bridge waehrend der
+  Pruefung. Gewuenscht war: kein "Spaeter", kein "Diese Version ueberspringen", kein Abbruch,
+  keine Update-Suche in den Einstellungen, automatische Pruefung bei jedem Programmstart,
+  Bridge waehrend des Updates nicht bedienbar, Installation zwingend.
+  Geaenderte geschuetzte Dateien und Inhalte:
+  - `update-system/updater/Update-Bridge.ps1` (3.0.0): gleiche Version = up-to-date; nur
+    hoehere Version wird installiert (zusaetzlicher Schutz im Helfer); Fortschritt wird direkt
+    geschrieben (kein File.Replace mehr, Schreibfehler werden protokolliert); RunId je Lauf;
+    keine Abbruchdatei; Wartezeit auf das Ende der Bridge 60 s statt 180 s.
+  - `app/ArenaBridge.ps1`, Block ARENA-UPDATE-INTEGRATION: ersetzt durch das Pflicht-Gate
+    (modales Fenster ohne Schliessen-Knopf, vor Studio/Plugin/Server/Tunnel; die Bridge beendet
+    sich selbst nach geprueftem Download; Neustart mit "Update erfolgreich").
+  - `app/ArenaBridge.ps1`, Einstellungsfenster: Updates-Bereich (Ueberschrift, Knopf "Jetzt nach
+    Updates suchen", Ergebnisfeld, Verdrahtung und die Update-Info) komplett entfernt.
+    Die Markierungen ARENA-UPDATE-SETTINGS-UI und -CODE entfallen damit.
+  - `developer/tools/release.py`: Fallback zum Lesen der Dateiversion ohne `pefile` (UTF-16-Suche
+    war fehlerhaft und las nur 4 MB); die Datei wird jetzt vollstaendig gelesen.
+  - `developer/tests/requirements-test.txt`: `pefile` als Testabhaengigkeit.
+  - Tests: `test_v800_update_window.py` (Pflicht-Fenster statt Hinweisfenster),
+    `test_v800_update_system_guard.py` (neue Invarianten), `test_v765_release_workflow.py`
+    (neue Namen), `Invoke-SelfUpdateSmoke.ps1` (S13 ohne Abbruch, S16 gleiche Version, S17
+    Fortschritt aus frueherem Lauf).
+  - `update-system/README.md`: Ursachen, neuer Ablauf, korrigierter Kanalstatus (stable aktiv,
+    beta deaktiviert; der Satz "beide Kanaele deaktiviert" war falsch).
+  Unveraendert: Kanal-Manifeste (stable bleibt freigegeben mit 7.8.0), Builder, Release-Artefakte
+  in release/, Sicherheitsregeln (kein Prozessabbruch, HTTPS-Hosts, Testmodus nur im Testbau).
+  Bekannte Grenzen: (a) Die alte 7.8.0-EXE mit Updater 2.0.0 traegt den Fehler weiter; sie muss
+  einmal manuell durch die Fassung mit Updater 3.0.0 ersetzt werden. (b) Ein Task-Manager-Kill
+  ist technisch nicht verhindern. (c) Der Windows-Lauf (Build, Start, Invoke-SelfUpdateSmoke.ps1)
+  ist in der Linux-Umgebung NICHT ausgefuehrt worden und steht aus. PowerShell-Verhalten ist nur
+  durch den Tree-sitter-Parser und die Quelltext-Pruefungen belegt.

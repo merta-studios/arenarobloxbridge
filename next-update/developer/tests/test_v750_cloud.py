@@ -480,7 +480,7 @@ def main() -> int:
     check("PasswordBox" in settings_xaml,
           "der Schluessel wird in einem PasswordBox-Feld eingegeben")
 
-    tutorial = region(settings_xaml, 'x:Name="CloudTutorialWrap"', '<TextBlock Text="UPDATES"')
+    tutorial = region(settings_xaml, 'x:Name="CloudTutorialWrap"', '<Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>')
     for piece in ("1. Öffne diese Seite:", "API-Schlüssel erstellen",
                   "irgendeinen Namen und eine Beschreibung",
                   "Füge die Berechtigungen hinzu, die du willst! Hier siehst du eine ausführliche Liste, was jede Berechtigung kann:",

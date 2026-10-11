@@ -22,9 +22,11 @@ Was dieser Test tut:
      S10 Rollback nach einem Fehler nach dem Ersetzen
      S11 falsche Dateiversion im Artefakt wird abgelehnt (Manifest/Datei passen nicht)
      S12 aeltere sequence im Manifest wird nie installiert (Schutz vor Cache-Stand)
-     S13 Abbruch waehrend des Downloads laesst alles unveraendert
+     S13 eine Abbruchdatei wird IGNORIERT (Pflicht-Update, kein Abbruch mehr)
      S14 Diagnose-Modus (doctor) liefert einen Bericht
      S15 Fortschrittsdatei meldet den Abschluss
+     S16 gleiche Version mit anderem Hash ist KEIN Update (up-to-date)
+     S17 Fortschritt aus einem frueheren Lauf wird nie gelesen (RunId)
 
 Der Test veraendert keine Datei ausserhalb von %TEMP%\arena-selfupdate-*.
 Exit 0 = alle Pruefungen bestanden, 1 = mindestens eine fehlgeschlagen.
@@ -464,7 +466,8 @@ Assert-Check 'S12 veraltetes Manifest: check meldet manifest-stale' ($null -ne $
 $run = Invoke-Updater -Mode 'install' -InstallDir $inst12 -ManifestPath $manifestStale -Case 's12c' -Extra @('-WaitForProcessId', '0')
 Assert-Check 'S12 veraltetes Manifest: es wird nichts installiert' ($run.ExitCode -eq 0 -and (Get-FileSha (Join-Path $inst12 'ArenaBridge.exe')) -eq $shaNew)
 
-# ------------------------------------------------------------ Szenario 13: Abbruch waehrend des Downloads
+# ------------------------------------------------------------ Szenario 13: KEIN Abbruch mehr (Pflicht-Update)
+# Eine Abbruchdatei darf den Vorgang nicht stoppen. Der Helfer kennt keinen Abbruch.
 $inst13 = New-Install 's13' $exeInstalledSource
 $manifestSlow = New-Manifest 'slow' $slowVersion $urlSlow $shaNew $sizeNew 15
 $run = Invoke-Updater -Mode 'install' -InstallDir $inst13 -ManifestPath $manifestSlow -Case 's13' -Extra @('-WaitForProcessId', '0') -Hide
@@ -475,18 +478,18 @@ while ([DateTime]::UtcNow -lt $cancelDeadline) {
     $progress = Read-Progress $inst13
     if ($null -ne $progress -and [string]$progress.phase -eq 'downloading') {
         $progressSeen = $true
-        [IO.File]::WriteAllText($cancelPath, 'abbruch', (New-Object Text.UTF8Encoding($false)))
+        [IO.File]::WriteAllText($cancelPath, 'ignoriert', (New-Object Text.UTF8Encoding($false)))
         break
     }
     if ($run.Process.HasExited) { break }
     Start-Sleep -Milliseconds 250
 }
-Assert-Check 'S13 Abbruch: Download lief und Fortschritt war sichtbar' $progressSeen
-$finished13 = $run.Process.WaitForExit(60000)
-Assert-Check 'S13 Abbruch: Updater endet sauber (Exit 0)' ($finished13 -and $run.Process.ExitCode -eq 0)
+Assert-Check 'S13 Kein Abbruch: Download lief und Fortschritt war sichtbar' $progressSeen
+$finished13 = $run.Process.WaitForExit(90000)
+Assert-Check 'S13 Kein Abbruch: Updater endet mit Erfolg (Exit 0)' ($finished13 -and $run.Process.ExitCode -eq 0)
 $progress13 = Read-Progress $inst13
-Assert-Check 'S13 Abbruch: Fortschritt meldet cancelled' ($null -ne $progress13 -and $progress13.phase -eq 'cancelled')
-Assert-Check 'S13 Abbruch: EXE unveraendert' ((Get-FileSha (Join-Path $inst13 'ArenaBridge.exe')) -eq $shaInstalled)
+Assert-Check 'S13 Kein Abbruch: Fortschritt endet mit done (Abbruchdatei wurde ignoriert)' ($null -ne $progress13 -and $progress13.phase -eq 'done')
+Assert-Check 'S13 Kein Abbruch: neue EXE ist installiert' ((Get-FileSha (Join-Path $inst13 'ArenaBridge.exe')) -eq $shaNew)
 
 # ------------------------------------------------------------ Szenario 14: Diagnose-Modus
 $inst14 = New-Install 's14' $exeInstalledSource
@@ -495,6 +498,25 @@ $result = if (Test-Path -LiteralPath $run.ResultPath) { Read-Json $run.ResultPat
 Assert-Check 'S14 Diagnose: Bericht mit Manifest, Version und Ordnern' `
     ($run.ExitCode -eq 0 -and $null -ne $result -and $result.manifestOk -eq $true -and $result.availableVersion -eq $newVersion -and $result.installDirectoryWriteable -eq $true)
 Assert-Check 'S14 Diagnose: aendert die EXE nicht' ((Get-FileSha (Join-Path $inst14 'ArenaBridge.exe')) -eq $shaInstalled)
+
+# ------------------------------------------------------------ Szenario 16: gleiche Version, anderer Hash
+# Regression "neue Version 7.8.0 / alte Version 7.8.0": gleiche Versionsnummer ist NIE ein Update.
+$inst16 = New-Install 's16' $exeInstalledSource
+$manifestSame = New-Manifest 'same' $installedVersion $urlNew $shaNew $sizeNew 9
+$run = Invoke-Updater -Mode 'check' -InstallDir $inst16 -ManifestPath $manifestSame -Case 's16'
+$result16 = if (Test-Path -LiteralPath $run.ResultPath) { Read-Json $run.ResultPath } else { $null }
+Assert-Check 'S16 Gleiche Version: Entscheidung ist up-to-date (kein Update)' ($null -ne $result16 -and [string]$result16.status -eq 'up-to-date')
+$run = Invoke-Updater -Mode 'install' -InstallDir $inst16 -ManifestPath $manifestSame -Case 's16b' -Extra @('-WaitForProcessId', '0')
+Assert-Check 'S16 Gleiche Version: install ersetzt nichts' ((Get-FileSha (Join-Path $inst16 'ArenaBridge.exe')) -eq $shaInstalled)
+
+# ------------------------------------------------------------ Szenario 17: Fortschritt aus einem frueheren Lauf wird nie gelesen
+$inst17 = New-Install 's17' $exeInstalledSource
+$staleDir = Join-Path $inst17 '.arena-update'
+New-Item -ItemType Directory -Path $staleDir -Force | Out-Null
+Write-Utf8 (Join-Path $staleDir 'update-progress.json') '{"runId":"alt","phase":"ready-to-install","message":"alt","percent":100}'
+$run = Invoke-Updater -Mode 'install' -InstallDir $inst17 -ManifestPath $manifestNew -Case 's17' -Extra @('-WaitForProcessId', '0', '-RunId', 'neu17')
+$progress17 = Read-Progress $inst17
+Assert-Check 'S17 Alt-Fortschritt: der neue Lauf meldet seine eigene RunId' ($null -ne $progress17 -and [string]$progress17.runId -eq 'neu17')
 
 # ------------------------------------------------------------ Szenario 15: Fortschritt meldet den Abschluss
 $progress2 = Read-Progress (Join-Path $WorkRoot 's2\install')
