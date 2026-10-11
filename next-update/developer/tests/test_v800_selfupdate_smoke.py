@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""Windows-only wrapper for Invoke-SelfUpdateSmoke.ps1 (7.7.0 self-update).
+"""Windows-only wrapper for Invoke-SelfUpdateSmoke.ps1 (Update-System 2.0.0).
 
 Exit 0  = every self-update check passed on Windows.
 Exit 1  = at least one check failed.
 Exit 77 = skipped: this host is not Windows, so the PowerShell 5.1 harness cannot run.
 
-The harness builds two test-fixture EXEs with the real builder, serves them from
-127.0.0.1 and never touches release/, channels/*.json or the real user data.
+Das Skript baut zwei Test-EXEs mit dem echten Builder (Dateiversion aus
+app/version.json abgeleitet), bedient sie ueber einen HttpListener nur auf
+127.0.0.1 und prueft 15 Faelle (Installation, Backup, Neustart, Downgrade,
+falscher SHA-256, Groesse, deaktiviertes/ungueltiges Manifest, Netzwerkfehler,
+laufende EXE ohne Prozessabbruch, Rollback, falsche Dateiversion, veraltete
+sequence, Abbruch, Diagnose, Fortschritt). Es veraendert niemals release/,
+die Kanal-Dateien oder echte Benutzerdaten.
 """
 from __future__ import annotations
 

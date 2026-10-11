@@ -36,6 +36,11 @@
       "date": "2026-10-11",
       "approvedBy": "Nutzer (Owner) - ausdrueckliche Freigabe",
       "note": "Freigabe 2026-10-11: Neufassung des Update-Systems (Updater 2.0.0, Manifest-Schema 2, unveraenderliche Artefaktnamen, eigenes Update-Fenster mit Fortschritt und Abbruch, Release-Doctor sowie Migrationshelfer) auf ausdrueckliche Nutzeranweisung."
+    },
+    {
+      "date": "2026-10-11",
+      "approvedBy": "Nutzer (Owner) - ausdrueckliche Freigabe",
+      "note": "Freigabe 2026-10-11 (Nachtrag): Beschreibung der Windows-Rauchtest-Huelle an den neuen Testumfang (15 Faelle) angepasst."
     }
   ],
   "files": {
@@ -53,7 +58,7 @@
     "developer/tests/run_offline_tests.py": "255c6acb04d9052516089fa1a41d33da591ff1f762231f05ec0c40359784bf5a",
     "developer/tests/requirements-test.txt": "267bcd9035ba02b51b5f33ae96e389e73426260f83f5fdebb4051afe9645e5d3",
     "developer/tests/Invoke-SelfUpdateSmoke.ps1": "8d5704509220095a05b6c9a8439cfe0460dd27a797f144db09fa08a53ec44497",
-    "developer/tests/test_v800_selfupdate_smoke.py": "6448450364df928ac5f283b43c2d7af1e095264682d580c4c3e8035660ac88d4",
+    "developer/tests/test_v800_selfupdate_smoke.py": "e459eca9bc294f032f8fca3e7c8cc0ed4d710716f253e46d696f1553ac6a1f7c",
     "developer/tests/test_v800_update_manifest.py": "aea7fe15efdfe972ea986f58257f1be51d9bdfcfbbd78218a233d8670c96dfca",
     "developer/tests/test_v800_update_system_guard.py": "f2ea71058a2ce0da05d70a5263dd1285af411d2fc1aaaa5c33c5d4b416b878cf",
     "developer/tests/test_v800_update_window.py": "3fad80aa513516669bf2367b1528d6ed4a8b10931bafc63a047673e10890a88d",
