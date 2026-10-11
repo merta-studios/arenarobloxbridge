@@ -26,14 +26,19 @@
       "date": "2026-10-11",
       "approvedBy": "Nutzer (Owner) - ausdrueckliche Freigabe",
       "note": "Nutzer hat am 2026-10-11 ausdruecklich beauftragt, den Build-Fehler 'Background placeholder was not replaced' in builder/Build-EXE.ps1 zu beheben (Pruefung matchte den Platzhalter-Text in den Smoke-Test-Zeilen von app/ArenaBridge.ps1)."
+    },
+    {
+      "date": "2026-10-11",
+      "approvedBy": "Nutzer (Owner) - ausdrueckliche Freigabe",
+      "note": "Release-Freigabe Version 7.7.0: Kanal stable aktiviert fuer freigegebene EXE."
     }
   ],
   "files": {
-    "update-system/PROTECTED.md": "2585883660699db8c754f47ae127c4f5400e3b053cfe96382732f022a5b6b4c4",
-    "update-system/README.md": "d75498e472161228bd53e9d62377a9af94de6161c972a6a5c874bb0dfdae5a2c",
+    "update-system/PROTECTED.md": "c2d07cebf35128b8ba810b0954053b0582464ef55e90845d6d79accec9b4df9b",
+    "update-system/README.md": "9d30f4c8938338ed8dca6d4c14e6c07f3714d056d0ca0c2a009af792aa08f112",
     "update-system/channels/beta.json": "62a6c0d86da796faf5044632149ff28049656d23ef50ec8035acd70fd8dd152c",
     "update-system/channels/manifest.schema.json": "241a49080863e5727d5ee9f946d9f85679b4473b5dd112d9b6df1fbecd81a158",
-    "update-system/channels/stable.json": "3f25d11dcb384e2b7716c96b681e5af0d6bdb2bed23e71d8df949eed145210f1",
+    "update-system/channels/stable.json": "fb11e6513a9f822a49c2e74f8202a4ece470b304f781a843ede9e73d418033ba",
     "update-system/updater/README.md": "ecff0576ef3912bb3897af1829cca1c58dd1dbfde5cca0ce04db6f554c8e1ffb",
     "update-system/updater/Update-Bridge.ps1": "b172faa012a84cb7fdd8567bdef7c3cdfccc8950be06844f4bb1bba4f84e2528",
     "builder/Build-EXE.ps1": "ad4b0d449afed7e473d1454f642da2858549287deac251823b128f614de32276",
@@ -41,8 +46,8 @@
     "developer/tests/requirements-test.txt": "267bcd9035ba02b51b5f33ae96e389e73426260f83f5fdebb4051afe9645e5d3",
     "developer/tests/Invoke-SelfUpdateSmoke.ps1": "10483d2588e50a179afedddbbfff55c43f4c759adc3960b1f1676de1849ddcbb",
     "developer/tests/test_v800_selfupdate_smoke.py": "6448450364df928ac5f283b43c2d7af1e095264682d580c4c3e8035660ac88d4",
-    "developer/tests/test_v800_update_manifest.py": "90320377ff053596c4ad08240c7464acc3bb6728f3f43d27f4e69d2bde01fc2c",
-    "developer/tests/test_v800_update_system_guard.py": "aba0fc75ebed32b87a12a8b9652162dab962492397ebd459b36fe12ad4defc9b",
+    "developer/tests/test_v800_update_manifest.py": "b4108bbdb918c5b93fbdc9f1be3c74a6ab89f9da13e0fcc0a7b96a3d43750d6b",
+    "developer/tests/test_v800_update_system_guard.py": "03bf5c076cfc14fb007fae0e496168ceb0b307a3acd9292e4056b09616f7602c",
     "developer/tests/fixtures/update/invalid-bad-version.json": "6e00638d1e6431a8fb0f3765c646ffcef7aecdfea2925867f5475526ed6b20d5",
     "developer/tests/fixtures/update/invalid-disabled-with-url.json": "7699ad96b2d18bbdac95d9af6f43c3baff6d0dba6650f9211eb05d5cd3094f52",
     "developer/tests/fixtures/update/invalid-evil-url.json": "8cefb36acaac23c59dcf5242530c00859b85f8f60d279fe513aab75808fcc435",

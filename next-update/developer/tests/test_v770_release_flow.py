@@ -83,33 +83,54 @@ def validate_manifest(data: dict, exe_path: Path, current_version: str,
     if ver != current_version:
         errs.append(f"version ({ver}) != app/version.json ({current_version})")
 
-    if last_pub_version and not semver_gt(ver, last_pub_version):
-        errs.append(f"version ({ver}) not higher than last published ({last_pub_version})")
-
-    if not exe_path.is_file():
-        errs.append(f"release EXE missing at {exe_path}")
-    else:
+    art = data.get("artifact", {})
+    actual_sha = ""
+    if exe_path.is_file():
         exe_bytes = exe_path.read_bytes()
         actual_sha = hashlib.sha256(exe_bytes).hexdigest().lower()
         actual_size = len(exe_bytes)
-        art = data.get("artifact", {})
         if str(art.get("sha256", "")).lower() != actual_sha:
             errs.append(f"sha256 ({art.get('sha256')}) != EXE sha256 ({actual_sha})")
         if art.get("sizeBytes") != actual_size:
             errs.append(f"sizeBytes ({art.get('sizeBytes')}) != EXE size ({actual_size})")
+    else:
+        errs.append(f"release EXE missing at {exe_path}")
+
+    # Regel 3 des Release-Ablaufs: Downgrade verboten, Gleichstand nur mit identischem
+    # Artefakt (sonst version-conflict). Ein aktiviertes Manifest darf nicht am Tag nach
+    # der Freigabe umfallen, nur weil README und Manifest dieselbe Version nennen.
+    if last_pub_version:
+        p_ver, p_last = parse_semver(ver), parse_semver(last_pub_version)
+        if not p_ver or not p_last:
+            errs.append(f"version ({ver}) or last published ({last_pub_version}) is not X.Y.Z")
+        elif p_ver == p_last:
+            if not actual_sha or str(art.get("sha256", "")).lower() != actual_sha:
+                errs.append(f"version-conflict: ({ver}) equals the last published version "
+                            f"with a different artifact hash")
+        elif not semver_gt(ver, last_pub_version):
+            errs.append(f"version ({ver}) not higher than last published ({last_pub_version})")
 
     canonical_url = "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/main/next-update/release/ArenaBridge.exe"
-    if data.get("artifact", {}).get("url") != canonical_url:
-        errs.append(f"URL is not canonical: {data.get('artifact', {}).get('url')}")
+    if art.get("url") != canonical_url:
+        errs.append(f"URL is not canonical: {art.get('url')}")
 
-    today_iso = _dt.date.today().isoformat()
+    published_at = str(data.get("publishedAtUtc", ""))
+    published_stamp = re.match(r"^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}:\d{2}Z$", published_at)
+    if not published_stamp:
+        errs.append(f"publishedAtUtc ({published_at}) is not ISO-8601 UTC YYYY-MM-DDTHH:MM:SSZ")
     approvals = lock_data.get("approvals", [])
-    has_release_approval = any(
-        a.get("date") == today_iso and ("release" in a.get("note", "").lower() or "freigabe" in a.get("note", "").lower())
-        for a in approvals
-    )
-    if not has_release_approval:
-        errs.append(f"lock file has no release approval dated today ({today_iso})")
+
+    def release_approval(day: str) -> bool:
+        return any(a.get("date") == day and ("release" in str(a.get("note", "")).lower()
+                                             or "freigabe" in str(a.get("note", "")).lower())
+                   for a in approvals)
+
+    if published_stamp:
+        if not release_approval(published_stamp.group(1)):
+            errs.append(f"lock file has no release approval dated {published_stamp.group(1)} "
+                        f"(publishedAtUtc of this manifest)")
+    elif not release_approval(_dt.date.today().isoformat()):
+        errs.append(f"lock file has no release approval dated today ({_dt.date.today().isoformat()})")
 
     return errs
 
@@ -249,6 +270,26 @@ def test_negative_unit_tests() -> None:
     no_approval_lock = {"approvals": [{"date": today_iso, "approvedBy": "Nutzer", "note": "Feature-PR normaler Umbau"}]}
     errs6 = validate_manifest(valid_base, exe_file, current_ver, last_pub, no_approval_lock, schema)
     check(any("lock" in e for e in errs6), "negative test: enabled without release approval in lock is rejected")
+
+    # Case 7: release approval exists, but not for the day this manifest was published
+    other_day_lock = {"approvals": [{"date": "2020-01-01", "approvedBy": "Nutzer",
+                                     "note": "Release-Freigabe Version 7.7.0 an einem anderen Tag."}]}
+    errs7 = validate_manifest(valid_base, exe_file, current_ver, last_pub, other_day_lock, schema)
+    check(any("lock" in e for e in errs7),
+          "negative test: release approval from another day than publishedAtUtc is rejected")
+
+    # Case 8: a published manifest whose version equals the recorded last published version
+    # stays valid while it points at the same artifact; a different hash is a version-conflict.
+    same_version_lock = {"approvals": [{"date": today_iso, "approvedBy": "Nutzer",
+                                        "note": "Release-Freigabe Version 7.7.0."}]}
+    if exe_file.is_file():
+        errs8 = validate_manifest(valid_base, exe_file, current_ver, current_ver, same_version_lock, schema)
+        check(not errs8, "live release state: same version and same artifact stays valid -> " + (", ".join(errs8) if errs8 else "ok"))
+    tampered_same = copy.deepcopy(valid_base)
+    tampered_same["artifact"]["sha256"] = "0" * 64
+    errs9 = validate_manifest(tampered_same, exe_file, current_ver, current_ver, same_version_lock, schema)
+    check(any("version-conflict" in e for e in errs9),
+          "negative test: same version with a different artifact hash is a version-conflict")
 
 
 def main() -> int:
