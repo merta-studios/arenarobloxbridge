@@ -4,3 +4,4 @@ tree_sitter>=0.25,<0.27
 tree_sitter_powershell>=0.25,<0.27
 lupa>=2.4
 jsonschema>=4.17,<5
+pefile>=2023.2.7

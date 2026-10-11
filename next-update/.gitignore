@@ -12,6 +12,3 @@
 /release/*.smoke.json
 /release/Start-Diagnostic.bat
 
-# Local updater cache/state from manual testing.
-/update-system/updater/.cache/
-*.update.lock

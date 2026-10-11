@@ -15,8 +15,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = ROOT / "app"
+def _shipped_build_version() -> str:
+    """Version aus app/version.json: so setzt der Builder den Platzhalter im Quelltext."""
+    import json
+    from pathlib import Path as _P
+    return json.loads((_P(__file__).resolve().parents[2] / "app" / "version.json").read_text(encoding="utf-8"))["version"]
+
+
 PS1 = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.8.0"
+VERSION = "7.9.0"
 SESSION_BUDGET_BYTES = 300000
 FAILURES: list[str] = []
 
@@ -35,7 +42,7 @@ def region(source: str, start: str, end: str) -> str:
 def load_source() -> str:
     raw = PS1.read_bytes()
     assert raw.startswith(b"\xef\xbb\xbf"), "ArenaBridge.ps1 must retain its UTF-8 BOM"
-    return raw.decode("utf-8-sig")
+    return raw.decode("utf-8-sig").replace("__ARENA_BUILD_VERSION__", _shipped_build_version())
 
 
 def extract_plugin_lua(source: str) -> str:

@@ -1,81 +1,43 @@
-ARENA ROBLOX BRIDGE — START HIER
-================================
+ARENA ROBLOX BRIDGE — START HIER (Version 7.9.0)
+=================================================
 
-NUR BAUEN UND PRIVAT TESTEN?
+NUR BAUEN UND TESTEN?
 
 1. Oeffne den Ordner next-update.
-2. Doppelklicke Build-EXE.bat. Das ist der einzige normale Startknopf.
-   Build-EXE.bat baut standardmaessig den Kanal stable (ohne interaktive Rueckfrage).
+2. Doppelklicke Build-EXE.bat.
 3. Warte auf BUILD ERFOLGREICH.
-4. Starte genau diese Test-EXE:
+4. Starte genau diese EXE:
 
        release\ArenaBridge.exe
 
-   Vorher andere ArenaBridge-Fenster schliessen. Falls beim Start kein
-   Fenster erscheint, schliesse andere ArenaBridge-Prozesse und starte:
+   Vorher andere ArenaBridge-Fenster schliessen. Falls beim Start kein Fenster
+   erscheint, schliesse andere ArenaBridge-Prozesse und starte
+   release\Start-Diagnostic.bat. Das Diagnose-Fenster offen lassen.
 
-       release\Start-Diagnostic.bat
+ZUM VEROEFFENTLICHEN (nur wenn der Test gut war):
 
-   Lass das Diagnose-Konsolenfenster offen. Die wichtigste Startdatei ist:
+- Lade die getestete Datei als next-update\release\ArenaBridge.exe auf main hoch
+  (ersetzen). Die Version in der EXE muss neuer sein als die bisherige.
+- GitHub startet dann automatisch den Workflow "Bridge-Version veroeffentlichen"
+  (Reiter Actions). Er schreibt next-update\release\latest.json. Erst danach
+  sehen Nutzer das Update.
+- Ist der Workflow rot: Meist ist die Version nicht erhoeht. Sag der KI
+  "Version erhoehen" — sie setzt dann z. B. 7.9.1 in app\version.json.
 
-       %LOCALAPPDATA%\START-CHECK.txt
+WIE DAS UPDATE FUER NUTZER FUNKTIONIERT:
 
-Der normale Build schreibt ALLE Ausgaben in den einzigen Ordner release\.
-Es gibt keine beta/stable-Unterordner, keinen release-inbox-Ordner und keinen
-user-builds-Ordner. Das neue Logo aus app\assets\neueslogo.png wird sowohl als
-Windows-EXE-Symbol als auch im Bridge-Fenster neben dem Titel verwendet (groesser,
-eckig und auch als Platzhalter-Icon der Place-Liste). Der Fensterhintergrund kommt
-aus app\assets\liquidglasbackground.png; auch er wird in die EXE eingebettet.
+- Beim Start prueft die Bridge (hoechstens 5 Sekunden), ob eine neue Version da ist.
+- Ist sie da, erscheint das Fenster "Update verfuegbar" mit dem gruenen Knopf
+  "Jetzt installieren". Er oeffnet den Browser mit der neuen EXE.
+- "Spaeter" wird gezaehlt (ueber alle Starts). Nach 5 Klicks gibt es keinen
+  "Spaeter"-Knopf mehr, das Update ist dann Pflicht.
+- Die neue EXE schiebt beim ersten Start die alte EXE in den Papierkorb.
+- Ohne Internet startet die Bridge ganz normal.
 
-KANAL-HINWEIS:
-Der Standard-Buildkanal ist stable. Die gebaute EXE hoert auf stable.json.
-Hinweis: Die bereits getestete 7.7.0-EXE ist ein beta-Kanal-Build und erhaelt kein
-Stable-Update. Neu gebaute EXEs nutzen automatisch stable.
+WICHTIG:
 
-SELBST-UPDATE PRIVAT TESTEN (nur Windows, optional, nach dem Build):
-
-   powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\developer\tests\Invoke-SelfUpdateSmoke.ps1
-
-   Der Test baut zwei Test-EXEs unter %TEMP% (nie in release\), startet einen
-   lokalen Test-Server auf 127.0.0.1 und prueft das Update isoliert. Er aendert
-   weder die echte Bridge noch die Kanaele. Das Ergebnis steht am Ende der Ausgabe.
-   Bis dieser Test auf deinem PC gelaufen ist, gilt das Selbst-Update als NICHT getestet.
-
-WICHTIG — TEST IST KEINE VEROEFFENTLICHUNG:
-
-- Ein PR, dessen Merge, ein ZIP-Download und dein lokaler Build aktualisieren
-  keine Nutzer. Channel-Manifeste bleiben aus.
-- Wenn die Aenderung kaputt ist oder dir nicht gefaellt: Test-EXE NICHT
-  hochladen. Starte einen neuen Chat, fordere Korrekturen als neuen PR an und
-  beginne nach dem Merge wieder mit ZIP, Build und Test.
-- Wenn alles perfekt ist: Sage das ausdruecklich in der Session, deren PR
-  bereits gemergt wurde. Diese Session antwortet dann NUR mit einer kopierbaren
-  Textbox/einem Codeblock, der den vollstaendigen Prompt fuer die naechste
-  Release-Session enthaelt. Hier wird noch nichts veroeffentlicht.
-- Die getestete Datei wird nur nach Freigabe unter genau diesem Repository-Pfad
-  abgelegt: next-update\release\ArenaBridge.exe. Diagnose-EXE, BAT,
-  Pruefsummen, Metadaten und temporaere Build-Dateien werden nicht hochgeladen.
-- Der verbindliche Ablauf steht in developer\docs\RELEASE-ABLAUF.md.
-- Die Release-Session verwendet ausschliesslich next-update\update-system\ und
-  den neuen Updater. Update-Bridge.ps1 ist in die EXE eingebettet und seit 7.7.0
-  ueber den Kanal stable freigegeben; beta bleibt deaktiviert. Bereits
-  installierte Kopien ohne Updater erhalten das System nicht automatisch; die
-  einmalige Migration bleibt offen und manuell. Die alte Root-Update-Struktur
-  bleibt unberuehrt und wird nicht benutzt.
-- Der Update-Schutz (update-system\PROTECTED.md) gilt: Aenderungen am Update-System
-  brauchen eine ausdrueckliche Freigabe.
-
-FUER DEN BUILD:
-
-- Benoetigt werden 64-Bit-Windows, Windows PowerShell 5.1, WPF/.NET und beim
-  ersten Build eine Internetverbindung fuer ps2exe. Administratorrechte sind
-  nicht noetig.
-- Der Build prueft den Windows-PowerShell-Parser fuer Bridge und Updater und
-  startet die EXE danach in einem isolierten Smoke-Test. Dabei werden
-  EXE-Startpfad, x64, STA/WPF, Startbild, eingebettetes Programmlogo und das
-  eingebettete Hintergrundbild geprueft.
-  Es wird nichts hochgeladen.
-- Hier in der Entwicklungssandbox wurde keine Windows-EXE gebaut.
-
-Mehr Details, Release-Ablauf, Ordneruebersicht und Offline-Tests: README.md
-Pflichtlektuere zum Release-Ablauf: developer\docs\RELEASE-ABLAUF.md
+- Die Bridge ersetzt sich nie selbst. Die neue EXE startest du selbst.
+- Windows kann beim Herunterladen warnen ("Unbekannter Herausgeber" /
+  SmartScreen). Die EXE ist nicht signiert. Wenn du der Datei vertraust:
+  "Weitere Informationen" -> "Trotzdem ausfuehren".
+- Der Ablauf im Detail: README.md. Technik: developer\docs\UPDATE-SYSTEM.md.

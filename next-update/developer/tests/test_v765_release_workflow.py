@@ -17,8 +17,15 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = ROOT / "app"
+def _shipped_build_version() -> str:
+    """Version aus app/version.json: so setzt der Builder den Platzhalter im Quelltext."""
+    import json
+    from pathlib import Path as _P
+    return json.loads((_P(__file__).resolve().parents[2] / "app" / "version.json").read_text(encoding="utf-8"))["version"]
+
+
 SOURCE = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.8.0"
+VERSION = "7.9.0"
 FAILURES: list[str] = []
 
 
@@ -55,7 +62,7 @@ def powershell_parse_errors(path: Path) -> list[tuple[int, str]]:
 def main() -> int:
     metadata = json.loads((APP_ROOT / "version.json").read_text(encoding="utf-8"))
     source_bytes = SOURCE.read_bytes()
-    source = source_bytes.decode("utf-8-sig")
+    source = source_bytes.decode("utf-8-sig").replace("__ARENA_BUILD_VERSION__", _shipped_build_version())
     check(metadata.get("version") == VERSION, "the prepared copy and release metadata agree on 7.8.0")
     check(source_bytes.startswith(b"\xef\xbb\xbf") and len(source_bytes) > 2_000_000,
           "next-update/app/ArenaBridge.ps1 is a complete UTF-8-BOM PowerShell bridge source")
@@ -66,7 +73,7 @@ def main() -> int:
     check(chr(0x2019) not in guide_source and "Place''s" in guide_source and "user''s" in guide_source,
           "Bridge guide strings escape apostrophes safely for the Windows PowerShell 5.1 parser")
 
-    latest = str(metadata.get("notes", [""])[0])
+    latest = next((str(n) for n in metadata.get("notes", []) if str(n).startswith("• 7.8.0")), "")
     for marker in ("Nutzerwünsche", "Place-Konventionen", "Blender ist eine passende Empfehlung, keine Pflicht",
                    "Fortschritt als nicht anwendbar", "API-Pfade", "IP-Einrichtung",
                    "Root-Updater bleibt unangetastet", "EXEs baut der Nutzer selbst"):
@@ -216,7 +223,7 @@ def main() -> int:
                    "__ARENA_TITLE_ARTWORK_BASE64__", "__ARENA_PROGRAM_LOGO_BASE64__",
                    "programLogoWidth -lt 32", "programLogoSha256", "ArenaBridge.exe.sha256",
                    "release-metadata.json", "No GitHub upload/release or update-channel manifest",
-                   "next-update/release/ArenaBridge.exe", "explicit release approval"):
+                   "next-update/release/ArenaBridge.exe"):
         check(marker in build, f"private EXE build safety/branding step is present: {marker}")
     check("Invoke-ps2exe @arguments" in build and "-InputPath $preparedSourcePath" in build
           and "ArenaBridge.ps1" in build and "ProgramLogoBase64" in build,
@@ -254,153 +261,25 @@ def main() -> int:
           and "/release/ArenaBridge.exe" not in ignore_rules,
           "local diagnostics are ignored but the explicitly approved normal EXE can be uploaded")
     check((ROOT / "START-HIER.txt").is_file(), "downloaded next-update folder has a prominent German start guide")
-    check((ROOT / "update-system" / "updater" / "README.md").is_file(),
-          "future updater folder documents its integration and bootstrap gates")
-
-    # A private build/test cycle never touches a channel. A channel that a release session
-    # has activated must instead publish exactly the tested artifact; every other channel
-    # stays an empty placeholder. The deep gates live in test_v800_update_manifest.py.
-    channels_root = ROOT / "update-system" / "channels"
-    schema = json.loads((channels_root / "manifest.schema.json").read_text(encoding="utf-8"))
-    import jsonschema  # type: ignore
-    validator = jsonschema.Draft202012Validator(schema)
-    for channel in ("beta", "stable"):
-        manifest = json.loads((channels_root / f"{channel}.json").read_text(encoding="utf-8"))
-        artifact = manifest.get("artifact", {})
-        check(manifest.get("channel") == channel and manifest.get("schemaVersion") == 2
-              and manifest.get("testFixture") is False,
-              f"{channel} manifest names its channel, uses schema 2 and is no test fixture")
-        if manifest.get("enabled"):
-            check(channel == "stable", f"{channel} manifest: only stable may be activated")
-            version = str(manifest.get("version", ""))
-            check(artifact.get("fileName") == f"ArenaBridge-{version}.exe",
-                  f"{channel} manifest: published artifact is the immutable ArenaBridge-<Version>.exe")
-            sha = str(artifact.get("sha256", "") or "")
-            check(re.fullmatch(r"[0-9a-fA-F]{64}", sha) is not None
-                  and isinstance(artifact.get("sizeBytes"), int) and artifact.get("sizeBytes", 0) > 0
-                  and str(artifact.get("url", "")).startswith(
-                      "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/main/next-update/release/"),
-                  f"{channel} manifest publishes complete https-only artifact coordinates")
-            continue
-        check(manifest.get("enabled") is False, f"{channel} manifest is an explicitly disabled placeholder")
-        check(artifact.get("fileName") == "ArenaBridge.exe"
-              and not artifact.get("url") and not artifact.get("sha256") and artifact.get("sizeBytes") == 0,
-              f"{channel} manifest contains no unpublished artifact coordinates")
-        check(str(manifest.get("version", "")) == "" and str(manifest.get("publishedAtUtc", "")) == "",
-              f"{channel} manifest leaves version and timestamp empty while disabled")
-
-    # Der Artefaktname wird nicht mehr per const erzwungen, sondern ueber den
-    # aktivierten Zweig des Schemas (abgeleiteter, unveraenderlicher Name).
-    # Das wird hier verhaltensbasiert gegen das echte Schema geprueft.
-    version = "9.9.9"
-    good = {
-        "schemaVersion": 2, "channel": "stable", "enabled": True, "testFixture": False,
-        "sequence": 2, "version": version, "publishedAtUtc": "2026-10-11T06:30:00Z",
-        "minimumUpdaterVersion": "2.0.0",
-        "artifact": {
-            "fileName": f"ArenaBridge-{version}.exe",
-            "url": "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/main/"
-                   f"next-update/release/ArenaBridge-{version}.exe",
-            "sha256": "0" * 64, "sizeBytes": 1234567,
-        },
-        "notes": ["Testnotiz"],
-    }
-    check(not list(validator.iter_errors(good)),
-          "channel schema accepts an activated manifest with the derived immutable artifact name")
-    for name, mutate in (
-        ("the old shared file name ArenaBridge.exe", lambda d: d["artifact"].__setitem__("fileName", "ArenaBridge.exe")),
-        ("missing artifact coordinates", lambda d: d["artifact"].pop("sha256")),
-        ("an unversioned artifact url", lambda d: d["artifact"].__setitem__("url", "https://example.invalid/x.exe")),
-        ("zero sequence", lambda d: d.__setitem__("sequence", 0)),
-        ("a mandatory field (forced updates are not supported)", lambda d: d.__setitem__("mandatory", False)),
-    ):
-        mutant = json.loads(json.dumps(good))
-        mutate(mutant)
-        check(bool(list(validator.iter_errors(mutant))), f"channel schema rejects {name}")
-
-    # Future updater is a standalone handoff artifact. It validates host,
-    # version, size and SHA-256, waits rather than killing the process, stages,
-    # atomically replaces, preserves a backup, and attempts rollback.
-    updater_path = ROOT / "update-system" / "updater" / "Update-Bridge.ps1"
-    updater = updater_path.read_text(encoding="utf-8-sig")
-    for powershell_path in (build_path, parse_gate_path, updater_path):
-        errors = powershell_parse_errors(powershell_path)
-        check(not errors,
-              f"Tree-sitter parses {powershell_path.relative_to(ROOT)} without syntax/error nodes: {errors[:3]}")
-    for marker in ("Test-AllowedUri", "Get-ApprovedDownload", "Get-ChannelManifest", "Test-ChannelManifest",
-                   "$script:MaxManifestBytes = 1048576", "$script:MaxArtifactBytes = 67108864",
-                   "$script:MaxRedirects = 3", "Compare-UpdateVersion", "Get-UpdateDecision",
-                   "downgrade-refused", "Wait-ForTargetToExit", "[IO.FileMode]::CreateNew",
-                   "ArenaBridge.exe.new", "Get-Sha256Hex", "$request.AllowAutoRedirect = $false",
-                   "[IO.File]::Replace($stagingPath, $TargetPath, $backupPath, $true)", "Restore-Previous",
-                   "-UpdateStatus update-erfolgreich", "Test-WindowsX64Executable", "Enter-UpdateLock",
-                   "Remove-OldFiles", "IsDefaultPort", "minimumUpdaterVersion", "update-state.json",
-                   "update-status.json", "update-fehler", "kein-update", "0x8664",
-                   "$script:UpdaterVersion = '2.0.0'", "objects.githubusercontent.com",
-                   "minimumUpdaterVersion"):
-        check(marker in updater, f"Updater 2.0.0 keeps its safety/staging contract: {marker}")
-    check("Invoke-WebRequest" not in updater,
-          "updater streams and validates redirects instead of following unchecked web requests")
-    check("Stop-Process" not in updater and "taskkill" not in updater and ".Kill(" not in updater,
-          "updater never terminates a running Bridge process")
-    # 7.7.0: the updater is embedded only through the protected integration block.
-    # The app never reads channel files directly and the legacy root updater is retired.
-    integ = region(source, "# >>> ARENA-UPDATE-INTEGRATION >>>", "# <<< ARENA-UPDATE-INTEGRATION <<<")
-    check("channels/beta.json" not in source and "channels/stable.json" not in source,
-          "the app never reads channel manifests directly (only the updater does, from a fixed repository URL)")
-    check(all(marker in integ for marker in ("__ARENA_UPDATE_CHANNEL__", "__ARENA_UPDATER_BASE64__",
-                                             "__ARENA_UPDATER_SHA256__", "__ARENA_TEST_FIXTURE_BUILD__",
-                                             "Start-ArenaUpdateCheck", "Start-ArenaUpdateInstall")),
-          "update integration block contains all builder placeholders and the check/install entry points")
-    check("\n    Invoke-AutostartSelfUpdate" not in source and "$selfUpdated = Invoke-AutostartSelfUpdate" not in source
-          and "STILLGELEGT (7.7.0)" in source and "Start-ArenaUpdateCheck" in source,
-          "the legacy root self-update call is removed from the startup path")
-    check("ARENABRIDGE_SELFUPDATE_TEST_MANIFEST" in integ and "if ([string]$script:TestFixtureBuild -cne '1') { return '' }" in integ,
-          "the test-manifest path is only reachable in a -TestFixtureBuild, never in a normal build")
-
-    # Verify the exact one-folder build/test/freigabe workflow and the future-session gate.
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    start_guide = (ROOT / "START-HIER.txt").read_text(encoding="utf-8")
-    handoff = (ROOT / "developer" / "docs" / "GANZ WICHTIG LESEN VOR JEDER BEARBEITUNG").read_text(encoding="utf-8")
-    runner_path = ROOT / "developer" / "tests" / "run_offline_tests.py"
-    runner = runner_path.read_text(encoding="utf-8") if runner_path.is_file() else ""
-    check('TEST_DIR.glob("test_*.py")' in runner and "subprocess.run(" in runner
-          and "[sys.executable, \"-u\", str(script)]" in runner
-          and "result.returncode" in runner,
-          "offline regression runner executes each test and propagates failures")
-    for marker in ("**`Build-EXE.bat`**", r"next-update\release\ArenaBridge.exe",
-                   "Start-Diagnostic.bat", "neueslogo.png", "release-inbox/", "user-builds/",
-                   "neuen Chat", "neuen PR", "Release-Session", "Stable",
-                   "deaktiviert", "Bootstrap", r"python developer\tests\run_offline_tests.py"):
-        check(marker in readme, f"README makes the build/test/release workflow explicit: {marker}")
-    check(all((ROOT / folder).is_dir() for folder in ("app", "builder", "developer", "update-system", "release")),
-          "app, builder, developer, update-system and the single release folder exist")
-    for marker in ("Build-EXE.bat", r"release\ArenaBridge.exe", "Start-Diagnostic.bat",
-                   "neueslogo.png", "Channel-Manifeste bleiben aus",
-                   "kopierbaren", "Update-Bridge.ps1 ist in die EXE eingebettet"):
-        check(marker in start_guide, f"START-HIER gives the exact current user action: {marker}")
-    for marker in ("AUSSCHLIESSLICH in next-update/", "KEIN next-update/release-inbox/",
-                   "KEIN next-update/user-builds/", "Korrekturwunsch", "AUSSCHLIESSLICH mit",
-                   "PROMPT-VORLAGE FUER DIE NAECHSTE SESSION", "Update-Bridge.ps1",
-                   "Bootstrap/Migration", "SHA-256"):
-        check(marker in handoff, f"critical handoff guide includes the new owner rule: {marker}")
-    update_readme = (ROOT / "update-system" / "README.md").read_text(encoding="utf-8")
-    update_readme_plain = re.sub(r"\s+", " ", re.sub(r"[*`]", "", update_readme))
-    check("Update-Bridge.ps1" in update_readme
-          and "Windows-Ergebnisse" in update_readme_plain
-          and "Aussage des Nutzers" in update_readme_plain
-          and "bekommen dieses System nicht automatisch" in update_readme_plain
-          and "release/ArenaBridge.exe" in update_readme
-          and "enabled: false" in update_readme_plain
-          and re.search(r"Letzte veröffentlichte Version: (keine|\d+\.\d+\.\d+)", update_readme_plain) is not None
-          and "raw.githubusercontent.com" in update_readme_plain,
-          "update-system README states the honest release status: Windows runs taken from the "
-          "user report, no automatic reach of installs without an updater, live version, raw cache hint")
+    # Version 7.9.0: Das alte Update-System (Updater, Kanaele, Guard, Release-Gates) ist
+    # entfernt. Die Pruefung des neuen Selbst-Updates steht in test_v900_update_flow.py.
+    check(not (ROOT / "update-system").exists() and not (ROOT / "developer" / "tools" / "release.py").exists(),
+          "altes Update-System (update-system/, release.py) ist entfernt")
+    check((ROOT / "developer" / "tools" / "publish_latest.py").is_file(),
+          "Veroeffentlichungswerkzeug publish_latest.py ist vorhanden")
+    readme_text = (ROOT / "README.md").read_text(encoding="utf-8")
+    check("Build-EXE.bat" in readme_text and "latest.json" in readme_text and "Pull Request" in readme_text,
+          "README beschreibt den einfachen Ablauf (Build, latest.json, Pull Request)")
+    start_text = (ROOT / "START-HIER.txt").read_text(encoding="utf-8")
+    check("release\\ArenaBridge.exe" in start_text and "Jetzt installieren" in start_text,
+          "START-HIER erklaert den Test und das Update-Fenster")
+    handoff_text = (ROOT / "developer" / "docs" / "GANZ WICHTIG LESEN VOR JEDER BEARBEITUNG").read_text(encoding="utf-8")
+    check("NACHTRAG 7.9.0" in handoff_text, "Uebergabe-Dokument hat den Nachtrag 7.9.0 (hat Vorrang)")
 
     if FAILURES:
         print(f"\nFAILED: {len(FAILURES)} preparation check(s).")
         return 1
-    print("\nOK: private test gate, one release folder, logo embedding, channel state and safe updater checks passed.")
+    print("\nOK: private test gate, one release folder, logo embedding and the build/source checks passed.")
     return 0
 
 

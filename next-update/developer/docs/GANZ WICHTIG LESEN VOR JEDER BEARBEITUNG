@@ -5,7 +5,21 @@
 #                                                                      #
 ##########################################################################
 
-AKTUELLER NACHTRAG 7.7.0 (10.10.2026) - SELBST-UPDATE-SYSTEM, SCHUTZREGELN
+AKTUELLER NACHTRAG 7.9.0 (11.10.2026) - EINFACHES UPDATE-SYSTEM (HAT VORRANG)
+=============================================================================
+DIESER NACHTRAG HAT VORRANG vor allen aelteren Update-Abschnitten unten.
+- Der alte Updater (update-system/, Kanaele beta/stable, Guard-Lock, PROTECTED.md,
+  Release-Gates, release.py, Invoke-SelfUpdateSmoke) ist ENTFERNT.
+- Neu: Block ARENA-UPDATE-INTEGRATION in app/ArenaBridge.ps1 (Pruefung, Fenster,
+  Zaehler, Papierkorb), developer/tools/publish_latest.py und der Workflow
+  .github/workflows/publish-bridge.yml (liegt im Hauptordner, weil GitHub nur dort liest).
+- Die Version kommt aus app/version.json; der Builder setzt sie in den Quelltext.
+- Schutzregeln, Guard und Release-Gates von 7.7.0 gelten NICHT mehr. Der Nutzer hat
+  deren Entfernung ausdruecklich freigegeben.
+- Ablauf und Technik: developer/docs/UPDATE-SYSTEM.md und developer/docs/RELEASE-ABLAUF.md.
+  Die folgenden 7.7.0-Abschnitte sind historisch.
+
+AKTUELLER NACHTRAG 7.7.0 (10.10.2026) - SELBST-UPDATE-SYSTEM, SCHUTZREGELN (HISTORISCH, ENTFALLEN SEIT 7.9.0)
 =============================================================================
 DIESER NACHTRAG HAT VORRANG vor 7.6.5 und allen aelteren Abschnitten.
 
@@ -37,7 +51,7 @@ REGEL: Kein Skript-Variablenname darf einen Parameternamen ausser durch Gross-/
 Kleinschreibung unterscheiden (Guard-Test prueft das). Windows-Lauf des Builds steht aus.
 PFLICHTLEKTUERE: developer/docs/RELEASE-ABLAUF.md und developer/docs/RELEASE-SESSION-PROMPT.md.
 
-SCHUTZREGELN FUER DAS UPDATE-SYSTEM (gelten fuer jede kuenftige Aenderung):
+SCHUTZREGELN 7.7.0 (ENTFALLEN SEIT 7.9.0, nur historisch):
 - Geschuetzt sind: next-update/update-system/** (Updater, Manifeste, Schema),
   der Block ARENA-UPDATE-INTEGRATION in app/ArenaBridge.ps1, die
   Update-Abschnitte in builder/Build-EXE.ps1, developer/tests/test_v800_* und
