@@ -18,7 +18,7 @@ from xml.etree import ElementTree as ET
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = ROOT / "app"
 SOURCE = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.7.0"
+VERSION = "7.7.2"
 FAILURES: list[str] = []
 
 
@@ -56,7 +56,7 @@ def main() -> int:
     metadata = json.loads((APP_ROOT / "version.json").read_text(encoding="utf-8"))
     source_bytes = SOURCE.read_bytes()
     source = source_bytes.decode("utf-8-sig")
-    check(metadata.get("version") == VERSION, "the prepared copy and release metadata agree on 7.7.0")
+    check(metadata.get("version") == VERSION, "the prepared copy and release metadata agree on 7.7.2")
     check(source_bytes.startswith(b"\xef\xbb\xbf") and len(source_bytes) > 2_000_000,
           "next-update/app/ArenaBridge.ps1 is a complete UTF-8-BOM PowerShell bridge source")
     check("function Get-PluginSource {" in source and "function Start-BridgeRuntime {" in source,

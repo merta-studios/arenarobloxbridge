@@ -35,7 +35,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = ROOT / "app"
 PS1 = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.7.0"
+VERSION = "7.7.2"
 FAILURES: list[str] = []
 
 
