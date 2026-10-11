@@ -61,27 +61,32 @@
       "date": "2026-10-11",
       "approvedBy": "Nutzer (Owner) - ausdrueckliche Freigabe",
       "note": "Freigabe Version 7.8.0: Gleichstand-Regel in den drei Release-Gates wiederhergestellt (Gleichstand nur mit identischem Artefakt-Hash, sonst version-conflict) plus neuer Negativtest; Artefakt release/ArenaBridge-7.8.0.exe unveraendert."
+    },
+    {
+      "date": "2026-10-11",
+      "approvedBy": "Nutzer (Owner) - ausdrueckliche Freigabe",
+      "note": "Nutzer-Freigabe 2026-10-11: Komplettueberarbeitung des Update-Systems auf Updater 3.0.0 (Pflicht-Update ohne Spaeter/Ueberspringen/Abbruch, Pruefung bei jedem Start vor den Diensten, Ladehaenger-Fix, gleiche Version = aktuell). Details in PROTECTED.md."
     }
   ],
   "files": {
-    "update-system/PROTECTED.md": "c11ffacb5edf7134c815d158fdb95011262a13dedc6fc600cedee1063f4c6b47",
-    "update-system/README.md": "eed5851a05af273a027499ef4b09503bd19d0704a73fddd678b378805d352e6c",
+    "update-system/PROTECTED.md": "8388c9dd464f9060a9f05985bfcd90064eca9b549f9aab4a0271b56c9855165e",
+    "update-system/README.md": "f4971ec732dab7c6926aca6d02300e4126dd108b40365690301746052b6a34dd",
     "update-system/channels/beta.json": "efc935515c3ca3e3b3dbc0e6877c8dc9ddfffd951c47ffa69a203be9844ee1db",
     "update-system/channels/manifest.schema.json": "3e4e84d1c6547ba3f096a4becc27ece29fcd5512376d6cf5c7fd49d7d8a2bb77",
     "update-system/channels/stable.json": "21bce8fed72d47f935b38a6f16df8b157a1bd92b94517e30bb7e09acb71bbd97",
     "update-system/updater/README.md": "ecff0576ef3912bb3897af1829cca1c58dd1dbfde5cca0ce04db6f554c8e1ffb",
-    "update-system/updater/Update-Bridge.ps1": "b04031f1dae0e2f0f6930d09b5c1d5c903a8c674f8d53077dabe156f2f283b3b",
+    "update-system/updater/Update-Bridge.ps1": "209075faacacb373b06fd9b53eb3571b36a3f03c2fe33976d26ee9951fffce60",
     "builder/Build-EXE.ps1": "b40585b4139be3f1079aa8215b2436ad2164e20c585396ad83e235feaf74b9db",
-    "developer/tools/release.py": "be3edb892b7805801b82ec53ca1cd5a3e3121137624704e877c99e6e9c0dc951",
+    "developer/tools/release.py": "f993bed1d50ff8abcce9382a982ee98fddcaa88a8bfdbf3690ee5457406bb501",
     "tools/ArenaBridge-Update-Holen.ps1": "82ea81bc2784086d82bc793df96830cd0b4d7d18e32401aa133bb6ad52ae257e",
     "tools/ArenaBridge-Update-Holen.cmd": "c5ca3e7e4a7f441ac8af1300af54dec4702ed2f04ed38eab406a417f531d930a",
     "developer/tests/run_offline_tests.py": "255c6acb04d9052516089fa1a41d33da591ff1f762231f05ec0c40359784bf5a",
-    "developer/tests/requirements-test.txt": "267bcd9035ba02b51b5f33ae96e389e73426260f83f5fdebb4051afe9645e5d3",
-    "developer/tests/Invoke-SelfUpdateSmoke.ps1": "8d5704509220095a05b6c9a8439cfe0460dd27a797f144db09fa08a53ec44497",
+    "developer/tests/requirements-test.txt": "4f5003e3d7410c9d916d2c456ce6b4d06a0a07343b4276c4ec8cadf2fc37f030",
+    "developer/tests/Invoke-SelfUpdateSmoke.ps1": "a64cac7f19b93ce6d05360d74682d9547c215528b8ea88b92cead906a5eed062",
     "developer/tests/test_v800_selfupdate_smoke.py": "e459eca9bc294f032f8fca3e7c8cc0ed4d710716f253e46d696f1553ac6a1f7c",
     "developer/tests/test_v800_update_manifest.py": "e5f574231d6699e89fab3337b1506555c9629e99d0f366f3b879f953e9872b14",
-    "developer/tests/test_v800_update_system_guard.py": "78267b9eb760a183f5929aa1eee6444fe4384a7aaed82b09c755f0f95073f2d2",
-    "developer/tests/test_v800_update_window.py": "01f172ce171b541ebee151d655d8e9e4ce39182f29639b85998748f908a8ba4b",
+    "developer/tests/test_v800_update_system_guard.py": "c2d89bc449731b775a435a6b2fffc01b9ea52b75dee0ac78ed7947ae498df02c",
+    "developer/tests/test_v800_update_window.py": "6954c474ae67a54f0d113d7a3d9ccb23bb51a88945be548e7c00a767b79a8992",
     "developer/tests/fixtures/update/invalid-bad-published.json": "832967036254f61e69686457da0bffa04c37903b78fe776098e4f02b7644f9dd",
     "developer/tests/fixtures/update/invalid-bad-version.json": "f6e541021ee2b826c0b2713f9181afaeccd1e1c7029151935bd5cae29d19ea7f",
     "developer/tests/fixtures/update/invalid-disabled-with-url.json": "a5d92099fa206dfd4cfe782b165c0cf2e01aae403f3fc2d53594e12375efe9bd",
@@ -103,8 +108,6 @@
     "developer/tests/fixtures/update/valid-fixture-loopback.json": "d0281c67337c0198b9b7110f774afb16962be39e96ec650a53095d8fa180c605",
     "developer/tests/fixtures/update/valid-production-enabled.json": "88eb8cb25c189661f3c0d2435653c8f64a370a99eb76c0cbffa6c3d15f265e85",
     "developer/tests/fixtures/update/valid-stable-release.json": "007a3b0df73bb6fc0c7a909f156a6fb55eebcc849d2d7e20269f147cfb83adfb",
-    "app/ArenaBridge.ps1#ARENA-UPDATE-INTEGRATION": "0f5bf013f4e14ecb91ab51181c9b04ff2ace233edf74781e9d795b51285a7f96",
-    "app/ArenaBridge.ps1#ARENA-UPDATE-SETTINGS-UI": "f18dc8def59ec226f5dcf8a9e7ea0105410e1c3f03e92d241f663f4c0188b4ec",
-    "app/ArenaBridge.ps1#ARENA-UPDATE-SETTINGS-CODE": "b9df562c43d531998521e47d9cf4d6d67c4b76af334be8e7925c688c14d57fca"
+    "app/ArenaBridge.ps1#ARENA-UPDATE-INTEGRATION": "5de9771665a3c6c443719641218dac03bab7db97e2545ee91c959401e62fa305"
   }
 }

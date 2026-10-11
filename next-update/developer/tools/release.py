@@ -143,12 +143,17 @@ def versioned_artifacts() -> list[Path]:
 # ------------------------------------------------------------------ EXE-Pruefungen
 def exe_embedded_version_strings(path: Path) -> set[str]:
     """Versionen, die als Text im EXE-Kopf stehen (UTF-16LE und ASCII)."""
-    raw = path.read_bytes()[:4 * 1024 * 1024]
+    # Ganze Datei: die VERSIONINFO-Ressource liegt bei einer ~6-MB-EXE weit hinten.
+    raw = path.read_bytes()
     found: set[str] = set()
-    for candidate in re.findall(rb"\x00\d[\x00.](?:\x00\d[\x00.]){3}", raw):
+    # UTF-16LE: "7\x00.\x008\x00.\x000\x00.\x000\x00" (Versionsressource, Wert "7.8.0.0")
+    for candidate in re.findall(rb"(?:\d\x00\.\x00){3}\d\x00", raw):
         text = candidate.decode("utf-16le", "replace")
         if re.match(r"^\d+\.\d+\.\d+\.\d+$", text):
             found.add(text)
+    # ASCII (selten, aber moeglich)
+    for candidate in re.findall(rb"(?<![\d.])\d+\.\d+\.\d+\.\d+(?![\d.])", raw):
+        found.add(candidate.decode("ascii"))
     return found
 
 

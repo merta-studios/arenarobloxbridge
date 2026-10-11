@@ -336,7 +336,7 @@ def main() -> int:
                    "-UpdateStatus update-erfolgreich", "Test-WindowsX64Executable", "Enter-UpdateLock",
                    "Remove-OldFiles", "IsDefaultPort", "minimumUpdaterVersion", "update-state.json",
                    "update-status.json", "update-fehler", "kein-update", "0x8664",
-                   "$script:UpdaterVersion = '2.0.0'", "objects.githubusercontent.com",
+                   "$script:UpdaterVersion = '3.0.0'", "objects.githubusercontent.com",
                    "minimumUpdaterVersion"):
         check(marker in updater, f"Updater 2.0.0 keeps its safety/staging contract: {marker}")
     check("Invoke-WebRequest" not in updater,
@@ -350,10 +350,10 @@ def main() -> int:
           "the app never reads channel manifests directly (only the updater does, from a fixed repository URL)")
     check(all(marker in integ for marker in ("__ARENA_UPDATE_CHANNEL__", "__ARENA_UPDATER_BASE64__",
                                              "__ARENA_UPDATER_SHA256__", "__ARENA_TEST_FIXTURE_BUILD__",
-                                             "Start-ArenaUpdateCheck", "Start-ArenaUpdateInstall")),
+                                             "Invoke-ArenaUpdateGate", "Start-ArenaGateInstall")),
           "update integration block contains all builder placeholders and the check/install entry points")
     check("\n    Invoke-AutostartSelfUpdate" not in source and "$selfUpdated = Invoke-AutostartSelfUpdate" not in source
-          and "STILLGELEGT (7.7.0)" in source and "Start-ArenaUpdateCheck" in source,
+          and "STILLGELEGT (7.7.0)" in source and "Invoke-ArenaUpdateGate" in source,
           "the legacy root self-update call is removed from the startup path")
     check("ARENABRIDGE_SELFUPDATE_TEST_MANIFEST" in integ and "if ([string]$script:TestFixtureBuild -cne '1') { return '' }" in integ,
           "the test-manifest path is only reachable in a -TestFixtureBuild, never in a normal build")

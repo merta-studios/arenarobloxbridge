@@ -1,10 +1,9 @@
 #requires -Version 5.1
 <#
-Arena Roblox Bridge - Selbst-Update-Helfer (Updater 2.0.0)
+Arena Roblox Bridge - Selbst-Update-Helfer (Updater 3.0.0)
 
 Dieser Helfer wird vom Builder in ArenaBridge.exe eingebettet (als Base64 mit
-fest eingetragener SHA-256) und von dort nach %LOCALAPPDATA% extrahiert. Die
-EXE haengt NICHT von einer separat veroeffentlichten Updater-Datei ab.
+fest eingetragener SHA-256) und von dort nach %LOCALAPPDATA% extrahiert.
 
 Modi:
   check    Laedt das Kanal-Manifest, prueft es und schreibt ein JSON-Ergebnis.
@@ -14,29 +13,24 @@ Modi:
            das REGULAERE Beenden der laufenden EXE, ersetzt sie atomar mit
            Backup, schreibt Status und Verlauf und startet die Bridge neu.
            Schlaegt ein Schritt fehl, wird die alte Fassung wiederhergestellt.
-  doctor   Schreibt einen Diagnosebericht (Umgebung, Kanal, Manifest, Zustand,
-           Schreibrechte, letzter Lauf). Aendert nichts.
+  doctor   Schreibt einen Diagnosebericht. Aendert nichts. Kein Bedienelement.
 
-Warum Version 2.0.0 (Kurzfassung, Details in developer/docs/UPDATE-KONZEPT.md):
-  - Die Artefakt-Datei heisst immer ArenaBridge-<Version>.exe. Der Dateiname
-    und die URL werden aus der Manifest-Version ABGELEITET. Damit kann eine
-    Veroeffentlichung niemals auf eine ueberschreibbare Sammeldatei zeigen.
-  - Das Manifest wird mit Cache-Brecher geladen und bei Fehlern mehrfach
-    versucht; nach einem Hash-Konflikt wird das Manifest genau einmal frisch
-    nachgeladen (Selbstheilung nach einem Merge/Cache-Versatz).
-  - sequence im Manifest: eine aeltere Folge als der lokale Stand wird nie
-    eingespielt (Schutz vor einem veralteten Manifest aus einem Cache).
-  - Vor dem Ersetzen wird die Dateiversion der neuen EXE geprueft: sie muss zur
-    Manifest-Version passen. Ein falsches oder fremdes Artefakt wird abgelehnt.
-  - Fortschritt in update-progress.json, Abbruch ueber Abbruch-Datei - ohne
-    jemals einen Prozess zu beenden.
+Version 3.0.0 (Kurzfassung, Details in update-system/README.md):
+  - Gleiche Version ist NIE ein Update (vorher fuehrte ein anderer Dateihash
+    bei gleicher Versionsnummer zu "7.8.0 -> 7.8.0"). Nur eine HOEHERE Version
+    wird installiert; eine niedrigere wird abgelehnt.
+  - Kein Abbruch mehr: Der Helfer kennt keine Abbruchdatei. Ein Update ist
+    verpflichtend, die Bridge startet erst nach erfolgreicher Installation.
+  - Jeder Lauf hat eine RunId; Fortschrittsdateien aus frueheren Laeufen werden
+    nie gelesen. Der Fortschritt enthaelt immer den aktuellen Schritt.
+  - Die Bridge schliesst sich selbst, sobald die neue Datei geprueft ist
+    (Phase ready-to-install). Der Helfer wartet hoechstens 60 Sekunden darauf.
+  - Die Datei heisst immer ArenaBridge-<Version>.exe (aus der Version abgeleitet).
 
 Harte Regeln (durch update-system/PROTECTED.md und einen Offline-Test gesichert):
-  - Keine Prozessbeendigung durch dieses Skript: eine laufende Bridge wird
-    nie gewaltsam beendet, es gibt keinen Beende- oder Kill-Befehl.
+  - Keine Prozessbeendigung durch dieses Skript (kein Stopp- oder Kill-Befehl fuer fremde Prozesse).
   - Download nur per HTTPS auf genehmigten GitHub-Hosts, feste Repository-URL,
-    keine frei waehlbaren URLs, keine Zugangsdaten.
-  - Downgrade-Schutz gegen lokalen Stand (update-state.json und Dateiversion).
+    keine frei waehlbaren URLs, keine Zugangsdaten, keine automatischen Weiterleitungen.
   - Test-Modus (-TestFixtureMode) ist nur mit einem Test-Manifest moeglich;
     normale Nutzerstarts uebergeben diesen Schalter nie.
 
@@ -52,9 +46,9 @@ param(
     [string]$ResultPath = '',
     [string]$LogPath = '',
     [string]$ProgressPath = '',
-    [string]$CancelPath = '',
+    [string]$RunId = '',
     [int]$WaitForProcessId = 0,
-    [int]$WaitTimeoutSeconds = 180,
+    [int]$WaitTimeoutSeconds = 60,
     [switch]$StartAfterUpdate,
     [switch]$TestFixtureMode,
     [string]$ManifestPath = '',
@@ -62,7 +56,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:UpdaterVersion = '2.0.0'
+$script:UpdaterVersion = '3.0.0'
 $script:ManifestSchemaVersion = 2
 $script:MaxManifestBytes = 1048576
 $script:MaxArtifactBytes = 67108864
@@ -77,7 +71,6 @@ $script:ApprovedDownloadHosts = @('raw.githubusercontent.com')
 $script:ApprovedRedirectHosts = @('raw.githubusercontent.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com')
 $script:ActiveLogPath = $LogPath
 $script:TestFixtureActive = [bool]$TestFixtureMode
-$script:CancelRequested = $false
 
 function Write-UpdateLog([string]$Text) {
     $line = ('{0:o} [updater {1}] {2}' -f [DateTime]::UtcNow, $script:UpdaterVersion, $Text)
@@ -206,16 +199,6 @@ function Test-AllowedUri([Uri]$Uri, [bool]$IsRedirect) {
     return ($script:ApprovedDownloadHosts -contains $hostName)
 }
 
-function Assert-NotCancelled {
-    # Abbruch ist eine freundliche Bitte des Nutzers, kein Prozesseingriff.
-    if ($script:CancelRequested) { throw 'ARENA_CANCEL:Der Nutzer hat das Update abgebrochen.' }
-    if ([string]::IsNullOrWhiteSpace($script:ActiveCancelPath)) { return }
-    if (Test-Path -LiteralPath $script:ActiveCancelPath -PathType Leaf) {
-        $script:CancelRequested = $true
-        throw 'ARENA_CANCEL:Der Nutzer hat das Update abgebrochen.'
-    }
-}
-
 function Get-ApprovedDownload {
     param(
         [Parameter(Mandatory = $true)][Uri]$Uri,
@@ -296,7 +279,6 @@ function Get-ApprovedDownload {
                 $outStream.Write($buffer, 0, $readCount)
                 if ($received -ge $nextProgressAt) {
                     $nextProgressAt = $received + 131072
-                    Assert-NotCancelled
                     if ($null -ne $OnBytes) { & $OnBytes $received }
                 }
             }
@@ -349,7 +331,6 @@ function Get-ChannelManifestText([bool]$BustCache) {
             return [Text.Encoding]::UTF8.GetString([byte[]]$download.Bytes)
         } catch {
             $lastError = $_.Exception.Message
-            if ($_.Exception.Message -like 'ARENA_CANCEL:*') { throw }
             Write-UpdateLog ('Manifest-Versuch ' + [string]$attempt + ' von ' + [string]$script:ManifestAttempts + ' fehlgeschlagen: ' + $lastError)
             if ($attempt -lt $script:ManifestAttempts) { Start-Sleep -Seconds $script:ManifestRetrySeconds }
         }
@@ -497,22 +478,16 @@ function Get-InstalledState([string]$TargetPath, [string]$StatePath) {
 }
 
 function Get-UpdateDecision($Manifest, $Installed, [string]$TargetPath) {
+    # Ein Update wird NUR angeboten, wenn die Version im Manifest HOEHER ist als die
+    # installierte. Gleiche Version ist immer "up-to-date" - unabhaengig von Dateihash
+    # oder Zeitstempel. Eine niedrigere Version wird abgelehnt.
     if (-not $Manifest.Enabled) { return 'disabled' }
     if (-not $Installed.TargetExists) { return 'target-missing' }
     if ($Installed.Version -eq '') { return 'error' }
     if ($Installed.StateSequence -gt 0 -and $Manifest.Sequence -lt $Installed.StateSequence) { return 'manifest-stale' }
     $order = Compare-UpdateVersion $Manifest.Version $Installed.Version
     if ($order -lt 0) { return 'downgrade-refused' }
-    if ($order -eq 0) {
-        if ($Installed.StateSha256 -ceq $Manifest.Sha256) { return 'up-to-date' }
-        if ($Installed.StateSha256 -ne '') { return 'version-conflict' }
-        # Kein verlaesslicher Stand gespeichert (z. B. manuell installiert):
-        # gleiche Version, aber anderer Dateiinhalt -> diese Fassung anbieten.
-        try {
-            if ((Get-Sha256Hex $TargetPath) -ceq $Manifest.Sha256) { return 'up-to-date' }
-        } catch { return 'error' }
-        return 'update-available'
-    }
+    if ($order -eq 0) { return 'up-to-date' }
     return 'update-available'
 }
 
@@ -531,11 +506,25 @@ function Write-UpdateProgress([string]$Phase, [string]$Message, [long]$ReceivedB
         percent = $percent
         receivedBytes = $ReceivedBytes
         totalBytes = $TotalBytes
+        runId = [string]$script:ActiveRunId
         updaterVersion = $script:UpdaterVersion
         channel = $Channel
         updatedAtUtc = [DateTime]::UtcNow.ToString('o')
     }
-    try { Write-TextAtomic $script:ActiveProgressPath ($payload | ConvertTo-Json -Depth 4) } catch {}
+    # Kein Replace (File.Replace scheitert, wenn die Bridge die Datei gerade liest, und
+    # der Fehler ging frueher still verloren). Direktes Schreiben mit Wiederholung;
+    # Leser verwerfen eine halb geschriebene Datei und lesen beim naechsten Mal neu.
+    $json = $payload | ConvertTo-Json -Depth 4
+    $written = $false
+    for ($attempt = 1; $attempt -le 20 -and -not $written; $attempt++) {
+        try {
+            [IO.File]::WriteAllText($script:ActiveProgressPath, $json, [Text.UTF8Encoding]::new($false))
+            $written = $true
+        } catch {
+            Start-Sleep -Milliseconds 50
+        }
+    }
+    if (-not $written) { Write-UpdateLog ('Fortschritt (' + $Phase + ') konnte nicht geschrieben werden: Datei dauerhaft gesperrt.') }
 }
 
 function Test-WindowsX64Executable([string]$Path) {
@@ -671,6 +660,10 @@ function Remove-OldFiles([string]$Directory, [string]$Filter, [int]$Keep) {
 }
 
 function Invoke-InstallFlow($Manifest, $Installed, [string]$TargetPath, [string]$StatePath, [string]$UpdateDir, [string]$InstallDir, [bool]$FreshManifest) {
+    # Letzte Sicherung: nie installieren, was nicht neuer ist als der lokale Stand.
+    if ((Compare-UpdateVersion $Manifest.Version $Installed.Version) -le 0) {
+        throw 'Keine Installation: die Version im Manifest ist nicht neuer als die installierte.'
+    }
     $stagingDir = Join-Path $UpdateDir 'staging'
     $backupDir = Join-Path $UpdateDir 'backup'
     $rejectedDir = Join-Path $UpdateDir 'rejected'
@@ -711,11 +704,9 @@ function Invoke-InstallFlow($Manifest, $Installed, [string]$TargetPath, [string]
 
         # Ab hier ist alles geprueft: die Bridge darf sich jetzt beenden.
         Write-UpdateProgress 'ready-to-install' 'Geprueft - die Bridge schliesst sich jetzt und wird ersetzt.' $Manifest.SizeBytes $Manifest.SizeBytes
-        Assert-NotCancelled
         Write-UpdateProgress 'waiting-for-exit' 'Warte auf das regulaere Beenden der Bridge ...' $Manifest.SizeBytes $Manifest.SizeBytes
         Wait-ForTargetToExit $TargetPath $WaitForProcessId $WaitTimeoutSeconds
         Wait-ForTargetToExit $TargetPath 0 $WaitTimeoutSeconds
-        Assert-NotCancelled
 
         Write-UpdateProgress 'installing' 'Die neue Fassung wird eingesetzt ...' $Manifest.SizeBytes $Manifest.SizeBytes
         $backupName = 'ArenaBridge.exe.' + $Installed.Version + '-' + (Get-Stamp) + '.bak'
@@ -768,7 +759,6 @@ function Invoke-InstallFlow($Manifest, $Installed, [string]$TargetPath, [string]
 }
 
 function Get-ErrorCode([string]$Message) {
-    if ($Message -like 'ARENA_CANCEL:*') { return 'cancelled' }
     if ($Message -like 'ARENA_HTTP404:*') { return 'artifact-not-found' }
     if ($Message -like '*SHA-256*') { return 'hash-mismatch' }
     if ($Message -like '*Dateiversion*') { return 'version-mismatch' }
@@ -780,7 +770,6 @@ function Get-ErrorCode([string]$Message) {
 
 function Get-CleanMessage([string]$Message, [string]$ErrorCode) {
     $text = $Message
-    if ($ErrorCode -eq 'cancelled') { return 'Der Nutzer hat das Update abgebrochen. Es wurde nichts geaendert.' }
     if ($ErrorCode -eq 'artifact-not-found') {
         return 'Die neue Datei ist auf GitHub noch nicht abrufbar (HTTP 404). Das kommt direkt nach einem Merge vor; bitte spaeter erneut versuchen.'
     }
@@ -839,7 +828,7 @@ $statePath = ''
 $updateDir = ''
 $logPath = ''
 $script:ActiveProgressPath = ''
-$script:ActiveCancelPath = ''
+$script:ActiveRunId = ''
 $lockStream = $null
 $manifest = $null
 $manifestError = ''
@@ -862,10 +851,13 @@ try {
     $logPath = [string]$script:ActiveLogPath
     $script:ActiveProgressPath = $ProgressPath
     if ([string]::IsNullOrWhiteSpace($script:ActiveProgressPath)) { $script:ActiveProgressPath = Join-Path $updateDir 'update-progress.json' }
-    $script:ActiveCancelPath = $CancelPath
-    if ([string]::IsNullOrWhiteSpace($script:ActiveCancelPath)) { $script:ActiveCancelPath = Join-Path $updateDir 'cancel.request' }
-    if (Test-Path -LiteralPath $script:ActiveCancelPath -PathType Leaf) { Remove-Item -LiteralPath $script:ActiveCancelPath -Force }
+    $script:ActiveRunId = [string]$RunId
+    # Eine Fortschrittsdatei aus einem frueheren Lauf darf nie gelesen werden.
+    if ($Mode -eq 'install' -and (Test-Path -LiteralPath $script:ActiveProgressPath -PathType Leaf)) {
+        Remove-Item -LiteralPath $script:ActiveProgressPath -Force -ErrorAction SilentlyContinue
+    }
 
+    if ($Mode -eq 'install') { Write-UpdateProgress 'checking' 'Update wird geprueft ...' 0 0 }
     Write-UpdateLog ('Modus ' + $Mode + ', Kanal ' + $Channel + $(if ($script:TestFixtureActive) { ' (TEST-MODUS)' } else { '' }) + ', Updater ' + $script:UpdaterVersion + '.')
 
     try {
@@ -972,26 +964,19 @@ try {
     $messageText = $_.Exception.Message
     $code = Get-ErrorCode $messageText
     $clean = Get-CleanMessage $messageText $code
-    if ($code -eq 'cancelled') {
-        $finalStatus = 'cancelled'
-        $finalMessage = $clean
-        Write-UpdateLog ('ABBRUCH: ' + $clean)
-        Write-UpdateProgress 'cancelled' $clean 0 0
-    } else {
-        $exitCode = 1
-        $finalStatus = 'failed'
-        $finalMessage = $clean
-        Write-UpdateLog ('FEHLER (' + $code + '): ' + $messageText)
-        Write-UpdateProgress 'error' $clean 0 0
-        if ($Mode -eq 'check' -and -not [string]::IsNullOrWhiteSpace($ResultPath)) {
-            try {
-                Write-TextAtomic $ResultPath ([ordered]@{
-                    schemaVersion = 2; status = 'error'; errorCode = $code; channel = $Channel
-                    updaterVersion = $script:UpdaterVersion; message = $clean
-                    checkedAtUtc = [DateTime]::UtcNow.ToString('o')
-                } | ConvertTo-Json -Depth 4)
-            } catch {}
-        }
+    $exitCode = 1
+    $finalStatus = 'failed'
+    $finalMessage = $clean
+    Write-UpdateLog ('FEHLER (' + $code + '): ' + $messageText)
+    Write-UpdateProgress 'error' $clean 0 0
+    if ($Mode -eq 'check' -and -not [string]::IsNullOrWhiteSpace($ResultPath)) {
+        try {
+            Write-TextAtomic $ResultPath ([ordered]@{
+                schemaVersion = 2; status = 'error'; errorCode = $code; channel = $Channel
+                updaterVersion = $script:UpdaterVersion; message = $clean
+                checkedAtUtc = [DateTime]::UtcNow.ToString('o')
+            } | ConvertTo-Json -Depth 4)
+        } catch {}
     }
 }
 

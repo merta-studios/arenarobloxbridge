@@ -1,3 +1,8 @@
+> **Hinweis (2026-10-11, Updater 3.0.0):** Die Abschnitte zu „Später“, „Diese Version
+> überspringen“, Abbruch, manueller Prüfung und Diagnose in den Einstellungen sind überholt.
+> Maßgeblich ist `update-system/README.md` (Pflicht-Update beim Programmstart, Ursachen der
+> Fehler 7.8.0 und der neue Ablauf).
+
 # Update-Konzept (Arena Roblox Bridge, Stand 7.8.0 / Updater 2.0.0)
 
 Dieses Dokument erklärt **das Warum** des Selbst-Update-Systems: die Regeln, die

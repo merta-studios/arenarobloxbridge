@@ -3186,7 +3186,7 @@ function Invoke-AutostartSelfUpdate {
     param([switch]$VerifyMode)
     # STILLGELEGT (7.7.0): Dieser Pfad lud frueher version.json und ArenaBridge.ps1 vom
     # Repository-Root (main/master) - also aus dem alten Update-Bereich. Er wird nicht
-    # mehr ausgefuehrt. Das neue Update laeuft ausschliesslich ueber Start-ArenaUpdateCheck.
+    # mehr ausgefuehrt. Das neue Update laeuft ausschliesslich ueber Invoke-ArenaUpdateGate.
     return $false
     if ($script:IsExeMode) { return $false }           # EXE aktualisiert der Starter
     if (-not $script:ScriptPath) { return $false }
@@ -41874,16 +41874,6 @@ function Open-SettingsWindow {
                                 </Grid>
                             </StackPanel>
                         </Border>
-                        <TextBlock Text="UPDATES" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
-                        <!-- >>> ARENA-UPDATE-SETTINGS-UI >>>  GESCHUETZT - siehe update-system/PROTECTED.md -->
-                        <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
-                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                            <Button x:Name="UpdateCheckButton" Content="Jetzt nach Updates suchen" Foreground="#E8EEF9" Background="#1B2A4A"
-                                    BorderBrush="#33FFFFFF" BorderThickness="1" Padding="13,8" FontSize="11.5" Cursor="Hand"
-                                    ToolTip="Prueft die freigegebene Version. Es wird nichts installiert, solange du nicht zustimmst."/>
-                        </StackPanel>
-                        <TextBlock x:Name="UpdateCheckResultText" Text="" Foreground="#94A3B8" FontSize="10.5" TextWrapping="Wrap" Margin="2,8,0,0"/>
-                        <!-- <<< ARENA-UPDATE-SETTINGS-UI <<< -->
 
                         <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
                         <TextBlock Text="Arena Roblox Bridge - Version 7.8.0" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
@@ -41921,19 +41911,6 @@ function Open-SettingsWindow {
     $editorIconsSwitch = $settingsWindow.FindName('EditorIconsSwitch')
     # Version 7.6.0: Der Creator-Dashboard-Schalter ist entfernt - der
     # Schluessel und seine Scopes entscheiden allein.
-    $updateText      = $settingsWindow.FindName('UpdateInfoText')
-    # >>> ARENA-UPDATE-SETTINGS-CODE >>>   GESCHUETZT - siehe update-system/PROTECTED.md
-    # 7.8.0: Die Knoepfe "Update-Diagnose" und "Protokoll" sind aus den
-    # Einstellungen entfernt; die Blockfunktionen bleiben erhalten.
-    $updateCheckButton  = $settingsWindow.FindName('UpdateCheckButton')
-    $updateCheckResult  = $settingsWindow.FindName('UpdateCheckResultText')
-    if ($null -ne $updateCheckButton) {
-        $updateCheckButton.Add_Click({
-            try { Start-ArenaManualUpdateCheck $updateCheckResult }
-            catch { try { $updateCheckResult.Text = 'Prüfung nicht möglich: ' + $_.Exception.Message } catch {} }
-        })
-    }
-    # <<< ARENA-UPDATE-SETTINGS-CODE <<<
     # ----------------------------------------------------------------
     # Version 7.5.6: Open Cloud ohne manuelle Entwickler-Eingabe.
     # Das Plugin liefert StudioService:GetUserId(); dieser angemeldete
@@ -42658,12 +42635,6 @@ function Open-SettingsWindow {
         Set-ArenaSwitchVisualState $toggleSwitch
         $toggleSwitch.Add_Loaded({ param($s, $e) Set-ArenaSwitchVisualState $s })
     }
-    if ($script:UpdateInfoState) {
-        $updateText.Text = [string]$script:UpdateInfoState.Body
-        $updateText.Foreground = Get-Brush ([string]$script:UpdateInfoState.BodyHex)
-    } else {
-        $updateText.Text = 'Version 7.8.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
-    }
 
     $swTitleBar.Add_MouseLeftButtonDown({
         if ($_.ButtonState -eq [System.Windows.Input.MouseButtonState]::Pressed) {
@@ -42723,26 +42694,13 @@ function Open-SettingsWindow {
 }
 
 # Version 3.8: Die Update-Infos stehen jetzt im grossen Einstellungsfenster.
-# Der Zustand wird hier vorbereitet (rote "1" bleibt am Zahnrad) und beim
-# Oeffnen der Einstellungen angezeigt.
-$script:UpdateInfoState = @{
-    IsError  = $false
-    Body     = 'Version 7.8.0 - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht.'
-    BodyHex  = '#94A3B8'
-}
+# (Ab 8.0.0 gibt es dort keinen Updates-Bereich mehr; der Fehlerhinweis am Zahnrad bleibt.)
 if (Test-UpdateError) {
     try { $UpdateBadge.Visibility = 'Visible' } catch {}
     $updateErrorText = Get-UpdateStatusText
     if ($script:UpdateDetails -and $script:UpdateDetails.error) {
         $updateErrorText = $updateErrorText + ': ' + [string]$script:UpdateDetails.error
     }
-    $script:UpdateInfoState.IsError = $true
-    $script:UpdateInfoState.Body = $updateErrorText
-    $script:UpdateInfoState.BodyHex = '#CBD5E1'
-} elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
-    $verText = '7.8.0'
-    if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
-    $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim naechsten Start wird automatisch nach Updates gesucht."
 }
 
 # Version 7.2.6 (START-NETZ KOMPLETT): Fehler im Fensterbau oder in der
@@ -42777,56 +42735,48 @@ function Set-UiRefreshCadence {
 
 # ============================================================================
 # >>> ARENA-UPDATE-INTEGRATION >>>   GESCHUETZT - siehe update-system/PROTECTED.md
-# Nur mit ausdruecklicher Nutzerfreigabe aendern. test_v800_update_system_guard.py
-# ueberwacht diesen Block per SHA-256. Der Builder ersetzt genau die vier Marker
+# Nur mit ausdrücklicher Nutzerfreigabe ändern. test_v800_update_system_guard.py
+# überwacht diesen Block per SHA-256. Der Builder ersetzt genau die vier Marker
 # unten; im PS1-Quelltext bleibt der Updater ausgeschaltet.
-# Das alte Root-Update (Invoke-AutostartSelfUpdate) wird nicht mehr genutzt.
 #
-# Konzept (Updater 2.0.0, siehe developer/docs/UPDATE-KONZEPT.md):
-#   1) Start: Pruefung im Hintergrund (eigener Prozess, blockiert nichts).
-#   2) Ist ein Update da, oeffnet sich ein eigenes Fenster mit Version,
-#      Neuerungen, Groesse und den Knoepfen Jetzt / Spaeter / Ueberspringen.
-#   3) Nach "Jetzt" laedt der Helfer im HINTERGRUND, waehrend die Bridge offen
-#      bleibt: Fortschritt, Abbruchmoeglichkeit, kein Fenster verschwindet.
-#   4) Erst wenn Groesse, SHA-256, x64-Kopf und Dateiversion geprueft sind,
-#      schliesst sich die Bridge selbst; der Helfer ersetzt die Datei atomar
-#      mit Backup und startet die neue Fassung. Fehler => alte Fassung bleibt.
-#   5) Nie beendet die Bridge oder der Helfer einen fremden Prozess.
+# Konzept (Updater 3.0.0, siehe update-system/README.md):
+#   1) Jeder Programmstart prüft zuerst das Kanal-Manifest. Währenddessen liegt ein
+#      modales Pflicht-Fenster ohne Schließen-Knopf vor der Bridge. Die Bridge ist
+#      nicht bedienbar und startet keine Dienste.
+#   2) Gibt es eine HOEHERE Version, wird sie geladen, geprüft und installiert.
+#      Es gibt kein Überspringen, kein Später und keinen Abbruch.
+#   3) Erst wenn die neue Datei geprüft ist, beendet sich die Bridge selbst. Der
+#      Helfer ersetzt die Datei atomar (mit Backup) und startet die neue Fassung.
+#   4) Gleiche Version ist immer aktuell. Der Updater beendet nie fremde Prozesse.
 # ============================================================================
 $script:UpdateChannel = '__ARENA_UPDATE_CHANNEL__'
 $script:EmbeddedUpdaterBase64 = '__ARENA_UPDATER_BASE64__'
 $script:EmbeddedUpdaterSha256 = '__ARENA_UPDATER_SHA256__'
-# 1 nur fuer den separaten, nicht veroeffentlichten Testbau (Build-EXE.ps1 -TestFixtureBuild).
+# 1 nur für den separaten, nicht veröffentlichten Testbau (Build-EXE.ps1 -TestFixtureBuild).
 # Normale Builds setzen 0; dann ist der Test-Manifestpfad in der EXE nicht erreichbar.
 $script:TestFixtureBuild = '__ARENA_TEST_FIXTURE_BUILD__'
-$script:UpdateCheckTimer = $null
-$script:UpdateCheckProcess = $null
-$script:UpdateCheckResultPath = ''
-$script:UpdateCheckDeadlineUtc = [DateTime]::MinValue
-$script:UpdateCheckPromptShown = $false
-$script:UpdateRetryTimer = $null
-$script:UpdateRetryCount = 0
-$script:UpdateRecheckTimer = $null
-$script:UpdateLastResult = $null
-$script:UpdateWindow = $null
-$script:UpdateProgressTimer = $null
-$script:UpdateInstallProcess = $null
-$script:UpdateInstallActive = $false
-$script:UpdateInstallCancelRequested = $false
-$script:UpdatePendingRecord = $null
-$script:UpdatePreferences = $null
-$script:UpdatePreferencesLoaded = $false
-$script:UpdateTaskTimer = $null
-$script:UpdateTaskKind = ''
-$script:UpdateTaskResultPath = ''
-$script:UpdateTaskProcess = $null
-$script:UpdateTaskDeadlineUtc = [DateTime]::MinValue
-$script:UpdateTaskInfoBlock = $null
-$script:UpdateTaskWindow = $null
-$script:UpdatePromptWindowFailed = $false
+
+# Zustand des Pflicht-Gates.
+$script:UpdateGateWindow = $null
+$script:UpdateGateTimer = $null
+$script:UpdateGateMayClose = $false
+$script:UpdateGateState = ''
+$script:UpdateGateProcess = $null
+$script:UpdateGateResultPath = ''
+$script:UpdateGateRunId = ''
+$script:UpdateGateRetryAtUtc = [DateTime]::MinValue
+$script:UpdateGateCheckFailures = 0
+$script:UpdateGateLastProgressUtc = [DateTime]::MinValue
+$script:UpdateGateCheckTimeoutSec = 150
+$script:UpdateGateCheckRetrySec = 20
+$script:UpdateGateInstallRetrySec = 60
+# Nach so vielen fehlgeschlagenen PRUEFUNGEN (nicht Installationen) startet die Bridge
+# ohne Prüfung weiter, damit ein Netzausfall niemanden aussperrt. Eine bekannte, aber
+# nicht installierbare Version blockiert dagegen weiter, bis sie installiert ist.
+$script:UpdateGateMaxCheckFailures = 3
 
 function Test-ArenaUpdateIntegrationBuilt {
-    # Nur ein echter Build (Kanal und Updater-Hash eingesetzt) darf pruefen.
+    # Nur ein echter Build (Kanal und Updater-Hash eingesetzt) darf prüfen.
     if (@('beta', 'stable') -cnotcontains [string]$script:UpdateChannel) { return $false }
     if ([string]$script:EmbeddedUpdaterSha256 -cnotmatch '^[0-9a-f]{64}$') { return $false }
     if ([string]::IsNullOrWhiteSpace([string]$script:EmbeddedUpdaterBase64)) { return $false }
@@ -42844,7 +42794,7 @@ function Get-ArenaWindowsPowerShell {
 }
 
 function Get-ArenaUpdateTestManifest {
-    # Nur fuer den privaten Test: eine vorhandene lokale Test-Manifestdatei.
+    # Nur für den privaten Test: eine vorhandene lokale Test-Manifestdatei.
     # Fehlt sie oder ist die Variable leer, gilt automatisch das feste Repository-Manifest.
     if ([string]$script:TestFixtureBuild -cne '1') { return '' }   # normale Builds: niemals
     $candidate = [string]$env:ARENABRIDGE_SELFUPDATE_TEST_MANIFEST
@@ -42863,15 +42813,11 @@ function Get-ArenaUpdatePaths {
         UpdateDirectory  = $updateDir
         LogPath          = Join-Path $bin 'update-helper.log'
         ProgressPath     = Join-Path $updateDir 'update-progress.json'
-        CancelPath       = Join-Path $updateDir 'cancel.request'
-        PreferencesPath  = Join-Path $bin 'update-preferences.json'
-        StatusPath       = Join-Path $install 'update-status.json'
-        HistoryPath      = Join-Path $install 'update-history.json'
     }
 }
 
 function Write-ArenaEmbeddedUpdater {
-    # Extrahiert den eingebetteten Updater; der Inhalt wird vorher gegen die feste SHA-256 geprueft.
+    # Extrahiert den eingebetteten Updater; der Inhalt wird vorher gegen die feste SHA-256 geprüft.
     $bytes = [Convert]::FromBase64String([string]$script:EmbeddedUpdaterBase64)
     $sha = [Security.Cryptography.SHA256]::Create()
     try { $hex = ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant() }
@@ -42907,11 +42853,12 @@ function Get-ArenaUpdaterArgumentString([string]$UpdaterPath, [string[]]$Extra) 
 }
 
 function Get-ArenaUpdaterBaseArguments {
-    # Gemeinsame Argumente fuer alle Updater-Aufrufe (auch -TestFixtureMode im Testbau).
+    # Gemeinsame Argumente für alle Updater-Aufrufe (auch -TestFixtureMode im Testbau).
+    $paths = Get-ArenaUpdatePaths
     $extra = @(
         '-Channel', [string]$script:UpdateChannel,
-        '-InstallDirectory', (ConvertTo-ArenaArgument (Get-ArenaUpdatePaths).InstallDirectory),
-        '-LogPath', (ConvertTo-ArenaArgument (Get-ArenaUpdatePaths).LogPath)
+        '-InstallDirectory', (ConvertTo-ArenaArgument $paths.InstallDirectory),
+        '-LogPath', (ConvertTo-ArenaArgument $paths.LogPath)
     )
     $testManifest = Get-ArenaUpdateTestManifest
     if (-not [string]::IsNullOrWhiteSpace($testManifest)) {
@@ -42920,71 +42867,11 @@ function Get-ArenaUpdaterBaseArguments {
     return $extra
 }
 
-function Set-ArenaUpdateInfoState([string]$Body, [string]$Hex, [bool]$IsError) {
-    # Der Text erscheint im Einstellungsfenster (Abschnitt UPDATES).
-    try {
-        if ($null -ne $script:UpdateInfoState -and $script:UpdateInfoState -is [hashtable]) {
-            $script:UpdateInfoState.Body = $Body
-            $script:UpdateInfoState.BodyHex = $Hex
-            $script:UpdateInfoState.IsError = $IsError
-        }
-    } catch {}
-}
-
-function Get-ArenaUpdateStatusSentence($Record) {
-    if ($null -eq $Record) { return 'Update-Prüfung ohne Ergebnis. Bitte später erneut versuchen.' }
-    $status = [string]$Record.status
-    $installed = [string]$Record.installedVersion
-    $available = [string]$Record.availableVersion
-    switch ($status) {
-        'update-available' { return ('Version ' + $available + ' ist verfügbar (installiert: ' + $installed + '). Fenster mit den Neuerungen wurde geöffnet.') }
-        'up-to-date'       { return ('Version ' + $installed + ' ist aktuell. Beim nächsten Start wird erneut automatisch gesucht.') }
-        'disabled'         { return 'Es ist gerade keine neue Version freigegeben. Beim nächsten Start wird erneut automatisch gesucht.' }
-        'downgrade-refused' { return ('Deine Version ' + $installed + ' ist neuer als die freigegebene Version ' + $available + '. Es wird nichts geändert.') }
-        'version-conflict' { return 'Es liegt eine gleichnamige Version mit anderem Inhalt vor. Aus Sicherheitsgründen wird nichts installiert.' }
-        'manifest-stale'   { return 'Die Update-Information war aelter als dein Stand. Es wird nichts geändert; nächster Versuch beim nächsten Start.' }
-        'target-missing'   { return 'Die Programmdatei wurde nicht gefunden; bitte die Bridge aus ihrem eigenen Ordner starten.' }
-        'error'            { return ('Update-Prüfung fehlgeschlagen: ' + [string]$Record.message) }
-    }
-    return ('Update-Status: ' + $status)
-}
-
-function Get-ArenaUpdatePreferences {
-    if ($script:UpdatePreferencesLoaded -and $null -ne $script:UpdatePreferences) { return $script:UpdatePreferences }
-    $script:UpdatePreferencesLoaded = $true
-    $script:UpdatePreferences = @{ schemaVersion = 1; skippedVersions = @() }
-    try {
-        $path = (Get-ArenaUpdatePaths).PreferencesPath
-        if (Test-Path -LiteralPath $path -PathType Leaf) {
-            $raw = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
-            $skipped = @()
-            foreach ($item in @($raw.skippedVersions)) {
-                if (-not [string]::IsNullOrWhiteSpace([string]$item)) { $skipped += [string]$item }
-            }
-            $script:UpdatePreferences = @{ schemaVersion = 1; skippedVersions = $skipped }
-        }
-    } catch { }
-    return $script:UpdatePreferences
-}
-
-function Test-ArenaUpdateVersionSkipped([string]$Version) {
-    if ([string]::IsNullOrWhiteSpace($Version)) { return $false }
-    $preferences = Get-ArenaUpdatePreferences
-    return (@($preferences.skippedVersions) -ccontains $Version)
-}
-
-function Add-ArenaSkippedVersion([string]$Version) {
-    if ([string]::IsNullOrWhiteSpace($Version)) { return }
-    $preferences = Get-ArenaUpdatePreferences
-    $skipped = @()
-    foreach ($item in @($preferences.skippedVersions)) { if ($item -cne $Version) { $skipped += [string]$item } }
-    $skipped += $Version
-    $script:UpdatePreferences = @{ schemaVersion = 1; skippedVersions = $skipped }
-    try {
-        $payload = [ordered]@{ schemaVersion = 1; skippedVersions = $skipped; writtenAtUtc = [DateTime]::UtcNow.ToString('o') }
-        [IO.File]::WriteAllText((Get-ArenaUpdatePaths).PreferencesPath, ($payload | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false))
-        Write-RuntimeLog ('Update-Hinweis: Version ' + $Version + ' wird nicht mehr angeboten (übersprungen).')
-    } catch { }
+function Get-ArenaUpdateSizeText($Record) {
+    $bytes = 0
+    try { if ($Record.artifactSizeBytes) { $bytes = [long]$Record.artifactSizeBytes } } catch { $bytes = 0 }
+    if ($bytes -le 0) { return '' }
+    return ([string][Math]::Round(($bytes / 1MB), 1)).Replace('.', ',') + ' MB'
 }
 
 function Get-ArenaUpdateNotesText($Record) {
@@ -42999,587 +42886,294 @@ function Get-ArenaUpdateNotesText($Record) {
     return $joined
 }
 
-function Get-ArenaUpdateSizeText($Record) {
-    $bytes = 0
-    try { if ($Record.artifactSizeBytes) { $bytes = [long]$Record.artifactSizeBytes } } catch { $bytes = 0 }
-    if ($bytes -le 0) { return '' }
-    return ([string][Math]::Round(($bytes / 1MB), 1)).Replace('.', ',') + ' MB'
-}
-
-function Test-ArenaUpdateHoldsLock {
+function Read-ArenaGateProgress([string]$Path) {
+    # Der Helfer ersetzt die Datei; daher muss das Lesen Delete zulassen. Eine
+    # halb geschriebene oder gerade gesperrte Datei ergibt null - der nächste Tick liest neu.
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
     try {
-        $lockPath = Join-Path (Get-ArenaUpdatePaths).UpdateDirectory 'update.lock'
-        return (Test-Path -LiteralPath $lockPath -PathType Leaf)
-    } catch { return $false }
-}
-
-# ---------------------------------------------------------------- Hintergrundpruefung
-function Start-ArenaUpdateCheck {
-    # Startet die Pruefung als eigenen Hintergrundprozess. Der Programmstart wartet nicht darauf.
-    if (-not $script:IsExeMode) { return }                    # PS1-Entwicklungsstart: kein Selbst-Update
-    if (-not (Test-ArenaUpdateIntegrationBuilt)) { return }  # Quelltext ohne Build-Marker
-    if ($script:DiagnosticMode) { Write-RuntimeLog 'Update-Prüfung übersprungen (Diagnosemodus).'; return }
-    if ($env:ARENABRIDGE_BUILD_SMOKE -eq '1') { return }
-    if ($script:UpdateInstallActive) { return }
-    try {
-        $paths = Get-ArenaUpdatePaths
-        $updater = Write-ArenaEmbeddedUpdater
-        $script:UpdateCheckResultPath = Join-Path $paths.BinDirectory ('update-check-' + [Guid]::NewGuid().ToString('N') + '.json')
-        $extra = @('-Mode', 'check', '-ResultPath', (ConvertTo-ArenaArgument $script:UpdateCheckResultPath))
-        $extra += (Get-ArenaUpdaterBaseArguments)
-        $arguments = Get-ArenaUpdaterArgumentString $updater $extra
-        $script:UpdateCheckProcess = Start-Process -FilePath (Get-ArenaWindowsPowerShell) -ArgumentList $arguments -WindowStyle Hidden -PassThru
-        $script:UpdateCheckDeadlineUtc = [DateTime]::UtcNow.AddSeconds(150)
-        Write-RuntimeLog ('Update-Prüfung im Hintergrund gestartet (Kanal ' + [string]$script:UpdateChannel + ').')
-        if ($null -eq $script:UpdateCheckTimer) {
-            $script:UpdateCheckTimer = [System.Windows.Threading.DispatcherTimer]::new()
-            $script:UpdateCheckTimer.Interval = [TimeSpan]::FromSeconds(1)
-            $script:UpdateCheckTimer.Add_Tick({
-                try { Test-ArenaUpdateCheckResult }
-                catch {
-                    try { $script:UpdateCheckTimer.Stop() } catch {}
-                    Write-RuntimeLog ('Update-Prüfung Auswertung fehlgeschlagen: ' + $_.Exception.Message)
-                }
-            })
-        }
-        $script:UpdateCheckTimer.Start()
+        $stream = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]'ReadWrite,Delete')
+        try {
+            $reader = New-Object IO.StreamReader($stream, [Text.Encoding]::UTF8)
+            $text = $reader.ReadToEnd()
+        } finally { $stream.Dispose() }
+        if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+        return ($text | ConvertFrom-Json -ErrorAction Stop)
     } catch {
-        Write-RuntimeLog ('Update-Prüfung nicht gestartet: ' + $_.Exception.Message)
+        return $null
     }
 }
 
-function Schedule-ArenaUpdateRetry([string]$Reason) {
-    # Fehler sind meist voruebergehend (Netz, GitHub-Cache). Ruhig spaeter erneut versuchen.
-    if ($script:UpdateRetryCount -ge 3) { return }
-    $script:UpdateRetryCount++
-    if ($null -ne $script:UpdateRetryTimer) { try { $script:UpdateRetryTimer.Stop() } catch {} }
-    else {
-        $script:UpdateRetryTimer = [System.Windows.Threading.DispatcherTimer]::new()
-        $script:UpdateRetryTimer.Add_Tick({
-            try { $script:UpdateRetryTimer.Stop() } catch {}
-            Write-RuntimeLog 'Update-Prüfung: neuer Versuch.'
-            Start-ArenaUpdateCheck
-        })
-    }
-    $script:UpdateRetryTimer.Interval = [TimeSpan]::FromSeconds(300)
-    $script:UpdateRetryTimer.Start()
-    Write-RuntimeLog ('Update-Prüfung wird in 5 Minuten wiederholt (' + [string]$script:UpdateRetryCount + '/3): ' + $Reason)
-}
-
-function Schedule-ArenaUpdateRecheck {
-    # Lange laufende Fenster: nach sechs Stunden einmal still nachsehen.
-    if ($null -ne $script:UpdateRecheckTimer) { try { $script:UpdateRecheckTimer.Stop() } catch {} }
-    else {
-        $script:UpdateRecheckTimer = [System.Windows.Threading.DispatcherTimer]::new()
-        $script:UpdateRecheckTimer.Add_Tick({
-            try { $script:UpdateRecheckTimer.Stop() } catch {}
-            Start-ArenaUpdateCheck
-        })
-    }
-    $script:UpdateRecheckTimer.Interval = [TimeSpan]::FromHours(6)
-    $script:UpdateRecheckTimer.Start()
-}
-
-function Complete-ArenaUpdateCheck($Record) {
-    $script:UpdateLastResult = $Record
-    $status = [string]$Record.status
-    Write-RuntimeLog ('Update-Prüfung Ergebnis: ' + $status + ' (installiert ' + [string]$Record.installedVersion + ', verfügbar ' + [string]$Record.availableVersion + ').')
-    if ($status -ceq 'update-available') {
-        Set-ArenaUpdateInfoState ('Version ' + [string]$Record.availableVersion + ' ist verfügbar (installiert: ' + [string]$Record.installedVersion + ').') '#3DDC84' $false
-        if (Test-ArenaUpdateVersionSkipped ([string]$Record.availableVersion)) {
-            Write-RuntimeLog ('Update-Hinweis: Version ' + [string]$Record.availableVersion + ' wurde vom Nutzer übersprungen.')
-        } elseif (-not $script:UpdateCheckPromptShown) {
-            $script:UpdateCheckPromptShown = $true
-            Show-ArenaUpdatePrompt $Record
-        }
-    } elseif ($status -ceq 'error') {
-        Set-ArenaUpdateInfoState ('Update-Prüfung fehlgeschlagen: ' + [string]$Record.message) '#CBD5E1' $true
-        Schedule-ArenaUpdateRetry ([string]$Record.message)
-    } else {
-        Set-ArenaUpdateInfoState (Get-ArenaUpdateStatusSentence $Record) '#94A3B8' $false
-        Schedule-ArenaUpdateRecheck
-    }
-}
-
-function Test-ArenaUpdateCheckResult {
-    $resultPath = [string]$script:UpdateCheckResultPath
-    $finished = $false
-    $record = $null
-    if (-not [string]::IsNullOrWhiteSpace($resultPath) -and (Test-Path -LiteralPath $resultPath -PathType Leaf)) {
-        try { $record = Get-Content -LiteralPath $resultPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop } catch { $record = $null }
-        Remove-Item -LiteralPath $resultPath -Force -ErrorAction SilentlyContinue
-        $finished = $true
-    } elseif ($null -ne $script:UpdateCheckProcess -and $script:UpdateCheckProcess.HasExited) {
-        $finished = $true
-    } elseif ([DateTime]::UtcNow -gt $script:UpdateCheckDeadlineUtc) {
-        $finished = $true
-    }
-    if (-not $finished) { return }
-    try { $script:UpdateCheckTimer.Stop() } catch {}
-    if ($null -eq $record) {
-        Write-RuntimeLog 'Update-Prüfung: kein auswertbares Ergebnis; die Bridge startet normal weiter.'
-        Set-ArenaUpdateInfoState 'Update-Prüfung lieferte kein Ergebnis. Beim nächsten Start wird es erneut versucht.' '#94A3B8' $false
-        Schedule-ArenaUpdateRetry 'kein Ergebnis'
-        return
-    }
-    Complete-ArenaUpdateCheck $record
-}
-
-# ---------------------------------------------------------------- Update-Fenster
-function Get-ArenaUpdatePromptXaml {
+# ---------------------------------------------------------------- Pflicht-Gate (Fenster)
+function Get-ArenaUpdateGateXaml {
     return @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Arena Roblox Bridge - Update" Width="640" Height="600"
-        WindowStartupLocation="CenterScreen" WindowStyle="None" AllowsTransparency="True"
-        Background="Transparent" ResizeMode="NoResize" ShowInTaskbar="True" FontFamily="Segoe UI">
-    <Window.Resources>
-        <Style x:Key="ArenaUpdateButton" TargetType="Button">
-            <Setter Property="Foreground" Value="#E8EEF9"/>
-            <Setter Property="Background" Value="#1B2A4A"/>
-            <Setter Property="Padding" Value="16,10"/>
-            <Setter Property="FontSize" Value="12.5"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="UpdateChrome" Background="{TemplateBinding Background}" CornerRadius="10"
-                                BorderBrush="#33FFFFFF" BorderThickness="1" Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="UpdateChrome" Property="Background" Value="#28406B"/>
-                            </Trigger>
-                            <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="UpdateChrome" Property="Opacity" Value="0.45"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-        <Style x:Key="ArenaUpdatePrimaryButton" TargetType="Button" BasedOn="{StaticResource ArenaUpdateButton}">
-            <Setter Property="Background" Value="#1F6F4A"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-        </Style>
-        <Style x:Key="ArenaUpdateCloseStyle" TargetType="Button">
-            <Setter Property="Foreground" Value="#CBD5E1"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="FontSize" Value="14"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="CloseChrome" Background="{TemplateBinding Background}" CornerRadius="8" Width="32" Height="32">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="CloseChrome" Property="Background" Value="#3A2030"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-    </Window.Resources>
-    <Border Background="#0E1730" CornerRadius="16" BorderBrush="#33FFFFFF" BorderThickness="1">
-        <Grid Margin="22,18,22,18">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
-            <Grid x:Name="UpdateTitleBar" Grid.Row="0" Background="Transparent" Margin="0,0,0,10">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                    <TextBlock x:Name="UpdateTitleText" Text="Update verfügbar" Foreground="#F1F5FB" FontSize="19" FontWeight="SemiBold"/>
-                    <TextBlock x:Name="UpdateVersionText" Text="" Foreground="#9FB2D0" FontSize="12.5" Margin="0,4,0,0"/>
-                </StackPanel>
-                <Button x:Name="UpdateCloseButton" Grid.Column="1" Style="{StaticResource ArenaUpdateCloseStyle}" Content="X" VerticalAlignment="Top"/>
-            </Grid>
-            <TextBlock x:Name="UpdateInfoText" Grid.Row="1" Text="" Foreground="#9FB2D0" FontSize="11.5" TextWrapping="Wrap" Margin="0,0,0,10"/>
-            <Border Grid.Row="2" Background="#101C34" CornerRadius="12" BorderBrush="#26FFFFFF" BorderThickness="1" Padding="14,12">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <TextBlock x:Name="UpdateNotesText" Text="" Foreground="#D7E1F2" FontSize="12.5" TextWrapping="Wrap" LineHeight="19"/>
-                </ScrollViewer>
-            </Border>
-            <StackPanel x:Name="UpdateProgressPanel" Grid.Row="3" Margin="0,14,0,0" Visibility="Collapsed">
-                <ProgressBar x:Name="UpdateProgressBar" Height="10" Minimum="0" Maximum="100" Value="0"
-                             Foreground="#3DDC84" Background="#16223D" BorderThickness="0"/>
-                <TextBlock x:Name="UpdateProgressText" Text="" Foreground="#CBD5E1" FontSize="11.5" TextWrapping="Wrap" Margin="0,8,0,0"/>
-            </StackPanel>
-            <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-                <Button x:Name="UpdateLogButton" Style="{StaticResource ArenaUpdateButton}" Content="Protokoll öffnen" Margin="0,0,10,0" Visibility="Collapsed"/>
-                <Button x:Name="UpdateSkipButton" Style="{StaticResource ArenaUpdateButton}" Content="Diese Version überspringen" Margin="0,0,10,0"/>
-                <Button x:Name="UpdateLaterButton" Style="{StaticResource ArenaUpdateButton}" Content="Später" Margin="0,0,10,0"/>
-                <Button x:Name="UpdateCancelButton" Style="{StaticResource ArenaUpdateButton}" Content="Abbrechen" Margin="0,0,10,0" Visibility="Collapsed"/>
-                <Button x:Name="UpdateInstallButton" Style="{StaticResource ArenaUpdatePrimaryButton}" Content="Jetzt aktualisieren"/>
-            </StackPanel>
-        </Grid>
-    </Border>
+        Title="Arena Roblox Bridge - Update" Width="620" Height="480"
+        WindowStartupLocation="CenterScreen" WindowStyle="None" ResizeMode="NoResize"
+        Background="#0E1730" FontFamily="Segoe UI" Topmost="True" ShowInTaskbar="True">
+    <Grid Margin="26,22,26,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock x:Name="GateTitle" Text="Update wird geprüft" Foreground="#F1F5FB" FontSize="20" FontWeight="SemiBold"/>
+        <TextBlock x:Name="GateSubtitle" Text="Die Bridge startet erst, wenn die aktuelle Version installiert ist." Foreground="#9FB2D0" FontSize="12.5" TextWrapping="Wrap" Margin="0,6,0,14"/>
+        <Border Grid.Row="2" Background="#101C34" CornerRadius="12" BorderBrush="#26FFFFFF" BorderThickness="1" Padding="14,12">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <TextBlock x:Name="GateNotes" Text="" Foreground="#D7E1F2" FontSize="12.5" TextWrapping="Wrap" LineHeight="19"/>
+            </ScrollViewer>
+        </Border>
+        <StackPanel Grid.Row="3" Margin="0,16,0,0">
+            <ProgressBar x:Name="GateProgress" Height="12" Minimum="0" Maximum="100" Value="0" IsIndeterminate="True"
+                         Foreground="#3DDC84" Background="#16223D" BorderThickness="0"/>
+            <TextBlock x:Name="GateStatus" Text="" Foreground="#CBD5E1" FontSize="12" TextWrapping="Wrap" Margin="0,10,0,0"/>
+        </StackPanel>
+        <TextBlock Grid.Row="4" Text="Diese Aktualisierung ist verpflichtend. Das Fenster lässt sich nicht schliessen, bis sie installiert ist." Foreground="#94A3B8" FontSize="11" TextWrapping="Wrap" Margin="0,14,0,0"/>
+    </Grid>
 </Window>
 '@
 }
 
-function Show-ArenaUpdateFallbackPrompt($Record) {
-    # Immer vorhandener Notausgang: falls das eigene Fenster nicht gebaut werden kann.
-    $text = 'Version ' + [string]$Record.availableVersion + ' ist verfügbar (installiert: ' + [string]$Record.installedVersion + ').' +
-        [Environment]::NewLine + [Environment]::NewLine +
-        (Get-ArenaUpdateNotesText $Record) + [Environment]::NewLine + [Environment]::NewLine +
-        'Jetzt aktualisieren? Die neue Version wird geprüft (Größe, SHA-256, Dateiversion) und danach automatisch gestartet. Schlaegt etwas fehl, bleibt die bisherige Version erhalten.'
-    $answer = [System.Windows.MessageBox]::Show($text, 'Arena Roblox Bridge - Update', [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
-    if ($answer -eq [System.Windows.MessageBoxResult]::Yes) { Start-ArenaUpdateInstall $Record }
+function Set-ArenaGateView {
+    # $null bedeutet: dieses Feld unverändert lassen.
+    param($Title = $null, $Subtitle = $null, $Notes = $null, $Status = $null, $Percent = $null, $Indeterminate = $null)
+    try {
+        $window = $script:UpdateGateWindow
+        if ($null -eq $window) { return }
+        if ($null -ne $Title) { $window.FindName('GateTitle').Text = [string]$Title }
+        if ($null -ne $Subtitle) { $window.FindName('GateSubtitle').Text = [string]$Subtitle }
+        if ($null -ne $Notes) { $window.FindName('GateNotes').Text = [string]$Notes }
+        if ($null -ne $Status) { $window.FindName('GateStatus').Text = [string]$Status }
+        $bar = $window.FindName('GateProgress')
+        if ($null -ne $Indeterminate) { $bar.IsIndeterminate = [bool]$Indeterminate }
+        if ($null -ne $Percent) {
+            $bar.IsIndeterminate = $false
+            $bar.Value = [Math]::Max(0, [Math]::Min(100, [int]$Percent))
+        }
+    } catch {
+        Write-RuntimeLog ('Update-Gate: Anzeige konnte nicht aktualisiert werden: ' + $_.Exception.Message)
+    }
 }
 
-function Show-ArenaUpdatePrompt($Record) {
-    $script:UpdatePendingRecord = $Record
-    $script:UpdatePromptWindowFailed = $false
-    try {
-        $window = [Windows.Markup.XamlReader]::Parse((Get-ArenaUpdatePromptXaml))
-    } catch {
-        Write-RuntimeLog ('Update-Fenster konnte nicht gebaut werden; es erscheint die einfache Rückfrage: ' + $_.Exception.Message)
-        Show-ArenaUpdateFallbackPrompt $Record
+function Complete-ArenaUpdateGate([string]$Reason) {
+    # Normaler Abschluss: Die Bridge darf weiterlaufen und startet ihre Dienste.
+    Write-RuntimeLog ('Update-Gate beendet: ' + $Reason)
+    $script:UpdateGateMayClose = $true
+    try { $script:UpdateGateTimer.Stop() } catch {}
+    try { if ($null -ne $script:UpdateGateWindow) { $script:UpdateGateWindow.Close() } } catch {}
+}
+
+function Exit-ArenaForUpdate([string]$Reason) {
+    # Die neue Datei ist geprüft. Die Bridge beendet sich selbst; der Helfer wartet
+    # auf dieses reguläre Ende und ersetzt danach die Datei. Kein fremder Prozess wird beendet.
+    Write-RuntimeLog ('Update geprüft (' + $Reason + ') - die Bridge beendet sich für die Installation.')
+    $script:UpdateGateMayClose = $true
+    try { $script:UpdateGateTimer.Stop() } catch {}
+    [System.Environment]::Exit(0)
+}
+
+# ---------------------------------------------------------------- Prüfung
+function Start-ArenaGateCheck {
+    $paths = Get-ArenaUpdatePaths
+    $updater = Write-ArenaEmbeddedUpdater
+    $script:UpdateGateResultPath = Join-Path $paths.BinDirectory ('update-check-' + [Guid]::NewGuid().ToString('N') + '.json')
+    $extra = @('-Mode', 'check', '-ResultPath', (ConvertTo-ArenaArgument $script:UpdateGateResultPath))
+    $extra += (Get-ArenaUpdaterBaseArguments)
+    $arguments = Get-ArenaUpdaterArgumentString $updater $extra
+    $script:UpdateGateProcess = Start-Process -FilePath (Get-ArenaWindowsPowerShell) -ArgumentList $arguments -WindowStyle Hidden -PassThru
+    $script:UpdateGateState = 'check'
+    $script:UpdateGateDeadlineUtc = [DateTime]::UtcNow.AddSeconds($script:UpdateGateCheckTimeoutSec)
+    Set-ArenaGateView -Title 'Update wird geprüft' -Subtitle 'Die Bridge startet erst, wenn die aktuelle Version installiert ist.' -Status 'Suche nach der aktuellen Version ...' -Indeterminate $true
+    Write-RuntimeLog 'Update-Prüfung gestartet (Pflicht-Gate).'
+}
+
+function Register-ArenaGateCheckFailure([string]$Reason) {
+    $script:UpdateGateCheckFailures++
+    Write-RuntimeLog ('Update-Prüfung fehlgeschlagen (' + [string]$script:UpdateGateCheckFailures + ' von ' + [string]$script:UpdateGateMaxCheckFailures + '): ' + $Reason)
+    if ($script:UpdateGateCheckFailures -ge $script:UpdateGateMaxCheckFailures) {
+        Complete-ArenaUpdateGate 'Update-Prüfung nicht möglich; der Start läuft ohne Prüfung weiter.'
         return
     }
-    try {
-        $script:UpdateWindow = $window
-        if ($null -ne $script:MainWindow) { $window.Owner = $script:MainWindow }
-        $titleText = $window.FindName('UpdateTitleText')
-        $versionText = $window.FindName('UpdateVersionText')
-        $infoText = $window.FindName('UpdateInfoText')
-        $notesText = $window.FindName('UpdateNotesText')
-        $progressPanel = $window.FindName('UpdateProgressPanel')
-        $progressBar = $window.FindName('UpdateProgressBar')
-        $progressText = $window.FindName('UpdateProgressText')
-        $installButton = $window.FindName('UpdateInstallButton')
-        $laterButton = $window.FindName('UpdateLaterButton')
-        $skipButton = $window.FindName('UpdateSkipButton')
-        $cancelButton = $window.FindName('UpdateCancelButton')
-        $logButton = $window.FindName('UpdateLogButton')
-        $titleBar = $window.FindName('UpdateTitleBar')
-        $closeButton = $window.FindName('UpdateCloseButton')
-
-        $versionText.Text = 'Neu: Version ' + [string]$Record.availableVersion + '   -   installiert: ' + [string]$Record.installedVersion
-        $sizeText = Get-ArenaUpdateSizeText $Record
-        $infoText.Text = 'Neuerungen dieser Version von GitHub (nur HTTPS).' +
-            $(if ($sizeText) { ' Downloadgröße: ' + $sizeText + '.' } else { '' }) +
-            ' Geprüft wird Größe, SHA-256, x64-Kopf und Dateiversion; die bisherige Version bleibt als Backup erhalten.'
-        $notesText.Text = (Get-ArenaUpdateNotesText $Record)
-
-        $titleBar.Add_MouseLeftButtonDown({
-            if ($_.ButtonState -eq [System.Windows.Input.MouseButtonState]::Pressed) {
-                try { $script:UpdateWindow.DragMove() } catch {}
-            }
-        })
-        $closeButton.Add_Click({ try { $script:UpdateWindow.Close() } catch {} })
-        $laterButton.Add_Click({
-            Write-RuntimeLog 'Update-Hinweis: Das Update wurde auf später verschoben.'
-            try { $script:UpdateWindow.Close() } catch {}
-        })
-        $skipButton.Add_Click({
-            try {
-                if ($null -ne $script:UpdatePendingRecord) { Add-ArenaSkippedVersion ([string]$script:UpdatePendingRecord.availableVersion) }
-            } catch {}
-            try { $script:UpdateWindow.Close() } catch {}
-        })
-        $logButton.Add_Click({ Open-ArenaUpdateLog })
-        $cancelButton.Add_Click({
-            $script:UpdateInstallCancelRequested = $true
-            try {
-                $cancelPath = (Get-ArenaUpdatePaths).CancelPath
-                $cancelDir = Split-Path -Parent $cancelPath
-                if (-not (Test-Path -LiteralPath $cancelDir)) { New-Item -ItemType Directory -Path $cancelDir -Force | Out-Null }
-                [IO.File]::WriteAllText($cancelPath, 'abbruch', [Text.UTF8Encoding]::new($false))
-                $progressText.Text = 'Abbruch angefordert - es wird nichts geändert ...'
-            } catch {}
-        })
-        $installButton.Add_Click({
-            try {
-                $script:UpdatePromptWindowFailed = $false
-                $installButton.IsEnabled = $false
-                $progressPanel.Visibility = 'Visible'
-                $progressBar.Value = 0
-                $progressText.Text = 'Update wird vorbereitet ...'
-                $skipButton.Visibility = 'Collapsed'
-                $laterButton.Visibility = 'Collapsed'
-                $cancelButton.Visibility = 'Visible'
-                Start-ArenaUpdateInstall $script:UpdatePendingRecord
-            } catch {
-                $installButton.IsEnabled = $true
-                $progressText.Text = 'Update konnte nicht gestartet werden: ' + $_.Exception.Message
-                $logButton.Visibility = 'Visible'
-            }
-        })
-
-        Write-RuntimeLog ('Update-Fenster geöffnet (verfügbar: ' + [string]$Record.availableVersion + ', installiert: ' + [string]$Record.installedVersion + ').')
-        [void]$window.ShowDialog()
-    } catch {
-        Write-RuntimeLog ('Update-Fenster fehlgeschlagen: ' + $_.Exception.Message)
-        if (-not $script:UpdatePromptWindowFailed) {
-            $script:UpdatePromptWindowFailed = $true
-            try { if ($null -ne $script:UpdateWindow) { $script:UpdateWindow.Close() } } catch {}
-            Show-ArenaUpdateFallbackPrompt $Record
-        }
-    } finally {
-        $script:UpdateWindow = $null
-    }
+    Set-ArenaGateView -Title 'Update-Prüfung fehlgeschlagen' -Status ('Neuer Versuch in ' + [string]$script:UpdateGateCheckRetrySec + ' Sekunden. Grund: ' + $Reason) -Indeterminate $true
+    $script:UpdateGateState = 'retry'
+    $script:UpdateGateRetryAtUtc = [DateTime]::UtcNow.AddSeconds($script:UpdateGateCheckRetrySec)
 }
 
-function Open-ArenaUpdateLog {
-    try {
-        $logPath = (Get-ArenaUpdatePaths).LogPath
-        if (Test-Path -LiteralPath $logPath -PathType Leaf) {
-            Start-Process -FilePath 'notepad.exe' -ArgumentList ((ConvertTo-ArenaArgument $logPath)) | Out-Null
-        } else {
-            [System.Windows.MessageBox]::Show('Es liegt noch kein Update-Protokoll vor.', 'Arena Roblox Bridge - Update', [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information) | Out-Null
-        }
-    } catch {
-        Write-RuntimeLog ('Protokoll konnte nicht geöffnet werden: ' + $_.Exception.Message)
+function Invoke-ArenaGateCheckRecord($Record) {
+    $status = [string]$Record.status
+    Write-RuntimeLog ('Update-Prüfung Ergebnis: ' + $status + ' (installiert ' + [string]$Record.installedVersion + ', verfügbar ' + [string]$Record.availableVersion + ').')
+    $script:UpdateGateCheckFailures = 0
+    if ($status -ceq 'update-available') {
+        Start-ArenaGateInstall $Record
+        return
     }
+    if ($status -ceq 'error') {
+        Register-ArenaGateCheckFailure ([string]$Record.message)
+        return
+    }
+    Complete-ArenaUpdateGate ('Kein Update nötig (Status: ' + $status + ').')
+}
+
+function Test-ArenaGateCheckResult {
+    $record = $null
+    $finished = $false
+    $resultPath = [string]$script:UpdateGateResultPath
+    if (-not [string]::IsNullOrWhiteSpace($resultPath) -and (Test-Path -LiteralPath $resultPath -PathType Leaf)) {
+        try { $record = Get-Content -LiteralPath $resultPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop } catch { $record = $null }
+        Remove-Item -LiteralPath $resultPath -Force -ErrorAction SilentlyContinue
+        $finished = $true
+    } elseif ($null -ne $script:UpdateGateProcess -and $script:UpdateGateProcess.HasExited) {
+        $finished = $true
+    } elseif ([DateTime]::UtcNow -gt $script:UpdateGateDeadlineUtc) {
+        $finished = $true
+    }
+    if (-not $finished) { return }
+    if ($null -eq $record) {
+        Register-ArenaGateCheckFailure 'Die Prüfung lieferte kein Ergebnis.'
+        return
+    }
+    Invoke-ArenaGateCheckRecord $record
 }
 
 # ---------------------------------------------------------------- Installation
-function Start-ArenaUpdateInstall($Record) {
-    if ($null -eq $Record) { throw 'Kein Update-Datensatz vorhanden.' }
-    if ($script:UpdateInstallActive) { throw 'Es läuft bereits eine Update-Installation.' }
-    if (Test-ArenaUpdateHoldsLock) { throw 'Ein Update-Helfer arbeitet bereits. Bitte kurz warten.' }
-    $exeName = [IO.Path]::GetFileName([string]$script:ExePath)
-    if ($exeName -cne 'ArenaBridge.exe') { throw 'Die Programmdatei heisst nicht exakt ArenaBridge.exe; das Update wurde nicht gestartet.' }
+function Start-ArenaGateInstall($Record) {
     $paths = Get-ArenaUpdatePaths
     if (-not (Test-Path -LiteralPath $paths.UpdateDirectory)) { New-Item -ItemType Directory -Path $paths.UpdateDirectory -Force | Out-Null }
-    Remove-Item -LiteralPath $paths.CancelPath -Force -ErrorAction SilentlyContinue
-    $script:UpdateInstallCancelRequested = $false
     $updater = Write-ArenaEmbeddedUpdater
+    $script:UpdateGateRunId = [Guid]::NewGuid().ToString('N')
     $extra = @(
         '-Mode', 'install',
+        '-RunId', $script:UpdateGateRunId,
         '-WaitForProcessId', [string]$PID,
-        '-WaitTimeoutSeconds', '600',
+        '-WaitTimeoutSeconds', '60',
         '-ProgressPath', (ConvertTo-ArenaArgument $paths.ProgressPath),
-        '-CancelPath', (ConvertTo-ArenaArgument $paths.CancelPath),
         '-StartAfterUpdate'
     )
     $extra += (Get-ArenaUpdaterBaseArguments)
     $arguments = Get-ArenaUpdaterArgumentString $updater $extra
-    $script:UpdateInstallProcess = Start-Process -FilePath (Get-ArenaWindowsPowerShell) -ArgumentList $arguments -WindowStyle Hidden -PassThru
-    $script:UpdateInstallActive = $true
-    Write-RuntimeLog ('Update-Installation gestartet (Helfer PID ' + [string]$script:UpdateInstallProcess.Id + '). Die Bridge bleibt offen, bis die neue Datei geprüft ist.')
-    if ($null -eq $script:UpdateProgressTimer) {
-        $script:UpdateProgressTimer = [System.Windows.Threading.DispatcherTimer]::new()
-        $script:UpdateProgressTimer.Interval = [TimeSpan]::FromMilliseconds(600)
-        $script:UpdateProgressTimer.Add_Tick({
-            try { Test-ArenaUpdateInstallProgress }
-            catch {
-                try { $script:UpdateProgressTimer.Stop() } catch {}
-                Write-RuntimeLog ('Update-Fortschritt konnte nicht gelesen werden: ' + $_.Exception.Message)
-            }
-        })
-    }
-    $script:UpdateProgressTimer.Start()
+    $script:UpdateGateProcess = Start-Process -FilePath (Get-ArenaWindowsPowerShell) -ArgumentList $arguments -WindowStyle Hidden -PassThru
+    $script:UpdateGateState = 'install'
+    $script:UpdateGateLastProgressUtc = [DateTime]::UtcNow
+    $version = [string]$Record.availableVersion
+    $sizeText = Get-ArenaUpdateSizeText $Record
+    $sizeSuffix = ''
+    if ($sizeText) { $sizeSuffix = ' (' + $sizeText + ')' }
+    Set-ArenaGateView -Title ('Update auf Version ' + $version + ' wird installiert') `
+        -Subtitle ('Installiert ist derzeit Version ' + [string]$Record.installedVersion + '. Die neue Version wird geladen' + $sizeSuffix + ' und vor dem Einsetzen geprüft.') `
+        -Notes (Get-ArenaUpdateNotesText $Record) -Status 'Die neue Version wird geladen ...' -Percent 0
+    Write-RuntimeLog ('Update-Installation gestartet (Helfer PID ' + [string]$script:UpdateGateProcess.Id + ', Version ' + $version + ').')
 }
 
-function Get-ArenaUpdateWindowControl([string]$Name) {
-    try {
-        if ($null -ne $script:UpdateWindow) { return $script:UpdateWindow.FindName($Name) }
-    } catch {}
-    return $null
+function Register-ArenaGateInstallFailure([string]$Message) {
+    Write-RuntimeLog ('Update-Installation fehlgeschlagen: ' + $Message)
+    $script:UpdateGateProcess = $null
+    Set-ArenaGateView -Title 'Update konnte nicht installiert werden' -Subtitle 'Die bisherige Version bleibt erhalten. Das Update wird automatisch erneut versucht.' `
+        -Status ($Message + ' Neuer Versuch in ' + [string]$script:UpdateGateInstallRetrySec + ' Sekunden.') -Indeterminate $true
+    $script:UpdateGateState = 'retry'
+    $script:UpdateGateRetryAtUtc = [DateTime]::UtcNow.AddSeconds($script:UpdateGateInstallRetrySec)
 }
 
-function Show-ArenaUpdateInstallError([string]$Message) {
-    $script:UpdateInstallActive = $false
-    try { $script:UpdateProgressTimer.Stop() } catch {}
-    $progressText = Get-ArenaUpdateWindowControl 'UpdateProgressText'
-    $installButton = Get-ArenaUpdateWindowControl 'UpdateInstallButton'
-    $cancelButton = Get-ArenaUpdateWindowControl 'UpdateCancelButton'
-    $logButton = Get-ArenaUpdateWindowControl 'UpdateLogButton'
-    $skipButton = Get-ArenaUpdateWindowControl 'UpdateSkipButton'
-    $laterButton = Get-ArenaUpdateWindowControl 'UpdateLaterButton'
-    if ($null -ne $progressText) { $progressText.Text = 'Das Update wurde nicht installiert: ' + $Message }
-    if ($null -ne $installButton) { $installButton.IsEnabled = $true; $installButton.Visibility = 'Collapsed' }
-    if ($null -ne $cancelButton) { $cancelButton.Visibility = 'Collapsed' }
-    if ($null -ne $logButton) { $logButton.Visibility = 'Visible' }
-    if ($null -ne $skipButton) { $skipButton.Visibility = 'Visible' }
-    if ($null -ne $laterButton) { $laterButton.Visibility = 'Visible' }
-}
-
-function Complete-ArenaUpdateInstallClose {
-    # Die Datei ist geprueft: die Bridge schliesst sich selbst und der Helfer ersetzt sie.
-    Write-RuntimeLog 'Update geprüft - die Bridge schließt sich jetzt, danach startet die neue Version.'
-    try { $script:UpdateProgressTimer.Stop() } catch {}
-    try {
-        if ($null -ne $script:UpdateWindow) { $script:UpdateWindow.Close() }
-    } catch {}
-    try {
-        if ($null -ne $script:MainWindow) { $script:MainWindow.Close() }
-        else { [System.Environment]::Exit(0) }
-    } catch { [System.Environment]::Exit(0) }
-}
-
-function Test-ArenaUpdateInstallProgress {
-    $paths = Get-ArenaUpdatePaths
-    $progress = $null
-    if (Test-Path -LiteralPath $paths.ProgressPath -PathType Leaf) {
-        try { $progress = Get-Content -LiteralPath $paths.ProgressPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop } catch { $progress = $null }
-    }
-    if ($null -eq $progress) {
-        if ($null -ne $script:UpdateInstallProcess -and $script:UpdateInstallProcess.HasExited) {
-            Show-ArenaUpdateInstallError 'Der Helfer hat ohne Ergebnis geendet. Bitte Protokoll öffnen.'
+function Test-ArenaGateInstallProgress {
+    $progress = Read-ArenaGateProgress (Get-ArenaUpdatePaths).ProgressPath
+    $helperGone = ($null -ne $script:UpdateGateProcess -and $script:UpdateGateProcess.HasExited)
+    if ($null -ne $progress -and [string]$progress.runId -ceq $script:UpdateGateRunId) {
+        $script:UpdateGateLastProgressUtc = [DateTime]::UtcNow
+        $phase = [string]$progress.phase
+        $message = [string]$progress.message
+        $percent = 0
+        try { $percent = [int]$progress.percent } catch { $percent = 0 }
+        switch ($phase) {
+            'ready-to-install' { Exit-ArenaForUpdate $phase; return }
+            'waiting-for-exit' { Exit-ArenaForUpdate $phase; return }
+            'installing'       { Exit-ArenaForUpdate $phase; return }
+            'restarting'       { Exit-ArenaForUpdate $phase; return }
+            'done'             { Exit-ArenaForUpdate $phase; return }
+            'nothing'          { Complete-ArenaUpdateGate 'Helfer meldet: kein Update nötig.'; return }
+            'error'            { Register-ArenaGateInstallFailure $message; return }
         }
+        $statusText = $message
+        if ($phase -eq 'downloading') { $statusText = $message + ' (' + [string]$percent + ' %)' }
+        Set-ArenaGateView -Status $statusText -Percent $(if ($phase -eq 'downloading' -or $phase -eq 'verifying') { $percent } else { $null }) -Indeterminate $($phase -ne 'downloading' -and $phase -ne 'verifying')
         return
     }
-    $phase = [string]$progress.phase
-    $message = [string]$progress.message
-    $percent = 0
-    try { $percent = [int]$progress.percent } catch { $percent = 0 }
-    $progressBar = Get-ArenaUpdateWindowControl 'UpdateProgressBar'
-    $progressText = Get-ArenaUpdateWindowControl 'UpdateProgressText'
-    if ($null -ne $progressBar) { $progressBar.Value = [Math]::Max(0, [Math]::Min(100, $percent)) }
-    if ($null -ne $progressText -and -not [string]::IsNullOrWhiteSpace($message)) {
-        if ($phase -eq 'downloading' -and $percent -gt 0) { $progressText.Text = $message + ' (' + [string]$percent + ' %)' }
-        else { $progressText.Text = $message }
+    if ($helperGone) {
+        Register-ArenaGateInstallFailure 'Der Update-Helfer hat ohne Ergebnis geendet.'
+        return
     }
-    switch ($phase) {
-        'ready-to-install' { Complete-ArenaUpdateInstallClose }
-        'waiting-for-exit' { Complete-ArenaUpdateInstallClose }
-        'installing' { Complete-ArenaUpdateInstallClose }
-        'restarting' { Complete-ArenaUpdateInstallClose }
-        'done' {
-            $script:UpdateInstallActive = $false
-            try { $script:UpdateProgressTimer.Stop() } catch {}
-        }
-        'nothing' {
-            $script:UpdateInstallActive = $false
-            try { $script:UpdateProgressTimer.Stop() } catch {}
-            $progressTextNow = Get-ArenaUpdateWindowControl 'UpdateProgressText'
-            if ($null -ne $progressTextNow) { $progressTextNow.Text = 'Kein Update nötig - es wurde nichts geändert.' }
-            $laterButtonNow = Get-ArenaUpdateWindowControl 'UpdateLaterButton'
-            if ($null -ne $laterButtonNow) { $laterButtonNow.Visibility = 'Visible' }
-            $cancelButtonNow = Get-ArenaUpdateWindowControl 'UpdateCancelButton'
-            if ($null -ne $cancelButtonNow) { $cancelButtonNow.Visibility = 'Collapsed' }
-        }
-        'cancelled' {
-            $script:UpdateInstallActive = $false
-            try { $script:UpdateProgressTimer.Stop() } catch {}
-            Show-ArenaUpdateInstallError 'Vom Nutzer abgebrochen - es wurde nichts geändert.'
-        }
-        'error' {
-            Show-ArenaUpdateInstallError $message
-        }
+    $silentSec = [int]([DateTime]::UtcNow - $script:UpdateGateLastProgressUtc).TotalSeconds
+    if ($silentSec -ge 20) {
+        Set-ArenaGateView -Status ('Die Installation läuft. Letzte Rückmeldung vor ' + [string]$silentSec + ' Sekunden.')
     }
 }
 
-# ---------------------------------------------------------------- Manuelle Pruefung / Diagnose
-function Start-ArenaUpdaterTask([string]$Kind, [string[]]$ExtraArguments, [string]$ResultPath, $InfoBlock) {
-    $paths = Get-ArenaUpdatePaths
-    $updater = Write-ArenaEmbeddedUpdater
-    $extra = $ExtraArguments + (Get-ArenaUpdaterBaseArguments)
-    $extra += @('-ResultPath', (ConvertTo-ArenaArgument $ResultPath))
-    $arguments = Get-ArenaUpdaterArgumentString $updater $extra
-    $script:UpdateTaskKind = $Kind
-    $script:UpdateTaskResultPath = $ResultPath
-    $script:UpdateTaskInfoBlock = $InfoBlock
-    $script:UpdateTaskProcess = Start-Process -FilePath (Get-ArenaWindowsPowerShell) -ArgumentList $arguments -WindowStyle Hidden -PassThru
-    $script:UpdateTaskDeadlineUtc = [DateTime]::UtcNow.AddSeconds(120)
-    if ($null -eq $script:UpdateTaskTimer) {
-        $script:UpdateTaskTimer = [System.Windows.Threading.DispatcherTimer]::new()
-        $script:UpdateTaskTimer.Interval = [TimeSpan]::FromMilliseconds(700)
-        $script:UpdateTaskTimer.Add_Tick({
-            try { Test-ArenaUpdaterTaskFinished }
-            catch {
-                try { $script:UpdateTaskTimer.Stop() } catch {}
-                Write-RuntimeLog ('Update-Aufgabe konnte nicht ausgewertet werden: ' + $_.Exception.Message)
+# ---------------------------------------------------------------- Zustandsmaschine
+function Invoke-ArenaUpdateGateTick {
+    switch ($script:UpdateGateState) {
+        'check'   { Test-ArenaGateCheckResult }
+        'install' { Test-ArenaGateInstallProgress }
+        'retry'   {
+            if ([DateTime]::UtcNow -ge $script:UpdateGateRetryAtUtc) {
+                Write-RuntimeLog 'Update-Gate: neuer Versuch.'
+                Start-ArenaGateCheck
             }
-        })
+        }
     }
-    $script:UpdateTaskTimer.Start()
 }
 
-function Test-ArenaUpdaterTaskFinished {
-    $finished = $false
-    $record = $null
-    if (-not [string]::IsNullOrWhiteSpace($script:UpdateTaskResultPath) -and (Test-Path -LiteralPath $script:UpdateTaskResultPath -PathType Leaf)) {
-        try { $record = Get-Content -LiteralPath $script:UpdateTaskResultPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop } catch { $record = $null }
-        Remove-Item -LiteralPath $script:UpdateTaskResultPath -Force -ErrorAction SilentlyContinue
-        $finished = $true
-    } elseif ($null -ne $script:UpdateTaskProcess -and $script:UpdateTaskProcess.HasExited) {
-        $finished = $true
-    } elseif ([DateTime]::UtcNow -gt $script:UpdateTaskDeadlineUtc) {
-        $finished = $true
-    }
-    if (-not $finished) { return }
-    try { $script:UpdateTaskTimer.Stop() } catch {}
-    $kind = [string]$script:UpdateTaskKind
-    $infoBlock = $script:UpdateTaskInfoBlock
-    if ($kind -ceq 'check-manual') {
-        if ($null -eq $record) {
-            if ($null -ne $infoBlock) { $infoBlock.Text = 'Die Prüfung lieferte kein Ergebnis. Bitte Protokoll öffnen oder später erneut versuchen.' }
-            Write-RuntimeLog 'Manuelle Update-Prüfung ohne Ergebnis.'
-            return
-        }
-        Write-RuntimeLog ('Manuelle Update-Prüfung: ' + [string]$record.status + '.')
-        if ($null -ne $infoBlock) { $infoBlock.Text = (Get-ArenaUpdateStatusSentence $record) }
-        Set-ArenaUpdateInfoState (Get-ArenaUpdateStatusSentence $record) $(if ([string]$record.status -eq 'error') { '#CBD5E1' } else { '#94A3B8' }) $false
-        if ([string]$record.status -ceq 'update-available') {
-            $script:UpdateCheckPromptShown = $true
-            Show-ArenaUpdatePrompt $record
-        }
-    } elseif ($kind -ceq 'doctor') {
-        $lines = New-Object System.Collections.Generic.List[string]
-        if ($null -eq $record) {
-            $lines.Add('Die Update-Diagnose lieferte kein Ergebnis.')
-            $lines.Add('')
-            $lines.Add('Bitte das Protokoll prüfen:')
-            $lines.Add((Get-ArenaUpdatePaths).LogPath)
+function Register-ArenaGateTickFailure([string]$Reason) {
+    Write-RuntimeLog ('Update-Gate Fehler: ' + $Reason)
+    if ($script:UpdateGateState -eq 'check') { Register-ArenaGateCheckFailure $Reason; return }
+    if ($script:UpdateGateState -eq 'install') { Register-ArenaGateInstallFailure $Reason; return }
+    $script:UpdateGateState = 'retry'
+    $script:UpdateGateRetryAtUtc = [DateTime]::UtcNow.AddSeconds($script:UpdateGateCheckRetrySec)
+}
+
+function Invoke-ArenaUpdateGate {
+    # Pflicht-Update beim Programmstart. Kehrt erst zurück, wenn die Bridge weiterlaufen
+    # darf (kein Update nötig oder Prüfung dauerhaft nicht möglich). Bei einer Installation
+    # beendet sich die Bridge aus dem Gate heraus, der Helfer startet die neue Version.
+    if (-not $script:IsExeMode) { return }                    # PS1-Entwicklungsstart: kein Update
+    if (-not (Test-ArenaUpdateIntegrationBuilt)) { return }  # Quelltext ohne Build-Marker
+    if ($script:DiagnosticMode) { Write-RuntimeLog 'Update-Prüfung uebersprungen (Diagnosemodus).'; return }
+    if ($env:ARENABRIDGE_BUILD_SMOKE -eq '1') { return }
+    $script:UpdateGateMayClose = $false
+    $script:UpdateGateCheckFailures = 0
+    try {
+        $window = [Windows.Markup.XamlReader]::Parse((Get-ArenaUpdateGateXaml))
+        $script:UpdateGateWindow = $window
+        if ($null -ne $script:MainWindow) { $window.Owner = $script:MainWindow }
+        $window.Add_Closing({
+            param($sender, $eventArgs)
+            if (-not $script:UpdateGateMayClose) { $eventArgs.Cancel = $true }
+        })
+        $script:UpdateGateTimer = [System.Windows.Threading.DispatcherTimer]::new()
+        $script:UpdateGateTimer.Interval = [TimeSpan]::FromMilliseconds(300)
+        $script:UpdateGateTimer.Add_Tick({
+            try { Invoke-ArenaUpdateGateTick }
+            catch { Register-ArenaGateTickFailure $_.Exception.Message }
+        })
+        if ([string]$UpdateStatus -ceq 'update-fehler') {
+            # Der Helfer hat die Bridge nach einer fehlgeschlagenen Ersetzung neu gestartet.
+            # Eine kurze Pause verhindert eine schnelle Neustart-Schleife und zeigt den Grund.
+            $script:UpdateGateState = 'retry'
+            $script:UpdateGateRetryAtUtc = [DateTime]::UtcNow.AddSeconds($script:UpdateGateInstallRetrySec)
+            Set-ArenaGateView -Title 'Letztes Update wurde nicht eingesetzt' -Subtitle 'Die bisherige Version ist aktiv und bleibt erhalten.' -Status ('Neuer Versuch in ' + [string]$script:UpdateGateInstallRetrySec + ' Sekunden.') -Indeterminate $true
         } else {
-            $lines.Add('Updater:            ' + [string]$record.updaterVersion + '   (PowerShell ' + [string]$record.powershell + ')')
-            $lines.Add('Kanal:              ' + [string]$record.channel + '   Manifest: ' + $(if ($record.manifestOk) { 'lesbar' } else { 'FEHLER' }))
-            if (-not $record.manifestOk) { $lines.Add('  Grund:            ' + [string]$record.manifestError) }
-            $lines.Add('Verfügbar:         ' + $(if ([string]$record.availableVersion) { [string]$record.availableVersion + ' (sequence ' + [string]$record.sequence + ')' } else { '(Kanal deaktiviert)' }))
-            $lines.Add('Installiert:        ' + $(if ([string]$record.installedStateVersion) { [string]$record.installedStateVersion } else { '(kein Update-Status)' }) + $(if ([string]$record.installedFileVersion) { ', Dateiversion ' + [string]$record.installedFileVersion } else { '' }))
-            $lines.Add('Ordner:             ' + [string]$record.installDirectory)
-            $lines.Add('Ordner schreibbar:  ' + [string]$record.installDirectoryWriteable)
-            $lines.Add('Programmdatei:      ' + [string]$record.targetPath)
-            $lines.Add('Datei vorhanden:    ' + [string]$record.targetExists)
-            $lines.Add('Prüfzeit (UTC):    ' + [string]$record.checkedAtUtc)
+            # Ein Startfehler des Pruefers zaehlt wie ein Pruefungsfehler (mit Wiederholung),
+            # er darf die Sperre nicht stillschweigend aufheben.
+            try { Start-ArenaGateCheck } catch { Register-ArenaGateCheckFailure ('Pruefer nicht startbar: ' + $_.Exception.Message) }
         }
-        $lines.Add('')
-        $lines.Add('Protokoll: ' + (Get-ArenaUpdatePaths).LogPath)
-        if ($null -ne $infoBlock) { $infoBlock.Text = [string]::Join([Environment]::NewLine, $lines.ToArray()) }
-    }
-    $script:UpdateTaskKind = ''
-    $script:UpdateTaskResultPath = ''
-    $script:UpdateTaskInfoBlock = $null
-}
-
-function Start-ArenaManualUpdateCheck($InfoBlock) {
-    if ($script:UpdateInstallActive -or (Test-ArenaUpdateHoldsLock)) {
-        if ($null -ne $InfoBlock) { $InfoBlock.Text = 'Es läuft gerade eine Update-Installation. Bitte warten.' }
-        return
-    }
-    if ($null -ne $InfoBlock) { $InfoBlock.Text = 'Prüfung läuft ... (Gemessen wird nur die Kanal-Datei auf GitHub.)' }
-    $resultPath = Join-Path (Get-ArenaUpdatePaths).BinDirectory ('update-check-manual-' + [Guid]::NewGuid().ToString('N') + '.json')
-    try {
-        Start-ArenaUpdaterTask 'check-manual' @('-Mode', 'check') $resultPath $InfoBlock
+        $script:UpdateGateTimer.Start()
+        Write-RuntimeLog 'Update-Gate geöffnet: die Bridge ist bis zur Entscheidung gesperrt.'
+        [void]$window.ShowDialog()
     } catch {
-        if ($null -ne $InfoBlock) { $InfoBlock.Text = 'Prüfung konnte nicht gestartet werden: ' + $_.Exception.Message }
-        Write-RuntimeLog ('Manuelle Update-Prüfung nicht gestartet: ' + $_.Exception.Message)
-    }
-}
-
-function Show-ArenaUpdateDiagnose($InfoBlock) {
-    if ($null -ne $InfoBlock) { $InfoBlock.Text = 'Update-Diagnose läuft ...' }
-    $resultPath = Join-Path (Get-ArenaUpdatePaths).BinDirectory ('update-doctor-' + [Guid]::NewGuid().ToString('N') + '.json')
-    try {
-        Start-ArenaUpdaterTask 'doctor' @('-Mode', 'doctor') $resultPath $InfoBlock
-    } catch {
-        if ($null -ne $InfoBlock) { $InfoBlock.Text = 'Diagnose konnte nicht gestartet werden: ' + $_.Exception.Message }
-        Write-RuntimeLog ('Update-Diagnose nicht gestartet: ' + $_.Exception.Message)
+        try { if ($null -ne $script:UpdateGateTimer) { $script:UpdateGateTimer.Stop() } } catch {}
+        Write-RuntimeLog ('Update-Gate konnte nicht laufen; der Start geht ohne Prüfung weiter: ' + $_.Exception.Message)
+    } finally {
+        $script:UpdateGateWindow = $null
     }
 }
 # <<< ARENA-UPDATE-INTEGRATION <<<
@@ -43590,9 +43184,11 @@ function Start-BridgeRuntime {
         Add-PendingToast 'Achtung: Die Skriptdatei ist nicht als "UTF-8 mit BOM" gespeichert. Umlaute koennen falsch aussehen.' 'Warn' 9
         Write-RuntimeLog 'ACHTUNG: Skriptdatei ist falsch codiert - Umlaute werden ggf. falsch angezeigt.'
     }
-    Set-StartupStage 'Update-Pruefung (neues Update-System, im Hintergrund)'
-    # Der alte Root-Updatepfad ist stillgelegt (Invoke-AutostartSelfUpdate laeuft nicht mehr).
-    try { Start-ArenaUpdateCheck } catch { Write-RuntimeLog ('Update-Pruefung uebersprungen: ' + $_.Exception.Message) }
+    Set-StartupStage 'Pflicht-Update-Pruefung (vor allen Diensten; Bridge gesperrt)'
+    # Der alte Root-Updatepfad ist stillgelegt. Das Pflicht-Gate laeuft bei JEDEM Start,
+    # bevor Studio, Plugin, Server oder Tunnel starten. Es kehrt nur zurueck, wenn die
+    # Bridge weiterlaufen darf; bei einer Installation beendet es die Bridge selbst.
+    try { Invoke-ArenaUpdateGate } catch { Write-RuntimeLog ('Update-Gate uebersprungen: ' + $_.Exception.Message) }
     Set-StartupStage 'Roblox-Studio-Suche und Plugin-/Server-Start'
     $script:RobloxStudioPath = Find-RobloxStudio
     if ($script:RobloxStudioPath) {

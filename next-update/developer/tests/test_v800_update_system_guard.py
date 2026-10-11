@@ -33,12 +33,8 @@ BOOTSTRAP = ROOT / "tools" / "ArenaBridge-Update-Holen.ps1"
 CHANNELS = ROOT / "update-system" / "channels"
 BLOCK_START = "# >>> ARENA-UPDATE-INTEGRATION >>>"
 BLOCK_END = "# <<< ARENA-UPDATE-INTEGRATION <<<"
-SETTINGS_UI_START = "<!-- >>> ARENA-UPDATE-SETTINGS-UI >>>"
-SETTINGS_UI_END = "<!-- <<< ARENA-UPDATE-SETTINGS-UI <<< -->"
-SETTINGS_CODE_START = "# >>> ARENA-UPDATE-SETTINGS-CODE >>>"
-SETTINGS_CODE_END = "# <<< ARENA-UPDATE-SETTINGS-CODE <<<"
 MIN_APPROVAL_CHARS = 30
-EXPECTED_UPDATER_VERSION = "2.0.0"
+EXPECTED_UPDATER_VERSION = "3.0.0"
 FAILURES: list[str] = []
 
 # Tree-sitter (die PowerShell-Grammatik) meldet in dieser grossen, gemischten
@@ -89,14 +85,6 @@ def integration_block_text() -> str:
     return marker_slice(text, BLOCK_START, BLOCK_END)
 
 
-def settings_ui_text() -> str:
-    return marker_slice(app_source().replace("\r\n", "\n"), SETTINGS_UI_START, SETTINGS_UI_END)
-
-
-def settings_code_text() -> str:
-    return marker_slice(app_source().replace("\r\n", "\n"), SETTINGS_CODE_START, SETTINGS_CODE_END)
-
-
 def protected_hashes() -> dict[str, str]:
     hashes: dict[str, str] = {}
     for path in sorted(p for p in (ROOT / "update-system").rglob("*") if p.is_file()):
@@ -116,10 +104,6 @@ def protected_hashes() -> dict[str, str]:
             hashes[rel(path)] = sha256_bytes(path.read_bytes())
     hashes["app/ArenaBridge.ps1#ARENA-UPDATE-INTEGRATION"] = sha256_bytes(
         integration_block_text().encode("utf-8"))
-    hashes["app/ArenaBridge.ps1#ARENA-UPDATE-SETTINGS-UI"] = sha256_bytes(
-        settings_ui_text().encode("utf-8"))
-    hashes["app/ArenaBridge.ps1#ARENA-UPDATE-SETTINGS-CODE"] = sha256_bytes(
-        settings_code_text().encode("utf-8"))
     return hashes
 
 
@@ -267,8 +251,14 @@ def static_invariants() -> None:
           "vor dem Ersetzen wird die Dateiversion der neuen EXE geprueft")
     check("Compare-UpdateVersion $script:UpdaterVersion $minimumUpdater" in updater,
           "der Updater erlaubt minimumUpdaterVersion <= eigene Version (Gleichstand ist normal)")
-    check("update-progress.json" in updater and "cancel.request" in updater,
-          "Fortschrittsdatei und Abbruchdatei sind vorhanden (Abbruch ohne Prozesseingriff)")
+    check("update-progress.json" in updater and "cancel.request" not in updater,
+          "Fortschrittsdatei vorhanden; es gibt KEINE Abbruchdatei mehr (Pflicht-Update)")
+    check("WriteAllText" in updater and "Write-TextAtomic $script:ActiveProgressPath" not in updater,
+          "der Fortschritt wird direkt geschrieben (kein File.Replace, das an der Lesesperre scheiterte)")
+    check("'up-to-date'" in updater and "version-conflict" not in updater,
+          "gleiche Version ist 'up-to-date'; die Version-Konflikt-Regel ist entfernt")
+    check("Keine Installation: die Version im Manifest ist nicht neuer" in updater,
+          "der Helfer installiert nie eine Version, die nicht neuer ist als die installierte")
     check("update-history.json" in updater, "der Verlauf der Updates wird geschrieben")
     try:
         errors = new_powershell_parse_errors(UPDATER.read_bytes())
@@ -284,10 +274,8 @@ def static_invariants() -> None:
     block = integration_block_text()
     check(block != "" and source.count(BLOCK_START) == 1,
           "es gibt genau einen Update-Block in der App")
-    check(SETTINGS_UI_START in source and source.count(SETTINGS_UI_START) == 1,
-          "es gibt genau einen Updates-Bereich im Einstellungsfenster")
-    check(SETTINGS_CODE_START in source and source.count(SETTINGS_CODE_START) == 1,
-          "der Updates-Bereich ist genau einmal verdrahtet")
+    check("ARENA-UPDATE-SETTINGS" not in source and "UpdateCheckButton" not in source,
+          "das Einstellungsfenster hat keinen Updates-Bereich mehr (keine manuelle Suche)")
     check("ARENABRIDGE_SELFUPDATE_TEST_MANIFEST" in block
           and "if ([string]$script:TestFixtureBuild -cne '1') { return '' }" in block,
           "die Test-Manifest-Variable ist an den Testbau gekoppelt")
@@ -306,29 +294,19 @@ def static_invariants() -> None:
     check(not missing_keys,
           "der Update-Block nutzt nur selbst definierte WPF-Ressourcen: "
           + (", ".join(missing_keys) if missing_keys else "ok"))
-    check("update-progress.json" in block and "cancel.request" in block,
-          "Fortschritt und Abbruch werden auch in der App verwendet")
-    check("update-history.json" in block, "die App kennt den Update-Verlauf")
-    check("Start-ArenaUpdateCheck" in block and "Test-ArenaUpdateCheckResult" in block,
-          "Startpruefung und Auswertung sind im Block vorhanden")
-    check("Start-ArenaManualUpdateCheck" in block and "Show-ArenaUpdateDiagnose" in block,
-          "manuelle Pruefung und Diagnose stehen im Update-Block zur Verfuegung")
+    check("update-progress.json" in block and "cancel.request" not in block,
+          "die App liest den Fortschritt, kennt aber keinen Abbruch")
+    check("[IO.FileShare]'ReadWrite,Delete'" in block,
+          "die App liest die Fortschrittsdatei mit Delete-Freigabe (sonst scheitert das Ersetzen durch den Helfer)")
+    check("Invoke-ArenaUpdateGate" in block and "Test-ArenaGateCheckResult" in block,
+          "Pflicht-Gate und Auswertung der Pruefung sind im Block vorhanden")
+    check("Start-ArenaManualUpdateCheck" not in block and "Show-ArenaUpdateDiagnose" not in block,
+          "es gibt keine manuelle Pruefung und keine Diagnose-Schaltflaeche mehr")
 
-    settings_ui = settings_ui_text()
-    settings_code = settings_code_text()
-    # 7.8.0: Auf ausdruecklichen Nutzerwunsch sind die Knoepfe "Update-Diagnose"
-    # und "Protokoll" aus den Einstellungen entfernt. Der Bereich bietet nur noch
-    # die manuelle Suche an; die Blockfunktionen bleiben unveraendert vorhanden.
-    check("UpdateCheckButton" in settings_ui
-          and "UpdateDiagnoseButton" not in settings_ui and "UpdateLogButton" not in settings_ui,
-          "das Einstellungsfenster bietet nur noch die manuelle Suche an (Diagnose/Protokoll entfernt)")
-    check("Start-ArenaManualUpdateCheck" in settings_code
-          and "Show-ArenaUpdateDiagnose" not in settings_code and "Open-ArenaUpdateLog" not in settings_code,
-          "im Einstellungsfenster ist nur noch die manuelle Suche verdrahtet")
-    check('Style="{StaticResource' not in settings_ui,
-          "die neuen Update-Knoepfe nutzen keine geteilten Fenster-Ressourcen (kein StaticResource-Absturz)")
-    check(settings_ui.count("<Button ") == 1,
-          "der Updates-Bereich hat genau den Knopf Jetzt nach Updates suchen")
+    # 8.0.0: Auf Nutzerwunsch gibt es in den Einstellungen KEINEN Updates-Bereich mehr.
+    # Ein Update laeuft bei jedem Programmstart automatisch (Pflicht-Gate).
+    check('Text="UPDATES"' not in source and "UpdateInfoText" not in source,
+          "die Einstellungen zeigen keinen Updates-Bereich und keine Update-Infos")
 
     tool_text = RELEASE_TOOL.read_text(encoding="utf-8")
     check("elif current_updater and semver_gt(minimum, current_updater)" in tool_text,
