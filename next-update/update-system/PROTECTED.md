@@ -93,3 +93,15 @@ Eine Änderung ist nur zulässig, wenn ALLE Punkte erfüllt sind:
   die Kanal-Manifeste `beta.json`/`stable.json` und der Integrationsblock
   `ARENA-UPDATE-INTEGRATION` in `app/ArenaBridge.ps1`. Kanaele bleiben deaktiviert.
   Der Windows-Lauf (Build, Smoke, Selbst-Update-Test) steht weiterhin aus.
+
+- 2026-10-11, Fehlerkorrektur am Builder (ohne Versionsaenderung, 7.7.0 bleibt): Der Nutzer hat
+  die Behebung des Build-Fehlers "Background placeholder was not replaced:
+  __ARENA_BACKGROUND_IMAGE_BASE64__" in `builder/Build-EXE.ps1` ausdruecklich beauftragt.
+  Ursache: Die Pruefung nach dem Einsetzen der Bilder suchte den blossen Platzhalter-Text im
+  gesamten Quelltext. Dieser Text steht aber absichtlich auch in den Laufzeit-Pruefungen des
+  Smoke-Tests in `app/ArenaBridge.ps1` (`-eq '__ARENA_BACKGROUND_IMAGE_BASE64__'`), daher wurde
+  der Build faelschlich abgebrochen. Behoben: Die Pruefung sucht nur noch die echte Zuweisung
+  `$script:BackgroundImageBase64 = '__ARENA_BACKGROUND_IMAGE_BASE64__'`. Betroffene geschuetzte
+  Dateien: `builder/Build-EXE.ps1`, diese Datei und die Lock-Datei. Updater, Kanal-Manifeste und
+  der Integrationsblock bleiben unveraendert. Kanaele bleiben deaktiviert. Der Windows-Lauf
+  (Build, Smoke, Selbst-Update-Test) steht weiterhin aus.

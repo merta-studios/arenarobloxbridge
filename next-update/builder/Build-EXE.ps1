@@ -406,8 +406,12 @@ try {
     $preparedSource = $preparedSource.Replace($logoMarker,$logoReplacement)
     $backgroundReplacement = '$script:BackgroundImageBase64 = ''' + $backgroundBase64 + ''''
     $preparedSource = $preparedSource.Replace($backgroundMarker,$backgroundReplacement)
-    foreach ($leftoverBackground in @('__ARENA_BACKGROUND_IMAGE_BASE64__')) {
-        if ($preparedSource.Contains($leftoverBackground)) { throw ('Background placeholder was not replaced: ' + $leftoverBackground) }
+    # Pruefe nur die echte Zuweisung ($script:BackgroundImageBase64 = '__ARENA_...'),
+    # nicht den blossen Platzhalter-Text: der steht absichtlich auch in den
+    # Laufzeit-Pruefungen des Smoke-Tests (-eq '__ARENA_...') und wuerde sonst
+    # faelschlich als "nicht ersetzt" gemeldet.
+    if ($preparedSource.Contains($backgroundMarker)) {
+        throw 'Background placeholder was not replaced: the $script:BackgroundImageBase64 assignment still holds __ARENA_BACKGROUND_IMAGE_BASE64__.'
     }
     foreach ($entry in $updateMarkers) { $preparedSource = $preparedSource.Replace($entry.Marker, $entry.Value) }
     foreach ($leftover in @('__ARENA_UPDATE_CHANNEL__','__ARENA_UPDATER_BASE64__','__ARENA_UPDATER_SHA256__','__ARENA_TEST_FIXTURE_BUILD__')) {
