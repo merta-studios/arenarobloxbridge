@@ -306,20 +306,23 @@ def static_invariants() -> None:
     check("Start-ArenaUpdateCheck" in block and "Test-ArenaUpdateCheckResult" in block,
           "Startpruefung und Auswertung sind im Block vorhanden")
     check("Start-ArenaManualUpdateCheck" in block and "Show-ArenaUpdateDiagnose" in block,
-          "manuelle Pruefung und Diagnose sind im Block vorhanden")
+          "manuelle Pruefung und Diagnose stehen im Update-Block zur Verfuegung")
 
     settings_ui = settings_ui_text()
     settings_code = settings_code_text()
-    check("UpdateCheckButton" in settings_ui and "UpdateDiagnoseButton" in settings_ui
-          and "UpdateLogButton" in settings_ui,
-          "das Einstellungsfenster bietet Suchen, Diagnose und Protokoll an")
-    check("Start-ArenaManualUpdateCheck" in settings_code and "Show-ArenaUpdateDiagnose" in settings_code
-          and "Open-ArenaUpdateLog" in settings_code,
-          "die Knoepfe rufen die Funktionen des Update-Blocks auf")
+    # 7.8.0: Auf ausdruecklichen Nutzerwunsch sind die Knoepfe "Update-Diagnose"
+    # und "Protokoll" aus den Einstellungen entfernt. Der Bereich bietet nur noch
+    # die manuelle Suche an; die Blockfunktionen bleiben unveraendert vorhanden.
+    check("UpdateCheckButton" in settings_ui
+          and "UpdateDiagnoseButton" not in settings_ui and "UpdateLogButton" not in settings_ui,
+          "das Einstellungsfenster bietet nur noch die manuelle Suche an (Diagnose/Protokoll entfernt)")
+    check("Start-ArenaManualUpdateCheck" in settings_code
+          and "Show-ArenaUpdateDiagnose" not in settings_code and "Open-ArenaUpdateLog" not in settings_code,
+          "im Einstellungsfenster ist nur noch die manuelle Suche verdrahtet")
     check('Style="{StaticResource' not in settings_ui,
           "die neuen Update-Knoepfe nutzen keine geteilten Fenster-Ressourcen (kein StaticResource-Absturz)")
-    check(settings_ui.count("<Button ") == 3,
-          "der Updates-Bereich hat genau die drei Knoepfe Suchen, Diagnose, Protokoll")
+    check(settings_ui.count("<Button ") == 1,
+          "der Updates-Bereich hat genau den Knopf Jetzt nach Updates suchen")
 
     tool_text = RELEASE_TOOL.read_text(encoding="utf-8")
     check("elif current_updater and semver_gt(minimum, current_updater)" in tool_text,

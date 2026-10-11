@@ -41881,12 +41881,6 @@ function Open-SettingsWindow {
                             <Button x:Name="UpdateCheckButton" Content="Jetzt nach Updates suchen" Foreground="#E8EEF9" Background="#1B2A4A"
                                     BorderBrush="#33FFFFFF" BorderThickness="1" Padding="13,8" FontSize="11.5" Cursor="Hand"
                                     ToolTip="Prueft die freigegebene Version. Es wird nichts installiert, solange du nicht zustimmst."/>
-                            <Button x:Name="UpdateDiagnoseButton" Content="Update-Diagnose" Foreground="#E8EEF9" Background="#16233D"
-                                    BorderBrush="#33FFFFFF" BorderThickness="1" Padding="13,8" FontSize="11.5" Cursor="Hand" Margin="8,0,0,0"
-                                    ToolTip="Zeigt Kanal, Versionen, Ordnerrechte und das Update-Protokoll."/>
-                            <Button x:Name="UpdateLogButton" Content="Protokoll" Foreground="#E8EEF9" Background="#16233D"
-                                    BorderBrush="#33FFFFFF" BorderThickness="1" Padding="13,8" FontSize="11.5" Cursor="Hand" Margin="8,0,0,0"
-                                    ToolTip="Oeffnet das Update-Protokoll in Notepad."/>
                         </StackPanel>
                         <TextBlock x:Name="UpdateCheckResultText" Text="" Foreground="#94A3B8" FontSize="10.5" TextWrapping="Wrap" Margin="2,8,0,0"/>
                         <!-- <<< ARENA-UPDATE-SETTINGS-UI <<< -->
@@ -41929,24 +41923,15 @@ function Open-SettingsWindow {
     # Schluessel und seine Scopes entscheiden allein.
     $updateText      = $settingsWindow.FindName('UpdateInfoText')
     # >>> ARENA-UPDATE-SETTINGS-CODE >>>   GESCHUETZT - siehe update-system/PROTECTED.md
+    # 7.8.0: Die Knoepfe "Update-Diagnose" und "Protokoll" sind aus den
+    # Einstellungen entfernt; die Blockfunktionen bleiben erhalten.
     $updateCheckButton  = $settingsWindow.FindName('UpdateCheckButton')
-    $updateDiagnoseButton = $settingsWindow.FindName('UpdateDiagnoseButton')
-    $updateLogButton    = $settingsWindow.FindName('UpdateLogButton')
     $updateCheckResult  = $settingsWindow.FindName('UpdateCheckResultText')
     if ($null -ne $updateCheckButton) {
         $updateCheckButton.Add_Click({
             try { Start-ArenaManualUpdateCheck $updateCheckResult }
             catch { try { $updateCheckResult.Text = 'Prüfung nicht möglich: ' + $_.Exception.Message } catch {} }
         })
-    }
-    if ($null -ne $updateDiagnoseButton) {
-        $updateDiagnoseButton.Add_Click({
-            try { Show-ArenaUpdateDiagnose $updateCheckResult }
-            catch { try { $updateCheckResult.Text = 'Diagnose nicht möglich: ' + $_.Exception.Message } catch {} }
-        })
-    }
-    if ($null -ne $updateLogButton) {
-        $updateLogButton.Add_Click({ Open-ArenaUpdateLog })
     }
     # <<< ARENA-UPDATE-SETTINGS-CODE <<<
     # ----------------------------------------------------------------
