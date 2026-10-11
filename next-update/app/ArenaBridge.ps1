@@ -32169,9 +32169,15 @@ function Set-SplashTitleArtwork {
     }
 }
 
-function Set-BackgroundArtwork {
-    param($ImageControl)
-    if ($null -eq $ImageControl) { return $false }
+# Version 7.7.2: Der Nutzer-Hintergrund (app/assets/liquidglasbackground.png)
+# wird jetzt in ALLEN Fenstern gezeigt. Er wird deshalb - wie das Programmlogo -
+# nur EINMAL dekodiert und danach als eingefrorene Bitmap wiederverwendet.
+$script:BackgroundArtworkBitmap = $null
+$script:BackgroundArtworkChecked = $false
+
+function Get-BackgroundArtworkBitmap {
+    if ($script:BackgroundArtworkChecked) { return $script:BackgroundArtworkBitmap }
+    $script:BackgroundArtworkChecked = $true
     $imageBytes = $null
     $imageStream = $null
     try {
@@ -32182,10 +32188,7 @@ function Set-BackgroundArtwork {
             $imagePath = Join-Path $script:AppRoot 'assets\liquidglasbackground.png'
             if (Test-Path -LiteralPath $imagePath -PathType Leaf) { $imageBytes = [System.IO.File]::ReadAllBytes($imagePath) }
         }
-        if ($null -eq $imageBytes -or $imageBytes.Length -eq 0) {
-            $ImageControl.Visibility = 'Collapsed'
-            return $false
-        }
+        if ($null -eq $imageBytes -or $imageBytes.Length -eq 0) { return $null }
         $imageStream = [System.IO.MemoryStream]::new([byte[]]$imageBytes)
         $bitmap = [System.Windows.Media.Imaging.BitmapImage]::new()
         $bitmap.BeginInit()
@@ -32193,15 +32196,57 @@ function Set-BackgroundArtwork {
         $bitmap.StreamSource = $imageStream
         $bitmap.EndInit()
         $bitmap.Freeze()
+        $script:BackgroundArtworkBitmap = $bitmap
+        return $bitmap
+    } catch {
+        try { Write-RuntimeLog ('Hintergrundbild konnte nicht geladen werden: ' + $_.Exception.Message) } catch {}
+        return $null
+    } finally {
+        if ($null -ne $imageStream) { try { $imageStream.Dispose() } catch {} }
+    }
+}
+
+function Set-BackgroundArtwork {
+    param($ImageControl)
+    if ($null -eq $ImageControl) { return $false }
+    try {
+        $bitmap = Get-BackgroundArtworkBitmap
+        if ($null -eq $bitmap) {
+            $ImageControl.Visibility = 'Collapsed'
+            return $false
+        }
         $ImageControl.Source = $bitmap
         $ImageControl.Visibility = 'Visible'
         return $true
     } catch {
-        try { Write-RuntimeLog ('Hintergrundbild konnte nicht geladen werden: ' + $_.Exception.Message) } catch {}
+        try { Write-RuntimeLog ('Hintergrundbild konnte nicht angezeigt werden: ' + $_.Exception.Message) } catch {}
         try { $ImageControl.Visibility = 'Collapsed' } catch {}
         return $false
-    } finally {
-        if ($null -ne $imageStream) { try { $imageStream.Dispose() } catch {} }
+    }
+}
+
+# Version 7.7.2: Eine Border kann ihren eigenen Hintergrund sauber an den
+# abgerundeten Ecken beschneiden (CornerRadius) - ein Image-Kindelement nicht.
+# Deshalb bekommen die Schalen der anderen Fenster das Hintergrundbild als
+# ImageBrush-Hintergrund; bleibt das Bild aus, gilt der bisherige Verlauf.
+function Set-BackgroundShellBrush {
+    param($Shell)
+    if ($null -eq $Shell) { return $false }
+    try {
+        $bitmap = Get-BackgroundArtworkBitmap
+        if ($null -eq $bitmap) { return $false }
+        $brush = [System.Windows.Media.ImageBrush]::new()
+        $brush.ImageSource = $bitmap
+        $brush.Stretch = [System.Windows.Media.Stretch]::UniformToFill
+        $brush.AlignmentX = [System.Windows.Media.AlignmentX]::Center
+        $brush.AlignmentY = [System.Windows.Media.AlignmentY]::Center
+        try { [System.Windows.Media.RenderOptions]::SetBitmapScalingMode($brush, [System.Windows.Media.BitmapScalingMode]::HighQuality) } catch {}
+        try { $brush.Freeze() } catch {}
+        $Shell.Background = $brush
+        return $true
+    } catch {
+        try { Write-RuntimeLog ('Hintergrundbild der Fensterschale konnte nicht gesetzt werden: ' + $_.Exception.Message) } catch {}
+        return $false
     }
 }
 
@@ -34734,28 +34779,12 @@ function Get-UserMessageWindowXaml {
     <Window.Resources>
 <!--ARENA_DIALOG_STYLES-->
     </Window.Resources>
-    <Border CornerRadius="20" Background="{StaticResource SwAppBg}"
+    <!-- Version 7.7.2: RootShell bekommt nach dem Laden das Nutzer-
+         Hintergrundbild als Brush (Set-BackgroundShellBrush); die frueheren
+         Aurora-Verlaufskreise sind entfernt. Als Fallback bleibt SwAppBg. -->
+    <Border x:Name="RootShell" CornerRadius="20" Background="{StaticResource SwAppBg}"
             BorderBrush="#33FFFFFF" BorderThickness="1" ClipToBounds="True">
         <Grid>
-            <Grid IsHitTestVisible="False">
-                <Ellipse Width="420" Height="420" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-150,-190,0,0">
-                    <Ellipse.Fill>
-                        <RadialGradientBrush>
-                            <GradientStop Color="#407B5CFF" Offset="0"/>
-                            <GradientStop Color="#007B5CFF" Offset="1"/>
-                        </RadialGradientBrush>
-                    </Ellipse.Fill>
-                </Ellipse>
-                <Ellipse Width="360" Height="360" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-120,-140">
-                    <Ellipse.Fill>
-                        <RadialGradientBrush>
-                            <GradientStop Color="#2E00CFC0" Offset="0"/>
-                            <GradientStop Color="#0000CFC0" Offset="1"/>
-                        </RadialGradientBrush>
-                    </Ellipse.Fill>
-                </Ellipse>
-            </Grid>
-
             <Grid Margin="22">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -34854,6 +34883,8 @@ function Open-UserMessageWindow {
         $reader = [System.Xml.XmlNodeReader]::new([xml]$windowXaml)
         $win = [Windows.Markup.XamlReader]::Load($reader)
         try { $win.Owner = $window } catch {}
+        # Version 7.7.2: derselbe Nutzer-Hintergrund wie im Hauptfenster.
+        [void](Set-BackgroundShellBrush -Shell ($win.FindName('RootShell')))
 
         $titleBar = $win.FindName('TitleBar')
         $placeLabel = $win.FindName('PlaceNameText')
@@ -35405,31 +35436,12 @@ function Get-AskWindowXaml {
     <Window.Resources>
 <!--ARENA_DIALOG_STYLES-->
     </Window.Resources>
-    <Border CornerRadius="20" Background="{StaticResource SwAppBg}"
+    <!-- Version 7.7.2: RootShell bekommt nach dem Laden das Nutzer-
+         Hintergrundbild als Brush (Set-BackgroundShellBrush); der fruehere
+         Aurora-Hintergrundglanz ist entfernt. Als Fallback bleibt SwAppBg. -->
+    <Border x:Name="RootShell" CornerRadius="20" Background="{StaticResource SwAppBg}"
             BorderBrush="#33FFFFFF" BorderThickness="1" ClipToBounds="True">
         <Grid>
-            <!-- Ruhiger Hintergrundglanz: dieselben Farben wie im Haupt- und
-                 Einstellungsfenster, aber OHNE Daueranimation. Eine forever
-                 laufende Storyboard-Animation war mit ein Grund fuer das
-                 unruhige Bild des alten Fensters. -->
-            <Grid IsHitTestVisible="False">
-                <Ellipse Width="420" Height="420" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-150,-190,0,0">
-                    <Ellipse.Fill>
-                        <RadialGradientBrush>
-                            <GradientStop Color="#407B5CFF" Offset="0"/>
-                            <GradientStop Color="#007B5CFF" Offset="1"/>
-                        </RadialGradientBrush>
-                    </Ellipse.Fill>
-                </Ellipse>
-                <Ellipse Width="360" Height="360" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-120,-140">
-                    <Ellipse.Fill>
-                        <RadialGradientBrush>
-                            <GradientStop Color="#2E00CFC0" Offset="0"/>
-                            <GradientStop Color="#0000CFC0" Offset="1"/>
-                        </RadialGradientBrush>
-                    </Ellipse.Fill>
-                </Ellipse>
-            </Grid>
 
             <Grid Margin="22">
                 <Grid.RowDefinitions>
@@ -36073,6 +36085,8 @@ function Open-AskWindow {
         $win = [Windows.Markup.XamlReader]::Load($reader)
         $win.Topmost = $true
         try { $win.Owner = $window } catch {}
+        # Version 7.7.2: derselbe Nutzer-Hintergrund wie im Hauptfenster.
+        [void](Set-BackgroundShellBrush -Shell ($win.FindName('RootShell')))
 
         # Mit Versatz am Mauszeiger, auf dem jeweiligen Monitor. Hoehe max.
         # 70 % des Bildschirms; bei langem Inhalt scrollt nur die Karte.
@@ -36878,6 +36892,9 @@ function Open-HandoffWindow {
     [void]$grid.Children.Add($buttons)
     $shell.Child = $grid
     $win.Content = $shell
+    # Version 7.7.2: derselbe Nutzer-Hintergrund wie im Hauptfenster (als
+    # Brush der Fensterschale; die abgerundeten Ecken bleiben sauber).
+    [void](Set-BackgroundShellBrush -Shell $shell)
     $win.Add_Closed({ $script:HandoffWindow = $null })
     $script:HandoffWindow = $win
     try { [void]$win.Show() } catch { try { [void]$win.ShowDialog() } catch {} }
@@ -38138,52 +38155,10 @@ function Clear-ArenaHistory {
     }
 }
 
-# Version 6.0: Aurora-Lichter fuer programmatisch gebaute Fenster (der
-# Verlaufs-Bildschirm kommt ohne XAML-Ressourcen aus). Jedes Licht ist eine
-# Ellipse mit radialem Farbverlauf, die langsam hin- und herdriftet. Die
-# Funktion ist bewusst defensiv gebaut: Schlaegt irgendetwas, liefert sie
-# ein leeres Grid zurueck - das Fenster bleibt voll bedienbar.
-function New-AuroraLayer {
-    param([double]$Width, [double]$Height)
-    $layer = [System.Windows.Controls.Grid]::new()
-    $layer.IsHitTestVisible = $false
-    try {
-        $specs = @(
-            @{ Size = [Math]::Min(520, $Width * 0.8); X = -170.0; Y = -190.0; Color = '#547B5CFF'; DX = 44.0; DY = 28.0; TX = 34; TY = 26 },
-            @{ Size = [Math]::Min(420, $Width * 0.65); X = ($Width * 0.62); Y = ($Height * 0.5); Color = '#4D2E4FFF'; DX = -38.0; DY = -24.0; TX = 40; TY = 31 },
-            @{ Size = [Math]::Min(330, $Width * 0.5); X = ($Width * 0.55); Y = -120.0; Color = '#4000CFC0'; DX = -30.0; DY = 22.0; TX = 28; TY = 36 }
-        )
-        foreach ($spec in $specs) {
-            $blob = [System.Windows.Shapes.Ellipse]::new()
-            $blob.Width = [double]$spec.Size
-            $blob.Height = [double]$spec.Size
-            $blob.HorizontalAlignment = 'Left'
-            $blob.VerticalAlignment = 'Top'
-            $blob.Margin = [System.Windows.Thickness]::new([double]$spec.X, [double]$spec.Y, 0, 0)
-            $radial = [System.Windows.Media.RadialGradientBrush]::new()
-            $radial.GradientOrigin = [System.Windows.Point]::new(0.5, 0.5)
-            $null = $radial.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString([string]$spec.Color), 0.0))
-            $transparent = [string]$spec.Color
-            # '#AARRGGBB' -> Alpha auf 00 setzen (randlos auslaufen)
-            $transparent = '#00' + $transparent.Substring(3)
-            $null = $radial.GradientStops.Add([System.Windows.Media.GradientStop]::new([System.Windows.Media.ColorConverter]::ConvertFromString($transparent), 1.0))
-            try { $radial.Freeze() } catch {}
-            $blob.Fill = $radial
-            $drift = [System.Windows.Media.TranslateTransform]::new(0, 0)
-            $blob.RenderTransform = $drift
-            $animX = [System.Windows.Media.Animation.DoubleAnimation]::new(0, [double]$spec.DX, [System.TimeSpan]::FromSeconds([int]$spec.TX))
-            $animX.AutoReverse = $true
-            $animX.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
-            $drift.BeginAnimation([System.Windows.Media.TranslateTransform]::XProperty, $animX)
-            $animY = [System.Windows.Media.Animation.DoubleAnimation]::new(0, [double]$spec.DY, [System.TimeSpan]::FromSeconds([int]$spec.TY))
-            $animY.AutoReverse = $true
-            $animY.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
-            $drift.BeginAnimation([System.Windows.Media.TranslateTransform]::YProperty, $animY)
-            $null = $layer.Children.Add($blob)
-        }
-    } catch {}
-    return $layer
-}
+# Version 7.7.2: Die fruehere Funktion New-AuroraLayer (driftende Aurora-
+# Lichter fuer programmatisch gebaute Fenster) ist entfernt - alle Fenster
+# nutzen jetzt das Nutzer-Hintergrundbild (Set-BackgroundShellBrush bzw.
+# Set-BackgroundArtwork im Hauptfenster).
 
 function Get-ArenaHistoryProgressTargets {
     param($State, $Entries)
@@ -38598,8 +38573,8 @@ function Open-ArenaHistoryWindow {
     $history=[System.Windows.Window]::new();$history.Title=$Title;$history.Width=880;$history.Height=760;$history.MinWidth=880;$history.MinHeight=760;$history.MaxWidth=880;$history.MaxHeight=760
     $history.WindowStartupLocation='CenterOwner';$history.WindowStyle='None';$history.AllowsTransparency=$true;$history.Background=[System.Windows.Media.Brushes]::Transparent;$history.FontFamily=[System.Windows.Media.FontFamily]::new('Segoe UI')
     try{$history.Owner=$window}catch{}
-    # Version 6.0 (Liquid Glass): dunkle Glas-Schale auf navy-violettem
-    # Verlauf, Aurora-Lichter dahinter, echter Rundungs-Beschchnitt.
+    # Version 7.7.2: dunkle Glas-Schale auf navy-violettem Verlauf (nur noch
+    # Fallback hinter dem Nutzer-Hintergrundbild), echter Rundungs-Beschnitt.
     $shell=[System.Windows.Controls.Border]::new();$shell.CornerRadius=[System.Windows.CornerRadius]::new(18)
     $shellBg=[System.Windows.Media.LinearGradientBrush]::new()
     $shellBg.StartPoint=[System.Windows.Point]::new(0,0);$shellBg.EndPoint=[System.Windows.Point]::new(0.35,1)
@@ -38615,12 +38590,6 @@ function Open-ArenaHistoryWindow {
     $r1=[System.Windows.Controls.RowDefinition]::new();$r1.Height=[System.Windows.GridLength]::Auto
     $r2=[System.Windows.Controls.RowDefinition]::new();$r2.Height=[System.Windows.GridLength]::new(1,[System.Windows.GridUnitType]::Star)
     $grid.RowDefinitions.Add($r0);$grid.RowDefinitions.Add($r1);$grid.RowDefinitions.Add($r2)
-    try {
-        $aurora = New-AuroraLayer -Width 880 -Height 760
-        [System.Windows.Controls.Grid]::SetRow($aurora,0)
-        [System.Windows.Controls.Grid]::SetRowSpan($aurora,3)
-        $grid.Children.Add($aurora)|Out-Null
-    } catch {}
     $head=[System.Windows.Controls.Grid]::new();$hc0=[System.Windows.Controls.ColumnDefinition]::new();$hc1=[System.Windows.Controls.ColumnDefinition]::new();$hc1.Width=[System.Windows.GridLength]::Auto;$hc2=[System.Windows.Controls.ColumnDefinition]::new();$hc2.Width=[System.Windows.GridLength]::Auto;$head.ColumnDefinitions.Add($hc0);$head.ColumnDefinitions.Add($hc1);$head.ColumnDefinitions.Add($hc2)
     $texts=[System.Windows.Controls.StackPanel]::new();$titleText=[System.Windows.Controls.TextBlock]::new();$titleText.Text=$Title;$titleText.Foreground=Get-Brush '#F4F8FF';$titleText.FontSize=20;$titleText.FontWeight='Bold';$sub=[System.Windows.Controls.TextBlock]::new();$sub.Text='Aktueller Arena-Fortschritt und verständlicher Aktivitätsverlauf - Fenster ist frei verschiebbar';$sub.Foreground=Get-Brush '#AAB9D8';$sub.FontSize=12.5;$sub.Margin=[System.Windows.Thickness]::new(0,4,0,0);$texts.Children.Add($titleText)|Out-Null;$texts.Children.Add($sub)|Out-Null;$head.Children.Add($texts)|Out-Null
     # Version 5.2: Die Knoepfe tragen das normale Titelleisten-Design des
@@ -38640,6 +38609,10 @@ function Open-ArenaHistoryWindow {
     [System.Windows.Controls.Grid]::SetRow($progressScroll,1);$grid.Children.Add($progressScroll)|Out-Null
     $scroll=[System.Windows.Controls.ScrollViewer]::new();$scroll.Margin=[System.Windows.Thickness]::new(0,8,0,0);$scroll.VerticalScrollBarVisibility='Auto';$scroll.HorizontalScrollBarVisibility='Disabled';$historyHost=[System.Windows.Controls.StackPanel]::new();$scroll.Content=$historyHost;[System.Windows.Controls.Grid]::SetRow($scroll,2);$grid.Children.Add($scroll)|Out-Null
     $shell.Child=$grid;$history.Content=$shell
+    # Version 7.7.2: derselbe Nutzer-Hintergrund wie im Hauptfenster (als
+    # Brush der Fensterschale; die abgerundeten Ecken bleiben sauber). Die
+    # frueheren Aurora-Lichter sind entfernt.
+    [void](Set-BackgroundShellBrush -Shell $shell)
     $state=[pscustomobject]@{Window=$history;Scroll=$scroll;Host=$historyHost;ProgressScroll=$progressScroll;ProgressHost=$progressHost;ProgressCards=@{};SessionId=$SessionId;AllPlaces=[string]::IsNullOrWhiteSpace($SessionId);FirstRender=$true;Signature=$null;Timer=$null}
     $history.Tag=$state;$trash.Tag=$state;$close.Tag=$history
     $trash.Add_Click({param($sender,$e) Clear-ArenaHistory ([string]$sender.Tag.SessionId);$sender.Tag.FirstRender=$true;$sender.Tag.Signature=$null;Update-ArenaHistoryWindow $sender.Tag})
@@ -40741,7 +40714,7 @@ function Show-UpdateNotice {
         Width="520" Height="440" MinWidth="520" MinHeight="440" MaxWidth="520" MaxHeight="440"
         ResizeMode="NoResize" WindowStyle="None" AllowsTransparency="True"
         Background="Transparent" WindowStartupLocation="CenterScreen" FontFamily="Segoe UI">
-    <Border CornerRadius="22" BorderBrush="#33FFFFFF" BorderThickness="1" ClipToBounds="True">
+    <Border x:Name="RootShell" CornerRadius="22" BorderBrush="#33FFFFFF" BorderThickness="1" ClipToBounds="True">
         <Border.Background>
             <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
                 <GradientStop Color="#060A1A" Offset="0"/>
@@ -40752,53 +40725,10 @@ function Show-UpdateNotice {
         <Border.Clip>
             <RectangleGeometry Rect="0,0,520,440" RadiusX="22" RadiusY="22"/>
         </Border.Clip>
+        <!-- Version 7.7.2: RootShell bekommt nach dem Laden das Nutzer-
+             Hintergrundbild als Brush (Set-BackgroundShellBrush); die
+             animierten Aurora-Lichter sind entfernt. -->
         <Grid>
-            <!-- Aurora-Lichter hinter dem Glas (Version 6.0 Liquid Glass) -->
-            <Grid IsHitTestVisible="False">
-                <Ellipse Width="420" Height="420" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-150,-170,0,0">
-                    <Ellipse.Fill>
-                        <RadialGradientBrush>
-                            <GradientStop Color="#547B5CFF" Offset="0"/>
-                            <GradientStop Color="#007B5CFF" Offset="1"/>
-                        </RadialGradientBrush>
-                    </Ellipse.Fill>
-                    <Ellipse.RenderTransform>
-                        <TranslateTransform X="0" Y="0"/>
-                    </Ellipse.RenderTransform>
-                    <Ellipse.Triggers>
-                        <EventTrigger RoutedEvent="Loaded">
-                            <BeginStoryboard>
-                                <Storyboard>
-                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="0" To="38" Duration="0:0:33" AutoReverse="True" RepeatBehavior="Forever"/>
-                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="24" Duration="0:0:26" AutoReverse="True" RepeatBehavior="Forever"/>
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </EventTrigger>
-                    </Ellipse.Triggers>
-                </Ellipse>
-                <Ellipse Width="360" Height="360" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-120,-140">
-                    <Ellipse.Fill>
-                        <RadialGradientBrush>
-                            <GradientStop Color="#4000CFC0" Offset="0"/>
-                            <GradientStop Color="#0000CFC0" Offset="1"/>
-                        </RadialGradientBrush>
-                    </Ellipse.Fill>
-                    <Ellipse.RenderTransform>
-                        <TranslateTransform X="0" Y="0"/>
-                    </Ellipse.RenderTransform>
-                    <Ellipse.Triggers>
-                        <EventTrigger RoutedEvent="Loaded">
-                            <BeginStoryboard>
-                                <Storyboard>
-                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="0" To="-30" Duration="0:0:29" AutoReverse="True" RepeatBehavior="Forever"/>
-                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="-20" Duration="0:0:35" AutoReverse="True" RepeatBehavior="Forever"/>
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </EventTrigger>
-                    </Ellipse.Triggers>
-                </Ellipse>
-            </Grid>
-
             <Grid Margin="30,26">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -40908,6 +40838,8 @@ function Show-UpdateNotice {
 '@
     $noticeReader = [System.Xml.XmlNodeReader]::new([xml]$noticeXaml)
     $noticeWindow = [Windows.Markup.XamlReader]::Load($noticeReader)
+    # Version 7.7.2: derselbe Nutzer-Hintergrund wie im Hauptfenster.
+    [void](Set-BackgroundShellBrush -Shell ($noticeWindow.FindName('RootShell')))
     $noticeLogoImage = $noticeWindow.FindName('NoticeLogoImage')
     [void](Set-ProgramBrandLogo -ImageControl $noticeLogoImage -Window $noticeWindow)
     $script:UpdateNoticeWindow = $noticeWindow
@@ -41708,57 +41640,14 @@ function Open-SettingsWindow {
             </Setter>
         </Style>
     </Window.Resources>
-    <Border CornerRadius="20" Background="{StaticResource SwAppBg}" BorderBrush="#33FFFFFF" BorderThickness="1" ClipToBounds="True">
+    <!-- Version 7.7.2: RootShell bekommt nach dem Laden das Nutzer-
+         Hintergrundbild als Brush (Set-BackgroundShellBrush); die animierten
+         Aurora-Lichter sind entfernt. Als Fallback bleibt SwAppBg. -->
+    <Border x:Name="RootShell" CornerRadius="20" Background="{StaticResource SwAppBg}" BorderBrush="#33FFFFFF" BorderThickness="1" ClipToBounds="True">
         <Border.Clip>
             <RectangleGeometry Rect="0,0,680,660" RadiusX="20" RadiusY="20"/>
         </Border.Clip>
         <Grid>
-            <!-- Aurora-Lichter hinter dem Glas -->
-            <Grid IsHitTestVisible="False">
-                <Ellipse Width="480" Height="480" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-170,-200,0,0">
-                    <Ellipse.Fill>
-                        <RadialGradientBrush>
-                            <GradientStop Color="#547B5CFF" Offset="0"/>
-                            <GradientStop Color="#007B5CFF" Offset="1"/>
-                        </RadialGradientBrush>
-                    </Ellipse.Fill>
-                    <Ellipse.RenderTransform>
-                        <TranslateTransform X="0" Y="0"/>
-                    </Ellipse.RenderTransform>
-                    <Ellipse.Triggers>
-                        <EventTrigger RoutedEvent="Loaded">
-                            <BeginStoryboard>
-                                <Storyboard>
-                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="0" To="42" Duration="0:0:36" AutoReverse="True" RepeatBehavior="Forever"/>
-                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="28" Duration="0:0:28" AutoReverse="True" RepeatBehavior="Forever"/>
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </EventTrigger>
-                    </Ellipse.Triggers>
-                </Ellipse>
-                <Ellipse Width="420" Height="420" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-140,-160">
-                    <Ellipse.Fill>
-                        <RadialGradientBrush>
-                            <GradientStop Color="#4000CFC0" Offset="0"/>
-                            <GradientStop Color="#0000CFC0" Offset="1"/>
-                        </RadialGradientBrush>
-                    </Ellipse.Fill>
-                    <Ellipse.RenderTransform>
-                        <TranslateTransform X="0" Y="0"/>
-                    </Ellipse.RenderTransform>
-                    <Ellipse.Triggers>
-                        <EventTrigger RoutedEvent="Loaded">
-                            <BeginStoryboard>
-                                <Storyboard>
-                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)" From="0" To="-32" Duration="0:0:31" AutoReverse="True" RepeatBehavior="Forever"/>
-                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.Y)" From="0" To="-22" Duration="0:0:38" AutoReverse="True" RepeatBehavior="Forever"/>
-                                </Storyboard>
-                            </BeginStoryboard>
-                        </EventTrigger>
-                    </Ellipse.Triggers>
-                </Ellipse>
-            </Grid>
-
             <Grid Margin="24">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -41969,6 +41858,8 @@ function Open-SettingsWindow {
 '@
     $settingsReader = [System.Xml.XmlNodeReader]::new([xml]$settingsXaml)
     $settingsWindow = [Windows.Markup.XamlReader]::Load($settingsReader)
+    # Version 7.7.2: derselbe Nutzer-Hintergrund wie im Hauptfenster.
+    [void](Set-BackgroundShellBrush -Shell ($settingsWindow.FindName('RootShell')))
 
     try { $settingsWindow.Owner = $window } catch {}
     # Version 6.0: Das Einstellungsfenster blendet weich ein (Liquid Glass).
@@ -42284,27 +42175,12 @@ function Open-SettingsWindow {
     <Window.Resources>
 <!--ARENA_DIALOG_STYLES-->
     </Window.Resources>
-    <Border CornerRadius="20" Background="{StaticResource SwAppBg}"
+    <!-- Version 7.7.2: RootShell bekommt nach dem Laden das Nutzer-
+         Hintergrundbild als Brush (Set-BackgroundShellBrush); die frueheren
+         Aurora-Verlaufskreise sind entfernt. Als Fallback bleibt SwAppBg. -->
+    <Border x:Name="RootShell" CornerRadius="20" Background="{StaticResource SwAppBg}"
             BorderBrush="#33FFFFFF" BorderThickness="1" ClipToBounds="True">
         <Grid>
-            <Grid IsHitTestVisible="False">
-                <Ellipse Width="420" Height="420" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="-150,-190,0,0">
-                    <Ellipse.Fill>
-                        <RadialGradientBrush>
-                            <GradientStop Color="#407B5CFF" Offset="0"/>
-                            <GradientStop Color="#007B5CFF" Offset="1"/>
-                        </RadialGradientBrush>
-                    </Ellipse.Fill>
-                </Ellipse>
-                <Ellipse Width="360" Height="360" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,-120,-140">
-                    <Ellipse.Fill>
-                        <RadialGradientBrush>
-                            <GradientStop Color="#2E00CFC0" Offset="0"/>
-                            <GradientStop Color="#0000CFC0" Offset="1"/>
-                        </RadialGradientBrush>
-                    </Ellipse.Fill>
-                </Ellipse>
-            </Grid>
             <Grid Margin="22">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -42380,6 +42256,8 @@ function Open-SettingsWindow {
             $permReader = [System.Xml.XmlNodeReader]::new([xml]($permXaml.Replace('<!--ARENA_DIALOG_STYLES-->', [string]$script:ArenaDialogStyles)))
             $permWindow = [Windows.Markup.XamlReader]::Load($permReader)
             try { $permWindow.Owner = $settingsWindow } catch {}
+            # Version 7.7.2: derselbe Nutzer-Hintergrund wie im Hauptfenster.
+            [void](Set-BackgroundShellBrush -Shell ($permWindow.FindName('RootShell')))
             $permSubTitle  = $permWindow.FindName('PermSubTitle')
             $permList      = $permWindow.FindName('PermList')
             $permFootNote  = $permWindow.FindName('PermFootNote')
