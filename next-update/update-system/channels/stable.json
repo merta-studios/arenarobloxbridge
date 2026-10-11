@@ -1,21 +1,21 @@
 {
   "schemaVersion": 2,
   "channel": "stable",
-  "enabled": false,
+  "enabled": true,
   "testFixture": false,
-  "sequence": 1,
-  "version": "",
-  "publishedAtUtc": "",
+  "sequence": 2,
+  "version": "7.8.0",
+  "publishedAtUtc": "2026-10-11T02:26:33Z",
   "minimumUpdaterVersion": "2.0.0",
   "artifact": {
-    "fileName": "ArenaBridge.exe",
-    "url": "",
-    "sha256": "",
-    "sizeBytes": 0
+    "fileName": "ArenaBridge-7.8.0.exe",
+    "url": "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/main/next-update/release/ArenaBridge-7.8.0.exe",
+    "sha256": "4026cff81a681d4e200503c5a072a720e598963f69ac4d252b98397b45067a7d",
+    "sizeBytes": 5897728
   },
   "notes": [
-    "Kanal ist DEAKTIVIERT. Es laeuft gerade keine Veroeffentlichung ueber das neue Update-System.",
-    "Veroeffentlichen ist ein eigener, ausdruecklicher Schritt: release/ArenaBridge.exe (vom Nutzer gebaute und getestete EXE) nach release/ArenaBridge-<version>.exe kopieren und dieses Manifest mit developer/tools/release.py stage setzen.",
-    "Ein Merge, ein ZIP-Download, ein lokaler Build oder ein privater Test aktivieren diesen Kanal nie."
+    "7.8.0 — NEUES SELBST-UPDATE-SYSTEM (Updater 2.0.0): Beim Start prueft die Bridge den freigegebenen Kanal und bietet ein Update nur als freiwillige Ja/Nein-Entscheidung an. Das neue Update-Fenster zeigt Version, Neuerungen und Downloadgroesse, laedt im Hintergrund mit Fortschrittsanzeige, laesst sich jederzeit abbrechen und schliesst die Bridge erst, wenn Groesse, SHA-256, x64-Kopf UND die Dateiversion der neuen Datei geprueft sind; danach wird atomar ersetzt (Backup, automatischer Rollback). Die Update-Datei heisst jetzt immer ArenaBridge-<Version>.exe, damit eine Veroeffentlichung niemals eine aeltere Datei ueberschreiben kann.",
+    "Neu ausserdem: der Bereich UPDATES in den Einstellungen mit 'Jetzt nach Updates suchen', 'Update-Diagnose' (Kanal, Versionen, Ordnerrechte, Protokoll) und 'Protokoll', eine sichtbare Fehlermeldung statt stiller Misserfolge, update-history.json mit den letzten Laeufen sowie das Release-Werkzeug developer/tools/release.py, das Manifest, Dateigroesse, Pruefsumme, Dateiversion und Freigabe in einem Schritt prueft. Nutzerwünsche und Place-Konventionen haben Vorrang; PROJEKT ZUERST bleibt, Blender ist eine passende Empfehlung, keine Pflicht. Fortschritt als nicht anwendbar markieren, wo er nicht passt; es gibt keine erfundene 0 %. Open-Cloud-Verlauf speichert keine API-Pfade, Ressourcen-IDs oder Antwortwerte; im Tutorial steht keine IP-Einrichtung.",
+    "Root-Updater bleibt unangetastet, das alte System wird ignoriert, EXEs baut der Nutzer selbst. Ein PR-Merge, ZIP, Build und Test aktualisieren keine Nutzer; erst der ausdrueckliche Release-Schritt aktiviert einen Kanal."
   ]
 }

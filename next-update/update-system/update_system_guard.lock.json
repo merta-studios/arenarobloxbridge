@@ -46,14 +46,29 @@
       "date": "2026-10-11",
       "approvedBy": "Nutzer (Owner) - ausdrueckliche Freigabe",
       "note": "Der Nutzer hat in dieser Session ausdruecklich nur das Entfernen der Knoepfe Update-Diagnose und Protokoll im Bereich UPDATES des Einstellungsfensters beauftragt (mehr nicht). Die beiden v800-Tests wurden auf den neuen Stand gezogen, PROTECTED.md enthaelt den Aenderungseintrag; Updater, Kanaele und Sicherheitspruefungen bleiben unveraendert."
+    },
+    {
+      "date": "2026-10-11",
+      "approvedBy": "Nutzer (Owner) - ausdrueckliche Freigabe",
+      "note": "Release-Freigabe Version 7.8.0: Kanal stable aktiviert; Artefakt release/ArenaBridge-7.8.0.exe, SHA-256 4026cff81a681d4e200503c5a072a720e598963f69ac4d252b98397b45067a7d, getestet vom Nutzer mit bestandenem Selbst-Update-Test."
+    },
+    {
+      "date": "2026-10-11",
+      "approvedBy": "Nutzer (Owner) - ausdrueckliche Freigabe",
+      "note": "Release-Freigabe Version 7.8.0: PROTECTED.md enthaelt den dokumentierten Freigabeeintrag zur Veroeffentlichung; Artefakt release/ArenaBridge-7.8.0.exe, SHA-256 4026cff81a681d4e200503c5a072a720e598963f69ac4d252b98397b45067a7d, getestet vom Nutzer mit bestandenem Selbst-Update-Test."
+    },
+    {
+      "date": "2026-10-11",
+      "approvedBy": "Nutzer (Owner) - ausdrueckliche Freigabe",
+      "note": "Freigabe Version 7.8.0: Gleichstand-Regel in den drei Release-Gates wiederhergestellt (Gleichstand nur mit identischem Artefakt-Hash, sonst version-conflict) plus neuer Negativtest; Artefakt release/ArenaBridge-7.8.0.exe unveraendert."
     }
   ],
   "files": {
-    "update-system/PROTECTED.md": "d186ac88fce3b6f0424044b975ad89f2842c41b40dbcb5687a31fb654d140948",
-    "update-system/README.md": "bb942045e928e25814d8b2a6c15ebcf9b589fd47d52df20fd5e47a1fdb461220",
+    "update-system/PROTECTED.md": "c11ffacb5edf7134c815d158fdb95011262a13dedc6fc600cedee1063f4c6b47",
+    "update-system/README.md": "eed5851a05af273a027499ef4b09503bd19d0704a73fddd678b378805d352e6c",
     "update-system/channels/beta.json": "efc935515c3ca3e3b3dbc0e6877c8dc9ddfffd951c47ffa69a203be9844ee1db",
     "update-system/channels/manifest.schema.json": "3e4e84d1c6547ba3f096a4becc27ece29fcd5512376d6cf5c7fd49d7d8a2bb77",
-    "update-system/channels/stable.json": "2f46c162fec6cd6626b1f999a7294c5fd05fe7e05bef3d393c261a857bd32b62",
+    "update-system/channels/stable.json": "21bce8fed72d47f935b38a6f16df8b157a1bd92b94517e30bb7e09acb71bbd97",
     "update-system/updater/README.md": "ecff0576ef3912bb3897af1829cca1c58dd1dbfde5cca0ce04db6f554c8e1ffb",
     "update-system/updater/Update-Bridge.ps1": "b04031f1dae0e2f0f6930d09b5c1d5c903a8c674f8d53077dabe156f2f283b3b",
     "builder/Build-EXE.ps1": "b40585b4139be3f1079aa8215b2436ad2164e20c585396ad83e235feaf74b9db",
@@ -64,8 +79,8 @@
     "developer/tests/requirements-test.txt": "267bcd9035ba02b51b5f33ae96e389e73426260f83f5fdebb4051afe9645e5d3",
     "developer/tests/Invoke-SelfUpdateSmoke.ps1": "8d5704509220095a05b6c9a8439cfe0460dd27a797f144db09fa08a53ec44497",
     "developer/tests/test_v800_selfupdate_smoke.py": "e459eca9bc294f032f8fca3e7c8cc0ed4d710716f253e46d696f1553ac6a1f7c",
-    "developer/tests/test_v800_update_manifest.py": "aea7fe15efdfe972ea986f58257f1be51d9bdfcfbbd78218a233d8670c96dfca",
-    "developer/tests/test_v800_update_system_guard.py": "9708ec47639097763f911ffce646d928d41c3f7f097f4c087963a7943c11ce78",
+    "developer/tests/test_v800_update_manifest.py": "e5f574231d6699e89fab3337b1506555c9629e99d0f366f3b879f953e9872b14",
+    "developer/tests/test_v800_update_system_guard.py": "78267b9eb760a183f5929aa1eee6444fe4384a7aaed82b09c755f0f95073f2d2",
     "developer/tests/test_v800_update_window.py": "01f172ce171b541ebee151d655d8e9e4ce39182f29639b85998748f908a8ba4b",
     "developer/tests/fixtures/update/invalid-bad-published.json": "832967036254f61e69686457da0bffa04c37903b78fe776098e4f02b7644f9dd",
     "developer/tests/fixtures/update/invalid-bad-version.json": "f6e541021ee2b826c0b2713f9181afaeccd1e1c7029151935bd5cae29d19ea7f",

@@ -154,3 +154,45 @@ Eine Änderung ist nur zulässig, wenn ALLE Punkte erfüllt sind:
   `app/version.json` und der Kopfkommentar der App nennen die beiden Knoepfe weiterhin.
   Der Windows-Lauf (Build, EXE-Smoke-Test, Invoke-SelfUpdateSmoke.ps1) steht aus und wird
   hier nicht behauptet; die Offline-Tests laufen gruen.
+
+- 2026-10-11, Release-Aktivierung Version 7.8.0 (Kanal stable, Auftrag der Release-Session):
+  Der Nutzer hat den privaten Windows-Test ausdruecklich bestaetigt und die Freigabe erteilt,
+  einschliesslich der Meldung, dass `Invoke-SelfUpdateSmoke.ps1` auf seinem Windows-PC fuer
+  diesen Build bestanden hat. Geprueft und dokumentiert: `release/ArenaBridge.exe` ist die im
+  Repository liegende, vom Nutzer getestete Datei (git-Status fuer diese Datei: unveraendert),
+  PE-Machine 0x8664 (Windows x64), PE-FileVersion exakt 7.8.0.0, Dateigroesse 5.897.728 Bytes,
+  SHA-256 4026cff81a681d4e200503c5a072a720e598963f69ac4d252b98397b45067a7d, Repository
+  oeffentlich (`gh repo view --json isPrivate` = false), Version identisch mit
+  `app/version.json` und hoeher als die letzte Veroeffentlichung (7.7.0 wurde zurueckgezogen;
+  die naechste sequence ist daher 2). Aktiviert wurde ausschliesslich `channels/stable.json`
+  mit der kanonischen URL und `sequence` 2; `channels/beta.json` bleibt deaktiviert. Das
+  Artefakt liegt unveraenderlich unter `release/ArenaBridge-7.8.0.exe` und wird nie
+  ueberschrieben. Quellcode, `app/version.json`, `builder/` und die EXE selbst wurden nicht
+  veraendert; es wurde nichts nachgebaut und kein Manifest von Hand geschrieben - Aktivierung,
+  README-Tabelle und Rebaseline liefen ausschliesslich ueber `developer/tools/release.py
+  stage --version 7.8.0 --channel stable --tested-by-user --smoke-test-passed`. Betroffene
+  Dateien: `channels/stable.json`, `update-system/README.md` (Letzte veroeffentlichte
+  Version: 7.8.0), `release/ArenaBridge-7.8.0.exe`, diese Datei und die Lock-Datei.
+  Nicht in dieser Linux-Umgebung nachpruefbar (nur vom Nutzer auf Windows bestaetigt):
+  der echte Build, der Start der EXE, das WPF-Update-Fenster und der Rauchtest.
+
+- 2026-10-11, Wiederherstellung der Gleichstand-Regel in den drei Release-Gates
+  (Version bleibt 7.8.0; Auftrag der Release-Session nach Rueckfrage - der Nutzer hat die
+  Entscheidung ausdruecklich an die Session uebertragen, mit dem Ziel "am Ende sehen dass
+  es klappt"): Ursache war ein echter Befund direkt nach dem Veroeffentlichen. Alle drei
+  Gates (`test_v770_release_flow.py`, `test_v800_update_manifest.py`,
+  `test_v800_update_system_guard.py`) lesen die Zeile "Letzte veröffentlichte Version" aus
+  `update-system/README.md`. Genau diese Zeile schreibt `release.py stage` beim
+  Veroeffentlichen auf die neue Version, wodurch das Manifest anschliessend auf Gleichstand
+  mit der letzten Veroeffentlichung steht und pauschal als Fehler galt - das Release fiel
+  auf sich selbst herein. Die Regel war fuer Release 7.7.0 (PR #89) bereits genau so
+  eingebaut und wurde beim Neuschreiben der Tests in PR #92 versehentlich entfernt.
+  Wiederhergestellt wird nur der hier und in RELEASE-ABLAUF.md Regel 4 dokumentierte
+  Stand: Gleichstand ist ausschliesslich mit genau demselben Artefakt erlaubt (gleicher
+  SHA-256 der echten Datei in `release/`); ein anderer Hash bleibt `version-conflict`, ein
+  Downgrade bleibt ein Fehler. Neu ist ein Negativtest im Guard, der genau dieses
+  Aushebeln (gleiche Version, fremder Hash) abfaengt. Nicht geaendert wurden
+  `update-system/updater/Update-Bridge.ps1`, die Kanal-Schemas, der Integrationsblock
+  `ARENA-UPDATE-INTEGRATION` in `app/ArenaBridge.ps1`, `builder/Build-EXE.ps1` und
+  `developer/tools/release.py`. Betroffene geschuetzte Dateien: die drei Testdateien,
+  diese Datei und die Lock-Datei.
