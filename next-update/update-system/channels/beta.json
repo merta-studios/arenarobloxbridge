@@ -1,12 +1,12 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "channel": "beta",
   "enabled": false,
   "testFixture": false,
+  "sequence": 1,
   "version": "",
   "publishedAtUtc": "",
-  "minimumUpdaterVersion": "1.1.0",
-  "mandatory": false,
+  "minimumUpdaterVersion": "2.0.0",
   "artifact": {
     "fileName": "ArenaBridge.exe",
     "url": "",
@@ -14,6 +14,7 @@
     "sizeBytes": 0
   },
   "notes": [
-    "Kanal ist DEAKTIVIERT. Private Tests veroeffentlichen nichts; die lokale EXE liegt unter next-update/release/ArenaBridge.exe."
+    "Kanal ist DEAKTIVIERT. Private Tests veroeffentlichen nichts; die lokale EXE liegt unter next-update/release/ArenaBridge.exe.",
+    "Der Beta-Kanal ist der Vorab-Kanal fuer Versionen mit Endung -beta.1. Auch er wird nur ausdruecklich und ueber developer/tools/release.py stage aktiviert."
   ]
 }

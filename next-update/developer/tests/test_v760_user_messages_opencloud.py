@@ -28,7 +28,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = ROOT / "app"
 PS1 = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.7.2"
+VERSION = "7.8.0"
 FAILURES: list[str] = []
 
 
@@ -59,8 +59,8 @@ def main() -> int:
     metadata = json.loads((APP_ROOT / "version.json").read_text(encoding="utf-8"))
     notes = [str(note) for note in metadata.get("notes", [])]
     latest = notes[0] if notes else ""
-    check(metadata.get("version") == VERSION, "version.json is 7.7.2")
-    check(latest.startswith("• 7.7.2") and "PROJEKT ZUERST" in latest,
+    check(metadata.get("version") == VERSION, "version.json is 7.8.0")
+    check(latest.startswith("• 7.8.0") and "PROJEKT ZUERST" in latest,
           "latest release note documents the project-first update")
     check(any(note.startswith("• 7.6.2") and "open_cloud" in note for note in notes),
           "historical 7.6.2 Open Cloud key scope remains documented")

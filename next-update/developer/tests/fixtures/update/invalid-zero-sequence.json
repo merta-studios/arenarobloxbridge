@@ -3,7 +3,7 @@
   "channel": "beta",
   "enabled": true,
   "testFixture": true,
-  "sequence": 4,
+  "sequence": 0,
   "version": "7.7.1",
   "publishedAtUtc": "2026-10-10T12:00:00Z",
   "minimumUpdaterVersion": "2.0.0",

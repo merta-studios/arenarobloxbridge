@@ -1,25 +1,21 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "channel": "stable",
-  "enabled": true,
+  "enabled": false,
   "testFixture": false,
-  "version": "7.7.0",
-  "publishedAtUtc": "2026-10-11T00:33:16Z",
-  "minimumUpdaterVersion": "1.1.0",
-  "mandatory": false,
+  "sequence": 1,
+  "version": "",
+  "publishedAtUtc": "",
+  "minimumUpdaterVersion": "2.0.0",
   "artifact": {
     "fileName": "ArenaBridge.exe",
-    "url": "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/main/next-update/release/ArenaBridge.exe",
-    "sha256": "19984c193434412339df260ba0203640ff8ed6fad0293e36661ce11578ec1690",
-    "sizeBytes": 5842432
+    "url": "",
+    "sha256": "",
+    "sizeBytes": 0
   },
   "notes": [
-    "Arena Roblox Bridge 7.7.0 - Selbst-Update-System. Die EXE enthaelt den eingebetteten Updater (Update-Bridge 1.1.0) und fragt beim Start, ob ein Update installiert werden soll. Ohne dein Ja aendert sich nichts; eine laufende Bridge wird dabei nie beendet.",
-    "Sicherer Austausch: Download ausschliesslich per HTTPS von GitHub, Dateigroesse und SHA-256-Pruefsumme werden vor dem Ersetzen geprueft, die bisherige EXE bleibt als Backup erhalten, der Austausch ist atomar und rollt bei einem Startfehler automatisch zurueck.",
-    "Neues Programmlogo (grosser, eckig, oben links) und neuer Fensterhintergrund aus liquidglasbackground.png; das Beta-Abzeichen ist vom Ladebildschirm entfernt.",
-    "Builder korrigiert (PR #88): Der Build bricht nicht mehr mit 'Background placeholder was not replaced' ab. Die Pruefung kontrolliert jetzt nur noch die echte Zuweisung und nicht die Platzhaltertexte in den Smoke-Test-Zeilen.",
-    "mandatory ist bewusst false: Ein Update bleibt immer eine freiwillige Ja/Nein-Entscheidung, ein erzwungenes Update gibt es nicht.",
-    "Freigegeben nach privatem Windows-Test des Nutzers (EXE-Build, Start, Invoke-SelfUpdateSmoke.ps1 bestanden). raw.githubusercontent.com kann nach dem Merge einige Minuten den alten Stand ausliefern: Der Updater bricht bei einem Hash-Konflikt unveraendert ab und versucht es beim naechsten Start erneut.",
-    "Bestehende Installationen ohne eingebauten Updater werden nicht automatisch erreicht; fuer sie ist ein einmaliger manueller Austausch auf diese Version noetig."
+    "Kanal ist DEAKTIVIERT. Es laeuft gerade keine Veroeffentlichung ueber das neue Update-System.",
+    "Veroeffentlichen ist ein eigener, ausdruecklicher Schritt: release/ArenaBridge.exe (vom Nutzer gebaute und getestete EXE) nach release/ArenaBridge-<version>.exe kopieren und dieses Manifest mit developer/tools/release.py stage setzen.",
+    "Ein Merge, ein ZIP-Download, ein lokaler Build oder ein privater Test aktivieren diesen Kanal nie."
   ]
 }

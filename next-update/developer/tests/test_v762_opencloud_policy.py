@@ -143,7 +143,7 @@ class CloudPolicy(unittest.TestCase):
         self.assertIn("'open_cloud'         { return (Invoke-OpenCloudServerTool",SOURCE)
 
     def test_ui_and_version(self):
-        self.assertEqual(json.loads((APP_ROOT/'version.json').read_text())['version'],'7.7.2')
+        self.assertEqual(json.loads((APP_ROOT/'version.json').read_text())['version'],'7.8.0')
         ui=function('Get-CloudPermissionCatalog','New-CloudPermissionRow')
         self.assertIn('(Get-OpenCloudCatalog).permissions.PSObject.Properties',ui)
         self.assertIn('Test-OpenCloudPermission -Info $Verdict -Permission ([string]$Item.id)',SOURCE)

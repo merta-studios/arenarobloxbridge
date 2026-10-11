@@ -1,7 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:arena-roblox-bridge:channel-manifest:1",
-  "title": "Arena Roblox Bridge channel manifest (update-system, schemaVersion 1)",
+  "$id": "urn:arena-roblox-bridge:channel-manifest:2",
+  "title": "Arena Roblox Bridge channel manifest (update-system, schemaVersion 2)",
+  "description": "Ein Kanal-Manifest beschreibt genau eine Veroeffentlichung. Die Datei heisst immer ArenaBridge-<version>.exe; Name und URL sind damit unveraenderlich und koennen von einer spaeteren Veroeffentlichung nicht ueberschrieben werden. Die Gleichheit von version, artifact.fileName und artifact.url prueft der Updater zur Laufzeit, der Release-Schritt und der Guard-Test.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -9,79 +10,176 @@
     "channel",
     "enabled",
     "testFixture",
+    "sequence",
     "version",
     "publishedAtUtc",
     "artifact",
     "notes"
   ],
   "properties": {
-    "schemaVersion": { "const": 1 },
-    "channel": { "enum": ["beta", "stable"] },
-    "enabled": { "type": "boolean" },
+    "schemaVersion": {
+      "const": 2
+    },
+    "channel": {
+      "enum": [
+        "beta",
+        "stable"
+      ]
+    },
+    "enabled": {
+      "type": "boolean"
+    },
     "testFixture": {
       "type": "boolean",
       "default": false,
-      "description": "true ONLY for offline test fixtures. The updater refuses such manifests unless it runs in its explicit -TestFixtureMode. Channel files in this repository must be false."
+      "description": "true NUR fuer Offline-Testvorlagen. Der Updater lehnt solche Manifeste ab, solange er nicht ausdruecklich mit -TestFixtureMode laeuft. Kanal-Dateien im Repository muessen false sein."
     },
-    "version": { "type": "string" },
-    "publishedAtUtc": { "type": "string" },
-    "minimumUpdaterVersion": { "type": "string", "default": "1.0.0" },
-    "mandatory": { "type": "boolean", "default": false },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 999999999,
+      "description": "Laufende Nummer jeder Veroeffentlichung dieses Kanals, beginnend bei 1. Sie muss bei jeder Veroeffentlichung steigen. Der Updater spielt nie eine kleinere Nummer ein (Schutz vor einem veralteten Manifest aus einem Cache)."
+    },
+    "version": {
+      "type": "string"
+    },
+    "publishedAtUtc": {
+      "type": "string"
+    },
+    "minimumUpdaterVersion": {
+      "type": "string",
+      "default": "2.0.0"
+    },
     "artifact": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["fileName", "url", "sha256", "sizeBytes"],
+      "required": [
+        "fileName",
+        "url",
+        "sha256",
+        "sizeBytes"
+      ],
       "properties": {
-        "fileName": { "const": "ArenaBridge.exe" },
-        "url": { "type": "string" },
-        "sha256": { "type": "string" },
-        "sizeBytes": { "type": "integer", "minimum": 0, "maximum": 67108864 }
+        "fileName": {
+          "type": "string",
+          "description": "Muss exakt ArenaBridge-<version>.exe sein. Die Gleichheit mit der Version kann JSON-Schema nicht ausdruecken; sie wird vom Updater, vom Release-Werkzeug und vom Guard-Test erzwungen."
+        },
+        "url": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 67108864
+        }
       }
     },
     "notes": {
       "type": "array",
-      "items": { "type": "string", "maxLength": 800 }
-    },
-    "minimumVersion": { "type": "string" }
+      "items": {
+        "type": "string",
+        "maxLength": 800
+      }
+    }
   },
   "allOf": [
     {
-      "if": { "properties": { "enabled": { "const": true } }, "required": ["enabled"] },
+      "if": {
+        "properties": {
+          "enabled": {
+            "const": true
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      },
       "then": {
         "properties": {
           "version": {
             "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$"
           },
+          "publishedAtUtc": {
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+          },
           "artifact": {
             "properties": {
-              "sha256": { "pattern": "^[A-Fa-f0-9]{64}$" },
-              "sizeBytes": { "minimum": 1024 }
+              "sha256": {
+                "pattern": "^[A-Fa-f0-9]{64}$"
+              },
+              "sizeBytes": {
+                "minimum": 1024
+              },
+              "fileName": {
+                "pattern": "^ArenaBridge-[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?\\.exe$"
+              }
+            }
+          }
+        },
+        "required": [
+          "minimumUpdaterVersion"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "enabled": {
+            "const": false
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      },
+      "then": {
+        "properties": {
+          "version": {
+            "const": ""
+          },
+          "publishedAtUtc": {
+            "const": ""
+          },
+          "artifact": {
+            "properties": {
+              "fileName": {
+                "const": "ArenaBridge.exe"
+              },
+              "url": {
+                "const": ""
+              },
+              "sha256": {
+                "const": ""
+              },
+              "sizeBytes": {
+                "const": 0
+              }
             }
           }
         }
       }
     },
     {
-      "if": { "properties": { "enabled": { "const": false } }, "required": ["enabled"] },
-      "then": {
+      "if": {
         "properties": {
-          "artifact": {
-            "properties": {
-              "url": { "const": "" },
-              "sha256": { "const": "" },
-              "sizeBytes": { "const": 0 }
-            }
+          "testFixture": {
+            "const": true
           }
-        }
-      }
-    },
-    {
-      "if": { "properties": { "testFixture": { "const": true } }, "required": ["testFixture"] },
+        },
+        "required": [
+          "testFixture"
+        ]
+      },
       "then": {
         "properties": {
           "artifact": {
             "properties": {
-              "url": { "pattern": "^http://127\\.0\\.0\\.1:[0-9]{4,5}/ArenaBridge\\.exe$" }
+              "url": {
+                "pattern": "^http://127\\.0\\.0\\.1:[0-9]{4,5}/ArenaBridge-[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?\\.exe$"
+              }
             }
           }
         }
@@ -91,12 +189,28 @@
           "artifact": {
             "properties": {
               "url": {
-                "enum": [
-                  "",
-                  "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/main/next-update/release/ArenaBridge.exe"
-                ]
+                "pattern": "^(|https://raw\\.githubusercontent\\.com/merta-studios/arenarobloxbridge/main/next-update/release/ArenaBridge-[0-9]+\\.[0-9]+\\.[0-9]+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?\\.exe)$"
               }
             }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "channel": {
+            "const": "stable"
+          }
+        },
+        "required": [
+          "channel"
+        ]
+      },
+      "then": {
+        "properties": {
+          "version": {
+            "pattern": "^(|[0-9]+\\.[0-9]+\\.[0-9]+)$"
           }
         }
       }

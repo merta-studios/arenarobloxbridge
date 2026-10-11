@@ -1,25 +1,27 @@
 #!/usr/bin/env python3
-"""Offline checks for the update manifests (schema + fixtures + channel state).
+"""Offline-Checks fuer die Kanal-Manifeste (Schema 2, Update-System 2.0.0).
 
-No network and no PowerShell. Proves that:
-  * the schema accepts the valid fixtures and rejects every invalid one,
-  * a DISABLED channel file stays a placeholder with no artifact coordinates,
-  * an ENABLED (released) channel file satisfies every release gate of
-    developer/docs/RELEASE-ABLAUF.md on its own: version == app/version.json, never a
-    downgrade, sha256/sizeBytes identical with the real release/ArenaBridge.exe, the
-    canonical repository URL, updater 1.1.0, mandatory == false and the release approval
-    of the publication day recorded in the lock file,
-  * the Windows wrapper skips cleanly (exit 77) on non-Windows hosts.
+Kein Netz, kein PowerShell. Nachgewiesen wird:
+  * das Schema akzeptiert jede gueltige Vorlage und lehnt jede ungueltige ab,
+  * zusaetzlich gibt es semantische Vorlagen: schema-gueltig, aber von den
+    Laufzeitregeln abgelehnt (Dateiname/URL muessen aus der Version folgen),
+  * eine DEAKTIVIERTE Kanal-Datei ist ein reiner Platzhalter ohne Download-
+    Koordinaten,
+  * eine AKTIVIERTE Kanal-Datei erfuellt alle Freigabebedingungen aus
+    developer/docs/RELEASE-ABLAUF.md: Version == app/version.json, Dateiname und
+    URL aus der Version abgeleitet, Groesse/SHA-256 identisch mit der echten
+    Datei release/ArenaBridge-<version>.exe, sequence echt groesser als die
+    letzte Veroeffentlichung und die Freigabe im Guard-Lock dokumentiert,
+  * der Windows-Wrapper sauber mit Exit 77 ueberspringt.
 
-The release-state checks are deliberately independent of the guard test, so a tampered
-manifest has to pass two separate implementations, not one.
+Die Freigabepruefung liegt bewusst in developer/tools/release.py (dieselbe
+Implementierung, die auch veroeffentlicht) - ein veraendertes Manifest muss also
+zwei unabhaengige Implementierungen bestehen: das JSON-Schema und diese Regeln.
 """
 from __future__ import annotations
 
-import datetime as _dt
-import hashlib
+import importlib.util
 import json
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -31,10 +33,7 @@ FIXTURES = TESTS / "fixtures" / "update"
 LOCK = ROOT / "update-system" / "update_system_guard.lock.json"
 README = ROOT / "update-system" / "README.md"
 VERSION_FILE = ROOT / "app" / "version.json"
-RELEASE_EXE = ROOT / "release" / "ArenaBridge.exe"
-CANONICAL_URL = ("https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/"
-                 "main/next-update/release/ArenaBridge.exe")
-STAMP_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}:\d{2}Z$")
+RELEASE_DIR = ROOT / "release"
 FAILURES: list[str] = []
 
 
@@ -44,50 +43,36 @@ def check(condition: bool, message: str) -> None:
         FAILURES.append(message)
 
 
+def load_release_tool():
+    """developer/tools/release.py als Modul laden (eine Regelquelle)."""
+    spec = importlib.util.spec_from_file_location("arena_release_tool",
+                                                  ROOT / "developer" / "tools" / "release.py")
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
 def validator():
     try:
         import jsonschema  # type: ignore
     except ImportError:
-        print("FAILED: jsonschema is missing. Install developer/tests/requirements-test.txt.")
+        print("FAILED: jsonschema fehlt. developer/tests/requirements-test.txt installieren.")
         raise SystemExit(1)
     schema = json.loads((CHANNELS / "manifest.schema.json").read_text(encoding="utf-8"))
     jsonschema.Draft202012Validator.check_schema(schema)
+    check(schema.get("properties", {}).get("schemaVersion", {}).get("const") == 2,
+          "das Schema beschreibt schemaVersion 2")
+    check(schema.get("additionalProperties") is False,
+          "das Schema lehnt unbekannte Felder ab")
+    check("sequence" in schema.get("required", []),
+          "sequence ist Pflichtfeld (Schutz vor einem veralteten Manifest)")
+    check(schema.get("properties", {}).get("artifact", {}).get("additionalProperties") is False,
+          "artifact erlaubt keine Zusatzfelder")
     return jsonschema.Draft202012Validator(schema)
 
 
-def parse_semver(value: str) -> tuple | None:
-    m = re.match(r"^(\d+)\.(\d+)\.(\d+)(?:-(.+))?$", value.strip())
-    if not m:
-        return None
-    major, minor, patch, prerelease = m.groups()
-    return (int(major), int(minor), int(patch), prerelease or "")
-
-
-def semver_gt(v1: str, v2: str) -> bool:
-    p1, p2 = parse_semver(v1), parse_semver(v2)
-    if not p1 or not p2:
-        return False
-    if p1[:3] != p2[:3]:
-        return p1[:3] > p2[:3]
-    if not p1[3] and p2[3]:
-        return True
-    if p1[3] and not p2[3]:
-        return False
-    return p1[3] > p2[3]
-
-
-def last_published_version() -> str:
-    """The version recorded by the last release ("" when nothing was published yet)."""
-    m = re.search(r"Letzte ver[öo]ffentlichte Version:\s*([^\s\n\(\)]+)",
-                  README.read_text(encoding="utf-8"), re.IGNORECASE)
-    if not m:
-        return ""
-    value = m.group(1).strip()
-    return "" if value.lower() in ("keine", "none", "") else value
-
-
 def release_approval_for(day: str) -> bool:
-    """True when the lock file carries a release approval dated `day`."""
     if not LOCK.is_file():
         return False
     approvals = json.loads(LOCK.read_text(encoding="utf-8")).get("approvals", [])
@@ -98,94 +83,111 @@ def release_approval_for(day: str) -> bool:
     return False
 
 
+def last_published_version() -> str:
+    text = README.read_text(encoding="utf-8") if README.is_file() else ""
+    import re
+    match = re.search(r"Letzte ver[öo]ffentlichte Version:\s*([^\s\n\(\)]+)", text, re.IGNORECASE)
+    if not match:
+        return ""
+    value = match.group(1).strip()
+    return "" if value.lower() in ("keine", "none", "") else value
+
+
 def check_disabled_channel(channel: str, data: dict) -> None:
-    check(data.get("enabled") is False, f"{channel}.json is an explicitly disabled placeholder")
+    check(data.get("enabled") is False, f"{channel}.json ist ein ausdruecklich deaktivierter Platzhalter")
     artifact = data.get("artifact", {})
     check(artifact.get("url") == "" and artifact.get("sha256") == "" and artifact.get("sizeBytes") == 0,
-          f"{channel}.json publishes no artifact coordinates")
+          f"{channel}.json veroeffentlicht keine Download-Koordinaten")
+    check(str(data.get("version", "")) == "" and str(data.get("publishedAtUtc", "")) == "",
+          f"{channel}.json nennt keine Version und kein Datum")
 
 
-def check_released_channel(channel: str, data: dict) -> None:
-    """Everything a channel must prove before users are offered an update."""
-    artifact = data.get("artifact", {})
+def check_released_channel(channel: str, data: dict, tool) -> None:
+    version = str(data.get("version", ""))
     source_version = str(json.loads(VERSION_FILE.read_text(encoding="utf-8")).get("version", ""))
-    check(data.get("version") == source_version,
-          f"{channel}.json publishes exactly app/version.json ({source_version})")
-    check(artifact.get("fileName") == "ArenaBridge.exe", f"{channel}.json ships ArenaBridge.exe")
-    check(artifact.get("url") == CANONICAL_URL,
-          f"{channel}.json uses the canonical repository URL, nothing else")
-    check(data.get("mandatory") is False, f"{channel}.json offers the update voluntarily (no forced update)")
+    check(version == source_version,
+          f"{channel}.json veroeffentlicht genau app/version.json ({source_version})")
 
-    published = str(data.get("publishedAtUtc", ""))
-    stamp = STAMP_RE.match(published)
-    check(bool(stamp), f"{channel}.json publishedAtUtc is ISO-8601 UTC ({published or 'leer'})")
+    artifact = data.get("artifact", {})
+    expected_name = tool.artifact_name(version)
+    check(artifact.get("fileName") == expected_name,
+          f"{channel}.json nutzt den aus der Version abgeleiteten Dateinamen ({expected_name})")
+    check(artifact.get("url") == tool.artifact_url(version),
+          f"{channel}.json nutzt die aus der Version abgeleitete Adresse")
 
-    exe_present = RELEASE_EXE.is_file()
-    check(exe_present, f"{channel}.json artifact exists at {RELEASE_EXE.relative_to(ROOT)}")
-    actual_sha = ""
-    if exe_present:
-        raw = RELEASE_EXE.read_bytes()
-        actual_sha = hashlib.sha256(raw).hexdigest().lower()
-        check(str(artifact.get("sha256", "")).lower() == actual_sha,
-              f"{channel}.json sha256 matches the tested EXE ({actual_sha})")
-        check(artifact.get("sizeBytes") == len(raw),
-              f"{channel}.json sizeBytes matches the tested EXE ({len(raw)})")
+    exe_path = RELEASE_DIR / expected_name
+    check(exe_path.is_file(), f"{channel}.json Artefakt liegt als {exe_path.relative_to(ROOT)} vor")
+    problems = tool.validate_channel(data, channel, exe_path=exe_path)
+    check(not problems, f"{channel}.json besteht die Freigabepruefung: " + ("; ".join(problems) or "ok"))
 
     previous = last_published_version()
-    version = str(data.get("version", ""))
     if not previous:
-        check(True, f"{channel}.json: no earlier release recorded, {version} is the first")
-    elif parse_semver(version) == parse_semver(previous):
-        # Gleichstand ist nur mit identischem Artefakt erlaubt (kein version-conflict).
-        check(bool(actual_sha) and str(artifact.get("sha256", "")).lower() == actual_sha,
-              f"{channel}.json: version {version} equals the last release and must point at the same EXE")
+        check(True, f"{channel}.json: keine fruehere Veroeffentlichung eingetragen")
     else:
-        check(semver_gt(version, previous),
-              f"{channel}.json: version {version} must be higher than the last release {previous}")
+        same = tool.parse_semver(version) == tool.parse_semver(previous)
+        if same:
+            check(False, f"{channel}.json: Version {version} ist bereits als veroeffentlicht vermerkt")
+        else:
+            check(tool.semver_gt(version, previous),
+                  f"{channel}.json: Version {version} ist hoeher als die letzte ({previous})")
 
+    published = str(data.get("publishedAtUtc", ""))
+    check(bool(tool.STAMP_RE.match(published)), f"{channel}.json publishedAtUtc ist ISO-8601 UTC ({published})")
+    stamp = tool.STAMP_RE.match(published)
     if stamp:
-        check(release_approval_for(stamp.group(1)),
-              f"{channel}.json: lock file records the release approval of {stamp.group(1)}")
-
-
-def check_channel(channel: str, data: dict, v) -> None:
-    check(data.get("channel") == channel, f"{channel}.json names its own channel")
-    check(data.get("testFixture") is False, f"{channel}.json is not a test fixture")
-    check(data.get("minimumUpdaterVersion") == "1.1.0", f"{channel}.json requires updater 1.1.0")
-    check(not list(v.iter_errors(data)), f"{channel}.json validates against the schema")
-    if data.get("enabled"):
-        check_released_channel(channel, data)
-    else:
-        check_disabled_channel(channel, data)
+        day = published[:10]
+        check(release_approval_for(day),
+              f"{channel}.json: Guard-Lock dokumentiert die Freigabe vom {day}")
 
 
 def main() -> int:
     v = validator()
+    tool = load_release_tool()
 
-    for path in sorted(FIXTURES.glob("valid-*.json")):
+    valid = sorted(FIXTURES.glob("valid-*.json"))
+    for path in valid:
         errors = sorted(v.iter_errors(json.loads(path.read_text(encoding="utf-8"))), key=str)
-        check(not errors, f"valid fixture is accepted: {path.name}" + (f" -> {errors[0].message}" if errors else ""))
+        check(not errors, f"gueltige Vorlage wird akzeptiert: {path.name}"
+                          + (f" -> {errors[0].message}" if errors else ""))
 
     invalid = sorted(FIXTURES.glob("invalid-*.json"))
-    check(len(invalid) >= 8, f"at least eight invalid fixtures exist (found {len(invalid)})")
+    check(len(invalid) >= 12, f"mindestens zwoelf ungueltige Vorlagen vorhanden (gefunden {len(invalid)})")
     for path in invalid:
         rejected = not list(v.iter_errors(json.loads(path.read_text(encoding="utf-8"))))
-        check(not rejected, f"invalid fixture is rejected: {path.name}")
+        check(not rejected, f"ungueltige Vorlage wird abgelehnt: {path.name}")
+
+    semantic = sorted(FIXTURES.glob("semantic-*.json"))
+    check(len(semantic) >= 1, "es gibt semantische Vorlagen (schema-gueltig, aber abgelehnt)")
+    for path in semantic:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        schema_errors = list(v.iter_errors(data))
+        runtime_problems = tool.validate_channel(data, str(data.get("channel", "beta")))
+        check(not schema_errors and bool(runtime_problems),
+              f"semantische Vorlage wird erst durch die Laufzeitregeln abgelehnt: {path.name}")
 
     for channel in ("beta", "stable"):
-        check_channel(channel, json.loads((CHANNELS / f"{channel}.json").read_text(encoding="utf-8")), v)
+        data = json.loads((CHANNELS / f"{channel}.json").read_text(encoding="utf-8"))
+        check(data.get("channel") == channel, f"{channel}.json nennt den eigenen Kanal")
+        check(data.get("testFixture") is False, f"{channel}.json ist keine Testvorlage")
+        check(isinstance(data.get("sequence"), int) and data["sequence"] >= 1,
+              f"{channel}.json hat eine gueltige sequence")
+        check(not list(v.iter_errors(data)), f"{channel}.json entspricht dem Schema")
+        if data.get("enabled"):
+            check_released_channel(channel, data, tool)
+        else:
+            check_disabled_channel(channel, data)
 
     wrapper = TESTS / "test_v800_selfupdate_smoke.py"
     if sys.platform != "win32":
-        result = subprocess.run([sys.executable, str(wrapper)], cwd=ROOT, capture_output=True, text=True, check=False)
+        result = subprocess.run([sys.executable, str(wrapper)], cwd=ROOT, capture_output=True,
+                                text=True, check=False)
         check(result.returncode == 77 and "SKIP" in result.stdout,
-              "Windows self-update wrapper skips with exit 77 on this non-Windows host")
+              "Windows-Selbst-Update-Wrapper ueberspringt auf diesem Host mit Exit 77")
 
     if FAILURES:
-        print(f"\nFAILED: {len(FAILURES)} update manifest check(s).")
+        print(f"\nFAILED: {len(FAILURES)} Manifest-Pruefung(en).")
         return 1
-    print("\nOK: manifest schema, fixtures, channel state (disabled placeholder or released) "
-          "and the Windows skip behaviour passed.")
+    print("\nOK: Schema 2, Vorlagen, Kanalzustand und die Windows-Ueberspringung sind in Ordnung.")
     return 0
 
 
