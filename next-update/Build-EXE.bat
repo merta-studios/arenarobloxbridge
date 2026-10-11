@@ -10,7 +10,8 @@ echo Dies baut nur deine private Test-EXE. Es wird nichts veroeffentlicht,
 echo kein Nutzer aktualisiert und kein Update-Manifest geaendert.
 echo.
 echo Das neue Logo aus app\assets\neueslogo.png wird sowohl als
-echo EXE-Symbol als auch im Bridge-Fenster eingebettet.
+echo EXE-Symbol als auch im Bridge-Fenster eingebettet, und das Bild
+echo app\assets\liquidglasbackground.png wird der Fensterhintergrund.
 echo.
 echo Vor dem spaeteren Test bitte andere ArenaBridge-Fenster schliessen.
 echo.

@@ -77,3 +77,19 @@ Eine Änderung ist nur zulässig, wenn ALLE Punkte erfüllt sind:
   Neuer Test test_v770_release_flow.py hinzugefuegt. Betroffene geschuetzte Dateien:
   `builder/Build-EXE.ps1`, `update-system/PROTECTED.md`, `update-system/README.md`,
   `developer/tests/test_v800_update_system_guard.py`, Lock-Datei. Kanaele bleiben deaktiviert.
+
+- 2026-10-11, Branding/Hintergrund nach Nutzerauftrag (Version bleibt 7.7.0): Der Nutzer
+  hat ausdruecklich beauftragt, sein neues Bild `app/assets/liquidglasbackground.png` als
+  Fensterhintergrund der Bridge zu verwenden, den bisherigen Hintergrund aus farbigen
+  Aurora-Verlaufskreisen vollstaendig zu entfernen, das Programmlogo oben links groesser
+  und eckig (nicht abgerundet) zu zeigen, das Platzhalter-Icon der Place-Liste durch
+  dasselbe Logo zu ersetzen und das Beta-Abzeichen vom Ladebildschirm zu entfernen.
+  Damit das Hintergrundbild wie Logo und Titelbild selbstgenuegsam in der EXE steckt
+  (neben `release/ArenaBridge.exe` darf keine Bilddatei liegen), wurde
+  `builder/Build-EXE.ps1` um genau EINEN Asset-Platzhalter samt Pruefung,
+  Groessencheck und Smoke-Test-Erweiterung ergaenzt.
+  Betroffene geschuetzte Dateien: `builder/Build-EXE.ps1`, diese Datei und die
+  Lock-Datei. NICHT betroffen und unveraendert: `update-system/updater/Update-Bridge.ps1`,
+  die Kanal-Manifeste `beta.json`/`stable.json` und der Integrationsblock
+  `ARENA-UPDATE-INTEGRATION` in `app/ArenaBridge.ps1`. Kanaele bleiben deaktiviert.
+  Der Windows-Lauf (Build, Smoke, Selbst-Update-Test) steht weiterhin aus.

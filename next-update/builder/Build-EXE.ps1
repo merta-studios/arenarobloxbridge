@@ -99,7 +99,10 @@ function Test-StagedExecutable {
         if ([int]$report.programLogoWidth -lt 32 -or [int]$report.programLogoHeight -lt 32) {
             throw 'The staged EXE smoke test did not decode the embedded neueslogo.png branding.'
         }
-        Write-Step ("Compiled EXE launched successfully: PowerShell " + [string]$report.powershell + ', WPF/STA OK, title image ' + [string]$report.titleImageWidth + 'x' + [string]$report.titleImageHeight + ', app logo ' + [string]$report.programLogoWidth + 'x' + [string]$report.programLogoHeight + '.')
+        if ([int]$report.backgroundImageWidth -lt 640 -or [int]$report.backgroundImageHeight -lt 360) {
+            throw 'The staged EXE smoke test did not decode the embedded liquidglasbackground.png window background.'
+        }
+        Write-Step ("Compiled EXE launched successfully: PowerShell " + [string]$report.powershell + ', WPF/STA OK, title image ' + [string]$report.titleImageWidth + 'x' + [string]$report.titleImageHeight + ', app logo ' + [string]$report.programLogoWidth + 'x' + [string]$report.programLogoHeight + ', background ' + [string]$report.backgroundImageWidth + 'x' + [string]$report.backgroundImageHeight + '.')
     } finally {
         if ($null -ne $process) { try { $process.Dispose() } catch {} }
         if ($null -eq $previousSmokeFlag) { Remove-Item Env:\ARENABRIDGE_BUILD_SMOKE -ErrorAction SilentlyContinue }
@@ -217,6 +220,8 @@ $parseGatePath = Join-Path $builderRoot 'parse-gate.ps1'
 $iconPath = Join-Path $assetsDirectory 'ArenaBridge.ico'
 $titleArtworkPath = Join-Path $assetsDirectory 'arena-bridge-title.jpg'
 $programLogoPath = Join-Path $assetsDirectory 'neueslogo.png'
+# Version 7.7.1: vom Nutzer bereitgestelltes Fensterhintergrund-Bild.
+$backgroundImagePath = Join-Path $assetsDirectory 'liquidglasbackground.png'
 $updaterPath = Join-Path $repoRoot 'update-system\updater\Update-Bridge.ps1'
 $releaseDirectory = Join-Path $repoRoot 'release'
 $buildOutputDirectory = $releaseDirectory
@@ -239,7 +244,7 @@ $exePath = Join-Path $buildOutputDirectory 'ArenaBridge.exe'
 $diagnosticExePath = Join-Path $buildOutputDirectory 'ArenaBridge-Diagnose.exe'
 $diagnosticBatPath = Join-Path $buildOutputDirectory 'Start-Diagnostic.bat'
 
-foreach ($requiredPath in @($sourcePath,$versionPath,$parseGatePath,$iconPath,$titleArtworkPath,$programLogoPath,$updaterPath)) {
+foreach ($requiredPath in @($sourcePath,$versionPath,$parseGatePath,$iconPath,$titleArtworkPath,$programLogoPath,$backgroundImagePath,$updaterPath)) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
         throw ("Required build input is missing: " + $requiredPath)
     }
@@ -253,8 +258,24 @@ if ($programLogoHeader.Length -lt 1000 -or $programLogoHeader.Length -gt 1048576
     $programLogoHeader[6] -ne 26 -or $programLogoHeader[7] -ne 10) {
     throw 'app\assets\neueslogo.png is missing, too small/large, or is not a valid PNG file.'
 }
+# Das Hintergrundbild ist Pflicht-Branding: ohne es bleibt das Fenster leer.
+$backgroundHeader = [IO.File]::ReadAllBytes($backgroundImagePath)
+if ($backgroundHeader.Length -lt 10000 -or $backgroundHeader.Length -gt 20971520 -or
+    $backgroundHeader[0] -ne 137 -or $backgroundHeader[1] -ne 80 -or
+    $backgroundHeader[2] -ne 78 -or $backgroundHeader[3] -ne 71 -or
+    $backgroundHeader[4] -ne 13 -or $backgroundHeader[5] -ne 10 -or
+    $backgroundHeader[6] -ne 26 -or $backgroundHeader[7] -ne 10) {
+    throw 'app\assets\liquidglasbackground.png is missing, too small/large, or is not a valid PNG file.'
+}
+# PNG-IHDR: Breite/Hoehe stehen big-endian an Offset 16..23.
+$backgroundPixelWidth = ([int]$backgroundHeader[16] * 16777216) + ([int]$backgroundHeader[17] * 65536) + ([int]$backgroundHeader[18] * 256) + [int]$backgroundHeader[19]
+$backgroundPixelHeight = ([int]$backgroundHeader[20] * 16777216) + ([int]$backgroundHeader[21] * 65536) + ([int]$backgroundHeader[22] * 256) + [int]$backgroundHeader[23]
+if ($backgroundPixelWidth -lt 920 -or $backgroundPixelHeight -lt 620) {
+    throw ('app\assets\liquidglasbackground.png is smaller than the 920x620 window and would look blurry: ' + [string]$backgroundPixelWidth + 'x' + [string]$backgroundPixelHeight + '.')
+}
 Write-Step ("Using the EXE icon generated from the supplied logo: " + $iconPath)
 Write-Step ("Embedding the same app logo into the Bridge window: " + $programLogoPath)
+Write-Step ("Embedding the window background image: " + $backgroundImagePath + " (" + [string]$backgroundPixelWidth + "x" + [string]$backgroundPixelHeight + ")")
 
 $versionInfo = Get-Content -LiteralPath $versionPath -Raw -Encoding UTF8 | ConvertFrom-Json -ErrorAction Stop
 $sourceVersion = [string]$versionInfo.version
@@ -349,6 +370,13 @@ try {
     if ($sourceText.IndexOf($logoMarker,[StringComparison]::Ordinal) -ne $sourceText.LastIndexOf($logoMarker,[StringComparison]::Ordinal)) {
         throw 'The program-logo injection marker must appear exactly once.'
     }
+    $backgroundMarker = '$script:BackgroundImageBase64 = ''__ARENA_BACKGROUND_IMAGE_BASE64__'''
+    if (-not $sourceText.Contains($backgroundMarker)) {
+        throw 'The unique background-image injection marker is missing from ArenaBridge.ps1.'
+    }
+    if ($sourceText.IndexOf($backgroundMarker,[StringComparison]::Ordinal) -ne $sourceText.LastIndexOf($backgroundMarker,[StringComparison]::Ordinal)) {
+        throw 'The background-image injection marker must appear exactly once.'
+    }
     $titleArtworkBytes = [IO.File]::ReadAllBytes($titleArtworkPath)
     if ($titleArtworkBytes.Length -le 1000 -or $titleArtworkBytes.Length -gt 10485760) {
         throw ("The title artwork has an unexpected size: " + [string]$titleArtworkBytes.Length + ' bytes.')
@@ -367,16 +395,26 @@ try {
     $titleArtworkBase64 = [Convert]::ToBase64String($titleArtworkBytes)
     $programLogoBytes = [IO.File]::ReadAllBytes($programLogoPath)
     $programLogoBase64 = [Convert]::ToBase64String($programLogoBytes)
+    $backgroundBytes = [IO.File]::ReadAllBytes($backgroundImagePath)
+    if ($backgroundBytes.Length -le 10000 -or $backgroundBytes.Length -gt 20971520) {
+        throw ("The window background image has an unexpected size: " + [string]$backgroundBytes.Length + ' bytes.')
+    }
+    $backgroundBase64 = [Convert]::ToBase64String($backgroundBytes)
     $sourceReplacement = '$script:TitleArtworkBase64 = ''' + $titleArtworkBase64 + ''''
     $preparedSource = $sourceText.Replace($sourceMarker,$sourceReplacement)
     $logoReplacement = '$script:ProgramLogoBase64 = ''' + $programLogoBase64 + ''''
     $preparedSource = $preparedSource.Replace($logoMarker,$logoReplacement)
+    $backgroundReplacement = '$script:BackgroundImageBase64 = ''' + $backgroundBase64 + ''''
+    $preparedSource = $preparedSource.Replace($backgroundMarker,$backgroundReplacement)
+    foreach ($leftoverBackground in @('__ARENA_BACKGROUND_IMAGE_BASE64__')) {
+        if ($preparedSource.Contains($leftoverBackground)) { throw ('Background placeholder was not replaced: ' + $leftoverBackground) }
+    }
     foreach ($entry in $updateMarkers) { $preparedSource = $preparedSource.Replace($entry.Marker, $entry.Value) }
     foreach ($leftover in @('__ARENA_UPDATE_CHANNEL__','__ARENA_UPDATER_BASE64__','__ARENA_UPDATER_SHA256__','__ARENA_TEST_FIXTURE_BUILD__')) {
         if ($preparedSource.Contains($leftover)) { throw ('Update-system placeholder was not replaced: ' + $leftover) }
     }
     [IO.File]::WriteAllText($preparedSourcePath,$preparedSource,[Text.UTF8Encoding]::new($true))
-    Write-Step ("Prepared self-contained source with title artwork (" + [string]$titleArtworkBytes.Length + " bytes) and the program logo (" + [string]$programLogoBytes.Length + " bytes). No external runtime image is required.")
+    Write-Step ("Prepared self-contained source with title artwork (" + [string]$titleArtworkBytes.Length + " bytes), the program logo (" + [string]$programLogoBytes.Length + " bytes) and the window background (" + [string]$backgroundBytes.Length + " bytes). No external runtime image is required.")
     Write-Step 'Re-running the real Windows PowerShell parser against the exact embedded compile copy...'
     & $windowsPowerShell -NoLogo -NoProfile -ExecutionPolicy Bypass -File $parseGatePath -Path $preparedSourcePath
     if ($LASTEXITCODE -ne 0) { throw 'PowerShell parse gate failed for the embedded compile copy; no EXE was produced.' }
@@ -406,6 +444,7 @@ try {
     $iconSha256 = (Get-FileHash -LiteralPath $iconPath -Algorithm SHA256).Hash.ToLowerInvariant()
     $artworkSha256 = (Get-FileHash -LiteralPath $titleArtworkPath -Algorithm SHA256).Hash.ToLowerInvariant()
     $programLogoSha256 = (Get-FileHash -LiteralPath $programLogoPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $backgroundSha256 = (Get-FileHash -LiteralPath $backgroundImagePath -Algorithm SHA256).Hash.ToLowerInvariant()
     $metadata = [ordered]@{
         schemaVersion = 1
         channel = $Channel
@@ -423,6 +462,9 @@ try {
         titleArtworkSha256 = $artworkSha256
         programLogoFileName = 'neueslogo.png'
         programLogoSha256 = $programLogoSha256
+        backgroundImageFileName = 'liquidglasbackground.png'
+        backgroundImageSha256 = $backgroundSha256
+        backgroundImageSizeBytes = [long]$backgroundBytes.Length
         updateChannel = $Channel
         updaterFileName = 'Update-Bridge.ps1 (embedded in ArenaBridge.exe, not published separately)'
         updaterVersion = $updaterVersion

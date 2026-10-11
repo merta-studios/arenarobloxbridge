@@ -23,7 +23,9 @@ NUR BAUEN UND PRIVAT TESTEN?
 Der normale Build schreibt ALLE Ausgaben in den einzigen Ordner release\.
 Es gibt keine beta/stable-Unterordner, keinen release-inbox-Ordner und keinen
 user-builds-Ordner. Das neue Logo aus app\assets\neueslogo.png wird sowohl als
-Windows-EXE-Symbol als auch im Bridge-Fenster neben dem Titel verwendet.
+Windows-EXE-Symbol als auch im Bridge-Fenster neben dem Titel verwendet (groesser,
+eckig und auch als Platzhalter-Icon der Place-Liste). Der Fensterhintergrund kommt
+aus app\assets\liquidglasbackground.png; auch er wird in die EXE eingebettet.
 
 KANAL-HINWEIS:
 Der Standard-Buildkanal ist stable. Die gebaute EXE hoert auf stable.json.
@@ -70,7 +72,8 @@ FUER DEN BUILD:
   nicht noetig.
 - Der Build prueft den Windows-PowerShell-Parser fuer Bridge und Updater und
   startet die EXE danach in einem isolierten Smoke-Test. Dabei werden
-  EXE-Startpfad, x64, STA/WPF, Startbild und eingebettetes Programmlogo geprueft.
+  EXE-Startpfad, x64, STA/WPF, Startbild, eingebettetes Programmlogo und das
+  eingebettete Hintergrundbild geprueft.
   Es wird nichts hochgeladen.
 - Hier in der Entwicklungssandbox wurde keine Windows-EXE gebaut.
 

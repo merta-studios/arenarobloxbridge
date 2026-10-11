@@ -37,7 +37,8 @@
 
 Das Build-Skript prüft zuerst den Windows-PowerShell-Parser (Bridge **und** Updater).
 Danach startet es die EXE in einem isolierten Smoke-Test; dabei werden x64, STA/WPF,
-der EXE-Ordnerpfad, das Startbild **und das eingebettete `neueslogo.png`** geprüft.
+der EXE-Ordnerpfad, das Startbild, das eingebettete `neueslogo.png` **und das
+eingebettete `liquidglasbackground.png`** geprüft.
 Dieser Smoke-Test startet weder Roblox Studio noch den Bridge-Server noch einen Updater.
 
 **Der Build bettet außerdem den Updater (Version 1.1.0) in die EXE ein.** Die EXE
