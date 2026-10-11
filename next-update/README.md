@@ -43,8 +43,10 @@ Dieser Smoke-Test startet weder Roblox Studio noch den Bridge-Server noch einen 
 
 **Der Build bettet außerdem den Updater (Version 1.1.0) in die EXE ein.** Die EXE
 braucht keine separate Updater-Datei. Die Auto-Update-Prüfung ist im Normalbau
-aktiv, gilt aber nur für Kanäle, die freigegeben sind. Solange `beta.json` bzw.
-`stable.json` deaktiviert sind, findet kein Update statt.
+aktiv, gilt aber nur für Kanäle, die freigegeben sind. `stable.json` ist seit der
+Freigabe von 7.7.0 aktiv und bietet genau die getestete `release/ArenaBridge.exe` an;
+`beta.json` bleibt deaktiviert. Die letzte veröffentlichte Version und alle Details stehen
+in `update-system/README.md`.
 
 ## Selbst-Update privat testen (nur Windows, nach dem ZIP-Build)
 
@@ -97,11 +99,12 @@ Windows-PC gelaufen ist und das Ergebnis dokumentiert wurde.
    diese getestete Datei dort hochzuladen oder anzuhängen. Sie darf nicht raten
    oder einen ungeprüften Ersatz verwenden.
 4. Die öffentliche Auslieferung läuft ausschließlich über `next-update/update-system/`.
-   **Offene Freigabeschranken:** (a) Ein Windows-Lauf von Parse-Gate, EXE-Build und
-   Selbst-Update-Test ist noch nicht dokumentiert. (b) Bereits installierte Kopien
-   ohne Updater werden vom System **nicht automatisch** erreicht; eine einmalige
-   Migration ist offen. Solange diese Punkte offen sind, bleibt Stable deaktiviert,
-   und es darf nicht behauptet werden, alle Nutzer würden automatisch aktualisiert.
+   **Stand der Freigabeschranken (7.7.0):** (a) Parse-Gate, EXE-Build und
+   Selbst-Update-Test sind durch den Nutzer auf Windows ausgeführt und gemeldet —
+   übernommen, nicht von der KI nachgerechnet. (b) Bereits installierte Kopien
+   ohne Updater werden vom System **nicht automatisch** erreicht; die einmalige
+   Migration ist offen geblieben. Es darf deshalb nicht behauptet werden, alle
+   Nutzer würden automatisch aktualisiert.
 5. Erst nachdem Integration, Bootstrap, getestete EXE, Versionsnummer,
    Dateigröße und SHA-256 stimmen, darf die Release-Session den Stable-Kanal
    über das neue System vorbereiten. Das Stable-Manifest muss auf genau die
@@ -131,7 +134,7 @@ Der Guard-Test schlägt bei jeder ungeprüften Änderung fehl.
 | `app/assets/neueslogo.png` | Verbindliches Logo für EXE und Programmfenster. |
 | `builder/` | Interner PowerShell-Builder und Parser — nicht separat starten. |
 | `release/` | Einziger Ausgabeordner; hier liegt `ArenaBridge.exe` (nach dem Build). |
-| `update-system/` | Neues Manifest-/Updater-System (geschützt, Kanäle deaktiviert). |
+| `update-system/` | Neues Manifest-/Updater-System (geschützt; stable aktiv seit 7.7.0, beta deaktiviert). |
 | `developer/tests/` | Offline-Regressionstests; für den normalen EXE-Build nicht nötig. |
 | `developer/docs/` | Arbeitsregeln, technische Verträge und Hintergründe (`RELEASE-ABLAUF.md`). |
 | `developer/ci/`, `developer/tools/` | Wartungs- und Prüfwerkzeuge. |

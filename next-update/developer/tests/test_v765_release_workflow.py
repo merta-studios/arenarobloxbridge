@@ -3,7 +3,8 @@
 
 This is structural and network-free: it never runs the EXE builder, Windows
 PowerShell, the updater, or Roblox. It verifies the private-test gate, the one
-release/ output folder, the supplied logo in both branding paths, and the
+release/ output folder, the supplied logo in both branding paths, the channel state
+(disabled placeholder or a released manifest with complete coordinates) and the
 standalone updater's safe-publication prerequisites.
 """
 from __future__ import annotations
@@ -256,15 +257,26 @@ def main() -> int:
     check((ROOT / "update-system" / "updater" / "README.md").is_file(),
           "future updater folder documents its integration and bootstrap gates")
 
-    # Both public channels stay off during every private build/test cycle.
+    # A private build/test cycle never touches a channel. A channel that a release session
+    # has activated must instead publish exactly the tested artifact; every other channel
+    # stays an empty placeholder. The deep gates live in test_v800_update_manifest.py.
     channels_root = ROOT / "update-system" / "channels"
     for channel in ("beta", "stable"):
         manifest = json.loads((channels_root / f"{channel}.json").read_text(encoding="utf-8"))
-        check(manifest.get("channel") == channel and manifest.get("enabled") is False,
-              f"{channel} manifest is an explicitly disabled placeholder")
         artifact = manifest.get("artifact", {})
-        check(artifact.get("fileName") == "ArenaBridge.exe" and not artifact.get("url")
-              and not artifact.get("sha256") and artifact.get("sizeBytes") == 0,
+        check(manifest.get("channel") == channel and artifact.get("fileName") == "ArenaBridge.exe",
+              f"{channel} manifest names its channel and the fixed artifact file")
+        if manifest.get("enabled"):
+            check(channel == "stable",
+                  f"{channel} manifest: the 7.7.0 release activates stable only, beta stays off")
+            sha = str(artifact.get("sha256", "") or "")
+            check(re.fullmatch(r"[0-9a-fA-F]{64}", sha) is not None
+                  and isinstance(artifact.get("sizeBytes"), int) and artifact.get("sizeBytes", 0) > 0
+                  and str(artifact.get("url", "")).startswith("https://raw.githubusercontent.com/"),
+                  f"{channel} manifest publishes complete https-only artifact coordinates")
+            continue
+        check(manifest.get("enabled") is False, f"{channel} manifest is an explicitly disabled placeholder")
+        check(not artifact.get("url") and not artifact.get("sha256") and artifact.get("sizeBytes") == 0,
               f"{channel} manifest contains no unpublished artifact coordinates")
     schema = json.loads((channels_root / "manifest.schema.json").read_text(encoding="utf-8"))
     check(schema.get("properties", {}).get("channel", {}).get("enum") == ["beta", "stable"]
@@ -339,16 +351,19 @@ def main() -> int:
     update_readme = (ROOT / "update-system" / "README.md").read_text(encoding="utf-8")
     update_readme_plain = re.sub(r"\s+", " ", re.sub(r"[*`]", "", update_readme))
     check("Update-Bridge.ps1" in update_readme
-          and "noch nichts ausgeführt" in update_readme_plain
+          and "Windows-Ergebnisse stammen aus der Aussage des Nutzers" in update_readme_plain
           and "erhalten dieses System nicht automatisch" in update_readme_plain
           and "release/ArenaBridge.exe" in update_readme
-          and "enabled: false" in update_readme,
-          "update-system README states the honest status: not tested on Windows, no automatic reach of existing installs")
+          and "enabled: false" in update_readme
+          and "Letzte veröffentlichte Version: 7.7.0" in update_readme_plain
+          and "raw.githubusercontent.com" in update_readme_plain,
+          "update-system README states the honest release status: Windows runs taken from the "
+          "user report, no automatic reach of installs without an updater, live version, raw cache hint")
 
     if FAILURES:
         print(f"\nFAILED: {len(FAILURES)} preparation check(s).")
         return 1
-    print("\nOK: private test gate, one release folder, logo embedding, disabled channels, and safe updater checks passed.")
+    print("\nOK: private test gate, one release folder, logo embedding, channel state and safe updater checks passed.")
     return 0
 
 

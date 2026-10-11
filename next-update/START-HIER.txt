@@ -57,10 +57,10 @@ WICHTIG — TEST IST KEINE VEROEFFENTLICHUNG:
   Pruefsummen, Metadaten und temporaere Build-Dateien werden nicht hochgeladen.
 - Der verbindliche Ablauf steht in developer\docs\RELEASE-ABLAUF.md.
 - Die Release-Session verwendet ausschliesslich next-update\update-system\ und
-  den neuen Updater. Update-Bridge.ps1 ist in die EXE eingebettet, aber auf
-  Windows noch nicht getestet. Bereits installierte Kopien ohne Updater erhalten
-  das System nicht automatisch; eine einmalige Migration ist offen. Stable bleibt
-  deaktiviert, bis diese Punkte geprueft sind. Die alte Root-Update-Struktur
+  den neuen Updater. Update-Bridge.ps1 ist in die EXE eingebettet und seit 7.7.0
+  ueber den Kanal stable freigegeben; beta bleibt deaktiviert. Bereits
+  installierte Kopien ohne Updater erhalten das System nicht automatisch; die
+  einmalige Migration bleibt offen und manuell. Die alte Root-Update-Struktur
   bleibt unberuehrt und wird nicht benutzt.
 - Der Update-Schutz (update-system\PROTECTED.md) gilt: Aenderungen am Update-System
   brauchen eine ausdrueckliche Freigabe.

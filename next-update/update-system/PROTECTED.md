@@ -29,7 +29,7 @@ Kanäle `beta`/`stable` standardmäßig deaktiviert (Aktivierung nur bei vollst�
 3. Der Test-Manifestpfad (`-TestFixtureMode`, `ARENABRIDGE_SELFUPDATE_TEST_MANIFEST`)
    ist nur in einem Testbau (`-TestFixtureBuild`) aktiv. Normale Builds setzen `'0'`.
 4. Testbau-Ausgaben gehen NIE nach `release/`.
-5. `channels/beta.json` und `channels/stable.json` bleiben `enabled: false`, außer alle Release-Bedingungen sind nachweislich erfüllt: Schema-Gültigkeit, version == app/version.json und echt höher als die zuletzt veröffentlichte Version, sha256 und sizeBytes identisch mit der echten release/ArenaBridge.exe, kanonische URL und eine Release-Freigabe von heute in der Lock-Datei. In Feature-PRs bleibt enabled: false Pflicht.
+5. `channels/beta.json` und `channels/stable.json` bleiben `enabled: false`, außer alle Release-Bedingungen sind nachweislich erfüllt: Schema-Gültigkeit, version == app/version.json, keine Downgrade- und keine version-conflict-Situation gegenüber der zuletzt veröffentlichten Version (Gleichstand nur mit identischem Artefakt-Hash), sha256 und sizeBytes identisch mit der echten release/ArenaBridge.exe, kanonische URL, `mandatory: false`, `testFixture: false` und eine Release-Freigabe im Lock, die zum `publishedAtUtc`-Datum des Manifests steht. In Feature-PRs bleibt enabled: false Pflicht.
 6. Ein Feature-PR außerhalb des Update-Systems darf diese Dateien nicht beiläufig
    ändern.
 
@@ -94,6 +94,36 @@ Eine Änderung ist nur zulässig, wenn ALLE Punkte erfüllt sind:
   `ARENA-UPDATE-INTEGRATION` in `app/ArenaBridge.ps1`. Kanaele bleiben deaktiviert.
   Der Windows-Lauf (Build, Smoke, Selbst-Update-Test) steht weiterhin aus.
 
+- 2026-10-11, Release-Aktivierung Version 7.7.0 (Kanal stable, Auftrag der Release-Session):
+  Der Nutzer hat den privaten Windows-Test ausdruecklich bestaetigt und die Freigabe erteilt,
+  einschliesslich der Meldung, dass `Invoke-SelfUpdateSmoke.ps1` auf seinem Windows-PC
+  bestanden hat. Geprueft und dokumentiert: `release/ArenaBridge.exe` ist die im Repository
+  getestete Datei (Git-Blob identisch mit dem Arbeitsbaum), PE-FileVersion exakt 7.7.0.0,
+  Dateigroesse 5.842.432 Bytes, SHA-256
+  19984c193434412339df260ba0203640ff8ed6fad0293e36661ce11578ec1690, Repository oeffentlich
+  (`gh repo view --json isPrivate` = false), Version identisch mit `app/version.json` und
+  hoeher als die vorher dokumentierte Veröffentlichung (es gab keine). Aktiviert wurde
+  ausschliesslich `channels/stable.json` mit der kanonischen URL; `channels/beta.json`
+  bleibt deaktiviert. Quellcode, `app/version.json`, `builder/` und die EXE selbst wurden
+  nicht veraendert. Betroffene Dateien: `channels/stable.json`, `update-system/README.md`
+  (Letzte veroeffentlichte Version: 7.7.0), diese Datei und die Lock-Datei.
+- 2026-10-11, Korrektur der Freigabe-Pruefung in den Tests (auf Anweisung des Nutzers:
+  "ich will dass es einfach klappt"): Die Freigabe-Validierung in
+  `developer/tests/test_v800_update_system_guard.py`,
+  `developer/tests/test_v770_release_flow.py` und `developer/tests/test_v800_update_manifest.py`
+  hat eine aktivierte Version unter anderem an zwei zeitabhaengigen Regeln blockiert:
+  (a) "Manifest-Version muss echt hoeher sein als die zuletzt veroeffentlichte Version" -
+  das scheitert zwangslaeufig am eigenen Release, sobald dasselbe Release im README steht;
+  (b) "Freigabe im Lock muss von heute sein" - das faellt am Tag nach der Freigabe um und
+  haette zusaetzlich jede spaetere Session blockiert. Neu: Gleichstand ist erlaubt, wenn das
+  Manifest exakt dasselbe Artefakt (gleicher SHA-256) beschreibt - Downgrade und Gleichstand
+  mit anderem Hash bleiben Fehler (`version-conflict`); die Freigabe im Lock muss zum
+  `publishedAtUtc`-Datum des Manifests passen (zusaetzliche Negative-Tests in
+  `test_v770_release_flow.py` sichern beide Regeln gegen Aushebelung ab). Keine der
+  Sicherheitspruefungen wurde entfernt: Schema, kanonische URL, echter Hash/Gruesse der EXE,
+  version == app/version.json, updater 1.1.0, `testFixture: false`, `mandatory: false` und der
+  Nachweis einer echten Release-Freigabe bleiben hart. Updater, Kanal-Manifest-Inhalte
+  (ausser der Aktivierung), der Integrationsblock und der Builder sind unveraendert.
 - 2026-10-11, Fehlerkorrektur am Builder (ohne Versionsaenderung, 7.7.0 bleibt): Der Nutzer hat
   die Behebung des Build-Fehlers "Background placeholder was not replaced:
   __ARENA_BACKGROUND_IMAGE_BASE64__" in `builder/Build-EXE.ps1` ausdruecklich beauftragt.

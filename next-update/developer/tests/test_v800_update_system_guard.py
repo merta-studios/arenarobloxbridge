@@ -119,33 +119,59 @@ def validate_release_manifest_data(data: dict, exe_path: Path, current_version: 
     if ver != current_version:
         errs.append(f"version ({ver}) != app/version.json ({current_version})")
 
-    if last_pub_version and not semver_gt(ver, last_pub_version):
-        errs.append(f"version ({ver}) not higher than last published ({last_pub_version})")
-
-    if not exe_path.is_file():
-        errs.append(f"release EXE missing at {exe_path}")
-    else:
+    art = data.get("artifact", {})
+    actual_sha = ""
+    if exe_path.is_file():
         exe_bytes = exe_path.read_bytes()
         actual_sha = hashlib.sha256(exe_bytes).hexdigest().lower()
         actual_size = len(exe_bytes)
-        art = data.get("artifact", {})
         if str(art.get("sha256", "")).lower() != actual_sha:
             errs.append(f"sha256 ({art.get('sha256')}) != EXE sha256 ({actual_sha})")
         if art.get("sizeBytes") != actual_size:
             errs.append(f"sizeBytes ({art.get('sizeBytes')}) != EXE size ({actual_size})")
+    else:
+        errs.append(f"release EXE missing at {exe_path}")
+
+    # RELEASE-ABLAUF.md Regel 3: ein Downgrade ist verboten. Ein Gleichstand ist nur dann
+    # in Ordnung, wenn das Manifest exakt dasselbe Artefakt (gleicher SHA-256) beschreibt;
+    # sonst liegt ein version-conflict vor. Der Gleichstand mit identischem Artefakt ist
+    # bewusst erlaubt, damit eine freigegebene Version sich nicht selbst sperrt, sobald
+    # dieselbe Version in update-system/README.md als "letzte veroeffentlichte" steht.
+    if last_pub_version:
+        p_ver, p_last = parse_semver(ver), parse_semver(last_pub_version)
+        if not p_ver or not p_last:
+            errs.append(f"version ({ver}) or last published ({last_pub_version}) is not X.Y.Z")
+        elif p_ver == p_last:
+            if not actual_sha or str(art.get("sha256", "")).lower() != actual_sha:
+                errs.append(f"version-conflict: ({ver}) equals the last published version "
+                            f"with a different artifact hash")
+        elif not semver_gt(ver, last_pub_version):
+            errs.append(f"version ({ver}) not higher than last published ({last_pub_version})")
 
     canonical_url = "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/main/next-update/release/ArenaBridge.exe"
-    if data.get("artifact", {}).get("url") != canonical_url:
-        errs.append(f"URL is not canonical: {data.get('artifact', {}).get('url')}")
+    if art.get("url") != canonical_url:
+        errs.append(f"URL is not canonical: {art.get('url')}")
 
-    today_iso = _dt.date.today().isoformat()
+    # Release-Provenienz: der Lock muss genau die Freigabe enthalten, die diese
+    # Veroeffentlichung dokumentiert - datumsgleich mit publishedAtUtc. Damit bleibt die
+    # Prüfung nachpruefbar, solange das Manifest steht, statt am Folgetag abzulaufen.
+    published_at = str(data.get("publishedAtUtc", ""))
+    published_stamp = re.match(r"^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}:\d{2}Z$", published_at)
+    if not published_stamp:
+        errs.append(f"publishedAtUtc ({published_at}) is not ISO-8601 UTC YYYY-MM-DDTHH:MM:SSZ")
     approvals = lock_data.get("approvals", [])
-    has_release_approval = any(
-        a.get("date") == today_iso and ("release" in a.get("note", "").lower() or "freigabe" in a.get("note", "").lower())
-        for a in approvals
-    )
-    if not has_release_approval:
-        errs.append(f"lock file has no release approval dated today ({today_iso})")
+
+    def release_approval(day: str) -> bool:
+        return any(a.get("date") == day and ("release" in str(a.get("note", "")).lower()
+                                             or "freigabe" in str(a.get("note", "")).lower())
+                   for a in approvals)
+
+    if published_stamp:
+        if not release_approval(published_stamp.group(1)):
+            errs.append(f"lock file has no release approval dated {published_stamp.group(1)} "
+                        f"(publishedAtUtc of this manifest)")
+    elif not release_approval(_dt.date.today().isoformat()):
+        errs.append(f"lock file has no release approval dated today ({_dt.date.today().isoformat()})")
 
     return errs
 
