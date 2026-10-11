@@ -53,10 +53,10 @@ Mit 7.8.0 gilt ein Vertrag, der genau diese Fehler unmöglich macht:
 
 ## Letzte veröffentlichte Version
 
-Letzte veröffentlichte Version: keine (7.7.0 wurde am 2026-10-11 zurückgezogen; die Freigabe war fehlerhaft und für Nutzer nicht installierbar)
-
+Letzte veröffentlichte Version: 7.8.0 (freigegeben am 2026-10-11, Kanal stable)
 | Version | Datum (UTC) | Kanal | Sequence | Artefakt |
 |---|---|---|---|---|
+| 7.8.0 | 2026-10-11 | stable | 2 | `release/ArenaBridge-7.8.0.exe`, 5.897.728 Bytes, SHA-256 `4026cff81a681d4e200503c5a072a720e598963f69ac4d252b98397b45067a7d` |
 | 7.7.0 | 2026-10-11 | stable | 1 | **Zurückgezogen** – Manifest nannte 5.842.432 Bytes / SHA-256 `19984c19…ec1690`, im Repository lag aber `release/ArenaBridge.exe` mit 5.835.776 Bytes / SHA-256 `21c9800f…f63f3a5c`. Kein Nutzer hat diese Version installiert. |
 
 Vor 7.7.0 wurde nie ein Kanal-Manifest aktiviert. Die nächste Freigabe muss

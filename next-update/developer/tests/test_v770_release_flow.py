@@ -160,10 +160,23 @@ def test_active_manifest_consistency() -> None:
             continue
         check(str(data.get("version")) == app_version,
               f"{channel}.json: Version entspricht app/version.json")
-        if previous:
-            check(arena.semver_gt(str(data.get("version")), previous),
-                  f"{channel}.json: Version ist höher als die letzte Veröffentlichung ({previous})")
+        version = str(data.get("version"))
         artifact_file = RELEASE_DIR / str((data.get("artifact") or {}).get("fileName", ""))
+        artifact_sha = str((data.get("artifact") or {}).get("sha256", "")).lower()
+        actual_sha = arena.sha256_file(artifact_file).lower() if artifact_file.is_file() else ""
+        # Regel 4 des Release-Ablaufs: hoeher als die letzte Veroeffentlichung;
+        # Gleichstand ist nur mit genau demselben Artefakt erlaubt (sonst version-conflict).
+        # Die Zeile "Letzte veröffentlichte Version" nennt nach dem Veroeffentlichen die
+        # Version dieses Manifests selbst - das ist kein Rueckschritt, sondern der Normalfall.
+        if not previous:
+            check(True, f"{channel}.json: keine frühere Veröffentlichung eingetragen")
+        elif arena.parse_semver(version) == arena.parse_semver(previous):
+            check(bool(actual_sha) and artifact_sha == actual_sha,
+                  f"{channel}.json: Version {version} gleicht der letzten Veröffentlichung und "
+                  f"muss genau dasselbe Artefakt nennen (version-conflict bei anderem Hash)")
+        else:
+            check(arena.semver_gt(version, previous),
+                  f"{channel}.json: Version ist höher als die letzte Veröffentlichung ({previous})")
         problems = arena.validate_channel(data, channel, exe_path=artifact_file)
         check(not problems, f"aktiviertes Manifest {channel}.json ist konsistent: "
                             + ("; ".join(problems) if problems else "ok"))

@@ -121,15 +121,20 @@ def check_released_channel(channel: str, data: dict, tool) -> None:
     check(not problems, f"{channel}.json besteht die Freigabepruefung: " + ("; ".join(problems) or "ok"))
 
     previous = last_published_version()
+    actual_sha = tool.sha256_file(exe_path).lower() if exe_path.is_file() else ""
+    artifact_sha = str(artifact.get("sha256", "")).lower()
     if not previous:
         check(True, f"{channel}.json: keine fruehere Veroeffentlichung eingetragen")
+    elif tool.parse_semver(version) == tool.parse_semver(previous):
+        # Gleichstand ist nur mit genau demselben Artefakt erlaubt (version-conflict bei
+        # anderem Hash). Die README-Zeile "Letzte veröffentlichte Version" nennt nach dem
+        # Veroeffentlichen die Version dieses Manifests selbst - das ist der Normalfall.
+        check(bool(actual_sha) and artifact_sha == actual_sha,
+              f"{channel}.json: Version {version} gleicht der letzten Veroeffentlichung und "
+              f"muss genau dasselbe Artefakt nennen (version-conflict bei anderem Hash)")
     else:
-        same = tool.parse_semver(version) == tool.parse_semver(previous)
-        if same:
-            check(False, f"{channel}.json: Version {version} ist bereits als veroeffentlicht vermerkt")
-        else:
-            check(tool.semver_gt(version, previous),
-                  f"{channel}.json: Version {version} ist hoeher als die letzte ({previous})")
+        check(tool.semver_gt(version, previous),
+              f"{channel}.json: Version {version} ist hoeher als die letzte ({previous})")
 
     published = str(data.get("publishedAtUtc", ""))
     check(bool(tool.STAMP_RE.match(published)), f"{channel}.json publishedAtUtc ist ISO-8601 UTC ({published})")

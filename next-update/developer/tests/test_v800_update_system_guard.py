@@ -193,6 +193,7 @@ def validate_release_manifest_data(data: dict, channel: str, exe_dir: Path,
     if artifact.get("url") != expected_url:
         errors.append(f"artifact.url ist nicht die abgeleitete Adresse {expected_url}")
     exe_path = exe_dir / expected_name
+    actual_sha = ""
     if not exe_path.is_file():
         errors.append(f"Artefakt {expected_name} fehlt in release/")
     else:
@@ -203,8 +204,13 @@ def validate_release_manifest_data(data: dict, channel: str, exe_dir: Path,
         if artifact.get("sizeBytes") != len(raw):
             errors.append("artifact.sizeBytes passt nicht zur Datei")
     if last_pub_version:
+        # Downgrade ist verboten; Gleichstand ist nur mit genau demselben Artefakt erlaubt
+        # (sonst version-conflict). Die README-Zeile "Letzte veröffentlichte Version" nennt
+        # nach dem Veroeffentlichen die Version dieses Manifests selbst.
         if parse_semver(last_pub_version) == parse_semver(version):
-            errors.append(f"version ({version}) ist bereits als veroeffentlicht vermerkt")
+            if not actual_sha or str(artifact.get("sha256", "")).lower() != actual_sha:
+                errors.append(f"version-conflict: ({version}) gleicht der letzten "
+                              f"Veroeffentlichung, nennt aber ein anderes Artefakt")
         elif not semver_gt(version, last_pub_version):
             errors.append(f"version ({version}) ist nicht hoeher als {last_pub_version}")
     published = str(data.get("publishedAtUtc", ""))
@@ -368,6 +374,21 @@ def static_invariants() -> None:
                                                       current_source_version, last_pub_version, lock_data)
             check(not problems, f"{channel}.json Freigabe ist vollstaendig: "
                                 + ("; ".join(problems) if problems else "ok"))
+
+    # Negativtest zur Gleichstand-Regel: dieselbe Version wie die letzte Veroeffentlichung
+    # bleibt nur mit genau demselben Artefakt zulaessig. Ein anderer Hash muss
+    # version-conflict bleiben - die Ausnahme darf nicht aushebelbar sein.
+    released = [name for name in ("beta", "stable")
+                if json.loads((CHANNELS / f"{name}.json").read_text(encoding="utf-8")).get("enabled")]
+    if released and last_pub_version:
+        channel = released[0]
+        live = json.loads((CHANNELS / f"{channel}.json").read_text(encoding="utf-8"))
+        tampered = json.loads(json.dumps(live))
+        tampered["artifact"]["sha256"] = "0" * 64
+        problems = validate_release_manifest_data(tampered, channel, ROOT / "release",
+                                                  current_source_version, last_pub_version, lock_data)
+        check(any("version-conflict" in problem for problem in problems),
+              "Negativtest: Gleichstand mit einem anderen Artefakt bleibt version-conflict")
 
     schema = json.loads((CHANNELS / "manifest.schema.json").read_text(encoding="utf-8"))
     check(schema.get("properties", {}).get("schemaVersion", {}).get("const") == 2
