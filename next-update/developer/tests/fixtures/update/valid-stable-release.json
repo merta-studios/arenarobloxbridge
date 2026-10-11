@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 2,
+  "channel": "stable",
+  "enabled": true,
+  "testFixture": false,
+  "sequence": 9,
+  "version": "7.8.0",
+  "publishedAtUtc": "2026-10-11T04:30:00Z",
+  "minimumUpdaterVersion": "2.0.0",
+  "artifact": {
+    "fileName": "ArenaBridge-7.8.0.exe",
+    "url": "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/main/next-update/release/ArenaBridge-7.8.0.exe",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "sizeBytes": 4096
+  },
+  "notes": [
+    "Fixture"
+  ]
+}

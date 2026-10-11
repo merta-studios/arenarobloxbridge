@@ -12,7 +12,7 @@ ausgibt, sobald der Nutzer nach erfolgreichem privatem Windows-Test signalisiert
 ---
 
 ### Auszufüllende Platzhalter
-- `<VERSION>`: Die dreiteilige Versionsnummer aus `app/version.json` (z. B. `7.7.0` oder `7.7.1`).
+- `<VERSION>`: Die dreiteilige Versionsnummer aus `app/version.json` (z. B. `7.8.0`).
 - `<KURZBESCHREIBUNG DER GEMERGTEN AENDERUNG>`: Eine prägnante deutsche Zusammenfassung der im Code-PR gemergten Änderungen.
 
 ---
@@ -24,50 +24,37 @@ Du bist die Release-Session für Arena Roblox Bridge.
 Der Nutzer hat den privaten Windows-Test von Version <VERSION> erfolgreich abgeschlossen und die Freigabe erteilt.
 Gemergte Änderungen: <KURZBESCHREIBUNG DER GEMERGTEN AENDERUNG>.
 
-Lies ZUERST die Datei next-update/developer/docs/RELEASE-ABLAUF.md sorgfältig durch.
+Lies ZUERST next-update/developer/docs/RELEASE-ABLAUF.md und next-update/developer/docs/UPDATE-KONZEPT.md sorgfältig durch.
 
 AUFTRAG DER RELEASE-SESSION:
-1. ARBEITSBEREICH: Arbeite AUSSCHLIESSLICH in next-update/ und next-update/update-system/. Das alte System im Repository-Hauptordner ist strikt verboten und wird ignoriert.
-2. KEINE QUELLCODE-ÄNDERUNG: Verändere NIE Quelltexte in app/, builder/ oder version.json. Baue keine EXE still nach.
-3. EXE PRÜFEN:
-   - Prüfe, ob die vom Nutzer getestete EXE unter next-update/release/ArenaBridge.exe existiert.
-   - Falls sie fehlt: STOPPE sofort und bitte den Nutzer um genau diese Datei.
-   - Berechne SHA-256 und Dateigröße (sizeBytes) direkt aus der Datei next-update/release/ArenaBridge.exe. Raten ist verboten.
-   - Prüfe die PE-FileVersion der EXE (z. B. via pefile in einem temporären venv außerhalb des Repos). Sie MUSS exakt '<VERSION>.0' lauten. Bei Abweichung: STOPPE und melde den Fehler dem Nutzer.
+1. ARBEITSBEREICH: Arbeite AUSSCHLIESSLICH in next-update/. Das alte System im Repository-Hauptordner ist strikt verboten und wird ignoriert.
+2. KEINE QUELLCODE-ÄNDERUNG: Verändere NIE Quelltexte in app/, builder/ oder version.json. Baue keine EXE still nach. Aktiviere kein Manifest von Hand – dafür ist ausschließlich developer/tools/release.py zuständig.
+3. ZUSTAND PRÜFEN:
+   - Führe `python developer/tools/release.py status` aus und lies das Ergebnis vollständig.
+   - Führe `python developer/tools/release.py check --require-test-build` aus.
+   - Prüfe, ob die vom Nutzer getestete EXE unter next-update/release/ArenaBridge.exe liegt, und ob die PE-FileVersion exakt '<VERSION>.0' lautet (Werkzeug prüft das mit; hilfsweise pefile in einem temporären venv außerhalb des Repos).
+   - Wenn Datei fehlt, Version nicht zu app/version.json passt oder die Dateiversion abweicht: STOPPE und melde den Fehler dem Nutzer. Rate niemals SHA-256, Größe oder Version.
 4. REPO-SICHTBARKEIT PRÜFEN:
    - Führe `gh repo view --json isPrivate` aus.
-   - Ist das Repository privat (isPrivate != false) oder nicht prüfbar: STOPPE, aktiviere nichts und warne den Nutzer (der Updater sendet keine Zugangsdaten; privat = 404 = kein Update).
+   - Ist das Repository privat (isPrivate != false) oder nicht prüfbar: STOPPE, veröffentliche nichts und warne den Nutzer (der Updater sendet keine Zugangsdaten; privat = 404 = kein Update).
 5. SMOKE-TEST-RÜCKFRAGE:
    - Prüfe, ob der Nutzer in dieser Session bereits gemeldet hat, dass `Invoke-SelfUpdateSmoke.ps1` auf Windows bestanden hat.
-   - Wenn nicht gemeldet: Frage einmal ausdrücklich nach dem Ergebnis. Ohne Bestätigung oder ein ausdrückliches „trotzdem“ des Nutzers wird das Manifest NICHT aktiviert.
-6. MANIFEST AKTIVIEREN:
-   - Fülle next-update/update-system/channels/stable.json aus:
-     * schemaVersion: 1
-     * channel: "stable"
-     * enabled: true
-     * testFixture: false
-     * version: "<VERSION>"
-     * publishedAtUtc: Aktueller UTC-Zeitstempel im ISO-8601-Format (z. B. "2026-10-10T14:30:00Z")
-     * minimumUpdaterVersion: "1.1.0"
-     * mandatory: false
-     * artifact.fileName: "ArenaBridge.exe"
-     * artifact.url: "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/main/next-update/release/ArenaBridge.exe"
-     * artifact.sha256: Die berechnete hexadezimale SHA-256 der EXE
-     * artifact.sizeBytes: Die exakte Byteanzahl der EXE
-     * notes: Deutsche Nutzerhinweise zu den Neuerungen dieser Version
-   - Halte beta.json auf enabled: false.
-7. DOKUMENTATION & LOCK:
-   - Aktualisiere in next-update/update-system/README.md den Eintrag "Letzte veröffentlichte Version" auf "<VERSION>".
-   - Dokumentiere die Freigabe in next-update/update-system/PROTECTED.md.
-   - Führe Rebaseline für die Lock-Datei aus (GENAU EINE Freigabe, mind. 30 Zeichen):
-     python developer/tests/test_v800_update_system_guard.py --rebaseline --approval "Release-Freigabe Version <VERSION>: Kanal stable aktiviert fuer freigegebene EXE."
+   - Wenn nicht gemeldet: Frage einmal ausdrücklich nach dem Ergebnis. Ohne Bestätigung oder ein ausdrückliches „trotzdem“ des Nutzers wird NICHT veröffentlicht (dann `--smoke-test-skipped`, ehrlich im PR vermerken).
+6. VERÖFFENTLICHEN (nur mit dem Werkzeug):
+   - Erst Probelauf: `python developer/tools/release.py stage --version <VERSION> --channel stable --tested-by-user --smoke-test-passed --dry-run`
+   - Dann echt: gleicher Befehl ohne `--dry-run` (bzw. `--smoke-test-skipped`, falls der Nutzer den Test ausdrücklich übersprungen hat).
+   - Das Werkzeug kopiert die getestete EXE nach release/ArenaBridge-<VERSION>.exe (unveränderlich), schreibt stable.json im Schema 2 mit fortlaufender sequence, aktualisiert die README-Tabelle und führt das Guard-Rebaseline (`--rebaseline`) mit der Release-Freigabe aus. Handarbeit an den JSON-Dateien ist verboten.
+   - Lasse beta.json unverändert auf enabled: false.
+7. DOKUMENTATION:
+   - Prüfe, dass in next-update/update-system/README.md die Zeile "Letzte veröffentlichte Version" auf "<VERSION>" steht und die Tabelle die neue Zeile mit Sequence enthält (schreibt das Werkzeug).
+   - Ergänze in next-update/update-system/PROTECTED.md eine kurze Freigabenotiz zur Veröffentlichung, falls noch nicht vorhanden.
 8. TESTS:
-   - Führe die Offline-Testsuite in einem venv außerhalb des Repos aus:
-     python developer/tests/run_offline_tests.py
-   - Alle Tests müssen grün sein (test_v800_selfupdate_smoke.py darf auf Linux exit 77 skippen).
+   - Führe in einem venv außerhalb des Repos aus: `python developer/tests/run_offline_tests.py`
+   - Alle Tests müssen grün sein (test_v800_selfupdate_smoke.py darf auf Linux mit Exit 77 skippen).
 9. PULL REQUEST:
-   - Erstelle einen Pull Request für diesen Release auf GitHub.
+   - Erstelle einen Pull Request für diesen Release auf GitHub (nur Kanal, README, Lock, ggf. PROTECTED.md).
    - Merge den PR NICHT selbst.
    - Liste ehrlich auf, was nur der Nutzer auf Windows prüfen kann.
-   - Weise den Nutzer darauf hin, dass raw.githubusercontent.com bis zu 5 Minuten Cache-Verzögerung haben kann (völlig sicher durch SHA-256-Prüfung des Updaters).
+   - Weise den Nutzer darauf hin, dass raw.githubusercontent.com bis zu 5 Minuten Cache-Verzögerung haben kann (ungefährlich: Cache-Brecher, sequence-Prüfung und SHA-256-Prüfung im Updater).
+   - Nenne als Rücknahme-Weg: `python developer/tools/release.py disable --channel stable`.
 ```

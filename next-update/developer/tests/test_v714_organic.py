@@ -18,7 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = ROOT / "app"
 PS1 = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.7.2"
+VERSION = "7.8.0"
 FAILURES: list[str] = []
 
 
@@ -62,7 +62,7 @@ def main() -> int:
     source = load_source()
     plugin_lua = extract_plugin_lua(source)
     meta = json.loads((APP_ROOT / "version.json").read_text(encoding="utf-8"))
-    check(meta.get("version") == VERSION, "version.json and source target the prepared 7.7.2 update")
+    check(meta.get("version") == VERSION, "version.json and source target the prepared 7.8.0 update")
 
     # Organic metadata and marker flags are optional inputs, not schema gates.
     builder = region(plugin_lua, "tools.build_polygon_model = function(args)", "tools.build_assembly = function(args)")

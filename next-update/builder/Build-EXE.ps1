@@ -450,7 +450,12 @@ try {
     $programLogoSha256 = (Get-FileHash -LiteralPath $programLogoPath -Algorithm SHA256).Hash.ToLowerInvariant()
     $backgroundSha256 = (Get-FileHash -LiteralPath $backgroundImagePath -Algorithm SHA256).Hash.ToLowerInvariant()
     $metadata = [ordered]@{
-        schemaVersion = 1
+        # Schema 2 des Update-Systems: unveraenderlicher Artefaktname, abgeleitete Adresse,
+        # eingebetteter Updater 2.0.0. Siehe developer/docs/UPDATE-KONZEPT.md.
+        schemaVersion = 2
+        updateSystem = 'next-update/update-system'
+        publishTool = 'developer/tools/release.py stage'
+        artifactNaming = 'ArenaBridge-<version>.exe (unveraenderlich; nur release.py stage schreibt sie)'
         channel = $Channel
         version = $BuildVersion
         sourceVersion = $sourceVersion

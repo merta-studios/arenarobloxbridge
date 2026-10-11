@@ -24,7 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = ROOT / "app"
 PS1 = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.7.2"
+VERSION = "7.8.0"
 FAILURES: list[str] = []
 
 
@@ -48,7 +48,7 @@ def main() -> int:
     metadata = json.loads((APP_ROOT / "version.json").read_text(encoding="utf-8"))
     check(metadata.get("version") == VERSION, f"version.json matches {VERSION}")
     latest_note = str(metadata.get("notes", [""])[0])
-    check(latest_note.startswith("• 7.7.2") and "PROJEKT ZUERST" in latest_note,
+    check(latest_note.startswith("• 7.8.0") and "PROJEKT ZUERST" in latest_note,
           "the newest release note documents the current project-first update")
     check(any(str(note).startswith("• 7.6.2") and "open_cloud" in str(note)
               for note in metadata.get("notes", [])),

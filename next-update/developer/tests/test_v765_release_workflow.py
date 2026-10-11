@@ -18,7 +18,7 @@ from xml.etree import ElementTree as ET
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = ROOT / "app"
 SOURCE = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.7.2"
+VERSION = "7.8.0"
 FAILURES: list[str] = []
 
 
@@ -56,7 +56,7 @@ def main() -> int:
     metadata = json.loads((APP_ROOT / "version.json").read_text(encoding="utf-8"))
     source_bytes = SOURCE.read_bytes()
     source = source_bytes.decode("utf-8-sig")
-    check(metadata.get("version") == VERSION, "the prepared copy and release metadata agree on 7.7.2")
+    check(metadata.get("version") == VERSION, "the prepared copy and release metadata agree on 7.8.0")
     check(source_bytes.startswith(b"\xef\xbb\xbf") and len(source_bytes) > 2_000_000,
           "next-update/app/ArenaBridge.ps1 is a complete UTF-8-BOM PowerShell bridge source")
     check("function Get-PluginSource {" in source and "function Start-BridgeRuntime {" in source,
@@ -261,27 +261,62 @@ def main() -> int:
     # has activated must instead publish exactly the tested artifact; every other channel
     # stays an empty placeholder. The deep gates live in test_v800_update_manifest.py.
     channels_root = ROOT / "update-system" / "channels"
+    schema = json.loads((channels_root / "manifest.schema.json").read_text(encoding="utf-8"))
+    import jsonschema  # type: ignore
+    validator = jsonschema.Draft202012Validator(schema)
     for channel in ("beta", "stable"):
         manifest = json.loads((channels_root / f"{channel}.json").read_text(encoding="utf-8"))
         artifact = manifest.get("artifact", {})
-        check(manifest.get("channel") == channel and artifact.get("fileName") == "ArenaBridge.exe",
-              f"{channel} manifest names its channel and the fixed artifact file")
+        check(manifest.get("channel") == channel and manifest.get("schemaVersion") == 2
+              and manifest.get("testFixture") is False,
+              f"{channel} manifest names its channel, uses schema 2 and is no test fixture")
         if manifest.get("enabled"):
-            check(channel == "stable",
-                  f"{channel} manifest: the 7.7.0 release activates stable only, beta stays off")
+            check(channel == "stable", f"{channel} manifest: only stable may be activated")
+            version = str(manifest.get("version", ""))
+            check(artifact.get("fileName") == f"ArenaBridge-{version}.exe",
+                  f"{channel} manifest: published artifact is the immutable ArenaBridge-<Version>.exe")
             sha = str(artifact.get("sha256", "") or "")
             check(re.fullmatch(r"[0-9a-fA-F]{64}", sha) is not None
                   and isinstance(artifact.get("sizeBytes"), int) and artifact.get("sizeBytes", 0) > 0
-                  and str(artifact.get("url", "")).startswith("https://raw.githubusercontent.com/"),
+                  and str(artifact.get("url", "")).startswith(
+                      "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/main/next-update/release/"),
                   f"{channel} manifest publishes complete https-only artifact coordinates")
             continue
         check(manifest.get("enabled") is False, f"{channel} manifest is an explicitly disabled placeholder")
-        check(not artifact.get("url") and not artifact.get("sha256") and artifact.get("sizeBytes") == 0,
+        check(artifact.get("fileName") == "ArenaBridge.exe"
+              and not artifact.get("url") and not artifact.get("sha256") and artifact.get("sizeBytes") == 0,
               f"{channel} manifest contains no unpublished artifact coordinates")
-    schema = json.loads((channels_root / "manifest.schema.json").read_text(encoding="utf-8"))
-    check(schema.get("properties", {}).get("channel", {}).get("enum") == ["beta", "stable"]
-          and schema.get("properties", {}).get("artifact", {}).get("properties", {}).get("fileName", {}).get("const") == "ArenaBridge.exe",
-          "channel schema constrains channel and artifact identity")
+        check(str(manifest.get("version", "")) == "" and str(manifest.get("publishedAtUtc", "")) == "",
+              f"{channel} manifest leaves version and timestamp empty while disabled")
+
+    # Der Artefaktname wird nicht mehr per const erzwungen, sondern ueber den
+    # aktivierten Zweig des Schemas (abgeleiteter, unveraenderlicher Name).
+    # Das wird hier verhaltensbasiert gegen das echte Schema geprueft.
+    version = "9.9.9"
+    good = {
+        "schemaVersion": 2, "channel": "stable", "enabled": True, "testFixture": False,
+        "sequence": 2, "version": version, "publishedAtUtc": "2026-10-11T06:30:00Z",
+        "minimumUpdaterVersion": "2.0.0",
+        "artifact": {
+            "fileName": f"ArenaBridge-{version}.exe",
+            "url": "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/main/"
+                   f"next-update/release/ArenaBridge-{version}.exe",
+            "sha256": "0" * 64, "sizeBytes": 1234567,
+        },
+        "notes": ["Testnotiz"],
+    }
+    check(not list(validator.iter_errors(good)),
+          "channel schema accepts an activated manifest with the derived immutable artifact name")
+    for name, mutate in (
+        ("the old shared file name ArenaBridge.exe", lambda d: d["artifact"].__setitem__("fileName", "ArenaBridge.exe")),
+        ("missing artifact coordinates", lambda d: d["artifact"].pop("sha256")),
+        ("an unversioned artifact url", lambda d: d["artifact"].__setitem__("url", "https://example.invalid/x.exe")),
+        ("zero sequence", lambda d: d.__setitem__("sequence", 0)),
+        ("a mandatory field (forced updates are not supported)", lambda d: d.__setitem__("mandatory", False)),
+    ):
+        mutant = json.loads(json.dumps(good))
+        mutate(mutant)
+        check(bool(list(validator.iter_errors(mutant))), f"channel schema rejects {name}")
 
     # Future updater is a standalone handoff artifact. It validates host,
     # version, size and SHA-256, waits rather than killing the process, stages,
@@ -301,8 +336,9 @@ def main() -> int:
                    "-UpdateStatus update-erfolgreich", "Test-WindowsX64Executable", "Enter-UpdateLock",
                    "Remove-OldFiles", "IsDefaultPort", "minimumUpdaterVersion", "update-state.json",
                    "update-status.json", "update-fehler", "kein-update", "0x8664",
-                   "$script:UpdaterVersion = '1.1.0'", "objects.githubusercontent.com"):
-        check(marker in updater, f"v1.1.0 updater keeps its safety/staging contract: {marker}")
+                   "$script:UpdaterVersion = '2.0.0'", "objects.githubusercontent.com",
+                   "minimumUpdaterVersion"):
+        check(marker in updater, f"Updater 2.0.0 keeps its safety/staging contract: {marker}")
     check("Invoke-WebRequest" not in updater,
           "updater streams and validates redirects instead of following unchecked web requests")
     check("Stop-Process" not in updater and "taskkill" not in updater and ".Kill(" not in updater,
@@ -351,11 +387,12 @@ def main() -> int:
     update_readme = (ROOT / "update-system" / "README.md").read_text(encoding="utf-8")
     update_readme_plain = re.sub(r"\s+", " ", re.sub(r"[*`]", "", update_readme))
     check("Update-Bridge.ps1" in update_readme
-          and "Windows-Ergebnisse stammen aus der Aussage des Nutzers" in update_readme_plain
-          and "erhalten dieses System nicht automatisch" in update_readme_plain
+          and "Windows-Ergebnisse" in update_readme_plain
+          and "Aussage des Nutzers" in update_readme_plain
+          and "bekommen dieses System nicht automatisch" in update_readme_plain
           and "release/ArenaBridge.exe" in update_readme
-          and "enabled: false" in update_readme
-          and "Letzte veröffentlichte Version: 7.7.0" in update_readme_plain
+          and "enabled: false" in update_readme_plain
+          and re.search(r"Letzte veröffentlichte Version: (keine|\d+\.\d+\.\d+)", update_readme_plain) is not None
           and "raw.githubusercontent.com" in update_readme_plain,
           "update-system README states the honest release status: Windows runs taken from the "
           "user report, no automatic reach of installs without an updater, live version, raw cache hint")

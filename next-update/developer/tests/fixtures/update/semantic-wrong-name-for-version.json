@@ -8,8 +8,8 @@
   "publishedAtUtc": "2026-10-10T12:00:00Z",
   "minimumUpdaterVersion": "2.0.0",
   "artifact": {
-    "fileName": "ArenaBridge-7.7.1.exe",
-    "url": "http://127.0.0.1:18080/ArenaBridge-7.7.1.exe",
+    "fileName": "ArenaBridge-7.7.0.exe",
+    "url": "http://127.0.0.1:18080/ArenaBridge-7.7.0.exe",
     "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "sizeBytes": 4096
   },

@@ -1,15 +1,15 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "channel": "beta",
   "enabled": true,
   "testFixture": false,
+  "sequence": 4,
   "version": "7.7.1",
   "publishedAtUtc": "2026-10-10T12:00:00Z",
-  "minimumUpdaterVersion": "1.1.0",
-  "mandatory": false,
+  "minimumUpdaterVersion": "2.0.0",
   "artifact": {
-    "fileName": "ArenaBridge.exe",
-    "url": "http://raw.githubusercontent.com/merta-studios/arenarobloxbridge/main/next-update/release/ArenaBridge.exe",
+    "fileName": "ArenaBridge-7.7.1.exe",
+    "url": "http://raw.githubusercontent.com/merta-studios/arenarobloxbridge/main/next-update/release/ArenaBridge-7.7.1.exe",
     "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "sizeBytes": 4096
   },
