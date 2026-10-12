@@ -1,27 +1,27 @@
 #!/usr/bin/env python3
-"""Offline-Abnahme fuer den Blender-/Mesh-Weg, fortgeschrieben auf 7.5.0.
+"""Offline-Abnahme für den Blender-/Mesh-Weg, fortgeschrieben auf 7.5.0.
 
 Der 7.4.x-Teil bleibt als Bestandsabnahme erhalten (Schritt 4, Runner, BOM,
 Messung, Register, Lua-Werkzeuge, Gates). Ab 7.5.0 ist EINES anders und hier
-mitgeprueft: DAS MESH-FENSTER IST ENTFERNT. Der Upload laeuft ueber die
+mitgeprüft: DAS MESH-FENSTER IST ENTFERNT. Der Upload läuft über die
 Roblox-Open-Cloud-API und das Werkzeug upload_asset (eigene Abnahme in
 test_v750_cloud.py).
 
-Geprueft wird, was ohne laufende Bridge pruefbar ist:
+Geprüft wird, was ohne laufende Bridge prüfbar ist:
 
-* Schritt 4 des Starts liegt VOR dem Tunnel, hat ein Zeitlimit, laesst den
-  Start NIE haengen und deaktiviert bei einem Fehlschlag nur den Mesh-Bau.
-* Die neuen Werkzeuge existieren als Schema (Tool-Doku = Argumentpruefung) und
+* Schritt 4 des Starts liegt VOR dem Tunnel, hat ein Zeitlimit, lässt den
+  Start NIE hängen und deaktiviert bei einem Fehlschlag nur den Mesh-Bau.
+* Die neuen Werkzeuge existieren als Schema (Tool-Doku = Argumentprüfung) und
   die Server-Werkzeuge sind im Handler verdrahtet.
-* Blender-Skripte werden vor dem Start geprueft (Sperrliste), das OBJ wird von
-  der Bridge gemessen (Dreiecke, Groesse, Dateigroesse, Limit).
-* Der Plugin-Teil setzt Geometrie ausschliesslich ueber
+* Blender-Skripte werden vor dem Start geprüft (Sperrliste), das OBJ wird von
+  der Bridge gemessen (Dreiecke, Größe, Dateigröße, Limit).
+* Der Plugin-Teil setzt Geometrie ausschließlich über
   InsertService:CreateMeshPartAsync + MeshPart:ApplyMesh - niemals per
-  MeshPart.MeshId - und markiert/loescht ArenaPlaceholder korrekt.
+  MeshPart.MeshId - und markiert/löscht ArenaPlaceholder korrekt.
 * model_audit trennt Mesh-Platzhalter von anderen Messwerten. report_done
   bleibt nur bei einem tatsächlich erzeugten, noch nicht angewandten Mesh-Slot offen.
 * Seit 7.5.0: das Fenster "Mesh-Uploads" ist WEG (alle 13 Funktionen, die
-  Fenster-Zustandsvariablen und die Auto-Oeffnen-Logik sind geloescht). Der
+  Fenster-Zustandsvariablen und die Auto-Öffnen-Logik sind gelöscht). Der
   UI-Takt pflegt weiter die Mesh-Zeilen und Platzhalter, der Upload selbst ist
   ein Werkzeugaufruf (upload_asset), kein Menschenschritt.
 """
@@ -51,7 +51,7 @@ FAILURES: list[str] = []
 
 
 def check(condition: bool, message: str) -> None:
-    print(("[GRUEN] " if condition else "[ROT]   ") + message)
+    print(("[GRÜN] " if condition else "[ROT]   ") + message)
     if not condition:
         FAILURES.append(message)
 
@@ -64,7 +64,7 @@ def region(source: str, start: str, end: str) -> str:
 
 def main() -> int:
     raw = PS1.read_bytes()
-    check(raw.startswith(b"\xef\xbb\xbf"), "ArenaBridge.ps1 behaelt die UTF-8-BOM")
+    check(raw.startswith(b"\xef\xbb\xbf"), "ArenaBridge.ps1 behält die UTF-8-BOM")
     source = raw.decode("utf-8-sig").replace("__ARENA_BUILD_VERSION__", _shipped_build_version())
     metadata = json.loads((APP_ROOT / "version.json").read_text(encoding="utf-8"))
     notes = "\n".join(str(note) for note in metadata.get("notes", []))
@@ -109,12 +109,12 @@ def main() -> int:
     check("Start-BlenderStartupGate" in runtime and "Start-CloudflareTunnel" in runtime,
           "Start-BridgeRuntime ruft den Blender-Schritt und den Tunnel auf")
     check(runtime.index("Start-BlenderStartupGate") < runtime.index("Start-CloudflareTunnel"),
-          "Schritt 4 laeuft VOR dem Tunnelstart")
+          "Schritt 4 läuft VOR dem Tunnelstart")
     check("if ($blenderReady) { Start-CloudflareTunnel }" in runtime,
           "der Tunnel startet nur, wenn der Blender-Schritt fertig ist")
     tunnel = region(source, "function Start-CloudflareTunnel {", "function Restart-CloudflareTunnel {")
     check(tunnel.index("if ($script:BlenderGatePending)") < tunnel.index("Get-CloudflaredPath"),
-          "kein Tunnelstart (auch nicht aus der Selbstheilung), solange Schritt 4 laeuft")
+          "kein Tunnelstart (auch nicht aus der Selbstheilung), solange Schritt 4 läuft")
     gate = region(source, "function Start-BlenderStartupGate {", "function Complete-BlenderStartupGate {")
     check("$script:BlenderGatePending = $true" in gate and "AddMinutes(12)" in gate,
           "der Blender-Schritt hat ein hartes Gesamt-Gate (12 min) und setzt den Warte-Zustand")
@@ -122,11 +122,11 @@ def main() -> int:
           "Suche + Version + Probe starten in EINEM Hintergrund-Runspace (kein Einfrieren)")
     complete = region(source, "function Complete-BlenderStartupGate {", "function Update-BlenderSplashRow {")
     check("Start-CloudflareTunnel" in complete and "$script:BlenderGatePending = $false" in complete,
-          "der UI-Takt loest den Tunnel nach dem Schritt aus")
+          "der UI-Takt löst den Tunnel nach dem Schritt aus")
     refresh = region(source, "function Refresh-Ui {", "$line = $null")
     check("Complete-BlenderStartupGate" in refresh and "Update-BlenderSplashRow $null" in refresh
           and "Update-MeshTick" in refresh,
-          "Refresh-Ui fuehrt Gate, Splash-Zeile und Mesh-Takt aus")
+          "Refresh-Ui führt Gate, Splash-Zeile und Mesh-Takt aus")
     splash = region(source, "function Update-BlenderSplashRow {",
                     "# ============================================================================\n# Version 7.4.0: MESH-BAU")
     for mode in ("'ready'", "'failed'", "'skipped'", "'installing'", "'searching'", "'probing'"):
@@ -136,14 +136,14 @@ def main() -> int:
     click = region(source, "$SplashBlenderState = $window.FindName('SplashBlenderState')",
                    "$SplashTunnelDot    = $window.FindName('SplashTunnelDot')")
     check("Add_MouseLeftButtonUp" in click and "Start-BlenderRecheck" in click,
-          '"Blender pruefen" (Zeile 4) startet die Pruefung neu')
+          '"Blender prüfen" (Zeile 4) startet die Prüfung neu')
     recheck = region(source, "    function Start-BlenderRecheck {", "    function Get-BlenderReport {")
     check("Start-BlenderStepRunspace" in recheck and "Install-BlenderPortableZip" not in recheck,
-          '"Blender pruefen" startet denselben Runspace (echte Probe, kein reines Versionslesen)')
+          '"Blender prüfen" startet denselben Runspace (echte Probe, kein reines Versionslesen)')
     check("'searching'" in recheck and "return $false" in recheck,
-          "eine laufende Pruefung wird nicht doppelt gestartet")
+          "eine laufende Prüfung wird nicht doppelt gestartet")
 
-    # EINE Hilfs-Quelle fuer Hauptprogramm UND Runspaces (7.4.0 hatte im
+    # EINE Hilfs-Quelle für Hauptprogramm UND Runspaces (7.4.0 hatte im
     # Runspace Phantom-Funktionen - die Probe scheiterte lautlos).
     tools = region(source, "$script:BridgeBlenderTools = {",
                    "try { . ([scriptblock]::Create([string]$script:BridgeBlenderTools)) }")
@@ -151,15 +151,15 @@ def main() -> int:
                    "Invoke-BlenderProcess", "Test-BlenderQuick", "Get-BlenderDownloadCandidates",
                    "Test-BlenderZipHash", "Install-BlenderPortableZip", "Get-BlenderReport",
                    "Start-BlenderStepRunspace", "Start-BlenderRecheck"):
-        check(f"function {helper}" in tools, f"die eine Hilfs-Quelle enthaelt {helper}")
+        check(f"function {helper}" in tools, f"die eine Hilfs-Quelle enthält {helper}")
     check(". ([scriptblock]::Create([string]$script:BridgeBlenderTools))" in source,
-          "das Hauptprogramm laedt genau diese Quelle")
+          "das Hauptprogramm lädt genau diese Quelle")
     check("BlenderToolsText = [string]$script:BridgeBlenderTools" in source,
-          "die Quelle liegt in Shared fuer die Runspaces bereit")
+          "die Quelle liegt in Shared für die Runspaces bereit")
     step = region(source, "$script:BridgeBlenderStepScript = {", "$script:BridgeBlenderProbeScript = {")
-    check("BlenderToolsText" in step, "der Schritt-Runspace laedt genau diese Quelle (keine Phantom-Funktionen)")
-    check("BlenderProbeScriptText" in step, "der Schritt-Runspace faehrt die EINE Probe")
-    check("TotalSeconds -gt 180" in step, "Zeitlimit Suchen/Pruefen: 180 s")
+    check("BlenderToolsText" in step, "der Schritt-Runspace lädt genau diese Quelle (keine Phantom-Funktionen)")
+    check("BlenderProbeScriptText" in step, "der Schritt-Runspace fährt die EINE Probe")
+    check("TotalSeconds -gt 180" in step, "Zeitlimit Suchen/Prüfen: 180 s")
     check("-State 'probing'" in step and "Install-BlenderPortableZip" in step,
           "auch der Installationsweg endet in der echten Probe")
     check("-State 'ready'" not in step and "portable" in step.lower(),
@@ -169,17 +169,17 @@ def main() -> int:
     probe = region(source, "$script:BridgeBlenderProbeScript = {",
                    "# ----------------------------------------------------------------------------\n# Der Mesh-Job-Worker")
     check("ARENA_MESH_STATS" in probe and "$marker.Length -ne 17" in probe,
-          "die Probe prueft die Markerlaenge EXAKT (kein Zeichenversatz)")
+          "die Probe prüft die Markerlänge EXAKT (kein Zeichenversatz)")
     check("$markerIndex + $marker.Length" in probe and "$markerIndex + 18" not in source,
           "die Messzeile wird exakt hinter dem Marker gelesen")
     check("Write-BridgeBomFreeFile" in probe and "Write-BridgeLog" in probe,
           "die Probe schreibt BOM-frei UND protokolliert selbst in die runtime.log")
     check("$null -eq $stats" in probe and "-Probe 'failed'" in probe,
-          "eine unlesbare Messzeile faellt GESCHLOSSEN durch (kein falscher Erfolg)")
+          "eine unlesbare Messzeile fällt GESCHLOSSEN durch (kein falscher Erfolg)")
     check(source.count("-State 'ready'") == 1 and "-State 'ready'" in probe,
-          "ready setzt AUSSCHLIESSLICH die bestandene Faehigkeitsprobe")
+          "ready setzt AUSSCHLIESSLICH die bestandene Fähigkeitsprobe")
     dead = [ln for ln in source.splitlines() if "Test-BlenderCapability" in ln and not ln.strip().startswith("#")]
-    check(not dead, "die tote zweite Probe ist geloescht (0 Aufrufer)")
+    check(not dead, "die tote zweite Probe ist gelöscht (0 Aufrufer)")
     check("BridgeBlenderInstallScript" not in source,
           "der alte Installer-Runspace ist im Schritt-Runspace aufgegangen")
 
@@ -189,9 +189,9 @@ def main() -> int:
           "blender-status.json wird aus EINER Funktion BOM-frei geschrieben (auch aus Runspaces)")
     for field in ("state", "path", "version", "detail", "message", "percent", "source",
                   "enabled", "gateResolved", "probe"):
-        check(field in state_fn, f"der Zustandsbericht enthaelt {field}")
+        check(field in state_fn, f"der Zustandsbericht enthält {field}")
     check("GateResolved $true" in source and "GateResolved $false" in source,
-          "der Gate-Endstand wird ausdruecklich gesetzt (ready/failed zuerst)")
+          "der Gate-Endstand wird ausdrücklich gesetzt (ready/failed zuerst)")
     failed_paths = probe.count("-State 'failed'")
     check(failed_paths >= 4, "jeder Fehlerweg der Probe endet ehrlich als failed (kein stiller Ausgang)")
     check("$state.Foreground = Get-Brush '#FF8AA0'" in splash,
@@ -202,7 +202,7 @@ def main() -> int:
     #     defined" bei allen drei Exportwegen, Exit 1, probe="failed"):
     #     Der Runner importierte bpy NUR innerhalb von main() - das ist
     #     eine LOKALE Variable, arena_export() sah kein bpy. Jetzt steht
-    #     der Import auf Modulebene; derselbe Text laeuft in der Probe
+    #     der Import auf Modulebene; derselbe Text läuft in der Probe
     #     UND in jedem echten Mesh-Job.
     # ------------------------------------------------------------------
     runner_begin = source.index("$script:MeshRunnerTemplate = @'\n")
@@ -215,16 +215,16 @@ def main() -> int:
                 if ln != "import bpy" and ln.lstrip().startswith("import bpy")]
     check(len(module_level) == 1 and not indented,
           "import bpy steht GENAU einmal im Runner: auf Modulebene, KEIN "
-          "eingerueckter Import in einer Funktion (der 7.4.1-Fehler)")
+          "eingerückter Import in einer Funktion (der 7.4.1-Fehler)")
     check(runner.index("import bpy") < runner.index("def arena_export"),
           "import bpy steht auf Modulebene VOR arena_export")
     check("def main()" in runner
           and runner.index("def main()") < runner.index("bpy.ops.wm.read_factory_settings(use_empty=True)"),
           "die leere Szene wird weiterhin in main() gesetzt - VOR dem Laden des Nutzer-Skripts")
 
-    # Mini-Ausfuehrung: der Runner wird mit einem gestubbten bpy-Modul
-    # WIRKLICH ausgefuehrt (Szene -> Slot-Skript -> Export -> Messung ->
-    # Markerzeile). Haette es diesen Test in 7.4.1 gegeben, waere der
+    # Mini-Ausführung: der Runner wird mit einem gestubbten bpy-Modul
+    # WIRKLICH ausgeführt (Szene -> Slot-Skript -> Export -> Messung ->
+    # Markerzeile). Hätte es diesen Test in 7.4.1 gegeben, wäre der
     # NameError sofort aufgefallen.
     calls = []
 
@@ -296,18 +296,18 @@ def main() -> int:
     for tool in ("blender_status", "build_mesh_model", "mesh_status", "mesh_cancel",
                  "mesh_apply_asset", "mesh_slots", "mesh_apply"):
         check(f"name = '{tool}'" in mesh_docs,
-              f"Werkzeug {tool} ist in der MESH-Sektion dokumentiert (Doku = Argumentpruefung)")
+              f"Werkzeug {tool} ist in der MESH-Sektion dokumentiert (Doku = Argumentprüfung)")
     check("slots = @{ type = 'array'; required = $true" in mesh_docs,
           "build_mesh_model verlangt slots (Schema)")
     switch = region(source, "    function Invoke-ServerTool($sessionId, [string]$tool, $toolArgs) {", "            'get_docs' {")
     for tool in ("blender_status", "build_mesh_model", "mesh_status", "mesh_cancel", "mesh_apply_asset"):
         check(f"'{tool}'" in switch, f"{tool} wird im Handler beantwortet (kein Studio-Befehl)")
     mesh_tool = region(source, "    function Invoke-MeshServerTool(", "    function Invoke-ServerTool(")
-    check("MeshToolkitText" in mesh_tool, "der Handler laedt den Toolkit-Text (eine Quelle)")
+    check("MeshToolkitText" in mesh_tool, "der Handler lädt den Toolkit-Text (eine Quelle)")
     check("BLENDER_NOT_READY" in mesh_tool and "mesh_apply" in mesh_tool,
           "build_mesh_model meldet fehlendes Blender ehrlich; mesh_apply_asset nutzt den Plugin-Befehl")
     check("Test-MeshScriptSafety" in mesh_tool,
-          "build_mesh_model prueft jedes Skript, bevor Blender startet")
+          "build_mesh_model prüft jedes Skript, bevor Blender startet")
     check("Start-MeshJobWork" in mesh_tool, "build_mesh_model startet den Hintergrund-Job")
 
     # ------------------------------------------------------------------
@@ -316,7 +316,7 @@ def main() -> int:
     safety = region(source, "function Test-MeshScriptSafety {", "function Get-MeshJobData {")
     for token in ("subprocess", "socket", "urllib", "ctypes", "winreg",
                   "bpy.ops.wm.", "export_scene", "__import__", "eval(", "exec("):
-        check(token in safety, f"Sperrliste enthaelt {token}")
+        check(token in safety, f"Sperrliste enthält {token}")
     check("200000" in safety, "Skriptgroesse ist begrenzt")
     stats = region(source, "function Get-MeshObjStats {", "function Test-MeshScriptSafety {")
     for token in ("triangles", "vertices", "bytes", "size", "limit", "overLimit"):
@@ -324,8 +324,8 @@ def main() -> int:
     check("[int]$Limit = 10000" in stats, "Standardgrenze sind 10.000 Dreiecke")
     job = region(source, "function Start-MeshJobWork {", "function Stop-MeshJob {")
     check("Set-MeshSlotField $Shared ([string]$slot.key) 'state' 'rejected'" in source
-          and "hoechstens" in source,
-          "ein Slot ueber der Dreiecksgrenze wird abgelehnt (state rejected)")
+          and "höchstens" in source,
+          "ein Slot über der Dreiecksgrenze wird abgelehnt (state rejected)")
     check("MeshJobScriptText" in job and "BeginInvoke" in job,
           "der Blender-Lauf startet in einem eigenen Runspace (HTTP-Antwort sofort)")
     check("WaitForExit($timeoutSeconds" in source and "Kill()" in source,
@@ -342,23 +342,23 @@ def main() -> int:
           and 'part:SetAttribute("ArenaPlaceholder", true)' in lua,
           "Platzhalter sind eindeutig markiert (Slot, Zustand, Platzhalter-Flag)")
     check("CreateMeshPartAsync" in lua and ":ApplyMesh(created)" in lua,
-          "Geometrie kommt ueber CreateMeshPartAsync + ApplyMesh in die BESTEHENDE Instanz")
+          "Geometrie kommt über CreateMeshPartAsync + ApplyMesh in die BESTEHENDE Instanz")
     check(re.search(r"\.MeshId\s*=\s*[^=]", lua) is None and "MeshContent" not in lua,
-          "MeshId/MeshContent werden NIE direkt geschrieben (schreibgeschuetzt)")
+          "MeshId/MeshContent werden NIE direkt geschrieben (schreibgeschützt)")
     check("local savedSize = target.Size" in lua and "local savedCFrame = target.CFrame" in lua
           and "target:SetAttribute(\"ArenaPlaceholder\", false)" in lua,
-          "Groesse/Position bleiben erhalten, das Platzhalter-Flag wird ehrlich entfernt")
-    check("meshIdReadBack" in lua, "die Antwort nennt die zurueckgelesene MeshId")
+          "Größe/Position bleiben erhalten, das Platzhalter-Flag wird ehrlich entfernt")
+    check("meshIdReadBack" in lua, "die Antwort nennt die zurückgelesene MeshId")
     audit = region(source, "tools.model_audit = function(args)", "tools.world_audit = function(args)")
     check('part:GetAttribute("ArenaMeshSlot")' in audit and "meshSlotCount" in audit
           and "meshSlots" in audit,
           "model_audit meldet Mesh-Platzhalter getrennt")
     check("if isPlaceholder and meshKey == nil then" in audit,
-          "Mesh-Platzhalter werden nicht als vergessene Platzhalter gezaehlt")
+          "Mesh-Platzhalter werden nicht als vergessene Platzhalter gezählt")
     report_start = source.index("            'report_done' {", source.index("function Invoke-ServerTool"))
-    # Der Fall endet mit der schliessenden Klammer auf gleicher Ebene; das
-    # naechste Werkzeug im Handler ist 'clear_pending' (inline, VOR
-    # Invoke-ServerTool) - deshalb hier die naechste 12er-Ebene als Grenze.
+    # Der Fall endet mit der schließenden Klammer auf gleicher Ebene; das
+    # nächste Werkzeug im Handler ist 'clear_pending' (inline, VOR
+    # Invoke-ServerTool) - deshalb hier die nächste 12er-Ebene als Grenze.
     report = source[report_start:report_start + 30000]
     check("MESH_UPLOAD_PENDING" in report and "$meshSlotCount -gt 0" in report,
           "report_done antwortet MESH_UPLOAD_PENDING, solange ein Mesh wartet")
@@ -368,8 +368,8 @@ def main() -> int:
           "Audit-Kennzahlen landen in AuditFlags (report_done liest sie)")
 
     # ------------------------------------------------------------------
-    # 5) 7.5.0: DAS MESH-FENSTER IST ENTFERNT (ausdruecklicher Nutzerwunsch).
-    #    Kein Fenster, kein Menueeintrag, kein automatisches Aufgehen, kein
+    # 5) 7.5.0: DAS MESH-FENSTER IST ENTFERNT (ausdrücklicher Nutzerwunsch).
+    #    Kein Fenster, kein Menüeintrag, kein automatisches Aufgehen, kein
     #    Mesh-Id-Abtippen. Was bleibt: Blender-Bau, gemessene Platzhalter,
     #    mesh_apply_asset / mesh_drop als normale Werkzeuge - und der Upload
     #    als Werkzeugaufruf upload_asset.
@@ -388,17 +388,17 @@ def main() -> int:
     # "Mesh-Uploads" darf nur noch im Changelog und in dem Satz vorkommen, der
     # dem Agenten sagt, dass das Fenster WEG ist - nirgends als sichtbarer Text.
     mentions = [line.strip() for line in source.splitlines() if "Mesh-Uploads" in line]
-    check(len(mentions) <= 3, f'"Mesh-Uploads" steht hoechstens dreimal in der Datei ({len(mentions)})')
+    check(len(mentions) <= 3, f'"Mesh-Uploads" steht höchstens dreimal in der Datei ({len(mentions)})')
     for line in mentions:
         stripped = line.lstrip()
         check(stripped.startswith("#") or "entfernt" in line or "WEG" in line,
-              'jede Erwaehnung ist Changelog oder sagt, dass das Fenster entfernt ist')
+              'jede Erwähnung ist Changelog oder sagt, dass das Fenster entfernt ist')
     check("$meshItem" not in source and "Mesh-Uploads (Blender)" not in source,
-          "die Place-Liste hat KEINEN Mesh-Menueeintrag mehr")
+          "die Place-Liste hat KEINEN Mesh-Menüeintrag mehr")
     refresh = region(source, "function Refresh-Ui {", "$line = $null")
     check("Update-MeshTick" in refresh, "der UI-Takt pflegt die Mesh-Zeilen weiter")
     check("Update-MeshWindow" not in refresh and "Update-MeshAutoWindow" not in refresh,
-          "der UI-Takt oeffnet/aktualisiert KEIN Mesh-Fenster mehr")
+          "der UI-Takt öffnet/aktualisiert KEIN Mesh-Fenster mehr")
     check("upload_asset" in source, "upload_asset existiert als Upload-Werkzeug")
     tick_end = source.index("# Version 7.5.0: KEIN Mesh-Fenster mehr")
     tick = source[source.index("function Update-MeshTick {"):tick_end]
@@ -406,17 +406,17 @@ def main() -> int:
           "der UI-Takt legt Platzhalter an und verbucht die Einsetz-Ergebnisse")
     check("'drop:'" in tick and "Update-MeshRegistryFromDropResult" in tick,
           "der UI-Takt verbucht auch die Stornieren-Ergebnisse (done/error)")
-    check("Remove-MeshAppliedFileSets" in tick and "Eingesetzte Mesh-Dateien geloescht" in tick,
-          'nach einem Einsetzen raeumt der Takt Dateien auf und protokolliert das wortgleich')
+    check("Remove-MeshAppliedFileSets" in tick and "Eingesetzte Mesh-Dateien gelöscht" in tick,
+          'nach einem Einsetzen räumt der Takt Dateien auf und protokolliert das wortgleich')
     check("apply_failed" in tick and "drop_failed" in tick,
-          "Fehlschlaege werden ehrlich als apply_failed/drop_failed gesetzt")
+          "Fehlschläge werden ehrlich als apply_failed/drop_failed gesetzt")
     check("Mesh-Slot storniert" in tick, 'das Stornieren wird als "Mesh-Slot storniert" protokolliert')
     check("Write-RuntimeLog" in tick, "der Takt protokolliert Einsetzen/Stornieren (kein Fenster mehr)")
     cleanup = region(source, "function Remove-MeshSlotFiles {", "function Remove-MeshAppliedFileSets {")
     check("MeshRegistry.TryRemove" in cleanup and "Remove-Item -LiteralPath $folder -Recurse" in cleanup,
-          "aufraeumen: Slot + Dateien; der Job-Ordner nur, wenn nichts mehr wartet")
+          "aufräumen: Slot + Dateien; der Job-Ordner nur, wenn nichts mehr wartet")
     check("'obj', 'applying', 'dropping'" in cleanup,
-          "der Ordner bleibt stehen, solange noch ein Slot wartet (weniger Datenmuell, kein Verlust)")
+          "der Ordner bleibt stehen, solange noch ein Slot wartet (weniger Datenmüll, kein Verlust)")
     check("MeshSlotsBySession" in source and "placeholder" in source.lower(),
           "Register/Platzhalter bleiben die Quelle (nichts wird behauptet)")
 
@@ -425,11 +425,11 @@ def main() -> int:
     # ------------------------------------------------------------------
     lua_drop = region(source, "tools.mesh_drop = function(args)", "tools.get_output = function(args)")
     check('inst:IsA("MeshPart") and inst:GetAttribute("ArenaMeshSlot") == key' in lua_drop,
-          "mesh_drop loescht genau die MeshParts mit ArenaMeshSlot = key")
+          "mesh_drop löscht genau die MeshParts mit ArenaMeshSlot = key")
     check("inst:Destroy()" in lua_drop and "hadAppliedMesh" in lua_drop,
           "mesh_drop entfernt die Instanz und meldet, ob schon ein Mesh eingesetzt war")
     check("NICHT wiederhergestellt" in lua_drop,
-          "mesh_drop sagt im note ehrlich, dass ein eingesetztes Mesh nicht zurueckkommt")
+          "mesh_drop sagt im note ehrlich, dass ein eingesetztes Mesh nicht zurückkommt")
     check("mesh_drop = true" in region(source, "local PERSISTENT_WRITE_TOOLS = {", "local WRITE_TOOLS = {}"),
           "mesh_drop ist in PERSISTENT_WRITE_TOOLS registriert (Testmodus-Schutz)")
     check("'mesh_drop'" in region(source, "    function Get-ActivityToolSets {", "    function Get-ArenaActivityText"),
@@ -437,10 +437,10 @@ def main() -> int:
     check("name = 'mesh_drop'" in region(source, "# ---------------- MESH / BLENDER", "# ---------------- JOBS ----------------"),
           "mesh_drop hat einen Doku-Eintrag (Kategorie mesh)")
     check("mesh_drop = 'Hat die angeforderten Mesh-Platzhalter aus dem Place entfernt." in source,
-          "mesh_drop hat einen Aktivitaetstext fuer die Place-Zeile")
+          "mesh_drop hat einen Aktivitätstext für die Place-Zeile")
 
     if FAILURES:
-        print(f"\nFEHLGESCHLAGEN: {len(FAILURES)} Pruefung(en) rot.")
+        print(f"\nFEHLGESCHLAGEN: {len(FAILURES)} Prüfung(en) rot.")
         return 1
     print("\nOK: Blender-/Mesh-Weg bestanden (Schritt 4, Runner, Messung, Platzhalter, Gates; Mesh-Fenster entfernt, Upload per Werkzeug).")
     return 0

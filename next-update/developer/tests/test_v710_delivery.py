@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""Verifikationstest fuer Arena Roblox Bridge 7.1.0 (6 Pflicht-Tests).
+"""Verifikationstest für Arena Roblox Bridge 7.1.0 (6 Pflicht-Tests).
 
-Prueft sowohl den echten Quellcode in ArenaBridge.ps1 (PowerShell + eingebettetes
+Prüft sowohl den echten Quellcode in ArenaBridge.ps1 (PowerShell + eingebettetes
 Luau-Plugin) als auch das Laufzeitverhalten im Zustell-Simulator und (sofern
 vorhanden) in der echten Luau-VM (@luau-rs/luau):
 
   Test 1: BindReason-Regressionstest (Get-PlaceIdentity / Save-PlaceIdentity /
           gedrosseltes Vorschau-Fehlerlog in Update-Row).
   Test 2: COMMAND_DELIVERY_UNCONFIRMED-Reproduktion und Heilung (To-Json ohne
-          Array-Unrolling fuer 0/1 Elemente, Ack-vor-Enqueue + Ack-Outbox im
-          Plugin, Re-Delivery unbestaetigter Befehle bis unackedCount=3).
+          Array-Unrolling für 0/1 Elemente, Ack-vor-Enqueue + Ack-Outbox im
+          Plugin, Re-Delivery unbestätigter Befehle bis unackedCount=3).
   Test 3: Verlust von received_batch UND started, aber /plugin/result kommt an
           (Selbstheilung in Complete-CommandResult + Chunk-Fortschritt).
   Test 4: Kaputter Befehl im Plugin (enqueueCommand ohne stilles return bei
@@ -18,8 +18,8 @@ vorhanden) in der echten Luau-VM (@luau-rs/luau):
           + 30 s mit lastPollError/lastPluginError/lastAckAt + klarer deutscher
           Verlaufskarte).
   Test 6: Sequenztest mit 20 Befehlen hintereinander unter Stoerfeuer (jeder 3.
-          received_batch-POST und jeder 5. started-POST schlaegt fehl, jeder 7.
-          erste Poll geht verloren -> alle 20 Befehle ok=true, 0 Abbrueche).
+          received_batch-POST und jeder 5. started-POST schlägt fehl, jeder 7.
+          erste Poll geht verloren -> alle 20 Befehle ok=true, 0 Abbrüche).
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ def extract_ps_function(source: str, name: str) -> str:
     assert match is not None, f"PowerShell-Funktion {name} nicht gefunden"
     start = match.start()
     brace_open = source.find("{", match.end())
-    assert brace_open >= 0, f"Keine oeffnende Klammer fuer {name}"
+    assert brace_open >= 0, f"Keine öffnende Klammer für {name}"
     depth = 0
     for idx in range(brace_open, len(source)):
         ch = source[idx]
@@ -95,7 +95,7 @@ def test_1_bind_reason_and_preview_throttle(source: str) -> None:
         "Test 1 FEHLGESCHLAGEN: BindReason fehlt im [pscustomobject] von Get-PlaceIdentity"
     )
     assert "Write-PreviewCaptureError" in update_row_fn and "function Write-PreviewCaptureError" in source, (
-        "Test 1 FEHLGESCHLAGEN: Update-Row drosselt Vorschau-Aufnahmefehler nicht ueber Write-PreviewCaptureError"
+        "Test 1 FEHLGESCHLAGEN: Update-Row drosselt Vorschau-Aufnahmefehler nicht über Write-PreviewCaptureError"
     )
 
 
@@ -107,7 +107,7 @@ def test_2_command_delivery_unconfirmed_repro_and_healing(source: str, lua: str)
     cancel_ids_fn = extract_ps_function(source, "Get-SessionCancellationIds")
 
     # 1) To-Json darf 0- und 1-elementige Arrays in PowerShell 5.1 nicht durch
-    #    die Pipeline entrollen (sonst wird @() zu $null -> ungueltiges JSON
+    #    die Pipeline entrollen (sonst wird @() zu $null -> ungültiges JSON
     #    "cancelledCommands":, und @("id") zu einem String statt Array!).
     assert "$obj.Count -eq 0" in to_json_fn and "'[]'" in to_json_fn, (
         "Test 2 FEHLGESCHLAGEN: To-Json behandelt leere Arrays (@()) nicht explizit als '[]'"
@@ -120,12 +120,12 @@ def test_2_command_delivery_unconfirmed_repro_and_healing(source: str, lua: str)
     # ein 1-elementiges Array (das leere Array als Element) -> "$cancelledNow.Count
     # -gt 0" war in /plugin/poll immer wahr und die Schleife brach vor dem
     # Dequeue ab (live: kein einziger Befehl erreichte Studio). Die Funktion
-    # liefert jetzt FLACH; die 0/1-Element-Faelle regelt To-Json.
+    # liefert jetzt FLACH; die 0/1-Element-Fälle regelt To-Json.
     assert "return , $items.ToArray()" not in cancel_ids_fn, (
         "Test 2 FEHLGESCHLAGEN: Get-SessionCancellationIds nutzt wieder den Komma-Operator (7.1.0-Regression: Poll liefert nie Befehle)"
     )
     assert "return $items.ToArray()" in cancel_ids_fn, (
-        "Test 2 FEHLGESCHLAGEN: Get-SessionCancellationIds gibt kein flaches Array zurueck"
+        "Test 2 FEHLGESCHLAGEN: Get-SessionCancellationIds gibt kein flaches Array zurück"
     )
 
     # 2) Plugin muss received_batch VOR enqueueCommand senden und eine Ack-Outbox
@@ -142,14 +142,14 @@ def test_2_command_delivery_unconfirmed_repro_and_healing(source: str, lua: str)
         "Test 2 FEHLGESCHLAGEN: received_batch (sendOrQueueAckBatch) wird im Poll NICHT vor enqueueCommand aufgerufen"
     )
 
-    # 3) Bridge muss unbestaetigte 'delivered'-Befehle bei nachfolgenden Polls
+    # 3) Bridge muss unbestätigte 'delivered'-Befehle bei nachfolgenden Polls
     #    erneut zustellen (Re-Delivery mit unackedCount bis 3) und CommandPayloads
     #    vorhalten.
     assert "CommandPayloads" in source and "unackedCount" in source, (
-        "Test 2 FEHLGESCHLAGEN: Bridge haelt CommandPayloads / unackedCount fuer Re-Delivery nicht vor"
+        "Test 2 FEHLGESCHLAGEN: Bridge hält CommandPayloads / unackedCount für Re-Delivery nicht vor"
     )
-    assert "Befehl erneut zugestellt (unbestaetigt " in source, (
-        "Test 2 FEHLGESCHLAGEN: Bridge protokolliert und fuehrt Re-Delivery unbestaetigter Befehle nicht aus"
+    assert "Befehl erneut zugestellt (unbestätigt " in source, (
+        "Test 2 FEHLGESCHLAGEN: Bridge protokolliert und führt Re-Delivery unbestätigter Befehle nicht aus"
     )
 
 
@@ -165,7 +165,7 @@ def test_3_result_self_healing_when_acks_lost(source: str) -> None:
         "Test 3 FEHLGESCHLAGEN: Complete-CommandResult schreibt keinen Lebenszyklus-Eintrag ins runtime.log"
     )
     assert "$Shared.CommandPayloads.TryRemove" in complete_fn, (
-        "Test 3 FEHLGESCHLAGEN: Complete-CommandResult raeumt CommandPayloads nicht auf"
+        "Test 3 FEHLGESCHLAGEN: Complete-CommandResult räumt CommandPayloads nicht auf"
     )
 
 
@@ -182,7 +182,7 @@ def test_4_broken_command_never_silently_dropped(lua: str) -> None:
         "Test 4 FEHLGESCHLAGEN: enqueueCommand beantwortet kaputte Befehle (z. B. ohne tool) nicht sofort mit INVALID_COMMAND"
     )
 
-    # Wenn @luau-rs/luau verfuegbar ist, fuehren wir den echten Lua-Code von
+    # Wenn @luau-rs/luau verfügbar ist, führen wir den echten Lua-Code von
     # sendOrQueueAckBatch, deliverOrQueueResult und enqueueCommand in der Luau-VM aus:
     luau_mod = Path("/home/user/luaumock/node_modules/@luau-rs/luau")
     if luau_mod.exists():
@@ -195,7 +195,7 @@ const begin = ps1.indexOf(marker) + marker.length;
 const end = ps1.indexOf("\n'@\n}", begin);
 const lua = ps1.slice(begin, end);
 
-// 1) Komplettes Plugin muss in Luau fehlerfrei kompilieren und 2) echte Funktionstexte ausfuehren:
+// 1) Komplettes Plugin muss in Luau fehlerfrei kompilieren und 2) echte Funktionstexte ausführen:
 (async () => {
 const vm = await Lua.create();
 vm.compile(lua);
@@ -270,7 +270,7 @@ vm.execute(harness);
 })().catch((e) => { console.error(e); process.exit(1); });
 """
         res = subprocess.run(["node", "-e", js], cwd=ROOT, capture_output=True, text=True)
-        assert res.returncode == 0, f"Test 4 Luau-Ausfuehrung fehlgeschlagen: {res.stderr}"
+        assert res.returncode == 0, f"Test 4 Luau-Ausführung fehlgeschlagen: {res.stderr}"
 
 
 # ---------------------------------------------------------------------------
@@ -285,13 +285,13 @@ def test_5_dead_plugin_honest_failure_with_diagnostics(source: str, lua: str) ->
         "Test 5 FEHLGESCHLAGEN: Plugin sendet lastPollError / lastPluginError / lastAckAt nicht im Executor-Snapshot"
     )
     assert "lastPollError" in abandon_fn and "lastPluginError" in abandon_fn and "pluginDiagnostics" in abandon_fn, (
-        "Test 5 FEHLGESCHLAGEN: Mark-CommandAbandoned enthaelt keine pluginDiagnostics (lastPollError/lastPluginError/lastAckAt)"
+        "Test 5 FEHLGESCHLAGEN: Mark-CommandAbandoned enthält keine pluginDiagnostics (lastPollError/lastPluginError/lastAckAt)"
     )
-    assert "Befehl vom Waechter abgebrochen:" in abandon_fn or "Befehl vom Waechter abgebrochen:" in watchdog_fn, (
+    assert "Befehl vom Wächter abgebrochen:" in abandon_fn or "Befehl vom Wächter abgebrochen:" in watchdog_fn, (
         "Test 5 FEHLGESCHLAGEN: Watchdog-Abbruch wird nicht mit Grund und Plugin-Diagnose in runtime.log protokolliert"
     )
     assert "COMMAND_DELIVERY_UNCONFIRMED" in activity_fn and "Empfang des Befehls" in activity_fn, (
-        "Test 5 FEHLGESCHLAGEN: Complete-ArenaActivity erzeugt keine verstaendliche deutsche Meldung fuer COMMAND_DELIVERY_UNCONFIRMED"
+        "Test 5 FEHLGESCHLAGEN: Complete-ArenaActivity erzeugt keine verständliche deutsche Meldung für COMMAND_DELIVERY_UNCONFIRMED"
     )
 
 
@@ -360,7 +360,7 @@ class SimulatedBridge710:
                 collected.append(item)
 
         if not self.is_710:
-            # 7.0.8-Bug: leeres $cancelledIds erzeugte ungueltiges JSON ("cancelledCommands":,)
+            # 7.0.8-Bug: leeres $cancelledIds erzeugte ungültiges JSON ("cancelledCommands":,)
             if len(self.cancelled_ids) == 0:
                 return None
         if drop_http_response:
@@ -371,7 +371,7 @@ class SimulatedBridge710:
         if phase == "received_batch":
             self.ack_call_index += 1
             if self.ack_call_index % 3 == 0:
-                return False  # Stoerfeuer: jeder 3. received_batch-POST schlaegt fehl
+                return False  # Stoerfeuer: jeder 3. received_batch-POST schlägt fehl
             for cid in command_ids or []:
                 info = self.pending.get(cid)
                 if info and info["status"] in ("queued", "delivered"):
@@ -382,7 +382,7 @@ class SimulatedBridge710:
         if phase == "started":
             self.start_call_index += 1
             if self.start_call_index % 5 == 0:
-                return False  # Stoerfeuer: jeder 5. started-POST schlaegt fehl
+                return False  # Stoerfeuer: jeder 5. started-POST schlägt fehl
             info = self.pending.get(command_id or "")
             if info and info["status"] in ("queued", "delivered", "received"):
                 info["status"] = "started"
@@ -519,7 +519,7 @@ def main() -> int:
     for label, fn in tests:
         try:
             fn()
-            print(f"[GRUEN] {label}")
+            print(f"[GRÜN] {label}")
         except AssertionError as exc:
             print(f"[ROT]   {label}: {exc}")
             failures.append(f"{label}: {exc}")
@@ -527,7 +527,7 @@ def main() -> int:
     if failures:
         print(f"\nFEHLGESCHLAGEN: {len(failures)} von {len(tests)} Tests rot.", file=sys.stderr)
         return 1
-    print(f"\nOK: Alle {len(tests)} Pflicht-Tests fuer Version 7.1.0 sind gruen.")
+    print(f"\nOK: Alle {len(tests)} Pflicht-Tests für Version 7.1.0 sind grün.")
     return 0
 
 

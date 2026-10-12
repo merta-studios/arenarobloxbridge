@@ -73,7 +73,7 @@ def main() -> int:
     check("thumbnail:read" not in permissions and "universe.user-restriction:write" not in permissions,
           "explicitly forbidden permissions are not advertised")
     row = region(source, "function New-CloudPermissionRow {",
-                 "# Tutorial-Schritt 4: die komplette Berechtigungs-Uebersicht fuellen.")
+                 "# Tutorial-Schritt 4: die komplette Berechtigungs-Übersicht füllen.")
     check("Scope: " not in row, "permission rows do not repeat the scope under the title")
 
     window = region(source, "function Show-CloudPermissionsWindow {",
@@ -89,7 +89,7 @@ def main() -> int:
           "the user-facing core-rights warning text is gone")
 
     save_click = region(source, "$cloudSaveButton.Add_Click({",
-                        "# --- Berechtigungen des gespeicherten Schluessels ansehen")
+                        "# --- Berechtigungen des gespeicherten Schlüssels ansehen")
     check("Show-CloudPermissionsWindow -PendingKey $keyText" in save_click
           and "Set-OpenCloudKey" not in save_click,
           "save still does not persist the key until the yes-button")
