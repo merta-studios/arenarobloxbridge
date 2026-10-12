@@ -210,7 +210,7 @@ def main() -> int:
     bat = bat_path.read_text(encoding="ascii")
     build = build_path.read_text(encoding="utf-8-sig")
     for marker in ("builder\\Build-EXE.ps1", "-Channel stable", "BUILD ERFOLGREICH",
-                   "release\\ArenaBridge.exe", "Start-Diagnostic.bat", "START-HIER.txt",
+                   "release\\ArenaRobloxBridge.exe", "Start-Diagnostic.bat", "START-HIER.txt",
                    "app\\assets\\neueslogo.png", "kein Nutzer aktualisiert"):
         check(marker in bat, f"single test-build BAT gives an exact next action/path: {marker}")
     for marker in ("The EXE build must run on Windows", "64-bit Windows",
@@ -221,9 +221,9 @@ def main() -> int:
                    "Invoke-ps2exe @arguments", "iconFile = $IconPath", "STA = $true", "x64 = $true",
                    "noConsole = $NoConsole", "unique title-artwork injection marker",
                    "__ARENA_TITLE_ARTWORK_BASE64__", "__ARENA_PROGRAM_LOGO_BASE64__",
-                   "programLogoWidth -lt 32", "programLogoSha256", "ArenaBridge.exe.sha256",
+                   "programLogoWidth -lt 32", "programLogoSha256", "ArenaRobloxBridge.exe.sha256",
                    "release-metadata.json", "No GitHub upload/release or update-channel manifest",
-                   "next-update/release/ArenaBridge.exe"):
+                   "next-update/release/ArenaRobloxBridge.exe"):
         check(marker in build, f"private EXE build safety/branding step is present: {marker}")
     check("Invoke-ps2exe @arguments" in build and "-InputPath $preparedSourcePath" in build
           and "ArenaBridge.ps1" in build and "ProgramLogoBase64" in build,
@@ -249,7 +249,7 @@ def main() -> int:
           "the obsolete two-tree user-builds/release-inbox layout is removed")
     release_dir = ROOT / "release"
     check(release_dir.is_dir() and (release_dir / "README.txt").is_file()
-          and ((not (release_dir / "ArenaBridge.exe").exists()) or (release_dir / "ArenaBridge.exe").is_file())
+          and ((not (release_dir / "ArenaRobloxBridge.exe").exists()) or (release_dir / "ArenaRobloxBridge.exe").is_file())
           and not (release_dir / "ArenaBridge-Diagnose.exe").exists(),
           "one release/ folder exists, documents the workflow, and has no generated EXE in source")
     ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
@@ -258,7 +258,7 @@ def main() -> int:
     check("/release/ArenaBridge-Diagnose.exe" in ignore_rules
           and "/release/Start-Diagnostic.bat" in ignore_rules
           and "/release/release-metadata.json" in ignore_rules
-          and "/release/ArenaBridge.exe" not in ignore_rules,
+          and "/release/ArenaRobloxBridge.exe" not in ignore_rules,
           "local diagnostics are ignored but the explicitly approved normal EXE can be uploaded")
     check((ROOT / "START-HIER.txt").is_file(), "downloaded next-update folder has a prominent German start guide")
     # Version 7.9.0: Das alte Update-System (Updater, Kanaele, Guard, Release-Gates) ist
@@ -271,7 +271,7 @@ def main() -> int:
     check("Build-EXE.bat" in readme_text and "latest.json" in readme_text and "Pull Request" in readme_text,
           "README beschreibt den einfachen Ablauf (Build, latest.json, Pull Request)")
     start_text = (ROOT / "START-HIER.txt").read_text(encoding="utf-8")
-    check("release\\ArenaBridge.exe" in start_text and "Jetzt installieren" in start_text,
+    check("release\\ArenaRobloxBridge.exe" in start_text and "Jetzt installieren" in start_text,
           "START-HIER erklaert den Test und das Update-Fenster")
     handoff_text = (ROOT / "developer" / "docs" / "GANZ WICHTIG LESEN VOR JEDER BEARBEITUNG").read_text(encoding="utf-8")
     check("NACHTRAG 7.9.1" in handoff_text, "Uebergabe-Dokument hat den Nachtrag 7.9.1 (hat Vorrang)")

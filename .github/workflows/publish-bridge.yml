@@ -1,5 +1,5 @@
 # Veroeffentlicht die Bridge automatisch: Sobald die Datei
-# next-update/release/ArenaBridge.exe auf main geaendert wird, erzeugt dieser
+# next-update/release/ArenaRobloxBridge.exe auf main geaendert wird, erzeugt dieser
 # Workflow next-update/release/latest.json (Version, Groesse, Pruefsumme, Adresse)
 # und schreibt sie zurueck ins Repository. Alle Bridges pruefen dort beim Start.
 #
@@ -12,7 +12,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'next-update/release/ArenaBridge.exe'
+      - 'next-update/release/ArenaRobloxBridge.exe'
   workflow_dispatch:
 
 permissions:

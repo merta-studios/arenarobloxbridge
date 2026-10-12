@@ -1,12 +1,38 @@
 ########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-ÜBERGABE FÜR NEUE SESSIONS              #
-#   (Stand: Version 7.9.2 - 12.10.2026)                                #
+#   (Stand: Version 7.9.3 - 12.10.2026)                                #
 #                                                                      #
 ########################################################################
 
-AKTUELLER NACHTRAG 7.9.2 (12.10.2026) - STICHPUNKT-NOTIZEN, NEUES UPDATE-FENSTER, UMLAUTE, WEICHES ZIEHEN (HAT VORRANG)
-========================================================================================================================
+AKTUELLER NACHTRAG 7.9.3 (12.10.2026) - EXE-NAME ARENAROBLOXBRIDGE.EXE & NETLIFY-DOWNLOAD-WEBSITE (HAT VORRANG)
+================================================================================================================
+
+- NEUER EXE-NAME (`ArenaRobloxBridge.exe`):
+  - `builder/Build-EXE.ps1` und `Build-EXE.bat` bauen die reguläre Programmdatei ab
+    7.9.3 als `next-update/release/ArenaRobloxBridge.exe` (Prüfsumme:
+    `ArenaRobloxBridge.exe.sha256`, Metadaten: `fileName = 'ArenaRobloxBridge.exe'`).
+  - `developer/tools/publish_latest.py` und `.github/workflows/publish-bridge.yml`
+    prüfen und veröffentlichen `next-update/release/ArenaRobloxBridge.exe`.
+  - `app/ArenaBridge.ps1` akzeptiert in `Get-ArenaOwnExePath`, `Get-ArenaUpdateInfo`,
+    `Invoke-ArenaUpdateCleanup` sowie in der Autostart-Prüfung (`Test-BridgeUpdaterExecutable`
+    und `Resolve-BridgeUpdaterExePath`) den Namen `ArenaRobloxBridge.exe` (sowie
+    `ArenaBridge.exe` für das Aufräumen beim Übergang).
+- NETLIFY-DOWNLOAD-WEBSITE (`next-update/website/`):
+  - Enthält `index.html`, `netlify.toml` und `README.md` zum späteren 1:1-Kopieren in
+    ein zweites GitHub-Repository für Netlify.
+  - Bewusst komplett leere weiße Seite mit zentriertem schwarzem Text, der den
+    Download-Status zeigt, im Hintergrund `latest.json` und die EXE abruft, Größe und
+    SHA-256 prüft und den Download als `ArenaRobloxBridge.exe` startet.
+  - Version 7.9.3 öffnet beim Update vorerst weiterhin den direkten Repository-Link;
+    die Einbindung der Netlify-URL folgt in einer späteren Version, sobald die Seite
+    live gehostet ist.
+- VERSION 7.9.3 ist in `app/version.json` nach der Stichpunkt-Regel vorbereitet.
+  `release/latest.json` bleibt unangetastet, bis der Windows-Build privat getestet und
+  als `next-update/release/ArenaRobloxBridge.exe` auf `main` hochgeladen wurde.
+
+HISTORISCHER NACHTRAG 7.9.2 (12.10.2026) - STICHPUNKT-NOTIZEN, NEUES UPDATE-FENSTER, UMLAUTE, WEICHES ZIEHEN (WEITER GÜLTIG)
+=============================================================================================================================
 
 - STICHPUNKT-REGEL FÜR NUTZER-NOTIZEN (DAUERHAFT, FÜR JEDE ZUKÜNFTIGE VERSION):
   Die Notizen zu einer Version in `app/version.json` sind KURZE STICHPUNKTE im Ton

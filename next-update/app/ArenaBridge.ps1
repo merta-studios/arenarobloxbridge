@@ -2687,7 +2687,7 @@ function Test-BridgeUpdaterExecutable {
     try {
         if ([System.IO.Path]::GetExtension($candidate) -ine '.exe') { return $null }
         $baseName = [System.IO.Path]::GetFileNameWithoutExtension($candidate)
-        if ($baseName -ine 'ArenaBridge') { return $null }
+        if ($baseName -ine 'ArenaRobloxBridge' -and $baseName -ine 'ArenaBridge') { return $null }
         if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { return $null }
         return [System.IO.Path]::GetFullPath($candidate)
     } catch { return $null }
@@ -2809,6 +2809,10 @@ function Resolve-BridgeUpdaterExePath {
     }
 
     foreach ($candidatePath in @(
+        (Join-Path $script:AppRoot 'ArenaRobloxBridge.exe'),
+        (Join-Path $script:RepoRoot 'ArenaRobloxBridge.exe'),
+        (Join-Path $script:AppDataRoot 'ArenaRobloxBridge.exe'),
+        (Join-Path $script:BinFolder 'ArenaRobloxBridge.exe'),
         (Join-Path $script:AppRoot 'ArenaBridge.exe'),
         (Join-Path $script:RepoRoot 'ArenaBridge.exe'),
         (Join-Path $script:AppDataRoot 'ArenaBridge.exe'),
@@ -2823,7 +2827,7 @@ function Resolve-BridgeUpdaterExePath {
     } catch {}
 
     try {
-        $runningStarters = @(Get-CimInstance Win32_Process -Filter "Name='ArenaBridge.exe'" -ErrorAction SilentlyContinue)
+        $runningStarters = @(Get-CimInstance Win32_Process -Filter "Name='ArenaRobloxBridge.exe' OR Name='ArenaBridge.exe'" -ErrorAction SilentlyContinue)
         foreach ($starter in $runningStarters) { $candidates.Add([string]$starter.ExecutablePath) }
     } catch {}
 
@@ -31913,7 +31917,7 @@ function Set-StartupEnabled {
     if ($Enabled) {
         $updater = Resolve-BridgeUpdaterExePath -PreferredPath $UpdaterPath
         if ([string]::IsNullOrWhiteSpace([string]$updater)) {
-            throw 'ArenaBridge.exe (der Starter/Updater) wurde nicht gefunden. Es wird absichtlich kein PowerShell-Autostart eingerichtet. Starte zuerst die ArenaBridge.exe und aktiviere den Schalter danach erneut.'
+            throw 'ArenaRobloxBridge.exe (der Starter/Updater) wurde nicht gefunden. Es wird absichtlich kein PowerShell-Autostart eingerichtet. Starte zuerst die ArenaRobloxBridge.exe und aktiviere den Schalter danach erneut.'
         }
         # Alte Powershell-/Skript- und Mehrfach-Einträge entfernen, bevor die
         # eine kanonische Registrierung geschrieben wird.
@@ -31922,7 +31926,7 @@ function Set-StartupEnabled {
         Set-ItemProperty -Path $runKey -Name 'ArenaRobloxBridge' -Value ('"' + [string]$updater + '"')
         $script:UpdaterExePath = [string]$updater
         [void](Save-BridgeUpdaterExePath $script:UpdaterExePath)
-        Write-RuntimeLog ('Autostart aktiviert: nur ArenaBridge.exe/Updater wird gestartet (' + [string]$updater + '); alte Bridge-Startvarianten wurden bereinigt.')
+        Write-RuntimeLog ('Autostart aktiviert: nur ArenaRobloxBridge.exe/Updater wird gestartet (' + [string]$updater + '); alte Bridge-Startvarianten wurden bereinigt.')
         return $true
     }
     Remove-BridgeStartupEntries
@@ -31946,7 +31950,7 @@ function Get-StartupEnabled {
     # nicht weiter starten lassen, wenn kein echter Updater-Pfad existiert.
     try {
         Remove-BridgeStartupEntries
-        Write-RuntimeLog 'Autostart deaktiviert: alter Bridge-Eintrag entfernt, aber ArenaBridge.exe/Updater wurde nicht gefunden. Bitte den Updater einmal starten und Autostart erneut einschalten.'
+        Write-RuntimeLog 'Autostart deaktiviert: alter Bridge-Eintrag entfernt, aber ArenaRobloxBridge.exe/Updater wurde nicht gefunden. Bitte den Updater einmal starten und Autostart erneut einschalten.'
     } catch {}
     return $false
 }
@@ -43453,10 +43457,10 @@ $script:UpdatePromptInstall = $null
 $script:UpdatePromptLater = $null
 
 function Get-ArenaOwnExePath {
-    # Nur die kompilierte EXE (ArenaBridge*.exe) kennt einen Update-Pfad.
+    # Nur die kompilierte EXE (ArenaRobloxBridge*.exe / ArenaBridge*.exe) kennt einen Update-Pfad.
     try {
         $path = [string][System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
-        if (-not [string]::IsNullOrWhiteSpace($path) -and ([IO.Path]::GetFileName($path) -like 'ArenaBridge*.exe')) {
+        if (-not [string]::IsNullOrWhiteSpace($path) -and (([IO.Path]::GetFileName($path) -like 'ArenaRobloxBridge*.exe') -or ([IO.Path]::GetFileName($path) -like 'ArenaBridge*.exe'))) {
             return $path
         }
     } catch {}
@@ -43524,7 +43528,7 @@ function Get-ArenaUpdateInfo {
         $sha = [string]$manifest.sha256
         $size = [int64]$manifest.sizeBytes
         if ($remoteVersion -cnotmatch '^\d+\.\d+\.\d+$') { throw 'Versionsnummer im Manifest ist ungültig.' }
-        if (-not $url.StartsWith($script:UpdateRepoUrlPrefix, [StringComparison]::Ordinal) -or $url -notlike '*/next-update/release/ArenaBridge.exe') {
+        if (-not $url.StartsWith($script:UpdateRepoUrlPrefix, [StringComparison]::Ordinal) -or ($url -notlike '*/next-update/release/ArenaRobloxBridge.exe' -and $url -notlike '*/next-update/release/ArenaBridge.exe')) {
             throw 'Download-Adresse im Manifest ist nicht erlaubt.'
         }
         if ($sha -cnotmatch '^[0-9a-f]{64}$') { throw 'Prüfsumme im Manifest ist ungültig.' }
@@ -43549,7 +43553,7 @@ function Invoke-ArenaUpdateCleanup {
     if ([string]::IsNullOrWhiteSpace($old)) { return }
     $own = Get-ArenaOwnExePath
     if ($own -and ($old -ieq $own)) { return }
-    if ([IO.Path]::GetFileName($old) -notlike 'ArenaBridge*.exe' -or -not (Test-Path -LiteralPath $old -PathType Leaf)) {
+    if ((([IO.Path]::GetFileName($old) -notlike 'ArenaRobloxBridge*.exe') -and ([IO.Path]::GetFileName($old) -notlike 'ArenaBridge*.exe')) -or -not (Test-Path -LiteralPath $old -PathType Leaf)) {
         $state.pendingCleanup = ''
         Save-ArenaUpdateState $state
         return
@@ -43850,7 +43854,7 @@ function Show-ArenaUpdateWindow {
                 Save-ArenaUpdateState $state
                 Start-Process -FilePath $script:UpdatePendingUrl
                 $script:UpdateWindowChoice = 'install'
-                $script:UpdatePromptStatus.Text = 'Der Download startet im Browser. Starte danach die heruntergeladene ArenaBridge.exe. Diese Version wird mit "Schließen" beendet.'
+                $script:UpdatePromptStatus.Text = 'Der Download startet im Browser. Starte danach die heruntergeladene ArenaRobloxBridge.exe. Diese Version wird mit "Schließen" beendet.'
                 $script:UpdatePromptInstall.Content = 'Schließen'
                 $script:UpdatePromptLater.Visibility = [System.Windows.Visibility]::Collapsed
             } catch {

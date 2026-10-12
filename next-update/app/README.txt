@@ -14,7 +14,7 @@ Zum normalen Bauen diese Quelldatei nicht direkt starten: zurück zum
 next-update-Ordner gehen und Build-EXE.bat doppelklicken. Der private
 Test-Build erscheint im EINZIGEN Ausgabeordner:
 
-    release\ArenaBridge.exe
+    release\ArenaRobloxBridge.exe
 
 Die exe aus diesem Ordner wird erst nach einem erfolgreichen persönlichen
 Test und ausdrücklicher Release-Freigabe in das Repository hochgeladen.

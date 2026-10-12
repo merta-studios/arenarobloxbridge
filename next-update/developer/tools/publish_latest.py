@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Erzeugt next-update/release/latest.json aus der echten ArenaBridge.exe.
+"""Erzeugt next-update/release/latest.json aus der echten ArenaRobloxBridge.exe.
 
 Aufgerufen von .github/workflows/publish-bridge.yml, sobald sich
-next-update/release/ArenaBridge.exe auf main aendert. Das Werkzeug laedt nichts
+next-update/release/ArenaRobloxBridge.exe auf main aendert. Das Werkzeug laedt nichts
 herunter und veraendert nur latest.json. Es prueft:
 
 - die Datei ist eine Windows-x64-EXE,
@@ -26,11 +26,11 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]  # next-update/
-DEFAULT_EXE = PROJECT_ROOT / "release" / "ArenaBridge.exe"
+DEFAULT_EXE = PROJECT_ROOT / "release" / "ArenaRobloxBridge.exe"
 DEFAULT_LATEST = PROJECT_ROOT / "release" / "latest.json"
 DEFAULT_VERSION_JSON = PROJECT_ROOT / "app" / "version.json"
 DEFAULT_REPO = "merta-studios/arenarobloxbridge"
-EXE_PATH_IN_REPO = "next-update/release/ArenaBridge.exe"
+EXE_PATH_IN_REPO = "next-update/release/ArenaRobloxBridge.exe"
 MIN_BYTES = 100_000
 MAX_BYTES = 64 * 1024 * 1024
 MACHINE_X64 = 0x8664

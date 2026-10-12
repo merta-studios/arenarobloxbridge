@@ -1,4 +1,4 @@
-# Selbst-Update der Bridge (Version 7.9.2)
+# Selbst-Update der Bridge (Version 7.9.3)
 
 Dieses Dokument beschreibt das einfache Update-System. Es ersetzt den alten Updater,
 die Kanäle beta/stable, Guard-Lock, PROTECTED.md und die Release-Gates. Alles davon
@@ -9,11 +9,12 @@ ist entfernt.
 | Baustein | Aufgabe |
 | --- | --- |
 | `app/version.json` | Die Version (einzige Quelle). Der Builder setzt sie in die EXE. |
-| `builder/Build-EXE.ps1` | Ersetzt `__ARENA_BUILD_VERSION__` im Quelltext durch die Version aus `version.json`. Dateiversion = `<Version>.0`. |
-| `release/ArenaBridge.exe` | Die veröffentlichte EXE. Eine Änderung dieser Datei auf `main` startet den Workflow. |
+| `builder/Build-EXE.ps1` | Ersetzt `__ARENA_BUILD_VERSION__` im Quelltext durch die Version aus `version.json` und erzeugt `release/ArenaRobloxBridge.exe`. Dateiversion = `<Version>.0`. |
+| `release/ArenaRobloxBridge.exe` | Die veröffentlichte EXE. Eine Änderung dieser Datei auf `main` startet den Workflow. |
 | `developer/tools/publish_latest.py` | Prüft die EXE und schreibt `release/latest.json`. |
 | `.github/workflows/publish-bridge.yml` | Startet das Werkzeug und committet `latest.json` zurück. Liegt im Hauptordner, weil GitHub nur dort Workflows liest. |
 | `release/latest.json` | Version, Größe, SHA-256, Download-Adresse (auf den Commit gepinnt), Versionsnotiz. |
+| `website/` | Eigenständige, schlichte Download-Website für Netlify (später für das Zweit-Repository). |
 | `app/ArenaBridge.ps1`, Block `ARENA-UPDATE-INTEGRATION` | Die Bridge-Seite: Prüfung, Fenster, Zähler, Papierkorb. |
 
 ## Ablauf beim Start der Bridge (nur als EXE)
@@ -23,8 +24,8 @@ ist entfernt.
    nicht gesperrt ist (also nicht läuft) und nicht die eigene EXE ist.
 2. **Prüfen:** `latest.json` wird geladen (Timeout 5 Sekunden, Zeitstempel gegen Caches).
    Geprüft werden: Versionsformat, Download-Adresse nur unter
-   `raw.githubusercontent.com/merta-studios/arenarobloxbridge/`, SHA-256 (64 Hex-Zeichen),
-   Größe zwischen 100 KB und 64 MB.
+   `raw.githubusercontent.com/merta-studios/arenarobloxbridge/` (`*/next-update/release/ArenaRobloxBridge.exe`),
+   SHA-256 (64 Hex-Zeichen), Größe zwischen 100 KB und 64 MB.
    - Fehler oder kein Internet: Bridge startet normal (fail-open).
    - Gleiche oder niedrigere Version: Bridge startet normal, Zähler wird zurückgesetzt.
 3. **Update verfügbar:** Modales Fenster (620 x 660, ziehbar) vor den Diensten.
@@ -42,10 +43,10 @@ ist entfernt.
 
 ## Veröffentlichung (Workflow)
 
-- Trigger: Push auf `main`, der `next-update/release/ArenaBridge.exe` ändert (oder manuell).
+- Trigger: Push auf `main`, der `next-update/release/ArenaRobloxBridge.exe` ändert (oder manuell).
 - `publish_latest.py` prüft: Windows-x64-EXE; FileVersion der EXE = `version.json` + `.0`;
   Version höher als die veröffentlichte; gleiche Version nur mit identischer Datei.
-- Download-Adresse: `https://raw.githubusercontent.com/<repo>/<commit>/next-update/release/ArenaBridge.exe`.
+- Download-Adresse: `https://raw.githubusercontent.com/<repo>/<commit>/next-update/release/ArenaRobloxBridge.exe`.
 - Der Commit von `latest.json` trägt `[skip ci]` und löst keinen weiteren Lauf aus.
 - Braucht `contents: write`. Ist `main` durch Branch-Schutz gesperrt, muss der Bot dort
   schreiben dürfen (Einstellungen im GitHub-Repository prüfen).

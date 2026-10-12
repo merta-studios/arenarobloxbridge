@@ -6,7 +6,7 @@ ARENA ROBLOX BRIDGE — MARKEN-ASSETS
   im Bridge-Fenster neben dem Titel und im Update-Hinweis angezeigt.
 - ArenaBridge.ico ist das passende mehrgroessige Windows-Icon, das aus
   neueslogo.png erzeugt wurde. Build-EXE.ps1 validiert das ICO und gibt es
-  an ps2exe weiter, damit auch die ArenaBridge.exe dieses Logo als
+  an ps2exe weiter, damit auch die ArenaRobloxBridge.exe dieses Logo als
   Dateisymbol traegt.
 - arena-bridge-title.jpg bleibt das separate grosse Start-/Titelbild; es ist
   nicht das Programm-Logo.
