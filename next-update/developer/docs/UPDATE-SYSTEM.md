@@ -1,20 +1,31 @@
-# Selbst-Update der Bridge (Version 7.9.3)
+# Selbst-Update der Bridge (Version 7.9.4)
 
 Dieses Dokument beschreibt das einfache Update-System. Es ersetzt den alten Updater,
 die Kanäle beta/stable, Guard-Lock, PROTECTED.md und die Release-Gates. Alles davon
 ist entfernt.
+
+**Zwei Regeln ab 7.9.4:**
+
+1. **Genau eine EXE.** Der Builder erzeugt ausschließlich
+   `release/ArenaRobloxBridge.exe`. Die frühere zweite Datei
+   (`ArenaBridge-Diagnose.exe`) und `Start-Diagnostic.bat` sind entfernt; alte
+   Reste und `*.previous-*.exe`-Kopien räumt der Builder beim Bauen weg.
+2. **Installation über die Download-Seite.** Geprüft wird weiter im Repository
+   (`latest.json`). Der Knopf „Jetzt installieren“ öffnet aber
+   `https://arena-rblx-bridge.netlify.app/` im Standard-Browser. Dort liegt immer
+   die neueste `ArenaRobloxBridge.exe`.
 
 ## Bausteine
 
 | Baustein | Aufgabe |
 | --- | --- |
 | `app/version.json` | Die Version (einzige Quelle). Der Builder setzt sie in die EXE. |
-| `builder/Build-EXE.ps1` | Ersetzt `__ARENA_BUILD_VERSION__` im Quelltext durch die Version aus `version.json` und erzeugt `release/ArenaRobloxBridge.exe`. Dateiversion = `<Version>.0`. |
-| `release/ArenaRobloxBridge.exe` | Die veröffentlichte EXE. Eine Änderung dieser Datei auf `main` startet den Workflow. |
+| `builder/Build-EXE.ps1` | Ersetzt `__ARENA_BUILD_VERSION__` im Quelltext durch die Version aus `version.json` und erzeugt genau eine EXE: `release/ArenaRobloxBridge.exe`. Dateiversion = `<Version>.0`. |
+| `release/ArenaRobloxBridge.exe` | Die veröffentlichte EXE — die einzige Programmdatei. Eine Änderung dieser Datei auf `main` startet den Workflow. |
 | `developer/tools/publish_latest.py` | Prüft die EXE und schreibt `release/latest.json`. |
 | `.github/workflows/publish-bridge.yml` | Startet das Werkzeug und committet `latest.json` zurück. Liegt im Hauptordner, weil GitHub nur dort Workflows liest. |
 | `release/latest.json` | Version, Größe, SHA-256, Download-Adresse (auf den Commit gepinnt), Versionsnotiz. |
-| `website/` | Eigenständige, schlichte Download-Website für Netlify (später für das Zweit-Repository). |
+| `website/` | Quelle der schlichten Download-Website für Netlify — live unter `https://arena-rblx-bridge.netlify.app/`. |
 | `app/ArenaBridge.ps1`, Block `ARENA-UPDATE-INTEGRATION` | Die Bridge-Seite: Prüfung, Fenster, Zähler, Papierkorb. |
 
 ## Ablauf beim Start der Bridge (nur als EXE)
@@ -32,8 +43,9 @@ ist entfernt.
    Oben der Zeitstrahl "DEINE VERSION" -> "NEU FÜR DICH" mit laufender und neuer
    Version, darunter die Neuigkeiten als kurze Stichpunkte (Stichpunkt-Regel:
    siehe `docs/GANZ WICHTIG LESEN VOR JEDER BEARBEITUNG`).
-   - "Jetzt installieren": merkt sich den Pfad der laufenden EXE als `pendingCleanup`,
-     öffnet den Standard-Browser mit der EXE-Adresse. Danach nur noch "Schließen" (beendet die Bridge).
+   - "Jetzt installieren" (ab 7.9.4): merkt sich den Pfad der laufenden EXE als
+     `pendingCleanup` und öffnet den Standard-Browser mit der Download-Seite
+     `https://arena-rblx-bridge.netlify.app/`. Danach nur noch "Schließen" (beendet die Bridge).
    - "Später": `laterClicks` +1, Bridge läuft weiter. Der Knopf zeigt keine
      Restzahl - wie oft "Später" noch möglich ist, bleibt ein Geheimnis des Programms.
    - Fenster ohne Auswahl geschlossen: wie "Später", außer wenn Pflicht (dann beendet sich die Bridge).
@@ -44,6 +56,8 @@ ist entfernt.
 ## Veröffentlichung (Workflow)
 
 - Trigger: Push auf `main`, der `next-update/release/ArenaRobloxBridge.exe` ändert (oder manuell).
+- Hochgeladen wird immer nur diese eine Datei. Lokale Hilfsdateien
+  (`ArenaRobloxBridge.exe.sha256`, `release-metadata.json`) bleiben auf dem PC.
 - `publish_latest.py` prüft: Windows-x64-EXE; FileVersion der EXE = `version.json` + `.0`;
   Version höher als die veröffentlichte; gleiche Version nur mit identischer Datei.
 - Download-Adresse: `https://raw.githubusercontent.com/<repo>/<commit>/next-update/release/ArenaRobloxBridge.exe`.
@@ -60,6 +74,9 @@ ist entfernt.
 
 ## Tests
 
+- `developer/tests/test_v794_single_exe_download_site.py` prüft die zwei 7.9.4-Regeln
+  (Builder erzeugt genau eine EXE; "Jetzt installieren" öffnet die Download-Seite,
+  die Repository-Prüfung bleibt).
 - `developer/tests/test_v792_desktop_reliability.py` prüft die 7.9.2-Oberfläche
   (Stichpunkt-Regel, Zeitstrahl, "Später" ohne Zahl, weiches Ziehen/Scrollen,
   Einstellungen mit einem Knopf).
@@ -68,9 +85,13 @@ ist entfernt.
   (Adressen, Limit 5, kein Prozess-Kill, Papierkorb-Aufruf, Reihenfolge vor den Diensten),
   XAML wohlgeformt, Versionsplatzhalter, Builder, Parser-Hinweise.
 - **Nicht prüfbar unter Linux** (Pflicht auf Windows):
-  1. Build-EXE.bat läuft durch; `Dateiversion` der EXE (Eigenschaften -> Details) = Version + `.0`.
+  1. Build-EXE.bat läuft durch; danach liegt in `release\` genau eine EXE
+     (`ArenaRobloxBridge.exe`), keine Diagnose-Datei mehr. `Dateiversion` der EXE
+     (Eigenschaften -> Details) = Version + `.0`.
   2. Start ohne Internet: Bridge startet normal.
   3. Update-Fenster erscheint (braucht eine zweite, neuere veröffentlichte Version),
      zeigt Zeitstrahl und Stichpunkte, "Später" zählt, nach 5 Klicks kein "Später" mehr.
-  4. "Jetzt installieren" öffnet den Browser; nach Start der neuen EXE liegt die alte im Papierkorb.
-  5. Die gebaute EXE zeigt im Fenster und in der Diagnose die richtige Version.
+  4. "Jetzt installieren" öffnet `https://arena-rblx-bridge.netlify.app/` im Browser;
+     der Download dort liefert `ArenaRobloxBridge.exe`, nach deren Start liegt die
+     alte EXE im Papierkorb.
+  5. Die gebaute EXE zeigt im Fenster die richtige Version.

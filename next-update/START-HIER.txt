@@ -1,4 +1,4 @@
-ARENA ROBLOX BRIDGE — START HIER (Version 7.9.3)
+ARENA ROBLOX BRIDGE — START HIER (Version 7.9.4)
 =================================================
 
 NUR BAUEN UND TESTEN?
@@ -6,13 +6,16 @@ NUR BAUEN UND TESTEN?
 1. Öffne den Ordner next-update.
 2. Doppelklicke Build-EXE.bat.
 3. Warte auf BUILD ERFOLGREICH.
-4. Starte genau diese EXE:
+4. Starte genau diese EINE EXE (es gibt keine zweite mehr):
 
        release\ArenaRobloxBridge.exe
 
    Vorher andere ArenaBridge-Fenster schließen. Falls beim Start kein Fenster
-   erscheint, schließe andere ArenaBridge-Prozesse und starte
-   release\Start-Diagnostic.bat. Das Diagnose-Fenster offen lassen.
+   erscheint, schließe andere ArenaBridge-Prozesse und starte dieselbe EXE
+   erneut. Hinweise stehen dann hier:
+
+       %LOCALAPPDATA%\START-CHECK.txt
+       %LOCALAPPDATA%\ArenaRobloxBridge\bin\startup-diagnose.txt
 
 ZUM VERÖFFENTLICHEN (nur wenn der Test gut war):
 
@@ -26,10 +29,13 @@ ZUM VERÖFFENTLICHEN (nur wenn der Test gut war):
 
 WIE DAS UPDATE FÜR NUTZER FUNKTIONIERT:
 
-- Beim Start prüft die Bridge (höchstens 5 Sekunden), ob eine neue Version da ist.
+- Beim Start prüft die Bridge (höchstens 5 Sekunden) im Repository, ob eine neue
+  Version da ist.
 - Ist sie da, erscheint das neue Update-Fenster: Zeitstrahl von deiner Version
   zur neuen Version, darunter kurze Stichpunkte, was neu ist, und der grüne Knopf
-  "Jetzt installieren". Er öffnet den Browser mit der neuen EXE.
+  "Jetzt installieren". Er öffnet den Browser mit der Download-Seite
+  https://arena-rblx-bridge.netlify.app/ — dort liegt immer die neueste
+  ArenaRobloxBridge.exe.
 - "Später" ist begrenzt (das Programm behält die Zahl für sich und zeigt sie NICHT
   an). Ab dem Limit gibt es keinen "Später"-Knopf mehr, das Update ist dann Pflicht.
 - Der Knopf "Programmdateien öffnen" in den Einstellungen zeigt den Bridge-Ordner
@@ -40,6 +46,8 @@ WIE DAS UPDATE FÜR NUTZER FUNKTIONIERT:
 WICHTIG:
 
 - Die Bridge ersetzt sich nie selbst. Die neue EXE startest du selbst.
+- Der Builder erzeugt genau EINE Programmdatei (release\ArenaRobloxBridge.exe).
+  Lade auch nur diese eine Datei zum Veröffentlichen hoch.
 - Windows kann beim Herunterladen warnen ("Unbekannter Herausgeber" /
   SmartScreen). Die EXE ist nicht signiert. Wenn du der Datei vertraust:
   "Weitere Informationen" -> "Trotzdem ausführen".

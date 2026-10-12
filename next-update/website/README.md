@@ -1,5 +1,10 @@
 # Arena Roblox Bridge — Download-Website (für Netlify)
 
+**Live-Adresse: <https://arena-rblx-bridge.netlify.app/>** — ab Version 7.9.4 öffnet
+die Bridge genau diese Seite, wenn der Nutzer das Update wirklich installieren will.
+Die Bridge prüft Updates weiterhin selbst im Repository (`latest.json`); die Seite
+liefert die Datei.
+
 Dieser Ordner enthält die komplette, eigenständige Download-Website für
 `ArenaRobloxBridge.exe`. Der gesamte Inhalt dieses Ordners (`index.html`,
 `netlify.toml`, `README.md`) kann unverändert in ein zweites GitHub-Repository
@@ -26,6 +31,8 @@ kopiert und direkt über **Netlify** gehostet werden.
 3. Bei Netlify **Add new site → Import an existing project** wählen und das
    zweite GitHub-Repository verbinden (keine Build-Befehle nötig; `netlify.toml`
    stellt alles automatisch ein).
-4. Sobald die Netlify-Adresse feststeht, kann sie in einer späteren Bridge-Version
-   als Update-Link hinterlegt werden. Version 7.9.3 nutzt beim Update vorerst
-   weiterhin den direkten Repository-Link.
+4. Die Netlify-Adresse ist hinterlegt: Version 7.9.4 öffnet beim Update
+   `https://arena-rblx-bridge.netlify.app/` (siehe
+   `app/ArenaBridge.ps1`, `$script:UpdateDownloadPageUrl`). Ändert sich die
+   Adresse, muss sie dort, in `README.md`/`START-HIER.txt` und hier angepasst
+   werden.

@@ -1,7 +1,22 @@
 ﻿# ============================================================================
 # Arena Roblox Bridge  -  Version __ARENA_BUILD_VERSION__
 #
-# Version __ARENA_BUILD_VERSION__ (2026-10-12) - SCHÖNERES UPDATE-FENSTER, ECHTE UMLAUTE, WEICHES ZIEHEN.
+# Version __ARENA_BUILD_VERSION__ (2026-10-12) - EIN PROGRAMM, EIN DOWNLOAD.
+#   1) GENAU EINE EXE: Gebaut wird nur noch ArenaRobloxBridge.exe. Der frühere
+#      zweite Programm-Zwilling (ArenaBridge-Diagnose.exe) und das Startskript
+#      Start-Diagnostic.bat entfallen; alte Reste räumt der Builder weg.
+#   2) DOWNLOAD-SEITE: "Jetzt installieren" öffnet die Download-Seite
+#      https://arena-rblx-bridge.netlify.app/ im Standard-Browser. Dort liegt
+#      immer die neueste ArenaRobloxBridge.exe bereit.
+#   3) REPOSITORY-PRÜFUNG BLEIBT: Die Bridge prüft weiter im Hintergrund
+#      latest.json aus dem Repository (Version, Adresse, Prüfsumme, Größe) und
+#      zeigt erst dann das Update-Fenster.
+#   4) Alles aus 7.9.2 bleibt: Zeitstrahl, kurze Stichpunkte, "Später" ohne Zahl,
+#      weiches Ziehen und Scrollen.
+#   Ein Build und ein privater Windows-Test bleiben vor einer Veröffentlichung nötig.
+#
+# Version 7.9.2 (2026-10-12) - SCHÖNERES UPDATE-FENSTER, ECHTE UMLAUTE, WEICHES ZIEHEN.
+#   Historie zu __ARENA_BUILD_VERSION__ (7.9.3/7.9.4):
 #   1) UPDATE-FENSTER NEU: Zeitstrahl von der laufenden zur neuen Version, kurze
 #      Stichpunkte statt Textwand, klare Knöpfe. "Später" zeigt keine Zahl mehr -
 #      wie oft man später darf, bleibt ein Geheimnis des Programms.
@@ -13,7 +28,6 @@
 #      (Laufzeitprotokolle, Diagnose, Einstellungen); der zweite Knopf ist weg.
 #   5) WEICHES ZIEHEN UND SCROLLEN: Fenster folgen der Maus ohne Ruckeln, Listen
 #      und Tabellen scrollen gedämpft statt in Stufen.
-#   Ein Build und ein privater Windows-Test bleiben vor einer Veröffentlichung nötig.
 #
 # Version 7.9.0 (2026-10-11) - EINFACHES SELBST-UPDATE (ersetzt den 7.8.0-Updater).
 #   Die folgenden Notizen sind 7.9.0-Historie.
@@ -43435,12 +43449,14 @@ function Set-UiRefreshCadence {
 # ============================================================================
 # >>> ARENA-UPDATE-INTEGRATION >>>
 # ============================================================================
-# SELBST-UPDATE (Version 7.9.0, bewusst einfach)
+# SELBST-UPDATE (Version 7.9.0, bewusst einfach; 7.9.4 öffnet die Download-Seite)
 #   - Die Bridge ersetzt sich NIE selbst und lädt nichts im Hintergrund.
 #   - Beim Start wird latest.json aus dem Repository gelesen (höchstens 5 Sekunden).
 #     Kein Internet oder ein Fehler => die Bridge startet ganz normal.
 #   - Gibt es eine neuere Version, erscheint ein eigenes Fenster "Update verfügbar".
-#     "Jetzt installieren" öffnet den Standard-Browser mit der neuen EXE.
+#     "Jetzt installieren" öffnet den Standard-Browser mit der Download-Seite
+#     https://arena-rblx-bridge.netlify.app/ (Version 7.9.4). Dort lädt der Nutzer
+#     die neue ArenaRobloxBridge.exe herunter.
 #     "Später" wird gezählt. Nach 5 Klicks gibt es keinen "Später"-Knopf mehr.
 #   - Die neue EXE schiebt beim ersten Start die alte EXE in den Papierkorb. Es wird
 #     nur die Datei angefasst, die die alte Version selbst zum Update angeboten hat.
@@ -43448,6 +43464,9 @@ function Set-UiRefreshCadence {
 # ============================================================================
 $script:UpdateManifestUrl = 'https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/main/next-update/release/latest.json'
 $script:UpdateRepoUrlPrefix = 'https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/'
+# Version 7.9.4: Geprüft wird weiter im Repository; installiert wird über die
+# eigene Download-Seite. Sie zeigt und liefert immer die neueste Version.
+$script:UpdateDownloadPageUrl = 'https://arena-rblx-bridge.netlify.app/'
 $script:UpdateLaterLimit = 5
 $script:UpdatePendingUrl = ''
 $script:UpdateWindowChoice = ''
@@ -43821,7 +43840,7 @@ function Show-ArenaUpdateWindow {
         [void](Set-ProgramBrandImage -ImageControl ($win.FindName('UpdateLogoImage')))
         $runningText = $runningVersion
         if ([string]::IsNullOrWhiteSpace($runningText)) { $runningText = 'unbekannt' }
-        $versionText.Text = 'Du nutzt Version ' + $runningText + '. Die neue Fassung steht bereit.'
+        $versionText.Text = 'Du nutzt Version ' + $runningText + '. Auf der Download-Seite wartet die neue Fassung.'
         $currentVersionText.Text = $runningText
         $newVersionText.Text = [string]$Info.Version
         $headlineText.Text = $headline
@@ -43852,13 +43871,15 @@ function Show-ArenaUpdateWindow {
                 $state = Read-ArenaUpdateState
                 $state.pendingCleanup = Get-ArenaOwnExePath
                 Save-ArenaUpdateState $state
-                Start-Process -FilePath $script:UpdatePendingUrl
+                # Version 7.9.4: Der Nutzer landet auf der Download-Seite; sie
+                # liefert immer die neueste ArenaRobloxBridge.exe.
+                Start-Process -FilePath $script:UpdateDownloadPageUrl
                 $script:UpdateWindowChoice = 'install'
-                $script:UpdatePromptStatus.Text = 'Der Download startet im Browser. Starte danach die heruntergeladene ArenaRobloxBridge.exe. Diese Version wird mit "Schließen" beendet.'
+                $script:UpdatePromptStatus.Text = 'Die Download-Seite ist im Browser geöffnet. Lade dort die neue ArenaRobloxBridge.exe herunter und starte sie. Diese Version wird mit "Schließen" beendet.'
                 $script:UpdatePromptInstall.Content = 'Schließen'
                 $script:UpdatePromptLater.Visibility = [System.Windows.Visibility]::Collapsed
             } catch {
-                $script:UpdatePromptStatus.Text = 'Der Browser konnte nicht geöffnet werden. Download-Adresse: ' + $script:UpdatePendingUrl
+                $script:UpdatePromptStatus.Text = 'Der Browser konnte nicht geöffnet werden. Download-Seite: ' + $script:UpdateDownloadPageUrl
                 Write-RuntimeLog ('Browser für Update nicht geöffnet: ' + $_.Exception.Message)
             }
         })
@@ -43916,8 +43937,10 @@ function Invoke-ArenaUpdateGate {
     $limit = [int]$script:UpdateLaterLimit
     $clicks = [int]$state.laterClicks
     $forced = ($clicks -ge $limit)
+    # Version 7.9.4: Die Adresse aus dem Manifest bleibt nur für das Protokoll
+    # wichtig (Geprüft wird im Repository). Installiert wird über die Download-Seite.
     $script:UpdatePendingUrl = [string]$info.Url
-    Write-RuntimeLog ('Update verfügbar: Version ' + [string]$info.Version + ' (Später-Klicks: ' + [string]$clicks + ', Pflicht: ' + [string]$forced + ').')
+    Write-RuntimeLog ('Update verfügbar: Version ' + [string]$info.Version + ' (Später-Klicks: ' + [string]$clicks + ', Pflicht: ' + [string]$forced + ', Download-Seite: ' + $script:UpdateDownloadPageUrl + ').')
     # Version 7.9.2: Die Anzahl der möglichen "Später"-Klicks wird dem Fenster
     # absichtlich NICHT übergeben - der Nutzer sieht nur "Später".
     $choice = Show-ArenaUpdateWindow -Info $info -Forced $forced -OwnerWindow $OwnerWindow

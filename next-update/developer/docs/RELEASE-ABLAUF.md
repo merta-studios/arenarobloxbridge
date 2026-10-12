@@ -1,4 +1,4 @@
-# Release-Ablauf (next-update, Version 7.9.3)
+# Release-Ablauf (next-update, Version 7.9.4)
 
 Kurzfassung: Siehe `next-update/README.md`. Hier die Details für Entwicklung und Prüfung.
 
@@ -10,7 +10,8 @@ Kurzfassung: Siehe `next-update/README.md`. Hier die Details für Entwicklung un
    `docs/GANZ WICHTIG LESEN VOR JEDER BEARBEITUNG`). Tests laufen lassen:
    `python developer/tests/run_offline_tests.py`. Dann "mach Pull Request".
 2. **Merge und Build:** Der Nutzer mergt den PR, lädt das ZIP, startet `Build-EXE.bat`.
-   Ergebnis: `release/ArenaRobloxBridge.exe` (lokal).
+   Ergebnis: genau eine Datei, `release/ArenaRobloxBridge.exe` (lokal). Alte
+   Diagnose-Dateien und Sicherungskopien entfernt der Builder dabei selbst.
 3. **Privater Test:** Der Nutzer testet die EXE auf seinem Windows-PC (Checkliste in
    `UPDATE-SYSTEM.md`, Abschnitt "Tests").
 4. **Veröffentlichung:** Nur bei gutem Stand die getestete `ArenaRobloxBridge.exe` nach
@@ -22,7 +23,10 @@ Kurzfassung: Siehe `next-update/README.md`. Hier die Details für Entwicklung un
 - Die Version muss bei jeder Veröffentlichung höher sein. Gleiche Version mit anderer
   EXE wird abgelehnt (Nutzer mit dieser Version bekämen sonst nie das Update).
 - Jede EXE bleibt in der Git-Historie (ca. 6 MB pro Version). Es wird keine zweite Kopie
-  mit Versionsnamen abgelegt.
+  mit Versionsnamen abgelegt — und seit 7.9.4 gibt es auch keine zweite Programmdatei
+  (Diagnose-EXE/BAT) mehr.
+- Nutzer installieren über die Download-Seite <https://arena-rblx-bridge.netlify.app/>;
+  die Bridge selbst prüft nur das Repository-Manifest.
 - Testbauten gehören nicht in `release/`, sondern bleiben lokal.
 - Erst nach Freigabe durch den Nutzer veröffentlichen.
 
