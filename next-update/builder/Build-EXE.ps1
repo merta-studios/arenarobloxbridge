@@ -113,6 +113,70 @@ function Test-StagedExecutable {
     }
 }
 
+function Invoke-FileReplaceWithoutBackup {
+    param(
+        [string]$SourcePath,
+        [string]$DestinationPath
+    )
+    # Warum NICHT einfach [IO.File]::Replace($SourcePath,$DestinationPath,$null,$true)?
+    # Windows PowerShell 5.1 wandelt $null beim Aufruf einer .NET-Methode mit
+    # string-Parameter in eine LEERE ZEICHENKETTE um. File.Replace haelt "" fuer
+    # einen Sicherungspfad und bricht sofort ab:
+    #   Ausnahme beim Aufrufen von "Replace" mit 4 Argument(en):
+    #   "Der Pfad hat ein ungueltiges Format." (The path is not of a legal form.)
+    # Genau daran ist der 7.9.4-Bau zuletzt gescheitert - und zwar IMMER, sobald
+    # release\ArenaRobloxBridge.exe schon vorhanden war (also ab dem zweiten Bau).
+    # Ueber eine object[]-Argumentliste (Reflection) kommt $null dagegen als
+    # echtes .NET-null an: die EXE wird atomar ersetzt und es entsteht KEINE
+    # Sicherungsdatei im Ausgabeordner (7.9.4: dort liegt genau EINE Datei).
+    $replaceMethod = [IO.File].GetMethod('Replace',[Type[]]@([System.String],[System.String],[System.String],[System.Boolean]))
+    if ($null -eq $replaceMethod) {
+        throw 'File.Replace(String, String, String, Boolean) is missing from this .NET runtime; nothing was published.'
+    }
+    try {
+        [void]$replaceMethod.Invoke($null,[Object[]]@($SourcePath,$DestinationPath,$null,$true))
+    } catch {
+        # MethodInfo.Invoke verpackt die echte Ausnahme; hier soll die echte
+        # Meldung (z. B. "wird von einem anderen Prozess verwendet") stehen.
+        $inner = $_.Exception.InnerException
+        if ($null -ne $inner) { throw $inner }
+        throw
+    }
+}
+
+function Test-AtomicReplaceSupport {
+    # Kurzer Selbsttest VOR dem teuren Kompilieren: eine Datei atomar und ohne
+    # Sicherungskopie ersetzen. Faellt das auf dieser Maschine aus, bricht der
+    # Bau sofort mit einer verstaendlichen Meldung ab, statt erst nach Minuten
+    # beim Einsetzen der fertigen EXE.
+    $probeDirectory = Join-Path $env:TEMP ('ArenaRobloxBridge-replace-probe-' + [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $probeDirectory -Force | Out-Null
+    try {
+        $probeTarget = Join-Path $probeDirectory 'target.bin'
+        $probeStaging = Join-Path $probeDirectory 'staging.bin'
+        Write-Utf8NoBom $probeTarget 'alt'
+        Write-Utf8NoBom $probeStaging 'neu'
+        Invoke-FileReplaceWithoutBackup -SourcePath $probeStaging -DestinationPath $probeTarget
+        if (-not (Test-Path -LiteralPath $probeTarget -PathType Leaf)) {
+            throw 'The atomic replace probe deleted the target file instead of replacing it.'
+        }
+        if ([IO.File]::ReadAllText($probeTarget) -ne 'neu') {
+            throw 'The atomic replace probe did not exchange the file contents.'
+        }
+        if (Test-Path -LiteralPath $probeStaging) {
+            throw 'The atomic replace probe left the staging file behind; the replace was not atomic.'
+        }
+        if ([int](@(Get-ChildItem -LiteralPath $probeDirectory -File).Count) -ne 1) {
+            throw 'The atomic replace probe created a backup copy; the output folder must stay at exactly one program file.'
+        }
+        Write-Step 'Atomic replace self-test passed: the build output can be published without leaving a backup copy.'
+    } catch {
+        throw ("The atomic replace self-test failed, so the EXE would not be publishable at the end of this build. " + $_.Exception.Message)
+    } finally {
+        Remove-Item -LiteralPath $probeDirectory -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Publish-LocalBuild {
     param(
         [string]$StagingPath,
@@ -120,16 +184,35 @@ function Publish-LocalBuild {
     )
     # Version 7.9.4: Der Ausgabeordner enthaelt genau EINE Datei - die neue
     # ArenaRobloxBridge.exe. Der frueher zusaetzlich abgelegte
-    # "*.previous-<Zeitstempel>.exe"-Rest entfaellt; ersetzt wird atomar.
-    try {
-        if (Test-Path -LiteralPath $TargetPath -PathType Leaf) {
-            [IO.File]::Replace($StagingPath,$TargetPath,$null,$true)
-        } else {
-            [IO.File]::Move($StagingPath,$TargetPath)
+    # "*.previous-<Zeitstempel>.exe"-Rest entfaellt; ersetzt wird atomar und
+    # OHNE Sicherungskopie. Drei kurze Anlaeufe: direkt nach dem Smoke-Test
+    # koennen Virenscanner oder der Explorer die neue Datei noch einen
+    # Augenblick festhalten.
+    $lastError = $null
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        try {
+            if (Test-Path -LiteralPath $TargetPath -PathType Leaf) {
+                Invoke-FileReplaceWithoutBackup -SourcePath $StagingPath -DestinationPath $TargetPath
+            } else {
+                [IO.File]::Move($StagingPath,$TargetPath)
+            }
+            return
+        } catch {
+            $lastError = $_
+            if ($attempt -lt 3) { Start-Sleep -Milliseconds 400 }
         }
-    } catch {
-        throw ("Could not safely publish the local build output. Close every running ArenaRobloxBridge window and run Build-EXE.bat again. " + $_.Exception.Message)
     }
+    $detail = ''
+    if ($null -ne $lastError) {
+        if ($null -ne $lastError.Exception) {
+            $detail = [string]$lastError.Exception.Message
+            if ([string]::IsNullOrWhiteSpace($detail) -and $null -ne $lastError.Exception.InnerException) {
+                $detail = [string]$lastError.Exception.InnerException.Message
+            }
+        }
+        if ([string]::IsNullOrWhiteSpace($detail)) { $detail = [string]$lastError }
+    }
+    throw ("Could not safely publish the local build output. Close every running ArenaRobloxBridge window and run Build-EXE.bat again. " + $detail)
 }
 
 function Remove-LegacyReleaseArtifacts {
@@ -296,6 +379,10 @@ $windowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\
 if (-not (Test-Path -LiteralPath $windowsPowerShell -PathType Leaf)) {
     throw 'Windows PowerShell 5.1 was not found. Run this build from a Windows installation with PowerShell.'
 }
+# 7.9.4-Hotfix: Vor dem teuren Kompilieren pruefen, ob der atomare Austausch der
+# fertigen EXE auf dieser Maschine ueberhaupt moeglich ist (kein $null-Leerstring,
+# keine Sicherungskopie im Ausgabeordner).
+Test-AtomicReplaceSupport
 Write-Step 'Running the real PowerShell parser before compilation...'
 & $windowsPowerShell -NoLogo -NoProfile -ExecutionPolicy Bypass -File $parseGatePath -Path $sourcePath
 if ($LASTEXITCODE -ne 0) { throw 'PowerShell parse gate failed; no EXE was produced.' }
