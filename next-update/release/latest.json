@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "version": "7.9.4",
-  "sha256": "284b918f7e50e2f43fd8db9303220031aa9c399dbacd68bc8a6ba44f6e6bde88",
+  "version": "7.9.5",
+  "sha256": "ae365b8a2d5baecd142ffc1dd8a9b73b85fd3de102e7df520e86e8bbbd7700eb",
   "sizeBytes": 5842944,
-  "url": "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/1320a8ba99809dbad0738fdac3b6e7712c3f850c/next-update/release/ArenaRobloxBridge.exe",
-  "publishedAtUtc": "2026-10-12T18:16:06Z",
-  "notes": "• 7.9.4 — EIN PROGRAMM, EIN DOWNLOAD: • Gebaut wird nur noch eine einzige Datei: ArenaRobloxBridge.exe — kein zweites Programm mehr im Ordner. • Alte Diagnose- und Sicherungskopien räumt der Builder selbst weg. • „Jetzt installieren“ öffnet jetzt deine Download-Seite: dort wartet immer die neueste ArenaRobloxBridge.exe. • Das Update-Fenster bleibt wie gewohnt: Zeitstrahl, kurze Stichpunkte und „Später“ in deiner Hand. • Geprüft wird weiter im Hintergrund über das Repository — du verpasst kein Update mehr."
+  "url": "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/c7f090cc54c7f4fc4f9c73cbe791a7ba0bebd8e1/next-update/release/ArenaRobloxBridge.exe",
+  "publishedAtUtc": "2026-10-12T18:29:38Z",
+  "notes": "• 7.9.5 — TESTUPDATE FÜR DAS UPDATE-SYSTEM: • Dieses Testupdate prüft Versionsvergleich und Update-Hinweis. • Am Programm selbst wurde nichts geändert. • Die ArenaRobloxBridge.exe erhält nur die Test-Versionsnummer 7.9.5. • Die Notiz erscheint wie bei einem echten Update im Update-Fenster. • Download und Installation laufen über die Download-Seite."
 }
