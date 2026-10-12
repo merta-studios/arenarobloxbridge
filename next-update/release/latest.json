@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "version": "7.9.1",
-  "sha256": "8543db2afc551c510422bd62532739bb951dde8a75e2d5c5ad705261c04fcad6",
-  "sizeBytes": 5814272,
-  "url": "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/8c4b2d5b387418aca97699823d77bab26fc1eebc/next-update/release/ArenaBridge.exe",
-  "publishedAtUtc": "2026-10-12T15:23:01Z",
-  "notes": "• 7.9.1 — ABGEDUNKELTE NEBENFENSTER, OPTIONALER FORTSCHRITT, GERENDERT BESTAETIGTES FERTIG-POPUP UND GRUPPIERTE EINSTELLUNGEN: Das benutzerdefinierte Hintergrundbild wird in allen Nebenschalen (nicht im Hauptfenster der Place-Liste) mit einer dunklen Glaslage kombiniert. Der Fortschritts-Read-modify-write ist synchronisiert und Snapshot-Auswahl nutzt eine globale Revision gegen schnelle Parallelaufrufe. Progress ist optional; Chat-/Lese-/Beobachtungsaufgaben koennen ihn weglassen oder explizit ausblenden, und ohne echte Prozentmeldung gibt es keine erfundene 0 % oder 100 %. report_done zeigt p ..."
+  "version": "7.9.2",
+  "sha256": "378ede12727024035535a0a62a7a1b09ecbfea57661174cfdd1e7bdb19cc4166",
+  "sizeBytes": 5840384,
+  "url": "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/f7a14541b15d81d7fdb621c81ecbdd09f0b6f043/next-update/release/ArenaBridge.exe",
+  "publishedAtUtc": "2026-10-12T16:22:38Z",
+  "notes": "• 7.9.2 — DEIN UPDATE-FENSTER, ENDLICH SCHÖN: • Zeitstrahl von deiner Version zur neuen — du siehst sofort, was du bekommst. • Kurze Stichpunkte statt Textwand: in Sekunden gelesen, sofort verstanden. • Echte Umlaute: ä, ö, ü und ß stehen endlich da, wo sie hingehören. • Fenster ziehen und Listen scrollen laufen butterweich — kein Ruckeln mehr. • Einstellungen aufgeräumt: ein Knopf bringt dich direkt in deinen Bridge-Ordner. • Und dein „Später“-Knopf bleibt dein Geheimnis: keine Klick-Zählerei mehr."
 }
