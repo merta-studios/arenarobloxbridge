@@ -12,8 +12,9 @@ AKTUELLER NACHTRAG 7.9.4 (12.10.2026) - GENAU EINE EXE & INSTALLATION ÜBER DIE 
   - `builder/Build-EXE.ps1` baut nur noch `next-update/release/ArenaRobloxBridge.exe`.
     Der frühere zweite Bau (Konsolen-`ArenaBridge-Diagnose.exe`), der Starter
     `Start-Diagnostic.bat`, die zweite Prüfsummendatei und die
-    `*.previous-<Zeitstempel>.exe`-Sicherungskopien sind ENTFERNT. Ein laufender
-    Build wird nur noch atomar ersetzt (`[IO.File]::Replace(...,$null,...)`).
+    `*.previous-<Zeitstempel>.exe`-Sicherungskopien sind ENTFERNT. Eine vorhandene
+    EXE wird atomar und OHNE Sicherungskopie ersetzt, über
+    `Invoke-FileReplaceWithoutBackup` (siehe „BAUBRUCH BEHOBEN“ unten).
   - `Remove-LegacyReleaseArtifacts` räumt beim Bauen alte Reste aus `release/`
     (Diagnose-EXE, Diagnose-BAT, Prüfsumme, Backup-Kopien) weg, damit dort genau
     eine EXE liegt.
@@ -40,17 +41,47 @@ AKTUELLER NACHTRAG 7.9.4 (12.10.2026) - GENAU EINE EXE & INSTALLATION ÜBER DIE 
   - Netlify-Seite ist live: <https://arena-rblx-bridge.netlify.app/>. Sie liest
     `latest.json`, prüft Größe und SHA-256 und speichert die Datei als
     `ArenaRobloxBridge.exe`. Quelle der Seite bleibt `next-update/website/`.
+- BAUBRUCH BEHOBEN („BUILD FEHLGESCHLAGEN (Exit-Code 1)“ beim Einsetzen der EXE):
+  - Gemeldeter Fehler beim zweiten und jedem weiteren Build (sobald
+    `release/ArenaRobloxBridge.exe` schon existiert):
+    `Ausnahme beim Aufrufen von "Replace" mit 4 Argument(en): "Der Pfad hat ein
+    ungültiges Format."` plus
+    `Could not safely publish the local build output.` - obwohl der EXE-Smoke-Test
+    zuvor grün war.
+  - URSACHE: Windows PowerShell 5.1 wandelt `$null` beim Aufruf einer .NET-Methode
+    mit `string`-Parameter in eine LEERE ZEICHENKETTE um. `File.Replace` hält `""`
+    für einen Sicherungspfad und wirft `ArgumentException`. Der Aufruf
+    `[IO.File]::Replace($Staging,$Target,$null,$true)` konnte daher nie
+    funktionieren; der erste Build ging nur über den `Move`-Zweig (Zieldatei fehlt
+    noch) durch.
+  - FIX in `builder/Build-EXE.ps1`: die neue Funktion
+    `Invoke-FileReplaceWithoutBackup` holt die Überladung
+    `File.Replace(String, String, String, Boolean)` und ruft sie über eine
+    `[Object[]]`-Argumentliste per Reflection auf - dort bleibt `$null` ein echtes
+    .NET-null. Es entsteht also keine Sicherungsdatei (`outputFileCount = 1`
+    bleibt gültig), und die `TargetInvocationException` wird ausgepackt, damit die
+    echte Meldung (z. B. „wird von einem anderen Prozess verwendet“) erscheint.
+  - `Publish-LocalBuild` nutzt diesen Helfer, macht drei kurze Anläufe gegen
+    flüchtige Sperren (Virenscanner/Explorer) und behält den Rat „Fenster
+    schließen und Build-EXE.bat erneut ausführen“. Fehlt die EXE noch, bleibt es
+    beim einfachen `[IO.File]::Move`.
+  - NEU: `Test-AtomicReplaceSupport` ersetzt vor dem Kompilieren eine Temp-Datei
+    über denselben Helfer. Schlägt das fehl, bricht der Bau SOFORT mit klarer
+    Meldung ab, statt erst nach dem teuren EXE-Bau beim Einsetzen.
 - VERSION 7.9.4 steht in `app/version.json` nach der Stichpunkt-Regel (sechs
   Stichpunkte, 510 Zeichen). `release/latest.json` und die veröffentlichte EXE
   bleiben unangetastet, bis der Windows-Build privat getestet und ausdrücklich
   freigegeben wurde.
 - TESTS: Neu `developer/tests/test_v794_single_exe_download_site.py` prüft beide
-  Regeln auf Quellebene. Aktualisiert:
+  Regeln auf Quellebene und `developer/tests/test_v794_build_publish.py` prüft den
+  behobenen Baubruch (kaputter `Replace`-Aufruf weg, echtes .NET-null über die
+  `[Object[]]`-Argumentliste, `Move`-Zweig für den ersten Bau, Selbsttest vor dem
+  Kompilieren, Ein-Datei-Vertrag). Aktualisiert:
   `test_v765_release_workflow.py` (BAT-Marker ohne Diagnose-BAT),
   `test_v792_desktop_reliability.py` (Installieren öffnet die Download-Seite),
-  `test_v900_update_flow.py` (Download-Seite im Update-Block). Offline-Lauf
-  22/22 in der Sandbox; WPF, Explorer, Papierkorb und der echte
-  Windows-PowerShell-Build bleiben ein Windows-Test.
+  `test_v900_update_flow.py` (Download-Seite im Update-Block). WPF, Explorer,
+  Papierkorb und der echte Windows-PowerShell-Build (ps2exe, ReplaceFile) bleiben
+  ein Windows-Test.
 
 HISTORISCHER NACHTRAG 7.9.3 (12.10.2026) - EXE-NAME ARENAROBLOXBRIDGE.EXE & NETLIFY-DOWNLOAD-WEBSITE (WEITER GÜLTIG)
 ================================================================================================================
