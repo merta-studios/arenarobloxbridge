@@ -1,4 +1,4 @@
-# Selbst-Update der Bridge (Version 7.9.0)
+# Selbst-Update der Bridge (Version 7.9.1)
 
 Dieses Dokument beschreibt das einfache Update-System. Es ersetzt den alten Updater,
 die Kanaele beta/stable, Guard-Lock, PROTECTED.md und die Release-Gates. Alles davon

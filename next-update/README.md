@@ -1,4 +1,4 @@
-# Arena Roblox Bridge — Update- und Testablauf (Version 7.9.0)
+# Arena Roblox Bridge — Update- und Testablauf (Version 7.9.1)
 
 > **Arbeite nur in `next-update/`.** Der alte Bereich im Repository-Hauptordner
 > bleibt unverändert. Ausnahme: GitHub liest Automatisierungen (Workflows) nur aus

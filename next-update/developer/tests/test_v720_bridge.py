@@ -38,7 +38,7 @@ def _shipped_build_version() -> str:
 
 
 PS1 = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.9.0"
+VERSION = _shipped_build_version()
 
 failures: list[str] = []
 
@@ -397,8 +397,8 @@ def main() -> int:
     check("ProgressMissingPercent" in state_fn and "PERCENT_MISSING" in state_fn,
           "Fehlende Prozentzahl wird gezaehlt und als Station gemeldet")
     visual = region(source, "function Update-PlaceProgressVisual", "function Get-ProgressDiagnoseLines")
-    check("$showNumericProgress = (($percentKnown -or $state -eq 'done') -and $progressMode -ne 'hidden')" in visual,
-          "a numeric meter is shown only for a real percent or a completed task, never in hidden mode")
+    check("$showNumericProgress = ($percentKnown -and $progressMode -ne 'hidden')" in visual,
+          "a numeric meter is shown only for a real percentage, never just because a task completed")
     check("if ($progressMode -eq 'hidden')" in visual and "Fortschritt nicht anwendbar" in visual,
           "read/observation tasks can be explicitly marked not applicable")
     check("$Row.ProgressBar.Visibility = 'Collapsed'" in visual
@@ -441,8 +441,8 @@ def main() -> int:
     check("function Invoke-NotifySweep" in source and "'SWEEP'" in source,
           "notify.sweep misst nach dem Anzeigen erneut")
     show = region(source, "function Show-ArenaDoneNotification", "function Set-ArenaSwitchVisualState")
-    check("'CALL_RETURNED'" in show and "'CALL_FAILED'" in show,
-          "Der Anzeigeaufruf wird als Station verbucht (CALL/CALL_FAILED)")
+    check("RENDER_PENDING" in show and "CALL_RETURNED_UNVERIFIED" in show and "'CALL_FAILED'" in show,
+          "Bridge-Popup wird vor Fallback gezeigt; unbestaetigte Fallbacks bleiben ehrlich markiert")
     check("notify-diagnose.txt" in source and "function Get-NotifyDiagnoseLines" in source,
           "notify-diagnose.txt nennt Plattform, Zaehler und die letzten Meldungen")
     check("function Open-NotifySeenWindow" not in source
@@ -474,8 +474,8 @@ def main() -> int:
           "report_done behauptet nicht mehr blind 'delivered = true'")
     check("NOTIFICATION_UNVERIFIED" in done and "notification = @{" in done,
           "report_done antwortet ehrlich mit Urteil und NOTIFICATION_UNVERIFIED")
-    check("platformVerdict" in done and "notify.sweep" in done,
-          "Die Antwort nennt Urteil, Grund und die Nachmessung")
+    check("platformVerdict" in done and "WPF_ContentRendered" in done and "TryUpdate" in done,
+          "Die Antwort nennt Plattformdiagnose und atomare WPF-Renderbestaetigung")
 
     print("\n4) Fragen ueber die Bridge (D3 / 7.2.3)")
     for marker in (

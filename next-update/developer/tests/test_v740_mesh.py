@@ -46,7 +46,7 @@ def _shipped_build_version() -> str:
 
 
 PS1 = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.9.0"
+VERSION = _shipped_build_version()
 FAILURES: list[str] = []
 
 

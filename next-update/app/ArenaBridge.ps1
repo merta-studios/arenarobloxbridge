@@ -1,8 +1,22 @@
 ﻿# ============================================================================
 # Arena Roblox Bridge  -  Version __ARENA_BUILD_VERSION__
 #
-# Version __ARENA_BUILD_VERSION__ (2026-10-11) - EINFACHES SELBST-UPDATE (ersetzt den 7.8.0-Updater).
-#   Die Notizen darunter sind 7.8.0-Historie.
+# Version __ARENA_BUILD_VERSION__ (2026-10-12) - NEBENFENSTER, FORTSCHRITT UND FERTIG-POPUP ROBUSTER.
+#   1) SEKUNDAERFENSTER: Das benutzerdefinierte Hintergrundbild wird in allen
+#      Fenstern ausser der Place-Hauptliste mit einer dunklen Glaslage kombiniert.
+#   2) FORTSCHRITT: Read-modify-write ist synchronisiert und Snapshot-Aufloesung
+#      nutzt eine globale Revision. Ohne echte Prozentmeldung gibt es keinen
+#      erfundenen 0-%- oder 100-%-Balken; hidden/off ist optional und fuer reine
+#      Chat-, Lese- und Beobachtungsaufgaben nicht anwendbar.
+#   3) FERTIG-MELDUNG: Ein eigenes, kurz eingeblendetes Bridge-Fenster ist der
+#      Hauptkanal. report_done bestaetigt erst nach WPF-ContentRendered; die
+#      Windows-Toast-Pruefung ist kein falscher Zustellnachweis mehr.
+#   4) EINSTELLUNGEN: Update-Informationen/Version und Entwicklerhinweis sind
+#      gruppiert; Explorer-Schaltflaechen oeffnen Programm- bzw. Protokollordner.
+#   Ein Build und ein privater Windows-Test bleiben vor einer Veroeffentlichung noetig.
+#
+# Version 7.9.0 (2026-10-11) - EINFACHES SELBST-UPDATE (ersetzt den 7.8.0-Updater).
+#   Die folgenden Notizen sind 7.9.0-Historie.
 #   1) EIGENES UPDATE-FENSTER: Version, Neuerungen, Groesse und die Knoepfe Jetzt /
 #      Spaeter / Diese Version ueberspringen; waehrend des Downloads laeuft eine
 #      Fortschrittsanzeige, die Bridge bleibt offen und der Abbruch ist jederzeit
@@ -2947,6 +2961,7 @@ $script:NotifyAumidState = $null
 $script:NotifyPlatformCache = $null
 $script:NotifyPlatformCacheAt = $null
 $script:NotifyRecords = New-Object System.Collections.Generic.List[object]
+$script:NotifyPopupWindows = New-Object System.Collections.Generic.List[object]
 # Version 7.2.0 (D8): Fenster "Nachricht an Arena senden".
 $script:UserMessageWindow = $null
 # Version 7.2.0 (D3): Fenster "Arena fragt" (Entscheidungsbaum am Mauszeiger).
@@ -3617,7 +3632,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Einstellungen (Version 3.8): UI und Server-Threads teilen sich diese Werte.
     BridgeSettings  = [hashtable]::Synchronized(@{
         simAllowed      = $false    # sim_start bleibt bis zu echter Edit-Modus-Simulation gesperrt
-        notifyOnDone    = $false    # report_done -> Windows-Benachrichtigung
+        notifyOnDone    = $false    # report_done -> Bridge-Fertig-Popup (Standard: aus)
         progressInPlaceList = $true # Fortschrittsanzeige in der Place-Liste
         # Version 7.0.3: Laufzeitdiagnostik fuer die Leistungsmessung.
         # Standard AUS: ohne diese Zustimmung wird nichts gemessen/geloggt.
@@ -3776,8 +3791,13 @@ $script:Shared = [hashtable]::Synchronized(@{
         get_docs = 'Werkzeugdokumentation lesen'
         capture_screenshot = 'Studio-Fenster aufnehmen'
     }
-    # report_done-Meldungen: der Server legt sie ab, die Oberflaeche zeigt sie an
-    NotifyQueue     = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+    # report_done-Meldungen: der Server legt sie ab, die Oberflaeche zeigt sie an.
+    # Der Handler wartet kurz auf ContentRendered und meldet erst dann Anzeige.
+    NotifyQueue             = [System.Collections.Concurrent.ConcurrentQueue[string]]::new()
+    NotifyFlowLock          = [System.Object]::new()
+    # flowId -> WAITING/TIMEOUT oder JSON-Ack (DISPLAYED/UNVERIFIED/FAILED).
+    # TryUpdate macht die Rueckmeldung atomar gegen das Timeout des Handlers.
+    NotifyDeliveryStates    = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
 
     # ==================================================================
     # Version 7.2.0: NUTZER-KANAL, FRAGEN, BUILD-REGISTER, KANAL-ZAEHLER.
@@ -3889,10 +3909,12 @@ $script:Shared = [hashtable]::Synchronized(@{
     # live collection; entries stay only for the running bridge process.
     ActivityLogs       = [System.Collections.Concurrent.ConcurrentDictionary[string,object]]::new()
     ActivityCommandMap = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
-    # Version 7.0.0: Fortschrittsvertrag. sessionId -> JSON
-    # { percent, message, state, updatedAt, lastCallAt, calls, callsWithProgress,
-    #   autoSet, history[] }. Jeder Aufruf traegt ihn; fehlt er, gilt 0 %.
-    ProgressStates  = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    # Fortschrittsvertrag: sessionId -> JSON mit Messwerten/Status.
+    # Der Lock umfasst den gesamten Read-modify-write-Zyklus; Revisionen
+    # unterscheiden auch mehrere Aufrufe innerhalb derselben Sekunde.
+    ProgressStates     = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
+    ProgressStateLock  = [System.Object]::new()
+    ProgressRevision   = 0L
     # Version 7.0.0: Uebergaben (Handoff) je Sitzung + zuletzt geschriebener Pfad.
     Handoffs        = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     # Version 7.0.0: Audit-Kennzahlen (Platzhalter/Blockout) fuer optionale Diagnose.
@@ -17273,6 +17295,7 @@ $script:BridgeHandlerScript = {
                 $parsed = 0.0
                 return [double]::TryParse($text.Replace(',', '.'), [System.Globalization.NumberStyles]::Float, [System.Globalization.CultureInfo]::InvariantCulture, [ref]$parsed)
             }
+            if ($node -is [bool]) { return $false }
             if ($node -is [ValueType]) { return $true }
             if ($node.PSObject.Properties['percent']) {
                 $value = $node.percent
@@ -17288,9 +17311,11 @@ $script:BridgeHandlerScript = {
         # Read-only observation can explicitly opt out of percentage progress.
         # The mode is metadata for the bridge UI only and is never forwarded to Studio.
         try {
+            if ($node -is [bool] -and -not $node) { return 'hidden' }
+            if ($null -ne $node -and $node.PSObject.Properties['enabled'] -and $node.enabled -eq $false) { return 'hidden' }
             if ($null -ne $node -and $node.PSObject.Properties['mode']) {
                 $mode = ([string]$node.mode).Trim().ToLowerInvariant().Replace('-', '_')
-                if ($mode -in @('hidden','not_applicable','na')) { return 'hidden' }
+                if ($mode -in @('hidden','not_applicable','na','off','disabled','none','false','no')) { return 'hidden' }
             }
         } catch {}
         return 'auto'
@@ -17347,6 +17372,8 @@ $script:BridgeHandlerScript = {
         # ueberhaupt schon eine Zahl kam (percentKnown). Ohne Zahl zeigt die
         # Oberflaeche keinen Balken und keine erfundene 0 %.
         param([string]$sessionId, [string]$tool, $percent, [string]$message, [bool]$reported, [bool]$isDone, [bool]$autoSet, [bool]$percentProvided = $false, [string]$progressMode = 'auto')
+        [System.Threading.Monitor]::Enter($Shared.ProgressStateLock)
+        try {
         $state = Read-ProgressState $sessionId
         if ($null -eq $state) {
             $state = [pscustomobject]@{
@@ -17356,6 +17383,12 @@ $script:BridgeHandlerScript = {
             }
         }
         $now = Get-UnixSeconds
+        $nextRevision = [long]0
+        try {
+            $nextRevision = [long]$Shared.ProgressRevision + 1
+            $Shared.ProgressRevision = $nextRevision
+        } catch { $nextRevision = [long]$now }
+        Set-ProgressField $state 'revision' $nextRevision
         $state.calls = [int]$state.calls + 1
         $state.lastCallAt = $now
         $state.lastTool = [string]$tool
@@ -17406,14 +17439,17 @@ $script:BridgeHandlerScript = {
                 Set-ProgressField $state 'percentKnown' $false
                 if ([string]::IsNullOrWhiteSpace([string]$state.message)) { $state.message = 'Fortschritt nicht anwendbar.' }
                 Write-FlowStation 'PROGRESS' (Get-ShortSid $sessionId) 'DONE' @{ mode = 'hidden'; percent = 'not_applicable'; tool = [string]$tool }
+            } elseif (-not [bool]$state.percentKnown) {
+                # Ohne vorherige echte Prozentmeldung gibt es keinen
+                # messbaren Balkenabschluss - insbesondere keine erfundene 100 %
+                # fuer Chat-Fragen oder reine Lese-/Beobachtungsaufgaben.
+                Set-ProgressField $state 'mode' 'hidden'
+                Set-ProgressField $state 'autoSet' $false
+                Set-ProgressField $state 'percentKnown' $false
+                if ([string]::IsNullOrWhiteSpace([string]$state.message)) { $state.message = 'Kein messbarer Prozentfortschritt gemeldet.' }
+                Write-FlowStation 'PROGRESS' (Get-ShortSid $sessionId) 'DONE' @{ mode = 'hidden'; percent = 'not_applicable'; reason = 'no_percent_reported'; tool = [string]$tool }
             } else {
-                if (-not $reported) {
-                    $state.percent = 100.0
-                    $state.autoSet = $true
-                    if ([string]::IsNullOrWhiteSpace([string]$state.message)) { $state.message = 'Automatisch gesetzt (report_done ohne Prozentangabe)' }
-                    $state.updatedAt = $now
-                    $state.callsWithProgress = [int]$state.callsWithProgress + 1
-                }
+                # Ein echter Messwert darf beim Abschluss auf 100 % enden.
                 $state.percent = 100.0
                 $state.autoSet = $state.autoSet -or (-not $reported)
                 Set-ProgressField $state 'percentKnown' $true
@@ -17432,6 +17468,9 @@ $script:BridgeHandlerScript = {
         $state.history = $history
         Save-ProgressState $sessionId $state
         return $state
+        } finally {
+            [System.Threading.Monitor]::Exit($Shared.ProgressStateLock)
+        }
     }
 
 
@@ -22701,13 +22740,13 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
             errors = @() })
 
         # ---------------- PLAY / TEST ----------------
-                                        $t.Add(@{ name = 'report_done'; category = 'session'; summary = 'Eine kurze, lebendige Windows-11-Mitteilung senden.';
-            description = 'Als letzten Call verwenden, wenn die Arbeit fertig ist. Arena schreibt SELBST einen aussagekraeftigen Titel und einen natuerlichen, einladenden Inhalt – keine trockene Liste. Verlaessliches Windows-11-Anzeigebudget: Titel maximal 70 Zeichen, Inhalt maximal 140 Zeichen. Microsoft definiert fuer ToastGeneric keine feste Zeichenobergrenze pro Feld; die sichtbare Menge haengt von Breite, Skalierung und Layout ab. Deshalb erzwingt die Bridge diese konservativen Vollanzeige-Grenzen. Gute Form: Titel="✅ Arena hat den Lauf-Bug behoben!", message="Der Lauf-Bug ist weg – komm ins Spiel und probiere es aus!".';
+                                        $t.Add(@{ name = 'report_done'; category = 'session'; summary = 'Ein kurzes, lebendiges Bridge-Fertig-Popup zeigen.';
+            description = 'Als letzten Call verwenden, wenn die Arbeit fertig ist. Arena schreibt SELBST einen aussagekraeftigen Titel und einen natuerlichen, einladenden Inhalt – keine trockene Liste. Das eigene Bridge-Popup begrenzt Titel auf 70 und Inhalt auf 140 Zeichen, damit beides vollstaendig ins Fenster passt. Die Antwort bestaetigt die Anzeige erst nach WPF-ContentRendered; Windows-Toast/Fokus-Einstellungen steuern diesen Primaerkanal nicht. Gute Form: Titel="✅ Arena hat den Lauf-Bug behoben!", message="Der Lauf-Bug ist weg – komm ins Spiel und probiere es aus!".';
             params = @{ title = @{ type = 'string'; required = $true; default = '-'; description = 'Von Arena formulierter lebendiger Titel, maximal 70 Zeichen.' }; message = @{ type = 'string'; required = $true; default = '-'; description = 'Ein natuerlicher, einladender Satz, maximal 140 Zeichen; keine Auflistung.' } };
-            returns = '{ delivered, title, message, limits: { titleCharacters=70, messageCharacters=140 } }';
+            returns = '{ delivered, title, message, limits: { titleCharacters=70, messageCharacters=140 }, notification: { state, method, displayedAt, verified, verification, platformVerdict, platformReason }, notificationWarning?, honest? }';
             example = @{ title = '✅ Arena hat den Lauf-Bug behoben!'; message = 'Der Lauf-Bug ist weg – komm ins Spiel und probiere es aus!' };
             errors = @('UNACKED_USER_MESSAGE: mindestens eine Nutzernachricht ist noch unbeantwortet/unbestaetigt - erst anwenden, beantworten und mit ack_user_message bestaetigen, dann erneut report_done.', 'NOTIFICATIONS_DISABLED', 'BAD_ARGS: title/message fehlen oder ueberschreiten 70/140 Zeichen.');
-            notes = @('The response includes notification { flowId, platformVerdict, platformReason, verified }. If NOTIFICATION_UNVERIFIED, Windows may have suppressed the toast; report the work in your reply without claiming a notification was delivered.', 'The response includes buildRegister { models, audited, unaudited, drafts, declared, averageFinishScore }. Grade/draft labels are heuristics only. The register reports which models were measured; model_audit is optional and not a completion gate.') })
+            notes = @('The response includes notification { flowId, state, method, displayedAt, platformVerdict, platformReason, verified }. verified=true means the Bridge popup reached WPF ContentRendered, not that the user saw it. If NOTIFICATION_UNVERIFIED, queued popup display was not confirmed; do not claim delivery. Windows platform fields describe only the optional native fallback.', 'The response includes buildRegister { models, audited, unaudited, drafts, declared, averageFinishScore }. Grade/draft labels are heuristics only. The register reports which models were measured; model_audit is optional and not a completion gate.') })
                         $t.Add(@{ name = 'set_context'; category = 'session'; summary = 'Seite wechseln: server oder client.';
             description = 'Bestimmt, welche Seite Laufzeit-Werkzeuge (run_lua) treffen. run_lua selbst laeuft IMMER nur auf der Server/Seite - fuer den Client die client_-Werkzeuge.';
             params = @{ context = @{ type = "'server'|'client'"; required = $true; default = '-'; description = '' } };
@@ -23519,11 +23558,11 @@ end
         # Version 7.0.0: Fortschrittsvertrag + Qualitaetsvertrag gehoeren in
         # JEDE Sitzung - kurz, hart, maschinenlesbar.
         $out.progressContract = @{
-            field = 'For measurable work, send progress = { percent = 43, message = "short concrete update" } at the same level as token/targetPlace/tool (or inside args). The bridge removes it before forwarding to Studio.'
-            mode = 'For simple read-only inspection/observation where a percentage does not apply, send progress = { mode = "hidden", message = "what you checked" }. The bridge hides the bar and labels progress not applicable; this is not a fabricated 0 % and does not trigger PERCENT_MISSING.'
-            missing = 'Missing percent is non-fatal. Unless mode=hidden was explicitly chosen, the UI shows truthful text only and no percentage/bar; after repeated unnumbered progress calls the response includes PERCENT_MISSING so measurable tasks can report a real estimate.'
+            field = 'Progress is optional: omit it when a meaningful estimate is unavailable. For measurable work, you may send progress = { percent = 43, message = "short concrete update" } at the same level as token/targetPlace/tool (or inside args); the bridge removes it before forwarding to Studio.'
+            mode = 'For chat questions and read-only inspection/observation, progress may be omitted entirely or disabled with progress=false / progress={mode:"hidden"|"off"|"not_applicable"}. The bridge labels it not applicable and hides the bar; no progress call is required.'
+            missing = 'Missing percent is non-fatal. The UI shows truthful text only and no percentage/bar; omitted progress does not count as a missing-percent failure. Only repeated explicit message-only progress reports may include PERCENT_MISSING so measurable tasks can provide a real estimate.'
             neverReset = 'A message-only call never resets a known percentage to 0. A fresh task starts without a percentage until Arena actually reports one.'
-            last = 'The last call of a completed task is report_done. Its 100 % is shown only for normal progress mode; mode=hidden stays not applicable for read-only tasks.'
+            last = 'report_done shows 100 % only when a genuine numeric progress value was reported. If no percentage was reported, completion stays not applicable rather than fabricating 100 %.'
             display = 'The place row and history show a numeric bar only after Arena reports a number. Hidden mode displays not applicable with the concrete text/action; no initial 0 %, no implied idle state. After 60 s without a Bridge call, the UI reports only that no new Bridge call was observed and that Arena status is unavailable.'
             rewind = 'Rewinds are allowed and stay visible; the bridge never invents a higher percentage than you reported.'
         }
@@ -23534,7 +23573,7 @@ end
             'model_audit, world_audit and ui_audit are optional diagnostics. Treat their geometry, color, contrast, motion, phase and structure results as measurements; change something only when it conflicts with the brief, Place convention, a real defect or an explicit requirement.',
             'Marked placeholders/blockouts are reported for context, not as automatic blockers. The sole geometry-specific pending workflow is an explicitly generated build_mesh_model slot whose requested Roblox geometry has not yet been applied; report_done may identify that concrete upload/application step.',
             'Keep script and GUI architecture consistent with the existing Place or the user request. Length, runtime construction, offsets, neutral colors, low contrast or a plain surface do not by themselves authorize a rewrite.',
-            'Use truthful progress: for simple read/observation work choose progress.mode="hidden" and a concrete message; do not invent 0% or an inactivity claim. For measurable work report a genuine estimate.',
+            'Progress is optional. For chat questions and pure read/observation work, omit it or set progress=false / mode="hidden"; no status payload is required. For measurable work, report a genuine estimate only; never invent 0%, 100% or an inactivity claim.',
             'At task end, use report_done when appropriate or continue the user-requested workflow. Do not add complexity or force a handoff solely to satisfy a generic quality score.'
         )
         $handoffJson = ''
@@ -23546,7 +23585,7 @@ end
             $out.simNotice = 'IMPORTANT: sim_start is intentionally disabled because the former Studio Run path exits Edit mode (EditModeActive=false), and the documented Studio API has no supported true Edit-mode physics/script path. Do not retry it; continue building and auditing in edit mode.'
         }
         if ($startNotify) {
-            $out.finishNotification = 'FINISH NOTIFICATION IS ON: when ALL your changes are complete and you are about to end your answer, call report_done { title, message } as your VERY LAST tool call - the user receives a Windows notification with your German message (e.g. title="✅ Arena hat den Bug behoben!", message="Der Fehler ist weg – komm und teste das Spiel!"). After that call: no more tools, no more changes - end your answer immediately.'
+            $out.finishNotification = 'FINISH NOTIFICATION IS ON: when ALL your changes are complete and you are about to end your answer, call report_done { title, message } as your VERY LAST tool call. The Bridge shows its own desktop popup and confirms only after WPF reports it rendered; Windows Toast settings cannot silently suppress this primary route. After that call: no more tools, no more changes - end your answer immediately.'
         }
         # Version 7.1.3: NUTZLAST-BUDGET DES SESSIONSTARTS.
         # Bis 7.1.2 lieferte die ERSTE Antwort die vollstaendige Doku ALLER
@@ -23630,7 +23669,7 @@ end
         $manifest = @{
             name = 'Arena Roblox Studio Bridge'
             version = '__ARENA_BUILD_VERSION__'
-            progress = 'For measurable work, report a genuine progress = { percent, message }. For simple read/observation work use { mode = "hidden", message = "what you checked" }; the bar is hidden and progress is not applicable. Missing percentages never create a 0% bar or an inactivity claim. report_done sets 100 only for normal measurable-progress mode.'
+            progress = 'Progress is optional. For measurable work, you may report a genuine progress = { percent, message }. For chat questions and simple read/observation work, omit progress or disable it with progress=false / { mode = "hidden" | "off" | "not_applicable" }; no status payload is required. Missing percentages never create a 0% bar, 100% completion estimate or inactivity claim.'
             simulation = 'sim_start is intentionally disabled: the former implementation used official Studio Run and exited Edit mode (EditModeActive=false). The documented Studio API has no supported true Edit-mode physics/script path. sim_status stays available; sim_stop remains for an existing bridge-owned session. This is distinct from a user Play/F5 test.'
             handoff = 'handoff { scope = "game", ... } is ONLY for a complete game or a combination of systems. Everything else must be finished in this session (HANDOFF_NOT_ALLOWED). One completely delivered stage precedes every handoff; the bridge stores it under %LOCALAPPDATA%\ArenaRobloxBridge\handoff and injects it into the _sessionStart of the next session for the same place.'
             docsVersion = [string]$Shared.DocsVersion
@@ -23867,7 +23906,7 @@ end
             executor = $executorSnapshot
             askUserProtocol = $askUserProtocol
             progressContract = @{
-                rule = 'Numeric work may send progress = { percent, message }; simple read-only inspection may send progress = { mode="hidden", message }. Hidden mode suppresses the bar and PERCENT_MISSING. Missing percentages never create a 0 % display; report_done completes the task, but hidden mode remains not applicable.'
+                rule = 'Progress is optional. Measurable work may send progress = { percent, message }; chat or read-only inspection may omit progress or send false / { mode="hidden"|"off"|"not_applicable" }. No status payload is required. Missing percentages never create a 0 % display, and report_done does not invent a 100 % value.'
                 mode = $(if ($progressView -and $progressView.PSObject.Properties['mode']) { [string]$progressView.mode } else { 'auto' })
                 notApplicable = $(if ($progressView -and $progressView.PSObject.Properties['mode']) { [string]$progressView.mode -eq 'hidden' } else { $false })
                 lastPercent = $(if ($progressView -and [string]$progressView.mode -ne 'hidden' -and [bool]$progressView.percentKnown) { [double]$progressView.percent } else { $null })
@@ -23921,7 +23960,7 @@ end
         if ($notifyOnDone) {
             $envelope.notifyWhenDone = @{
                 code = 'REPORT_DONE_EXPECTED'
-                instruction = 'FINISH NOTIFICATION IS ON: when ALL your changes are complete and you are about to end your answer, call report_done { title, message } as your VERY LAST tool call.'
+                instruction = 'FINISH NOTIFICATION IS ON: when ALL your changes are complete and you are about to end your answer, call report_done { title, message } as your VERY LAST tool call. The Bridge desktop popup is acknowledged only after WPF renders it.'
                 messageRule = 'title = lively German headline (max 70 chars), message = inviting German sentence (max 140 chars), e.g. title="✅ Arena hat den Bug behoben!", message="Der Fehler ist weg – komm und teste das Spiel!".'
                 strictRule = 'Call it ONLY when you are truly done: no further tool calls and no further changes afterwards - end your answer right after it. Never call it mid-work.'
             }
@@ -25058,8 +25097,8 @@ end
                 } else {
                     Update-ArenaProgressState $sessionId 'report_done' 100.0 ([string]$doneProgress.message) $true $true $false | Out-Null
                 }
-                # Version 3.8: Arena meldet "fertig" - der Nutzer bekommt eine
-                # Windows-Benachrichtigung (nur wenn er das aktiviert hat).
+                # Version 3.8/7.9.1: Arena meldet "fertig" - der Nutzer bekommt
+                # ein Bridge-Popup (nur wenn er das aktiviert hat).
                 # Version 7.2.0 (AP6): Das Bau-Register gehoert in JEDE
                 # report_done-Antwort - auch wenn die Fertig-Meldung aus ist.
                 # Es sagt ehrlich, was gebaut und was davon geprueft wurde.
@@ -25109,18 +25148,19 @@ end
                 $doneEntry = Get-SessionEntry $sessionId
                 $donePlace = 'Place'
                 if ($doneEntry) { $donePlace = [string]$doneEntry.placeName }
-                # Version 7.2.0 (D4): Jede Meldung bekommt eine Flow-Id, die
-                # ENQUEUED -> PLATFORM -> CALL -> SWEEP verbindet. Vorher stand
-                # im Protokoll "Arena-Fertig-Meldung angezeigt", ohne dass
-                # irgendjemand wusste, ob Windows sie wirklich gezeichnet hat.
+                # Version 7.9.1: Flow-IDs sind auch bei parallelen report_done-Aufrufen eindeutig.
+                # Die Handler-Antwort wartet kurz auf den tatsaechlich gerenderten Bridge-Popup.
                 $notifyFlowSeq = [long]0
+                [System.Threading.Monitor]::Enter($Shared.NotifyFlowLock)
                 try {
                     $notifyFlowSeq = [long]$Shared.Channel['NotifyFlowSeq'] + 1
                     $Shared.Channel['NotifyFlowSeq'] = $notifyFlowSeq
-                } catch {}
+                } finally {
+                    [System.Threading.Monitor]::Exit($Shared.NotifyFlowLock)
+                }
                 $notifyFlowId = 'n-' + [string]$notifyFlowSeq
                 $platformVerdict = 'UNKNOWN'
-                $platformReason = 'Die Oberflaeche hat die Plattform noch nicht gemessen.'
+                $platformReason = 'Der Windows-Toast-Status ist nur ein Fallback-Diagnosewert; das Bridge-Popup ist davon unabhaengig.'
                 $platformAppId = $false
                 try {
                     $platformJson = [string]$Shared.NotifyPlatformJson
@@ -25139,14 +25179,49 @@ end
                     time = (Get-Date).ToString('u')
                     queuedAt = (Get-UnixSeconds)
                 }
+                $waiterAdded = $false
+                try { $waiterAdded = $Shared.NotifyDeliveryStates.TryAdd($notifyFlowId, 'WAITING') } catch {}
                 $Shared.NotifyQueue.Enqueue((To-Json $donePayload 8))
                 Add-ChannelCount 'NotifyEnqueued' 1
                 Write-FlowStation 'NOTIFY' $notifyFlowId 'ENQUEUED' @{ place = $donePlace; platform = $platformVerdict; aumidRegistered = $platformAppId; title = $doneTitle }
                 Add-BridgeEvent $sessionId 'arena_done' ("The assistant reported it is done: " + $doneMessage) @{ place = $donePlace }
-                $notifyVerified = ($platformVerdict -eq 'READY')
+
+                # Der Status wird atomar zwischen Bridge-Ack und Timeout gesetzt.
+                # DISPLAYED heisst: ContentRendered ist eingetroffen - nicht, dass
+                # der Nutzer die Meldung sicher wahrgenommen hat.
+                $deliveryEnvelope = 'WAITING'
+                $deliveryDeadline = [DateTime]::UtcNow.AddSeconds(3)
+                while ($waiterAdded -and [DateTime]::UtcNow -lt $deliveryDeadline) {
+                    $deliveryEnvelope = 'WAITING'
+                    if (-not $Shared.NotifyDeliveryStates.TryGetValue($notifyFlowId, [ref]$deliveryEnvelope)) { break }
+                    if ($deliveryEnvelope -ne 'WAITING') { break }
+                    Start-Sleep -Milliseconds 60
+                }
+                if ($waiterAdded -and $deliveryEnvelope -eq 'WAITING') {
+                    [void]$Shared.NotifyDeliveryStates.TryUpdate($notifyFlowId, 'TIMEOUT', 'WAITING')
+                    $deliveryEnvelope = 'TIMEOUT'
+                    [void]$Shared.NotifyDeliveryStates.TryGetValue($notifyFlowId, [ref]$deliveryEnvelope)
+                }
+                $removedDeliveryState = ''
+                if ($waiterAdded) { [void]$Shared.NotifyDeliveryStates.TryRemove($notifyFlowId, [ref]$removedDeliveryState) }
+                $deliveryView = $null
+                if ($deliveryEnvelope -ne 'WAITING' -and $deliveryEnvelope -ne 'TIMEOUT') {
+                    try { $deliveryView = $deliveryEnvelope | ConvertFrom-Json } catch {}
+                }
+                $notifyDeliveryState = 'QUEUED'
+                $notifyDeliveryMethod = ''
+                $notifyDeliveryReason = 'Die Bridge hat innerhalb von 3 Sekunden keine Render-Bestaetigung erhalten; die Warteschlange versucht die Anzeige weiter.'
+                $notifyShownAt = [int64]0
+                if ($null -ne $deliveryView) {
+                    $notifyDeliveryState = [string]$deliveryView.state
+                    $notifyDeliveryMethod = [string]$deliveryView.method
+                    $notifyDeliveryReason = [string]$deliveryView.reason
+                    try { $notifyShownAt = [int64]$deliveryView.shownAt } catch {}
+                }
+                $notifyVerified = ($notifyDeliveryState -eq 'DISPLAYED' -and $notifyDeliveryMethod -eq 'bridge-window')
                 $notifyResult = @{
                     queued = $true
-                    delivered = $notifyVerified
+                    delivered = [bool]$notifyVerified
                     buildRegister = $buildRegister
                     buildRegisterNote = $buildRegisterNote
                     flowId = $notifyFlowId
@@ -25155,21 +25230,26 @@ end
                     limits = @{ titleCharacters = 70; messageCharacters = 140 }
                     notification = @{
                         flowId = $notifyFlowId
-                        state = 'QUEUED'
+                        state = $notifyDeliveryState
+                        method = $notifyDeliveryMethod
+                        displayedAt = $notifyShownAt
                         settingEnabled = $true
                         platformVerdict = $platformVerdict
                         platformReason = $platformReason
                         appUserModelIdRegistered = $platformAppId
-                        verified = $false
-                        verification = 'notify.sweep re-measures the platform a few seconds after the call and writes the verdict (SHOWN or SHOWN_UNVERIFIED plus reason) to notify-diagnose.txt. Windows has no API that confirms a toast was drawn, so "verified" here means: no suppression was measurable.'
+                        verified = [bool]$notifyVerified
+                        verification = 'DISPLAYED bestaetigt ausschliesslich, dass das eigene Bridge-Fenster das WPF-ContentRendered-Ereignis erreicht hat. Das belegt das Rendern, nicht die Wahrnehmung durch den Nutzer; Windows Toast/Fokus-Assistent blockiert diesen Primaerkanal nicht.'
                         diagnoseFile = '%LOCALAPPDATA%\ArenaRobloxBridge\notify-diagnose.txt'
                     }
-                    note = 'The user is being notified on their PC right now. This was your LAST action: make no further changes and no further tool calls - end your response now with your final summary.'
+                    note = $(if ($notifyVerified) { 'The Bridge desktop popup was rendered. This was your LAST action: make no further changes and no further tool calls - end your response now with your final summary.' } else { 'The finish notification remains queued or is unverified. Do NOT claim it was displayed. This was your LAST action: make no further changes and no further tool calls - end your response now with your final summary.' })
                 }
                 if (-not $notifyVerified) {
                     $notifyResult.notificationWarning = 'NOTIFICATION_UNVERIFIED'
-                    $notifyResult.honest = ('The finish notification was queued, but Windows may suppress it right now: ' + $platformVerdict + ' - ' + $platformReason + ' Do NOT claim the user was notified. Say in your reply what you finished and that the Windows notification may not appear.')
-                    Write-FlowStation 'NOTIFY' $notifyFlowId 'UNVERIFIED' @{ verdict = $platformVerdict; reason = $platformReason }
+                    if ($notifyDeliveryState -eq 'SUPPRESSED_APP_DISABLED') { $notifyResult.notificationWarning = 'NOTIFICATION_SUPPRESSED' }
+                    $notifyResult.honest = ('The finish popup was queued, but the Bridge did not confirm a rendered desktop window (state=' + $notifyDeliveryState + ', reason=' + $notifyDeliveryReason + '). Do NOT claim the user was notified; report the work in your reply and state that popup display was not confirmed.')
+                    Write-FlowStation 'NOTIFY' $notifyFlowId 'UNVERIFIED' @{ state = $notifyDeliveryState; method = $notifyDeliveryMethod; reason = $notifyDeliveryReason; platform = $platformVerdict }
+                } else {
+                    Write-FlowStation 'NOTIFY' $notifyFlowId 'DISPLAYED' @{ method = $notifyDeliveryMethod; shownAt = $notifyShownAt; acknowledgement = 'WPF_ContentRendered' }
                 }
                 return @{ ok = $true; result = $notifyResult }
             }
@@ -32257,27 +32337,47 @@ function Set-BackgroundArtwork {
     }
 }
 
-# Version 7.7.2: Eine Border kann ihren eigenen Hintergrund sauber an den
-# abgerundeten Ecken beschneiden (CornerRadius) - ein Image-Kindelement nicht.
-# Deshalb bekommen die Schalen der anderen Fenster das Hintergrundbild als
-# ImageBrush-Hintergrund; bleibt das Bild aus, gilt der bisherige Verlauf.
+# Version 7.9.1: Das Nutzerbild bleibt in jeder Nebenschale erhalten, wird aber
+# mit einer halbtransparenten schwarzen Zeichenflaeche abgedunkelt. Das
+# Hauptfenster der Place-Liste nutzt Set-BackgroundArtwork und bleibt hell.
 function Set-BackgroundShellBrush {
     param($Shell)
     if ($null -eq $Shell) { return $false }
     try {
         $bitmap = Get-BackgroundArtworkBitmap
         if ($null -eq $bitmap) { return $false }
-        $brush = [System.Windows.Media.ImageBrush]::new()
-        $brush.ImageSource = $bitmap
+        $bounds = [System.Windows.Rect]::new(0, 0, [double]$bitmap.PixelWidth, [double]$bitmap.PixelHeight)
+        if ($bounds.Width -le 0 -or $bounds.Height -le 0) { return $false }
+
+        $group = [System.Windows.Media.DrawingGroup]::new()
+        $imageDrawing = [System.Windows.Media.ImageDrawing]::new()
+        $imageDrawing.ImageSource = $bitmap
+        $imageDrawing.Rect = $bounds
+        [void]$group.Children.Add($imageDrawing)
+
+        # 44 % schwarz: genug Kontrast fuer Text, ohne das eigene Bild zu verlieren.
+        $shade = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromArgb(112, 0, 0, 0))
+        $shade.Freeze()
+        $shadeGeometry = [System.Windows.Media.RectangleGeometry]::new($bounds)
+        $shadeDrawing = [System.Windows.Media.GeometryDrawing]::new($shade, $null, $shadeGeometry)
+        [void]$group.Children.Add($shadeDrawing)
+        $group.Freeze()
+
+        $brush = [System.Windows.Media.DrawingBrush]::new($group)
         $brush.Stretch = [System.Windows.Media.Stretch]::UniformToFill
         $brush.AlignmentX = [System.Windows.Media.AlignmentX]::Center
         $brush.AlignmentY = [System.Windows.Media.AlignmentY]::Center
+        $brush.Viewbox = $bounds
+        $brush.ViewboxUnits = [System.Windows.Media.BrushMappingMode]::Absolute
+        $brush.Viewport = [System.Windows.Rect]::new(0, 0, 1, 1)
+        $brush.ViewportUnits = [System.Windows.Media.BrushMappingMode]::RelativeToBoundingBox
+        $brush.TileMode = [System.Windows.Media.TileMode]::None
         try { [System.Windows.Media.RenderOptions]::SetBitmapScalingMode($brush, [System.Windows.Media.BitmapScalingMode]::HighQuality) } catch {}
         try { $brush.Freeze() } catch {}
         $Shell.Background = $brush
         return $true
     } catch {
-        try { Write-RuntimeLog ('Hintergrundbild der Fensterschale konnte nicht gesetzt werden: ' + $_.Exception.Message) } catch {}
+        try { Write-RuntimeLog ('Abgedunkeltes Hintergrundbild der Fensterschale konnte nicht gesetzt werden: ' + $_.Exception.Message) } catch {}
         return $false
     }
 }
@@ -33844,6 +33944,7 @@ function Get-ProgressStateSnapshotForId {
         CallsWithPercent = $callsWithPercent
         CallsWithoutPercent = $callsWithoutPercent
         LastTool = $lastTool
+        Revision = $(if ($state.PSObject.Properties['revision']) { [int64]$state.revision } else { [int64]0 })
         Mode = $(if ($state.PSObject.Properties['mode']) { [string]$state.mode } else { 'auto' })
     }
     # Nach einer Minute ohne Bridge-Aufruf: Fortschritt ehrlich einfrieren
@@ -33883,11 +33984,17 @@ function Get-ProgressStateSnapshot {
     } catch {}
     $best = $null
     $bestCall = [int64](-1)
+    $bestRevision = [int64](-1)
     foreach ($candidate in $candidates) {
         $view = Get-ProgressStateSnapshotForId $candidate
         if ($null -eq $view) { continue }
         $callAt = [int64]$view.LastCallAt
-        if ($null -eq $best -or $callAt -gt $bestCall) { $best = $view; $bestCall = $callAt }
+        $revision = [int64]$view.Revision
+        if ($null -eq $best -or $revision -gt $bestRevision -or ($revision -eq $bestRevision -and $callAt -gt $bestCall)) {
+            $best = $view
+            $bestCall = $callAt
+            $bestRevision = $revision
+        }
     }
     return $best
 }
@@ -36615,7 +36722,7 @@ function Update-PlaceProgressVisual {
     if (-not [string]::IsNullOrWhiteSpace($commandText)) { $tooltip = $tooltip + [Environment]::NewLine + $commandText }
     if (-not [string]::IsNullOrWhiteSpace($userBadgeText)) { $tooltip = $tooltip + [Environment]::NewLine + $userBadgeText + ' - Menue (...) der Place-Zeile: "Nachricht an Arena senden".' }
 
-    $showNumericProgress = (($percentKnown -or $state -eq 'done') -and $progressMode -ne 'hidden')
+    $showNumericProgress = ($percentKnown -and $progressMode -ne 'hidden')
     Set-Text $Row.ProgressText $label
     $Row.ProgressText.Visibility = 'Visible'
     $Row.ProgressText.Foreground = Get-Brush $color
@@ -36765,14 +36872,15 @@ function Write-ChannelDiagnoseFile {
         [void]$sb2.AppendLine('')
         [void]$sb2.AppendLine('Zaehler (laufen immer mit):')
         [void]$sb2.AppendLine(('  Meldungen eingereiht:            {0}' -f (Get-ChannelCountText 'NotifyEnqueued')))
-        [void]$sb2.AppendLine(('  Meldungen angezeigt:             {0}' -f (Get-ChannelCountText 'NotifyShown')))
-        [void]$sb2.AppendLine(('  von Windows unterdrueckt:        {0}' -f (Get-ChannelCountText 'NotifySuppressed')))
+        [void]$sb2.AppendLine(('  Bridge-Popups gerendert:         {0}' -f (Get-ChannelCountText 'NotifyShown')))
+        [void]$sb2.AppendLine(('  durch App-Schalter unterdrueckt: {0}' -f (Get-ChannelCountText 'NotifySuppressed')))
         [void]$sb2.AppendLine(('  Aufruf fehlgeschlagen:           {0}' -f (Get-ChannelCountText 'NotifyFailed')))
         [void]$sb2.AppendLine(('  nach Aufruf nicht bestaetigt:    {0}' -f (Get-ChannelCountText 'NotifyUnverified')))
         [void]$sb2.AppendLine(('  letztes Urteil:                  {0}' -f (Get-ChannelCountText 'NotifyLastVerdict')))
         [void]$sb2.AppendLine(('  letzter Grund:                   {0}' -f (Get-ChannelCountText 'NotifyLastReason')))
         [void]$sb2.AppendLine('')
-        [void]$sb2.AppendLine('Windows-Plattform (gemessen, nicht geraten):')
+        [void]$sb2.AppendLine('WPF-ContentRendered bestaetigt das Rendern, nicht das Gesehenwerden.')
+        [void]$sb2.AppendLine('Windows-Toast-Fallback (nur Diagnose; primaeres Bridge-Popup ist unabhaengig):')
         try {
             $platformNow = Update-NotifyPlatformCache -Force
             if ($null -ne $platformNow) {
@@ -38351,7 +38459,6 @@ function Update-ArenaHistoryProgressCard {
         if ([string]::IsNullOrWhiteSpace($progressMode)) { $progressMode = 'auto' }
         $percent = [int][Math]::Round([double]$snapshot.Percent,0)
         if ($percent -lt 0) { $percent = 0 }; if ($percent -gt 100) { $percent = 100 }
-        if ($state -eq 'done' -and -not $percentKnown) { $percent = 100; $percentKnown = $true }
         $message = Format-ProgressMessage $snapshot
         if ([string]::IsNullOrWhiteSpace($message)) { $message = 'Bridge-Aufruf erfasst; keine konkrete Statusmeldung übermittelt.' }
         $silent = [int]$snapshot.SilentSeconds
@@ -38404,7 +38511,7 @@ function Update-ArenaHistoryProgressCard {
         $commandStatus = Get-PendingCommandStatusLabel ([string]$openCommand.status)
         $metaParts.Add('Studio-Befehl: ' + $toolLabel + ' (' + $commandStatus + ')')
     }
-    $showNumericProgress = (($percentKnown -or $state -eq 'done') -and $progressMode -ne 'hidden')
+    $showNumericProgress = ($percentKnown -and $progressMode -ne 'hidden')
     $signature = @($Target.PlaceName,$statusText,$percent,$percentKnown,$progressMode,$state,$actionText,($metaParts.ToArray() -join ' · ')) -join '|'
     if ([string]$Card.Signature -eq $signature) { return }
     $Card.Signature = $signature
@@ -41190,9 +41297,9 @@ function Get-NotifyPlatformLine {
 }
 
 function Update-NotifyPlatformCache {
-    # Haelt das Urteil fuer den HTTP-Handler bereit: Der Server-Runspace kann
-    # keine UI-Funktionen aufrufen, liest aber genau dieses JSON, damit
-    # report_done ehrlich antworten kann (NOTIFICATION_UNVERIFIED).
+    # Haelt den Windows-Toast-Fallbackstatus fuer Diagnose bereit. Der Primaerkanal
+    # ist ein eigenes WPF-Popup; dessen Anzeige wird separat per ContentRendered
+    # bestaetigt und nicht aus diesem Plattformurteil abgeleitet.
     param([switch]$Force)
     try {
         $now = Get-Date
@@ -41225,11 +41332,8 @@ function Add-NotifyRecord {
 }
 
 function Invoke-NotifySweep {
-    # Version 7.2.0: Nachsicht statt Blindheit. Windows bietet keine API, die
-    # das Anzeigen eines Toasts bestaetigt - also wird NACH dem Aufruf erneut
-    # gemessen und ehrlich verbucht: SHOWN (keine Unterdrueckung messbar) oder
-    # SHOWN_UNVERIFIED (Grund steht dabei). Genau dieser Unterschied fehlte
-    # 7.1.x, wo "delivered = true" blind zurueckgegeben wurde.
+    # WPF ContentRendered ist die einzige bestaetigte Anzeige. Native Toasts
+    # koennen ohne Ausnahme verworfen werden; deren Aufruf bleibt unverified.
     param()
     try {
         if ($null -eq $script:NotifyRecords -or $script:NotifyRecords.Count -eq 0) { return }
@@ -41237,31 +41341,44 @@ function Invoke-NotifySweep {
         foreach ($record in $script:NotifyRecords.ToArray()) {
             try {
                 if ([bool]$record.swept) { continue }
+                $method = [string]$record.method
+                if ($method -eq 'bridge-window') {
+                    # Eine lange Queue darf einen frisch geoeffneten Popup nicht
+                    # sofort als Render-Timeout markieren. Die Render-Frist beginnt
+                    # mit dem WPF-Show-Aufruf, nicht mit dem Enqueue-Zeitpunkt.
+                    $popupOpenedAt = [int64]0
+                    try { if ($record.PSObject.Properties['popupOpenedAt']) { $popupOpenedAt = [int64]$record.popupOpenedAt } } catch {}
+                    if ($popupOpenedAt -le 0) { $popupOpenedAt = [int64]$record.queuedAt }
+                    if ($popupOpenedAt -le 0) { $popupOpenedAt = $nowSeconds }
+                    if (($nowSeconds - $popupOpenedAt) -lt 5) { continue }
+                    $reason = 'Das Bridge-Fenster meldete innerhalb von 5 Sekunden nach dem Oeffnen kein WPF-ContentRendered; sichtbare Anzeige ist nicht bestaetigt.'
+                    Set-UiMessageField $record 'swept' $true
+                    Set-UiMessageField $record 'sweptAt' $nowSeconds
+                    Set-UiMessageField $record 'verdict' 'DISPLAY_UNVERIFIED'
+                    Set-UiMessageField $record 'sweepReason' $reason
+                    Add-UiChannelCount 'NotifyUnverified' 1
+                    Set-UiChannelText 'NotifyLastVerdict' 'DISPLAY_UNVERIFIED'
+                    Set-UiChannelText 'NotifyLastReason' $reason
+                    Write-FlowTrace 'NOTIFY' ([string]$record.flowId) 'SWEEP' @{ verdict = 'DISPLAY_UNVERIFIED'; ageSeconds = ($nowSeconds - $popupOpenedAt); method = $method; reason = $reason }
+                    [void](Set-NotifyDeliveryAcknowledgement -FlowId ([string]$record.flowId) -State 'UNVERIFIED' -Method $method -Reason $reason)
+                    try { $script:Shared.NotifyLastJson = [string]($record | ConvertTo-Json -Depth 6 -Compress) } catch {}
+                    continue
+                }
                 $shownAt = [int64]$record.shownAt
                 if ($shownAt -le 0) { continue }
                 if (($nowSeconds - $shownAt) -lt 4) { continue }
-                $platform = Update-NotifyPlatformCache -Force
-                $verdict = 'SHOWN_UNVERIFIED'
-                $reason = 'Windows bestaetigt das Anzeigen eines Toasts nicht; nach dem Aufruf war keine Unterdrueckung messbar.'
-                if ($null -ne $platform) {
-                    if ([string]$platform.verdict -eq 'READY') {
-                        $verdict = 'SHOWN'
-                        $reason = [string]$platform.reason
-                    } else {
-                        $verdict = 'SHOWN_UNVERIFIED'
-                        $reason = ('Nach dem Aufruf gemessen: ' + (Get-NotifyPlatformLine $platform))
-                    }
-                }
+        $platform = Update-NotifyPlatformCache
+        $verdict = 'SHOWN_UNVERIFIED'
+                $reason = 'Der Windows-Fallback-Aufruf kehrte zurueck; Windows bestaetigt nicht, ob die Meldung sichtbar war.'
+                if ($null -ne $platform) { $reason += ' Plattformdiagnose: ' + (Get-NotifyPlatformLine $platform) }
                 Set-UiMessageField $record 'swept' $true
                 Set-UiMessageField $record 'sweptAt' $nowSeconds
                 Set-UiMessageField $record 'verdict' $verdict
                 Set-UiMessageField $record 'sweepReason' $reason
-                if ($verdict -eq 'SHOWN') { Add-UiChannelCount 'NotifyShown' 1 } else { Add-UiChannelCount 'NotifyUnverified' 1 }
+                Add-UiChannelCount 'NotifyUnverified' 1
                 Set-UiChannelText 'NotifyLastVerdict' $verdict
                 Set-UiChannelText 'NotifyLastReason' $reason
-                Write-FlowTrace 'NOTIFY' ([string]$record.flowId) 'SWEEP' @{ verdict = $verdict; ageSeconds = ($nowSeconds - $shownAt); method = ([string]$record.method); reason = $reason }
-                # Nicht erneut einreihen (das wuerde duplizieren) - nur die
-                # gemeinsame Ablage fuer Diagnose/HTTP aktualisieren.
+                Write-FlowTrace 'NOTIFY' ([string]$record.flowId) 'SWEEP' @{ verdict = $verdict; ageSeconds = ($nowSeconds - $shownAt); method = $method; reason = $reason }
                 try { $script:Shared.NotifyLastJson = [string]($record | ConvertTo-Json -Depth 6 -Compress) } catch {}
             } catch {}
         }
@@ -41279,26 +41396,242 @@ function Clear-NotifyQueue {
             $item = $null
             if (-not $script:Shared.NotifyQueue.TryDequeue([ref]$item)) { break }
             $drained = $drained + 1
+            try {
+                $payload = [string]$item | ConvertFrom-Json
+                $flowId = [string]$payload.flowId
+                $reason = 'Die Fertig-Meldung wurde aus der Warteschlange entfernt, weil der Schalter ausgeschaltet wurde.'
+                [void](Set-NotifyDeliveryAcknowledgement -FlowId $flowId -State 'SUPPRESSED_APP_DISABLED' -Reason $reason)
+                Write-FlowTrace 'NOTIFY' $flowId 'SUPPRESSED' @{ reason = 'setting_off_during_queue' }
+            } catch {}
         }
     } catch {}
     if ($drained -gt 0) { Write-RuntimeLog "Fertig-Benachrichtigung aus: $drained wartende Meldung(en) verworfen." }
     return $drained
 }
 
+function Set-NotifyDeliveryAcknowledgement {
+    # Handler und UI-Dispatcher teilen flowId -> Zustand. TryUpdate verhindert,
+    # dass ein spaeter Render-Ack einen bereits abgelaufenen Waiter wiederbelebt.
+    param([string]$FlowId, [string]$State, [string]$Method = '', [string]$Reason = '', [int64]$ShownAt = 0)
+    try {
+        if ([string]::IsNullOrWhiteSpace($FlowId)) { return $false }
+        $current = ''
+        if (-not $script:Shared.NotifyDeliveryStates.TryGetValue([string]$FlowId, [ref]$current)) { return $false }
+        if ($current -ne 'WAITING') { return $false }
+        $ack = @{
+            state = [string]$State
+            method = [string]$Method
+            reason = [string]$Reason
+            shownAt = [int64]$ShownAt
+        } | ConvertTo-Json -Depth 4 -Compress
+        return [bool]$script:Shared.NotifyDeliveryStates.TryUpdate([string]$FlowId, [string]$ack, 'WAITING')
+    } catch { return $false }
+}
+
+function Show-ArenaDoneDesktopPopup {
+    # Primaerkanal fuer report_done: eigenes, topmost WPF-Fenster statt eines
+    # Windows-Toast-Aufrufs, dessen sichtbare Darstellung nicht bestaetigt wird.
+    param($Record)
+    $noticeWindow = $null
+    $autoCloseTimer = $null
+    try {
+        $noticeWindow = [System.Windows.Window]::new()
+        $noticeWindow.Title = 'Arena Roblox Bridge'
+        $noticeWindow.Width = 424
+        $noticeWindow.Height = 208
+        $noticeWindow.WindowStyle = [System.Windows.WindowStyle]::None
+        $noticeWindow.ResizeMode = [System.Windows.ResizeMode]::NoResize
+        $noticeWindow.AllowsTransparency = $true
+        $noticeWindow.Background = [System.Windows.Media.Brushes]::Transparent
+        $noticeWindow.Topmost = $true
+        $noticeWindow.ShowActivated = $false
+        $noticeWindow.ShowInTaskbar = $false
+        $noticeWindow.WindowStartupLocation = [System.Windows.WindowStartupLocation]::Manual
+
+        $shell = [System.Windows.Controls.Border]::new()
+        $shell.CornerRadius = [System.Windows.CornerRadius]::new(16)
+        $shell.Padding = [System.Windows.Thickness]::new(0)
+        $shell.BorderBrush = Get-Brush '#66FFFFFF'
+        $shell.BorderThickness = [System.Windows.Thickness]::new(1)
+        $shell.ClipToBounds = $true
+        if (-not (Set-BackgroundShellBrush -Shell $shell)) { $shell.Background = Get-Brush '#10182A' }
+
+        $layout = [System.Windows.Controls.Grid]::new()
+        $layout.Margin = [System.Windows.Thickness]::new(18, 14, 18, 14)
+        foreach ($height in @([System.Windows.GridLength]::Auto, [System.Windows.GridLength]::Auto, [System.Windows.GridLength]::new(1.0, [System.Windows.GridUnitType]::Star), [System.Windows.GridLength]::Auto)) {
+            $row = [System.Windows.Controls.RowDefinition]::new()
+            $row.Height = $height
+            [void]$layout.RowDefinitions.Add($row)
+        }
+
+        $header = [System.Windows.Controls.Grid]::new()
+        $headerLeft = [System.Windows.Controls.ColumnDefinition]::new()
+        $headerLeft.Width = [System.Windows.GridLength]::new(1.0, [System.Windows.GridUnitType]::Star)
+        $headerRight = [System.Windows.Controls.ColumnDefinition]::new()
+        $headerRight.Width = [System.Windows.GridLength]::Auto
+        [void]$header.ColumnDefinitions.Add($headerLeft)
+        [void]$header.ColumnDefinitions.Add($headerRight)
+
+        $brand = [System.Windows.Controls.StackPanel]::new()
+        $brand.Orientation = [System.Windows.Controls.Orientation]::Horizontal
+        $brand.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+        $badge = [System.Windows.Controls.Border]::new()
+        $badge.Width = 28
+        $badge.Height = 28
+        $badge.CornerRadius = [System.Windows.CornerRadius]::new(14)
+        $badge.Background = Get-Brush '#2534D399'
+        $badge.BorderBrush = Get-Brush '#704ADE80'
+        $badge.BorderThickness = [System.Windows.Thickness]::new(1)
+        $check = [System.Windows.Controls.TextBlock]::new()
+        $check.Text = '✓'
+        $check.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe UI Symbol')
+        $check.FontSize = 15
+        $check.FontWeight = [System.Windows.FontWeights]::Bold
+        $check.Foreground = Get-Brush '#86EFAC'
+        $check.HorizontalAlignment = [System.Windows.HorizontalAlignment]::Center
+        $check.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+        $badge.Child = $check
+        [void]$brand.Children.Add($badge)
+        $brandText = [System.Windows.Controls.TextBlock]::new()
+        $brandText.Text = 'AUFTRAG ABGESCHLOSSEN'
+        $brandText.Margin = [System.Windows.Thickness]::new(10, 0, 0, 0)
+        $brandText.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe UI')
+        $brandText.FontSize = 9.5
+        $brandText.FontWeight = [System.Windows.FontWeights]::SemiBold
+        $brandText.Foreground = Get-Brush '#A5B3D1'
+        $brandText.VerticalAlignment = [System.Windows.VerticalAlignment]::Center
+        [void]$brand.Children.Add($brandText)
+        [void]$header.Children.Add($brand)
+
+        $closeButton = [System.Windows.Controls.Button]::new()
+        $closeButton.Content = '×'
+        $closeButton.Width = 28
+        $closeButton.Height = 28
+        $closeButton.Padding = [System.Windows.Thickness]::new(0)
+        $closeButton.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe UI Symbol')
+        $closeButton.FontSize = 18
+        $closeButton.Foreground = Get-Brush '#DCE6F5'
+        $closeButton.Background = Get-Brush '#20FFFFFF'
+        $closeButton.BorderBrush = Get-Brush '#35FFFFFF'
+        $closeButton.BorderThickness = [System.Windows.Thickness]::new(1)
+        $closeButton.Cursor = [System.Windows.Input.Cursors]::Hand
+        $closeButton.Tag = $noticeWindow
+        $closeButton.Add_Click({ param($sender, $eventArgs) try { $sender.Tag.Close() } catch {} })
+        [System.Windows.Controls.Grid]::SetColumn($closeButton, 1)
+        [void]$header.Children.Add($closeButton)
+        [void]$layout.Children.Add($header)
+
+        $title = [System.Windows.Controls.TextBlock]::new()
+        $title.Text = [string]$Record.title
+        $title.Margin = [System.Windows.Thickness]::new(0, 9, 0, 0)
+        $title.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe UI')
+        $title.FontSize = 16
+        $title.FontWeight = [System.Windows.FontWeights]::SemiBold
+        $title.Foreground = Get-Brush '#F8FAFC'
+        $title.TextWrapping = [System.Windows.TextWrapping]::Wrap
+        $title.MaxHeight = 42
+        [System.Windows.Controls.Grid]::SetRow($title, 1)
+        [void]$layout.Children.Add($title)
+
+        $message = [System.Windows.Controls.TextBlock]::new()
+        $message.Text = [string]$Record.message
+        $message.Margin = [System.Windows.Thickness]::new(0, 5, 0, 0)
+        $message.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe UI')
+        $message.FontSize = 12.5
+        $message.Foreground = Get-Brush '#E1EAF7'
+        $message.TextWrapping = [System.Windows.TextWrapping]::Wrap
+        $message.VerticalAlignment = [System.Windows.VerticalAlignment]::Top
+        $message.MaxHeight = 56
+        [System.Windows.Controls.Grid]::SetRow($message, 2)
+        [void]$layout.Children.Add($message)
+
+        $footer = [System.Windows.Controls.StackPanel]::new()
+        $footerLine = [System.Windows.Controls.Border]::new()
+        $footerLine.Height = 1
+        $footerLine.Background = Get-Brush '#38FFFFFF'
+        $footerLine.Margin = [System.Windows.Thickness]::new(0, 8, 0, 7)
+        [void]$footer.Children.Add($footerLine)
+        $footerText = [System.Windows.Controls.TextBlock]::new()
+        $footerText.Text = ('Arena Roblox Bridge  ·  ' + [string]$Record.place)
+        $footerText.FontFamily = [System.Windows.Media.FontFamily]::new('Segoe UI')
+        $footerText.FontSize = 10
+        $footerText.Foreground = Get-Brush '#B8C5D9'
+        $footerText.TextTrimming = [System.Windows.TextTrimming]::CharacterEllipsis
+        $footerText.ToolTip = 'Wird nach 12 Sekunden automatisch geschlossen.'
+        [void]$footer.Children.Add($footerText)
+        [System.Windows.Controls.Grid]::SetRow($footer, 3)
+        [void]$layout.Children.Add($footer)
+        $shell.Child = $layout
+        $noticeWindow.Content = $shell
+
+        if ($null -eq $script:NotifyPopupWindows) { $script:NotifyPopupWindows = New-Object System.Collections.Generic.List[object] }
+        while ($script:NotifyPopupWindows.Count -ge 3) {
+            $oldest = $script:NotifyPopupWindows[0]
+            try { $oldest.Close() } catch {}
+            if ($script:NotifyPopupWindows.Count -gt 0 -and [object]::ReferenceEquals($script:NotifyPopupWindows[0], $oldest)) {
+                $script:NotifyPopupWindows.RemoveAt(0)
+            }
+        }
+        $slot = $script:NotifyPopupWindows.Count
+        $workArea = [System.Windows.SystemParameters]::WorkArea
+        $noticeWindow.Left = [Math]::Max($workArea.Left + 10, $workArea.Right - $noticeWindow.Width - 20)
+        $noticeWindow.Top = [Math]::Max($workArea.Top + 10, $workArea.Bottom - $noticeWindow.Height - 20 - ($slot * ($noticeWindow.Height + 10)))
+
+        $autoCloseTimer = [System.Windows.Threading.DispatcherTimer]::new()
+        $autoCloseTimer.Interval = [TimeSpan]::FromSeconds(12)
+        $autoCloseTimer.Tag = $noticeWindow
+        $autoCloseTimer.Add_Tick({
+            param($sender, $eventArgs)
+            $sender.Stop()
+            try { $sender.Tag.Close() } catch {}
+        })
+        $noticeWindow.Tag = [pscustomobject]@{ Record = $Record; AutoCloseTimer = $autoCloseTimer }
+        $noticeWindow.Add_ContentRendered({
+            param($sender, $eventArgs)
+            try {
+                $info = $sender.Tag
+                $noticeRecord = $info.Record
+                $renderedAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+                $reason = 'Das Bridge-Popup hat WPF-ContentRendered erreicht; gerendert bedeutet nicht automatisch vom Nutzer wahrgenommen.'
+                Set-UiMessageField $noticeRecord 'shownAt' $renderedAt
+                Set-UiMessageField $noticeRecord 'method' 'bridge-window'
+                Set-UiMessageField $noticeRecord 'verdict' 'DISPLAYED'
+                Set-UiMessageField $noticeRecord 'reason' $reason
+                Set-UiMessageField $noticeRecord 'swept' $true
+                Set-UiMessageField $noticeRecord 'sweptAt' $renderedAt
+                Set-UiMessageField $noticeRecord 'sweepReason' $reason
+                Add-UiChannelCount 'NotifyShown' 1
+                Set-UiChannelText 'NotifyLastVerdict' 'DISPLAYED'
+                Set-UiChannelText 'NotifyLastReason' $reason
+                Write-FlowTrace 'NOTIFY' ([string]$noticeRecord.flowId) 'DISPLAYED' @{ method = 'bridge-window'; shownAt = $renderedAt; acknowledgement = 'WPF_ContentRendered' }
+                try { $script:Shared.NotifyLastJson = [string]($noticeRecord | ConvertTo-Json -Depth 6 -Compress) } catch {}
+                [void](Set-NotifyDeliveryAcknowledgement -FlowId ([string]$noticeRecord.flowId) -State 'DISPLAYED' -Method 'bridge-window' -Reason $reason -ShownAt $renderedAt)
+            } catch {
+                try { Write-RuntimeLog ('Bridge-Popup-Renderbestaetigung fehlgeschlagen: ' + $_.Exception.Message) } catch {}
+            }
+        })
+        $noticeWindow.Add_Closed({
+            param($sender, $eventArgs)
+            try { $sender.Tag.AutoCloseTimer.Stop() } catch {}
+            try { [void]$script:NotifyPopupWindows.Remove($sender) } catch {}
+        })
+        [void]$script:NotifyPopupWindows.Add($noticeWindow)
+        [void]$noticeWindow.Show()
+        $autoCloseTimer.Start()
+        return $true
+    } catch {
+        try { if ($null -ne $autoCloseTimer) { $autoCloseTimer.Stop() } } catch {}
+        try { if ($null -ne $noticeWindow) { $noticeWindow.Close() } } catch {}
+        try { if ($null -ne $noticeWindow -and $null -ne $script:NotifyPopupWindows) { [void]$script:NotifyPopupWindows.Remove($noticeWindow) } } catch {}
+        try { Write-RuntimeLog ('Bridge-Fertig-Popup konnte nicht geoeffnet werden: ' + $_.Exception.Message) } catch {}
+        return $false
+    }
+}
+
 function Show-ArenaDoneNotification {
-    # Version 3.8: Windows-Benachrichtigung "Arena ist fertig" - ausschliesslich
-    # fuer die report_done-Meldung der KI (der Nutzer hat diese Benachrichtigung
-    # dafuer explizit in den Einstellungen aktiviert; sie ist standardmaessig
-    # AUS). Die alten stummen Toast-Stummel bleiben unangetastet.
-    # Version 7.1.3: Der Schalter "Benachrichtigung, wenn Arena fertig ist"
-    # steht direkt unter "Fortschritt in der Place-Liste anzeigen" und wird
-    # hier ZUSAETZLICH unmittelbar vor dem Anzeigen geprueft - ein Ausschalten
-    # wirkt damit auch fuer Meldungen, die schon in der Warteschlange lagen.
-    # Version 7.2.0 (D4): Es wird GEMESSEN, nicht behauptet. Vor dem Aufruf
-    # laeuft Test-NotifyPlatform, der Aufruf selbst bekommt eine Station, und
-    # notify.sweep misst danach erneut. Ein Toast, den Windows still verworfen
-    # hat, steht jetzt als SHOWN_UNVERIFIED mit Grund im Protokoll und in
-    # notify-diagnose.txt - statt "Arena-Fertig-Meldung angezeigt".
+    # report_done nutzt zuerst ein eigenes Bridge-Fenster. Nur wenn WPF das
+    # Popup nicht oeffnen kann, wird auf Windows-Toast/Tray-Balloon gewechselt;
+    # diese Fallback-Aufrufe werden ausdruecklich NICHT als sichtbar bestaetigt.
     param([string]$Place, [string]$Title, [string]$Message, [string]$FlowId = '', [int64]$QueuedAt = 0)
     $flowId = [string]$FlowId
     if ([string]::IsNullOrWhiteSpace($flowId)) { $flowId = 'n-' + [string]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) }
@@ -41325,30 +41658,46 @@ function Show-ArenaDoneNotification {
         Set-UiChannelText 'NotifyLastReason' ([string]$record.reason)
         Write-FlowTrace 'NOTIFY' $flowId 'SUPPRESSED' @{ reason = 'setting_off'; place = ([string]$Place) }
         Add-NotifyRecord $record
-        Write-RuntimeLog 'Fertig-Meldung verworfen: der Schalter "Benachrichtigung, wenn Arena fertig ist" ist aus.'
+        [void](Set-NotifyDeliveryAcknowledgement -FlowId $flowId -State 'SUPPRESSED_APP_DISABLED' -Reason ([string]$record.reason))
+        Write-RuntimeLog 'Fertig-Popup verworfen: der Schalter "Benachrichtigung, wenn Arena fertig ist" ist aus.'
         return $record
     }
-    # Plattform VOR dem Aufruf messen: das Urteil gehoert zur Meldung.
-    $platform = Update-NotifyPlatformCache -Force
+
+    # Plattformstatus bleibt fuer notify-diagnose.txt nuetzlich, steuert aber
+    # den Bridge-Popup-Kanal nicht (Fokus-Assistent/Vollbild koennen ihn nicht still verwerfen).
+    $platform = Update-NotifyPlatformCache
     if ($null -ne $platform) {
         Write-FlowTrace 'NOTIFY' $flowId 'PLATFORM' @{ verdict = ([string]$platform.verdict); globalToasts = $(if ($null -eq $platform.globalToastsEnabled) { 'unknown' } else { [string]$platform.globalToastsEnabled }); appEnabled = $(if ($null -eq $platform.appNotificationsEnabled) { 'unknown' } else { [string]$platform.appNotificationsEnabled }); focusAssist = ([string]$platform.focusAssist); foreground = ([string]$platform.foreground); aumidRegistered = ([string]$platform.appUserModelIdRegistered); build = ([string]$platform.windowsBuild) }
     }
-    # Windows 11 ToastGeneric hat laut Microsoft kein festes Zeichenlimit je
-    # Textfeld (Darstellung wird nach Breite/Skalierung abgeschnitten; Gesamt-XML
-    # max. 5 KB). Fuer verlaesslich voll sichtbare Meldungen erzwingt die Bridge
-    # den konservativen Windows-11-Anzeigebudget-Vertrag: 70 Zeichen Titel,
-    # 140 Zeichen Inhalt. Dieselben Grenzen stehen in der Arena-Dokumentation.
     $title = $Title
     if ([string]::IsNullOrWhiteSpace($title)) { $title = '✅ Arena ist fertig!' }
     if ($title.Length -gt 70) { $title = $title.Substring(0, 69).TrimEnd() + '…' }
     $text = $Message
     if ($text.Length -gt 140) { $text = $text.Substring(0, 139).TrimEnd() + '…' }
     if ([string]::IsNullOrWhiteSpace($text)) { $text = 'Ich bin fertig.' }
+    Set-UiMessageField $record 'title' $title
+    Set-UiMessageField $record 'message' $text
+    Set-UiMessageField $record 'method' 'bridge-window'
+    Set-UiMessageField $record 'verdict' 'RENDER_PENDING'
+    Set-UiMessageField $record 'reason' 'Das Bridge-Fenster wird geoeffnet; ContentRendered bestaetigt anschliessend das Rendering.'
+    Add-NotifyRecord $record
+
+    # Ab hier laeuft die Render-Frist. Eine lange Queue darf nicht die Zeit
+    # verbrauchen, die WPF nach dem Oeffnen fuer ContentRendered braucht.
+    Set-UiMessageField $record 'popupOpenedAt' ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+    $popupShown = $false
+    try { $popupShown = Show-ArenaDoneDesktopPopup $record } catch {
+        Write-RuntimeLog ('Bridge-Fertig-Popup fehlgeschlagen: ' + $_.Exception.Message)
+        Write-FlowTrace 'NOTIFY' $flowId 'CALL_FAILED' @{ channel = 'bridge-window'; error = $_.Exception.Message }
+    }
+    if ($popupShown) {
+        Write-FlowTrace 'NOTIFY' $flowId 'CALL' @{ channel = 'bridge-window'; verdict = 'RENDER_PENDING' }
+        Write-RuntimeLog ("Fertig-Popup geoeffnet: " + $text + ' (ContentRendered-Bestaetigung folgt).')
+        return $record
+    }
+
     $shown = $false
     $method = ''
-    # 1) Moderner Windows-Toast (WinRT) - mit der REGISTRIERTEN App-Id, damit
-    #    Windows die Meldung nicht still verwirft und sie "Arena Roblox Bridge"
-    #    heisst statt "Windows PowerShell".
     try {
         [void][Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime]
         [void][Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType = WindowsRuntime]
@@ -41366,10 +41715,9 @@ function Show-ArenaDoneNotification {
         $shown = $true
         $method = 'winrt:' + $appId
     } catch {
-        Write-RuntimeLog "Windows-Toast fehlgeschlagen: $($_.Exception.Message)"
+        Write-RuntimeLog "Windows-Toast-Fallback fehlgeschlagen: $($_.Exception.Message)"
         Write-FlowTrace 'NOTIFY' $flowId 'CALL_FAILED' @{ channel = 'winrt'; error = $_.Exception.Message }
     }
-    # 2) Fallback: klassischer Balloon-Hinweis ueber ein Tray-Symbol.
     if (-not $shown) {
         try {
             Add-Type -AssemblyName System.Windows.Forms
@@ -41385,41 +41733,41 @@ function Show-ArenaDoneNotification {
             $niTimer.Interval = [TimeSpan]::FromSeconds(25)
             $niTimer.Tag = $ni
             $niTimer.Add_Tick({
-                param($s, $e)
-                $s.Stop()
-                try { $s.Tag.Visible = $false; $s.Tag.Dispose() } catch {}
+                param($sender, $eventArgs)
+                $sender.Stop()
+                try { $sender.Tag.Visible = $false; $sender.Tag.Dispose() } catch {}
             })
             $niTimer.Start()
             $shown = $true
             $method = 'balloon'
         } catch {
-            Write-RuntimeLog "Balloon-Hinweis fehlgeschlagen: $($_.Exception.Message)"
+            Write-RuntimeLog "Balloon-Fallback fehlgeschlagen: $($_.Exception.Message)"
             Write-FlowTrace 'NOTIFY' $flowId 'CALL_FAILED' @{ channel = 'balloon'; error = $_.Exception.Message }
         }
     }
-    # 3) Letzter Fallback: Hauptfenster holen und aktivieren.
-    if (-not $shown) {
-        try {
-            $window.Activate()
-            [void]$window.Focus()
-            $method = 'window'
-        } catch {}
-    }
-    Set-UiMessageField $record 'shownAt' ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+    $shownAt = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    Set-UiMessageField $record 'shownAt' $shownAt
     Set-UiMessageField $record 'method' $method
     if ($shown) {
-        Set-UiMessageField $record 'verdict' 'CALL_RETURNED'
-        Set-UiMessageField $record 'reason' 'Show() kam ohne Ausnahme zurueck - ob Windows die Meldung wirklich gezeichnet hat, misst notify.sweep.'
-        Write-FlowTrace 'NOTIFY' $flowId 'CALL' @{ channel = $method; verdict = 'CALL_RETURNED'; platform = $(if ($null -ne $platform) { [string]$platform.verdict } else { '-' }) }
+        $reason = 'Ein Windows-Fallback-Aufruf kehrte zurueck; Windows bestaetigt damit nicht, dass die Meldung sichtbar war.'
+        Set-UiMessageField $record 'verdict' 'CALL_RETURNED_UNVERIFIED'
+        Set-UiMessageField $record 'reason' $reason
+        Set-UiChannelText 'NotifyLastVerdict' 'CALL_RETURNED_UNVERIFIED'
+        Set-UiChannelText 'NotifyLastReason' $reason
+        Write-FlowTrace 'NOTIFY' $flowId 'UNVERIFIED' @{ channel = $method; platform = $(if ($null -ne $platform) { [string]$platform.verdict } else { 'UNKNOWN' }) }
+        [void](Set-NotifyDeliveryAcknowledgement -FlowId $flowId -State 'UNVERIFIED' -Method $method -Reason $reason -ShownAt $shownAt)
     } else {
+        $reason = 'Bridge-Popup, Windows-Toast und Tray-Balloon konnten nicht geoeffnet werden.'
         Set-UiMessageField $record 'verdict' 'CALL_FAILED'
-        Set-UiMessageField $record 'reason' 'Kein Kanal (WinRT, Balloon, Fenster) konnte aufgerufen werden.'
+        Set-UiMessageField $record 'reason' $reason
         Add-UiChannelCount 'NotifyFailed' 1
         Set-UiChannelText 'NotifyLastVerdict' 'CALL_FAILED'
+        Set-UiChannelText 'NotifyLastReason' $reason
         Write-FlowTrace 'NOTIFY' $flowId 'CALL_FAILED' @{ channel = 'none' }
+        [void](Set-NotifyDeliveryAcknowledgement -FlowId $flowId -State 'FAILED' -Method 'none' -Reason $reason -ShownAt $shownAt)
     }
-    Add-NotifyRecord $record
-    Write-RuntimeLog ("Arena-Fertig-Meldung angezeigt: " + $text + " (Kanal: " + $(if ($method) { $method } else { 'keiner' }) + ", Urteil: " + [string]$record.verdict + ", wird von notify.sweep nachgemessen)")
+    try { $script:Shared.NotifyLastJson = [string]($record | ConvertTo-Json -Depth 6 -Compress) } catch {}
+    Write-RuntimeLog ("Fertig-Fallback verarbeitet: " + $text + " (Kanal: " + $(if ($method) { $method } else { 'keiner' }) + ", Urteil: " + [string]$record.verdict + ').')
     return $record
 }
 
@@ -41875,13 +42223,27 @@ function Open-SettingsWindow {
                                 </Grid>
                             </StackPanel>
                         </Border>
-                        <TextBlock Text="UPDATES" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
-                        <!-- >>> ARENA-UPDATE-SETTINGS-UI >>>  Version 7.9.0: nur noch Hinweistext -->
-                        <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap"/>
+                        <!-- >>> ARENA-UPDATE-SETTINGS-UI >>>  Version 7.9.1 -->
+                        <Border x:Name="UpdateInfoCard" Margin="0,20,0,0" Padding="14,13" Background="#26121D35" BorderBrush="#42FFFFFF" BorderThickness="1" CornerRadius="12">
+                            <StackPanel>
+                                <TextBlock Text="UPDATES" Foreground="{StaticResource SwTextMain}" FontSize="12" FontWeight="Bold"/>
+                                <TextBlock x:Name="UpdateInfoText" Foreground="{StaticResource SwTextFaint}" FontSize="11" TextWrapping="Wrap" Margin="0,8,0,0"/>
+                                <Border Height="1" Background="{StaticResource SwLine}" Margin="0,12,0,10"/>
+                                <TextBlock Text="Arena Roblox Bridge - Version __ARENA_BUILD_VERSION__" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                            </StackPanel>
+                        </Border>
                         <!-- <<< ARENA-UPDATE-SETTINGS-UI <<< -->
 
-                        <Border Height="1" Background="{StaticResource SwLine}" Margin="0,18,0,12"/>
-                        <TextBlock Text="Arena Roblox Bridge - Version __ARENA_BUILD_VERSION__" Foreground="{StaticResource SwTextFaint}" FontSize="11"/>
+                        <Border x:Name="AboutCard" Margin="0,12,0,0" Padding="14,13" Background="#26121D35" BorderBrush="#42FFFFFF" BorderThickness="1" CornerRadius="12">
+                            <StackPanel>
+                                <TextBlock Text="Entwickelt von MertaStudios mit dem Arena Agenten." Foreground="{StaticResource SwTextMain}" FontSize="11.5" TextWrapping="Wrap"/>
+                                <Button x:Name="OpenProgramFilesButton" Height="38" MinWidth="190" Padding="16,0" Margin="0,12,0,0"
+                                        HorizontalAlignment="Left" Content="Programmdateien öffnen" Style="{StaticResource ArenaPrimaryButton}"/>
+                                <TextBlock Text="Laufzeitprotokolle und Diagnosedateien liegen im Bridge-Datenordner." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                                <Button x:Name="OpenRuntimeFilesButton" Height="36" MinWidth="190" Padding="16,0" Margin="0,8,0,0"
+                                        HorizontalAlignment="Left" Content="Laufzeitprotokolle öffnen" Style="{StaticResource ArenaQuietButton}"/>
+                            </StackPanel>
+                        </Border>
 
                     </StackPanel>
                 </ScrollViewer>
@@ -41917,7 +42279,25 @@ function Open-SettingsWindow {
     # Version 7.6.0: Der Creator-Dashboard-Schalter ist entfernt - der
     # Schluessel und seine Scopes entscheiden allein.
     $updateText      = $settingsWindow.FindName('UpdateInfoText')
-    # >>> ARENA-UPDATE-SETTINGS-CODE >>>  Version 7.9.0: nur Hinweistext, keine Knoepfe.
+    $openProgramFilesButton = $settingsWindow.FindName('OpenProgramFilesButton')
+    $openRuntimeFilesButton = $settingsWindow.FindName('OpenRuntimeFilesButton')
+    # >>> ARENA-UPDATE-SETTINGS-CODE >>> Version 7.9.1: Programm- und Protokollordner.
+    $openProgramFilesButton.ToolTip = [string]$script:AppFolder
+    $openProgramFilesButton.Add_Click({
+        try {
+            $folder = [string]$script:AppFolder
+            if ([string]::IsNullOrWhiteSpace($folder) -or -not (Test-Path -LiteralPath $folder -PathType Container)) { throw ('Programmordner nicht gefunden: ' + $folder) }
+            Start-Process -FilePath 'explorer.exe' -ArgumentList ('"{0}"' -f $folder) -ErrorAction Stop
+        } catch { Write-RuntimeLog ('Programmdateien konnten nicht im Explorer geoeffnet werden: ' + $_.Exception.Message) }
+    })
+    $openRuntimeFilesButton.ToolTip = [string]$script:AppDataRoot
+    $openRuntimeFilesButton.Add_Click({
+        try {
+            $folder = [string]$script:AppDataRoot
+            if ([string]::IsNullOrWhiteSpace($folder) -or -not (Test-Path -LiteralPath $folder -PathType Container)) { throw ('Bridge-Datenordner nicht gefunden: ' + $folder) }
+            Start-Process -FilePath 'explorer.exe' -ArgumentList ('"{0}"' -f $folder) -ErrorAction Stop
+        } catch { Write-RuntimeLog ('Laufzeitprotokoll-Ordner konnte nicht im Explorer geoeffnet werden: ' + $_.Exception.Message) }
+    })
     # <<< ARENA-UPDATE-SETTINGS-CODE <<<
     # ----------------------------------------------------------------
     # Version 7.5.6: Open Cloud ohne manuelle Entwickler-Eingabe.
@@ -42676,7 +43056,7 @@ function Open-SettingsWindow {
     })
     $doneNotifySwitch.Add_Click({
         param($s, $e)
-        # Version 7.1.3: An/Aus der Windows-Meldung "Arena ist fertig"
+        # Version 7.1.3/7.9.1: An/Aus des Bridge-Fertig-Popups
         # (report_done). Aus wirkt SOFORT: eine schon gemeldete Meldung wird
         # aus der Warteschlange verworfen und der Anzeige-Takt ueberspringt
         # sie; die KI erfaehrt denselben Stand in jeder Antwort.
@@ -42685,14 +43065,13 @@ function Open-SettingsWindow {
         $script:SettingsCache.notifyOnDone = $enabled
         Save-BridgeSettingsFile
         if (-not $enabled) { Clear-NotifyQueue }
-        # Version 7.2.0 (D4): Beim Einschalten die App-Id registrieren, sonst
-        # verwirft Windows die Meldung still - und beim Ausschalten das Urteil
-        # sofort neu messen (SUPPRESSED_APP_DISABLED).
+        # Die App-Id bleibt nur fuer den nativen Fallback registriert.
+        # Das Plattformurteil ist Diagnose und blockiert das Bridge-Popup nicht.
         if ($enabled) { [void](Register-NotifyAumid -Force) }
         [void](Update-NotifyPlatformCache -Force)
         $stateText = 'aus'
         if ($enabled) { $stateText = 'an' }
-        Write-RuntimeLog "Fertig-Benachrichtigung (report_done) ist jetzt $stateText."
+        Write-RuntimeLog "Bridge-Fertig-Popup (report_done) ist jetzt $stateText."
     })
     $editorIconsSwitch.Add_Click({
         param($s, $e)
@@ -43110,8 +43489,7 @@ function Start-BridgeRuntime {
     })
     $script:UiRefreshTimer.Start()
 
-    # Version 3.8: report_done-Meldungen der KI abholen und als Windows-
-    # Benachrichtigung anzeigen. Der Server legt sie nur in die Warteschlange,
+    # Version 3.8: report_done-Meldungen der KI abholen und als Bridge-Popup anzeigen. Der Server legt sie nur in die Warteschlange,
     # wenn der Nutzer die Fertig-Meldung aktiviert hat.
     $script:NotifyTimer = [System.Windows.Threading.DispatcherTimer]::new()
     $script:NotifyTimer.Interval = [TimeSpan]::FromMilliseconds(800)
@@ -43122,26 +43500,27 @@ function Start-BridgeRuntime {
             $notifyAllowed = $false
             try { $notifyAllowed = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch {}
             if (-not $notifyAllowed) { [void](Clear-NotifyQueue) }
-            while ($notifyAllowed) {
+            $notifyBatchCount = 0
+            while ($notifyAllowed -and $notifyBatchCount -lt 2) {
                 $item = $null
                 if (-not $script:Shared.NotifyQueue.TryDequeue([ref]$item)) { break }
+                $notifyBatchCount = $notifyBatchCount + 1
+                $payloadFlow = ''
                 try {
                     $payload = $item | ConvertFrom-Json
-                    $payloadFlow = ''
                     try { if ($payload.PSObject.Properties['flowId']) { $payloadFlow = [string]$payload.flowId } } catch {}
                     $payloadQueued = [int64]0
                     try { if ($payload.PSObject.Properties['queuedAt']) { $payloadQueued = [int64]$payload.queuedAt } } catch {}
                     [void](Show-ArenaDoneNotification -Place ([string]$payload.place) -Title ([string]$payload.title) -Message ([string]$payload.message) -FlowId $payloadFlow -QueuedAt $payloadQueued)
                 } catch {
                     Write-RuntimeLog "Fertig-Meldung konnte nicht angezeigt werden: $($_.Exception.Message)"
-                    Write-FlowTrace 'NOTIFY' 'n-?' 'CALL_FAILED' @{ channel = 'tick'; error = $_.Exception.Message }
+                    Write-FlowTrace 'NOTIFY' $(if ($payloadFlow) { $payloadFlow } else { 'n-?' }) 'CALL_FAILED' @{ channel = 'tick'; error = $_.Exception.Message }
+                    [void](Set-NotifyDeliveryAcknowledgement -FlowId $payloadFlow -State 'FAILED' -Method 'tick' -Reason ([string]$_.Exception.Message))
                 }
                 try { $notifyAllowed = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch { $notifyAllowed = $false }
             }
-            # Version 7.2.0 (D4): notify.sweep misst NACH dem Anzeigen erneut und
-            # verbucht ehrlich SHOWN oder SHOWN_UNVERIFIED mit Grund. Windows bietet
-            # keine Bestaetigungs-API fuer einen Toast - deshalb Messung plus
-            # Nutzerfrage ("Gesehen? Ja/Nein") statt blindem delivered = true.
+            # Version 7.9.1: ContentRendered bestaetigt den Bridge-Popup-Kanal;
+            # Windows-Toast-Fallbacks bleiben ausdruecklich unverified.
             Invoke-NotifySweep
             [void](Update-NotifyPlatformCache)
         } catch {}
@@ -43153,7 +43532,7 @@ function Start-BridgeRuntime {
     try {
         $notifyWantedAtStart = $false
         try { $notifyWantedAtStart = [bool]$script:Shared.BridgeSettings.notifyOnDone } catch {}
-        if ($notifyWantedAtStart) { [void](Register-NotifyAumid) }
+        if ($notifyWantedAtStart) { [void](Register-NotifyAumid -Force) }
         [void](Update-NotifyPlatformCache -Force)
     } catch {}
     $script:NotifyTimer.Start()

@@ -25,7 +25,7 @@ def _shipped_build_version() -> str:
 
 
 SOURCE = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.9.0"
+VERSION = _shipped_build_version()
 FAILURES: list[str] = []
 
 
@@ -274,7 +274,7 @@ def main() -> int:
     check("release\\ArenaBridge.exe" in start_text and "Jetzt installieren" in start_text,
           "START-HIER erklaert den Test und das Update-Fenster")
     handoff_text = (ROOT / "developer" / "docs" / "GANZ WICHTIG LESEN VOR JEDER BEARBEITUNG").read_text(encoding="utf-8")
-    check("NACHTRAG 7.9.0" in handoff_text, "Uebergabe-Dokument hat den Nachtrag 7.9.0 (hat Vorrang)")
+    check("NACHTRAG 7.9.1" in handoff_text, "Uebergabe-Dokument hat den Nachtrag 7.9.1 (hat Vorrang)")
 
     if FAILURES:
         print(f"\nFAILED: {len(FAILURES)} preparation check(s).")

@@ -27,7 +27,7 @@ def _shipped_build_version() -> str:
 
 
 PS1 = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.9.0"
+VERSION = _shipped_build_version()
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -103,8 +103,8 @@ def main() -> int:
     version = json.loads((APP_ROOT / "version.json").read_text(encoding="utf-8"))
     require(version["version"] == VERSION, f"version.json is not {VERSION}")
     release_notes = "\n".join(str(note) for note in version.get("notes", []))
-    latest_note = next((str(n) for n in version.get("notes", []) if str(n).startswith("• 7.8.0")), "")
-    for marker in ("7.8.0", "Nutzerwünsche", "Place-Konventionen", "keine Pflicht",
+    latest_note = next((str(n) for n in version.get("notes", []) if str(n).startswith("• 7.9.1")), "")
+    for marker in ("7.9.1", "Nutzerwünsche", "Place-Konventionen", "keine Pflicht",
                    "keine erfundene 0 %", "API-Pfade", "IP-Einrichtung",
                    "Root-Updater bleibt unangetastet", "EXEs baut der Nutzer selbst"):
         require(marker in latest_note, f"7.8.0 release note omits current scope: {marker}")
@@ -1087,7 +1087,7 @@ def main() -> int:
     progress_visual = source[source.index("function Update-PlaceProgressVisual"):source.index("function Get-ProgressDiagnoseLines")]
     require("if ($progressMode -eq 'hidden')" in progress_visual
             and "Fortschritt nicht anwendbar" in progress_visual
-            and "$showNumericProgress = (($percentKnown -or $state -eq 'done') -and $progressMode -ne 'hidden')" in progress_visual
+            and "$showNumericProgress = ($percentKnown -and $progressMode -ne 'hidden')" in progress_visual
             and "$Row.ProgressBar.Visibility = 'Collapsed'" in progress_visual
             and "ProgressBar.Foreground = Get-Brush $color" in progress_visual
             and "ProgressText.Visibility = 'Visible'" in progress_visual
@@ -2043,7 +2043,12 @@ def main() -> int:
     require("function Clear-NotifyQueue" in source, "Clear-NotifyQueue is missing")
     require("if (-not $enabled) { Clear-NotifyQueue }" in source,
             "switching the finish notification off does not clear pending messages")
-    require("Fertig-Meldung verworfen: der Schalter" in source,
+    notify_path_start = source.index("function Show-ArenaDoneNotification {")
+    notify_path_end = source.index("function Get-NotifyDiagnoseLines {", notify_path_start)
+    notify_path = source[notify_path_start:notify_path_end]
+    require("if (-not $allowed)" in notify_path
+            and "SUPPRESSED_APP_DISABLED" in notify_path
+            and notify_path.index("if (-not $allowed)") < notify_path.index("Show-ArenaDoneDesktopPopup $record"),
             "the notification path does not check the switch right before showing")
     require("$notifyAllowed = [bool]$script:Shared.BridgeSettings.notifyOnDone" in source
             and "if (-not $notifyAllowed) { [void](Clear-NotifyQueue) }" in source,

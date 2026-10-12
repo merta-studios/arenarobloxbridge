@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline-Pruefung des einfachen Selbst-Updates (Version 7.9.0).
+"""Offline-Pruefung des einfachen Selbst-Updates (Version 7.9.1).
 
 Geprueft wird, was auf Linux pruefbar ist:
 - das Veroeffentlichungswerkzeug (publish_latest.py) gegen die echte EXE,
@@ -67,7 +67,7 @@ def test_publish_tool(tool) -> None:
           f"Dateiversion der EXE ist dreiteilig plus .0 (gefunden: {version})")
     core = version[:-2]
     commit = "0" * 40
-    now = __import__("datetime").datetime(2026, 10, 11, 12, 0, tzinfo=__import__("datetime").timezone.utc)
+    now = __import__("datetime").datetime(2026, 10, 12, 12, 0, tzinfo=__import__("datetime").timezone.utc)
     manifest = tool.build_manifest(RELEASE_EXE, core, "Test", "merta-studios/arenarobloxbridge", commit, now)
     check(manifest["sha256"] == __import__("hashlib").sha256(RELEASE_EXE.read_bytes()).hexdigest(),
           "SHA-256 im Manifest stimmt mit der Datei ueberein")

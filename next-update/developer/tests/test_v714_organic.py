@@ -25,7 +25,7 @@ def _shipped_build_version() -> str:
 
 
 PS1 = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.9.0"
+VERSION = _shipped_build_version()
 FAILURES: list[str] = []
 
 
@@ -158,7 +158,7 @@ def main() -> int:
     progress = region(source, "function Update-PlaceProgressVisual", "function Get-ProgressDiagnoseLines")
     check("if ($progressMode -eq 'hidden')" in progress
           and "Fortschritt nicht anwendbar" in progress
-          and "$showNumericProgress = (($percentKnown -or $state -eq 'done') -and $progressMode -ne 'hidden')" in progress
+          and "$showNumericProgress = ($percentKnown -and $progressMode -ne 'hidden')" in progress
           and "$Row.ProgressBar.Visibility = 'Collapsed'" in progress
           and "Seit über einer Minute kein Bridge Aufruf mehr" not in progress,
           "hidden progress is explicitly not applicable, with no bar, invented percent, or stale inactivity label")

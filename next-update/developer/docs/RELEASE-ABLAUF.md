@@ -1,4 +1,4 @@
-# Release-Ablauf (next-update, Version 7.9.0)
+# Release-Ablauf (next-update, Version 7.9.1)
 
 Kurzfassung: Siehe `next-update/README.md`. Hier die Details fuer Entwicklung und Pruefung.
 
