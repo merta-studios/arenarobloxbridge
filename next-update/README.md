@@ -1,5 +1,10 @@
-# Arena Roblox Bridge — Update- und Testablauf (Version 7.9.4)
+# Arena Roblox Bridge — Update- und Testablauf (Testupdate 7.9.5 vorbereitet)
 
+> **Testupdate 7.9.5 vorbereitet:** Es wurde nur `app/version.json` mit einer
+> sichtbaren Testnotiz aktualisiert. Programmcode und Builder bleiben unverändert;
+> es wurde keine EXE gebaut oder veröffentlicht. `release/latest.json` bleibt
+> unangetastet und wird weiterhin ausschließlich vom Workflow erzeugt.
+>
 > **Arbeite nur in `next-update/`.** Der alte Bereich im Repository-Hauptordner
 > bleibt unverändert. Ausnahme: GitHub liest Automatisierungen (Workflows) nur aus
 > `.github/workflows/` im Hauptordner. Deshalb liegt dort genau eine Datei:
@@ -47,7 +52,7 @@ kein Owner-Fließtext, keine Datei-Labels. Das Update-Fenster und der
 6. **Veröffentlichen (nur bei gutem Stand):** Die getestete
    `ArenaRobloxBridge.exe` in den GitHub-Ordner `next-update/release/` hochladen und
    auf `main` speichern (ersetzen). Dabei muss die Version in der EXE neuer sein
-   als die bisher veröffentlichte — die KI erhöht sie im PR (z. B. 7.9.3 → 7.9.4).
+   als die bisher veröffentlichte — hier ist 7.9.5 als Testversion vorbereitet.
    Es wird **nur diese eine Datei** hochgeladen (keine Diagnose-Dateien, keine
    Metadaten).
 7. **Der Workflow läuft automatisch** (GitHub-Reiter **Actions**, Lauf „Bridge-Version
