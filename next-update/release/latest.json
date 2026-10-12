@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "version": "7.9.3",
-  "sha256": "639bf396983244c1fad79f070b54e4542dd12115827fa489856c9b66d9c16655",
-  "sizeBytes": 5840896,
-  "url": "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/4ea302d4e050f0ce046cb36cf86b2693870b9585/next-update/release/ArenaRobloxBridge.exe",
-  "publishedAtUtc": "2026-10-12T17:08:29Z",
-  "notes": "• 7.9.3 — KLARER NAME, SAUBERER DOWNLOAD: • Deine Bridge heißt jetzt offiziell ArenaRobloxBridge.exe — sofort erkennbar im Download-Ordner und auf dem Desktop. • Künftige Updates laufen nahtlos über den neuen Programmnamen weiter. • Nach dem Update räumt die Bridge deinen Ordner automatisch auf und legt die alte Datei in den Papierkorb. • Neue, aufgeräumte Download-Seite vorbereitet: öffnet sich blitzschnell und zeigt dir live den Status. • Alle gewohnten Stärken bleiben an Bord: weiches Ziehen, butterweiches Scrollen und das übersichtliche Update-Fenster."
+  "version": "7.9.4",
+  "sha256": "284b918f7e50e2f43fd8db9303220031aa9c399dbacd68bc8a6ba44f6e6bde88",
+  "sizeBytes": 5842944,
+  "url": "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/1320a8ba99809dbad0738fdac3b6e7712c3f850c/next-update/release/ArenaRobloxBridge.exe",
+  "publishedAtUtc": "2026-10-12T18:16:06Z",
+  "notes": "• 7.9.4 — EIN PROGRAMM, EIN DOWNLOAD: • Gebaut wird nur noch eine einzige Datei: ArenaRobloxBridge.exe — kein zweites Programm mehr im Ordner. • Alte Diagnose- und Sicherungskopien räumt der Builder selbst weg. • „Jetzt installieren“ öffnet jetzt deine Download-Seite: dort wartet immer die neueste ArenaRobloxBridge.exe. • Das Update-Fenster bleibt wie gewohnt: Zeitstrahl, kurze Stichpunkte und „Später“ in deiner Hand. • Geprüft wird weiter im Hintergrund über das Repository — du verpasst kein Update mehr."
 }
