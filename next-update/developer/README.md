@@ -7,6 +7,7 @@ Alles Technische, was nicht zum normalen Nutzer-Klick gehört, liegt hier:
 - `docs/` — Verträge, historische Hintergrundnotizen und Entwicklungsregeln.
 - `ci/` — Beispiel für einen optionalen Windows-PowerShell-Parser-Workflow und
   den Generator des geprüften Open-Cloud-Katalogs.
+- `tools/publish_latest.py` liegt unter `tools/` und erzeugt `release/latest.json` (vom Workflow aufgerufen).
 - `tools/` — manuelle Diagnose-/Live-Abnahme-Werkzeuge.
 
 ## Offline-Tests starten
@@ -32,6 +33,5 @@ Build-EXE.bat
 ```
 
 Der Build-Ausgang liegt im einzigen Ordner `next-update/release/`. Ein Merge
-oder lokaler Build löst kein öffentliches Nutzer-Update aus. Die Regeln für
-Korrektur-PRs, explizite Freigabe und die spätere Nutzung des neuen
-`update-system/` stehen in `../README.md` und `docs/GANZ WICHTIG LESEN VOR JEDER BEARBEITUNG`.
+oder lokaler Build löst kein öffentliches Nutzer-Update aus. Ablauf des
+Selbst-Updates: `../README.md`. Technik und Tests: `docs/UPDATE-SYSTEM.md`.

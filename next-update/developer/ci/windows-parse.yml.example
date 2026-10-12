@@ -12,8 +12,7 @@ jobs:
         shell: powershell
         run: |
           foreach ($target in @('./next-update/app/ArenaBridge.ps1',
-                                './next-update/update-system/updater/Update-Bridge.ps1',
-                                './next-update/developer/tests/Invoke-SelfUpdateSmoke.ps1')) {
+                                './next-update/builder/Build-EXE.ps1')) {
             & ./next-update/builder/parse-gate.ps1 -Path $target
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }

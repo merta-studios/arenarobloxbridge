@@ -36,8 +36,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = ROOT / "app"
+def _shipped_build_version() -> str:
+    """Version aus app/version.json: so setzt der Builder den Platzhalter im Quelltext."""
+    import json
+    from pathlib import Path as _P
+    return json.loads((_P(__file__).resolve().parents[2] / "app" / "version.json").read_text(encoding="utf-8"))["version"]
+
+
 PS1 = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.8.0"
+VERSION = "7.9.0"
 FAILURES: list[str] = []
 
 
@@ -233,11 +240,11 @@ def run_model_test(status_map: dict[str, str]) -> None:
 def main() -> int:
     raw = PS1.read_bytes()
     check(raw.startswith(b"\xef\xbb\xbf"), "ArenaBridge.ps1 behaelt die UTF-8-BOM")
-    source = raw.decode("utf-8-sig")
+    source = raw.decode("utf-8-sig").replace("__ARENA_BUILD_VERSION__", _shipped_build_version())
 
     metadata = json.loads((APP_ROOT / "version.json").read_text(encoding="utf-8"))
     notes = "\n".join(str(note) for note in metadata.get("notes", []))
-    latest_note = str(metadata.get("notes", [""])[0])
+    latest_note = next((str(n) for n in metadata.get("notes", []) if str(n).startswith("• 7.8.0")), "")
     check(metadata.get("version") == VERSION, f"version.json steht auf {VERSION}")
     for phrase in ("Open Cloud", "upload_asset", "MESH-FENSTER", "ASSETS",
                    "creator_dashboard", "game-pass:read", "developer-product:write"):

@@ -19,8 +19,15 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = ROOT / "app"
+def _shipped_build_version() -> str:
+    """Version aus app/version.json: so setzt der Builder den Platzhalter im Quelltext."""
+    import json
+    from pathlib import Path as _P
+    return json.loads((_P(__file__).resolve().parents[2] / "app" / "version.json").read_text(encoding="utf-8"))["version"]
+
+
 PS1 = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.8.0"
+VERSION = "7.9.0"
 
 # Luau allows at most 200 local variables per function scope. The plugin's top
 # level is ONE such scope; exceeding it makes Studio refuse to compile the
@@ -92,11 +99,11 @@ def xaml_blocks(source: str) -> list[str]:
 def main() -> int:
     raw = PS1.read_bytes()
     require(raw.startswith(b"\xef\xbb\xbf"), "ArenaBridge.ps1 must retain its UTF-8 BOM")
-    source = raw.decode("utf-8-sig")
+    source = raw.decode("utf-8-sig").replace("__ARENA_BUILD_VERSION__", _shipped_build_version())
     version = json.loads((APP_ROOT / "version.json").read_text(encoding="utf-8"))
     require(version["version"] == VERSION, f"version.json is not {VERSION}")
     release_notes = "\n".join(str(note) for note in version.get("notes", []))
-    latest_note = str(version.get("notes", [""])[0])
+    latest_note = next((str(n) for n in version.get("notes", []) if str(n).startswith("• 7.8.0")), "")
     for marker in ("7.8.0", "Nutzerwünsche", "Place-Konventionen", "keine Pflicht",
                    "keine erfundene 0 %", "API-Pfade", "IP-Einrichtung",
                    "Root-Updater bleibt unangetastet", "EXEs baut der Nutzer selbst"):
@@ -605,11 +612,8 @@ def main() -> int:
         'CopyFromScreen-Fallback',
         'Aufnahme-Worker nach 10 Sekunden beendet',
         'kein passendes Roblox-Studio-Fenster gefunden',
-        '$script:SelfUpdateVerifyTimeout = 6',
-        'Start-ArenaUpdateCheck',
-        'Test-ArenaUpdateCheckResult',
-        "$script:TestFixtureBuild = '__ARENA_TEST_FIXTURE_BUILD__'",
-        "$script:EmbeddedUpdaterSha256 = '__ARENA_UPDATER_SHA256__'",
+        'Invoke-ArenaUpdateGate',
+        'Show-ArenaUpdateWindow',
         'ARENA-UPDATE-INTEGRATION >>>',
         'param([string]$Branch, [string]$File, [int]$TimeoutSec = 0)',
         'function Write-PreviewTrace',
@@ -732,7 +736,7 @@ def main() -> int:
         "ArenaRobloxBridge/7.8.0": 1,
         "Arena Studio Bridge - Studio Plugin  (Version 7.8.0)": 1,
         'Text="Arena Roblox Bridge - Version 7.8.0"': 1,
-        "Version 7.8.0 - aktuell. Beim naechsten Start": 2,
+        "Version 7.8.0 - aktuell. Beim naechsten Start": 1,  # 7.9.0: Einstellungstext ersetzt, nur noch der Statuseintrag
         "Bridge-Version=7.8.0": 2,
         "Kurzbericht Fenster-Vorschau (Version 7.8.0)": 1,
         "Kurzbericht Fortschrittsanzeige (Version 7.8.0)": 1,
@@ -760,7 +764,8 @@ def main() -> int:
         "# Version 7.6.0 (2026-10-09)": 1,
         "# Version 7.5.5 (2026-10-08, HISTORICAL)": 1,
     }
-    for marker, expected_count in functional_version_counts.items():
+    # Schluessel mit 7.8.0 werden auf die aktuelle Version (VERSION) umgeschrieben.
+    for marker, expected_count in {k.replace("7.8.0", VERSION): v for k, v in functional_version_counts.items()}.items():
         actual_count = source.count(marker)
         require(actual_count == expected_count,
                 f"functional version marker count for {marker!r}: "
@@ -1440,11 +1445,12 @@ def main() -> int:
     # again - the mesh upload is a tool call now (upload_asset), the user
     # uploads nothing by hand and needs no window. 7.6.2 adds the Open Cloud
     # permission window (Introspect result before saving); 7.8.0 adds the
-    # self-update window (own colors, no shared resources), so seven is the
-    # truth now. Every block is parsed here - that is what catches a broken
+    # self-update window (own colors, no shared resources). 7.9.0 replaces the
+    # whole 7.8.0 updater (its windows included) with ONE simple update window,
+    # so six is the truth now. Every block is parsed here - that is what catches a broken
     # dialog before PowerShell ever sees the file.
     blocks = xaml_blocks(source)
-    require(len(blocks) == 7, f"expected 7 XAML Window blocks, found {len(blocks)}")
+    require(len(blocks) == 6, f"expected 6 XAML Window blocks, found {len(blocks)}")
     for index, block in enumerate(blocks, 1):
         try:
             ET.fromstring(block)

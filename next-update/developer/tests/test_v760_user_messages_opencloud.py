@@ -27,8 +27,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = ROOT / "app"
+def _shipped_build_version() -> str:
+    """Version aus app/version.json: so setzt der Builder den Platzhalter im Quelltext."""
+    import json
+    from pathlib import Path as _P
+    return json.loads((_P(__file__).resolve().parents[2] / "app" / "version.json").read_text(encoding="utf-8"))["version"]
+
+
 PS1 = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.8.0"
+VERSION = "7.9.0"
 FAILURES: list[str] = []
 
 
@@ -55,10 +62,10 @@ def main() -> int:
     raw = PS1.read_bytes()
     check(raw.startswith(b"\xef\xbb\xbf"), "ArenaBridge.ps1 retains the required UTF-8 BOM")
     check(b"\r\n" not in raw, "ArenaBridge.ps1 retains LF-only line endings")
-    source = raw.decode("utf-8-sig")
+    source = raw.decode("utf-8-sig").replace("__ARENA_BUILD_VERSION__", _shipped_build_version())
     metadata = json.loads((APP_ROOT / "version.json").read_text(encoding="utf-8"))
     notes = [str(note) for note in metadata.get("notes", [])]
-    latest = notes[0] if notes else ""
+    latest = next((n for n in notes if n.startswith("• 7.8.0")), "")
     check(metadata.get("version") == VERSION, "version.json is 7.8.0")
     check(latest.startswith("• 7.8.0") and "PROJEKT ZUERST" in latest,
           "latest release note documents the project-first update")

@@ -30,8 +30,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = ROOT / "app"
+def _shipped_build_version() -> str:
+    """Version aus app/version.json: so setzt der Builder den Platzhalter im Quelltext."""
+    import json
+    from pathlib import Path as _P
+    return json.loads((_P(__file__).resolve().parents[2] / "app" / "version.json").read_text(encoding="utf-8"))["version"]
+
+
 PS1 = APP_ROOT / "ArenaBridge.ps1"
-VERSION = "7.8.0"
+VERSION = "7.9.0"
 
 failures: list[str] = []
 
@@ -281,7 +288,7 @@ def new_powershell_parse_errors(raw: bytes) -> list[tuple[int, str]]:
 def main() -> int:
     raw = PS1.read_bytes()
     check(raw.startswith(b"\xef\xbb\xbf"), "ArenaBridge.ps1 behaelt die UTF-8-BOM")
-    source = raw.decode("utf-8-sig")
+    source = raw.decode("utf-8-sig").replace("__ARENA_BUILD_VERSION__", _shipped_build_version())
 
     print("\n1) Nutzer-Kanal (Zwischennachricht, D8)")
     for marker in (
@@ -770,7 +777,7 @@ def main() -> int:
     for marker in (".ToArray()", "gemeinsamen Ressourcenblock", "Eigene Antwort", "runtime.log",
                    "ASK_CANCELLED", "Strg+Enter", "NOTIFICATION_UNVERIFIED", "notify-diagnose.txt"):
         check(marker in source, f"active Bridge source retains regression marker: {marker}")
-    check("DocsVersion     = '7.8.0'" in source and 'local ARENA_VERSION  = "7.8.0"' in source,
+    check(f"DocsVersion     = '{VERSION}'" in source and f'local ARENA_VERSION  = "{VERSION}"' in source,
           "Alle funktionalen Versionsstellen stehen auf " + VERSION)
     for marker in ("Set-StartupStage", "startup-trace.txt", "START-NETZ KOMPLETT",
                    "$script:WindowShown", "function Start-BridgeRuntime",

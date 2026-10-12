@@ -7,7 +7,14 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = ROOT / "app"
-SOURCE = (APP_ROOT/'ArenaBridge.ps1').read_text(encoding='utf-8-sig')
+def _shipped_build_version() -> str:
+    """Version aus app/version.json: so setzt der Builder den Platzhalter im Quelltext."""
+    import json
+    from pathlib import Path as _P
+    return json.loads((_P(__file__).resolve().parents[2] / "app" / "version.json").read_text(encoding="utf-8"))["version"]
+
+
+SOURCE = (APP_ROOT/'ArenaBridge.ps1').read_text(encoding='utf-8-sig').replace('__ARENA_BUILD_VERSION__', _shipped_build_version())
 CAT = json.loads((APP_ROOT/'opencloud/catalog.json').read_text())
 PERMISSIONS = json.loads((APP_ROOT/'opencloud/permissions.json').read_text())
 DENIED = '''thumbnail:read user.advanced:read user.social:read
@@ -143,7 +150,7 @@ class CloudPolicy(unittest.TestCase):
         self.assertIn("'open_cloud'         { return (Invoke-OpenCloudServerTool",SOURCE)
 
     def test_ui_and_version(self):
-        self.assertEqual(json.loads((APP_ROOT/'version.json').read_text())['version'],'7.8.0')
+        self.assertEqual(json.loads((APP_ROOT/'version.json').read_text())['version'],'7.9.0')
         ui=function('Get-CloudPermissionCatalog','New-CloudPermissionRow')
         self.assertIn('(Get-OpenCloudCatalog).permissions.PSObject.Properties',ui)
         self.assertIn('Test-OpenCloudPermission -Info $Verdict -Permission ([string]$Item.id)',SOURCE)
