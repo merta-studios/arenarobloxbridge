@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "version": "7.9.2",
-  "sha256": "378ede12727024035535a0a62a7a1b09ecbfea57661174cfdd1e7bdb19cc4166",
-  "sizeBytes": 5840384,
-  "url": "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/f7a14541b15d81d7fdb621c81ecbdd09f0b6f043/next-update/release/ArenaBridge.exe",
-  "publishedAtUtc": "2026-10-12T16:22:38Z",
-  "notes": "• 7.9.2 — DEIN UPDATE-FENSTER, ENDLICH SCHÖN: • Zeitstrahl von deiner Version zur neuen — du siehst sofort, was du bekommst. • Kurze Stichpunkte statt Textwand: in Sekunden gelesen, sofort verstanden. • Echte Umlaute: ä, ö, ü und ß stehen endlich da, wo sie hingehören. • Fenster ziehen und Listen scrollen laufen butterweich — kein Ruckeln mehr. • Einstellungen aufgeräumt: ein Knopf bringt dich direkt in deinen Bridge-Ordner. • Und dein „Später“-Knopf bleibt dein Geheimnis: keine Klick-Zählerei mehr."
+  "version": "7.9.3",
+  "sha256": "639bf396983244c1fad79f070b54e4542dd12115827fa489856c9b66d9c16655",
+  "sizeBytes": 5840896,
+  "url": "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/4ea302d4e050f0ce046cb36cf86b2693870b9585/next-update/release/ArenaRobloxBridge.exe",
+  "publishedAtUtc": "2026-10-12T17:08:29Z",
+  "notes": "• 7.9.3 — KLARER NAME, SAUBERER DOWNLOAD: • Deine Bridge heißt jetzt offiziell ArenaRobloxBridge.exe — sofort erkennbar im Download-Ordner und auf dem Desktop. • Künftige Updates laufen nahtlos über den neuen Programmnamen weiter. • Nach dem Update räumt die Bridge deinen Ordner automatisch auf und legt die alte Datei in den Papierkorb. • Neue, aufgeräumte Download-Seite vorbereitet: öffnet sich blitzschnell und zeigt dir live den Status. • Alle gewohnten Stärken bleiben an Bord: weiches Ziehen, butterweiches Scrollen und das übersichtliche Update-Fenster."
 }
