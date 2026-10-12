@@ -118,22 +118,50 @@ function Publish-LocalBuild {
         [string]$StagingPath,
         [string]$TargetPath
     )
-    $directory = Split-Path -Parent $TargetPath
-    $baseName = [IO.Path]::GetFileNameWithoutExtension($TargetPath)
-    $backupPath = ''
+    # Version 7.9.4: Der Ausgabeordner enthaelt genau EINE Datei - die neue
+    # ArenaRobloxBridge.exe. Der frueher zusaetzlich abgelegte
+    # "*.previous-<Zeitstempel>.exe"-Rest entfaellt; ersetzt wird atomar.
     try {
         if (Test-Path -LiteralPath $TargetPath -PathType Leaf) {
-            $backupPath = Join-Path $directory ($baseName + '.previous-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '.exe')
-            [IO.File]::Replace($StagingPath,$TargetPath,$backupPath,$true)
-            Write-Step ("Previous local build preserved at " + $backupPath)
+            [IO.File]::Replace($StagingPath,$TargetPath,$null,$true)
         } else {
             [IO.File]::Move($StagingPath,$TargetPath)
         }
     } catch {
-        if ($backupPath -and (Test-Path -LiteralPath $backupPath) -and -not (Test-Path -LiteralPath $TargetPath)) {
-            [IO.File]::Move($backupPath,$TargetPath)
+        throw ("Could not safely publish the local build output. Close every running ArenaRobloxBridge window and run Build-EXE.bat again. " + $_.Exception.Message)
+    }
+}
+
+function Remove-LegacyReleaseArtifacts {
+    # Version 7.9.4: Frueher legte der Builder neben ArenaRobloxBridge.exe eine
+    # zweite EXE (ArenaBridge-Diagnose.exe), einen Starter (Start-Diagnostic.bat),
+    # eine zweite Pruefsummendatei und Backup-Kopien in release\ ab. Diese Reste
+    # werden beim Bauen entfernt, damit dort genau eine EXE liegt.
+    param([string]$Directory)
+    if ([string]::IsNullOrWhiteSpace($Directory) -or -not (Test-Path -LiteralPath $Directory -PathType Container)) { return }
+    $removed = New-Object System.Collections.Generic.List[string]
+    $legacyNames = @(
+        'ArenaBridge-Diagnose.exe',
+        'ArenaBridge-Diagnose.exe.sha256',
+        'ArenaBridge-Diagnose.building.exe',
+        'ArenaRobloxBridge.building.exe',
+        'Start-Diagnostic.bat'
+    )
+    foreach ($name in $legacyNames) {
+        $path = Join-Path $Directory $name
+        if (Test-Path -LiteralPath $path -PathType Leaf) {
+            Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+            if (-not (Test-Path -LiteralPath $path)) { $removed.Add($name) }
         }
-        throw ("Could not safely publish the local build output. The previous file is preserved when present. " + $_.Exception.Message)
+    }
+    foreach ($pattern in @('*.previous-*.exe')) {
+        foreach ($old in @(Get-ChildItem -LiteralPath $Directory -Filter $pattern -File -ErrorAction SilentlyContinue)) {
+            Remove-Item -LiteralPath $old.FullName -Force -ErrorAction SilentlyContinue
+            if (-not (Test-Path -LiteralPath $old.FullName)) { $removed.Add($old.Name) }
+        }
+    }
+    if ($removed.Count -gt 0) {
+        Write-Step ("Removed " + [string]$removed.Count + ' leftover diagnostic/backup file(s) from the output folder: ' + ($removed -join ', ') + '. Only ArenaRobloxBridge.exe remains.')
     }
 }
 
@@ -166,41 +194,6 @@ function Test-WindowsIconFile([string]$Path) {
         }
     }
     return $true
-}
-
-function Write-DiagnosticLauncher([string]$Path) {
-    $text = @'
-@echo off
-setlocal
-title Arena Roblox Bridge - Diagnostic start
-set "APP=%~dp0ArenaBridge-Diagnose.exe"
-if not exist "%APP%" (
-  echo Diagnostic EXE is missing: "%APP%"
-  echo Re-run Build-EXE.bat from the next-update folder.
-  pause
-  exit /b 2
-)
-echo.
-echo ARENA ROBLOX BRIDGE - DIAGNOSTIC START
-echo Close any other ArenaBridge window first. This mode keeps a console visible.
-echo Normal beta app: "%~dp0ArenaRobloxBridge.exe"
-echo.
-set "ARENABRIDGE_DIAGNOSTIC_MODE=1"
-"%APP%"
-set "RESULT=%ERRORLEVEL%"
-set "ARENABRIDGE_DIAGNOSTIC_MODE="
-echo.
-echo Diagnostic EXE exit code: %RESULT%
-echo Start check: "%LOCALAPPDATA%\START-CHECK.txt"
-echo Startup log: "%LOCALAPPDATA%\ArenaRobloxBridge\bin\startup-diagnose.txt"
-echo Start-entry log: "%LOCALAPPDATA%\ArenaRobloxBridge-start-entry.txt"
-echo Keep this window open and copy the console output if the app still fails.
-echo.
-pause
-exit /b %RESULT%
-'@
-    $text = $text -replace "`n", "`r`n"
-    [IO.File]::WriteAllText($Path,$text,[Text.Encoding]::ASCII)
 }
 
 if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
@@ -240,8 +233,6 @@ if (-not [string]::IsNullOrWhiteSpace($TestFileVersion)) {
     if ($TestFileVersion -cnotmatch '^\d+\.\d+\.\d+\.\d+$') { throw '-TestFileVersion must be a four-part numeric version such as 7.7.1.0.' }
 }
 $exePath = Join-Path $buildOutputDirectory 'ArenaRobloxBridge.exe'
-$diagnosticExePath = Join-Path $buildOutputDirectory 'ArenaBridge-Diagnose.exe'
-$diagnosticBatPath = Join-Path $buildOutputDirectory 'Start-Diagnostic.bat'
 
 foreach ($requiredPath in @($sourcePath,$versionPath,$parseGatePath,$iconPath,$titleArtworkPath,$programLogoPath,$backgroundImagePath)) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
@@ -332,7 +323,6 @@ $tempBuildDirectory = Join-Path $env:TEMP ('ArenaRobloxBridge-build-' + [Guid]::
 New-Item -ItemType Directory -Path $tempBuildDirectory -Force | Out-Null
 $preparedSourcePath = Join-Path $tempBuildDirectory 'ArenaBridge.compile.ps1'
 $stagingExePath = Join-Path $buildOutputDirectory 'ArenaRobloxBridge.building.exe'
-$stagingDiagnosticExePath = Join-Path $buildOutputDirectory 'ArenaBridge-Diagnose.building.exe'
 $smokeReportPath = Join-Path $tempBuildDirectory 'smoke-report.json'
 
 try {
@@ -397,35 +387,33 @@ try {
     & $windowsPowerShell -NoLogo -NoProfile -ExecutionPolicy Bypass -File $parseGatePath -Path $preparedSourcePath
     if ($LASTEXITCODE -ne 0) { throw 'PowerShell parse gate failed for the embedded compile copy; no EXE was produced.' }
 
-    foreach ($oldStagingPath in @($stagingExePath,$stagingDiagnosticExePath)) {
-        if (Test-Path -LiteralPath $oldStagingPath) { Remove-Item -LiteralPath $oldStagingPath -Force }
-    }
+    if (Test-Path -LiteralPath $stagingExePath) { Remove-Item -LiteralPath $stagingExePath -Force }
     $numericVersion = $sourceVersion + '.0'
     if (-not [string]::IsNullOrWhiteSpace($TestFileVersion)) { $numericVersion = $TestFileVersion }
+    # Version 7.9.4: GENAU EINE EXE. Der frueher zusaetzlich gebaute
+    # Konsolen-Diagnose-Zwilling (ArenaBridge-Diagnose.exe) entfaellt.
     Write-Step ("Compiling " + $BuildVersion + ' for channel ' + $Channel + ' (hidden-console release EXE)...')
     Invoke-BridgeCompiler -InputPath $preparedSourcePath -OutputPath $stagingExePath -IconPath $iconPath -NumericVersion $numericVersion -NoConsole $true -WindowTitle 'Arena Roblox Bridge'
-    Write-Step 'Compiling a separate console-enabled diagnostic EXE for local troubleshooting...'
-    Invoke-BridgeCompiler -InputPath $preparedSourcePath -OutputPath $stagingDiagnosticExePath -IconPath $iconPath -NumericVersion $numericVersion -NoConsole $false -WindowTitle 'Arena Roblox Bridge - Diagnose'
 
     Test-StagedExecutable -ExecutablePath $stagingExePath -ReportPath $smokeReportPath
 
-    # Publish the troubleshooting twin first; the normal ArenaRobloxBridge.exe is
-    # replaced last so a failure cannot leave a half-built release executable.
-    Publish-LocalBuild -StagingPath $stagingDiagnosticExePath -TargetPath $diagnosticExePath
+    # Die neue EXE wird erst nach dem bestandenen Smoke-Test eingesetzt
+    # (atomarer Austausch, kein zweites Programm als Beifang).
     Publish-LocalBuild -StagingPath $stagingExePath -TargetPath $exePath
-    Write-DiagnosticLauncher -Path $diagnosticBatPath
+    if ($buildOutputDirectory -ieq $releaseDirectory) {
+        Remove-LegacyReleaseArtifacts -Directory $buildOutputDirectory
+    }
 
     $file = Get-Item -LiteralPath $exePath
-    $diagnosticFile = Get-Item -LiteralPath $diagnosticExePath
     $sha256 = (Get-FileHash -LiteralPath $exePath -Algorithm SHA256).Hash.ToLowerInvariant()
-    $diagnosticSha256 = (Get-FileHash -LiteralPath $diagnosticExePath -Algorithm SHA256).Hash.ToLowerInvariant()
     $iconSha256 = (Get-FileHash -LiteralPath $iconPath -Algorithm SHA256).Hash.ToLowerInvariant()
     $artworkSha256 = (Get-FileHash -LiteralPath $titleArtworkPath -Algorithm SHA256).Hash.ToLowerInvariant()
     $programLogoSha256 = (Get-FileHash -LiteralPath $programLogoPath -Algorithm SHA256).Hash.ToLowerInvariant()
     $backgroundSha256 = (Get-FileHash -LiteralPath $backgroundImagePath -Algorithm SHA256).Hash.ToLowerInvariant()
     $metadata = [ordered]@{
         # Version 7.9.0: einfaches Selbst-Update. Die GitHub Action schreibt latest.json.
-        schemaVersion = 3
+        # Version 7.9.4: Schema 4 - nur noch eine EXE (keine Diagnose-Dateien mehr).
+        schemaVersion = 4
         publishTool = '.github/workflows/publish-bridge.yml (writes next-update/release/latest.json)'
         channel = $Channel
         version = $BuildVersion
@@ -433,9 +421,9 @@ try {
         fileName = 'ArenaRobloxBridge.exe'
         sizeBytes = [long]$file.Length
         sha256 = $sha256
-        diagnosticFileName = 'ArenaBridge-Diagnose.exe'
-        diagnosticSizeBytes = [long]$diagnosticFile.Length
-        diagnosticSha256 = $diagnosticSha256
+        # Version 7.9.4: Genau eine EXE im Ausgabeordner. Die frueheren Felder
+        # diagnosticFileName/diagnosticSizeBytes/diagnosticSha256 entfallen.
+        outputFileCount = 1
         iconFileName = [IO.Path]::GetFileName($iconPath)
         iconSha256 = $iconSha256
         titleArtworkFileName = 'arena-bridge-title.jpg'
@@ -454,21 +442,19 @@ try {
     $metadataPath = Join-Path $buildOutputDirectory 'release-metadata.json'
     Write-Utf8NoBom $metadataPath ($metadata | ConvertTo-Json -Depth 6)
     Write-Utf8NoBom (Join-Path $buildOutputDirectory 'ArenaRobloxBridge.exe.sha256') ($sha256 + '  ArenaRobloxBridge.exe' + [Environment]::NewLine)
-    Write-Utf8NoBom (Join-Path $buildOutputDirectory 'ArenaBridge-Diagnose.exe.sha256') ($diagnosticSha256 + '  ArenaBridge-Diagnose.exe' + [Environment]::NewLine)
 
     Write-Step 'LOCAL TEST BUILD COMPLETED. No GitHub upload/release or update-channel manifest was changed.'
     Write-Host ''
-    Write-Host 'NOW RUN THIS FILE ON YOUR PC TO TEST THE APP:' -ForegroundColor Green
+    Write-Host 'ONE FILE WAS BUILT - THERE IS NO SECOND EXE ANY MORE:' -ForegroundColor Green
     Write-Host ('  ' + $exePath) -ForegroundColor White
-    Write-Host 'If the normal EXE shows nothing, close other ArenaBridge windows and run:' -ForegroundColor Yellow
-    Write-Host ('  ' + $diagnosticBatPath) -ForegroundColor White
+    Write-Host 'If this EXE shows no window, close every other ArenaBridge window and start it again.' -ForegroundColor Yellow
+    Write-Host ('Start report: ' + (Join-Path $env:LOCALAPPDATA 'START-CHECK.txt'))
+    Write-Host ('Start log:    ' + (Join-Path $env:LOCALAPPDATA 'ArenaRobloxBridge\bin\startup-diagnose.txt'))
     Write-Host ('Local-only metadata: ' + $metadataPath)
-    Write-Host 'No users were updated. Only after explicit approval may the exact tested ArenaRobloxBridge.exe be uploaded to next-update/release/ArenaRobloxBridge.exe; do not upload diagnostic files or metadata.'
+    Write-Host 'No users were updated. Only after explicit approval may the exact tested ArenaRobloxBridge.exe be uploaded to next-update/release/ArenaRobloxBridge.exe; do not upload the local metadata.'
 } finally {
-    foreach ($stagingPath in @($stagingExePath,$stagingDiagnosticExePath)) {
-        if ($stagingPath -and (Test-Path -LiteralPath $stagingPath)) {
-            Remove-Item -LiteralPath $stagingPath -Force -ErrorAction SilentlyContinue
-        }
+    if ($stagingExePath -and (Test-Path -LiteralPath $stagingExePath)) {
+        Remove-Item -LiteralPath $stagingExePath -Force -ErrorAction SilentlyContinue
     }
     if (Test-Path -LiteralPath $tempBuildDirectory) {
         Remove-Item -LiteralPath $tempBuildDirectory -Recurse -Force -ErrorAction SilentlyContinue

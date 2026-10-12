@@ -4,6 +4,9 @@
 # Do not add /release/ArenaRobloxBridge.exe to this ignore file.
 
 # Local-only diagnosis/build outputs (never distribution artifacts).
+# Version 7.9.4: Der Builder erzeugt keine Diagnose-EXE und kein
+# Start-Diagnostic.bat mehr; die zwei Regeln bleiben nur als Sicherheitsnetz
+# fuer Reste aus alten Builds (der Builder raeumt sie beim Bauen weg).
 /release/ArenaBridge-Diagnose.exe
 /release/*.sha256
 /release/release-metadata.json

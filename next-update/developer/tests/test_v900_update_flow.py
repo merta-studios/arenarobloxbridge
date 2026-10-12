@@ -162,7 +162,13 @@ def test_app_block() -> None:
     check(text.count("# >>> ARENA-UPDATE-INTEGRATION >>>") == 1 and len(block) > 1000,
           "Update-Block genau einmal vorhanden")
     check("https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/" in block,
-          "Download nur von raw.githubusercontent.com (feste Adresse)")
+          "Update-Pruefung nur gegen raw.githubusercontent.com (feste Adresse)")
+    # Version 7.9.4: Installiert wird ueber die eigene Download-Seite.
+    check("$script:UpdateDownloadPageUrl = 'https://arena-rblx-bridge.netlify.app/'" in block,
+          "Update-Block kennt die Download-Seite (feste Adresse, 7.9.4)")
+    check("Start-Process -FilePath $script:UpdateDownloadPageUrl" in block
+          and "Start-Process -FilePath $script:UpdatePendingUrl" not in block,
+          "Jetzt installieren oeffnet die Download-Seite (nicht mehr die rohe EXE-Adresse)")
     check("$script:UpdateLaterLimit = 5" in block, "Spaeter-Limit ist 5")
     check(re.search(r"Stop-Process|taskkill|\.Kill\(|Invoke-Expression|\biex\b", block) is None,
           "Update-Block beendet keine Prozesse und fuehrt keinen Code aus dem Netz aus")

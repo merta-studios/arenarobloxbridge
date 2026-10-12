@@ -1,4 +1,4 @@
-# Arena Roblox Bridge — Update- und Testablauf (Version 7.9.3)
+# Arena Roblox Bridge — Update- und Testablauf (Version 7.9.4)
 
 > **Arbeite nur in `next-update/`.** Der alte Bereich im Repository-Hauptordner
 > bleibt unverändert. Ausnahme: GitHub liest Automatisierungen (Workflows) nur aus
@@ -10,6 +10,17 @@
 Du änderst etwas in einer Session → „mach Pull Request“ → Link öffnen → mergen →
 ZIP laden → `Build-EXE.bat` → testen → bei gutem Stand die EXE nach
 `next-update/release/ArenaRobloxBridge.exe` legen → der Workflow macht den Rest.
+
+## Zwei feste Regeln ab 7.9.4
+
+- **Genau eine Programmdatei:** Der Builder erzeugt nur noch
+  `next-update\release\ArenaRobloxBridge.exe`. Es gibt keine zweite EXE
+  (früher `ArenaBridge-Diagnose.exe`) und kein `Start-Diagnostic.bat` mehr.
+  Alte Reste und Sicherungskopien räumt der Builder aus `release\` weg.
+- **Installation über die Download-Seite:** Die Bridge prüft Updates weiter im
+  Repository (`latest.json`). Wer das Update wirklich installieren will, bekommt
+  aber diese Seite im Browser: <https://arena-rblx-bridge.netlify.app/>.
+  Dort liegt immer die neueste `ArenaRobloxBridge.exe`.
 
 ## Die Schritte im Detail
 
@@ -36,7 +47,9 @@ kein Owner-Fließtext, keine Datei-Labels. Das Update-Fenster und der
 6. **Veröffentlichen (nur bei gutem Stand):** Die getestete
    `ArenaRobloxBridge.exe` in den GitHub-Ordner `next-update/release/` hochladen und
    auf `main` speichern (ersetzen). Dabei muss die Version in der EXE neuer sein
-   als die bisher veröffentlichte — die KI erhöht sie im PR (z. B. 7.9.2 → 7.9.3).
+   als die bisher veröffentlichte — die KI erhöht sie im PR (z. B. 7.9.3 → 7.9.4).
+   Es wird **nur diese eine Datei** hochgeladen (keine Diagnose-Dateien, keine
+   Metadaten).
 7. **Der Workflow läuft automatisch** (GitHub-Reiter **Actions**, Lauf „Bridge-Version
    veröffentlichen“). Er prüft die EXE, berechnet Prüfsumme und Größe und schreibt
    `next-update/release/latest.json`. Ab da sehen alle Bridges beim nächsten Start
@@ -59,8 +72,8 @@ kein Owner-Fließtext, keine Datei-Labels. Das Update-Fenster und der
 | --- | --- |
 | `app/` | Quellcode der Bridge (`ArenaBridge.ps1`) und `version.json` (Versionsquelle) |
 | `builder/` | Bau-Werkzeuge (`Build-EXE.ps1`), von `Build-EXE.bat` aufgerufen |
-| `release/` | **Einziger Ausgabeordner.** `ArenaRobloxBridge.exe` (veröffentlichte EXE) und `latest.json` (automatisch) |
-| `website/` | Vorbereitete Download-Website für Netlify (später für das Zweit-Repository) |
+| `release/` | **Einziger Ausgabeordner.** Genau eine Programmdatei: `ArenaRobloxBridge.exe`, dazu `latest.json` (automatisch) |
+| `website/` | Quelle der Download-Website für Netlify — live unter <https://arena-rblx-bridge.netlify.app/> |
 | `developer/` | Tests, Doku, Werkzeuge (`tools/publish_latest.py` für den Workflow) |
 | `../.github/workflows/publish-bridge.yml` | Der Workflow, der `latest.json` erzeugt |
 

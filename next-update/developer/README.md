@@ -5,8 +5,9 @@ Alles Technische, was nicht zum normalen Nutzer-Klick gehört, liegt hier:
 - `tests/` — Offline-Regressionsskripte, PowerShell-Checks und
   `requirements-test.txt`.
 - `docs/` — Verträge, historische Hintergrundnotizen und Entwicklungsregeln.
-  Verbindlich: `docs/GANZ WICHTIG LESEN VOR JEDER BEARBEITUNG` (Stand 7.9.2) —
-  dort steht auch die Stichpunkt-Regel für die Nutzer-Notizen.
+  Verbindlich: `docs/GANZ WICHTIG LESEN VOR JEDER BEARBEITUNG` (Stand 7.9.4) —
+  dort stehen auch die Stichpunkt-Regel für die Nutzer-Notizen und die zwei
+  7.9.4-Regeln (genau eine EXE, Installation über die Download-Seite).
 - `ci/` — Beispiel für einen optionalen Windows-PowerShell-Parser-Workflow und
   den Generator des geprüften Open-Cloud-Katalogs.
 - `tools/publish_latest.py` liegt unter `tools/` und erzeugt `release/latest.json` (vom Workflow aufgerufen).
@@ -36,6 +37,7 @@ Zum bloßen Bauen/Testen des privaten Kandidaten brauchst du den Ordner `develop
 Build-EXE.bat
 ```
 
-Der Build-Ausgang liegt im einzigen Ordner `next-update/release/`. Ein Merge
-oder lokaler Build löst kein öffentliches Nutzer-Update aus. Ablauf des
-Selbst-Updates: `../README.md`. Technik und Tests: `docs/UPDATE-SYSTEM.md`.
+Der Build-Ausgang liegt im einzigen Ordner `next-update/release/` und besteht aus
+genau einer Programmdatei (`ArenaRobloxBridge.exe`). Ein Merge oder lokaler Build
+löst kein öffentliches Nutzer-Update aus. Ablauf des Selbst-Updates:
+`../README.md`. Technik und Tests: `docs/UPDATE-SYSTEM.md`.

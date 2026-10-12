@@ -1,11 +1,58 @@
 ########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-ÜBERGABE FÜR NEUE SESSIONS              #
-#   (Stand: Version 7.9.3 - 12.10.2026)                                #
+#   (Stand: Version 7.9.4 - 12.10.2026)                                #
 #                                                                      #
 ########################################################################
 
-AKTUELLER NACHTRAG 7.9.3 (12.10.2026) - EXE-NAME ARENAROBLOXBRIDGE.EXE & NETLIFY-DOWNLOAD-WEBSITE (HAT VORRANG)
+AKTUELLER NACHTRAG 7.9.4 (12.10.2026) - GENAU EINE EXE & INSTALLATION ÜBER DIE DOWNLOAD-SEITE (HAT VORRANG)
+=========================================================================================================
+
+- GENAU EINE PROGRAMMDATEI:
+  - `builder/Build-EXE.ps1` baut nur noch `next-update/release/ArenaRobloxBridge.exe`.
+    Der frühere zweite Bau (Konsolen-`ArenaBridge-Diagnose.exe`), der Starter
+    `Start-Diagnostic.bat`, die zweite Prüfsummendatei und die
+    `*.previous-<Zeitstempel>.exe`-Sicherungskopien sind ENTFERNT. Ein laufender
+    Build wird nur noch atomar ersetzt (`[IO.File]::Replace(...,$null,...)`).
+  - `Remove-LegacyReleaseArtifacts` räumt beim Bauen alte Reste aus `release/`
+    (Diagnose-EXE, Diagnose-BAT, Prüfsumme, Backup-Kopien) weg, damit dort genau
+    eine EXE liegt.
+  - `release-metadata.json` ist auf `schemaVersion = 4` mit `outputFileCount = 1`
+    umgestellt; die Felder `diagnosticFileName`/`diagnosticSizeBytes`/
+    `diagnosticSha256` gibt es nicht mehr.
+  - `Build-EXE.bat`, `START-HIER.txt`, `builder/README.txt`, `release/README.txt`,
+    `app/README.txt`, `README.md`, `developer/README.md`,
+    `developer/docs/UPDATE-SYSTEM.md` und `developer/docs/RELEASE-ABLAUF.md` nennen
+    nur noch diese eine Datei und beschreiben die Fehlersuche ohne zweite EXE
+    (`%LOCALAPPDATA%\START-CHECK.txt`,
+    `%LOCALAPPDATA%\ArenaRobloxBridge\bin\startup-diagnose.txt`; der Quelltext
+    läuft zusätzlich als PS1 mit `ARENABRIDGE_DIAGNOSTIC_MODE=1`).
+- INSTALLATION ÜBER DIE DOWNLOAD-SEITE:
+  - Neue feste Adresse im Update-Block von `app/ArenaBridge.ps1`:
+    `$script:UpdateDownloadPageUrl = 'https://arena-rblx-bridge.netlify.app/'`.
+    Der Knopf „Jetzt installieren“ öffnet genau diese Seite im Standard-Browser
+    (`Start-Process -FilePath $script:UpdateDownloadPageUrl`) und zeigt danach
+    „Schließen“.
+  - Die REPOSITORY-PRÜFUNG BLEIBT UNVERÄNDERT: `latest.json` wird weiter von
+    `raw.githubusercontent.com/merta-studios/arenarobloxbridge/main/next-update/release/latest.json`
+    gelesen; Adresse, Prüfsumme und Größe werden weiter geprüft
+    (`$script:UpdatePendingUrl` bleibt nur für Protokoll/Diagnose).
+  - Netlify-Seite ist live: <https://arena-rblx-bridge.netlify.app/>. Sie liest
+    `latest.json`, prüft Größe und SHA-256 und speichert die Datei als
+    `ArenaRobloxBridge.exe`. Quelle der Seite bleibt `next-update/website/`.
+- VERSION 7.9.4 steht in `app/version.json` nach der Stichpunkt-Regel (sechs
+  Stichpunkte, 510 Zeichen). `release/latest.json` und die veröffentlichte EXE
+  bleiben unangetastet, bis der Windows-Build privat getestet und ausdrücklich
+  freigegeben wurde.
+- TESTS: Neu `developer/tests/test_v794_single_exe_download_site.py` prüft beide
+  Regeln auf Quellebene. Aktualisiert:
+  `test_v765_release_workflow.py` (BAT-Marker ohne Diagnose-BAT),
+  `test_v792_desktop_reliability.py` (Installieren öffnet die Download-Seite),
+  `test_v900_update_flow.py` (Download-Seite im Update-Block). Offline-Lauf
+  22/22 in der Sandbox; WPF, Explorer, Papierkorb und der echte
+  Windows-PowerShell-Build bleiben ein Windows-Test.
+
+HISTORISCHER NACHTRAG 7.9.3 (12.10.2026) - EXE-NAME ARENAROBLOXBRIDGE.EXE & NETLIFY-DOWNLOAD-WEBSITE (WEITER GÜLTIG)
 ================================================================================================================
 
 - NEUER EXE-NAME (`ArenaRobloxBridge.exe`):

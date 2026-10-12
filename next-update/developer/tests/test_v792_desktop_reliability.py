@@ -98,8 +98,10 @@ def main() -> int:
     check("Get-ArenaUpdateBullets -Notes $notes" in window
           and "Add-ArenaUpdateBulletRow -Panel $bulletsPanel" in window,
           "Das Fenster zeichnet die Neuigkeiten als einzelne Stichpunkte")
-    check("Save-ArenaUpdateState" in window and "Start-Process -FilePath $script:UpdatePendingUrl" in window,
-          "Der Installieren-Knopf merkt sich die alte EXE und öffnet den Browser")
+    # Version 7.9.4: Der Knopf merkt sich die alte EXE und öffnet die Download-Seite.
+    check("Save-ArenaUpdateState" in window and "Start-Process -FilePath $script:UpdateDownloadPageUrl" in window
+          and "https://arena-rblx-bridge.netlify.app/" in SOURCE,
+          "Der Installieren-Knopf merkt sich die alte EXE und öffnet die Download-Seite")
     xaml_start = window.find('$xaml = @"\n')
     xaml_end = window.find('\n"@', xaml_start + 1) if xaml_start >= 0 else -1
     xaml = window[xaml_start + len('$xaml = @"\n'):xaml_end] if xaml_start >= 0 and xaml_end >= 0 else ""

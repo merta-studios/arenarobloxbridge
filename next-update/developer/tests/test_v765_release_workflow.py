@@ -210,9 +210,12 @@ def main() -> int:
     bat = bat_path.read_text(encoding="ascii")
     build = build_path.read_text(encoding="utf-8-sig")
     for marker in ("builder\\Build-EXE.ps1", "-Channel stable", "BUILD ERFOLGREICH",
-                   "release\\ArenaRobloxBridge.exe", "Start-Diagnostic.bat", "START-HIER.txt",
+                   "release\\ArenaRobloxBridge.exe", "GENAU EINE Datei", "START-HIER.txt",
                    "app\\assets\\neueslogo.png", "kein Nutzer aktualisiert"):
         check(marker in bat, f"single test-build BAT gives an exact next action/path: {marker}")
+    # Version 7.9.4: Genau eine EXE - der BAT nennt keine zweite Programmdatei mehr.
+    check("Start-Diagnostic" not in bat and "ArenaBridge-Diagnose" not in bat,
+          "the BAT no longer points at a second diagnostic EXE or launcher")
     for marker in ("The EXE build must run on Windows", "64-bit Windows",
                    "Join-Path $appRoot 'ArenaBridge.ps1'", "Join-Path $appRoot 'version.json'",
                    "Join-Path $builderRoot 'parse-gate.ps1'", "Join-Path $repoRoot 'release'",
@@ -250,8 +253,10 @@ def main() -> int:
     release_dir = ROOT / "release"
     check(release_dir.is_dir() and (release_dir / "README.txt").is_file()
           and ((not (release_dir / "ArenaRobloxBridge.exe").exists()) or (release_dir / "ArenaRobloxBridge.exe").is_file())
-          and not (release_dir / "ArenaBridge-Diagnose.exe").exists(),
-          "one release/ folder exists, documents the workflow, and has no generated EXE in source")
+          and not (release_dir / "ArenaBridge-Diagnose.exe").exists()
+          and not (release_dir / "Start-Diagnostic.bat").exists()
+          and not list(release_dir.glob("*.previous-*.exe")),
+          "one release/ folder exists, documents the workflow, and holds no second EXE")
     ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
     ignore_rules = [line.strip() for line in ignore.splitlines()
                     if line.strip() and not line.lstrip().startswith("#")]
