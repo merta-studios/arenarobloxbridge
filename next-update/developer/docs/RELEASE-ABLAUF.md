@@ -1,4 +1,4 @@
-# Release-Ablauf (next-update, Version 7.9.2)
+# Release-Ablauf (next-update, Version 7.9.3)
 
 Kurzfassung: Siehe `next-update/README.md`. Hier die Details für Entwicklung und Prüfung.
 
@@ -10,11 +10,11 @@ Kurzfassung: Siehe `next-update/README.md`. Hier die Details für Entwicklung un
    `docs/GANZ WICHTIG LESEN VOR JEDER BEARBEITUNG`). Tests laufen lassen:
    `python developer/tests/run_offline_tests.py`. Dann "mach Pull Request".
 2. **Merge und Build:** Der Nutzer mergt den PR, lädt das ZIP, startet `Build-EXE.bat`.
-   Ergebnis: `release/ArenaBridge.exe` (lokal).
+   Ergebnis: `release/ArenaRobloxBridge.exe` (lokal).
 3. **Privater Test:** Der Nutzer testet die EXE auf seinem Windows-PC (Checkliste in
    `UPDATE-SYSTEM.md`, Abschnitt "Tests").
-4. **Veröffentlichung:** Nur bei gutem Stand die getestete `ArenaBridge.exe` nach
-   `next-update/release/ArenaBridge.exe` hochladen und auf `main` speichern. Der Workflow
+4. **Veröffentlichung:** Nur bei gutem Stand die getestete `ArenaRobloxBridge.exe` nach
+   `next-update/release/ArenaRobloxBridge.exe` hochladen und auf `main` speichern. Der Workflow
    erzeugt `latest.json` automatisch. Niemand schreibt `latest.json` von Hand.
 
 ## Regeln

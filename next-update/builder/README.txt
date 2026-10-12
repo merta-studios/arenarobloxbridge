@@ -5,7 +5,7 @@ Build-EXE.ps1 und parse-gate.ps1 sind interne Helfer. Starte nicht direkt diese
 Dateien, sondern doppelklicke im Ordner next-update die Datei Build-EXE.bat.
 
 Der lokale Build schreibt ausschließlich nach ..\release\ :
-  ArenaBridge.exe, ArenaBridge-Diagnose.exe, Start-Diagnostic.bat,
+  ArenaRobloxBridge.exe, ArenaBridge-Diagnose.exe, Start-Diagnostic.bat,
   Prüfsummen und release-metadata.json.
 
 Die Version kommt aus ..\app\version.json. Der Builder setzt sie an allen Stellen

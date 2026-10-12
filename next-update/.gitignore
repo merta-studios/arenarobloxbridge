@@ -1,7 +1,7 @@
 # The private test build is created in the one shared release/ directory.
 # Keep the normal app artifact trackable: it is uploaded to this exact path
 # only after explicit all-user release approval.
-# Do not add /release/ArenaBridge.exe to this ignore file.
+# Do not add /release/ArenaRobloxBridge.exe to this ignore file.
 
 # Local-only diagnosis/build outputs (never distribution artifacts).
 /release/ArenaBridge-Diagnose.exe

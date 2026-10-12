@@ -183,7 +183,7 @@ if not exist "%APP%" (
 echo.
 echo ARENA ROBLOX BRIDGE - DIAGNOSTIC START
 echo Close any other ArenaBridge window first. This mode keeps a console visible.
-echo Normal beta app: "%~dp0ArenaBridge.exe"
+echo Normal beta app: "%~dp0ArenaRobloxBridge.exe"
 echo.
 set "ARENABRIDGE_DIAGNOSTIC_MODE=1"
 "%APP%"
@@ -239,7 +239,7 @@ if (-not [string]::IsNullOrWhiteSpace($TestFileVersion)) {
     if (-not $TestFixtureBuild) { throw '-TestFileVersion is only accepted together with -TestFixtureBuild.' }
     if ($TestFileVersion -cnotmatch '^\d+\.\d+\.\d+\.\d+$') { throw '-TestFileVersion must be a four-part numeric version such as 7.7.1.0.' }
 }
-$exePath = Join-Path $buildOutputDirectory 'ArenaBridge.exe'
+$exePath = Join-Path $buildOutputDirectory 'ArenaRobloxBridge.exe'
 $diagnosticExePath = Join-Path $buildOutputDirectory 'ArenaBridge-Diagnose.exe'
 $diagnosticBatPath = Join-Path $buildOutputDirectory 'Start-Diagnostic.bat'
 
@@ -297,7 +297,7 @@ if ($Channel -eq 'stable' -and $BuildVersion.Contains('-')) {
 }
 if ($Channel -eq 'stable' -and -not $NonInteractive) {
     Write-Warning 'A stable build writes to the same single release\ folder. Do not run this during private testing.'
-    $confirmation = Read-Host 'Type RELEASE STABLE to overwrite release\ArenaBridge.exe'
+    $confirmation = Read-Host 'Type RELEASE STABLE to overwrite release\ArenaRobloxBridge.exe'
     if ($confirmation -cne 'RELEASE STABLE') { throw 'Stable build cancelled.' }
 }
 
@@ -331,7 +331,7 @@ if (-not (Test-Path -LiteralPath $buildOutputDirectory -PathType Container)) {
 $tempBuildDirectory = Join-Path $env:TEMP ('ArenaRobloxBridge-build-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $tempBuildDirectory -Force | Out-Null
 $preparedSourcePath = Join-Path $tempBuildDirectory 'ArenaBridge.compile.ps1'
-$stagingExePath = Join-Path $buildOutputDirectory 'ArenaBridge.building.exe'
+$stagingExePath = Join-Path $buildOutputDirectory 'ArenaRobloxBridge.building.exe'
 $stagingDiagnosticExePath = Join-Path $buildOutputDirectory 'ArenaBridge-Diagnose.building.exe'
 $smokeReportPath = Join-Path $tempBuildDirectory 'smoke-report.json'
 
@@ -409,7 +409,7 @@ try {
 
     Test-StagedExecutable -ExecutablePath $stagingExePath -ReportPath $smokeReportPath
 
-    # Publish the troubleshooting twin first; the normal ArenaBridge.exe is
+    # Publish the troubleshooting twin first; the normal ArenaRobloxBridge.exe is
     # replaced last so a failure cannot leave a half-built release executable.
     Publish-LocalBuild -StagingPath $stagingDiagnosticExePath -TargetPath $diagnosticExePath
     Publish-LocalBuild -StagingPath $stagingExePath -TargetPath $exePath
@@ -430,7 +430,7 @@ try {
         channel = $Channel
         version = $BuildVersion
         sourceVersion = $sourceVersion
-        fileName = 'ArenaBridge.exe'
+        fileName = 'ArenaRobloxBridge.exe'
         sizeBytes = [long]$file.Length
         sha256 = $sha256
         diagnosticFileName = 'ArenaBridge-Diagnose.exe'
@@ -449,11 +449,11 @@ try {
         testFixtureBuild = [bool]$TestFixtureBuild
         builtAtUtc = [DateTime]::UtcNow.ToString('o')
         published = $false
-        note = 'Lokaler Testbau. Veroeffentlicht wird nur durch Einchecken der getesteten Datei als next-update/release/ArenaBridge.exe.'
+        note = 'Lokaler Testbau. Veroeffentlicht wird nur durch Einchecken der getesteten Datei als next-update/release/ArenaRobloxBridge.exe.'
     }
     $metadataPath = Join-Path $buildOutputDirectory 'release-metadata.json'
     Write-Utf8NoBom $metadataPath ($metadata | ConvertTo-Json -Depth 6)
-    Write-Utf8NoBom (Join-Path $buildOutputDirectory 'ArenaBridge.exe.sha256') ($sha256 + '  ArenaBridge.exe' + [Environment]::NewLine)
+    Write-Utf8NoBom (Join-Path $buildOutputDirectory 'ArenaRobloxBridge.exe.sha256') ($sha256 + '  ArenaRobloxBridge.exe' + [Environment]::NewLine)
     Write-Utf8NoBom (Join-Path $buildOutputDirectory 'ArenaBridge-Diagnose.exe.sha256') ($diagnosticSha256 + '  ArenaBridge-Diagnose.exe' + [Environment]::NewLine)
 
     Write-Step 'LOCAL TEST BUILD COMPLETED. No GitHub upload/release or update-channel manifest was changed.'
@@ -463,7 +463,7 @@ try {
     Write-Host 'If the normal EXE shows nothing, close other ArenaBridge windows and run:' -ForegroundColor Yellow
     Write-Host ('  ' + $diagnosticBatPath) -ForegroundColor White
     Write-Host ('Local-only metadata: ' + $metadataPath)
-    Write-Host 'No users were updated. Only after explicit approval may the exact tested ArenaBridge.exe be uploaded to next-update/release/ArenaBridge.exe; do not upload diagnostic files or metadata.'
+    Write-Host 'No users were updated. Only after explicit approval may the exact tested ArenaRobloxBridge.exe be uploaded to next-update/release/ArenaRobloxBridge.exe; do not upload diagnostic files or metadata.'
 } finally {
     foreach ($stagingPath in @($stagingExePath,$stagingDiagnosticExePath)) {
         if ($stagingPath -and (Test-Path -LiteralPath $stagingPath)) {

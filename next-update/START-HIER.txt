@@ -1,4 +1,4 @@
-ARENA ROBLOX BRIDGE — START HIER (Version 7.9.2)
+ARENA ROBLOX BRIDGE — START HIER (Version 7.9.3)
 =================================================
 
 NUR BAUEN UND TESTEN?
@@ -8,7 +8,7 @@ NUR BAUEN UND TESTEN?
 3. Warte auf BUILD ERFOLGREICH.
 4. Starte genau diese EXE:
 
-       release\ArenaBridge.exe
+       release\ArenaRobloxBridge.exe
 
    Vorher andere ArenaBridge-Fenster schließen. Falls beim Start kein Fenster
    erscheint, schließe andere ArenaBridge-Prozesse und starte
@@ -16,13 +16,13 @@ NUR BAUEN UND TESTEN?
 
 ZUM VERÖFFENTLICHEN (nur wenn der Test gut war):
 
-- Lade die getestete Datei als next-update\release\ArenaBridge.exe auf main hoch
+- Lade die getestete Datei als next-update\release\ArenaRobloxBridge.exe auf main hoch
   (ersetzen). Die Version in der EXE muss neuer sein als die bisherige.
 - GitHub startet dann automatisch den Workflow "Bridge-Version veröffentlichen"
   (Reiter Actions). Er schreibt next-update\release\latest.json. Erst danach
   sehen Nutzer das Update.
 - Ist der Workflow rot: Meist ist die Version nicht erhöht. Sag der KI
-  "Version erhöhen" — sie setzt dann z. B. 7.9.1 in app\version.json.
+  "Version erhöhen" — sie setzt dann z. B. 7.9.4 in app\version.json.
 
 WIE DAS UPDATE FÜR NUTZER FUNKTIONIERT:
 

@@ -23,7 +23,7 @@ echo.
 echo ================================================================
 echo BUILD ERFOLGREICH
 echo Diese EXE lokal testen:
-echo "%~dp0release\ArenaBridge.exe"
+echo "%~dp0release\ArenaRobloxBridge.exe"
 echo.
 echo Wenn beim Start kein Fenster erscheint, erst andere ArenaBridge-
 echo Fenster schliessen und dann die Diagnose starten:

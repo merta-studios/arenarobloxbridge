@@ -106,15 +106,15 @@ def main() -> int:
     set_startup = region(source, "function Set-StartupEnabled {", "function Get-StartupEnabled {")
     get_startup = region(source, "function Get-StartupEnabled {", "# Alte Installationen werden")
 
-    check("$baseName -ine 'ArenaBridge'" in updater_validate
-          and "ArenaRobloxBridge'" not in updater_validate
+    check("$baseName -ine 'ArenaRobloxBridge'" in updater_validate
+          and "$baseName -ine 'ArenaBridge'" in updater_validate
           and "ArenaBridgeUpdater'" not in updater_validate
           and "Test-Path -LiteralPath $candidate -PathType Leaf" in updater_validate,
           "only an existing, named updater EXE is accepted")
     check("Get-BridgeUpdaterPathFromParent" in resolve
           and "Get-BridgeStartupItems" in resolve
           and "UpdaterPathFile" in resolve
-          and "ArenaBridge.exe" in resolve,
+          and "ArenaRobloxBridge.exe" in resolve,
           "updater path can come from the parent EXE, existing startup entries, or saved local path")
     check("HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run" in registry_paths
           and "RunOnce" in registry_paths

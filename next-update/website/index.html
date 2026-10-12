@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>ArenaRobloxBridge Download</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #ffffff;
+      color: #000000;
+      font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      box-sizing: border-box;
+      padding: 24px;
+    }
+    main {
+      max-width: 640px;
+    }
+    #status {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.5;
+      font-weight: 400;
+      color: #000000;
+      white-space: pre-line;
+    }
+    #detail {
+      margin: 10px 0 0 0;
+      font-size: 13px;
+      line-height: 1.45;
+      color: #000000;
+    }
+    #retry {
+      display: none;
+      margin-top: 14px;
+      font-size: 13px;
+      color: #000000;
+      text-decoration: underline;
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 0;
+      font-family: inherit;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <p id="status" role="status" aria-live="polite">ArenaRobloxBridge.exe wird vorbereitet …</p>
+    <p id="detail"></p>
+    <a id="retry" href="#">Falls der Download nicht automatisch startet, hier klicken.</a>
+  </main>
+
+  <script>
+    (function () {
+      "use strict";
+
+      var MANIFEST_URL = "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/main/next-update/release/latest.json";
+      var ALLOWED_PREFIX = "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/";
+      var FALLBACK_EXE_URL = "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/main/next-update/release/ArenaRobloxBridge.exe";
+      var DOWNLOAD_FILENAME = "ArenaRobloxBridge.exe";
+
+      var statusEl = document.getElementById("status");
+      var detailEl = document.getElementById("detail");
+      var retryEl = document.getElementById("retry");
+      var activeObjectUrl = null;
+
+      function setStatus(mainText, detailText) {
+        statusEl.textContent = mainText || "";
+        detailEl.textContent = detailText || "";
+      }
+
+      function formatMegabytes(bytes) {
+        return (bytes / (1024 * 1024)).toFixed(1).replace(".", ",") + " MB";
+      }
+
+      function isAllowedExeUrl(url) {
+        if (typeof url !== "string" || url.indexOf(ALLOWED_PREFIX) !== 0) {
+          return false;
+        }
+        return (
+          url.endsWith("/next-update/release/ArenaRobloxBridge.exe") ||
+          url.endsWith("/next-update/release/ArenaBridge.exe")
+        );
+      }
+
+      function triggerBrowserDownload(url, fileName) {
+        var link = document.createElement("a");
+        link.href = url;
+        link.download = fileName || DOWNLOAD_FILENAME;
+        link.rel = "noopener";
+        link.style.display = "none";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+
+      async function sha256Hex(uint8Array) {
+        if (!window.crypto || !window.crypto.subtle) {
+          return null;
+        }
+        var digest = await window.crypto.subtle.digest("SHA-256", uint8Array);
+        var hashArray = Array.from(new Uint8Array(digest));
+        return hashArray.map(function (b) { return b.toString(16).padStart(2, "0"); }).join("");
+      }
+
+      async function fetchManifest() {
+        var cacheBuster = "?ts=" + Date.now();
+        var response = await fetch(MANIFEST_URL + cacheBuster, { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error("Manifest antwortete mit HTTP " + response.status);
+        }
+        var manifest = await response.json();
+        if (!manifest || !isAllowedExeUrl(manifest.url)) {
+          throw new Error("Ungültige Download-Adresse im Manifest.");
+        }
+        return {
+          version: typeof manifest.version === "string" ? manifest.version : "",
+          url: manifest.url,
+          sha256: typeof manifest.sha256 === "string" ? manifest.sha256.toLowerCase() : "",
+          sizeBytes: typeof manifest.sizeBytes === "number" ? manifest.sizeBytes : 0
+        };
+      }
+
+      async function downloadBytesWithProgress(url, expectedBytes, versionLabel) {
+        var response = await fetch(url, { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error("EXE-Abruf fehlgeschlagen (HTTP " + response.status + ")");
+        }
+        var total = expectedBytes || parseInt(response.headers.get("content-length") || "0", 10) || 0;
+        if (!response.body || typeof response.body.getReader !== "function") {
+          setStatus(
+            "ArenaRobloxBridge.exe" + versionLabel + " wird geladen …",
+            "Bitte einen Moment warten."
+          );
+          var buffer = await response.arrayBuffer();
+          return new Uint8Array(buffer);
+        }
+
+        var reader = response.body.getReader();
+        var chunks = [];
+        var received = 0;
+
+        while (true) {
+          var step = await reader.read();
+          if (step.done) {
+            break;
+          }
+          if (step.value) {
+            chunks.push(step.value);
+            received += step.value.byteLength;
+            if (total > 0) {
+              var percent = Math.min(100, Math.round((received / total) * 100));
+              setStatus(
+                "ArenaRobloxBridge.exe" + versionLabel + " wird geladen … " + percent + " %",
+                formatMegabytes(received) + " von " + formatMegabytes(total)
+              );
+            } else {
+              setStatus(
+                "ArenaRobloxBridge.exe" + versionLabel + " wird geladen …",
+                formatMegabytes(received) + " empfangen"
+              );
+            }
+          }
+        }
+
+        var combined = new Uint8Array(received);
+        var offset = 0;
+        for (var i = 0; i < chunks.length; i++) {
+          combined.set(chunks[i], offset);
+          offset += chunks[i].byteLength;
+        }
+        return combined;
+      }
+
+      async function startDownloadFlow() {
+        var targetUrl = FALLBACK_EXE_URL;
+        var version = "";
+        var expectedSha256 = "";
+        var expectedSize = 0;
+
+        setStatus("Suche neueste Version von ArenaRobloxBridge.exe …", "");
+
+        try {
+          var manifest = await fetchManifest();
+          targetUrl = manifest.url;
+          version = manifest.version;
+          expectedSha256 = manifest.sha256;
+          expectedSize = manifest.sizeBytes;
+        } catch (manifestError) {
+          targetUrl = FALLBACK_EXE_URL;
+        }
+
+        var versionLabel = version ? " (Version " + version + ")" : "";
+        setStatus("ArenaRobloxBridge.exe" + versionLabel + " wird geladen … 0 %", "");
+
+        try {
+          var bytes = await downloadBytesWithProgress(targetUrl, expectedSize, versionLabel);
+
+          if (expectedSize > 0 && bytes.byteLength !== expectedSize) {
+            throw new Error("Dateigröße stimmt nicht mit dem Manifest überein.");
+          }
+
+          if (expectedSha256 && /^[0-9a-f]{64}$/.test(expectedSha256)) {
+            setStatus("Prüfe ArenaRobloxBridge.exe" + versionLabel + " …", "SHA-256-Prüfsumme wird kontrolliert.");
+            var actualSha256 = await sha256Hex(bytes);
+            if (actualSha256 && actualSha256 !== expectedSha256) {
+              throw new Error("SHA-256-Prüfsumme stimmt nicht überein.");
+            }
+          }
+
+          var blob = new Blob([bytes], { type: "application/octet-stream" });
+          if (activeObjectUrl) {
+            URL.revokeObjectURL(activeObjectUrl);
+          }
+          activeObjectUrl = URL.createObjectURL(blob);
+
+          retryEl.href = activeObjectUrl;
+          retryEl.setAttribute("download", DOWNLOAD_FILENAME);
+          retryEl.style.display = "inline-block";
+
+          triggerBrowserDownload(activeObjectUrl, DOWNLOAD_FILENAME);
+
+          setStatus(
+            "Download von ArenaRobloxBridge.exe" + versionLabel + " gestartet.",
+            "Starte danach die heruntergeladene Datei ArenaRobloxBridge.exe. Dieses Tab kann geschlossen werden."
+          );
+        } catch (downloadError) {
+          retryEl.href = targetUrl;
+          retryEl.setAttribute("download", DOWNLOAD_FILENAME);
+          retryEl.style.display = "inline-block";
+
+          triggerBrowserDownload(targetUrl, DOWNLOAD_FILENAME);
+
+          setStatus(
+            "Direkter Download von ArenaRobloxBridge.exe" + versionLabel + " wurde angestoßen.",
+            "Falls der Download nicht automatisch beginnt, klicke unten auf den Link."
+          );
+        }
+      }
+
+      startDownloadFlow();
+    })();
+  </script>
+</body>
+</html>

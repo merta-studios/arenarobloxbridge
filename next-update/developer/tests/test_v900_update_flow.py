@@ -27,9 +27,14 @@ REPO_ROOT = PROJECT_ROOT.parent                      # Repository-Wurzel
 APP = PROJECT_ROOT / "app" / "ArenaBridge.ps1"
 BUILDER = PROJECT_ROOT / "builder" / "Build-EXE.ps1"
 PUBLISH_TOOL = PROJECT_ROOT / "developer" / "tools" / "publish_latest.py"
-RELEASE_EXE = PROJECT_ROOT / "release" / "ArenaBridge.exe"
+RELEASE_EXE = (
+    PROJECT_ROOT / "release" / "ArenaRobloxBridge.exe"
+    if (PROJECT_ROOT / "release" / "ArenaRobloxBridge.exe").is_file()
+    else PROJECT_ROOT / "release" / "ArenaBridge.exe"
+)
 VERSION_JSON = PROJECT_ROOT / "app" / "version.json"
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "publish-bridge.yml"
+WEBSITE_DIR = PROJECT_ROOT / "website"
 TOKEN = "__ARENA_BUILD_VERSION__"
 # Baseline des Tree-sitter-Parsers fuer app/ArenaBridge.ps1 (bekannte, harmlose Hinweise).
 PARSER_BASELINE_APP = 8
@@ -61,7 +66,11 @@ def load_publish_tool():
 
 def test_publish_tool(tool) -> None:
     print("\n-- Veroeffentlichungswerkzeug (echte EXE)")
-    check(RELEASE_EXE.is_file(), "release/ArenaBridge.exe ist vorhanden")
+    check(RELEASE_EXE.is_file(), "veroeffentlichte Test-EXE in release/ ist vorhanden")
+    check(tool.DEFAULT_EXE == PROJECT_ROOT / "release" / "ArenaRobloxBridge.exe",
+          "publish_latest.py prueft standardmaessig release/ArenaRobloxBridge.exe")
+    check(tool.EXE_PATH_IN_REPO == "next-update/release/ArenaRobloxBridge.exe",
+          "publish_latest.py zeigt auf next-update/release/ArenaRobloxBridge.exe")
     version = tool.file_version(RELEASE_EXE)
     check(re.fullmatch(r"\d+\.\d+\.\d+\.0", version) is not None,
           f"Dateiversion der EXE ist dreiteilig plus .0 (gefunden: {version})")
@@ -72,8 +81,8 @@ def test_publish_tool(tool) -> None:
     check(manifest["sha256"] == __import__("hashlib").sha256(RELEASE_EXE.read_bytes()).hexdigest(),
           "SHA-256 im Manifest stimmt mit der Datei ueberein")
     check(manifest["sizeBytes"] == RELEASE_EXE.stat().st_size, "Groesse im Manifest stimmt")
-    check(manifest["url"].endswith(f"/{commit}/next-update/release/ArenaBridge.exe"),
-          "Download-Adresse zeigt auf den Commit (unveraenderlich)")
+    check(manifest["url"].endswith(f"/{commit}/next-update/release/ArenaRobloxBridge.exe"),
+          "Download-Adresse zeigt auf den Commit und ArenaRobloxBridge.exe (unveraenderlich)")
     try:
         tool.build_manifest(RELEASE_EXE, "9.9.9", "Test", "merta-studios/arenarobloxbridge", commit, now)
         check(False, "falsche Version wird abgelehnt")
@@ -126,11 +135,24 @@ def test_workflow() -> None:
     print("\n-- Workflow")
     check(WORKFLOW.is_file(), ".github/workflows/publish-bridge.yml liegt im Repository-Hauptordner")
     text = WORKFLOW.read_text(encoding="utf-8") if WORKFLOW.is_file() else ""
-    check("next-update/release/ArenaBridge.exe" in text, "Workflow startet nur bei Aenderung der EXE")
+    check("next-update/release/ArenaRobloxBridge.exe" in text, "Workflow startet nur bei Aenderung der ArenaRobloxBridge.exe")
     check("branches: [main]" in text, "Workflow laeuft nur auf main")
     check("contents: write" in text, "Workflow darf latest.json committen")
     check("next-update/developer/tools/publish_latest.py" in text, "Workflow ruft das Werkzeug auf")
     check("[skip ci]" in text, "Commit des Workflows loest keinen weiteren Lauf aus")
+
+
+def test_website() -> None:
+    print("\n-- Download-Website (next-update/website)")
+    index_html = WEBSITE_DIR / "index.html"
+    netlify_toml = WEBSITE_DIR / "netlify.toml"
+    check(WEBSITE_DIR.is_dir() and index_html.is_file() and netlify_toml.is_file(),
+          "next-update/website enthaelt index.html und netlify.toml fuer das Zweit-Repository")
+    html = index_html.read_text(encoding="utf-8") if index_html.is_file() else ""
+    check("background: #ffffff" in html and "color: #000000" in html,
+          "Download-Seite ist eine leere weisse Seite mit schwarzem Statustext")
+    check("next-update/release/latest.json" in html and "ArenaRobloxBridge.exe" in html,
+          "Download-Seite ruft latest.json ab und laedt ArenaRobloxBridge.exe herunter")
 
 
 def test_app_block() -> None:
@@ -148,7 +170,8 @@ def test_app_block() -> None:
           "Update-Block loescht oder verschiebt nichts direkt (Papierkorb nur ueber Microsoft.VisualBasic)")
     check("SendToRecycleBin" in block, "alte EXE geht in den Papierkorb")
     check("DeleteFile" in block and "OnlyErrorDialogs" in block, "Papierkorb-Aufruf ist vollstaendig")
-    check(re.search(r"ArenaBridge\*\.exe", block) is not None, "nur ArenaBridge*.exe darf entfernt werden")
+    check(re.search(r"ArenaRobloxBridge\*\.exe", block) is not None, "ArenaRobloxBridge*.exe wird erkannt und aufgeraeumt")
+    check("*/next-update/release/ArenaRobloxBridge.exe" in block, "Update-Block akzeptiert ArenaRobloxBridge.exe im release-Ordner")
     code_lines = [l for l in text.split("\n") if not l.lstrip().startswith("#")]
     check(not any("Start-ArenaUpdateCheck" in l or "Start-ArenaManualUpdateCheck" in l for l in code_lines),
           "keine Aufrufe der entfernten alten Update-Funktionen")
@@ -223,6 +246,7 @@ def main() -> int:
     test_publish_tool(tool)
     test_version_source()
     test_workflow()
+    test_website()
     test_app_block()
     test_builder()
     test_removed_old_system()
