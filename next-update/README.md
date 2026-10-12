@@ -1,4 +1,4 @@
-# Arena Roblox Bridge — Update- und Testablauf (Version 7.9.1)
+# Arena Roblox Bridge — Update- und Testablauf (Version 7.9.2)
 
 > **Arbeite nur in `next-update/`.** Der alte Bereich im Repository-Hauptordner
 > bleibt unverändert. Ausnahme: GitHub liest Automatisierungen (Workflows) nur aus
@@ -22,6 +22,17 @@ ZIP laden → `Build-EXE.bat` → testen → bei gutem Stand die EXE nach
    Die fertige Test-EXE liegt danach in `next-update\release\ArenaBridge.exe`.
 5. **Testen:** Diese EXE auf deinem PC starten (andere ArenaBridge-Fenster vorher
    schließen).
+### Regel für die Neuigkeiten (Stichpunkt-Regel, dauerhaft)
+
+Die Notizen zu einer Version stehen in `app/version.json`. Sie sind **kurze
+Stichpunkte im Ton für die Nutzer**: `notes[0]` beginnt mit `• <Version> — TITEL:`,
+danach folgen mindestens vier Stichpunkte (je `• ` davor, höchstens 240 Zeichen),
+die ganze Notiz bleibt unter 600 Zeichen. Kurz feiern, was die Nutzer bekommen —
+kein Owner-Fließtext, keine Datei-Labels. Das Update-Fenster und der
+„Update installiert“-Hinweis zeigen diese Stichpunkte einzeln; der
+„Später“-Knopf zeigt nie eine Restzahl (das bleibt ein Geheimnis des Programms).
+`developer/tests/test_v792_desktop_reliability.py` prüft die Regel mit.
+
 6. **Veröffentlichen (nur bei gutem Stand):** Die getestete
    `ArenaBridge.exe` in den GitHub-Ordner `next-update/release/` hochladen und
    auf `main` speichern (ersetzen). Dabei muss die Version in der EXE neuer sein

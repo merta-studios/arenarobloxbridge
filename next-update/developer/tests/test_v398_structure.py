@@ -19,6 +19,8 @@ from xml.etree import ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
 APP_ROOT = ROOT / "app"
+
+
 def _shipped_build_version() -> str:
     """Version aus app/version.json: so setzt der Builder den Platzhalter im Quelltext."""
     import json
@@ -103,11 +105,22 @@ def main() -> int:
     version = json.loads((APP_ROOT / "version.json").read_text(encoding="utf-8"))
     require(version["version"] == VERSION, f"version.json is not {VERSION}")
     release_notes = "\n".join(str(note) for note in version.get("notes", []))
-    latest_note = next((str(n) for n in version.get("notes", []) if str(n).startswith("• 7.9.1")), "")
-    for marker in ("7.9.1", "Nutzerwünsche", "Place-Konventionen", "keine Pflicht",
-                   "keine erfundene 0 %", "API-Pfade", "IP-Einrichtung",
-                   "Root-Updater bleibt unangetastet", "EXEs baut der Nutzer selbst"):
-        require(marker in latest_note, f"7.8.0 release note omits current scope: {marker}")
+    latest_note = next((str(n) for n in version.get("notes", []) if str(n).startswith("• " + VERSION + " ")), "")
+    require(latest_note, f"version.json hat keine Stichpunkt-Notiz für {VERSION}")
+    # Version 7.9.2 (Nutzerregel): Neuigkeiten sind KURZE STICHPUNKTE im Nutzer-Ton.
+    require(latest_note.count("•") >= 5,
+            "die Notiz der aktuellen Version ist keine Stichpunktliste (mindestens 5 Stichpunkte)")
+    collapsed_note = " ".join(latest_note.split())
+    require(len(collapsed_note) <= 600,
+            "die Notiz der aktuellen Version passt nicht ins Manifest (max 600 Zeichen)")
+    require(any(letter in latest_note for letter in "äöüÄÖÜß"),
+            "die Notiz der aktuellen Version benutzt echte Umlaute")
+    # Absichtlich aus Teilen gebaut, damit ein Umlaut-Werkzeug diese Pruefliste
+    # nicht selbst umschreibt: typische Ersatzschreibweisen der alten Fassungen.
+    old_spellings = ["f" + "uer", "u" + "eber", "l" + "aesst", "Schl" + "uessel",
+                     "Pr" + "uefung", "schli" + "essen", "Gr" + "oesse", "Sp" + "aeter"]
+    require(all(word not in latest_note for word in old_spellings),
+            "die Notiz der aktuellen Version benutzt keine ae/oe/ue-Ersatzschreibweise")
     require("7.6.2" in release_notes and "creator_dashboard" in release_notes
             and "game-pass:read" in release_notes and "ask_user" in release_notes,
             "version history omits the Open Cloud/user-channel technical baseline")
@@ -124,7 +137,7 @@ def main() -> int:
     # the script; no source may be appended after it.
     expected_final_lines = [
         "# Sicherheitsnetz (Version 3.4): Falls das Closed-Ereignis doch nicht zum",
-        "# Exit gefuehrt haben sollte, wird der Prozess hier garantiert beendet.",
+        "# Exit geführt haben sollte, wird der Prozess hier garantiert beendet.",
         "try { Write-RuntimeLog '=== Programmende ===' } catch {}",
         "[System.Environment]::Exit(0)",
     ]
@@ -296,7 +309,7 @@ def main() -> int:
         "$verText = '6.0.1'",
         'Arena Studio Bridge - Studio Plugin  (Version 6.0.1)',
         'Text="Arena Roblox Bridge - Version 6.0.1"',
-        "Version 6.0.1 - aktuell. Beim naechsten Start",
+        "Version 6.0.1 - aktuell. Beim nächsten Start",
         "# Arena Roblox Bridge  -  Version 6.0.1",
     ]
     for marker in stale_601_literals:
@@ -313,7 +326,7 @@ def main() -> int:
         "$verText = '6.0.2'",
         'Arena Studio Bridge - Studio Plugin  (Version 6.0.2)',
         'Text="Arena Roblox Bridge - Version 6.0.2"',
-        "Version 6.0.2 - aktuell. Beim naechsten Start",
+        "Version 6.0.2 - aktuell. Beim nächsten Start",
     ]
     for marker in stale_602_literals:
         require(marker not in source, f"stale 6.0.2 literal remains: {marker}")
@@ -332,7 +345,7 @@ def main() -> int:
         "$verText = '6.0.3'",
         'Arena Studio Bridge - Studio Plugin  (Version 6.0.3)',
         'Text="Arena Roblox Bridge - Version 6.0.3"',
-        "Version 6.0.3 - aktuell. Beim naechsten Start",
+        "Version 6.0.3 - aktuell. Beim nächsten Start",
     ]
     for marker in stale_603_literals:
         require(marker not in source, f"stale 6.0.3 literal remains: {marker}")
@@ -351,8 +364,8 @@ def main() -> int:
         "$verText = '6.0.4'",
         'Arena Studio Bridge - Studio Plugin  (Version 6.0.4)',
         'Text="Arena Roblox Bridge - Version 6.0.4"',
-        "Version 6.0.4 - aktuell. Beim naechsten Start",
-        "Laufzeit-Identitaet: Bridge-Version=6.0.4",
+        "Version 6.0.4 - aktuell. Beim nächsten Start",
+        "Laufzeit-Identität: Bridge-Version=6.0.4",
     ]
     for marker in stale_604_literals:
         require(marker not in source, f"stale 6.0.4 literal remains: {marker}")
@@ -370,8 +383,8 @@ def main() -> int:
         "$verText = '6.0.5'",
         'Arena Studio Bridge - Studio Plugin  (Version 6.0.5)',
         'Text="Arena Roblox Bridge - Version 6.0.5"',
-        "Version 6.0.5 - aktuell. Beim naechsten Start",
-        "Laufzeit-Identitaet: Bridge-Version=6.0.5",
+        "Version 6.0.5 - aktuell. Beim nächsten Start",
+        "Laufzeit-Identität: Bridge-Version=6.0.5",
         "Kurzbericht Fenster-Vorschau (Version 6.0.5)",
     ]
     for marker in stale_605_literals:
@@ -409,8 +422,8 @@ def main() -> int:
         "$verText = '6.1.2'",
         'Arena Studio Bridge - Studio Plugin  (Version 6.1.2)',
         'Text="Arena Roblox Bridge - Version 6.1.2"',
-        "Version 6.1.2 - aktuell. Beim naechsten Start",
-        "Laufzeit-Identitaet: Bridge-Version=6.1.2",
+        "Version 6.1.2 - aktuell. Beim nächsten Start",
+        "Laufzeit-Identität: Bridge-Version=6.1.2",
         "Kurzbericht Fenster-Vorschau (Version 6.1.2)",
     ]
     for marker in stale_612_literals:
@@ -431,8 +444,8 @@ def main() -> int:
         "$verText = '6.1.3'",
         'Arena Studio Bridge - Studio Plugin  (Version 6.1.3)',
         'Text="Arena Roblox Bridge - Version 6.1.3"',
-        "Version 6.1.3 - aktuell. Beim naechsten Start",
-        "Laufzeit-Identitaet: Bridge-Version=6.1.3",
+        "Version 6.1.3 - aktuell. Beim nächsten Start",
+        "Laufzeit-Identität: Bridge-Version=6.1.3",
         "Kurzbericht Fenster-Vorschau (Version 6.1.3)",
     ]
     for marker in stale_613_literals:
@@ -451,8 +464,8 @@ def main() -> int:
         "$verText = '6.1.4'",
         'Arena Studio Bridge - Studio Plugin  (Version 6.1.4)',
         'Text="Arena Roblox Bridge - Version 6.1.4"',
-        "Version 6.1.4 - aktuell. Beim naechsten Start",
-        "Laufzeit-Identitaet: Bridge-Version=6.1.4",
+        "Version 6.1.4 - aktuell. Beim nächsten Start",
+        "Laufzeit-Identität: Bridge-Version=6.1.4",
         "Kurzbericht Fenster-Vorschau (Version 6.1.4)",
     ]
     for marker in stale_614_literals:
@@ -472,8 +485,8 @@ def main() -> int:
         "$verText = '6.2.0'",
         'Arena Studio Bridge - Studio Plugin  (Version 6.2.0)',
         'Text="Arena Roblox Bridge - Version 6.2.0"',
-        "Version 6.2.0 - aktuell. Beim naechsten Start",
-        "Laufzeit-Identitaet: Bridge-Version=6.2.0",
+        "Version 6.2.0 - aktuell. Beim nächsten Start",
+        "Laufzeit-Identität: Bridge-Version=6.2.0",
         "Kurzbericht Fenster-Vorschau (Version 6.2.0)",
     ]
     for marker in stale_620_literals:
@@ -493,8 +506,8 @@ def main() -> int:
         "$verText = '6.1.5'",
         'Arena Studio Bridge - Studio Plugin  (Version 6.1.5)',
         'Text="Arena Roblox Bridge - Version 6.1.5"',
-        "Version 6.1.5 - aktuell. Beim naechsten Start",
-        "Laufzeit-Identitaet: Bridge-Version=6.1.5",
+        "Version 6.1.5 - aktuell. Beim nächsten Start",
+        "Laufzeit-Identität: Bridge-Version=6.1.5",
         "Kurzbericht Fenster-Vorschau (Version 6.1.5)",
     ]
     for marker in stale_615_literals:
@@ -549,21 +562,21 @@ def main() -> int:
         'function Get-PlaceDisplayName',
         'x:Name="PlaceListStatusText"',
         "Add-PlaceRowToPlaceList $script:AllPlacesRow $allSid 'Alle-Places-Zeile'",
-        'hinzugefuegt (sid={1}): PlaceList.Children={2}',
+        'hinzugefügt (sid={1}): PlaceList.Children={2}',
         'hart auf sichtbar gestellt',
         'Einblend-Animation kam nie an',
         'Place-Liste konnte nicht neu angeordnet werden',
         'Place-Zeile: Vorschau-Visual konnte nicht erstellt werden',
-        'Place-Zeile: Auswahlmenue/Popup konnte nicht erstellt werden',
-        'Arena-Verlaufsfenster konnte nicht geoeffnet werden',
+        'Place-Zeile: Auswahlmenü/Popup konnte nicht erstellt werden',
+        'Arena-Verlaufsfenster konnte nicht geöffnet werden',
         '$script:PlaceVisibleSeconds = 15',
         '$script:PlaceOrphanGraceSeconds = 4',
         '$script:PlaceCleanupSeconds = 120',
         'function Remove-DeadSession',
         'Remove-DeadSession $sessionId',
         'function New-HistoryButton',
-        '$head.Add_MouseLeftButtonDown($dragHandler)',
-        '$shell.Add_MouseLeftButtonDown($dragHandler)',
+        'function Enable-BridgeWindowDrag',
+        'Enable-BridgeWindowDrag -Window $window -Handle $TitleBar',
         'function Get-ActivityToolSets',
         'previousLines = select(2, string.gsub(oldSource',
         'function Get-ResultNumber',
@@ -736,7 +749,7 @@ def main() -> int:
         "ArenaRobloxBridge/7.8.0": 1,
         "Arena Studio Bridge - Studio Plugin  (Version 7.8.0)": 1,
         'Text="Arena Roblox Bridge - Version 7.8.0"': 1,
-        "Version 7.8.0 - aktuell. Beim naechsten Start": 1,  # 7.9.0: Einstellungstext ersetzt, nur noch der Statuseintrag
+        "Version 7.8.0 - aktuell. Beim nächsten Start": 1,  # 7.9.0: Einstellungstext ersetzt, nur noch der Statuseintrag
         "Bridge-Version=7.8.0": 2,
         "Kurzbericht Fenster-Vorschau (Version 7.8.0)": 1,
         "Kurzbericht Fortschrittsanzeige (Version 7.8.0)": 1,
@@ -764,7 +777,7 @@ def main() -> int:
         "# Version 7.6.0 (2026-10-09)": 1,
         "# Version 7.5.5 (2026-10-08, HISTORICAL)": 1,
     }
-    # Schluessel mit 7.8.0 werden auf die aktuelle Version (VERSION) umgeschrieben.
+    # Schlüssel mit 7.8.0 werden auf die aktuelle Version (VERSION) umgeschrieben.
     for marker, expected_count in {k.replace("7.8.0", VERSION): v for k, v in functional_version_counts.items()}.items():
         actual_count = source.count(marker)
         require(actual_count == expected_count,
@@ -785,7 +798,7 @@ def main() -> int:
     require("$window.WindowState -eq 'Minimized'" in refresh_fn
             and "Update-HandoffCard\n    Sync-PlaceList $activeStudios" in refresh_fn,
             "minimized refresh or once-per-tick handoff scheduling regressed")
-    row_update_fn = source[source.index("function Update-Row {"):source.index("# AKTUALISIERUNG DER OBERFLAECHE")]
+    row_update_fn = source[source.index("function Update-Row {"):source.index("# AKTUALISIERUNG DER OBERFLÄCHE")]
     require("Update-HandoffCard" not in row_update_fn,
             "handoff state is once again scanned for every Place row")
     require("function Set-PlacePreviewSpinnerAnimation" in source
@@ -936,7 +949,7 @@ def main() -> int:
         "$verText = '7.0.0'",
         "Arena Studio Bridge - Studio Plugin  (Version 7.0.0)",
         'Text="Arena Roblox Bridge - Version 7.0.0"',
-        "Version 7.0.0 - aktuell. Beim naechsten Start",
+        "Version 7.0.0 - aktuell. Beim nächsten Start",
         "Bridge-Version=7.0.0",
         "Kurzbericht Fenster-Vorschau (Version 7.0.0)",
     ]
@@ -956,7 +969,7 @@ def main() -> int:
         "$verText = '7.0.2'",
         "Arena Studio Bridge - Studio Plugin  (Version 7.0.2)",
         'Text="Arena Roblox Bridge - Version 7.0.2"',
-        "Version 7.0.2 - aktuell. Beim naechsten Start",
+        "Version 7.0.2 - aktuell. Beim nächsten Start",
         "Bridge-Version=7.0.2",
         "Kurzbericht Fenster-Vorschau (Version 7.0.2)",
         "Place-Diagnose (Version 7.0.2)",
@@ -1248,7 +1261,7 @@ def main() -> int:
     # synchronous thumbnail request back onto the WPF dispatcher thread.
     require("thumbnails.roblox.com/v1/games/icons" not in source,
             "the blocking Roblox game-icon request is back in the window-preview path")
-    # 6.0.4: Der Primaerweg der Aufnahme ist der kompilierte C#-Helfer im
+    # 6.0.4: Der Primärweg der Aufnahme ist der kompilierte C#-Helfer im
     # Hauptprozess; der 6.0.3-Runspace-Worker darf nur noch als Fallback
     # existieren, und jede Aufnahme schreibt die Stationen ins Log.
     capture_fn = source[source.index("function Start-PlacePreviewCapture"):source.index("function Update-PlacePreviewCaptures")]
@@ -1850,7 +1863,7 @@ def main() -> int:
     # The UI runs in the MAIN runspace: it must never call the server handler's
     # functions (Get-DeliverySession / Request-CommandCancel only exist there).
     cancel_fn = source[source.index("function Invoke-PlaceRowCancel {"):source.index("function Update-PlaceProgressVisual {")]
-    # Kommentarzeilen zaehlen nicht: geprueft wird der ausfuehrbare Code.
+    # Kommentarzeilen zählen nicht: geprüft wird der ausführbare Code.
     cancel_code = "\n".join(line for line in cancel_fn.splitlines() if not line.strip().startswith("#"))
     require("Get-DeliverySession " not in cancel_code and "Request-CommandCancel" not in cancel_code,
             "the place-row cancel path calls server-runspace functions again")
@@ -1870,7 +1883,7 @@ def main() -> int:
     # Name beim Aufruf ein GLOBAL-Zugriff -> nil -> "attempt to call a nil
     # value" -> der Befehl endet als RUNTIME_ERROR (live: "fast alle Werkzeuge
     # kaputt"). Gefunden mit einer Scope-Analyse (luaparser + Scope-Resolver),
-    # bestaetigt mit echtem Luau (v739, WebAssembly) im Lauf.
+    # bestätigt mit echtem Luau (v739, WebAssembly) im Lauf.
     plugin_lua = plugin_source(source)
     require(plugin_lua.count("local function findByPath(path)") == 1,
             "findByPath fehlt im Plugin - jede Pfad-Referenz stirbt mit RUNTIME_ERROR")
@@ -1883,12 +1896,12 @@ def main() -> int:
             "firstNonEmpty wird weiterhin vor seiner Deklaration benutzt (nil-Global)")
     require("local nextInst = childByToken(current, segments[index])" in plugin_lua
             and "game:GetService(segments[index])" in plugin_lua,
-            "findByPath findet Dienste nicht (GetService-Rueckfall fehlt)")
+            "findByPath findet Dienste nicht (GetService-Rückfall fehlt)")
     require("local loopOk, loopErr = xpcall(function()" in plugin_lua
             and "Die Poll-Schleife hat einen Fehler abgefangen" in plugin_lua,
             "die Poll-Schleife ist nicht fehlerfest (still beendete Aufgabe = keine Befehle)")
     require("local tplName = (type(with) == \"table\" and with.name) or nil" in plugin_lua,
-            "tplName wird weiterhin ausserhalb seines Gueltigkeitsbereichs gelesen")
+            "tplName wird weiterhin außerhalb seines Gültigkeitsbereichs gelesen")
 
     # 7.1.0 LIVE FIX: BindReason in Get-PlaceIdentity, safe To-Json array
     # serialization, Ack-Outbox + Result-Outbox, and Re-Delivery.
@@ -1914,7 +1927,7 @@ def main() -> int:
             and "'{\"ok\":true,\"sessionId\":' + (To-Json $sid 3)" in poll_block,
             "/plugin/poll must keep the @() cancellation check and announce sessionId in every answer")
     #  b) Windows PowerShell 5.1 throws "Die Argumenttypen stimmen nicht
-    #     ueberein." for @($var) when $var holds a List[object]. Never wrap a
+    #     überein." for @($var) when $var holds a List[object]. Never wrap a
     #     List[object] variable in @(); use .ToArray() / [object[]] instead.
     snapshot_fn = source[source.index("function Get-QueueSnapshot"):source.index("function Get-SessionEntry")]
     require("@($pending)" not in snapshot_fn and "@($recentCommands)" not in snapshot_fn

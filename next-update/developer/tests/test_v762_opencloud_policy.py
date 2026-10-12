@@ -150,7 +150,14 @@ class CloudPolicy(unittest.TestCase):
         self.assertIn("'open_cloud'         { return (Invoke-OpenCloudServerTool",SOURCE)
 
     def test_ui_and_version(self):
-        self.assertEqual(json.loads((APP_ROOT/'version.json').read_text())['version'],'7.9.1')
+        # Version 7.9.2: Die Prüfung hängt nicht mehr an einer festen Nummer
+        # (jede Veröffentlichung braucht eine höhere Version), sondern an der
+        # Form und an der Stichpunkt-Regel aus app/version.json.
+        version = json.loads((APP_ROOT/'version.json').read_text(encoding='utf-8'))
+        self.assertRegex(version['version'], r'^\d+\.\d+\.\d+$')
+        first = str(version['notes'][0])
+        self.assertTrue(first.startswith('• ' + version['version'] + ' '), first[:40])
+        self.assertGreaterEqual(first.count('•'), 5)
         ui=function('Get-CloudPermissionCatalog','New-CloudPermissionRow')
         self.assertIn('(Get-OpenCloudCatalog).permissions.PSObject.Properties',ui)
         self.assertIn('Test-OpenCloudPermission -Info $Verdict -Permission ([string]$Item.id)',SOURCE)

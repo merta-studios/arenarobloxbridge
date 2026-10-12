@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""Offline-Abnahme fuer Arena Roblox Bridge 7.6.5.
+"""Offline-Abnahme für Arena Roblox Bridge 7.6.5.
 
-Dieser Test braucht KEIN Windows und keinen PowerShell-Prozess. Er prueft
+Dieser Test braucht KEIN Windows und keinen PowerShell-Prozess. Er prüft
 Nutzer-Kanal, ehrlichen/optional ausblendbaren Fortschritt, Completion-UI,
 Bridge-Fragen, optionale Audit-Messungen und GUI-Hinweise plus Fundament.
 
   1. Nutzer-Kanal (Zwischennachricht) .......... _bridge.userMessages + ack/wait
   2. Fortschritt ohne erfundene Zahl ........... N/A-Modus blendet Balken aus
   3. Fertig-Meldung mit Messung (D4) ........... Urteil, sweep, ehrliche Antwort
-  4. Fragen ueber die Bridge (D3) .............. ask_user-Baum + Fenster + Resume
+  4. Fragen über die Bridge (D3) .............. ask_user-Baum + Fenster + Resume
   5. Optionale Audits/GUI ...................... finishScore/grade/codeLayout ohne Gates
-  6. Fundament ................................. Stationen, Zaehler, echter PowerShell-Parser
+  6. Fundament ................................. Stationen, Zähler, echter PowerShell-Parser
 
 Tree-sitter ist nur ein Struktur-Zusatzcheck, kein Windows-PowerShell-Parser.
 parse-gate.ps1 nutzt den echten Parser, wenn PowerShell installiert ist.
-Ohne PowerShell wird dieser Check explizit uebersprungen.
+Ohne PowerShell wird dieser Check explizit übersprungen.
 
 Aufruf:
     python developer/tests/test_v720_bridge.py
@@ -66,13 +66,13 @@ def collection_return_problems(source: str) -> list[str]:
 
     Falle 2 (P0-Blocker 7.2.4, live belegt): `@($list)` um eine
     System.Collections.Generic.List wirft in Windows PowerShell 5.1 den
-    Binderfehler "Die Argumenttypen stimmen nicht ueberein." - egal ob die
-    Liste leer oder gefuellt ist. In 7.2.3 stand hinter einem korrekten
+    Binderfehler "Die Argumenttypen stimmen nicht überein." - egal ob die
+    Liste leer oder gefüllt ist. In 7.2.3 stand hinter einem korrekten
     `return ,$items` trotzdem `@($items)` am Umschlag; dadurch scheiterte
     JEDER Werkzeugaufruf, solange eine Frage offen war. Richtig ist
     `$list.ToArray()` (ergibt auch leer ein Array, nie $null).
 
-    Beide Regeln werden ueber dieselbe Zuordnungstabelle geprueft: eine
+    Beide Regeln werden über dieselbe Zuordnungstabelle geprüft: eine
     Variable gilt als Sammlung, wenn sie direkt aus `New-Object
     ...Generic.List/Queue/Stack/Dictionary[...]` stammt ODER aus dem Aufruf
     einer Funktion, die ihrerseits `return ,$...` auf so eine Sammlung macht.
@@ -100,7 +100,7 @@ def collection_return_problems(source: str) -> list[str]:
         for match in re.finditer(r"([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)", line):
             assigns.setdefault((who, match.group(1)), []).append((i, match.group(2)))
 
-    # Funktionen, die eine Generic-Sammlung per Komma-Operator zurueckgeben.
+    # Funktionen, die eine Generic-Sammlung per Komma-Operator zurückgeben.
     collection_funcs: set[str] = set()
     for i, line in enumerate(lines):
         match = re.match(r"\s*return\s+,?\s*\$([A-Za-z_][A-Za-z0-9_]*)\s*(\}.*)?$", line.rstrip())
@@ -129,7 +129,7 @@ def collection_return_problems(source: str) -> list[str]:
             var = bare.group(1)
             if any(collection.search(value) for _, value in assigns.get((who, var), [])):
                 problems.append(
-                    f"Zeile {i + 1}: {who}() gibt ${var} entpackbar zurueck - richtig ist ,${var}"
+                    f"Zeile {i + 1}: {who}() gibt ${var} entpackbar zurück - richtig ist ,${var}"
                 )
         # Falle 2: @($var) um eine Sammlung.
         for wrapped in re.finditer(r"@\(\s*\$([A-Za-z_][A-Za-z0-9_]*)\s*\)", line):
@@ -148,18 +148,18 @@ def collection_return_problems(source: str) -> list[str]:
 def without_comments(text: str) -> str:
     """PowerShell-Kommentarzeilen entfernen.
 
-    Erklaerende Kommentare duerfen die verbotenen Altfarben beim Namen nennen
-    ("kein #F50B1030 mehr"); geprueft werden muss der echte XAML-/Code-Anteil.
+    Erklärende Kommentare dürfen die verbotenen Altfarben beim Namen nennen
+    ("kein #F50B1030 mehr"); geprüft werden muss der echte XAML-/Code-Anteil.
     """
     return "\n".join(line for line in text.split("\n")
                       if not line.lstrip().startswith("#"))
 
 
 def balanced(source: str) -> tuple[bool, str]:
-    """Klammer-/String-Balance ueber die ganze Datei.
+    """Klammer-/String-Balance über die ganze Datei.
 
-    Ueberspringt Kommentare, einfache und doppelte Strings, Here-Strings und
-    $-Unterausdruecke in doppelten Strings. Danach muss die Bilanz Null sein.
+    Überspringt Kommentare, einfache und doppelte Strings, Here-Strings und
+    $-Unterausdrücke in doppelten Strings. Danach muss die Bilanz Null sein.
     """
     n = len(source)
     stack: list[tuple[str, int]] = []
@@ -230,11 +230,11 @@ def balanced(source: str) -> tuple[bool, str]:
             elif ch in "})]":
                 pair = {"}": "{", ")": "(", "]": "["}[ch]
                 if not stack:
-                    raise ValueError(f"Zeile {line_of(j)}: '{ch}' ohne oeffnende Klammer")
+                    raise ValueError(f"Zeile {line_of(j)}: '{ch}' ohne öffnende Klammer")
                 opener, opener_line = stack.pop()
                 if opener != pair:
                     raise ValueError(
-                        f"Zeile {line_of(j)}: '{ch}' schliesst '{opener}' aus Zeile {opener_line}"
+                        f"Zeile {line_of(j)}: '{ch}' schließt '{opener}' aus Zeile {opener_line}"
                     )
             j += 1
         if stop_at_paren:
@@ -287,7 +287,7 @@ def new_powershell_parse_errors(raw: bytes) -> list[tuple[int, str]]:
 
 def main() -> int:
     raw = PS1.read_bytes()
-    check(raw.startswith(b"\xef\xbb\xbf"), "ArenaBridge.ps1 behaelt die UTF-8-BOM")
+    check(raw.startswith(b"\xef\xbb\xbf"), "ArenaBridge.ps1 behält die UTF-8-BOM")
     source = raw.decode("utf-8-sig").replace("__ARENA_BUILD_VERSION__", _shipped_build_version())
 
     print("\n1) Nutzer-Kanal (Zwischennachricht, D8)")
@@ -311,7 +311,7 @@ def main() -> int:
 
     envelope_rules = region(source, "function New-Envelope", "\n    # ------------------------------------------------------------------\n    # Werkzeuge, die das Programm selbst beantwortet")
     # 7.2.4 (P0): .ToArray() statt @() - @( List[object] ) ist der
-    # PowerShell-5.1-Binderfehler, der in 7.2.3 jeden Werkzeugaufruf toetete.
+    # PowerShell-5.1-Binderfehler, der in 7.2.3 jeden Werkzeugaufruf tötete.
     check("$envelope.userMessages = $pendingUserMessages.ToArray()" in envelope_rules
           and "$envelope.userMessageContract" in envelope_rules
           and "@($pendingUserMessages)" not in envelope_rules,
@@ -334,9 +334,9 @@ def main() -> int:
               f"Nachricht-Fenster kennt den Zustand: {text}")
     check("$withdrawn = Withdraw-UserMessage $data.SessionId $id" in source
           and "function Withdraw-UserMessage" in source,
-          "Abbrechen zieht die Nachricht wirklich zurueck (kein vorgetaeuschter Widerruf)")
+          "Abbrechen zieht die Nachricht wirklich zurück (kein vorgetäuschter Widerruf)")
     check("Zu spät zum Zurückziehen" in source,
-          "Das Fenster sagt ehrlich, wenn Zurueckziehen nicht mehr geht")
+          "Das Fenster sagt ehrlich, wenn Zurückziehen nicht mehr geht")
     # 7.2.4 (3a): Das Nachrichten-Fenster ist aus dem gemeinsamen XAML-
     # Ressourcenblock gebaut - dasselbe Design wie Haupt-/Einstellungsfenster.
     message_window = region(source, "function Get-UserMessageWindowXaml", "function Get-AskStateForUi")
@@ -355,15 +355,14 @@ def main() -> int:
           "Textfeld, Senden-, Abbrechen-, Warn- und Kreuz-Knopf kommen aus dem gemeinsamen Ressourcenblock")
     check("SwWarnBtnBg" in source,
           "der gelbe Warn-Knopf (SwWarnBtnBg) ist im gemeinsamen Dialog-Stilblock definiert")
-    check("$titleBar.Add_MouseLeftButtonDown" in message_window
-          and "$s.Tag.DragMove()" in message_window
+    check("Enable-BridgeWindowDrag -Window $win -Handle $titleBar" in message_window
           and 'x:Name="CloseButton"' in message_window
           and '$closeButton.Add_Click' in message_window,
-          "Das Fenster ist per Titelleiste verschiebbar und hat einen X-Schliesser")
+          "Das Fenster ist per Titelleiste verschiebbar (ohne blockierendes DragMove) und hat einen X-Schließer")
     check("$win.Owner = $window" in message_window
           and "$win.ShowDialog()" in message_window
           and "$win.Show()" not in message_window,
-          "Das modale ShowDialog sperrt das Hauptfenster waehrend der Eingabe")
+          "Das modale ShowDialog sperrt das Hauptfenster während der Eingabe")
     check("Get-UiShortErrorReason" in source
           and "Die Nachricht konnte nicht gespeichert werden: " in message_window
           and "siehe runtime.log" not in message_window,
@@ -371,21 +370,21 @@ def main() -> int:
     check("Add_PreviewKeyDown" in message_window
           and "ModifierKeys]::Control" in message_window
           and "Key]::Escape" in message_window,
-          "Nachricht-Fenster unterstuetzt Strg+Enter zum Senden und Esc zum Schliessen")
+          "Nachricht-Fenster unterstützt Strg+Enter zum Senden und Esc zum Schließen")
     # 3c: kurzer echter Grund im Fenster, VOLLER Grund im runtime.log.
     check("Write-RuntimeLog ('Nachricht-Fenster: Speichern abgelehnt - ' + $reason)" in message_window
           and "Write-UiErrorLog 'Nachricht konnte nicht gesendet werden' $_" in message_window,
-          "Der volle Fehlergrund wird zusaetzlich ins runtime.log geschrieben")
-    # 3d: Add-UserMessage darf nie $list.Add() auf $null ausfuehren.
+          "Der volle Fehlergrund wird zusätzlich ins runtime.log geschrieben")
+    # 3d: Add-UserMessage darf nie $list.Add() auf $null ausführen.
     add_msg = region(source, "function Add-UserMessage", "function Withdraw-UserMessage")
     check("if ($null -eq $list) { $list = New-Object System.Collections.Generic.List[object] }" in add_msg,
           "Add-UserMessage legt eine fehlende Nachrichtenliste an, statt auf $null zu schreiben")
     place_row_ui = region(source, "function New-Row {", "function New-MinimalPlaceRow {")
     check("-Title 'Laufenden Befehl abbrechen'" not in place_row_ui
           and "$cancelCmdItem" not in place_row_ui,
-          "Das Place-Menue bietet keinen Abbruch eines laufenden Befehls mehr an")
+          "Das Place-Menü bietet keinen Abbruch eines laufenden Befehls mehr an")
 
-    print("\n2) Fortschritt: nichts erfunden, nichts verdraengt (D5-D7)")
+    print("\n2) Fortschritt: nichts erfunden, nichts verdrängt (D5-D7)")
     check("function Get-ProgressPercentProvided" in source,
           "Es wird unterschieden zwischen 'keine Zahl' und 'Zahl = 0'")
     check("[System.Globalization.NumberStyles]::Float" in source
@@ -395,7 +394,7 @@ def main() -> int:
     check("if ($percentProvided)" in state_fn and "percentKnown" in state_fn,
           "percent wird NUR bei einer wirklich mitgeschickten Zahl geschrieben")
     check("ProgressMissingPercent" in state_fn and "PERCENT_MISSING" in state_fn,
-          "Fehlende Prozentzahl wird gezaehlt und als Station gemeldet")
+          "Fehlende Prozentzahl wird gezählt und als Station gemeldet")
     visual = region(source, "function Update-PlaceProgressVisual", "function Get-ProgressDiagnoseLines")
     check("$showNumericProgress = ($percentKnown -and $progressMode -ne 'hidden')" in visual,
           "a numeric meter is shown only for a real percentage, never just because a task completed")
@@ -409,7 +408,7 @@ def main() -> int:
     check("Seit über einer Minute kein Bridge Aufruf mehr" not in visual,
           "the Place progress UI has no stale/misleading inactivity label")
     check("$label = 'Befehl: ' + [string]$openCmd.tool" not in source,
-          "Ein offener Befehl verdraengt die Anzeige nicht mehr (D7)")
+          "Ein offener Befehl verdrängt die Anzeige nicht mehr (D7)")
     check("$Row.CommandCancelButton.Visibility = 'Collapsed'" in visual,
           "Der optionale Zeilen-Knopf bleibt unsichtbar")
     check("Get-PlaceOpenCommand (Get-UiDeliverySession $sessionId)" in visual,
@@ -418,7 +417,7 @@ def main() -> int:
     check("Get-ProgressStateSnapshotForId" in snapshot
           and "function Get-ProgressStateSnapshotForId" in source
           and "Get-UiDeliverySession" in snapshot,
-          "Der Fortschritt wird ueber Vorgaenger/Nachfolger aufgeloest")
+          "Der Fortschritt wird über Vorgänger/Nachfolger aufgelöst")
     check("progress-diagnose.txt" in source and "function Write-ChannelDiagnoseFile" in source,
           "progress-diagnose.txt wird als kleiner Kurzbericht geschrieben")
     check("progressWarning" in source and "'PERCENT_MISSING'" in source,
@@ -442,12 +441,12 @@ def main() -> int:
           "notify.sweep misst nach dem Anzeigen erneut")
     show = region(source, "function Show-ArenaDoneNotification", "function Set-ArenaSwitchVisualState")
     check("RENDER_PENDING" in show and "CALL_RETURNED_UNVERIFIED" in show and "'CALL_FAILED'" in show,
-          "Bridge-Popup wird vor Fallback gezeigt; unbestaetigte Fallbacks bleiben ehrlich markiert")
+          "Bridge-Popup wird vor Fallback gezeigt; unbestätigte Fallbacks bleiben ehrlich markiert")
     check("notify-diagnose.txt" in source and "function Get-NotifyDiagnoseLines" in source,
-          "notify-diagnose.txt nennt Plattform, Zaehler und die letzten Meldungen")
+          "notify-diagnose.txt nennt Plattform, Zähler und die letzten Meldungen")
     check("function Open-NotifySeenWindow" not in source
           and "function Send-NotifyTestMessage" not in source,
-          "Die kuenstliche Test-Benachrichtigung und ihre Rueckfrage sind entfernt")
+          "Die künstliche Test-Benachrichtigung und ihre Rückfrage sind entfernt")
     settings_ui = region(source, "function Open-SettingsWindow", "# Version 3.8: Die Update-Infos")
     settings_xaml = region(settings_ui, "$settingsXaml = @'", "'@")
     check('Text="DIAGNOSE"' not in settings_xaml
@@ -467,7 +466,7 @@ def main() -> int:
           and "alte opt-ins werden ignoriert" in settings_loader,
           "Ein alter Performance-Diagnose-Opt-in wird nicht still wieder aktiviert")
     check("NotifySeenYes" not in source and "NotifySeenNo" not in source,
-          "Die entfernte Test-Rueckfrage hinterlaesst keine toten Diagnose-Zaehler")
+          "Die entfernte Test-Rückfrage hinterlässt keine toten Diagnose-Zähler")
     done_start = source.index("                $notifyFlowId = 'n-' + [string]$notifyFlowSeq")
     done = source[done_start:done_start + 9000]
     check("delivered = $true" not in done,
@@ -475,9 +474,9 @@ def main() -> int:
     check("NOTIFICATION_UNVERIFIED" in done and "notification = @{" in done,
           "report_done antwortet ehrlich mit Urteil und NOTIFICATION_UNVERIFIED")
     check("platformVerdict" in done and "WPF_ContentRendered" in done and "TryUpdate" in done,
-          "Die Antwort nennt Plattformdiagnose und atomare WPF-Renderbestaetigung")
+          "Die Antwort nennt Plattformdiagnose und atomare WPF-Renderbestätigung")
 
-    print("\n4) Fragen ueber die Bridge (D3 / 7.2.3)")
+    print("\n4) Fragen über die Bridge (D3 / 7.2.3)")
     for marker in (
         "function Test-AskTree",
         "function Invoke-AskUser",
@@ -497,7 +496,7 @@ def main() -> int:
     check("ASK_UNREACHABLE" in source, "Unbrauchbare Bedingungen werden gemeldet (ASK_UNREACHABLE)")
     tree = region(source, "function Test-AskTree", "function Read-AskState")
     check("if ($options.Count -lt 2)" in tree and "code = 'ASK_GRAPH_INVALID'" in tree,
-          "Test-AskTree weist Baeume mit weniger als zwei Optionen vor dem Fenster ab")
+          "Test-AskTree weist Bäume mit weniger als zwei Optionen vor dem Fenster ab")
     check("$maxQuestions = 12" in source and "$maxOptions = 6" in source and "$maxChars = 400" in source,
           "Die Grenzen des Plans sind umgesetzt (12 Fragen, 6 Optionen, 400 Zeichen)")
     ask = region(source, "function Invoke-AskUser", "function Get-LateAskAnswers")
@@ -506,10 +505,10 @@ def main() -> int:
     check("if ($seconds -gt 50) { $seconds = 50 }" in source,
           "waitSeconds bleibt unter dem harten HTTP-Deckel")
     check("path = @($State.path)" in source and "notShown = @($State.notShown)" in source,
-          "Die Antwort nennt gestellte und uebersprungene Fragen")
+          "Die Antwort nennt gestellte und übersprungene Fragen")
     check("cancelled = $wasCancelled" in source
           and "summary = $(if ($wasCancelled) { 'Der Nutzer hat abgebrochen.' }" in source,
-          "Spaete Nutzerantworten liefern cancelled:true samt ehrlicher Zusammenfassung")
+          "Späte Nutzerantworten liefern cancelled:true samt ehrlicher Zusammenfassung")
     check("$answer.confirmed = $false" in source and "ASK_CANCELLED" in region(source, "function Invoke-ConfirmAction", "function Get-LateAskAnswers"),
           "confirm_action behandelt ASK_CANCELLED eindeutig als Nein")
     check("$envelope.userAnswers = $lateAnswers.ToArray()" in envelope_rules
@@ -522,14 +521,14 @@ def main() -> int:
     ask_xaml = region(source, "function Get-AskWindowXaml", "function New-AskWindowInfo")
     open_ask = region(source, "function Open-AskWindow", "function Sync-AskWindows")
     check("function Open-AskWindow" in source and "function Sync-AskWindows" in source,
-          "Das Fragenfenster oeffnet sich aus dem Anzeige-Takt")
+          "Das Fragenfenster öffnet sich aus dem Anzeige-Takt")
     # 2a: Design = Programm-Design (XAML + gemeinsamer Ressourcenblock).
     check('Width="480" Height="420"' in ask_xaml
           and 'SizeToContent="Height"' in ask_xaml
           and 'WindowStyle="None"' in ask_xaml
           and 'AllowsTransparency="True"' in ask_xaml
           and 'Background="Transparent"' in ask_xaml,
-          "Fragen-Fenster ist XAML-basiert, rahmenlos, transparent und hoehenbasiert (480 x 420)")
+          "Fragen-Fenster ist XAML-basiert, rahmenlos, transparent und höhenbasiert (480 x 420)")
     ask_markup = without_comments(ask_xaml)
     check('Background="{StaticResource SwAppBg}"' in ask_markup
           and '{StaticResource SwCardBg}' in ask_markup
@@ -538,7 +537,7 @@ def main() -> int:
           and '#5CFFEF' not in ask_markup,
           "Fragen-Fenster nutzt SwAppBg/SwCardBg/SwTextMain - kein #F50B1030-Shell, kein Mint")
     # Der Platzhalter steht einmal in der Vorlage und einmal im Replace-Aufruf.
-    # Der Platzhalter steht zweimal: einmal als Luecke in der Vorlage, einmal
+    # Der Platzhalter steht zweimal: einmal als Lücke in der Vorlage, einmal
     # als Suchbegriff im Replace-Aufruf. Beides muss da sein - und der
     # Ressourcenblock selbst genau einmal definiert.
     check("$script:ArenaDialogStyles" in source
@@ -550,12 +549,12 @@ def main() -> int:
     check("[System.Windows.Forms.Cursor]::Position" in open_ask
           and "[System.Windows.Forms.Screen]::FromPoint" in open_ask
           and "$windowMaxHeight = [Math]::Min(560, [Math]::Floor($area.Height * 0.70))" in open_ask,
-          "Fenster startet am Mauszeiger und bleibt innerhalb von 70 % der Bildschirmhoehe")
+          "Fenster startet am Mauszeiger und bleibt innerhalb von 70 % der Bildschirmhöhe")
     check('x:Name="QuestionScroll"' in ask_xaml and '<RowDefinition Height="*"/>' in ask_xaml,
           "Der ScrollViewer liegt in der eigenen *-Zeile")
     check('x:Name="CopyPanel"' in ask_xaml and 'x:Name="DonePanel"' in ask_xaml
           and 'x:Name="ButtonRow"' in ask_xaml,
-          "Kopier-, Endzustand- und Knopfzeile sind getrennte Bereiche und ueberlappen nicht")
+          "Kopier-, Endzustand- und Knopfzeile sind getrennte Bereiche und überlappen nicht")
     # 2e: genau drei Aktionen, farblich eindeutig.
     check('x:Name="BackButton" Content="Zurück"' in ask_xaml
           and 'x:Name="CancelButton" Content="Abbrechen"' in ask_xaml
@@ -563,10 +562,10 @@ def main() -> int:
           and 'Style="{StaticResource ArenaQuietButton}"' in ask_xaml
           and 'Style="{StaticResource ArenaDangerButton}"' in ask_xaml
           and 'Style="{StaticResource ArenaPrimaryButton}"' in ask_xaml,
-          "Unten stehen genau Zurueck (grau), Abbrechen (rot) und Weiter/Fertig (gruen)")
+          "Unten stehen genau Zurück (grau), Abbrechen (rot) und Weiter/Fertig (grün)")
     check('Color="#F238D16C"' in source and 'Color="#F2FF5C77"' in source
           and 'Color="#0E1428"' in source,
-          "Gruen #38D16C, Crimson #FF5C77 und Grau #0E1428 sind die einzigen Aktionsfarben")
+          "Grün #38D16C, Crimson #FF5C77 und Grau #0E1428 sind die einzigen Aktionsfarben")
     check("$nextButton.Content" not in open_ask and "$cancelButton.Background" not in open_ask,
           "Die Knopffarben stehen nicht mehr als Code, sondern im gemeinsamen XAML")
     check('Visibility="Collapsed"' in ask_xaml
@@ -574,14 +573,14 @@ def main() -> int:
           and "$Info.CopyPanel.Visibility = 'Visible'" in ui
           and "Agent arbeitet weiter …" in ui
           and "Agent ist offline …" in ui,
-          "Der Kopierknopf ist standardmaessig unsichtbar und erscheint nur bei Offline oder Ablauf")
+          "Der Kopierknopf ist standardmäßig unsichtbar und erscheint nur bei Offline oder Ablauf")
     check("Diese Frage kam ohne Optionen an" in ui
           and "EMPTY_QUESTION" in ui
           and "Write-UiErrorLog ('ASK EMPTY_QUESTION" in ui,
           "Fehlgeformte Altfragen zeigen sichtbar einen Fehler und werden protokolliert")
     # 2h: ziehbar, Kreuz oben rechts als eigener Hover-Knopf.
-    check("$titleBar.Add_MouseLeftButtonDown" in open_ask
-          and "DragMove()" in open_ask
+    check("Enable-BridgeWindowDrag -Window $win -Handle $titleBar" in open_ask
+          and "DragMove()" not in open_ask
           and 'x:Name="CloseButton"' in ask_xaml
           and 'x:Key="ArenaCloseButton"' in source
           and '<Setter Property="Width" Value="32"/>' in source
@@ -591,7 +590,7 @@ def main() -> int:
     check("$window.IsEnabled = $false" in source
           and "Stop-AskModal $Info" in ui
           and "state.state -ne 'waiting'" in open_ask,
-          "Fragen sperren die Hauptoberflaeche nur waehrend waiting und geben im Timer sicher frei")
+          "Fragen sperren die Hauptoberfläche nur während waiting und geben im Timer sicher frei")
     check("$win.Add_PreviewKeyDown" in open_ask
           and "Key]::Escape" in open_ask
           and "Cancel-AskForUi $data 'escape'" in open_ask,
@@ -605,7 +604,7 @@ def main() -> int:
     check("function Test-AskCondition" in source and "anyOf" in source and "allOf" in source,
           "Bedingungen (when/anyOf/allOf/custom) werden ausgewertet")
     check("ANSWER_DISCARDED" in source and "reason = 'back'" in open_ask,
-          "Zurueck verwirft Folgeantworten nachvollziehbar")
+          "Zurück verwirft Folgeantworten nachvollziehbar")
 
     print("\n4b) Quick-Tunnel: tote URL niemals als LIVE weitergeben")
     tunnel_start = region(source, "function Start-CloudflareTunnel", "function Restart-CloudflareTunnel")
@@ -623,7 +622,7 @@ def main() -> int:
           "Tunnel-Wiederherstellung ist gedrosselt und wechselt nach Auto/QUIC auf HTTP/2")
     check("lineProcessId" in tunnel_refresh and "lineProcessId -ne $activeProcessId" in tunnel_refresh
           and "TunnelLiveSince" in tunnel_refresh,
-          "Gepufferte Ausgabe alter Prozesse kann keine neue URL ueberschreiben und ein Kurzstart umgeht den Backoff nicht")
+          "Gepufferte Ausgabe alter Prozesse kann keine neue URL überschreiben und ein Kurzstart umgeht den Backoff nicht")
 
     print("\n5) Optionale Qualitaetsmessungen und GUI-Hinweise")
     quality = region(source, "WORLD_ENGINE.auditBuildQuality = function(parts, root)", "tools.model_audit = function(args)")
@@ -657,9 +656,9 @@ def main() -> int:
           "MONOLITH_RISK is a note, not a tool/completion error code")
 
 
-    print("\n5b) P0-Blocker 7.2.4: Sammlungen toeten keinen Werkzeugaufruf mehr")
+    print("\n5b) P0-Blocker 7.2.4: Sammlungen töten keinen Werkzeugaufruf mehr")
     # Live belegt mit 7.2.3: ask_user legte die Frage an, antwortete aber mit
-    # {"error":"Die Argumenttypen stimmen nicht ueberein."} - danach scheiterte
+    # {"error":"Die Argumenttypen stimmen nicht überein."} - danach scheiterte
     # JEDES Werkzeug. Ursache: @() um eine List[object] hinter einem korrekten
     # "return ,$items".
     envelope_fn = region(source, "function New-Envelope",
@@ -680,7 +679,7 @@ def main() -> int:
               f"Umschlagfeld ist defensiv gekapselt und meldet {station} statt zu scheitern")
     check(envelope_fn.count("} catch {") >= 3
           and "return $envelope" in envelope_fn,
-          "New-Envelope liefert den Umschlag auch dann, wenn ein Zierfeld fehlschlaegt")
+          "New-Envelope liefert den Umschlag auch dann, wenn ein Zierfeld fehlschlägt")
     # d) Das Gate muss die alte Fehlerklasse wirklich finden (Selbsttest).
     reconstructed = source.replace("$envelope.userAnswers = $lateAnswers.ToArray()",
                                    "$envelope.userAnswers = @($lateAnswers)")
@@ -697,14 +696,14 @@ def main() -> int:
           and "$customBox.MaxLength = 4000" in ui,
           "Eigene Antwort ist ein echtes Textfeld mit Stil, Caret und Tab-Weitergabe")
     # WPF vergibt ohne expliziten TabIndex int.MaxValue; ein einzelner fester
-    # Index wuerde das Feld VOR die Optionen legen. Visuelle Reihenfolge ist
-    # hier die richtige - und Tab muss den Fokus weitergeben, nicht einruecken.
+    # Index würde das Feld VOR die Optionen legen. Visuelle Reihenfolge ist
+    # hier die richtige - und Tab muss den Fokus weitergeben, nicht einrücken.
     check("$customBox.TabIndex" not in ui,
           "Kein fester TabIndex bricht die visuelle Tab-Reihenfolge der Optionen")
     check("if ($allowCustom) {" not in ui,
-          "Das Textfeld haengt nicht mehr an allowCustomResponse - es ist immer da")
+          "Das Textfeld hängt nicht mehr an allowCustomResponse - es ist immer da")
     check("$customBox.Add_TextChanged" in ui
-          and "hier darf KEIN Neuzeichnen angestossen werden" in ui,
+          and "hier darf KEIN Neuzeichnen angestoßen werden" in ui,
           "Tippen schreibt in die Antwort, ohne das Feld neu aufzubauen (Caret bleibt)")
     # 2c: ruhiges Einblenden.
     check("[TimeSpan]::FromMilliseconds(180)" in open_ask
@@ -715,46 +714,46 @@ def main() -> int:
     check("$Info.RenderSignature = $signature" in ui
           and "if ($signature -eq [string]$Info.RenderSignature) {" in ui,
           "Der Fragenbereich wird nur bei echter Strukturänderung neu aufgebaut")
-    # 2d: kein Auto-Schliessen, Restzeit sichtbar, zweite Anfrage aktualisiert.
+    # 2d: kein Auto-Schließen, Restzeit sichtbar, zweite Anfrage aktualisiert.
     check("function Set-AskCountdownText" in source
           and "Set-AskCountdownText $Info $secondsLeft $askState" in ui
           and "Noch " in source,
-          "Die Restzeit steht sichtbar in der Fusszeile")
+          "Die Restzeit steht sichtbar in der Fußzeile")
     check("function Retarget-AskWindow" in source
           and "[void](Retarget-AskWindow $script:AskWindow.Tag $askId" in open_ask,
-          "Eine zweite Anfrage aktualisiert dasselbe Fenster statt es zu schliessen")
+          "Eine zweite Anfrage aktualisiert dasselbe Fenster statt es zu schließen")
     check("$script:AskWindowShownIds" in source
           and "if ($script:AskWindowShownIds.Contains($askId)) { return }" in open_ask,
-          "Fuer dieselbe askId wird das Fenster nie erneut geoeffnet")
-    # 2f: gruener Endzustand statt stillem Verschwinden.
+          "Für dieselbe askId wird das Fenster nie erneut geöffnet")
+    # 2f: grüner Endzustand statt stillem Verschwinden.
     check("function Show-AskDoneState" in source
           and "Show-AskDoneState $data $path.Count" in open_ask
           and "Show-AskDoneState $Info $answeredCount" in ui,
-          "Nach Fertig bleibt das Fenster offen und zeigt den gruenen Endzustand")
+          "Nach Fertig bleibt das Fenster offen und zeigt den grünen Endzustand")
     done_fn = region(source, "function Show-AskDoneState", "function Update-AskWindow")
     check("gespeichert - Arena holt sie ab." in done_fn
           and "Stop-AskModal $Info" in done_fn
           and "Content=\"Schließen\"" in ask_xaml
           and "$info.DoneCloseButton.Add_Click" in open_ask,
-          "Der Endzustand nennt die Zahl der Antworten, gibt die Oberflaeche frei und hat Schliessen")
+          "Der Endzustand nennt die Zahl der Antworten, gibt die Oberfläche frei und hat Schließen")
     check("$Info.Window.Close()" not in done_fn,
-          "Der Endzustand schliesst das Fenster nicht von allein")
-    # 2e: kein Schliessen/Kopieren im normalen Ablauf.
+          "Der Endzustand schließt das Fenster nicht von allein")
+    # 2e: kein Schließen/Kopieren im normalen Ablauf.
     check("$Info.CopyPanel.Visibility = 'Collapsed'" in ui
           and "$Info.DonePanel.Visibility = 'Collapsed'" in ui,
           "Im normalen Ablauf sind Kopier- und Endzustandbereich unsichtbar")
-    # 2h: modal mit Notausgaengen.
+    # 2h: modal mit Notausgängen.
     check("Start-AskModal $info" in open_ask
           and "$window.IsEnabled = $false" in source
           and "Stop-AskModal $data" in open_ask,
-          "Das Fenster sperrt die Hauptoberflaeche und gibt sie bei Antwort/Abbruch/Ablauf frei")
-    check("$titleBar.Add_MouseLeftButtonDown" in open_ask and "DragMove()" in open_ask,
-          "Die Titelzeile zieht das Fenster (DragMove)")
-    # 2i: Groesse.
+          "Das Fenster sperrt die Hauptoberfläche und gibt sie bei Antwort/Abbruch/Ablauf frei")
+    check("Enable-BridgeWindowDrag -Window $win -Handle $titleBar" in open_ask,
+          "Die Titelzeile zieht das Fenster ohne DragMove (7.9.2)")
+    # 2i: Größe.
     check('Width="480" Height="420"' in ask_xaml
           and 'SizeToContent="Height"' in ask_xaml
           and "$win.MaxHeight = $windowMaxHeight" in open_ask,
-          "Startgroesse 480 x 420, hoehenbasiert, gedeckelt auf 70 % der Bildschirmhoehe")
+          "Startgröße 480 x 420, höhenbasiert, gedeckelt auf 70 % der Bildschirmhöhe")
     check('x:Name="QuestionScroll"' in ask_xaml
           and 'VerticalScrollBarVisibility="Auto"' in ask_xaml,
           "Lange Texte scrollen in der Karte, nicht das Fenster")
@@ -785,14 +784,14 @@ def main() -> int:
         check(marker in source, f"7.2.7-Startnetz-Marker vorhanden: {marker}")
 
     # 7.2.9 (START-BLOCKER): Der Start starb nicht an einer Ausnahme, sondern
-    # blieb stecken - dafuer hilft kein try/catch. Zwei Stellen sind gesichert:
-    # das modale Hinweisfenster VOR dem Hauptfenster und der ungeschuetzte
+    # blieb stecken - dafür hilft kein try/catch. Zwei Stellen sind gesichert:
+    # das modale Hinweisfenster VOR dem Hauptfenster und der ungeschützte
     # Bereich vor dem Fensterbau.
     trap_head = source.index("$ErrorActionPreference = 'Stop'")
     trap_at = source.index("trap {")
     window_build_at = source.index("Set-StartupStage 'Fensteraufbau: XAML wird geladen'")
     check(trap_head < trap_at < window_build_at,
-          "7.3.0: trap auf Skriptebene sitzt VOR dem Fensterbau und faengt jeden nicht abgefangenen Fehler")
+          "7.3.0: trap auf Skriptebene sitzt VOR dem Fensterbau und fängt jeden nicht abgefangenen Fehler")
     check("trap {\n    $trapMessage = ''" in source
           and "startup-diagnose.txt" in source[trap_at:trap_at + 6000]
           and "notepad.exe" in source[trap_at:trap_at + 6000]
@@ -801,7 +800,7 @@ def main() -> int:
           "Notepad und beendet danach sauber")
     notice = region(source, "function Show-UpdateNotice", "# ----------------------------------------------------------------------------\n# EINSTELLUNGSFENSTER")
     check("NOTICE_OPACITY_RESCUE" in notice and "NOTICE_WATCHDOG" in notice,
-          "7.3.0: Hinweisfenster hat Rettungs-Timer UND Waechter (unsichtbar = Start-Blocker)")
+          "7.3.0: Hinweisfenster hat Rettungs-Timer UND Wächter (unsichtbar = Start-Blocker)")
     rescue_at = notice.index("FromMilliseconds(700)")
     fade_at = notice.index("FromMilliseconds(240)")
     dialog_at = notice.index("[void]$noticeWindow.ShowDialog()")
@@ -810,15 +809,15 @@ def main() -> int:
     watchdog_at = notice.index("FromMilliseconds(2500)")
     check(watchdog_at < dialog_at and "IsLoaded" in notice and "IsVisible" in notice
           and "damit das Programm starten kann" in notice,
-          "7.3.0: Der Waechter schliesst ein unsichtbares Hinweisfenster, statt den Start zu blockieren")
+          "7.3.0: Der Wächter schließt ein unsichtbares Hinweisfenster, statt den Start zu blockieren")
     check("[System.Windows.Input.Key]::Escape" in notice,
           "7.3.0: Esc ist ein Notausgang aus dem modalen Hinweisfenster")
     for guarded in ("if ($noticeTitleEl)", "if ($noticeSubEl)",
                     "if ($noticeNotesEl)", "if ($noticeOkEl)"):
-        check(guarded in notice, f"7.3.0: FindName-Ergebnis wird geprueft: {guarded}")
+        check(guarded in notice, f"7.3.0: FindName-Ergebnis wird geprüft: {guarded}")
     check("$noticeNoteItems.ToArray()" in notice and "[string]::Join(" in notice
           and "6000" in notice,
-          "7.3.0: Die notes-LISTE erscheint als Absaetze (mit Umbruechen) und ist gedeckelt")
+          "7.3.0: Die notes-LISTE erscheint als Absätze (mit Umbrüchen) und ist gedeckelt")
     check("[string]$script:UpdateDetails.notes" not in source,
           "7.3.0: notes wird nicht mehr mit [string] zu einer Zeile ohne Umbruch gepresst")
     check("$script:UpdateNoticeWindow" in notice,
@@ -835,8 +834,8 @@ def main() -> int:
         opacity_visible_at = handler.index("$window.Opacity = 1")
         init_at = handler.index("Start-BridgeRuntime")
         check(rendered_at < dialog_at and closed_at < dialog_at,
-              "ShowDialog/cleanup stehen bereit, bevor ContentRendered die Initialisierung ausloest")
-        # 7.3.0 (STARTGARANTIE): Der Update-/Willkommenshinweis laeuft NICHT
+              "ShowDialog/cleanup stehen bereit, bevor ContentRendered die Initialisierung auslöst")
+        # 7.3.0 (STARTGARANTIE): Der Update-/Willkommenshinweis läuft NICHT
         # mehr vor dem Hauptfenster (ein modales Fenster dort konnte den ganzen
         # Start unsichtbar festhalten), sondern in genau derselben
         # Einmal-Initialisierung direkt nach dem sichtbaren Fenster und VOR den
@@ -844,7 +843,7 @@ def main() -> int:
         notice_call = "if ($UpdateStatus -eq 'update-erfolgreich' -or $UpdateStatus -eq 'erster-start')"
         check(notice_call in handler and "Show-UpdateNotice" in handler
               and notice_call not in start_area[:rendered_at],
-              "7.3.0: Der Update-/Willkommenshinweis laeuft erst nach dem sichtbaren Hauptfenster (nie davor)")
+              "7.3.0: Der Update-/Willkommenshinweis läuft erst nach dem sichtbaren Hauptfenster (nie davor)")
         notice_at = handler.index("Show-UpdateNotice")
         check(opacity_visible_at < notice_at < init_at,
               "7.3.0: Hinweis erscheint nach der harten Deckkraft-Sicherung und vor Start-BridgeRuntime")
@@ -853,7 +852,7 @@ def main() -> int:
         runtime_function = region(source, "function Start-BridgeRuntime", "# ----------------------------------------------------------------------------\n# START: Ereignisse stehen VOR ShowDialog")
         check("Show-UpdateNotice" not in runtime_function
               and source.count("Show-UpdateNotice }") == 1,
-              "7.3.0: Der Update-Hinweis wird genau einmal geoeffnet (im Einmal-Timer, nicht in Start-BridgeRuntime)")
+              "7.3.0: Der Update-Hinweis wird genau einmal geöffnet (im Einmal-Timer, nicht in Start-BridgeRuntime)")
         check("if ($script:StartupRuntimeStarted) { return }" in handler
               and "$script:StartupRuntimeStarted = $true" in handler,
               "ContentRendered startet den Runtime-Start genau einmal")
@@ -861,10 +860,10 @@ def main() -> int:
         check(False, f"Window-first-Startsequenz nicht auswertbar: {exc}")
     check("$splash.Visibility = 'Visible'" in source
           and "$headline.Text = 'Start fehlgeschlagen'" in source,
-          "Startfehler nach dem ersten Rendern bleiben im sichtbaren Splash erklaert")
-    # 7.3.0 (STARTGARANTIE): Diese fuenf Pruefungen halten die Ursachenklassen
-    # fest, die "es passiert gar nichts" erzeugen - sie duerfen nicht
-    # zurueckgebaut werden.
+          "Startfehler nach dem ersten Rendern bleiben im sichtbaren Splash erklärt")
+    # 7.3.0 (STARTGARANTIE): Diese fünf Prüfungen halten die Ursachenklassen
+    # fest, die "es passiert gar nichts" erzeugen - sie dürfen nicht
+    # zurückgebaut werden.
     loaded_handler = region(source, "$window.Add_Loaded({", "Set-StartupStage 'Ereignisse verdrahtet")
     check("$window.Opacity = 0" not in loaded_handler
           and "$window.Opacity = 1" in loaded_handler
@@ -875,7 +874,7 @@ def main() -> int:
           and "$noticeWindow.Opacity = 0" not in notice_region
           and "$noticeWindow.Owner = $script:MainWindow" in notice_region
           and "CenterOwner" in notice_region,
-          "7.3.0: Hinweisfenster ist sofort sichtbar und gehoert dem Hauptfenster (Owner/CenterOwner)")
+          "7.3.0: Hinweisfenster ist sofort sichtbar und gehört dem Hauptfenster (Owner/CenterOwner)")
     check("foreach ($bridgeAssembly in @('PresentationFramework', 'PresentationCore', 'WindowsBase', 'System.Web'))" in source
           and "\nAdd-Type -AssemblyName PresentationFramework\n" not in source
           and "\nAdd-Type -AssemblyName System.Web\n" not in source,
@@ -887,17 +886,17 @@ def main() -> int:
           "7.3.0: Letzter sichtbarer Weg (Diagnosedatei in Notepad) fehlt in trap und Startdiagnose nicht")
     check("-WorkingDirectory $script:AppFolder -PassThru" in source
           and "$restartProc.HasExited" in source and "$restartTry -le 2" in source,
-          "7.3.0: Der Neustart nach einem Autostart-Update wird geprueft und genau einmal wiederholt "
+          "7.3.0: Der Neustart nach einem Autostart-Update wird geprüft und genau einmal wiederholt "
           "(kein stilles Ende nach dem Update)")
     problems = collection_return_problems(source)
     for problem in problems:
         print(f"    {problem}")
     check(not problems,
-          "Keine Generic-Sammlung wird entpackbar zurueckgegeben (return ,$liste) "
+          "Keine Generic-Sammlung wird entpackbar zurückgegeben (return ,$liste) "
           "und keine wird in @() gelegt (Binderfehler - .ToArray() statt @())")
     final_lines = source.rstrip().splitlines()[-4:]
     check(final_lines[0].startswith("# Sicherheitsnetz") and final_lines[-1] == "[System.Environment]::Exit(0)",
-          "Der absichtliche Not-Aus am Dateiende ist unveraendert")
+          "Der absichtliche Not-Aus am Dateiende ist unverändert")
 
     try:
         balanced(source)
@@ -920,9 +919,9 @@ def main() -> int:
     # /, %, -binary) NICHT am Anfang einer Fortsetzungszeile stehen. Der Parser
     # behandelt einen Zeilenumbruch direkt vor einem Operator als
     # Anweisungsende - das erzeugte in 7.3.0 9 Parse-Fehler ab Zeile 27432.
-    # Operatoren gehoeren an das Ende der vorherigen Zeile.
+    # Operatoren gehören an das Ende der vorherigen Zeile.
     # Wir filtern hier-strings (@'...'@ / @"..."@) und Kommentare heraus, da
-    # dort fuehrende Operatoren Teil des eingebetteten Codes (Lua, Bullet-
+    # dort führende Operatoren Teil des eingebetteten Codes (Lua, Bullet-
     # Listen in Beschreibungen) sind und von PowerShell nicht als Operator
     # interpretiert werden.
     def operator_at_line_start_problems(text: str) -> list[str]:
@@ -981,7 +980,7 @@ def main() -> int:
           "(Parse-Fehler auf Windows PowerShell 5.1)")
 
     # 7.5.4-Regressionstor: In PowerShell-Hashtable-Literalen (@{ ... })
-    # sind doppelte Schluessel ein schwerer Parser-Fehler (Parse-Fehler
+    # sind doppelte Schlüssel ein schwerer Parser-Fehler (Parse-Fehler
     # "Duplicate keys are not allowed in hash literals").
     def hashtable_duplicate_key_problems(text: str) -> list[str]:
         n = len(text)
@@ -1071,7 +1070,7 @@ def main() -> int:
             seen: dict[str, int] = {}
             for k, l in entries:
                 if k in seen:
-                    duplicates.append(f"Hashtable ab Zeile {start_line}: doppelter Schluessel {k!r} in Zeile {l} (bereits in Zeile {seen[k]})")
+                    duplicates.append(f"Hashtable ab Zeile {start_line}: doppelter Schlüssel {k!r} in Zeile {l} (bereits in Zeile {seen[k]})")
                 else:
                     seen[k] = l
 
@@ -1136,7 +1135,7 @@ def main() -> int:
     for problem in hash_problems:
         print(f"    {problem}")
     check(not hash_problems,
-          "Keine doppelten Schluessel in PowerShell-Hashtable-Literalen (Parse-Fehler auf PowerShell 5.1/7)")
+          "Keine doppelten Schlüssel in PowerShell-Hashtable-Literalen (Parse-Fehler auf PowerShell 5.1/7)")
 
     check((ROOT / "builder" / "parse-gate.ps1").is_file(), "Echtes Parser-Gate vorhanden")
     check("PROOF_OF_LIFE Version=" + VERSION in source,
@@ -1150,16 +1149,16 @@ def main() -> int:
         print(result.stderr)
         check(result.returncode == 0, "Echter PowerShell-Parser (siehe Engine-Version oben)")
     else:
-        print("  UEBERSPRUNGEN: echter PowerShell-Parser; powershell/pwsh fehlen. "
+        print("  ÜBERSPRUNGEN: echter PowerShell-Parser; powershell/pwsh fehlen. "
               "Windows-PowerShell-5.1-Gate vor Freigabe erforderlich.")
 
     print()
     if failures:
-        print(f"ROT: {len(failures)} Pruefung(en) fehlgeschlagen:")
+        print(f"ROT: {len(failures)} Prüfung(en) fehlgeschlagen:")
         for entry in failures:
             print(f"  - {entry}")
         return 1
-    print("OK: Offline-Pruefungen abgeschlossen. Kein Nachweis eines Windows-Fensterstarts.")
+    print("OK: Offline-Prüfungen abgeschlossen. Kein Nachweis eines Windows-Fensterstarts.")
     return 0
 
 

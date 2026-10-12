@@ -5,10 +5,14 @@ Alles Technische, was nicht zum normalen Nutzer-Klick gehört, liegt hier:
 - `tests/` — Offline-Regressionsskripte, PowerShell-Checks und
   `requirements-test.txt`.
 - `docs/` — Verträge, historische Hintergrundnotizen und Entwicklungsregeln.
+  Verbindlich: `docs/GANZ WICHTIG LESEN VOR JEDER BEARBEITUNG` (Stand 7.9.2) —
+  dort steht auch die Stichpunkt-Regel für die Nutzer-Notizen.
 - `ci/` — Beispiel für einen optionalen Windows-PowerShell-Parser-Workflow und
   den Generator des geprüften Open-Cloud-Katalogs.
 - `tools/publish_latest.py` liegt unter `tools/` und erzeugt `release/latest.json` (vom Workflow aufgerufen).
-- `tools/` — manuelle Diagnose-/Live-Abnahme-Werkzeuge.
+- `tools/` — manuelle Diagnose-/Live-Abnahme-Werkzeuge. Dazu das Umlaut-Werkzeug
+  `tools/german_umlauts.py` (prüft/überführt `ae/oe/ue/ss` in echte Umlaute;
+  ohne `--write` nur ein Zählbericht) mit seinem Tokenizer `tools/ps_text_tokens.py`.
 
 ## Offline-Tests starten
 

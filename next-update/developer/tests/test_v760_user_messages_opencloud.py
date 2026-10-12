@@ -133,7 +133,7 @@ def main() -> int:
     # 3) Save flow: Introspect first, permission window, then save.
     # ------------------------------------------------------------------
     save_click = region(source, "$cloudSaveButton.Add_Click({",
-                        "# --- Berechtigungen des gespeicherten Schluessels ansehen")
+                        "# --- Berechtigungen des gespeicherten Schlüssels ansehen")
     check("Set-OpenCloudKey" not in save_click and "Save-BridgeSettingsFile" not in save_click,
           "the save button stores nothing by itself")
     check("Show-CloudPermissionsWindow -PendingKey $keyText" in save_click,
@@ -192,7 +192,7 @@ def main() -> int:
     check("universe.user-restriction:write" not in permissions and "thumbnail:read" not in permissions,
           "forbidden rights are not offered")
     row = region(source, "function New-CloudPermissionRow {",
-                 "# Tutorial-Schritt 4: die komplette Berechtigungs-Uebersicht fuellen.")
+                 "# Tutorial-Schritt 4: die komplette Berechtigungs-Übersicht füllen.")
     check("0x2714" in row and "0x2716" in row,
           "granted/missing permissions render as green check / red cross glyphs")
     check("Scope: " not in row, "the scope is the row title, not a subtitle")
