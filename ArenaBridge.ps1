@@ -1,5 +1,9 @@
 ﻿# ============================================================================
-# Arena Roblox Bridge  -  Version 7.6.2
+# Arena Roblox Bridge  -  Version 7.6.3
+#
+# Version 7.6.3 - LETZTES UPDATE IM ALTEN KANAL: Neues Update System (Hinweisfenster).
+#   Die neue Bridge wird ueber die Download-Seite installiert. Der alte Code unten
+#   wird nicht mehr ausgefuehrt (siehe Block nach param).
 #
 # Version 7.6.2 (2026-10-10) - EXAKTE OPEN-CLOUD-FREIGABEN + VOLLSTAENDIGE KEY-PRUEFUNG
 #   1) Introspect wird nicht mehr bei 600 Zeichen abgeschnitten; beide
@@ -2263,6 +2267,117 @@ param(
     [string]$UpdateStatus = '',
     [string]$UpdaterPath = ''
 )
+
+# ============================================================================
+# LETZTES UPDATE IM ALTEN UPDATE-KANAL (Version 7.6.3)
+# Dieses Skript zeigt nur noch ein Fenster: "Neues Update System" mit dem
+# Knopf zur neuen Arena AI Bridge (Download-Seite). Danach beendet es sich.
+# Der alte Programmcode darunter wird NICHT mehr ausgefuehrt. Er bleibt
+# bewusst in der Datei, weil der alte Updater nur Dateien ab 50 KB annimmt.
+# Die neue Bridge liegt in next-update/ (eigenes Update-System).
+# ============================================================================
+$script:ArenaLegacyUrl = 'https://arena-rblx-bridge.netlify.app/'
+
+function Show-ArenaLegacyNotice {
+    $xaml = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Arena Roblox Bridge" Width="520" Height="320"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ResizeMode="NoResize" WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <SolidColorBrush x:Key="TextMain" Color="#F4F8FF"/>
+        <SolidColorBrush x:Key="TextMuted" Color="#9AA9CE"/>
+        <LinearGradientBrush x:Key="AppBg" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#060A1A" Offset="0"/>
+            <GradientStop Color="#0A1128" Offset="0.55"/>
+            <GradientStop Color="#0C1533" Offset="1"/>
+        </LinearGradientBrush>
+        <LinearGradientBrush x:Key="GreenBg" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#F238D16C" Offset="0"/>
+            <GradientStop Color="#E61F9A4C" Offset="1"/>
+        </LinearGradientBrush>
+        <Style x:Key="ArenaButton" TargetType="Button">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" CornerRadius="10"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Opacity" Value="0.92"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bd" Property="Opacity" Value="0.75"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+    <Border CornerRadius="20" Background="{StaticResource AppBg}"
+            BorderBrush="#33FFFFFF" BorderThickness="1" Margin="10">
+        <Grid Margin="30,26,30,24">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <TextBlock Grid.Row="0" Text="ARENA ROBLOX BRIDGE  ·  LETZTES UPDATE"
+                       Foreground="{StaticResource TextMuted}" FontSize="11" FontWeight="SemiBold"/>
+            <TextBlock Grid.Row="1" Margin="0,12,0,0" Text="Neues Update System"
+                       Foreground="{StaticResource TextMain}" FontSize="26" FontWeight="Bold"/>
+            <TextBlock Grid.Row="2" Margin="0,12,0,0" TextWrapping="Wrap"
+                       Foreground="{StaticResource TextMuted}" FontSize="13.5"
+                       Text="Dies ist das letzte Update über den alten Kanal. Die neue Arena AI Bridge wird ab jetzt über die Download-Seite installiert."/>
+            <StackPanel Grid.Row="4">
+                <Button x:Name="InstallButton" Height="46"
+                        Content="Neue Arena AI Bridge installieren"
+                        Foreground="#08131A" Background="{StaticResource GreenBg}"
+                        BorderBrush="#662FCB6C" Style="{StaticResource ArenaButton}"/>
+                <Button x:Name="CloseButton" Margin="0,10,0,0" Height="36"
+                        Content="Schließen" Foreground="{StaticResource TextMuted}"
+                        Background="#0E1428" BorderBrush="#33FFFFFF"
+                        Style="{StaticResource ArenaButton}"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>
+'@
+    try {
+        Add-Type -AssemblyName PresentationFramework -ErrorAction Stop
+        Add-Type -AssemblyName PresentationCore -ErrorAction Stop
+        Add-Type -AssemblyName WindowsBase -ErrorAction Stop
+        if ([System.Threading.Thread]::CurrentThread.ApartmentState -ne 'STA') { throw 'Kein STA-Thread.' }
+        $script:ArenaLegacyWindow = [System.Windows.Markup.XamlReader]::Parse($xaml)
+    } catch {
+        # Fallback: wenigstens die Download-Seite oeffnen.
+        try { Start-Process -FilePath $script:ArenaLegacyUrl } catch {}
+        return
+    }
+    $installButton = $script:ArenaLegacyWindow.FindName('InstallButton')
+    $closeButton = $script:ArenaLegacyWindow.FindName('CloseButton')
+    $installButton.Add_Click({
+        try { Start-Process -FilePath $script:ArenaLegacyUrl } catch {}
+        $script:ArenaLegacyWindow.Close()
+    })
+    $closeButton.Add_Click({ $script:ArenaLegacyWindow.Close() })
+    [void]$script:ArenaLegacyWindow.ShowDialog()
+}
+
+Show-ArenaLegacyNotice
+exit 0
 
 # 7.2.9 PROOF_OF_LIFE: first executable statement after param.
 # Existing LOCALAPPDATA directory; no UI, no new exception net.
