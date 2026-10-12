@@ -143,18 +143,22 @@ def test_website_and_docs() -> None:
 
 
 def test_version_note() -> None:
-    print("\n-- Version 7.9.4")
+    print("\n-- Vorbereitete Testversion")
     data = json.loads(VERSION.read_text(encoding="utf-8"))
-    check(data["version"] == "7.9.4", "app/version.json ist auf 7.9.4 erhöht")
-    note = str(data["notes"][0])
-    check(note.startswith("• 7.9.4 "), "Die neueste Notiz gehört zur Version 7.9.4")
+    version = str(data.get("version", ""))
+    check(re.fullmatch(r"\d+\.\d+\.\d+", version) is not None,
+          "app/version.json nennt eine gültige dreiteilige Version")
+    note = str(data.get("notes", [""])[0])
+    check(note.startswith(f"• {version} — "),
+          "Die neueste Notiz beginnt mit der vorbereiteten Version")
     check(note.count("•") >= 5 and len(" ".join(note.split())) <= 600,
           "Die Notiz folgt der Stichpunkt-Regel (mindestens fünf Stichpunkte, unter 600 Zeichen)")
     check("ArenaRobloxBridge.exe" in note and "Spaeter" not in note
           and any(letter in note for letter in "äöüÄÖÜß"),
           "Die Notiz nennt die eine EXE und benutzt echte Umlaute")
-    check("Download-Seite" in note and "7.9.4" in note,
-          "Die Notiz erklärt die Download-Seite der neuen Version")
+    check("Download-Seite" in note and "TESTUPDATE" in note
+          and "nichts geändert" in note,
+          "Die Notiz kennzeichnet das Testupdate und bestätigt unveränderten Programmcode")
 
 
 def main() -> int:

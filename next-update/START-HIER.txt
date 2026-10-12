@@ -1,5 +1,10 @@
-ARENA ROBLOX BRIDGE — START HIER (Version 7.9.4)
-=================================================
+ARENA ROBLOX BRIDGE — START HIER (Testupdate 7.9.5 vorbereitet)
+===============================================================
+
+TESTSTAND 7.9.5:
+- Nur app\version.json wurde für den Update-System-Test vorbereitet.
+- Der Programmcode ist unverändert; es wurde keine EXE gebaut oder veröffentlicht.
+- release\latest.json bleibt unverändert und wird nur vom GitHub-Workflow erzeugt.
 
 NUR BAUEN UND TESTEN?
 
@@ -25,7 +30,7 @@ ZUM VERÖFFENTLICHEN (nur wenn der Test gut war):
   (Reiter Actions). Er schreibt next-update\release\latest.json. Erst danach
   sehen Nutzer das Update.
 - Ist der Workflow rot: Meist ist die Version nicht erhöht. Sag der KI
-  "Version erhöhen" — sie setzt dann z. B. 7.9.4 in app\version.json.
+  "Version erhöhen" — sie setzt dann die nächste Version in app\version.json.
 
 WIE DAS UPDATE FÜR NUTZER FUNKTIONIERT:
 
