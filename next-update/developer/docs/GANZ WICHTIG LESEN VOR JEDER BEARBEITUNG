@@ -1,13 +1,46 @@
 ##########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-UEBERGABE FUER NEUE SESSIONS            #
-#   (Stand: Version 7.7.2 - 11.10.2026)                                #
+#   (Stand: Version 7.9.1 - 12.10.2026)                                #
 #                                                                      #
 ##########################################################################
 
-AKTUELLER NACHTRAG 7.9.0 (11.10.2026) - EINFACHES UPDATE-SYSTEM (HAT VORRANG)
+AKTUELLER NACHTRAG 7.9.1 (12.10.2026) - NEBENFENSTER, FORTSCHRITT UND FERTIG-POPUP ROBUSTER (HAT VORRANG)
+=======================================================================================================
+
+- AUSSCHLIESSLICH next-update/app und die dazugehoerigen next-update-Tests/Dokumente
+  bearbeiten. Der alte Root-Update-Pfad bleibt unangetastet.
+- NUTZER-HINTERGRUND: Set-BackgroundShellBrush gilt nur fuer Nebenschalen; Bild plus
+  halbtransparente schwarze Lage dunkelt das Bild ab. Das Place-Hauptfenster nutzt
+  weiterhin Set-BackgroundArtwork ohne diese Lage.
+- FORTSCHRITT: ProgressStates werden mit einem gemeinsamen Monitor-Lock als kompletter
+  Read-modify-write aktualisiert. Eine globale Revision loest Gleichstaende innerhalb
+  derselben Sekunde bei Sitzungs-/Reconnect-Snapshots auf. Prozentwerte erscheinen nur
+  nach einer echten Zahl. report_done darf bei vorher nicht gemeldetem Prozentwert keine
+  erfundenen 100 % erzeugen; Chat-Fragen/Lese-/Beobachtungsaufgaben koennen progress
+  weglassen oder false / mode hidden, off, not_applicable senden. Progress ist optional.
+- FERTIG-POPUP: report_done reiht die Meldung ein und wartet maximal drei Sekunden auf
+  den atomaren Zustellstatus. Primaerkanal ist ein topmost Bridge-WPF-Fenster; erst
+  ContentRendered gilt als DISPLAYED (Renderer bestaetigt, Nutzerwahrnehmung nicht).
+  Windows-Toast/Tray bleiben nur ein ehrlich unverified Fallback; deren Platform-Check
+  ist nicht mehr der Zustellnachweis. UI-Ticks verarbeiten hoechstens zwei Meldungen,
+  damit ein Backlog die WPF-Renderereignisse nicht blockiert.
+- EINSTELLUNGEN: Update-Titel, automatische Update-Pruefung und Version stehen in einer
+  Karte. Eine getrennte Entwicklerkarte nennt den Wortlaut des Nutzers. Programmdateien
+  oeffnet AppFolder; Laufzeitprotokolle liegen tatsaechlich in AppDataRoot, daher gibt
+  es dafuer eine eigene Schaltflaeche.
+- VERSION 7.9.1 ist in app/version.json vorbereitet. release/latest.json und die
+  veroeffentlichte EXE bleiben unveraendert, bis ein Windows-Build privat getestet und
+  ausdruecklich freigegeben wurde. WPF/Explorer/Toast-Verhalten nicht unter Linux als
+  live getestet behaupten.
+- OFFLINE-PRUEFUNG 12.10.2026: `.venv/bin/python developer/tests/run_offline_tests.py`
+  (Dependencies aus `developer/tests/requirements-test.txt`) besteht 21/21 Tests;
+  Tree-sitter meldet 0 neue PowerShell-Parsefehler. Echter Windows-PowerShell-5.1-/WPF-
+  Start-, Explorer- und Benachrichtigungstest ist hier nicht verfuegbar und bleibt offen.
+
+HISTORISCHER NACHTRAG 7.9.0 (11.10.2026) - EINFACHES UPDATE-SYSTEM
 =============================================================================
-DIESER NACHTRAG HAT VORRANG vor allen aelteren Update-Abschnitten unten.
+Historischer Stand zum Update-System 7.9.0; der aktuelle Stand steht im Nachtrag 7.9.1 oben.
 - Der alte Updater (update-system/, Kanaele beta/stable, Guard-Lock, PROTECTED.md,
   Release-Gates, release.py, Invoke-SelfUpdateSmoke) ist ENTFERNT.
 - Neu: Block ARENA-UPDATE-INTEGRATION in app/ArenaBridge.ps1 (Pruefung, Fenster,
