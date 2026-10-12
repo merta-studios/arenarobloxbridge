@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "version": "7.9.0",
-  "sha256": "c3583d9befb1ab658415488ab559505d693cfbded291bbfa084bf6de734ddaed",
-  "sizeBytes": 5789184,
-  "url": "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/b791c9e7becadd79d0b7004bb72f0c81b4b95fb5/next-update/release/ArenaBridge.exe",
-  "publishedAtUtc": "2026-10-12T14:29:46Z",
-  "notes": "• 7.9.0 — EINFACHES UPDATE-SYSTEM: Beim Start prueft die Bridge (hoechstens 5 Sekunden), ob eine neue Version freigegeben ist. Ist sie da, erscheint ein Fenster \"Update verfuegbar\" mit dem Knopf \"Jetzt installieren\". Der Knopf oeffnet den Standard-Browser mit der neuen ArenaBridge.exe. \"Spaeter\" wird gezaehlt; nach 5 Klicks ist das Update Pflicht. Die neue EXE schiebt beim ersten Start die alte EXE in den Papierkorb. Die Bridge ersetzt sich nie selbst. Die Version in der EXE kommt aus dieser Datei; die Veroeffentlichung macht ein GitHub-Workflow."
+  "version": "7.9.1",
+  "sha256": "8543db2afc551c510422bd62532739bb951dde8a75e2d5c5ad705261c04fcad6",
+  "sizeBytes": 5814272,
+  "url": "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/8c4b2d5b387418aca97699823d77bab26fc1eebc/next-update/release/ArenaBridge.exe",
+  "publishedAtUtc": "2026-10-12T15:23:01Z",
+  "notes": "• 7.9.1 — ABGEDUNKELTE NEBENFENSTER, OPTIONALER FORTSCHRITT, GERENDERT BESTAETIGTES FERTIG-POPUP UND GRUPPIERTE EINSTELLUNGEN: Das benutzerdefinierte Hintergrundbild wird in allen Nebenschalen (nicht im Hauptfenster der Place-Liste) mit einer dunklen Glaslage kombiniert. Der Fortschritts-Read-modify-write ist synchronisiert und Snapshot-Auswahl nutzt eine globale Revision gegen schnelle Parallelaufrufe. Progress ist optional; Chat-/Lese-/Beobachtungsaufgaben koennen ihn weglassen oder explizit ausblenden, und ohne echte Prozentmeldung gibt es keine erfundene 0 % oder 100 %. report_done zeigt p ..."
 }
