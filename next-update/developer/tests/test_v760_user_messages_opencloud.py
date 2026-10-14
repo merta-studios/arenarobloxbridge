@@ -100,8 +100,9 @@ def main() -> int:
           "the exact message text is repeated at the BOTTOM of the envelope")
     check("openUserMessageCount" in envelope and "Get-UnackedUserMessageViews" in envelope,
           "every envelope carries the count of still-unacknowledged user messages")
-    check("TEN responses" in envelope and "UNACKED_USER_MESSAGE" in envelope,
-          "the user-message contract explains the ten repeats and the report_done gate")
+    check("EVERY following envelope" in envelope and "UNACKED_USER_MESSAGE" in envelope
+          and "chatAcknowledgementRequired" in envelope and "requiredSequence" in envelope,
+          "the user-message contract (8.0.0 strict) repeats in every envelope, forces the chat confirmation first and keeps the report_done gate")
 
     done_gate = region(source, "'report_done' {\n                # Version 7.6.0: USER-MESSAGE-GATE.",
                        "# report_done may identify an explicitly generated, unapplied mesh slot below.")
@@ -114,8 +115,8 @@ def main() -> int:
     done_docs = region(source, "$t.Add(@{ name = 'report_done'", "$t.Add(@{ name = 'set_context'")
     check("UNACKED_USER_MESSAGE" in done_docs,
           "report_done documentation lists the new error code")
-    check("USER CHANNEL (7.2.0, HARDENED 7.6.0)" in source,
-          "the session rules describe the hardened user channel")
+    check("USER CHANNEL (7.2.0, HARDENED 7.6.0, STRICT 8.0.0)" in source,
+          "the session rules describe the hardened user channel (strict since 8.0.0)")
 
     # ------------------------------------------------------------------
     # 2) The switch is gone - the key is the permission system.

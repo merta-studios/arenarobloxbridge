@@ -3380,6 +3380,7 @@ function Get-BridgeSettingsFile {
         # hier, sondern verschlüsselt in opencloud.key. Hier stehen nur die
         # Metadaten (ob einer hinterlegt ist) und der ERSTELLER, dem Roblox
         # jedes hochgeladene Asset zuordnet (Pflichtfeld der Assets-API).
+        uiLanguage          = 'en'    # Version 8.0.0: Programmsprache, Standard Englisch ('en' oder 'de')
         openCloudKeySet     = $false
         openCloudKeyHint    = ''      # z. B. "…7Hf9" - nur die letzten Zeichen
         openCloudCreatorId  = ''      # numerische Nutzer- oder Gruppen-Id
@@ -3392,6 +3393,7 @@ function Get-BridgeSettingsFile {
     try {
         if (Test-Path -LiteralPath $script:SettingsFile) {
             $loaded = Get-Content -LiteralPath $script:SettingsFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($loaded.PSObject.Properties.Name -contains 'uiLanguage') { $loadedLang = ([string]$loaded.uiLanguage).ToLowerInvariant(); if ($loadedLang -eq 'de' -or $loadedLang -eq 'en') { $settings.uiLanguage = $loadedLang } }
             if ($loaded.PSObject.Properties.Name -contains 'autoStart') { $settings.autoStart = [bool]$loaded.autoStart }
             if ($loaded.PSObject.Properties.Name -contains 'progressInPlaceList') { $settings.progressInPlaceList = [bool]$loaded.progressInPlaceList }
             if ($loaded.PSObject.Properties.Name -contains 'notifyOnDone') { $settings.notifyOnDone = [bool]$loaded.notifyOnDone }
@@ -3418,6 +3420,7 @@ function Get-BridgeSettingsFile {
 function Save-BridgeSettingsFile {
     try {
         $out = @{
+            uiLanguage      = $(if ([string]$script:SettingsCache.uiLanguage -eq 'de') { 'de' } else { 'en' })
             autoStart       = [bool]$script:SettingsCache.autoStart
             simAllowed      = $false
             notifyOnDone    = [bool]$script:SettingsCache.notifyOnDone
@@ -3441,6 +3444,8 @@ function Save-BridgeSettingsFile {
 }
 
 $script:SettingsCache = Get-BridgeSettingsFile
+# Version 8.0.0: gespeicherte Sprachwahl beim Start uebernehmen (Standard en).
+try { $script:UiLanguage = $(if ([string]$script:SettingsCache.uiLanguage -eq 'de') { 'de' } else { 'en' }) } catch {}
 
 # Version 7.1.3: HARTE OBERGRENZE für das Sessionstart-Paket (Bytes, JSON).
 # Die erste Antwort einer Sitzung trug bis 7.1.2 die vollständige Doku aller
@@ -10221,6 +10226,61 @@ UI_ENGINE.SKINS = {
         strokes = { { w = 0.006, alpha = 0.35, tint = "surfaceHi" } },
         shadows = { { blur = 0.06, alpha = 0.5, oy = 0.014 } },
         sheen = 0.05, gradFill = 90, gradStroke = 90, fonts = { "Kalam", "Arimo" }, energy = "soft" },
+    -- Version 8.0.0: Zwoelf weitere Skins fuer andere Spielarten (Horror,
+    -- simple Games, Simulator, Tycoon, Obby, Ocean, Winter, Candy, Space,
+    -- Military, Royal, Nature). Jeder Skin nennt in bestFor ehrlich, wofuer
+    -- er gedacht ist - ui_skin action=list liefert das Feld mit, damit Arena
+    -- nach Spielart waehlt statt zu raten. textureAsBackground=true heisst:
+    -- die Textur IST der Hintergrund (siehe textureLayer/surface in 8.0.0),
+    -- kein Farbverlauf darunter.
+    horror = { label = "Horror / Dread", bestFor = "horror, thriller, scary, escape, monster, dark story", brand = "#7A0E14", mood = "deep", corner = "crisp", texture = "cracks", texAlpha = 0.72, fillAlpha = 0, textureAsBackground = true,
+        strokes = { { w = 0.008, alpha = 0.15, tint = "accent", grad = true }, { w = 0.003, alpha = 0.55, tint = "shadow", inner = true } },
+        shadows = { { blur = 0.16, alpha = 0.62, oy = 0.02, spread = 0.01, tint = "shadow" }, { blur = 0.04, alpha = 0.4, oy = 0.008 } },
+        sheen = 0.04, gradFill = 90, gradStroke = 0, fonts = { "Creepster", "Mono" }, energy = "heavy" },
+    minimal = { label = "Minimal / Clean", bestFor = "simple games, tools, admin panels, settings, clean casual games", brand = "#3B82F6", mood = "light", corner = "soft", texture = "none", texAlpha = 1, fillAlpha = 0,
+        strokes = { { w = 0.004, alpha = 0.55, tint = "surfaceLo" } },
+        shadows = { { blur = 0.05, alpha = 0.5, oy = 0.012, spread = -0.006 } },
+        sheen = 0.05, gradFill = 90, gradStroke = 90, fonts = { "Montserrat", "SourceSans" }, energy = "soft" },
+    simulator = { label = "Simulator / Clicker", bestFor = "simulator, clicker, incremental, pet games, bright progression games", brand = "#FF8A00", mood = "pastel", corner = "chunky", texture = "stars", texAlpha = 0.86, fillAlpha = 0,
+        strokes = { { w = 0.020, alpha = 0, tint = "surfaceHi" }, { w = 0.007, alpha = 0.2, tint = "accentLo", inner = true } },
+        shadows = { { blur = 0.10, alpha = 0.5, oy = 0.028, spread = -0.01 } },
+        sheen = 0.28, gradFill = 110, gradStroke = 40, fonts = { "Luckiest", "Fredoka" }, energy = "bouncy" },
+    tycoon = { label = "Tycoon / Business", bestFor = "tycoon, business, restaurant, shop and money games", brand = "#1F9A4C", mood = "light", corner = "round", texture = "diagonal", texAlpha = 0.90, fillAlpha = 0,
+        strokes = { { w = 0.008, alpha = 0.1, tint = "accentLo", grad = true }, { w = 0.003, alpha = 0.4, tint = "warm", inner = true } },
+        shadows = { { blur = 0.08, alpha = 0.5, oy = 0.02 } },
+        sheen = 0.18, gradFill = 100, gradStroke = 30, fonts = { "Montserrat", "Gotham" }, energy = "snappy" },
+    obby = { label = "Obby / Platformer", bestFor = "obby, parkour, platformer, tower and stage games", brand = "#FF4D6D", mood = "pastel", corner = "chunky", texture = "diagonal", texAlpha = 0.88, fillAlpha = 0,
+        strokes = { { w = 0.018, alpha = 0, tint = "surfaceHi" }, { w = 0.006, alpha = 0.25, tint = "accent", inner = true } },
+        shadows = { { blur = 0.07, alpha = 0.5, oy = 0.03, spread = -0.008 } },
+        sheen = 0.24, gradFill = 105, gradStroke = 45, fonts = { "Fredoka", "Gotham" }, energy = "bouncy" },
+    ocean = { label = "Ocean / Underwater", bestFor = "ocean, underwater, pirate sea, fishing, island and water games", brand = "#0077B6", mood = "deep", corner = "round", texture = "waves", texAlpha = 0.82, fillAlpha = 0, textureAsBackground = true,
+        strokes = { { w = 0.007, alpha = 0.2, tint = "strokeHi", grad = true }, { w = 0.003, alpha = 0.45, tint = "accent", inner = true } },
+        shadows = { { blur = 0.13, alpha = 0.5, oy = 0.02, spread = 0.005, tint = "glow" } },
+        sheen = 0.22, gradFill = 115, gradStroke = 20, fonts = { "Montserrat", "Arimo" }, energy = "soft" },
+    winter = { label = "Winter / Ice", bestFor = "winter, snow, ice, christmas, arctic and frozen games", brand = "#38BDF8", mood = "light", corner = "round", texture = "snow", texAlpha = 0.85, fillAlpha = 0.08,
+        strokes = { { w = 0.007, alpha = 0.25, tint = "surfaceHi", grad = true }, { w = 0.003, alpha = 0.5, tint = "accent", inner = true } },
+        shadows = { { blur = 0.10, alpha = 0.45, oy = 0.018, spread = -0.005 } },
+        sheen = 0.30, gradFill = 110, gradStroke = 15, fonts = { "Montserrat", "Gotham" }, energy = "soft" },
+    candy = { label = "Candy / Sweet", bestFor = "candy, sweet, cute, kids, bakery and pastel party games", brand = "#FF6FB5", mood = "pastel", corner = "chunky", texture = "bubbles", texAlpha = 0.84, fillAlpha = 0, textureAsBackground = true,
+        strokes = { { w = 0.020, alpha = 0, tint = "surfaceHi" }, { w = 0.007, alpha = 0.2, tint = "accent", inner = true } },
+        shadows = { { blur = 0.09, alpha = 0.48, oy = 0.026, spread = -0.01 } },
+        sheen = 0.32, gradFill = 108, gradStroke = 50, fonts = { "Fredoka", "Gotham" }, energy = "bouncy" },
+    space = { label = "Space / Galaxy", bestFor = "space, sci-fi, galaxy, aliens, rockets and future games", brand = "#7C3AED", mood = "deep", corner = "round", texture = "stars", texAlpha = 0.80, fillAlpha = 0, textureAsBackground = true,
+        strokes = { { w = 0.007, alpha = 0.1, tint = "accent", grad = true }, { w = 0.003, alpha = 0.5, tint = "comp", inner = true } },
+        shadows = { { blur = 0.18, alpha = 0.42, spread = 0.012, tint = "glow" }, { blur = 0.04, alpha = 0.35, oy = 0.01 } },
+        sheen = 0.16, gradFill = 120, gradStroke = 0, fonts = { "Montserrat", "Mono" }, energy = "snappy" },
+    military = { label = "Military / Tactical", bestFor = "military, army, tactical shooter, base and strategy games", brand = "#4B5320", mood = "deep", corner = "crisp", texture = "camo", texAlpha = 0.84, fillAlpha = 0, textureAsBackground = true,
+        strokes = { { w = 0.006, alpha = 0.2, tint = "surfaceLo" }, { w = 0.003, alpha = 0.5, tint = "shadow", inner = true } },
+        shadows = { { blur = 0.07, alpha = 0.55, oy = 0.016 } },
+        sheen = 0.06, gradFill = 95, gradStroke = 90, fonts = { "Mono", "Gotham" }, energy = "heavy" },
+    royal = { label = "Royal / Luxury", bestFor = "royal, castle, luxury, vip, rich, hotel and elegant games", brand = "#B8860B", mood = "deep", corner = "soft", texture = "diamond", texAlpha = 0.86, fillAlpha = 0,
+        strokes = { { w = 0.009, alpha = 0, tint = "warm", grad = true }, { w = 0.0035, alpha = 0.35, tint = "accentHi", inner = true } },
+        shadows = { { blur = 0.11, alpha = 0.55, oy = 0.02 }, { blur = 0.03, alpha = 0.35, oy = 0.006, tint = "glow" } },
+        sheen = 0.26, gradFill = 105, gradStroke = 30, fonts = { "Merriweather", "Montserrat" }, energy = "heavy" },
+    nature = { label = "Nature / Farm", bestFor = "nature, farm, garden, animals, forest life and cozy farming games", brand = "#3E8914", mood = "light", corner = "round", texture = "leaves", texAlpha = 0.85, fillAlpha = 0,
+        strokes = { { w = 0.008, alpha = 0.15, tint = "accentLo" }, { w = 0.003, alpha = 0.45, tint = "surfaceHi", inner = true } },
+        shadows = { { blur = 0.08, alpha = 0.5, oy = 0.02 } },
+        sheen = 0.14, gradFill = 100, gradStroke = 55, fonts = { "Kalam", "Arimo" }, energy = "soft" },
 }
 
 function UI_ENGINE.skinNames()
@@ -10411,9 +10471,19 @@ end
 
 -- Raster-Textur: entweder ein echtes gekacheltes Bild (TileSize in SCALE!)
 -- oder ein prozedurales Raster aus echten Frames - kein totes Asset nötig.
-function UI_ENGINE.textureLayer(base, skin, budget)
+function UI_ENGINE.textureLayer(base, skin, budget, texOpts)
+    -- Version 8.0.0: Eine echte Textur ist der HINTERGRUND selbst, nicht
+    -- eine fast unsichtbare Schicht ueber einem Farbverlauf. texOpts.mode
+    -- "background" (automatisch bei textureImage ODER skin.textureAsBackground)
+    -- heisst: Bild fuellt die Flaeche deckend (Transparenz 0, kein Tint-
+    -- Schleier, ScaleType aus textureFit), und surface() laesst den
+    -- Fuellgradienten dann ganz weg. Nur ohne echte Textur UND ohne
+    -- textureAsBackground bleibt die Textur das dezente Muster von frueher.
+    texOpts = texOpts or {}
     local pattern = string.lower(tostring(skin.texture or "none"))
-    if pattern == "none" then return nil, 0, pattern end
+    local textureImage = texOpts.textureImage or skin.textureImage
+    local asBackground = texOpts.mode == "background" or textureImage ~= nil or skin.textureAsBackground == true
+    if pattern == "none" and textureImage == nil then return nil, 0, pattern end
     local layer = Instance.new("Frame")
     layer.Name = "ArenaTexture"
     layer.BackgroundTransparency = 1
@@ -10423,23 +10493,40 @@ function UI_ENGINE.textureLayer(base, skin, budget)
     layer.ZIndex = 2
     layer.ClipsDescendants = true
     layer:SetAttribute("ArenaParallax", tonumber(skin.parallax) or 0.006)
-    if skin.textureImage then
+    layer:SetAttribute("ArenaTextureBackground", asBackground == true)
+    if textureImage then
         local image = Instance.new("ImageLabel")
         image.Name = "ArenaTextureImage"
         image.BackgroundTransparency = 1
         image.Size = UDim2.fromScale(1, 1)
-        image.Image = tostring(skin.textureImage)
-        image.ScaleType = Enum.ScaleType.Tile
-        image.TileSize = UDim2.fromScale(tonumber(skin.tileX) or 0.18, tonumber(skin.tileY) or 0.18)
-        image.ImageTransparency = math.clamp(tonumber(skin.texAlpha) or 0.9, 0, 1)
-        image.ImageColor3 = UI_ENGINE.col(skin.textureTint, skin.p.surfaceHi)
+        image.Image = tostring(textureImage)
+        -- Hintergrund-Textur: deckend und ungetoent, damit das Bild selbst
+        -- die Farbe ist. Fit kommt aus dem Aufruf/Skin: Tile (gekachelt,
+        -- Standard mit tileX/tileY), Crop (fuellend beschnitten), Fit oder
+        -- Stretch. Frueher war hier fest Tile + Transparenz 0.9 verdrahtet -
+        -- die Textur war praktisch unsichtbar ueber dem Verlauf.
+        local fit = string.lower(tostring(texOpts.fit or skin.textureFit or ((skin.tileX or skin.tileY) and "tile" or "crop")))
+        if fit == "fit" then image.ScaleType = Enum.ScaleType.Fit
+        elseif fit == "stretch" then image.ScaleType = Enum.ScaleType.Stretch
+        elseif fit == "crop" then image.ScaleType = Enum.ScaleType.Crop
+        else image.ScaleType = Enum.ScaleType.Tile; fit = "tile" end
+        if image.ScaleType == Enum.ScaleType.Tile then
+            image.TileSize = UDim2.fromScale(tonumber(texOpts.tileX or skin.tileX) or 0.18, tonumber(texOpts.tileY or skin.tileY) or 0.18)
+        end
+        image.ImageTransparency = asBackground and 0 or math.clamp(tonumber(skin.texAlpha) or 0.9, 0, 1)
+        image.ImageColor3 = texOpts.tint and UI_ENGINE.col(texOpts.tint, skin.p.surfaceHi) or Color3.fromRGB(255, 255, 255)
+        image:SetAttribute("ArenaTextureBackground", asBackground == true)
+        image:SetAttribute("ArenaTextureFit", fit)
         image.Parent = layer
         layer.Parent = base
-        return layer, 1, pattern .. "+image"
+        return layer, 1, pattern .. "+image:" .. fit .. (asBackground and ":background" or ":overlay")
     end
     local p = skin.p
     local tint = UI_ENGINE.col(skin.textureTint, UI_ENGINE.mix(p.surfaceHi, p.accent, 0.25))
+    -- Als Hintergrund zaehlt das Muster selbst: deutlich sichtbarer
+    -- (Transparenz ~0.45 statt ~0.9), als Dekor bleibt es dezent wie bisher.
     local alpha = math.clamp(tonumber(skin.texAlpha) or 0.9, 0, 1)
+    if asBackground then alpha = math.clamp(tonumber(skin.bgTexAlpha) or 0.45, 0, 1) end
     local count, maximum = 0, math.max(4, math.min(tonumber(budget) or 26, 64))
     local function line(horizontal, at, thick, extra)
         if count >= maximum then return end
@@ -10487,6 +10574,27 @@ function UI_ENGINE.textureLayer(base, skin, budget)
     elseif pattern == "fiber" then
         for i = 1, 11 do line(true, i / 12, 0.003, 0.03) end
         for i = 1, 5 do line(false, i / 6, 0.002, 0.05) end
+    elseif pattern == "cracks" then
+        -- Horror-Risse: duenne, versetzte Diagonalen in zwei Richtungen.
+        for i = 1, 10 do line(false, i / 11, 0.0025, ((i % 3) - 1) * 0.06) end
+        for i = 1, 7 do line(true, (i / 8) + ((i % 2) * 0.03), 0.002, 0.05) end
+    elseif pattern == "stars" or pattern == "snow" then
+        for row = 1, 6 do for colIndex = 1, 7 do dot((colIndex - 0.5) / 7 + ((row % 2) * 0.05), (row - 0.5) / 6, 0.008 + ((row + colIndex) % 3) * 0.004, ((row * colIndex) % 3) * 0.04) end end
+    elseif pattern == "waves" then
+        -- Wellen aus versetzten Punktreihen (Sinus-Offset je Zeile).
+        for row = 1, 7 do for colIndex = 1, 9 do dot((colIndex - 0.5) / 9, (row - 0.5) / 7 + math.sin(colIndex * 0.9 + row) * 0.012, 0.010, 0.02) end end
+    elseif pattern == "bubbles" then
+        for row = 1, 5 do for colIndex = 1, 6 do dot((colIndex - 0.5) / 6 + ((row % 2) * 0.06), (row - 0.5) / 5, 0.016 + ((row + colIndex) % 3) * 0.008, 0.03) end end
+    elseif pattern == "diagonal" then
+        for i = 1, 12 do line(true, i / 13, 0.006, ((i % 2) * 0.05)) end
+    elseif pattern == "camo" then
+        for row = 1, 4 do for colIndex = 1, 5 do dot((colIndex - 0.5) / 5 + ((row % 2) * 0.07), (row - 0.5) / 4, 0.030 + ((row * 2 + colIndex) % 3) * 0.012, 0.02) end end
+    elseif pattern == "diamond" then
+        for row = 1, 5 do for colIndex = 1, 6 do dot((colIndex - 0.5) / 6 + ((row % 2) * 0.08), (row - 0.5) / 5, 0.012, 0) end end
+        for i = 1, 6 do line(true, i / 7, 0.002, 0.06) end
+    elseif pattern == "leaves" then
+        for row = 1, 5 do for colIndex = 1, 6 do dot((colIndex - 0.5) / 6 + ((row % 2) * 0.05), (row - 0.5) / 5, 0.014, ((row + colIndex) % 3) * 0.04) end end
+        for i = 1, 6 do line(true, i / 7, 0.003, 0.05) end
     else
         for row = 1, 6 do for colIndex = 1, 7 do dot((colIndex - 0.5) / 7, (row - 0.5) / 6, 0.010, ((row + colIndex) % 3) * 0.05) end end
     end
@@ -10615,8 +10723,22 @@ function UI_ENGINE.surface(opts)
     base.Position = UDim2.fromScale(0.5, 0.5)
     base.Size = UDim2.fromScale(1, 1)
     base.BorderSizePixel = 0
+    -- Version 8.0.0: Hintergrund-Modus ehrlich trennen. "texture" (echte
+    -- Textur ODER Skin mit textureAsBackground) macht die Textur zum
+    -- Hintergrund: Basis transparent, KEIN Fuellgradient darueber. Sonst
+    -- bleibt es "gradient" (Verlauf) oder mit fillAlpha/ausdruecklichem
+    -- fill eine reine Farbe - aber nie Textur-ueber-Verlauf wie bis 7.9.x.
+    local textureImage = opts.textureImage or opts.backgroundTexture or skin.textureImage
+    local backgroundMode = string.lower(tostring(opts.backgroundMode or "auto"))
+    if backgroundMode == "auto" then
+        backgroundMode = (textureImage ~= nil or skin.textureAsBackground == true) and "texture" or "gradient"
+    end
+    if backgroundMode ~= "texture" and backgroundMode ~= "color" then backgroundMode = "gradient" end
+    report.backgroundMode = backgroundMode
+    report.textureIsBackground = (backgroundMode == "texture")
     base.BackgroundColor3 = UI_ENGINE.col(opts.fill, skin.p.surface)
-    base.BackgroundTransparency = math.clamp(tonumber(opts.fillAlpha or skin.fillAlpha) or 0, 0, 1)
+    base.BackgroundTransparency = (backgroundMode == "texture" and textureImage ~= nil) and 1
+        or math.clamp(tonumber(opts.fillAlpha or skin.fillAlpha) or 0, 0, 1)
     base.ZIndex = 1
     base:SetAttribute("ArenaBase", true)
     base.Parent = wrapper
@@ -10642,18 +10764,27 @@ function UI_ENGINE.surface(opts)
         table.insert(report.warnings, "an ancestor CanvasGroup always clips: this shadow may be cut off")
     end
 
-    -- 4. Füllgradient (Winkel A).
+    -- 4. Füllgradient (Winkel A) - NUR im gradient-Modus. Im texture-Modus
+    --    waere er genau der Schleier, der die Hintergrund-Textur bis 7.9.x
+    --    verdeckt hat; im color-Modus ist die reine Farbe der Hintergrund.
     local fillBase = base.BackgroundColor3
-    UI_ENGINE.gradient(base, {
-        {0, UI_ENGINE.mix(fillBase, skin.p.surfaceHi, 0.34)},
-        {0.55, fillBase},
-        {1, UI_ENGINE.mix(fillBase, skin.p.surfaceLo, 0.55)},
-    }, skin.gradFill or 90, nil, "ArenaFillGradient")
-    report.layers = report.layers + 1
-    report.gradients = 1
+    report.gradients = 0
+    if backgroundMode == "gradient" then
+        UI_ENGINE.gradient(base, {
+            {0, UI_ENGINE.mix(fillBase, skin.p.surfaceHi, 0.34)},
+            {0.55, fillBase},
+            {1, UI_ENGINE.mix(fillBase, skin.p.surfaceLo, 0.55)},
+        }, skin.gradFill or 90, nil, "ArenaFillGradient")
+        report.layers = report.layers + 1
+        report.gradients = 1
+    end
 
-    -- 5. Raster-Textur.
-    local texture, texCount, texKind = UI_ENGINE.textureLayer(base, skin, opts.textureBudget)
+    -- 5. Hintergrund-Textur bzw. Raster-Textur.
+    local texture, texCount, texKind = UI_ENGINE.textureLayer(base, skin, opts.textureBudget, {
+        mode = (backgroundMode == "texture") and "background" or "overlay",
+        textureImage = textureImage, fit = opts.textureFit, tileX = opts.textureTileX, tileY = opts.textureTileY,
+        tint = opts.textureTint,
+    })
     report.textureParts = texCount
     report.texture = texKind
     if texture then report.layers = report.layers + 1 end
@@ -10903,6 +11034,49 @@ end
 -- ---------------------------------------------------------------------------
 -- WERKZEUGE DER UI ENGINE
 -- ---------------------------------------------------------------------------
+-- Version 8.0.0: BILLBOARD-REGEL (Owner-Befund: Billboard-GUIs blieben auf
+-- Entfernung RIESIG). Die Größe eines BillboardGui wird in STUDS gegeben
+-- (Scale-Anteil von Size), niemals in Bildschirm-Pixeln (Offset-Anteil):
+-- Offset = auf jede Entfernung gleich gross auf dem Bildschirm, Scale =
+-- echte Weltgroesse, die mit der Entfernung perspektivisch kleiner wird -
+-- wie ein Part. Dazu: MaxDistance setzen (Standard 60 Studs, danach weg),
+-- StudsOffsetWorldSpace fuer die Höhe ueber dem Anker, AlwaysOnTop=false,
+-- damit Waende das Schild ehrlich verdecken. ui_audit meldet jedes
+-- BillboardGui mit Offset-Größe als billboardOffsetSize.
+function UI_ENGINE.billboardSize(widthStuds, heightStuds)
+    local w = math.clamp(tonumber(widthStuds) or 6, 0.5, 40)
+    local h = math.clamp(tonumber(heightStuds) or 3, 0.5, 40)
+    return UDim2.new(w, 0, h, 0)
+end
+
+function UI_ENGINE.ensureBillboard(adornee, args)
+    args = args or {}
+    local anchor = adornee
+    if anchor ~= nil and anchor:IsA("Model") then
+        local part = anchor.PrimaryPart or anchor:FindFirstChildWhichIsA("BasePart", true)
+        if part then anchor = part end
+    end
+    local gui = Instance.new("BillboardGui")
+    gui.Name = tostring(args.screenName or args.name or "ArenaBillboard")
+    gui.Size = UI_ENGINE.billboardSize(args.billboardWidth or args.widthStuds, args.billboardHeight or args.heightStuds)
+    gui.MaxDistance = math.clamp(tonumber(args.maxDistance) or 60, 10, 500)
+    local lift = tonumber(args.studsOffsetY)
+    if lift == nil then lift = tonumber(args.heightOffset) or 3 end
+    gui.StudsOffsetWorldSpace = Vector3.new(tonumber(args.studsOffsetX) or 0, lift, tonumber(args.studsOffsetZ) or 0)
+    gui.AlwaysOnTop = args.alwaysOnTop == true
+    pcall(function() gui.LightInfluence = 1 end)
+    pcall(function() gui.Active = true end)
+    if anchor ~= nil and (anchor:IsA("BasePart") or anchor:IsA("Model")) then
+        pcall(function() gui.Adornee = anchor end)
+        gui.Parent = anchor
+    elseif anchor ~= nil then
+        gui.Parent = anchor
+    end
+    gui:SetAttribute("ArenaBillboard", true)
+    gui:SetAttribute("ArenaBillboardRule", "size-in-studs-scale-only; shrinks with distance")
+    return gui, gui
+end
+
 function UI_ENGINE.ensureScreen(parent, args)
     if parent:IsA("GuiObject") or parent:IsA("LayerCollector") then return parent, nil end
     local screen = Instance.new("ScreenGui")
@@ -10966,6 +11140,10 @@ function UI_ENGINE.buildNode(spec, parentHost, skin, caps, ctx, depth, inLayout,
         inLayout = inLayout, layoutOrder = spec.layoutOrder or ctx.order, flex = spec.flex, skin = nodeSkin,
         order = ctx.order, motion = spec.motion, zIndex = spec.zIndex, hover = spec.hover, press = spec.press,
         textureBudget = spec.textureBudget or ctx.textureBudget,
+        -- Version 8.0.0: Textur gehort in den Hintergrund (siehe surface).
+        textureImage = spec.textureImage or spec.backgroundTexture or spec.textureId or ctx.textureImage,
+        backgroundMode = spec.backgroundMode or ctx.backgroundMode,
+        textureFit = spec.textureFit, textureTileX = spec.tileX, textureTileY = spec.tileY, textureTint = spec.textureTint,
     })
     ctx.layers = ctx.layers + built.report.layers
     ctx.strokes = ctx.strokes + (built.report.strokes or 0)
@@ -10973,6 +11151,7 @@ function UI_ENGINE.buildNode(spec, parentHost, skin, caps, ctx, depth, inLayout,
     ctx.shadows = ctx.shadows + (built.report.shadows or 0)
     ctx.gradients = ctx.gradients + (built.report.gradients or 0)
     ctx.textureParts = ctx.textureParts + (built.report.textureParts or 0)
+    if built.report.textureIsBackground then ctx.textureBackgrounds = (ctx.textureBackgrounds or 0) + 1 end
     if built.isGroup then ctx.canvasGroups = ctx.canvasGroups + 1 end
     if built.report.layers < 4 then ctx.thinSurfaces = ctx.thinSurfaces + 1 end
     for _, warning in ipairs(built.report.warnings) do table.insert(ctx.warnings, tostring(spec.id or "node") .. ": " .. warning) end
@@ -11053,6 +11232,8 @@ function UI_ENGINE.newContext(args, skin)
         textureParts = 0, canvasGroups = 0, thinSurfaces = 0, texts = 0, scrolls = 0, images = {},
         warnings = {}, budget = math.max(1, math.min(tonumber(args.maxSurfaces) or 160, 400)),
         textureBudget = tonumber(args.textureBudget) or 26, brand = args.brand, overBudget = false,
+        textureImage = args.textureImage or args.backgroundTexture or args.textureId,
+        backgroundMode = args.backgroundMode, textureBackgrounds = 0,
     }
 end
 
@@ -11078,14 +11259,17 @@ end
 function UI_ENGINE.textureRecipe(skin, spec)
     skin = skin or UI_ENGINE.resolveSkin("glass", nil, nil)
     spec = spec or {}
-    local explicit = spec.textureImage or spec.textureId
+    local explicit = spec.textureImage or spec.textureId or spec.backgroundTexture
     if explicit ~= nil and tostring(explicit) ~= "" then
         return {
             mode = "texture",
+            usage = "background",
             textureId = tostring(explicit),
+            fit = tostring(spec.textureFit or skin.textureFit or "tile"),
             tile = Vector2.new(tonumber(spec.tileX) or tonumber(skin.tileX) or 0.18,
                 tonumber(spec.tileY) or tonumber(skin.tileY) or 0.18),
             tint = UI_ENGINE.col(spec.textureTint, skin.p.surfaceHi),
+            instruction = "Use this id AS the surface background (backgroundMode=texture / textureImage on the node): the engine fills the surface with it at full opacity and adds NO fill gradient over it. Do not also set a background color/gradient on the same surface.",
             warning = nil,
         }
     end
@@ -11212,7 +11396,7 @@ tools.ui_texture = function(args)
     if recipe.warning then table.insert(warnings, recipe.warning) end
     return ok({
         engine = UI_ENGINE.ENGINE_VERSION,
-        recipe = { mode = recipe.mode, textureId = recipe.textureId, tile = { recipe.tile.X, recipe.tile.Y }, tint = "#" .. recipe.tint:ToHex() },
+        recipe = { mode = recipe.mode, usage = recipe.usage, textureId = recipe.textureId, fit = recipe.fit, tile = { recipe.tile.X, recipe.tile.Y }, tint = "#" .. recipe.tint:ToHex(), instruction = recipe.instruction },
         skin = skin.key,
         warnings = warnings,
         honest = recipe.note or "real texture id accepted - the engine uses it before any procedural fill",
@@ -11273,11 +11457,11 @@ tools.ui_skin = function(args)
         local list = {}
         for _, name in ipairs(UI_ENGINE.skinNames()) do
             local entry = UI_ENGINE.SKINS[name]
-            table.insert(list, { name = name, label = entry.label, mood = entry.mood, corner = entry.corner,
-                texture = entry.texture, energy = entry.energy, strokes = #(entry.strokes or {}), shadows = #(entry.shadows or {}),
+            table.insert(list, { name = name, label = entry.label, bestFor = entry.bestFor, mood = entry.mood, corner = entry.corner,
+                texture = entry.texture, textureAsBackground = entry.textureAsBackground == true, energy = entry.energy, strokes = #(entry.strokes or {}), shadows = #(entry.shadows or {}),
                 strokeGradient = (entry.strokes and entry.strokes[1] and entry.strokes[1].grad) == true })
         end
-        return ok({ skins = list, count = #list, note = "None of these is a dark dashboard. Pass skin + brand to build_interface/build_surface." })
+        return ok({ skins = list, count = #list, note = "24 skins (8.0.0): pick by bestFor / game type (horror, minimal/simple, simulator, tycoon, obby, ocean, winter, candy, space, military, royal, nature plus the classic twelve). None is a dark dashboard by default. Pass skin + brand to build_interface/build_surface." })
     end
     if action == "get" or action == "resolve" or action == "preview" then
         local skin = UI_ENGINE.resolveSkin(args.skin or args.name or "glass", args.brand, args.colors)
@@ -11285,8 +11469,8 @@ tools.ui_skin = function(args)
         for key, value in pairs(skin.p) do
             hex[key] = string.format("#%02X%02X%02X", math.floor(value.R * 255 + 0.5), math.floor(value.G * 255 + 0.5), math.floor(value.B * 255 + 0.5))
         end
-        return ok({ skin = skin.key, label = skin.label, mood = skin.mood, corner = skin.corner, texture = skin.texture,
-            energy = skin.energy, fonts = skin.fonts, palette = hex,
+        return ok({ skin = skin.key, label = skin.label, bestFor = skin.bestFor, mood = skin.mood, corner = skin.corner, texture = skin.texture,
+            textureAsBackground = skin.textureAsBackground == true, energy = skin.energy, fonts = skin.fonts, palette = hex,
             textContrast = UI_ENGINE.contrast(skin.p.text, skin.p.surface),
             generic = UI_ENGINE.isGeneric(skin.p.surface) })
     end
@@ -11367,7 +11551,12 @@ tools.build_surface = function(args)
     local skin = UI_ENGINE.resolveSkin(args.skin or "glass", args.brand, args.colors)
     local refused = UI_ENGINE.guardGeneric(args, skin)
     if refused then return refused end
-    local host, createdScreen = UI_ENGINE.ensureScreen(parent, args)
+    -- Version 8.0.0: surfaceType="billboard" baut in ein BillboardGui am
+    -- Anker (Größe in Studs, siehe ensureBillboard) statt in ein ScreenGui.
+    local isBillboard = string.lower(tostring(args.surfaceType or args.guiType or "")) == "billboard"
+    local host, createdScreen
+    if isBillboard then host, createdScreen = UI_ENGINE.ensureBillboard(parent, args)
+    else host, createdScreen = UI_ENGINE.ensureScreen(parent, args) end
     local ctx = UI_ENGINE.newContext(args, skin)
     local spec = args.surface or args
     local built = UI_ENGINE.buildNode(spec, host, skin, caps, ctx, 0, args.inLayout == true, false)
@@ -11380,7 +11569,8 @@ tools.build_surface = function(args)
     return ok({
         surface = describeRef(built.wrapper), content = describeRef(built.content),
         screenGui = createdScreen and describeRef(createdScreen) or nil,
-        skin = skin.key, layers = built.report.layers, shadows = built.report.shadows, shadowKind = built.report.shadowKind,
+        skin = skin.key, backgroundMode = built.report.backgroundMode, textureIsBackground = built.report.textureIsBackground,
+        layers = built.report.layers, shadows = built.report.shadows, shadowKind = built.report.shadowKind,
         strokes = built.report.strokes, strokeGradients = built.report.strokeGradients, strokesScaled = built.report.strokesScaled,
         gradients = built.report.gradients, texture = built.report.texture, textureParts = built.report.textureParts,
         cornerRadius = built.report.cornerRadius, padding = built.report.padding, cornerSafe = built.report.cornerSafe,
@@ -11404,7 +11594,10 @@ tools.build_interface = function(args)
     local skin = UI_ENGINE.resolveSkin(args.skin or "glass", args.brand, args.colors)
     local refused = UI_ENGINE.guardGeneric(args, skin)
     if refused then return refused end
-    local host, createdScreen = UI_ENGINE.ensureScreen(parent, args)
+    local isBillboard = string.lower(tostring(args.surfaceType or args.guiType or "")) == "billboard"
+    local host, createdScreen
+    if isBillboard then host, createdScreen = UI_ENGINE.ensureBillboard(parent, args)
+    else host, createdScreen = UI_ENGINE.ensureScreen(parent, args) end
     local screen = createdScreen
     if screen == nil and host:IsA("LayerCollector") then screen = host end
     local ctx = UI_ENGINE.newContext(args, skin)
@@ -11445,7 +11638,7 @@ tools.build_interface = function(args)
         screenGui = screen and describeRef(screen) or nil,
         roots = roots, surfaces = ctx.count, layers = ctx.layers,
         strokes = ctx.strokes, strokeGradients = ctx.strokeGradients, shadows = ctx.shadows,
-        gradients = ctx.gradients, textureParts = ctx.textureParts, texts = ctx.texts,
+        gradients = ctx.gradients, textureParts = ctx.textureParts, textureBackgrounds = ctx.textureBackgrounds, texts = ctx.texts,
         canvasGroups = ctx.canvasGroups, scrollers = ctx.scrolls, thinSurfaces = ctx.thinSurfaces,
         motionScript = motionRef, skin = skin.key, energy = skin.energy,
         imageAssets = ctx.images,
@@ -11465,9 +11658,10 @@ tools.ui_audit = function(args)
     local stats = { total = 0, filled = 0, genericColors = 0, flatSurfaces = 0, strokes = 0, strokesScaled = 0,
         gradients = 0, gradientsOnStrokes = 0, shadows = 0, textures = 0, canvasGroups = 0, nestedCanvasGroups = 0,
         uiScales = 0, offsetHeavy = 0, texts = 0,
-        glowStacks = 0, radialMenus = 0, textureImages = 0 }
+        glowStacks = 0, radialMenus = 0, textureImages = 0, billboards = 0, billboardOffsetSize = 0, textureBackgrounds = 0, textureOverlaysWashed = 0 }
     local problems = { anchorMismatches = {}, cornerOverflow = {}, contrastFailures = {}, flatSurfaces = {}, genericColors = {},
-        offsetHeavy = {}, nestedCanvasGroups = {}, textTooSmall = {}, tapTargetsTooSmall = {}, outOfBounds = {} }
+        offsetHeavy = {}, nestedCanvasGroups = {}, textTooSmall = {}, tapTargetsTooSmall = {}, outOfBounds = {},
+        billboardOffsetSize = {}, textureWashedOut = {} }
     local function push(list, inst, detail)
         if #list < 14 then local entry = describeRef(inst); entry.detail = detail; table.insert(list, entry) end
     end
@@ -11482,7 +11676,17 @@ tools.ui_audit = function(args)
     local function scan(inst, depth, insideGroup)
         if depth > 14 then return end
         for _, child in ipairs(inst:GetChildren()) do
-            if child:IsA("LayerCollector") then
+            if child:IsA("BillboardGui") then
+                -- Version 8.0.0: Billboard-Regel messen: Offset in Size =
+                -- auf Entfernung gleich riesig; Scale (Studs) schrumpft mit.
+                stats.billboards = stats.billboards + 1
+                local sizeOff = math.abs(child.Size.X.Offset) + math.abs(child.Size.Y.Offset)
+                if sizeOff > 0 then
+                    stats.billboardOffsetSize = stats.billboardOffsetSize + 1
+                    push(problems.billboardOffsetSize, child, "BillboardGui Size uses pixel Offset (" .. tostring(sizeOff) .. "px): it stays the same huge size at any distance. Use studs instead: Size = UDim2.new(widthStuds, 0, heightStuds, 0) plus MaxDistance (about 60) and StudsOffsetWorldSpace for height.")
+                end
+                table.insert(screens, child); scan(child, depth, false)
+            elseif child:IsA("LayerCollector") then
                 table.insert(screens, child); scan(child, depth, false)
             elseif child:IsA("GuiObject") then
                 stats.total = stats.total + 1
@@ -11523,6 +11727,16 @@ tools.ui_audit = function(args)
                 end
                 if child:IsA("ImageLabel") and child.Image ~= nil and tostring(child.Image) ~= "" then
                     stats.textureImages = stats.textureImages + 1
+                    -- Version 8.0.0: Hintergrund-Textur zaehlt nur deckend.
+                    -- Eine Textur mit Transparenz > 0.5 ueber einem Verlauf
+                    -- ist der alte Fehler (Textur praktisch unsichtbar).
+                    if child:GetAttribute("ArenaTextureBackground") == true then
+                        stats.textureBackgrounds = stats.textureBackgrounds + 1
+                    end
+                    if child.Name == "ArenaTextureImage" and child.ImageTransparency > 0.5 then
+                        stats.textureOverlaysWashed = stats.textureOverlaysWashed + 1
+                        push(problems.textureWashedOut, child, "texture image is an overlay at transparency " .. string.format("%.2f", child.ImageTransparency) .. " over a fill/gradient - as a background it must be opaque (backgroundMode=texture) with no fill gradient over it")
+                    end
                 end
                 if child:GetAttribute("ArenaGlow") then stats.glowStacks = stats.glowStacks + 1 end
                 if child:GetAttribute("ArenaRadial") then stats.radialMenus = stats.radialMenus + 1 end
@@ -16837,7 +17051,7 @@ $script:BridgeHandlerScript = {
             result = @{
                 acked = $acked
                 replyShownToUser = $reply
-                note = 'The bridge shows the user that their message arrived and was read. Now act on it.'
+                note = 'Acknowledged. This ack is only valid because your chat reply already confirmed the message visibly and you applied it; the bridge shows the user that their message arrived, was seen and was acted on.'
             }
         }
     }
@@ -16895,7 +17109,7 @@ $script:BridgeHandlerScript = {
                 waitedSeconds = $waited
                 messageCount = $views.Count
                 maxSeconds = $maxSeconds
-                note = $(if ($views.Count -gt 0) { 'The user messages themselves are in _bridge.userMessages of THIS response. Read them, act on them and acknowledge with ack_user_message.' } else { 'No user message arrived. Continue your work; do not call wait_for_user in a loop.' })
+                note = $(if ($views.Count -gt 0) { 'The user messages themselves are in _bridge.userMessages of THIS response. Mandatory: confirm visibly in chat FIRST (you saw it + what changes), apply it, report in chat, then acknowledge with ack_user_message.' } else { 'No user message arrived. Continue your work; do not call wait_for_user in a loop.' })
             }
         }
     }
@@ -22553,20 +22767,20 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
             example = @{ };
             errors = @() })
         $t.Add(@{ name = 'ui_skin'; category = 'ui'; summary = 'Kunstrichtung wählen ODER den Stil vorhandener GUIs auslesen.';
-            description = 'action=list nennt alle zwölf Skins (glass, arcade, comic, sticker, clay, parchment, metal, paper, crt, holo, cozywood, chalk) - keiner davon ist ein dunkles Dashboard. action=get löst einen Skin plus Markenfarbe zur vollständigen Palette auf und meldet den gemessenen Textkontrast. action=extract liest ein BESTEHENDES GUI und meldet dominante Farben, wahrscheinliche Markenfarbe, Eckenradien, Schriften und vorhandene Effekte. Nutze diese Daten bei Bedarf, um eine bestehende Art Direction zu erhalten; build_interface bleibt optional und ist kein Pflichtschritt.';
+            description = 'action=list nennt alle 24 Skins (8.0.0: glass, arcade, comic, sticker, clay, parchment, metal, paper, crt, holo, cozywood, chalk plus horror, minimal, simulator, tycoon, obby, ocean, winter, candy, space, military, royal, nature) mit bestFor je Spielart (u. a. Horror, simple Games, Simulator, Tycoon, Obby, Ocean, Space, Military) - keiner davon ist ein dunkles Dashboard. action=get löst einen Skin plus Markenfarbe zur vollständigen Palette auf und meldet den gemessenen Textkontrast. action=extract liest ein BESTEHENDES GUI und meldet dominante Farben, wahrscheinliche Markenfarbe, Eckenradien, Schriften und vorhandene Effekte. Nutze diese Daten bei Bedarf, um eine bestehende Art Direction zu erhalten; build_interface bleibt optional und ist kein Pflichtschritt.';
             params = @{ action = @{ type = "'list' | 'get' | 'extract'"; required = $false; default = "'list'"; description = 'Was getan werden soll.' }; skin = @{ type = 'string'; required = $false; default = "'glass'"; description = 'Skinname für get.' }; brand = @{ type = 'color'; required = $false; default = 'null'; description = 'EINE gesättigte Markenfarbe; die ganze Palette wird daraus harmonisch abgeleitet.' }; colors = @{ type = 'table'; required = $false; default = '{}'; description = 'Einzelne Palettenwerte gezielt überschreiben.' }; ref = @{ type = 'ref'; required = $false; default = "'game.StarterGui'"; description = 'Wurzel für extract.' } };
             returns = 'list: { skins, count } | get: { skin, palette (hex), textContrast, fonts, generic } | extract: { brand, dominantColors, suggestedMood, corners, fonts, found, reuseThisStyle }';
             example = @{ action = 'extract'; ref = 'game.StarterGui' };
             errors = @('BAD_ARGS: action unbekannt.', 'REF_NOT_FOUND') })
         $t.Add(@{ name = 'build_surface'; category = 'ui'; summary = 'Optionale komposite Oberfläche für passende GUI-Arbeit.';
             description = 'Optionaler Komposit-Builder für passende GUI-Arbeit. Wenn der Nutzer oder das Place diesen Builder wählt, erstellt die Bridge aus Rollen, Design-Rechtecken und Skin einen editierbaren Schichtstapel und meldet die gebauten Ebenen. Nutze ihn nur, wenn diese Art Direction zum Auftrag passt; ein einzelner Frame, rohe GuiObjects oder ein bestehendes Framework bleiben gültig.';
-            params = @{ parentRef = @{ type = 'ref'; required = $false; default = "'game.StarterGui'"; description = 'Ziel. Ist es StarterGui, wird automatisch ein ScreenGui mit ZIndexBehavior=Sibling und DeviceSafeInsets erzeugt.' }; skin = @{ type = 'string|table'; required = $false; default = "'glass'"; description = 'Kunstrichtung. Einzelne Rezeptfelder können als Tabelle überschrieben werden.' }; brand = @{ type = 'color'; required = $false; default = "'#FF4D6D'"; description = 'EINE Markenfarbe -> ganze Palette.' }; role = @{ type = "'card'|'button'|'panel'|'modal'|'header'|'bar'|'chip'"; required = $false; default = "'card'"; description = 'button erzeugt zusätzlich eine Trefferfläche und Hover/Press-Attribute.' }; rect = @{ type = '{x,y,w,h}'; required = $false; default = '{50,50,40,20}'; description = 'DESIGN-RAUM 0..100 des Elternteils. x,y ist der Ankerpunkt. Es gibt bewusst kein Offset.' }; align = @{ type = 'string'; required = $false; default = "'center'"; description = 'center/top/bottom/left/right/topleft/... - bestimmt den AnchorPoint. Wird nie geraten.' }; corner = @{ type = "'sharp'|'crisp'|'soft'|'round'|'chunky'|'pill'"; required = $false; default = 'aus dem Skin'; description = 'Eckenprofil statt Pixelzahl.' }; cornerShape = @{ type = '{tl,tr,bl,br}'; required = $false; default = 'null'; description = 'Einzelne Eckenradien für Tabs, Kerben, Sprechblasen (nur wenn ui_capabilities.individualCorners true ist).' }; aspect = @{ type = 'number'; required = $false; default = 'null'; description = 'Seitenverhältnis festnageln (UIAspectRatioConstraint) - verhindert Verzerrung auf dem Handy.' }; groupFade = @{ type = 'bool'; required = $false; default = 'false'; description = 'NUR wenn der ganze Teilbaum als Einheit faden/tönen soll: erzeugt eine CanvasGroup und begründet das in der Rückgabe. Verschachtelung wird verweigert.' }; text = @{ type = 'table'; required = $false; default = 'null'; description = '{ value, display, weight, xAlign, minSize, maxSize, rich, wrap, color } - TextScaled plus UITextSizeConstraint; eine ausdrückliche Farbe bleibt erhalten. ui_audit kann Kontrast messen, ohne sie automatisch zu ersetzen.' }; padding = @{ type = 'number'; required = $false; default = 'aus dem Radius'; description = 'Innenabstand als Scale. Ein expliziter Wert (auch 0) wird beibehalten; bei Auslassung gilt ein Skin-/Ecken-Standardwert. cornerSafe wird gemessen, nicht erzwungen.' }; allowGeneric = @{ type = 'bool'; required = $false; default = 'false'; description = 'Legacy-Kompatibilität; user-requested Farben werden nicht blockiert.' } };
+            params = @{ parentRef = @{ type = 'ref'; required = $false; default = "'game.StarterGui'"; description = 'Ziel. Ist es StarterGui, wird automatisch ein ScreenGui mit ZIndexBehavior=Sibling und DeviceSafeInsets erzeugt. Mit surfaceType=billboard ist parentRef der Anker-Part/das Model des Schildes.' }; surfaceType = @{ type = "'screen'|'billboard'"; required = $false; default = "'screen'"; description = 'billboard baut ein BillboardGui am Anker: Größe NUR in Studs (billboardWidth/billboardHeight), damit es auf Entfernung kleiner wird - niemals Pixel-Offset.' }; billboardWidth = @{ type = 'number'; required = $false; default = '6'; description = 'Breite des BillboardGui in STUDS (Scale), nicht Pixeln.' }; billboardHeight = @{ type = 'number'; required = $false; default = '3'; description = 'Höhe des BillboardGui in STUDS (Scale), nicht Pixeln.' }; maxDistance = @{ type = 'number'; required = $false; default = '60'; description = 'Billboard: ab dieser Entfernung (Studs) verschwindet das Schild.' }; studsOffsetY = @{ type = 'number'; required = $false; default = '3'; description = 'Billboard: Höhe ueber dem Anker in Studs (StudsOffsetWorldSpace).' }; backgroundMode = @{ type = "'auto'|'texture'|'gradient'|'color'"; required = $false; default = "'auto'"; description = 'texture = die Textur IST der Hintergrund (deckend, kein Verlauf darueber); auto waehlt texture bei textureImage/textureAsBackground-Skins.' }; textureImage = @{ type = 'string'; required = $false; default = 'null'; description = 'Echte Bild-Id als Hintergrund-Textur der Flaeche (deckend, ungetoent).' }; textureFit = @{ type = "'tile'|'crop'|'fit'|'stretch'"; required = $false; default = "'tile'"; description = 'Wie die Hintergrund-Textur die Flaeche fuellt.' }; skin = @{ type = 'string|table'; required = $false; default = "'glass'"; description = 'Kunstrichtung. Einzelne Rezeptfelder können als Tabelle überschrieben werden.' }; brand = @{ type = 'color'; required = $false; default = "'#FF4D6D'"; description = 'EINE Markenfarbe -> ganze Palette.' }; role = @{ type = "'card'|'button'|'panel'|'modal'|'header'|'bar'|'chip'"; required = $false; default = "'card'"; description = 'button erzeugt zusätzlich eine Trefferfläche und Hover/Press-Attribute.' }; rect = @{ type = '{x,y,w,h}'; required = $false; default = '{50,50,40,20}'; description = 'DESIGN-RAUM 0..100 des Elternteils. x,y ist der Ankerpunkt. Es gibt bewusst kein Offset.' }; align = @{ type = 'string'; required = $false; default = "'center'"; description = 'center/top/bottom/left/right/topleft/... - bestimmt den AnchorPoint. Wird nie geraten.' }; corner = @{ type = "'sharp'|'crisp'|'soft'|'round'|'chunky'|'pill'"; required = $false; default = 'aus dem Skin'; description = 'Eckenprofil statt Pixelzahl.' }; cornerShape = @{ type = '{tl,tr,bl,br}'; required = $false; default = 'null'; description = 'Einzelne Eckenradien für Tabs, Kerben, Sprechblasen (nur wenn ui_capabilities.individualCorners true ist).' }; aspect = @{ type = 'number'; required = $false; default = 'null'; description = 'Seitenverhältnis festnageln (UIAspectRatioConstraint) - verhindert Verzerrung auf dem Handy.' }; groupFade = @{ type = 'bool'; required = $false; default = 'false'; description = 'NUR wenn der ganze Teilbaum als Einheit faden/tönen soll: erzeugt eine CanvasGroup und begründet das in der Rückgabe. Verschachtelung wird verweigert.' }; text = @{ type = 'table'; required = $false; default = 'null'; description = '{ value, display, weight, xAlign, minSize, maxSize, rich, wrap, color } - TextScaled plus UITextSizeConstraint; eine ausdrückliche Farbe bleibt erhalten. ui_audit kann Kontrast messen, ohne sie automatisch zu ersetzen.' }; padding = @{ type = 'number'; required = $false; default = 'aus dem Radius'; description = 'Innenabstand als Scale. Ein expliziter Wert (auch 0) wird beibehalten; bei Auslassung gilt ein Skin-/Ecken-Standardwert. cornerSafe wird gemessen, nicht erzwungen.' }; allowGeneric = @{ type = 'bool'; required = $false; default = 'false'; description = 'Legacy-Kompatibilität; user-requested Farben werden nicht blockiert.' } };
             returns = '{ surface, content, screenGui, skin, layers, shadows, shadowKind, strokes, strokeGradients, strokesScaled, gradients, texture, textureParts, cornerRadius, padding, cornerSafe, canvasGroup, canvasGroupReason, offsetUsed, anchorPoint, invariants, capabilities }';
             example = @{ skin = 'holo'; brand = '#38F2C6'; role = 'button'; rect = @(50, 82, 26, 9); text = @{ value = 'JETZT SPIELEN'; display = $true } };
             errors = @('REF_NOT_FOUND', 'BAD_ARGS') })
         $t.Add(@{ name = 'build_interface'; category = 'ui'; summary = 'Optionaler One-Call-GUI-Builder für neue oder passende Oberflächen.';
             description = 'OPTIONALER GUI-BUILDER für neue oder kompatible Oberflächen; nicht als Pflicht-Replacement verwenden. Er erzeugt ein ScreenGui und einen editierbaren Baum aus Text, Bildern und Layout-Knoten im Design-Raum 0..100. Das Projekt kann die erzeugte Struktur weiter anpassen. Laufzeit-Choreografie wird nur angelegt, wenn motion.enabled=true angefordert wird; ohne diese Angabe bleibt die Oberfläche statisch. Danach kann ui_audit optional Messwerte liefern.';
-            params = @{ name = @{ type = 'string'; required = $false; default = "'ArenaInterface'"; description = 'Name des ScreenGui.' }; parentRef = @{ type = 'ref'; required = $false; default = "'game.StarterGui'"; description = 'Ziel.' }; skin = @{ type = 'string|table'; required = $false; default = "'glass'"; description = 'Kunstrichtung für den ganzen Baum; einzelne Knoten dürfen abweichen.' }; brand = @{ type = 'color'; required = $false; default = "'#FF4D6D'"; description = 'EINE Markenfarbe -> abgeleitete Palette. Kontrast bleibt messbar; nutzerdefinierte Text-/Farbwerte werden nicht still überschrieben.' }; surfaces = @{ type = 'array'; required = $true; default = '-'; description = 'Baum aus Knoten: { id, role, rect:{x,y,w,h}, align, corner, cornerShape, aspect, groupFade, padding, text, image, flex, layout:{ kind:list|grid|none, dir, gap, cols, cellH, scroll, wrap, hFlex, vFlex, xAlign, yAlign }, children:[...], repeat:{ count, template } }. {n} im Text wird durch den Index ersetzt.' }; motion = @{ type = 'table'; required = $false; default = '{}'; description = '{ enabled, energy: soft|snappy|bouncy|heavy, stagger, idle } - steuert den mitgelieferten LocalScript.' }; ignoreGuiInset = @{ type = 'bool'; required = $false; default = 'false'; description = 'Topbar-Bereich mitbenutzen.' }; resetOnSpawn = @{ type = 'bool'; required = $false; default = 'true'; description = '' }; maxSurfaces = @{ type = 'int'; required = $false; default = '160'; description = 'Budget, maximal 400.' }; allowGeneric = @{ type = 'bool'; required = $false; default = 'false'; description = 'Legacy-Kompatibilität; user-requested Farben werden nicht blockiert.' } };
+            params = @{ name = @{ type = 'string'; required = $false; default = "'ArenaInterface'"; description = 'Name des ScreenGui.' }; parentRef = @{ type = 'ref'; required = $false; default = "'game.StarterGui'"; description = 'Ziel. Mit surfaceType=billboard der Anker-Part/das Model.' }; surfaceType = @{ type = "'screen'|'billboard'"; required = $false; default = "'screen'"; description = 'billboard: alle Flaechen leben in einem BillboardGui; Größe in Studs billboardWidth/billboardHeight, MaxDistance maxDistance - schrumpft mit der Entfernung.' }; billboardWidth = @{ type = 'number'; required = $false; default = '6'; description = 'Billboard-Breite in STUDS.' }; billboardHeight = @{ type = 'number'; required = $false; default = '3'; description = 'Billboard-Höhe in STUDS.' }; maxDistance = @{ type = 'number'; required = $false; default = '60'; description = 'Billboard-MaxDistance in Studs.' }; textureImage = @{ type = 'string'; required = $false; default = 'null'; description = 'Echte Bild-Id: wird Hintergrund der Flaechen (backgroundMode=texture), kein Verlauf darueber. Je Knoten uebersteuerbar.' }; backgroundMode = @{ type = "'auto'|'texture'|'gradient'|'color'"; required = $false; default = "'auto'"; description = 'Hintergrund je Flaeche: Textur, Verlauf oder reine Farbe - ehrlich getrennt.' }; skin = @{ type = 'string|table'; required = $false; default = "'glass'"; description = 'Kunstrichtung für den ganzen Baum; einzelne Knoten dürfen abweichen.' }; brand = @{ type = 'color'; required = $false; default = "'#FF4D6D'"; description = 'EINE Markenfarbe -> abgeleitete Palette. Kontrast bleibt messbar; nutzerdefinierte Text-/Farbwerte werden nicht still überschrieben.' }; surfaces = @{ type = 'array'; required = $true; default = '-'; description = 'Baum aus Knoten: { id, role, rect:{x,y,w,h}, align, corner, cornerShape, aspect, groupFade, padding, text, image, flex, layout:{ kind:list|grid|none, dir, gap, cols, cellH, scroll, wrap, hFlex, vFlex, xAlign, yAlign }, children:[...], repeat:{ count, template } }. {n} im Text wird durch den Index ersetzt.' }; motion = @{ type = 'table'; required = $false; default = '{}'; description = '{ enabled, energy: soft|snappy|bouncy|heavy, stagger, idle } - steuert den mitgelieferten LocalScript.' }; ignoreGuiInset = @{ type = 'bool'; required = $false; default = 'false'; description = 'Topbar-Bereich mitbenutzen.' }; resetOnSpawn = @{ type = 'bool'; required = $false; default = 'true'; description = '' }; maxSurfaces = @{ type = 'int'; required = $false; default = '160'; description = 'Budget, maximal 400.' }; allowGeneric = @{ type = 'bool'; required = $false; default = 'false'; description = 'Legacy-Kompatibilität; user-requested Farben werden nicht blockiert.' } };
             returns = '{ screenGui, roots, surfaces, layers, strokes, strokeGradients, shadows, gradients, textureParts, texts, canvasGroups, scrollers, thinSurfaces, motionScript, skin, energy, imageAssets, offsetUsed, invariants, capabilities, nextStep }';
             example = @{ name = 'ShopUI'; skin = 'sticker'; brand = '#FFB020'; surfaces = @(@{ id = 'Panel'; role = 'modal'; rect = @(50, 50, 62, 70); groupFade = $true; children = @(@{ id = 'Title'; role = 'header'; rect = @(50, 9, 86, 13); text = @{ value = 'SHOP'; display = $true } }, @{ id = 'Grid'; role = 'panel'; rect = @(50, 58, 90, 70); layout = @{ kind = 'grid'; cols = 3; gap = 4; cellH = 30; scroll = $true }; repeatSpec = @{ count = 9; template = @{ role = 'button'; rect = @(0, 0, 28, 28); text = @{ value = 'Item {n}' } } } }) }) };
             errors = @('BAD_ARGS: surfaces fehlt oder leer.', 'REF_NOT_FOUND') })
@@ -22634,7 +22848,7 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
             example = @{ ref = '#42'; skin = 'arcade'; strength = 0.7 };
             errors = @('REF_NOT_FOUND') })
         $t.Add(@{ name = 'ui_texture'; category = 'ui'; summary = 'Textur-Rezept: echte Textur-ID zuerst, sonst ehrlicher Gradienten-Fallback.';
-            description = 'Echte Texturen schlagen prozedurale Muster. Mit textureId kommt mode="texture" und die Engine nutzt genau diese Id (Tile/Größe aus tileX/tileY, Tint aus textureTint). Ohne Id kommt mode="gradient" plus Warnung TEXTURE_ASSET_MISSING - kein Fehler, aber ehrlich sichtbar. Reines Rezept (baut nichts), ideal vor build_surface/build_interface.';
+            description = 'Echte Texturen sind der HINTERGRUND selbst (8.0.0): Mit textureId kommt mode="texture" plus usage="background" - die Engine fuellt die Flaeche deckend mit genau dieser Id (Fit aus textureFit, Kachelung aus tileX/tileY) und legt KEINEN Farbverlauf darueber. Ohne Id kommt mode="gradient" plus Warnung TEXTURE_ASSET_MISSING - kein Fehler, aber ehrlich sichtbar. Reines Rezept (baut nichts), ideal vor build_surface/build_interface (dort textureImage/backgroundMode=texture je Flaeche setzen).';
             params = @{ skin = @{ type = 'string'; required = $false; default = "'glass'"; description = '' }; textureId = @{ type = 'string'; required = $false; default = 'null'; description = 'echte Roblox-Bild-Id (z.B. rbxassetid://...).' }; tileX = @{ type = 'number'; required = $false; default = '0.18'; description = '' }; tileY = @{ type = 'number'; required = $false; default = '0.18'; description = '' }; textureTint = @{ type = 'string'; required = $false; default = 'null'; description = '' } };
             returns = '{ ok, engine, recipe { mode="texture"|"gradient", textureId, tile, tint }, warnings=[TEXTURE_ASSET_MISSING?] }';
             example = @{ textureId = 'rbxassetid://123456789'; tileX = 0.25 };
@@ -23061,7 +23275,7 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
             example = @{ maxSeconds = 25 };
             errors = @() })
         $t.Add(@{ name = 'ack_user_message'; category = 'session'; summary = 'Nachricht des Nutzers als gelesen bestätigen (Pflicht).';
-            description = 'Beendet die Wiederholung einer Nutzernachricht und zeigt dem Nutzer im Fenster "von Arena bestätigt" plus deine optionale Kurzantwort. Ohne Bestätigung wird dieselbe Nachricht in bis zu drei Antworten wiederholt und die Oberfläche meldet ehrlich "angekommen, nicht bestätigt".';
+            description = 'PFLICHT UND STRENG (8.0.0): Eine Nutzernachricht ist erst erledigt, wenn du (1) im Chat sichtbar als ERSTES schreibst, dass du sie gesehen hast und was du deshalb aenderst, (2) sie wirklich umsetzt und (3) danach mit ack_user_message { id, reply } bestaetigst. ack OHNE vorherige Chat-Bestaetigung und Umsetzung ist ungueltig. Ohne ack wiederholt die Bridge die Nachricht in JEDEM Umschlag und report_done bleibt mit UNACKED_USER_MESSAGE blockiert.';
             params = @{ id = @{ type = 'string'; required = $false; default = 'null'; description = 'Eine Nachrichten-Id aus _bridge.userMessages.' }; ids = @{ type = 'string[]'; required = $false; default = 'null'; description = 'Mehrere Ids.' }; all = @{ type = 'bool'; required = $false; default = 'false'; description = 'true = alle offenen Nachrichten.' }; reply = @{ type = 'string'; required = $false; default = 'null'; description = 'Kurze Antwort an den Nutzer (max. 300 Zeichen).' } };
             returns = '{ acked, replyShownToUser, note }';
             example = @{ id = 'msg_ab12cd34ef56'; reply = 'Verstanden - ich baue den Baum neu.' };
@@ -23124,7 +23338,7 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
                 inspectBeforeChange = 'Before a consequential edit, inspect the relevant Place hierarchy, existing models, scripts, GUI and properties. Reuse the established naming, parents, palette, component organization and behavior. Do not replace unrelated or user-authored work.'
                 modeling = 'Use the user-requested representation or the Place convention (Parts, assemblies, polygons, meshes or a mix). Blender is a recommendation for suitable greenfield geometry, especially smooth/dense single-mesh forms; it is not mandatory. Polygon/wedge, Parts and assembly workflows are not gated by a generic preference. Do not convert an existing model just to change its representation.'
                 scripts = 'Read the existing script and nearby modules before editing. Preserve its architecture, naming, formatting, runtime context and public behavior; prefer a minimal patch with expectHash over whole-file replacement. Compile-check changed Lua where applicable. Create a new script only when the task needs one and follow the Place''s existing parent/name conventions.'
-                gui = 'Inspect the current GUI and reuse its style, hierarchy, responsive layout and interaction conventions. Preserve explicit colors, fonts, dimensions and requested simplicity. build_interface/build_surface/ui_skin/ui_audit are useful options for new or compatible GUI work, not mandatory replacements for an existing GUI or an explicitly requested implementation.'
+                gui = 'Inspect the current GUI and reuse its style, hierarchy, responsive layout and interaction conventions. Preserve explicit colors, fonts, dimensions and requested simplicity. build_interface/build_surface/ui_skin/ui_audit are useful options for new or compatible GUI work, not mandatory replacements for an existing GUI or an explicitly requested implementation. BILLBOARDS (8.0.0): a BillboardGui is sized in STUDS (Size = UDim2.new(widthStuds, 0, heightStuds, 0)), never in pixel Offset - Offset keeps it huge at any distance, studs shrink naturally with distance like a part. Always set MaxDistance (about 40-80 studs) and StudsOffsetWorldSpace, keep AlwaysOnTop=false unless the user asks otherwise, and prefer build_surface/build_interface with surfaceType=billboard. Real textures are the background itself: textureImage/backgroundMode=texture fills the surface opaquely with no fill gradient over it.'
                 other = 'For assets, gameplay, animation, audio, environment and other systems, inspect existing patterns and user preferences before choosing a tool. General quality suggestions are defaults only; do not silently override the task or rewrite unrelated work.'
                 defaults = 'Blender, polygon builders, UI engines and other specialized helpers are recommendations/capabilities, not product-wide mandates. Ask through the Bridge only when a real unresolved decision is necessary.'
             }
@@ -23134,6 +23348,8 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
                 'For a greenfield 3D task with no established method, choose the representation that best matches the silhouette, performance, editability and requested style. build_mesh_model (Blender), build_polygon_model, build_assembly and native Parts can be combined where useful; a user request or observed Place convention may choose any of them. Keep simple/primitive/blockout requests simple and never silently migrate existing models.',
                 'For visual/3D work, match the requested scope and target Place: use a clear silhouette, supporting forms, detail, palette/materials and correct joins when they serve the task. Complexity is not a quality requirement. A simple, primitive, blockout, monochrome or static result is valid when requested or established; audit measurements never decide completion by themselves.',
                 'GUI work is project-first: inspect and preserve the existing hierarchy, colors, fonts, layout and interactions; follow explicit design instructions. build_interface/build_surface and ui_skin are optional tools for new or compatible work, not mandatory replacements. If using the UI engine, probe only the capabilities you need, match an existing style with ui_skin action=extract, and use ui_audit when useful; do not add motion, textures or decorative layers against the user''s request.',
+                'BILLBOARD SIZE RULE (8.0.0, MANDATORY for every BillboardGui): Size is a WORLD size in studs - UDim2.new(widthStuds, 0, heightStuds, 0) (Scale part only, Offset always 0). Pixel Offset in a BillboardGui Size means the same enormous screen size at EVERY distance and is forbidden. The GUI must shrink with distance like a 3D object. Set MaxDistance (typically 40-80 studs), StudsOffsetWorldSpace for the height above the anchor, AlwaysOnTop=false unless explicitly requested. Use build_surface/build_interface with surfaceType=billboard (billboardWidth/billboardHeight in studs) instead of hand-setting Offset sizes. ui_audit flags every Offset-sized BillboardGui as billboardOffsetSize - fix it before report_done.',
+                'TEXTURE BACKGROUND RULE (8.0.0): when a surface has a real texture, the texture IS the background. Pass textureImage (node or call level) or a skin with textureAsBackground and backgroundMode=texture (auto when a texture is present): the engine fills the surface opaquely (fit tile/crop/fit/stretch) and adds NO fill gradient and NO background color over it. Never stack a faint texture overlay (transparency ~0.9) on top of a color gradient and call it textured - ui_audit reports that as textureWashedOut. Without a real texture id, say so honestly (TEXTURE_ASSET_MISSING) instead of faking one.',
                 'SCRIPT work is also project-first: inspect the relevant source and nearby modules, preserve established patterns and behavior, make the smallest safe patch, use expectHash, and compile-check changed Lua where applicable. Do not rewrite a working script or create a new architecture merely because a scaffold tool exists.',
                 'Object ids such as #42 are stable within the current plugin session and avoid ambiguity when names repeat. Paths and selectors are also accepted where documented.',
                 'Several Places can be connected. With the Alle-Places token, GET /api/places returns targetPlace values; selecting one target keeps edits unambiguous.',
@@ -23148,10 +23364,19 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
                 'HARD CONSTRAINT for any hand-written WedgePart/triangle geometry (build_polygon_model already does this correctly - this rule is for genuinely custom run_lua geometry code only): see polygonEngineRules below for the mandatory WedgePart axis convention and the canonical seamless-triangle formula. Getting the axis order wrong is the single most common cause of 90-degree rotation errors and gaping seams in procedural low-poly builds.',
                 'BRIDGE-ONLY QUESTIONS (mandatory, 7.5.8): whenever a user answer is needed to continue safely or correctly, ask via ask_user in the Bridge for clarification/choices or confirm_action for yes/no. Never pose the question in normal chat and never wait for a chat reply. Chat may only say that a Bridge question window is open and ask the user to answer there. Put related decisions in one ask_user tree; resume the same askId until answered/cancelled; read _bridge.userAnswers and never guess while openQuestions is present. If the Bridge tool fails, report the exact error and stop dependent work - do not fall back to chat.',
                 'OPTIONAL BUILD METRICS (7.6.3): model_audit may report part/shape/color counts, cylinder-axis heuristics and an estimated finishScore/grade. These are observations, not style judgments or report_done gates; simple primitives, blockouts and low-detail builds need no grade declaration. report_done includes the build register as informational context.',
-                'USER CHANNEL (7.2.0, HARDENED 7.6.0): the user can message you WHILE you work ("Nachricht an Arena senden" in the bridge place row). Every response then carries _bridge.userMessages plus _bridge.userMessageContract, the message text appears at the TOP and the BOTTOM of _bridge.attention, and _bridge.openUserMessageCount tells you how many messages are still unacknowledged. Read it first, apply it, tell the user what you changed, and acknowledge with ack_user_message { id } - an unacknowledged message repeats in up to TEN responses AND report_done fails with UNACKED_USER_MESSAGE until every message is acknowledged, so a message can never be forgotten or outlasted. wait_for_user { maxSeconds <= 50 } blocks until a message arrives; use it only at a real decision point, never as polling. The user can also switch the place to read-only from the same menu, which is reported as WRITE_LOCKED_BY_USER.',
+                'USER CHANNEL (7.2.0, HARDENED 7.6.0, STRICT 8.0.0): the user can message you WHILE you work ("Nachricht an Arena senden" / "Send message to Arena" in the bridge place row). This is the HIGHEST priority input and outranks your previous plan. Mandatory sequence, no exceptions: (1) STOP your current plan, (2) your VERY NEXT chat reply MUST start by visibly confirming the message in chat - say that you saw it and exactly what you will change because of it (the user must be able to read this confirmation in chat; silently continuing is a violation), (3) actually apply the message, (4) in chat report what changed, (5) only then acknowledge with ack_user_message { id, reply }. Every response carries _bridge.userMessages plus _bridge.userMessageContract (chatAcknowledgementRequired=true), the text at the TOP and the BOTTOM of _bridge.attention, and _bridge.openUserMessageCount. An unacknowledged message repeats in EVERY envelope and report_done fails with UNACKED_USER_MESSAGE until all are acknowledged - it can never be forgotten, outlasted or silently ignored. Never claim you received nothing while userMessages/userMessageContract is present. wait_for_user { maxSeconds <= 50 } blocks until a message arrives; use it only at a real decision point, never as polling. Read-only from the same menu is reported as WRITE_LOCKED_BY_USER.',
                 'OPTIONAL ORGANIC MEASUREMENTS: organic=true or a user-added ArenaOrganicBuild attribute lets model_audit report per-model diagnostics; organicKind is optional metadata. These checks do not select geometry or require polygons, a palette, facial anatomy or motion. Follow the actual brief; findings are advisory, an audit is optional, and no name/marker activates a completion gate.',
                 'PROJECT-FIRST BUILD/ASSET CHOICE (7.6.3): follow the user request and target Place convention. Use Blender mesh, polygon/Parts, catalog assets or existing geometry when they fit; no default builder, catalog search or upload is mandatory. Only an actually created mesh slot awaiting geometry keeps report_done open.'
             )
+            billboardGuiRules = @{
+                title = 'BillboardGui distance sizing (8.0.0): signs shrink with distance, never stay huge'
+                theRule = 'BillboardGui.Size is measured in STUDS via the Scale component: Size = UDim2.new(widthStuds, 0, heightStuds, 0). Any pixel Offset in Size pins the GUI to a constant screen size, so a sign looks enormous even from far away - that is the bug this rule removes.'
+                sizing = 'Pick a real world size for the sign (for example 6 x 3 studs above a part, 10 x 4 for a shop sign), set it as Scale-only Size, and let perspective shrink it with distance exactly like a part.'
+                distance = 'Always set MaxDistance (typically 40-80 studs, smaller for labels, larger for landmarks) so distant signs disappear instead of floating over the world, and StudsOffsetWorldSpace = Vector3.new(0, heightAboveAnchor, 0) for placement.'
+                onTop = 'AlwaysOnTop stays false unless the user explicitly wants a through-wall marker; occlusion keeps depth honest.'
+                howToBuild = 'Prefer build_surface/build_interface with surfaceType=billboard, billboardWidth/billboardHeight (studs) and maxDistance. When writing raw instances, mirror exactly those values. ui_audit measures billboardOffsetSize and textureWashedOut findings.'
+                checklist = @('Size.Offset is 0 on X and Y', 'width/height are plausible stud sizes for the object', 'MaxDistance is set and sensible', 'StudsOffsetWorldSpace lifts the sign above the anchor', 'AlwaysOnTop only when explicitly requested')
+            }
             worldEngineRules = @{
                 title = 'Optional World Tools - preserve the requested scene style and Place conventions'
                 workflow = 'Inspect the existing world first. For large/new terrain or placement-sensitive work, site_survey and optional world_style/style_lock can help; then use the user-requested or Place-consistent tools (Parts, assemblies, polygons, meshes, props, refine). model_audit/world_audit report measurements; placeholders and blockouts are reviewed against requested scope, not automatic completion gates.'
@@ -23324,8 +23549,9 @@ end
                     '7 CANVASGROUP (when needed): check clipping, memory and text-rendering implications before using a CanvasGroup. Avoid unnecessary nesting; a plain Frame remains appropriate when no group fade/clip is requested.',
                     '8 SHADOW (optional): if the design asks for a shadow, use a supported shadow method and check ancestor clipping. Multiple shadow layers are an art choice, not a requirement.',
                     '9 GLOW (optional): use ui_glow/world_glow when compatible with the user request and Place. Do not add glow unless wanted; if it is wanted, avoid wasteful stacks of transparent effects.',
-                    '10 TEXTURES (optional): use ui_texture when a real texture is requested or established. Its fallback warning is informational; omitting a texture is valid when the design is plain.',
-                    '11 RADIAL MENUS (when requested): ui_radial is available for radial layouts. Use another implementation when the user or Place calls for it; image/procedural fallbacks are informational.'
+                    '10 TEXTURES AS BACKGROUND (8.0.0): a real texture IS the background, not a faint overlay. Use textureImage/backgroundMode=texture so the engine fills the surface opaquely (tile/crop/fit/stretch) with NO fill gradient or background color over it. A texture at ~0.9 transparency over a gradient is the old bug - ui_audit calls it textureWashedOut. ui_texture returns usage=background for a real id; without an id the honest TEXTURE_ASSET_MISSING warning stays.',
+                    '11 RADIAL MENUS (when requested): ui_radial is available for radial layouts. Use another implementation when the user or Place calls for it; image/procedural fallbacks are informational.',
+                    '12 BILLBOARDS (8.0.0): BillboardGui Size is a world size in STUDS: UDim2.new(widthStuds, 0, heightStuds, 0). Offset pixels are forbidden there - they keep the sign the same huge screen size at every distance instead of shrinking with distance. Set MaxDistance (about 40-80), StudsOffsetWorldSpace for height, AlwaysOnTop=false by default. Prefer build_surface/build_interface surfaceType=billboard; ui_audit reports Offset-sized billboards as billboardOffsetSize.'
                 )
                 modernInstances = @(
                     'UIShadow: native 2D drop shadow. BlurRadius (UDim), Color, Transparency, Offset (UDim2), Spread (UDim2), ZIndex (negative only), Enabled. Scale values are a percentage of the parent. Multiple shadows per instance. No text glyph shadows, no inset shadows, no gradients or textures on the shadow itself.',
@@ -24158,9 +24384,11 @@ end
             $envelope.userMessageContract = @{
                 code = 'USER_MESSAGE_PENDING'
                 priority = 'highest'
-                instruction = 'The user sent this WHILE you were working. Stop executing your previous plan, apply the instruction, and tell the user in your reply what you changed. Then acknowledge with ack_user_message { id }.'
-                doNotIgnore = 'These messages outrank your own assumptions and any earlier plan. Never tell the user you received nothing while this field is present. The exact text is repeated in attention - at the top AND at the bottom.'
-                repeatRule = 'An unacknowledged message is repeated in up to TEN responses, and report_done refuses to finish (UNACKED_USER_MESSAGE) while ANY user message is still unacknowledged. Ignoring it does not make it disappear - the bridge shows the user "angekommen, nicht bestätigt".'
+                chatAcknowledgementRequired = $true
+                requiredSequence = @('1 STOP: drop your previous plan now.', '2 SAY IT IN CHAT FIRST: your very next chat reply MUST visibly start by confirming this message - name that you saw it and exactly what you will change because of it. The user reads this in chat; working silently is forbidden.', '3 APPLY: actually do what the message asks (or, if impossible, say exactly why in chat).', '4 REPORT IN CHAT: tell the user what changed.', '5 ACK: only now call ack_user_message { id, reply } - ack without the chat confirmation and the change is invalid.')
+                instruction = 'The user sent this WHILE you were working. Follow requiredSequence exactly: stop, confirm visibly in chat FIRST, apply it, report in chat, then acknowledge with ack_user_message { id, reply }.'
+                doNotIgnore = 'These messages outrank your own assumptions and any earlier plan. Never tell the user you received nothing while this field is present, never continue your old plan silently, and never ack without having said in chat that you saw the message and what it changes. The exact text is repeated in attention - at the top AND at the bottom.'
+                repeatRule = 'An unacknowledged message is repeated in EVERY following envelope (openUserMessageCount stays > 0), and report_done refuses to finish (UNACKED_USER_MESSAGE) while ANY user message is still unacknowledged. Ignoring it does not make it disappear - the bridge shows the user "angekommen, nicht bestätigt" (arrived, not confirmed).'
             }
             # Der erste Satz steht WÖRTLICH in attention: genau daran ist in
             # 7.5.0 eine Nutzernachricht gescheitert (Arena fand den Text nicht).
@@ -24174,10 +24402,10 @@ end
             try { $firstId = [string]$pendingUserMessages[0].id } catch {}
             $userNote = '!!! USER MESSAGE - STOP AND READ THIS FIRST !!! (' + [string]$pendingUserMessages.Count + ' message(s)) - THE USER WROTE: "' + $firstText + '"'
             if (-not [string]::IsNullOrWhiteSpace($firstId)) { $userNote = $userNote + ' (id ' + $firstId + ', acknowledge with ack_user_message { id = "' + $firstId + '" }).' }
-            $userNote = $userNote + ' Read _bridge.userMessages FIRST, apply what the user asks, mention it in your reply, then ack it. Do NOT answer that you received nothing. report_done is BLOCKED until every user message is acknowledged.'
+            $userNote = $userNote + ' MANDATORY (8.0.0): your NEXT chat reply MUST start by visibly confirming this message (that you saw it and what you will change), then apply it, report the change in chat, and only then ack it. Silently continuing your old plan is forbidden. Do NOT answer that you received nothing. report_done is BLOCKED until every user message is acknowledged.'
             if ($envelope.attention) { $envelope.attention = $userNote + ' ' + $envelope.attention } else { $envelope.attention = $userNote }
             # Dieselbe Nachricht noch einmal ganz unten im Umschlag.
-            $envelope.userMessageReminder = 'REMINDER (bottom of envelope): the user wrote "' + $firstText + '" - handle it NOW, answer it in your reply, and ack it with ack_user_message.'
+            $envelope.userMessageReminder = 'REMINDER (bottom of envelope): the user wrote "' + $firstText + '" - handle it NOW: confirm it visibly at the start of your next chat reply, apply it, report what changed in chat, and only then ack it with ack_user_message.'
         }
         } catch {
             Write-FlowStation 'ENVELOPE' ([string]$sessionId) 'USER_MESSAGES_SKIPPED' @{ reason = 'envelope_field_failed' }
@@ -24189,7 +24417,7 @@ end
             $unackedUserMessages = Get-UnackedUserMessageViews 10
             if ($unackedUserMessages.Count -gt 0) {
                 $envelope.openUserMessageCount = [int]$unackedUserMessages.Count
-                $openNote = 'OPEN USER MESSAGES: ' + [string]$unackedUserMessages.Count + ' user message(s) are still UNACKNOWLEDGED. Apply them and ack each with ack_user_message { id }. report_done will fail with UNACKED_USER_MESSAGE until they are all acknowledged.'
+                $openNote = 'OPEN USER MESSAGES: ' + [string]$unackedUserMessages.Count + ' user message(s) are still UNACKNOWLEDGED. For each one: confirm visibly in chat that you saw it and what it changes, apply it, report in chat, then ack with ack_user_message { id }. report_done will fail with UNACKED_USER_MESSAGE until they are all acknowledged.'
                 if ($envelope.attention) { $envelope.attention = $envelope.attention + ' ' + $openNote } else { $envelope.attention = $openNote }
                 if (-not $envelope.ContainsKey('userMessageReminder')) {
                     $firstOpenText = ''
@@ -32154,13 +32382,39 @@ function Get-ActiveStudios {
     $deduped | Sort-Object placeName, sessionId
 }
 
+function Reset-ArenaProgressState {
+    # Version 8.0.0 (Nutzerwunsch): "Token zurücksetzen" setzt auch den
+    # Fortschrittsbalken ("wie weit Arena ist") dieser Place zurueck -
+    # serverseitiger Zustand weg UND sichtbare Leiste sofort auf leer/idle.
+    param([string]$SessionId)
+    try {
+        $junk = $null
+        if ($SessionId -eq '__arena_all_places__') {
+            foreach ($key in @($script:Shared.ProgressStates.Keys)) { [void]$script:Shared.ProgressStates.TryRemove([string]$key, [ref]$junk) }
+        } elseif (-not [string]::IsNullOrWhiteSpace($SessionId)) {
+            [void]$script:Shared.ProgressStates.TryRemove([string]$SessionId, [ref]$junk)
+        }
+    } catch {}
+    try {
+        $rows = @()
+        if ($SessionId -eq '__arena_all_places__') { $rows = @($script:UiRows.Values) }
+        elseif ($script:UiRows.ContainsKey($SessionId)) { $rows = @($script:UiRows[$SessionId]) }
+        foreach ($progressRow in $rows) {
+            try { if ($progressRow.ProgressPanel) { $progressRow.ProgressPanel.Visibility = 'Collapsed' } } catch {}
+            try { if ($progressRow.ProgressBar) { $progressRow.ProgressBar.Value = 0 } } catch {}
+            try { $progressRow.ProgressState = 'idle' } catch {}
+        }
+    } catch {}
+}
+
 function Reset-SessionToken {
     param([string]$SessionId)
     if ($SessionId -eq '__arena_all_places__') {
         # Version 5: only an explicit click changes the aggregate token.
         $script:AllPlacesToken = New-Token
         $script:Shared.MultiPlaceToken = $script:AllPlacesToken
-        Write-RuntimeLog 'Token für Alle Places wurde manuell zurückgesetzt.'
+        Reset-ArenaProgressState $SessionId
+        Write-RuntimeLog 'Token für Alle Places wurde manuell zurückgesetzt (Fortschritt ebenfalls zurückgesetzt).'
         Show-CopyConfirm -Message 'Token für alle Places wurde zurückgesetzt.' -Seconds 4
         return
     }
@@ -32172,7 +32426,9 @@ function Reset-SessionToken {
     $new = New-Token
     $script:Shared.SessionTokens[$SessionId] = $new
     $script:Shared.TokenSessions[$new] = $SessionId
-    Write-RuntimeLog "Token für Sitzung $SessionId neu vergeben."
+    # Version 8.0.0: Mit dem Token startet auch der Fortschrittsbalken neu.
+    Reset-ArenaProgressState $SessionId
+    Write-RuntimeLog "Token für Sitzung $SessionId neu vergeben (Fortschritt ebenfalls zurückgesetzt)."
     Show-CopyConfirm -Message 'Token wurde zurückgesetzt.' -Seconds 4
 }
 
@@ -32242,9 +32498,192 @@ function New-CheckPath {
     return $path
 }
 
+
+# ----------------------------------------------------------------------------
+# Version 8.0.0: PROGRAMMSPRACHE (Englisch ist Standard, Deutsch waehlbar).
+# Die Quelle bleibt Deutsch; Get-UiDisplayText uebersetzt jede sichtbare
+# Zeichenfolge zur Anzeige. XAML laeuft vor dem Laden durch
+# Get-LocalizedXamlText, Code-Fenster zusaetzlich durch
+# Apply-UiLanguageToWindow, und Set-Text uebersetzt dynamische Texte an
+# einer zentralen Stelle. So gilt die Wahl fuer das GESAMTE Programm
+# (Hauptfenster, Einstellungen, Place-Menue, Fragen, Nachrichten, Verlauf,
+# Update- und Berechtigungsfenster), nicht nur fuer einzelne Knopfe.
+# ----------------------------------------------------------------------------
+$script:UiLanguage = 'en'
+try { if ([string]$script:SettingsCache.uiLanguage -eq 'de') { $script:UiLanguage = 'de' } } catch {}
+$script:UiTranslationsDeEn = @{
+    'Beim PC-Start automatisch öffnen' = 'Open automatically at PC startup'
+    'Live-Vorschau-Icons im Editor anzeigen' = 'Show live preview icons in the editor'
+    'Fortschritt in der Place-Liste anzeigen' = 'Show progress in the place list'
+    'Benachrichtigung, wenn Arena fertig ist' = 'Notification when Arena is done'
+    'Sprache / Language' = 'Language'
+    'Die Sprache gilt für das gesamte Programm. Englisch ist der Standard.' = 'The language applies to the whole program. English is the default.'
+    'Englisch ist ausgewählt - alle Fenster nutzen Englisch.' = 'English is selected - all windows now use English.'
+    'Deutsch ist ausgewählt - alle Fenster nutzen Deutsch.' = 'German is selected - all windows now use German.'
+    'Einstellungen' = 'Settings'
+    'Arena Roblox Bridge - Einstellungen' = 'Arena Roblox Bridge - Settings'
+    'PROGRAMM' = 'PROGRAM'
+    'EDITOR' = 'EDITOR'
+    'PLACE-LISTE' = 'PLACE LIST'
+    'UPDATES' = 'UPDATES'
+    'Verbundene Places' = 'Connected places'
+    'Automatisch verbunden' = 'Connected automatically'
+    'bereit für verbundene Places' = 'ready for connected places'
+    'Öffne ein Place in Roblox Studio' = 'Open a place in Roblox Studio'
+    'Sobald sich ein Studio-Fenster mit einem geladenen Place verbindet, erscheint es hier automatisch.' = 'As soon as a Studio window with a loaded place connects, it appears here automatically.'
+    'Arena AI öffnen' = 'Open Arena AI'
+    'Arena AI im Browser öffnen' = 'Open Arena AI in the browser'
+    'OPTIONEN' = 'OPTIONS'
+    'Prompt kopieren' = 'Copy prompt'
+    'URL und Token für Arena' = 'URL and token for Arena'
+    'Arena-Verlauf anzeigen' = 'Show Arena history'
+    'Aktionen und Änderungen dieses Place' = 'Actions and changes in this place'
+    'Nachricht an Arena senden' = 'Send message to Arena'
+    'Korrektur während der Arbeit' = 'Correction while working'
+    'Nur Lesezugriff' = 'Read-only access'
+    'Inaktiv - Änderungen sind erlaubt' = 'Off - changes are allowed'
+    'Aktiv - Änderungen sind gesperrt' = 'On - changes are blocked'
+    'Token zurücksetzen' = 'Reset token'
+    'Neuen Zugang für dieses Place' = 'New access for this place'
+    'Prompt für alle verbundenen Places kopieren' = 'Copy prompt for all connected places'
+    'Alle Places' = 'All places'
+    'Weitere Optionen' = 'More options'
+    'Arena fragt' = 'Arena asks'
+    'Arena wartet auf deine Antwort.' = 'Arena is waiting for your answer.'
+    'Frage ' = 'Question '
+    ' von ' = ' of '
+    'Eigene Antwort (optional, ergänzt deine Auswahl):' = 'Your own answer (optional, adds to your selection):'
+    'Eigene Antwort:' = 'Your own answer:'
+    'Mehrfachauswahl möglich.' = 'Multiple selection is possible.'
+    'Diese Frage kam ohne Optionen an - du kannst unten frei antworten.' = 'This question arrived without options - you can answer freely below.'
+    'Zurück' = 'Back'
+    'Abbrechen' = 'Cancel'
+    'Weiter' = 'Next'
+    'Fertig' = 'Done'
+    'Schließen' = 'Close'
+    'Abbrechen (Esc)' = 'Cancel (Esc)'
+    'Schließen (Esc)' = 'Close (Esc)'
+    'Antwort als Text kopieren' = 'Copy answer as text'
+    'Nachricht an Arena' = 'Message to Arena'
+    'Deine Nachricht:' = 'Your message:'
+    'Sende Arena während dem Arbeiten Nachrichten, damit er sich selbst schnell korrigieren kann.' = 'Send Arena messages while it works so it can correct itself quickly.'
+    'Absenden' = 'Send'
+    'Nachricht wird gesendet…' = 'Sending message…'
+    'Arena bekommt deine Nachricht zugestellt, sobald er das nächste Mal die Bridge benutzt!' = 'Arena will receive your message the next time it uses the Bridge!'
+    'Nachricht gesendet! ✅' = 'Message sent! ✅'
+    'Noch eine Nachricht senden' = 'Send another message'
+    'Nachricht zurückziehen' = 'Withdraw message'
+    'Verbundenes Place' = 'Connected place'
+    'Aktueller Arena-Fortschritt und verständlicher Aktivitätsverlauf - Fenster ist frei verschiebbar' = 'Current Arena progress and a clear activity history - this window can be moved freely'
+    'Arena-Verlauf' = 'Arena history'
+    'Arena-Verlauf · Alle Places' = 'Arena history · All places'
+    'Verlauf zurücksetzen' = 'Reset history'
+    'Arena arbeitet gerade...' = 'Arena is working...'
+    'Fertig!' = 'Done!'
+    'Fehler' = 'Error'
+    'Update verfügbar' = 'Update available'
+    'Das ist neu' = 'What is new'
+    'DEINE VERSION' = 'YOUR VERSION'
+    'NEU FÜR DICH' = 'NEW FOR YOU'
+    'Jetzt installieren' = 'Install now'
+    'Später' = 'Later'
+    'Programmdateien öffnen' = 'Open program files'
+    'Öffnet den Bridge-Ordner mit Laufzeitprotokollen, Diagnosedateien und Einstellungen.' = 'Opens the Bridge folder with runtime logs, diagnostics and settings.'
+    'Entwickelt von MertaStudios mit dem Arena Agenten.' = 'Developed by MertaStudios with the Arena agent.'
+    'Die Bridge sucht beim Start automatisch nach neuen Versionen. Ist eine neue Version da, erscheint ein Hinweisfenster.' = 'The Bridge automatically checks for new versions at startup. When one is available, a notice window appears.'
+    'Roblox Open Cloud API-Key' = 'Roblox Open Cloud API key'
+    'ROBLOX OPEN CLOUD API-KEY' = 'ROBLOX OPEN CLOUD API KEY'
+    'Noch kein API-Key hinzugefügt!' = 'No API key added yet!'
+    'API-Key ist eingerichtet!' = 'API key is set up!'
+    'API-Key entfernen' = 'Remove API key'
+    'Berechtigungen ansehen' = 'View permissions'
+    'Berechtigungen des API-Keys' = 'API key permissions'
+    'Was darf Arena mit diesem Key?' = 'What may Arena do with this key?'
+    'Ja, alles richtig! Key speichern!' = 'Yes, all correct! Save key!'
+    'Oh, das ändere ich nochmal!' = 'Oh, I will change that!'
+    'Erneut prüfen' = 'Check again'
+    'Speichern' = 'Save'
+    'Tutorial: API-Key in 7 Schritten' = 'Tutorial: API key in 7 steps'
+    'Arena Roblox Bridge startet …' = 'Arena Roblox Bridge is starting …'
+    'Start wird vorbereitet …' = 'Preparing startup …'
+    'DEIN STUDIO. DEINE WELT. VERBUNDEN.' = 'YOUR STUDIO. YOUR WORLD. CONNECTED.'
+    'Arena Roblox Bridge - Update' = 'Arena Roblox Bridge - Update'
+    'ArenaBridge - Update' = 'ArenaBridge - Update'
+    'Update-Problem - klicke auf die Einstellungen für Details' = 'Update problem - click Settings for details'
+    'In Roblox Studio angemeldet' = 'Signed in to Roblox Studio'
+    'Roblox Studio-Nutzer' = 'Roblox Studio user'
+    'Live-Vorschau des Roblox-Studio-Fensters' = 'Live preview of the Roblox Studio window'
+    'Plugin veraltet - Studio neustarten' = 'Plugin outdated - restart Studio'
+    'Token wurde zurückgesetzt.' = 'Token has been reset.'
+    'Token für alle Places wurde zurückgesetzt.' = 'Token for all places has been reset.'
+    'Prompt wurde in die Zwischenablage kopiert' = 'Prompt copied to the clipboard'
+    'Prompt für alle Places wurde in die Zwischenablage kopiert - Arena sieht die Place-Auswahl dann automatisch' = 'Prompt for all places copied to the clipboard - Arena then sees the place selection automatically'
+    'Der Cloudflare-Tunnel ist noch nicht bereit.' = 'The Cloudflare tunnel is not ready yet.'
+    'Token konnte nicht gelesen werden.' = 'The token could not be read.'
+    'Nur Lesezugriff ist aktiv.' = 'Read-only access is on.'
+    'Lese- und Schreibzugriff ist aktiv.' = 'Read and write access is on.'
+    'Bitte wähle eine Antwort oder schreibe unten eine eigene, bevor es weitergeht.' = 'Please choose an answer or write your own below before continuing.'
+    'Arena holt sie ab.' = 'Arena will pick them up.'
+    'Antworten sind gespeichert - ' = 'Answers are saved - '
+    'Antwort ist gespeichert - ' = 'Answer is saved - '
+    'anzeigen' = 'show'
+    'ausblenden' = 'hide'
+}
+$script:UiTranslationsEnDe = @{}
+foreach ($pair in @($script:UiTranslationsDeEn.GetEnumerator())) { $script:UiTranslationsEnDe[[string]$pair.Value] = [string]$pair.Key }
+
+function Get-UiLanguage {
+    try { if ([string]$script:UiLanguage -eq 'de') { return 'de' } } catch {}
+    return 'en'
+}
+function Get-UiDisplayText {
+    param([AllowEmptyString()][string]$Text)
+    if ([string]::IsNullOrEmpty($Text)) { return $Text }
+    try {
+        $map = if ((Get-UiLanguage) -eq 'de') { $script:UiTranslationsEnDe } else { $script:UiTranslationsDeEn }
+        if ($null -eq $map) { return $Text }
+        if ($map.ContainsKey($Text)) { return [string]$map[$Text] }
+        $result = $Text
+        foreach ($key in @($map.Keys | Sort-Object { $_.Length } -Descending)) {
+            if ($key.Length -ge 4 -and $result.Contains([string]$key)) { $result = $result.Replace([string]$key, [string]$map[$key]) }
+        }
+        return $result
+    } catch { return $Text }
+}
+function Get-LocalizedXamlText {
+    param([AllowEmptyString()][string]$XamlText)
+    if ([string]::IsNullOrEmpty($XamlText) -or (Get-UiLanguage) -ne 'en') { return $XamlText }
+    try {
+        $result = $XamlText
+        foreach ($key in @($script:UiTranslationsDeEn.Keys | Sort-Object { $_.Length } -Descending)) {
+            if ($result.Contains([string]$key)) { $result = $result.Replace([string]$key, [string]$script:UiTranslationsDeEn[$key]) }
+        }
+        return $result
+    } catch { return $XamlText }
+}
+function Apply-UiLanguageToWindow {
+    param($Root)
+    if ($null -eq $Root) { return }
+    try {
+        $stack = New-Object System.Collections.Generic.List[object]
+        $stack.Add($Root)
+        while ($stack.Count -gt 0) {
+            $node = $stack[0]; $stack.RemoveAt(0)
+            if ($null -eq $node) { continue }
+            try { if ($node -is [System.Windows.Window]) { $node.Title = Get-UiDisplayText ([string]$node.Title) } } catch {}
+            try { if ($node -is [System.Windows.Controls.TextBlock]) { $node.Text = Get-UiDisplayText ([string]$node.Text) } } catch {}
+            try { if (($node -is [System.Windows.Controls.ContentControl]) -and ($node.Content -is [string])) { $node.Content = Get-UiDisplayText ([string]$node.Content) } } catch {}
+            try { if ($node.ToolTip -is [string]) { $node.ToolTip = Get-UiDisplayText ([string]$node.ToolTip) } } catch {}
+            try { foreach ($child in [System.Windows.LogicalTreeHelper]::GetChildren($node)) { if ($child -is [System.Windows.DependencyObject]) { $stack.Add($child) } } } catch {}
+        }
+    } catch {}
+}
+
 function Set-Text {
     param($Element, [string]$Value)
     if ($null -eq $Element) { return }
+    # Version 8.0.0: dynamische Texte laufen zentral durch die Sprachwahl.
+    $Value = Get-UiDisplayText ([string]$Value)
     if ([string]$Element.Text -ne $Value) { $Element.Text = $Value }
 }
 
@@ -32754,6 +33193,36 @@ function Set-ProgramBrandImage {
     }
 }
 
+function Start-ArenaLogoFloatAnimation {
+    # Version 8.0.0: sanftes Schweben (TranslateTransform Y, -3..+3 px,
+    # Sinus, endlos hin und her) plus pulsierender Glow. Nur Transform und
+    # Effekt werden animiert - kein Layout-Eingriff, kein Ruckeln.
+    param($LogoBorder)
+    if ($null -eq $LogoBorder) { return }
+    try {
+        $transform = $LogoBorder.RenderTransform
+        if (-not ($transform -is [System.Windows.Media.TranslateTransform])) {
+            $transform = [System.Windows.Media.TranslateTransform]::new(0, 0)
+            $LogoBorder.RenderTransform = $transform
+        }
+        $float = [System.Windows.Media.Animation.DoubleAnimation]::new(-3.0, 3.0, [System.TimeSpan]::FromSeconds(2.6))
+        $float.AutoReverse = $true
+        $float.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+        $ease = [System.Windows.Media.Animation.SineEase]::new()
+        $ease.EasingMode = [System.Windows.Media.Animation.EasingMode]::EaseInOut
+        $float.EasingFunction = $ease
+        $transform.BeginAnimation([System.Windows.Media.TranslateTransform]::YProperty, $float)
+    } catch {}
+    try {
+        if ($null -ne $LogoBorder.Effect) {
+            $glow = [System.Windows.Media.Animation.DoubleAnimation]::new(0.38, 0.68, [System.TimeSpan]::FromSeconds(2.6))
+            $glow.AutoReverse = $true
+            $glow.RepeatBehavior = [System.Windows.Media.Animation.RepeatBehavior]::Forever
+            $LogoBorder.Effect.BeginAnimation([System.Windows.Media.Effects.DropShadowEffect]::OpacityProperty, $glow)
+        }
+    } catch {}
+}
+
 # ----------------------------------------------------------------------------
 # OBERFLÄCHE (XAML)
 # ----------------------------------------------------------------------------
@@ -33176,13 +33645,24 @@ $xaml = @'
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <!-- Version 7.7.1: größeres Programmlogo, eckig (kein CornerRadius). -->
-                        <Border Width="52" Height="52" Margin="0,0,14,0" CornerRadius="0"
+                        <!-- Version 8.0.0: Programmlogo ABGERUNDET mit Glow und
+                             Schwebe-Animation (Start-ArenaLogoFloatAnimation). -->
+                        <Border x:Name="ProgramLogoBorder" Width="52" Height="52" Margin="0,0,14,0" CornerRadius="14"
                                 Background="{StaticResource AppBg}" BorderBrush="#59FFFFFF"
-                                BorderThickness="1" ClipToBounds="True">
+                                BorderThickness="1" ClipToBounds="True" RenderTransformOrigin="0.5,0.5">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#00E5D0" BlurRadius="18" ShadowDepth="0" Opacity="0.55"/>
+                            </Border.Effect>
+                            <Border.RenderTransform>
+                                <TranslateTransform Y="0"/>
+                            </Border.RenderTransform>
                             <Image x:Name="ProgramLogoImage" Width="52" Height="52"
                                    Stretch="Uniform" SnapsToDevicePixels="True"
-                                   RenderOptions.BitmapScalingMode="HighQuality"/>
+                                   RenderOptions.BitmapScalingMode="HighQuality">
+                                <Image.Clip>
+                                    <RectangleGeometry Rect="0,0,52,52" RadiusX="14" RadiusY="14"/>
+                                </Image.Clip>
+                            </Image>
                         </Border>
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="Arena Roblox Bridge" Foreground="{StaticResource TextMain}" FontSize="18.5" FontWeight="Bold"/>
@@ -33251,14 +33731,24 @@ $xaml = @'
                             </Grid.RowDefinitions>
                             <Grid Grid.Row="0">
                                 <StackPanel x:Name="EmptyState" HorizontalAlignment="Center" VerticalAlignment="Center" Width="430">
-                                    <!-- Version 7.7.1: derselbe Programmlogo-Auftritt wie oben links
-                                         in der Titelzeile - eckig, groß, kein gezeichnetes Ersatzsymbol. -->
-                                    <Border Width="96" Height="96" CornerRadius="0" HorizontalAlignment="Center"
+                                    <!-- Version 8.0.0: dasselbe Logo wie oben links - jetzt
+                                         abgerundet, mit Glow und Schwebe-Animation. -->
+                                    <Border x:Name="EmptyStateLogoBorder" Width="96" Height="96" CornerRadius="24" HorizontalAlignment="Center"
                                             Background="{StaticResource AppBg}" BorderBrush="#40FFFFFF"
-                                            BorderThickness="1" ClipToBounds="True">
+                                            BorderThickness="1" ClipToBounds="True" RenderTransformOrigin="0.5,0.5">
+                                        <Border.Effect>
+                                            <DropShadowEffect Color="#00E5D0" BlurRadius="26" ShadowDepth="0" Opacity="0.55"/>
+                                        </Border.Effect>
+                                        <Border.RenderTransform>
+                                            <TranslateTransform Y="0"/>
+                                        </Border.RenderTransform>
                                         <Image x:Name="EmptyStateLogoImage" Width="96" Height="96"
                                                Stretch="Uniform" SnapsToDevicePixels="True"
-                                               RenderOptions.BitmapScalingMode="HighQuality"/>
+                                               RenderOptions.BitmapScalingMode="HighQuality">
+                                            <Image.Clip>
+                                                <RectangleGeometry Rect="0,0,96,96" RadiusX="24" RadiusY="24"/>
+                                            </Image.Clip>
+                                        </Image>
                                     </Border>
                                     <TextBlock x:Name="EmptyTitle" Text="Öffne ein Place in Roblox Studio" Foreground="{StaticResource TextMain}" FontSize="21" FontWeight="Bold" TextAlignment="Center" Margin="0,22,0,0"/>
                                     <TextBlock x:Name="EmptyBody" Text="Sobald sich ein Studio-Fenster mit einem geladenen Place verbindet, erscheint es hier automatisch." Foreground="{StaticResource TextMuted}" FontSize="13.5" TextAlignment="Center" TextWrapping="Wrap" Margin="0,10,0,0"/>
@@ -33455,6 +33945,8 @@ $xaml = @'
 # Ereignis-Verdrahtung den Prozess lautlos beenden - kein Fenster, kein Log.
 Set-StartupStage 'Fensteraufbau: XAML wird geladen'
 try {
+# Version 8.0.0: Hauptfenster in der gewaehlten Sprache (Standard Englisch).
+$xaml = Get-LocalizedXamlText $xaml
 $reader = [System.Xml.XmlNodeReader]::new([xml]$xaml)
 $window = [Windows.Markup.XamlReader]::Load($reader)
 $script:MainWindow = $window
@@ -33466,6 +33958,8 @@ $BackgroundImage = $window.FindName('BackgroundImage')
 [void](Set-BackgroundArtwork -ImageControl $BackgroundImage)
 $ProgramLogoImage = $window.FindName('ProgramLogoImage')
 [void](Set-ProgramBrandLogo -ImageControl $ProgramLogoImage -Window $window)
+# Version 8.0.0: Schweben + Glow fuer beide Logo-Auftritte.
+try { Start-ArenaLogoFloatAnimation ($window.FindName('ProgramLogoBorder')) } catch {}
 
 $window.Dispatcher.add_UnhandledException({
     param($sender, $eventArgs)
@@ -33556,6 +34050,7 @@ $PlaceList       = $window.FindName('PlaceList')
 # wie die Titelzeile (vorher ein gezeichneter Strich mit zwei Kreisen).
 $EmptyStateLogoImage = $window.FindName('EmptyStateLogoImage')
 [void](Set-ProgramBrandImage -ImageControl $EmptyStateLogoImage)
+try { Start-ArenaLogoFloatAnimation ($window.FindName('EmptyStateLogoBorder')) } catch {}
 $EmptyState      = $window.FindName('EmptyState')
 $EmptyTitle      = $window.FindName('EmptyTitle')
 $EmptyBody       = $window.FindName('EmptyBody')
@@ -35298,7 +35793,7 @@ function Get-UserMessageWindowXaml {
     </Border>
 </Window>
 '@
-    return $template.Replace('<!--ARENA_DIALOG_STYLES-->', [string]$script:ArenaDialogStyles)
+    return Get-LocalizedXamlText ($template.Replace('<!--ARENA_DIALOG_STYLES-->', [string]$script:ArenaDialogStyles))
 }
 
 function Open-UserMessageWindow {
@@ -35574,6 +36069,7 @@ function Open-UserMessageWindow {
             $info.SendButton.IsEnabled = ($textBox.Text.Trim().Length -gt 0)
         }
         $timer.Start()
+        try { Apply-UiLanguageToWindow $win } catch {}
         # ShowDialog disables the owner window for the lifetime of this dialog.
         [void]$win.ShowDialog()
     } catch {
@@ -35960,9 +36456,12 @@ function Get-AskWindowXaml {
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
+                    <!-- Version 8.0.0: KEINE Restzeit-Anzeige mehr - der Nutzer
+                         wird nicht unter Druck gesetzt. Das Element bleibt nur
+                         als leerer, unsichtbarer Platzhalter im Baum. -->
                     <TextBlock x:Name="AskCountdownText" Grid.Column="0" VerticalAlignment="Center"
                                Foreground="{StaticResource SwTextFaint}" FontSize="10.5"
-                               TextWrapping="Wrap"/>
+                               TextWrapping="Wrap" Visibility="Collapsed"/>
                     <StackPanel x:Name="ButtonRow" Grid.Column="1" Orientation="Horizontal"
                                 HorizontalAlignment="Right">
                         <Button x:Name="BackButton" Content="Zurück" MinWidth="80" MinHeight="32"
@@ -35978,7 +36477,7 @@ function Get-AskWindowXaml {
     </Border>
 </Window>
 '@
-    return $template.Replace('<!--ARENA_DIALOG_STYLES-->', [string]$script:ArenaDialogStyles)
+    return Get-LocalizedXamlText ($template.Replace('<!--ARENA_DIALOG_STYLES-->', [string]$script:ArenaDialogStyles))
 }
 
 function New-AskWindowInfo {
@@ -36023,30 +36522,24 @@ function New-AskWindowInfo {
         CopyButton         = $Win.FindName('CopyButton')
         CloseButton        = $Win.FindName('CloseButton')
         Timer              = $null
+        # Version 8.0.0: Fokus-/Caret-Rettung der eigenen Antwort.
+        CustomBoxes        = @{}
+        FocusedCustomQuestionId = ''
+        FocusedCustomCaret = 0
+        FocusedCustomSelectionLength = 0
     }
 }
 
 function Set-AskCountdownText {
-    # Restzeit in der Fußzeile - der Nutzer muss sehen können, wie lange die
-    # Frage noch offen bleibt (2d).
+    # Version 8.0.0 (Nutzerwunsch): Unten steht NICHT mehr, wie lange man
+    # Zeit hat - kein Countdown, kein Zeitdruck. Die interne Ablaufzeit der
+    # Frage bleibt technisch bestehen, wird aber nirgends mehr angezeigt.
+    # Diese Funktion leert die Anzeige daher nur noch und versteckt sie.
     param($Info, [int]$SecondsLeft, [string]$AskState)
     try {
         if ($null -eq $Info -or $null -eq $Info.CountdownText) { return }
-        if ($AskState -ne 'waiting') {
-            Set-Text $Info.CountdownText ''
-            return
-        }
-        if ($SecondsLeft -le 0) {
-            Set-Text $Info.CountdownText 'Antwortzeit abgelaufen'
-            return
-        }
-        $minutes = [int][Math]::Floor($SecondsLeft / 60)
-        $seconds = [int]($SecondsLeft % 60)
-        if ($minutes -gt 0) {
-            Set-Text $Info.CountdownText ('Noch ' + [string]$minutes + ' min ' + [string]$seconds + ' s Zeit')
-        } else {
-            Set-Text $Info.CountdownText ('Noch ' + [string]$seconds + ' s Zeit')
-        }
+        Set-Text $Info.CountdownText ''
+        try { $Info.CountdownText.Visibility = 'Collapsed' } catch {}
     } catch {}
 }
 
@@ -36178,11 +36671,11 @@ function Update-AskWindow {
             $Info.QuestionCard.Visibility = 'Collapsed'
             $Info.ButtonRow.Visibility = 'Collapsed'
             $Info.CopyPanel.Visibility = 'Visible'
-            Set-Text $Info.ProgressText 'Antwortzeit abgelaufen'
+            Set-Text $Info.ProgressText 'Diese Frage ist beendet'
             if ($agentAlive) {
-                $Info.StatusText.Text = 'Agent arbeitet weiter … Die Antwortzeit ist abgelaufen. Du kannst die Fragen und deine Auswahl als Text kopieren und im Arena-Chat senden.'
+                $Info.StatusText.Text = 'Agent arbeitet weiter … Diese Frage ist beendet. Du kannst die Fragen und deine Auswahl als Text kopieren und im Arena-Chat senden.'
             } else {
-                $Info.StatusText.Text = 'Agent ist offline … Die Antwortzeit ist abgelaufen. Du kannst die Fragen und deine Auswahl als Text kopieren und im Arena-Chat senden.'
+                $Info.StatusText.Text = 'Agent ist offline … Diese Frage ist beendet. Du kannst die Fragen und deine Auswahl als Text kopieren und im Arena-Chat senden.'
             }
             $Info.StatusText.Foreground = Get-Brush '#FFB4C4'
             return
@@ -36246,6 +36739,23 @@ function Update-AskWindow {
         $Info.RenderSignature = $signature
 
         $questionStack = $Info.QuestionStack
+        # Version 8.0.0: Bevor der Baum neu gebaut wird, Fokus und Caret des
+        # eigenen Antwortfelds retten - sonst verliert das Textfeld beim
+        # Tippen den Fokus, sobald eine Strukturaktualisierung durchlaeuft.
+        $focusedCustomQuestionId = ''
+        $focusedCustomCaret = 0
+        $focusedCustomSelection = 0
+        try {
+            $focusedElement = [System.Windows.Input.Keyboard]::FocusedElement
+            if ($null -ne $focusedElement -and ($focusedElement -is [System.Windows.Controls.TextBox]) -and $null -ne $focusedElement.Tag -and $focusedElement.Tag.PSObject.Properties['QuestionId']) {
+                $focusedCustomQuestionId = [string]$focusedElement.Tag.QuestionId
+                $focusedCustomCaret = [int]$focusedElement.SelectionStart
+                $focusedCustomSelection = [int]$focusedElement.SelectionLength
+                $Info.FocusedCustomQuestionId = $focusedCustomQuestionId
+                $Info.FocusedCustomCaret = $focusedCustomCaret
+                $Info.FocusedCustomSelectionLength = $focusedCustomSelection
+            }
+        } catch {}
         $questionStack.Children.Clear()
         $question = $null
         if ($visible.Count -gt 0) { $question = $visible[[Math]::Min($Info.Step, $visible.Count - 1)].Question }
@@ -36410,6 +36920,24 @@ function Update-AskWindow {
         # der Tab-Reihenfolge. Ohne Index gilt die visuelle Reihenfolge.
         $customBox.ToolTip = 'Eigene Antwort - tippen oder einfügen (Strg+V). Wird zusätzlich zu den angekreuzten Optionen übergeben.'
         $customBox.Tag = [pscustomobject]@{ Info = $Info; QuestionId = $qid }
+        try { if ($null -ne $Info.CustomBoxes) { $Info.CustomBoxes[$qid] = $customBox } } catch {}
+        $customBox.Add_GotKeyboardFocus({
+            param($s, $e)
+            $data = $s.Tag
+            try {
+                $data.Info.FocusedCustomQuestionId = [string]$data.QuestionId
+                $data.Info.FocusedCustomCaret = [int]$s.SelectionStart
+            } catch {}
+        })
+        $customBox.Add_SelectionChanged({
+            param($s, $e)
+            $data = $s.Tag
+            try {
+                $data.Info.FocusedCustomQuestionId = [string]$data.QuestionId
+                $data.Info.FocusedCustomCaret = [int]$s.SelectionStart
+                $data.Info.FocusedCustomSelectionLength = [int]$s.SelectionLength
+            } catch {}
+        })
         $customBox.Add_TextChanged({
             param($s, $e)
             $data = $s.Tag
@@ -36418,13 +36946,33 @@ function Update-AskWindow {
                 if ($null -eq $entry) { $entry = @{ optionIds = @(); labels = @(); custom = '' } }
                 $entry.custom = [string]$s.Text
                 $data.Info.Answers[$data.QuestionId] = $entry
-                $data.Info.Dirty = $true
+                # Version 8.0.0: Tippen setzt Dirty NICHT mehr (der Timer
+                # baute den Baum sonst neu und der Fokus war weg). Die
+                # Antwort liegt direkt in Answers; Caret wird gerettet.
+                try {
+                    $data.Info.FocusedCustomQuestionId = [string]$data.QuestionId
+                    $data.Info.FocusedCustomCaret = [int]$s.SelectionStart
+                    $data.Info.FocusedCustomSelectionLength = [int]$s.SelectionLength
+                } catch {}
                 # Wichtig: hier darf KEIN Neuzeichnen angestoßen werden - das
                 # Textfeld würde sonst beim Tippen neu gebaut und der Caret
                 # wäre weg.
             } catch {}
         })
         [void]$questionStack.Children.Add($customBox)
+
+        # Version 8.0.0: Fokus und Caret exakt wiederherstellen, wenn der
+        # Neuaufbau waehrend des Tippens lief - die eigene Antwort behaelt
+        # den Fokus, der Cursor bleibt an derselben Stelle.
+        if (-not [string]::IsNullOrWhiteSpace($focusedCustomQuestionId) -and $focusedCustomQuestionId -eq $qid) {
+            try {
+                [void]$customBox.Focus()
+                $textLength = [int]$customBox.Text.Length
+                $caret = [Math]::Min([Math]::Max(0, $focusedCustomCaret), $textLength)
+                $customBox.SelectionStart = $caret
+                $customBox.SelectionLength = [Math]::Min([Math]::Max(0, $focusedCustomSelection), ($textLength - $caret))
+            } catch {}
+        }
 
         $Info.BackButton.IsEnabled = ($Info.Step -gt 0)
         $Info.NextButton.IsEnabled = $true
@@ -36760,6 +37308,7 @@ function Open-AskWindow {
         Start-AskModal $info
         [void](Update-AskWindow $info)
         $timer.Start()
+        try { Apply-UiLanguageToWindow $win } catch {}
         [void]$win.Show()
         try { $win.Activate() } catch {}
     } catch {
@@ -37850,6 +38399,36 @@ function Set-PlacePreviewImage {
         return
     }
     $isSelfTest = $flow.StartsWith('selftest')
+    if ($isSelfTest) {
+        # Version 8.0.0 (Owner-Befund: gruen-orange-gruene Rechtecke blitzen
+        # kurz in der Place-Liste auf): Das Testbild (Limette/Orange-
+        # Schachbrett) wird NIE MEHR in die sichtbare Zeile gelegt. Es ist
+        # nur noch eine reine Dekodier-Probe im Speicher; in der Liste
+        # bleibt bis zum ersten ECHTEN Frame ausschliesslich das drehende
+        # Lade-Icon (Spinner) sichtbar.
+        try {
+            $probeStream = New-Object System.IO.MemoryStream (,$Bytes)
+            try {
+                $probeBitmap = [System.Windows.Media.Imaging.BitmapImage]::new()
+                $probeBitmap.BeginInit()
+                $probeBitmap.CacheOption = [System.Windows.Media.Imaging.BitmapCacheOption]::OnLoad
+                $probeBitmap.StreamSource = $probeStream
+                $probeBitmap.EndInit()
+                $probeBitmap.Freeze()
+                if ($probeBitmap.PixelWidth -lt 8 -or $probeBitmap.PixelHeight -lt 8) { throw 'Probe image decoded with an unexpected size.' }
+            } finally { $probeStream.Dispose() }
+            Write-PreviewTrace $flow 'SELFTEST_PROBE_OK' @{ sid = [string]$Row.sessionId; bytes = $Bytes.Length } 'probe=in-memory-only spinner=bleibt sichtbar'
+            $script:PreviewSelfTestVerdict = 'PREVIEW_UI_SELFTEST_OK sid=' + [string]$Row.sessionId + ' flow=' + $flow + ' (Dekodier-Probe im Speicher, Testbild wird nicht angezeigt)'
+            try { if ($Row.IconSpinner) { $Row.IconSpinner.Visibility = 'Visible' } } catch {}
+            try { if ($Row.IconImage) { $Row.IconImage.Visibility = 'Collapsed' } } catch {}
+            try { Set-PlacePreviewSpinnerAnimation $Row.IconVisual $true } catch {}
+        } catch {
+            Write-PreviewTrace $flow 'SELFTEST_PROBE_FAILED' @{ sid = [string]$Row.sessionId; error = [string]$_.Exception.Message }
+            $script:PreviewSelfTestVerdict = 'PREVIEW_UI_SELFTEST_FAILED sid=' + [string]$Row.sessionId + ' flow=' + $flow + ' error=' + [string]$_.Exception.Message
+        }
+        Clear-PreviewFlow $flow
+        return
+    }
     $apply = {
         $decodedW = 0
         $decodedH = 0
@@ -37893,6 +38472,7 @@ function Set-PlacePreviewImage {
                 # Wert 1 frei), und ein Wächter holt eine hängende
                 # Einblendung nach 400 ms hart zurück.
                 $Row.PreviewHasFrame = $true
+                $Row.PreviewHasRealFrame = $true
                 $Row.IconImage.Opacity = 1
                 try {
                     $fade = [System.Windows.Media.Animation.DoubleAnimation]::new(0, 1, [System.TimeSpan]::FromMilliseconds(260))
@@ -37981,6 +38561,8 @@ function Set-PlacePreviewImage {
 function New-PlacePreviewSelfTestImage {
     # Unverwechselbar: Magenta/Neon-Limette-Schachbrett mit orangem Rand.
     # Wird komplett im Speicher gezeichnet - kein Fenster, kein Netzwerk.
+    # Version 8.0.0: NUR Dekodier-Probe, wird niemals angezeigt (sonst sah
+    # der Nutzer kurz das gruen-orange Muster als verbuggte Textur).
     $bmp = New-Object System.Drawing.Bitmap 64, 44
     try {
         $colorA = [System.Drawing.Color]::FromArgb(255, 255, 0, 255)
@@ -38021,34 +38603,13 @@ function Invoke-PlacePreviewUiSelfTest {
         $bytes = New-PlacePreviewSelfTestImage
         if (-not $bytes -or $bytes.Length -eq 0) { throw 'Testbild konnte nicht erzeugt werden (0 Bytes)' }
         Write-PreviewTrace $flow 'RESULT_RECEIVED' @{ sid = [string]$SessionId; type = [string]$bytes.GetType().FullName; bytes = $bytes.Length; w = 64; h = 44 } 'method=in-memory'
+        # Version 8.0.0: Set-PlacePreviewImage behandelt selftest-Flows als
+        # reine Speicher-Probe (siehe dort) - das bunte Testmuster erscheint
+        # zu KEINEM Zeitpunkt in der Place-Liste. Bis zum ersten echten
+        # Frame dreht ausschliesslich der Lade-Spinner weiter; ein
+        # Waechter, der ein sichtbares Testbild wieder wegnehmen muesste,
+        # ist damit ueberfluessig und entfernt.
         Set-PlacePreviewImage $Row $bytes $flow
-        # 2,5-Sekunden-Wächter: ist bis dahin keine echte Vorschau da
-        # (PreviewHasFrame wäre dann true), Testbild ausblenden und
-        # Spinner wieder zeigen. So sieht der Nutzer nie ein buntes
-        # Schachbrett dauerhaft in der Liste.
-        try {
-            $selfTestTimer = [System.Windows.Threading.DispatcherTimer]::new()
-            $selfTestTimer.Interval = [System.TimeSpan]::FromMilliseconds(2500)
-            $selfTestTimer.Tag = $Row
-            $selfTestTimer.Add_Tick({
-                param($s, $e)
-                $s.Stop()
-                $r = $s.Tag
-                if ($null -eq $r) { return }
-                # Echte Vorschau ist da (PreviewHasFrame wurde durch
-                # Set-PlacePreviewImage gesetzt) - Testbild darf bleiben.
-                if ([bool]$r.PreviewHasFrame) { return }
-                # Keine echte Vorschau nach 2,5 s - Testbild aus, Spinner an.
-                try {
-                    if ($null -ne $r.IconImage) { $r.IconImage.Source = $null }
-                    if ($null -ne $r.IconImage) { $r.IconImage.Visibility = 'Collapsed' }
-                    if ($null -ne $r.IconSpinner) { $r.IconSpinner.Visibility = 'Visible' }
-                    if ($null -ne $r.IconFallback) { $r.IconFallback.Visibility = 'Collapsed' }
-                    try { Set-PlacePreviewSpinnerAnimation $r.IconVisual $true } catch {}
-                } catch {}
-            })
-            $selfTestTimer.Start()
-        } catch {}
     } catch {
         Write-PreviewTrace $flow 'RESULT_RECEIVED' @{ sid = [string]$SessionId; error = [string]$_.Exception.Message }
         $verdictEarly = 'PREVIEW_UI_SELFTEST_FAILED sid=' + [string]$SessionId + ' error=' + [string]$_.Exception.Message
@@ -39069,6 +39630,7 @@ function Open-ArenaHistoryWindow {
     $timer=[System.Windows.Threading.DispatcherTimer]::new();$timer.Interval=[TimeSpan]::FromMilliseconds(650);$timer.Tag=$state;$timer.Add_Tick({param($sender,$e) Update-ArenaHistoryWindow $sender.Tag});$state.Timer=$timer
     $history.Add_Loaded({param($sender,$e) Update-ArenaHistoryWindow $sender.Tag;$sender.Tag.Timer.Start()})
     $history.Add_Closed({param($sender,$e) try{$sender.Tag.Timer.Stop()}catch{}})
+    try { Apply-UiLanguageToWindow $history } catch {}
     [void]$history.ShowDialog()
 }
 
@@ -39138,6 +39700,7 @@ function New-Row {
         IconVisual = $null
         PreviewHandle   = $null
         PreviewHasFrame = $false
+        PreviewHasRealFrame = $false
         PreviewVerifyDone = $false
         IconIconAttempted = $false
         PreviewFailCount = 0
@@ -39619,13 +40182,17 @@ function New-Row {
             Set-RowMode $targetRow $newMode
         })
 
-        $menuStack.Children.Add($messageItem.Root) | Out-Null
-        $menuStack.Children.Add((New-Separator)) | Out-Null
+        # Version 8.0.0 (Nutzerwunsch, exakte Reihenfolge):
+        #   OPTIONEN, Trennlinie, Prompt kopieren, Trennlinie,
+        #   Arena-Verlauf anzeigen, Nachricht an Arena senden,
+        #   Nur Lesezugriff, Token zurücksetzen.
+        # (Die Trennlinie nach OPTIONEN haengt bereits oben am Kopf.)
         $menuStack.Children.Add($copyItem.Root) | Out-Null
-        $menuStack.Children.Add($resetItem.Root) | Out-Null
-        $menuStack.Children.Add($historyItem.Root) | Out-Null
         $menuStack.Children.Add((New-Separator)) | Out-Null
+        $menuStack.Children.Add($historyItem.Root) | Out-Null
+        $menuStack.Children.Add($messageItem.Root) | Out-Null
         $menuStack.Children.Add($toggleItem.Root) | Out-Null
+        $menuStack.Children.Add($resetItem.Root) | Out-Null
 
         $menuShell.Child = $menuStack
         $popup.Child = $menuShell
@@ -39760,7 +40327,7 @@ function Show-CopyConfirm {
     )
     if ($null -eq $CopyConfirm) { return }
     try {
-        if ($null -ne $CopyConfirmText) { $CopyConfirmText.Text = $Message }
+        if ($null -ne $CopyConfirmText) { $CopyConfirmText.Text = Get-UiDisplayText ([string]$Message) }
 
         # Ein evtl. noch laufender Ausblend-Zähler wird zurückgesetzt,
         # damit mehrmaliges Kopieren den Hinweis frisch anzeigt.
@@ -40660,7 +41227,7 @@ function New-MinimalPlaceRow {
         SessionId = $SessionId
         Root = $null; Title = $null; Copy = $null; Menu = $null; Popup = $null
         Toggle = $null; IconFrame = $null; IconImage = $null; IconSpinner = $null
-        IconFallback = $null; IconVisual = $null; PreviewHandle = [IntPtr]::Zero; PreviewHasFrame = $false
+        IconFallback = $null; IconVisual = $null; PreviewHandle = [IntPtr]::Zero; PreviewHasFrame = $false; PreviewHasRealFrame = $false
         PreviewVerifyDone = $false; IconIconAttempted = $false; PreviewFailCount = 0
         PreviewLoggedOnce = $false; Mode = $(if ([string]$Studio.accessMode -eq 'readonly') {'readonly'} else {'readwrite'})
         ModeUntil = [DateTime]::MinValue; StaleText = $null
@@ -42393,13 +42960,26 @@ function Open-SettingsWindow {
                         <Border Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="14" Padding="16,12">
                             <StackPanel>
                                 <CheckBox x:Name="StartupSwitch" Style="{StaticResource ArenaSwitch}" Content="Beim PC-Start automatisch öffnen"/>
-                            </StackPanel>
-                        </Border>
-
-                        <TextBlock Text="EDITOR" Foreground="{StaticResource SwTextMuted}" FontSize="10.5" FontWeight="Bold" Margin="2,20,0,8"/>
-                        <Border Background="{StaticResource SwCardBg}" BorderBrush="#2EFFFFFF" BorderThickness="1" CornerRadius="14" Padding="16,12">
-                            <StackPanel>
-                                <CheckBox x:Name="EditorIconsSwitch" Style="{StaticResource ArenaSwitch}" Content="Live-Vorschau-Icons im Editor anzeigen"/>
+                                <!-- Version 8.0.0: Sprachauswahl direkt unter dem
+                                     PC-Start-Schalter. Nur Englisch (Standard) und
+                                     Deutsch, mit Flaggen und Haekchen an der Wahl. -->
+                                <TextBlock Text="Sprache / Language" Foreground="{StaticResource SwTextMain}" FontSize="13" FontWeight="SemiBold" Margin="0,16,0,6"/>
+                                <TextBlock Text="Die Sprache gilt für das gesamte Programm. Englisch ist der Standard." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                <Button x:Name="LanguageEnglishButton" Style="{StaticResource ArenaQuietButton}" HorizontalContentAlignment="Left" Padding="12,8" MinHeight="38">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="🇬🇧" FontSize="17" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                        <TextBlock Text="English" FontSize="13" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="LanguageEnglishCheck" Text="✓" FontSize="15" FontWeight="Bold" Foreground="#38D16C" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="LanguageGermanButton" Style="{StaticResource ArenaQuietButton}" HorizontalContentAlignment="Left" Padding="12,8" MinHeight="38" Margin="0,8,0,0">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="🇩🇪" FontSize="17" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                        <TextBlock Text="Deutsch" FontSize="13" VerticalAlignment="Center"/>
+                                        <TextBlock x:Name="LanguageGermanCheck" Text="✓" FontSize="15" FontWeight="Bold" Foreground="#38D16C" VerticalAlignment="Center" Margin="12,0,0,0" Visibility="Collapsed"/>
+                                    </StackPanel>
+                                </Button>
+                                <TextBlock x:Name="LanguageHintText" Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,8,0,0"/>
                             </StackPanel>
                         </Border>
 
@@ -42410,6 +42990,9 @@ function Open-SettingsWindow {
                                 <!-- Version 7.1.3: Fertig-Benachrichtigung als eigener
                                      Schalter direkt unter der Fortschrittsanzeige. -->
                                 <CheckBox x:Name="DoneNotifySwitch" Style="{StaticResource ArenaSwitch}" Content="Benachrichtigung, wenn Arena fertig ist" Margin="0,14,0,0"/>
+                                <!-- Version 8.0.0: Live-Vorschau gehoert jetzt zur
+                                     Kategorie PLACE-LISTE (vorher eigene Kategorie EDITOR). -->
+                                <CheckBox x:Name="EditorIconsSwitch" Style="{StaticResource ArenaSwitch}" Content="Live-Vorschau-Icons im Editor anzeigen" Margin="0,14,0,0"/>
                             </StackPanel>
                         </Border>
 
@@ -42570,6 +43153,7 @@ function Open-SettingsWindow {
     </Border>
 </Window>
 '@
+    $settingsXaml = Get-LocalizedXamlText $settingsXaml
     $settingsReader = [System.Xml.XmlNodeReader]::new([xml]$settingsXaml)
     $settingsWindow = [Windows.Markup.XamlReader]::Load($settingsReader)
     # Version 7.7.2: derselbe Nutzer-Hintergrund wie im Hauptfenster.
@@ -42594,6 +43178,11 @@ function Open-SettingsWindow {
     $progressSwitch  = $settingsWindow.FindName('ProgressSwitch')
     $doneNotifySwitch = $settingsWindow.FindName('DoneNotifySwitch')
     $editorIconsSwitch = $settingsWindow.FindName('EditorIconsSwitch')
+    $languageEnglishButton = $settingsWindow.FindName('LanguageEnglishButton')
+    $languageGermanButton  = $settingsWindow.FindName('LanguageGermanButton')
+    $languageEnglishCheck  = $settingsWindow.FindName('LanguageEnglishCheck')
+    $languageGermanCheck   = $settingsWindow.FindName('LanguageGermanCheck')
+    $languageHintText      = $settingsWindow.FindName('LanguageHintText')
     # Version 7.6.0: Der Creator-Dashboard-Schalter ist entfernt - der
     # Schlüssel und seine Scopes entscheiden allein.
     $updateText      = $settingsWindow.FindName('UpdateInfoText')
@@ -43389,6 +43978,43 @@ function Open-SettingsWindow {
         param($s, $e)
         Set-EditorIconsEnabled ([bool]$s.IsChecked)
         Save-BridgeSettingsFile
+    })
+    # Version 8.0.0: Sprachauswahl (Flaggen + Haekchen). Die Wahl wird sofort
+    # gespeichert, das Haekchen wandert sofort, und die Sprache wird auf das
+    # Hauptfenster und dieses Fenster angewandt; neu geoeffnete Fenster
+    # starten direkt in der gewaehlten Sprache (Standard: Englisch).
+    $syncLanguageUi = {
+        $isGerman = ((Get-UiLanguage) -eq 'de')
+        try { $languageEnglishCheck.Visibility = $(if ($isGerman) { 'Collapsed' } else { 'Visible' }) } catch {}
+        try { $languageGermanCheck.Visibility = $(if ($isGerman) { 'Visible' } else { 'Collapsed' }) } catch {}
+        try { $languageHintText.Text = $(if ($isGerman) { 'Deutsch ist ausgewählt - alle Fenster nutzen Deutsch.' } else { 'English is selected - all windows now use English.' }) } catch {}
+    }
+    & $syncLanguageUi
+    $languageEnglishButton.Add_Click({
+        param($s, $e)
+        try {
+            $script:SettingsCache.uiLanguage = 'en'
+            $script:UiLanguage = 'en'
+            Save-BridgeSettingsFile
+            & $syncLanguageUi
+            try { Apply-UiLanguageToWindow $window } catch {}
+            try { Apply-UiLanguageToWindow $settingsWindow } catch {}
+            & $syncLanguageUi
+            Write-RuntimeLog 'Programmsprache: Englisch (Standard).'
+        } catch { Write-UiErrorLog 'Sprachauswahl Englisch' $_ }
+    })
+    $languageGermanButton.Add_Click({
+        param($s, $e)
+        try {
+            $script:SettingsCache.uiLanguage = 'de'
+            $script:UiLanguage = 'de'
+            Save-BridgeSettingsFile
+            & $syncLanguageUi
+            try { Apply-UiLanguageToWindow $window } catch {}
+            try { Apply-UiLanguageToWindow $settingsWindow } catch {}
+            & $syncLanguageUi
+            Write-RuntimeLog 'Programmsprache: Deutsch.'
+        } catch { Write-UiErrorLog 'Sprachauswahl Deutsch' $_ }
     })
     [void]$settingsWindow.ShowDialog()
 }

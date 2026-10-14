@@ -4,9 +4,9 @@
 Dieser Test braucht KEIN Windows, kein PowerShell und kein Roblox Studio. Er
 prueft ausschliesslich den vom Nutzer beauftragten Oberflaechen-Umbau:
 
-1. LOGO OBEN LINKS: groesser als vorher (mindestens 46 px) und ECKIG
-   (CornerRadius="0"), damit das Logo nicht mehr als abgerundeter Kreis/Blob
-   erscheint.
+1. LOGO OBEN LINKS: groesser als vorher (mindestens 46 px). Seit 8.0.0 ist
+   es ABGERUNDET (CornerRadius=14) mit Glow und Schwebe-Animation (der
+   7.7.1-Beschluss "eckig" ist durch den Nutzerwunsch 8.0.0 ersetzt).
 2. PLACE-LISTE OHNE PLACE: Das Platzhalter-Icon ist nicht mehr der gezeichnete
    Strich mit den zwei Kreisen, sondern dieselbe eingebettete Logo-Bitmap
    (EmptyStateLogoImage + Set-ProgramBrandImage).
@@ -107,9 +107,11 @@ def main() -> int:
     logo_height = int(float(logo_image.attrib.get("Height", "0"))) if logo_image is not None else 0
     check(logo_width >= 46 and logo_height >= 46,
           f"das Titelzeilen-Logo ist deutlich groesser als 38 px ({logo_width}x{logo_height})")
-    check(logo_box is not None and str(logo_box.attrib.get("CornerRadius", "")).strip().strip("0.") == ""
-          and logo_box.attrib.get("CornerRadius") == "0",
-          "das Titelzeilen-Logo ist eckig (CornerRadius=0, nicht abgerundet)")
+    check(logo_box is not None and logo_box.attrib.get("CornerRadius") == "14"
+          and logo_box.attrib.get("{http://schemas.microsoft.com/winfx/2006/xaml}Name") == "ProgramLogoBorder",
+          "das Titelzeilen-Logo ist seit 8.0.0 abgerundet (CornerRadius=14, ProgramLogoBorder)")
+    check("Start-ArenaLogoFloatAnimation" in source and "DropShadowEffect" in source,
+          "das Logo schwebt seit 8.0.0 mit Glow (Start-ArenaLogoFloatAnimation)")
     check(logo_image is not None and logo_image.attrib.get("Stretch") == "Uniform",
           "das Titelzeilen-Logo wird proportional skaliert (keine Verzerrung)")
     check("Set-ProgramBrandLogo -ImageControl $ProgramLogoImage" in source,
