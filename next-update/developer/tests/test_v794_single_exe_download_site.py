@@ -153,12 +153,10 @@ def test_version_note() -> None:
           "Die neueste Notiz beginnt mit der vorbereiteten Version")
     check(note.count("•") >= 5 and len(" ".join(note.split())) <= 600,
           "Die Notiz folgt der Stichpunkt-Regel (mindestens fünf Stichpunkte, unter 600 Zeichen)")
-    check("ArenaRobloxBridge.exe" in note and "Spaeter" not in note
-          and any(letter in note for letter in "äöüÄÖÜß"),
-          "Die Notiz nennt die eine EXE und benutzt echte Umlaute")
-    check("Download-Seite" in note and "TESTUPDATE" in note
-          and "nichts geändert" in note,
-          "Die Notiz kennzeichnet das Testupdate und bestätigt unveränderten Programmcode")
+    check("Billboard" in note and any(letter in note for letter in "äöüÄÖÜß"),
+          "Die Notiz nennt das 8.0.0-Thema (Billboards) und benutzt echte Umlaute")
+    check("8.0.0" in note and "Englisch" in note and "Fortschritt" in note,
+          "Die Notiz kennzeichnet Version 8.0.0 mit Sprache und Fortschritts-Reset")
 
 
 def main() -> int:

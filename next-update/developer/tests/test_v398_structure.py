@@ -1318,10 +1318,11 @@ def main() -> int:
             "the fade-in watchdog for the preview image is missing")
     require("Start-PlacePreviewVisibilityVerify $Row $flow $isSelfTest" in assign_fn,
             "the delayed visibility verification is not wired into the assign path")
-    # The self-test verdict must NOT be written straight after assignment any
-    # more (6.0.4 logged PREVIEW_UI_SELFTEST_OK even at opacity 0).
-    require("PREVIEW_UI_SELFTEST_OK" not in assign_fn,
-            "the self-test still reports success before visibility was measured")
+    # 8.0.0: the self-test image is NEVER assigned to the visible row any
+    # more (the user saw the green/orange test pattern flash). It is only an
+    # in-memory decode probe; the spinner stays until the first real frame.
+    require("SELFTEST_PROBE_OK" in assign_fn and "PreviewHasRealFrame" in source,
+            "the self-test must stay an in-memory probe (8.0.0) and real frames must be tracked separately")
     verify_fn = source[source.index("function Start-PlacePreviewVisibilityVerify"):source.index("function Write-PreviewTrace")]
     require("PREVIEW_UI_SELFTEST_OK" in verify_fn and "PREVIEW_UI_SELFTEST_FAILED" in verify_fn,
             "the measured self-test verdict is missing from the verification step")
