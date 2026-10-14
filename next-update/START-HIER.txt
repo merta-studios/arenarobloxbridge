@@ -31,6 +31,14 @@ ZUM VERÖFFENTLICHEN (nur wenn der Test gut war):
   sehen Nutzer das Update.
 - Ist der Workflow rot: Meist ist die Version nicht erhöht. Sag der KI
   "Version erhöhen" — sie setzt dann die nächste Version in app\version.json.
+- GEGEN VIREN-FEHLALARME (optional, aber wirksam): Hinterlege dein
+  Code-Signatur-Zertifikat einmal mit
+      setx ARENABRIDGE_SIGN_PFX "C:\Pfad\zertifikat.pfx"
+      setx ARENABRIDGE_SIGN_PFX_PASSWORD "passwort"      (nur wenn nötig)
+  danach baut Build-EXE.bat wie gewohnt - die EXE wird dann automatisch
+  signiert und der Bau bricht ab, wenn die Signatur nicht gültig ist.
+  Hintergrund, Meldewege und ein fertiger Meldetext für die Scanner-Hersteller:
+  developer\docs\FALSE-POSITIVE-MELDUNG.md
 
 WIE DAS UPDATE FÜR NUTZER FUNKTIONIERT:
 
@@ -56,4 +64,11 @@ WICHTIG:
 - Windows kann beim Herunterladen warnen ("Unbekannter Herausgeber" /
   SmartScreen). Die EXE ist nicht signiert. Wenn du der Datei vertraust:
   "Weitere Informationen" -> "Trotzdem ausführen".
+- Virenscanner melden die EXE manchmal als Trojaner/Downloader. Das sind
+  Fehlalarme: Die Bridge ist ein PowerShell-Programm, das mit dem Werkzeug
+  ps2exe in eine EXE gepackt wird - dieses Bau-Muster ist bei Scannern
+  bekannt und wird oft fälschlich gemeldet. Was wirklich dagegen hilft
+  (Meldewege der Hersteller, fertiger Meldetext, Signatur des Builds):
+  developer\docs\FALSE-POSITIVE-MELDUNG.md. Im Builder lässt sich die EXE
+  auf Wunsch signieren, siehe "ZUM VERÖFFENTLICHEN" unten.
 - Der Ablauf im Detail: README.md. Technik: developer\docs\UPDATE-SYSTEM.md.

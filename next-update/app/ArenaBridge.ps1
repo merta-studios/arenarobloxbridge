@@ -32591,8 +32591,13 @@ $script:UiTranslationsDeEn = @{
     'Öffnet den Bridge-Ordner mit Laufzeitprotokollen, Diagnosedateien und Einstellungen.' = 'Opens the Bridge folder with runtime logs, diagnostics and settings.'
     'Entwickelt von MertaStudios mit dem Arena Agenten.' = 'Developed by MertaStudios with the Arena agent.'
     'Die Bridge sucht beim Start automatisch nach neuen Versionen. Ist eine neue Version da, erscheint ein Hinweisfenster.' = 'The Bridge automatically checks for new versions at startup. When one is available, a notice window appears.'
+    # PowerShell-Hashtables vergleichen Schlüssel OHNE Groß-/Kleinschreibung.
+    # Der frühere Zweiteintrag für die XAML-Überschrift 'ROBLOX OPEN CLOUD
+    # API-KEY' war deshalb derselbe Schlüssel und brach den Bau als harter
+    # Parser-Fehler ab (DuplicateKeyInHashLiteral, 8.0.0). Die Überschrift
+    # bleibt in beiden Sprachen unverändert; übersetzt wird die sichtbare
+    # Kartenüberschrift daneben.
     'Roblox Open Cloud API-Key' = 'Roblox Open Cloud API key'
-    'ROBLOX OPEN CLOUD API-KEY' = 'ROBLOX OPEN CLOUD API KEY'
     'Noch kein API-Key hinzugefügt!' = 'No API key added yet!'
     'API-Key ist eingerichtet!' = 'API key is set up!'
     'API-Key entfernen' = 'Remove API key'

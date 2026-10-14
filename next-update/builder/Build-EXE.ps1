@@ -10,6 +10,21 @@ param(
     # Test-only: numeric FileVersion of a test-fixture EXE (e.g. 7.7.1.0) so the
     # self-update test can serve a genuinely newer artifact. Requires -TestFixtureBuild.
     [string]$TestFileVersion = '',
+    # Optional: echte Code-Signatur (Authenticode) gegen Viren-Fehlalarme.
+    # Die haeufigste Ursache der Fehlalarme ist eine UNSIGNIERTE EXE. Wird eine
+    # Signatur angeboten, signiert der Builder die fertige EXE VOR dem Smoke-Test
+    # und laesst den Bau ohne gueltige Signatur scheitern. Ohne diese Angaben
+    # bleibt der Bau exakt wie vorher (unsigniert). Anleitung mit Bezugsquellen
+    # fuer Zertifikate: developer\docs\FALSE-POSITIVE-MELDUNG.md
+    # -SignCertificatePath    Pfad zu einem .pfx/.p12 mit privatem Schluessel
+    # -SignCertificateThumbprint  Alternative: Zertifikat aus Cert:\CurrentUser\My
+    # -SignCertificatePassword    optional; sonst Umgebungsvariable
+    #                             ARENABRIDGE_SIGN_PFX_PASSWORD oder sichere Abfrage
+    # -SignTimestampUrl       Zeitstempel-Server; leer lassen = ohne Zeitstempel
+    [string]$SignCertificatePath = '',
+    [string]$SignCertificateThumbprint = '',
+    [string]$SignCertificatePassword = '',
+    [string]$SignTimestampUrl = 'http://timestamp.digicert.com',
     # Schalter fuer Build-EXE.bat oder CI: ueberspringt die interaktive Bestaetigung bei -Channel stable
     [switch]$NonInteractive
 )
@@ -32,7 +47,9 @@ function Invoke-BridgeCompiler {
         [string]$IconPath,
         [string]$NumericVersion,
         [bool]$NoConsole,
-        [string]$WindowTitle
+        [string]$WindowTitle,
+        [string]$Copyright,
+        [string]$Trademark
     )
     $arguments = @{
         inputFile = $InputPath
@@ -46,6 +63,19 @@ function Invoke-BridgeCompiler {
         product = 'Arena Roblox Bridge'
         version = $NumericVersion
         iconFile = $IconPath
+    }
+    # Vollstaendige Dateiinformationen (Eigenschaften -> Details). Eine EXE ohne
+    # Copyright-/Trademark-Angaben sieht fuer Viren-Heuristiken wie ein
+    # zusammengebautes Wegwerf-Programm aus - das laesst sich vermeiden, ohne das
+    # Verhalten der Bridge zu aendern.
+    $installedParameters = (Get-Command Invoke-ps2exe -ErrorAction SilentlyContinue).Parameters
+    if ($null -ne $installedParameters) {
+        if ($installedParameters.ContainsKey('copyright') -and -not [string]::IsNullOrWhiteSpace($Copyright)) {
+            $arguments['copyright'] = $Copyright
+        }
+        if ($installedParameters.ContainsKey('trademark') -and -not [string]::IsNullOrWhiteSpace($Trademark)) {
+            $arguments['trademark'] = $Trademark
+        }
     }
     Invoke-ps2exe @arguments | Out-Null
     if (-not (Test-Path -LiteralPath $OutputPath -PathType Leaf)) {
@@ -175,6 +205,109 @@ function Test-AtomicReplaceSupport {
     } finally {
         Remove-Item -LiteralPath $probeDirectory -Recurse -Force -ErrorAction SilentlyContinue
     }
+}
+
+function Resolve-BridgeSigningCertificate {
+    # Laedt das Signaturzertifikat VOR dem teuren Kompilieren: fehlt es, ist das
+    # Passwort falsch oder fehlt der private Schluessel, bricht der Bau sofort
+    # mit klarer Meldung ab. Ohne Zertifikatsangaben passiert hier nichts (der
+    # Bau bleibt dann unsigniert wie vorher).
+    param(
+        [string]$CertificatePath,
+        [string]$CertificateThumbprint,
+        [string]$CertificatePassword,
+        [switch]$NoPrompt
+    )
+    if ([string]::IsNullOrWhiteSpace($CertificatePath) -and [string]::IsNullOrWhiteSpace($CertificateThumbprint)) {
+        return $null
+    }
+    if (-not [string]::IsNullOrWhiteSpace($CertificateThumbprint)) {
+        $normalized = ($CertificateThumbprint -replace '[^0-9A-Fa-f]','').ToUpperInvariant()
+        if ($normalized.Length -lt 40) {
+            throw 'SignCertificateThumbprint must be a complete certificate thumbprint (40 hexadecimal characters).'
+        }
+        $found = @()
+        foreach ($store in @('Cert:\CurrentUser\My','Cert:\LocalMachine\My')) {
+            $found += @(Get-ChildItem -Path $store -ErrorAction SilentlyContinue | Where-Object { $_.Thumbprint -eq $normalized })
+        }
+        $certificate = $found | Where-Object { $_.HasPrivateKey } | Select-Object -First 1
+        if ($null -eq $certificate) {
+            throw ('No certificate with thumbprint ' + $normalized + ' and a private key was found in Cert:\CurrentUser\My or Cert:\LocalMachine\My. Install the code-signing certificate first and run the build again.')
+        }
+        return $certificate
+    }
+    if (-not (Test-Path -LiteralPath $CertificatePath -PathType Leaf)) {
+        throw ('The code-signing certificate file was not found: ' + $CertificatePath)
+    }
+    $extension = [IO.Path]::GetExtension($CertificatePath).ToLowerInvariant()
+    if ($extension -ne '.pfx' -and $extension -ne '.p12') {
+        throw 'SignCertificatePath must point to a .pfx or .p12 file with the private key (a plain .cer cannot sign).'
+    }
+    if ([string]::IsNullOrEmpty($CertificatePassword)) {
+        if (-not [string]::IsNullOrEmpty($env:ARENABRIDGE_SIGN_PFX_PASSWORD)) {
+            $CertificatePassword = $env:ARENABRIDGE_SIGN_PFX_PASSWORD
+        } elseif ($NoPrompt) {
+            throw 'The .pfx password is missing. Set the environment variable ARENABRIDGE_SIGN_PFX_PASSWORD or pass -SignCertificatePassword.'
+        } else {
+            Write-Step 'Reading the .pfx password (input stays hidden)...'
+            $secure = Read-Host -AsSecureString -Prompt 'Password of the code-signing .pfx'
+            $CertificatePassword = [System.Net.NetworkCredential]::new('',$secure).Password
+        }
+    }
+    try {
+        $flags = [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
+        $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($CertificatePath,$CertificatePassword,$flags)
+    } catch {
+        throw ('The .pfx could not be opened (wrong password or damaged file): ' + $_.Exception.Message)
+    }
+    if (-not $certificate.HasPrivateKey) {
+        throw 'The .pfx does not contain a private key; this certificate cannot sign the EXE.'
+    }
+    return $certificate
+}
+
+function Invoke-BridgeCodeSign {
+    # Signiert die fertige EXE VOR dem Smoke-Test und prueft die Signatur danach
+    # unabhaengig nach. Ohne Zertifikat passiert nichts.
+    param(
+        [string]$ExecutablePath,
+        $Certificate,
+        [string]$TimestampUrl
+    )
+    if ($null -eq $Certificate) { return $null }
+    if (-not (Test-Path -LiteralPath $ExecutablePath -PathType Leaf)) {
+        throw ('The staged executable to sign is missing: ' + $ExecutablePath)
+    }
+    $signParameters = @{
+        LiteralPath = $ExecutablePath
+        Certificate = $Certificate
+        HashAlgorithm = 'SHA256'
+        Force = $true
+        Confirm = $false
+    }
+    $timestampText = 'none'
+    if (-not [string]::IsNullOrWhiteSpace($TimestampUrl)) {
+        $signParameters['TimestampServer'] = $TimestampUrl
+        $timestampText = $TimestampUrl
+    }
+    $signature = Set-AuthenticodeSignature @signParameters
+    if ($null -eq $signature -or [string]$signature.Status -ne 'Valid') {
+        $message = ''
+        if ($null -ne $signature) { $message = [string]$signature.Status + ' ' + [string]$signature.StatusMessage }
+        throw ('Code signing failed; the EXE was not published. ' + $message + ' Tip: without internet the timestamp server is unreachable - pass -SignTimestampUrl '''' to skip the timestamp.')
+    }
+    $verified = Get-AuthenticodeSignature -LiteralPath $ExecutablePath
+    $verifiedStatus = ''
+    if ($null -ne $verified) { $verifiedStatus = [string]$verified.Status }
+    if ($verifiedStatus -ne 'Valid') {
+        throw ('The freshly signed EXE does not carry a valid signature (status ' + $verifiedStatus + '); the output was not published.')
+    }
+    if ($null -ne $verified.SignerCertificate) {
+        Write-Step ('Signed the staged EXE for ' + [string]$verified.SignerCertificate.Subject + ' (SHA-256, timestamp: ' + $timestampText + '). Antivirus engines and SmartScreen see a publisher instead of an unknown program.')
+    } else {
+        Write-Step ('Signed the staged EXE (SHA-256, timestamp: ' + $timestampText + ').')
+    }
+    return $verified
 }
 
 function Publish-LocalBuild {
@@ -383,6 +516,24 @@ if (-not (Test-Path -LiteralPath $windowsPowerShell -PathType Leaf)) {
 # fertigen EXE auf dieser Maschine ueberhaupt moeglich ist (kein $null-Leerstring,
 # keine Sicherungskopie im Ausgabeordner).
 Test-AtomicReplaceSupport
+# 8.0.0: Ein eventuell vorhandenes Signaturzertifikat ebenfalls VOR dem teuren
+# Kompilieren aufloesen (fehlendes Zertifikat, falsches Passwort, fehlender
+# privater Schluessel = sofortiger, klarer Abbruch statt Zeitverlust).
+# Ohne -SignCertificatePath/-SignCertificateThumbprint wird die Umgebungsvariable
+# ARENABRIDGE_SIGN_PFX ausgewertet (Pfad zum .pfx). Damit funktioniert auch der
+# normale Weg ueber Build-EXE.bat: Zertifikat einmal als Umgebungsvariable
+# hinterlegen, danach wie gewohnt bauen. Passwort: -SignCertificatePassword,
+# ARENABRIDGE_SIGN_PFX_PASSWORD oder die sichere Abfrage.
+if ([string]::IsNullOrWhiteSpace($SignCertificatePath) -and [string]::IsNullOrWhiteSpace($SignCertificateThumbprint) -and -not [string]::IsNullOrWhiteSpace($env:ARENABRIDGE_SIGN_PFX)) {
+    $SignCertificatePath = $env:ARENABRIDGE_SIGN_PFX
+    Write-Step ('Using the code-signing certificate from the environment variable ARENABRIDGE_SIGN_PFX: ' + $SignCertificatePath)
+}
+$signingCertificate = Resolve-BridgeSigningCertificate -CertificatePath $SignCertificatePath -CertificateThumbprint $SignCertificateThumbprint -CertificatePassword $SignCertificatePassword -NoPrompt:$NonInteractive
+if ($null -ne $signingCertificate) {
+    Write-Step ('Code signing is enabled: ' + [string]$signingCertificate.Subject + ' (thumbprint ' + [string]$signingCertificate.Thumbprint + '). Without a valid signature no build is published.')
+} else {
+    Write-Step 'Code signing is NOT enabled: the EXE will be unsigned, and antivirus engines and SmartScreen may warn. See developer\docs\FALSE-POSITIVE-MELDUNG.md'
+}
 Write-Step 'Running the real PowerShell parser before compilation...'
 & $windowsPowerShell -NoLogo -NoProfile -ExecutionPolicy Bypass -File $parseGatePath -Path $sourcePath
 if ($LASTEXITCODE -ne 0) { throw 'PowerShell parse gate failed; no EXE was produced.' }
@@ -480,7 +631,12 @@ try {
     # Version 7.9.4: GENAU EINE EXE. Der frueher zusaetzlich gebaute
     # Konsolen-Diagnose-Zwilling (ArenaBridge-Diagnose.exe) entfaellt.
     Write-Step ("Compiling " + $BuildVersion + ' for channel ' + $Channel + ' (hidden-console release EXE)...')
-    Invoke-BridgeCompiler -InputPath $preparedSourcePath -OutputPath $stagingExePath -IconPath $iconPath -NumericVersion $numericVersion -NoConsole $true -WindowTitle 'Arena Roblox Bridge'
+    Invoke-BridgeCompiler -InputPath $preparedSourcePath -OutputPath $stagingExePath -IconPath $iconPath -NumericVersion $numericVersion -NoConsole $true -WindowTitle 'Arena Roblox Bridge' -Copyright 'Copyright (C) 2026 MertaStudios' -Trademark 'Arena Roblox Bridge'
+
+    # 8.0.0: Optionale Authenticode-Signatur VOR dem Smoke-Test, damit genau die
+    # Datei geprueft wird, die danach eingesetzt wird. Ohne Zertifikat aendert
+    # sich am Ablauf nichts.
+    $signatureInfo = Invoke-BridgeCodeSign -ExecutablePath $stagingExePath -Certificate $signingCertificate -TimestampUrl $SignTimestampUrl
 
     Test-StagedExecutable -ExecutablePath $stagingExePath -ReportPath $smokeReportPath
 
@@ -524,6 +680,14 @@ try {
         testFixtureBuild = [bool]$TestFixtureBuild
         builtAtUtc = [DateTime]::UtcNow.ToString('o')
         published = $false
+        # 8.0.0: Signaturzustand und vollstaendige Dateiinformationen - beides
+        # senkt die Zahl der Viren-Fehlalarme (siehe FALSE-POSITIVE-MELDUNG.md).
+        signedWithAuthenticode = [bool]($null -ne $signatureInfo)
+        signerSubject = $(if ($null -ne $signatureInfo -and $null -ne $signatureInfo.SignerCertificate) { [string]$signatureInfo.SignerCertificate.Subject } else { '' })
+        signerThumbprint = $(if ($null -ne $signatureInfo -and $null -ne $signatureInfo.SignerCertificate) { [string]$signatureInfo.SignerCertificate.Thumbprint } else { '' })
+        signTimestampUrl = $SignTimestampUrl
+        fileCopyright = 'Copyright (C) 2026 MertaStudios'
+        fileTrademark = 'Arena Roblox Bridge'
         note = 'Lokaler Testbau. Veroeffentlicht wird nur durch Einchecken der getesteten Datei als next-update/release/ArenaRobloxBridge.exe.'
     }
     $metadataPath = Join-Path $buildOutputDirectory 'release-metadata.json'
@@ -534,6 +698,14 @@ try {
     Write-Host ''
     Write-Host 'ONE FILE WAS BUILT - THERE IS NO SECOND EXE ANY MORE:' -ForegroundColor Green
     Write-Host ('  ' + $exePath) -ForegroundColor White
+    if ($null -ne $signatureInfo -and $null -ne $signatureInfo.SignerCertificate) {
+        Write-Host ('Signed for: ' + [string]$signatureInfo.SignerCertificate.Subject) -ForegroundColor Green
+        Write-Host 'A valid signature is the most effective protection against antivirus false positives.'
+    } else {
+        Write-Host 'This EXE is NOT signed (code signing is optional).' -ForegroundColor Yellow
+        Write-Host 'Antivirus engines can report a false positive for unsigned, compiled PowerShell programs.'
+        Write-Host 'What to do about it: next-update\developer\docs\FALSE-POSITIVE-MELDUNG.md'
+    }
     Write-Host 'If this EXE shows no window, close every other ArenaBridge window and start it again.' -ForegroundColor Yellow
     Write-Host ('Start report: ' + (Join-Path $env:LOCALAPPDATA 'START-CHECK.txt'))
     Write-Host ('Start log:    ' + (Join-Path $env:LOCALAPPDATA 'ArenaRobloxBridge\bin\startup-diagnose.txt'))

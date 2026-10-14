@@ -20,6 +20,23 @@ ein, wo der Platzhalter __ARENA_BUILD_VERSION__ steht, und setzt die Dateiversio
 der EXE auf <Version>.0. Danach prüft der Builder den PowerShell-Parser und einen
 isolierten Start der EXE (Build-Smoke-Test).
 
+Viren-Fehlalarme (seit 8.0.0): Der normale Bau ist unsigniert, und genau das
+meldet VirusTotal regelmäßig (beim 7.9.5-Build 15 von 58 Engines) - ein bekanntes
+Fehlalarm-Muster für PowerShell-Programme, die mit ps2exe in eine EXE gepackt
+werden. Auf Wunsch signiert der Builder die fertige EXE (Authenticode):
+
+  -SignCertificatePath <pfx> | -SignCertificateThumbprint <40 Hex-Zeichen>
+  -SignCertificatePassword <passwort>   (sonst ARENABRIDGE_SIGN_PFX_PASSWORD)
+  -SignTimestampUrl <adresse>            (leer lassen = ohne Zeitstempel)
+
+Statt der Parameter dürfen auch die Umgebungsvariablen ARENABRIDGE_SIGN_PFX und
+ARENABRIDGE_SIGN_PFX_PASSWORD gesetzt werden - dann genügt weiter der gewohnte
+Doppelklick auf Build-EXE.bat. Signiert wird VOR dem Smoke-Test; ist die
+Signatur nicht gültig, bricht der Bau ab und es wird nichts eingesetzt.
+
+Ursache, Meldewege der Scanner-Hersteller und ein fertiger Meldetext:
+..\developer\docs\FALSE-POSITIVE-MELDUNG.md.
+
 Der Builder bettet keinen Updater mehr ein. Die Update-Logik steht direkt in
 app\ArenaBridge.ps1 (Block ARENA-UPDATE-INTEGRATION). Details: ..\developer\docs\UPDATE-SYSTEM.md.
 
