@@ -234,7 +234,10 @@
 
           setStatus(
             "Download von ArenaRobloxBridge.exe" + versionLabel + " gestartet.",
-            "Starte danach die heruntergeladene Datei ArenaRobloxBridge.exe. Dieses Tab kann geschlossen werden."
+            "Starte danach die heruntergeladene Datei ArenaRobloxBridge.exe. Dieses Tab kann geschlossen werden.\n"
+              + "Windows kann warnen (\"unbekannter Herausgeber\") und Virenscanner melden die Datei "
+              + "manchmal fälschlich als Trojaner - das ist ein bekannter Fehlalarm, weil das Programm "
+              + "nicht signiert ist. Wenn du der Quelle vertraust: \"Weitere Informationen\" -> \"Trotzdem ausführen\"."
           );
         } catch (downloadError) {
           retryEl.href = targetUrl;

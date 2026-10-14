@@ -22,6 +22,12 @@ kopiert und direkt über **Netlify** gehostet werden.
   Seite Größe und SHA-256-Prüfsumme und speichert die Datei direkt auf dieser
   sauberen Seite als **`ArenaRobloxBridge.exe`** — sowohl für Erst-Downloads als
   auch für spätere Updates.
+- **Hinweis zu Fehlalarmen (Version 8.0.0):** Nach dem Start des Downloads wird
+  eine Zeile eingeblendet, die SmartScreen- und Virenscanner-Warnungen als
+  bekannten Fehlalarm einordnet (die EXE ist nicht signiert). Hintergrund,
+  Meldewege der Scanner-Hersteller und der Signatur-Weg über den Builder:
+  `../developer/docs/FALSE-POSITIVE-MELDUNG.md`. Dieser Text ist bewusst nur
+  eine Zeile im bestehenden Detail-Text — das schlichte Seitenlayout bleibt.
 
 ## Auf Netlify veröffentlichen (später im Zweit-Repo)
 

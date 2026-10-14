@@ -979,9 +979,14 @@ def main() -> int:
           "Kein Operator (+, *, /, %, -bin.) steht am Anfang einer Fortsetzungszeile "
           "(Parse-Fehler auf Windows PowerShell 5.1)")
 
-    # 7.5.4-Regressionstor: In PowerShell-Hashtable-Literalen (@{ ... })
-    # sind doppelte Schlüssel ein schwerer Parser-Fehler (Parse-Fehler
-    # "Duplicate keys are not allowed in hash literals").
+    # 7.5.4-Regressionstor, erweitert in 8.0.0: In PowerShell-Hashtable-Literalen
+    # (@{ ... }) sind doppelte Schlüssel ein schwerer Parser-Fehler
+    # ("DuplicateKeyInHashLiteral"). PowerShell vergleicht Zeichenketten-Schlüssel
+    # OHNE Groß-/Kleinschreibung - 'ROBLOX OPEN CLOUD API-KEY' und
+    # 'Roblox Open Cloud API-Key' sind deshalb DERSELBE Schlüssel. Genau daran ist
+    # der Bau am 14.10.2026 gescheitert (PARSE-FEHLER: 1, Zeile 32595); das frühere
+    # Tor war blind, weil es Schlüssel in Anführungszeichen mit Leerzeichen gar
+    # nicht erkannte und Groß-/Kleinschreibung unterschied.
     def hashtable_duplicate_key_problems(text: str) -> list[str]:
         n = len(text)
         duplicates: list[str] = []
@@ -991,6 +996,14 @@ def main() -> int:
             cur_line = start_line
             brace_depth = 1
             entries: list[tuple[str, int]] = []
+
+            def key_follows_equals(after_pos: int) -> bool:
+                """Steht nach dem Schlüsselkandidaten wirklich ein Zuweisungszeichen?"""
+                probe = after_pos
+                while probe < n and text[probe] in (" ", "\t"):
+                    probe += 1
+                return (probe < n and text[probe] == "="
+                        and (probe + 1 >= n or text[probe + 1] != "="))
 
             while pos < n and brace_depth > 0:
                 ch = text[pos]
@@ -1014,31 +1027,34 @@ def main() -> int:
                     cur_line += text.count("\n", pos, end + len(term))
                     pos = end + len(term)
                     continue
-                if ch == "'":
+                if ch in ("'", '"'):
+                    # Zeichenketten-Literal lesen. Auf Ebene 1 kann es der
+                    # Hashtable-Schlüssel sein - dann folgt direkt ein `=`.
+                    quote = ch
+                    key_start = pos
+                    key_line = cur_line
+                    key_is_literal = brace_depth == 1
                     pos += 1
                     while pos < n:
                         if text[pos] == "\n":
                             cur_line += 1
-                        if text[pos] == "'":
+                            pos += 1
+                            continue
+                        if quote == "'" and text[pos] == "'":
                             if pos + 1 < n and text[pos + 1] == "'":
                                 pos += 2
                                 continue
-                            pos += 1
                             break
-                        pos += 1
-                    continue
-                if ch == '"':
-                    pos += 1
-                    while pos < n:
-                        if text[pos] == "\n":
-                            cur_line += 1
-                        if text[pos] == "`":
+                        if quote == '"' and text[pos] == "`":
                             pos += 2
                             continue
-                        if text[pos] == '"':
-                            pos += 1
+                        if quote == '"' and text[pos] == '"':
                             break
                         pos += 1
+                    key_text = text[key_start + 1:pos]
+                    pos += 1
+                    if key_is_literal and key_follows_equals(pos):
+                        entries.append((key_text, key_line))
                     continue
                 if ch == "@" and pos + 1 < n and text[pos + 1] == "{":
                     scan_hash(pos + 1, cur_line)
@@ -1053,26 +1069,27 @@ def main() -> int:
                     brace_depth -= 1
                     pos += 1
                     continue
-                if brace_depth == 1:
-                    if ch.isalnum() or ch in ("_", "$", "'", '"'):
-                        k_start = pos
-                        while pos < n and (text[pos].isalnum() or text[pos] in ("_", "-", ".", ":", "$", "'", '"')):
-                            pos += 1
-                        k_text = text[k_start:pos].strip().strip("'\"")
-                        while pos < n and text[pos] in (" ", "\t"):
-                            pos += 1
-                        if pos < n and text[pos] == "=" and (pos + 1 == n or text[pos + 1] != "="):
-                            entries.append((k_text, cur_line))
-                            pos += 1
-                        continue
+                if brace_depth == 1 and (ch.isalnum() or ch in ("_", "$")):
+                    key_start = pos
+                    key_line = cur_line
+                    while pos < n and (text[pos].isalnum() or text[pos] in ("_", "-", ".", ":", "$")):
+                        pos += 1
+                    if key_follows_equals(pos):
+                        entries.append((text[key_start:pos].strip(), key_line))
+                    continue
                 pos += 1
 
+            # PowerShell vergleicht Hashtable-Schlüssel ohne Groß-/Kleinschreibung
+            # (StringComparer.OrdinalIgnoreCase): 'Foo' und 'FOO' sind EIN Schlüssel.
             seen: dict[str, int] = {}
-            for k, l in entries:
-                if k in seen:
-                    duplicates.append(f"Hashtable ab Zeile {start_line}: doppelter Schlüssel {k!r} in Zeile {l} (bereits in Zeile {seen[k]})")
+            for key, line in entries:
+                key_id = key.lower()
+                if key_id in seen:
+                    duplicates.append(
+                        f"Hashtable ab Zeile {start_line}: doppelter Schlüssel {key!r} in Zeile {line} "
+                        f"(bereits in Zeile {seen[key_id]}; Groß-/Kleinschreibung zählt nicht)")
                 else:
-                    seen[k] = l
+                    seen[key_id] = line
 
         pos = 0
         line = 1
@@ -1097,31 +1114,26 @@ def main() -> int:
                 line += text.count("\n", pos, end + len(term))
                 pos = end + len(term)
                 continue
-            if text[pos] == "'":
+            if text[pos] in ("'", '"'):
+                quote = text[pos]
                 pos += 1
                 while pos < n:
                     if text[pos] == "\n":
                         line += 1
-                    if text[pos] == "'":
+                        pos += 1
+                        continue
+                    if quote == "'" and text[pos] == "'":
                         if pos + 1 < n and text[pos + 1] == "'":
                             pos += 2
                             continue
-                        pos += 1
                         break
-                    pos += 1
-                continue
-            if text[pos] == '"':
-                pos += 1
-                while pos < n:
-                    if text[pos] == "\n":
-                        line += 1
-                    if text[pos] == "`":
+                    if quote == '"' and text[pos] == "`":
                         pos += 2
                         continue
-                    if text[pos] == '"':
-                        pos += 1
+                    if quote == '"' and text[pos] == '"':
                         break
                     pos += 1
+                pos += 1
                 continue
             if text[pos] == "@" and pos + 1 < n and text[pos + 1] == "{":
                 scan_hash(pos + 1, line)
@@ -1129,13 +1141,17 @@ def main() -> int:
                 continue
             pos += 1
 
-        return duplicates
+        # Verschachtelte Literale werden vom äußeren Durchlauf erneut besucht;
+        # mehrfach gemeldete Zeilen einmalig ausgeben.
+        return sorted(set(duplicates))
+
 
     hash_problems = hashtable_duplicate_key_problems(source)
     for problem in hash_problems:
         print(f"    {problem}")
     check(not hash_problems,
-          "Keine doppelten Schlüssel in PowerShell-Hashtable-Literalen (Parse-Fehler auf PowerShell 5.1/7)")
+          "Keine doppelten Schlüssel in PowerShell-Hashtable-Literalen - auch nicht "
+          "bei unterschiedlicher Groß-/Kleinschreibung (Parse-Fehler auf PowerShell 5.1/7)")
 
     check((ROOT / "builder" / "parse-gate.ps1").is_file(), "Echtes Parser-Gate vorhanden")
     check("PROOF_OF_LIFE Version=" + VERSION in source,

@@ -67,8 +67,14 @@ ist entfernt.
 
 ## Was bewusst NICHT gemacht wird
 
-- Keine Code-Signatur (Azure Artifact Signing, Zertifikate, Authenticode). Folge: Windows
-  SmartScreen und Virenscanner können warnen oder Fehlalarme melden. Das ist akzeptiert.
+- Keine Code-Signatur als Voreinstellung. Ohne Zertifikat bleibt der Bau unsigniert, und dann
+  können Windows SmartScreen und Virenscanner warnen oder Fehlalarme melden (`15/58` Engines
+  auf VirusTotal beim 7.9.5-Build). Seit 8.0.0 kann der Builder die EXE auf Wunsch signieren:
+  `-SignCertificatePath` (.pfx/.p12) oder `-SignCertificateThumbprint` (Zertifikat aus
+  `Cert:\CurrentUser\My`), Passwort über `-SignCertificatePassword`/`ARENABRIDGE_SIGN_PFX_PASSWORD`,
+  Zertifikatspfad zusätzlich über `ARENABRIDGE_SIGN_PFX`. Signiert wird die fertige EXE VOR dem
+  Smoke-Test; eine ungültige Signatur bricht den Bau ab. Meldewege der Hersteller, Textvorlage
+  und Bezugsquellen für Zertifikate: `developer/docs/FALSE-POSITIVE-MELDUNG.md`.
 - Kein Selbst-Ersetzen der laufenden EXE. Der Nutzer startet die neue EXE selbst.
 - Kein Hintergrund-Download, kein Fortschrittsbalken.
 

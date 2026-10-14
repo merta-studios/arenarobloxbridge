@@ -1,11 +1,53 @@
 ########################################################################
 #                                                                      #
 #   ARENA ROBLOX BRIDGE  -  KI-ÜBERGABE FÜR NEUE SESSIONS              #
-#   (Stand: Version 7.9.4 - 12.10.2026)                                #
+#   (Stand: Version 8.0.0 - 14.10.2026)                                #
 #                                                                      #
 ########################################################################
 
-AKTUELLER NACHTRAG 7.9.4 (12.10.2026) - GENAU EINE EXE & INSTALLATION ÜBER DIE DOWNLOAD-SEITE (HAT VORRANG)
+AKTUELLER NACHTRAG 8.0.0 (14.10.2026) - PARSER-FEHLER BEHOBEN & VIREN-FEHLALARME (HAT VORRANG)
+==============================================================================================
+
+- GEMELDETER BAUBRUCH (Windows PowerShell 5.1: PARSE-FEHLER: 1, kein EXE):
+  `app/ArenaBridge.ps1:32595:5: Doppelte Schlüssel "ROBLOX OPEN CLOUD API-KEY" sind in
+  Hashliteralen nicht zulässig. [DuplicateKeyInHashLiteral]`, Abbruch in
+  `builder/Build-EXE.ps1` (Parse-Gate).
+  URSACHE: `$script:UiTranslationsDeEn` enthielt 'Roblox Open Cloud API-Key' (Zeile 32594)
+  UND 'ROBLOX OPEN CLOUD API-KEY' (Zeile 32595). PowerShell vergleicht Hashtable-Schlüssel
+  OHNE Groß-/Kleinschreibung - das ist derselbe Schlüssel.
+  FIX: Der Zweiteintrag ist entfernt, an seiner Stelle steht eine kurze Erklärung. Die
+  XAML-Überschrift "ROBLOX OPEN CLOUD API-KEY" bleibt in beiden Sprachen unverändert, die
+  sichtbare Kartenüberschrift wird weiter übersetzt. Version bleibt 8.0.0.
+- OFFLINE-TOR ERWEITERT: `developer/tests/test_v720_bridge.py` prüfte doppelte
+  Hashtable-Schlüssel bisher OHNE Groß-/Kleinschreibung und erkannte Schlüssel in
+  Anführungszeichen mit Leerzeichen überhaupt nicht - deshalb lief das Tor grün, obwohl
+  der Bau brach. Der Prüfer ist neu geschrieben (case-insensitive Vergleich wie PowerShell,
+  quoted keys, Kommentare/Here-Strings, sortierte Ausgabe) und meldet die alte Datei mit
+  genau der gemeldeten Zeile 32595, die neue mit 0 Problemen.
+- VIREN-FEHLALARME (Nutzerwunsch): VirusTotal meldete 15/58 für die 7.9.5-EXE
+  (u. a. Trojan:Win32/Wacatac.B!ml, Gen:Variant.MSILHeracles.270602, Ti!AE365B8A2D5B).
+  Ursache ist das ps2exe-Bau-Muster (unsignierte EXE + eingebettetes PowerShell-Skript),
+  nicht der Projektcode. Umgesetzt in 8.0.0:
+  - `builder/Build-EXE.ps1` signiert die EXE auf Wunsch (Authenticode):
+    `-SignCertificatePath` (.pfx/.p12), `-SignCertificateThumbprint`,
+    `-SignCertificatePassword`, `-SignTimestampUrl`; zusätzlich die Umgebungsvariablen
+    `ARENABRIDGE_SIGN_PFX` und `ARENABRIDGE_SIGN_PFX_PASSWORD`. Das Zertifikat wird VOR dem
+    Kompilieren aufgelöst, signiert wird VOR dem Smoke-Test, eine ungültige Signatur bricht
+    den Bau ab. Ohne Zertifikat bleibt der Ablauf exakt wie vorher (unsigniert).
+  - Dateiinformationen vollständig: Copyright/Trademark gehen an ps2exe (nur wenn die
+    installierte ps2exe-Version sie kennt); `release-metadata.json` notiert
+    `signedWithAuthenticode`, `signerSubject`, `signerThumbprint`, `signTimestampUrl`.
+  - Neu `developer/docs/FALSE-POSITIVE-MELDUNG.md`: Ursache, Meldewege der gemeldeten
+    Hersteller mit Links, fertiger englischer Meldetext, Signatur-Wege (Azure Trusted
+    Signing / OV / EV) und was NICHT hilft (Obfuskation, Packer, Fake-Metadaten).
+    `START-HIER.txt` und `developer/docs/UPDATE-SYSTEM.md` verweisen darauf.
+  - `builder/Build-EXE.ps1` muss reines ASCII bleiben (Test `test_v794_build_publish.py`);
+    die neuen Kommentare dort stehen deshalb ohne Umlaute.
+- WINDOWS-PFLICHTTEST nach diesem Nachtrag: `Build-EXE.bat` muss durchlaufen (Parse-Gate,
+  ps2exe, Smoke-Test, genau eine EXE in `release\`). Mit hinterlegtem Zertifikat zusätzlich
+  prüfen: Signatur gültig, und bei ungültiger Signatur bricht der Bau ab.
+
+HISTORISCHER NACHTRAG 7.9.4 (12.10.2026) - GENAU EINE EXE & INSTALLATION ÜBER DIE DOWNLOAD-SEITE (WEITER GÜLTIG)
 =========================================================================================================
 
 - GENAU EINE PROGRAMMDATEI:
