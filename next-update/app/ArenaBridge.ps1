@@ -1,6 +1,15 @@
 ﻿# ============================================================================
 # Arena Roblox Bridge  -  Version __ARENA_BUILD_VERSION__
 #
+# Version 8.0.1 (2026-10-14) - PFLICHT-UPDATE OHNE SCHLUPFLOCH (DRINGENDER FIX).
+#   Das X oben rechts im Update-Fenster wurde bisher als "Später" gewertet:
+#   Nach 5x "Später" (ab dann ist das Update Pflicht) konnte man das Fenster
+#   einfach wegklicken und die Bridge trotzdem bequem weiter nutzen. Jetzt
+#   gilt: Das X - und jedes Schließen des Update-Fensters ohne Auswahl -
+#   beendet die KOMPLETTE Bridge samt Hauptfenster (die Dienste starten gar
+#   nicht erst), und ein "Später" startet die Bridge bei einem bereits
+#   fälligen Pflicht-Update grundsätzlich nicht mehr.
+#
 # Version __ARENA_BUILD_VERSION__ (2026-10-12) - EIN PROGRAMM, EIN DOWNLOAD.
 #   1) GENAU EINE EXE: Gebaut wird nur noch ArenaRobloxBridge.exe. Der frühere
 #      zweite Programm-Zwilling (ArenaBridge-Diagnose.exe) und das Startskript
@@ -44091,6 +44100,8 @@ function Set-UiRefreshCadence {
 #     "Später" wird gezählt. Nach 5 Klicks gibt es keinen "Später"-Knopf mehr.
 #   - Die neue EXE schiebt beim ersten Start die alte EXE in den Papierkorb. Es wird
 #     nur die Datei angefasst, die die alte Version selbst zum Update angeboten hat.
+#   - Version 8.0.1: Das X oben rechts (und jedes Schließen ohne Auswahl)
+#     beendet die komplette Bridge samt Hauptfenster - es ist KEIN "Später".
 #   - Im Skriptlauf (nicht als EXE) findet keine Update-Prüfung statt.
 # ============================================================================
 $script:UpdateManifestUrl = 'https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/main/next-update/release/latest.json'
@@ -44296,7 +44307,8 @@ function Add-ArenaUpdateBulletRow {
 }
 
 function Show-ArenaUpdateWindow {
-    # Gibt zurück: 'install', 'later', '' (Fenster ohne Auswahl geschlossen) oder 'error'.
+    # Gibt zurück: 'install', 'later', 'exit' (X oder Fenster ohne Auswahl
+    # geschlossen - beendet die komplette Bridge) oder 'error'.
     # Version 7.9.2: neues, aufgeräumtes Fenster mit Zeitstrahl von der alten
     # zur neuen Version und kurzen Stichpunkten. Die Zahl der möglichen
     # "Später"-Klicks wird NICHT angezeigt - das ist ein Geheimnis des
@@ -44521,12 +44533,22 @@ function Show-ArenaUpdateWindow {
             })
         }
         if ($null -ne $closeButton) {
+            $closeButton.ToolTip = 'Bridge beenden'
             $closeButton.Add_Click({
-                # Wie "Später", aber ohne Zähler-Anzeige: das Kreuz ist immer da.
-                if ([string]::IsNullOrEmpty($script:UpdateWindowChoice)) { $script:UpdateWindowChoice = 'later' }
+                # Version 8.0.1: Das X ist KEIN "Später" mehr. Es beendet die
+                # komplette Bridge (Hauptfenster inklusive): Das Update-Gate
+                # gibt dafür $false zurück und der Aufrufer schließt das
+                # Hauptfenster, bevor irgendein Dienst startet. Eine bereits
+                # getroffene Installations-Auswahl bleibt erhalten.
+                if ([string]::IsNullOrEmpty($script:UpdateWindowChoice)) { $script:UpdateWindowChoice = 'exit' }
                 try { $script:UpdatePromptWindow.Close() } catch {}
             })
         }
+        # Version 8.0.1: Auch jedes andere Schließen ohne Auswahl (z. B.
+        # Alt+F4) gilt als Beenden der Bridge - niemals als "Später".
+        $win.Add_Closing({
+            if ([string]::IsNullOrEmpty($script:UpdateWindowChoice)) { $script:UpdateWindowChoice = 'exit' }
+        })
         # Version 7.9.2: Fenster ziehen und Liste weich scrollen.
         [void](Enable-BridgeWindowDrag -Window $win -Handle ($win.FindName('UpdateHead')) -Images @())
         [void](Enable-BridgeSmoothScroll -Scroller $notesScroll)
@@ -44577,12 +44599,24 @@ function Invoke-ArenaUpdateGate {
     $choice = Show-ArenaUpdateWindow -Info $info -Forced $forced -OwnerWindow $OwnerWindow
     if ($choice -eq 'error') { return $true }
     if ($choice -eq 'install') { return $false }
-    if ($choice -eq 'later' -or (-not $forced -and $choice -eq '')) {
+    # Version 8.0.1: X (oder Schließen ohne Auswahl) beendet IMMER die
+    # komplette Bridge - auch schon vor dem Pflicht-Limit. Der Aufrufer
+    # schließt dafür das Hauptfenster; die Dienste starten gar nicht erst.
+    # Das X erhöht den Später-Zähler nicht und startet die Bridge nicht.
+    if ($choice -eq 'exit') {
+        Write-RuntimeLog 'Update-Fenster über das X geschlossen: Die Bridge wird beendet.'
+        return $false
+    }
+    # Version 8.0.1 (Pflicht-Sperre): Ist das Update bereits Pflicht, darf
+    # auch ein "Später" die Bridge nicht mehr starten - egal, über welchen
+    # Weg diese Auswahl hier ankommt.
+    if ($forced) { return $false }
+    if ($choice -eq 'later' -or $choice -eq '') {
         $state.laterClicks = $clicks + 1
         Save-ArenaUpdateState $state
         return $true
     }
-    # Pflicht-Update ohne Installation geschlossen: Programm beenden.
+    # Alles andere ohne Installation: Programm beenden.
     return $false
 }
 # <<< ARENA-UPDATE-INTEGRATION <<<

@@ -36,11 +36,12 @@ def main():
     print("8.0.0 offline regression checks")
 
     # --- version + notes (Stichpunkt-Regel) ---
-    check(str(data.get("version")) == "8.0.0", "app/version.json ist 8.0.0")
-    note = str(data.get("notes", [""])[0])
-    check(note.startswith("• 8.0.0 — ") and note.count("•") >= 5
+    check(str(data.get("version")) == "8.0.1", "app/version.json ist 8.0.1 (8.0.0-Inhalte bleiben enthalten)")
+    notes = [str(n) for n in data.get("notes", [])]
+    note = next((n for n in notes if n.startswith("• 8.0.0 — ")), "")
+    check(bool(note) and note.count("•") >= 5
           and len(" ".join(note.split())) <= 600,
-          "notes[0] folgt der Stichpunkt-Regel (Titel + >=5 Punkte, <600 Zeichen)")
+          "Die 8.0.0-Notiz folgt weiter der Stichpunkt-Regel (Titel + >=5 Punkte, <600 Zeichen)")
 
     # --- billboards shrink with distance ---
     check("UI_ENGINE.ensureBillboard" in source and "UDim2.new(w, 0, h, 0)" in source,

@@ -5,6 +5,33 @@
 #                                                                      #
 ########################################################################
 
+AKTUELLER NACHTRAG 8.0.1 (14.10.2026) - PFLICHT-UPDATE: X SCHLIESST DIE KOMPLETTE BRIDGE (HAT VORRANG)
+==============================================================================================
+
+- DRINGENDER FIX (Nutzerwunsch): Nach 5x "Später" ist das Update Pflicht - aber das X oben
+  rechts im Update-Fenster (`UpdateCloseButton` in `Show-ArenaUpdateWindow`) setzte
+  `$script:UpdateWindowChoice = 'later'`, und `Invoke-ArenaUpdateGate` wertete JEDES
+  'later' als Weiter-Start (Zähler +1, Rückgabe $true). So ließ sich die Pflicht bequem
+  umgehen und die Bridge normal weiter nutzen.
+- JETZT: Das X setzt die Auswahl 'exit' (Tooltip "Bridge beenden"), und ein neues
+  `$win.Add_Closing` macht auch jedes andere Schließen ohne Auswahl (z. B. Alt+F4) zu
+  'exit' - niemals zu 'later'. Eine getroffene Installations-Auswahl bleibt erhalten.
+- GATE GEHÄRTET: 'exit' gibt im Gate immer $false zurück (ohne Zähler-Erhöhung), und bei
+  bereits fälligem Pflicht-Update ($forced) gibt auch ein 'later' $false zurück. Der
+  Aufrufer im Start-Takt schließt bei $false das Hauptfenster (`$window.Close()`), bevor
+  `Start-BridgeRuntime` läuft - die komplette Bridge beendet sich also, Dienste starten
+  nicht. Dieses Verhalten gilt für das X ab dem ersten Erscheinen des Fensters, nicht
+  erst ab der Pflicht (ausdrücklicher Nutzerwunsch).
+- Version ist 8.0.1 (`app/version.json`, neue Stichpunkt-Notiz vorne; die 8.0.0-Notiz
+  bleibt als Historie an zweiter Stelle). `release/latest.json` und die veröffentlichte
+  EXE bleiben unangetastet, bis der Windows-Build privat getestet und freigegeben wurde.
+- NEUES TOR: `developer/tests/test_v801_update_close.py`. Die Versionsnägel in
+  `test_v800_gui_language.py` und `test_v794_single_exe_download_site.py` suchen die
+  8.0.0-Notiz jetzt in der Notiz-Historie statt in notes[0].
+- WINDOWS-PFLICHTTEST: Update-Fenster mit X schließen -> Hauptfenster muss mit
+  schließen (Bridge komplett aus). Nach 5x "Später": kein "Später"-Knopf mehr, und
+  auch das X beendet die Bridge statt sie weiterlaufen zu lassen.
+
 AKTUELLER NACHTRAG 8.0.0 (14.10.2026) - PARSER-FEHLER BEHOBEN & VIREN-FEHLALARME (HAT VORRANG)
 ==============================================================================================
 

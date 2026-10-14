@@ -1,4 +1,4 @@
-# Selbst-Update der Bridge (Version 7.9.4)
+# Selbst-Update der Bridge (Version 8.0.1)
 
 Dieses Dokument beschreibt das einfache Update-System. Es ersetzt den alten Updater,
 die Kanäle beta/stable, Guard-Lock, PROTECTED.md und die Release-Gates. Alles davon
@@ -48,9 +48,13 @@ ist entfernt.
      `https://arena-rblx-bridge.netlify.app/`. Danach nur noch "Schließen" (beendet die Bridge).
    - "Später": `laterClicks` +1, Bridge läuft weiter. Der Knopf zeigt keine
      Restzahl - wie oft "Später" noch möglich ist, bleibt ein Geheimnis des Programms.
-   - Fenster ohne Auswahl geschlossen: wie "Später", außer wenn Pflicht (dann beendet sich die Bridge).
+   - **X oben rechts (seit 8.0.1): beendet die komplette Bridge samt Hauptfenster.** Das X ist
+     kein verstecktes "Später" mehr und erhöht den Zähler nicht. Dasselbe gilt für jedes andere
+     Schließen des Fensters ohne Auswahl (z. B. Alt+F4). Das Hauptfenster wird vom Aufrufer
+     geschlossen, bevor irgendein Dienst startet - die Bridge ist danach vollständig aus.
    - Ab 5 Klicks (pro angebotener Version) gibt es kein "Später" mehr. Die Bridge startet
-     ohne Installation nicht weiter.
+     ohne Installation nicht weiter - auch ein "Später", das auf irgendeinem Weg doch noch
+     im Update-Gate ankommt, wird bei fälligem Pflicht-Update abgelehnt (Rückgabe $false).
 4. Der Zähler gilt pro Version. Erscheint eine neue Version, beginnt er bei 0.
 
 ## Veröffentlichung (Workflow)
@@ -86,6 +90,9 @@ ist entfernt.
 - `developer/tests/test_v792_desktop_reliability.py` prüft die 7.9.2-Oberfläche
   (Stichpunkt-Regel, Zeitstrahl, "Später" ohne Zahl, weiches Ziehen/Scrollen,
   Einstellungen mit einem Knopf).
+- `developer/tests/test_v801_update_close.py` prüft den 8.0.1-Fix auf Quellebene: X und
+  Schließen ohne Auswahl liefern 'exit' (nie 'later'), das Gate beendet damit immer, ein
+  Pflicht-"Später" startet nie, und der Aufrufer schließt bei $false das Hauptfenster.
 - `developer/tests/test_v900_update_flow.py` prüft unter Linux:
   Werkzeug gegen die echte EXE (inkl. Ablehnungsfälle), Workflow-Datei, Block-Struktur
   (Adressen, Limit 5, kein Prozess-Kill, Papierkorb-Aufruf, Reihenfolge vor den Diensten),
@@ -101,3 +108,7 @@ ist entfernt.
      der Download dort liefert `ArenaRobloxBridge.exe`, nach deren Start liegt die
      alte EXE im Papierkorb.
   5. Die gebaute EXE zeigt im Fenster die richtige Version.
+  6. Update-Fenster über das X oben rechts schließen: Die komplette Bridge (auch das
+     Hauptfenster dahinter) muss sich beenden - kein Weiterarbeiten möglich. Nach 5x
+     "Später" zusätzlich prüfen: Das Fenster zeigt kein "Später" mehr, und auch das X
+     lässt die Bridge nicht weiterlaufen, sondern beendet sie.
