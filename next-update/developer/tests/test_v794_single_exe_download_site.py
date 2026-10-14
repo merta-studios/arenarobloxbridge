@@ -153,9 +153,11 @@ def test_version_note() -> None:
           "Die neueste Notiz beginnt mit der vorbereiteten Version")
     check(note.count("•") >= 5 and len(" ".join(note.split())) <= 600,
           "Die Notiz folgt der Stichpunkt-Regel (mindestens fünf Stichpunkte, unter 600 Zeichen)")
-    check("Billboard" in note and any(letter in note for letter in "äöüÄÖÜß"),
+    notes = [str(n) for n in data.get("notes", [])]
+    note800 = next((n for n in notes if n.startswith("• 8.0.0 ")), "")
+    check("Billboard" in note800 and any(letter in note800 for letter in "äöüÄÖÜß"),
           "Die Notiz nennt das 8.0.0-Thema (Billboards) und benutzt echte Umlaute")
-    check("8.0.0" in note and "Englisch" in note and "Fortschritt" in note,
+    check("8.0.0" in note800 and "Englisch" in note800 and "Fortschritt" in note800,
           "Die Notiz kennzeichnet Version 8.0.0 mit Sprache und Fortschritts-Reset")
 
 
