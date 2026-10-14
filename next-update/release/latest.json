@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "version": "7.9.5",
-  "sha256": "ae365b8a2d5baecd142ffc1dd8a9b73b85fd3de102e7df520e86e8bbbd7700eb",
-  "sizeBytes": 5842944,
-  "url": "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/c7f090cc54c7f4fc4f9c73cbe791a7ba0bebd8e1/next-update/release/ArenaRobloxBridge.exe",
-  "publishedAtUtc": "2026-10-12T18:29:38Z",
-  "notes": "• 7.9.5 — TESTUPDATE FÜR DAS UPDATE-SYSTEM: • Dieses Testupdate prüft Versionsvergleich und Update-Hinweis. • Am Programm selbst wurde nichts geändert. • Die ArenaRobloxBridge.exe erhält nur die Test-Versionsnummer 7.9.5. • Die Notiz erscheint wie bei einem echten Update im Update-Fenster. • Download und Installation laufen über die Download-Seite."
+  "version": "8.0.0",
+  "sha256": "b01c09a1d1c4ae6dc0cf60c0af1dd0c45c2cefcf7c6385d7a5bd6917879ca8e3",
+  "sizeBytes": 5897728,
+  "url": "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/e982e4a593cf843dfcaf7c253cc1d100d2484f63/next-update/release/ArenaRobloxBridge.exe",
+  "publishedAtUtc": "2026-10-14T16:07:13Z",
+  "notes": "• 8.0.0 — GUI-KRAFT, BILLBOARDS & ENGLISCH: • Billboard-GUIs werden mit der Entfernung kleiner statt riesig zu bleiben. • 24 GUI-Stile (neu: Horror, Minimal, Simulator und mehr) plus Texturen als echter Hintergrund. • Deine Nachrichten an Arena werden jetzt verbindlich im Chat bestätigt und umgesetzt. • Neues Optionen-Menü, Token-Reset setzt den Fortschritt zurück, Fragen ganz ohne Zeitdruck. • Programmsprache: Englisch (Standard) oder Deutsch, mit Flaggenwahl in den Einstellungen. • Logo schwebt jetzt mit Glow und runden Ecken; beim Laden dreht nur noch der Spinner."
 }
