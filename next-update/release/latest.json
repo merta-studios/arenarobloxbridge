@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "version": "8.0.0",
-  "sha256": "b01c09a1d1c4ae6dc0cf60c0af1dd0c45c2cefcf7c6385d7a5bd6917879ca8e3",
-  "sizeBytes": 5897728,
-  "url": "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/e982e4a593cf843dfcaf7c253cc1d100d2484f63/next-update/release/ArenaRobloxBridge.exe",
-  "publishedAtUtc": "2026-10-14T16:07:13Z",
-  "notes": "• 8.0.0 — GUI-KRAFT, BILLBOARDS & ENGLISCH: • Billboard-GUIs werden mit der Entfernung kleiner statt riesig zu bleiben. • 24 GUI-Stile (neu: Horror, Minimal, Simulator und mehr) plus Texturen als echter Hintergrund. • Deine Nachrichten an Arena werden jetzt verbindlich im Chat bestätigt und umgesetzt. • Neues Optionen-Menü, Token-Reset setzt den Fortschritt zurück, Fragen ganz ohne Zeitdruck. • Programmsprache: Englisch (Standard) oder Deutsch, mit Flaggenwahl in den Einstellungen. • Logo schwebt jetzt mit Glow und runden Ecken; beim Laden dreht nur noch der Spinner."
+  "version": "8.0.1",
+  "sha256": "34f986f47d9eb3225bdac3a95242f93bfeb1f4aff56d9dbfb075553c1ba1f962",
+  "sizeBytes": 5899776,
+  "url": "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/0a700b471b280578227a34a733de85dd04557375/next-update/release/ArenaRobloxBridge.exe",
+  "publishedAtUtc": "2026-10-14T16:33:16Z",
+  "notes": "• 8.0.1 — PFLICHT-UPDATE OHNE SCHLUPFLOCH: • Das X oben rechts im Update-Fenster schließt jetzt die komplette Bridge samt Hauptfenster. • Nach 5× „Später“ hilft kein Wegklicken mehr: installieren oder Programm beenden. • Die Bridge startet dabei gar nicht erst weiter — das Update bleibt wirklich Pflicht. • So geht dir kein wichtiges Update mehr verloren."
 }
