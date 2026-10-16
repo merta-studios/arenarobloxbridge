@@ -149,6 +149,9 @@ def main(argv: list[str] | None = None) -> int:
         version, note = read_version_json(args.version_json)
         manifest = build_manifest(args.exe, version, note, args.repo, args.commit,
                                   dt.datetime.now(dt.timezone.utc))
+        localized = json.loads(args.version_json.read_text(encoding="utf-8")).get("notesEn") or []
+        if localized:
+            manifest["notesEn"] = " ".join(str(localized[0]).split())[:600]
         state = check_against_previous(manifest, args.latest)
     except PublishError as exc:
         print(f"FEHLER: {exc}", file=sys.stderr)

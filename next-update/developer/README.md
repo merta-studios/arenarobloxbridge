@@ -41,3 +41,15 @@ Der Build-Ausgang liegt im einzigen Ordner `next-update/release/` und besteht au
 genau einer Programmdatei (`ArenaRobloxBridge.exe`). Ein Merge oder lokaler Build
 löst kein öffentliches Nutzer-Update aus. Ablauf des Selbst-Updates:
 `../README.md`. Technik und Tests: `docs/UPDATE-SYSTEM.md`.
+
+## Vorbereiteter Stand 8.0.3
+
+- [Umfang, Prüfungen und offene Windows-/Studio-Abnahme](docs/V8_0_3_ACCEPTANCE.md)
+- [Normale Part-Rezepte, relative Platzierung und Budgets](docs/PART_BUILDER_8_0_3.md)
+- `tools/sync_ui_translations.py` bettet `app/localization/en.json` in das
+  Ein-Datei-Programm ein; `--check` prüft Synchronität ohne Änderungen.
+- `tests/test_v803_runtime.ps1` prüft isolierte echte PowerShell-Funktionen
+  unter Windows PowerShell 5.1 (hier auf Linux nicht ausgeführt).
+
+Vor einem Build Katalog synchronisieren und die Offline-Suite laufen lassen.
+Keine EXE-Freigabe allein aufgrund grüner Quellstrukturtests.

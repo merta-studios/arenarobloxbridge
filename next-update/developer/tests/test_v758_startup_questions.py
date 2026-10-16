@@ -106,11 +106,11 @@ def main() -> int:
     set_startup = region(source, "function Set-StartupEnabled {", "function Get-StartupEnabled {")
     get_startup = region(source, "function Get-StartupEnabled {", "# Alte Installationen werden")
 
-    check("$baseName -ine 'ArenaRobloxBridge'" in updater_validate
-          and "$baseName -ine 'ArenaBridge'" in updater_validate
+    check("ArenaRobloxBridge|ArenaBridge" in updater_validate
+          and "\\(\\d+\\)" in updater_validate
           and "ArenaBridgeUpdater'" not in updater_validate
           and "Test-Path -LiteralPath $candidate -PathType Leaf" in updater_validate,
-          "only an existing, named updater EXE is accepted")
+          "8.0.3: existing Bridge EXEs support version/download-copy suffixes")
     check("Get-BridgeUpdaterPathFromParent" in resolve
           and "Get-BridgeStartupItems" in resolve
           and "UpdaterPathFile" in resolve
@@ -144,8 +144,10 @@ def main() -> int:
     lock_start = source.index("$script:BridgeSingleInstanceMutex = $null")
     # The isolated EXE smoke-test branch may load WPF before the normal
     # single-instance guard, then exits without starting the Bridge. Check the
-    # first WPF load on the normal path, after the guard itself.
-    wpf_load = source.index("Add-Type -AssemblyName PresentationFramework", lock_start)
+    # first actual main-window construction on the normal path; assembly
+    # loading alone creates no duplicate window. Autostart migration now
+    # deliberately precedes the guard so a newly launched EXE cleans old entries.
+    wpf_load = source.index("$window = [Windows.Markup.XamlReader]::Load($reader)", lock_start)
     check(lock_start < wpf_load
           and "[System.Threading.Mutex]::new($false, $mutexName)" in source
           and "$script:BridgeSingleInstanceMutex.WaitOne(0)" in source

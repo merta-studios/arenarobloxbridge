@@ -36,7 +36,7 @@ def main():
     print("8.0.0 offline regression checks")
 
     # --- version + notes (Stichpunkt-Regel) ---
-    check(str(data.get("version")) == "8.0.1", "app/version.json ist 8.0.1 (8.0.0-Inhalte bleiben enthalten)")
+    check(tuple(map(int, str(data.get("version")).split("."))) >= (8, 0, 1), "app/version.json behält mindestens die 8.0.1-Fixes (8.0.0-Inhalte bleiben enthalten)")
     notes = [str(n) for n in data.get("notes", [])]
     note = next((n for n in notes if n.startswith("• 8.0.0 — ")), "")
     check(bool(note) and note.count("•") >= 5
@@ -110,8 +110,9 @@ def main():
     check('x:Name="EditorIconsSwitch"' in place_list,
           "editor-icons setting lives in the PLACE-LISTE category")
     check('x:Name="LanguageEnglishButton"' in source and 'x:Name="LanguageGermanButton"' in source
-          and "🇬🇧" in source and "🇩🇪" in source and "✓" in source,
-          "language selector with flag icons and checkmark exists")
+          and 'x:Name="LanguageMenuButton"' in source and 'x:Name="LanguageChoices"' in source
+          and 'Fill="#FFCE00"' in source and 'Fill="#012169"' in source and "✓" in source,
+          "8.0.3: collapsed language selector with vector flags and checkmarks exists")
     check("uiLanguage" in source and "Get-UiDisplayText" in source
           and "Get-LocalizedXamlText" in source,
           "full-program language system (default English, German optional)")

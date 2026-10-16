@@ -179,7 +179,7 @@ def main() -> int:
     old_spellings = ("Programmdateien oeffnen", "Laufzeitprotokolle oeffnen", "Spaeter",
                      "Groesse", "Pruefung", "Schluessel", "verschluesselt", "moeglich")
     check("Programmdateien öffnen" in SOURCE
-          and all(word not in SOURCE for word in old_spellings),
+          and all(word not in re.sub(r"# >>> UI-TRANSLATIONS-803.*?# <<< UI-TRANSLATIONS-803 <<<", "", SOURCE, flags=re.S) for word in old_spellings),
           "Deutsche Texte benutzen echte Umlaute statt ae/oe/ue")
 
     # --- 7.9.1-Verhalten, das bleiben muss ---

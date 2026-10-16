@@ -1,14 +1,14 @@
-# Arena Roblox Bridge — Update- und Testablauf (Testupdate 7.9.5 vorbereitet)
+# Arena Roblox Bridge — 8.0.3 vorbereitet
 
-> **Testupdate 7.9.5 vorbereitet:** Es wurde nur `app/version.json` mit einer
-> sichtbaren Testnotiz aktualisiert. Programmcode und Builder bleiben unverändert;
-> es wurde keine EXE gebaut oder veröffentlicht. `release/latest.json` bleibt
-> unangetastet und wird weiterhin ausschließlich vom Workflow erzeugt.
+> **8.0.3 ist als Quellstand vorbereitet, nicht veröffentlicht.** Fenstergebundene
+> Screenshots, Gruppen-Uploads und Asset-Rechte, einfache Aktivität, persistente
+> DE/EN-Auswahl, Kontoübersicht, Autostart-Migration und normale Part-Rezepte.
+> Offline-Prüfungen ersetzen keinen Windows-/Studio-Test. EXE und
+> `release/latest.json` wurden nicht verändert.
 >
 > **Arbeite nur in `next-update/`.** Der alte Bereich im Repository-Hauptordner
-> bleibt unverändert. Ausnahme: GitHub liest Automatisierungen (Workflows) nur aus
-> `.github/workflows/` im Hauptordner. Deshalb liegt dort genau eine Datei:
-> `.github/workflows/publish-bridge.yml`.
+> bleibt unverändert. Abnahme und bekannte Grenzen:
+> [8.0.3-Checkliste](developer/docs/V8_0_3_ACCEPTANCE.md).
 
 ## Der Ablauf in einem Satz
 

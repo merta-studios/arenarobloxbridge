@@ -173,7 +173,8 @@ def check_activity_history_progress(source: str) -> None:
     check("$bar.Background = Get-Brush '#F3F6FC'" in progress_cards,
           "history meter track uses a distinct near-white shade")
     check("Fortschritt nicht anwendbar" in history_progress
-          and "$Card.Meter.Visibility = if ($showNumericProgress) { 'Visible' } else { 'Collapsed' }" in history_progress,
+          and "$Card.Meter.Visibility = if ($progressMode -eq 'hidden') { 'Collapsed' } else { 'Visible' }" in history_progress
+          and "$Card.Bar.IsIndeterminate" in history_progress,
           "hidden/not-applicable tasks have no history bar or misleading percent")
     check("$main.FontSize=14" in card and "$main.TextWrapping='Wrap'" in card,
           "Aktionskarten sind groesser und umbrechen lesbar")
@@ -185,11 +186,11 @@ def check_activity_history_progress(source: str) -> None:
           and "$progressText.TextWrapping = 'Wrap'" in source
           and "$progressRow.Orientation = 'Vertical'" in source,
           "Place-Status unter dem Namen ist groesser, mehrzeilig und strukturiert")
-    check("if ($progressMode -eq 'hidden')" in place_progress
-          and "Fortschritt nicht anwendbar" in place_progress
-          and "$Row.ProgressBar.Visibility = 'Collapsed'" in place_progress
+    check("$Row.ProgressBar.IsIndeterminate" in place_progress
+          and "$silent -lt 60" in place_progress
+          and "$Row.ProgressBar.Visibility = 'Visible'" in place_progress
           and "Seit über einer Minute kein Bridge Aufruf mehr" not in place_progress,
-          "observation-only tasks show N/A without a bar or fabricated inactivity label")
+          "8.0.3: observation-only tasks use activity without fabricated percentages")
 
 
 # ----------------------------------------------------------------------

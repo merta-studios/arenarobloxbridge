@@ -252,3 +252,12 @@ Hard rules for Blender scripts (the bridge rejects violations before start):
   Blender.
 - A mesh is a black box inside the place: the honest evidence is the bridge's
   OBJ measurement, the read-back mesh id and the user's visual check.
+
+## Ordinary Part recipes (8.0.3)
+
+`build_assembly` additionally supports native/virtual Part shapes such as
+HalfBall, QuarterBall, Tube, Torus and CurvedCylinder, with bridge-calculated
+relative placement and repetition. This does not change the polygon or Blender
+engines or impose them on a Parts request. See
+[Part builder 8.0.3](PART_BUILDER_8_0_3.md) for axes, approximation limits,
+examples, budgets and rollback.

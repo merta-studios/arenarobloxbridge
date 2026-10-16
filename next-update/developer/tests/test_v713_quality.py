@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -178,7 +179,8 @@ def main() -> int:
     for obsolete in ("BLENDER-FIRST (Version 7.5.5)", "POLYGON_BLENDER_FIRST",
                      "every nontrivial custom visible 3D model", "DRAFT_GRADE_RISK",
                      "DETAIL_REQUIRED", "ORGANIC_AUDIT_REQUIRED"):
-        check(obsolete not in source, f"obsolete universal build/completion gate is absent: {obsolete}")
+        check(obsolete not in re.sub(r"# >>> UI-TRANSLATIONS-803.*?# <<< UI-TRANSLATIONS-803 <<<", "", source, flags=re.S),
+              f"obsolete universal gate is absent outside historical translations: {obsolete}")
 
     # Audit measurements stay available and descriptive, including their
     # historically useful ball/cylinder observations.
