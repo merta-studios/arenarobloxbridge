@@ -1,9 +1,10 @@
 {
   "schemaVersion": 1,
-  "version": "8.0.1",
-  "sha256": "34f986f47d9eb3225bdac3a95242f93bfeb1f4aff56d9dbfb075553c1ba1f962",
-  "sizeBytes": 5899776,
-  "url": "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/0a700b471b280578227a34a733de85dd04557375/next-update/release/ArenaRobloxBridge.exe",
-  "publishedAtUtc": "2026-10-14T16:33:16Z",
-  "notes": "• 8.0.1 — PFLICHT-UPDATE OHNE SCHLUPFLOCH: • Das X oben rechts im Update-Fenster schließt jetzt die komplette Bridge samt Hauptfenster. • Nach 5× „Später“ hilft kein Wegklicken mehr: installieren oder Programm beenden. • Die Bridge startet dabei gar nicht erst weiter — das Update bleibt wirklich Pflicht. • So geht dir kein wichtiges Update mehr verloren."
+  "version": "8.0.3",
+  "sha256": "cf477ea0ab61dbd431ccf634670259707e9a82dfaf747877befb1f32fd99f3df",
+  "sizeBytes": 6025728,
+  "url": "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/e66c4c73bbd1b50884640e5d04bb7eadc7d267c5/next-update/release/ArenaRobloxBridge.exe",
+  "publishedAtUtc": "2026-10-16T15:07:05Z",
+  "notes": "• 8.0.3 — DEIN STUDIO, SICHER VERBUNDEN: • Screenshots nur vom passenden Studio-Fenster, nie vom Desktop. • Gruppen-Uploads und Asset-Freigaben per API-Key. • Place-Namen und Vorschauen ohne Fenster-Raten. • Sichtbarer Aktivitätsbalken ohne letzten Schritt. • Sprachmenü mit echten Flaggen, mehr Übersetzungen und gespeicherter Auswahl. • Alte Autostarts werden bereinigt, mehrere Konten als Liste angezeigt. • Neue Parts-Formen, Zylinderkurven und relative Platzierung — die Bridge rechnet für Arena.",
+  "notesEn": "• 8.0.3 — YOUR STUDIO, SAFELY CONNECTED: • Screenshots only from the matching Studio window, never the desktop. • Group-owned uploads and asset-use permissions via API key. • Place names and previews without guessing windows. • Visible activity bar, without the last step. • Dropdown language menu with vector flags, more translations and saved preferences. • Old startup entries cleaned up; multiple accounts listed together. • New Parts shapes, curved cylinders and relative placement — the Bridge does the math."
 }
