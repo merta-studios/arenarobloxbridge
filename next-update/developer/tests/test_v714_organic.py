@@ -156,12 +156,12 @@ def main() -> int:
               "title continues to show the product and fixed connected-Place hint")
 
     progress = region(source, "function Update-PlaceProgressVisual", "function Get-ProgressDiagnoseLines")
-    check("if ($progressMode -eq 'hidden')" in progress
-          and "Fortschritt nicht anwendbar" in progress
+    check("$Row.ProgressBar.IsIndeterminate" in progress
+          and "$silent -lt 60" in progress
           and "$showNumericProgress = ($percentKnown -and $progressMode -ne 'hidden')" in progress
-          and "$Row.ProgressBar.Visibility = 'Collapsed'" in progress
+          and "$Row.ProgressBar.Visibility = 'Visible'" in progress
           and "Seit über einer Minute kein Bridge Aufruf mehr" not in progress,
-          "hidden progress is explicitly not applicable, with no bar, invented percent, or stale inactivity label")
+          "8.0.3: hidden percentages retain activity without invented numbers")
     row_builder = region(source, "function New-Row {", "function New-MinimalPlaceRow {")
     fallback = region(source, "function New-MinimalPlaceRow {", "\nfunction ")
     check("$namePanel.VerticalAlignment = 'Stretch'" in row_builder

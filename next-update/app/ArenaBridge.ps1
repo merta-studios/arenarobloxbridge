@@ -1,6 +1,16 @@
 ﻿# ============================================================================
 # Arena Roblox Bridge  -  Version __ARENA_BUILD_VERSION__
 #
+# Version 8.0.3 (2026-10-16) - STUDIO-PRIVATSPHÄRE UND NORMALE PARTS.
+#   Fenstergebundene Screenshots ohne Desktop-Fallback; eindeutige Place-
+#   Zuordnung; Gruppen-Uploads; begrenzte Asset-Use-Reparatur per API-Key.
+#   Einfacher Aktivitätsbalken, persistente DE/EN-Auswahl mit Vektorflaggen,
+#   Mehrkonto-Fußzeile und Migration alter Autostart-Einträge.
+#   20 normale/virtuelle Part-Formen, relative Anker, Wiederholungen,
+#   CSG-/Primitive-Budgets und Rollback; kein Polygon-/Blender-Umbau.
+#   Vor Freigabe: native Windows-/Studio-Abnahme gemäß
+#   developer/docs/V8_0_3_ACCEPTANCE.md. Keine Veröffentlichung durch Quelländerung.
+#
 # Version 8.0.1 (2026-10-14) - PFLICHT-UPDATE OHNE SCHLUPFLOCH (DRINGENDER FIX).
 #   Das X oben rechts im Update-Fenster wurde bisher als "Später" gewertet:
 #   Nach 5x "Später" (ab dann ist das Update Pflicht) konnte man das Fenster
@@ -2401,69 +2411,6 @@ if ($env:ARENABRIDGE_BUILD_SMOKE -eq '1') {
 # Continue + SilentlyContinue keeps diagnostic I/O from becoming a start blocker.
 Write-Output ("{0:o} PROOF_OF_LIFE Version=__ARENA_BUILD_VERSION__ PID={1} PS={2} File={3} UpdateStatus={4}" -f (Get-Date), $PID, $PSVersionTable.PSVersion, $PSCommandPath, $UpdateStatus) -ErrorAction Continue | Out-File -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Encoding UTF8 -ErrorAction SilentlyContinue
 
-# Version 7.5.8: Ein Autostart kann alte Run-Einträge parallel auslösen.
-# Nur EIN PowerShell-Kind darf die Bridge-Oberfläche/Dienste starten. Die
-# Sperre ist pro Windows-Konto und wird beim Prozessende automatisch freigegeben.
-$script:BridgeSingleInstanceMutex = $null
-$script:BridgeSingleInstanceOwned = $false
-try {
-    $mutexIdentity = [string]$env:USERNAME
-    try {
-        $currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-        if (-not [string]::IsNullOrWhiteSpace([string]$currentSid)) { $mutexIdentity = [string]$currentSid }
-    } catch {}
-    if ([string]::IsNullOrWhiteSpace($mutexIdentity)) { $mutexIdentity = 'current-user' }
-    $mutexIdentity = $mutexIdentity -replace '[^A-Za-z0-9_.-]', '_'
-    $mutexName = 'Local\ArenaRobloxBridge-' + $mutexIdentity
-    $script:BridgeSingleInstanceMutex = [System.Threading.Mutex]::new($false, $mutexName)
-    try {
-        $script:BridgeSingleInstanceOwned = $script:BridgeSingleInstanceMutex.WaitOne(0)
-    } catch [System.Threading.AbandonedMutexException] {
-        $script:BridgeSingleInstanceOwned = $true
-    }
-    if (-not $script:BridgeSingleInstanceOwned) {
-        $duplicateMessage = 'Arena Roblox Bridge läuft bereits. Schließe das vorhandene Fenster vollständig und starte die Beta-EXE danach erneut.'
-        try {
-            Add-Content -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Value ('{0:o} SINGLE_INSTANCE_DUPLICATE PID={1} UpdateStatus={2}' -f (Get-Date), $PID, $UpdateStatus) -Encoding UTF8 -ErrorAction SilentlyContinue
-        } catch {}
-        try {
-            [System.IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA 'START-CHECK.txt'),
-                ('Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
-                 'Version: __ARENA_BUILD_VERSION__' + [Environment]::NewLine +
-                 'ABBRUCH: SINGLE_INSTANCE_DUPLICATE' + [Environment]::NewLine +
-                 $duplicateMessage + [Environment]::NewLine +
-                 'Log: ' + (Join-Path $env:LOCALAPPDATA 'ArenaRobloxBridge-start-entry.txt') + [Environment]::NewLine),
-                [System.Text.Encoding]::UTF8)
-        } catch {}
-        if ($script:DiagnosticMode) {
-            try { [Console]::Error.WriteLine('SINGLE_INSTANCE_DUPLICATE: ' + $duplicateMessage) } catch {}
-        } elseif ([string]::IsNullOrWhiteSpace($UpdateStatus)) {
-            # Das COM-Popup erklärt den Doppelstart, ohne WPF vor dem
-            # Single-Instance-Gate zu laden oder ein zweites Bridge-Fenster zu bauen.
-            try {
-                $duplicateNotice = New-Object -ComObject WScript.Shell
-                [void]$duplicateNotice.Popup($duplicateMessage, 0, 'Arena Roblox Bridge - bereits geöffnet', 48)
-            } catch {}
-        }
-        try { $script:BridgeSingleInstanceMutex.Dispose() } catch {}
-        exit 0
-    }
-} catch {
-    # Die Sicherung darf eine Bridge nicht am Start hindern, falls Windows die
-    # benannte Mutex-API unerwartet blockiert.
-    try { Add-Content -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Value ('{0:o} SINGLE_INSTANCE_GUARD_WARNING {1}' -f (Get-Date), $_.Exception.Message) -Encoding UTF8 -ErrorAction SilentlyContinue } catch {}
-}
-
-function Release-BridgeSingleInstanceMutex {
-    if (-not $script:BridgeSingleInstanceOwned -or $null -eq $script:BridgeSingleInstanceMutex) { return }
-    try {
-        $script:BridgeSingleInstanceMutex.ReleaseMutex()
-        $script:BridgeSingleInstanceOwned = $false
-    } catch {}
-    try { $script:BridgeSingleInstanceMutex.Dispose() } catch {}
-    $script:BridgeSingleInstanceMutex = $null
-}
-
 $ErrorActionPreference = 'Stop'
 
 # ----------------------------------------------------------------------------
@@ -2710,7 +2657,7 @@ function Test-BridgeUpdaterExecutable {
     try {
         if ([System.IO.Path]::GetExtension($candidate) -ine '.exe') { return $null }
         $baseName = [System.IO.Path]::GetFileNameWithoutExtension($candidate)
-        if ($baseName -ine 'ArenaRobloxBridge' -and $baseName -ine 'ArenaBridge') { return $null }
+        if ($baseName -notmatch '^(?i:ArenaRobloxBridge|ArenaBridge)(?:[-_ ]v?\d+\.\d+\.\d+)?(?: ?\(\d+\))?$') { return $null }
         if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { return $null }
         return [System.IO.Path]::GetFullPath($candidate)
     } catch { return $null }
@@ -2811,8 +2758,8 @@ function Get-BridgeUpdaterPathFromParent {
 function Resolve-BridgeUpdaterExePath {
     param([string]$PreferredPath = '')
     $candidates = New-Object System.Collections.Generic.List[string]
-    if (-not [string]::IsNullOrWhiteSpace($PreferredPath)) { $candidates.Add([string]$PreferredPath) }
     if ($script:IsExeMode -and -not [string]::IsNullOrWhiteSpace([string]$script:ExePath)) { $candidates.Add([string]$script:ExePath) }
+    if (-not [string]::IsNullOrWhiteSpace($PreferredPath)) { $candidates.Add([string]$PreferredPath) }
     if (-not [string]::IsNullOrWhiteSpace([string]$env:ARENABRIDGE_UPDATER_PATH)) { $candidates.Add([string]$env:ARENABRIDGE_UPDATER_PATH) }
 
     try {
@@ -3446,7 +3393,10 @@ function Save-BridgeSettingsFile {
             openCloudSavedAt = [string]$script:SettingsCache.openCloudSavedAt
         }
         $json = $out | ConvertTo-Json -Depth 6
-        [System.IO.File]::WriteAllText($script:SettingsFile, $json, [System.Text.UTF8Encoding]::new($true))
+        $temp = $script:SettingsFile + '.' + [Guid]::NewGuid().ToString('N') + '.tmp'
+        [System.IO.File]::WriteAllText($temp, $json, [System.Text.UTF8Encoding]::new($true))
+        if ([IO.File]::Exists($script:SettingsFile)) { [IO.File]::Replace($temp, $script:SettingsFile, $null) }
+        else { [IO.File]::Move($temp, $script:SettingsFile) }
     } catch {
         try { Write-RuntimeLog "Einstellungen konnten nicht gespeichert werden: $($_.Exception.Message)" } catch {}
     }
@@ -3944,6 +3894,7 @@ $script:Shared = [hashtable]::Synchronized(@{
     # Fortschrittsvertrag: sessionId -> JSON mit Messwerten/Status.
     # Der Lock umfasst den gesamten Read-modify-write-Zyklus; Revisionen
     # unterscheiden auch mehrere Aufrufe innerhalb derselben Sekunde.
+    StudioCaptureTargets = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     ProgressStates     = [System.Collections.Concurrent.ConcurrentDictionary[string,string]]::new()
     ProgressStateLock  = [System.Object]::new()
     ProgressRevision   = 0L
@@ -5211,6 +5162,18 @@ local function decodeValue(value)
     if type(value) ~= "table" then
         return value
     end
+    if value.type == nil or ({Vector3=true,Vector2=true,Color3=true,CFrame=true,UDim2=true,UDim=true,NumberRange=true,Rect=true})[value.type] then
+        local copy = {}; for k,v in pairs(value) do copy[k]=v end
+        for _,key in ipairs({"x","y","z","r","g","b","xScale","xOffset","yScale","yOffset","scale","offset","min","max","minX","minY","maxX","maxY"}) do
+            if type(copy[key]) == "string" and tonumber(copy[key]) then copy[key]=tonumber(copy[key]) end
+        end
+        for _,key in ipairs({"position","orientation","orientationRadians"}) do
+            if type(copy[key]) == "table" then
+                local child={}; for k,v in pairs(copy[key]) do child[k]=tonumber(v) or v end; copy[key]=child
+            end
+        end
+        value=copy
+    end
     if value.type == nil then
         -- Kurzform für Vektoren: {x=,y=,z=}
         if value.x ~= nil and value.y ~= nil and value.z ~= nil then
@@ -5289,19 +5252,30 @@ local function setProperty(inst, property, rawValue)
     local value = rawValue
     if type(rawValue) == "table" then
         if #rawValue == 3 and property ~= "Size" and (property == "Color" or property == "Color3" or string.find(property, "Color")) then
-            value = Color3.fromRGB(rawValue[1], rawValue[2], rawValue[3])
+            value = Color3.fromRGB(tonumber(rawValue[1]), tonumber(rawValue[2]), tonumber(rawValue[3]))
         elseif #rawValue == 3 then
-            value = Vector3.new(rawValue[1], rawValue[2], rawValue[3])
+            value = Vector3.new(tonumber(rawValue[1]), tonumber(rawValue[2]), tonumber(rawValue[3]))
         else
             value = decodeValue(rawValue)
         end
     elseif type(rawValue) == "string" then
         local current = nil
         local okCurrent = pcall(function() current = inst[property] end)
-        if okCurrent and typeof(current) == "EnumItem" then
+        if okCurrent and type(current) == "number" and tonumber(rawValue) then
+            local n=tonumber(rawValue)
+            if n == n and math.abs(n) ~= math.huge then value=n end
+        elseif okCurrent and type(current) == "boolean" and (rawValue:lower() == "true" or rawValue:lower() == "false") then
+            value=rawValue:lower() == "true"
+        elseif okCurrent and typeof(current) == "EnumItem" then
             local enumType = tostring(current.EnumType)
             enumType = string.gsub(enumType, "^Enum%.", "")
-            local okEnum, enumValue = pcall(function() return Enum[enumType][rawValue] end)
+            local enumKey = rawValue:match("([%w_]+)$") or rawValue
+            local okEnum, enumValue = pcall(function() return Enum[enumType][enumKey] end)
+            if not okEnum then
+                for _,candidate in ipairs(Enum[enumType]:GetEnumItems()) do
+                    if candidate.Name:lower() == enumKey:lower() then enumValue=candidate; okEnum=true; break end
+                end
+            end
             if okEnum then value = enumValue end
         elseif okCurrent and typeof(current) == "BrickColor" then
             value = BrickColor.new(rawValue)
@@ -9876,53 +9850,247 @@ tools.build_polygon_model = function(args)
     return ok({model=describeRef(model),organic=organicBuild,organicKind=organicKind,submodels=#specs,polygons=#rawPolygons,volumesBuilt=#generatedVolumeSpecs,volumeSummary=volumeSummary,triangles=triCount,wedges=wedgeCount,autoCaps=capCount,welds=weldCount,weldedSubmodels=weldedSubmodels,autoWeldDefault=true,mainWelds=mainWeldCount,facesTotal=facesTotal,facesBuilt=facesTotal-facesSkipped,facesSkipped=facesSkipped,incomplete=incomplete,skipped=skipped,fallbackFaces=fallbackFaces,ignoredGeometryProperties=ignoredGeometryProperties,geometryInvariant="Size/CFrame applied after safe style properties",geometry=waitMeasurable(sample,2),method="side-corrected skin placement + ear-clipping + two WedgeParts per triangle (closed loft volumes included; auto-welded by default)",editable=true},warningsText)
 end
 
+-- 8.0.3 ordinary-part recipes. No external meshes, Blender or polygon engine.
+MASTER_BUILD.partShapes = {"Block","Ball","Cylinder","Wedge","CornerWedge","HalfBall","QuarterBall","HalfCylinder","QuarterCylinder","Tube","Ring","Torus","CurvedCylinder","Arch","Capsule","Cone","Pyramid","Stairs","SpiralStairs","Polyline"}
+function MASTER_BUILD.partFrame(part)
+    if part:IsA("BasePart") then return part.CFrame end
+    if part:IsA("Model") then return part:GetPivot() end
+    error("relativeTo must resolve to a BasePart or Model")
+end
+function MASTER_BUILD.partNumber(value, fallback, minimum, maximum)
+    local n = tonumber(value)
+    if value == nil then n = fallback end
+    if not n or n ~= n or math.abs(n) == math.huge or (minimum and n < minimum) or (maximum and n > maximum) then error("Invalid shape dimension/budget: "..tostring(value)) end
+    return n
+end
+function MASTER_BUILD.partVector(value, fallback)
+    if value == nil then return fallback end
+    if type(value) == "table" then
+        for _,keys in ipairs({{"x","X",1},{"y","Y",2},{"z","Z",3}}) do
+            local raw=value[keys[1]]
+            if raw == nil then raw=value[keys[2]] end
+            if raw == nil then raw=value[keys[3]] end
+            if raw ~= nil then MASTER_BUILD.partNumber(raw,nil) end
+        end
+    end
+    local v=MASTER_BUILD.vec3(value)
+    if not v or v.X ~= v.X or v.Y ~= v.Y or v.Z ~= v.Z or math.abs(v.X) == math.huge or math.abs(v.Y) == math.huge or math.abs(v.Z) == math.huge then error("Invalid vector") end
+    return v
+end
+function MASTER_BUILD.partRecipe(spec, owner, budget)
+    local shape = tostring(spec.shape or "Block"):lower():gsub("[%s_%-]", "")
+    if shape == "dome" then shape = "halfball" end
+    if shape == "torus" then local copy={}; for k,v in pairs(spec) do copy[k]=v end; copy.angle=360; spec=copy; shape="curvedcylinder" end
+    local size = MASTER_BUILD.partVector(spec.size or (spec.properties or {}).Size,Vector3.new(4,4,4))
+    if size.X <= 0 or size.Y <= 0 or size.Z <= 0 then error("Shape size must be positive") end
+    local pieces, temporary = {}, {}
+    local function part(kind, dimensions, frame, isTemporary)
+        budget.count = budget.count + 1
+        if budget.count > budget.max then error("BUDGET_EXCEEDED: actual primitives including CSG cutters exceed maxParts") end
+        local p = Instance.new(kind == "Wedge" and "WedgePart" or kind == "CornerWedge" and "CornerWedgePart" or "Part")
+        p.Anchored = true
+        p.Size = dimensions
+        p.CFrame = frame or CFrame.new()
+        if kind == "Ball" or kind == "Cylinder" then p.Shape = Enum.PartType[kind] end
+        p.Parent = owner
+        table.insert(isTemporary and temporary or pieces, p)
+        return p
+    end
+    local function difference(base, cutters)
+        -- Originals and cutters live only inside the new assembly: failure rolls it all back.
+        budget.csg = (budget.csg or 0) + 1
+        if budget.csg > 96 then error("BUDGET_EXCEEDED: at most 96 CSG operations per assembly") end
+        local result = base:SubtractAsync(cutters, Enum.CollisionFidelity.Default, Enum.RenderFidelity.Automatic)
+        result.Parent = owner
+        result.UsePartColor = true
+        for _,p in ipairs(cutters) do p:Destroy() end
+        base:Destroy()
+        for i,p in ipairs(pieces) do if p == base then pieces[i] = result; break end end
+        return result
+    end
+    local function xFrame(position, direction)
+        local x = direction.Unit
+        local up = math.abs(x:Dot(Vector3.yAxis)) > 0.99 and Vector3.zAxis or Vector3.yAxis
+        local z = x:Cross(up).Unit
+        return CFrame.fromMatrix(position, x, z:Cross(x).Unit, z)
+    end
+    if shape == "block" or shape == "ball" or shape == "cylinder" or shape == "wedge" or shape == "cornerwedge" then
+        local kind = ({block="Block",ball="Ball",cylinder="Cylinder",wedge="Wedge",cornerwedge="CornerWedge"})[shape]
+        part(kind, size)
+    elseif shape == "halfball" or shape == "quarterball" or shape == "halfcylinder" or shape == "quartercylinder" then
+        local sphere = shape:find("ball") ~= nil
+        local base = part(sphere and "Ball" or "Cylinder", size)
+        local span = math.max(size.X,size.Y,size.Z) * 4 + 4
+        local cutters = {part("Block",Vector3.new(span,span,span),CFrame.new(0,-span/2,0),true)}
+        if shape:find("quarter") then table.insert(cutters,part("Block",Vector3.new(span,span,span),CFrame.new(0,0,-span/2),true)) end
+        difference(base,cutters)
+    elseif shape == "tube" or shape == "ring" then
+        -- Tube follows local X (Roblox Cylinder axis); Ring follows local Y.
+        local outer = MASTER_BUILD.partNumber(spec.radius,math.min(size.Y,size.Z)/2,0.05,10000)
+        local wall = MASTER_BUILD.partNumber(spec.wallThickness,outer*0.2,0.01,outer-0.01)
+        local length = MASTER_BUILD.partNumber(spec.length,shape == "ring" and size.Y or size.X,0.05,10000)
+        local frame = shape == "ring" and CFrame.Angles(0,0,math.pi/2) or CFrame.new()
+        local base = part("Cylinder",Vector3.new(length,outer*2,outer*2),frame)
+        difference(base,{part("Cylinder",Vector3.new(length+2,(outer-wall)*2,(outer-wall)*2),frame,true)})
+    elseif shape == "curvedcylinder" or shape == "arch" then
+        local radius = MASTER_BUILD.partNumber(spec.radius,8,0.1,10000)
+        local thickness = MASTER_BUILD.partNumber(spec.thickness,1,0.05,radius*1.8)
+        local degrees = MASTER_BUILD.partNumber(spec.angle,90,1,360)
+        local start = math.rad(MASTER_BUILD.partNumber(spec.startAngle,0,-36000,36000))
+        local n = math.floor(MASTER_BUILD.partNumber(spec.segments,math.ceil(degrees/10),2,64))
+        if n < math.ceil(degrees/45) then n = math.ceil(degrees/45) end
+        local step = math.rad(degrees)/n
+        local tubeRadius = thickness/2
+        local extra = tubeRadius * math.tan(step/2) + 0.02
+        local span = (radius + thickness)*8 + 8
+        local function point(a) return Vector3.new(math.cos(a)*radius,0,math.sin(a)*radius) end
+        local function tangent(a) return Vector3.new(-math.sin(a),0,math.cos(a)) end
+        for i=1,n do
+            local a,b = start+(i-1)*step,start+i*step
+            local p,q = point(a),point(b)
+            local mid,delta = (p+q)/2,q-p
+            local frame = xFrame(mid,delta)
+            local base = part(shape == "arch" and "Block" or "Cylinder",Vector3.new(delta.Magnitude+extra*2,thickness,thickness),frame)
+            -- Miter planes perpendicular to each endpoint tangent. Shared planes
+            -- give adjacent pieces matching faces instead of protruding cylinder ends.
+            local cutA = part("Block",Vector3.new(span,span,span),xFrame(p-tangent(a)*(span/2),tangent(a)),true)
+            local cutB = part("Block",Vector3.new(span,span,span),xFrame(q+tangent(b)*(span/2),tangent(b)),true)
+            difference(base,{cutA,cutB})
+        end
+        if spec.fuse ~= false then
+            local rest = {}; for i=2,#pieces do table.insert(rest,pieces[i]) end
+            budget.csg = (budget.csg or 0) + 1
+            if budget.csg > 96 then error("BUDGET_EXCEEDED: at most 96 CSG operations per assembly") end
+            local result = pieces[1]:UnionAsync(rest,Enum.CollisionFidelity.Default,Enum.RenderFidelity.Automatic)
+            result.Parent = owner
+        result.UsePartColor = true
+            for _,p in ipairs(pieces) do p:Destroy() end
+            pieces = {result}
+        end
+    elseif shape == "capsule" then
+        local radius = MASTER_BUILD.partNumber(spec.radius,math.min(size.Y,size.Z)/2,0.05,10000)
+        local length = MASTER_BUILD.partNumber(spec.length,math.max(size.X,4*radius),2*radius+0.01,10000)
+        local shaft = length-2*radius
+        part("Cylinder",Vector3.new(shaft,radius*2,radius*2))
+        part("Ball",Vector3.one*radius*2,CFrame.new(-shaft/2,0,0))
+        part("Ball",Vector3.one*radius*2,CFrame.new(shaft/2,0,0))
+    elseif shape == "cone" then
+        -- Editable stacked-cylinder approximation, deliberately not advertised as an exact cone.
+        local n = math.floor(MASTER_BUILD.partNumber(spec.segments,16,2,64))
+        for i=1,n do
+            local diameter = math.min(size.X,size.Z)*(1-(i-0.5)/n)
+            part("Cylinder",Vector3.new(size.Y/n,diameter,diameter),CFrame.new(0,-size.Y/2+(i-0.5)*size.Y/n,0)*CFrame.Angles(0,0,math.pi/2))
+        end
+    elseif shape == "pyramid" then
+        local base=part("Block",size)
+        local span=math.max(size.X,size.Y,size.Z)*8+8
+        local apex=Vector3.new(0,size.Y/2,0)
+        local cutters={}
+        for _,normal in ipairs({Vector3.new(2*size.Y/size.X,1,0),Vector3.new(-2*size.Y/size.X,1,0),Vector3.new(0,1,2*size.Y/size.Z),Vector3.new(0,1,-2*size.Y/size.Z)}) do
+            local n=normal.Unit
+            table.insert(cutters,part("Block",Vector3.one*span,xFrame(apex+n*span/2,n),true))
+        end
+        difference(base,cutters)
+    elseif shape == "stairs" or shape == "spiralstairs" then
+        local n = math.floor(MASTER_BUILD.partNumber(spec.steps,8,1,128))
+        local radius = MASTER_BUILD.partNumber(spec.radius,8,0.1,10000)
+        local angle = math.rad(MASTER_BUILD.partNumber(spec.angle,180,-3600,3600))
+        for i=1,n do
+            if shape == "stairs" then
+                local h = size.Y*i/n
+                part("Block",Vector3.new(size.X,h,size.Z/n),CFrame.new(0,-size.Y/2+h/2,-size.Z/2+(i-0.5)*size.Z/n))
+            else
+                local a = (i-1)*angle/n
+                part("Block",Vector3.new(size.X,math.min(size.Y/n,0.5),size.Z),CFrame.new(math.cos(a)*radius,-size.Y/2+(i-0.5)*size.Y/n,math.sin(a)*radius)*CFrame.Angles(0,-a,0))
+            end
+        end
+    elseif shape == "polyline" then
+        local points = spec.points or {}
+        if #points < 2 or #points > 129 then error("Polyline requires 2..129 local points") end
+        local thickness = MASTER_BUILD.partNumber(spec.thickness,1,0.05,1000)
+        for i=2,#points do
+            local a,b = MASTER_BUILD.partVector(points[i-1]),MASTER_BUILD.partVector(points[i])
+            if not a or not b or (b-a).Magnitude < 0.001 then error("Polyline contains invalid/coincident points") end
+            part("Cylinder",Vector3.new((b-a).Magnitude,thickness,thickness),xFrame((a+b)/2,b-a))
+            if i < #points then part("Ball",Vector3.one*thickness,CFrame.new(b)) end
+        end
+    else error("Unknown shape '"..shape.."'. Supported: "..table.concat(MASTER_BUILD.partShapes,", ")) end
+    return pieces
+end
+
 tools.build_assembly = function(args)
     local parent,err=resolveRef(args.parentRef or "game.Workspace"); if not parent then return failCode("REF_NOT_FOUND",err) end
     local model=Instance.new("Model"); model.Name=tostring(args.modelName or args.name or "ArenaAssembly"); model.Parent=parent; model:SetAttribute("ArenaMasterBuild",true)
     if args.grade == "simple" or args.grade == "lowpoly" or args.grade == "blockout" or args.grade == "detailed" then model:SetAttribute("ArenaDeclaredGrade", tostring(args.grade)) end
-    local items=args.items or args.parts or {}; local expanded={}
-    for _,spec in ipairs(items) do
-        local repeatSpec=spec.repeatSpec or spec["repeat"] or {}; local count=math.max(1,math.floor(tonumber(repeatSpec.count) or 1))
-        if #expanded+count>2000 then model:Destroy(); return failCode("BUDGET_EXCEEDED","build_assembly creates at most 2000 parts per call.") end
-        local basePos=MASTER_BUILD.vec3((spec.properties or {}).Position or spec.position) or Vector3.zero
-        local offset=MASTER_BUILD.vec3(repeatSpec.offset) or Vector3.zero
-        local radius=tonumber(repeatSpec.radius); local angleStep=tonumber(repeatSpec.angleStep) or (radius and 360/count or 0)
-        for i=1,count do
-            local copy={}; for k,v in pairs(spec) do copy[k]=v end
-            local props={}; for k,v in pairs(spec.properties or {}) do props[k]=v end
-            local pos=basePos+offset*(i-1)
-            if radius then local a=math.rad((tonumber(repeatSpec.startAngle) or 0)+angleStep*(i-1)); pos=basePos+Vector3.new(math.cos(a)*radius,tonumber(repeatSpec.heightStep or 0)*(i-1),math.sin(a)*radius); props.Orientation=Vector3.new(0,-math.deg(a)+90,0) end
-            props.Position=pos; copy.properties=props; copy.name=tostring(spec.name or spec.className or "Part"):gsub("{n}",tostring(i)); copy.parentRef=nil
-            table.insert(expanded,copy)
-        end
-    end
-    local created,errors,sample={},{},{}
-    for i,spec in ipairs(expanded) do
-        local className=tostring(spec.className or "Part")
-        local okNew,inst=pcall(Instance.new,className)
-        if not okNew or not inst then table.insert(errors,{index=i,error="Cannot create "..className})
-        else
-            inst.Name=spec.name or className
-            local problems=applyProperties(inst,spec.properties)
-            local attributeProblems={}
-            for attributeName,attributeValue in pairs(spec.attributes or {}) do
-                local okAttribute,attributeError=pcall(function()
-                    inst:SetAttribute(tostring(attributeName),decodeValue(attributeValue))
-                end)
-                if not okAttribute then table.insert(attributeProblems,{name=tostring(attributeName),error=tostring(attributeError)}) end
+    local budget={count=0,max=2000,csg=0}
+    local created,anchors,sample,problems={},{},{},{}
+    local success,why=pcall(function()
+        budget.max=math.floor(MASTER_BUILD.partNumber(args.maxParts,2000,1,2000))
+        local items=args.items or args.parts or {}
+        if #items == 0 then error("items must not be empty") end
+        for index,spec in ipairs(items) do
+            local key=tostring(spec.id or spec.name or index)
+            if anchors[key] then error("Duplicate assembly id/name: "..key) end
+            local props={}; for k,v in pairs(args.defaults or {}) do props[k]=v end; for k,v in pairs(spec.properties or {}) do props[k]=v end
+            local origin=CFrame.new()
+            if props.CFrame then origin=decodeValue(props.CFrame)
+            else
+                local pos=MASTER_BUILD.partVector(spec.position or props.Position,Vector3.zero)
+                local rot=MASTER_BUILD.partVector(spec.orientation or props.Orientation,Vector3.zero)
+                origin=CFrame.new(pos)*CFrame.fromOrientation(math.rad(rot.X),math.rad(rot.Y),math.rad(rot.Z))
             end
-            inst.Parent=model
-            local d=describeRef(inst)
-            d.propertyProblems=(#problems>0) and problems or nil
-            d.attributeProblems=(#attributeProblems>0) and attributeProblems or nil
-            table.insert(created,d)
-            if inst:IsA("BasePart") and #sample<8 then table.insert(sample,inst) end
+            if spec.relativeTo then
+                local ref=anchors[tostring(spec.relativeTo)]
+                if not ref then ref=resolveRef(spec.relativeTo) end
+                if not ref then error("relativeTo must name an earlier item or an existing ref: "..tostring(spec.relativeTo)) end
+                local offset=MASTER_BUILD.partVector(spec.offset,Vector3.zero)
+                if spec.space == "world" then origin=(MASTER_BUILD.partFrame(ref)+offset)*origin
+                else origin=MASTER_BUILD.partFrame(ref)*CFrame.new(offset)*origin end
+            elseif spec.offset then origin=CFrame.new(MASTER_BUILD.partVector(spec.offset,Vector3.zero))*origin end
+            local repeatSpec=spec.repeatSpec or spec["repeat"] or {}
+            local count=math.floor(MASTER_BUILD.partNumber(repeatSpec.count,1,1,2000))
+            local offset=MASTER_BUILD.partVector(repeatSpec.offset,Vector3.zero)
+            local radius=repeatSpec.radius and MASTER_BUILD.partNumber(repeatSpec.radius,nil,0,10000)
+            local angleStep=MASTER_BUILD.partNumber(repeatSpec.angleStep,radius and 360/count or 0,-36000,36000)
+            for rep=1,count do
+                local frame=origin*CFrame.new(offset*(rep-1))
+                if radius then
+                    local a=math.rad((tonumber(repeatSpec.startAngle) or 0)+angleStep*(rep-1))
+                    frame=origin*CFrame.new(math.cos(a)*radius,(tonumber(repeatSpec.heightStep) or 0)*(rep-1),math.sin(a)*radius)*CFrame.Angles(0,-a+math.pi/2,0)
+                end
+                local group=Instance.new("Model"); group.Name=tostring(spec.name or spec.id or spec.className or spec.shape or "Part"):gsub("{n}",tostring(rep)); group.Parent=model
+                local pieces
+                if spec.shape then
+                    local recipe={}; for k,v in pairs(spec) do recipe[k]=v end
+                    recipe.properties=props
+                    pieces=MASTER_BUILD.partRecipe(recipe,group,budget)
+                else
+                    budget.count=budget.count+1; if budget.count>budget.max then error("BUDGET_EXCEEDED") end
+                    pieces={Instance.new(tostring(spec.className or "Part"))}; pieces[1].Parent=group
+                end
+                local style={}; for k,v in pairs(props) do if k~="Position" and k~="Orientation" and k~="CFrame" and (not spec.shape or (k~="Size" and k~="Shape")) then style[k]=v end end
+                for _,inst in ipairs(pieces) do
+                    local localFrame=inst:IsA("BasePart") and inst.CFrame or nil
+                    local issues=applyProperties(inst,style)
+                    for _,issue in ipairs(issues) do table.insert(problems,{index=index,error=issue}) end
+                    for name,value in pairs(spec.attributes or {}) do inst:SetAttribute(tostring(name),decodeValue(value)) end
+                    if localFrame then inst.CFrame=frame*localFrame; if #sample<8 then table.insert(sample,inst) end end
+                end
+                group.WorldPivot=frame
+                local result
+                if #pieces==1 then
+                    result=pieces[1]; result.Name=group.Name; result.Parent=model; group:Destroy()
+                else result=group end
+                if rep==1 then anchors[key]=result end
+                anchors[key.."["..rep.."]"]=result
+                local d=describeRef(result); d.recipe=spec.shape; d.partCount=#pieces; table.insert(created,d)
+            end
         end
-    end
-    if #created==0 then model:Destroy(); return failCode("BAD_ARGS","No assembly items could be created.",errors) end
-    if args.pivot then local pivot=decodeValue(args.pivot); if typeof(pivot)=="CFrame" then model:PivotTo(pivot) elseif typeof(pivot)=="Vector3" then model:PivotTo(CFrame.new(pivot)) end end
+        if args.pivot then local pivot=decodeValue(args.pivot); if typeof(pivot)=="CFrame" then model:PivotTo(pivot) elseif typeof(pivot)=="Vector3" then model:PivotTo(CFrame.new(pivot)) end end
+    end)
+    if not success then model:Destroy(); return failCode("ASSEMBLY_ROLLED_BACK",tostring(why),{rolledBack=true,primitiveBudget=budget.count}) end
     waypoint("build assembly "..model.Name)
-    return ok({model=describeRef(model),created=created,count=#created,errors=errors,geometry=waitMeasurable(sample,2),note="All parts were created, repeated and grouped in one atomic build call; use the returned model id for moving/cloning."})
+    return ok({model=describeRef(model),created=created,count=#created,errors=problems,primitiveCount=budget.count,csgOperations=budget.csg,supportedShapes=MASTER_BUILD.partShapes,geometry=waitMeasurable(sample,2),note="Local relativeTo offsets and repeats are calculated by the bridge. Compound recipes return a Model, fused recipes a UnionOperation. Cone is a stepped approximation. No external mesh assets required."})
 end
 
 
@@ -11873,6 +12041,11 @@ local function runAssetImport(args, assetId, parent)
         model = InsertService:LoadAsset(assetId)
     end)
     if not okLoad or model == nil then
+        local message = tostring(loadErr)
+        local lower = message:lower()
+        if lower:find("permission",1,true) or lower:find("not authorized",1,true) or lower:find("not authorised",1,true) or lower:find("403",1,true) or lower:find("not trusted",1,true) then
+            return failCode("ASSET_PERMISSION_DENIED", message, {assetId=assetId, safeToRetry=true})
+        end
         return fail("LoadAsset failed for " .. tostring(assetId) .. ": " .. tostring(loadErr)
             .. " (the asset may be private or not a model/mesh). For decals, sounds and textures you normally do NOT need to insert an asset - just set the property to rbxassetid://" .. tostring(assetId) .. ".")
     end
@@ -11967,6 +12140,7 @@ tools.apply_asset = function(args)
     if assetId == nil then return fail("assetId must be a number.") end
     local url = "rbxassetid://" .. tostring(assetId)
     local applied = {}
+    local permissionDenied = false
     for _, inst in ipairs(list) do
         local property = args.property
         if property == nil then
@@ -11985,11 +12159,14 @@ tools.apply_asset = function(args)
             if okSet then
                 table.insert(applied, { instance = describeRef(inst), property = property, value = url })
             else
+                local message=tostring(setErr):lower()
+                if message:find("permission",1,true) or message:find("not authorized",1,true) or message:find("forbidden",1,true) or message:find("403",1,true) then permissionDenied=true end
                 table.insert(errors, inst.Name .. ": " .. tostring(setErr))
             end
         end
     end
     waypoint("apply asset")
+    if permissionDenied then return failCode("ASSET_PERMISSION_DENIED","Some asset properties were denied by Roblox.",{applied=applied,count=#applied,errors=errors,assetId=assetId,partial=(#applied>0),safeToRetry=true}) end
     return ok({ applied = applied, count = #applied, errors = errors })
 end
 
@@ -14805,7 +14982,23 @@ end)
 -- Stop) und LeaveTest.
 -- ---------------------------------------------------------------------------
 
+local publishedPlaceName = {id = 0, name = nil, pending = false, retryAt = 0}
+local function refreshPublishedPlaceName()
+    local id = game.PlaceId
+    if publishedPlaceName.id ~= id then publishedPlaceName = {id=id, name=nil, pending=false, retryAt=0} end
+    if id <= 0 or publishedPlaceName.pending or os.clock() < publishedPlaceName.retryAt then return end
+    publishedPlaceName.pending = true
+    publishedPlaceName.retryAt = os.clock() + 120
+    local state = publishedPlaceName
+    task.spawn(function()
+        local success, info = pcall(function() return game:GetService("MarketplaceService"):GetProductInfo(id, Enum.InfoType.Asset) end)
+        if success and info and type(info.Name) == "string" then state.name = info.Name else state.retryAt = os.clock() + 20 end
+        state.pending = false
+    end)
+end
+
 local function statePayload()
+    refreshPublishedPlaceName()
     -- Version 7.1.1: sessionId (seit 7.0.0 verloren) und gameId wieder im
     -- Poll-/Heartbeat-Payload. Ohne sessionId kannte Update-Session die
     -- Sitzung nie: jeder Poll lief als "Reconnect" (reconnects+1, Lesemodus
@@ -14814,7 +15007,7 @@ local function statePayload()
         instanceGuid = instanceGuid,
         sessionId = sessionId,
         placeId = tostring(game.PlaceId),
-        placeName = tostring(game.Name),
+        placeName = tostring(publishedPlaceName.name or game.Name),
         mode = currentMode(),
         context = currentContext(),
         capabilities = capabilities,
@@ -15552,8 +15745,8 @@ namespace Arena {
 # werden). Scheitert bereits das Kompilieren (z. B. Sprachmodus
 # ConstrainedLanguage), steht der Grund im runtime.log und die Bridge fällt
 # auf den 6.0.3-Hintergrund-Runspace-Worker zurück (ps-runspace-fallback).
-# Aufnahme-Leiter für GPU-/verdeckte Fenster: PrintWindow(PW_RENDERFULLCONTENT)
-# -> PrintWindow(0) -> WindowDcBitBlt (DWM-Umleitfläche) -> CopyFromScreen.
+# 8.0.3: Ausschließlich PrintWindow für das validierte Studio-Fenster.
+# Kein Bildschirm-/Desktop-/Window-DC-Fallback; minimiert/mehrdeutig = kein Bild.
 # ----------------------------------------------------------------------------
 $script:PreviewCaptureMode = 'ps-fallback'
 $script:PreviewCaptureModeReason = 'C#-Helfer noch nicht kompiliert'
@@ -15590,6 +15783,7 @@ namespace Arena {
         private const uint PW_RENDERFULLCONTENT = 2;
         private const int SRCCOPY = 0x00CC0020;
 
+        [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint processId);
         [DllImport("user32.dll")] private static extern bool IsIconic(IntPtr hWnd);
         [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr hWnd, out PreviewWindowRect lpRect);
         [DllImport("user32.dll")] private static extern bool PrintWindow(IntPtr hWnd, IntPtr hdcBlt, uint nFlags);
@@ -15613,6 +15807,14 @@ namespace Arena {
             IntPtr hwnd = new IntPtr(hwndValue);
             try {
                 if (hwnd == IntPtr.Zero) { result.Error = "HWND ist 0"; return Finish(result, watch, attempts); }
+                uint pid;
+                GetWindowThreadProcessId(hwnd, out pid);
+                using (Process studio = Process.GetProcessById((int)pid)) {
+                    if ((studio.ProcessName != "RobloxStudioBeta" && studio.ProcessName != "RobloxStudio") || studio.MainWindowHandle != hwnd) {
+                        result.Error = "Target is not a Roblox Studio window"; return Finish(result, watch, attempts);
+                    }
+                }
+                if (IsIconic(hwnd)) { result.Minimized = true; result.Error = "Studio window is minimized"; return Finish(result, watch, attempts); }
                 PreviewWindowRect rect;
                 if (!GetWindowRect(hwnd, out rect)) { result.Error = "GetWindowRect fehlgeschlagen"; return Finish(result, watch, attempts); }
                 int width = rect.Right - rect.Left;
@@ -15626,15 +15828,7 @@ namespace Arena {
                     if (captured != null) { result.Method = "PrintWindow"; }
                 }
                 if (captured == null) {
-                    captured = TryWindowDcBitBlt(hwnd, width, height, attempts);
-                    if (captured != null) { result.Method = "WindowDcBitBlt"; }
-                }
-                if (captured == null) {
-                    captured = TryCopyFromScreen(rect, width, height, attempts);
-                    if (captured != null) { result.Method = "CopyFromScreen"; }
-                }
-                if (captured == null) {
-                    result.Error = "alle vier Aufnahmewege ohne nutzbare Pixel (schwarz/transparent oder API-Fehler)";
+                    result.Error = "Window-only capture unavailable (black/transparent or API error); desktop fallback is forbidden";
                     return Finish(result, watch, attempts);
                 }
 
@@ -15718,68 +15912,6 @@ namespace Arena {
         // DWM-/Windows-Capture-Alternative: BitBlt aus der Umleitfläche des
         // Fenster-DC. Funktioniert bei manchen GPU-Fenstern, bei denen
         // PrintWindow nur Schwarz liefert.
-        private static Bitmap TryWindowDcBitBlt(IntPtr hwnd, int width, int height, StringBuilder attempts) {
-            IntPtr windowDc = IntPtr.Zero;
-            IntPtr memDc = IntPtr.Zero;
-            IntPtr hBmp = IntPtr.Zero;
-            Bitmap bmp = null;
-            try {
-                windowDc = GetWindowDC(hwnd);
-                if (windowDc == IntPtr.Zero) { attempts.Append("windowDcBitBlt=dc-null "); return null; }
-                memDc = CreateCompatibleDC(windowDc);
-                hBmp = CreateCompatibleBitmap(windowDc, width, height);
-                if (memDc == IntPtr.Zero || hBmp == IntPtr.Zero) {
-                    attempts.Append("windowDcBitBlt=ressource-fehlt ");
-                    return null;
-                }
-                IntPtr oldObj = SelectObject(memDc, hBmp);
-                bool blitted = BitBlt(memDc, 0, 0, width, height, windowDc, 0, 0, SRCCOPY);
-                if (oldObj != IntPtr.Zero) { SelectObject(memDc, oldObj); }
-                if (!blitted) { attempts.Append("windowDcBitBlt=api-false "); return null; }
-                bmp = Image.FromHbitmap(hBmp);
-                string sample;
-                if (!HasVisibleContent(bmp, out sample)) {
-                    attempts.Append("windowDcBitBlt=ok-aber-nichts-sichtbar[").Append(sample).Append("] ");
-                    DisposeQuiet(bmp);
-                    bmp = null;
-                    return null;
-                }
-                attempts.Append("windowDcBitBlt=ok ");
-                return bmp;
-            } catch (Exception ex) {
-                attempts.Append("windowDcBitBlt=ex(").Append(ex.Message).Append(") ");
-                DisposeQuiet(bmp);
-                return null;
-            } finally {
-                if (hBmp != IntPtr.Zero) { DeleteObject(hBmp); }
-                if (memDc != IntPtr.Zero) { DeleteDC(memDc); }
-                if (windowDc != IntPtr.Zero) { ReleaseDC(hwnd, windowDc); }
-            }
-        }
-
-        // Letzter Fallback: CopyFromScreen (fotografiert ggf. Überlagerungen mit).
-        private static Bitmap TryCopyFromScreen(PreviewWindowRect rect, int width, int height, StringBuilder attempts) {
-            Bitmap bmp = null;
-            try {
-                bmp = new Bitmap(width, height, PixelFormat.Format32bppArgb);
-                using (Graphics g = Graphics.FromImage(bmp)) {
-                    g.CopyFromScreen(rect.Left, rect.Top, 0, 0, new Size(width, height));
-                }
-                string sample;
-                if (!HasVisibleContent(bmp, out sample)) {
-                    attempts.Append("copyFromScreen=nichts-sichtbar[").Append(sample).Append("] ");
-                    DisposeQuiet(bmp);
-                    return null;
-                }
-                attempts.Append("copyFromScreen=ok ");
-                return bmp;
-            } catch (Exception ex) {
-                attempts.Append("copyFromScreen=ex(").Append(ex.Message).Append(") ");
-                DisposeQuiet(bmp);
-                return null;
-            }
-        }
-
         // Sichtbarkeitsprobe: mehrere Punkte über die Fläche. Liefert die
         // Messwerte mit, damit das Log zeigt, WARUM ein Weg verworfen wurde.
         private static bool HasVisibleContent(Bitmap bmp, out string info) {
@@ -21879,85 +22011,40 @@ $script:BridgeHandlerScript = {
     # ------------------------------------------------------------------
     # SCREENSHOT (bewusst unbeliebt gemacht - siehe Manifest)
     # ------------------------------------------------------------------
-    function Invoke-Screenshot($toolArgs) {
-        $advice = 'Screenshot captured. Textual scene tools are also available when exact object values are useful.'
-        # Der eigentliche Code steckt in einem erst bei Bedarf erzeugten
-        # Block. Grund: PowerShell löst Typangaben wie [System.Drawing...]
-        # schon beim Übersetzen einer Funktion auf. Fehlt oder klemmt
-        # System.Drawing, würden sonst ALLE Werkzeuge ausfallen - nur wegen
-        # der Screenshot-Funktion, von der ohnehin abgeraten wird.
-        $shotCode = [scriptblock]::Create(@'
-param($toolArgs, $shotFolder, $advice)
-Add-Type -AssemblyName System.Drawing -ErrorAction Stop
-$process = Get-Process -Name 'RobloxStudioBeta', 'RobloxStudio' -ErrorAction SilentlyContinue |
-    Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
-if (-not $process) {
-    return @{ ok = $false; error = 'No visible Roblox Studio window found.'; advice = $advice }
-}
-$rect = New-Object Arena.RECT
-[void][Arena.ScreenHelper]::GetWindowRect($process.MainWindowHandle, [ref]$rect)
-$width = $rect.Right - $rect.Left
-$height = $rect.Bottom - $rect.Top
-if ($width -le 0 -or $height -le 0) {
-    return @{ ok = $false; error = 'The Studio window is minimised or hidden.'; advice = $advice }
-}
-$bitmap = New-Object System.Drawing.Bitmap $width, $height
-$graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-$graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, (New-Object System.Drawing.Size $width, $height))
-$graphics.Dispose()
-
-$maxWidth = 1100
-if ($toolArgs.maxWidth) { $maxWidth = [int]$toolArgs.maxWidth }
-$final = $bitmap
-if ($width -gt $maxWidth) {
-    $scale = $maxWidth / [double]$width
-    $newWidth = [int]($width * $scale)
-    $newHeight = [int]($height * $scale)
-    $resized = New-Object System.Drawing.Bitmap $newWidth, $newHeight
-    $resizeGraphics = [System.Drawing.Graphics]::FromImage($resized)
-    $resizeGraphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-    $resizeGraphics.DrawImage($bitmap, 0, 0, $newWidth, $newHeight)
-    $resizeGraphics.Dispose()
-    $bitmap.Dispose()
-    $final = $resized
-}
-
-$fileName = 'studio_' + (Get-Date).ToString('yyyyMMdd_HHmmss') + '.png'
-$filePath = Join-Path $shotFolder $fileName
-$final.Save($filePath, [System.Drawing.Imaging.ImageFormat]::Png)
-$shotWidth = $final.Width
-$shotHeight = $final.Height
-$final.Dispose()
-return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight }
-'@)
-
+    function Invoke-Screenshot($sessionId, $toolArgs) {
+        $sessionId = Get-DeliverySession ([string]$sessionId)
+        # 8.0.3: fail closed. No desktop pixels, no first-process fallback.
+        $targetJson = ''
+        if (-not $Shared.StudioCaptureTargets.TryGetValue([string]$sessionId, [ref]$targetJson)) {
+            return @{ ok=$false; code='STUDIO_WINDOW_UNRESOLVED'; error='The target Studio window is not uniquely identified yet. Use describe_scene or retry after the next UI refresh.' }
+        }
         try {
-            $shot = & $shotCode $toolArgs $Shared.ShotFolder $advice
-        } catch {
-            return @{ ok = $false; error = "Screenshot failed: $($_.Exception.Message)"; advice = $advice }
-        }
-        if (-not $shot.ok) { return $shot }
-
-        $result = @{
-            ok = $true
-            result = @{
-                file = $shot.file
-                width = $shot.width
-                height = $shot.height
-                advice = $advice
-            }
-        }
-        if ($toolArgs.includeBase64 -eq $true) {
-            try {
-                $bytes = [System.IO.File]::ReadAllBytes([string]$shot.file)
-                $blob = New-Blob ([Convert]::ToBase64String($bytes)) 'capture_screenshot'
-                $result.result.base64Blob = $blob
-                $result.result.base64Note = 'Fetch the picture with get_chunk and decode base64. Seriously: describe_scene is better.'
-            } catch {
-                $result.result.base64Error = $_.Exception.Message
-            }
-        }
-        return $result
+            $target = $targetJson | ConvertFrom-Json
+            # Revalidate live identity rather than expiring a valid binding while
+            # the Bridge UI is minimized (its refresh timer is intentionally slower).
+            $entry = Get-SessionEntry $sessionId
+            $aliveAt=[long]$entry.lastSeen; $presence=[long]0
+            if ($Shared.Presence.TryGetValue($sessionId,[ref]$presence)) { $aliveAt=$presence }
+            if ($null -eq $entry -or ((Get-UnixSeconds)-$aliveAt) -gt 30 -or [string]$entry.instanceGuid -ne [string]$target.instanceGuid -or [string]$entry.placeId -ne [string]$target.placeId) { throw 'Studio session identity changed or disconnected.' }
+            $proc = Get-Process -Id ([int]$target.pid) -ErrorAction Stop
+            if ($proc.ProcessName -notin @('RobloxStudioBeta','RobloxStudio') -or $proc.MainWindowHandle.ToInt64() -ne [long]$target.hwnd) { throw 'Studio window identity changed.' }
+            if (([string]$proc.MainWindowTitle -replace '\s*[-–]\s*Roblox Studio\s*$', '').Trim() -ne [string]$target.title) { throw 'Studio window title changed; waiting for a fresh binding.' }
+            if (-not ('Arena.PreviewCapture' -as [type])) { throw 'Window-only capture helper is unavailable; desktop capture is forbidden.' }
+            $rect = New-Object Arena.RECT
+            if (-not [Arena.ScreenHelper]::GetWindowRect($proc.MainWindowHandle, [ref]$rect)) { throw 'Studio window closed.' }
+            $maxWidth = 1100
+            if ($toolArgs.maxWidth) { $maxWidth = [Math]::Max(160, [Math]::Min(3840, [int]$toolArgs.maxWidth)) }
+            $height = [Math]::Max(17, [int](($rect.Bottom-$rect.Top) * [Math]::Min(1.0, $maxWidth / [double][Math]::Max(1, $rect.Right-$rect.Left))))
+            $shot = [Arena.PreviewCapture]::Capture([long]$target.hwnd, $height)
+            if (-not $shot.Ok) { throw $shot.Error }
+            $proc.Refresh()
+            if ($proc.HasExited -or $proc.MainWindowHandle.ToInt64() -ne [long]$target.hwnd -or (([string]$proc.MainWindowTitle -replace '\s*[-–]\s*Roblox Studio\s*$', '').Trim()) -ne [string]$target.title) { throw 'Studio identity changed during capture; image discarded.' }
+            $file = Join-Path $Shared.ShotFolder ('studio_' + [Guid]::NewGuid().ToString('N') + '.png')
+            [IO.File]::WriteAllBytes($file, $shot.Png)
+            $result = @{ file=$file; width=$shot.Width; height=$shot.Height; sessionId=[string]$sessionId; captureMethod=$shot.Method }
+            if ($toolArgs.includeBase64 -eq $true) { $result.base64Blob = New-Blob ([Convert]::ToBase64String($shot.Png)) 'capture_screenshot' }
+            return @{ ok=$true; result=$result }
+        } catch { return @{ ok=$false; code='STUDIO_CAPTURE_UNAVAILABLE'; error=$_.Exception.Message; advice='Use describe_scene. The bridge never falls back to desktop capture.' } }
     }
 
     # ------------------------------------------------------------------
@@ -22079,6 +22166,19 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         }
         $params = $schema.params
         if ($null -eq $params -or -not ($params -is [System.Collections.IDictionary])) { return @{ ok=$true } }
+        foreach ($name in $params.Keys) {
+            $provided = Get-CommandArgumentValue $toolArgs ([string]$name)
+            if (-not $provided.found -or $provided.value -isnot [string]) { continue }
+            $type = [string]$params[$name].type
+            $value = $provided.value
+            if ($type -match '^(number|int|integer|float|double)$') {
+                $number = 0.0
+                if ([double]::TryParse($value.Trim(), [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$number) -and -not [double]::IsNaN($number) -and -not [double]::IsInfinity($number)) {
+                    if ($type -notmatch '^(int|integer)$' -or $number -eq [Math]::Truncate($number)) { $value = $number }
+                }
+            } elseif ($type -match '^(bool|boolean)$' -and $value.Trim() -match '^(?i:true|false)$') { $value = ($value.Trim() -ieq 'true') }
+            if ($toolArgs -is [System.Collections.IDictionary]) { $toolArgs[$name] = $value } else { $toolArgs.$name = $value }
+        }
         $missing = New-Object System.Collections.Generic.List[string]
         foreach ($name in $params.Keys) {
             $spec = $params[$name]
@@ -22234,7 +22334,7 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
         return @{ ok=$true }
     }
 
-    function Invoke-PluginTool($sessionId, $tool, $toolArgs, [int]$timeoutSeconds, [string]$activityId = '') {
+    function Invoke-PluginTool($sessionId, $tool, $toolArgs, [int]$timeoutSeconds, [string]$activityId = '', [bool]$allowPermissionRepair = $true) {
         $argumentCheck = Test-CommandArguments ([string]$tool) $toolArgs
         if (-not $argumentCheck.ok) { return (To-Json $argumentCheck 12) }
         # Version 7.0.5: the caller keeps its session/token; the DELIVERY follows the
@@ -22336,6 +22436,24 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
 
         if (-not $got) { return $null }
         Remove-PendingCommand $sessionId $commandId | Out-Null
+        if ($allowPermissionRepair -and $tool -in @('insert_asset','apply_asset')) {
+            try {
+                $failed = $resultJson | ConvertFrom-Json
+                if ($failed.ok -eq $false -and [string]$failed.code -eq 'ASSET_PERMISSION_DENIED') {
+                    $repair = Grant-SessionAssetUse -SessionId $sessionId -AssetId ([string]$toolArgs.assetId)
+                    if ($repair.ok -eq $true) {
+                        # Retry only after a definitive permission failure, never on timeout.
+                        $retried = Invoke-PluginTool $callerSession $tool $toolArgs $timeoutSeconds $activityId $false
+                        if ($null -eq $retried) { return $null }
+                        $response = $retried | ConvertFrom-Json
+                        $response | Add-Member -NotePropertyName permissionRepair -NotePropertyValue $repair -Force
+                        return (To-Json $response 40)
+                    }
+                    $failed | Add-Member -NotePropertyName permissionRepair -NotePropertyValue $repair -Force
+                    return (To-Json $failed 40)
+                }
+            } catch { Write-BridgeLog ('Asset permission repair failed: ' + $_.Exception.Message) }
+        }
         return $resultJson
     }
 
@@ -22742,12 +22860,24 @@ return @{ ok = $true; file = $filePath; width = $shotWidth; height = $shotHeight
             errors = @('WORLD_NOT_PROBED: probe_world zuerst.', 'REGION_LIMIT: Box zu groß - kleiner aufteilen (empirische Obergrenze im Fehler).', 'BAD_ARGS: min/max fehlt.') })
 
         # ---------------- MASTER BUILD ----------------
-        $t.Add(@{ name = 'build_assembly'; category = 'create'; summary = 'Parts-basierte Baugruppe für Wiederholungen und angefragte Formen.';
-            description = 'Erstellt bis zu 2000 Parts/Instanzen, wendet Properties an, erzeugt lineare oder radiale Wiederholungen und gruppiert alles direkt in ein Model. Passt zu Gebäude-Rahmen, Treppen, Zäunen, Säulenringen, Fassaden, Modulen und jeder angefragten Parts-basierten Form. Kombiniere bei Bedarf mit build_polygon_model, Blender/Meshes, vorhandenen Assets oder einfachen Parts; keine Geometrieform ist für ein Hero-Modell pauschal vorgeschrieben. Die Bridge berechnet Wiederholungen/Positionen.';
-            params = @{ grade = @{ type='string'; required=$false; default='null'; description='Optionales Grade-Metadatum für Diagnose/Build-Register; ohne Angabe wird eine einfache Gestaltung nicht als unvollständig behandelt.' }; modelName = @{ type='string'; required=$false; default="'ArenaAssembly'"; description='Name des fertigen Models.' }; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'}; items=@{type='array';required=$true;default='-';description='[{className,name,properties,attributes,repeat:{count,offset}|{count,radius,startAngle,angleStep,heightStep}}]. attributes wird per SetAttribute gesetzt (z.B. {ArenaOrganicRole="eye_left"}); {n} im Namen wird ersetzt.'}; pivot=@{type='Vector3|CFrame';required=$false;default='null';description='Optional das ganze Model am Ende versetzen.'} };
-            returns = '{ model, created, count, errors, geometry }';
-            example = @{ modelName='Säulenring'; items=@(@{className='Part';name='Säule{n}';properties=@{Size=@{x=2;y=12;z=2};Anchored=$true};repeat=@{count=12;radius=20}}) };
-            errors = @('BUDGET_EXCEEDED: mehr als 2000 Teile.', 'BAD_ARGS: nichts erstellt.') })
+        $t.Add(@{ name = 'build_assembly'; category = 'create'; summary = 'Native Parts, shape recipes, relative placement and repetition in one call.';
+            description = '8.0.3 ordinary-part builder, independent of polygon/Blender tools. Shapes (case-insensitive): Block, Ball, Cylinder, Wedge, CornerWedge, HalfBall (alias Dome), QuarterBall, HalfCylinder, QuarterCylinder, Tube, Ring, Torus, CurvedCylinder, Arch, Capsule, Cone, Pyramid, Stairs, SpiralStairs, Polyline. Half/quarter solids and Pyramid use internal CSG; Tube/Ring subtract an inner cylinder. Cylinder/Tube/Capsule run along local X; Ring along Y; balls are centered at origin, HalfBall keeps Y>=0, QuarterBall also Z>=0. size is the FULL source primitive bounding box before cutting. CurvedCylinder uses miter-cut cylinders and fuses them by default; Arch uses miter-cut blocks. Curves lie in local XZ around the origin (rotate the recipe for vertical arches). Torus is a 360-degree CurvedCylinder. Cone is an explicitly stepped approximation using stacked cylinders, NOT a perfect mathematical cone. Stairs rise along +Z; SpiralStairs circle around +Y. Polyline uses local points and sphere joints. Compound shapes return a Model, simple/fused shapes a BasePart/UnionOperation. No external assets. Each item accepts id, shape, name, size, position, orientation (degrees), relativeTo (earlier item id/name or an existing ref), offset, space=local|world, properties, attributes, repeatSpec. Without a position, relativeTo+offset is sufficient: local offset rotates with the anchor, world offset uses world axes; the bridge does the arithmetic. Earlier repeats can be referenced as id[1], id[2], etc. Forward/cyclic/duplicate item IDs fail and roll back the new assembly. Shape parameters: radius, thickness, wallThickness, length, angle (1..360 degrees), startAngle, segments (2..64, curves use at least ceil(angle/45)), steps (1..128), points (2..129), fuse (true by default). Capsule length must exceed twice its radius. Curves require thickness <= 1.8*radius. defaults supplies shared Roblox properties; per-item properties override defaults. Shape size/CFrame/Position/Orientation are geometry-owned, not overwritten by style properties. Recipes are anchored by default; legacy className items retain their previous defaults. repeatSpec supports count, offset or radius/startAngle/angleStep/heightStep. Work budget includes ALL temporary CSG cutters, at most 2000 primitives and 96 CSG operations per call. Rollback on geometry/CSG failure destroys only this new assembly, never existing anchors. Property warnings are returned explicitly; inspect errors before claiming success. Simple, primitive and blockout requests remain valid choices, not a requirement to add complexity.';
+            params = @{
+                grade=@{type='string';required=$false;default='null';description='Optional diagnostic grade metadata, never a modeling-method gate.'}
+                modelName=@{type='string';required=$false;default="'ArenaAssembly'";description='Finished model name.'}
+                parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Destination.'}
+                defaults=@{type='table';required=$false;default='{}';description='Shared Roblox properties, e.g. Anchored=true, Material=Wood, Color=#BC854F.'}
+                maxParts=@{type='int';required=$false;default='2000';description='Work budget (1..2000), including temporary CSG cutter primitives.'}
+                items=@{type='array';required=$true;default='-';description='[{id,name,shape,size,position,orientation,relativeTo,offset,space,properties,attributes,radius,thickness,wallThickness,length,angle,startAngle,segments,steps,points,fuse,repeatSpec}]. Legacy className/properties/repeat remain supported. Position is optional. Use earlier unique ids/names as anchors. attributes uses SetAttribute (e.g. ArenaOrganicRole=eye_left); {n} in names expands per repeat. Read the full description for axes, approximation and budgets.'}
+                pivot=@{type='Vector3|CFrame';required=$false;default='null';description='Optional final model pivot.'}
+            };
+            returns = '{ model, created:[{id,name,path,recipe,partCount}], count, primitiveCount, csgOperations, errors, geometry, supportedShapes }';
+            example = @{ modelName='PartsExample'; defaults=@{Anchored=$true;Material='SmoothPlastic'}; items=@(
+                @{id='base';shape='Block';size=@{x=12;y=1;z=12};position=@{x=0;y=4;z=0}},
+                @{id='dome';shape='HalfBall';size=@{x=8;y=8;z=8};relativeTo='base';offset=@{x=0;y=0.5;z=0}},
+                @{id='pipe';shape='CurvedCylinder';radius=8;thickness=1;angle=90;segments=9;relativeTo='base';offset=@{x=0;y=5;z=0}}
+            ) };
+            errors = @('ASSEMBLY_ROLLED_BACK: geometry/ref/CSG/budget failure; only the new assembly was removed.', 'REF_NOT_FOUND: parent missing. Property warnings are in errors; no hidden partial geometry success.') })
         $t.Add(@{ name = 'build_polygon_model'; category = 'create'; summary = 'Strukturierter Polygon-Builder; nach Nutzerwunsch und Place-Konvention einsetzen.';
             description = 'PROJECT-FIRST (7.6.3): first follow the explicit user method, then the existing Place convention, then choose by task fit. Blender is a recommendation for suitable greenfield geometry, not a restriction. Use build_polygon_model whenever polygons match the requested or established approach; userRequestedPolygon is optional context only, not a gate. Estimate wedge count and explain meaningful performance trade-offs without blocking the requested method. modelBuildRules and the LowPolyHouse example document this builder, not a mandatory workflow. Ablauf: erst Bounds/Koordinaten/Stil festlegen, dann eine vollständige Hauptsilhouette als benannte Submodels mit Polygonflächen bauen, danach Wiederholungen mit build_assembly und Akzente/Details ergänzen, Ergebnis prüfen und model_audit ausführen. Ein polygon={name,points=[{x,y,z},...]} ist genau eine planare Fläche, KEIN ganzer Körper: für ein geschlossenes Objekt alle Seiten/Enden als Flächen verbinden oder closeOpenings=true für offene Rand-Loops setzen. Punkte müssen geordnet, planar, verschieden und nicht selbstschneidend sein. Benutze volumes für veränderliche Querschnitte wie Rumpf, Griff, Säule, Schaft oder Ast. Ein einzelner Frontumriss mit thickness bleibt eine dünne Platte. Punkte sind die Geometrie; origin/rotation-in-Grad/scale transformieren das ganze Modell, properties.Position/Size/CFrame/Orientation werden ignoriert. Der Builder trianguliert und erzeugt zwei WedgeParts pro Dreieck; AutoWeld ist je Submodel an. Nie nur ok ansehen: result.incomplete=false, facesSkipped=0 und skipped=[] verlangen; fallbackFaces/Warnungen lesen und Fehlerstellen neu bauen. organic=true/organicKind sind optionale Diagnose-Metadaten; sie aktivieren keine Geometrie-, Farb-, Anatomie- oder Animationspflicht. Simple Standardteile und explizite Primitive-/Blockoutwünsche bleiben einfache Ausnahmen.';
             params = @{ userRequestedPolygon=@{type='bool';required=$false;default='false';description='Optional: marks that polygon geometry follows an explicit user request. The Bridge does not require it.'}; matchPlaceConvention=@{type='bool';required=$false;default='false';description='Optional: set true when this build follows the inspected target-Place convention.'}; grade=@{type='string';required=$false;default='null';description='Optionales Grade-Metadatum für Diagnose/Build-Register. Es ist nicht nötig, um eine simple, primitive, low-poly oder blockout-Gestaltung als beabsichtigt zu markieren.'}; modelName=@{type='string';required=$false;default="'ArenaPolygonModel'";description='Oberstes fertiges Model.'}; organic=@{type='bool';required=$false;default='false';description='Optionales Marker-Attribut, damit model_audit per-model Messwerte ermitteln kann. Kein Methoden- oder report_done-Gate.'}; organicKind=@{type='string';required=$false;default='null';description='Optionale Kategorie/Metadaten (z.B. creature, plant, tree, prop, custom); keine Kategorie ist erforderlich.'}; organicTraits=@{type='array';required=$false;default='[]';description='Optionale semantische Marker für die Diagnose (z.B. ["wings"]); beeinflusst weder den Build noch die Fertigmeldung.'}; volumes=@{type='array';required=$false;default='[]';description='Allgemeine geschlossene Loft-Volumen [{name,role,sides=6..16,sections:[{center={x,y,z},heightRadius,depthRadius},...],style}]. Für veränderliche Querschnitte in Rumpf/Hülle, Griff, Säule, Schaft oder Ast; mindestens 3 Stationen, Radien >=0.025 vor globalem scale und benachbarte Zentren >=0.01 Studs. Für eine weiche Creature-Form können zusätzliche Stationen/Seiten nützlich sein; diese Richtwerte sind optionale Beispiele, kein Gate.'}; submodels=@{type='array';required=$false;default='[]';description='EMPFOHLEN für jedes zusammengesetzte Modell: [{name,role,containerClass="Folder|Model",polygons:[{name,points:[{x,y,z},...],style?}],style,autoWeld,closeOpenings,capStyle}]. Jede Polygonliste enthält einzelne planare Flächen; groupiere nach Bauteil/Farbe/Material. Alle Submodels liegen unter dem zurückgegebenen Hauptmodel. role ist ein optionaler semantischer Marker für Diagnose oder projektinterne Konventionen.'}; polygons=@{type='array';required=$false;default='[]';description='Planare Flächen [{name,points:[{x,y,z},...],color,material,thickness,style}]. Jede Fläche braucht >=3 geordnete, planare, eindeutige Punkte und wird für ein Solid mit Rückseite/Seiten/Enden ergänzt. Punkte ohne Selbstschnitt und ohne redundante kollineare Ecken; für große Modelle nach Submodel/Material gruppieren.'}; points=@{type='Vector3[]';required=$false;default='null';description='Kurzform für genau EINE planare Fläche; Punkte sind echte Modellkoordinaten, nicht eine Bild-/Frontskizze.'}; script=@{type='string';required=$false;default='null';description='Textuelle Kurzform für mehrere POLYGON-Abschnitte. Für nachvollziehbare, mehrteilige Modelle bevorzugt die strukturierte submodels/polygons-Form und das LowPolyHouse-Beispiel verwenden.'}; style=@{type='table';required=$false;default='{}';description='Globale Part-Defaults: color, material, materialVariant, collisionGroup, thickness, thicknessPlacement (inside Standard|center|positive|negative), anchored, canCollide, canQuery, canTouch, castShadow, transparency, reflectance, properties. Geometrie bleibt Builder-eigen: Position/Orientation/Rotation/CFrame/Size/PivotOffset in properties werden ignoriert, damit keine Fläche verdreht wird.'}; autoWeld=@{type='bool';required=$false;default='true';description='Standard AN: WeldConstraint-Kette innerhalb jedes Untermodells, damit Polygon-Wedges auch bei anchored=false als ein Objekt verbunden bleiben. Nur autoWeld=false erzeugt bewusst getrennte Teile.'}; mainWeld=@{type='bool';required=$false;default='false';description='Verbindet alle Untermodelle automatisch mit dem ersten.'}; mainWelds=@{type='array';required=$false;default='[]';description='Animierbare Verbindungen [{name,from,to}] zwischen benannten Untermodellen. Erzeugt klassische Welds mit C0/C1 für Script-Animation.'}; closeOpenings=@{type='bool';required=$false;default='false';description='Erkennt unmatched boundary loops pro Submodel und versucht sie mit triangulierten AutoCaps zu schließen. Best effort: für kritische/geschlossene Objekte alle Flächen selbst modellieren und facesSkipped/skipped prüfen.'}; capStyle=@{type='table';required=$false;default='{}';description='Eigener Style für automatisch geschlossene Öffnungen.'}; origin=@{type='Vector3';required=$false;default='{0,0,0}';description='Gesamt-Offset.'}; rotation=@{type='Vector3 degrees';required=$false;default='{0,0,0}';description='Gesamtrotation.'}; scale=@{type='number';required=$false;default='1';description='Gesamtskalierung.'}; maxWedges=@{type='int';required=$false;default='4000';description='Budget, maximal 10000.'}; parentRef=@{type='ref';required=$false;default="'game.Workspace'";description='Ziel.'} };
@@ -22944,7 +23074,7 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
             example = @{ assetId = 1234567; parentRef = 'game.Workspace' };
             errors = @('ASSET_TYPE_MISMATCH: Id passt nicht zu Model/Mesh (actual.typeName wird gemeldet).', 'ASSET_NOT_FOUND', 'ASSET_HAS_SCRIPTS: enthält Skripte - acceptScripts=true nur mit Vorsicht.', 'CATALOG_UNAVAILABLE.') })
         $t.Add(@{ name = 'apply_asset'; category = 'assets'; summary = 'Asset auf Objekt legen (eigenschaft automatisch).';
-            description = 'Setzt Texture/SoundId/Image/MeshId automatisch passend zur Zielklasse - und validiert VORHER, dass die Id wirklich zum Typ passt (ASSET_TYPE_MISMATCH, sonst nie eingebaut).';
+            description = 'Setzt Texture/SoundId/Image/MeshId automatisch passend zur Zielklasse - und validiert VORHER, dass die Id wirklich zum Typ passt (ASSET_TYPE_MISMATCH, sonst nie eingebaut). 8.0.3: direct insert_asset/apply_asset calls automatically repair definitive Roblox permission failures via the saved API key (asset-permissions:write), granting only Use to this session universe, then retry once. Asynchronous playback/content warnings cannot always be observed by a property setter: use open_cloud call patch__asset_permissions_api_v1_assets_permissions with subjectType=Universe, subjectId=this gameId, action=Use, requests=[{assetId,grantToDependencies:true}] if such a warning is reported. No ownership transfer or public grant; missing scopes/roles remain errors. Nested plugin batch calls cannot call the desktop API-key repair; prefer direct asset calls when repairing access.';
             params = @{ refs = @{ type = 'ref[]'; required = $true; default = '-'; description = 'Decal, Texture, Sound, ImageLabel, SpecialMesh, MeshPart, Animation.' }; assetId = @{ type = 'number'; required = $true; default = '-'; description = '' }; property = @{ type = 'string'; required = $false; default = 'auto'; description = 'Nur wenn Auto nicht geht: Texture/SoundId/Image/MeshId/AnimationId.' }; skipValidation = @{ type = 'bool'; required = $false; default = 'false'; description = '' } };
             returns = '{ applied: [ { instance, property, value } ], count, errors }';
             example = @{ refs = @('#42'); assetId = 1234567 };
@@ -23308,11 +23438,11 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
             example = @{ tool = 'fill_region' };
             errors = @('REF_NOT_FOUND: unbekanntes Tool/Kategorie (Liste im Fehler).') })
         $t.Add(@{ name = 'capture_screenshot'; category = 'system'; summary = 'Roblox-Studio-Fenster als Screenshot erfassen.';
-            description = 'Erfasst das Studio-Fenster. Arena kann frei zwischen Screenshot und den textuellen Szenenwerkzeugen mit exakten Objektwerten wählen.';
+            description = 'Captures ONLY the uniquely bound Roblox Studio window for the target session using PrintWindow. Never captures the desktop, a screen region, overlays, another Studio session or the first process. If minimized, ambiguous or GPU capture is unavailable, returns STUDIO_WINDOW_UNRESOLVED/STUDIO_CAPTURE_UNAVAILABLE. Use describe_scene instead; never request desktop access. maxWidth is clamped to 160..3840.';
             params = @{ confirm = @{ type = 'bool'; required = $false; default = 'false'; description = 'Aus Kompatibilitätsgründen akzeptiert; nicht mehr erforderlich.' }; includeBase64 = @{ type = 'bool'; required = $false; default = 'false'; description = 'Bild als Base64-Blob.' }; maxWidth = @{ type = 'int'; required = $false; default = '1100'; description = '' } };
-            returns = '{ file, width, height, advice }';
+            returns = '{ file, width, height, sessionId, captureMethod, base64Blob? }';
             example = @{ confirm = $true };
-            errors = @('RUNTIME_ERROR: Studio-Fenster nicht sichtbar.') })
+            errors = @('STUDIO_WINDOW_UNRESOLVED', 'STUDIO_CAPTURE_UNAVAILABLE') })
 
         return ,$t
     }
@@ -23791,6 +23921,8 @@ end
         $out = @{
             docsVersion = [string]$Shared.DocsVersion
             welcome = 'Welcome. This first response includes the available capabilities and reference documentation. Use whatever subset helps the current task; details remain available through GET /api/docs or get_docs.'
+            ordinaryParts = 'build_assembly supports 20 ordinary-part recipes including HalfBall, Tube, Torus, miter-cut CurvedCylinder, Pyramid, Capsule and Stairs; relativeTo + offset avoids manual coordinate arithmetic. Read get_docs tool=build_assembly for exact axes, parameters, examples, CSG rollback and budgets. No Blender/polygon requirement.'
+            assetOwnership = 'Group-owned target places upload to the group, never silently to the account. Roblox must authorize the API key for that group. insert_asset can repair a definitive permission denial through asset-permissions:write by granting Use only to this session universe, then retry once. Missing key/scope/role is reported, not bypassed. Never blindly retry a timed-out import.'
             quickStart = @(
                 'If you need a user choice or clarification, ALWAYS use ask_user/confirm_action through this Bridge; never ask in normal chat. Full question-tool documentation is included below.',
                 'Inspect the Place when context is needed.',
@@ -23812,11 +23944,11 @@ end
         # JEDE Sitzung - kurz, hart, maschinenlesbar.
         $out.progressContract = @{
             field = 'Progress is optional: omit it when a meaningful estimate is unavailable. For measurable work, you may send progress = { percent = 43, message = "short concrete update" } at the same level as token/targetPlace/tool (or inside args); the bridge removes it before forwarding to Studio.'
-            mode = 'For chat questions and read-only inspection/observation, progress may be omitted entirely or disabled with progress=false / progress={mode:"hidden"|"off"|"not_applicable"}. The bridge labels it not applicable and hides the bar; no progress call is required.'
-            missing = 'Missing percent is non-fatal. The UI shows truthful text only and no percentage/bar; omitted progress does not count as a missing-percent failure. Only repeated explicit message-only progress reports may include PERCENT_MISSING so measurable tasks can provide a real estimate.'
+            mode = 'For chat questions and read-only inspection/observation, progress may be omitted entirely or disabled with progress=false / progress={mode:"hidden"|"off"|"not_applicable"}. This disables numeric percentage, not the place-row activity indicator; no progress call is required.'
+            missing = 'Missing percent is non-fatal. The place row shows an indeterminate activity indicator, never an invented percentage. Omitted progress does not count as a missing-percent failure.'
             neverReset = 'A message-only call never resets a known percentage to 0. A fresh task starts without a percentage until Arena actually reports one.'
             last = 'report_done shows 100 % only when a genuine numeric progress value was reported. If no percentage was reported, completion stays not applicable rather than fabricating 100 %.'
-            display = 'The place row and history show a numeric bar only after Arena reports a number. Hidden mode displays not applicable with the concrete text/action; no initial 0 %, no implied idle state. After 60 s without a Bridge call, the UI reports only that no new Bridge call was observed and that Arena status is unavailable.'
+            display = 'The place row always shows activity after a Bridge call: a real numeric bar if available, otherwise an indeterminate bar. Below the place name only the bar and concise status appear, never the last step. After 60 s without a Bridge call the status says no Bridge request for over a minute and the animation stops. This does not claim to know what Arena is doing outside the Bridge. History retains detailed actions.'
             rewind = 'Rewinds are allowed and stay visible; the bridge never invents a higher percentage than you reported.'
         }
         $out.qualityContract = @(
@@ -25238,7 +25370,7 @@ end
                     }
                 }
             }
-            'capture_screenshot' { return (Invoke-Screenshot $toolArgs) }
+            'capture_screenshot' { return (Invoke-Screenshot $sessionId $toolArgs) }
             'handoff'            { return (Invoke-HandoffWrite $sessionId $toolArgs) }
             'get_chunk' {
                 $index = 1
@@ -30568,6 +30700,22 @@ $script:BridgeOpenCloudTools = {
         }
     }
 
+    function Grant-SessionAssetUse {
+        param([string]$SessionId, [string]$AssetId)
+        $parsedAssetId=[long]0
+        if (-not [long]::TryParse($AssetId.Trim(),[System.Globalization.NumberStyles]::Integer,[System.Globalization.CultureInfo]::InvariantCulture,[ref]$parsedAssetId) -or $parsedAssetId -le 0) { return @{ ok=$false; code='BAD_ARGS'; error='A numeric assetId is required.' } }
+        $entry = Get-SessionEntry $SessionId
+        if ($null -eq $entry -or [string]$entry.gameId -notmatch '^[1-9]\d*$') { return @{ ok=$false; code='UNPUBLISHED_PLACE'; error='Asset use can only be granted to the published universe of this session.' } }
+        # The catalog enforces read-only mode, exact asset-permissions:write scope,
+        # the user allowlist, no-expiration policy and the authenticated key.
+        $grant = Invoke-OpenCloudCatalogTool -Shared $Shared -SessionId $SessionId -Arguments @{
+            action='call'; operation='patch__asset_permissions_api_v1_assets_permissions'
+            body=@{ subjectType='Universe'; subjectId=[string]$entry.gameId; action='Use'; requests=@(@{ assetId=$parsedAssetId; grantToDependencies=$true }) }
+        }
+        if ($grant.ok -eq $true) { return @{ ok=$true; code='ASSET_USE_GRANTED'; universeId=[string]$entry.gameId; assetId=$AssetId; note='Roblox accepted the permission request. Dependency grants may propagate asynchronously.' } }
+        return $grant
+    }
+
     function Get-OpenCloudStudioDeveloper {
         # Version 7.5.6: Der Asset-Ersteller ist das Konto, das in Roblox Studio
         # angemeldet ist. Das Plugin meldet StudioService:GetUserId() getrennt
@@ -30586,11 +30734,15 @@ $script:BridgeOpenCloudTools = {
     }
 
     function Resolve-OpenCloudCreatorForUpload {
-        # Version 7.5.6: ZUERST die echte Studio-Anmeldung (StudioService:GetUserId),
-        # damit Open Cloud als der angemeldete Nutzer hochlädt. Nur wenn Studio
-        # keine User-ID meldet, bleibt die aus dem API-Key gelesene Resource der
-        # automatische Rückfall. Es gibt kein manuelles Entwickler-Feld mehr.
+        # 8.0.3: Gruppeneigentümer zuerst; persönliche Places nutzen weiterhin
+        # die Studio-Anmeldung, danach die API-Key-Resource. Kein manueller
+        # Eigentümer-Override und kein stiller Gruppen-zu-Nutzer-Fallback.
         param($Shared, [string]$SessionId = '')
+        $entry = Get-SessionEntry $SessionId
+        if ($entry -and [string]$entry.creatorType -eq 'Group') {
+            if ([string]$entry.creatorId -notmatch '^[1-9]\d*$') { return @{ ok=$false; code='GROUP_OWNER_UNKNOWN'; error='The target place has no valid group owner ID yet.' } }
+            return @{ ok=$true; creatorId=[string]$entry.creatorId; creatorKind='group'; source='place_group_owner' }
+        }
         $studio = Get-OpenCloudStudioDeveloper -SessionId $SessionId
         if ($null -ne $studio) { return $studio }
         $fromKey = Resolve-OpenCloudCreatorFromKey -Shared $Shared
@@ -30606,8 +30758,8 @@ $script:BridgeOpenCloudTools = {
         $gate = Assert-OpenCloudToolAccess -Shared $Shared -RequiredScopes @('asset:read','asset:write') -What 'upload_asset'
         if ($gate.ok -ne $true) { return $gate }
         $config = Get-OpenCloudConfig $Shared
-        # Version 7.5.6: Der angemeldete Studio-Nutzer ist der primäre
-        # Asset-Ersteller; ohne Studio-ID wird die Resource aus dem API-Key genutzt.
+        # 8.0.3: Gruppenbesitz bleibt Gruppenbesitz. Rollen/Uploadrechte
+        # prüft Roblox; ein abgelehnter Gruppen-Upload wird nicht umgeleitet.
         $creatorFound = Resolve-OpenCloudCreatorForUpload -Shared $Shared -SessionId $SessionId
         if ($creatorFound.ok -ne $true) {
             return @{
@@ -32212,6 +32364,71 @@ try { [void](Get-StartupEnabled) } catch {
     try { Write-RuntimeLog ('Autostart-Prüfung fehlgeschlagen: ' + $_.Exception.Message) } catch {}
 }
 
+# Version 7.5.8: Ein Autostart kann alte Run-Einträge parallel auslösen.
+# Nur EIN PowerShell-Kind darf die Bridge-Oberfläche/Dienste starten. Die
+# Sperre ist pro Windows-Konto und wird beim Prozessende automatisch freigegeben.
+$script:BridgeSingleInstanceMutex = $null
+$script:BridgeSingleInstanceOwned = $false
+try {
+    $mutexIdentity = [string]$env:USERNAME
+    try {
+        $currentSid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        if (-not [string]::IsNullOrWhiteSpace([string]$currentSid)) { $mutexIdentity = [string]$currentSid }
+    } catch {}
+    if ([string]::IsNullOrWhiteSpace($mutexIdentity)) { $mutexIdentity = 'current-user' }
+    $mutexIdentity = $mutexIdentity -replace '[^A-Za-z0-9_.-]', '_'
+    $mutexName = 'Local\ArenaRobloxBridge-' + $mutexIdentity
+    $script:BridgeSingleInstanceMutex = [System.Threading.Mutex]::new($false, $mutexName)
+    try {
+        $script:BridgeSingleInstanceOwned = $script:BridgeSingleInstanceMutex.WaitOne(0)
+    } catch [System.Threading.AbandonedMutexException] {
+        $script:BridgeSingleInstanceOwned = $true
+    }
+    if (-not $script:BridgeSingleInstanceOwned) {
+        $duplicateMessage = $(if ([string]$script:SettingsCache.uiLanguage -eq 'de') { 'Arena Roblox Bridge läuft bereits. Schließe das vorhandene Fenster vollständig und starte die neue EXE danach erneut. Der Autostart wurde bereits bereinigt.' } else { 'Arena Roblox Bridge is already running. Close the existing window completely, then start the new EXE again. Startup entries have already been cleaned up.' })
+        try {
+            Add-Content -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Value ('{0:o} SINGLE_INSTANCE_DUPLICATE PID={1} UpdateStatus={2}' -f (Get-Date), $PID, $UpdateStatus) -Encoding UTF8 -ErrorAction SilentlyContinue
+        } catch {}
+        try {
+            [System.IO.File]::WriteAllText((Join-Path $env:LOCALAPPDATA 'START-CHECK.txt'),
+                ('Arena Roblox Bridge - Startkontrolle' + [Environment]::NewLine +
+                 'Version: __ARENA_BUILD_VERSION__' + [Environment]::NewLine +
+                 'ABBRUCH: SINGLE_INSTANCE_DUPLICATE' + [Environment]::NewLine +
+                 $duplicateMessage + [Environment]::NewLine +
+                 'Log: ' + (Join-Path $env:LOCALAPPDATA 'ArenaRobloxBridge-start-entry.txt') + [Environment]::NewLine),
+                [System.Text.Encoding]::UTF8)
+        } catch {}
+        if ($script:DiagnosticMode) {
+            try { [Console]::Error.WriteLine('SINGLE_INSTANCE_DUPLICATE: ' + $duplicateMessage) } catch {}
+        } elseif ([string]::IsNullOrWhiteSpace($UpdateStatus)) {
+            # Das COM-Popup erklärt den Doppelstart, ohne WPF vor dem
+            # Single-Instance-Gate zu laden oder ein zweites Bridge-Fenster zu bauen.
+            try {
+                $duplicateNotice = New-Object -ComObject WScript.Shell
+                [void]$duplicateNotice.Popup($duplicateMessage, 0, 'Arena Roblox Bridge - bereits geöffnet', 48)
+            } catch {}
+        }
+        try { $script:BridgeSingleInstanceMutex.Dispose() } catch {}
+        exit 0
+    }
+} catch {
+    # Die Sicherung darf eine Bridge nicht am Start hindern, falls Windows die
+    # benannte Mutex-API unerwartet blockiert.
+    try { Add-Content -LiteralPath "$env:LOCALAPPDATA\ArenaRobloxBridge-start-entry.txt" -Value ('{0:o} SINGLE_INSTANCE_GUARD_WARNING {1}' -f (Get-Date), $_.Exception.Message) -Encoding UTF8 -ErrorAction SilentlyContinue } catch {}
+}
+
+function Release-BridgeSingleInstanceMutex {
+    if (-not $script:BridgeSingleInstanceOwned -or $null -eq $script:BridgeSingleInstanceMutex) { return }
+    try {
+        $script:BridgeSingleInstanceMutex.ReleaseMutex()
+        $script:BridgeSingleInstanceOwned = $false
+    } catch {}
+    try { $script:BridgeSingleInstanceMutex.Dispose() } catch {}
+    $script:BridgeSingleInstanceMutex = $null
+}
+
+
+
 # ----------------------------------------------------------------------------
 # SITZUNGEN (ein Studio-Fenster = eine Sitzung = ein Token)
 # ----------------------------------------------------------------------------
@@ -32299,6 +32516,7 @@ function Remove-DeadSession {
             }
         }
         [void]$script:PlaceIdentities.Remove($SessionId)
+        $discardCapture = ''; [void]$script:Shared.StudioCaptureTargets.TryRemove($SessionId, [ref]$discardCapture)
     } catch {}
     # Vorschau-Worker und Caches gehören zur Sitzung und dürfen nach dem
     # Schließen eines Studio-Fensters weder weiterlaufen noch Handles halten.
@@ -32520,129 +32738,942 @@ function New-CheckPath {
 # ----------------------------------------------------------------------------
 $script:UiLanguage = 'en'
 try { if ([string]$script:SettingsCache.uiLanguage -eq 'de') { $script:UiLanguage = 'de' } } catch {}
-$script:UiTranslationsDeEn = @{
-    'Beim PC-Start automatisch öffnen' = 'Open automatically at PC startup'
-    'Live-Vorschau-Icons im Editor anzeigen' = 'Show live preview icons in the editor'
-    'Fortschritt in der Place-Liste anzeigen' = 'Show progress in the place list'
-    'Benachrichtigung, wenn Arena fertig ist' = 'Notification when Arena is done'
-    'Sprache / Language' = 'Language'
-    'Die Sprache gilt für das gesamte Programm. Englisch ist der Standard.' = 'The language applies to the whole program. English is the default.'
-    'Englisch ist ausgewählt - alle Fenster nutzen Englisch.' = 'English is selected - all windows now use English.'
-    'Deutsch ist ausgewählt - alle Fenster nutzen Deutsch.' = 'German is selected - all windows now use German.'
-    'Einstellungen' = 'Settings'
-    'Arena Roblox Bridge - Einstellungen' = 'Arena Roblox Bridge - Settings'
-    'PROGRAMM' = 'PROGRAM'
-    'EDITOR' = 'EDITOR'
-    'PLACE-LISTE' = 'PLACE LIST'
-    'UPDATES' = 'UPDATES'
-    'Verbundene Places' = 'Connected places'
-    'Automatisch verbunden' = 'Connected automatically'
-    'bereit für verbundene Places' = 'ready for connected places'
-    'Öffne ein Place in Roblox Studio' = 'Open a place in Roblox Studio'
-    'Sobald sich ein Studio-Fenster mit einem geladenen Place verbindet, erscheint es hier automatisch.' = 'As soon as a Studio window with a loaded place connects, it appears here automatically.'
-    'Arena AI öffnen' = 'Open Arena AI'
-    'Arena AI im Browser öffnen' = 'Open Arena AI in the browser'
-    'OPTIONEN' = 'OPTIONS'
-    'Prompt kopieren' = 'Copy prompt'
-    'URL und Token für Arena' = 'URL and token for Arena'
-    'Arena-Verlauf anzeigen' = 'Show Arena history'
-    'Aktionen und Änderungen dieses Place' = 'Actions and changes in this place'
-    'Nachricht an Arena senden' = 'Send message to Arena'
-    'Korrektur während der Arbeit' = 'Correction while working'
-    'Nur Lesezugriff' = 'Read-only access'
-    'Inaktiv - Änderungen sind erlaubt' = 'Off - changes are allowed'
-    'Aktiv - Änderungen sind gesperrt' = 'On - changes are blocked'
-    'Token zurücksetzen' = 'Reset token'
-    'Neuen Zugang für dieses Place' = 'New access for this place'
-    'Prompt für alle verbundenen Places kopieren' = 'Copy prompt for all connected places'
-    'Alle Places' = 'All places'
-    'Weitere Optionen' = 'More options'
-    'Arena fragt' = 'Arena asks'
-    'Arena wartet auf deine Antwort.' = 'Arena is waiting for your answer.'
-    'Frage ' = 'Question '
-    ' von ' = ' of '
-    'Eigene Antwort (optional, ergänzt deine Auswahl):' = 'Your own answer (optional, adds to your selection):'
-    'Eigene Antwort:' = 'Your own answer:'
-    'Mehrfachauswahl möglich.' = 'Multiple selection is possible.'
-    'Diese Frage kam ohne Optionen an - du kannst unten frei antworten.' = 'This question arrived without options - you can answer freely below.'
-    'Zurück' = 'Back'
-    'Abbrechen' = 'Cancel'
-    'Weiter' = 'Next'
-    'Fertig' = 'Done'
-    'Schließen' = 'Close'
-    'Abbrechen (Esc)' = 'Cancel (Esc)'
-    'Schließen (Esc)' = 'Close (Esc)'
-    'Antwort als Text kopieren' = 'Copy answer as text'
-    'Nachricht an Arena' = 'Message to Arena'
-    'Deine Nachricht:' = 'Your message:'
-    'Sende Arena während dem Arbeiten Nachrichten, damit er sich selbst schnell korrigieren kann.' = 'Send Arena messages while it works so it can correct itself quickly.'
-    'Absenden' = 'Send'
-    'Nachricht wird gesendet…' = 'Sending message…'
-    'Arena bekommt deine Nachricht zugestellt, sobald er das nächste Mal die Bridge benutzt!' = 'Arena will receive your message the next time it uses the Bridge!'
-    'Nachricht gesendet! ✅' = 'Message sent! ✅'
-    'Noch eine Nachricht senden' = 'Send another message'
-    'Nachricht zurückziehen' = 'Withdraw message'
-    'Verbundenes Place' = 'Connected place'
-    'Aktueller Arena-Fortschritt und verständlicher Aktivitätsverlauf - Fenster ist frei verschiebbar' = 'Current Arena progress and a clear activity history - this window can be moved freely'
-    'Arena-Verlauf' = 'Arena history'
-    'Arena-Verlauf · Alle Places' = 'Arena history · All places'
-    'Verlauf zurücksetzen' = 'Reset history'
-    'Arena arbeitet gerade...' = 'Arena is working...'
-    'Fertig!' = 'Done!'
-    'Fehler' = 'Error'
-    'Update verfügbar' = 'Update available'
-    'Das ist neu' = 'What is new'
-    'DEINE VERSION' = 'YOUR VERSION'
-    'NEU FÜR DICH' = 'NEW FOR YOU'
-    'Jetzt installieren' = 'Install now'
-    'Später' = 'Later'
-    'Programmdateien öffnen' = 'Open program files'
-    'Öffnet den Bridge-Ordner mit Laufzeitprotokollen, Diagnosedateien und Einstellungen.' = 'Opens the Bridge folder with runtime logs, diagnostics and settings.'
-    'Entwickelt von MertaStudios mit dem Arena Agenten.' = 'Developed by MertaStudios with the Arena agent.'
-    'Die Bridge sucht beim Start automatisch nach neuen Versionen. Ist eine neue Version da, erscheint ein Hinweisfenster.' = 'The Bridge automatically checks for new versions at startup. When one is available, a notice window appears.'
-    # PowerShell-Hashtables vergleichen Schlüssel OHNE Groß-/Kleinschreibung.
-    # Der frühere Zweiteintrag für die XAML-Überschrift 'ROBLOX OPEN CLOUD
-    # API-KEY' war deshalb derselbe Schlüssel und brach den Bau als harter
-    # Parser-Fehler ab (DuplicateKeyInHashLiteral, 8.0.0). Die Überschrift
-    # bleibt in beiden Sprachen unverändert; übersetzt wird die sichtbare
-    # Kartenüberschrift daneben.
-    'Roblox Open Cloud API-Key' = 'Roblox Open Cloud API key'
-    'Noch kein API-Key hinzugefügt!' = 'No API key added yet!'
-    'API-Key ist eingerichtet!' = 'API key is set up!'
-    'API-Key entfernen' = 'Remove API key'
-    'Berechtigungen ansehen' = 'View permissions'
-    'Berechtigungen des API-Keys' = 'API key permissions'
-    'Was darf Arena mit diesem Key?' = 'What may Arena do with this key?'
-    'Ja, alles richtig! Key speichern!' = 'Yes, all correct! Save key!'
-    'Oh, das ändere ich nochmal!' = 'Oh, I will change that!'
-    'Erneut prüfen' = 'Check again'
-    'Speichern' = 'Save'
-    'Tutorial: API-Key in 7 Schritten' = 'Tutorial: API key in 7 steps'
-    'Arena Roblox Bridge startet …' = 'Arena Roblox Bridge is starting …'
-    'Start wird vorbereitet …' = 'Preparing startup …'
-    'DEIN STUDIO. DEINE WELT. VERBUNDEN.' = 'YOUR STUDIO. YOUR WORLD. CONNECTED.'
-    'Arena Roblox Bridge - Update' = 'Arena Roblox Bridge - Update'
-    'ArenaBridge - Update' = 'ArenaBridge - Update'
-    'Update-Problem - klicke auf die Einstellungen für Details' = 'Update problem - click Settings for details'
-    'In Roblox Studio angemeldet' = 'Signed in to Roblox Studio'
-    'Roblox Studio-Nutzer' = 'Roblox Studio user'
-    'Live-Vorschau des Roblox-Studio-Fensters' = 'Live preview of the Roblox Studio window'
-    'Plugin veraltet - Studio neustarten' = 'Plugin outdated - restart Studio'
-    'Token wurde zurückgesetzt.' = 'Token has been reset.'
-    'Token für alle Places wurde zurückgesetzt.' = 'Token for all places has been reset.'
-    'Prompt wurde in die Zwischenablage kopiert' = 'Prompt copied to the clipboard'
-    'Prompt für alle Places wurde in die Zwischenablage kopiert - Arena sieht die Place-Auswahl dann automatisch' = 'Prompt for all places copied to the clipboard - Arena then sees the place selection automatically'
-    'Der Cloudflare-Tunnel ist noch nicht bereit.' = 'The Cloudflare tunnel is not ready yet.'
-    'Token konnte nicht gelesen werden.' = 'The token could not be read.'
-    'Nur Lesezugriff ist aktiv.' = 'Read-only access is on.'
-    'Lese- und Schreibzugriff ist aktiv.' = 'Read and write access is on.'
-    'Bitte wähle eine Antwort oder schreibe unten eine eigene, bevor es weitergeht.' = 'Please choose an answer or write your own below before continuing.'
-    'Arena holt sie ab.' = 'Arena will pick them up.'
-    'Antworten sind gespeichert - ' = 'Answers are saved - '
-    'Antwort ist gespeichert - ' = 'Answer is saved - '
-    'anzeigen' = 'show'
-    'ausblenden' = 'hide'
+# >>> UI-TRANSLATIONS-803 (generated from app/localization/en.json) >>>
+$script:UiTranslationsDeEn = @{}
+$uiTranslationJson = @'
+{
+  "1. Öffne diese Seite:": "1. Open this page:",
+  "2. Klicke auf „API-Schlüssel erstellen“": "2. Click “Create API key”",
+  "3. Gib irgendeinen Namen und eine Beschreibung ein – die sind völlig egal!": "3. Enter any name and description — they are up to you!",
+  "5. Wähle „No Expiration“ als Ablaufdatum.": "5. Select “No Expiration” for the expiration date.",
+  "6. Erstelle den Schlüssel und kopiere ihn sofort – Roblox zeigt ihn nur EINMAL.": "6. Create the key and copy it immediately — Roblox shows it only ONCE.",
+  "7. Füge den Schlüssel hier ein und drücke Speichern.": "7. Paste the key here and click Save.",
+  "Arena fragt Roblox nach den Berechtigungen …": "Arena is asking Roblox for permissions …",
+  "Bevorzugtes Roblox-Studio-Konto für Open-Cloud-Uploads; ohne Studio-ID dient die Key-Resource als Rückfall": "Signed-in Roblox Studio accounts. Group-owned places upload assets to the group.",
+  "Der Key ist Arenas Zugang zu Roblox (Uploads, Creator Dashboard, DataStores und mehr). Speichern öffnet sofort ein Fenster: zuerst ein Ladekreis, dann die Rechte. Grün = vorhanden, rot = fehlt. Du entscheidest selbst, was du gibst. Wichtig: kein Ablaufdatum – sonst weigert sich die Bridge komplett.": "The key gives Arena access to Roblox (uploads, Creator Dashboard, DataStores and more). Save opens a window immediately: first a spinner, then the permissions. Green = available, red = missing. You decide what to grant. Important: no expiration date — otherwise the Bridge refuses to use the key.",
+  "Füge die Berechtigungen hinzu, die du willst! Hier siehst du eine ausführliche Liste, was jede Berechtigung kann:": "Add the permissions you want! This detailed list explains what each permission allows:",
+  "Hat der Key ein Ablaufdatum, weigert sich die Bridge komplett, ihn zu benutzen.": "If the key has an expiration date, the Bridge refuses to use it.",
+  "Speichern öffnet sofort ein Fenster mit Ladekreis, danach siehst du GENAU welche Rechte der Key hat. Erst nach „Ja, alles richtig! Key speichern!“ wird er verschlüsselt gespeichert. Deinen Roblox-Namen musst du nirgends eintragen.": "Save immediately opens a window with a spinner, then shows EXACTLY which permissions the key has. It is saved encrypted only after “Yes, all correct! Save key!”. You do not need to enter your Roblox name anywhere.",
+  "Agent arbeitet weiter … Diese Frage ist beendet. Du kannst die Fragen und deine Auswahl als Text kopieren und im Arena-Chat senden.": "The agent is continuing … This question has ended. You can copy the questions and your choices as text and send them in the Arena chat.",
+  "Agent ist offline … Deine Antwort wird gespeichert und mit der nächsten Anfrage übergeben.": "The agent is offline … Your answer will be saved and delivered with the next request.",
+  "Agent ist offline … Diese Frage ist beendet. Du kannst die Fragen und deine Auswahl als Text kopieren und im Arena-Chat senden.": "The agent is offline … This question has ended. You can copy the questions and your choices as text and send them in the Arena chat.",
+  "Antwort ist": "Answer is",
+  "Antwort konnte nicht gespeichert werden: ": "Could not save answer: ",
+  "Antworten auf deine Frage (Arena Roblox Bridge)": "Answers to your question (Arena Roblox Bridge)",
+  "Antworten konnten nicht gespeichert werden": "Could not save answers",
+  "Antworttext konnte nicht kopiert werden": "Could not copy answer text",
+  "Arena hat seit ": "Arena has not made a request for ",
+  "Arena kann mit diesem Key arbeiten. Rechte siehst du unter „Berechtigungen ansehen“. Keys mit Ablaufdatum werden abgelehnt.": "Arena can use this key. See “View permissions” for its permissions. Keys with expiration dates are rejected.",
+  "Bitte arbeite mit diesen Antworten weiter.": "Please continue working with these answers.",
+  "Bitte den kopierten Schlüssel zuerst einfügen.": "Please paste the copied key first.",
+  "Bitte installiere Roblox Studio und starte dieses Programm danach neu.": "Please install Roblox Studio, then restart this program.",
+  "Blender nicht verfügbar": "Blender unavailable",
+  "Blender wird für den Mesh-Bau gesucht und getestet.": "Searching for and testing Blender for mesh building.",
+  "Blender wird geprüft": "Checking Blender",
+  "Blender wird installiert": "Installing Blender",
+  "Blender-Prüfung läuft bereits - kein zweiter Lauf.": "Blender check is already running — no second check started.",
+  "Block kopieren": "Copy block",
+  "Bridge-Aufruf erfasst; keine konkrete Statusmeldung übermittelt.": "Bridge request recorded; no specific status message received.",
+  "Cloudflare-Tunnel wird verbunden": "Connecting Cloudflare tunnel",
+  "Cloudflared konnte nicht automatisch installiert werden. Details stehen im Protokoll.": "Could not install Cloudflared automatically. See the log for details.",
+  "Cloudflared liefert keine Adresse.": "Cloudflared did not provide an address.",
+  "Cloudflared wird installiert": "Installing Cloudflared",
+  "Cloudflared wurde automatisch installiert. Der Tunnel wird jetzt gestartet ...": "Cloudflared was installed automatically. Starting the tunnel ...",
+  "Das Berechtigungs-Fenster konnte nicht geöffnet werden – der Schlüssel wurde NICHT gespeichert. Bitte erneut versuchen (siehe runtime.log).": "Could not open the permissions window — the key was NOT saved. Please try again (see runtime.log).",
+  "Das Plugin wird in deinen Roblox-Studio-Ordner gelegt.": "The plugin will be placed in your Roblox Studio folder.",
+  "Das Programm wurde zum ersten Mal geladen (Version ": "The program was loaded for the first time (version ",
+  "Das dauert normalerweise nur wenige Sekunden.": "This normally takes only a few seconds.",
+  "Das sieht nicht nach einem Roblox-Open-Cloud-Schlüssel aus (er ist deutlich länger). Bitte kopiere ihn komplett aus dem Creator Dashboard.": "This does not look like a Roblox Open Cloud key (it should be much longer). Please copy the entire key from the Creator Dashboard.",
+  "Der Browser konnte nicht geöffnet werden. Download-Seite: ": "Could not open the browser. Download page: ",
+  "Der Browser ließ sich nicht öffnen - die Adresse liegt jetzt in der Zwischenablage: create.roblox.com/dashboard/credentials": "Could not open the browser — the address is now on the clipboard: create.roblox.com/dashboard/credentials",
+  "Der Cloudflare-Tunnel wird automatisch heruntergeladen (dauert je nach Verbindung 1-3 Minuten).": "The Cloudflare tunnel is downloading automatically (1–3 minutes depending on your connection).",
+  "Der Key hat ein Ablaufdatum. Bitte im Creator Dashboard (create.roblox.com/dashboard/credentials) einen neuen Key mit Expiration = No Expiration erstellen und hier neu einfügen. Keys mit Ablaufdatum werden komplett abgelehnt.": "The key has an expiration date. Please create a new key with Expiration = No Expiration in the Creator Dashboard (create.roblox.com/dashboard/credentials), then paste it here. Keys with expiration dates are rejected.",
+  "Der Mesh-Bau ist vorerst aus - alles andere läuft normal.": "Mesh building is unavailable for now — everything else works normally.",
+  "Der Nutzer hat die Frage abgebrochen.": "The user cancelled the question.",
+  "Der Nutzer hat geantwortet: ": "The user answered: ",
+  "Der Schlüssel im Feld wurde nicht gespeichert.": "The key in the field was not saved.",
+  "Der Schlüssel ist gespeichert, aber die Prüfung war nicht möglich: ": "The key is saved, but could not be verified: ",
+  "Der Schlüssel konnte nicht gespeichert werden. Ist der Bridge-Ordner beschreibbar? Siehe runtime.log.": "Could not save the key. Is the Bridge folder writable? See runtime.log.",
+  "Der Start wartet auf den Blender-Schritt 4; der Tunnel startet danach automatisch.": "Startup is waiting for Blender step 4; the tunnel will start automatically afterwards.",
+  "Der bisherige Schlüssel wurde nicht verändert oder gelöscht. Bitte die Prüfung erneut versuchen.": "Your previous key was not changed or deleted. Please try verification again.",
+  "Die Antworten konnten nicht gespeichert werden. Bitte versuche es erneut.": "Could not save the answers. Please try again.",
+  "Die Bridge hat keine Nachrichten-ID zurückgegeben.": "The Bridge did not return a message ID.",
+  "Die Bridge weigert sich, diesen Key zu benutzen.": "The Bridge refuses to use this key.",
+  "Die Download-Seite ist im Browser geöffnet. Lade dort die neue ArenaRobloxBridge.exe herunter und starte sie. Diese Version wird mit \"Schließen\" beendet.": "The download page is open in your browser. Download and run the new ArenaRobloxBridge.exe. Click “Close” to exit this version.",
+  "Die Liste ist noch unvollständig. Die Bridge versucht, fehlende Zeilen automatisch erneut anzuzeigen; Details stehen in runtime.log.": "The list is incomplete. The Bridge is automatically retrying missing rows; see runtime.log for details.",
+  "Die Nachricht ist leer.": "The message is empty.",
+  "Die Nachricht konnte nicht gesendet werden: ": "Could not send the message: ",
+  "Die Nachricht konnte nicht gespeichert werden: ": "Could not save the message: ",
+  "Die Nachricht konnte nicht in der Bridge abgelegt werden.": "Could not store the message in the Bridge.",
+  "Die Prüfung ist fehlgeschlagen – dein gespeicherter Key bleibt unverändert.": "Verification failed — your saved key remains unchanged.",
+  "Die Prüfung ist fehlgeschlagen – nichts wurde gespeichert.": "Verification failed — nothing was saved.",
+  "Die verbundene Sitzung fehlt.": "The connected session is missing.",
+  "Diese Frage ist beendet": "This question has ended",
+  "Diese Frage kam ohne Inhalt an - bitte abbrechen und Arena neu fragen lassen.": "This question arrived without content — please cancel and let Arena ask again.",
+  "Diesen Block unverändert in einen neuen Chat mit Bridge-Zugriff kopieren - er wird beim nächsten Start automatisch mitgeliefert.": "Copy this block unchanged into a new chat with Bridge access — it will be included automatically on the next start.",
+  "Dieser Key hat ein Ablaufdatum. Die Bridge weigert sich komplett, ihn zu benutzen. Bitte im Creator Dashboard einen neuen Key mit Expiration = No Expiration erstellen und hier neu speichern.": "This key has an expiration date. The Bridge refuses to use it. Please create a new key with Expiration = No Expiration in the Creator Dashboard, then save it here.",
+  "Dieses Update ist Pflicht. Ohne Installation kann die Bridge nicht weiter genutzt werden.": "This update is required. You cannot continue using the Bridge without installing it.",
+  "Eigene Antwort - tippen oder einfügen (Strg+V). Wird zusätzlich zu den angekreuzten Optionen übergeben.": "Your own answer — type or paste (Ctrl+V). It will be sent in addition to your checked options.",
+  "Fenster ist offen – Arena fragt Roblox nach den Berechtigungen …": "Window is open — Arena is asking Roblox for permissions …",
+  "Fenster ist offen – Arena fragt Roblox nach den aktuellen Berechtigungen …": "Window is open — Arena is asking Roblox for the current permissions …",
+  "Fortschritt ist für diese Lese-/Beobachtungsaufgabe nicht anwendbar.": "A percentage does not apply to this reading/observation task.",
+  "Fortschritt nicht anwendbar.": "Progress percentage not applicable.",
+  "Fortschritt nicht anwendbar: ": "Progress percentage not applicable: ",
+  "Geprüft über den offiziellen Roblox-Introspect-Endpunkt (api-keys/v1/introspect). ": "Verified through the official Roblox introspection endpoint (api-keys/v1/introspect). ",
+  "Geändert": "Changed",
+  "Grün = vorhanden, rot = fehlt. Arena nutzt nur die Rechte, die der Key wirklich hat. Speichere, wenn die Liste für dich stimmt.": "Green = available, red = missing. Arena only uses permissions the key actually has. Save if the list looks right to you.",
+  "Ich bin fertig.": "I am done.",
+  "Installiere Roblox Studio, schließe dieses Fenster und öffne Arena Roblox Bridge danach erneut.": "Install Roblox Studio, close this window, then open Arena Roblox Bridge again.",
+  "Kein neuer Bridge-Aufruf beobachtet; Arena-Status ist nicht verfügbar.": "No new Bridge request observed; Arena status is unknown.",
+  "Keine Details verfügbar.": "No details available.",
+  "Keine neue Bridge-Meldung": "No new Bridge message",
+  "Kurz gesagt: alles, was dir die Arbeit leichter macht.": "In short: everything that makes your work easier.",
+  "Letzte Bridge-Aktion ist nicht verfügbar.": "The last Bridge action is unavailable.",
+  "Liste wird repariert": "Repairing list",
+  "Nachricht an Arena konnte nicht gespeichert werden": "Could not save message to Arena",
+  "Nachricht konnte nicht gesendet werden": "Could not send message",
+  "Nachricht konnte nicht zurückgezogen werden": "Could not withdraw message",
+  "Nicht anwendbar": "Not applicable",
+  "Nichts gespeichert – bitte den Schlüssel prüfen und erneut Speichern drücken.": "Nothing saved — please check the key and click Save again.",
+  "Nichts gespeichert. Ändere den Schlüssel im Feld oben und drücke erneut Speichern – Arena prüft dann neu.": "Nothing saved. Change the key in the field above and click Save again — Arena will verify it again.",
+  "Noch keine Bridge-Aktivität für die verbundenen Places aufgezeichnet.": "No Bridge activity recorded for the connected places yet.",
+  "Noch keine Bridge-Aktivität für diesen Place aufgezeichnet.": "No Bridge activity recorded for this place yet.",
+  "Open Cloud: Prüfung nicht möglich - ": "Open Cloud: verification unavailable — ",
+  "Open-Cloud-Berechtigungen": "Open Cloud permissions",
+  "Open-Cloud-Prüfung": "Open Cloud verification",
+  "Place-Liste wird repariert": "Repairing place list",
+  "Plattform-Check nicht verfügbar": "Platform check unavailable",
+  "Plugin installiert. Öffne nun ein Place in Roblox Studio - es erscheint automatisch hier.": "Plugin installed. Open a place in Roblox Studio — it will appear here automatically.",
+  "Port ist belegt": "Port is in use",
+  "Prompt-URL und Place-Token kopieren": "Copy prompt URL and place token",
+  "Prozentwert nicht gemeldet": "Percentage not reported",
+  "Prüfung über api-keys/v1/introspect": "Verification via api-keys/v1/introspect",
+  "Roblox Studio ist nicht installiert oder wurde nicht gefunden.": "Roblox Studio is not installed or could not be found.",
+  "Roblox Studio wird gesucht": "Searching for Roblox Studio",
+  "Roblox Studio wurde nicht gefunden": "Roblox Studio was not found",
+  "Roblox hat nicht geantwortet.": "Roblox did not respond.",
+  "Schlüssel geprüft. Welche Rechte Arena damit hat, siehst du unter „Berechtigungen ansehen“.": "Key verified. See “View permissions” for the permissions Arena has.",
+  "Schlüssel gespeichert (verschlüsselt). Arena kann jetzt mit ihm arbeiten.": "Key saved (encrypted). Arena can now use it.",
+  "Schlüssel wird bei Roblox geprüft …": "Verifying key with Roblox …",
+  "Seit über einer Minute kein Bridge-Aufruf": "No Bridge request for over a minute",
+  "So sieht dein Key aus. Du entscheidest selbst, ob das reicht.": "These are your key’s permissions. You decide whether they are sufficient.",
+  "Status nicht verfügbar": "Status unavailable",
+  "Studio-Befehl läuft: ": "Studio command running: ",
+  "Studio-Fenster ist minimiert": "Studio window is minimized",
+  "Studio-Plugin konnte nicht installiert werden": "Could not install Studio plugin",
+  "Studio-Plugin wird installiert": "Installing Studio plugin",
+  "Technische Verbesserungen und Fehlerbehebungen.": "Technical improvements and bug fixes.",
+  "Text in der Zwischenablage - jetzt im Arena-Chat einfügen (Strg+V).": "Text copied to clipboard — paste it into the Arena chat (Ctrl+V).",
+  "Tunnel braucht ungewöhnlich lange. Cloudflared wird mit HTTP/2 neu gestartet ...": "The tunnel is taking unusually long. Restarting Cloudflared with HTTP/2 ...",
+  "Tunnel ist bereit. Places können sich jetzt verbinden.": "Tunnel ready. Places can now connect.",
+  "Tunnel-Verbindung wird wiederholt": "Retrying tunnel connection",
+  "Update verfügbar: Version ": "Update available: version ",
+  "Vom Nutzer in der Place-Zeile abgebrochen.": "Cancelled by the user in the place row.",
+  "Wird nach 12 Sekunden automatisch geschlossen.": "Closes automatically after 12 seconds.",
+  "Zeitüberschreitung nach 10 s": "Timed out after 10 seconds",
+  "Zu spät zum Zurückziehen - Arena hat die Nachricht schon mitgenommen. Sie wird oben im Chat nicht sichtbar, aber als „angekommen“ geführt.": "Too late to withdraw — Arena already received the message. It will not appear at the top of the chat, but is marked as “received”.",
+  "Zuletzt ausgeführte Aktion: ": "Last action: ",
+  "angekommen, nicht bestätigt": "received, not acknowledged",
+  "läuft in Studio": "running in Studio",
+  "von Arena bestätigt": "acknowledged by Arena",
+  "von Studio empfangen": "received by Studio",
+  "wartet in der Warteschlange": "waiting in queue",
+  "wird gesendet": "sending",
+  "wird in Studio gestartet": "starting in Studio",
+  "Öffne ein Place in Roblox Studio - es erscheint automatisch in der Liste.": "Open a place in Roblox Studio — it will appear in the list automatically.",
+  "ÜBERGABEN": "HANDOFFS",
+  "Übergabe kopiert - jetzt in einen neuen Chat einfügen": "Handoff copied — paste it into a new chat",
+  "Übergabe": "Handoff",
+  "✅ Arena ist fertig!": "✅ Arena is done!",
+  "Angemeldet in Roblox Studio: ": "Signed in to Roblox Studio: ",
+  "1 Nachricht liegt für Arena bereit": "1 message is ready for Arena",
+  "1 Nachricht von Arena bestätigt": "1 message acknowledged by Arena",
+  " Nachrichten liegen für Arena bereit": " messages are ready for Arena",
+  " Nachrichten von Arena bestätigt": " messages acknowledged by Arena",
+  " (Später-Klicks: ": " (Later clicks: ",
+  " - die Bridge versucht es automatisch erneut.": " — the Bridge will retry automatically.",
+  " Das Programm startet erst, wenn du OK drückst.": " The program will start only after you click OK.",
+  " Das sieht nach einem Verbindungsproblem aus (Internet, Firewall, Proxy).": " This looks like a connection problem (internet, firewall, proxy).",
+  " Häufige Ursachen: Tippfehler beim Kopieren, der Schlüssel wurde gelöscht, die erlaubten IP-Adressen passen nicht oder der Schlüssel ist abgelaufen.": " Common causes: a copying error, a deleted key, incorrect allowed IP addresses, or an expired key.",
+  " einzelnen freigegebenen Berechtigungen. Roblox prüft zusätzlich je Erlebnis, ob dein Konto dort die nötige Rolle hat.": " individually granted permissions. Roblox also checks whether your account has the required role in each experience.",
+  " ist jetzt aktiv. Das ist neu:": " is now active. What is new:",
+  " nichts abgefragt - die Nachricht liegt bereit und kommt mit seiner nächsten Anfrage.": " without a request — the message is ready and will be delivered with the next request.",
+  " s kein neuer Bridge-Aufruf beobachtet; Arena-Status ist nicht verfügbar.": " seconds without a new Bridge request; Arena status is unknown.",
+  " · kein Ablaufdatum": " · no expiration date",
+  "(nicht beantwortet)": "(not answered)",
+  "(noch kein Ergebnis)": "(no result yet)",
+  "(noch nicht ermittelt)": "(not determined yet)",
+  ". Auf der Download-Seite wartet die neue Fassung.": ". The new version is waiting on the download page.",
+  "vorhanden": "available",
+  "fehlt": "missing",
+  "keine Rechte": "no permissions",
+  "Kein Zugriff": "No access",
+  "Lesen": "Read",
+  "Schreiben": "Write",
+  "Verbindung": "Connection",
+  "Wartet auf Arena": "Waiting for Arena",
+  "Arena braucht eine Entscheidung": "Arena needs a decision",
+  "Soll Arena das wirklich tun?": "Should Arena really do this?",
+  "Rückfrage zum aktuellen Auftrag": "Question about the current task",
+  "Asset-Informationen, Versionen, Upload-Ergebnisse und Upload-Kontingente ansehen. Lesen lädt keine neue Datei hoch.": "View asset information, versions, upload results and upload quotas. Read access does not upload a new file.",
+  "Assets erstellen, unterstützte Inhalte und Metadaten ändern, Versionen zurücksetzen, archivieren und wiederherstellen. Uploads: Audio, Bilder/Decals, Modelle/Meshes, Animationen und Videos nach Roblox-Format-, Konto- und Größenlimits. Einige Aktionen benötigen zusätzlich asset:read; keine freie Auswahl beliebiger Dateiformate.": "Create assets, update supported content and metadata, restore versions, archive and restore assets. Upload audio, images/decals, models/meshes, animations and videos within Roblox format, account and size limits. Some actions also need asset:read; arbitrary file formats are not supported.",
+  "Developer-Produkte (mehrfach kaufbare Dinge wie Coins) und ihre Einstellungen ansehen und auflisten.": "View and list developer products (repeat purchases such as coins) and their settings.",
+  "Developer-Produkte erstellen sowie Namen, Beschreibungen, Preise und Icons über die dokumentierten Endpunkte ändern.": "Create developer products and change names, descriptions, prices and icons through documented endpoints.",
+  "Gamepässe (einmal gekaufte Vorteile) und ihre Verkaufseinstellungen ansehen und auflisten.": "View and list game passes (one-time purchased benefits) and their sale settings.",
+  "Gamepässe erstellen sowie Namen, Beschreibungen, Preise, Verkauf und Icons ändern.": "Create game passes and change names, descriptions, prices, sale settings and icons.",
+  "Place-Versionsgeschichte und Mitwirkende ansehen. Öffentliche Place-Metadaten sind ebenfalls über die Tools lesbar.": "View place version history and contributors. Public place metadata can also be read through the tools.",
+  "Einstellungen einzelner Places ändern. Eine neue Spieldatei veröffentlichen ist das separate Recht universe-places:write.": "Change individual place settings. Publishing a new game file requires the separate universe-places:write permission.",
+  "Erlebnis-Konfigurationen, Entwürfe, veröffentlichte Revisionen und Experimente ansehen. Öffentliche Erlebnis-Metadaten sind ebenfalls lesbar.": "View experience configurations, drafts, published revisions and experiments. Public experience metadata is also readable.",
+  "Erlebnis-Einstellungen ändern, Server neu starten, Konfigurationsentwürfe und Experimente verwalten sowie dokumentierte Übersetzungs- und Spracherzeugungsfunktionen nutzen. Ausdrücklich gesperrte Funktionen wie Abonnements bleiben ausgeschlossen.": "Change experience settings, restart servers, manage configuration drafts and experiments, and use documented translation and speech-generation features. Explicitly blocked features such as subscriptions remain excluded.",
+  "Den gespeicherten Wert eines DataStore-Eintrags lesen, zum Beispiel den Spielstand eines Spielers.": "Read the saved value of a DataStore entry, such as a player's saved progress.",
+  "Neue DataStore-Einträge anlegen. Kombinierte Setzen-/Erhöhen-Endpunkte können zusätzlich update benötigen.": "Create DataStore entries. Combined set/increment endpoints may also require update access.",
+  "Vorhandene DataStore-Werte ändern oder Zahlen erhöhen. Kombinierte Endpunkte können zusätzlich create benötigen.": "Change existing DataStore values or increment numbers. Combined endpoints may also require create access.",
+  "Einzelne DataStore-Einträge löschen. Das ist nicht dasselbe wie einen ganzen Store zu löschen.": "Delete individual DataStore entries. This is not the same as deleting an entire store.",
+  "Schlüssel und Einträge eines DataStores auflisten; die gespeicherten Werte separat mit read lesen.": "List DataStore keys and entries; read the stored values separately with read access.",
+  "Eine bestimmte ältere Version eines gespeicherten Eintrags lesen.": "Read a specific older version of a saved entry.",
+  "Die verfügbaren Versionen beziehungsweise Revisionen eines Eintrags auflisten.": "List available versions or revisions of an entry.",
+  "Beim ersten Schreiben einen neuen Standard-DataStore entstehen lassen. Die v1-Endpunkte zum Setzen und Erhöhen benötigen zusätzlich objects:create und objects:update.": "Create a standard DataStore on the first write. The v1 set and increment endpoints also require objects:create and objects:update.",
+  "Einen ganzen DataStore zum Löschen markieren oder innerhalb der Roblox-Frist wiederherstellen.": "Mark an entire DataStore for deletion or restore it within Roblox's restoration period.",
+  "Die DataStores eines Erlebnisses auflisten, einschließlich gelöschter Stores, wenn angefordert.": "List an experience's DataStores, including deleted stores when requested.",
+  "Einen Snapshot der DataStores des Erlebnisses anstoßen. Das sichert deren Stand nach den Roblox-Snapshot-Regeln; es ist kein lokaler Download.": "Request a snapshot of the experience's DataStores. This saves their state under Roblox's snapshot rules; it is not a local download.",
+  "Eine RBXL-/RBXLX-Spieldatei als neue Place-Version speichern oder veröffentlichen. Published macht das Update live, Saved speichert nur die Version.": "Save or publish an RBXL/RBXLX game file as a new place version. Published makes it live; Saved only saves the version.",
+  "Analyse-Messwerte und Filterwerte des Erlebnisses abfragen und Ergebnisse länger laufender Abfragen abholen.": "Query experience analytics and filter values, and retrieve results of longer-running queries.",
+  "Von dir freigegebenes Analytics-Schreibrecht. In der geprüften offiziellen Spezifikation ist dafür kein API-Key-Endpunkt dokumentiert; deshalb wird keine Schreibaktion erfunden. Analytics-Alarme bleiben gesperrt.": "Analytics write permission granted by you. The verified official specification documents no API-key endpoint for it, so no write action is invented. Analytics alerts remain blocked.",
+  "Nutzersperren eines Erlebnisses oder Places und deren Änderungshistorie ansehen. Arena darf keine Sperren setzen, ändern oder aufheben.": "View experience/place user restrictions and their change history. Arena cannot create, change or remove restrictions.",
+  "Startseiten-Vorschaubilder des Erlebnisses, deren Verarbeitung und Personalisierungs-Einstellungen ansehen. Kein allgemeiner Thumbnail-Zugriff.": "View experience homepage thumbnails, processing and personalization settings. Not general thumbnail access.",
+  "Startseiten-Vorschaubilder hochladen und löschen sowie deren Personalisierungs-Auswahl erstellen und ändern.": "Upload and delete experience homepage thumbnails, and create or change personalization selections.",
+  "Spiel-Events und ihre Details ansehen und auflisten.": "View and list game events and their details.",
+  "Spiel-Events erstellen, ändern und löschen.": "Create, change and delete game events.",
+  "Sortierte DataStore-Einträge und Ranglistenwerte lesen und auflisten.": "Read and list ordered DataStore entries and leaderboard values.",
+  "Sortierte DataStore-Einträge anlegen, ändern, erhöhen und löschen, etwa Punkte einer Rangliste.": "Create, change, increment and delete ordered DataStore entries, such as leaderboard scores.",
+  "Gespeicherte Creator-Store-Assets einer Sammlung auflisten.": "List saved Creator Store assets in a collection.",
+  "Creator-Store-Assets in Sammlungen speichern und einzelne oder mehrere gespeicherte Verweise entfernen. Das löscht nicht das Original-Asset.": "Save Creator Store assets to collections and remove one or more saved references. This does not delete the original asset.",
+  "Erlebnisse aktivieren/deaktivieren, eigene Verwaltungsrechte ansehen und die dokumentierten älteren Übersetzungsfunktionen für Namen, Beschreibungen, Icons, Vorschaubilder und Lokalisierungstabellen nutzen. Keine Teamverwaltung oder Follower-Funktionen.": "Activate/deactivate experiences, view your management permissions, and use documented legacy translations for names, descriptions, icons, thumbnails and localization tables. No team management or follower features.",
+  "Übersetzte Gamepass-Namen, Beschreibungen und Icons lesen, ändern und entfernen über die älteren Verwaltungs-Endpunkte.": "Read, change and remove translated game pass names, descriptions and icons through legacy management endpoints.",
+  "Übersetzte Developer-Produkt-Namen, Beschreibungen und Icons lesen, ändern und entfernen über die älteren Verwaltungs-Endpunkte.": "Read, change and remove translated developer product names, descriptions and icons through legacy management endpoints.",
+  "Name, Beschreibung und Aktivierungszustand vorhandener Badges ändern. Keine Badge-Erstellung mit Robux-Ausgaben und kein Zugriff über legacy-badge:manage.": "Change existing badge names, descriptions and enabled state. No badge creation with Robux spending and no access through legacy-badge:manage.",
+  "Erlaubte Inventargegenstände eines Roblox-Nutzers auflisten. Keine Gegenstände vergeben, verschieben oder löschen; Roblox-Datenschutz gilt weiterhin.": "List permitted inventory items of a Roblox user. No granting, moving or deleting items; Roblox privacy rules still apply.",
+  "Creator-Store-Produkte und Asset-Details ansehen und den Creator Store durchsuchen.": "View Creator Store products and asset details, and search the Creator Store.",
+  "Creator-Store-Produkte erstellen und ihre dokumentierten Verkaufs-/Vertriebs-Einstellungen ändern. Ein Produkt ist nicht der eigentliche Asset-Dateiupload.": "Create Creator Store products and change their documented sales/distribution settings. A product is not the actual asset file upload.",
+  "Unterstützten Empfängern die Nutzung von Assets erlauben, zum Beispiel einem Gruppen-Erlebnis Zugriff auf dein hochgeladenes Asset geben. Roblox prüft Eigentum, Empfängertyp und deine Rolle; dieses Recht überträgt kein Eigentum.": "Allow supported recipients to use assets, for example granting a group-owned experience access to your uploaded asset. Roblox checks ownership, recipient type and your role; this permission does not transfer ownership.",
+  "Beim PC-Start automatisch öffnen": "Open automatically at PC startup",
+  "Live-Vorschau-Icons im Editor anzeigen": "Show live preview icons in the editor",
+  "Fortschritt in der Place-Liste anzeigen": "Show progress in the place list",
+  "Benachrichtigung, wenn Arena fertig ist": "Notification when Arena is done",
+  "Sprache / Language": "Language",
+  "Die Sprache gilt für das gesamte Programm. Englisch ist der Standard.": "The language applies to the whole program. English is the default.",
+  "Englisch ist ausgewählt - alle Fenster nutzen Englisch.": "English is selected - all windows now use English.",
+  "Deutsch ist ausgewählt - alle Fenster nutzen Deutsch.": "German is selected - all windows now use German.",
+  "Einstellungen": "Settings",
+  "Arena Roblox Bridge - Einstellungen": "Arena Roblox Bridge - Settings",
+  "PROGRAMM": "PROGRAM",
+  "EDITOR": "EDITOR",
+  "PLACE-LISTE": "PLACE LIST",
+  "UPDATES": "UPDATES",
+  "Verbundene Places": "Connected places",
+  "Automatisch verbunden": "Connected automatically",
+  "bereit für verbundene Places": "ready for connected places",
+  "Öffne ein Place in Roblox Studio": "Open a place in Roblox Studio",
+  "Sobald sich ein Studio-Fenster mit einem geladenen Place verbindet, erscheint es hier automatisch.": "As soon as a Studio window with a loaded place connects, it appears here automatically.",
+  "Arena AI öffnen": "Open Arena AI",
+  "Arena AI im Browser öffnen": "Open Arena AI in the browser",
+  "OPTIONEN": "OPTIONS",
+  "Prompt kopieren": "Copy prompt",
+  "URL und Token für Arena": "URL and token for Arena",
+  "Arena-Verlauf anzeigen": "Show Arena history",
+  "Aktionen und Änderungen dieses Place": "Actions and changes in this place",
+  "Nachricht an Arena senden": "Send message to Arena",
+  "Korrektur während der Arbeit": "Correction while working",
+  "Nur Lesezugriff": "Read-only access",
+  "Inaktiv - Änderungen sind erlaubt": "Off - changes are allowed",
+  "Aktiv - Änderungen sind gesperrt": "On - changes are blocked",
+  "Token zurücksetzen": "Reset token",
+  "Neuen Zugang für dieses Place": "New access for this place",
+  "Prompt für alle verbundenen Places kopieren": "Copy prompt for all connected places",
+  "Alle Places": "All places",
+  "Weitere Optionen": "More options",
+  "Arena fragt": "Arena asks",
+  "Arena wartet auf deine Antwort.": "Arena is waiting for your answer.",
+  "Frage ": "Question ",
+  " von ": " of ",
+  "Eigene Antwort (optional, ergänzt deine Auswahl):": "Your own answer (optional, adds to your selection):",
+  "Eigene Antwort:": "Your own answer:",
+  "Mehrfachauswahl möglich.": "Multiple selection is possible.",
+  "Diese Frage kam ohne Optionen an - du kannst unten frei antworten.": "This question arrived without options - you can answer freely below.",
+  "Zurück": "Back",
+  "Abbrechen": "Cancel",
+  "Weiter": "Next",
+  "Fertig": "Done",
+  "Schließen": "Close",
+  "Abbrechen (Esc)": "Cancel (Esc)",
+  "Schließen (Esc)": "Close (Esc)",
+  "Antwort als Text kopieren": "Copy answer as text",
+  "Nachricht an Arena": "Message to Arena",
+  "Deine Nachricht:": "Your message:",
+  "Sende Arena während dem Arbeiten Nachrichten, damit er sich selbst schnell korrigieren kann.": "Send Arena messages while it works so it can correct itself quickly.",
+  "Absenden": "Send",
+  "Nachricht wird gesendet…": "Sending message…",
+  "Arena bekommt deine Nachricht zugestellt, sobald er das nächste Mal die Bridge benutzt!": "Arena will receive your message the next time it uses the Bridge!",
+  "Nachricht gesendet! ✅": "Message sent! ✅",
+  "Noch eine Nachricht senden": "Send another message",
+  "Nachricht zurückziehen": "Withdraw message",
+  "Verbundenes Place": "Connected place",
+  "Aktueller Arena-Fortschritt und verständlicher Aktivitätsverlauf - Fenster ist frei verschiebbar": "Current Arena progress and a clear activity history - this window can be moved freely",
+  "Arena-Verlauf": "Arena history",
+  "Arena-Verlauf · Alle Places": "Arena history · All places",
+  "Verlauf zurücksetzen": "Reset history",
+  "Arena arbeitet gerade...": "Arena is working...",
+  "Fertig!": "Done!",
+  "Fehler": "Error",
+  "Update verfügbar": "Update available",
+  "Das ist neu": "What is new",
+  "DEINE VERSION": "YOUR VERSION",
+  "NEU FÜR DICH": "NEW FOR YOU",
+  "Jetzt installieren": "Install now",
+  "Später": "Later",
+  "Programmdateien öffnen": "Open program files",
+  "Öffnet den Bridge-Ordner mit Laufzeitprotokollen, Diagnosedateien und Einstellungen.": "Opens the Bridge folder with runtime logs, diagnostics and settings.",
+  "Entwickelt von MertaStudios mit dem Arena Agenten.": "Developed by MertaStudios with the Arena agent.",
+  "Die Bridge sucht beim Start automatisch nach neuen Versionen. Ist eine neue Version da, erscheint ein Hinweisfenster.": "The Bridge automatically checks for new versions at startup. When one is available, a notice window appears.",
+  "Roblox Open Cloud API-Key": "Roblox Open Cloud API key",
+  "Noch kein API-Key hinzugefügt!": "No API key added yet!",
+  "API-Key ist eingerichtet!": "API key is set up!",
+  "API-Key entfernen": "Remove API key",
+  "Berechtigungen ansehen": "View permissions",
+  "Berechtigungen des API-Keys": "API key permissions",
+  "Was darf Arena mit diesem Key?": "What may Arena do with this key?",
+  "Ja, alles richtig! Key speichern!": "Yes, all correct! Save key!",
+  "Oh, das ändere ich nochmal!": "Oh, I will change that!",
+  "Erneut prüfen": "Check again",
+  "Speichern": "Save",
+  "Tutorial: API-Key in 7 Schritten": "Tutorial: API key in 7 steps",
+  "Arena Roblox Bridge startet …": "Arena Roblox Bridge is starting …",
+  "Start wird vorbereitet …": "Preparing startup …",
+  "DEIN STUDIO. DEINE WELT. VERBUNDEN.": "YOUR STUDIO. YOUR WORLD. CONNECTED.",
+  "Arena Roblox Bridge - Update": "Arena Roblox Bridge - Update",
+  "ArenaBridge - Update": "ArenaBridge - Update",
+  "Update-Problem - klicke auf die Einstellungen für Details": "Update problem - click Settings for details",
+  "In Roblox Studio angemeldet": "Signed in to Roblox Studio",
+  "Roblox Studio-Nutzer": "Roblox Studio user",
+  "Live-Vorschau des Roblox-Studio-Fensters": "Live preview of the Roblox Studio window",
+  "Plugin veraltet - Studio neustarten": "Plugin outdated - restart Studio",
+  "Token wurde zurückgesetzt.": "Token has been reset.",
+  "Token für alle Places wurde zurückgesetzt.": "Token for all places has been reset.",
+  "Prompt wurde in die Zwischenablage kopiert": "Prompt copied to the clipboard",
+  "Prompt für alle Places wurde in die Zwischenablage kopiert - Arena sieht die Place-Auswahl dann automatisch": "Prompt for all places copied to the clipboard - Arena then sees the place selection automatically",
+  "Der Cloudflare-Tunnel ist noch nicht bereit.": "The Cloudflare tunnel is not ready yet.",
+  "Token konnte nicht gelesen werden.": "The token could not be read.",
+  "Nur Lesezugriff ist aktiv.": "Read-only access is on.",
+  "Lese- und Schreibzugriff ist aktiv.": "Read and write access is on.",
+  "Bitte wähle eine Antwort oder schreibe unten eine eigene, bevor es weitergeht.": "Please choose an answer or write your own below before continuing.",
+  "Arena holt sie ab.": "Arena will pick them up.",
+  "Antworten sind gespeichert - ": "Answers are saved - ",
+  "Antwort ist gespeichert - ": "Answer is saved - ",
+  "anzeigen": "show",
+  "ausblenden": "hide",
+  "Bridge beenden": "Exit Bridge",
+  "Verstanden": "Understood",
+  "In Arbeit": "In progress",
+  "Aktueller Status: ": "Current status: ",
+  "Arena hat den Auftrag abgeschlossen: ": "Arena completed the task: ",
+  "Arena meldet einen Fehler: ": "Arena reports an error: ",
+  "Letzter Arbeitsschritt: ": "Last step: ",
+  "Studio-Befehl: ": "Studio command: ",
+  "Fortschrittsbalken ausgeblendet": "Progress percentage hidden",
+  " Bridge-Aufrufe; ": " Bridge requests; ",
+  " mit Prozent": " with percentage",
+  "letzter Bridge-Aufruf vor ": "last Bridge request was ",
+  "Abgeschlossen": "Completed",
+  "Abgerufen": "Retrieved",
+  "Wartet": "Waiting",
+  "Macht gerade": "Working",
+  "Konsole": "Console",
+  "Warnung": "Warning",
+  "Unbekannter Place": "Unknown place",
+  "an Studio gesendet": "sent to Studio",
+  "Abbruch angefordert": "Cancellation requested",
+  "Arena bearbeitet gerade eine nicht erkannte Studio-Aktion.": "Arena is processing an unrecognized Studio action.",
+  "Arena arbeitet gerade an der Explorer-Suche: ": "Arena is searching the Explorer: ",
+  "Arena arbeitet gerade an der Roblox-Katalogsuche: ": "Arena is searching the Roblox catalog: ",
+  "Arena bearbeitet Open Cloud ": "Arena is processing Open Cloud ",
+  "; Ressourcenparameter bleiben aus dem Verlauf heraus.": "; resource parameters are excluded from history.",
+  "Arena arbeitet gerade: ": "Arena is working: ",
+  "Hat eine nicht erkannte Studio-Aktion angefragt.": "Requested an unrecognized Studio action.",
+  "im aktuellen Place": "in the current place",
+  " für Berechtigung „": " for permission “",
+  "Ergebnis: erfolgreich": "Result: successful",
+  "Ergebnis: fehlgeschlagen": "Result: failed",
+  "Ergebnis: nicht verfügbar": "Result: unavailable",
+  "Ergebnis: ": "Result: ",
+  "Beschreibung zurückgegeben": "Description returned",
+  "Ergebnis nicht verfügbar": "Result unavailable",
+  "Erfolgreich bestätigt": "Confirmed successfully",
+  " im Bereich „": " in scope “",
+  " im gesamten Place": " throughout the place",
+  "Hat im Explorer nach ": "Searched the Explorer for ",
+  "Hat im Roblox-Katalog nach ": "Searched the Roblox catalog for ",
+  "Hat das Skript „": "Updated script “",
+  "“ gezielt geändert: ": "” with targeted changes: ",
+  "“ mit diesen Änderungen bearbeitet: ": "” with these changes: ",
+  "Hat gezielte Änderungen am Skript „": "Made targeted changes to script “",
+  "Hat den Quelltext von „": "Replaced the source of “",
+  "“ vollständig ersetzt (": "” entirely (",
+  "Hat ein Skript erstellt; der Name wurde nicht angegeben": "Created a script; no name was provided",
+  "Hat „": "Modified “",
+  "“ aus dem Place gelöscht.": "” deleted from the place.",
+  "Hat die angeforderten Instanzen aus dem Place gelöscht": "Deleted the requested instances from the place",
+  "Hat eine Instanz erstellt; Name und Klasse waren nicht angegeben": "Created an instance; no name or class was provided",
+  "Hat eine Instanz": "Created an instance",
+  "Hat Lua-Code im Kontext „": "Executed Lua code in context “",
+  "“ ausgeführt (": "” (",
+  "Hat die angeforderten Instanzen in der Gruppe „": "Grouped the requested instances in “",
+  "Hat die angeforderten Instanzen gruppiert": "Grouped the requested instances",
+  "; ein Gruppenname wurde nicht angegeben.": "; no group name was provided.",
+  "; und ": "; and ",
+  " Aktionen in einer Anfrage gebündelt": " actions combined in one request",
+  " Einträge zurückgegeben)": " entries returned)",
+  "Hat den Explorer-Baum ab „": "Read the Explorer tree starting at “",
+  ", höchstens ": ", at most ",
+  " Einträge)": " entries)",
+  "Hat die Instanz „": "Inspected instance “",
+  " und ihre Eigenschaften geprüft.": " and its properties.",
+  " Einträge": " entries",
+  "Hat die Unterobjekte von „": "Listed the children of “",
+  "Hat die Referenz „": "Resolved reference “",
+  "“ aufgelöst": "”",
+  "Hat im Skript „": "Searched script “",
+  "Hat den Abstand zwischen „": "Measured the distance between “",
+  "“ und „": "” and “",
+  "Hat die Höhe von „": "Measured the height of “",
+  "“ über dem Boden gemessen": "” above the ground",
+  " (höchstens ": " (at most ",
+  "Hat in der Studio-Ausgabe auf „": "Waited for Studio output matching “",
+  " geändert: ": " changed: ",
+  " geändert": " changed",
+  "Hat Eigenschaften von ": "Changed properties of ",
+  "Hat Eigenschaften an ": "Changed properties on ",
+  " unterschiedlich geändert": " with different values",
+  "Hat Attribut „": "Set attribute “",
+  "hinzugefügt": "added",
+  "Hat den Tag „": "Updated tag “",
+  "Hat die aktuelle Studio-Auswahl ausgelesen (": "Read the current Studio selection (",
+  "Hat die aktuelle Studio-Auswahl ausgelesen": "Read the current Studio selection",
+  " ausgewählt)": " selected)",
+  "Hat in Studio ": "Selected in Studio: ",
+  " ausgewählt": " selected",
+  "Hat Mittelpunkt und Ausmaße von ": "Measured center and bounds of ",
+  "im angegebenen Quader": "in the specified box",
+  "Hat im Quader ": "Searched in box ",
+  "Hat um ": "Searched around ",
+  " im Radius ": " within radius ",
+  "Hat ab Position ": "Searched from position ",
+  " die nächsten ": " for the nearest ",
+  "Hat den Weg von „": "Checked the path from “",
+  "“ auf Hindernisse geprüft": "” for obstacles",
+  "Hat Roblox-Asset ": "Inserted Roblox asset ",
+  " in den Place eingefügt.": " into the place.",
+  "Hat Asset ": "Validated asset ",
+  " auf Existenz und passenden Typ geprüft": " for existence and expected type",
+  "Hat Details zu den Roblox-Assets ": "Read details of Roblox assets ",
+  " mit ": " with ",
+  " (Aufgabe ": " (job ",
+  " für „": " for “",
+  "Hat den Blender-Bau gestartet": "Started the Blender build",
+  "Hat den Mesh-Baufortschritt für „": "Checked mesh build progress for “",
+  "“ geprüft": "” checked",
+  " alle Mesh-Aufgaben": " all mesh jobs",
+  "die angeforderte Mesh-Aufgabe": "the requested mesh job",
+  "Hat den Blender-Mesh-Bau „": "Cancelled Blender mesh build “",
+  "die übergebene Datei": "the provided file",
+  " über Roblox Open Cloud hochgeladen": " uploaded through Roblox Open Cloud",
+  "Hat die Hintergrundaufgabe „": "Started background job “",
+  "“ gestartet": "” started",
+  "die angeforderte Aufgabe": "the requested job",
+  "den Status geprüft": "checked status",
+  "das Ergebnis abgerufen": "retrieved the result",
+  "Hat bei Aufgabe „": "Checked job “",
+  "Hat dich gefragt: „": "Asked you: “",
+  "Hat deine Bestätigung eingeholt: „": "Requested your confirmation: “",
+  "Hat bis zu ": "Waited up to ",
+  " Sekunden auf deine nächste Nachricht gewartet.": " seconds for your next message.",
+  "Hat deine Nachricht „": "Acknowledged your message “",
+  "“ als gelesen bestätigt.": "” as read.",
+  "das angeforderte Ergebnis": "the requested result",
+  "Hat Abschnitt ab Zeichen ": "Read a chunk starting at character ",
+  " aus Ergebnis „": " from result “",
+  "Hat längeren Text an die Bridge übertragen (": "Uploaded longer text to the Bridge (",
+  "Hat Dokumentation für „": "Read documentation for “",
+  "Hat einen Screenshot von „": "Captured a screenshot of “",
+  " Flächen)": " faces)",
+  "Hat das Polygonmodell „": "Built polygon model “",
+  "“ aus WedgeParts gebaut": "” from WedgeParts",
+  " Fehler: ": " Error: ",
+  " ist fehlgeschlagen.": " failed.",
+  " wurde abgebrochen.": " was cancelled.",
+  " nicht verfügbar": " unavailable",
+  "Willkommen bei Arena Roblox Bridge!": "Welcome to Arena Roblox Bridge!",
+  "Update installiert!": "Update installed!",
+  "). Alles Weitere passiert automatisch.": "). Everything else happens automatically.",
+  " - aktuell. Beim nächsten Start wird automatisch nach Updates gesucht.": " — up to date. Updates will be checked automatically on the next start.",
+  "Abschluss:": "Completion:",
+  "Abschnitt ab Zeichen:": "Chunk starting at character:",
+  "Abstand:": "Distance:",
+  "Abzuziehen:": "Subtract:",
+  "Achse:": "Axis:",
+  "Aktion:": "Action:",
+  "Animationen:": "Animations:",
+  "Anzahl:": "Count:",
+  "Auf den Boden gesetzt:": "Snapped to ground:",
+  "Aufgaben:": "Jobs:",
+  "Ausgangspunkt:": "Starting point:",
+  "Ausrichtung:": "Orientation:",
+  "Baustein:": "Prop:",
+  "Bauteil:": "Part:",
+  "Bauteile:": "Parts:",
+  "Befunde:": "Findings:",
+  "Berechtigung:": "Permission:",
+  "Bereich:": "Scope:",
+  "Bewertung:": "Rating:",
+  "Bild/Asset:": "Image/asset:",
+  "Bis:": "To:",
+  "Blickrichtung:": "View direction:",
+  "Blickziel:": "View target:",
+  "Cloud-Aktion:": "Cloud action:",
+  "Creator-Dashboard-Aktion:": "Creator Dashboard action:",
+  "Datastore-Aktion:": "DataStore action:",
+  "Dauer:": "Duration:",
+  "Detailgrad:": "Detail level:",
+  "Dokumentation:": "Documentation:",
+  "Drehpunkt:": "Pivot:",
+  "Eintrag:": "Entry:",
+  "Einträge:": "Entries:",
+  "Einzelteile:": "Individual parts:",
+  "Elemente:": "Elements:",
+  "Ende:": "End:",
+  "Entfernte Befehle:": "Removed commands:",
+  "Ereignisse:": "Events:",
+  "Ergebnis:": "Result:",
+  "Ergebnisse:": "Results:",
+  "Ersteller:": "Creator:",
+  "Erstellt:": "Created:",
+  "Farbe:": "Color:",
+  "Fenster:": "Window:",
+  "Flächen:": "Faces:",
+  "Frage:": "Question:",
+  "Funktion:": "Function:",
+  "Geplante Skripte:": "Planned scripts:",
+  "Geprüft:": "Checked:",
+  "Geänderte Voxel:": "Changed voxels:",
+  "Grund:": "Reason:",
+  "Grundteil:": "Base part:",
+  "Gruppe:": "Group:",
+  "Hinweise:": "Notes:",
+  "Höhenwerte:": "Height values:",
+  "Instanz:": "Instance:",
+  "Instanzen:": "Instances:",
+  "Kameraposition:": "Camera position:",
+  "Koordinatenhinweis:": "Coordinate note:",
+  "Koordinatensystem:": "Coordinate system:",
+  "Lichtname:": "Light name:",
+  "Maximale Tiefe:": "Maximum depth:",
+  "Messpunkte:": "Sample points:",
+  "Mittelpunkt:": "Center:",
+  "Modell:": "Model:",
+  "Neue Größe:": "New size:",
+  "Neuer Ablageort:": "New parent:",
+  "Neuer Kontext:": "New context:",
+  "Oberfläche:": "Surface:",
+  "Objekte beschrieben:": "Objects described:",
+  "Offene Befehle:": "Pending commands:",
+  "Pfad:": "Path:",
+  "Platziert:": "Placed:",
+  "Produkt-ID:": "Product ID:",
+  "Punkte:": "Points:",
+  "Qualität:": "Quality:",
+  "Rasterabstand:": "Grid spacing:",
+  "Reichweite:": "Range:",
+  "Richtung:": "Direction:",
+  "Seite:": "Page:",
+  "Sichtfeld:": "Field of view:",
+  "Skript:": "Script:",
+  "Skripte:": "Scripts:",
+  "Spalten:": "Columns:",
+  "Stil:": "Style:",
+  "Strahlen:": "Rays:",
+  "Stärke:": "Strength:",
+  "Suchbegriff:": "Search term:",
+  "Syntaxfehler:": "Syntax errors:",
+  "Teile:": "Parts:",
+  "Teststatus:": "Test status:",
+  "Treffer:": "Matches:",
+  "Trefferpunkt:": "Hit position:",
+  "Ursprung:": "Origin:",
+  "Variante:": "Variant:",
+  "Verbindung:": "Connection:",
+  "Verbund:": "Union:",
+  "Verfügbar:": "Available:",
+  "Verfügbare Funktionen:": "Available functions:",
+  "Versatz:": "Offset:",
+  "Von:": "From:",
+  "Voxelgröße:": "Voxel size:",
+  "Wartende Befehle:": "Queued commands:",
+  "Werkzeuge:": "Tools:",
+  "Wiederherstellungspunkt:": "Waypoint:",
+  "Winkel:": "Angle:",
+  "Ziel:": "Target:",
+  "Zielfläche:": "Target face:",
+  "Zu prüfende Instanzen:": "Instances to check:",
+  "Änderung:": "Change:",
+  "Überlappungen:": "Overlaps:",
+  "Bridge-Protokoll und Leistungsbericht": "Bridge log and performance report",
+  "Place-Informationen": "Place information",
+  "Explorer-Struktur": "Explorer hierarchy",
+  "Explorer-Suche": "Explorer search",
+  "Objektprüfung": "Object inspection",
+  "Unterobjekt-Liste": "Child object list",
+  "Eigenschaftsprüfung": "Property inspection",
+  "Objektpfad-Auflösung": "Object path resolution",
+  "Studio-Auswahl": "Studio selection",
+  "Objektauswahl in Studio": "Select objects in Studio",
+  "Szenenbeschreibung": "Scene description",
+  "Kamera- und Blickrichtungsprüfung": "Camera and viewing direction",
+  "Maßprüfung": "Dimension measurement",
+  "Szenenstatistik": "Scene statistics",
+  "Werkzeugliste": "Tool list",
+  "Bridge-Statusprüfung": "Bridge status check",
+  "Strahlmessung": "Ray measurement",
+  "Mehrfach-Strahlmessung": "Multiple ray measurements",
+  "Bodenhöhenmessung": "Ground height measurement",
+  "Abstandsmessung": "Distance measurement",
+  "Höhenmessung": "Height measurement",
+  "Objektsuche im Quader": "Objects inside a box",
+  "Objektsuche im Kugelbereich": "Objects inside a sphere",
+  "Suche nach nächsten Objekten": "Nearest object search",
+  "Hindernisprüfung": "Obstacle check",
+  "Kollisionsprüfung": "Overlap check",
+  "Bodenplatzierung": "Ground placement",
+  "Messbarkeitsprüfung": "Measurability check",
+  "Koordinatenprüfung": "Coordinate check",
+  "Ausrichtungsprüfung": "Orientation check",
+  "Zielausrichtung": "Target alignment",
+  "Blickausrichtung": "Look direction alignment",
+  "Drehung um einen Punkt": "Rotation around a point",
+  "Relative Verschiebung": "Relative movement",
+  "Größenänderung": "Resize part",
+  "Verbindung zwischen zwei Punkten": "Fit between two points",
+  "Flächenplatzierung": "Surface placement",
+  "Objektausrichtung": "Object alignment",
+  "Objektstapel": "Stack objects",
+  "Rasteranordnung": "Grid arrangement",
+  "Gleichmäßige Verteilung": "Even distribution",
+  "Objekterstellung": "Create object",
+  "Erstellung mehrerer Objekte": "Create multiple objects",
+  "Objektkopie": "Clone object",
+  "Objektlöschung": "Delete object",
+  "Löschung mehrerer Objekte": "Delete multiple objects",
+  "Umbenennung": "Rename object",
+  "Verschieben in einen anderen Ordner": "Move to another parent",
+  "Gruppierung": "Group objects",
+  "Auflösen einer Gruppe": "Ungroup objects",
+  "Änderung einer Eigenschaft": "Change a property",
+  "Änderung mehrerer Eigenschaften": "Change multiple properties",
+  "Eigenschaftsänderung an mehreren Objekten": "Change properties on multiple objects",
+  "Attributänderung": "Change an attribute",
+  "Tag hinzufügen": "Add tag",
+  "Tag entfernen": "Remove tag",
+  "Skripttext lesen": "Read script source",
+  "Skriptsuche": "Search script",
+  "Gezielte Skriptänderung": "Targeted script changes",
+  "Skripttext ersetzen": "Replace script source",
+  "Skript erstellen": "Create script",
+  "Mehrere Skripte erstellen": "Create multiple scripts",
+  "Syntaxprüfung": "Syntax check",
+  "Lua-Code ausführen": "Run Lua code",
+  "Lua-Statusprüfung": "Lua environment status",
+  "Lua-Status zurücksetzen": "Reset Lua environment",
+  "Vermessung der Spielwelt": "World measurements",
+  "Voxelbereich füllen": "Fill voxel region",
+  "Baugruppe erstellen": "Create assembly",
+  "Polygonmodell erstellen": "Create polygon model",
+  "Prüfung der Studio-Oberfläche": "Studio UI capabilities",
+  "Oberflächenstil": "Interface style",
+  "Oberfläche erstellen": "Create surface",
+  "Benutzeroberfläche erstellen": "Create user interface",
+  "Oberflächenprüfung": "Interface audit",
+  "Teile verbinden": "Union parts",
+  "Form abziehen": "Subtract shape",
+  "Gemeinsame Form berechnen": "Intersect shapes",
+  "Verbund wieder trennen": "Separate union",
+  "Verbund prüfen": "Inspect union",
+  "Roblox-Katalogsuche": "Roblox catalog search",
+  "Asset-Details prüfen": "Asset details",
+  "Asset-Typ prüfen": "Asset type validation",
+  "UI-Leuchteffekt erstellen": "Create UI glow",
+  "UI-Textur vorbereiten": "Prepare UI texture",
+  "Kreis-Menü erstellen": "Create radial menu",
+  "Weltstil anwenden": "Apply world style",
+  "Weltstil festhalten": "Lock world style",
+  "Bauplatz vermessen": "Survey building site",
+  "Modellvariante erzeugen": "Generate model variation",
+  "Baustein platzieren": "Place prop",
+  "Baustein speichern": "Save prop",
+  "Gespeicherte Bausteine auflisten": "List saved props",
+  "Modellprüfung": "Model audit",
+  "Weltprüfung": "World audit",
+  "Lichteffekt in der Welt erstellen": "Create world lighting effect",
+  "Modell verfeinern": "Refine model",
+  "Katalog-Asset einfügen": "Insert catalog asset",
+  "Asset auf Objekt anwenden": "Apply asset to object",
+  "Roblox-Katalog prüfen": "Roblox catalog status",
+  "Studio-Ausgabe lesen": "Read Studio output",
+  "Auf Studio-Ausgabe warten": "Wait for Studio output",
+  "Studio-Ausgabe leeren": "Clear Studio output",
+  "Studio-Fehler lesen": "Read Studio errors",
+  "Auftrag abschließen und prüfen": "Complete task and check rules",
+  "Arbeitskontext wechseln": "Switch working context",
+  "Warten": "Wait",
+  "Deaktivierten Simulationsstart prüfen": "Check disabled simulation start",
+  "Bridge-eigene Simulation beenden": "Stop Bridge-owned simulation",
+  "Studio-Teststatus prüfen": "Studio test status",
+  "Blender-Verfügbarkeit prüfen": "Blender availability",
+  "3D-Modell mit Blender bauen": "Build 3D model with Blender",
+  "Mesh-Baufortschritt prüfen": "Mesh build progress",
+  "Mesh-Bau abbrechen": "Cancel mesh build",
+  "Mesh-Assets in den Place einsetzen": "Apply mesh assets to place",
+  "Mesh-Platzhalter anlegen": "Create mesh placeholders",
+  "Mesh-Geometrie einsetzen": "Apply mesh geometry",
+  "Mesh-Platzhalter entfernen": "Remove mesh placeholders",
+  "Asset zu Roblox hochladen": "Upload asset to Roblox",
+  "Freigegebene Roblox-Cloud-Funktion": "Approved Roblox cloud function",
+  "Creator-Dashboard-Verwaltung": "Creator Dashboard management",
+  "DataStore über Open Cloud verwalten": "Manage DataStore through Open Cloud",
+  "Hintergrundaufgabe starten": "Start background job",
+  "Hintergrundaufgabe prüfen": "Background job status",
+  "Ergebnis der Hintergrundaufgabe abrufen": "Background job result",
+  "Hintergrundaufgaben auflisten": "List background jobs",
+  "Hintergrundaufgabe abbrechen": "Cancel background job",
+  "Hängende Studio-Warteschlange zurücksetzen": "Reset stuck Studio queue",
+  "Offene Studio-Befehle zurücksetzen": "Clear pending Studio commands",
+  "Offene Studio-Befehle prüfen": "Inspect pending Studio commands",
+  "Mehrere Aktionen zusammen ausführen": "Run actions together",
+  "Mehrere Aktionen parallel ausführen": "Run actions in parallel",
+  "Letzte Änderung rückgängig machen": "Undo last change",
+  "Änderung wiederholen": "Redo change",
+  "Wiederherstellungspunkt setzen": "Set recovery waypoint",
+  "Bridge-Hinweise lesen": "Read Bridge notices",
+  "Bridge-Ereignisse lesen": "Read Bridge events",
+  "UI-Skripte planen": "Plan UI scripts",
+  "Rückfrage im Bridge-Fenster stellen": "Ask a question in the Bridge",
+  "Bestätigung einholen": "Request confirmation",
+  "Auf deine Antwort warten": "Wait for your response",
+  "Deine Nachricht bestätigen": "Acknowledge your message",
+  "Ergebnisabschnitt abrufen": "Retrieve result chunk",
+  "Längeren Text an die Bridge übertragen": "Transfer longer text to Bridge",
+  "Werkzeugdokumentation lesen": "Read tool documentation",
+  "Studio-Fenster aufnehmen": "Capture Studio window",
+  "Hat die letzten Einträge aus Bridge-Protokoll und Leistungsbericht gelesen.": "Read the latest entries from the Bridge log and performance report.",
+  "Hat Place-Name, ID, Eigentümer und Studio-Zustand geprüft.": "Checked the place name, ID, owner and Studio state.",
+  "Hat die Explorer-Struktur des Places abgerufen.": "Retrieved the place's Explorer hierarchy.",
+  "Hat im Explorer nach den angegebenen Kriterien gesucht.": "Searched Explorer using the specified criteria.",
+  "Hat die angefragte Instanz und ihre Eigenschaften geprüft.": "Checked the requested instance and its properties.",
+  "Hat die Unterobjekte der angegebenen Instanz aufgelistet.": "Listed the specified instance's children.",
+  "Hat die angeforderten Eigenschaften der Instanzen ausgelesen.": "Read the requested instance properties.",
+  "Hat den Pfad und die stabile Studio-ID der angefragten Instanz ermittelt.": "Resolved the requested instance's path and stable Studio ID.",
+  "Hat die aktuelle Studio-Auswahl ausgelesen.": "Read the current Studio selection.",
+  "Hat die angeforderten Instanzen in Studio ausgewählt.": "Selected the requested instances in Studio.",
+  "Hat den Aufbau der Szene im Place beschrieben.": "Described the scene structure in the place.",
+  "Hat Kameraposition, Blickrichtung und Sichtfeld geprüft.": "Checked the camera position, viewing direction and field of view.",
+  "Hat Mittelpunkt und Ausmaße der angeforderten Instanzen gemessen.": "Measured the center and dimensions of the requested instances.",
+  "Hat die Anzahl und Typen der Objekte im Place gezählt.": "Counted the objects in the place by type.",
+  "Hat die verfügbaren Bridge-Werkzeuge aufgelistet.": "Listed the available Bridge tools.",
+  "Hat Verbindung und Auslastung der Bridge geprüft.": "Checked the Bridge connection and workload.",
+  "Hat einen Strahl durch den Place verfolgt.": "Cast a ray through the place.",
+  "Hat mehrere Strahlen durch den Place verfolgt.": "Cast several rays through the place.",
+  "Hat die Bodenhöhe an den angefragten Punkten gemessen.": "Measured ground height at the requested points.",
+  "Hat den Abstand zwischen den angegebenen Instanzen gemessen.": "Measured the distance between the specified instances.",
+  "Hat die Höhe der angegebenen Instanz über dem Boden gemessen.": "Measured the specified instance's height above the ground.",
+  "Hat Instanzen innerhalb des angegebenen Quaders gesucht.": "Searched for instances inside the specified box.",
+  "Hat Instanzen im angegebenen Kugelbereich gesucht.": "Searched for instances inside the specified sphere.",
+  "Hat die nächsten Instanzen zur angegebenen Position gesucht.": "Found the instances closest to the specified position.",
+  "Hat Hindernisse zwischen den angegebenen Punkten gesucht.": "Checked for obstacles between the specified points.",
+  "Hat geprüft, ob die angefragte Instanz andere Objekte berührt.": "Checked whether the requested instance overlaps other objects.",
+  "Hat die ausgewählten Instanzen auf den Boden gesetzt.": "Placed the selected instances on the ground.",
+  "Hat geprüft, ob die angegebenen Instanzen zuverlässig messbar sind.": "Checked whether the specified instances can be measured reliably.",
+  "Hat Koordinaten, Achsen und Maße im Place geprüft.": "Checked coordinates, axes and dimensions in the place.",
+  "Hat die Ausrichtung des angegebenen Bauteils bestimmt.": "Determined the specified part's orientation.",
+  "Hat das angegebene Bauteil zum Ziel ausgerichtet.": "Aligned the specified part with its target.",
+  "Hat das angegebene Bauteil zum Ziel gedreht.": "Rotated the specified part to face its target.",
+  "Hat die angegebenen Instanzen um einen Punkt gedreht.": "Rotated the specified instances around a point.",
+  "Hat die angegebenen Instanzen relativ verschoben.": "Moved the specified instances relative to their positions.",
+  "Hat die Größe des angegebenen Bauteils geändert.": "Resized the specified part.",
+  "Hat das angegebene Bauteil zwischen zwei Punkten ausgerichtet.": "Fitted the specified part between two points.",
+  "Hat die angegebene Instanz auf einer Fläche platziert.": "Placed the specified instance on a surface.",
+  "Hat die angegebenen Instanzen aufeinander ausgerichtet.": "Aligned the specified instances with one another.",
+  "Hat die angegebenen Instanzen gestapelt.": "Stacked the specified instances.",
+  "Hat die angegebenen Instanzen in einem Raster angeordnet.": "Arranged the specified instances in a grid.",
+  "Hat die angegebenen Instanzen gleichmäßig verteilt.": "Distributed the specified instances evenly.",
+  "Hat eine Instanz mit den angeforderten Eigenschaften erstellt.": "Created an instance with the requested properties.",
+  "Hat mehrere unterschiedliche Instanzen in einem Schritt erstellt.": "Created several different instances in one step.",
+  "Hat die angeforderte Instanz kopiert.": "Cloned the requested instance.",
+  "Hat die angeforderte Instanz aus dem Place gelöscht.": "Deleted the requested instance from the place.",
+  "Hat die angeforderten Instanzen aus dem Place gelöscht.": "Deleted the requested instances from the place.",
+  "Hat die angeforderte Instanz umbenannt.": "Renamed the requested instance.",
+  "Hat die angeforderten Instanzen an einen anderen Ablageort verschoben.": "Moved the requested instances to a different parent.",
+  "Hat die angeforderten Instanzen in einer Gruppe zusammengefasst.": "Grouped the requested instances.",
+  "Hat die angeforderte Gruppe aufgelöst und ihre Kinder behalten.": "Ungrouped the requested group while preserving its children.",
+  "Hat eine Eigenschaft der angeforderten Instanzen geändert.": "Changed one property on the requested instances.",
+  "Hat mehrere Eigenschaften der angeforderten Instanzen geändert.": "Changed several properties on the requested instances.",
+  "Hat unterschiedliche Eigenschaften an mehreren Instanzen geändert.": "Changed different properties on several instances.",
+  "Hat ein Attribut an den angeforderten Instanzen gesetzt.": "Set an attribute on the requested instances.",
+  "Hat den angegebenen Tag an den angeforderten Instanzen angebracht.": "Added the specified tag to the requested instances.",
+  "Hat den angegebenen Tag von den angeforderten Instanzen entfernt.": "Removed the specified tag from the requested instances.",
+  "Hat den Quelltext des angegebenen Skripts gelesen.": "Read the specified script's source code.",
+  "Hat im angegebenen Skript nach dem Suchtext gesucht.": "Searched the specified script for the requested text.",
+  "Hat gezielte Änderungen am angegebenen Skript vorgenommen.": "Made targeted changes to the specified script.",
+  "Hat den gesamten Quelltext des angegebenen Skripts ersetzt.": "Replaced the specified script's entire source code.",
+  "Hat das angeforderte Skript im Place erstellt.": "Created the requested script in the place.",
+  "Hat mehrere angeforderte Skripte im Place erstellt.": "Created several requested scripts in the place.",
+  "Hat den angeforderten Lua-Code auf Syntaxfehler geprüft.": "Checked the requested Lua code for syntax errors.",
+  "Hat Lua-Code im angeforderten Studio-Kontext ausgeführt.": "Ran Lua code in the requested Studio context.",
+  "Hat Variablen und laufende Aufgaben der Lua-Umgebung ausgelesen.": "Read variables and running tasks from the Lua environment.",
+  "Hat die persistente Lua-Umgebung und ihre Aufgaben zurückgesetzt.": "Reset the persistent Lua environment and its tasks.",
+  "Hat die Spielwelt an den angefragten Punkten vermessen.": "Measured the game world at the requested points.",
+  "Hat den angegebenen Bereich mit den angeforderten Voxeln gefüllt.": "Filled the specified region with the requested voxels.",
+  "Hat die angeforderte Baugruppe mit ihren Bauteilen erstellt.": "Created the requested assembly and its parts.",
+  "Hat das angeforderte Polygonmodell aus Flächen und Wedges gebaut.": "Built the requested polygon model from faces and wedges.",
+  "Hat geprüft, welche Oberflächenfunktionen Roblox Studio unterstützt.": "Checked which UI features Roblox Studio supports.",
+  "Hat einen Oberflächenstil ausgewählt oder die vorhandene Oberfläche ausgelesen.": "Selected a UI style or read the existing interface.",
+  "Hat die angeforderte zusammengesetzte Oberfläche erstellt.": "Created the requested compound surface.",
+  "Hat die angeforderte Benutzeroberfläche samt Steuerelementen erstellt.": "Created the requested user interface and its controls.",
+  "Hat die Benutzeroberfläche auf Lesbarkeit, Kontrast und Anordnung geprüft.": "Checked the interface's readability, contrast and layout.",
+  "Hat die angeforderten Teile zu einem Teil verbunden.": "Combined the requested parts into a single part.",
+  "Hat die angeforderte Form aus einem Grundteil herausgeschnitten.": "Subtracted the requested shape from a base part.",
+  "Hat bei den angeforderten Teilen nur den gemeinsamen Bereich behalten.": "Kept only the intersection of the requested parts.",
+  "Hat den angeforderten Verbund wieder in einzelne Teile zerlegt.": "Separated the requested union back into individual parts.",
+  "Hat geprüft, ob die angefragte Instanz ein Verbund ist und wie komplex sie ist.": "Checked whether the requested instance is a union and measured its complexity.",
+  "Hat im Roblox-Katalog nach dem angegebenen Asset-Typ gesucht.": "Searched the Roblox catalog for the specified asset type.",
+  "Hat die Details der angeforderten Roblox-Assets abgerufen.": "Retrieved details of the requested Roblox assets.",
+  "Hat geprüft, ob das angeforderte Asset existiert und zum erwarteten Typ passt.": "Checked that the requested asset exists and matches the expected type.",
+  "Hat den angeforderten Leuchteffekt für ein UI-Element erstellt.": "Created the requested glow effect for a UI element.",
+  "Hat ein Texturrezept für das angeforderte UI-Element vorbereitet.": "Prepared a texture recipe for the requested UI element.",
+  "Hat das angeforderte kreisförmige UI-Menü erstellt.": "Created the requested radial UI menu.",
+  "Hat den angeforderten Stil auf die Welt angewendet.": "Applied the requested world style.",
+  "Hat den Stil der Welt mit dem angegebenen Seed festgehalten.": "Locked the world style to the specified seed.",
+  "Hat den Bauplatz an den angefragten Punkten vermessen.": "Surveyed the building site at the requested points.",
+  "Hat mit dem angegebenen Seed eine reproduzierbare Modellvariante erzeugt.": "Generated a reproducible model variation using the specified seed.",
+  "Hat die angeforderten Bausteine auf dem Bauplatz platziert.": "Placed the requested props on the building site.",
+  "Hat die aktuelle Auswahl als wiederverwendbaren Baustein gespeichert.": "Saved the current selection as a reusable prop.",
+  "Hat die gespeicherten wiederverwendbaren Bausteine aufgelistet.": "Listed the saved reusable props.",
+  "Hat das angefragte Modell auf Platzhalter, Blockouts und Bauqualität geprüft.": "Checked the requested model for placeholders, blockouts and build quality.",
+  "Hat Stil, Beleuchtung und Atmosphäre der Welt geprüft.": "Checked the world's style, lighting and atmosphere.",
+  "Hat den angeforderten Lichteffekt in der Welt eingerichtet.": "Set up the requested lighting effect in the world.",
+  "Hat das angefragte Modell um messbare Details verfeinert.": "Refined the requested model with measurable details.",
+  "Hat das angeforderte Roblox-Asset in den Place eingefügt.": "Inserted the requested Roblox asset into the place.",
+  "Hat das angeforderte Asset auf die angegebenen Instanzen angewendet.": "Applied the requested asset to the specified instances.",
+  "Hat geprüft, ob der Roblox-Katalog erreichbar ist.": "Checked whether the Roblox catalog is reachable.",
+  "Hat die angeforderten Zeilen aus der Studio-Ausgabe gelesen.": "Read the requested lines from Studio output.",
+  "Hat auf eine passende Zeile in der Studio-Ausgabe gewartet.": "Waited for a matching line in Studio output.",
+  "Hat die Studio-Ausgabe geleert.": "Cleared Studio output.",
+  "Hat die Fehlerzeilen aus der Studio-Ausgabe gelesen.": "Read error lines from Studio output.",
+  "Hat den Auftrag als abgeschlossen gemeldet und die Abschlussregeln geprüft.": "Reported the task as complete and checked the completion rules.",
+  "Hat den Arbeitskontext für weitere Studio-Befehle geändert.": "Changed the working context for subsequent Studio commands.",
+  "Hat im angeforderten Kontext gewartet.": "Waited in the requested context.",
+  "Hat den nicht unterstützten Start einer Studio-Simulation angefragt.": "Requested the unsupported Studio simulation start.",
+  "Hat eine bestätigte, von der Bridge gestartete Studio-Simulation beendet.": "Stopped a confirmed simulation that the Bridge had started.",
+  "Hat den aktuellen Studio-Teststatus gelesen.": "Read the current Studio test status.",
+  "Hat geprüft, ob Blender installiert und für den Bau bereit ist.": "Checked whether Blender is installed and ready to build.",
+  "Hat den 3D-Modellbau in Blender gestartet.": "Started building a 3D model in Blender.",
+  "Hat Baufortschritt, Messwerte und Platzhalter der Mesh-Aufgaben geprüft.": "Checked mesh-task progress, measurements and placeholders.",
+  "Hat die angeforderte Blender-Mesh-Aufgabe abgebrochen.": "Cancelled the requested Blender mesh task.",
+  "Hat die hochgeladenen Mesh-Assets in die vorhandenen Platzhalter eingesetzt.": "Applied the uploaded mesh assets to the existing placeholders.",
+  "Hat Platzhalter für die angeforderten Mesh-Bauteile angelegt.": "Created placeholders for the requested mesh parts.",
+  "Hat die angeforderte Mesh-Geometrie in die Platzhalter eingesetzt.": "Applied the requested mesh geometry to the placeholders.",
+  "Hat die angeforderten Mesh-Platzhalter aus dem Place entfernt.": "Removed the requested mesh placeholders from the place.",
+  "Hat die angeforderte Datei über Roblox Open Cloud hochgeladen.": "Uploaded the requested file through Roblox Open Cloud.",
+  "Hat eine freigegebene Roblox-Cloud-Funktion über die Bridge aufgerufen.": "Called an approved Roblox cloud function through the Bridge.",
+  "Hat die angeforderte Creator-Dashboard-Aktion über offizielle Roblox Open Cloud APIs ausgeführt.": "Performed the requested Creator Dashboard action through official Roblox Open Cloud APIs.",
+  "Hat den DataStore des verbundenen Spiels über die offizielle Open-Cloud-Datastore-API bearbeitet.": "Accessed the connected game's DataStore through the official Open Cloud DataStore API.",
+  "Hat die angeforderte Hintergrundaufgabe gestartet.": "Started the requested background job.",
+  "Hat Status und Fortschritt der Hintergrundaufgabe gelesen.": "Read the background job's status and progress.",
+  "Hat das Ergebnis der fertigen Hintergrundaufgabe abgerufen.": "Retrieved the completed background job's result.",
+  "Hat die laufenden und abgeschlossenen Hintergrundaufgaben aufgelistet.": "Listed running and completed background jobs.",
+  "Hat die angeforderte Hintergrundaufgabe abgebrochen.": "Cancelled the requested background job.",
+  "Hat die hängende Studio-Warteschlange zurückgesetzt.": "Reset the stuck Studio command queue.",
+  "Hat offene Studio-Befehle aus der Warteschlange entfernt.": "Removed pending Studio commands from the queue.",
+  "Hat noch offene oder verspätete Studio-Befehle geprüft.": "Checked pending or delayed Studio commands.",
+  "Hat mehrere angeforderte Bridge-Aktionen in einem Aufruf gebündelt.": "Combined several requested Bridge actions into one call.",
+  "Hat mehrere angeforderte Bridge-Aktionen parallel ausgeführt.": "Ran several requested Bridge actions in parallel.",
+  "Hat die letzte Änderung in Studio rückgängig gemacht.": "Undid the last change in Studio.",
+  "Hat die zuletzt rückgängig gemachte Änderung in Studio wiederholt.": "Redid the most recently undone change in Studio.",
+  "Hat einen benannten Wiederherstellungspunkt in Studio gesetzt.": "Set a named recovery waypoint in Studio.",
+  "Hat Hinweise zu Bridge-Ereignissen und Änderungen abgerufen.": "Retrieved notices about Bridge events and changes.",
+  "Hat die letzten Ereignisse der Bridge abgerufen.": "Retrieved the latest Bridge events.",
+  "Hat einen Plan für die benötigten UI-Steuerskripte erstellt.": "Planned the required UI control scripts.",
+  "Hat dir eine Frage mit den angebotenen Antwortmöglichkeiten gestellt.": "Asked you a question with the available answer options.",
+  "Hat vor der angeforderten Änderung deine Bestätigung eingeholt.": "Requested your confirmation before making the proposed change.",
+  "Hat bis zur nächsten Nachricht von dir gewartet.": "Waited for your next message.",
+  "Hat deine Nachricht als gelesen bestätigt.": "Acknowledged your message as read.",
+  "Hat einen weiteren Abschnitt eines großen Ergebnisses abgerufen.": "Retrieved another chunk of a large result.",
+  "Hat längeren Text zur sicheren Übergabe an die Bridge übertragen.": "Transferred longer text securely to the Bridge.",
+  "Hat die angeforderte Werkzeug- oder Kategorien-Dokumentation gelesen.": "Read the requested tool or category documentation.",
+  "Hat nach Bestätigung einen Screenshot des Roblox-Studio-Fensters aufgenommen.": "Captured the Roblox Studio window after confirmation.",
+  "• 8.0.3 — DEIN STUDIO, SICHER VERBUNDEN: • Screenshots nur vom passenden Studio-Fenster, nie vom Desktop. • Gruppen-Uploads und Asset-Freigaben per API-Key. • Place-Namen und Vorschauen ohne Fenster-Raten. • Sichtbarer Aktivitätsbalken ohne letzten Schritt. • Sprachmenü mit echten Flaggen, mehr Übersetzungen und gespeicherter Auswahl. • Alte Autostarts werden bereinigt, mehrere Konten als Liste angezeigt. • Neue Parts-Formen, Zylinderkurven und relative Platzierung — die Bridge rechnet für Arena.": "• 8.0.3 — YOUR STUDIO, SAFELY CONNECTED: • Screenshots only from the matching Studio window, never the desktop. • Group-owned uploads and asset-use permissions via API key. • Place names and previews without guessing windows. • Visible activity bar, without the last step. • Dropdown language menu with vector flags, more translations and saved preferences. • Old startup entries cleaned up; multiple accounts listed together. • New Parts shapes, curved cylinders and relative placement — the Bridge does the math.",
+  "• 8.0.1 — PFLICHT-UPDATE OHNE SCHLUPFLOCH: • Das X oben rechts im Update-Fenster schließt jetzt die komplette Bridge samt Hauptfenster. • Nach 5× „Später“ hilft kein Wegklicken mehr: installieren oder Programm beenden. • Die Bridge startet dabei gar nicht erst weiter — das Update bleibt wirklich Pflicht. • So geht dir kein wichtiges Update mehr verloren.": "• 8.0.1 — REQUIRED UPDATES WITHOUT A LOOPHOLE: • The X in the update window now closes the entire Bridge, including its main window. • After five “Later” clicks, you must install or exit. • Dismissing the window no longer bypasses the requirement. • Bridge services do not start until the update gate allows it.",
+  "• 8.0.0 — GUI-KRAFT, BILLBOARDS & ENGLISCH: • Billboard-GUIs werden mit der Entfernung kleiner statt riesig zu bleiben. • 24 GUI-Stile (neu: Horror, Minimal, Simulator und mehr) plus Texturen als echter Hintergrund. • Deine Nachrichten an Arena werden jetzt verbindlich im Chat bestätigt und umgesetzt. • Neues Optionen-Menü, Token-Reset setzt den Fortschritt zurück, Fragen ganz ohne Zeitdruck. • Programmsprache: Englisch (Standard) oder Deutsch, mit Flaggenwahl in den Einstellungen. • Logo schwebt jetzt mit Glow und runden Ecken; beim Laden dreht nur noch der Spinner.": "• 8.0.0 — GUI STYLES, BILLBOARDS & ENGLISH: • Billboards shrink with distance. • 24 GUI styles including Horror, Minimal and Simulator, with real background textures. • Messages to Arena require acknowledgement in chat. • New options menu; token reset clears progress; questions have no timeout. • English by default or German in Settings. • Rounded, glowing, floating logo; only the spinner rotates while loading.",
+  "• 7.9.5 — TESTUPDATE FÜR DAS UPDATE-SYSTEM: • Dieses Testupdate prüft Versionsvergleich und Update-Hinweis. • Am Programm selbst wurde nichts geändert. • Die ArenaRobloxBridge.exe erhält nur die Test-Versionsnummer 7.9.5. • Die Notiz erscheint wie bei einem echten Update im Update-Fenster. • Download und Installation laufen über die Download-Seite.": "• 7.9.5 — UPDATE-SYSTEM TEST: • Tests version comparison and the update notice. • No program behavior changed. • The executable received version 7.9.5. • The notice appears like a normal update. • Download and installation use the download page.",
+  "• 7.9.4 — EIN PROGRAMM, EIN DOWNLOAD: • Gebaut wird nur noch eine einzige Datei: ArenaRobloxBridge.exe — kein zweites Programm mehr im Ordner. • Alte Diagnose- und Sicherungskopien räumt der Builder selbst weg. • „Jetzt installieren“ öffnet jetzt deine Download-Seite: dort wartet immer die neueste ArenaRobloxBridge.exe. • Das Update-Fenster bleibt wie gewohnt: Zeitstrahl, kurze Stichpunkte und „Später“ in deiner Hand. • Geprüft wird weiter im Hintergrund über das Repository — du verpasst kein Update mehr.": "• 7.9.4 — ONE PROGRAM, ONE DOWNLOAD: • Only ArenaRobloxBridge.exe is built. • Old diagnostic and backup outputs are cleaned up. • “Install now” opens the download page with the latest executable. • The familiar timeline, short bullet points and “Later” choice remain. • Update checks continue in the background.",
+  "• 7.9.3 — KLARER NAME, SAUBERER DOWNLOAD: • Deine Bridge heißt jetzt offiziell ArenaRobloxBridge.exe — sofort erkennbar im Download-Ordner und auf dem Desktop. • Künftige Updates laufen nahtlos über den neuen Programmnamen weiter. • Nach dem Update räumt die Bridge deinen Ordner automatisch auf und legt die alte Datei in den Papierkorb. • Neue, aufgeräumte Download-Seite vorbereitet: öffnet sich blitzschnell und zeigt dir live den Status. • Alle gewohnten Stärken bleiben an Bord: weiches Ziehen, butterweiches Scrollen und das übersichtliche Update-Fenster.": "• 7.9.3 — CLEAR NAME, CLEAN DOWNLOAD: • Official executable name: ArenaRobloxBridge.exe. • Future updates use the new name. • On first start, the new version recycles the old executable. • A fast, clean download page shows live status. • Smooth dragging, scrolling and the update window remain.",
+  "• 7.9.2 — DEIN UPDATE-FENSTER, ENDLICH SCHÖN: • Zeitstrahl von deiner Version zur neuen — du siehst sofort, was du bekommst. • Kurze Stichpunkte statt Textwand: in Sekunden gelesen, sofort verstanden. • Echte Umlaute: ä, ö, ü und ß stehen endlich da, wo sie hingehören. • Fenster ziehen und Listen scrollen laufen butterweich — kein Ruckeln mehr. • Einstellungen aufgeräumt: ein Knopf bringt dich direkt in deinen Bridge-Ordner. • Und dein „Später“-Knopf bleibt dein Geheimnis: keine Klick-Zählerei mehr.": "• 7.9.2 — A CLEARER UPDATE WINDOW: • Timeline from your version to the new one. • Short, readable bullet points. • Correct German characters. • Smoother dragging and scrolling. • One button opens the Bridge data folder. • The “Later” click count stays hidden.",
+  "• 7.9.0 — EINFACHES UPDATE-SYSTEM: Beim Start prueft die Bridge (hoechstens 5 Sekunden), ob eine neue Version freigegeben ist. Ist sie da, erscheint ein Fenster \"Update verfuegbar\" mit dem Knopf \"Jetzt installieren\". Der Knopf oeffnet den Standard-Browser mit der neuen ArenaBridge.exe. \"Spaeter\" wird gezaehlt; nach 5 Klicks ist das Update Pflicht. Die neue EXE schiebt beim ersten Start die alte EXE in den Papierkorb. Die Bridge ersetzt sich nie selbst. Die Version in der EXE kommt aus dieser Datei; die Veroeffentlichung macht ein GitHub-Workflow.": "• 7.9.0 — SIMPLER UPDATES (historical summary): Startup checks take at most five seconds. Updates offer Install or Later; after five deferrals the update is required. The new executable recycles the old one. Builds and merges alone do not publish an update.",
+  "• 7.8.0 — NEUES SELBST-UPDATE-SYSTEM (Updater 2.0.0): Beim Start prueft die Bridge den freigegebenen Kanal und bietet ein Update nur als freiwillige Ja/Nein-Entscheidung an. Das neue Update-Fenster zeigt Version, Neuerungen und Downloadgroesse, laedt im Hintergrund mit Fortschrittsanzeige, laesst sich jederzeit abbrechen und schliesst die Bridge erst, wenn Groesse, SHA-256, x64-Kopf UND die Dateiversion der neuen Datei geprueft sind; danach wird atomar ersetzt (Backup, automatischer Rollback). Die Update-Datei heisst jetzt immer ArenaBridge-<Version>.exe, damit eine Veroeffentlichung niemals eine aeltere Datei ueberschreiben kann. Neu ausserdem: der Bereich UPDATES in den Einstellungen mit 'Jetzt nach Updates suchen', 'Update-Diagnose' (Kanal, Versionen, Ordnerrechte, Protokoll) und 'Protokoll', eine sichtbare Fehlermeldung statt stiller Misserfolge, update-history.json mit den letzten Laeufen sowie das Release-Werkzeug developer/tools/release.py, das Manifest, Dateigroesse, Pruefsumme, Dateiversion und Freigabe in einem Schritt prueft. Nutzerwünsche und Place-Konventionen haben Vorrang; PROJEKT ZUERST bleibt, Blender ist eine passende Empfehlung, keine Pflicht. Fortschritt als nicht anwendbar markieren, wo er nicht passt; es gibt keine erfundene 0 %. Open-Cloud-Verlauf speichert keine API-Pfade, Ressourcen-IDs oder Antwortwerte; im Tutorial steht keine IP-Einrichtung. Root-Updater bleibt unangetastet, das alte System wird ignoriert, EXEs baut der Nutzer selbst. Ein PR-Merge, ZIP, Build und Test aktualisieren keine Nutzer; erst der ausdrueckliche Release-Schritt aktiviert einen Kanal.": "• 7.8.0 — UPDATER 2.0 (historical summary): Voluntary update download with progress and cancellation, size/SHA-256/x64/version checks, atomic replacement and rollback, update diagnostics and history. Project conventions and explicit user requests take priority. Windows live validation remained required before release.",
+  "• 7.7.2 — NUTZER-HINTERGRUND IN ALLEN FENSTERN: Das vom Nutzer gelieferte Bild (app/assets/liquidglasbackground.png) gilt jetzt in ALLEN Fenstern: Nachricht an Arena, Arena fragt, Update-Hinweis, Einstellungen, Berechtigungen des API-Keys, Uebergabe und Arena-Verlauf. Die Aurora-Verlaeufe sind entfernt. Das Bild wird einmal dekodiert, eingefroren und als ImageBrush der Fensterschale mit sauberer Eckenrundung geteilt. Nutzerwünsche und Place-Konventionen haben Vorrang; PROJEKT ZUERST bleibt, Blender ist eine passende Empfehlung, keine Pflicht. Fortschritt als nicht anwendbar markieren, wo er nicht passt; es gibt keine erfundene 0 %. Open-Cloud-Verlauf speichert keine API-Pfade, Ressourcen-IDs oder Antwortwerte; im Tutorial steht keine IP-Einrichtung. Root-Updater bleibt unangetastet, das alte System wird ignoriert, EXEs baut der Nutzer selbst. Ein PR-Merge, ZIP, Build und Test aktualisieren keine Nutzer.": "• 7.7.2 — YOUR BACKGROUND IN ALL WINDOWS (historical summary): The supplied background image is shared across message, question, update, settings, permissions, handoff and history windows. Aurora gradients were removed. No public update is triggered by a build or merge.",
+  "• 7.7.0 — SELBST-UPDATE-SYSTEM (NOCH NICHT FREIGEGEBEN): Die EXE enthaelt den eingebetteten Updater (Update-Bridge 1.1.0) und prueft beim Start das Kanal-Manifest. Eine Installation erfolgt nur nach Bestaetigung; die laufende EXE wird nie beendet, der Download kommt nur von GitHub-HTTPS mit Groesse und SHA-256, es gibt Backup, atomaren Austausch und Rueckrollung. Auf Windows ist das noch NICHT getestet. Stable und Beta bleiben DEAKTIVIERT; bestehende Installationen ohne Updater erhalten das System nicht automatisch (Migration offen). Nutzerwünsche und Place-Konventionen haben Vorrang; PROJEKT ZUERST bleibt, Blender ist eine passende Empfehlung, keine Pflicht. Fortschritt als nicht anwendbar markieren, wo er nicht passt; es gibt keine erfundene 0 %. Open-Cloud-Verlauf speichert keine API-Pfade, Ressourcen-IDs oder Antwortwerte; im Tutorial steht keine IP-Einrichtung. Root-Updater bleibt unangetastet, das alte System wird ignoriert, EXEs baut der Nutzer selbst. Ein PR-Merge, ZIP, lokaler Build und privater Test aktualisieren keine Nutzer.": "• 7.7.0 — SELF-UPDATES, NOT RELEASED (historical summary): Embedded update manifest checking, confirmation, download validation, backup and rollback. Stable and beta channels remained disabled pending Windows validation. User requests and project conventions take priority.",
+  "• 7.6.5 — NEUES LOGO + EIN TEST-/RELEASE-ORDNER + FREIGABE-PROZESS: Das verbindliche Logo app/assets/neueslogo.png ist im Bridge-Fenster neben dem Titel, im Update-Hinweisfenster und als EXE-Symbol eingebaut; der Builder bettet die PNG ein und prueft sie im EXE-Smoke-Test. Build-EXE.bat legt den lokalen Test-Build unter next-update/release/ArenaBridge.exe ab. release-inbox/ und user-builds/ mit beta/stable-Unterordnern entfallen; alle Build-Ausgaben liegen gemeinsam im einzigen release/-Ordner. Nutzerwünsche und Place-Konventionen haben Vorrang; PROJEKT ZUERST bleibt, Blender ist eine passende Empfehlung, keine Pflicht. Fortschritt als nicht anwendbar markieren, wo er nicht passt; es gibt keine erfundene 0 %. Open-Cloud-Verlauf speichert keine API-Pfade, Ressourcen-IDs oder Antwortwerte; im Tutorial steht keine IP-Einrichtung. Ein PR-Merge, ZIP, lokaler Build und privater Test aktualisieren keine Nutzer. Bei Fehlern beginnt ein neuer Korrektur-PR-/Test-Zyklus. Nach ausdruecklicher Freigabe antwortet die aktuelle Session ausschliesslich mit einer kopierbaren Textbox/einem Prompt fuer die naechste Release-Session. Nur der exakt getestete Build darf danach nach Freigabe als next-update/release/ArenaBridge.exe ins Repository. Die neue Update-Bridge ist noch nicht in die EXE integriert; Integration und Bootstrap bestehender Installationen sind Pflicht-Gates vor Stable und automatischer Auslieferung. Root-Updater bleibt unangetastet, das alte System wird ignoriert, EXEs baut der Nutzer selbst; Stable bleibt bis zur separaten Freigabe disabled.": "• 7.6.5 — LOGO, RELEASE FOLDER & APPROVAL (historical summary): New logo in the Bridge, update window and executable icon. One release folder for private builds. Tests and explicit approval are required before publication; a merge or local build does not update users.",
+  "• 7.6.4 — EXE-START-HOTFIX + AUFGERÄUMTER BETA-BUILD + EIGENES EXE-LOGO: Der Startabbruch der gebauten EXE ist behoben: ps2exe liefert keinen Skriptpfad, deshalb löst die Bridge AppFolder nun sicher aus dem Verzeichnis der laufenden EXE auf, statt Split-Path mit NULL aufzurufen. Derselbe Pfad-Resolver wird im isolierten Build-Smoke-Test geprüft; bei einem Fehler wird die EXE nicht als fertiger Build übernommen. Der next-update-Ordner ist deutlich gegliedert: Build-EXE.bat ist der einzige normale Startknopf, und die Beta liegt klar unter user-builds/beta/ArenaBridge.exe. Für ein eigenes EXE-Logo einfach app/assets/ArenaBridge.custom.ico ablegen; der Builder verwendet es automatisch, prüft das ICO und lässt das Standard-Logo unverändert. Die 7.6.3-Regelbasis PROJEKT ZUERST bleibt: Nutzerwünsche und Place-Konventionen haben Vorrang; Blender ist eine passende Empfehlung, keine Pflicht. Einfache Lese-/Beobachtungsaufgaben markieren Fortschritt als nicht anwendbar; es gibt keine erfundene 0 %. Der Open-Cloud-Verlauf nennt sichere Aktionen und Ergebnisse, speichert aber keine API-Pfade, Ressourcen-IDs oder Antwortwerte; das Tutorial enthält keine IP-Einrichtung. Root-Updater bleibt unangetastet, der neue Updater ist nicht integriert und EXEs baut der Nutzer selbst. Beta-Manifeste bleiben aus; hier wurde keine EXE gebaut oder veröffentlicht.": "• 7.6.4 — EXECUTABLE STARTUP HOTFIX (historical summary): Fixed missing script paths in compiled builds, cleaned up beta build output and added the application icon. Windows parse/build/runtime checks remain mandatory.",
+  "• 7.6.3 — PROJEKT ZUERST + OPEN-CLOUD-VERLAUF + GETRENNTE UPDATE-VORBEREITUNG: Konkrete Nutzerwünsche und etablierte Place-Konventionen haben Vorrang bei Geometrie, Skripten, GUI und anderen Arbeiten; Blender ist eine passende Empfehlung, keine Pflicht. Polygonbau hat keine generische Erlaubnissperre; Qualitätsprüfungen dürfen Nutzerstil nicht als Methodenpflicht überschreiben. Einfache Lese-/Beobachtungsaufgaben markieren Fortschritt als nicht anwendbar und zeigen keinen Balken/keine erfundene 0 %. Verlaufsspur ist hell. Open-Cloud-Verlauf nennt konkrete Aktion/Funktion und HTTP-/Ergebnisstatus, speichert aber keine API-Pfade, Ressourcen-IDs oder Antwortwerte. Schritt 4 des Tutorials verwendet die bestätigte exakte Formulierung; IP-Einrichtung und IP-Beispiele fehlen, vorhandene IP-Einstellungen bleiben unverändert. next-update enthält Nutzer-Buildskript, deaktivierte Beta-/Stable-Manifeste und einen eigenständigen Hash-prüfenden Updater mit Staging/Backup/Rollback. Root-Updater bleibt unangetastet; EXE-Build und Veröffentlichung sind nicht erfolgt und EXEs baut der Nutzer selbst. Build-EXE.bat ist der einzige normale Klick; sie nennt den genauen Beta-EXE-Pfad, bettet Titelbild und EXE-Symbol ein und startet einen isolierten EXE-/WPF-/Bild-Smoke-Test. Für einen stillen Startabbruch gibt es einen lokalen Diagnose-Start samt sichtbarem Hinweis, wenn bereits eine Bridge-Instanz läuft. Getestete EXEs werden später als GitHub-Release-Asset bereitgestellt, nicht als Git-Datei; der neue Updater bleibt bis zur separaten Integration aus.": "• 7.6.3 — PROJECT FIRST (historical summary): Explicit user choices and established place conventions take priority over general modeling recommendations. Open Cloud history excludes resource details. Update preparation is isolated from publication.",
+  "• 7.6.2 — OPEN CLOUD GENAU NACH DEINER FREIGABE: Die Key-Prüfung schneidet große Antworten nicht mehr bei 600 Zeichen ab. 41 einzelne Berechtigungen mit verständlichen Beschreibungen statt grober Read/Write-Gruppen. Neues Tool open_cloud mit 172 fest freigegebenen API-Endpunkten, einschließlich Place-Veröffentlichung, Asset-Verwaltung und -Freigaben, DataStores, Events, Analytics-Lesen, Inventar und Creator Store. Gesperrte Funktionen bleiben unsichtbar und unaufrufbar, auch bei einem Key mit allen Rechten. Audio, Animationen und Videos im Upload-Tool ergänzt (Bridge-Dateilimit 20 MiB). Kein Key-Export, keine Auth-Redirects; Schreibaktionen beachten den Nur-Lesen-Modus. Für universe.analytics:write ist derzeit kein offizieller Endpunkt dokumentiert; es bleibt ohne erfundene Funktion sichtbar. Windows-/Roblox-Live-Abnahme steht noch aus.": "• 7.6.2 — PRECISE OPEN CLOUD PERMISSIONS (historical summary): Fixed truncated introspection responses; 41 individual permissions and 172 reviewed API-key operations. No blanket read/write gate. DPAPI key protection, fixed endpoints and read-only enforcement remain.",
+  "• 7.6.1 (historisch, Scopes durch 7.6.2 aktualisiert) — OPEN-CLOUD-KEY KLARER FÜR VIBE-CODER: Tutorial nennt den Scope als Namen (kein extra Scope-Unterpunkt, nirgendwo „Pflicht“). Entfernt: Nutzer-Benachrichtigungen, Place-Instances, Messaging, Memory Stores. Neu, weil Arena sie per Tools nutzen darf: Ordered DataStores, Place Publishing, Übersetzungen, creator-store-product, universe.user-restriction, universe.thumbnail, universe.places, universe.event, universe.analytics, thumbnails. Speichern öffnet das Berechtigungs-Fenster SOFORT mit Ladekreis, dann erscheinen die Rechte. Keine Warnung mehr zu fehlenden Kern-Rechten. Hat der Key ein Ablaufdatum, weigert sich die Bridge komplett (OPENCLOUD_KEY_HAS_EXPIRATION) – Expiration muss „No Expiration“ sein. Jedes Open-Cloud-Werkzeug prüft: Key gespeichert? Kein Ablaufdatum? Scope hat Read UND Write? Sonst blocken mit genauer Anleitung für den Nutzer.": "• 7.6.1 — CLEARER API-KEY TUTORIAL (historical summary; scopes superseded by 7.6.2): Scope names and setup guidance are clearer, without a separate scope submenu.",
+  "• 7.6.0 — NACHRICHTEN AN ARENA UNÜBERSEHBAR + OPEN-CLOUD-KEY MIT VOLLEM UMFANG. (1) NACHRICHTEN: „Nachricht an Arena senden“ geht nicht mehr unter - der Text steht als lauter Banner oben UND als userMessageReminder unten in jeder Antwort, wird bis zu 10x wiederholt (vorher 3x), und report_done blockiert mit UNACKED_USER_MESSAGE, solange auch nur eine Nachricht unbeantwortet ist. (2) CREATOR-DASHBOARD-SCHALTER ENTFERNT: Die Einstellung „Arena darf den aktuellen Place im Creator Dashboard verwalten“ gibt es nicht mehr; was der Schlüssel darf, entscheidet allein der Schlüssel (seine Scopes) - Roblox bleibt die einzige Sperre. (3) TUTORIAL MIT ALLEN BERECHTIGUNGEN: Das Tutorial listet jede Open-Cloud-Berechtigung (Assets, Experiences, Places, Gamepässe, Developer-Produkte, DataStores, Ordered DataStores, Memory Stores, Messaging, Place-Instances, Place Publishing, Übersetzungen, Nutzer-Benachrichtigungen) mit Scope-Name und kurzer Beschreibung, was sie Arena ermöglicht. (4) SPEICHERN PRÜFT ERST: „Speichern“ speichert nicht sofort, sondern fragt den offiziellen Introspect-Endpunkt (POST apis.roblox.com/api-keys/v1/introspect) ab und zeigt ein eigenes Berechtigungs-Fenster: grün = darf Arena, rot = fehlt. Erst „Ja, alles richtig! Key speichern!“ speichert (DPAPI-verschlüsselt); „Oh, das ändere ich nochmal!“ führt zurück zum Feld. Gespeicherte Keys lassen sich jederzeit über „Berechtigungen ansehen“ erneut prüfen. (5) NEUES WERKZEUG datastore: DataStores des verbundenen Spiels über die offizielle stabile Cloud-v2-API - Stores auflisten, Einträge auflisten/lesen/anlegen/ändern/erhöhen/löschen und Versionen lesen; nur die aktive Sitzung, Read-only sperrt Schreibaktionen, fehlende Scopes nennt Roblox ehrlich. Offline-Regressionen ergänzt (test_v760_user_messages_opencloud.py); kein Roblox-Live-Test.": "• 7.6.0 — VISIBLE MESSAGES & CLOUD PERMISSIONS (historical summary): More visible message delivery and acknowledgement, full key introspection and a clear permissions window. Expiring keys are rejected.",
+  "• 7.5.9 — CREATOR-DASHBOARD-VERWALTUNG ÜBER OFFIZIELLE ROBLOX OPEN CLOUD APIs (STANDARD: AUS). Direkt unter dem Open-Cloud-Key gibt es einen dauerhaft gespeicherten Opt-in-Schalter, standardmäßig ausgeschaltet und unabhängig von upload_asset. creator_dashboard verwaltet ausschließlich das bereits veröffentlichte Spiel der aktuell verbundenen Roblox-Studio-Sitzung; frei angegebene Ziel-IDs werden abgelehnt. Unterstützt werden die dokumentierten Universe-/Place-Metadaten (displayName, description) sowie Gamepasses und Developer-Produkte: auflisten, lesen, erstellen und ändern. Icons können beim Erstellen/Ändern als PNG/JPEG über das offizielle Multipart-Feld imageFile gesendet werden. Das Tutorial nennt zusätzlich universe:write, universe.place:write, game-pass:read + game-pass:write und developer-product:read + developer-product:write; assets read/write bleibt nur für separate Mesh-/Bild-Uploads nötig. Schreibaktionen beachten weiterhin Read-only. Arena erstellt, löscht oder veröffentlicht keine Places/Universes und verspricht keine undokumentierten Creator-Hub-Funktionen. Offline-Regressionen erweitert; kein Roblox-Live-Test.": "• 7.5.9 — CREATOR DASHBOARD VIA OPEN CLOUD (historical summary): Official Roblox API-key actions for Creator Dashboard management, originally disabled by default. No browser-cookie authentication.",
+  "• 7.5.8 — MINI-UPDATE: FRAGEN VERBINDLICH ÜBER DIE BRIDGE + AUTOSTART NUR ÜBER DEN UPDATER. Wenn Arena für eine echte Entscheidung oder notwendige Klärung deine Antwort braucht, muss sie ask_user/confirm_action im Bridge-Fenster verwenden statt eine normale Chat-Frage zu stellen. Die vollständigen Frage-Werkzeuge stehen schon in der ersten Session-Antwort; jeder Antwort-Umschlag wiederholt die Regel, offene Fragen werden mit derselben askId fortgesetzt. Beim Aktivieren und beim nächsten Bridge-Start werden Bridge-Duplikate aus HKCU Run/RunOnce und benutzerspezifischen Startup-Verknüpfungen bereinigt und genau ein HKCU-Run-Eintrag für ArenaBridge.exe (den Updater) registriert. Direkte PowerShell-/ArenaBridge.ps1-Autostarts werden nie neu angelegt. Der Updater-Pfad wird aus dem aufrufenden EXE-Prozess, bestehenden Starteinträgen oder einer lokalen Cache-Datei ermittelt; ohne gültige Updater-EXE bleibt Autostart aus, statt wieder ein PowerShell-Fenster zu öffnen. Eine benutzerbezogene Ein-Instanz-Sperre verhindert doppelte Bridge-Fenster, auch wenn alte Einträge parallel feuern; der Selbst-Update-Neustart gibt die Sperre vor dem neuen Prozess frei. Offline-Regressionsabnahme ergänzt; Windows-PC-/Roblox-Studio-Liveabnahme ausstehend.": "• 7.5.8 — QUESTIONS & STARTUP (historical summary): Necessary choices use Bridge question tools. Startup is restricted to the executable/launcher, with duplicate legacy entries cleaned up.",
+  "• 7.5.7 — MINI-UPDATE: ARENA-VERLAUF MIT LIVE-FORTSCHRITT + 143 VERSTÄNDLICHEN AKTIONSTEXTEN. Das Verlaufsfenster zeigt jetzt je Place einen aktuellen Fortschrittsbalken samt Prozent, Status, letzter Aktion, Aufrufzahlen und Studio-Befehlsstatus. Die Statuszeile unter jedem Place-Namen ist größer und nennt die Aktion verständlich statt den internen Tool-Schlüssel. Alle 143 Werkzeuge aus dem Katalog besitzen eigene deutsche Verlaufssätze; Suchbegriffe, Place-/Objektziele, Skriptzeilen, Asset-IDs, Aufgabennummern und verfügbare Ergebniszahlen werden ergänzt, wenn sie vorliegen. Keine generische Suche nach „ein Objekt“ und kein roher „Hat TOOL ausgeführt“-Fallback mehr. Offline-Regressionsabnahme erweitert; kein Live-Test in Windows/Roblox Studio.": "• 7.5.7 — LIVE HISTORY (historical summary): Per-place progress and 143 readable action descriptions in the history window.",
+  "• 7.5.6 — MINI-UPDATE: ROBLOX-STUDIO-KONTO ALS ASSET-ERSTELLER + PROFIL UNTEN LINKS. Das Plugin liest die angemeldete Roblox-User-ID offiziell über StudioService:GetUserId() aus und meldet sie der Bridge. Open-Cloud-Uploads verwenden diese ID jetzt zuerst als creator.userId, statt den Place-Ersteller oder einen manuell eingetippten Namen zu nehmen. Die Entwickler-Fallback-Textbox samt Speicherung ist entfernt; falls Studio keine Anmeldung meldet, bleibt der automatisch aus dem Key gelesene Empfänger als Rückfall erhalten. Wichtig: Der Open-Cloud-Key muss ASSETS write für das in Studio angemeldete Konto erlauben. Unten links zeigt die Bridge dessen Avatar und Anzeigenamen; die öffentlichen Roblox-Profil-/Thumbnail-Daten werden im Hintergrund geladen, ohne die Oberfläche einzufrieren.": "• 7.5.6 — STUDIO ACCOUNT PROFILE (historical summary): StudioService reports the signed-in account; its profile appears at bottom left. Group-owned upload behavior is superseded by 8.0.3.",
+  "• 7.5.5 — HISTORISCHE BLENDER-PRAEFERENZ + API-/ORIENTATION-FIXES. Behoben: /api/tool-HTTP-500 durch fehlendes Zuweisungszeichen, /api/tools/parallel fuer Bridge-eigene Tools und Himmelsrichtungsindex. Die damalige Blender-first-Empfehlung ist seit 7.6.3 nicht aktiv; Nutzerwunsch und Place-Konvention entscheiden die Methode.": "• 7.5.5 — API & ORIENTATION FIXES (historical summary): Fixed tool HTTP errors, parallel dispatch and orientation helpers. The historical Blender preference is superseded by Project First.",
+  "• 7.5.4 — PARSER-HOTFIX. Doppelte Hashtable-Schluessel in Get-ArenaActivityText wurden entfernt; Windows PowerShell kann die Bridge wieder parsen. Die in diesem historischen Eintrag genannten DRAFT_GRADE_RISK-/Organic-/Progress-Sperren und Pflichttexte wurden spaeter durch 7.6.3 ersetzt; sie sind nicht mehr aktiv.": "• 7.5.4 — PARSER HOTFIX (historical summary): Removed duplicate PowerShell hashtable keys in activity text generation.",
+  "• 7.5.3 — HISTORISCHE UI-/NACHRICHTEN-/STARTUP-KORREKTUREN. Enthaelt Fixes fuer Open-Cloud-Empfaenger, Place-Vorschau, Splash, Aktivitaetstexte und Fragenfenster. Die damalige 0-%-Anzeige und globalen Organic-/Finish-Regeln sind seit 7.6.3 ueberholt; Fortschritts-/Auditverhalten richtet sich nach den aktuellen project-first Regeln und einfachen Lesetasks koennen hidden sein.": "• 7.5.3 — UI, MESSAGES & STARTUP (historical summary): Fixes for upload recipients, place previews, splash, activity descriptions and questions.",
+  "• 7.5.2 — MINI-UPDATE: EINSTELLUNGEN GEHEN WIEDER, PLACE-VORSCHAU LÄDT, ECHTE PLACE-NAMEN, NEUER LADEBILDSCHIRM. Vier Dinge auf einmal: (1) EINSTELLUNGSFENSTER ÖFFNET WIEDER: Es fehlten drei gemeinsam genutzte Ressourcen (SwGreenBtnBg, ArenaPrimaryButton, ArenaQuietButton) im Resources-Block des Einstellungsfensters – XamlReader.Load warf deswegen bei jedem Klick die StaticResourceExtension-Ausnahme. Der Block ist jetzt da. (2) PLACE-VORSCHAU LÄDT BEI MEHREREN FENSTERN: Bisher blieb der Handle 0 (HANDLE_RESOLVED reason=keinTrefferBeiMehrerenFenstern), weil der Fenstervergleich gegen den „Place XXXX“-Fallback lief und nie passte. Der Fallback kriegt jetzt Qualitätsstufe 0 (darf von Fenstertiteln überschrieben werden), Resolve-PlaceWindowIdentity nimmt bei mehreren Fenstern das ERSTE noch nicht belegte Studio-Fenster und merkt es sich (PID+HWND), und Resolve-PlacePreviewHandle probiert vor dem Aufgeben auch die Identity-basierte Zuweisung sowie einen zweiten Durchgang mit normalisierten Titeln. (3) PLACE-NAMEN SIND DIE ECHTEN NAMEN (kein „Place “ + 4 Zufallszeichen mehr). Der 4-Zeichen-Session-Fallback wird NUR noch angezeigt, wenn WEDER Plugin-Name NOCH Fenstertitel etwas Brauchbares liefern – und selbst dann wird er bei späteren Polls mit dem echten Namen (game.Name) oder Fenstertitel überschrieben, sobald der verfügbar ist. (4) LADEBILDSCHIRM NEU: Statt der vier Schritte (Roblox Studio / Plugin / Blender / Tunnel) gibt es jetzt einen organischen Ladebalken (fließende Animation, 0–100 %) darunter, darüber den aktuellen Schritt als Text und darüber ein sich drehendes Spinner-Icon – ein einziger Fluss, keine Liste mehr. Der Balken füllt sich je nach Zustand der vier Komponenten (Studio, Plugin, Blender, Tunnel) und wird bei Fehlern rot, bei Fertig grün.": "• 7.5.2 — SETTINGS, PREVIEWS & LOADING (historical summary): Settings reopen correctly, window previews load, place names are improved and the loading screen is refreshed.",
+  "• 7.5.1 — HISTORISCHE MESH-PFAD-EMPFEHLUNG + UPLOAD-FIXES. Ein Mesh pro verbundenem Modell war eine Empfehlung fuer den damals ausgewaehlten Blender-Mesh-Pfad, keine globale Modellierungsvorgabe. Seit 7.6.3 entscheiden Nutzerwunsch und Place-Konvention; der Mesh-Pfad bleibt optional.": "• 7.5.1 — UPLOAD FIXES (historical summary): Improved uploads. The old one-mesh-per-connected-model recommendation is not a universal modeling requirement.",
+  "• 7.5.0 — OPEN CLOUD UPLOAD: MESH-FENSTER WEG, ARENA LAEDT SELBST HOCH.": "• 7.5.0 — OPEN CLOUD UPLOADS: Arena uploads assets directly; the old mesh-upload window was removed.",
+  "• 7.4.2 — MINI-HOTFIX MESH-RUNNER (Blender-Export).": "• 7.4.2 — MESH-RUNNER HOTFIX: Blender export correction.",
+  "• 7.4.1 — BOM-HOTFIX, NEUES MESH-FENSTER, EHRLICHER SCHRITT 4.": "• 7.4.1 — BOM HOTFIX: New mesh window and truthful Blender startup step.",
+  "• 7.4.0 — BLENDER-MESH-BAU + MESH-UPLOAD-FENSTER.": "• 7.4.0 — BLENDER MESH BUILDING: Added mesh building and an upload window.",
+  "• 7.3.2 — HISTORISCHE POLYGON-/CREATURE-DIAGNOSTIK. Die damaligen Geometrie-, Anatomie-, Fluegel-, Farb-, Motion- und Audit-Schwellen wurden mit Projekt-first 7.6.3 zu optionalen Beobachtungen; sie schreiben keinen Builder und keine report_done-Fertigstellung vor.": "• 7.3.2 — POLYGON/CREATURE DIAGNOSTICS (historical summary): Historical geometry, anatomy, color, motion and audit thresholds were later superseded by Project First; they are not universal completion gates.",
+  "• 7.3.1 — PARSER-FIX: \"Es passiert gar nichts\" seit 7.2.5 ist behoben.": "• 7.3.1 — PARSER FIX: Fixed the startup failure introduced in 7.2.5.",
+  "• 7.3.0 — MINI-FIX: STARTGARANTIE.": "• 7.3.0 — STARTUP GUARANTEE: Improved startup reliability.",
+  "• 7.2.9 — DIAGNOSE-UPDATE.": "• 7.2.9 — DIAGNOSTICS UPDATE.",
+  "• 7.2.8 — MINI-FIX: START-BLOCKER WEG (2 STELLEN).": "• 7.2.8 — STARTUP FIX: Removed two startup blockers.",
+  "• 7.2.7 — MINI-START-FIX: Hauptfenster zuerst.": "• 7.2.7 — MAIN WINDOW FIRST: Show the window before background startup work.",
+  "• 7.2.6 — START-NETZ KOMPLETT: NIE MEHR LAUTLOS.": "• 7.2.6 — NO SILENT STARTUP FAILURES: Extended error handling.",
+  "• 7.2.5 — START-HOTFIX: Die Bridge startet wieder sicher.": "• 7.2.5 — STARTUP HOTFIX: Reliable Bridge startup restored.",
+  "• 7.2.4 — P0-BLOCKER BEHOBEN + ECHTES PROGRAMM-DESIGN.": "• 7.2.4 — CRITICAL BLOCKER FIX & APPLICATION DESIGN.",
+  "• 7.2.3 — FRAGENFENSTER, NUTZER-KANAL UND LIVE-SAMMLUNGEN.": "• 7.2.3 — QUESTIONS, USER MESSAGES & LIVE COLLECTIONS.",
+  "• 7.2.2 — MINI-UPDATE: Der Diagnosebereich wurde aus den Einstellungen entfernt.": "• 7.2.2 — SETTINGS CLEANUP: Removed the diagnostics section.",
+  "• 7.2.1 — KRITISCHER START-/PARSER-FIX.": "• 7.2.1 — CRITICAL STARTUP/PARSER FIX.",
+  "• 7.2.0 — NUTZER-KANAL, FORTSCHRITT, FERTIG-MELDUNG, FRAGEN.": "• 7.2.0 — USER MESSAGES, PROGRESS, COMPLETION NOTIFICATIONS & QUESTIONS.",
+  "Aktivitätsanzeige: keine Prozentzahl gemeldet.": "Activity indicator: no percentage reported.",
+  "FORTSCHRITT · ": "PROGRESS · "
 }
+'@
+foreach ($property in ($uiTranslationJson | ConvertFrom-Json).PSObject.Properties) { $script:UiTranslationsDeEn[$property.Name] = [string]$property.Value }
+# <<< UI-TRANSLATIONS-803 <<<
+$script:UiOriginalText = [System.Runtime.CompilerServices.ConditionalWeakTable[object,object]]::new()
+$script:UiTranslationPattern = '(?:' + ((@($script:UiTranslationsDeEn.Keys | Where-Object { $_.Length -ge 4 } | Sort-Object { $_.Length } -Descending) | ForEach-Object {
+    $key=[string]$_; $escaped=[regex]::Escape($key)
+    if ($key -match '^\p{L}') { $escaped='(?<!\p{L})'+$escaped }
+    if ($key -match '\p{L}$') { $escaped+='(?!\p{L})' }
+    $escaped
+}) -join '|') + ')'
+$script:UiTranslationRegex = [regex]::new($script:UiTranslationPattern, [System.Text.RegularExpressions.RegexOptions]::Compiled)
 $script:UiTranslationsEnDe = @{}
 foreach ($pair in @($script:UiTranslationsDeEn.GetEnumerator())) { $script:UiTranslationsEnDe[[string]$pair.Value] = [string]$pair.Key }
 
@@ -32652,52 +33683,72 @@ function Get-UiLanguage {
 }
 function Get-UiDisplayText {
     param([AllowEmptyString()][string]$Text)
-    if ([string]::IsNullOrEmpty($Text)) { return $Text }
-    try {
-        $map = if ((Get-UiLanguage) -eq 'de') { $script:UiTranslationsEnDe } else { $script:UiTranslationsDeEn }
-        if ($null -eq $map) { return $Text }
-        if ($map.ContainsKey($Text)) { return [string]$map[$Text] }
-        $result = $Text
-        foreach ($key in @($map.Keys | Sort-Object { $_.Length } -Descending)) {
-            if ($key.Length -ge 4 -and $result.Contains([string]$key)) { $result = $result.Replace([string]$key, [string]$map[$key]) }
-        }
-        return $result
-    } catch { return $Text }
+    if ([string]::IsNullOrEmpty($Text) -or (Get-UiLanguage) -eq 'de') { return $Text }
+    if ($script:UiTranslationsDeEn.ContainsKey($Text)) { return [string]$script:UiTranslationsDeEn[$Text] }
+    # One non-cascading replacement: translated fragments must not be translated again.
+    $pieces=[regex]::Split($Text, '(„[^“]*“|“[^”]*”|"[^"\r\n]*")')
+    for ($i=0; $i -lt $pieces.Length; $i+=2) {
+        $pieces[$i]=$script:UiTranslationRegex.Replace($pieces[$i], [System.Text.RegularExpressions.MatchEvaluator]{ param($m) [string]$script:UiTranslationsDeEn[$m.Value] })
+    }
+    return ($pieces -join '')
 }
 function Get-LocalizedXamlText {
     param([AllowEmptyString()][string]$XamlText)
-    if ([string]::IsNullOrEmpty($XamlText) -or (Get-UiLanguage) -ne 'en') { return $XamlText }
-    try {
-        $result = $XamlText
-        foreach ($key in @($script:UiTranslationsDeEn.Keys | Sort-Object { $_.Length } -Descending)) {
-            if ($result.Contains([string]$key)) { $result = $result.Replace([string]$key, [string]$script:UiTranslationsDeEn[$key]) }
-        }
-        return $result
-    } catch { return $XamlText }
+    # Only localize visible string attributes, never names, paths, bindings or styles.
+    return [regex]::Replace($XamlText, '(?s)(?<attr>Text|Content|ToolTip|Title)="(?<text>[^"{}]*)"', [System.Text.RegularExpressions.MatchEvaluator]{
+        param($m)
+        $value = [System.Net.WebUtility]::HtmlDecode($m.Groups['text'].Value)
+        $value = Get-UiDisplayText $value
+        $m.Groups['attr'].Value + '="' + [System.Security.SecurityElement]::Escape($value) + '"'
+    })
 }
 function Apply-UiLanguageToWindow {
     param($Root)
     if ($null -eq $Root) { return }
-    try {
-        $stack = New-Object System.Collections.Generic.List[object]
-        $stack.Add($Root)
-        while ($stack.Count -gt 0) {
-            $node = $stack[0]; $stack.RemoveAt(0)
-            if ($null -eq $node) { continue }
-            try { if ($node -is [System.Windows.Window]) { $node.Title = Get-UiDisplayText ([string]$node.Title) } } catch {}
-            try { if ($node -is [System.Windows.Controls.TextBlock]) { $node.Text = Get-UiDisplayText ([string]$node.Text) } } catch {}
-            try { if (($node -is [System.Windows.Controls.ContentControl]) -and ($node.Content -is [string])) { $node.Content = Get-UiDisplayText ([string]$node.Content) } } catch {}
-            try { if ($node.ToolTip -is [string]) { $node.ToolTip = Get-UiDisplayText ([string]$node.ToolTip) } } catch {}
-            try { foreach ($child in [System.Windows.LogicalTreeHelper]::GetChildren($node)) { if ($child -is [System.Windows.DependencyObject]) { $stack.Add($child) } } } catch {}
+    # Object keys do not leak closed windows; the ConditionalWeakTable owns weak keys.
+    $stack = New-Object System.Collections.Generic.List[object]
+    $stack.Add($Root)
+    while ($stack.Count -gt 0) {
+        $node=$stack[0]; $stack.RemoveAt(0)
+        if ($null -eq $node -or $node -isnot [System.Windows.DependencyObject]) { continue }
+        # User-generated content is data, not UI vocabulary.
+        if ([string]$node.Name -match '^(StudioEditor|SelectedLanguageText|LanguageEnglish|LanguageGerman|PlaceTitle)' -or [string]$node.Tag -eq 'ArenaUserContent' -or ($null -ne $node.Tag -and $node.Tag.PSObject.Properties['IsUserContent'] -and [bool]$node.Tag.IsUserContent)) { continue }
+        $original = $null
+        if (-not $script:UiOriginalText.TryGetValue($node,[ref]$original)) { $original=@{}; $script:UiOriginalText.Add($node,$original) }
+        foreach ($property in @('Title','Text','Content','ToolTip','Header')) {
+            # Input text is data; the input's own tooltip is still Bridge UI.
+            if ($node -is [System.Windows.Controls.TextBox] -and $property -eq 'Text') { continue }
+            try {
+                $current=$node.$property
+                if ($current -isnot [string]) { continue }
+                if (-not $original.ContainsKey($property) -or $current -ne $original[$property].Rendered) {
+                    $canonical = $current
+                    if ($script:UiTranslationsEnDe.ContainsKey($current)) { $canonical=[string]$script:UiTranslationsEnDe[$current] }
+                    $original[$property]=@{ Source=$canonical; Rendered=$current }
+                }
+                $translated=Get-UiDisplayText ([string]$original[$property].Source)
+                if ($translated -ne $current) { $node.$property=$translated }
+                $original[$property].Rendered=$translated
+            } catch {}
         }
-    } catch {}
+        try { if ($node -is [System.Windows.Window]) { foreach ($owned in $node.OwnedWindows) { $stack.Add($owned) } } } catch {}
+        try { foreach ($child in [System.Windows.LogicalTreeHelper]::GetChildren($node)) { if ($child -is [System.Windows.DependencyObject]) { $stack.Add($child) } } } catch {}
+    }
 }
 
 function Set-Text {
     param($Element, [string]$Value)
     if ($null -eq $Element) { return }
     # Version 8.0.0: dynamische Texte laufen zentral durch die Sprachwahl.
-    $Value = Get-UiDisplayText ([string]$Value)
+    if ([string]$Element.Tag -ne 'ArenaUserContent') {
+        $sourceValue=$Value
+        $Value=Get-UiDisplayText ([string]$Value)
+        try {
+            $original=$null
+            if (-not $script:UiOriginalText.TryGetValue($Element,[ref]$original)) { $original=@{}; $script:UiOriginalText.Add($Element,$original) }
+            $original['Text']=@{Source=$sourceValue;Rendered=$Value}
+        } catch {}
+    }
     if ([string]$Element.Text -ne $Value) { $Element.Text = $Value }
 }
 
@@ -33775,7 +34826,7 @@ $xaml = @'
                                 <Grid>
                                     <StackPanel x:Name="StudioEditorProfile" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Center" Visibility="Collapsed"
                                                 ToolTip="Bevorzugtes Roblox-Studio-Konto für Open-Cloud-Uploads; ohne Studio-ID dient die Key-Resource als Rückfall">
-                                        <Border Width="40" Height="40" CornerRadius="20" Background="#1A2B3F68" BorderBrush="#44FFFFFF" BorderThickness="1" ClipToBounds="True">
+                                        <Border x:Name="StudioEditorAvatarBorder" Width="40" Height="40" CornerRadius="20" Background="#1A2B3F68" BorderBrush="#44FFFFFF" BorderThickness="1" ClipToBounds="True">
                                             <Grid>
                                                 <TextBlock x:Name="StudioEditorAvatarFallback" Text="&#xE77B;" FontFamily="Segoe MDL2 Assets" FontSize="17" Foreground="#9CB2DC"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -34495,7 +35546,7 @@ function Get-PlaceNameQuality {
     if ($Source -eq 'sessionFallback') { return 0 }
     if ($Name -match '^Place\s+[A-Za-z0-9]{3,8}\s*$') { return 0 }
     if (Test-StandardPlaceName $Name) { return 0 }
-    if ($Source -eq 'plugin') { return 2 }
+    if ($Source -eq 'plugin') { return 3 }
     if ($Source -eq 'windowTitle' -and $Name -match '\s') { return 1 }
     return 2
 }
@@ -34511,7 +35562,7 @@ function Save-PlaceName {
     if ($script:PlaceNameSources.ContainsKey($SessionId)) { $oldSource = [string]$script:PlaceNameSources[$SessionId] }
     $oldQuality = Get-PlaceNameQuality $old $oldSource
     $newQuality = Get-PlaceNameQuality $clean $Source
-    if ($newQuality -le 0) { return $false }
+    if ($newQuality -le 0 -and -not [string]::IsNullOrWhiteSpace($old)) { return $false }
     if ($oldQuality -gt $newQuality) { return $false }
     if ($oldQuality -eq $newQuality -and $old -eq $clean) { return $false }
     $script:PlaceNames[$SessionId] = $clean
@@ -34579,59 +35630,36 @@ function Get-PlaceIdentityKey {
 }
 
 function Resolve-PlaceWindowIdentity {
-    # Bindet eine Sitzung an GENAU EIN Studio-Fenster (PID + HWND) und
-    # verhindert, dass zwei Zeilen dasselbe Fenster beanspruchen. Der
-    # Anzeigename dient nur als Hinweis, nie als Schlüssel.
     param($Studio, [string]$SessionId)
     $identity = Save-PlaceIdentity $SessionId $Studio $null 'lookup'
+    $discard = ''
+    [void]$script:Shared.StudioCaptureTargets.TryRemove($SessionId, [ref]$discard)
     $infos = @(Get-StudioWindowInfos)
-    if ($infos.Count -eq 0) { return $identity }
-    # 1) bereits gebunden und das Fenster existiert noch -> dabei bleiben.
-    if ($identity.ProcessId -gt 0 -and $identity.WindowHandle -ne [IntPtr]::Zero) {
-        foreach ($info in $infos) {
-            if ([IntPtr]$info.Handle -eq [IntPtr]$identity.WindowHandle) {
-                Save-PlaceIdentity $SessionId $Studio $info 'gebunden' | Out-Null
-                return (Get-PlaceIdentity $SessionId)
-            }
-        }
+    $wanted = Get-NormalizedPlaceName ([string]$Studio.placeName)
+    $matches = @($infos | Where-Object { (Get-NormalizedPlaceName ([string]$_.Title)) -eq $wanted -and $wanted })
+    $candidate = $null
+    # Bind only unique exact titles (published names are reported by the plugin).
+    # A second session with the same place name makes title matching ambiguous.
+    $sameNameSessions = @($script:Shared.Sessions.Values | ForEach-Object { try { $_ | ConvertFrom-Json } catch {} } | Where-Object {
+        $aliveAt=[long]$_.lastSeen; $presence=[long]0
+        if ($script:Shared.Presence.TryGetValue([string]$_.sessionId,[ref]$presence)) { $aliveAt=$presence }
+        (Get-NormalizedPlaceName ([string]$_.placeName)) -eq $wanted -and ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - $aliveAt) -lt 30
+    })
+    if ($matches.Count -eq 1 -and $sameNameSessions.Count -eq 1 -and -not (Test-PreviewHandleClaimed $matches[0].Handle $SessionId)) { $candidate = $matches[0] }
+    if ($null -eq $candidate -and $identity.WindowHandle -ne [IntPtr]::Zero) {
+        # Keep only the exact PID/HWND pair while its title still agrees.
+        $candidate = @($infos | Where-Object { $_.ProcessId -eq $identity.ProcessId -and $_.Handle -eq $identity.WindowHandle -and (Get-NormalizedPlaceName ([string]$_.Title)) -eq $wanted -and $wanted } | Select-Object -First 1)
+        if ($candidate.Count -eq 1) { $candidate = $candidate[0] } else { $candidate = $null }
     }
-    # 2) Kandidat über den normalisierten Namen suchen - aber nur Fenster,
-    #    die noch KEINE andere Sitzung beansprucht und nicht bereits vergeben.
-    $wanted = ''
-    if ($script:PlaceNames.ContainsKey($SessionId)) { $wanted = Get-NormalizedPlaceName ([string]$script:PlaceNames[$SessionId]) }
-    if (-not [string]::IsNullOrWhiteSpace($wanted)) {
-        foreach ($info in $infos) {
-            $normalized = Get-NormalizedPlaceName ([string]$info.Title)
-            if ([string]::IsNullOrWhiteSpace($normalized)) { continue }
-            if ($normalized -ne $wanted) { continue }
-            if (Test-PreviewHandleClaimed $info.Handle $SessionId) { continue }
-            $script:PreviewHandleClaims[[int64]$info.Handle] = $SessionId
-            Save-PlaceIdentity $SessionId $Studio $info 'titelExakt' | Out-Null
-            return (Get-PlaceIdentity $SessionId)
-        }
+    if ($null -eq $candidate) {
+        if ($identity.WindowHandle -ne [IntPtr]::Zero) { [void]$script:PreviewHandleClaims.Remove([long]$identity.WindowHandle) }
+        $identity.WindowHandle = [IntPtr]::Zero; $identity.ProcessId = 0; $identity.WindowTitle = ''
+        return $identity
     }
-    # 3) Einziges Fenster -> binden, unabhängig vom Namen (Beweis: PID+HWND).
-    if ($infos.Count -eq 1 -and -not (Test-PreviewHandleClaimed $infos[0].Handle $SessionId)) {
-        $script:PreviewHandleClaims[[int64]$infos[0].Handle] = $SessionId
-        Save-PlaceIdentity $SessionId $Studio $infos[0] 'einzelnesFenster' | Out-Null
-        return (Get-PlaceIdentity $SessionId)
-    }
-    # 4) Version 7.5.2: Bei MEHREREN Fenstern das ERSTE noch nicht beanspruchte
-    #    Fenster binden (Zählung: offene Sessions vs. Fenster). Das verhindert
-    #    „keinTrefferBeiMehrerenFenstern“, wenn das Plugin noch keinen echten
-    #    Namen meldet (z. B. direkt nach dem Öffnen). Die Bindung ist stabil
-    #    (PID+HWND), weitere Namens-Abgleiche ändern sie nicht.
-    foreach ($info in $infos) {
-        if (Test-PreviewHandleClaimed $info.Handle $SessionId) { continue }
-        $script:PreviewHandleClaims[[int64]$info.Handle] = $SessionId
-        $candidate = Get-NormalizedPlaceName ([string]$info.Title)
-        if (-not [string]::IsNullOrWhiteSpace($candidate)) {
-            [void](Save-PlaceName $SessionId $candidate 'windowTitle')
-        }
-        Save-PlaceIdentity $SessionId $Studio $info 'erstesFreiesFenster' | Out-Null
-        return (Get-PlaceIdentity $SessionId)
-    }
-    return $identity
+    $script:PreviewHandleClaims[[long]$candidate.Handle] = $SessionId
+    Save-PlaceIdentity $SessionId $Studio $candidate 'uniqueTitle' | Out-Null
+    $script:Shared.StudioCaptureTargets[$SessionId] = (@{ pid=[int]$candidate.ProcessId; hwnd=([IntPtr]$candidate.Handle).ToInt64(); title=[string]$candidate.Title; instanceGuid=[string]$Studio.instanceGuid; placeId=[string]$Studio.placeId; at=[DateTimeOffset]::UtcNow.ToUnixTimeSeconds() } | ConvertTo-Json -Compress)
+    return (Get-PlaceIdentity $SessionId)
 }
 
 function Test-PreviewHandleClaimed {
@@ -36085,6 +37113,7 @@ function Open-UserMessageWindow {
         $timer.Start()
         try { Apply-UiLanguageToWindow $win } catch {}
         # ShowDialog disables the owner window for the lifetime of this dialog.
+        try { Apply-UiLanguageToWindow $win } catch {}
         [void]$win.ShowDialog()
     } catch {
         Write-UiErrorLog 'Nachricht-Fenster konnte nicht geöffnet werden' $_
@@ -36802,6 +37831,7 @@ function Update-AskWindow {
             try { $custom = [string]$answer.custom } catch {}
         }
         $questionText = [System.Windows.Controls.TextBlock]::new()
+        $questionText.Tag = 'ArenaUserContent'
         $questionText.Text = [string]$question.text
         $questionText.TextWrapping = 'Wrap'
         $questionText.FontSize = 13.5
@@ -36833,7 +37863,7 @@ function Update-AskWindow {
                 else { $item.Style = $Info.Window.FindResource('ArenaOptionRadio') }
                 $item.Content = [string]$option.label
                 $item.Margin = [System.Windows.Thickness]::new(0, 3, 0, 3)
-                $item.Tag = [pscustomobject]@{ Info = $Info; QuestionId = $qid; OptionId = $oid; Label = [string]$option.label; Multi = $multi }
+                $item.Tag = [pscustomobject]@{ Info = $Info; QuestionId = $qid; OptionId = $oid; Label = [string]$option.label; Multi = $multi; IsUserContent = $true }
                 $item.IsChecked = ($selected -contains $oid)
                 if ($multi) {
                     $item.Add_Click({
@@ -37109,6 +38139,7 @@ function Open-AskWindow {
         }
 
         $info = New-AskWindowInfo $win $askId ([string]$AskState.sessionId)
+        $info.TitleText.Tag = 'ArenaUserContent'; $info.MessageText.Tag = 'ArenaUserContent'
         $win.Tag = $info
         $titleBar = $win.FindName('TitleBar')
         $titleBar.Tag = $info
@@ -37536,29 +38567,11 @@ function Update-PlaceProgressVisual {
     $userBadgeText = ''
     try { $userBadgeText = Get-UserMessageBadgeText $sessionId } catch {}
 
-    # Version 7.5.3: kräftige, volle Farben statt ausgewaschene Pastelltöne.
-    # Auf der Teal-Karte mit hellem Lila-Glas-Hintergrund wirkten die alten
-    # Werte blass; jetzt kräftiges Blau / Grün / Grau / Rot mit voller
-    # Sättigung.
-    $color = '#0B57D0'      # arbeitet = sattes Royalblau
+    $color = '#0B57D0'
     $label = 'Arena arbeitet gerade...'
-    if ($null -eq $snapshot -and $null -ne $openCmd) {
-        $label = 'Studio-Befehl läuft: ' + (Get-ArenaActivityDisplayLabel ([string]$openCmd.tool))
-    }
     if ($state -eq 'done') { $color = '#166534'; $label = 'Fertig!' }
-    elseif ($state -eq 'quiet') { $color = '#475569'; $label = $message }
     elseif ($state -eq 'error') { $color = '#9F1239'; $label = 'Fehler' }
-    elseif ($null -eq $snapshot -and $null -ne $openCmd) { $label = 'Studio-Befehl läuft: ' + (Get-ArenaActivityDisplayLabel ([string]$openCmd.tool)) }
-    elseif (-not [string]::IsNullOrWhiteSpace($message)) { $label = $message }
-    if ($progressMode -eq 'hidden') {
-        if ($state -eq 'done') { $label = 'Fertig · Fortschritt nicht anwendbar' }
-        elseif ($message) { $label = 'Fortschritt nicht anwendbar · ' + $message }
-        else { $label = 'Fortschritt nicht anwendbar.' }
-    }
-    if (-not [string]::IsNullOrWhiteSpace($lastTool)) {
-        $friendlyAction = Get-ArenaActivityDisplayLabel $lastTool
-        if ($label.IndexOf($friendlyAction,[StringComparison]::OrdinalIgnoreCase) -lt 0) { $label += ' · Letzte Aktion: ' + $friendlyAction }
-    }
+    elseif ($silent -ge 60) { $color = '#475569'; $label = 'Seit über einer Minute kein Bridge-Aufruf' }
 
     # 100% bleibt nach report_done exakt 60 s sichtbar, danach verschwindet
     # nur die Zeilenanzeige; der Verlauf bleibt für Diagnose/Prompt erhalten.
@@ -37576,11 +38589,13 @@ function Update-PlaceProgressVisual {
     if (-not [string]::IsNullOrWhiteSpace($userBadgeText)) { $tooltip = $tooltip + [Environment]::NewLine + $userBadgeText + ' - Menü (...) der Place-Zeile: "Nachricht an Arena senden".' }
 
     $showNumericProgress = ($percentKnown -and $progressMode -ne 'hidden')
+    $Row.ProgressBar.IsIndeterminate = (-not $showNumericProgress -and $state -ne 'done' -and $silent -lt 60)
+    $Row.ProgressBar.Visibility = 'Visible'
     Set-Text $Row.ProgressText $label
     $Row.ProgressText.Visibility = 'Visible'
     $Row.ProgressText.Foreground = Get-Brush $color
     if ($showNumericProgress) {
-        # Ein Balken erscheint nur nach einer echten Prozentmeldung.
+        # Nur eine echte Prozentmeldung macht den Aktivitätsbalken numerisch.
         $Row.ProgressBar.Visibility = 'Visible'
         $Row.ProgressPercent.Visibility = 'Visible'
         $Row.ProgressBar.Value = $percent
@@ -37592,11 +38607,12 @@ function Update-PlaceProgressVisual {
     } else {
         # No percent is known, or progress was explicitly marked not applicable.
         # Keep only factual text; do not paint an invented 0 % meter.
-        $Row.ProgressBar.Visibility = 'Collapsed'
+        $Row.ProgressBar.Visibility = 'Visible'
+        $Row.ProgressBar.Foreground = Get-Brush $color
         $Row.ProgressPercent.Visibility = 'Collapsed'
         $Row.ProgressBar.Value = 0
         if ($null -ne $snapshot -and $progressMode -ne 'hidden') {
-            $tooltip = $tooltip + [Environment]::NewLine + ('Keine Prozentzahl gemeldet (' + [string]$callsWithoutPercent + ' Aufruf(e)); es wird kein Balken angezeigt.')
+            $tooltip = $tooltip + [Environment]::NewLine + 'Aktivitätsanzeige: keine Prozentzahl gemeldet.'
         } elseif ($progressMode -eq 'hidden') {
             $tooltip = $tooltip + [Environment]::NewLine + 'Fortschritt ist für diese Lese-/Beobachtungsaufgabe nicht anwendbar.'
         }
@@ -38310,91 +39326,13 @@ function Get-StudioWindowInfos {
 
 function Resolve-PlacePreviewHandle {
     param($Studio, $Row)
-    $sessionId = [string]$Studio.sessionId
-    $rowTitle = ''
-    try { $rowTitle = ([string]$Row.Title.Text).Trim() } catch { $rowTitle = '' }
-    $infos = @(Get-StudioWindowInfos)
-    if ($infos.Count -eq 0) {
-        Save-PreviewHandleMeta $sessionId $null 'keineStudioFensterGefunden' $rowTitle
-        return [IntPtr]::Zero
+    $sid = [string]$Studio.sessionId
+    $identity = Resolve-PlaceWindowIdentity $Studio $sid
+    if ($identity.WindowHandle -ne [IntPtr]::Zero) {
+        Save-PreviewHandleMeta $sid ([pscustomobject]@{ Handle=$identity.WindowHandle; ProcessId=$identity.ProcessId; Title=$identity.WindowTitle }) 'uniqueIdentity' ([string]$Row.Title.Text)
+        return [IntPtr]$identity.WindowHandle
     }
-    # Version 7.0.0: ZUERST die gebundene Identität (PID + HWND). Nur wenn
-    # sie fehlt, wird gesucht - und jede Bindung wird exklusiv beansprucht,
-    # damit zwei Zeilen nie dasselbe Fenster zeigen.
-    $identity = Resolve-PlaceWindowIdentity $Studio $sessionId
-    if ($identity.ProcessId -gt 0 -and $identity.WindowHandle -ne [IntPtr]::Zero) {
-        foreach ($info in $infos) {
-            if ([IntPtr]$info.Handle -eq [IntPtr]$identity.WindowHandle) {
-                Save-PreviewHandleMeta $sessionId $info ('identität:' + [string]$identity.BindReason) $rowTitle
-                return [IntPtr]$info.Handle
-            }
-        }
-    }
-    # Nur EIN Studio-Fenster offen: keine Titel-Rateaktion nötig.
-    if ($infos.Count -eq 1) {
-        $script:PreviewHandleClaims[[int64]$infos[0].Handle] = $sessionId
-        Save-PlaceIdentity $sessionId $Studio $infos[0] 'einzelnesFenster' | Out-Null
-        Save-PreviewHandleMeta $sessionId $infos[0] 'einzelnesFenster' $rowTitle
-        return [IntPtr]$infos[0].Handle
-    }
-    # Mehrere Fenster: demselben angezeigten Namen zuordnen, den Get-PlaceName
-    # für diese Zeile bereits gewählt hat (dieselbe Kandidatenliste, die die
-    # Namensanzeige seit Version 5 zur Unterscheidung mehrerer Fenster nutzt).
-    # Version 6.0.2: robust gegen Leerraum an den Enden, Groß-/Klein-
-    # schreibung und angehängte Zusätze (z. B. den versionMismatch-Hinweis
-    # "Studio neu starten (Plugin veraltet)").
-    $wanted = Get-NormalizedPlaceName $rowTitle
-    foreach ($info in $infos) {
-        if (Test-PreviewHandleClaimed $info.Handle $sessionId) { continue }
-        $infoTitle = Get-NormalizedPlaceName ([string]$info.Title)
-        if (-not [string]::IsNullOrWhiteSpace($infoTitle) -and $infoTitle -eq $wanted) {
-            $script:PreviewHandleClaims[[int64]$info.Handle] = $sessionId
-            Save-PlaceIdentity $sessionId $Studio $info 'titelExakt' | Out-Null
-            Save-PreviewHandleMeta $sessionId $info 'titelExakt' $rowTitle
-            return [IntPtr]$info.Handle
-        }
-    }
-    $comparable = $wanted -replace '\s+-\s+Studio neu starten \(Plugin veraltet\)\s*$', ''
-    $comparable = $comparable.Trim()
-    if (-not [string]::IsNullOrWhiteSpace($comparable)) {
-        foreach ($info in $infos) {
-            if (Test-PreviewHandleClaimed $info.Handle $sessionId) { continue }
-            $infoTitle = Get-NormalizedPlaceName ([string]$info.Title)
-            if ([string]::IsNullOrWhiteSpace($infoTitle)) { continue }
-            if ($infoTitle.StartsWith($comparable, [System.StringComparison]::OrdinalIgnoreCase) -or
-                $comparable.StartsWith($infoTitle, [System.StringComparison]::OrdinalIgnoreCase)) {
-                $script:PreviewHandleClaims[[int64]$info.Handle] = $sessionId
-                Save-PlaceIdentity $sessionId $Studio $info 'titelTolerant' | Out-Null
-                Save-PreviewHandleMeta $sessionId $info 'titelTolerant' $rowTitle
-                return [IntPtr]$info.Handle
-            }
-        }
-    }
-    # Titel gerade uneindeutig/leer: den zuletzt zugeordneten Handle behalten,
-    # solange das Fenster noch existiert (verhindert Flackern).
-    if ($script:PlacePreviewHandles.ContainsKey($sessionId)) {
-        $previousRaw = $script:PlacePreviewHandles[$sessionId]
-        if ($null -ne $previousRaw) {
-            $previous = [IntPtr]$previousRaw
-            foreach ($info in $infos) {
-                if ([IntPtr]$info.Handle -eq $previous) {
-                    Save-PreviewHandleMeta $sessionId $info 'letzterHandle' $rowTitle
-                    return $previous
-                }
-            }
-        }
-    }
-    # Version 7.5.2: Letztes Mittel - das ERSTE noch nicht beanspruchte Fenster
-    # binden (Zählung). Damit gibt es kein „keinTrefferBeiMehrerenFenstern“
-    # mehr mit hwnd=0, solange noch irgendein Studio-Fenster frei ist.
-    foreach ($info in $infos) {
-        if (Test-PreviewHandleClaimed $info.Handle $sessionId) { continue }
-        $script:PreviewHandleClaims[[int64]$info.Handle] = $sessionId
-        Save-PlaceIdentity $sessionId $Studio $info 'erstesFreiesFenster' | Out-Null
-        Save-PreviewHandleMeta $sessionId $info 'erstesFreiesFenster' $rowTitle
-        return [IntPtr]$info.Handle
-    }
-    Save-PreviewHandleMeta $sessionId $null 'keinTrefferBeiMehrerenFenstern' $rowTitle
+    Save-PreviewHandleMeta $sid $null 'ambiguousWindowNoCapture' ([string]$Row.Title.Text)
     return [IntPtr]::Zero
 }
 
@@ -38734,6 +39672,7 @@ function Start-PlacePreviewCapture {
     $Row.PreviewHandle = $handle
     if ($handle -eq [IntPtr]::Zero) {
         [void]$script:PlacePreviewHandles.Remove($sessionId)
+        try { $Row.IconImage.Source=$null; $Row.IconImage.Visibility='Collapsed'; $Row.PreviewHasFrame=$false } catch {}
         if (-not $Row.PreviewHasFrame) {
             # Erst nach 3 Ticks ohne Fenster auf das Platzhalter-Symbol fallen.
             $Row.PreviewFailCount = [int]$Row.PreviewFailCount + 1
@@ -38799,7 +39738,7 @@ function Start-PlacePreviewCapture {
     Write-PreviewTrace $flow 'CAPTURE_START' @{ sid = $sessionId; pid = $metaPid; hwnd = $hwndHex; title = $metaTitle } ('targetH=' + $script:PlacePreviewCaptureHeight)
 
     $targetHeight = $script:PlacePreviewCaptureHeight
-    $job = [pscustomobject]@{ FlowId = $flow; SessionId = $sessionId; StartedAt = (Get-Date); Kind = ''; Task = $null; Worker = $null; Handle = $null }
+    $job = [pscustomobject]@{ FlowId = $flow; SessionId = $sessionId; StartedAt = (Get-Date); IdentityKey = (Get-PlaceIdentityKey $sessionId); CapturePid = [int]$meta.ProcessId; CaptureHwnd = $handleValue; CaptureTitle = [string]$meta.Title; Kind = ''; Task = $null; Worker = $null; Handle = $null }
 
     # Primärweg 6.0.4: kompilierter C#-Helfer im Hauptprozess. Das Ergebnis
     # (unveränderliches byte[]) durchquert keine Runspace-Grenze mehr.
@@ -38836,6 +39775,8 @@ try {
         Add-Type -TypeDefinition 'namespace Arena { [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; } public static class ScreenHelper { [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool IsIconic(System.IntPtr hWnd); [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr hWnd, out RECT lpRect); [System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool PrintWindow(System.IntPtr hWnd, System.IntPtr hdcBlt, uint nFlags); } }' -ErrorAction Stop
     }
     $hwnd = [IntPtr]$handleValue
+    $studio = Get-Process -Name 'RobloxStudioBeta','RobloxStudio' -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -eq $hwnd } | Select-Object -First 1
+    if (-not $studio -or [Arena.ScreenHelper]::IsIconic($hwnd)) { throw 'Studio window is gone or minimized.' }
     $rect = New-Object Arena.RECT
     if (-not [Arena.ScreenHelper]::GetWindowRect($hwnd, [ref]$rect)) {
         return @{ ok = $false; error = 'GetWindowRect fehlgeschlagen' }
@@ -38869,8 +39810,8 @@ try {
             if (-not $hasPixels) { $printed = $false }
         }
         if (-not $printed) {
-            $captureMethod = 'CopyFromScreen-Fallback'
-            $g.CopyFromScreen($rect.Left, $rect.Top, 0, 0, (New-Object System.Drawing.Size $width, $height))
+            $full.Dispose()
+            throw 'Window-only capture unavailable. Desktop fallback is forbidden.'
         }
     } finally { $g.Dispose() }
     # Sofort auf Kachel-Größe herunterskalieren (Performance!) - jedes
@@ -39010,6 +39951,15 @@ function Update-PlacePreviewCaptures {
         if ($resultAttempts) { $resultExtra += ' attempts=[' + $resultAttempts + ']' }
         Write-PreviewTrace $flow 'RESULT_RECEIVED' @{ type = $resultType; bytes = $byteLen; w = $resultW; h = $resultH; error = $traceError } $resultExtra
 
+        # Discard a late image if the row now belongs to another identity.
+        if ($bytes -and [string]$job.IdentityKey -ne (Get-PlaceIdentityKey $sessionId)) { $bytes=$null; $resultError='Studio identity changed during capture.' }
+        if ($bytes) {
+            try {
+                $liveProcess=[System.Diagnostics.Process]::GetProcessById([int]$job.CapturePid)
+                $liveTitle=([string]$liveProcess.MainWindowTitle -replace '\s*[-–]\s*Roblox Studio\s*$', '').Trim()
+                if ($liveProcess.ProcessName -notin @('RobloxStudio','RobloxStudioBeta') -or $liveProcess.MainWindowHandle.ToInt64() -ne [long]$job.CaptureHwnd -or $liveTitle -ne [string]$job.CaptureTitle) { throw 'Studio changed during capture.' }
+            } catch { $bytes=$null; $resultError='Studio identity changed during capture; image discarded.' }
+        }
         if ($bytes -and $script:UiRows.ContainsKey($sessionId)) {
             # Eindeutig prüfbare Übergabe: jede erfolgreiche Aufnahme liegt
             # zusätzlich als atomar getauschte PNG-Datei pro Sitzung vor;
@@ -39251,6 +40201,7 @@ function New-ArenaHistoryProgressCard {
 
     $stack = [System.Windows.Controls.StackPanel]::new()
     $place = [System.Windows.Controls.TextBlock]::new()
+    $place.Tag = 'ArenaUserContent'
     $place.Foreground = Get-Brush '#AFC2FF'
     $place.FontSize = 12.5
     $place.FontWeight = 'SemiBold'
@@ -39377,12 +40328,13 @@ function Update-ArenaHistoryProgressCard {
         $metaParts.Add('Studio-Befehl: ' + $toolLabel + ' (' + $commandStatus + ')')
     }
     $showNumericProgress = ($percentKnown -and $progressMode -ne 'hidden')
-    $signature = @($Target.PlaceName,$statusText,$percent,$percentKnown,$progressMode,$state,$actionText,($metaParts.ToArray() -join ' · ')) -join '|'
+    $Card.Bar.IsIndeterminate = ($progressMode -ne 'hidden' -and -not $showNumericProgress -and $state -ne 'done' -and $silent -lt 60)
+    $signature = @((Get-UiLanguage),$Target.PlaceName,$statusText,$percent,$percentKnown,$progressMode,$state,$actionText,($metaParts.ToArray() -join ' · ')) -join '|'
     if ([string]$Card.Signature -eq $signature) { return }
     $Card.Signature = $signature
-    $Card.Place.Text = 'FORTSCHRITT · ' + [string]$Target.PlaceName
+    $Card.Place.Text = (Get-UiDisplayText 'FORTSCHRITT · ') + [string]$Target.PlaceName
     $Card.Status.Text = $statusText
-    $Card.Meter.Visibility = if ($showNumericProgress) { 'Visible' } else { 'Collapsed' }
+    $Card.Meter.Visibility = if ($progressMode -eq 'hidden') { 'Collapsed' } else { 'Visible' }
     if ($showNumericProgress) {
         $Card.Bar.Value = $percent
         $Card.Percent.Text = [string]$percent + ' %'
@@ -39645,6 +40597,7 @@ function Open-ArenaHistoryWindow {
     $history.Add_Loaded({param($sender,$e) Update-ArenaHistoryWindow $sender.Tag;$sender.Tag.Timer.Start()})
     $history.Add_Closed({param($sender,$e) try{$sender.Tag.Timer.Stop()}catch{}})
     try { Apply-UiLanguageToWindow $history } catch {}
+    try { Apply-UiLanguageToWindow $history } catch {}
     [void]$history.ShowDialog()
 }
 
@@ -39845,6 +40798,7 @@ function New-Row {
         Write-UiErrorLog 'Place-Zeile: Vorschau-Visual konnte nicht erstellt werden' $_
     }
     $title = [System.Windows.Controls.TextBlock]::new()
+    $title.Tag = 'ArenaUserContent'
     $title.Text = Get-PlaceDisplayName $Studio $WindowNames
     $title.Foreground = Get-Brush '#FFFFFF'
     $title.FontSize = 16
@@ -40255,6 +41209,7 @@ function New-AllPlacesRow {
     # Bis 5.0.2 lagen beide zusätzlich als eigene Knöpfe direkt in der Zeile.
     $row = New-Row $virtualStudio $WindowNames
     $row.Root.Tag = '__arena_all_places__'
+    $row.Title.Tag = $null
     $row.Title.Text = 'Alle Places'
     try { $row.Copy.ToolTip = 'Prompt für alle verbundenen Places kopieren' } catch {}
     # Version 6.0.1: Die Sammelzeile bekommt (erstmal) bewusst KEINE Vorschau -
@@ -40797,7 +41752,7 @@ function Set-StudioEditorProfileCard {
         } else {
             $StudioEditorCaptionText.Text = ('Roblox Studio · ID ' + $userId)
         }
-        $StudioEditorProfile.ToolTip = ('Angemeldet in Roblox Studio: ' + $displayName + ' (ID ' + $userId + '). Dieser Nutzer wird für Open-Cloud-Uploads verwendet.')
+        $StudioEditorProfile.ToolTip = ((Get-UiDisplayText 'Angemeldet in Roblox Studio: ') + $displayName + ' (ID ' + $userId + ').')
         Set-StudioProfileAvatar $avatarBytes
         $StudioEditorProfile.Visibility = 'Visible'
     } catch {
@@ -40861,7 +41816,7 @@ function Start-StudioProfileLookup {
     }
 }
 
-function Update-StudioEditorProfile {
+function Update-SingleStudioEditorProfile {
     param($Studios)
     $wantedUserId = ''
     $latest = [int64]0
@@ -40932,7 +41887,38 @@ function Update-StudioEditorProfile {
     }
 }
 
+function Update-StudioEditorProfile {
+    param($Studios)
+    $accounts = @($Studios | Where-Object { [string]$_.editorUserId -match '^[1-9]\d*$' } | Group-Object editorUserId | Sort-Object Name)
+    try { $window.FindName('StudioEditorAvatarBorder').Visibility = 'Visible'; $StudioEditorCaptionText.Visibility = 'Visible' } catch {}
+    if ($accounts.Count -lt 2) { Update-SingleStudioEditorProfile $Studios; return }
+    # Resolve profiles sequentially in the existing nonblocking worker, not on the UI thread.
+    $selected = $accounts[0]
+    foreach ($account in $accounts) {
+        $id = [string]$account.Name
+        if (-not $script:StudioProfileCache.ContainsKey($id) -and (-not $script:StudioProfileRetryAt.ContainsKey($id) -or [DateTime]::UtcNow -ge $script:StudioProfileRetryAt[$id])) { $selected = $account; break }
+    }
+    Update-SingleStudioEditorProfile @($selected.Group)
+    $lines = foreach ($account in $accounts) {
+        $id = [string]$account.Name
+        if ($script:StudioProfileCache.ContainsKey($id)) {
+            $profile = $script:StudioProfileCache[$id]
+            '{0} (@{1}) · ID {2}' -f $profile.displayName, $profile.userName, $id
+        } else { 'Roblox Studio · ID ' + $id }
+    }
+    $StudioEditorProfile.Visibility = 'Visible'
+    $StudioEditorNameText.Text = [string]$accounts.Count + ' Accounts'
+    $StudioEditorCaptionText.Visibility = 'Collapsed'
+    $window.FindName('StudioEditorAvatarBorder').Visibility = 'Collapsed'
+    $StudioEditorProfile.ToolTip = $lines -join [Environment]::NewLine
+}
+
 function Refresh-Ui {
+    if (-not $script:UiLocalizeAt -or ((Get-Date)-$script:UiLocalizeAt).TotalSeconds -ge 1) {
+        $script:UiLocalizeAt=Get-Date
+        try { foreach ($openWindow in @([System.Windows.Application]::Current.Windows)) { Apply-UiLanguageToWindow $openWindow } } catch {}
+        try { Apply-UiLanguageToWindow $window } catch {}
+    }
     # Version 7.4.0: Blender-Schritt 4 und Mesh-Takt laufen ganz vorne im
     # UI-Takt - auch dann, wenn (noch) kein Studio gefunden wurde, denn der
     # Blender-Schritt gehört vor den Tunnel.
@@ -41270,6 +42256,7 @@ function New-MinimalPlaceRow {
     # Version 7.0.5: auch die Ersatzzeile zentriert ihren Inhalt wieder.
     $namePanel.VerticalAlignment = 'Center'
     $title = [System.Windows.Controls.TextBlock]::new()
+    $title.Tag = 'ArenaUserContent'
     $title.Text = Get-PlaceDisplayName $Studio $null
     $title.Foreground = Get-Brush '#F2F6FF'
     $title.FontSize = 14
@@ -41689,7 +42676,7 @@ function Show-UpdateNotice {
                 # Jetzt steht jeder Eintrag als eigener Absatz da.
                 $noticeNoteItems = New-Object System.Collections.Generic.List[string]
                 foreach ($noticeNoteItem in $script:UpdateDetails.notes) {
-                    $noticeNoteText = ([string]$noticeNoteItem).Trim()
+                    $noticeNoteText = Get-UiDisplayText (([string]$noticeNoteItem).Trim())
                     if (-not [string]::IsNullOrWhiteSpace($noticeNoteText)) {
                         $noticeNoteItems.Add($noticeNoteText)
                     }
@@ -41989,6 +42976,7 @@ function Show-UpdateNotice {
     })
     if ($noticeOkEl) { try { $noticeOkEl.Focus() | Out-Null } catch {} }
     try {
+        try { Apply-UiLanguageToWindow $noticeWindow } catch {}
         [void]$noticeWindow.ShowDialog()
     } catch {
         try { Write-RuntimeLog ('Update-Hinweisfenster konnte nicht angezeigt werden: ' + $_.Exception.Message) } catch {}
@@ -42979,20 +43967,32 @@ function Open-SettingsWindow {
                                      Deutsch, mit Flaggen und Haekchen an der Wahl. -->
                                 <TextBlock Text="Sprache / Language" Foreground="{StaticResource SwTextMain}" FontSize="13" FontWeight="SemiBold" Margin="0,16,0,6"/>
                                 <TextBlock Text="Die Sprache gilt für das gesamte Programm. Englisch ist der Standard." Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                                <Button x:Name="LanguageMenuButton" Style="{StaticResource ArenaQuietButton}" HorizontalContentAlignment="Stretch" Padding="12,8">
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Right" Text="▼" Margin="16,0,0,0"/>
+                                        <StackPanel Orientation="Horizontal">
+                                            <ContentControl x:Name="SelectedEnglishFlag"><Viewbox Width="24" Height="16" Margin="0,0,10,0"><Canvas Width="60" Height="40"><Rectangle Width="60" Height="40" Fill="#012169"/><Path Data="M0,0 L60,40 M60,0 L0,40" Stroke="White" StrokeThickness="9"/><Path Data="M0,0 L60,40 M60,0 L0,40" Stroke="#C8102E" StrokeThickness="3"/><Path Data="M30,0 L30,40 M0,20 L60,20" Stroke="White" StrokeThickness="13"/><Path Data="M30,0 L30,40 M0,20 L60,20" Stroke="#C8102E" StrokeThickness="7"/></Canvas></Viewbox></ContentControl>
+                                            <ContentControl x:Name="SelectedGermanFlag" Visibility="Collapsed"><Viewbox Width="24" Height="16" Margin="0,0,10,0"><Canvas Width="60" Height="40"><Rectangle Width="60" Height="14" Fill="#111111"/><Rectangle Width="60" Height="14" Canvas.Top="13" Fill="#DD0000"/><Rectangle Width="60" Height="14" Canvas.Top="26" Fill="#FFCE00"/></Canvas></Viewbox></ContentControl>
+                                            <TextBlock x:Name="SelectedLanguageText" Text="English"/>
+                                        </StackPanel>
+                                    </DockPanel>
+                                </Button>
+                                <StackPanel x:Name="LanguageChoices" Visibility="Collapsed" Margin="0,6,0,0">
                                 <Button x:Name="LanguageEnglishButton" Style="{StaticResource ArenaQuietButton}" HorizontalContentAlignment="Left" Padding="12,8" MinHeight="38">
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <TextBlock Text="🇬🇧" FontSize="17" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                        <Viewbox Width="24" Height="16" Margin="0,0,10,0"><Canvas Width="60" Height="40"><Rectangle Width="60" Height="40" Fill="#012169"/><Path Data="M0,0 L60,40 M60,0 L0,40" Stroke="White" StrokeThickness="9"/><Path Data="M0,0 L60,40 M60,0 L0,40" Stroke="#C8102E" StrokeThickness="3"/><Path Data="M30,0 L30,40 M0,20 L60,20" Stroke="White" StrokeThickness="13"/><Path Data="M30,0 L30,40 M0,20 L60,20" Stroke="#C8102E" StrokeThickness="7"/></Canvas></Viewbox>
                                         <TextBlock Text="English" FontSize="13" VerticalAlignment="Center"/>
                                         <TextBlock x:Name="LanguageEnglishCheck" Text="✓" FontSize="15" FontWeight="Bold" Foreground="#38D16C" VerticalAlignment="Center" Margin="12,0,0,0"/>
                                     </StackPanel>
                                 </Button>
                                 <Button x:Name="LanguageGermanButton" Style="{StaticResource ArenaQuietButton}" HorizontalContentAlignment="Left" Padding="12,8" MinHeight="38" Margin="0,8,0,0">
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <TextBlock Text="🇩🇪" FontSize="17" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                        <Viewbox Width="24" Height="16" Margin="0,0,10,0"><Canvas Width="60" Height="40"><Rectangle Width="60" Height="14" Fill="#111111"/><Rectangle Width="60" Height="14" Canvas.Top="13" Fill="#DD0000"/><Rectangle Width="60" Height="14" Canvas.Top="26" Fill="#FFCE00"/></Canvas></Viewbox>
                                         <TextBlock Text="Deutsch" FontSize="13" VerticalAlignment="Center"/>
                                         <TextBlock x:Name="LanguageGermanCheck" Text="✓" FontSize="15" FontWeight="Bold" Foreground="#38D16C" VerticalAlignment="Center" Margin="12,0,0,0" Visibility="Collapsed"/>
                                     </StackPanel>
                                 </Button>
+                                </StackPanel>
                                 <TextBlock x:Name="LanguageHintText" Foreground="{StaticResource SwTextFaint}" FontSize="10.5" TextWrapping="Wrap" Margin="0,8,0,0"/>
                             </StackPanel>
                         </Border>
@@ -43192,6 +44192,11 @@ function Open-SettingsWindow {
     $progressSwitch  = $settingsWindow.FindName('ProgressSwitch')
     $doneNotifySwitch = $settingsWindow.FindName('DoneNotifySwitch')
     $editorIconsSwitch = $settingsWindow.FindName('EditorIconsSwitch')
+    $languageMenuButton = $settingsWindow.FindName('LanguageMenuButton')
+    $languageChoices = $settingsWindow.FindName('LanguageChoices')
+    $languageMenuButton.Add_Click({
+        $languageChoices.Visibility = $(if ($languageChoices.Visibility -eq 'Visible') { 'Collapsed' } else { 'Visible' })
+    })
     $languageEnglishButton = $settingsWindow.FindName('LanguageEnglishButton')
     $languageGermanButton  = $settingsWindow.FindName('LanguageGermanButton')
     $languageEnglishCheck  = $settingsWindow.FindName('LanguageEnglishCheck')
@@ -43999,6 +45004,10 @@ function Open-SettingsWindow {
     # starten direkt in der gewaehlten Sprache (Standard: Englisch).
     $syncLanguageUi = {
         $isGerman = ((Get-UiLanguage) -eq 'de')
+        $settingsWindow.FindName('SelectedLanguageText').Text = $(if ($isGerman) { 'Deutsch' } else { 'English' })
+        $settingsWindow.FindName('SelectedGermanFlag').Visibility = $(if ($isGerman) { 'Visible' } else { 'Collapsed' })
+        $settingsWindow.FindName('SelectedEnglishFlag').Visibility = $(if ($isGerman) { 'Collapsed' } else { 'Visible' })
+        $languageChoices.Visibility = 'Collapsed'
         try { $languageEnglishCheck.Visibility = $(if ($isGerman) { 'Collapsed' } else { 'Visible' }) } catch {}
         try { $languageGermanCheck.Visibility = $(if ($isGerman) { 'Visible' } else { 'Collapsed' }) } catch {}
         try { $languageHintText.Text = $(if ($isGerman) { 'Deutsch ist ausgewählt - alle Fenster nutzen Deutsch.' } else { 'English is selected - all windows now use English.' }) } catch {}
@@ -44012,7 +45021,7 @@ function Open-SettingsWindow {
             Save-BridgeSettingsFile
             & $syncLanguageUi
             try { Apply-UiLanguageToWindow $window } catch {}
-            try { Apply-UiLanguageToWindow $settingsWindow } catch {}
+            try { Apply-UiLanguageToWindow $settingsWindow; foreach ($openWindow in @([System.Windows.Application]::Current.Windows)) { Apply-UiLanguageToWindow $openWindow } } catch {}
             & $syncLanguageUi
             Write-RuntimeLog 'Programmsprache: Englisch (Standard).'
         } catch { Write-UiErrorLog 'Sprachauswahl Englisch' $_ }
@@ -44025,11 +45034,12 @@ function Open-SettingsWindow {
             Save-BridgeSettingsFile
             & $syncLanguageUi
             try { Apply-UiLanguageToWindow $window } catch {}
-            try { Apply-UiLanguageToWindow $settingsWindow } catch {}
+            try { Apply-UiLanguageToWindow $settingsWindow; foreach ($openWindow in @([System.Windows.Application]::Current.Windows)) { Apply-UiLanguageToWindow $openWindow } } catch {}
             & $syncLanguageUi
             Write-RuntimeLog 'Programmsprache: Deutsch.'
         } catch { Write-UiErrorLog 'Sprachauswahl Deutsch' $_ }
     })
+    try { Apply-UiLanguageToWindow $settingsWindow } catch {}
     [void]$settingsWindow.ShowDialog()
 }
 
@@ -44197,8 +45207,9 @@ function Get-ArenaUpdateInfo {
         $info.Version = $remoteVersion
         $info.Url = $url
         $info.Notes = [string]$manifest.notes
+        if ((Get-UiLanguage) -eq 'en' -and -not [string]::IsNullOrWhiteSpace([string]$manifest.notesEn)) { $info.Notes=[string]$manifest.notesEn }
         # Version 7.9.2: kurze Anpreisung der Neuerungen aus dem Manifest.
-        try { $info.Headline = [string]$manifest.headline } catch { $info.Headline = '' }
+        try { $info.Headline = [string]$manifest.headline; if ((Get-UiLanguage) -eq 'en' -and $manifest.headlineEn) { $info.Headline=[string]$manifest.headlineEn } } catch { $info.Headline = '' }
         if ([version]$remoteVersion -gt [version]$running) { $info.Status = 'update' } else { $info.Status = 'none' }
     } catch {
         $info.Status = 'error'
@@ -44315,7 +45326,7 @@ function Show-ArenaUpdateWindow {
     # Programms und kein Thema für den Nutzer.
     param($Info, [bool]$Forced, $OwnerWindow)
     $script:UpdateWindowChoice = ''
-    $notes = [string]$Info.Notes
+    $notes = Get-UiDisplayText ([string]$Info.Notes)
     $headline = [string]$Info.Headline
     if ([string]::IsNullOrWhiteSpace($headline)) {
         $headline = 'Kurz gesagt: alles, was dir die Arbeit leichter macht.'
@@ -44553,6 +45564,7 @@ function Show-ArenaUpdateWindow {
         [void](Enable-BridgeWindowDrag -Window $win -Handle ($win.FindName('UpdateHead')) -Images @())
         [void](Enable-BridgeSmoothScroll -Scroller $notesScroll)
         if ($null -ne $OwnerWindow) { $win.Owner = $OwnerWindow }
+        try { Apply-UiLanguageToWindow $win } catch {}
         [void]$win.ShowDialog()
         return $script:UpdateWindowChoice
     } catch {
@@ -44833,6 +45845,7 @@ try {
     })
     Set-StartupStage 'Hauptfenster wird jetzt geöffnet (ShowDialog)'
     Write-RuntimeLog 'Fenster wird geöffnet; Startinitialisierung folgt nach dem ersten Rendern.'
+    try { Apply-UiLanguageToWindow $window } catch {}
     [void]$window.ShowDialog()
 } catch {
     Write-StartupFailureDiagnose $_

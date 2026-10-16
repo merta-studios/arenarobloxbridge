@@ -616,13 +616,13 @@ def main() -> int:
         'Place-Vorschau ($sessionId): Aufnahme fehlgeschlagen',
         'Place-Vorschau ($sessionId): Live-Vorschau aktiv',
         'Studio-Fenster ist minimiert',
-        '$previousRaw = $script:PlacePreviewHandles[$sessionId]',
-        '[System.StringComparison]::OrdinalIgnoreCase',
+        'ambiguousWindowNoCapture',
+        '$sameNameSessions.Count -eq 1',
         "if (-not ('Arena.ScreenHelper' -as [type])) {",
         'return $script:PreviewWindowCache',
         'return $script:WindowNameCache',
         '[Arena.ScreenHelper]::PrintWindow($hwnd, $hdc, 2)',
-        'CopyFromScreen-Fallback',
+        'Desktop fallback is forbidden.',
         'Aufnahme-Worker nach 10 Sekunden beendet',
         'kein passendes Roblox-Studio-Fenster gefunden',
         'Invoke-ArenaUpdateGate',
@@ -652,8 +652,8 @@ def main() -> int:
         'public sealed class PreviewCaptureResult',
         'public static Task<PreviewCaptureResult> CaptureAsync(long hwndValue, int targetHeight)',
         'private const uint PW_RENDERFULLCONTENT = 2;',
-        'TryWindowDcBitBlt',
-        'TryCopyFromScreen',
+        'Target is not a Roblox Studio window',
+        'GetWindowThreadProcessId',
         'HasVisibleContent',
         'true-aber-nichts-sichtbar',
         '[Arena.PreviewCapture]::CaptureAsync($handleValue, [int]$targetHeight)',
@@ -1098,16 +1098,16 @@ def main() -> int:
             "ground-tool timeout, verification, or documented fall-limit defaults regressed")
 
     progress_visual = source[source.index("function Update-PlaceProgressVisual"):source.index("function Get-ProgressDiagnoseLines")]
-    require("if ($progressMode -eq 'hidden')" in progress_visual
-            and "Fortschritt nicht anwendbar" in progress_visual
+    require("$Row.ProgressBar.IsIndeterminate" in progress_visual
+            and "$silent -lt 60" in progress_visual
             and "$showNumericProgress = ($percentKnown -and $progressMode -ne 'hidden')" in progress_visual
-            and "$Row.ProgressBar.Visibility = 'Collapsed'" in progress_visual
+            and "$Row.ProgressBar.Visibility = 'Visible'" in progress_visual
             and "ProgressBar.Foreground = Get-Brush $color" in progress_visual
             and "ProgressText.Visibility = 'Visible'" in progress_visual
             and "ProgressPercent.Text = ($percent.ToString() + ' %')" in progress_visual
             and "SilentSeconds -ge 60" in progress_visual
             and "Seit über einer Minute kein Bridge Aufruf mehr" not in progress_visual,
-            "the Place row does not hide non-applicable progress without inventing 0%/inactivity")
+            "8.0.3: the Place row uses activity animation without inventing a percentage")
     history_card = source[source.index("function New-ArenaHistoryProgressCard {"):source.index("function Update-ArenaHistoryProgressCard {")]
     require("$bar.Background = Get-Brush '#F3F6FC'" in history_card,
             "history progress track is not distinctly light/near-white")
@@ -1588,9 +1588,9 @@ def main() -> int:
     require(wedge_fn.index('applyProperties(w,safeProperties)') < wedge_fn.index('w.Size=Vector3.new(') < wedge_fn.index('w.CFrame=cf+shift'),
             'safe style properties must run before final immutable Size/CFrame assignment')
 
-    # Studio minimization must no longer pre-block periodic preview capture.
-    require("if (IsIconic(hwnd)) { result.Minimized = true" not in source, "C# preview still blocks minimized Studio")
-    require("if ([Arena.ScreenHelper]::IsIconic($hwnd))" not in source, "fallback preview still blocks minimized Studio")
+    # 8.0.3 privacy: minimized windows fail closed, never desktop-fallback.
+    require("if (IsIconic(hwnd)) { result.Minimized = true" in source, "C# capture must reject minimized Studio")
+    require("[Arena.ScreenHelper]::IsIconic($hwnd)" in source, "fallback must reject minimized Studio")
 
 
     # ------------------------------------------------------------------
@@ -1985,7 +1985,8 @@ def main() -> int:
             "organic markers still activate a build/completion guard")
     for obsolete in ("DRAFT_GRADE_RISK", "DETAIL_REQUIRED", "ORGANIC_AUDIT_REQUIRED",
                      "ORGANIC_POLYGON_REQUIRED", "ORGANIC_COLORS_REQUIRED"):
-        require(obsolete not in source, f"obsolete blocking code/text remains in bridge source: {obsolete}")
+        require(obsolete not in re.sub(r"# >>> UI-TRANSLATIONS-803.*?# <<< UI-TRANSLATIONS-803 <<<", "", source, flags=re.S),
+                f"obsolete blocking code/text remains outside historical translations: {obsolete}")
 
     audit_gate = source[source.index("# report_done may identify an explicitly generated, unapplied mesh slot below."):
                          source.index("$doneProgress = Read-ProgressState $sessionId")]

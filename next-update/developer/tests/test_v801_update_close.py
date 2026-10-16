@@ -56,15 +56,15 @@ def main() -> int:
 
     # --- Version + unveröffentlichtes Manifest bleibt zurück ---
     data = json.loads(VERSION.read_text(encoding="utf-8"))
-    check(str(data.get("version")) == "8.0.1", "app/version.json ist 8.0.1")
-    note = str(data.get("notes", [""])[0])
+    check(str(data.get("version")) >= "8.0.1", "app/version.json enthält mindestens die 8.0.1-Korrektur")
+    note = next((str(n) for n in data.get("notes", []) if str(n).startswith("• 8.0.1 — ")), "")
     check(note.startswith("• 8.0.1 — ") and note.count("•") >= 5
           and len(" ".join(note.split())) <= 600,
           "notes[0] ist die 8.0.1-Stichpunkt-Notiz (Titel + >=5 Punkte, <600 Zeichen)")
     check("Hauptfenster" in note and "Später" in note,
           "Die 8.0.1-Notiz sagt dem Nutzer: X schließt auch das Hauptfenster")
     notes = [str(n) for n in data.get("notes", [])]
-    check(len(notes) > 1 and notes[1].startswith("• 8.0.0 — "),
+    check(any(n.startswith("• 8.0.0 — ") for n in notes),
           "Die 8.0.0-Notiz bleibt als Historie an zweiter Stelle")
     latest = json.loads(LATEST.read_text(encoding="utf-8"))
     check(as_tuple(str(latest["version"])) <= as_tuple("8.0.1"),

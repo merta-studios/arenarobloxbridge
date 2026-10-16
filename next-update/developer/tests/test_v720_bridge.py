@@ -398,12 +398,12 @@ def main() -> int:
     visual = region(source, "function Update-PlaceProgressVisual", "function Get-ProgressDiagnoseLines")
     check("$showNumericProgress = ($percentKnown -and $progressMode -ne 'hidden')" in visual,
           "a numeric meter is shown only for a real percentage, never just because a task completed")
-    check("if ($progressMode -eq 'hidden')" in visual and "Fortschritt nicht anwendbar" in visual,
-          "read/observation tasks can be explicitly marked not applicable")
-    check("$Row.ProgressBar.Visibility = 'Collapsed'" in visual
+    check("$progressMode -ne 'hidden'" in visual and "IsIndeterminate" in visual,
+          "8.0.3: hidden numeric progress still has an activity indicator")
+    check("$Row.ProgressBar.Visibility = 'Visible'" in visual
           and "$Row.ProgressPercent.Visibility = 'Collapsed'" in visual,
-          "unknown and not-applicable progress hides the bar and percent instead of painting 0%")
-    check("Keine Prozentzahl gemeldet" in visual and "Fortschritt ist für diese Lese-/Beobachtungsaufgabe nicht anwendbar." in visual,
+          "8.0.3: unknown progress shows an activity bar without a fabricated percentage")
+    check("Aktivitätsanzeige: keine Prozentzahl gemeldet." in visual and "Fortschritt ist für diese Lese-/Beobachtungsaufgabe nicht anwendbar." in visual,
           "the tooltip distinguishes an unknown percent from a task with no applicable progress")
     check("Seit über einer Minute kein Bridge Aufruf mehr" not in visual,
           "the Place progress UI has no stale/misleading inactivity label")
@@ -637,7 +637,8 @@ def main() -> int:
           "a declared simple/low-poly/blockout grade can be retained as user-intent metadata")
     check("Measurements are descriptive" in quality and "not a completion gate" in quality,
           "quality report explicitly labels measurements advisory")
-    check("DRAFT_GRADE_RISK" not in source and "DETAIL_REQUIRED" not in source,
+    check(all(code not in re.sub(r"# >>> UI-TRANSLATIONS-803.*?# <<< UI-TRANSLATIONS-803 <<<", "", source, flags=re.S)
+              for code in ("DRAFT_GRADE_RISK", "DETAIL_REQUIRED")),
           "no draft-grade or audit-style error code blocks report_done")
     check("function Get-SessionBuildSummary" in source and "buildRegister" in source,
           "the build register continues to report what was built and measured")
