@@ -48,5 +48,6 @@ Fehlersuche ohne zweite EXE: Die Bridge schreibt ihre Startdiagnose selbst nach
 
 CI-Test-Build: Der GitHub-Actions-Workflow (exe-builder.yml) baut Test-Stände
 automatisch mit -Channel beta nach ..\beta-release\ArenaRobloxBridge.exe, ohne
-..\release\ oder ..\release\latest.json zu verändern.
+..\release\ArenaRobloxBridge.exe oder ..\release\latest.json zu verändern.
+
 
