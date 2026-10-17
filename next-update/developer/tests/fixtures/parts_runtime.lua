@@ -36,8 +36,43 @@ function CFrame.Angles(x,y,z)
     return rx*ry*rz
 end
 CFrame.fromOrientation=function(x,y,z) return CFrame.Angles(0,y,0)*CFrame.Angles(x,0,0)*CFrame.Angles(0,0,z) end
-function typeof(v) return type(v)=="table" and v._type or type(v) end
-Enum={PartType={Ball="Ball",Cylinder="Cylinder"},CollisionFidelity={Default="Default"},RenderFidelity={Automatic="Automatic"}}
+-- Luau-Erweiterung, die Standard-Lua nicht kennt (im Plugin ueberall genutzt).
+function math.clamp(value, low, high)
+    if value < low then return low end
+    if value > high then return high end
+    return value
+end
+local materialNames={"Air","Grass","Ground","Rock","Sand","Snow","Slate","Mud","LeafyGrass","CrackedLava","Water","Basalt","Limestone","Concrete","Asphalt","Sandstone","Ice","Glacier","LeafyGrass","Pavement","Salt","DiamondPlate","Foil","Marble","Granite","Metal","WoodPlanks","Plastic"}
+local Material={}
+for _,name in ipairs(materialNames) do Material[name]=name end
+Enum={PartType={Ball="Ball",Cylinder="Cylinder"},CollisionFidelity={Default="Default"},RenderFidelity={Automatic="Automatic"},
+    Material=Material,CameraType={Fixed="Fixed",Custom="Custom",Scriptable="Scriptable"}}
+-- Region3-Double: ExpandToGrid rundet auf das 4-Stud-Voxelraster auf.
+local R={}; R.__index=function(region,key)
+    if key=="Size" then return Vector3.new(region._max.X-region._min.X,region._max.Y-region._min.Y,region._max.Z-region._min.Z) end
+    if key=="Min" then return region._min end
+    if key=="Max" then return region._max end
+    return R[key]
+end
+Region3={}
+function Region3.new(low,high)
+    return setmetatable({_min=low,_max=high,_type="Region3"},R)
+end
+function R:ExpandToGrid(grid)
+    if grid~=4 then error("only 4-stud voxels are supported") end
+    local function down(v) return math.floor(v/grid+0.001)*grid end
+    local function up(v) return math.ceil(v/grid-0.001)*grid end
+    local low=Vector3.new(down(self._min.X),down(self._min.Y),down(self._min.Z))
+    local high=Vector3.new(up(self._max.X),up(self._max.Y),up(self._max.Z))
+    if high.X-low.X<grid then high=Vector3.new(low.X+grid,high.Y,high.Z) end
+    if high.Y-low.Y<grid then high=Vector3.new(high.X,low.Y+grid,high.Z) end
+    if high.Z-low.Z<grid then high=Vector3.new(high.X,high.Y,low.Z+grid) end
+    return Region3.new(low,high)
+end
+function typeof(v)
+    if type(v)=="table" and v._type then return v._type end
+    return type(v)
+end
 fixture={pool={},csg={},failCSG=false}
 local I={}; I.__index=I
 Instance={new=function(class)

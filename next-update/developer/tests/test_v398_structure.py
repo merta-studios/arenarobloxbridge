@@ -1660,8 +1660,8 @@ def main() -> int:
     require('failCode("STYLE_TOO_GENERIC"' not in plugin_source(source),
             "neutral/muted requested UI colors are still rejected by a style heuristic")
 
-    require(source.count("category = 'ui'") == 8,
-            "expected exactly 8 documented UI Engine tools (5 from 1.0 + glow/texture/radial)")
+    require(source.count("category = 'ui'") == 9,
+            "expected exactly 9 documented UI Engine tools (5 from 1.0 + glow/texture/radial + ui_widget)")
     require(source.count("category = 'world'") == 11,
             "expected exactly 11 documented World Engine tools")
     require(source.count("category = 'sim'") == 3,
