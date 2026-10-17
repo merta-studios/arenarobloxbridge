@@ -15,3 +15,8 @@
 /release/*.smoke.json
 /release/Start-Diagnostic.bat
 
+/beta-release/*.sha256
+/beta-release/release-metadata.json
+/beta-release/*.building.exe
+/beta-release/*.previous-*.exe
+/beta-release/*.smoke.json

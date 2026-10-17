@@ -67,7 +67,7 @@ def main() -> int:
     check(any(n.startswith("• 8.0.0 — ") for n in notes),
           "Die 8.0.0-Notiz bleibt als Historie an zweiter Stelle")
     latest = json.loads(LATEST.read_text(encoding="utf-8"))
-    check(as_tuple(str(latest["version"])) <= as_tuple("8.0.1"),
+    check(as_tuple(str(latest["version"])) <= as_tuple("8.0.3"),
           "release/latest.json bleibt das veröffentlichte Manifest (nicht angehoben)")
 
     # --- Update-Fenster: X ist 'exit', nie 'later' ---

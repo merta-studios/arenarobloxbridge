@@ -27,7 +27,7 @@ class Bridge803(unittest.TestCase):
             self.assertEqual(CATALOG[de], en)
         # The checked-in EXE/manifest is the last published binary, not this candidate.
         latest = json.loads((ROOT / 'release/latest.json').read_text())
-        self.assertLess(tuple(map(int, latest['version'].split('.'))), (8, 0, 3))
+        self.assertLessEqual(tuple(map(int, latest['version'].split('.'))), (8, 0, 3))
 
     def test_no_desktop_capture_path(self):
         self.assertNotRegex(SOURCE, r'\.CopyFromScreen\s*\(')

@@ -432,17 +432,17 @@ $programLogoPath = Join-Path $assetsDirectory 'neueslogo.png'
 # Version 7.7.1: vom Nutzer bereitgestelltes Fensterhintergrund-Bild.
 $backgroundImagePath = Join-Path $assetsDirectory 'liquidglasbackground.png'
 $releaseDirectory = Join-Path $repoRoot 'release'
+$betaReleaseDirectory = Join-Path $repoRoot 'beta-release'
 $buildOutputDirectory = $releaseDirectory
-if ($TestFixtureBuild) {
-    if ([string]::IsNullOrWhiteSpace($OutputDirectory)) { throw '-TestFixtureBuild requires -OutputDirectory outside the repository (for example a folder under %TEMP%).' }
+if (-not [string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $buildOutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
-    $repoPrefix = $repoRoot.TrimEnd('\') + '\'
-    if ($buildOutputDirectory.TrimEnd('\') -ieq $releaseDirectory.TrimEnd('\') -or $buildOutputDirectory.StartsWith($repoPrefix, [StringComparison]::OrdinalIgnoreCase)) {
-        throw 'A test-fixture build must never write inside the repository (release\ is the publication folder).'
+    if ($TestFixtureBuild) {
+        $repoPrefix = $repoRoot.TrimEnd('\') + '\'
+        if ($buildOutputDirectory.TrimEnd('\') -ieq $releaseDirectory.TrimEnd('\') -or $buildOutputDirectory.StartsWith($repoPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'A test-fixture build must never write inside the repository (release\ is the publication folder).'
+        }
+        if ($Channel -ne 'beta') { throw 'A test-fixture build is only allowed for channel beta.' }
     }
-    if ($Channel -ne 'beta') { throw 'A test-fixture build is only allowed for channel beta.' }
-} elseif (-not [string]::IsNullOrWhiteSpace($OutputDirectory)) {
-    throw '-OutputDirectory is only accepted together with -TestFixtureBuild. Normal builds always write to release\.'
 }
 if (-not [string]::IsNullOrWhiteSpace($TestFileVersion)) {
     if (-not $TestFixtureBuild) { throw '-TestFileVersion is only accepted together with -TestFixtureBuild.' }
