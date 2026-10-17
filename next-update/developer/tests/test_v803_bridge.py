@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""8.0.3 contracts: privacy, ownership, UI, persistence and agent documentation."""
+"""8.0.3/8.0.5 contracts: privacy, ownership, UI, persistence and agent documentation."""
 import json
 import re
 import subprocess
@@ -18,8 +18,9 @@ def region(start, end):
 class Bridge803(unittest.TestCase):
     def test_release_is_prepared_not_published(self):
         data = json.loads((ROOT / 'app/version.json').read_text())
-        self.assertEqual(data['version'], '8.0.3')
-        self.assertTrue(data['notes'][0].startswith('• 8.0.3 — '))
+        self.assertEqual(tuple(map(int, data['version'].split('.'))), (8, 0, 5))
+        self.assertEqual(data['version'], '8.0.5')
+        self.assertTrue(data['notes'][0].startswith('• 8.0.5 — '))
         self.assertLess(len(data['notes'][0]), 600)
         self.assertGreaterEqual(data['notes'][0].count('•'), 5)
         self.assertEqual(len(data['notes']), len(data['notesEn']))

@@ -1,14 +1,14 @@
-# Arena Roblox Bridge — 8.0.3 vorbereitet
+# Arena Roblox Bridge — 8.0.5 vorbereitet
 
-> **8.0.3 ist als Quellstand vorbereitet, nicht veröffentlicht.** Fenstergebundene
-> Screenshots, Gruppen-Uploads und Asset-Rechte, einfache Aktivität, persistente
-> DE/EN-Auswahl, Kontoübersicht, Autostart-Migration und normale Part-Rezepte.
+> **8.0.5 ist als Quellstand vorbereitet, nicht veröffentlicht.** Terrain-Werkzeuge,
+> Kamera-Selbstheilung, GUI-Design 3.0 mit 40 Stilen und 18 Widgets sowie eine
+> selbstheilende Desktop-Verknüpfung. Alles aus 8.0.3 bleibt erhalten.
 > Offline-Prüfungen ersetzen keinen Windows-/Studio-Test. EXE und
 > `release/latest.json` wurden nicht verändert.
 >
 > **Arbeite nur in `next-update/`.** Der alte Bereich im Repository-Hauptordner
 > bleibt unverändert. Abnahme und bekannte Grenzen:
-> [8.0.3-Checkliste](developer/docs/V8_0_3_ACCEPTANCE.md).
+> [8.0.5-Checkliste](developer/docs/V8_0_5_ACCEPTANCE.md).
 
 ## Der Ablauf in einem Satz
 

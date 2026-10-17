@@ -3694,6 +3694,19 @@ $script:Shared = [hashtable]::Synchronized(@{
         clear_lua_state = 'Lua-Status zurücksetzen'
         probe_world = 'Vermessung der Spielwelt'
         fill_region = 'Voxelbereich füllen'
+        terrain_heightmap = 'Geländekarte erzeugen'
+        terrain_sculpt = 'Gelände modellieren'
+        terrain_paint = 'Gelände bemalen'
+        terrain_water = 'Wasser und Flüsse bauen'
+        terrain_feature = 'Geländeform bauen'
+        terrain_carve = 'Gelände aushöhlen'
+        terrain_measure = 'Gelände vermessen'
+        terrain_clear = 'Gelände entfernen'
+        camera_state = 'Kamerazustand prüfen'
+        camera_reset = 'Kamera reparieren'
+        camera_focus = 'Kamera ausrichten'
+        camera_guard = 'Kamera-Wächter verwalten'
+        ui_widget = 'Fertiges UI-Widget bauen'
         build_assembly = 'Baugruppe erstellen'
         build_polygon_model = 'Polygonmodell erstellen'
         ui_capabilities = 'Prüfung der Studio-Oberfläche'
@@ -4509,6 +4522,227 @@ local function testSessionActive()
 end
 
 
+-- ===========================================================================
+-- CAMERA GUARD 8.0.5 - DIE STUDIO-KAMERA BLEIBT NIE MEHR HÄNGEN
+-- Ursache (Roblox Studio): Steht workspace.CurrentCamera.CameraType auf
+-- Scriptable, nimmt der Editor keine Maus-Drehung mehr an. Im Edit-Modus ist
+-- "Fixed" der Standard. Manche Plugins/Skripte lassen Scriptable zurück -
+-- auch nach einem Playtest oder gespeichert im Place, deshalb half bisher
+-- "Place neu öffnen" nicht. Der Guard repariert den Zustand beim Laden, nach
+-- jedem Bridge-Befehl, nach einem beendeten Playtest und auf Knopfdruck.
+-- Die Fläche wird von den Werkzeugen camera_state/camera_reset/camera_focus
+-- und camera_guard genutzt.
+-- ===========================================================================
+CAMERA = {}
+
+function CAMERA.services()
+    if CAMERA._uis == nil then
+        local ok, service = pcall(function() return game:GetService("UserInputService") end)
+        CAMERA._uis = (ok and service) or false
+    end
+    return CAMERA._uis or nil
+end
+
+function CAMERA.inRunningSession()
+    local runningNow = false
+    pcall(function() runningNow = RunService:IsRunning() end)
+    if runningNow then return true end
+    if StudioTestService ~= nil then
+        local editActive = nil
+        pcall(function() editActive = StudioTestService.EditModeActive end)
+        if editActive == false then return true end
+    end
+    return false
+end
+
+function CAMERA.current()
+    local camera = nil
+    pcall(function() camera = workspace.CurrentCamera end)
+    return camera
+end
+
+function CAMERA.state()
+    local camera = CAMERA.current()
+    local state = {
+        available = camera ~= nil,
+        inEditMode = false,
+        runningSession = CAMERA.inRunningSession(),
+        cameraType = "none",
+        cameraTypeIsScriptable = false,
+        stuck = false,
+        subject = nil,
+        position = nil,
+        fieldOfView = nil,
+    }
+    pcall(function() state.inEditMode = RunService:IsEdit() end)
+    if camera == nil then
+        state.advice = "Workspace.CurrentCamera does not exist. Open a Place in Edit mode."
+        return state
+    end
+    pcall(function() state.cameraType = tostring(camera.CameraType) end)
+    pcall(function() state.cameraTypeIsScriptable = (camera.CameraType == Enum.CameraType.Scriptable) end)
+    pcall(function()
+        local subject = camera.CameraSubject
+        if subject ~= nil then state.subject = subject:GetFullName() end
+    end)
+    pcall(function()
+        local p = camera.CFrame.Position
+        state.position = {
+            x = math.floor(p.X * 10 + 0.5) / 10,
+            y = math.floor(p.Y * 10 + 0.5) / 10,
+            z = math.floor(p.Z * 10 + 0.5) / 10,
+        }
+    end)
+    pcall(function() state.fieldOfView = camera.FieldOfView end)
+    state.stuck = (state.inEditMode == true and state.cameraTypeIsScriptable == true)
+    if state.stuck then
+        state.advice = "The Studio EDIT camera is locked because CameraType is Scriptable. Call camera_reset or press 'Kamera reparieren' in the Arena Bridge plugin; the plugin also repairs this automatically."
+    end
+    return state
+end
+
+function CAMERA.heal(reason, force)
+    local camera = CAMERA.current()
+    local result = { ok = true, reason = tostring(reason or "manual"), changed = false, before = nil, after = nil }
+    if camera == nil then
+        result.ok = false
+        result.error = "Workspace.CurrentCamera is missing."
+        return result
+    end
+    local before = CAMERA.state()
+    result.before = before
+    if before.inEditMode == true then
+        -- EDIT: "Fixed" ist der Studio-Standard. Scriptable blockiert Maus und
+        -- Tastatur; Custom überlässt die Kamera unnötig einem Kameraskript.
+        local okType = pcall(function()
+            if camera.CameraType ~= Enum.CameraType.Fixed then
+                camera.CameraType = Enum.CameraType.Fixed
+                result.changed = true
+            end
+        end)
+        if not okType then
+            pcall(function() camera.CameraType = Enum.CameraType.Custom end)
+            result.changed = true
+        end
+        pcall(function()
+            if camera.CameraSubject ~= nil then
+                camera.CameraSubject = nil
+                result.changed = true
+            end
+        end)
+    elseif before.runningSession == true and force == true then
+        -- PLAY/RUN: nur eine wirklich auf Scriptable festhängende Kamera
+        -- zurückgeben. Eine bewusste Cutscene-Kamera wird nicht angefasst.
+        local humanoid = nil
+        pcall(function()
+            local player = Players.LocalPlayer
+            local character = player and player.Character
+            humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        end)
+        if camera.CameraType == Enum.CameraType.Scriptable then
+            pcall(function()
+                camera.CameraType = Enum.CameraType.Custom
+                result.changed = true
+            end)
+            if humanoid ~= nil then pcall(function() camera.CameraSubject = humanoid end) end
+        end
+    end
+    -- FOV nur reparieren, wenn er unbrauchbar ist (70 ist kein Zwang).
+    pcall(function()
+        local fov = tonumber(camera.FieldOfView)
+        if fov == nil or fov < 20 or fov > 120 then
+            camera.FieldOfView = 70
+            result.changed = true
+        end
+    end)
+    local uis = CAMERA.services()
+    if uis ~= nil then
+        pcall(function()
+            if uis.MouseBehavior ~= Enum.MouseBehavior.Default then
+                uis.MouseBehavior = Enum.MouseBehavior.Default
+                result.changed = true
+            end
+        end)
+        pcall(function()
+            if uis.MouseIconEnabled == false then
+                uis.MouseIconEnabled = true
+                result.changed = true
+            end
+        end)
+    end
+    result.after = CAMERA.state()
+    if result.changed then
+        pcall(function()
+            warn("ARENA-KAMERA: " .. tostring(reason or "manual")
+                .. " - Kamerasteuerung wiederhergestellt (CameraType " .. tostring(result.after.cameraType) .. ").")
+        end)
+    end
+    return result
+end
+
+function CAMERA.noteBridgeCommand(tool)
+    CAMERA.lastBridgeCommandAt = os.clock()
+    CAMERA.lastBridgeTool = tostring(tool or "?")
+end
+
+function CAMERA.afterCommand(tool)
+    CAMERA.lastBridgeCommandAt = os.clock()
+    if type(tool) == "string" and string.sub(tool, 1, 7) == "camera_" then return end
+    local state = CAMERA.state()
+    if state.stuck == true then
+        return CAMERA.heal("after_tool:" .. tostring(tool or "?"), true)
+    end
+    return nil
+end
+
+function CAMERA.watch()
+    if CAMERA._watchStarted == true then return end
+    CAMERA._watchStarted = true
+    task.spawn(function()
+        local pendingSince = nil
+        local lastEdit = nil
+        while running do
+            task.wait(4)
+            local okWatch, watchError = pcall(function()
+                local state = CAMERA.state()
+                -- Ein Playtest wurde beendet: die Editor-Kamera kann danach
+                -- genauso hängen wie nach einem abgebrochenen Befehl.
+                if lastEdit == false and state.inEditMode == true then
+                    CAMERA.heal("after_playtest", true)
+                end
+                lastEdit = state.inEditMode
+                if state.stuck == true then
+                    local touched = (os.clock() - (CAMERA.lastBridgeCommandAt or -1000)) < 120
+                    if touched then
+                        CAMERA.heal("watchdog", true)
+                        pendingSince = nil
+                    elseif pendingSince == nil then
+                        pendingSince = os.clock()
+                    elseif (os.clock() - pendingSince) >= 6 then
+                        -- Gespeicherter Place mit Scriptable-Kamera: das half
+                        -- bisher nur durch manuelles Umstellen der Properties.
+                        CAMERA.heal("saved_stuck_state", true)
+                        pendingSince = nil
+                    end
+                else
+                    pendingSince = nil
+                end
+            end)
+            if not okWatch then
+                pcall(function() warn("ARENA-KAMERA-WÄCHTER: " .. tostring(watchError)) end)
+            end
+        end
+    end)
+end
+
+task.defer(function()
+    pcall(function() CAMERA.heal("plugin_load", true) end)
+    task.delay(2, function()
+        pcall(function() CAMERA.heal("plugin_load_settle", true) end)
+    end)
+end)
+CAMERA.watch()
+
 -- Test activity comes from RunService and EditModeActive; this bridge does
 -- not launch Play/F5 or depend on a client-side reporter.
 
@@ -4611,6 +4845,37 @@ end
 button.Click:Connect(function()
     widget.Enabled = true
 end)
+
+-- Version 8.0.5: sichtbarer Notfall-Knopf. Falls die Studio-Kamera durch ein
+-- anderes Plugin oder einen Test auf Scriptable hängen bleibt, holt dieser
+-- Klick die Maussteuerung sofort zurück - ohne Arena oder Neustart.
+do
+    local repairButton = Instance.new("TextButton")
+    repairButton.Name = "ArenaRepairCamera"
+    repairButton.AnchorPoint = Vector2.new(0.5, 1)
+    repairButton.Position = UDim2.new(0.5, 0, 1, -12)
+    repairButton.Size = UDim2.new(1, -36, 0, 30)
+    repairButton.BackgroundColor3 = Color3.fromRGB(0, 200, 150)
+    repairButton.BackgroundTransparency = 0.06
+    repairButton.BorderSizePixel = 0
+    repairButton.AutoButtonColor = true
+    repairButton.Text = "Kamera reparieren"
+    repairButton.TextColor3 = Color3.fromRGB(8, 20, 18)
+    repairButton.Font = Enum.Font.GothamBold
+    repairButton.TextSize = 13
+    local repairCorner = Instance.new("UICorner")
+    repairCorner.CornerRadius = UDim.new(0, 8)
+    repairCorner.Parent = repairButton
+    repairButton.Parent = frame
+    repairButton.MouseButton1Click:Connect(function()
+        local repair = CAMERA.heal("plugin_button", true)
+        if repair ~= nil and repair.changed == true then
+            pcall(function() setWidgetStatus("Kamera repariert") end)
+        else
+            pcall(function() setWidgetStatus("Kamera war bereits frei") end)
+        end
+    end)
+end
 
 -- ---------------------------------------------------------------------------
 -- HTTP
@@ -6781,12 +7046,228 @@ tools.viewport_info = function()
             material = tostring(hit.Material),
         }
     end
+    local cameraState = CAMERA.state()
     return ok({
         camera = encodeValue(camera.CFrame),
         fieldOfView = camera.FieldOfView,
         viewportSize = { x = camera.ViewportSize.X, y = camera.ViewportSize.Y },
         lookingAt = looking,
+        cameraState = cameraState,
+        cameraStuck = cameraState.stuck == true,
+        stuckWarning = cameraState.stuck and cameraState.advice or nil,
     })
+end
+
+tools.camera_state = function(args)
+    local state = CAMERA.state()
+    state.autoRepair = true
+    state.repairTrigger = "plugin load, after every non-camera bridge command, after a stopped playtest and every 4 s while a bridge command ran in the last 2 minutes"
+    state.toolAdvice = "camera_reset restores control; camera_focus frames an object without ever leaving the camera on Scriptable."
+    return ok(state)
+end
+
+tools.camera_reset = function(args)
+    args = args or {}
+    local result = CAMERA.heal("tool:camera_reset", true)
+    local camera = CAMERA.current()
+    if camera ~= nil then
+        local fov = tonumber(args.fieldOfView)
+        if fov ~= nil and fov >= 20 and fov <= 120 then
+            pcall(function() camera.FieldOfView = fov end)
+            result.fieldOfView = fov
+        end
+    end
+    result.state = CAMERA.state()
+    result.note = "Studio edit mode uses CameraType.Fixed. Scriptable is the state that disables mouse look; the plugin now repairs it automatically."
+    return ok(result)
+end
+
+tools.camera_focus = function(args)
+    args = args or {}
+    local center = nil
+    local radius = 20
+    if args.ref ~= nil or args.targetRef ~= nil then
+        local target, err = resolveRef(args.ref or args.targetRef)
+        if not target then return failCode("REF_NOT_FOUND", err) end
+        local cframe, size = boundsOf(target)
+        if cframe == nil then return failCode("BAD_ARGS", "The target has no measurable CFrame/Model bounds.") end
+        center = cframe.Position
+        radius = math.max(size.X or 0, size.Y or 0, size.Z or 0) * 0.75 + 6
+    end
+    local position = decodeValue(args.position)
+    if typeof(position) == "Vector3" then center = position end
+    if center == nil then return failCode("BAD_ARGS", "Provide ref (the object to frame) or position={x,y,z}.") end
+    local camera = CAMERA.current()
+    if camera == nil then return failCode("CAMERA_MISSING", "Workspace.CurrentCamera does not exist.") end
+    local yaw = math.rad(tonumber(args.yaw) or 35)
+    local pitch = math.rad(math.clamp(tonumber(args.pitch) or 24, -85, 85))
+    local distanceFactor = math.clamp(tonumber(args.distanceFactor) or 2.2, 0.4, 12)
+    local distance = math.max(6, radius * distanceFactor)
+    local offset = Vector3.new(
+        math.cos(yaw) * math.cos(pitch),
+        math.sin(pitch),
+        math.sin(yaw) * math.cos(pitch)
+    ) * distance
+    local from = center + offset
+    local applied = pcall(function() camera.CFrame = CFrame.lookAt(from, center) end)
+    if not applied then
+        pcall(function() camera.CFrame = CFrame.new(from, center) end)
+    end
+    -- Niemals Scriptable zurücklassen: in Edit bleibt Fixed die Steuerung.
+    pcall(function()
+        if RunService:IsEdit() then camera.CameraType = Enum.CameraType.Fixed end
+    end)
+    return ok({
+        framed = (args.ref or args.targetRef),
+        cameraPosition = { x = from.X, y = from.Y, z = from.Z },
+        lookAt = { x = center.X, y = center.Y, z = center.Z },
+        distance = distance,
+        cameraType = tostring(camera.CameraType),
+        note = "The edit camera keeps its normal mouse controls. No Scriptable state remains.",
+    })
+end
+
+CAMERA.GUARD_SOURCE = [==[
+-- Arena Camera Guard 8.0.5 (StarterPlayerScripts)
+-- Repariert eine auf Scriptable hängende Kamera nach dem Spawn und wenn
+-- Roblox die CurrentCamera austauscht. Eine bewusst gestartete Cutscene-
+-- Kamera wird NICHT überschrieben, weil nur diese beiden Momente geprüft
+-- werden.
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local player = Players.LocalPlayer
+
+local function restoreCamera()
+    local camera = Workspace.CurrentCamera
+    if camera == nil then return end
+    if camera.CameraType ~= Enum.CameraType.Scriptable then return end
+    local character = player and player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    camera.CameraType = Enum.CameraType.Custom
+    if humanoid ~= nil then camera.CameraSubject = humanoid end
+end
+
+if player ~= nil then
+    player.CharacterAdded:Connect(function()
+        task.wait(0.15)
+        restoreCamera()
+    end)
+end
+Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+    task.wait(0.1)
+    restoreCamera()
+end)
+task.defer(restoreCamera)
+]==]
+
+tools.camera_guard = function(args)
+    args = args or {}
+    local action = string.lower(tostring(args.action or "status"))
+    local starterPlayer = game:GetService("StarterPlayer")
+    local playerScripts = starterPlayer:FindFirstChild("StarterPlayerScripts")
+    local guardName = "ArenaCameraGuard"
+    local existing = nil
+    if playerScripts ~= nil then
+        for _, child in ipairs(playerScripts:GetChildren()) do
+            if child.Name == guardName then existing = child; break end
+        end
+    end
+    if action == "status" then
+        return ok({
+            installed = existing ~= nil,
+            guard = existing and describeRef(existing) or nil,
+            location = "StarterPlayer.StarterPlayerScripts." .. guardName,
+            camera = CAMERA.state(),
+        })
+    elseif action == "install" then
+        if playerScripts == nil then return failCode("REF_NOT_FOUND", "StarterPlayerScripts is missing.") end
+        if existing ~= nil then
+            if args.overwrite ~= true then
+                return ok({ installed = true, unchanged = true, guard = describeRef(existing), note = "Guard already installed. Pass overwrite=true to replace it." })
+            end
+            existing:Destroy()
+        end
+        local script = Instance.new("LocalScript")
+        script.Name = guardName
+        local written = pcall(function() script.Source = CAMERA.GUARD_SOURCE end)
+        if not written then
+            script:Destroy()
+            return failCode("SCRIPT_SOURCE_UNAVAILABLE", "Roblox Studio did not allow writing script.Source. The guard was not installed.")
+        end
+        script:SetAttribute("ArenaCameraGuard", true)
+        script.Parent = playerScripts
+        return ok({
+            installed = true,
+            guard = describeRef(script),
+            note = "The guard restores a Scriptable camera after respawns and camera swaps. It does not fight deliberate cutscene cameras.",
+        })
+    elseif action == "remove" then
+        if existing == nil then return ok({ installed = false, removed = false }) end
+        existing:Destroy()
+        return ok({ installed = false, removed = true })
+    elseif action == "scan" then
+        local patterns = {
+            { label = "CameraType = Scriptable", pattern = "CameraType%s*=%s*Enum%.CameraType%.Scriptable", risk = "high" },
+            { label = "CameraType = Fixed", pattern = "CameraType%s*=%s*Enum%.CameraType%.Fixed", risk = "low" },
+            { label = "CameraSubject", pattern = "CameraSubject", risk = "medium" },
+            { label = "MouseBehavior lock", pattern = "MouseBehavior%s*=%s*Enum%.MouseBehavior%.Lock", risk = "high" },
+            { label = "MouseIconEnabled = false", pattern = "MouseIconEnabled%s*=%s*false", risk = "medium" },
+        }
+        local findings = {}
+        local scanned = 0
+        local suspiciousName = {}
+        local function scanContainer(root)
+            for _, inst in ipairs(root:GetDescendants()) do
+                if scanned >= 400 then return end
+                if inst:IsA("LuaSourceContainer") then
+                    local okSource, source = pcall(function() return inst.Source end)
+                    if okSource and type(source) == "string" and #source > 0 then
+                        scanned = scanned + 1
+                        for _, entry in ipairs(patterns) do
+                            local first = string.find(source, entry.pattern)
+                            if first ~= nil then
+                                local prefix = string.sub(source, 1, first)
+                                local line = 1
+                                for _ in string.gmatch(prefix, "\n") do line = line + 1 end
+                                table.insert(findings, {
+                                    path = inst:GetFullName(),
+                                    className = inst.ClassName,
+                                    line = line,
+                                    match = entry.label,
+                                    risk = entry.risk,
+                                    snippet = string.sub((string.gsub(string.sub(source, first, first + 90), "%s+", " ")), 1, 90),
+                                })
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        scanContainer(game)
+        if playerScripts ~= nil then
+            for _, child in ipairs(playerScripts:GetChildren()) do
+                if child.Name == "CameraScript" or child.Name == "CameraModule" then
+                    table.insert(suspiciousName, { path = child:GetFullName(), className = child.ClassName, reason = "A custom script with this name disables Roblox's default camera controller." })
+                end
+            end
+        end
+        local high = 0
+        for _, finding in ipairs(findings) do
+            if finding.risk == "high" then high = high + 1 end
+        end
+        return ok({
+            scannedScripts = scanned,
+            findings = findings,
+            findingCount = #findings,
+            highRisk = high,
+            suspiciousNames = suspiciousName,
+            camera = CAMERA.state(),
+            advice = (high > 0)
+                and "A script sets CameraType.Scriptable. Call camera_reset now; if the camera freezes again during a playtest, fix that script (restore CameraType.Custom and CameraSubject after the cutscene) or install the camera guard."
+                or "No Scriptable camera assignment was found in the scanned scripts.",
+        })
+    end
+    return failCode("BAD_ARGS", "action must be status, install, remove or scan.")
 end
 
 tools.get_bounds = function(args)
@@ -9620,6 +10101,1650 @@ function MASTER_BUILD.findSubmodel(root,name)
     return nil
 end
 
+-- ===========================================================================
+-- TERRAIN ENGINE 8.0.5 - GELÄNDE, DAS DIE BRIDGE RECHNET
+-- Warum: Terrain ist kein "Part mit anderer Farbe". Es lebt in 4-Stud-Voxeln,
+-- hat feste API-Grenzen (ReadVoxels/WriteVoxels je 4.194.304 Voxel), Wasser
+-- liegt seit den Shorelines in einem eigenen Kanal (LiquidOccupancy) und
+-- Material-Schichtung entscheidet über glaubwürdige Küsten, Berge und Höhlen.
+-- Diese Engine kapselt: deterministisches Rauschen, Höhenkarten, Material-
+-- schichtung, Wasser, Sculpting, Bemalung, Graben und Messen. Die KI liefert
+-- Absicht + Zahlen; die Bridge rechnet Auflösung, Chunks, Budget und Undo.
+-- ===========================================================================
+TERRAIN = {}
+TERRAIN.RESOLUTION = 4
+TERRAIN.MAX_READ_WRITE_VOXELS = 4194304
+TERRAIN.MAX_FILL_VOXELS = 67108864
+TERRAIN.MAX_COLUMNS = 20000
+TERRAIN.DEFAULT_CHUNK_COLUMNS = 16
+TERRAIN.PRESET_NAMES = { "plains", "hills", "mountains", "islands", "archipelago", "dunes", "canyon", "plateau", "swamp", "volcano", "custom" }
+
+function TERRAIN.terrain()
+    local ok, terrain = pcall(function() return Workspace.Terrain end)
+    if ok and terrain ~= nil then return terrain end
+    return nil
+end
+
+function TERRAIN.material(name, fallback)
+    if name == nil then return fallback end
+    if type(name) == "userdata" then return name end
+    local ok, material = pcall(function() return Enum.Material[tostring(name)] end)
+    if ok and material ~= nil then return material end
+    return fallback
+end
+
+function TERRAIN.hexColor(value, fallback)
+    if value == nil then return fallback end
+    if type(value) == "userdata" then
+        local ok, color = pcall(function() return value end)
+        if ok and color ~= nil then return color end
+    end
+    local text = tostring(value)
+    local r, g, b = string.match(text, "^#?(%x%x)(%x%x)(%x%x)$")
+    if r ~= nil then
+        return Color3.fromRGB(tonumber(r, 16), tonumber(g, 16), tonumber(b, 16))
+    end
+    return fallback
+end
+
+function TERRAIN.hash2(ix, iz, seed)
+    local n = (ix * 374761393 + iz * 668265263 + (seed or 1) * 1442695041) % 2147483647
+    if n < 0 then n = n + 2147483647 end
+    n = (n * (n * n * 15731 + 789221) + 1376312589) % 2147483647
+    if n < 0 then n = n + 2147483647 end
+    return n / 2147483647
+end
+
+function TERRAIN.noise2D(x, z, seed)
+    local ix, iz = math.floor(x), math.floor(z)
+    local fx, fz = x - ix, z - iz
+    local u = fx * fx * (3 - 2 * fx)
+    local v = fz * fz * (3 - 2 * fz)
+    local a = TERRAIN.hash2(ix, iz, seed)
+    local b = TERRAIN.hash2(ix + 1, iz, seed)
+    local c = TERRAIN.hash2(ix, iz + 1, seed)
+    local d = TERRAIN.hash2(ix + 1, iz + 1, seed)
+    local top = a * (1 - u) + b * u
+    local bottom = c * (1 - u) + d * u
+    return top * (1 - v) + bottom * v
+end
+
+function TERRAIN.fbm(x, z, seed, octaves, persistence)
+    local total, amplitude, frequency, norm = 0, 1, 1, 0
+    local count = math.clamp(math.floor(tonumber(octaves) or 4), 1, 8)
+    local gain = math.clamp(tonumber(persistence) or 0.5, 0.1, 0.9)
+    for index = 1, count do
+        total = total + TERRAIN.noise2D(x * frequency, z * frequency, (seed or 1) + index * 37) * amplitude
+        norm = norm + amplitude
+        amplitude = amplitude * gain
+        frequency = frequency * 2
+    end
+    if norm <= 0 then return 0 end
+    return total / norm
+end
+
+function TERRAIN.ridged(x, z, seed, octaves)
+    local total, amplitude, frequency, norm = 0, 1, 1, 0
+    local count = math.clamp(math.floor(tonumber(octaves) or 4), 1, 8)
+    for index = 1, count do
+        local value = 1 - math.abs(TERRAIN.noise2D(x * frequency, z * frequency, (seed or 1) + index * 71) * 2 - 1)
+        total = total + value * value * amplitude
+        norm = norm + amplitude
+        amplitude = amplitude * 0.5
+        frequency = frequency * 2
+    end
+    if norm <= 0 then return 0 end
+    return total / norm
+end
+
+function TERRAIN.smoothstep(value)
+    local t = math.clamp(value, 0, 1)
+    return t * t * (3 - 2 * t)
+end
+
+function TERRAIN.presetFunction(preset)
+    preset = string.lower(tostring(preset or "hills"))
+    if preset == "plains" then
+        return function(wx, wz, args, ctx)
+            return ctx.baseHeight + (TERRAIN.fbm(wx * 0.012, wz * 0.012, ctx.seed, 4) - 0.5) * 7
+                + (TERRAIN.noise2D(wx * 0.05, wz * 0.05, ctx.seed + 9) - 0.5) * 1.6
+        end
+    elseif preset == "mountains" then
+        return function(wx, wz, args, ctx)
+            local ridge = TERRAIN.ridged(wx * 0.0042, wz * 0.0042, ctx.seed, 5)
+            local detail = (TERRAIN.fbm(wx * 0.02, wz * 0.02, ctx.seed + 4, 3) - 0.5) * 5
+            return ctx.baseHeight + ((ridge) ^ (1.45)) * ctx.amplitude + detail
+        end
+    elseif preset == "islands" then
+        return function(wx, wz, args, ctx)
+            local distance = math.sqrt(wx * wx + wz * wz) / math.max(8, ctx.radius)
+            local coast = math.clamp(1 - distance, 0, 1)
+            local shape = TERRAIN.smoothstep(coast * 1.12)
+            local detail = (TERRAIN.fbm(wx * 0.016, wz * 0.016, ctx.seed + 3, 4) - 0.5) * 5
+            return ctx.baseHeight + (shape - 0.18) * ctx.amplitude + detail
+        end
+    elseif preset == "archipelago" then
+        return function(wx, wz, args, ctx)
+            local mask = TERRAIN.fbm(wx * 0.0052, wz * 0.0052, ctx.seed + 21, 4)
+            local shape = TERRAIN.smoothstep((mask - 0.46) / 0.18)
+            local detail = (TERRAIN.fbm(wx * 0.022, wz * 0.022, ctx.seed + 5, 3) - 0.5) * 4
+            return ctx.baseHeight + (shape - 0.22) * ctx.amplitude + detail
+        end
+    elseif preset == "dunes" then
+        return function(wx, wz, args, ctx)
+            local wave = math.sin(wx * 0.024 + TERRAIN.noise2D(wx * 0.004, wz * 0.004, ctx.seed) * 4.0)
+                * math.cos(wz * 0.018) * 0.5 + 0.5
+            local detail = (TERRAIN.fbm(wx * 0.03, wz * 0.03, ctx.seed + 2, 3) - 0.5) * 2.2
+            return ctx.baseHeight + wave * ctx.amplitude * 0.55 + detail
+        end
+    elseif preset == "canyon" then
+        return function(wx, wz, args, ctx)
+            local plateau = TERRAIN.fbm(wx * 0.004, wz * 0.004, ctx.seed + 8, 3)
+            local valley = math.abs(TERRAIN.fbm(wx * 0.0032, wz * 0.0032, ctx.seed + 12, 3) * 2 - 1)
+            local depth = 0
+            if valley < 0.2 then depth = (1 - valley / 0.2) * ctx.amplitude * 0.85 end
+            return ctx.baseHeight + plateau * ctx.amplitude * 0.8 - depth
+        end
+    elseif preset == "plateau" then
+        return function(wx, wz, args, ctx)
+            local raw = TERRAIN.fbm(wx * 0.006, wz * 0.006, ctx.seed + 4, 4) * ctx.amplitude
+            local step = math.max(2, tonumber(args.terraceStep) or 8)
+            return ctx.baseHeight + math.floor(raw / step + 0.5) * step
+        end
+    elseif preset == "swamp" then
+        return function(wx, wz, args, ctx)
+            local base = ctx.baseHeight + (TERRAIN.fbm(wx * 0.01, wz * 0.01, ctx.seed + 6, 4) - 0.42) * ctx.amplitude * 0.22
+            local pools = TERRAIN.fbm(wx * 0.03, wz * 0.03, ctx.seed + 14, 2)
+            if pools < 0.35 then base = base - (0.35 - pools) * 6 end
+            return base
+        end
+    elseif preset == "volcano" then
+        return function(wx, wz, args, ctx)
+            local distance = math.sqrt(wx * wx + wz * wz)
+            local cone = math.clamp(1 - distance / math.max(8, ctx.radius), 0, 1)
+            local height = ctx.baseHeight + ((cone) ^ (1.5)) * ctx.amplitude
+            if distance < ctx.radius * 0.16 then
+                height = height - (ctx.radius * 0.16 - distance) * 1.15
+            end
+            return height + (TERRAIN.fbm(wx * 0.02, wz * 0.02, ctx.seed + 5, 3) - 0.5) * 3
+        end
+    elseif preset == "custom" then
+        return function(wx, wz, args, ctx)
+            local noiseCfg = type(args.noise) == "table" and args.noise or {}
+            local scale = tonumber(noiseCfg.scale) or 0.006
+            local octaves = tonumber(noiseCfg.octaves) or 4
+            local persistence = tonumber(noiseCfg.persistence) or 0.5
+            local ridge = (noiseCfg.ridge == true)
+            local value = ridge and TERRAIN.ridged(wx * scale, wz * scale, ctx.seed, octaves)
+                or TERRAIN.fbm(wx * scale, wz * scale, ctx.seed, octaves, persistence)
+            return ctx.baseHeight + (value - 0.5) * ctx.amplitude
+        end
+    end
+    return function(wx, wz, args, ctx)
+        local broad = TERRAIN.fbm(wx * 0.006, wz * 0.006, ctx.seed, 4)
+        local fine = TERRAIN.ridged(wx * 0.018, wz * 0.018, ctx.seed + 3, 3)
+        return ctx.baseHeight + (broad - 0.42) * ctx.amplitude * 0.8 + fine * ctx.amplitude * 0.18
+    end
+end
+
+function TERRAIN.normalizeSize(args)
+    local width, depth = nil, nil
+    local size = args.size
+    if type(size) == "table" then
+        width = tonumber(size.x or size.X or size[1] or size.w)
+        depth = tonumber(size.z or size.Z or size[3] or size.y or size[2] or size.d)
+    elseif typeof(size) == "Vector3" then
+        width, depth = size.X, size.Z
+    end
+    width = tonumber(args.sizeX) or width or 96
+    depth = tonumber(args.sizeZ) or depth or width
+    return math.clamp(width, 16, 512), math.clamp(depth, 16, 508)
+end
+
+function TERRAIN.arguments(args)
+    args = args or {}
+    local center = decodeValue(args.center)
+    if typeof(center) ~= "Vector3" then center = Vector3.new(0, 0, 0) end
+    local width, depth = TERRAIN.normalizeSize(args)
+    local baseHeight = tonumber(args.baseHeight)
+    if baseHeight == nil then baseHeight = center.Y end
+    local maxHeight = tonumber(args.maxHeight or args.height)
+    if maxHeight == nil then maxHeight = baseHeight + 48 end
+    if maxHeight < baseHeight + 2 then maxHeight = baseHeight + 2 end
+    local waterLevel = nil
+    if args.waterLevel ~= nil and args.waterLevel ~= false then waterLevel = tonumber(args.waterLevel) end
+    return {
+        center = center,
+        width = width,
+        depth = depth,
+        baseHeight = baseHeight,
+        maxHeight = maxHeight,
+        amplitude = maxHeight - baseHeight,
+        waterLevel = waterLevel,
+        seed = math.floor(tonumber(args.seed) or 4711),
+        radius = math.max(width, depth) * 0.5,
+        preset = string.lower(tostring(args.preset or "hills")),
+        edgeFalloff = math.clamp(tonumber(args.edgeFalloff) or 0, 0, 1),
+        minHeight = tonumber(args.minHeight) or (baseHeight - math.max(12, (maxHeight - baseHeight) * 0.5)),
+        maxAllowedHeight = tonumber(args.maxAllowedHeight) or (maxHeight + 64),
+    }
+end
+
+function TERRAIN.buildGrid(args)
+    local ctx = TERRAIN.arguments(args)
+    local step = math.clamp(tonumber(args.gridStep) or 4, 4, 16)
+    step = math.max(4, math.floor(step / 4 + 0.5) * 4)
+    local cols = math.floor(ctx.width / step + 0.999) + 1
+    local rows = math.floor(ctx.depth / step + 0.999) + 1
+    if cols * rows > TERRAIN.MAX_COLUMNS then
+        return nil, nil, "REGION_LIMIT", tostring(cols * rows) .. " columns exceed " .. tostring(TERRAIN.MAX_COLUMNS) .. ". Increase gridStep or reduce size."
+    end
+    local heightFunction = args._heightFunction or TERRAIN.presetFunction(ctx.preset)
+    local measured = (string.lower(tostring(args.mode or "generate")) == "measured")
+    local okExplicit = type(args.heights) == "table"
+    local explicitRows = okExplicit and #args.heights or 0
+    local explicitCols = 0
+    if okExplicit and explicitRows > 0 and type(args.heights[1]) == "table" then explicitCols = #args.heights[1] end
+    if okExplicit and (explicitRows < 2 or explicitCols < 2) then
+        return nil, nil, "BAD_ARGS", "heights must be a 2D array [row][col] with at least 2x2 numbers."
+    end
+    local rayHeight = math.max(256, math.abs(ctx.maxAllowedHeight) + 256)
+    local rayParams = nil
+    if measured then rayParams = measureRayParams({}) end
+    local grid = {}
+    local minXStud = math.floor((ctx.center.X - ctx.width * 0.5) / 4) * 4
+    local minZStud = math.floor((ctx.center.Z - ctx.depth * 0.5) / 4) * 4
+    local minimum, maximum, sum = math.huge, -math.huge, 0
+    for row = 1, rows do
+        grid[row] = {}
+        for col = 1, cols do
+            local wx = minXStud + (col - 1) * step
+            local wz = minZStud + (row - 1) * step
+            local height = nil
+            if okExplicit then
+                local srcRow = math.clamp(math.floor((row - 1) / math.max(1, rows - 1) * (explicitRows - 1)) + 1, 1, explicitRows)
+                local srcCol = math.clamp(math.floor((col - 1) / math.max(1, cols - 1) * (explicitCols - 1)) + 1, 1, explicitCols)
+                local raw = tonumber(args.heights[srcRow][srcCol])
+                height = (raw ~= nil) and raw or ctx.baseHeight
+            elseif measured then
+                local hit = Workspace:Raycast(Vector3.new(wx, ctx.center.Y + rayHeight, wz),
+                    Vector3.new(0, -(rayHeight * 2), 0), rayParams)
+                if hit ~= nil then
+                    height = hit.Position.Y
+                else
+                    height = ctx.baseHeight
+                end
+            else
+                height = heightFunction(wx, wz, args, ctx)
+            end
+            if ctx.edgeFalloff > 0 then
+                local edgeX = math.min(col - 1, cols - col) / math.max(1, (cols - 1) * 0.5)
+                local edgeZ = math.min(row - 1, rows - row) / math.max(1, (rows - 1) * 0.5)
+                local edge = math.clamp(math.min(edgeX, edgeZ) / math.max(0.0001, ctx.edgeFalloff), 0, 1)
+                local blended = ctx.baseHeight + (height - ctx.baseHeight) * TERRAIN.smoothstep(edge)
+                height = blended
+            end
+            height = math.clamp(height, ctx.minHeight, ctx.maxAllowedHeight)
+            grid[row][col] = height
+            if height < minimum then minimum = height end
+            if height > maximum then maximum = height end
+            sum = sum + height
+        end
+    end
+    local stats = {
+        preset = ctx.preset,
+        columns = cols * rows,
+        cols = cols,
+        rows = rows,
+        gridStep = step,
+        minHeight = minimum,
+        maxHeight = maximum,
+        averageHeight = sum / math.max(1, cols * rows),
+        baseHeight = ctx.baseHeight,
+        waterLevel = ctx.waterLevel,
+        seed = ctx.seed,
+        size = { x = ctx.width, z = ctx.depth },
+        center = { x = ctx.center.X, y = ctx.center.Y, z = ctx.center.Z },
+        minXStud = minXStud,
+        minZStud = minZStud,
+        mode = okExplicit and "explicit" or (measured and "measured" or "generated"),
+    }
+    return grid, stats, nil, nil
+end
+
+function TERRAIN.slopeAt(grid, row, col)
+    local current = grid[row] and grid[row][col]
+    if current == nil then return 0 end
+    local steepest = 0
+    for _, offset in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
+        local neighbor = grid[row + offset[1]]
+        local value = neighbor and neighbor[col + offset[2]]
+        if value ~= nil then
+            local delta = math.abs(value - current)
+            if delta > steepest then steepest = delta end
+        end
+    end
+    return steepest
+end
+
+function TERRAIN.materialStack(args, ctx, height, slope, topMaterial)
+    local stack = {
+        surface = TERRAIN.material((type(args.materials) == "table" and args.materials.surface) or args.surface, Enum.Material.Grass),
+        subsurface = TERRAIN.material((type(args.materials) == "table" and args.materials.subsurface) or args.subsurface, Enum.Material.Ground),
+        rock = TERRAIN.material((type(args.materials) == "table" and args.materials.rock) or args.rock, Enum.Material.Rock),
+        sand = TERRAIN.material((type(args.materials) == "table" and args.materials.sand) or args.sand, Enum.Material.Sand),
+        snow = TERRAIN.material((type(args.materials) == "table" and args.materials.snow) or args.snow, Enum.Material.Snow),
+        seabed = TERRAIN.material((type(args.materials) == "table" and args.materials.seabed) or args.seabed, Enum.Material.Sand),
+    }
+    local snowLine = tonumber(args.snowLine)
+    local rockSlope = tonumber(args.rockSlope) or 5.5
+    local sandDepth = math.max(2, tonumber(args.sandDepth) or 6)
+    local surface = stack.surface
+    if topMaterial ~= nil then surface = topMaterial end
+    if ctx.waterLevel ~= nil and height <= ctx.waterLevel + sandDepth then
+        surface = stack.seabed
+    elseif snowLine ~= nil and height >= snowLine then
+        surface = stack.snow
+    elseif slope >= rockSlope then
+        surface = stack.rock
+    end
+    return { surface = surface, subsurface = stack.subsurface, rock = stack.rock, sand = stack.sand, snow = stack.snow, seabed = stack.seabed }
+end
+
+function TERRAIN.newArray(nx, ny, nz, fill)
+    local array = {}
+    for x = 1, nx do
+        array[x] = {}
+        for y = 1, ny do
+            local column = {}
+            for z = 1, nz do column[z] = fill end
+            array[x][y] = column
+        end
+    end
+    return array
+end
+
+function TERRAIN.chunkRegion(minX, maxX, minZ, maxZ, bottomY, topY)
+    local low = Vector3.new(math.floor(minX), math.floor(bottomY), math.floor(minZ))
+    local high = Vector3.new(math.ceil(maxX), math.ceil(topY), math.ceil(maxZ))
+    if high.X - low.X < 4 then high = Vector3.new(low.X + 4, high.Y, high.Z) end
+    if high.Y - low.Y < 4 then high = Vector3.new(high.X, low.Y + 4, high.Z) end
+    if high.Z - low.Z < 4 then high = Vector3.new(high.X, high.Y, low.Z + 4) end
+    local region = Region3.new(low, high)
+    local ok, expanded = pcall(function() return region:ExpandToGrid(4) end)
+    if ok and expanded ~= nil then region = expanded end
+    return region
+end
+
+function TERRAIN.regionShape(region)
+    local size = region.Size
+    local nx = math.max(1, math.floor(size.X / 4 + 0.5))
+    local ny = math.max(1, math.floor(size.Y / 4 + 0.5))
+    local nz = math.max(1, math.floor(size.Z / 4 + 0.5))
+    return nx, ny, nz
+end
+
+function TERRAIN.readChunk(terrain, region)
+    local nx, ny, nz = TERRAIN.regionShape(region)
+    local result = {
+        materials = nil, occupancies = nil, liquids = nil,
+        nx = nx, ny = ny, nz = nz, source = "none",
+    }
+    if terrain.ReadVoxelChannels ~= nil then
+        local ok, channels = pcall(function()
+            return terrain:ReadVoxelChannels(region, 4, { "SolidMaterial", "SolidOccupancy", "LiquidOccupancy" })
+        end)
+        if ok and type(channels) == "table" then
+            result.materials = channels.SolidMaterial
+            result.occupancies = channels.SolidOccupancy
+            result.liquids = channels.LiquidOccupancy
+            result.source = "channels"
+        end
+    end
+    if result.materials == nil then
+        local ok, materials, occupancies = pcall(function() return terrain:ReadVoxels(region, 4) end)
+        if not ok or materials == nil then
+            return nil, "READ_FAILED: " .. tostring(materials)
+        end
+        result.materials = materials
+        result.occupancies = occupancies
+        result.source = "voxels"
+        result.liquids = TERRAIN.newArray(nx, ny, nz, 0)
+        for x = 1, nx do
+            for y = 1, ny do
+                for z = 1, nz do
+                    local material = materials[x] and materials[x][y] and materials[x][y][z]
+                    local occupancy = occupancies[x] and occupancies[x][y] and occupancies[x][y][z] or 0
+                    if material == Enum.Material.Water and occupancy > 0.02 then
+                        result.liquids[x][y][z] = occupancy
+                        result.materials[x][y][z] = Enum.Material.Air
+                        result.occupancies[x][y][z] = 0
+                    end
+                end
+            end
+        end
+    end
+    return result, nil
+end
+
+function TERRAIN.writeChunk(terrain, region, materials, occupancies, liquids)
+    if terrain.WriteVoxelChannels ~= nil then
+        local ok = pcall(function()
+            terrain:WriteVoxelChannels(region, 4, {
+                SolidMaterial = materials,
+                SolidOccupancy = occupancies,
+                LiquidOccupancy = liquids,
+            })
+        end)
+        if ok then return "channels" end
+    end
+    local okVoxels = pcall(function() terrain:WriteVoxels(region, 4, materials, occupancies) end)
+    if not okVoxels then return nil, "WRITE_FAILED" end
+    local hasWater = false
+    for x = 1, #liquids do
+        for y = 1, #(liquids[x] or {}) do
+            for z = 1, #(liquids[x][y] or {}) do
+                if (liquids[x][y][z] or 0) > 0.05 then hasWater = true break end
+            end
+            if hasWater then break end
+        end
+        if hasWater then break end
+    end
+    if hasWater then
+        for x = 1, #liquids do
+            for y = 1, #(liquids[x] or {}) do
+                for z = 1, #(liquids[x][y] or {}) do
+                    local liquid = liquids[x][y][z] or 0
+                    if liquid > 0.05 and (occupancies[x][y][z] or 0) < 0.6 then
+                        materials[x][y][z] = Enum.Material.Water
+                        occupancies[x][y][z] = 1
+                        liquids[x][y][z] = 0
+                    end
+                end
+            end
+        end
+        pcall(function() terrain:WriteVoxels(region, 4, materials, occupancies) end)
+    end
+    return "voxels"
+end
+
+function TERRAIN.beginRecording(name)
+    if ChangeHistoryService == nil then return nil end
+    local recording = nil
+    pcall(function() recording = ChangeHistoryService:TryBeginRecording(name) end)
+    return recording
+end
+
+function TERRAIN.finishRecording(recording, name)
+    if ChangeHistoryService ~= nil and recording ~= nil then
+        pcall(function()
+            ChangeHistoryService:FinishRecording(recording, Enum.FinishRecordingOperation.Commit)
+        end)
+    end
+    if name ~= nil then waypoint(name) end
+end
+
+function TERRAIN.jobTick(job, percent, message)
+    if type(job) == "table" then
+        if type(job.cancelled) == "function" and job.cancelled() then
+            return false
+        end
+        if type(job.progress) == "function" then job.progress(percent, message) end
+    end
+    return true
+end
+
+function TERRAIN.sampleGrid(grid, stats, minXStud, minZStud, wx, wz)
+    local step = stats.gridStep
+    local fx = (wx - minXStud) / step
+    local fz = (wz - minZStud) / step
+    local col = math.floor(fx) + 1
+    local row = math.floor(fz) + 1
+    local tx = math.clamp(fx - (col - 1), 0, 1)
+    local tz = math.clamp(fz - (row - 1), 0, 1)
+    local function at(r, c)
+        r = math.clamp(r, 1, stats.rows)
+        c = math.clamp(c, 1, stats.cols)
+        return grid[r][c]
+    end
+    local h00, h10 = at(row, col), at(row, col + 1)
+    local h01, h11 = at(row + 1, col), at(row + 1, col + 1)
+    local top = (h00 * (1 - tx) + h10 * tx) * (1 - tz) + (h01 * (1 - tx) + h11 * tx) * tz
+    local slope = math.max(math.abs(h00 - h10), math.abs(h01 - h11), math.abs(h00 - h01), math.abs(h10 - h11))
+    return top, slope
+end
+
+function TERRAIN.writeHeightmap(args, grid, stats, ctx)
+    local terrain = TERRAIN.terrain()
+    if terrain == nil then return nil, "NO_TERRAIN" end
+    local chunkColumns = math.clamp(math.floor(tonumber(args.chunkColumns) or TERRAIN.DEFAULT_CHUNK_COLUMNS), 4, 32)
+    local cols, rows, step = stats.cols, stats.rows, stats.gridStep
+    local minXStud = math.floor((ctx.center.X - ctx.width * 0.5) / 4) * 4
+    local minZStud = math.floor((ctx.center.Z - ctx.depth * 0.5) / 4) * 4
+    local colChunks = math.ceil(cols / chunkColumns)
+    local rowChunks = math.ceil(rows / chunkColumns)
+    local totalChunks = colChunks * rowChunks
+    local maxChunks = math.clamp(math.floor(tonumber(args.maxChunks) or 256), 1, 1024)
+    local startChunk = 1
+    if type(args.resumeToken) == "table" and tonumber(args.resumeToken.chunk) ~= nil then
+        startChunk = math.max(1, math.floor(tonumber(args.resumeToken.chunk)))
+    end
+    local job = args._job
+    local margin = math.max(4, tonumber(args.verticalMargin) or 8)
+    local processed, solidVoxels, waterVoxels, chunksDone = 0, 0, 0, 0
+    local sourceMode = nil
+    local chunkIndex = 0
+    local cancelled = false
+    local overrideExisting = (args.overrideExisting ~= false)
+    for chunkRow = 0, rowChunks - 1 do
+        for chunkCol = 0, colChunks - 1 do
+            chunkIndex = chunkIndex + 1
+            if chunkIndex >= startChunk then
+                if processed >= maxChunks then
+                    return {
+                        stats = stats, chunks = totalChunks, processedChunks = processed,
+                        resumeToken = { chunk = chunkIndex, total = totalChunks },
+                        solidVoxels = solidVoxels, waterVoxels = waterVoxels,
+                        sourceMode = sourceMode, complete = false,
+                    }, nil
+                end
+                if not TERRAIN.jobTick(job, math.floor((processed / math.max(1, totalChunks)) * 100),
+                        "Terrain chunk " .. tostring(processed + 1) .. "/" .. tostring(totalChunks)) then
+                    cancelled = true
+                    break
+                end
+                local colStart = chunkCol * chunkColumns + 1
+                local colEnd = math.min(cols, colStart + chunkColumns - 1)
+                local rowStart = chunkRow * chunkColumns + 1
+                local rowEnd = math.min(rows, rowStart + chunkColumns - 1)
+                local minHeight, maxHeight = math.huge, -math.huge
+                for row = math.max(1, rowStart - 1), math.min(rows, rowEnd + 1) do
+                    for col = math.max(1, colStart - 1), math.min(cols, colEnd + 1) do
+                        local h = grid[row][col]
+                        if h < minHeight then minHeight = h end
+                        if h > maxHeight then maxHeight = h end
+                    end
+                end
+                local bottomY = math.floor((minHeight - margin) / 4) * 4
+                local topY = math.ceil((maxHeight + margin) / 4) * 4
+                if ctx.waterLevel ~= nil and ctx.waterLevel + 4 > topY then
+                    topY = math.ceil((ctx.waterLevel + 4) / 4) * 4
+                end
+                if topY - bottomY > 512 then topY = bottomY + 512 end
+                local minX = minXStud + (colStart - 1) * step
+                local maxX = minXStud + (colEnd - 1) * step + step
+                local minZ = minZStud + (rowStart - 1) * step
+                local maxZ = minZStud + (rowEnd - 1) * step + step
+                local region = TERRAIN.chunkRegion(minX, maxX, minZ, maxZ, bottomY, topY)
+                local nx, ny, nz = TERRAIN.regionShape(region)
+                local materials = TERRAIN.newArray(nx, ny, nz, Enum.Material.Air)
+                local occupancies = TERRAIN.newArray(nx, ny, nz, 0)
+                local liquids = TERRAIN.newArray(nx, ny, nz, 0)
+                local existing = nil
+                if not overrideExisting then
+                    existing = TERRAIN.readChunk(terrain, region)
+                end
+                local surfaceDepth = math.max(4, tonumber(args.surfaceDepth) or 4)
+                local soilDepth = surfaceDepth + math.max(4, tonumber(args.soilDepth) or 8)
+                for x = 1, nx do
+                    local wx = region.Min.X + (x - 1) * 4 + 2
+                    for z = 1, nz do
+                        local wz = region.Min.Z + (z - 1) * 4 + 2
+                        local top, slope = TERRAIN.sampleGrid(grid, stats, minXStud, minZStud, wx, wz)
+                        local columnMaterials = TERRAIN.materialStack(args, ctx, top, slope, nil)
+                        for y = 1, ny do
+                            local voxelBottom = region.Min.Y + (y - 1) * 4
+                            local centerY = voxelBottom + 2
+                            local occupancy = math.clamp((top - voxelBottom) / 4, 0, 1)
+                            local material = Enum.Material.Air
+                            if occupancy > 0.02 then
+                                local depth = top - voxelBottom
+                                if depth <= surfaceDepth + 4 then
+                                    material = columnMaterials.surface
+                                elseif depth <= soilDepth + 4 then
+                                    material = columnMaterials.subsurface
+                                else
+                                    material = columnMaterials.rock
+                                end
+                            end
+                            local liquid = 0
+                            if ctx.waterLevel ~= nil and occupancy < 0.98 and centerY <= ctx.waterLevel then
+                                liquid = math.clamp((ctx.waterLevel - (centerY - 2)) / 4, 0, 1)
+                            end
+                            if existing ~= nil then
+                                local oldOccupancy = existing.occupancies[x] and existing.occupancies[x][y]
+                                    and existing.occupancies[x][y][z] or 0
+                                if oldOccupancy > occupancy then
+                                    occupancy = oldOccupancy
+                                    material = existing.materials[x][y][z] or material
+                                end
+                                local oldLiquid = existing.liquids and existing.liquids[x] and existing.liquids[x][y]
+                                    and existing.liquids[x][y][z] or 0
+                                if oldLiquid > liquid then liquid = oldLiquid end
+                            end
+                            materials[x][y][z] = material
+                            occupancies[x][y][z] = occupancy
+                            liquids[x][y][z] = liquid
+                            if occupancy > 0.02 then solidVoxels = solidVoxels + 1 end
+                            if liquid > 0.02 then waterVoxels = waterVoxels + 1 end
+                        end
+                    end
+                end
+                local writeMode, writeError = TERRAIN.writeChunk(terrain, region, materials, occupancies, liquids)
+                if writeMode == nil then
+                    return nil, writeError or "WRITE_FAILED", {
+                        stats = stats, processedChunks = processed, chunks = totalChunks,
+                        resumeToken = { chunk = chunkIndex, total = totalChunks },
+                    }
+                end
+                sourceMode = writeMode
+                processed = processed + 1
+                chunksDone = chunksDone + 1
+                task.wait()
+            end
+        end
+        if cancelled then break end
+    end
+    return {
+        stats = stats, chunks = totalChunks, processedChunks = processed,
+        solidVoxels = solidVoxels, waterVoxels = waterVoxels, sourceMode = sourceMode,
+        complete = (cancelled == false), cancelled = cancelled,
+        minXStud = minXStud, minZStud = minZStud,
+    }, nil
+end
+
+function TERRAIN.readHeightsFromChunk(chunk, region)
+    local heights = {}
+    for x = 1, chunk.nx do
+        heights[x] = {}
+        for z = 1, chunk.nz do
+            local top = region.Min.Y
+            local topMaterial = Enum.Material.Air
+            for y = 1, chunk.ny do
+                local occupancy = chunk.occupancies[x] and chunk.occupancies[x][y] and chunk.occupancies[x][y][z] or 0
+                if occupancy > 0.15 then
+                    top = region.Min.Y + (y - 1) * 4 + occupancy * 4
+                    topMaterial = chunk.materials[x][y][z] or Enum.Material.Air
+                end
+            end
+            heights[x][z] = { height = top, material = topMaterial }
+        end
+    end
+    return heights
+end
+
+function TERRAIN.sculptChunk(terrain, region, args, action, ctx, allHeights)
+    local chunk, readError = TERRAIN.readChunk(terrain, region)
+    if chunk == nil then return nil, readError end
+    local heights = TERRAIN.readHeightsFromChunk(chunk, region)
+    local baseHeight = 0
+    for x = 1, chunk.nx do
+        for z = 1, chunk.nz do
+            baseHeight = baseHeight + heights[x][z].height
+        end
+    end
+    baseHeight = baseHeight / math.max(1, chunk.nx * chunk.nz)
+    local target = tonumber(args.targetY) or baseHeight
+    local strength = tonumber(args.strength) or 4
+    local radius = math.max(1, tonumber(args.radius) or 24)
+    local center = decodeValue(args.center)
+    if typeof(center) ~= "Vector3" then center = Vector3.new(0, 0, 0) end
+    local seed = math.floor(tonumber(args.seed) or 4711)
+    local materials = TERRAIN.newArray(chunk.nx, chunk.ny, chunk.nz, Enum.Material.Air)
+    local occupancies = TERRAIN.newArray(chunk.nx, chunk.ny, chunk.nz, 0)
+    local liquids = TERRAIN.newArray(chunk.nx, chunk.ny, chunk.nz, 0)
+    local changed = 0
+    for x = 1, chunk.nx do
+        for z = 1, chunk.nz do
+            local height = heights[x][z].height
+            local wx = region.Min.X + (x - 1) * 4 + 2
+            local wz = region.Min.Z + (z - 1) * 4 + 2
+            local distance = math.sqrt((wx - center.X) ^ 2 + (wz - center.Z) ^ 2)
+            local falloff = TERRAIN.smoothstep(1 - distance / radius)
+            local delta = 0
+            if action == "raise" then
+                delta = strength * falloff
+            elseif action == "lower" then
+                delta = -strength * falloff
+            elseif action == "flatten" then
+                delta = (target - height) * math.clamp(strength / 10, 0.05, 1) * falloff
+            elseif action == "smooth" then
+                local sum, count = 0, 0
+                for dx = -2, 2 do
+                    for dz = -2, 2 do
+                        local neighbor = allHeights[wx + dx * 4]
+                        if neighbor ~= nil then
+                            local value = neighbor[wz + dz * 4]
+                            if value ~= nil then sum = sum + value; count = count + 1 end
+                        end
+                    end
+                end
+                if count > 0 then delta = ((sum / count) - height) * math.clamp(strength / 12, 0.05, 1) * falloff end
+            elseif action == "noise" then
+                delta = (TERRAIN.noise2D(wx * 0.12, wz * 0.12, seed) - 0.5) * 2 * strength * falloff
+            elseif action == "terrace" then
+                local step = math.max(1, strength)
+                local terraced = math.floor(height / step + 0.5) * step
+                delta = (terraced - height) * falloff
+            elseif action == "erode" then
+                local slope = TERRAIN.slopeAtSafe(allHeights, wx, wz)
+                delta = -math.min(strength, slope * strength * 0.3) * falloff
+            end
+            if delta ~= 0 then changed = changed + 1 end
+            local top = height + delta
+            local materialsForColumn = TERRAIN.materialStack(args, ctx, top, TERRAIN.slopeAtSafe(allHeights, wx, wz), args.material and TERRAIN.material(args.material, nil) or heights[x][z].material)
+            for y = 1, chunk.ny do
+                local voxelBottom = region.Min.Y + (y - 1) * 4
+                local voxelCenter = voxelBottom + 2
+                local occupancy = 0
+                if top >= voxelCenter - 2 then
+                    occupancy = math.clamp((top - (voxelCenter - 2)) / 4, 0, 1)
+                end
+                local material = Enum.Material.Air
+                if occupancy > 0.02 then
+                    local depth = top - (voxelCenter - 2)
+                    if depth <= 4 then material = materialsForColumn.surface
+                    elseif depth <= 12 then material = materialsForColumn.subsurface
+                    else material = materialsForColumn.rock end
+                end
+                local liquid = 0
+                if ctx.waterLevel ~= nil then
+                    if occupancy < 0.98 and voxelCenter <= ctx.waterLevel then
+                        liquid = math.clamp((ctx.waterLevel - (voxelCenter - 2)) / 4, 0, 1)
+                    end
+                elseif chunk.liquids ~= nil then
+                    liquid = chunk.liquids[x] and chunk.liquids[x][y] and chunk.liquids[x][y][z] or 0
+                end
+                materials[x][y][z] = material
+                occupancies[x][y][z] = occupancy
+                liquids[x][y][z] = liquid
+            end
+        end
+    end
+    local writeMode, writeError = TERRAIN.writeChunk(terrain, region, materials, occupancies, liquids)
+    if writeMode == nil then return nil, writeError end
+    return { changedColumns = changed, mode = writeMode }
+end
+
+function TERRAIN.slopeAtSafe(allHeights, wx, wz)
+    local center = allHeights[wx] and allHeights[wx][wz]
+    if center == nil then return 0 end
+    local steepest = 0
+    for _, offset in ipairs({ { 4, 0 }, { -4, 0 }, { 0, 4 }, { 0, -4 } }) do
+        local column = allHeights[wx + offset[1]]
+        local value = column and column[wz + offset[2]]
+        if value ~= nil then
+            local delta = math.abs(value - center)
+            if delta > steepest then steepest = delta end
+        end
+    end
+    return steepest
+end
+
+function TERRAIN.collectHeights(terrain, region)
+    local chunk, readError = TERRAIN.readChunk(terrain, region)
+    if chunk == nil then return nil, readError end
+    local heights = TERRAIN.readHeightsFromChunk(chunk, region)
+    local map = {}
+    for x = 1, chunk.nx do
+        for z = 1, chunk.nz do
+            local wx = region.Min.X + (x - 1) * 4 + 2
+            local wz = region.Min.Z + (z - 1) * 4 + 2
+            map[wx] = map[wx] or {}
+            map[wx][wz] = heights[x][z].height
+        end
+    end
+    return map
+end
+
+
+-- ---------------------------------------------------------------------------
+-- TERRAIN-WERKZEUGE (8.0.5)
+-- Jedes Werkzeug validiert Absicht und Budget, rechnet in 4-Stud-Voxeln und
+-- meldet ehrlich, was geschrieben wurde. Kein Werkzeug "rät" Höhen: Höhen
+-- kommen aus einer benannten Form, aus expliziten Werten oder aus Messungen.
+-- ---------------------------------------------------------------------------
+
+function TERRAIN.area(args)
+    args = args or {}
+    local minVec = decodeValue(args.min)
+    local maxVec = decodeValue(args.max)
+    local area = {}
+    if typeof(minVec) == "Vector3" and typeof(maxVec) == "Vector3" then
+        area.minX = math.min(minVec.X, maxVec.X)
+        area.maxX = math.max(minVec.X, maxVec.X)
+        area.minZ = math.min(minVec.Z, maxVec.Z)
+        area.maxZ = math.max(minVec.Z, maxVec.Z)
+        area.minY = math.min(minVec.Y, maxVec.Y)
+        area.maxY = math.max(minVec.Y, maxVec.Y)
+        area.center = Vector3.new((area.minX + area.maxX) * 0.5, (area.minY + area.maxY) * 0.5, (area.minZ + area.maxZ) * 0.5)
+    else
+        local center = decodeValue(args.center)
+        if typeof(center) ~= "Vector3" then center = Vector3.new(0, 0, 0) end
+        local width, depth = TERRAIN.normalizeSize(args)
+        area.center = center
+        area.minX = center.X - width * 0.5
+        area.maxX = center.X + width * 0.5
+        area.minZ = center.Z - depth * 0.5
+        area.maxZ = center.Z + depth * 0.5
+        area.minY = center.Y - 64
+        area.maxY = center.Y + 64
+    end
+    if tonumber(args.minY) ~= nil then area.minY = tonumber(args.minY) end
+    if tonumber(args.maxY) ~= nil then area.maxY = tonumber(args.maxY) end
+    if area.maxY <= area.minY then area.maxY = area.minY + 4 end
+    area.width = area.maxX - area.minX
+    area.depth = area.maxZ - area.minZ
+    area.volumeVoxels = (area.width * area.depth * (area.maxY - area.minY)) / 64
+    return area
+end
+
+function TERRAIN.volumeLabel(voxels)
+    return string.format("%d voxels (%.1f million)", voxels, voxels / 1000000)
+end
+
+tools.terrain_heightmap = function(args)
+    args = args or {}
+    if TERRAIN.terrain() == nil then return failCode("NO_TERRAIN", "Workspace.Terrain is missing - this place has no terrain service.") end
+    local grid, stats, code, message = TERRAIN.buildGrid(args)
+    if grid == nil then return failCode(code or "BAD_ARGS", message or "The heightmap could not be built.") end
+    local ctx = TERRAIN.arguments(args)
+    local written, writeError, partial = TERRAIN.writeHeightmap(args, grid, stats, ctx)
+    if written == nil then
+        return failCode(writeError or "WRITE_FAILED", "Terrain write failed in chunk " .. tostring(partial and partial.processedChunks or "?"), partial)
+    end
+    waypoint("terrain_heightmap")
+    local hints = {
+        "Shape first: the reported minHeight/maxHeight/waterLevel describe exactly what was written.",
+        "Use terrain_measure action=height or action=volume to verify instead of guessing afterwards.",
+        "Materials are layered (surface/soil/rock) and Biome-safe; pass materials={surface=..., subsurface=..., rock=...} only when the look needs it.",
+    }
+    if written.complete == false then
+        table.insert(hints, "Incomplete (" .. tostring(written.processedChunks) .. "/" .. tostring(written.chunks)
+            .. " chunks). Repeat the SAME call with resumeToken=" .. tostring(written.resumeToken.chunk)
+            .. " to continue - do not rebuild from scratch.")
+    end
+    if written.waterVoxels and written.waterVoxels > 0 then
+        table.insert(hints, "Water was written into the LiquidOccupancy channel, not as solid Water blocks.")
+    end
+    return ok(written, hints)
+end
+
+tools.terrain_sculpt = function(args)
+    args = args or {}
+    local terrain = TERRAIN.terrain()
+    if terrain == nil then return failCode("NO_TERRAIN", "Workspace.Terrain is missing.") end
+    local action = string.lower(tostring(args.action or "raise"))
+    local allowed = { raise = true, lower = true, flatten = true, smooth = true, noise = true, terrace = true, erode = true }
+    if not allowed[action] then
+        return failCode("BAD_ARGS", "action must be one of raise, lower, flatten, smooth, noise, terrace, erode.")
+    end
+    local center = decodeValue(args.center)
+    if typeof(center) ~= "Vector3" then return failCode("BAD_ARGS", "center={x,y,z} is required.") end
+    local radius = math.clamp(tonumber(args.radius) or 32, 4, 256)
+    local rayParams = measureRayParams({})
+    local minY, maxY, samples = math.huge, -math.huge, 0
+    for ix = -2, 2 do
+        for iz = -2, 2 do
+            local x = center.X + ix * radius * 0.5
+            local z = center.Z + iz * radius * 0.5
+            local hit = Workspace:Raycast(Vector3.new(x, center.Y + 512, z), Vector3.new(0, -1024, 0), rayParams)
+            if hit ~= nil then
+                if hit.Position.Y < minY then minY = hit.Position.Y end
+                if hit.Position.Y > maxY then maxY = hit.Position.Y end
+                samples = samples + 1
+            end
+        end
+    end
+    if samples == 0 then
+        return failCode("NO_SURFACE", "No ground was found under the brush. Build the terrain first (terrain_heightmap) or pass explicit minY/maxY.")
+    end
+    minY = minY - 24
+    maxY = maxY + 24
+    if tonumber(args.minY) ~= nil then minY = tonumber(args.minY) end
+    if tonumber(args.maxY) ~= nil then maxY = tonumber(args.maxY) end
+    if maxY - minY > 256 then maxY = minY + 256 end
+    local region = TERRAIN.chunkRegion(center.X - radius - 8, center.X + radius + 8,
+        center.Z - radius - 8, center.Z + radius + 8, minY, maxY)
+    local voxels = TERRAIN.regionShape(region)
+    if voxels > TERRAIN.MAX_READ_WRITE_VOXELS then
+        return failCode("REGION_LIMIT", "The brush region is " .. TERRAIN.volumeLabel(voxels) .. ", above the 4,194,304 read/write limit. Reduce radius.")
+    end
+    local ctx = TERRAIN.arguments(args)
+    ctx.baseHeight = center.Y
+    ctx.waterLevel = tonumber(args.waterLevel)
+    local allHeights = TERRAIN.collectHeights(terrain, region)
+    if allHeights == nil then return failCode("READ_FAILED", "Terrain could not be read for sculpting.") end
+    local recording = TERRAIN.beginRecording("Arena terrain sculpt")
+    local result, err = TERRAIN.sculptChunk(terrain, region, args, action, ctx, allHeights)
+    TERRAIN.finishRecording(recording, "terrain_sculpt")
+    if result == nil then return failCode(err or "WRITE_FAILED", "Sculpting failed.") end
+    return ok({
+        action = action,
+        radius = radius,
+        strength = tonumber(args.strength) or 4,
+        changedColumns = result.changedColumns,
+        writeMode = result.mode,
+        brush = { center = { x = center.X, y = center.Y, z = center.Z }, radius = radius },
+    }, {
+        "Sculpt actions are local: raise/lower move +/- strength, flatten pulls to targetY, smooth averages neighbours, erode lowers steep ground.",
+        "Paint afterwards with terrain_paint when the exposed layer should change (Rock after erosion, Sand around water).",
+    })
+end
+
+tools.terrain_paint = function(args)
+    args = args or {}
+    local terrain = TERRAIN.terrain()
+    if terrain == nil then return failCode("NO_TERRAIN", "Workspace.Terrain is missing.") end
+    local material = TERRAIN.material(args.material, nil)
+    if material == nil then
+        return failCode("BAD_ARGS", "material is required, for example Grass, Ground, Rock, Sand, Snow, Slate, CrackedLava, Mud, LeafyGrass.")
+    end
+    local area = TERRAIN.area(args)
+    if area.width > 512 or area.depth > 512 then
+        return failCode("REGION_LIMIT", "Painting is limited to 512 x 512 studs per call - split the area.")
+    end
+    if area.maxY - area.minY > 512 then area.maxY = area.minY + 512 end
+    local depth = tonumber(args.depth) or 4
+    if depth < 0 then depth = 0 end
+    if depth > 64 then depth = 64 end
+    local radius = tonumber(args.radius)
+    local center = area.center
+    local chunkSize = 64
+    local cols = math.ceil(area.width / chunkSize)
+    local rows = math.ceil(area.depth / chunkSize)
+    local painted, processed, failed = 0, 0, 0
+    for chunkRow = 0, rows - 1 do
+        for chunkCol = 0, cols - 1 do
+            local minX = area.minX + chunkCol * chunkSize
+            local maxX = math.min(area.maxX, minX + chunkSize)
+            local minZ = area.minZ + chunkRow * chunkSize
+            local maxZ = math.min(area.maxZ, minZ + chunkSize)
+            local region = TERRAIN.chunkRegion(minX, maxX, minZ, maxZ, area.minY, area.maxY)
+            local chunk = TERRAIN.readChunk(terrain, region)
+            if chunk == nil then
+                failed = failed + 1
+            else
+                local touched = 0
+                for x = 1, chunk.nx do
+                    for z = 1, chunk.nz do
+                        local wx = region.Min.X + (x - 1) * 4 + 2
+                        local wz = region.Min.Z + (z - 1) * 4 + 2
+                        local inside = true
+                        if radius ~= nil then
+                            inside = ((wx - center.X) ^ 2 + (wz - center.Z) ^ 2) <= radius * radius
+                        end
+                        if inside then
+                            local topHeight, topIndex = nil, nil
+                            for y = chunk.ny, 1, -1 do
+                                local occupancy = chunk.occupancies[x][y][z] or 0
+                                if occupancy > 0.15 then
+                                    topIndex = y
+                                    topHeight = region.Min.Y + (y - 1) * 4 + occupancy * 4
+                                    break
+                                end
+                            end
+                            if topIndex ~= nil and topHeight ~= nil then
+                                for y = 1, chunk.ny do
+                                    local occupancy = chunk.occupancies[x][y][z] or 0
+                                    if occupancy > 0.02 then
+                                        local voxelTop = region.Min.Y + y * 4
+                                        if depth <= 0 or voxelTop >= (topHeight - depth) then
+                                            chunk.materials[x][y][z] = material
+                                            touched = touched + 1
+                                        end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+                local writeMode, writeError = TERRAIN.writeChunk(terrain, region, chunk.materials, chunk.occupancies, chunk.liquids)
+                if writeMode == nil then failed = failed + 1 else painted = painted + touched end
+            end
+            processed = processed + 1
+            task.wait()
+        end
+    end
+    waypoint("terrain_paint")
+    return ok({
+        material = tostring(material),
+        paintedVoxels = painted,
+        depth = depth,
+        radius = radius,
+        chunks = processed,
+        failedChunks = failed,
+        area = { minX = area.minX, maxX = area.maxX, minZ = area.minZ, maxZ = area.maxZ, minY = area.minY, maxY = area.maxY },
+    }, {
+        "depth is measured downward from the measured surface (4 = one voxel layer, 12 = three).",
+        "Painting never changes the solid shape, only the solid material; water is left untouched.",
+    })
+end
+
+function TERRAIN.distanceToSegment(px, pz, ax, az, bx, bz)
+    local dx, dz = bx - ax, bz - az
+    local lengthSq = dx * dx + dz * dz
+    local t = 0
+    if lengthSq > 0.0001 then
+        t = math.clamp(((px - ax) * dx + (pz - az) * dz) / lengthSq, 0, 1)
+    end
+    local cx, cz = ax + dx * t, az + dz * t
+    return math.sqrt((px - cx) ^ 2 + (pz - cz) ^ 2)
+end
+
+function TERRAIN.pathPoints(args)
+    local points = {}
+    if type(args.points) == "table" then
+        for _, entry in ipairs(args.points) do
+            local vec = decodeValue(entry)
+            if typeof(vec) == "Vector3" then table.insert(points, vec) end
+        end
+    end
+    if #points < 2 then
+        local from = decodeValue(args.from)
+        local to = decodeValue(args.to)
+        if typeof(from) == "Vector3" and typeof(to) == "Vector3" then
+            points = { from, to }
+        end
+    end
+    return points
+end
+
+tools.terrain_water = function(args)
+    args = args or {}
+    local terrain = TERRAIN.terrain()
+    if terrain == nil then return failCode("NO_TERRAIN", "Workspace.Terrain is missing.") end
+    local action = string.lower(tostring(args.action or "lake"))
+    if action == "lake" then
+        local center = decodeValue(args.center)
+        if typeof(center) ~= "Vector3" then return failCode("BAD_ARGS", "lake needs center={x,y,z}.") end
+        local waterLevel = tonumber(args.waterLevel) or center.Y
+        local radius = math.clamp(tonumber(args.radius) or 48, 8, 256)
+        local depth = math.clamp(tonumber(args.depth) or 16, 4, 128)
+        local gridArgs = {
+            mode = "measured",
+            center = center,
+            size = { x = radius * 2, z = radius * 2 },
+            gridStep = math.clamp(tonumber(args.gridStep) or 8, 4, 16),
+            baseHeight = waterLevel,
+            waterLevel = waterLevel,
+            maxChunks = args.maxChunks,
+            surface = args.surface, subsurface = args.subsurface, rock = args.rock, seabed = args.seabed,
+            sand = args.sand, snow = args.snow, sandDepth = args.sandDepth, snowLine = args.snowLine,
+            rockSlope = args.rockSlope,
+        }
+        gridArgs.gridStep = math.max(4, math.floor(gridArgs.gridStep / 4 + 0.5) * 4)
+        local grid, stats, code, message = TERRAIN.buildGrid(gridArgs)
+        if grid == nil then return failCode(code or "BAD_ARGS", message or "Lake grid failed.") end
+        local step = stats.gridStep
+        for row = 1, stats.rows do
+            for col = 1, stats.cols do
+                local wx = stats.minXStud + (col - 1) * step
+                local wz = stats.minZStud + (row - 1) * step
+                local distance = math.sqrt((wx - center.X) ^ 2 + (wz - center.Z) ^ 2)
+                if distance <= radius then
+                    local bowl = waterLevel - depth * (1 - TERRAIN.smoothstep(distance / radius))
+                    if bowl < grid[row][col] then grid[row][col] = bowl end
+                end
+            end
+        end
+        local ctx = TERRAIN.arguments(gridArgs)
+        ctx.waterLevel = waterLevel
+        local written, writeError = TERRAIN.writeHeightmap(gridArgs, grid, stats, ctx)
+        if written == nil then return failCode(writeError or "WRITE_FAILED", "Lake write failed.") end
+        waypoint("terrain_water_lake")
+        return ok({
+            action = "lake", waterLevel = waterLevel, radius = radius, depth = depth,
+            waterVoxels = written.waterVoxels, solidVoxels = written.solidVoxels,
+            chunks = written.chunks, processedChunks = written.processedChunks,
+            resumeToken = written.resumeToken, complete = written.complete,
+        }, {
+            "The basin is dug and filled in one pass: the lake bed follows a smooth bowl, the shore is sand.",
+            "Verify with terrain_measure action=water at the centre.",
+        })
+    elseif action == "river" then
+        local points = TERRAIN.pathPoints(args)
+        if #points < 2 then return failCode("BAD_ARGS", "river needs points=[{x,y,z},...] (at least 2) or from/to.") end
+        local waterLevel = tonumber(args.waterLevel) or points[1].Y
+        local width = math.clamp(tonumber(args.width) or 24, 6, 128)
+        local depth = math.clamp(tonumber(args.depth) or 10, 2, 96)
+        local minX, maxX, minZ, maxZ = math.huge, -math.huge, math.huge, -math.huge
+        for _, point in ipairs(points) do
+            if point.X < minX then minX = point.X end
+            if point.X > maxX then maxX = point.X end
+            if point.Z < minZ then minZ = point.Z end
+            if point.Z > maxZ then maxZ = point.Z end
+        end
+        local padding = width + 24
+        local center = Vector3.new((minX + maxX) * 0.5, waterLevel, (minZ + maxZ) * 0.5)
+        local sizeX = math.min(1024, (maxX - minX) + padding * 2)
+        local sizeZ = math.min(1024, (maxZ - minZ) + padding * 2)
+        local gridArgs = {
+            mode = "measured",
+            center = center,
+            size = { x = sizeX, z = sizeZ },
+            gridStep = math.clamp(tonumber(args.gridStep) or 8, 4, 16),
+            baseHeight = waterLevel,
+            waterLevel = waterLevel,
+            maxChunks = args.maxChunks,
+        }
+        gridArgs.gridStep = math.max(4, math.floor(gridArgs.gridStep / 4 + 0.5) * 4)
+        local grid, stats, code, message = TERRAIN.buildGrid(gridArgs)
+        if grid == nil then return failCode(code or "BAD_ARGS", message or "River grid failed.") end
+        local step = stats.gridStep
+        for row = 1, stats.rows do
+            for col = 1, stats.cols do
+                local wx = stats.minXStud + (col - 1) * step
+                local wz = stats.minZStud + (row - 1) * step
+                local nearest = math.huge
+                for index = 1, #points - 1 do
+                    local distance = TERRAIN.distanceToSegment(wx, wz, points[index].X, points[index].Z, points[index + 1].X, points[index + 1].Z)
+                    if distance < nearest then nearest = distance end
+                end
+                if nearest <= width then
+                    local channel = waterLevel - depth * (1 - TERRAIN.smoothstep(nearest / width))
+                    if channel < grid[row][col] then grid[row][col] = channel end
+                end
+            end
+        end
+        local ctx = TERRAIN.arguments(gridArgs)
+        ctx.waterLevel = waterLevel
+        local written, writeError = TERRAIN.writeHeightmap(gridArgs, grid, stats, ctx)
+        if written == nil then return failCode(writeError or "WRITE_FAILED", "River write failed.") end
+        waypoint("terrain_water_river")
+        return ok({
+            action = "river", waterLevel = waterLevel, width = width, depth = depth,
+            points = #points, waterVoxels = written.waterVoxels, solidVoxels = written.solidVoxels,
+            chunks = written.chunks, processedChunks = written.processedChunks,
+            resumeToken = written.resumeToken, complete = written.complete,
+        }, {
+            "The river follows the polyline through all points; give 3+ points for curves.",
+            "Banks are cut into the existing measured surface, so a river through hills forms a real valley.",
+        })
+    elseif action == "fill" or action == "ocean" then
+        local area = TERRAIN.area(args)
+        local waterLevel = tonumber(args.waterLevel) or area.maxY
+        local bottom = tonumber(args.minY) or area.minY
+        if waterLevel <= bottom then return failCode("BAD_ARGS", "waterLevel/maxY must be above minY.") end
+        local region = TERRAIN.chunkRegion(area.minX, area.maxX, area.minZ, area.maxZ, bottom, waterLevel)
+        local nx, ny, nz = TERRAIN.regionShape(region)
+        local voxels = nx * ny * nz
+        if voxels > TERRAIN.MAX_FILL_VOXELS then
+            return failCode("REGION_LIMIT", "Fill would touch " .. TERRAIN.volumeLabel(voxels) .. ", the FillRegion limit is 67,108,864. Split the area.")
+        end
+        local okFill, fillError = pcall(function() terrain:FillRegion(region, 4, Enum.Material.Water) end)
+        if not okFill then return failCode("WRITE_FAILED", "FillRegion failed: " .. tostring(fillError)) end
+        waypoint("terrain_water_fill")
+        return ok({
+            action = action, waterLevel = waterLevel,
+            min = { x = region.Min.X, y = region.Min.Y, z = region.Min.Z },
+            max = { x = region.Max.X, y = region.Max.Y, z = region.Max.Z },
+            voxels = voxels,
+        }, {
+            "FillRegion replaces the whole box with water - it does not keep an island inside it.",
+            "For an ocean around existing terrain use action=lake with a very large radius and a deep depth, or fill only the ring outside the land.",
+        })
+    elseif action == "clear" then
+        local area = TERRAIN.area(args)
+        local chunkSize = 64
+        local cols = math.ceil(area.width / chunkSize)
+        local rows = math.ceil(area.depth / chunkSize)
+        local removed, processed = 0, 0
+        for chunkRow = 0, rows - 1 do
+            for chunkCol = 0, cols - 1 do
+                local minX = area.minX + chunkCol * chunkSize
+                local maxX = math.min(area.maxX, minX + chunkSize)
+                local minZ = area.minZ + chunkRow * chunkSize
+                local maxZ = math.min(area.maxZ, minZ + chunkSize)
+                local region = TERRAIN.chunkRegion(minX, maxX, minZ, maxZ, area.minY, area.maxY)
+                local chunk = TERRAIN.readChunk(terrain, region)
+                if chunk ~= nil then
+                    local touched = 0
+                    for x = 1, chunk.nx do
+                        for y = 1, chunk.ny do
+                            for z = 1, chunk.nz do
+                                if (chunk.liquids[x][y][z] or 0) > 0.02 then
+                                    chunk.liquids[x][y][z] = 0
+                                    touched = touched + 1
+                                end
+                            end
+                        end
+                    end
+                    if touched > 0 then
+                        TERRAIN.writeChunk(terrain, region, chunk.materials, chunk.occupancies, chunk.liquids)
+                        removed = removed + touched
+                    end
+                end
+                processed = processed + 1
+                task.wait()
+            end
+        end
+        waypoint("terrain_water_clear")
+        return ok({ action = "clear", removedWaterVoxels = removed, chunks = processed }, {
+            "Only the liquid channel is cleared; solid terrain and parts stay untouched.",
+        })
+    end
+    return failCode("BAD_ARGS", "action must be lake, river, fill, ocean or clear.")
+end
+
+-- ---------------------------------------------------------------------------
+-- GELÄNDEFORMEN: benannte Silhouetten statt zufälliger Haufen.
+-- ---------------------------------------------------------------------------
+TERRAIN.FEATURE_SHAPES = {}
+
+TERRAIN.FEATURE_SHAPES.mountain = function(wx, wz, args, ctx)
+    local distance = math.sqrt((wx - ctx.center.X) ^ 2 + (wz - ctx.center.Z) ^ 2) / math.max(8, ctx.radius)
+    local cone = (math.clamp(1 - distance, 0, 1) ^ 1.45)
+    local ridge = TERRAIN.ridged(wx * 0.012, wz * 0.012, ctx.seed, 4)
+    return ctx.baseHeight + ctx.amplitude * cone * (0.55 + ridge * 0.8)
+end
+
+TERRAIN.FEATURE_SHAPES.ridge = function(wx, wz, args, ctx)
+    local dx = math.abs(wx - ctx.center.X) / math.max(8, ctx.radius)
+    local dz = math.abs(wz - ctx.center.Z) / math.max(8, ctx.radius * 0.3)
+    local crest = math.clamp(1 - dz, 0, 1) * math.clamp(1 - dx, 0, 1)
+    local detail = TERRAIN.ridged(wx * 0.02, wz * 0.02, ctx.seed, 4)
+    return ctx.baseHeight + ctx.amplitude * ((crest) ^ (1.1)) * (0.6 + detail * 0.6)
+end
+
+TERRAIN.FEATURE_SHAPES.hill = function(wx, wz, args, ctx)
+    local distance = math.sqrt((wx - ctx.center.X) ^ 2 + (wz - ctx.center.Z) ^ 2) / math.max(8, ctx.radius)
+    local bump = math.exp(-(distance * 2.3) ^ 2)
+    local detail = (TERRAIN.fbm(wx * 0.03, wz * 0.03, ctx.seed, 3) - 0.5) * 2.5
+    return ctx.baseHeight + ctx.amplitude * bump + detail
+end
+
+TERRAIN.FEATURE_SHAPES.plateau = function(wx, wz, args, ctx)
+    local distance = math.sqrt((wx - ctx.center.X) ^ 2 + (wz - ctx.center.Z) ^ 2) / math.max(8, ctx.radius)
+    local shape = TERRAIN.smoothstep(math.clamp((0.78 - distance) / 0.18, 0, 1))
+    local detail = (TERRAIN.fbm(wx * 0.02, wz * 0.02, ctx.seed, 3) - 0.5) * 3
+    return ctx.baseHeight + ctx.amplitude * shape + detail * (1 - shape)
+end
+
+TERRAIN.FEATURE_SHAPES.crater = function(wx, wz, args, ctx)
+    local distance = math.sqrt((wx - ctx.center.X) ^ 2 + (wz - ctx.center.Z) ^ 2) / math.max(8, ctx.radius)
+    local rim = math.exp(-((distance - 0.78) ^ 2) / 0.006) * 0.45
+    local bowl = -math.clamp(1 - distance / 0.78, 0, 1) ^ 1.6
+    local detail = (TERRAIN.fbm(wx * 0.03, wz * 0.03, ctx.seed, 3) - 0.5) * 2
+    return ctx.baseHeight + ctx.amplitude * (rim + bowl * 0.85) + detail
+end
+
+TERRAIN.FEATURE_SHAPES.volcano = function(wx, wz, args, ctx)
+    local distance = math.sqrt((wx - ctx.center.X) ^ 2 + (wz - ctx.center.Z) ^ 2) / math.max(8, ctx.radius)
+    local cone = (math.clamp(1 - distance, 0, 1) ^ 1.7)
+    local crater = 0
+    if distance < 0.22 then crater = -(1 - distance / 0.22) * 0.35 end
+    local detail = TERRAIN.ridged(wx * 0.025, wz * 0.025, ctx.seed, 3) * 0.18
+    return ctx.baseHeight + ctx.amplitude * (cone * 0.85 + crater + detail)
+end
+
+TERRAIN.FEATURE_SHAPES.canyon = function(wx, wz, args, ctx)
+    local distance = math.abs(wz - ctx.center.Z) / math.max(8, ctx.radius * 0.35)
+    local wall = math.clamp(distance, 0, 1)
+    local detail = (TERRAIN.fbm(wx * 0.02, wz * 0.02, ctx.seed, 4) - 0.5) * 4
+    return ctx.baseHeight + ctx.amplitude * TERRAIN.smoothstep(wall) * 0.9 + detail
+end
+
+TERRAIN.FEATURE_SHAPES.island = function(wx, wz, args, ctx)
+    local distance = math.sqrt((wx - ctx.center.X) ^ 2 + (wz - ctx.center.Z) ^ 2) / math.max(8, ctx.radius)
+    local shape = TERRAIN.smoothstep(math.clamp((1 - distance) / 0.45, 0, 1))
+    local detail = (TERRAIN.fbm(wx * 0.025, wz * 0.025, ctx.seed, 4) - 0.5) * 5
+    return ctx.baseHeight + (shape - 0.28) * ctx.amplitude + detail * shape
+end
+
+TERRAIN.FEATURE_SHAPES.archipelago = function(wx, wz, args, ctx)
+    local mask = TERRAIN.fbm(wx * 0.008, wz * 0.008, ctx.seed + 17, 4)
+    local shape = TERRAIN.smoothstep((mask - 0.48) / 0.14)
+    local detail = (TERRAIN.fbm(wx * 0.03, wz * 0.03, ctx.seed + 3, 3) - 0.5) * 3
+    return ctx.baseHeight + (shape - 0.24) * ctx.amplitude + detail * shape
+end
+
+TERRAIN.FEATURE_SHAPES.dunes = function(wx, wz, args, ctx)
+    local wave = (math.sin(wx * 0.035 + TERRAIN.noise2D(wx * 0.01, wz * 0.01, ctx.seed) * 5) * 0.5 + 0.5)
+    local cross = math.cos(wz * 0.02) * 0.35 + 0.65
+    local detail = (TERRAIN.fbm(wx * 0.05, wz * 0.05, ctx.seed + 2, 2) - 0.5) * 1.4
+    return ctx.baseHeight + ctx.amplitude * wave * cross * 0.5 + detail
+end
+
+TERRAIN.FEATURE_SHAPES.cliff = function(wx, wz, args, ctx)
+    local direction = math.clamp((ctx.center.X - wx) / math.max(8, ctx.radius) * 0.5 + 0.5, 0, 1)
+    local ledge = TERRAIN.smoothstep(math.clamp(direction * 1.6, 0, 1))
+    local detail = (TERRAIN.fbm(wx * 0.03, wz * 0.03, ctx.seed, 3) - 0.5) * 3
+    return ctx.baseHeight + ctx.amplitude * ledge + detail * 0.4
+end
+
+TERRAIN.FEATURE_SHAPES.valley = function(wx, wz, args, ctx)
+    local distance = math.abs(wx - ctx.center.X) / math.max(8, ctx.radius)
+    local shape = TERRAIN.smoothstep(math.clamp(distance / 0.75, 0, 1))
+    local detail = (TERRAIN.fbm(wx * 0.02, wz * 0.02, ctx.seed, 3) - 0.5) * 3
+    return ctx.baseHeight + ctx.amplitude * (shape - 0.5) + detail
+end
+
+TERRAIN.FEATURE_SHAPES.terrace = function(wx, wz, args, ctx)
+    local base = ctx.baseHeight + (TERRAIN.fbm(wx * 0.01, wz * 0.01, ctx.seed, 4) - 0.35) * ctx.amplitude * 0.7
+    local step = math.max(2, tonumber(args.terraceStep) or 8)
+    return ctx.baseHeight + math.floor((base - ctx.baseHeight) / step + 0.5) * step
+end
+
+tools.terrain_feature = function(args)
+    args = args or {}
+    if TERRAIN.terrain() == nil then return failCode("NO_TERRAIN", "Workspace.Terrain is missing.") end
+    local kind = string.lower(tostring(args.kind or args.preset or "mountain"))
+    local shape = TERRAIN.FEATURE_SHAPES[kind]
+    if shape == nil then
+        local names = {}
+        for name in pairs(TERRAIN.FEATURE_SHAPES) do table.insert(names, name) end
+        table.sort(names)
+        return failCode("BAD_ARGS", "kind must be one of: " .. table.concat(names, ", ") .. ".")
+    end
+    local center = decodeValue(args.center)
+    if typeof(center) ~= "Vector3" then center = Vector3.new(0, 0, 0) end
+    local radius = math.clamp(tonumber(args.radius) or 64, 8, 256)
+    local height = math.clamp(tonumber(args.height) or 32, 2, 256)
+    local effectiveArgs = {
+        preset = kind,
+        center = center,
+        size = { x = radius * 2, z = radius * 2 },
+        baseHeight = center.Y,
+        maxHeight = center.Y + height,
+        minHeight = center.Y - height - 8,
+        gridStep = math.clamp(tonumber(args.gridStep) or 4, 4, 16),
+        maxChunks = args.maxChunks,
+        surface = args.surface, subsurface = args.subsurface, rock = args.rock, sand = args.sand,
+        snow = args.snow, seabed = args.seabed, snowLine = args.snowLine, rockSlope = args.rockSlope,
+        sandDepth = args.sandDepth, edgeFalloff = tonumber(args.edgeFalloff) or 0.18,
+        _heightFunction = shape,
+    }
+    effectiveArgs.gridStep = math.max(4, math.floor(effectiveArgs.gridStep / 4 + 0.5) * 4)
+    local waterLevel = tonumber(args.waterLevel)
+    if waterLevel == nil and (kind == "island" or kind == "archipelago") then waterLevel = center.Y end
+    effectiveArgs.waterLevel = waterLevel
+    local grid, stats, code, message = TERRAIN.buildGrid(effectiveArgs)
+    if grid == nil then return failCode(code or "BAD_ARGS", message or "Feature grid failed.") end
+    local ctx = TERRAIN.arguments(effectiveArgs)
+    ctx.waterLevel = waterLevel
+    local written, writeError = TERRAIN.writeHeightmap(effectiveArgs, grid, stats, ctx)
+    if written == nil then return failCode(writeError or "WRITE_FAILED", "Feature write failed.") end
+    if kind == "volcano" and args.lava == true then
+        local craterRadius = math.max(4, radius * 0.18)
+        local craterBottom = center.Y + height * 0.25
+        local region = TERRAIN.chunkRegion(center.X - craterRadius, center.X + craterRadius,
+            center.Z - craterRadius, center.Z + craterRadius, craterBottom, craterBottom + 8)
+        pcall(function() TERRAIN.terrain():FillRegion(region, 4, Enum.Material.CrackedLava) end)
+    end
+    waypoint("terrain_feature_" .. kind)
+    return ok({
+        kind = kind,
+        stats = stats,
+        chunks = written.chunks,
+        processedChunks = written.processedChunks,
+        residualAboveSurface = written.sourceMode,
+        waterVoxels = written.waterVoxels,
+        solidVoxels = written.solidVoxels,
+        resumeToken = written.resumeToken,
+        complete = written.complete,
+    }, {
+        "The feature is centred on center with the requested radius and height; stats contains the measured result.",
+        "Add detail afterwards with terrain_paint (rock on steep sides, snow above snowLine) instead of regenerating everything.",
+    })
+end
+
+tools.terrain_carve = function(args)
+    args = args or {}
+    local terrain = TERRAIN.terrain()
+    if terrain == nil then return failCode("NO_TERRAIN", "Workspace.Terrain is missing.") end
+    local action = string.lower(tostring(args.action or "tunnel"))
+    local radius = math.clamp(tonumber(args.radius) or 10, 2, 80)
+    local points = TERRAIN.pathPoints(args)
+    local carvedVolume = 0
+    local steps = 0
+    if action == "tunnel" or action == "trench" or action == "arch" then
+        if #points < 2 then return failCode("BAD_ARGS", action .. " needs points (at least 2) or from/to.") end
+        if action == "trench" then
+            local waterLevel = tonumber(args.waterLevel) or points[1].Y
+            for _, point in ipairs(points) do
+                point = Vector3.new(point.X, waterLevel - radius, point.Z)
+            end
+            local adjusted = {}
+            for _, point in ipairs(points) do table.insert(adjusted, Vector3.new(point.X, waterLevel - radius * 0.5, point.Z)) end
+            points = adjusted
+        end
+        if action == "arch" then
+            local from, to = points[1], points[#points]
+            local span = (to - from)
+            local height = tonumber(args.height) or math.max(radius * 3, span.Magnitude * 0.25)
+            local arcPoints = {}
+            local segments = 16
+            for index = 0, segments do
+                local t = index / segments
+                local x = from.X + (to.X - from.X) * t
+                local z = from.Z + (to.Z - from.Z) * t
+                local y = math.max(from.Y, to.Y) + math.sin(t * math.pi) * height
+                table.insert(arcPoints, Vector3.new(x, y, z))
+            end
+            points = arcPoints
+        end
+        local stepLength = math.max(2, radius * 0.6)
+        for index = 1, #points - 1 do
+            local from, to = points[index], points[index + 1]
+            local distance = (to - from).Magnitude
+            local count = math.max(1, math.ceil(distance / stepLength))
+            for step = 0, count - 1 do
+                local t = step / count
+                local position = from + (to - from) * t
+                local wobble = nil
+                if args.jitter ~= nil and tonumber(args.jitter) ~= nil then
+                    local amount = tonumber(args.jitter)
+                    position = position + Vector3.new(
+                        (TERRAIN.noise2D(position.X * 0.1, position.Z * 0.1, 11) - 0.5) * amount,
+                        (TERRAIN.noise2D(position.X * 0.1, position.Z * 0.1, 23) - 0.5) * amount,
+                        (TERRAIN.noise2D(position.X * 0.1, position.Z * 0.1, 37) - 0.5) * amount
+                    )
+                end
+                local okFill = pcall(function() terrain:FillBall(position, radius, Enum.Material.Air) end)
+                if okFill then
+                    carvedVolume = carvedVolume + (4 / 3) * math.pi * radius ^ 3 * (stepLength / math.max(stepLength, radius))
+                    steps = steps + 1
+                end
+                task.wait()
+            end
+        end
+    elseif action == "pit" then
+        local center = decodeValue(args.center)
+        if typeof(center) ~= "Vector3" then return failCode("BAD_ARGS", "pit needs center={x,y,z}.") end
+        local depth = math.clamp(tonumber(args.depth) or radius, 2, 128)
+        local okFill = pcall(function() terrain:FillBall(center - Vector3.new(0, depth * 0.5, 0), radius, Enum.Material.Air) end)
+        if not okFill then return failCode("WRITE_FAILED", "FillBall failed.") end
+        carvedVolume = (4 / 3) * math.pi * radius ^ 3 * 0.5
+        steps = 1
+    elseif action == "sphere" then
+        local center = decodeValue(args.center)
+        if typeof(center) ~= "Vector3" then return failCode("BAD_ARGS", "sphere needs center={x,y,z}.") end
+        local okFill = pcall(function() terrain:FillBall(center, radius, Enum.Material.Air) end)
+        if not okFill then return failCode("WRITE_FAILED", "FillBall failed.") end
+        carvedVolume = (4 / 3) * math.pi * radius ^ 3
+        steps = 1
+    else
+        return failCode("BAD_ARGS", "action must be tunnel, trench, arch, pit or sphere.")
+    end
+    waypoint("terrain_carve")
+    return ok({
+        action = action,
+        steps = steps,
+        radius = radius,
+        removedVolumeStuds3 = math.floor(carvedVolume),
+        note = "Carving uses Air FillBalls, so it removes both terrain and water along the path.",
+    }, {
+        "Carve first, then terrain_paint the exposed walls (Rock inside a tunnel, Sand in a trench).",
+        "For a cave system, carve several connected tunnels with the same radius and different points.",
+    })
+end
+
+tools.terrain_measure = function(args)
+    args = args or {}
+    local terrain = TERRAIN.terrain()
+    if terrain == nil then return failCode("NO_TERRAIN", "Workspace.Terrain is missing.") end
+    local action = string.lower(tostring(args.action or "height"))
+    if action == "height" then
+        local points = {}
+        if type(args.points) == "table" then
+            for _, entry in ipairs(args.points) do
+                local vec = decodeValue(entry)
+                if typeof(vec) == "Vector3" then table.insert(points, vec) end
+            end
+        end
+        local single = decodeValue(args.position or args.center)
+        if typeof(single) == "Vector3" then table.insert(points, single) end
+        if #points == 0 then return failCode("BAD_ARGS", "height needs points=[{x,y,z},...] or position={x,y,z}.") end
+        if #points > 64 then return failCode("REGION_LIMIT", "height accepts at most 64 points per call - split the list.") end
+        local rayParams = measureRayParams({})
+        local heights = {}
+        for _, point in ipairs(points) do
+            local hit = Workspace:Raycast(Vector3.new(point.X, point.Y + 512, point.Z), Vector3.new(0, -1024, 0), rayParams)
+            table.insert(heights, {
+                x = point.X, z = point.Z,
+                height = hit and hit.Position.Y or nil,
+                hit = hit and hit.Instance:GetFullName() or nil,
+                material = hit and tostring(hit.Material) or nil,
+            })
+        end
+        return ok({ action = "height", points = heights, measured = #heights },
+            { "height is the first hit from +512 studs; a part above the ground is reported as the hit instance - exclude it if you need terrain only." })
+    elseif action == "profile" then
+        local from = decodeValue(args.from)
+        local to = decodeValue(args.to)
+        if typeof(from) ~= "Vector3" or typeof(to) ~= "Vector3" then return failCode("BAD_ARGS", "profile needs from and to vectors.") end
+        local samples = math.clamp(math.floor(tonumber(args.samples) or 16), 2, 128)
+        local rayParams = measureRayParams({})
+        local profile = {}
+        for index = 0, samples - 1 do
+            local t = index / (samples - 1)
+            local x = from.X + (to.X - from.X) * t
+            local z = from.Z + (to.Z - from.Z) * t
+            local hit = Workspace:Raycast(Vector3.new(x, math.max(from.Y, to.Y) + 512, z), Vector3.new(0, -1024, 0), rayParams)
+            table.insert(profile, {
+                t = t, x = x, z = z,
+                height = hit and hit.Position.Y or nil,
+                instance = hit and hit.Instance:GetFullName() or nil,
+            })
+        end
+        local minimum, maximum = math.huge, -math.huge
+        for _, entry in ipairs(profile) do
+            if entry.height ~= nil then
+                if entry.height < minimum then minimum = entry.height end
+                if entry.height > maximum then maximum = entry.height end
+            end
+        end
+        return ok({
+            action = "profile", from = { x = from.X, y = from.Y, z = from.Z }, to = { x = to.X, y = to.Y, z = to.Z },
+            sampleCount = #profile, minHeight = minimum, maxHeight = maximum, relativeHeight = maximum - minimum,
+            samples = profile,
+        })
+    elseif action == "water" then
+        local point = decodeValue(args.position or args.center)
+        if typeof(point) ~= "Vector3" then return failCode("BAD_ARGS", "water needs position={x,y,z}.") end
+        local region = TERRAIN.chunkRegion(point.X - 8, point.X + 8, point.Z - 8, point.Z + 8, point.Y - 64, point.Y + 64)
+        local chunk = TERRAIN.readChunk(terrain, region)
+        if chunk == nil then return failCode("READ_FAILED", "Water could not be read.") end
+        local waterSurface, waterVoxels = nil, 0
+        for x = 1, chunk.nx do
+            for y = 1, chunk.ny do
+                for z = 1, chunk.nz do
+                    local liquid = chunk.liquids[x] and chunk.liquids[x][y] and chunk.liquids[x][y][z] or 0
+                    if liquid > 0.02 then
+                        waterVoxels = waterVoxels + 1
+                        local surface = region.Min.Y + (y - 1) * 4 + liquid * 4
+                        if waterSurface == nil or surface > waterSurface then waterSurface = surface end
+                    end
+                end
+            end
+        end
+        return ok({
+            action = "water", x = point.X, z = point.Z,
+            hasWater = waterSurface ~= nil,
+            waterLevel = waterSurface,
+            depthBelowQuery = waterSurface and (point.Y - waterSurface) or nil,
+            waterVoxels = waterVoxels,
+            searchBand = { minY = region.Min.Y, maxY = region.Max.Y },
+        }, {
+            "waterLevel is the highest liquid surface in a 16 x 16 stud column around the point.",
+            "Liquid lives in the LiquidOccupancy channel (Shorelines update); a solid Water voxel reports as water too.",
+        })
+    elseif action == "volume" then
+        local area = TERRAIN.area(args)
+        if area.width > 512 or area.depth > 512 then return failCode("REGION_LIMIT", "volume is limited to 512 x 512 studs per call.") end
+        local chunkSize = 64
+        local cols = math.ceil(area.width / chunkSize)
+        local rows = math.ceil(area.depth / chunkSize)
+        local solid, water, chunks = 0, 0, 0
+        for chunkRow = 0, rows - 1 do
+            for chunkCol = 0, cols - 1 do
+                local minX = area.minX + chunkCol * chunkSize
+                local maxX = math.min(area.maxX, minX + chunkSize)
+                local minZ = area.minZ + chunkRow * chunkSize
+                local maxZ = math.min(area.maxZ, minZ + chunkSize)
+                local region = TERRAIN.chunkRegion(minX, maxX, minZ, maxZ, area.minY, area.maxY)
+                local chunk = TERRAIN.readChunk(terrain, region)
+                if chunk ~= nil then
+                    for x = 1, chunk.nx do
+                        for y = 1, chunk.ny do
+                            for z = 1, chunk.nz do
+                                local occupancy = chunk.occupancies[x][y][z] or 0
+                                if occupancy > 0.02 then solid = solid + occupancy end
+                                local liquid = chunk.liquids[x][y][z] or 0
+                                if liquid > 0.02 then water = water + liquid end
+                            end
+                        end
+                    end
+                    chunks = chunks + 1
+                end
+                task.wait()
+            end
+        end
+        return ok({
+            action = "volume",
+            solidVoxels = math.floor(solid + 0.5), waterVoxels = math.floor(water + 0.5),
+            solidStuds3 = math.floor(solid * 64), waterStuds3 = math.floor(water * 64),
+            chunks = chunks,
+            area = { minX = area.minX, maxX = area.maxX, minZ = area.minZ, maxZ = area.maxZ, minY = area.minY, maxY = area.maxY },
+        })
+    end
+    return failCode("BAD_ARGS", "action must be height, profile, water or volume.")
+end
+
+tools.terrain_clear = function(args)
+    args = args or {}
+    local terrain = TERRAIN.terrain()
+    if terrain == nil then return failCode("NO_TERRAIN", "Workspace.Terrain is missing.") end
+    local area = TERRAIN.area(args)
+    if area.width > 1024 or area.depth > 1024 then
+        return failCode("REGION_LIMIT", "terrain_clear is limited to 1024 x 1024 studs; split the area.")
+    end
+    local region = TERRAIN.chunkRegion(area.minX, area.maxX, area.minZ, area.maxZ, area.minY, area.maxY)
+    local nx, ny, nz = TERRAIN.regionShape(region)
+    local voxels = nx * ny * nz
+    if voxels > TERRAIN.MAX_FILL_VOXELS then
+        return failCode("REGION_LIMIT", "Clear would touch " .. TERRAIN.volumeLabel(voxels) .. " (limit 67,108,864). Split the area.")
+    end
+    if args.confirm ~= true then
+        return failCode("CONFIRM_REQUIRED",
+            "terrain_clear removes ALL terrain and water inside " .. tostring(math.floor(area.width)) .. " x " .. tostring(math.floor(area.depth))
+            .. " studs (" .. TERRAIN.volumeLabel(voxels) .. "). Repeat with confirm=true after the user agreed.",
+            { width = area.width, depth = area.depth, voxels = voxels })
+    end
+    local recording = TERRAIN.beginRecording("Arena terrain clear")
+    local okFill, fillError = pcall(function() terrain:FillRegion(region, 4, Enum.Material.Air) end)
+    TERRAIN.finishRecording(recording, "terrain_clear")
+    if not okFill then return failCode("WRITE_FAILED", "Clearing failed: " .. tostring(fillError)) end
+    return ok({
+        cleared = true,
+        voxels = voxels,
+        min = { x = region.Min.X, y = region.Min.Y, z = region.Min.Z },
+        max = { x = region.Max.X, y = region.Max.Y, z = region.Max.Z },
+    }, { "Undo restores the previous terrain (one ChangeHistory step)." })
+end
+
+
 tools.build_polygon_model = function(args)
     local parent,err=resolveRef(args.parentRef or "game.Workspace")
     if not parent then return failCode("REF_NOT_FOUND",err) end
@@ -10296,6 +12421,22 @@ end
 
 -- Generik-Erkennung: das entsättigte Blaugrau der immergleichen
 -- "Dark-Website"-GUI wird als Signatur erkannt und abgelehnt.
+-- 8.0.5: Farbtoekens. Eine Semantik statt Hex-Wiederholung: "accent",
+-- "surfaceHi", "comp" ... werden gegen die aktive Skin-Palette aufgeloest.
+UI_ENGINE.TOKENS = {
+    accent = true, accentHi = true, accentLo = true, comp = true, warm = true,
+    surface = true, surfaceHi = true, surfaceLo = true, text = true, textMuted = true,
+    stroke = true, strokeHi = true, shadow = true, glow = true,
+}
+
+function UI_ENGINE.tokenColor(skin, value, fallback)
+    if type(value) == "string" and UI_ENGINE.TOKENS[value] ~= nil and skin ~= nil and skin.p ~= nil then
+        local resolved = skin.p[value]
+        if resolved ~= nil then return resolved end
+    end
+    return UI_ENGINE.col(value, fallback)
+end
+
 function UI_ENGINE.isGeneric(c)
     local h, s, v = c:ToHSV()
     local deg = h * 360
@@ -10458,6 +12599,95 @@ UI_ENGINE.SKINS = {
         strokes = { { w = 0.008, alpha = 0.15, tint = "accentLo" }, { w = 0.003, alpha = 0.45, tint = "surfaceHi", inner = true } },
         shadows = { { blur = 0.08, alpha = 0.5, oy = 0.02 } },
         sheen = 0.14, gradFill = 100, gradStroke = 55, fonts = { "Kalam", "Arimo" }, energy = "soft" },
+    -- =======================================================================
+    -- Version 8.0.5: SECHZEHN WEITERE STILE - zusammen 40.
+    -- Die neuen Felder outline/gloss/decor sind echte Engine-Bausteine
+    -- (siehe UI_ENGINE.outlineLayer/glossLayer/decorLayer), keine Farbangaben:
+    --   outline = dicke Kontur (comic/sticker/chunky/marker/neon/engraved/tape)
+    --   gloss   = Glasur ueber der oberen Haelfte (Knopf-Gefuehl)
+    --   decor   = Wolken/Funken/Konfetti/Blasen/Striche/Strahlen
+    -- Alle drei sind hinter dem Inhalt, damit Text und Bilder lesbar bleiben.
+    -- =======================================================================
+    pop = { label = "Pop Art", bestFor = "comic, pop art, funny, bright party and meme games", brand = "#FF2D55", mood = "pastel", corner = "chunky", texture = "halftone", texAlpha = 0.88, fillAlpha = 0,
+        strokes = { { w = 0.004, alpha = 0.65, tint = "surfaceHi" } },
+        shadows = { { blur = 0.02, alpha = 0.7, oy = 0.02, ox = 0.012, spread = 0 } },
+        sheen = 0.24, gradFill = 110, gradStroke = 40, fonts = { "Bangers", "Gotham" }, energy = "bouncy",
+        outline = { style = "comic", w = 0.020 }, gloss = { strength = 0.30, height = 0.44 }, decor = { kind = "sparkles", count = 7 } },
+    cloud = { label = "Cloud Kingdom", bestFor = "cute platformers, sky worlds, casual and kids games", brand = "#38BDF8", mood = "light", corner = "round", texture = "noise", texAlpha = 0.95, fillAlpha = 0,
+        strokes = { { w = 0.006, alpha = 0.30, tint = "strokeHi", grad = true } },
+        shadows = { { blur = 0.08, alpha = 0.42, oy = 0.02, spread = -0.008 } },
+        sheen = 0.20, gradFill = 112, gradStroke = 30, fonts = { "Fredoka", "Gotham" }, energy = "soft",
+        outline = { style = "sticker", w = 0.012, keyW = 0.026 }, gloss = { strength = 0.26 }, decor = { kind = "clouds", count = 12 } },
+    gel = { label = "Glossy Gel", bestFor = "casual, clickers, mobile-style and friendly games", brand = "#22C55E", mood = "pastel", corner = "pill", texture = "none", texAlpha = 1, fillAlpha = 0,
+        strokes = { { w = 0.005, alpha = 0.4, tint = "surfaceHi" } },
+        shadows = { { blur = 0.10, alpha = 0.5, oy = 0.026, spread = -0.01 } },
+        sheen = 0.16, gradFill = 108, gradStroke = 45, fonts = { "Fredoka", "Montserrat" }, energy = "bouncy",
+        outline = { style = "sticker", w = 0.010, keyW = 0.030 }, gloss = { strength = 0.56, height = 0.52 } },
+    neon = { label = "Neon Diner", bestFor = "night city, rhythm, arcade and neon party games", brand = "#F72585", mood = "deep", corner = "round", texture = "grid", texAlpha = 0.90, fillAlpha = 0, textureAsBackground = true,
+        strokes = { { w = 0.006, alpha = 0.1, tint = "accent", grad = true } },
+        shadows = { { blur = 0.16, alpha = 0.5, spread = 0.012, tint = "glow" } },
+        sheen = 0.24, gradFill = 115, gradStroke = 0, fonts = { "Montserrat", "Mono" }, energy = "snappy",
+        outline = { style = "neon", w = 0.007, glow = 0.55 }, gloss = { strength = 0.22 }, decor = { kind = "sparkles", count = 8 } },
+    gold = { label = "Golden Age", bestFor = "luxury, casino, award shows, vip and rich-life games", brand = "#C9A227", mood = "deep", corner = "soft", texture = "diamond", texAlpha = 0.86, fillAlpha = 0,
+        strokes = { { w = 0.007, alpha = 0.05, tint = "warm", grad = true }, { w = 0.003, alpha = 0.4, tint = "accentHi", inner = true } },
+        shadows = { { blur = 0.10, alpha = 0.6, oy = 0.02 }, { blur = 0.03, alpha = 0.3, oy = 0.006, tint = "glow" } },
+        sheen = 0.30, gradFill = 105, gradStroke = 20, fonts = { "Merriweather", "Montserrat" }, energy = "heavy",
+        outline = { style = "engraved", w = 0.004 }, gloss = { strength = 0.34 } },
+    inkwash = { label = "Ink & Watercolor", bestFor = "story, mystery, art games, journals and calm experiences", brand = "#2F4858", mood = "ink", corner = "soft", texture = "brush", texAlpha = 0.90, fillAlpha = 0,
+        strokes = { { w = 0.0035, alpha = 0.5, tint = "surfaceLo" } },
+        shadows = { { blur = 0.06, alpha = 0.35, oy = 0.014, spread = -0.006 } },
+        sheen = 0.05, gradFill = 95, gradStroke = 90, fonts = { "Merriweather", "Kalam" }, energy = "soft",
+        outline = { style = "marker", w = 0.008 }, gloss = { strength = 0.10 } },
+    blueprint = { label = "Blueprint", bestFor = "builders, engineering, planning, tycoon and tutorial screens", brand = "#1D4ED8", mood = "deep", corner = "crisp", texture = "grid", texAlpha = 0.92, fillAlpha = 0, textureAsBackground = true,
+        strokes = { { w = 0.003, alpha = 0.55, tint = "strokeHi" } },
+        shadows = { { blur = 0.04, alpha = 0.4, oy = 0.01 } },
+        sheen = 0.08, gradFill = 90, gradStroke = 80, fonts = { "Mono", "SourceSans" }, energy = "snappy",
+        outline = { style = "engraved", w = 0.0035 }, decor = { kind = "dashes", count = 8, zIndex = 3 } },
+    pirate = { label = "Pirate Haven", bestFor = "pirate, treasure, sailing, adventure and sea stories", brand = "#8B5E34", mood = "light", corner = "crisp", texture = "grain", texAlpha = 0.86, fillAlpha = 0,
+        strokes = { { w = 0.007, alpha = 0.15, tint = "accentLo" } },
+        shadows = { { blur = 0.07, alpha = 0.55, oy = 0.018 } },
+        sheen = 0.10, gradFill = 100, gradStroke = 60, fonts = { "Merriweather", "Arimo" }, energy = "heavy",
+        outline = { style = "tape", w = 0.018 }, gloss = { strength = 0.14 } },
+    medieval = { label = "Medieval Tavern", bestFor = "medieval, knight, castle, rpg and fantasy town games", brand = "#7C2D12", mood = "deep", corner = "crisp", texture = "grain", texAlpha = 0.84, fillAlpha = 0,
+        strokes = { { w = 0.006, alpha = 0.2, tint = "warm" }, { w = 0.003, alpha = 0.4, tint = "shadow", inner = true } },
+        shadows = { { blur = 0.09, alpha = 0.6, oy = 0.022 } },
+        sheen = 0.08, gradFill = 95, gradStroke = 70, fonts = { "Merriweather", "Gotham" }, energy = "heavy",
+        outline = { style = "tape", w = 0.016, color = "#D8C3A0", alpha = 0.2 }, gloss = { strength = 0.12 } },
+    scifi = { label = "Sci-Fi HUD", bestFor = "sci-fi, mech, space station, cyber and future combat games", brand = "#06B6D4", mood = "deep", corner = "crisp", texture = "grid", texAlpha = 0.88, fillAlpha = 0, textureAsBackground = true,
+        strokes = { { w = 0.004, alpha = 0.2, tint = "accent", grad = true } },
+        shadows = { { blur = 0.12, alpha = 0.45, spread = 0.008, tint = "glow" } },
+        sheen = 0.18, gradFill = 118, gradStroke = 0, fonts = { "Mono", "Gotham" }, energy = "snappy",
+        outline = { style = "neon", w = 0.005, glow = 0.4 }, decor = { kind = "dashes", count = 10 } },
+    sports = { label = "Sports Arena", bestFor = "sports, racing, tournaments, leaderboards and team games", brand = "#EF4444", mood = "light", corner = "chunky", texture = "diagonal", texAlpha = 0.90, fillAlpha = 0,
+        strokes = { { w = 0.005, alpha = 0.6, tint = "surfaceHi" } },
+        shadows = { { blur = 0.05, alpha = 0.55, oy = 0.02, spread = -0.006 } },
+        sheen = 0.26, gradFill = 110, gradStroke = 35, fonts = { "Gotham", "Montserrat" }, energy = "snappy",
+        outline = { style = "comic", w = 0.014 }, gloss = { strength = 0.32 } },
+    gothic = { label = "Gothic Cathedral", bestFor = "gothic, vampire, dark fantasy, mystery and cathedral builds", brand = "#4C1D95", mood = "deep", corner = "crisp", texture = "cracks", texAlpha = 0.80, fillAlpha = 0, textureAsBackground = true,
+        strokes = { { w = 0.005, alpha = 0.25, tint = "comp", grad = true }, { w = 0.003, alpha = 0.5, tint = "shadow", inner = true } },
+        shadows = { { blur = 0.14, alpha = 0.6, oy = 0.02, spread = 0.008, tint = "shadow" } },
+        sheen = 0.10, gradFill = 95, gradStroke = 60, fonts = { "Creepster", "Merriweather" }, energy = "heavy",
+        outline = { style = "engraved", w = 0.005, color = "#C4B5FD", alpha = 0.3 } },
+    tropical = { label = "Tropical Island", bestFor = "tropical, island, resort, vacation and beach games", brand = "#10B981", mood = "pastel", corner = "round", texture = "leaves", texAlpha = 0.86, fillAlpha = 0,
+        strokes = { { w = 0.006, alpha = 0.2, tint = "surfaceHi", grad = true } },
+        shadows = { { blur = 0.08, alpha = 0.45, oy = 0.022, spread = -0.008 } },
+        sheen = 0.24, gradFill = 112, gradStroke = 25, fonts = { "Fredoka", "Arimo" }, energy = "bouncy",
+        outline = { style = "sticker", w = 0.012, keyW = 0.022 }, gloss = { strength = 0.30 }, decor = { kind = "clouds", count = 8 } },
+    desert = { label = "Desert Nomad", bestFor = "desert, egypt, caravan, survival and sandbox games", brand = "#D97706", mood = "light", corner = "soft", texture = "fiber", texAlpha = 0.88, fillAlpha = 0,
+        strokes = { { w = 0.004, alpha = 0.5, tint = "surfaceLo" } },
+        shadows = { { blur = 0.07, alpha = 0.5, oy = 0.018, spread = -0.006 } },
+        sheen = 0.12, gradFill = 100, gradStroke = 75, fonts = { "Merriweather", "SourceSans" }, energy = "soft",
+        outline = { style = "tape", w = 0.014, color = "#FDE68A", alpha = 0.1 } },
+    dreamcore = { label = "Dreamcore", bestFor = "dream, surreal, liminal, calm and artistic games", brand = "#A78BFA", mood = "pastel", corner = "pill", texture = "bubbles", texAlpha = 0.84, fillAlpha = 0,
+        strokes = { { w = 0.005, alpha = 0.3, tint = "strokeHi", grad = true } },
+        shadows = { { blur = 0.18, alpha = 0.35, spread = 0.02, tint = "glow" } },
+        sheen = 0.28, gradFill = 120, gradStroke = 15, fonts = { "Quicksand", "Gotham" }, energy = "soft",
+        outline = { style = "sticker", w = 0.010, keyW = 0.030, keyline = "#FDF4FF" }, gloss = { strength = 0.40 }, decor = { kind = "bubbles", count = 10 } },
+    toybox = { label = "Toy Box", bestFor = "kids, toy, block, playroom and family games", brand = "#F59E0B", mood = "pastel", corner = "chunky", texture = "none", texAlpha = 1, fillAlpha = 0,
+        strokes = { { w = 0.004, alpha = 0.5, tint = "surfaceHi" } },
+        shadows = { { blur = 0.04, alpha = 0.6, oy = 0.024, spread = -0.004 } },
+        sheen = 0.22, gradFill = 108, gradStroke = 45, fonts = { "Fredoka", "Luckiest" }, energy = "bouncy",
+        outline = { style = "chunky", w = 0.026, keyW = 0.010 }, gloss = { strength = 0.48 }, decor = { kind = "confetti", count = 8 } },
 }
 
 function UI_ENGINE.skinNames()
@@ -10812,6 +13042,270 @@ function UI_ENGINE.applyFont(label, family, weight, caps)
 end
 
 -- ---------------------------------------------------------------------------
+-- UI ENGINE 3.0 (Version 8.0.5): KONTUR, GLANZ UND DEKOR ALS RECHT.
+-- Die Vorlagen der Nutzer sind eindeutig: dicke dunkle Konturen mit weisser
+-- Innenkante (Sticker/Comic), glasige Glanz-Buttons, Wolken und Funken.
+-- Bis 8.0.3 konnte die Engine nur Farbverlauf + feine UIStrokes. Diese drei
+-- Schichten sind jetzt echte, gezaehlte Bausteine - jede einzeln abschaltbar
+-- und im Bericht sichtbar. Sie liegen hinter dem Inhalt (ZIndex 3) bzw.
+-- hinter der Basis (Kontur), damit Text und Bilder immer lesbar bleiben.
+-- ---------------------------------------------------------------------------
+UI_ENGINE.OUTLINES = {
+    -- w = Konturstaerke in SCALE (waechst mit der Oberflaeche), keyline =
+    -- helle Innenkante wie bei einem Aufkleber, glow = weicher Aussenring.
+    comic = { w = 0.016, color = "#141018", keyline = nil, alpha = 0 },
+    sticker = { w = 0.013, color = "#17131C", keyline = "#FFFFFF", keyW = 0.024, alpha = 0 },
+    chunky = { w = 0.028, color = "#0F0B14", keyline = "#FFFFFF", keyW = 0.009, alpha = 0 },
+    marker = { w = 0.010, color = "#101014", keyline = nil, alpha = 0.06 },
+    neon = { w = 0.007, color = "accent", alpha = 0.12, glow = 0.5 },
+    engraved = { w = 0.004, color = "surfaceHi", alpha = 0.42 },
+    tape = { w = 0.020, color = "#E9DFC8", keyline = "#B9A98A", keyW = 0.006, alpha = 0.15 },
+}
+
+function UI_ENGINE.hash(size, ix, seed)
+    local n = (ix * 374761393 + (seed or 7) * 668265263) % 2147483647
+    if n < 0 then n = n + 2147483647 end
+    return (n % 100000) / 100000 * size
+end
+
+function UI_ENGINE.outlineSpec(skin, spec)
+    if spec == false then return nil end
+    local source = spec
+    if source == nil then source = skin and skin.outline end
+    if source == nil or source == false then return nil end
+    local preset = nil
+    if source == true then preset = "comic"
+    elseif type(source) == "string" then preset = source
+    elseif type(source) == "table" then preset = tostring(source.style or source.kind or "comic") end
+    if preset ~= nil and string.lower(preset) == "none" then return nil end
+    local base = UI_ENGINE.OUTLINES[string.lower(tostring(preset or "comic"))] or UI_ENGINE.OUTLINES.comic
+    local merged = {}
+    for key, value in pairs(base) do merged[key] = value end
+    if type(source) == "table" then
+        for key, value in pairs(source) do merged[key] = value end
+    end
+    return merged
+end
+
+-- Kontur: liegt HINTER der Basis (ZIndex der Basis - 1) und ist deshalb auch
+-- bei runden Ecken und Textur-Hintergruenden vollstaendig sichtbar.
+function UI_ENGINE.outlineLayer(base, skin, caps, spec)
+    local o = UI_ENGINE.outlineSpec(skin, spec)
+    if o == nil then return nil end
+    local width = math.clamp(tonumber(o.w) or 0.014, 0.001, 0.06)
+    local color = UI_ENGINE.col(o.color, skin.p[o.tint or "shadow"] or skin.p.shadow)
+    if type(o.color) == "string" and o.color == "accent" then color = skin.p.accent end
+    local cornerProfile = tonumber(skin.cornerRadius) or UI_ENGINE.CORNER[string.lower(tostring(skin.corner or "soft"))] or UI_ENGINE.CORNER.soft
+    local made = 0
+    local holder = Instance.new("Frame")
+    holder.Name = "ArenaOutline"
+    holder.AnchorPoint = Vector2.new(0.5, 0.5)
+    holder.Position = UDim2.fromScale(0.5, 0.5)
+    holder.Size = UDim2.fromScale(1 + width * 2, 1 + width * 2)
+    holder.BackgroundColor3 = color
+    holder.BackgroundTransparency = math.clamp(tonumber(o.alpha) or 0, 0, 1)
+    holder.BorderSizePixel = 0
+    holder.ZIndex = math.max(0, (tonumber(base.ZIndex) or 1) - 1)
+    UI_ENGINE.applyCorner(holder, math.min(0.5, cornerProfile + width), caps)
+    holder:SetAttribute("ArenaOutline", true)
+    holder:SetAttribute("ArenaOutlineColor", "#" .. color:ToHex())
+    if o.glow ~= nil and tonumber(o.glow) ~= nil then
+        local glowStroke = Instance.new("UIStroke")
+        glowStroke.Name = "ArenaOutlineGlow"
+        glowStroke.Color = skin.p.glow or skin.p.accent
+        glowStroke.Transparency = math.clamp(1 - (tonumber(o.glow) or 0.5), 0, 1)
+        glowStroke.LineJoinMode = Enum.LineJoinMode.Round
+        local scaled = false
+        if caps.strokeScaledSize then
+            scaled = pcall(function()
+                glowStroke.StrokeSizingMode = Enum.StrokeSizingMode.ScaledSize
+                glowStroke.Thickness = math.clamp(width * 2.2, 0.002, 0.5)
+            end)
+        end
+        if not scaled then glowStroke.Thickness = math.max(1, width * 2.2 * 260) end
+        glowStroke.Parent = holder
+        made = made + 1
+    end
+    holder.Parent = base.Parent
+    made = made + 1
+    if o.keyline ~= nil then
+        local keyW = math.clamp(tonumber(o.keyW) or 0.012, 0.002, 0.05)
+        local keyline = Instance.new("Frame")
+        keyline.Name = "ArenaOutlineKeyline"
+        keyline.AnchorPoint = Vector2.new(0.5, 0.5)
+        keyline.Position = UDim2.fromScale(0.5, 0.5)
+        keyline.Size = UDim2.fromScale(1 + keyW * 2, 1 + keyW * 2)
+        keyline.BackgroundColor3 = UI_ENGINE.col(o.keyline, skin.p.surfaceHi)
+        keyline.BackgroundTransparency = 0
+        keyline.BorderSizePixel = 0
+        keyline.ZIndex = holder.ZIndex
+        UI_ENGINE.applyCorner(keyline, math.min(0.5, cornerProfile + keyW), caps)
+        keyline:SetAttribute("ArenaOutlineKeyline", true)
+        keyline.Parent = base.Parent
+        made = made + 1
+    end
+    return {
+        layers = made,
+        preset = string.lower(tostring(o.style or o.kind or (type(spec) == "string" and spec) or "comic")),
+        width = width,
+        color = "#" .. color:ToHex(),
+        keyline = o.keyline and UI_ENGINE.col(o.keyline, skin.p.surfaceHi):ToHex() or nil,
+    }
+end
+
+-- Glanz: obere Haelfte als weicher Lichtverlauf plus kleine Specular-Flaeche.
+-- Genau das "gelige" Knopf-Gefuehl der Vorlagen - ohne Bilddatei.
+function UI_ENGINE.glossLayer(base, skin, caps, spec)
+    local g = spec
+    if g == nil then g = skin and skin.gloss end
+    if g == nil or g == false then return nil end
+    if g == true then g = {} end
+    if type(g) ~= "table" then return nil end
+    local strength = math.clamp(tonumber(g.strength) or 0.34, 0.05, 0.9)
+    local height = math.clamp(tonumber(g.height) or 0.48, 0.1, 0.9)
+    local color = UI_ENGINE.col(g.color, skin.p.surfaceHi)
+    local cornerProfile = UI_ENGINE.CORNER[string.lower(tostring(skin.corner or "soft"))] or UI_ENGINE.CORNER.soft
+    local holder = Instance.new("Frame")
+    holder.Name = "ArenaGloss"
+    holder.BackgroundTransparency = 1
+    holder.Size = UDim2.fromScale(1, height)
+    holder.AnchorPoint = Vector2.new(0.5, 0)
+    holder.Position = UDim2.fromScale(0.5, 0)
+    holder.ZIndex = 3
+    holder.ClipsDescendants = true
+    local fill = Instance.new("Frame")
+    fill.Name = "ArenaGlossFill"
+    fill.BackgroundColor3 = color
+    fill.BorderSizePixel = 0
+    fill.Size = UDim2.fromScale(1, 1)
+    fill.BackgroundTransparency = 0
+    fill.ZIndex = 3
+    UI_ENGINE.applyCorner(fill, math.max(0, cornerProfile - 0.01), caps, { bl = 0, br = 0 })
+    UI_ENGINE.gradient(fill, { {0, color}, {1, color} }, 90,
+        { {0, math.clamp(1 - strength, 0, 1)}, {0.62, math.clamp(1 - strength * 0.35, 0, 1)}, {1, 1} }, "ArenaGlossFade")
+    fill.Parent = holder
+    if g.specular ~= false and height >= 0.4 then
+        local dot = Instance.new("Frame")
+        dot.Name = "ArenaGlossSpecular"
+        dot.AnchorPoint = Vector2.new(0.5, 0.5)
+        dot.Position = UDim2.fromScale(0.26, 0.3)
+        dot.Size = UDim2.new(0.30, 0, 0.42, 0)
+        dot.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+        dot.BackgroundTransparency = math.clamp(1 - strength * 1.15, 0, 0.9)
+        dot.BorderSizePixel = 0
+        dot.ZIndex = 3
+        UI_ENGINE.applyCorner(dot, "pill", caps)
+        dot.Parent = holder
+    end
+    holder:SetAttribute("ArenaGloss", true)
+    holder:SetAttribute("ArenaGlossStrength", strength)
+    holder.Parent = base
+    return { strength = strength, height = height, layers = 1 }
+end
+
+-- Dekor: Wolken, Funken, Konfetti, Blasen, Striche, Sterne und Strahlen.
+-- Deterministisch aus einem Seed (kein math.random) und budgetiert, damit
+-- eine Oberflaeche nicht in hundert Dekorationsteilen erstickt.
+UI_ENGINE.DECOR_BUDGET = 24
+function UI_ENGINE.decorLayer(base, skin, caps, spec)
+    local d = spec
+    if d == nil then d = skin and skin.decor end
+    if d == nil or d == false then return nil end
+    if type(d) == "string" then d = { kind = d } end
+    if type(d) ~= "table" then return nil end
+    local kind = string.lower(tostring(d.kind or d.type or "clouds"))
+    if kind == "none" then return nil end
+    local budget = math.clamp(math.floor(tonumber(d.count) or 6), 1, UI_ENGINE.DECOR_BUDGET)
+    local seed = math.floor(tonumber(d.seed) or 7)
+    local zIndex = math.floor(tonumber(d.zIndex) or 3)
+    local color = UI_ENGINE.col(d.color, skin.p.surfaceHi)
+    local accent = UI_ENGINE.col(d.accentColor, skin.p.accent)
+    local holder = Instance.new("Frame")
+    holder.Name = "ArenaDecor"
+    holder.BackgroundTransparency = 1
+    holder.Size = UDim2.fromScale(1, 1)
+    holder.AnchorPoint = Vector2.new(0.5, 0.5)
+    holder.Position = UDim2.fromScale(0.5, 0.5)
+    holder.ClipsDescendants = d.clip == true
+    holder.ZIndex = zIndex
+    local made = 0
+    local function ellipse(px, py, w, h, rotation, tint, transparency)
+        if made >= budget then return end
+        local cell = Instance.new("Frame")
+        cell.Name = "ArenaDecorPart" .. tostring(made)
+        cell.AnchorPoint = Vector2.new(0.5, 0.5)
+        cell.Position = UDim2.fromScale(math.clamp(px, -0.15, 1.15), math.clamp(py, -0.15, 1.15))
+        cell.Size = UDim2.fromScale(math.max(0.004, w), math.max(0.004, h))
+        cell.BackgroundColor3 = tint or color
+        cell.BackgroundTransparency = math.clamp(transparency or 0, 0, 1)
+        cell.BorderSizePixel = 0
+        cell.ZIndex = zIndex
+        pcall(function() cell.Rotation = rotation or 0 end)
+        UI_ENGINE.applyCorner(cell, "pill", caps)
+        cell.Parent = holder
+        made = made + 1
+    end
+    if kind == "clouds" then
+        local clusters = math.max(1, math.floor(budget / 4))
+        for index = 1, clusters do
+            local cx = UI_ENGINE.hash(1, index * 7, seed) * 0.9 + 0.05
+            local cy = UI_ENGINE.hash(0.55, index * 13, seed + 3) + 0.12
+            local baseW = 0.16 + UI_ENGINE.hash(0.16, index * 17, seed + 5)
+            local baseH = baseW * 0.62
+            ellipse(cx, cy, baseW, baseH, 0, color, 0)
+            ellipse(cx - baseW * 0.32, cy + baseH * 0.22, baseW * 0.55, baseH * 0.85, 0, color, 0)
+            ellipse(cx + baseW * 0.30, cy + baseH * 0.20, baseW * 0.50, baseH * 0.80, 0, color, 0)
+            ellipse(cx + baseW * 0.05, cy - baseH * 0.35, baseW * 0.52, baseH * 1.05, 0, color, 0)
+        end
+    elseif kind == "sparkles" or kind == "stars" then
+        for index = 1, budget do
+            local px = UI_ENGINE.hash(1, index * 11, seed)
+            local py = UI_ENGINE.hash(1, index * 19, seed + 4)
+            local size = 0.012 + UI_ENGINE.hash(0.020, index * 23, seed + 9)
+            local tint = (index % 3 == 0) and accent or color
+            ellipse(px, py, size, size * 2.6, 0, tint, 0)
+            ellipse(px, py, size * 2.6, size, 0, tint, 0)
+        end
+    elseif kind == "confetti" then
+        for index = 1, budget do
+            local px = UI_ENGINE.hash(1, index * 5, seed)
+            local py = UI_ENGINE.hash(1, index * 3 + 1, seed + 6)
+            local size = 0.012 + UI_ENGINE.hash(0.016, index * 9, seed + 2)
+            local palette = { color, accent, skin.p.warm or accent, skin.p.comp or accent }
+            ellipse(px, py, size, size * 0.55, UI_ENGINE.hash(180, index, seed) - 90, palette[(index % #palette) + 1], 0.05)
+        end
+    elseif kind == "bubbles" then
+        for index = 1, budget do
+            local px = UI_ENGINE.hash(1, index * 7 + 2, seed)
+            local py = UI_ENGINE.hash(1, index * 13 + 5, seed + 8)
+            local size = 0.02 + UI_ENGINE.hash(0.05, index * 3, seed + 1)
+            ellipse(px, py, size, size, 0, skin.p.strokeHi or color, 0.55)
+        end
+    elseif kind == "dashes" then
+        for index = 1, budget do
+            local px = (index - 0.5) / budget
+            ellipse(px, 0.06, 0.030, 0.012, 0, accent, 0.25)
+            ellipse(px, 0.94, 0.030, 0.012, 0, accent, 0.25)
+        end
+    elseif kind == "rays" then
+        local centerX, centerY = 0.5, tonumber(d.originY) or 0.0
+        for index = 1, budget do
+            local angle = (index / budget) * 360
+            local length = 0.55 + UI_ENGINE.hash(0.25, index, seed)
+            local px = centerX + math.cos(math.rad(angle)) * length * 0.5
+            local py = centerY + math.sin(math.rad(angle)) * length * 0.5
+            ellipse(px, py, 0.012, length, angle + 90, color, 0.45)
+        end
+    else
+        return nil
+    end
+    holder:SetAttribute("ArenaDecor", kind)
+    holder:SetAttribute("ArenaDecorCount", made)
+    holder.Parent = base
+    return { kind = kind, elements = made, budget = budget, zIndex = zIndex }
+end
+
+-- ---------------------------------------------------------------------------
 -- DIE KOMPOSITE OBERFLÄCHE - das Gegenstück zu build_polygon_model.
 -- ---------------------------------------------------------------------------
 function UI_ENGINE.surface(opts)
@@ -10913,7 +13407,7 @@ function UI_ENGINE.surface(opts)
     if backgroundMode ~= "texture" and backgroundMode ~= "color" then backgroundMode = "gradient" end
     report.backgroundMode = backgroundMode
     report.textureIsBackground = (backgroundMode == "texture")
-    base.BackgroundColor3 = UI_ENGINE.col(opts.fill, skin.p.surface)
+    base.BackgroundColor3 = UI_ENGINE.tokenColor(skin, opts.fill, skin.p.surface)
     base.BackgroundTransparency = (backgroundMode == "texture" and textureImage ~= nil) and 1
         or math.clamp(tonumber(opts.fillAlpha or skin.fillAlpha) or 0, 0, 1)
     base.ZIndex = 1
@@ -10979,6 +13473,28 @@ function UI_ENGINE.surface(opts)
     report.cornerRadius = radius
     if UI_ENGINE.sheenLayer(base, skin, caps, opts.corner or skin.corner) then report.layers = report.layers + 1 end
 
+    -- 9a. UI ENGINE 3.0 (8.0.5): dicke Kontur, Glanzflaeche und Dekor.
+    --     Die Reihenfolge ist Absicht: Kontur HINTER die Basis, Glanz und
+    --     Dekor AUF die Basis, aber UNTER den Inhalt (Content hat ZIndex 4).
+    --     Dadurch bleibt Text immer lesbar, auch bei Wolken und Funken.
+    local outlineReport = UI_ENGINE.outlineLayer(base, skin, caps, opts.outline)
+    if outlineReport ~= nil then
+        report.outline = outlineReport
+        report.outlineLayers = outlineReport.layers
+        report.layers = report.layers + outlineReport.layers
+    end
+    local glossReport = UI_ENGINE.glossLayer(base, skin, caps, opts.gloss)
+    if glossReport ~= nil then
+        report.gloss = glossReport
+        report.layers = report.layers + 1
+    end
+    local decorReport = UI_ENGINE.decorLayer(base, skin, caps, opts.decor)
+    if decorReport ~= nil then
+        report.decor = decorReport
+        report.decorLayers = decorReport.elements
+        report.layers = report.layers + 1
+    end
+
     -- 10. Inhaltsschacht: Innenabstand folgt dem Radius, damit Inhalt
     --     niemals über eine runde Ecke laufen kann.
     local content = Instance.new("Frame")
@@ -11030,7 +13546,7 @@ function UI_ENGINE.textNode(parent, spec, skin, caps, bg)
     label.TextWrapped = spec.wrap == true
     label.RichText = spec.rich == true
     label.ZIndex = 5
-    local target = UI_ENGINE.col(spec.color, nil)
+    local target = UI_ENGINE.tokenColor(skin, spec.color, nil)
     local explicitTextColor = (target ~= nil and spec.color ~= nil)
     if not explicitTextColor then target = UI_ENGINE.readable(bg or skin.p.surface, skin.p.text, skin.p.surface) end
     -- Preserve an explicit user/project color. ui_audit may report its measured
@@ -11321,6 +13837,8 @@ function UI_ENGINE.buildNode(spec, parentHost, skin, caps, ctx, depth, inLayout,
         textureImage = spec.textureImage or spec.backgroundTexture or spec.textureId or ctx.textureImage,
         backgroundMode = spec.backgroundMode or ctx.backgroundMode,
         textureFit = spec.textureFit, textureTileX = spec.tileX, textureTileY = spec.tileY, textureTint = spec.textureTint,
+        -- Version 8.0.5: Kontur, Glanz und Dekor sind Knoten-Eigenschaften.
+        outline = spec.outline, gloss = spec.gloss, decor = spec.decor,
     })
     ctx.layers = ctx.layers + built.report.layers
     ctx.strokes = ctx.strokes + (built.report.strokes or 0)
@@ -11329,6 +13847,15 @@ function UI_ENGINE.buildNode(spec, parentHost, skin, caps, ctx, depth, inLayout,
     ctx.gradients = ctx.gradients + (built.report.gradients or 0)
     ctx.textureParts = ctx.textureParts + (built.report.textureParts or 0)
     if built.report.textureIsBackground then ctx.textureBackgrounds = (ctx.textureBackgrounds or 0) + 1 end
+    if built.report.outline then
+        ctx.outlines = (ctx.outlines or 0) + 1
+        ctx.outlineLayers = (ctx.outlineLayers or 0) + (built.report.outlineLayers or 0)
+    end
+    if built.report.gloss then ctx.glosses = (ctx.glosses or 0) + 1 end
+    if built.report.decor then
+        ctx.decorNodes = (ctx.decorNodes or 0) + 1
+        ctx.decorParts = (ctx.decorParts or 0) + (built.report.decorLayers or 0)
+    end
     if built.isGroup then ctx.canvasGroups = ctx.canvasGroups + 1 end
     if built.report.layers < 4 then ctx.thinSurfaces = ctx.thinSurfaces + 1 end
     for _, warning in ipairs(built.report.warnings) do table.insert(ctx.warnings, tostring(spec.id or "node") .. ": " .. warning) end
@@ -11566,6 +14093,636 @@ function UI_ENGINE.radialMenu(parent, skin, spec)
     }
 end
 
+-- ===========================================================================
+-- WIDGET-BIBLIOTHEK 8.0.5 - 18 fertige Oberflaechen-Gerueste.
+-- Die Vorlagen der Nutzer zeigen immer dieselben Bausteine: Shop mit
+-- Kopfband und Karten, Inventar mit Filtern, Battle Pass mit Schienen,
+-- Rangliste mit Zeilen, Dialog mit Antwortknoepfen. Deshalb liefert die
+-- Engine diese Gerueste als benannte Widgets - die KI fuellt nur noch
+-- Texte, Preise und Zahlen. Jedes Geruest nutzt dieselben Regeln wie
+-- build_interface (Scale-only, Layout-Slots, Kontur/Glanz/Dekor), damit
+-- nichts handgebaut werden muss und die Regeln nicht umgangen werden.
+-- ===========================================================================
+UI_ENGINE.WIDGETS = {}
+
+function UI_ENGINE.widgetItem(args, index, fallbackName, fallbackPrice)
+    local items = type(args.items) == "table" and args.items or {}
+    local entry = items[index]
+    if type(entry) == "string" then return entry, fallbackPrice end
+    if type(entry) == "table" then
+        return tostring(entry.name or entry.label or fallbackName), tostring(entry.price or entry.cost or fallbackPrice)
+    end
+    return fallbackName, fallbackPrice
+end
+
+function UI_ENGINE.widgetCard(name, price, extra)
+    local card = {
+        id = name .. "Card",
+        role = "card",
+        rect = { x = 50, y = 50, w = 28, h = 46 },
+        layout = { kind = "list", dir = "vertical", gap = 2 },
+        padding = 0.045,
+        fill = "surfaceHi",
+        text = { value = name, scaled = true, wrap = true },
+    }
+    if extra ~= nil then card.children = extra end
+    if price ~= nil and price ~= "" then
+        card.children = card.children or {}
+        table.insert(card.children, {
+            id = name .. "Price", role = "badge", rect = { x = 50, y = 50, w = 90, h = 26 },
+            fill = "accent", text = { value = price, scaled = true },
+        })
+    end
+    return card
+end
+
+function UI_ENGINE.widgetHeader(title, subtitle)
+    return {
+        id = "Header", role = "panel", rect = { x = 50, y = 50, w = 100, h = 13 },
+        fill = "accent", gloss = true,
+        text = { value = title, scaled = true, xAlign = "Left" },
+        children = subtitle and {
+            { id = "HeaderHint", role = "label", rect = { x = 78, y = 50, w = 40, h = 60 },
+              text = { value = subtitle, scaled = true, xAlign = "Right" } },
+        } or nil,
+    }
+end
+
+function UI_ENGINE.widgetBar(name, fill, label)
+    return {
+        id = name, role = "badge", rect = { x = 50, y = 50, w = 100, h = 100 },
+        fill = "surfaceLo", children = {
+            { id = name .. "Fill", role = "badge", rect = { x = 50 - (100 - fill) / 2, y = 50, w = fill, h = 100 },
+              fill = "accent", text = label and { value = label, scaled = true, xAlign = "Center" } or nil },
+        },
+    }
+end
+
+function UI_ENGINE.widgetRoot(id, width, height, children, args)
+    return {
+        id = id or "Widget",
+        role = "panel",
+        rect = { x = 50, y = 50, w = width or 64, h = height or 64 },
+        align = "center",
+        layout = { kind = "list", dir = "vertical", gap = 2 },
+        padding = 0.03,
+        children = children,
+    }
+end
+
+function UI_ENGINE.widgetDef(name, def)
+    def.name = name
+    UI_ENGINE.WIDGETS[name] = def
+    return def
+end
+
+UI_ENGINE.widgetDef("shop", {
+    label = "Shop / Store",
+    summary = "Kopfband mit Titel, drei Kategorie-Reiter, Kartenraster mit Preis-Badges und Kauf-Knopf.",
+    bestFor = "gamepasses, item stores, egg shops",
+    build = function(args)
+        local cards = {}
+        for index = 1, 6 do
+            local name, price = UI_ENGINE.widgetItem(args, index, "Item " .. tostring(index), "R$ " .. tostring(index * 50))
+            table.insert(cards, UI_ENGINE.widgetCard(name, price))
+        end
+        return UI_ENGINE.widgetRoot("Shop", args.width or 66, args.height or 66, {
+            UI_ENGINE.widgetHeader(args.title or "Shop", "R$ 1.250"),
+            { id = "Tabs", role = "panel", rect = { x = 50, y = 50, w = 100, h = 9 }, fill = "surfaceLo",
+              layout = { kind = "list", dir = "horizontal", gap = 2 },
+              children = {
+                  { id = "Tab1", role = "button", rect = { x = 50, y = 50, w = 31, h = 86 }, fill = "accent", text = { value = args.tab1 or "Featured", scaled = true } },
+                  { id = "Tab2", role = "button", rect = { x = 50, y = 50, w = 31, h = 86 }, fill = "surfaceHi", text = { value = args.tab2 or "Pets", scaled = true } },
+                  { id = "Tab3", role = "button", rect = { x = 50, y = 50, w = 31, h = 86 }, fill = "surfaceHi", text = { value = args.tab3 or "Crates", scaled = true } },
+              } },
+            { id = "Grid", role = "panel", rect = { x = 50, y = 50, w = 100, h = 64 }, fill = "surfaceLo",
+              layout = { kind = "grid", cols = 3, cellH = 46, gap = 3 }, children = cards },
+        }, args)
+    end,
+})
+
+UI_ENGINE.widgetDef("inventory", {
+    label = "Inventar",
+    summary = "Filter-Reiter, 10 Slots im Raster, Kapazitaetsbalken unten.",
+    bestFor = "item collections, pets, gear, backpacks",
+    build = function(args)
+        local slots = {}
+        for index = 1, 10 do
+            local name = UI_ENGINE.widgetItem(args, index, "", "")
+            table.insert(slots, {
+                id = "Slot" .. tostring(index), role = "card", rect = { x = 50, y = 50, w = 18, h = 28 },
+                fill = "surfaceHi", layout = { kind = "list", dir = "vertical", gap = 1 },
+                text = { value = (name ~= "" and name) or "★", scaled = true },
+                children = name ~= "" and {
+                    { id = "SlotCount" .. tostring(index), role = "badge", rect = { x = 50, y = 50, w = 90, h = 30 },
+                      fill = "accent", text = { value = "x" .. tostring(index), scaled = true } },
+                } or nil,
+            })
+        end
+        return UI_ENGINE.widgetRoot("Inventory", args.width or 66, args.height or 66, {
+            UI_ENGINE.widgetHeader(args.title or "Inventory", "24 / 40"),
+            { id = "Filters", role = "panel", rect = { x = 50, y = 50, w = 100, h = 8 }, fill = "surfaceLo",
+              layout = { kind = "list", dir = "horizontal", gap = 2 },
+              children = {
+                  { id = "FilterAll", role = "button", rect = { x = 50, y = 50, w = 24, h = 86 }, fill = "accent", text = { value = "All", scaled = true } },
+                  { id = "FilterGear", role = "button", rect = { x = 50, y = 50, w = 24, h = 86 }, fill = "surfaceHi", text = { value = "Gear", scaled = true } },
+                  { id = "FilterPets", role = "button", rect = { x = 50, y = 50, w = 24, h = 86 }, fill = "surfaceHi", text = { value = "Pets", scaled = true } },
+              } },
+            { id = "Slots", role = "panel", rect = { x = 50, y = 50, w = 100, h = 62 }, fill = "surfaceLo",
+              layout = { kind = "grid", cols = 5, cellH = 18, gap = 2 }, children = slots },
+            UI_ENGINE.widgetBar("Capacity", 60, "24 / 40"),
+        }, args)
+    end,
+})
+
+UI_ENGINE.widgetDef("battlepass", {
+    label = "Battle Pass",
+    summary = "Titel, Fortschrittsbalken, fuenf Stufen mit Belohnungen und Abhol-Knopf.",
+    bestFor = "seasons, progression, rewards",
+    build = function(args)
+        local tiers = {}
+        for index = 1, 5 do
+            local name = UI_ENGINE.widgetItem(args, index, "Tier " .. tostring(index), "")
+            table.insert(tiers, {
+                id = "Tier" .. tostring(index), role = "card", rect = { x = 50, y = 50, w = 18, h = 40 },
+                fill = (index <= 2) and "accent" or "surfaceHi",
+                text = { value = name, scaled = true, wrap = true },
+                children = {
+                    { id = "TierLabel" .. tostring(index), role = "label", rect = { x = 50, y = 82, w = 90, h = 24 },
+                      text = { value = "T" .. tostring(index), scaled = true } },
+                },
+            })
+        end
+        return UI_ENGINE.widgetRoot("BattlePass", args.width or 68, args.height or 56, {
+            UI_ENGINE.widgetHeader(args.title or "Battle Pass", "Season 1"),
+            { id = "Progress", role = "panel", rect = { x = 50, y = 50, w = 100, h = 12 }, fill = "surfaceLo",
+              children = {
+                  { id = "ProgressFill", role = "badge", rect = { x = 35, y = 50, w = 66, h = 70 }, fill = "accent", gloss = true,
+                    text = { value = args.progressLabel or "Level 7 · 1.240 / 2.000 XP", scaled = true } },
+              } },
+            { id = "Tiers", role = "panel", rect = { x = 50, y = 50, w = 100, h = 40 }, fill = "surfaceLo",
+              layout = { kind = "list", dir = "horizontal", gap = 2 }, children = tiers },
+            { id = "Claim", role = "button", rect = { x = 50, y = 50, w = 46, h = 13 }, fill = "accent", gloss = true,
+              text = { value = args.claimLabel or "Claim reward", scaled = true } },
+        }, args)
+    end,
+})
+
+UI_ENGINE.widgetDef("quests", {
+    label = "Quests",
+    summary = "Vier Aufgabenzeilen mit Fortschrittsbalken und Belohnungs-Badge.",
+    bestFor = "missions, daily tasks, objectives",
+    build = function(args)
+        local rows = {}
+        for index = 1, 4 do
+            local name, reward = UI_ENGINE.widgetItem(args, index, "Quest " .. tostring(index), "R$ " .. tostring(index * 25))
+            table.insert(rows, {
+                id = "Quest" .. tostring(index), role = "card", rect = { x = 50, y = 50, w = 100, h = 18 },
+                fill = "surfaceHi", layout = { kind = "list", dir = "vertical", gap = 1 },
+                text = { value = name, scaled = true, xAlign = "Left" },
+                children = {
+                    UI_ENGINE.widgetBar("QuestBar" .. tostring(index), 30 + index * 12, (index * 25) .. "%"),
+                    { id = "QuestReward" .. tostring(index), role = "badge", rect = { x = 82, y = 50, w = 30, h = 55 },
+                      fill = "accent", text = { value = reward, scaled = true } },
+                },
+            })
+        end
+        return UI_ENGINE.widgetRoot("Quests", args.width or 62, args.height or 62, {
+            UI_ENGINE.widgetHeader(args.title or "Daily Quests", "3 / 4"),
+            { id = "QuestList", role = "panel", rect = { x = 50, y = 50, w = 100, h = 78 }, fill = "surfaceLo",
+              layout = { kind = "list", dir = "vertical", gap = 2 }, children = rows },
+        }, args)
+    end,
+})
+
+UI_ENGINE.widgetDef("settings", {
+    label = "Einstellungen",
+    summary = "Fuenf Zeilen mit Beschriftung und Schalter-Badge.",
+    bestFor = "options, toggles, audio/video settings",
+    build = function(args)
+        local rows = {}
+        for index = 1, 5 do
+            local name = UI_ENGINE.widgetItem(args, index, "Option " .. tostring(index), "")
+            table.insert(rows, {
+                id = "Setting" .. tostring(index), role = "card", rect = { x = 50, y = 50, w = 100, h = 13 },
+                fill = "surfaceHi", text = { value = name, scaled = true, xAlign = "Left" },
+                children = {
+                    { id = "Toggle" .. tostring(index), role = "button", rect = { x = 88, y = 50, w = 18, h = 62 },
+                      fill = (index <= 3) and "accent" or "surfaceLo", gloss = true,
+                      text = { value = (index <= 3) and "ON" or "OFF", scaled = true } },
+                },
+            })
+        end
+        return UI_ENGINE.widgetRoot("Settings", args.width or 58, args.height or 62, {
+            UI_ENGINE.widgetHeader(args.title or "Settings", "Save"),
+            { id = "SettingList", role = "panel", rect = { x = 50, y = 50, w = 100, h = 80 }, fill = "surfaceLo",
+              layout = { kind = "list", dir = "vertical", gap = 2 }, children = rows },
+        }, args)
+    end,
+})
+
+UI_ENGINE.widgetDef("leaderboard", {
+    label = "Rangliste",
+    summary = "Kopfzeile plus acht Rangzeilen; die eigene Zeile ist farbig.",
+    bestFor = "scores, rankings, tournaments",
+    build = function(args)
+        local rows = {}
+        for index = 1, 8 do
+            local name = UI_ENGINE.widgetItem(args, index, "Player " .. tostring(index), tostring(9000 - index * 700))
+            rows[index] = {
+                id = "Row" .. tostring(index), role = "card", rect = { x = 50, y = 50, w = 100, h = 9 },
+                fill = (index == 1) and "accent" or "surfaceHi",
+                text = { value = "#" .. tostring(index) .. "  " .. name .. "   " .. tostring(9000 - index * 700), scaled = true, xAlign = "Left" },
+            }
+        end
+        return UI_ENGINE.widgetRoot("Leaderboard", args.width or 48, args.height or 70, {
+            UI_ENGINE.widgetHeader(args.title or "Leaderboard", "Top 8"),
+            { id = "Rows", role = "panel", rect = { x = 50, y = 50, w = 100, h = 82 }, fill = "surfaceLo",
+              layout = { kind = "list", dir = "vertical", gap = 1 }, children = rows },
+        }, args)
+    end,
+})
+
+UI_ENGINE.widgetDef("profile", {
+    label = "Profil",
+    summary = "Avatar-Kreis, Name, drei Statistik-Kacheln und XP-Balken.",
+    bestFor = "player cards, stats, social profiles",
+    build = function(args)
+        local name = tostring(args.playerName or "Player")
+        local stats = { "Wins 128", "Level 42", "Streak 7" }
+        local tiles = {}
+        for index, value in ipairs(stats) do
+            tiles[index] = { id = "Stat" .. tostring(index), role = "card", rect = { x = 50, y = 50, w = 31, h = 26 },
+                fill = "surfaceHi", text = { value = tostring(UI_ENGINE.widgetItem(args, index, value, "")) ~= "" and tostring(UI_ENGINE.widgetItem(args, index, value, "")) or value, scaled = true, wrap = true } }
+        end
+        return UI_ENGINE.widgetRoot("Profile", args.width or 58, args.height or 52, {
+            { id = "Avatar", role = "badge", rect = { x = 50, y = 50, w = 16, h = 20 }, fill = "accent", gloss = true, corner = "pill",
+              text = { value = string.sub(name, 1, 2), scaled = true } },
+            { id = "Name", role = "label", rect = { x = 50, y = 50, w = 100, h = 8 }, text = { value = name, scaled = true } },
+            { id = "Stats", role = "panel", rect = { x = 50, y = 50, w = 100, h = 28 }, fill = "surfaceLo",
+              layout = { kind = "list", dir = "horizontal", gap = 2 }, children = tiles },
+            UI_ENGINE.widgetBar("XP", 74, "XP 7.400 / 10.000"),
+        }, args)
+    end,
+})
+
+UI_ENGINE.widgetDef("dailyrewards", {
+    label = "Tagesbelohnungen",
+    summary = "Sieben Tageskarten, Tag 4 hervorgehoben, Abhol-Knopf.",
+    bestFor = "login streaks, daily gifts",
+    build = function(args)
+        local cards = {}
+        for index = 1, 7 do
+            cards[index] = {
+                id = "Day" .. tostring(index), role = "card", rect = { x = 50, y = 50, w = 12, h = 36 },
+                fill = (index == 4) and "accent" or "surfaceHi",
+                text = { value = "D" .. tostring(index), scaled = true, wrap = true },
+                children = {
+                    { id = "DayReward" .. tostring(index), role = "badge", rect = { x = 50, y = 80, w = 92, h = 30 },
+                      fill = (index == 4) and "surfaceHi" or "surfaceLo", text = { value = "R$ " .. tostring(index * 10), scaled = true } },
+                },
+            }
+        end
+        return UI_ENGINE.widgetRoot("DailyRewards", args.width or 70, args.height or 48, {
+            UI_ENGINE.widgetHeader(args.title or "Daily Rewards", "Day 4 of 7"),
+            { id = "Days", role = "panel", rect = { x = 50, y = 50, w = 100, h = 46 }, fill = "surfaceLo",
+              layout = { kind = "list", dir = "horizontal", gap = 1.5 }, children = cards },
+            { id = "Claim", role = "button", rect = { x = 50, y = 50, w = 44, h = 14 }, fill = "accent", gloss = true,
+              text = { value = args.claimLabel or "Claim today", scaled = true } },
+        }, args)
+    end,
+})
+
+UI_ENGINE.widgetDef("gacha", {
+    label = "Gacha / Eggs",
+    summary = "Drei Zieh-Karten mit Chancen-Badge und Einzel-Plus-Zehnfach-Knopf.",
+    bestFor = "egg hatching, loot boxes, pulls",
+    build = function(args)
+        local cards = {}
+        for index = 1, 3 do
+            local name, odds = UI_ENGINE.widgetItem(args, index, "Egg " .. tostring(index), "25%")
+            cards[index] = {
+                id = "Gacha" .. tostring(index), role = "card", rect = { x = 50, y = 50, w = 30, h = 54 },
+                fill = (index == 3) and "comp" or "surfaceHi", gloss = index == 3,
+                text = { value = name, scaled = true, wrap = true },
+                children = {
+                    { id = "Odds" .. tostring(index), role = "badge", rect = { x = 50, y = 78, w = 80, h = 24 },
+                      fill = "accent", text = { value = odds, scaled = true } },
+                },
+            }
+        end
+        return UI_ENGINE.widgetRoot("Gacha", args.width or 66, args.height or 58, {
+            UI_ENGINE.widgetHeader(args.title or "Pet Eggs", "R$ 2.480"),
+            { id = "Eggs", role = "panel", rect = { x = 50, y = 50, w = 100, h = 56 }, fill = "surfaceLo",
+              layout = { kind = "list", dir = "horizontal", gap = 2 }, children = cards },
+            { id = "RollOne", role = "button", rect = { x = 27, y = 50, w = 44, h = 14 }, fill = "accent", gloss = true,
+              text = { value = "Hatch · R$ 240", scaled = true } },
+            { id = "RollTen", role = "button", rect = { x = 74, y = 50, w = 44, h = 14 }, fill = "surfaceHi",
+              text = { value = "Hatch 10x", scaled = true } },
+        }, args)
+    end,
+})
+
+UI_ENGINE.widgetDef("currency", {
+    label = "Waehrungsleiste",
+    summary = "Kompakte HUD-Leiste mit zwei Waehrungen und Plus-Knoepfen.",
+    bestFor = "top bar, coins/gems, always-on HUD",
+    build = function(args)
+        return UI_ENGINE.widgetRoot("CurrencyBar", args.width or 44, args.height or 12, {
+            { id = "Coins", role = "badge", rect = { x = 25, y = 50, w = 46, h = 90 }, fill = "surfaceHi", gloss = true,
+              text = { value = args.coins or "12.480", scaled = true } },
+            { id = "CoinsPlus", role = "button", rect = { x = 50, y = 50, w = 16, h = 74 }, fill = "accent", text = { value = "+", scaled = true } },
+            { id = "Gems", role = "badge", rect = { x = 72, y = 50, w = 40, h = 90 }, fill = "surfaceHi", gloss = true,
+              text = { value = args.gems or "320", scaled = true } },
+            { id = "GemsPlus", role = "button", rect = { x = 94, y = 50, w = 14, h = 74 }, fill = "accent", text = { value = "+", scaled = true } },
+        }, args)
+    end,
+})
+
+UI_ENGINE.widgetDef("hud", {
+    label = "HUD-Leisten",
+    summary = "Lebens- und Ausdauerbalken plus vier Faehigkeiten-Slots.",
+    bestFor = "action, survival, combat HUD",
+    build = function(args)
+        local abilities = {}
+        for index = 1, 4 do
+            abilities[index] = {
+                id = "Ability" .. tostring(index), role = "button", rect = { x = 50, y = 50, w = 22, h = 88 },
+                fill = (index == 1) and "accent" or "surfaceHi", gloss = true,
+                text = { value = "[" .. tostring(index) .. "]", scaled = true },
+            }
+        end
+        return UI_ENGINE.widgetRoot("Hud", args.width or 40, args.height or 44, {
+            UI_ENGINE.widgetBar("Health", 82, "HEALTH 82 / 100"),
+            UI_ENGINE.widgetBar("Stamina", 54, "STAMINA 54 / 100"),
+            { id = "Abilities", role = "panel", rect = { x = 50, y = 50, w = 100, h = 26 }, fill = "surfaceLo",
+              layout = { kind = "list", dir = "horizontal", gap = 2 }, children = abilities },
+        }, args)
+    end,
+})
+
+UI_ENGINE.widgetDef("dialog", {
+    label = "Dialog",
+    summary = "Sprecher-Namensschild, Textflaeche und drei Antwortknoepfe.",
+    bestFor = "NPCs, conversations, story choices",
+    build = function(args)
+        local choices = {}
+        for index = 1, 3 do
+            local name = UI_ENGINE.widgetItem(args, index, "Choice " .. tostring(index), "")
+            choices[index] = {
+                id = "Choice" .. tostring(index), role = "button", rect = { x = 50, y = 50, w = 100, h = 22 },
+                fill = (index == 1) and "accent" or "surfaceHi", gloss = true,
+                text = { value = (name ~= "" and name) or ("Option " .. tostring(index)), scaled = true, xAlign = "Left" },
+            }
+        end
+        return UI_ENGINE.widgetRoot("Dialog", args.width or 60, args.height or 46, {
+            { id = "Speaker", role = "badge", rect = { x = 22, y = 50, w = 40, h = 14 }, fill = "accent", gloss = true,
+              text = { value = args.speaker or "Captain Mira", scaled = true } },
+            { id = "Line", role = "card", rect = { x = 50, y = 50, w = 100, h = 30 }, fill = "surfaceHi",
+              text = { value = args.line or "The bridge is open. Ready to cross?", scaled = true, wrap = true, xAlign = "Left" } },
+            { id = "Choices", role = "panel", rect = { x = 50, y = 50, w = 100, h = 42 }, fill = "surfaceLo",
+              layout = { kind = "list", dir = "vertical", gap = 2 }, children = choices },
+        }, args)
+    end,
+})
+
+UI_ENGINE.widgetDef("tooltip", {
+    label = "Tooltip",
+    summary = "Kleine Karte mit Titel, Beschreibung, zwei Werten und Tasten-Hinweis.",
+    bestFor = "hover info, item detail, stat popups",
+    build = function(args)
+        return UI_ENGINE.widgetRoot("Tooltip", args.width or 30, args.height or 26, {
+            { id = "Title", role = "label", rect = { x = 50, y = 50, w = 100, h = 18 },
+              text = { value = args.title or "Iron Sword", scaled = true } },
+            { id = "Desc", role = "label", rect = { x = 50, y = 50, w = 100, h = 30 },
+              text = { value = args.description or "+12 Attack · forged in the old mine", scaled = true, wrap = true } },
+            { id = "Stats", role = "panel", rect = { x = 50, y = 50, w = 100, h = 22 }, fill = "surfaceLo",
+              layout = { kind = "list", dir = "vertical", gap = 1 }, children = {
+                  { id = "StatA", role = "badge", rect = { x = 50, y = 50, w = 100, h = 46 }, text = { value = "Durability 84%", scaled = true, xAlign = "Left" } },
+                  { id = "StatB", role = "badge", rect = { x = 50, y = 50, w = 100, h = 46 }, text = { value = "Rarity: Rare", scaled = true, xAlign = "Left" } },
+              } },
+            { id = "Hint", role = "badge", rect = { x = 50, y = 50, w = 100, h = 12 }, fill = "accent",
+              text = { value = args.hint or "Hold [E] to equip", scaled = true } },
+        }, args)
+    end,
+})
+
+UI_ENGINE.widgetDef("hotbar", {
+    label = "Schnellleiste",
+    summary = "Neun Slots mit Nummerntasten; Slot 1 ist gewaehlt.",
+    bestFor = "survival, sandbox, placement tools",
+    build = function(args)
+        local slots = {}
+        for index = 1, 9 do
+            local name = UI_ENGINE.widgetItem(args, index, "", "")
+            slots[index] = {
+                id = "HotbarSlot" .. tostring(index), role = "button", rect = { x = 50, y = 50, w = 10, h = 84 },
+                fill = (index == 1) and "accent" or "surfaceHi", gloss = index == 1,
+                text = { value = (name ~= "" and name) or tostring(index), scaled = true, wrap = true },
+            }
+        end
+        return UI_ENGINE.widgetRoot("Hotbar", args.width or 62, args.height or 14, {
+            { id = "Slots", role = "panel", rect = { x = 50, y = 50, w = 100, h = 100 }, fill = "surfaceLo",
+              layout = { kind = "list", dir = "horizontal", gap = 1 }, children = slots },
+        }, args)
+    end,
+})
+
+UI_ENGINE.widgetDef("map", {
+    label = "Karte",
+    summary = "Kartenflaeche mit vier Wegpunkten und Legende.",
+    bestFor = "world maps, quest markers, travel",
+    build = function(args)
+        local pins = {}
+        local labels = { "Home", "Quest", "Shop", "Boss" }
+        for index = 1, 4 do
+            pins[index] = {
+                id = "Pin" .. tostring(index), role = "badge", rect = {
+                    x = 18 + index * 18, y = 20 + (index % 2) * 30, w = 10, h = 12 },
+                fill = (index == 2) and "accent" or "surfaceHi", corner = "pill", gloss = true,
+                text = { value = tostring(UI_ENGINE.widgetItem(args, index, labels[index], "")), scaled = true },
+            }
+        end
+        return UI_ENGINE.widgetRoot("Map", args.width or 64, args.height or 56, {
+            UI_ENGINE.widgetHeader(args.title or "Island Map", "N"),
+            { id = "MapArea", role = "panel", rect = { x = 50, y = 50, w = 100, h = 66 }, fill = "surfaceLo",
+              texture = "grid", children = pins },
+            { id = "Legend", role = "badge", rect = { x = 50, y = 50, w = 100, h = 10 }, fill = "surfaceHi",
+              text = { value = "● Home   ● Quest   ● Shop   ● Boss", scaled = true } },
+        }, args)
+    end,
+})
+
+UI_ENGINE.widgetDef("codex", {
+    label = "Codex",
+    summary = "Linke Eintragsliste, rechter Detailbereich mit Titel und Text.",
+    bestFor = "lore, bestiary, recipes, help",
+    build = function(args)
+        local entries = {}
+        for index = 1, 5 do
+            local name = UI_ENGINE.widgetItem(args, index, "Entry " .. tostring(index), "")
+            entries[index] = {
+                id = "Entry" .. tostring(index), role = "button", rect = { x = 50, y = 50, w = 100, h = 17 },
+                fill = (index == 1) and "accent" or "surfaceHi",
+                text = { value = name, scaled = true, xAlign = "Left" },
+            }
+        end
+        return UI_ENGINE.widgetRoot("Codex", args.width or 66, args.height or 58, {
+            UI_ENGINE.widgetHeader(args.title or "Codex", "5 entries"),
+            { id = "Body", role = "panel", rect = { x = 50, y = 50, w = 100, h = 80 }, fill = "surfaceLo",
+              layout = { kind = "list", dir = "horizontal", gap = 2 },
+              children = {
+                  { id = "EntryList", role = "panel", rect = { x = 50, y = 50, w = 42, h = 100 }, fill = "surfaceHi",
+                    layout = { kind = "list", dir = "vertical", gap = 1 }, children = entries },
+                  { id = "Detail", role = "card", rect = { x = 50, y = 50, w = 55, h = 100 }, fill = "surfaceHi",
+                    layout = { kind = "list", dir = "vertical", gap = 2 }, padding = 0.05,
+                    text = { value = args.detailTitle or "Selected entry", scaled = true, wrap = true },
+                    children = {
+                        { id = "DetailText", role = "label", rect = { x = 50, y = 50, w = 100, h = 80 },
+                          text = { value = args.detailText or "Describe the selected entry here. The engine keeps the text readable above textures and decor.", scaled = true, wrap = true } },
+                    } },
+              } },
+        }, args)
+    end,
+})
+
+UI_ENGINE.widgetDef("tiers", {
+    label = "Tierliste",
+    summary = "Fuenf Tier-Zeilen (S bis D) mit farbigen Chips.",
+    bestFor = "tier lists, rarity charts, comparisons",
+    build = function(args)
+        local rows, tierNames = {}, { "S", "A", "B", "C", "D" }
+        for index = 1, 5 do
+            local chips = {}
+            for chip = 1, 3 do
+                chips[chip] = { id = "TierChip" .. tostring(index) .. tostring(chip), role = "badge",
+                    rect = { x = 50, y = 50, w = 30, h = 76 }, fill = (index <= 2) and "accent" or "surfaceHi",
+                    text = { value = tostring(UI_ENGINE.widgetItem(args, (index - 1) * 3 + chip, "Item", "")), scaled = true } }
+            end
+            rows[index] = { id = "TierRow" .. tostring(index), role = "panel", rect = { x = 50, y = 50, w = 100, h = 18 }, fill = "surfaceLo",
+                layout = { kind = "list", dir = "horizontal", gap = 2 }, children = {
+                    { id = "TierLabel" .. tostring(index), role = "badge", rect = { x = 50, y = 50, w = 14, h = 76 },
+                      fill = (index <= 2) and "accent" or "surfaceHi", gloss = true, text = { value = tierNames[index], scaled = true } },
+                    table.unpack(chips),
+                } }
+        end
+        return UI_ENGINE.widgetRoot("TierList", args.width or 62, args.height or 62, {
+            UI_ENGINE.widgetHeader(args.title or "Tier List", "Reroll"),
+            { id = "Rows", role = "panel", rect = { x = 50, y = 50, w = 100, h = 82 }, fill = "surfaceLo",
+              layout = { kind = "list", dir = "vertical", gap = 2 }, children = rows },
+        }, args)
+    end,
+})
+
+UI_ENGINE.widgetDef("social", {
+    label = "Freundesliste",
+    summary = "Fuenf Freundeszeilen mit Status und Einladen-Knopf.",
+    bestFor = "friends, parties, lobbies, social panels",
+    build = function(args)
+        local rows = {}
+        for index = 1, 5 do
+            local name = UI_ENGINE.widgetItem(args, index, "Friend " .. tostring(index), "")
+            rows[index] = {
+                id = "Friend" .. tostring(index), role = "card", rect = { x = 50, y = 50, w = 100, h = 13 },
+                fill = "surfaceHi", text = { value = name, scaled = true, xAlign = "Left" },
+                children = {
+                    { id = "FriendStatus" .. tostring(index), role = "badge", rect = { x = 66, y = 50, w = 26, h = 64 },
+                      fill = (index % 2 == 0) and "accent" or "surfaceLo",
+                      text = { value = (index % 2 == 0) and "Online" or "Away", scaled = true } },
+                    { id = "FriendInvite" .. tostring(index), role = "button", rect = { x = 88, y = 50, w = 18, h = 64 },
+                      fill = "accent", text = { value = "Invite", scaled = true } },
+                },
+            }
+        end
+        return UI_ENGINE.widgetRoot("Social", args.width or 54, args.height or 56, {
+            UI_ENGINE.widgetHeader(args.title or "Friends", "3 online"),
+            { id = "Friends", role = "panel", rect = { x = 50, y = 50, w = 100, h = 82 }, fill = "surfaceLo",
+              layout = { kind = "list", dir = "vertical", gap = 1.5 }, children = rows },
+        }, args)
+    end,
+})
+
+function UI_ENGINE.widgetNames()
+    local names = {}
+    for name in pairs(UI_ENGINE.WIDGETS) do table.insert(names, name) end
+    table.sort(names)
+    return names
+end
+
+tools.ui_widget = function(args)
+    args = args or {}
+    local action = string.lower(tostring(args.action or "build"))
+    if action == "list" or action == "styles" then
+        local list = {}
+        for _, name in ipairs(UI_ENGINE.widgetNames()) do
+            local def = UI_ENGINE.WIDGETS[name]
+            table.insert(list, { name = name, label = def.label, summary = def.summary, bestFor = def.bestFor })
+        end
+        return ok({ widgets = list, count = #list,
+            note = tostring(#list) .. " ready-made widgets. Each is a complete layout skeleton (header, rows, badges, buttons) built from the same engine rules; fill in texts, prices and numbers via items=[...] or the named arguments." })
+    end
+    if action == "get" or action == "preview" then
+        local name = string.lower(tostring(args.kind or args.widget or args.name or ""))
+        local def = UI_ENGINE.WIDGETS[name]
+        if def == nil then
+            return failCode("BAD_ARGS", "Unknown widget '" .. name .. "'. Known: " .. table.concat(UI_ENGINE.widgetNames(), ", ") .. ".")
+        end
+        return ok({ widget = name, label = def.label, summary = def.summary, bestFor = def.bestFor,
+            accepts = { items = "array of strings or {name, price}", title = "string", widgetSpecific = "speaker/line for dialog, coins/gems for currency, playerName for profile, progressLabel/claimLabel for battlepass and dailyrewards", itemsKey = "items" },
+            note = "Call ui_widget without action (or action=build) to place it." })
+    end
+    if action ~= "build" then
+        return failCode("BAD_ARGS", "action must be list, get or build.")
+    end
+    local name = string.lower(tostring(args.kind or args.widget or "shop"))
+    local def = UI_ENGINE.WIDGETS[name]
+    if def == nil then
+        return failCode("BAD_ARGS", "Unknown widget '" .. name .. "'. Known: " .. table.concat(UI_ENGINE.widgetNames(), ", ") .. ".")
+    end
+    local parent, err = resolveRef(args.parentRef or "game.StarterGui")
+    if not parent then return failCode("REF_NOT_FOUND", err) end
+    local caps = UI_ENGINE.caps()
+    local skin = UI_ENGINE.resolveSkin(args.skin or "pop", args.brand, args.colors)
+    local host, createdScreen
+    if string.lower(tostring(args.surfaceType or args.guiType or "")) == "billboard" then
+        local anchorParent = parent
+        host, createdScreen = UI_ENGINE.ensureBillboard(anchorParent, args)
+    else
+        host, createdScreen = UI_ENGINE.ensureScreen(parent, args)
+    end
+    local ctx = UI_ENGINE.newContext(args, skin)
+    local rootSpec = def.build(args, skin)
+    if args.name ~= nil or args.id ~= nil then rootSpec.id = tostring(args.name or args.id) end
+    if args.decor ~= nil then rootSpec.decor = args.decor end
+    if args.gloss ~= nil then rootSpec.gloss = args.gloss end
+    if args.outline ~= nil then rootSpec.outline = args.outline end
+    local built = UI_ENGINE.buildNode(rootSpec, host, skin, caps, ctx, 0, false, false)
+    if built == nil then
+        if createdScreen then createdScreen:Destroy() end
+        return failCode("BAD_ARGS", "The widget could not be built (nesting or budget limit).")
+    end
+    waypoint("ui widget " .. name)
+    local warnings = (#ctx.warnings > 0) and table.concat(ctx.warnings, " | ") or nil
+    return ok({
+        widget = name, label = def.label,
+        surface = describeRef(built.wrapper), content = describeRef(built.content),
+        screenGui = createdScreen and createdScreen.Name or nil,
+        skin = skin.key, style = skin.label,
+        nodes = ctx.count, texts = ctx.texts,
+        outlines = ctx.outlines or 0, glosses = ctx.glosses or 0,
+        decorNodes = ctx.decorNodes or 0, decorParts = ctx.decorParts or 0,
+        layers = built.report.layers, strokes = built.report.strokes, shadows = built.report.shadows,
+        backgroundMode = built.report.backgroundMode,
+        widgets = UI_ENGINE.widgetNames(),
+        rule = "Widgets are layout skeletons, not finished games: wire the buttons to code with insert_script/patch_script and replace the placeholder texts via items/title.",
+        nextSteps = {
+            "Fill real content: items=[{name, price}, ...], title=..., plus widget-specific fields (speaker/line, coins/gems, playerName).",
+            "Add behavior afterwards (insert_script) and verify with ui_audit or a playtest.",
+            "If the Place already has a GUI, match its style with ui_skin action=extract first - do not replace user-authored interfaces.",
+        },
+    }, warnings)
+end
+
 tools.ui_texture = function(args)
     local skin = UI_ENGINE.resolveSkin(args.skin or "glass", args.brand, args.colors)
     local recipe = UI_ENGINE.textureRecipe(skin, args)
@@ -11632,13 +14789,37 @@ tools.ui_skin = function(args)
     local action = string.lower(tostring(args.action or "list"))
     if action == "list" then
         local list = {}
+        local search = nil
+        local searchArg = args["for"]
+        if args.game ~= nil or args.search ~= nil or searchArg ~= nil then
+            search = string.lower(tostring(args.game or args.search or searchArg))
+        end
+        local function outlineName(entry)
+            local o = entry.outline
+            if o == nil or o == false then return nil end
+            if type(o) == "string" then return o end
+            if type(o) == "table" then return tostring(o.style or o.kind or "comic") end
+            return "comic"
+        end
+        local function decorName(entry)
+            local d = entry.decor
+            if d == nil or d == false then return nil end
+            if type(d) == "string" then return d end
+            if type(d) == "table" then return tostring(d.kind or "clouds") end
+            return "clouds"
+        end
         for _, name in ipairs(UI_ENGINE.skinNames()) do
             local entry = UI_ENGINE.SKINS[name]
-            table.insert(list, { name = name, label = entry.label, bestFor = entry.bestFor, mood = entry.mood, corner = entry.corner,
-                texture = entry.texture, textureAsBackground = entry.textureAsBackground == true, energy = entry.energy, strokes = #(entry.strokes or {}), shadows = #(entry.shadows or {}),
-                strokeGradient = (entry.strokes and entry.strokes[1] and entry.strokes[1].grad) == true })
+            local haystack = string.lower(tostring(name) .. " " .. tostring(entry.label) .. " " .. tostring(entry.bestFor) .. " " .. tostring(entry.mood))
+            if search == nil or string.find(haystack, search, 1, true) ~= nil then
+                table.insert(list, { name = name, label = entry.label, bestFor = entry.bestFor, mood = entry.mood, corner = entry.corner,
+                    texture = entry.texture, textureAsBackground = entry.textureAsBackground == true, energy = entry.energy, strokes = #(entry.strokes or {}), shadows = #(entry.shadows or {}),
+                    strokeGradient = (entry.strokes and entry.strokes[1] and entry.strokes[1].grad) == true,
+                    outline = outlineName(entry), gloss = (entry.gloss ~= nil and entry.gloss ~= false), decor = decorName(entry) })
+            end
         end
-        return ok({ skins = list, count = #list, note = "24 skins (8.0.0): pick by bestFor / game type (horror, minimal/simple, simulator, tycoon, obby, ocean, winter, candy, space, military, royal, nature plus the classic twelve). None is a dark dashboard by default. Pass skin + brand to build_interface/build_surface." })
+        return ok({ skins = list, count = #list, total = #UI_ENGINE.skinNames(), filteredBy = search,
+            note = "40 skins (8.0.5): pick by bestFor / game type. The 16 new styles add thick outlines (comic/sticker/chunky/marker/neon/engraved/tape), glossy buttons and clouds/sparkles/confetti where the style calls for them; all classic skins stay unchanged. None is a dark dashboard by default. Pass skin + brand to ui_widget/build_interface/build_surface." })
     end
     if action == "get" or action == "resolve" or action == "preview" then
         local skin = UI_ENGINE.resolveSkin(args.skin or args.name or "glass", args.brand, args.colors)
@@ -11646,10 +14827,23 @@ tools.ui_skin = function(args)
         for key, value in pairs(skin.p) do
             hex[key] = string.format("#%02X%02X%02X", math.floor(value.R * 255 + 0.5), math.floor(value.G * 255 + 0.5), math.floor(value.B * 255 + 0.5))
         end
+        local outlineInfo = nil
+        if skin.outline ~= nil and skin.outline ~= false then
+            local o = type(skin.outline) == "table" and skin.outline or {}
+            outlineInfo = { style = tostring(o.style or o.kind or "comic"), width = tonumber(o.w) or 0.014,
+                keyline = o.keyline ~= nil, glow = o.glow ~= nil }
+        end
+        local decorInfo = nil
+        if skin.decor ~= nil and skin.decor ~= false then
+            local d = type(skin.decor) == "table" and skin.decor or {}
+            decorInfo = { kind = tostring(d.kind or "clouds"), count = tonumber(d.count) or 6 }
+        end
         return ok({ skin = skin.key, label = skin.label, bestFor = skin.bestFor, mood = skin.mood, corner = skin.corner, texture = skin.texture,
             textureAsBackground = skin.textureAsBackground == true, energy = skin.energy, fonts = skin.fonts, palette = hex,
             textContrast = UI_ENGINE.contrast(skin.p.text, skin.p.surface),
-            generic = UI_ENGINE.isGeneric(skin.p.surface) })
+            generic = UI_ENGINE.isGeneric(skin.p.surface),
+            outline = outlineInfo, gloss = (skin.gloss ~= nil and skin.gloss ~= false), decor = decorInfo,
+            styleNote = "Gloss/outline/decor are real engine layers (counted per surface), not just colours." })
     end
     if action == "extract" then
         local root, err = resolveRef(args.ref or args.rootRef or "game.StarterGui")
@@ -11750,6 +14944,7 @@ tools.build_surface = function(args)
         layers = built.report.layers, shadows = built.report.shadows, shadowKind = built.report.shadowKind,
         strokes = built.report.strokes, strokeGradients = built.report.strokeGradients, strokesScaled = built.report.strokesScaled,
         gradients = built.report.gradients, texture = built.report.texture, textureParts = built.report.textureParts,
+        outline = built.report.outline, gloss = built.report.gloss, decor = built.report.decor,
         cornerRadius = built.report.cornerRadius, padding = built.report.padding, cornerSafe = built.report.cornerSafe,
         canvasGroup = built.isGroup, canvasGroupReason = built.report.canvasGroupReason,
         offsetUsed = 0, anchorPoint = { built.wrapper.AnchorPoint.X, built.wrapper.AnchorPoint.Y },
@@ -11817,6 +15012,8 @@ tools.build_interface = function(args)
         strokes = ctx.strokes, strokeGradients = ctx.strokeGradients, shadows = ctx.shadows,
         gradients = ctx.gradients, textureParts = ctx.textureParts, textureBackgrounds = ctx.textureBackgrounds, texts = ctx.texts,
         canvasGroups = ctx.canvasGroups, scrollers = ctx.scrolls, thinSurfaces = ctx.thinSurfaces,
+        outlines = ctx.outlines or 0, outlineLayers = ctx.outlineLayers or 0,
+        glosses = ctx.glosses or 0, decorNodes = ctx.decorNodes or 0, decorParts = ctx.decorParts or 0,
         motionScript = motionRef, skin = skin.key, energy = skin.energy,
         imageAssets = ctx.images,
         offsetUsed = 0,
@@ -11835,10 +15032,11 @@ tools.ui_audit = function(args)
     local stats = { total = 0, filled = 0, genericColors = 0, flatSurfaces = 0, strokes = 0, strokesScaled = 0,
         gradients = 0, gradientsOnStrokes = 0, shadows = 0, textures = 0, canvasGroups = 0, nestedCanvasGroups = 0,
         uiScales = 0, offsetHeavy = 0, texts = 0,
-        glowStacks = 0, radialMenus = 0, textureImages = 0, billboards = 0, billboardOffsetSize = 0, textureBackgrounds = 0, textureOverlaysWashed = 0 }
+        glowStacks = 0, radialMenus = 0, textureImages = 0, billboards = 0, billboardOffsetSize = 0, textureBackgrounds = 0, textureOverlaysWashed = 0,
+        outlines = 0, glosses = 0, decorNodes = 0, decorParts = 0 }
     local problems = { anchorMismatches = {}, cornerOverflow = {}, contrastFailures = {}, flatSurfaces = {}, genericColors = {},
         offsetHeavy = {}, nestedCanvasGroups = {}, textTooSmall = {}, tapTargetsTooSmall = {}, outOfBounds = {},
-        billboardOffsetSize = {}, textureWashedOut = {} }
+        billboardOffsetSize = {}, textureWashedOut = {}, decorOveruse = {} }
     local function push(list, inst, detail)
         if #list < 14 then local entry = describeRef(inst); entry.detail = detail; table.insert(list, entry) end
     end
@@ -11917,6 +15115,20 @@ tools.ui_audit = function(args)
                 end
                 if child:GetAttribute("ArenaGlow") then stats.glowStacks = stats.glowStacks + 1 end
                 if child:GetAttribute("ArenaRadial") then stats.radialMenus = stats.radialMenus + 1 end
+                -- UI ENGINE 3.0 (8.0.5): Kontur, Glanz und Dekor messen.
+                -- Sie sind ausdrueckliche Stilmittel; die Zahlen machen nur
+                -- sichtbar, wie viele Schichten eine Oberflaeche traegt.
+                if child:GetAttribute("ArenaOutline") then stats.outlines = stats.outlines + 1 end
+                if child:GetAttribute("ArenaGloss") then stats.glosses = stats.glosses + 1 end
+                local decorKind = child:GetAttribute("ArenaDecor")
+                if decorKind ~= nil then
+                    stats.decorNodes = stats.decorNodes + 1
+                    local partCount = tonumber(child:GetAttribute("ArenaDecorCount")) or 0
+                    stats.decorParts = stats.decorParts + partCount
+                    if partCount > UI_ENGINE.DECOR_BUDGET then
+                        push(problems.decorOveruse or {}, child, "decor node carries " .. tostring(partCount) .. " parts; keep decoration below " .. tostring(UI_ENGINE.DECOR_BUDGET) .. " per surface")
+                    end
+                end
                 -- Anker-Regel: skaliert animiert, aber wächst nicht aus der Mitte.
                 if hasScale and child.AnchorPoint.X == 0 and child.AnchorPoint.Y == 0 then
                     push(problems.anchorMismatches, child, "UIScale with AnchorPoint 0,0 grows toward the bottom right instead of from its own anchor")
@@ -12572,6 +15784,7 @@ tools.sim_stop = function(args)
     if StudioTestService ~= nil then pcall(function() diagnostics.editModeActiveBefore = StudioTestService.EditModeActive end) end
     if not testSessionActive() then
         simStartedByBridge = false
+        pcall(function() CAMERA.heal("sim_stop_already_stopped", true) end)
         return ok({ alreadyStopped = true, state = simStateData() })
     end
     if simStartedByBridge ~= true or userPlaytestActive == true then
@@ -12588,7 +15801,9 @@ tools.sim_stop = function(args)
         simStartedAt = 0
         aiPlayIntent = { action = "stop", at = os.time() }
         waypoint("sim_stop")
-        return ok({ stopped = true, stopMethod = "runServiceStop", startDiagnostics = diagnostics, state = simStateData() })
+        local cameraRepair = nil
+        pcall(function() cameraRepair = CAMERA.heal("sim_stop", true) end)
+        return ok({ stopped = true, stopMethod = "runServiceStop", startDiagnostics = diagnostics, state = simStateData(), cameraRecovered = cameraRepair and cameraRepair.changed or false })
     end
     -- Rang 2: Tastenkürzel Shift+F5 (Fallback).
     diagnostics.usedPath = "studioShortcut"
@@ -12931,9 +16146,13 @@ local PERSISTENT_WRITE_TOOLS = {
     union = true, subtract = true, negate = true, intersect = true, separate = true,
     insert_asset = true, apply_asset = true,
     point_at = true, fill_region = true,
+    terrain_heightmap = true, terrain_sculpt = true, terrain_paint = true, terrain_water = true,
+    terrain_feature = true, terrain_carve = true, terrain_clear = true,
+
     build_polygon_model = true, build_assembly = true,
     mesh_slots = true, mesh_apply = true, mesh_drop = true,
     build_surface = true, build_interface = true,
+    ui_widget = true,
     undo = true, redo = true,
 }
 
@@ -12943,6 +16162,7 @@ WRITE_TOOLS.run_lua = true
 WRITE_TOOLS.select_instance = true
 WRITE_TOOLS.sim_start = true
 WRITE_TOOLS.style_lock = true
+WRITE_TOOLS.camera_guard = true
 WRITE_TOOLS.prop_place = true
 WRITE_TOOLS.prop_save = true
 WRITE_TOOLS.refine = true
@@ -14597,6 +17817,7 @@ local function handleCommand(command)
     if type(args) ~= "table" then args = {} end
     -- Während eines Bridge-Befehls keine user_active-Meldungen auslösen.
     bridgeCommandActive = true
+    pcall(function() CAMERA.noteBridgeCommand(command.tool) end)
     if args.asJob == true and command.tool ~= "start_job" then
         local okJob, jobId = xpcall(function()
             return newJob(command.tool, function(job)
@@ -14634,6 +17855,14 @@ local function handleCommand(command)
     result.commandId = tostring(command.id)
     result.durationSeconds = math.floor((os.clock() - startedAt) * 1000) / 1000
     bridgeCommandActive = false
+    -- 8.0.5: Nach JEDEM Befehl prüfen, ob ein Skript die Editor-Kamera auf
+    -- Scriptable gestellt hat. Die Reparatur ist billig und verhindert die
+    -- berichtete "Kamera hängt"-Situation direkt nach der Arbeit.
+    local cameraHeal = nil
+    pcall(function() cameraHeal = CAMERA.afterCommand(command.tool) end)
+    if type(cameraHeal) == "table" and cameraHeal.changed == true then
+        result.cameraRecovered = true
+    end
     return result
 end
 
@@ -15377,6 +18606,7 @@ game:GetPropertyChangedSignal("Name"):Connect(function()
 end)
 
 plugin.Unloading:Connect(function()
+    pcall(function() CAMERA.heal("plugin_unloading", true) end)
     running = false
     if sessionId then
         post("/plugin/disconnect", { sessionId = sessionId, reason = "unloading" })
@@ -18392,6 +21622,52 @@ $script:BridgeHandlerScript = {
                 Add-ActivityResultCount $parts $result 'Geplante Skripte:' @('count','scriptCount')
             }
             'list_jobs' { Add-ActivityResultCount $parts $result 'Aufgaben:' @('count','returned','total') }
+            'terrain_heightmap' {
+                Add-ActivityDetailPart $parts $arguments 'Form:' @('preset','mode','seed')
+                Add-ActivityDetailPart $parts $arguments 'Größe:' @('size','center','maxHeight','waterLevel')
+                Add-ActivityResultCount $parts $result 'Geschriebene Chunks:' @('processedChunks','chunks')
+            }
+            'terrain_sculpt' {
+                Add-ActivityDetailPart $parts $arguments 'Aktion:' @('action','material')
+                Add-ActivityDetailPart $parts $arguments 'Pinsel:' @('radius','strength','center')
+                Add-ActivityResultCount $parts $result 'Geänderte Spalten:' @('changedColumns')
+            }
+            'terrain_paint' {
+                Add-ActivityDetailPart $parts $arguments 'Material:' @('material','depth')
+                Add-ActivityDetailPart $parts $arguments 'Bereich:' @('center','size','radius')
+                Add-ActivityResultCount $parts $result 'Bemalte Voxel:' @('paintedVoxels')
+            }
+            'terrain_water' {
+                Add-ActivityDetailPart $parts $arguments 'Art:' @('action','waterLevel','width')
+                Add-ActivityDetailPart $parts $arguments 'Bereich:' @('center','radius','size','points')
+                Add-ActivityResultCount $parts $result 'Wasservoxel:' @('waterVoxels')
+            }
+            'terrain_feature' {
+                Add-ActivityDetailPart $parts $arguments 'Form:' @('kind','radius','height')
+                Add-ActivityDetailPart $parts $arguments 'Mittelpunkt:' @('center','waterLevel')
+                Add-ActivityResultCount $parts $result 'Geschriebene Chunks:' @('processedChunks','chunks')
+            }
+            'terrain_carve' {
+                Add-ActivityDetailPart $parts $arguments 'Schnitt:' @('action','radius','height')
+                Add-ActivityDetailPart $parts $arguments 'Pfad:' @('points','from','to')
+                Add-ActivityResultCount $parts $result 'Schnitte:' @('steps')
+            }
+            'terrain_measure' {
+                Add-ActivityDetailPart $parts $arguments 'Messung:' @('action','samples')
+                Add-ActivityDetailPart $parts $arguments 'Punkte:' @('points','position','from','to')
+                Add-ActivityResultCount $parts $result 'Messwerte:' @('measured','sampleCount','waterVoxels','solidVoxels')
+            }
+            'terrain_clear' {
+                Add-ActivityDetailPart $parts $arguments 'Bereich:' @('center','size','min','max')
+                Add-ActivityResultCount $parts $result 'Entfernte Voxel:' @('voxels')
+            }
+            'camera_state' { Add-ActivityDetailPart $parts $arguments 'Prüfung:' @('action') }
+            'camera_reset' { Add-ActivityDetailPart $parts $arguments 'Sichtfeld:' @('fieldOfView') }
+            'camera_focus' {
+                Add-ActivityDetailPart $parts $arguments 'Ziel:' @('ref','position')
+                Add-ActivityDetailPart $parts $arguments 'Blickwinkel:' @('yaw','pitch','distanceFactor')
+            }
+            'camera_guard' { Add-ActivityDetailPart $parts $arguments 'Aktion:' @('action') }
             'get_chunk' {
                 Add-ActivityDetailPart $parts $arguments 'Ergebnis:' @('blobId','id')
                 Add-ActivityDetailPart $parts $arguments 'Abschnitt ab Zeichen:' @('offset','start')
@@ -18410,8 +21686,8 @@ $script:BridgeHandlerScript = {
     }
 
     function Get-ActivityToolSets {
-        $read = @('get_bridge_log','get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','sim_status','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait','ui_capabilities','ui_skin','ui_audit','ui_texture','world_style','site_survey','variation','model_audit','world_audit','prop_list','wait_for_user','ack_user_message','ask_user','confirm_action','scaffold_ui_scripts','blender_status','mesh_status')
-        $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','build_polygon_model','build_assembly','mesh_slots','mesh_apply','mesh_drop','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','sim_start','set_context','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute','build_surface','build_interface','ui_glow','ui_radial','prop_place','prop_save','refine','style_lock','world_glow','sim_stop','mesh_cancel','build_mesh_model','mesh_apply_asset','upload_asset','open_cloud','creator_dashboard','datastore','force_fail','clear_pending')
+        $read = @('get_bridge_log','get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','sim_status','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait','ui_capabilities','ui_skin','ui_audit','ui_texture','world_style','site_survey','variation','model_audit','world_audit','prop_list','wait_for_user','ack_user_message','ask_user','confirm_action','scaffold_ui_scripts','blender_status','mesh_status','camera_state','terrain_measure')
+        $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','build_polygon_model','build_assembly','mesh_slots','mesh_apply','mesh_drop','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','sim_start','set_context','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute','build_surface','build_interface','ui_glow','ui_radial','prop_place','prop_save','refine','style_lock','world_glow','sim_stop','mesh_cancel','build_mesh_model','mesh_apply_asset','upload_asset','open_cloud','creator_dashboard','datastore','force_fail','clear_pending','camera_reset','camera_focus','camera_guard','ui_widget','terrain_heightmap','terrain_sculpt','terrain_paint','terrain_water','terrain_feature','terrain_carve','terrain_clear')
         return @{ read = $read; write = $write }
     }
 
@@ -18503,6 +21779,19 @@ $script:BridgeHandlerScript = {
             select_instance = 'Hat die angeforderten Instanzen in Studio ausgewählt.'
             describe_scene = 'Hat den Aufbau der Szene im Place beschrieben.'
             viewport_info = 'Hat Kameraposition, Blickrichtung und Sichtfeld geprüft.'
+            camera_state = 'Hat den Zustand der Studio-Kamera und die Kamerasteuerung geprüft.'
+            camera_reset = 'Hat die Studio-Kamera repariert und die Maussteuerung zurückgeholt.'
+            camera_focus = 'Hat die Kamera auf das angegebene Ziel gerichtet.'
+            camera_guard = 'Hat den Kamera-Wächter im Place geprüft oder verwaltet.'
+            ui_widget = 'Hat ein fertiges Oberflächen-Widget aus der UI-Bibliothek gebaut.'
+            terrain_heightmap = 'Hat eine Geländekarte mit Höhen, Materialschichten und Wasser erzeugt.'
+            terrain_sculpt = 'Hat das Gelände mit dem Pinsel modelliert.'
+            terrain_paint = 'Hat die Geländeoberfläche neu bemalt.'
+            terrain_water = 'Hat Wasser, Seen oder Flüsse gebaut.'
+            terrain_feature = 'Hat eine Geländeform wie Berg, Insel oder Krater gebaut.'
+            terrain_carve = 'Hat Tunnel, Höhlen oder Gräben in das Gelände geschnitten.'
+            terrain_measure = 'Hat Höhen, Profile, Wasser oder Volumen des Geländes gemessen.'
+            terrain_clear = 'Hat Gelände im angegebenen Bereich entfernt.'
             get_bounds = 'Hat Mittelpunkt und Ausmaße der angeforderten Instanzen gemessen.'
             scene_stats = 'Hat die Anzahl und Typen der Objekte im Place gezählt.'
             list_tools = 'Hat die verfügbaren Bridge-Werkzeuge aufgelistet.'
@@ -22859,6 +26148,82 @@ $script:BridgeHandlerScript = {
             example = @{ min = @{ x = -20; y = -10; z = -20 }; max = @{ x = 20; y = 10; z = 20 }; with = @{ className = 'Part'; properties = @{ Anchored = $true }; name = 'Fill' }; fillTo = 'rule'; asJob = $true };
             errors = @('WORLD_NOT_PROBED: probe_world zuerst.', 'REGION_LIMIT: Box zu groß - kleiner aufteilen (empirische Obergrenze im Fehler).', 'BAD_ARGS: min/max fehlt.') })
 
+        # ---------------- TERRAIN (8.0.5) ----------------
+        $t.Add(@{ name = 'terrain_heightmap'; category = 'terrain'; summary = 'GELÄNDE BAUEN: Höhenkarte mit Materialschichten und Wasser.';
+            description = 'Baut eine zusammenhängende Landschaft aus einer benannten Form (preset) oder aus expliziten Höhen. Die Bridge rechnet Rauschen, Bilinear-Sampling, Materialschichtung (surface/subsurface/rock), Wasser im LiquidOccupancy-Kanal und Chunking. preset: plains, hills, mountains, islands, archipelago, dunes, canyon, plateau, swamp, volcano, custom. mode: generate (Standard), measured (bestehendes Gelände abtasten und neu schreiben) oder explicit (heights). Jeder Chunk wird als Region3:ExpandToGrid(4) geschrieben, höchstens 4,194,304 Voxel pro Read/Write. Grosse Karten liefern resumeToken - denselben Aufruf mit resumeToken={chunk=N} wiederholen statt neu zu bauen. overrideExisting=false erhält vorhandenes höheres Gelände.';
+            params = @{ preset = @{ type = 'string'; required = $false; default = "'hills'"; description = 'Formname.' }; mode = @{ type = 'string'; required = $false; default = "'generate'"; description = 'generate | measured | explicit.' }; center = @{ type = '{x,y,z}'; required = $false; default = '{0,0,0}'; description = 'Mittelpunkt; center.Y ist die Basishöhe.' }; size = @{ type = '{x,z}'; required = $false; default = '{96,96}'; description = 'Ausdehnung in Studs (max 512 x 508).' }; baseHeight = @{ type = 'number'; required = $false; default = 'center.Y'; description = 'Basis-/Meereshöhe.' }; maxHeight = @{ type = 'number'; required = $false; default = 'baseHeight+48'; description = 'Höchste Spitze.' }; minHeight = @{ type = 'number'; required = $false; default = 'baseHeight-...'; description = 'Tiefster Punkt (Klippen/Bagger).' }; seed = @{ type = 'int'; required = $false; default = '4711'; description = 'Deterministischer Seed - gleicher Seed, gleiche Welt.' }; waterLevel = @{ type = 'number'; required = $false; default = 'null'; description = 'Wasserspiegel; null = kein Wasser.' }; gridStep = @{ type = 'int'; required = $false; default = '4'; description = 'Rasterweite 4-16 (Vielfache von 4 = voxelgenau).' }; heights = @{ type = 'number[][]'; required = $false; default = 'null'; description = 'Explizite Höhen [row][col] für mode=explicit.' }; materials = @{ type = 'table'; required = $false; default = 'null'; description = 'surface/subsurface/rock/sand/snow/seabed überschreiben.' }; snowLine = @{ type = 'number'; required = $false; default = 'null'; description = 'Ab dieser Höhe Schnee.' }; rockSlope = @{ type = 'number'; required = $false; default = '5.5'; description = 'Ab diesem Höhenunterschied Fels statt Gras.' }; edgeFalloff = @{ type = 'number'; required = $false; default = '0'; description = '0-1: Rand zu baseHeight auslaufen lassen.' }; overrideExisting = @{ type = 'bool'; required = $false; default = 'true'; description = 'false = vorhandenes höheres Gelände bleibt.' }; chunkColumns = @{ type = 'int'; required = $false; default = '16'; description = 'Rasterzellen pro Chunk (4-32).' }; maxChunks = @{ type = 'int'; required = $false; default = '256'; description = 'Chunks pro Aufruf; Rest über resumeToken.' }; resumeToken = @{ type = 'table'; required = $false; default = 'null'; description = 'Aus dem letzten Ergebnis: {chunk=N}.' }; asJob = @{ type = 'bool'; required = $false; default = 'false'; description = 'Grosse Karten im Hintergrund.' } };
+            returns = '{ stats: { preset, columns, cols, rows, gridStep, minHeight, maxHeight, averageHeight, baseHeight, waterLevel, seed, size, center, mode }, chunks, processedChunks, solidVoxels, waterVoxels, sourceMode, complete, resumeToken, minXStud, minZStud }';
+            example = @{ preset = 'mountains'; center = @{ x = 0; y = 0; z = 0 }; size = @{ x = 192; z = 192 }; maxHeight = 64; seed = 4711; asJob = $true };
+            errors = @('NO_TERRAIN: der Place hat keinen Terrain-Service.', 'REGION_LIMIT: mehr als 20,000 Rasterzellen - gridStep erhöhen oder size senken.', 'BAD_ARGS: heights ist keine 2x2-Matrix.') })
+        $t.Add(@{ name = 'terrain_sculpt'; category = 'terrain'; summary = 'Gelände mit dem Pinsel formen (raise/lower/flatten/smooth/noise/terrace/erode).';
+            description = 'Liest die Oberfläche im Pinselbereich, verändert sie gemäß action und schreibt das Band zurück. raise/lower bewegen um strength, flatten zieht zu targetY, smooth mittelt Nachbarn, noise streut deterministisch, terrace schneidet Stufen, erode senkt steile Hänge. material überschreibt die Oberfläche gezielt. Bestehendes Wasser bleibt erhalten, solange waterLevel nicht gesetzt wird. Radius 4-256 Studs, Region höchstens 4,194,304 Voxel.';
+            params = @{ action = @{ type = 'string'; required = $true; default = "'raise'"; description = 'raise | lower | flatten | smooth | noise | terrace | erode.' }; center = @{ type = '{x,y,z}'; required = $true; default = '-'; description = 'Pinselmittelpunkt.' }; radius = @{ type = 'number'; required = $false; default = '32'; description = 'Pinselradius in Studs.' }; strength = @{ type = 'number'; required = $false; default = '4'; description = 'Stärke (Studs bzw. Stufenbreite).' }; targetY = @{ type = 'number'; required = $false; default = 'Mittel der Oberfläche'; description = 'Ziel bei flatten.' }; material = @{ type = 'string'; required = $false; default = 'null'; description = 'Neues Oberflächenmaterial.' }; waterLevel = @{ type = 'number'; required = $false; default = 'null'; description = 'Setzt Wasser im Bereich neu.' }; seed = @{ type = 'int'; required = $false; default = '4711'; description = 'Seed für noise.' } };
+            returns = '{ action, radius, strength, changedColumns, writeMode, brush }';
+            example = @{ action = 'raise'; center = @{ x = 20; y = 12; z = 0 }; radius = 28; strength = 6 };
+            errors = @('NO_SURFACE: kein Boden unter dem Pinsel - erst terrain_heightmap bauen.', 'REGION_LIMIT: Pinsel zu gross - Radius verkleinern.') })
+        $t.Add(@{ name = 'terrain_paint'; category = 'terrain'; summary = 'Oberfläche bemalen (Rock, Sand, Snow, Mud, CrackedLava) ohne die Form zu ändern.';
+            description = 'Schreibt ein Material in die oberste Schicht (depth Studs ab gemessener Oberfläche). Optional kreisförmig per radius. Erhält Wasser unverändert. Für Klippen nach dem Sculpten, Sandstrände nach dem Wasser, Schnee oberhalb der Schneegrenze. depth=0 färbt alle festen Voxel im Bereich. Max 512 x 512 Studs pro Aufruf.';
+            params = @{ material = @{ type = 'string'; required = $true; default = '-'; description = 'z.B. Grass, Ground, Rock, Sand, Snow, Slate, CrackedLava, Mud, LeafyGrass.' }; center = @{ type = '{x,y,z}'; required = $false; default = '{0,0,0}'; description = 'Mittelpunkt des Bereichs.' }; size = @{ type = '{x,z}'; required = $false; default = '{96,96}'; description = 'Bereichsgröße.' }; min = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Alternativ: untere Ecke.' }; max = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Alternativ: obere Ecke.' }; depth = @{ type = 'number'; required = $false; default = '4'; description = 'Tiefe ab Oberfläche in Studs (0 = alles).' }; radius = @{ type = 'number'; required = $false; default = 'null'; description = 'Kreisförmige Maske.' } };
+            returns = '{ material, paintedVoxels, depth, radius, chunks, failedChunks, area }';
+            example = @{ material = 'Rock'; center = @{ x = 20; y = 12; z = 0 }; radius = 32; depth = 8 };
+            errors = @('BAD_ARGS: unbekanntes Material.', 'REGION_LIMIT: Bereich über 512 Studs.') })
+        $t.Add(@{ name = 'terrain_water'; category = 'terrain'; summary = 'Seen, Flüsse, Ozeane und Wasser reinigen - inklusive Uferprofil.';
+            description = 'action=lake lasst einen gemessenen Untergrund stehen und senkt darin eine Schale ab; das Wasser wird korrekt im LiquidOccupancy-Kanal geschrieben (Source of truth seit den Shorelines), nicht als solide Water-Blöcke. action=river folgt einer Polyline (points oder from/to) und schneidet ein echtes Tal durch vorhandene Hügel. action=fill/ocean füllt eine Box per FillRegion (max 67,108,864 Voxel). action=clear entfernt nur Wasser. Seen/Flüsse laufen über die gemessene Höhenkarte und sind resume-fähig.';
+            params = @{ action = @{ type = 'string'; required = $false; default = "'lake'"; description = 'lake | river | fill | ocean | clear.' }; center = @{ type = '{x,y,z}'; required = $false; default = '{0,0,0}'; description = 'Mittelpunkt (lake/fill).' }; radius = @{ type = 'number'; required = $false; default = '48'; description = 'Seeradius.' }; depth = @{ type = 'number'; required = $false; default = '16'; description = 'Wassertiefe unter waterLevel.' }; waterLevel = @{ type = 'number'; required = $false; default = 'center.Y / points[1].Y'; description = 'Wasserspiegel.' }; points = @{ type = '{x,y,z}[]'; required = $false; default = 'null'; description = 'Flussverlauf (>= 2 Punkte).' }; from = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Flussstart.' }; to = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Flussende.' }; width = @{ type = 'number'; required = $false; default = '24'; description = 'Flussbreite (Radius der Rinne).' }; minY = @{ type = 'number'; required = $false; default = 'area.minY'; description = 'Untergrenze für fill/clear.' }; maxY = @{ type = 'number'; required = $false; default = 'area.maxY'; description = 'Obergrenze für fill/clear.' } };
+            returns = '{ action, waterLevel, radius|width, depth, waterVoxels, solidVoxels, chunks, processedChunks, resumeToken, complete }';
+            example = @{ action = 'lake'; center = @{ x = 0; y = 4; z = 0 }; radius = 56; depth = 14; waterLevel = 6 };
+            errors = @('NO_TERRAIN', 'BAD_ARGS: river braucht mindestens 2 Punkte.', 'REGION_LIMIT: Fill-Box über 67,108,864 Voxel.') })
+        $t.Add(@{ name = 'terrain_feature'; category = 'terrain'; summary = 'Einzelne Geländeform: mountain, ridge, hill, plateau, crater, volcano, canyon, island, archipelago, dunes, cliff, valley, terrace.';
+            description = 'Setzt EINE klar benannte Silhouette an eine Stelle - schneller und glaubwürdiger als eine grosse Zufallskarte. Höhe und Radius bestimmen die Form; waterLevel optional, island/archipelago setzen es automatisch auf center.Y. volcano mit lava=true füllt den Krater mit CrackedLava. Ergebnis enthält die gemessenen stats. Für eine ganze Landschaft terrain_heightmap nutzen.';
+            params = @{ kind = @{ type = 'string'; required = $false; default = "'mountain'"; description = 'mountain, ridge, hill, plateau, crater, volcano, canyon, island, archipelago, dunes, cliff, valley, terrace.' }; center = @{ type = '{x,y,z}'; required = $false; default = '{0,0,0}'; description = 'Fuss-/Mittelpunkt.' }; radius = @{ type = 'number'; required = $false; default = '64'; description = 'Grundradius.' }; height = @{ type = 'number'; required = $false; default = '32'; description = 'Formhöhe über center.Y.' }; waterLevel = @{ type = 'number'; required = $false; default = 'null'; description = 'Wasserspiegel (island: center.Y).' }; lava = @{ type = 'bool'; required = $false; default = 'false'; description = 'Vulkan: Krater mit Lava füllen.' }; gridStep = @{ type = 'int'; required = $false; default = '4'; description = 'Rasterweite.' } };
+            returns = '{ kind, stats, chunks, processedChunks, waterVoxels, solidVoxels, resumeToken, complete }';
+            example = @{ kind = 'volcano'; center = @{ x = 0; y = 0; z = 0 }; radius = 80; height = 56; lava = $true };
+            errors = @('BAD_ARGS: unbekannter kind (bekannte Namen werden aufgelistet).', 'NO_TERRAIN') })
+        $t.Add(@{ name = 'terrain_carve'; category = 'terrain'; summary = 'Tunnel, Höhlen, Gräben, Bögen, Gruben und Hohlräume schneiden.';
+            description = 'Entfernt Gelände entlang eines Pfades (FillBall Air). action=tunnel/arch/trench nutzen points oder from/to; arch zieht einen Bogen über die Spannweite, trench senkt sich auf waterLevel, jitter erzeugt natürliche Höhlenwände. pit und sphere entfernen eine Kugel/Grube. Danach mit terrain_paint die Wandfarbe setzen (Rock innen, Sand im Graben).';
+            params = @{ action = @{ type = 'string'; required = $false; default = "'tunnel'"; description = 'tunnel | arch | trench | pit | sphere.' }; points = @{ type = '{x,y,z}[]'; required = $false; default = 'null'; description = 'Pfad (>= 2 Punkte).' }; from = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Start.' }; to = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Ziel.' }; radius = @{ type = 'number'; required = $false; default = '10'; description = 'Radius des Schnitts.' }; height = @{ type = 'number'; required = $false; default = 'radius*3'; description = 'Bogenhöhe bei arch.' }; jitter = @{ type = 'number'; required = $false; default = '0'; description = 'Zufällige Verschiebung für natürliche Wände.' }; center = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Mittelpunkt bei pit/sphere.' }; depth = @{ type = 'number'; required = $false; default = 'radius'; description = 'Tiefe bei pit.' } };
+            returns = '{ action, steps, radius, removedVolumeStuds3, note }';
+            example = @{ action = 'tunnel'; points = @(@{x=-40;y=8;z=0}, @{x=40;y=12;z=6}); radius = 9; jitter = 1.5 };
+            errors = @('BAD_ARGS: Pfad fehlt.', 'WRITE_FAILED') })
+        $t.Add(@{ name = 'terrain_measure'; category = 'terrain'; summary = 'Gelände messen: Höhen, Profile, Wasserstand, Volumen.';
+            description = 'height misst Höhen an bis zu 64 Punkten per Raycast von +512. profile tastet eine Linie ab (samples 2-128) inklusive relativem Höhenunterschied. water findet den höchsten Flüssigkeitsspiegel in einer 16x16-Spalte über den LiquidOccupancy-Kanal. volume zählt feste und flüssige Voxel in einer Box (max 512x512 Studs). Immer messen statt nach dem Bauen raten.';
+            params = @{ action = @{ type = 'string'; required = $false; default = "'height'"; description = 'height | profile | water | volume.' }; points = @{ type = '{x,y,z}[]'; required = $false; default = 'null'; description = 'Messpunkte (max 64).' }; position = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Einzelpunkt.' }; from = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Profilstart.' }; to = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Profilende.' }; samples = @{ type = 'int'; required = $false; default = '16'; description = 'Stützpunkte des Profils.' }; center = @{ type = '{x,y,z}'; required = $false; default = '{0,0,0}'; description = 'Mittelpunkt für volume.' }; size = @{ type = '{x,z}'; required = $false; default = '{96,96}'; description = 'Box für volume.' }; minY = @{ type = 'number'; required = $false; default = 'center.Y-64'; description = 'Untergrenze der Volumenmessung.' }; maxY = @{ type = 'number'; required = $false; default = 'center.Y+64'; description = 'Obergrenze.' } };
+            returns = '{ action, points|samples|waterLevel|solidVoxels, ... }';
+            example = @{ action = 'profile'; from = @{ x = -48; y = 0; z = 0 }; to = @{ x = 48; y = 0; z = 0 }; samples = 24 };
+            errors = @('BAD_ARGS', 'READ_FAILED', 'REGION_LIMIT') })
+        $t.Add(@{ name = 'terrain_clear'; category = 'terrain'; summary = 'Gelände und Wasser in einem Bereich entfernen (nur mit confirm=true).';
+            description = 'Entfernt alles Gelände und Wasser in einer Box oder einem center+size-Bereich. Erfordert confirm=true, weil es destruktiv ist; ohne Bestätigung wird mit CONFIRM_REQUIRED und der gemessenen Voxelzahl abgewiesen. Ein ChangeHistory-Schritt macht das Undo einfach.';
+            params = @{ center = @{ type = '{x,y,z}'; required = $false; default = '{0,0,0}'; description = 'Mittelpunkt.' }; size = @{ type = '{x,z}'; required = $false; default = '{96,96}'; description = 'Bereich.' }; min = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Untere Ecke.' }; max = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Obere Ecke.' }; minY = @{ type = 'number'; required = $false; default = 'center.Y-64'; description = 'Untergrenze.' }; maxY = @{ type = 'number'; required = $false; default = 'center.Y+64'; description = 'Obergrenze.' }; confirm = @{ type = 'bool'; required = $true; default = 'false'; description = 'Muss true sein.' } };
+            returns = '{ cleared, voxels, min, max }';
+            example = @{ center = @{ x = 0; y = 0; z = 0 }; size = @{ x = 64; z = 64 }; minY = -8; maxY = 32; confirm = $true };
+            errors = @('CONFIRM_REQUIRED: confirm=true fehlt.', 'REGION_LIMIT: über 67,108,864 Voxel.') })
+
+        # ---------------- CAMERA (8.0.5) ----------------
+        $t.Add(@{ name = 'camera_state'; category = 'camera'; summary = 'Prüft, ob die Studio-Kamera hängt (CameraType Scriptable).';
+            description = 'Liest CameraType, CameraSubject, Position, FieldOfView und den Spielmodus. stuck=true bedeutet: im Editor steht CameraType auf Scriptable - dann dreht die Maus nicht mehr. Das Plugin heilt das automatisch; der Call liefert Belege dafür.';
+            params = @{};
+            returns = '{ available, inEditMode, runningSession, cameraType, cameraTypeIsScriptable, stuck, subject, position, fieldOfView, advice, repairTrigger }';
+            example = @{};
+            errors = @() })
+        $t.Add(@{ name = 'camera_reset'; category = 'camera'; summary = 'Kamera reparieren: Scriptable/Fixed/Custom korrekt setzen.';
+            description = 'Setzt im Edit-Modus CameraType=Fixed (Studio-Standard) und entfernt ein blockierendes CameraSubject, im Play-Modus bei force CameraType=Custom + Humanoid als Subject. Repariert zusätzlich MouseBehavior und MouseIconEnabled. fieldOfView (20-120) kann mitgesetzt werden. Nach dem Call ist die Maussteuerung sofort wieder da.';
+            params = @{ fieldOfView = @{ type = 'number'; required = $false; default = 'null'; description = 'Optionaler neuer FOV (20-120).' } };
+            returns = '{ ok, reason, changed, before, after, state, note }';
+            example = @{};
+            errors = @('Camera fehlt (kein Place geöffnet).') })
+        $t.Add(@{ name = 'camera_focus'; category = 'camera'; summary = 'Kamera auf ein Objekt oder eine Position richten - ohne Scriptable-Falle.';
+            description = 'Richtet die Editor-Kamera auf ref (BasePart/Model) oder position, mit yaw/pitch/distanceFactor. Die Steuerung bleibt danach beim Nutzer (CameraType=Fixed), damit nichts hängen bleibt. Ersetzt das manuelle Herumzoomen nach dem Bauen.';
+            params = @{ ref = @{ type = 'ref'; required = $false; default = 'null'; description = 'Zielobjekt.' }; position = @{ type = '{x,y,z}'; required = $false; default = 'null'; description = 'Alternatives Ziel.' }; yaw = @{ type = 'number'; required = $false; default = '35'; description = 'Seitenwinkel in Grad.' }; pitch = @{ type = 'number'; required = $false; default = '24'; description = 'Neigung -85..85.' }; distanceFactor = @{ type = 'number'; required = $false; default = '2.2'; description = 'Abstand relativ zur Objektgröße.' } };
+            returns = '{ framed, cameraPosition, lookAt, distance, cameraType, note }';
+            example = @{ ref = '#42'; yaw = 30; pitch = 20 };
+            errors = @('REF_NOT_FOUND', 'BAD_ARGS: weder ref noch position.') })
+        $t.Add(@{ name = 'camera_guard'; category = 'camera'; summary = 'Kamera-Wächter im Place prüfen/installieren und Skripte nach Scriptable scannen.';
+            description = 'status zeigt den LocalScript in StarterPlayerScripts. install legt ArenaCameraGuard an (nur mit permission script.Source). remove löscht ihn. scan durchsucht bis zu 400 Skripte nach CameraType=Scriptable, MouseBehavior-Lock und MouseIconEnabled=false und meldet Pfad, Zeile, Risiko. Der Wächter greift nur nach Respawn und Camera-Tausch - bewusste Cutscene-Kameras bleiben unangetastet.';
+            params = @{ action = @{ type = 'string'; required = $false; default = "'status'"; description = 'status | install | remove | scan.' }; overwrite = @{ type = 'bool'; required = $false; default = 'false'; description = 'Vorhandenen Wächter ersetzen.' } };
+            returns = '{ installed, guard, location, camera } oder { scannedScripts, findings, highRisk, suspiciousNames, advice }';
+            example = @{ action = 'scan' };
+            errors = @('SCRIPT_SOURCE_UNAVAILABLE: Studio erlaubt kein script.Source.', 'BAD_ARGS: unbekannte action.') })
+
         # ---------------- MASTER BUILD ----------------
         $t.Add(@{ name = 'build_assembly'; category = 'create'; summary = 'Native Parts, shape recipes, relative placement and repetition in one call.';
             description = '8.0.3 ordinary-part builder, independent of polygon/Blender tools. Shapes (case-insensitive): Block, Ball, Cylinder, Wedge, CornerWedge, HalfBall (alias Dome), QuarterBall, HalfCylinder, QuarterCylinder, Tube, Ring, Torus, CurvedCylinder, Arch, Capsule, Cone, Pyramid, Stairs, SpiralStairs, Polyline. Half/quarter solids and Pyramid use internal CSG; Tube/Ring subtract an inner cylinder. Cylinder/Tube/Capsule run along local X; Ring along Y; balls are centered at origin, HalfBall keeps Y>=0, QuarterBall also Z>=0. size is the FULL source primitive bounding box before cutting. CurvedCylinder uses miter-cut cylinders and fuses them by default; Arch uses miter-cut blocks. Curves lie in local XZ around the origin (rotate the recipe for vertical arches). Torus is a 360-degree CurvedCylinder. Cone is an explicitly stepped approximation using stacked cylinders, NOT a perfect mathematical cone. Stairs rise along +Z; SpiralStairs circle around +Y. Polyline uses local points and sphere joints. Compound shapes return a Model, simple/fused shapes a BasePart/UnionOperation. No external assets. Each item accepts id, shape, name, size, position, orientation (degrees), relativeTo (earlier item id/name or an existing ref), offset, space=local|world, properties, attributes, repeatSpec. Without a position, relativeTo+offset is sufficient: local offset rotates with the anchor, world offset uses world axes; the bridge does the arithmetic. Earlier repeats can be referenced as id[1], id[2], etc. Forward/cyclic/duplicate item IDs fail and roll back the new assembly. Shape parameters: radius, thickness, wallThickness, length, angle (1..360 degrees), startAngle, segments (2..64, curves use at least ceil(angle/45)), steps (1..128), points (2..129), fuse (true by default). Capsule length must exceed twice its radius. Curves require thickness <= 1.8*radius. defaults supplies shared Roblox properties; per-item properties override defaults. Shape size/CFrame/Position/Orientation are geometry-owned, not overwritten by style properties. Recipes are anchored by default; legacy className items retain their previous defaults. repeatSpec supports count, offset or radius/startAngle/angleStep/heightStep. Work budget includes ALL temporary CSG cutters, at most 2000 primitives and 96 CSG operations per call. Rollback on geometry/CSG failure destroys only this new assembly, never existing anchors. Property warnings are returned explicitly; inspect errors before claiming success. Simple, primitive and blockout requests remain valid choices, not a requirement to add complexity.';
@@ -22923,6 +26288,12 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
             returns = '{ screenGui, roots, surfaces, layers, strokes, strokeGradients, shadows, gradients, textureParts, texts, canvasGroups, scrollers, thinSurfaces, motionScript, skin, energy, imageAssets, offsetUsed, invariants, capabilities, nextStep }';
             example = @{ name = 'ShopUI'; skin = 'sticker'; brand = '#FFB020'; surfaces = @(@{ id = 'Panel'; role = 'modal'; rect = @(50, 50, 62, 70); groupFade = $true; children = @(@{ id = 'Title'; role = 'header'; rect = @(50, 9, 86, 13); text = @{ value = 'SHOP'; display = $true } }, @{ id = 'Grid'; role = 'panel'; rect = @(50, 58, 90, 70); layout = @{ kind = 'grid'; cols = 3; gap = 4; cellH = 30; scroll = $true }; repeatSpec = @{ count = 9; template = @{ role = 'button'; rect = @(0, 0, 28, 28); text = @{ value = 'Item {n}' } } } }) }) };
             errors = @('BAD_ARGS: surfaces fehlt oder leer.', 'REF_NOT_FOUND') })
+        $t.Add(@{ name = 'ui_widget'; category = 'ui'; summary = 'FERTIGE OBERFLÄCHEN: 18 Widget-Gerüste (Shop, Inventar, Battle Pass, Quests, ...).';
+            description = 'Baut ein komplettes Layout-Gerüst aus der Widget-Bibliothek: Kopfband, Reiter, Kartenraster, Badges, Knöpfe, Fortschrittsbalken - mit denselben Regeln wie build_interface (Scale-only, Layout-Slots, Kontur/Glanz/Dekor). Kein Handbau, keine Pixel-Offsets. Die KI füllt nur Texte, Preise und Zahlen. action=list liefert alle 18 Widgets mit Zweck; action=get zeigt die erwarteten Felder; ohne action wird gebaut. Widgets sind Gerüste, kein fertiges Spiel: Verhalten kommt danach über insert_script/patch_script.';
+            params = @{ action = @{ type = 'string'; required = $false; default = "'build'"; description = 'build | list | get.' }; kind = @{ type = 'string'; required = $false; default = "'shop'"; description = 'shop, inventory, battlepass, quests, settings, leaderboard, profile, dailyrewards, gacha, currency, hud, dialog, tooltip, hotbar, map, codex, tiers, social.' }; items = @{ type = 'array'; required = $false; default = 'null'; description = 'Einträge als string oder {name, price} - füllt Karten/Zeilen/Reiter.' }; title = @{ type = 'string'; required = $false; default = 'null'; description = 'Kopfband-Titel.' }; skin = @{ type = 'string'; required = $false; default = "'pop'"; description = 'Stilname (ui_skin action=list zeigt 40).' }; brand = @{ type = 'string'; required = $false; default = 'null'; description = 'Markenfarbe als Hex - die Palette wird abgeleitet.' }; parentRef = @{ type = 'ref'; required = $false; default = "'game.StarterGui'"; description = 'Elternobjekt (GuiObject/LayerCollector oder StarterGui).' }; screenName = @{ type = 'string'; required = $false; default = 'null'; description = 'Name des ScreenGui.' }; playerName = @{ type = 'string'; required = $false; default = 'null'; description = 'profile: Spielername.' }; speaker = @{ type = 'string'; required = $false; default = 'null'; description = 'dialog: Sprecher.' }; line = @{ type = 'string'; required = $false; default = 'null'; description = 'dialog: Textzeile.' }; coins = @{ type = 'string'; required = $false; default = 'null'; description = 'currency: Münzwert.' }; gems = @{ type = 'string'; required = $false; default = 'null'; description = 'currency: Edelsteinwert.' }; surfaceType = @{ type = 'string'; required = $false; default = 'null'; description = "billboard baut in ein BillboardGui (Größe in Studs)." }; outline = @{ type = 'bool|table'; required = $false; default = 'Skin-Standard'; description = 'Kontur überschreiben (true/false/Style-Name).' }; gloss = @{ type = 'bool|table'; required = $false; default = 'Skin-Standard'; description = 'Glanz überschreiben.' }; decor = @{ type = 'bool|table'; required = $false; default = 'Skin-Standard'; description = 'Dekor überschreiben: clouds, sparkles, confetti, bubbles, dashes, rays.' } };
+            returns = '{ widget, label, surface, content, screenGui, skin, style, nodes, texts, outlines, glosses, decorNodes, decorParts, layers, strokes, shadows, backgroundMode, widgets, nextSteps }';
+            example = @{ kind = 'shop'; skin = 'pop'; title = 'Gem Shop'; items = @(@{ name = 'Speed Coil'; price = 'R$ 99' }, @{ name = 'Lucky Egg'; price = 'R$ 240' }) };
+            errors = @('BAD_ARGS: unbekannter Widget-Name (die bekannten Namen werden im Fehler aufgelistet).', 'REF_NOT_FOUND: parentRef existiert nicht.') })
         $t.Add(@{ name = 'ui_audit'; category = 'ui'; summary = 'Optionale GUI-Messwerte: Gerätematrix, Kontrast, Anker und Stilmerkmale.';
             description = 'Optionaler GUI-Messlauf (kein Freigabe-Gate): berechnet Layout-Offets, Anchor-/Ecken-Messwerte, Textkontrast, CanvasGroup-Nutzung, Oberflächenmerkmale, Stroke-Anzahl und einen beschreibenden Neutral-/Layer-Score. Die Gerätematrix berechnet effektive Pixelgrößen für phone/tablet/desktop/ultrawide und kann kleine Texte, Touch-Ziele oder Offscreen-Elemente benennen. Jeder Befund nennt Objekt-ID und Messwert; der Nutzer/Place-Stil bestimmt, ob eine Änderung sinnvoll ist.';
             params = @{ ref = @{ type = 'ref'; required = $false; default = "'game.StarterGui'"; description = 'Wurzel der Prüfung (ScreenGui oder ein beliebiger Teilbaum).' }; devices = @{ type = 'string[]'; required = $false; default = "@('phone','tablet','desktop')"; description = 'phone 896x414, tablet 1112x834, desktop 1920x1080, ultrawide 2560x1080.' } };
@@ -23524,6 +26895,24 @@ $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN:
                 light = 'world_glow can create a bounded light when requested. Choose lighting, atmosphere, Sky and glow according to the scene brief and Place; these are not universal completion requirements.'
                 phases = 'model_audit phase/verdict values describe measured structures only. They do not decide whether the task is complete: a requested blockout, simple scene or unlit/static set may be complete.'
                 props = 'prop_save/prop_place are optional reuse helpers. Use them when they match the user''s request and Place; direct builds and requested variation remain valid alternatives.'
+            }
+            terrainRules = @{
+                title = 'Terrain 8.0.5 - the Bridge does the terrain math, the agent supplies the intent'
+                workflow = 'Terrain is built from a named shape, explicit heights or measurements - never from guessed coordinates. Use terrain_feature for one silhouette (mountain, island, crater, volcano, canyon, ridge, plateau, valley, cliff, dunes, terrace) and terrain_heightmap for a whole landscape. Both return measured stats: read them instead of describing what you hope was written.'
+                scale = 'Terrain lives in 4-stud voxels. terrain_heightmap samples in a grid (gridStep 4-16) and bilinearly interpolates into voxels, so gridStep 4 gives the finest coastline. Regions are always Region3:ExpandToGrid(4); one ReadVoxels/WriteVoxels call handles at most 4,194,304 voxels, which is why writes happen in chunks and expose resumeToken.'
+                water = 'Water belongs in the LiquidOccupancy channel (shorelines), not in solid Water blocks. terrain_water action=lake/river digs the basin and writes water in one pass; action=fill/ocean uses FillRegion (max 67,108,864 voxels); action=clear removes only liquid. terrain_measure action=water reports the actual surface level - use it before placing boats, docks or waterfalls.'
+                materials = 'The engine layers surface, subsurface and rock automatically and adds sand below the waterline and snow above snowLine. Use terrain_paint for local corrections (Rock after erosion or carving, Sand on beaches, Mud in swamps) instead of regenerating the whole map. Do not paint a material that contradicts the biome unless the user asks for it.'
+                carving = 'terrain_carve cuts tunnels, caves, arches, trenches, pits and spheres with Air FillBalls. Carve first, paint afterwards. Large cave systems are several connected tunnels with the same radius. Verify openings with terrain_measure action=profile or height.'
+                verification = 'After every terrain build: terrain_measure action=volume for solid/water voxels, action=profile for skyline changes, action=water for the waterline. Report the measured numbers; do not claim a mountain exists because a function was called.'
+                performance = 'Prefer asJob=true and maxChunks for large areas so Studio stays responsive; repeat the same call with resumeToken to continue. Never loop resume indefinitely - report remaining chunks to the user if the area is enormous.'
+            }
+            cameraRules = @{
+                title = 'Studio camera 8.0.5 - a Scriptable camera is a bug, not a feature'
+                theBug = 'When workspace.CurrentCamera.CameraType is Scriptable in Edit mode, Roblox Studio stops mouse-look; reopening the place does not help because the state can be saved. The Studio default in Edit mode is Fixed.'
+                selfHealing = 'The plugin repairs this at load, after every non-camera bridge command, after a stopped playtest and every 4 seconds while a bridge command ran in the last 2 minutes. The dock widget also has a visible Kamera reparieren button.'
+                tools = 'camera_state reports the exact state including stuck=true; camera_reset restores CameraType.Fixed (edit) or Custom (play) plus mouse behaviour; camera_focus frames an object and deliberately leaves the camera usable; camera_guard installs a StarterPlayerScripts repair script and scans up to 400 scripts for CameraType.Scriptable, MouseBehavior.Lock and MouseIconEnabled=false.'
+                playTest = 'In a playtest only an actually stuck Scriptable camera is reset. A deliberate cutscene camera the user or a script set up is not touched - the guard reacts to respawns and camera swaps only.'
+                reporting = 'If the user reports a frozen camera, call camera_state and camera_guard action=scan before changing anything. Report the script path and line of the assignment that caused it; do not blame Studio generically.'
             }
             toolboxRules = @{
                 title = 'Asset and geometry choice - follow explicit intent and the established Place'
@@ -32427,6 +35816,167 @@ function Release-BridgeSingleInstanceMutex {
     $script:BridgeSingleInstanceMutex = $null
 }
 
+# ----------------------------------------------------------------------------
+# Version 8.0.5: DESKTOP-VERKNÜPFUNG MIT SELBSTHEILUNG
+# Nutzerwunsch: Die EXE legt beim Start selbst eine Verknüpfung auf den
+# Desktop, wenn dort noch keine ist. Löscht der Nutzer sie, ist sie beim
+# nächsten Start wieder da. Nach einem Update zeigt die vorhandene
+# Verknüpfung auf die alte Datei - sie wird dann auf die NEUE EXE umgebogen.
+# Es werden ausschließlich Bridge-Verknüpfungen des aktuellen Benutzers
+# angefasst, niemals fremde Programme und nichts systemweit.
+# ----------------------------------------------------------------------------
+function Get-ArenaDesktopFolder {
+    try {
+        $folder = [Environment]::GetFolderPath('DesktopDirectory')
+        if (-not [string]::IsNullOrWhiteSpace($folder) -and (Test-Path -LiteralPath $folder)) { return [string]$folder }
+    } catch {}
+    try {
+        $folder = [Environment]::GetFolderPath('Desktop')
+        if (-not [string]::IsNullOrWhiteSpace($folder)) { return [string]$folder }
+    } catch {}
+    return ''
+}
+
+function Get-ArenaShortcutInfo {
+    param([string]$Path)
+    $info = [pscustomobject]@{
+        exists = $false
+        target = ''
+        arguments = ''
+        workingDirectory = ''
+        iconLocation = ''
+        description = ''
+    }
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $info }
+    $shell = $null
+    try {
+        if (-not (Test-Path -LiteralPath $Path)) { return $info }
+        $info.exists = $true
+        $shell = New-Object -ComObject WScript.Shell
+        $link = $shell.CreateShortcut($Path)
+        $info.target = [string]$link.TargetPath
+        $info.arguments = [string]$link.Arguments
+        $info.workingDirectory = [string]$link.WorkingDirectory
+        $info.iconLocation = [string]$link.IconLocation
+        $info.description = [string]$link.Description
+    } catch {
+    } finally {
+        if ($null -ne $shell) { try { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($shell) } catch {} }
+    }
+    return $info
+}
+
+function Test-ArenaBridgeShortcutTarget {
+    param([string]$TargetPath)
+    try {
+        $name = [System.IO.Path]::GetFileName([string]$TargetPath)
+        if ([string]::IsNullOrWhiteSpace($name)) { return $false }
+        return (($name -like 'ArenaRobloxBridge*.exe') -or ($name -like 'ArenaBridge*.exe'))
+    } catch { return $false }
+}
+
+function Initialize-ArenaDesktopShortcut {
+    param([switch]$Force)
+    $result = [pscustomobject]@{
+        state = 'skipped'
+        created = $false
+        updated = $false
+        removed = 0
+        shortcutPath = ''
+        target = ''
+        reason = ''
+    }
+    try {
+        if (-not $script:IsExeMode) { $result.reason = 'script-mode'; return $result }
+        $exe = Get-ArenaOwnExePath
+        if ([string]::IsNullOrWhiteSpace($exe) -or -not (Test-Path -LiteralPath $exe)) { $result.reason = 'exe-unknown'; return $result }
+        $exe = [System.IO.Path]::GetFullPath($exe)
+        $exeDirectory = [System.IO.Path]::GetDirectoryName($exe)
+        $desktop = Get-ArenaDesktopFolder
+        if ([string]::IsNullOrWhiteSpace($desktop)) { $result.reason = 'desktop-unknown'; return $result }
+        $canonical = Join-Path $desktop 'Arena Roblox Bridge.lnk'
+        $result.shortcutPath = $canonical
+        $result.target = $exe
+
+        # Alte bzw. anders benannte Bridge-Verknüpfungen ersetzen. Eine
+        # Verknüpfung auf ein FREMDES Programm wird nie angefasst.
+        foreach ($legacyName in @('ArenaBridge.lnk', 'ArenaRobloxBridge.lnk', 'Arena Bridge.lnk',
+                                  'ArenaBridge - Verknüpfung.lnk', 'ArenaRobloxBridge - Verknüpfung.lnk',
+                                  'ArenaBridge (1).lnk', 'ArenaRobloxBridge (1).lnk')) {
+            $candidate = Join-Path $desktop $legacyName
+            if (-not (Test-Path -LiteralPath $candidate)) { continue }
+            $legacy = Get-ArenaShortcutInfo -Path $candidate
+            if (Test-ArenaBridgeShortcutTarget -TargetPath ([string]$legacy.target)) {
+                try {
+                    Remove-Item -LiteralPath $candidate -Force -ErrorAction Stop
+                    $result.removed = [int]$result.removed + 1
+                } catch {}
+            }
+        }
+
+        $current = Get-ArenaShortcutInfo -Path $canonical
+        $currentIcon = ([string]$current.iconLocation -replace ',\s*-?\d+\s*$', '').Trim()
+        $needsWrite = $true
+        if (-not $Force -and $current.exists) {
+            $sameTarget = (([string]$current.target).TrimEnd('\') -ieq $exe.TrimEnd('\'))
+            $sameDirectory = (([string]$current.workingDirectory).TrimEnd('\') -ieq ([string]$exeDirectory).TrimEnd('\'))
+            $sameIcon = ($currentIcon -ieq $exe)
+            if ($sameTarget -and $sameDirectory -and $sameIcon) { $needsWrite = $false }
+        }
+        if (-not $needsWrite) {
+            $result.state = 'ok'
+            $result.reason = 'already-current'
+            return $result
+        }
+
+        $verdict = ''
+        if ('Arena.NotifyLink' -as [type]) {
+            try {
+                $verdict = [string][Arena.NotifyLink]::Register($canonical, $exe, '', $exeDirectory,
+                    'Arena.ArenaRobloxBridge', 'Arena Roblox Bridge', $exe, 0)
+            } catch { $verdict = 'failed: ' + $_.Exception.Message }
+        } else {
+            $verdict = 'helper-unavailable'
+        }
+        if ($verdict -ne 'ok' -or -not (Test-Path -LiteralPath $canonical)) {
+            $shell = $null
+            try {
+                $shell = New-Object -ComObject WScript.Shell
+                $link = $shell.CreateShortcut($canonical)
+                $link.TargetPath = $exe
+                $link.Arguments = ''
+                $link.WorkingDirectory = $exeDirectory
+                $link.IconLocation = ($exe + ',0')
+                $link.Description = 'Arena Roblox Bridge'
+                $link.Save()
+                $verdict = 'ok-com-fallback'
+            } catch {
+                $verdict = 'failed: ' + $_.Exception.Message
+            } finally {
+                if ($null -ne $shell) { try { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($shell) } catch {} }
+            }
+        }
+        if (Test-Path -LiteralPath $canonical) {
+            $result.state = 'ok'
+            $result.created = -not [bool]$current.exists
+            $result.updated = [bool]$current.exists
+            $result.reason = $verdict
+            $action = $(if ($current.exists) { 'aktualisiert' } else { 'angelegt' })
+            Write-RuntimeLog ("Desktop-Verknüpfung $action -> $exe ($verdict)")
+        } else {
+            $result.state = 'failed'
+            $result.reason = $verdict
+            Write-RuntimeLog ("Desktop-Verknüpfung konnte nicht angelegt werden: $verdict")
+        }
+        return $result
+    } catch {
+        $result.state = 'failed'
+        $result.reason = $_.Exception.Message
+        try { Write-RuntimeLog ("Desktop-Verknüpfung: " + $_.Exception.Message) } catch {}
+        return $result
+    }
+}
+
 
 
 # ----------------------------------------------------------------------------
@@ -33661,7 +37211,34 @@ $uiTranslationJson = @'
   "• 7.2.1 — KRITISCHER START-/PARSER-FIX.": "• 7.2.1 — CRITICAL STARTUP/PARSER FIX.",
   "• 7.2.0 — NUTZER-KANAL, FORTSCHRITT, FERTIG-MELDUNG, FRAGEN.": "• 7.2.0 — USER MESSAGES, PROGRESS, COMPLETION NOTIFICATIONS & QUESTIONS.",
   "Aktivitätsanzeige: keine Prozentzahl gemeldet.": "Activity indicator: no percentage reported.",
-  "FORTSCHRITT · ": "PROGRESS · "
+  "FORTSCHRITT · ": "PROGRESS · ",
+  "• 8.0.5 — TERRAIN, KAMERA & GUI-UPGRADE: • Neue Terrain-Werkzeuge bauen Höhenkarten, Berge, Inseln, Höhlen, Flüsse und Wasser — die Bridge rechnet das Gelände. • Die Studio-Kamera entriegelt sich nach jedem Befehl und beim Plugin-Start selbst, mit Kamera-Werkzeugen und Reparatur-Knopf. • GUI-Design 3.0: 40 Stile, dicke Konturen, Glanz-Buttons, Wolken, Funken und 18 Widgets wie Shop, Inventar und Battle Pass. • Die Bridge legt beim Start automatisch eine Desktop-Verknüpfung an und erneuert sie nach jedem Update. • Gelöschte Verknüpfung? Beim nächsten Start ist sie wieder da.": "• 8.0.5 — TERRAIN, CAMERA & GUI UPGRADE: • New terrain tools build heightmaps, mountains, islands, caves, rivers and water — the Bridge does the terrain math. • The Studio camera unlocks itself after every command and at plugin start, with camera tools and a repair button. • GUI Design 3.0: 40 styles, thick outlines, glossy buttons, clouds, sparkles and 18 widgets such as shop, inventory and battle pass. • The Bridge creates a desktop shortcut on startup and refreshes it after every update. • Deleted the shortcut? It is back on the next start.",
+  "Geländekarte erzeugen": "Built a terrain heightmap with height, material layers and water.",
+  "Gelände modellieren": "Sculpted the terrain with the brush.",
+  "Gelände bemalen": "Repainted the terrain surface.",
+  "Wasser und Flüsse bauen": "Built water, lakes or rivers.",
+  "Geländeform bauen": "Built a terrain feature such as a mountain, island or crater.",
+  "Gelände aushöhlen": "Carved tunnels, caves or trenches into the terrain.",
+  "Gelände vermessen": "Measured terrain heights, profiles, water or volume.",
+  "Gelände entfernen": "Removed terrain in the requested area.",
+  "Kamerazustand prüfen": "Checked the Studio camera state and mouse control.",
+  "Kamera reparieren": "Repaired the Studio camera and restored mouse control.",
+  "Kamera ausrichten": "Framed the requested target with the camera.",
+  "Kamera-Wächter verwalten": "Checked or managed the in-place camera guard.",
+  "Fertiges UI-Widget bauen": "Built a ready-made interface widget from the UI library.",
+  "Hat den Zustand der Studio-Kamera und die Kamerasteuerung geprüft.": "Checked the Studio camera state and mouse control.",
+  "Hat die Studio-Kamera repariert und die Maussteuerung zurückgeholt.": "Repaired the Studio camera and restored mouse control.",
+  "Hat die Kamera auf das angegebene Ziel gerichtet.": "Framed the requested target with the camera.",
+  "Hat den Kamera-Wächter im Place geprüft oder verwaltet.": "Checked or managed the in-place camera guard.",
+  "Hat eine Geländekarte mit Höhen, Materialschichten und Wasser erzeugt.": "Built a terrain heightmap with height, material layers and water.",
+  "Hat das Gelände mit dem Pinsel modelliert.": "Sculpted the terrain with the brush.",
+  "Hat die Geländeoberfläche neu bemalt.": "Repainted the terrain surface.",
+  "Hat Wasser, Seen oder Flüsse gebaut.": "Built water, lakes or rivers.",
+  "Hat eine Geländeform wie Berg, Insel oder Krater gebaut.": "Built a terrain feature such as a mountain, island or crater.",
+  "Hat Tunnel, Höhlen oder Gräben in das Gelände geschnitten.": "Carved tunnels, caves or trenches into the terrain.",
+  "Hat Höhen, Profile, Wasser oder Volumen des Geländes gemessen.": "Measured terrain heights, profiles, water or volume.",
+  "Hat Gelände im angegebenen Bereich entfernt.": "Removed terrain in the requested area.",
+  "Hat ein fertiges Oberflächen-Widget aus der UI-Bibliothek gebaut.": "Built a ready-made interface widget from the UI library."
 }
 '@
 foreach ($property in ($uiTranslationJson | ConvertFrom-Json).PSObject.Properties) { $script:UiTranslationsDeEn[$property.Name] = [string]$property.Value }
@@ -45635,6 +49212,12 @@ function Invoke-ArenaUpdateGate {
 
 function Start-BridgeRuntime {
     Set-StartupStage 'Hauptfenster gerendert; Startinitialisierung beginnt'
+    # Version 8.0.5: Selbstheilende Desktop-Verknüpfung. Fehlt sie (vom Nutzer
+    # gelöscht), wird sie hier neu angelegt; zeigt sie nach einem Update noch
+    # auf die alte EXE, wird sie auf genau diese laufende Datei umgebogen.
+    try { [void](Initialize-ArenaDesktopShortcut) } catch {
+        try { Write-RuntimeLog ('Desktop-Verknüpfung: ' + $_.Exception.Message) } catch {}
+    }
     if (-not $script:EncodingOk) {
         Add-PendingToast 'Achtung: Die Skriptdatei ist nicht als "UTF-8 mit BOM" gespeichert. Umlaute können falsch aussehen.' 'Warn' 9
         Write-RuntimeLog 'ACHTUNG: Skriptdatei ist falsch codiert - Umlaute werden ggf. falsch angezeigt.'
