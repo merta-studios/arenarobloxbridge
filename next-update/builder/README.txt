@@ -45,3 +45,8 @@ Das Windows-EXE-Symbol kommt aus ..\app\assets\ArenaBridge.ico. Das Logo
 
 Fehlersuche ohne zweite EXE: Die Bridge schreibt ihre Startdiagnose selbst nach
 %LOCALAPPDATA%\START-CHECK.txt und %LOCALAPPDATA%\ArenaRobloxBridge\bin\startup-diagnose.txt.
+
+CI-Test-Build: Der GitHub-Actions-Workflow (exe-builder.yml) baut Test-Stände
+automatisch mit -Channel beta nach ..\beta-release\ArenaRobloxBridge.exe, ohne
+..\release\ oder ..\release\latest.json zu verändern.
+
