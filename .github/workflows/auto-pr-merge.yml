@@ -7,6 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: write
   pull-requests: write
 
@@ -19,28 +20,67 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Create and merge Pull Request to main
+      - name: Create PR, wait for checks, and merge to main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BRANCH_NAME: ${{ github.ref_name }}
+          HEAD_SHA: ${{ github.sha }}
         run: |
-          echo "Processing branch: $BRANCH_NAME"
-          # Pruefen ob bereits ein offener Pull Request existiert
-          EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --base main --state open --json number --jq '.[0].number')
-          
+          set -euo pipefail
+          echo "Processing branch: $BRANCH_NAME ($HEAD_SHA)"
+
+          EXISTING_PR=$(gh pr list \
+            --head "$BRANCH_NAME" \
+            --base main \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty')
+
           if [ -z "$EXISTING_PR" ]; then
-            echo "Erstelle neuen Pull Request von $BRANCH_NAME nach main..."
+            echo "Creating a pull request from $BRANCH_NAME to main..."
             PR_URL=$(gh pr create \
               --base main \
               --head "$BRANCH_NAME" \
               --title "Automatischer Session-Merge: $BRANCH_NAME -> main" \
-              --body "Automatisch erstellt durch Auto-PR-Merge Workflow.")
-            PR_NUM=$(echo "$PR_URL" | grep -oE '[0-9]+$')
+              --body "Automatisch erstellt durch Auto-PR-Merge Workflow. Der Merge erfolgt erst nach erfolgreichem Exe-Checker-Lauf.")
+            PR_NUM="${PR_URL##*/}"
           else
-            echo "Bestehender PR gefunden: #$EXISTING_PR"
+            echo "Open pull request found: #$EXISTING_PR"
             PR_NUM="$EXISTING_PR"
           fi
-          
-          echo "Merge PR #$PR_NUM in main..."
-          gh pr merge "$PR_NUM" --merge --admin || gh pr merge "$PR_NUM" --merge
-          echo "Erfolgreich in main gemergt!"
+
+          if [ -z "$PR_NUM" ]; then
+            echo "Could not determine the pull request number." >&2
+            exit 1
+          fi
+
+          # The Exe-Checker starts on the same branch push. Wait for that exact
+          # commit's workflow (not this auto-merge run) and fail closed on CI errors.
+          CHECK_RUN_ID=""
+          for attempt in $(seq 1 60); do
+            CHECK_RUN_ID=$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow exe-checker.yml \
+              --branch "$BRANCH_NAME" \
+              --limit 100 \
+              --json databaseId,headSha,event \
+              --jq ".[] | select(.headSha == \"$HEAD_SHA\" and .event == \"push\") | .databaseId" \
+              | head -n 1)
+            if [ -n "$CHECK_RUN_ID" ]; then
+              break
+            fi
+            echo "Waiting for the Exe-Checker run for $HEAD_SHA ($attempt/60)..."
+            sleep 10
+          done
+
+          if [ -z "$CHECK_RUN_ID" ]; then
+            echo "No Exe-Checker push run appeared for $HEAD_SHA; refusing to merge." >&2
+            exit 1
+          fi
+
+          echo "Waiting for Exe-Checker run #$CHECK_RUN_ID to finish..."
+          gh run watch "$CHECK_RUN_ID" --interval 10 --exit-status
+
+          echo "Merging PR #$PR_NUM into main..."
+          gh pr merge "$PR_NUM" --merge
+          echo "Successfully merged PR #$PR_NUM into main."

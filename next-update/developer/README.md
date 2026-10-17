@@ -31,6 +31,8 @@ Die Tests bauen oder starten keine EXE. Für Windows PowerShell 5.1 zusätzlich:
 .\developer\tests\test_v762_runtime.ps1
 ```
 
+Der GitHub-Checker installiert die Test-Abhängigkeiten, führt alle `test_*.py`-Skripte aus und prüft `app/ArenaBridge.ps1` sowie `builder/Build-EXE.ps1` mit Windows PowerShell 5.1. Der automatische Session-Merge wartet auf den erfolgreichen Checker-Lauf.
+
 Zum bloßen Bauen/Testen des privaten Kandidaten brauchst du den Ordner `developer` nicht:
 
 ```text
