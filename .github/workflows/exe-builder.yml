@@ -1,0 +1,70 @@
+name: Exe Builder (Beta Release)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'next-update/app/**'
+      - 'next-update/builder/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: exe-builder
+  cancel-in-progress: false
+
+jobs:
+  build-exe:
+    runs-on: windows-latest
+    steps:
+      - name: Code holen
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: ps2exe Modul installieren
+        shell: powershell
+        run: |
+          Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
+          Install-Module -Name ps2exe -Scope CurrentUser -Force
+
+      - name: Beta-Release Ordner vorbereiten
+        shell: powershell
+        run: |
+          $betaDir = Join-Path $PWD 'next-update\beta-release'
+          if (-not (Test-Path -LiteralPath $betaDir)) {
+            New-Item -ItemType Directory -Path $betaDir -Force | Out-Null
+          }
+
+      - name: Build-EXE.ps1 nach beta-release ausfuehren
+        shell: powershell
+        run: |
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "./next-update/builder/Build-EXE.ps1" -Channel beta -OutputDirectory "./next-update/beta-release" -NonInteractive
+          if ($LASTEXITCODE -ne 0) {
+            throw "Build-EXE.ps1 failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Gebaute Test-EXE pruefen
+        shell: powershell
+        run: |
+          $exe = Get-Item -LiteralPath "./next-update/beta-release/ArenaRobloxBridge.exe"
+          Write-Host ("Gebaute Datei gefunden: " + $exe.FullName + " (" + $exe.Length + " Bytes)")
+          if ($exe.Length -le 1000000) {
+            throw "Die generierte ArenaRobloxBridge.exe ist unvollstaendig oder zu klein."
+          }
+
+      - name: ArenaRobloxBridge.exe in beta-release committen und pushen
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add next-update/beta-release/ArenaRobloxBridge.exe
+          if git diff --cached --quiet; then
+            echo "Keine Aenderungen an ArenaRobloxBridge.exe in beta-release."
+          else
+            git commit -m "Auto-Build: Neue Test-EXE in beta-release bereitgestellt [skip ci]"
+            git push origin main
+          fi

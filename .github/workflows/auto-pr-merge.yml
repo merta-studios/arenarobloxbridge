@@ -1,0 +1,46 @@
+name: Auto PR and Merge to Main
+
+on:
+  push:
+    branches:
+      - 'arena/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create and merge Pull Request to main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH_NAME: ${{ github.ref_name }}
+        run: |
+          echo "Processing branch: $BRANCH_NAME"
+          # Pruefen ob bereits ein offener Pull Request existiert
+          EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --base main --state open --json number --jq '.[0].number')
+          
+          if [ -z "$EXISTING_PR" ]; then
+            echo "Erstelle neuen Pull Request von $BRANCH_NAME nach main..."
+            PR_URL=$(gh pr create \
+              --base main \
+              --head "$BRANCH_NAME" \
+              --title "Automatischer Session-Merge: $BRANCH_NAME -> main" \
+              --body "Automatisch erstellt durch Auto-PR-Merge Workflow.")
+            PR_NUM=$(echo "$PR_URL" | grep -oE '[0-9]+$')
+          else
+            echo "Bestehender PR gefunden: #$EXISTING_PR"
+            PR_NUM="$EXISTING_PR"
+          fi
+          
+          echo "Merge PR #$PR_NUM in main..."
+          gh pr merge "$PR_NUM" --merge --admin || gh pr merge "$PR_NUM" --merge
+          echo "Erfolgreich in main gemergt!"
