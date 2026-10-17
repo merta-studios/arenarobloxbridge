@@ -48638,8 +48638,11 @@ if (Test-UpdateError) {
     $script:UpdateInfoState.Body = $updateErrorText
     $script:UpdateInfoState.BodyHex = '#CBD5E1'
 } elseif ($UpdateStatus -in @('update-erfolgreich', 'erster-start', 'kein-update')) {
+    # Version 8.0.5: Diese Zeile nennt IMMER den LAUFENDEN Stand. Vorher konnte
+    # hier die Manifest-Version stehen - eine Beta (8.0.5-beta.1) zeigte dann
+    # "Version 8.0.3 - aktuell", obwohl eine neuere Fassung lief. Das Manifest
+    # beschreibt nur, was andere haben, nicht was dieses Fenster ist.
     $verText = '__ARENA_BUILD_VERSION__'
-    if ($script:UpdateDetails -and $script:UpdateDetails.version) { $verText = [string]$script:UpdateDetails.version }
     $script:UpdateInfoState.Body = "Version $verText - aktuell. Beim nächsten Start wird automatisch nach Updates gesucht."
 }
 
