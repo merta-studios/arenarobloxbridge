@@ -18,6 +18,22 @@ Kurzfassung: Siehe `next-update/README.md`. Hier die Details für Entwicklung un
    `next-update/release/ArenaRobloxBridge.exe` hochladen und auf `main` speichern. Der Workflow
    erzeugt `latest.json` automatisch. Niemand schreibt `latest.json` von Hand.
 
+## Beta-Testbuild vs. Release-EXE
+
+- `next-update/beta-release/ArenaRobloxBridge.exe` wird von `exe-builder.yml`
+  automatisch mit `-Channel beta` gebaut. Die Dateiversion ist trotzdem
+  `<Version>.0`; nur der eingeblendete Stand trägt `-beta.1`
+  (z. B. `8.0.5-beta.1`). Der Beta-Build verändert **nie** `release/` oder
+  `latest.json`.
+- Ein Beta-Build läuft nicht automatisch in ein Release: Er zeigt in den
+  Einstellungen weiterhin `-beta.1`. Für Nutzer gedacht ist die mit
+  `Build-EXE.bat` (Kanal `stable`) gebaute EXE ohne Beta-Zusatz.
+- Eine veraltete EXE kann nicht versehentlich veröffentlicht werden:
+  `publish_latest.py` vergleicht die Dateiversion der EXE mit
+  `app/version.json` und bricht bei Abweichung ab. Eine 8.0.3-EXE in
+  `release/` führt also zu einem Fehler im Workflow, nicht zu einem Update
+  für Nutzer; `latest.json` bleibt unverändert.
+
 ## Regeln
 
 - Die Version muss bei jeder Veröffentlichung höher sein. Gleiche Version mit anderer

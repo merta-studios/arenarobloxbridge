@@ -70,4 +70,4 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File developer\tests\test_v80
 - [ ] Deutsches und englisches GUI durchgehen, insbesondere die neuen Tool-Dokumentationen und Aktivitätstexte; echte Umlaute prüfen.
 - [ ] Pflicht-Update-Fenster (8.0.1): X beendet alles, „Später“ bleibt nach der Grenze gesperrt.
 
-**Freigabestatus:** keine EXE gebaut, keine Veröffentlichung, keine Live-Roblox-/Windows-Abnahme in dieser Umgebung. Erst nach dieser Matrix ausdrücklich freigeben.
+**Freigabestatus:** keine Release-EXE gebaut, keine Veröffentlichung, keine Live-Roblox-/Windows-Abnahme in dieser Umgebung. Der CI-Beta-Testbuild (`beta-release/`, Stand `8.0.5-beta.1`, Dateiversion 8.0.5.0) ist kein Release. Erst nach dieser Matrix ausdrücklich freigeben.
