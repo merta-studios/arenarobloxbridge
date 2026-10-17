@@ -46,8 +46,19 @@ Das Windows-EXE-Symbol kommt aus ..\app\assets\ArenaBridge.ico. Das Logo
 Fehlersuche ohne zweite EXE: Die Bridge schreibt ihre Startdiagnose selbst nach
 %LOCALAPPDATA%\START-CHECK.txt und %LOCALAPPDATA%\ArenaRobloxBridge\bin\startup-diagnose.txt.
 
-CI-Test-Build: Der GitHub-Actions-Workflow (exe-builder.yml) baut Test-Stände
-automatisch mit -Channel beta nach ..\beta-release\ArenaRobloxBridge.exe, ohne
-..\release\ArenaRobloxBridge.exe oder ..\release\latest.json zu verändern.
+CI-Release-Kandidat: Der GitHub-Actions-Workflow (exe-builder.yml) baut bei jeder
+Änderung an app/ oder builder/ automatisch mit -Channel rc nach
+..\beta-release\ArenaRobloxBridge.exe, ohne ..\release\ArenaRobloxBridge.exe oder
+..\release\latest.json zu verändern.
+
+Der Kandidat trägt exakt die Version aus ..\app\version.json (z. B. 8.0.5, KEIN
+-beta-Zusatz) und die Dateiversion <Version>.0. Er ist damit 1:1 die spätere
+Release-Datei: testen, nach ..\release\ kopieren (oder den Workflow "Release
+freigeben" starten), fertig - publish-bridge.yml schreibt latest.json.
+
+Kanäle:
+  -Channel beta    Testbuild mit -beta.1, nicht veröffentlichbar
+  -Channel rc      Release-Kandidat, exakt die Release-Version, Ablage in beta-release
+  -Channel stable  Release-Build nach release\ (Build-EXE.bat nutzt diesen Kanal)
 
 

@@ -1,6 +1,9 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('beta','stable')]
+    # beta   = Testbuild mit Beta-Zusatz (8.0.5-beta.1), nicht veroeffentlichbar
+    # rc     = Release-Kandidat: exakt die Version aus version.json (8.0.5),
+    #          gedacht fuer beta-release\ und 1:1 als Release einsetzbar
+    # stable = Release-Build nach release    [ValidateSet('beta','stable','rc')]
     [string]$Channel = 'beta',
     [string]$BuildVersion = '',
     # Nur fuer den privaten Selbst-Update-Test (Harness developer/tests/Invoke-SelfUpdateSmoke.ps1).
@@ -434,6 +437,12 @@ $backgroundImagePath = Join-Path $assetsDirectory 'liquidglasbackground.png'
 $releaseDirectory = Join-Path $repoRoot 'release'
 $betaReleaseDirectory = Join-Path $repoRoot 'beta-release'
 $buildOutputDirectory = $releaseDirectory
+# Version 8.0.5: Ein Release-Kandidat landet NIE ungefragt in release\. Der
+# Kandidat ist die spaetere Release-Datei, wird aber erst durch das bewusste
+# Einchecken nach release\ veroeffentlicht.
+if ([string]::IsNullOrWhiteSpace($OutputDirectory) -and $Channel -eq 'rc') {
+    $buildOutputDirectory = $betaReleaseDirectory
+}
 if (-not [string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $buildOutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
     if ($TestFixtureBuild) {
@@ -501,6 +510,17 @@ if ($buildCoreVersion -ne $sourceVersion) {
 }
 if ($Channel -eq 'stable' -and $BuildVersion.Contains('-')) {
     throw 'Stable builds cannot use a prerelease version. Use beta first, then a stable version.'
+}
+if ($Channel -eq 'rc') {
+    # Ein Release-Kandidat muss exakt die Version des spaeteren Releases tragen.
+    # Mit einem -beta.-Zusatz waere er nicht 1:1 veroeffentlichbar und die
+    # Nutzer saehen im Programm eine andere Version als im Manifest.
+    if ($BuildVersion.Contains('-')) {
+        throw ('A release candidate must use exactly the version from app/version.json (no prerelease suffix); found: ' + $BuildVersion)
+    }
+    if ($buildOutputDirectory -ieq $releaseDirectory) {
+        throw 'A release candidate is never written into release\. Use beta-release\ or copy the finished file there yourself.'
+    }
 }
 if ($Channel -eq 'stable' -and -not $NonInteractive) {
     Write-Warning 'A stable build writes to the same single release\ folder. Do not run this during private testing.'
@@ -659,6 +679,12 @@ try {
         schemaVersion = 4
         publishTool = '.github/workflows/publish-bridge.yml (writes next-update/release/latest.json)'
         channel = $Channel
+        # Version 8.0.5: Der Release-Kandidat ist die spaetere Release-Datei.
+        # publishable=true heisst NICHT veroeffentlicht, sondern: exakt diese
+        # Datei darf unveraendert als next-update/release/ArenaRobloxBridge.exe
+        # eingecheckt werden.
+        releaseCandidate = ($Channel -eq 'rc')
+        publishable = ($Channel -eq 'rc' -and -not $TestFixtureBuild)
         version = $BuildVersion
         sourceVersion = $sourceVersion
         fileName = 'ArenaRobloxBridge.exe'
@@ -688,13 +714,21 @@ try {
         signTimestampUrl = $SignTimestampUrl
         fileCopyright = 'Copyright (C) 2026 MertaStudios'
         fileTrademark = 'Arena Roblox Bridge'
-        note = 'Lokaler Testbau. Veroeffentlicht wird nur durch Einchecken der getesteten Datei als next-update/release/ArenaRobloxBridge.exe.'
+        note = $(if ($Channel -eq 'rc') {
+            'Release-Kandidat mit der exakten Release-Version. Zum Veroeffentlichen genau diese Datei als next-update/release/ArenaRobloxBridge.exe einchecken; publish_latest.py schreibt dann latest.json.'
+        } else {
+            'Lokaler Testbau. Veroeffentlicht wird nur durch Einchecken der getesteten Datei als next-update/release/ArenaRobloxBridge.exe.'
+        })
     }
     $metadataPath = Join-Path $buildOutputDirectory 'release-metadata.json'
     Write-Utf8NoBom $metadataPath ($metadata | ConvertTo-Json -Depth 6)
     Write-Utf8NoBom (Join-Path $buildOutputDirectory 'ArenaRobloxBridge.exe.sha256') ($sha256 + '  ArenaRobloxBridge.exe' + [Environment]::NewLine)
 
-    Write-Step 'LOCAL TEST BUILD COMPLETED. No GitHub upload/release or update-channel manifest was changed.'
+    if ($Channel -eq 'rc') {
+        Write-Step ('RELEASE CANDIDATE BUILT: version ' + $BuildVersion + ' - identical to the later release version.')
+    } else {
+        Write-Step 'LOCAL TEST BUILD COMPLETED. No GitHub upload/release or update-channel manifest was changed.'
+    }
     Write-Host ''
     Write-Host 'ONE FILE WAS BUILT - THERE IS NO SECOND EXE ANY MORE:' -ForegroundColor Green
     Write-Host ('  ' + $exePath) -ForegroundColor White
@@ -710,7 +744,12 @@ try {
     Write-Host ('Start report: ' + (Join-Path $env:LOCALAPPDATA 'START-CHECK.txt'))
     Write-Host ('Start log:    ' + (Join-Path $env:LOCALAPPDATA 'ArenaRobloxBridge\bin\startup-diagnose.txt'))
     Write-Host ('Local-only metadata: ' + $metadataPath)
-    Write-Host 'No users were updated. Only after explicit approval may the exact tested ArenaRobloxBridge.exe be uploaded to next-update/release/ArenaRobloxBridge.exe; do not upload the local metadata.'
+    if ($Channel -eq 'rc') {
+        Write-Host ('This is the release candidate for ' + $BuildVersion + '. Copy exactly this file to next-update/release/ArenaRobloxBridge.exe to publish it.') -ForegroundColor Green
+        Write-Host 'No users were updated yet. Do not upload the local metadata.'
+    } else {
+        Write-Host 'No users were updated. Only after explicit approval may the exact tested ArenaRobloxBridge.exe be uploaded to next-update/release/ArenaRobloxBridge.exe; do not upload the local metadata.'
+    }
 } finally {
     if ($stagingExePath -and (Test-Path -LiteralPath $stagingExePath)) {
         Remove-Item -LiteralPath $stagingExePath -Force -ErrorAction SilentlyContinue

@@ -18,21 +18,31 @@ Kurzfassung: Siehe `next-update/README.md`. Hier die Details für Entwicklung un
    `next-update/release/ArenaRobloxBridge.exe` hochladen und auf `main` speichern. Der Workflow
    erzeugt `latest.json` automatisch. Niemand schreibt `latest.json` von Hand.
 
-## Beta-Testbuild vs. Release-EXE
+## Release-Kandidat vs. Release-EXE
 
 - `next-update/beta-release/ArenaRobloxBridge.exe` wird von `exe-builder.yml`
-  automatisch mit `-Channel beta` gebaut. Die Dateiversion ist trotzdem
-  `<Version>.0`; nur der eingeblendete Stand trägt `-beta.1`
-  (z. B. `8.0.5-beta.1`). Der Beta-Build verändert **nie** `release/` oder
-  `latest.json`.
-- Ein Beta-Build läuft nicht automatisch in ein Release: Er zeigt in den
-  Einstellungen weiterhin `-beta.1`. Für Nutzer gedacht ist die mit
-  `Build-EXE.bat` (Kanal `stable`) gebaute EXE ohne Beta-Zusatz.
+  automatisch mit **`-Channel rc`** gebaut, sobald sich `app/` oder `builder/`
+  auf `main` ändert. Der Kandidat trägt **exakt** die Version aus
+  `app/version.json` (z. B. `8.0.5`, kein `-beta.1`) und die Dateiversion
+  `<Version>.0`. Er ist damit 1:1 die spätere Release-Datei.
+- Der Workflow prüft nach dem Bauen die Dateiversion und dass die Version höher
+  ist als `release/latest.json`. Passt etwas nicht, bricht der Lauf ab, statt
+  einen unbrauchbaren Kandidaten abzulegen.
+- Veröffentlichen: Datei testen, nach `next-update/release/` kopieren
+  (ersetzen), auf `main` speichern. Oder den Workflow **„Release freigeben
+  (Kandidat → release)"** per `workflow_dispatch` starten: Er prüft den
+  Kandidaten mit `publish_latest.py --dry-run`, übernimmt ihn und startet
+  `publish-bridge.yml`. `latest.json` schreibt weiterhin nur der Publish-Lauf.
+- Nichts veröffentlicht von selbst: `beta-release/` ist kein Release-Ordner,
+  und Commits mit dem `GITHUB_TOKEN` lösen keine Folgeläufe aus — deshalb
+  startet der Freigabe-Workflow `publish-bridge.yml` ausdrücklich selbst.
 - Eine veraltete EXE kann nicht versehentlich veröffentlicht werden:
   `publish_latest.py` vergleicht die Dateiversion der EXE mit
   `app/version.json` und bricht bei Abweichung ab. Eine 8.0.3-EXE in
   `release/` führt also zu einem Fehler im Workflow, nicht zu einem Update
   für Nutzer; `latest.json` bleibt unverändert.
+- `-Channel beta` gibt es weiterhin für private Testbauten mit `-beta.1`; solche
+  Builds sind bewusst **nicht** veröffentlichbar.
 
 ## Regeln
 
