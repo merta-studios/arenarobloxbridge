@@ -1,4 +1,18 @@
-name: Exe Builder (Beta Release)
+name: Exe Builder (Release-Kandidat)
+
+# Baut bei jeder Aenderung an app/ oder builder/ automatisch einen
+# RELEASE-KANDIDATEN nach next-update/beta-release/.
+#
+# Der Kandidat traegt exakt die Version aus app/version.json (z. B. 8.0.5,
+# KEIN "-beta.1") und die gleiche Dateiversion (8.0.5.0). Damit ist er 1:1 die
+# spaetere Release-Datei: nach dem Testen einfach
+# next-update/beta-release/ArenaRobloxBridge.exe nach
+# next-update/release/ArenaRobloxBridge.exe kopieren (oder den Workflow
+# "Release freigeben" starten). publish-bridge.yml schreibt daraus latest.json
+# und alle Nutzer erhalten das Update.
+#
+# Nichts hier veroeffentlicht von selbst: release/ und latest.json bleiben
+# unangetastet, bis der Kandidat bewusst uebernommen wird.
 
 on:
   push:
@@ -31,7 +45,7 @@ jobs:
           Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
           Install-Module -Name ps2exe -Scope CurrentUser -Force
 
-      - name: Beta-Release Ordner vorbereiten
+      - name: Kandidaten-Ordner vorbereiten
         shell: powershell
         run: |
           $betaDir = Join-Path $PWD 'next-update\beta-release'
@@ -39,32 +53,53 @@ jobs:
             New-Item -ItemType Directory -Path $betaDir -Force | Out-Null
           }
 
-      - name: Build-EXE.ps1 nach beta-release ausfuehren
+      - name: Build-EXE.ps1 als Release-Kandidat nach beta-release ausfuehren
         shell: powershell
         run: |
-          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "./next-update/builder/Build-EXE.ps1" -Channel beta -OutputDirectory "./next-update/beta-release" -NonInteractive
+          & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "./next-update/builder/Build-EXE.ps1" -Channel rc -OutputDirectory "./next-update/beta-release" -NonInteractive
           if ($LASTEXITCODE -ne 0) {
             throw "Build-EXE.ps1 failed with exit code $LASTEXITCODE"
           }
 
-      - name: Gebaute Test-EXE pruefen
+      - name: Kandidat pruefen (Dateiversion muss die Release-Version sein)
         shell: powershell
         run: |
+          $version = [string](Get-Content -LiteralPath "./next-update/app/version.json" -Raw -Encoding UTF8 | ConvertFrom-Json).version
           $exe = Get-Item -LiteralPath "./next-update/beta-release/ArenaRobloxBridge.exe"
-          Write-Host ("Gebaute Datei gefunden: " + $exe.FullName + " (" + $exe.Length + " Bytes)")
+          Write-Host ("Gebaute Datei: " + $exe.FullName + " (" + $exe.Length + " Bytes)")
           if ($exe.Length -le 1000000) {
             throw "Die generierte ArenaRobloxBridge.exe ist unvollstaendig oder zu klein."
           }
+          $fileVersion = [string][System.Diagnostics.FileVersionInfo]::GetVersionInfo($exe.FullName).FileVersion
+          if ($fileVersion -ne ($version + ".0")) {
+            throw ("Der Kandidat traegt die Dateiversion " + $fileVersion + ", erwartet wird " + $version + ".0. Er waere nicht 1:1 veroeffentlichbar.")
+          }
+          $sha256 = (Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          Write-Host ("Release-Kandidat " + $version + " | Dateiversion " + $fileVersion + " | SHA-256 " + $sha256)
+          if (-not (Test-Path -LiteralPath "./next-update/release/latest.json")) {
+            throw "next-update/release/latest.json fehlt; ohne veroeffentlichte Version ist keine Pruefung moeglich."
+          }
+          $latest = [string](Get-Content -LiteralPath "./next-update/release/latest.json" -Raw -Encoding UTF8 | ConvertFrom-Json).version
+          Write-Host ("Veroeffentlicht ist aktuell: " + $latest)
+          $oldParts = $latest.Split('.')
+          $newParts = $version.Split('.')
+          if ([int]$newParts[0] -lt [int]$oldParts[0] -or
+              ([int]$newParts[0] -eq [int]$oldParts[0] -and [int]$newParts[1] -lt [int]$oldParts[1]) -or
+              ([int]$newParts[0] -eq [int]$oldParts[0] -and [int]$newParts[1] -eq [int]$oldParts[1] -and [int]$newParts[2] -le [int]$oldParts[2])) {
+            throw ("Der Kandidat (" + $version + ") ist nicht neuer als die veroeffentlichte Version (" + $latest + "). Erhoehe app/version.json.")
+          }
 
-      - name: ArenaRobloxBridge.exe in beta-release committen und pushen
+      - name: Release-Kandidat in beta-release committen und pushen
         shell: bash
         run: |
+          VERSION=$(grep -o '"version"[[:space:]]*:[[:space:]]*"[0-9.]*"' next-update/app/version.json | head -1 | sed 's/.*"\([0-9.]*\)"/\1/')
+          echo "Version aus app/version.json: $VERSION"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add next-update/beta-release/ArenaRobloxBridge.exe
           if git diff --cached --quiet; then
             echo "Keine Aenderungen an ArenaRobloxBridge.exe in beta-release."
           else
-            git commit -m "Auto-Build: Neue Test-EXE in beta-release bereitgestellt [skip ci]"
+            git commit -m "Auto-Build: Release-Kandidat ${VERSION} in beta-release bereitgestellt [skip ci]"
             git push origin main
           fi

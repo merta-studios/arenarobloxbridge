@@ -9,6 +9,12 @@
 > **Arbeite nur in `next-update/`.** Der alte Bereich im Repository-Hauptordner
 > bleibt unverändert. Abnahme und bekannte Grenzen:
 > [8.0.5-Checkliste](developer/docs/V8_0_5_ACCEPTANCE.md).
+>
+> **Veröffentlichen:** Der CI-Workflow „Exe Builder (Release-Kandidat)" legt in
+> `beta-release/` bereits die Datei mit der endgültigen Version ab (z. B. 8.0.5).
+> Nach dem Testen diese Datei nach `next-update/release/` kopieren — oder den
+> Workflow „Release freigeben (Kandidat → release)" starten. `latest.json`
+> schreibt weiterhin nur der Publish-Workflow.
 
 ## Der Ablauf in einem Satz
 

@@ -1,0 +1,102 @@
+name: Release freigeben (Kandidat -> release)
+
+# Uebernimmt den getesteten Release-Kandidaten aus next-update/beta-release/
+# nach next-update/release/ und startet damit die Veroeffentlichung
+# (publish-bridge.yml schreibt latest.json; alle Bridges bieten das Update an).
+#
+# Das passiert NUR auf ausdruecklichen Start (workflow_dispatch). Es gibt keinen
+# automatischen Ausloeser: ein Merge, ein Build oder ein Test veroeffentlicht
+# nichts.
+#
+# Vor dem Kopieren wird geprueft:
+#   - der Kandidat existiert und ist eine Windows-x64-EXE,
+#   - seine Dateiversion ist exakt <app/version.json>.0,
+#   - er ist neuer als die zuletzt veroeffentlichte Version,
+#   - die Pruefsumme/Groesse sind plausibel (publish_latest.py, --dry-run).
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Zum Veroeffentlichen RELEASE eintragen'
+        required: true
+        default: ''
+      skip_tests:
+        description: 'Offline-Tests ueberspringen (nicht empfohlen)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: promote-candidate
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Freigabe pruefen
+        shell: bash
+        run: |
+          if [ "${{ inputs.confirm }}" != "RELEASE" ]; then
+            echo "Abbruch: Bitte im Feld 'confirm' genau RELEASE eintragen."
+            exit 1
+          fi
+
+      - name: Code holen
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Test-Abhaengigkeiten und pefile installieren
+        run: python -m pip install --quiet -r next-update/developer/tests/requirements-test.txt
+
+      - name: Offline-Suite ausfuehren
+        if: ${{ !inputs.skip_tests }}
+        run: python next-update/developer/tests/run_offline_tests.py
+
+      - name: Kandidat gegen das Release-Manifest pruefen
+        run: |
+          python next-update/developer/tools/publish_latest.py \
+            --exe next-update/beta-release/ArenaRobloxBridge.exe \
+            --latest next-update/release/latest.json \
+            --version-json next-update/app/version.json \
+            --commit "$GITHUB_SHA" --dry-run
+
+      - name: Kandidat nach release uebernehmen und committen
+        shell: bash
+        run: |
+          VERSION=$(grep -o '"version"[[:space:]]*:[[:space:]]*"[0-9.]*"' next-update/app/version.json | head -1 | sed 's/.*"\([0-9.]*\)"/\1/')
+          echo "Version aus app/version.json: $VERSION"
+          cp next-update/beta-release/ArenaRobloxBridge.exe next-update/release/ArenaRobloxBridge.exe
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add next-update/release/ArenaRobloxBridge.exe
+          if git diff --cached --quiet; then
+            echo "Die Release-Datei ist bereits identisch; keine Veroeffentlichung noetig."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -m "Release ${VERSION}: Kandidat aus beta-release uebernommen [skip ci]"
+            git push origin main
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+        id: promote
+
+      # Commits mit dem GITHUB_TOKEN loesen keine weiteren Workflows aus.
+      # Deshalb wird publish-bridge.yml hier ausdruecklich gestartet.
+      - name: Veroeffentlichung starten (latest.json)
+        if: ${{ steps.promote.outputs.changed == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow run publish-bridge.yml --ref main
+          echo "publish-bridge.yml gestartet. latest.json wird aus der neuen EXE erzeugt."
