@@ -281,6 +281,21 @@ class RegistrationConsistency(unittest.TestCase):
         self.assertEqual(set(docs), set(labels))
 
 
+class RunningVersionDisplay(unittest.TestCase):
+    def test_settings_show_the_running_build_not_the_manifest(self):
+        block = region('$script:UpdateInfoState = @{', '# Version 7.2.6 (START-NETZ KOMPLETT): Fehler im Fensterbau')
+        self.assertIn('$verText = \'__ARENA_BUILD_VERSION__\'', block)
+        self.assertNotIn('UpdateDetails.version', block)
+        self.assertIn('Version $verText - aktuell', block)
+
+    def test_update_window_compares_against_the_running_build(self):
+        window = region('function Show-ArenaUpdateWindow', 'function Invoke-ArenaUpdateGate')
+        self.assertIn('Get-ArenaRunningVersion', window)
+        running = region('function Get-ArenaRunningVersion', 'function Get-ArenaUpdateStatePath')
+        self.assertIn('FileVersion', running)
+        self.assertIn("'^(\\d+\\.\\d+\\.\\d+)'", running)
+
+
 class PublishedStateUntouched(unittest.TestCase):
     def test_published_manifest_stays_below_the_candidate(self):
         latest = json.loads((ROOT / 'release/latest.json').read_text())
