@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "version": "8.0.3",
-  "sha256": "cf477ea0ab61dbd431ccf634670259707e9a82dfaf747877befb1f32fd99f3df",
-  "sizeBytes": 6025728,
-  "url": "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/e66c4c73bbd1b50884640e5d04bb7eadc7d267c5/next-update/release/ArenaRobloxBridge.exe",
-  "publishedAtUtc": "2026-10-16T15:07:05Z",
-  "notes": "• 8.0.3 — DEIN STUDIO, SICHER VERBUNDEN: • Screenshots nur vom passenden Studio-Fenster, nie vom Desktop. • Gruppen-Uploads und Asset-Freigaben per API-Key. • Place-Namen und Vorschauen ohne Fenster-Raten. • Sichtbarer Aktivitätsbalken ohne letzten Schritt. • Sprachmenü mit echten Flaggen, mehr Übersetzungen und gespeicherter Auswahl. • Alte Autostarts werden bereinigt, mehrere Konten als Liste angezeigt. • Neue Parts-Formen, Zylinderkurven und relative Platzierung — die Bridge rechnet für Arena.",
-  "notesEn": "• 8.0.3 — YOUR STUDIO, SAFELY CONNECTED: • Screenshots only from the matching Studio window, never the desktop. • Group-owned uploads and asset-use permissions via API key. • Place names and previews without guessing windows. • Visible activity bar, without the last step. • Dropdown language menu with vector flags, more translations and saved preferences. • Old startup entries cleaned up; multiple accounts listed together. • New Parts shapes, curved cylinders and relative placement — the Bridge does the math."
+  "version": "8.0.5",
+  "sha256": "2fb8861403734152100b4531a9181d54b0c994f4571d8df61a760befbaf19627",
+  "sizeBytes": 6286848,
+  "url": "https://raw.githubusercontent.com/merta-studios/arenarobloxbridge/ee8c414c833198837e123672d8d1ce487931573a/next-update/release/ArenaRobloxBridge.exe",
+  "publishedAtUtc": "2026-10-17T20:11:37Z",
+  "notes": "• 8.0.5 — TERRAIN, KAMERA & GUI-UPGRADE: • Neue Terrain-Werkzeuge bauen Höhenkarten, Berge, Inseln, Höhlen, Flüsse und Wasser — die Bridge rechnet das Gelände. • Die Studio-Kamera entriegelt sich nach jedem Befehl und beim Plugin-Start selbst, mit Kamera-Werkzeugen und Reparatur-Knopf. • GUI-Design 3.0: 40 Stile, dicke Konturen, Glanz-Buttons, Wolken, Funken und 18 Widgets wie Shop, Inventar und Battle Pass. • Die Bridge legt beim Start automatisch eine Desktop-Verknüpfung an und erneuert sie nach jedem Update. • Gelöschte Verknüpfung? Beim nächsten Start ist sie wieder da.",
+  "notesEn": "• 8.0.5 — TERRAIN, CAMERA & GUI UPGRADE: • New terrain tools build heightmaps, mountains, islands, caves, rivers and water — the Bridge does the terrain math. • The Studio camera unlocks itself after every command and at plugin start, with camera tools and a repair button. • GUI Design 3.0: 40 styles, thick outlines, glossy buttons, clouds, sparkles and 18 widgets such as shop, inventory and battle pass. • The Bridge creates a desktop shortcut on startup and refreshes it after every update. • Deleted the shortcut? It is back on the next start."
 }
