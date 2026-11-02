@@ -4,12 +4,12 @@
   "published": false,
   "version": "8.1.2",
   "asset": "ArenaRobloxBridge.exe",
-  "sha256": "4f73b0ca2e5689967f7e41d8d2b6cab80a089a74be2180f6a2f749870c3c8930",
+  "sha256": "d758a9dcbf4d69378d787886ae2686197b1c39a7ae5e5b42df6fa2e0947253b0",
   "sizeBytes": 6390272,
   "exeVersion": "8.1.2.0",
   "sourceFingerprint": "3e8c6d8456e6d54f1b89cf273ecd9aae623a7de2ba055a089b0d211fe29f8f7f",
-  "sourceCommit": "004223dda2d22a2d945fbbfee330a4615c6fd01c",
-  "branch": "arena/6b671593-arenarobloxbridge",
-  "runId": "41489793998",
+  "sourceCommit": "34bb16b8230cdcc02ff79377d6e31a1b5b5bbefa",
+  "branch": "main",
+  "runId": "41492604182",
   "note": "Unpublished beta candidate. Verify source+EXE before explicit promotion; never served by release/latest.json."
 }
