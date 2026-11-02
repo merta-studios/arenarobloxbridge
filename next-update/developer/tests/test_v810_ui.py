@@ -196,6 +196,70 @@ class UiEngine40(unittest.TestCase):
         return true
         '''))
 
+    def test_path_fill_is_approximate_inset_stack_and_toggleable(self):
+        self.assertTrue(self.run_lua('''
+        local p=tools.ui_path({preset="ring",radius=40,thickness=4,fill=true,fillColor="#FF0000",fillLayers=6})
+        assert(p.ok, tostring(p.error))
+        local r=p.result.report
+        assert(r.closed and r.fill.enabled and r.fill.approximate and r.fill.nativeFill==false)
+        assert(r.fill.layers==6 and r.fill.instances==6 and r.strokeOnly==false and r.nativeStrokeOnly==true)
+        local holder=resolveRef(p.result.path.id)
+        local main=holder:FindFirstChild("Path")
+        local fills=0
+        for _,c in ipairs(holder:GetChildren()) do
+            if c:GetAttribute("ArenaPathFillLayer") then
+                fills=fills+1
+                assert(c:IsA("Path2D") and c.Closed==true)
+                assert(c.ZIndex<main.ZIndex and c.Thickness>main.Thickness)
+                assert(math.abs(c.Color3.R-1)<1e-6 and math.abs(c.Color3.G)<1e-6 and math.abs(c.Color3.B)<1e-6)
+            end
+        end
+        assert(fills==6)
+        local inspect=tools.ui_path({action="inspect",ref=p.result.path.id})
+        assert(inspect.ok and inspect.result.fill.enabled and inspect.result.strokeOnly==false)
+        local edit=tools.ui_path({action="edit",ref=p.result.path.id,operation="update",index=1,point={x=50,y=5}})
+        assert(edit.ok)
+        local after=tools.ui_path({action="inspect",ref=p.result.path.id})
+        assert(after.result.fill.enabled)
+        local off=tools.ui_path({action="fill",ref=p.result.path.id,fill=false})
+        assert(off.ok and off.result.fill.enabled==false)
+        local left=0
+        for _,c in ipairs(holder:GetChildren()) do if c:GetAttribute("ArenaPathFillLayer") then left=left+1 end end
+        assert(left==0)
+        local on=tools.ui_path({action="fill",ref=p.result.path.id,fill=true,fillLayers=3,fillColor="#00FF00"})
+        assert(on.ok and on.result.fill.enabled and on.result.fill.layers==3)
+        return true
+        '''))
+
+    def test_path_fill_requires_closed_and_reports_concave_risk(self):
+        self.assertTrue(self.run_lua('''
+        local open=tools.ui_path({preset="wave",fill=true})
+        assert(not open.ok and tostring(open.error):find("closed"))
+        local concave=tools.ui_path({points={{x=0,y=0},{x=100,y=0},{x=100,y=100},{x=50,y=50},{x=0,y=100}},closed=true,smooth=false,fill=true})
+        assert(concave.ok, tostring(concave.error))
+        assert(concave.result.report.fill.concave==true)
+        local warned=false
+        for _,w in ipairs(concave.result.report.warnings) do if w:find("CONCAVE_FILL_RISK") then warned=true end end
+        assert(warned)
+        local budget=tools.ui_path({preset="ring",fill=true,fillLayers=99})
+        assert(budget.ok and budget.result.report.fill.layers==UI_ENGINE.PATH_MAX_FILL_LAYERS)
+        return true
+        '''))
+
+    def test_path_fill_fallback_uses_frames_when_path2d_missing(self):
+        self.assertTrue(self.run_lua('''
+        UI_ENGINE._caps={canvasGroup=false,path2D=false,pathControlPoints=false,pathSampling=false,gradientType=false,gradientScale=false,gradientTileMode=false,gradientTypes={},gradientTileModes={}}
+        local p=tools.ui_path({preset="ring",radius=40,fill=true,fillLayers=8})
+        assert(p.ok, tostring(p.error))
+        assert(p.result.report.fill.enabled and p.result.report.fill.method=="inset-frame-stroke-stack")
+        assert(p.result.report.fill.layers<=4 and p.result.report.fill.instances>0)
+        local holder=resolveRef(p.result.path.id)
+        local frames=0
+        for _,c in ipairs(holder:GetChildren()) do if c:GetAttribute("ArenaPathFillLayer") then frames=frames+1; assert(c:IsA("Frame")) end end
+        assert(frames==p.result.report.fill.instances)
+        return true
+        '''))
+
     def test_path_fallback_is_cubic_and_explicit(self):
         self.assertTrue(self.run_lua('''
         UI_ENGINE._caps={canvasGroup=false,path2D=false,pathControlPoints=false,pathSampling=false,gradientType=false,gradientScale=false,gradientTileMode=false,gradientTypes={},gradientTileModes={}}

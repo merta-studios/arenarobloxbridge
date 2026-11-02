@@ -15184,11 +15184,12 @@ end
 -- /reference/engine/datatypes/Path2DControlPoint and /ui/2D-paths.
 -- Path2D is a STROKE. There is no fill/trim/progress API; progress arcs below
 -- are explicitly rebuilt geometry, never a pretend native property.
-UI_ENGINE.PATH_VERSION = "4.1"
+UI_ENGINE.PATH_VERSION = "4.2"
 UI_ENGINE.PATH_MAX_POINTS = 50
 UI_ENGINE.PATH_MAX_MARKERS = 24
 UI_ENGINE.PATH_MAX_SAMPLES = 128
 UI_ENGINE.PATH_MAX_FALLBACK_SEGMENTS = 192
+UI_ENGINE.PATH_MAX_FILL_LAYERS = 16
 
 function UI_ENGINE.pathNumber(value, fallback, name)
     local n = tonumber(value)
@@ -15540,6 +15541,121 @@ function UI_ENGINE.pathDrawFallback(holder, data, style, aspect, gradientSpec, s
     return all,report
 end
 
+-- Approximate closed-path fill. Roblox Path2D has no native Fill() API.
+-- The Bridge stacks smaller closed Path2D strokes behind the outline: each
+-- inset layer is scaled toward the centroid and given a thick stroke so the
+-- rings overlap. This is a visual approximation, not a vector fill, and it is
+-- only reliable for simple closed shapes. Concave/self-intersecting outlines
+-- can leave gaps or overdraw; the report says so instead of hiding it.
+function UI_ENGINE.pathFillConfig(args, skin, style)
+    local fill=args.fill
+    if fill==nil or fill==false then return nil end
+    local spec=type(fill)=="table" and fill or {}
+    if fill~=true and type(fill)~="table" then error("BAD_ARGS: fill must be true, false or an object") end
+    local color=UI_ENGINE.tokenColor(skin,args.fillColor or spec.color,UI_ENGINE.col(style.color,skin.p.accent))
+    return {enabled=true,color="#"..color:ToHex(),
+        layers=math.floor(UI_ENGINE.finite(args.fillLayers or spec.layers,8,1,UI_ENGINE.PATH_MAX_FILL_LAYERS)),
+        overlap=UI_ENGINE.finite(args.fillOverlap or spec.overlap,1.18,1,2),
+        zIndex=math.floor(UI_ENGINE.finite(args.fillZIndex or spec.zIndex,math.max(1,(style.zIndex or 5)-2),1,100))}
+end
+
+function UI_ENGINE.pathFillCentroid(data, holder)
+    local size=holder and holder.AbsoluteSize or Vector2.new(400,300)
+    local w,h=size.X,size.Y; if w<=0 then w=400 end; if h<=0 then h=300 end
+    local sx,sy=0,0
+    for _,p in ipairs(data.points) do
+        sx=sx+p.x+(p.xOffset or 0)/w*100
+        sy=sy+p.y+(p.yOffset or 0)/h*100
+    end
+    local n=math.max(1,#data.points)
+    return sx/n, sy/n, w, h
+end
+
+function UI_ENGINE.pathFillRadius(data, cx, cy, w, h)
+    local radius=0
+    for _,p in ipairs(data.points) do
+        local dx=(p.x-cx)/100*w+(p.xOffset or 0)
+        local dy=(p.y-cy)/100*h+(p.yOffset or 0)
+        radius=math.max(radius,math.sqrt(dx*dx+dy*dy))
+    end
+    return radius
+end
+
+function UI_ENGINE.pathScaleData(data, cx, cy, scale)
+    local scaled=UI_ENGINE.copy(data)
+    local function scaleUDim(u)
+        u.x=cx+(u.x-cx)*scale; u.y=cy+(u.y-cy)*scale
+        u.xOffset=(u.xOffset or 0)*scale; u.yOffset=(u.yOffset or 0)*scale
+    end
+    for _,p in ipairs(scaled.points) do
+        scaleUDim(p); scaleUDim(p.left); scaleUDim(p.right)
+    end
+    return scaled
+end
+
+function UI_ENGINE.pathFillConcave(data, aspect)
+    local points=UI_ENGINE.pathFromData(data,false)
+    local poly=UI_ENGINE.pathPolyline(points,true,8,aspect or 1)
+    local line=poly.points
+    if #line<4 then return false end
+    local sign=0
+    for i=1,#line do
+        local a,b,c=line[i],line[i%#line+1],line[(i+1)%#line+1]
+        local cross=(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x)
+        if math.abs(cross)>1e-8 then
+            local s=cross>0 and 1 or -1
+            if sign==0 then sign=s elseif sign~=s then return true end
+        end
+    end
+    return false
+end
+
+function UI_ENGINE.pathClearFill(holder)
+    for _,child in ipairs(holder:GetChildren()) do
+        if child:GetAttribute("ArenaPathFillLayer") then child:Destroy() end
+    end
+end
+
+function UI_ENGINE.pathBuildFill(holder, path, data, style, cfg, aspect, native)
+    UI_ENGINE.pathClearFill(holder)
+    if not cfg or not cfg.enabled then return {enabled=false,approximate=false,layers=0,instances=0} end
+    if not data.closed then error("BAD_ARGS: fill=true requires a closed path (closed=true and at least 3 points)") end
+    local cx,cy,w,h=UI_ENGINE.pathFillCentroid(data,holder)
+    local radius=UI_ENGINE.pathFillRadius(data,cx,cy,w,h)
+    if radius<1 then error("BAD_ARGS: fill path is degenerate; radius is below 1 pixel") end
+    local layers=cfg.layers
+    local gap=radius/(layers+1)
+    local thickness=math.clamp(math.max(tonumber(style.thickness) or 0,gap*2*cfg.overlap),1,100)
+    local color=UI_ENGINE.col(cfg.color,Color3.new(1,1,1))
+    local instances=0
+    local concave=UI_ENGINE.pathFillConcave(data,aspect)
+    if native then
+        for i=1,layers do
+            local scale=1-i/(layers+1)
+            local layer=Instance.new("Path2D"); layer.Name="PathFill"..i
+            layer.Color3=color; layer.Thickness=thickness; layer.ZIndex=cfg.zIndex; layer.Visible=style.visible ~= false
+            UI_ENGINE.pathApplyData(layer,UI_ENGINE.pathScaleData(data,cx,cy,scale))
+            layer:SetAttribute("ArenaPathFillLayer",true); layer:SetAttribute("ArenaPathFillIndex",i)
+            layer:SetAttribute("ArenaPathFillScale",scale); layer.Parent=holder
+            instances=instances+1
+        end
+    else
+        -- Older Studio: keep the same idea with thick Frame polyline rings,
+        -- but reduce the layer count so the fallback segment budget survives.
+        local fallbackLayers=math.min(layers,4)
+        for i=1,fallbackLayers do
+            local scale=1-i/(fallbackLayers+1)
+            local frames=UI_ENGINE.pathFallbackFrames(holder,UI_ENGINE.pathScaleData(data,cx,cy,scale),color,thickness,aspect,"PathFill",cfg.zIndex)
+            for _,f in ipairs(frames) do f:SetAttribute("ArenaPathFillLayer",true); f:SetAttribute("ArenaPathFillIndex",i) end
+            instances=instances+#frames
+        end
+        layers=fallbackLayers
+    end
+    return {enabled=true,approximate=true,method=native and "inset-path2d-stroke-stack" or "inset-frame-stroke-stack",
+        layers=layers,instances=instances,thickness=thickness,zIndex=cfg.zIndex,color=cfg.color,concave=concave,
+        nativeFill=false,note="Visual fill approximation from overlapping inset strokes. Roblox Path2D still has no native fill API."}
+end
+
 function UI_ENGINE.pathMarker(holder, skin, spec, index, caps)
     if type(spec) ~= "table" then error("BAD_ARGS: marker/item must be an object") end
     local size = UI_ENGINE.finite(spec.sizePx or spec.size,40,8,256)
@@ -15585,11 +15701,14 @@ function UI_ENGINE.path(parent, skin, args)
     if lockAspect == nil then lockAspect=(not caps.path2D) or args.preset=="ring" or args.preset=="circle" or args.preset=="arc" end
     if lockAspect then local lock=Instance.new("UIAspectRatioConstraint"); lock.AspectRatio=aspect; lock.DominantAxis=Enum.DominantAxis.Width; lock.Parent=holder end
     local style=UI_ENGINE.pathVisualConfig(args,skin)
+    local fillCfg=UI_ENGINE.pathFillConfig(args,skin,style)
+    if fillCfg and not data.closed then error("BAD_ARGS: fill=true requires closed=true") end
     local native=caps.path2D and caps.pathControlPoints
-    local made, segments, gradientReport, mode
+    local made, segments, gradientReport, mode, fillReport
     holder:SetAttribute("ArenaPath",true); holder:SetAttribute("ArenaPathAspect",aspect)
     holder:SetAttribute("ArenaPathVersion",UI_ENGINE.PATH_VERSION)
     holder:SetAttribute("ArenaPathStyle",game:GetService("HttpService"):JSONEncode(style))
+    if fillCfg then holder:SetAttribute("ArenaPathFill",game:GetService("HttpService"):JSONEncode(fillCfg)) end
     if args.gradient ~= nil and args.gradient ~= false then
         local stored=UI_ENGINE.gradientSpec(args.gradient)
         holder:SetAttribute("ArenaPathGradientSpec",game:GetService("HttpService"):JSONEncode(stored))
@@ -15609,7 +15728,8 @@ function UI_ENGINE.path(parent, skin, args)
             copy.Thickness=math.min(100,style.thickness+layer.width); copy.ZIndex=math.max(1,style.zIndex+dz); copy.Visible=style.visible
             UI_ENGINE.pathApplyData(copy,shift and UI_ENGINE.pathShift(data,layer.offsetX,layer.offsetY) or data); copy.Parent=holder
         end
-        copyLayer(style.shadow,"PathShadow",-2,true); copyLayer(style.outline,"PathOutline",-1,false)
+        copyLayer(style.shadow,"PathShadow",fillCfg and -3 or -2,true); copyLayer(style.outline,"PathOutline",-1,false)
+        fillReport=UI_ENGINE.pathBuildFill(holder,made,data,style,fillCfg,aspect,true)
         if args.gradient ~= nil and args.gradient ~= false then
             local gs=UI_ENGINE.gradientSpec(args.gradient)
             local stops=UI_ENGINE.pathStops(args.stops,skin)
@@ -15619,6 +15739,7 @@ function UI_ENGINE.path(parent, skin, args)
         local gs, stops
         if args.gradient ~= nil and args.gradient ~= false then gs=UI_ENGINE.gradientSpec(args.gradient); stops=UI_ENGINE.pathStops(args.stops,skin) end
         segments,gradientReport=UI_ENGINE.pathDrawFallback(holder,data,style,aspect,gs,stops)
+        fillReport=UI_ENGINE.pathBuildFill(holder,nil,data,style,fillCfg,aspect,false)
         mode="cubic-bezier Frame fallback (approximate)"
     end
     holder.Parent=parent
@@ -15640,12 +15761,17 @@ function UI_ENGINE.path(parent, skin, args)
         end)
         if not good then holder:Destroy(); error(why) end
     end
-    local report={mode=mode,native=native == true,points=#data.points,closed=data.closed,strokeOnly=true,aspect=aspect,aspectLocked=lockAspect == true,
+    local filled=fillReport and fillReport.enabled == true
+    local report={mode=mode,native=native == true,points=#data.points,closed=data.closed,strokeOnly=not filled,nativeStrokeOnly=true,fill=fillReport or {enabled=false},aspect=aspect,aspectLocked=lockAspect == true,
         gradient=gradientReport,markers=#markers,fallbackSegments=segments and #segments or 0,warnings={},
         zIndexPolicy="Path2D.ZIndex orders strokes; it does not participate in UIListLayout. With Sibling ZIndexBehavior, keep the holder behind interactive cards.",
-        note="Path2D renders a stroked cubic spline, not a filled polygon. Use ui_shape for fills. x/y and tangents are holder percentages; xOffset/yOffset are pixels."}
+        note="Path2D renders a stroked cubic spline. fill=true adds an approximate inset-stroke stack behind the outline; it is not a native Roblox fill. x/y and tangents are holder percentages; xOffset/yOffset are pixels."}
     if not native then table.insert(report.warnings,"PATH2D_UNAVAILABLE: approximate cubic Frame polyline; native viewport editing is unavailable. Sampling/layout/motion use the same cubic math as an explicit approximation.") end
     if gradientReport and gradientReport.segmented then table.insert(report.warnings,"SEGMENTED_FALLBACK_GRADIENT: each Frame segment has its own gradient; this is not one seamless spline gradient.") end
+    if filled then
+        table.insert(report.warnings,"APPROXIMATE_PATH_FILL: overlapping inset strokes, not a native Path2D fill. Inspect edges, concave regions and memory before calling it finished.")
+        if fillReport.concave then table.insert(report.warnings,"CONCAVE_FILL_RISK: inset stroke stacks can leave gaps or overdraw on concave/self-intersecting outlines; prefer ui_shape or a real image for critical artwork.") end
+    end
     return holder,report,made,markers
 end
 
@@ -16329,18 +16455,19 @@ tools.ui_path = function(args)
     local action=string.lower(tostring(args.action or "create"))
     local caps=UI_ENGINE.caps()
     if action=="recipes" then
-        return ok({presets={"arc","ring","wave","line","s"},actions={"create","inspect","sample","edit","layout","motion","control","connect","progress","set_progress"},
+        return ok({presets={"arc","ring","wave","line","s"},actions={"create","inspect","sample","edit","fill","layout","motion","control","connect","progress","set_progress"},
             combinations={
                 curvedNavigation="create preset=wave + layout items with real images; arcLength spacing keeps equal visual distance",
                 skillTreeConnector="connect fromRef/toRef between existing cards; endpoints stay in place and the spline recomputes on move/resize",
                 progressRing="progress value=0..1; separate track + rebuilt active arc, not a fake native trim property",
                 movingIcon="motion targetRef/item mode=pingpong|loop|once; 30 Hz dirty-driven runtime, no GetLength per frame",
                 graphEditor="create smooth=false + edit insert/update/remove; native ControlPointChanged drives attached layouts",
-                outlinedSpline="create outline/shadow layers; real sibling strokes, lower ZIndex, no fill claim"},
-            limits={points=UI_ENGINE.PATH_MAX_POINTS,markers=UI_ENGINE.PATH_MAX_MARKERS,samples=UI_ENGINE.PATH_MAX_SAMPLES,fallbackSegments=UI_ENGINE.PATH_MAX_FALLBACK_SEGMENTS},
-            note="Path2D is stroke-only. Use ui_shape for filled polygons. Upgraded UIGradients on Path2D are fully released and need no allowBeta opt-in; older Studio still reports capability fallbacks."})
+                outlinedSpline="create outline/shadow layers; real sibling strokes, lower ZIndex, no native fill claim",
+                filledClosedShape="create closed=true fill=true fillColor=... fillLayers=1..16; approximate inset Path2D stroke stack behind the outline, not a native Fill() API"},
+            limits={points=UI_ENGINE.PATH_MAX_POINTS,markers=UI_ENGINE.PATH_MAX_MARKERS,samples=UI_ENGINE.PATH_MAX_SAMPLES,fallbackSegments=UI_ENGINE.PATH_MAX_FALLBACK_SEGMENTS,fillLayers=UI_ENGINE.PATH_MAX_FILL_LAYERS},
+            note="Path2D is natively stroke-only. fill=true builds an approximate inset-stroke stack for closed paths; use ui_shape or real images when exact fills matter. Upgraded UIGradients on Path2D are fully released and need no allowBeta opt-in; older Studio still reports capability fallbacks."})
     end
-    if action=="inspect" or action=="sample" or action=="edit" or action=="layout" or action=="motion" or action=="control" or action=="set_progress" then
+    if action=="inspect" or action=="sample" or action=="edit" or action=="fill" or action=="layout" or action=="motion" or action=="control" or action=="set_progress" then
         local ref,err=resolveRef(args.ref or args.pathRef); if not ref then return failCode("REF_NOT_FOUND",err) end
         local good,data,path,holder=pcall(UI_ENGINE.pathReadData,ref)
         if not good then return failCode("BAD_ARGS",tostring(data)) end
@@ -16349,7 +16476,8 @@ tools.ui_path = function(args)
             local bounds
             if path and caps.pathBounds then pcall(function() local r=path:GetBoundingRect(); bounds={min={x=r.Min.X,y=r.Min.Y},max={x=r.Max.X,y=r.Max.Y}} end) end
             return ok({path=describeRef(holder),nativePath=path and describeRef(path) or nil,mode=path and "Path2D" or "cubic-bezier Frame fallback (approximate)",
-                data=data,length=length,lengthCached=cached,boundingRect=bounds,strokeOnly=true,
+                data=data,length=length,lengthCached=cached,boundingRect=bounds,strokeOnly=not (holder:GetAttribute("ArenaPathFill")~=nil),nativeStrokeOnly=true,
+                fill=holder:GetAttribute("ArenaPathFill") and game:GetService("HttpService"):JSONDecode(holder:GetAttribute("ArenaPathFill")) or {enabled=false},
                 capabilities={sampling=caps.pathSampling,tangents=caps.pathTangents,editing=caps.pathEditing,changedEvent=caps.pathChangedEvent,length=caps.pathLength,bounds=caps.pathBounds},
                 note="GetLength is cached by revision/size and is never polled by the runtime. BoundingRect includes stroke thickness."})
         end
@@ -16393,6 +16521,8 @@ tools.ui_path = function(args)
             local style=game:GetService("HttpService"):JSONDecode(holder:GetAttribute("ArenaPathStyle") or '{"color":"#FFFFFF","thickness":3,"zIndex":5}')
             local aspect=holder:GetAttribute("ArenaPathAspect") or 1
             local okWrite,writeWhy=pcall(function()
+                local fillRaw=holder:GetAttribute("ArenaPathFill")
+                if fillRaw and not nextData.closed then error("BAD_ARGS: this path has fill=true; keep it closed or set action=fill fill=false before opening it") end
                 if path then UI_ENGINE.pathApplyData(path,nextData)
                 else
                     local gsRaw=holder:GetAttribute("ArenaPathGradientSpec"); local gs=gsRaw and game:GetService("HttpService"):JSONDecode(gsRaw) or nil
@@ -16401,10 +16531,36 @@ tools.ui_path = function(args)
                     UI_ENGINE.pathDrawFallback(holder,nextData,style,aspect,gs,stops)
                 end
                 UI_ENGINE.pathStore(holder,path,nextData)
+                if fillRaw then
+                    local cfg=game:GetService("HttpService"):JSONDecode(fillRaw)
+                    UI_ENGINE.pathBuildFill(holder,path,nextData,style,cfg,aspect,path~=nil)
+                end
             end)
             if not okWrite then return failCode("PATH_WRITE_FAILED",tostring(writeWhy)) end
             waypoint("ui path edit")
             return ok({path=describeRef(holder),data=nextData,operation=op,points=#nextData.points,mode=path and "Path2D" or "cubic-bezier Frame fallback (approximate)"})
+        end
+        if action=="fill" then
+            local skin=UI_ENGINE.resolveSkin(args.skin or "glass",args.brand,args.colors)
+            local style=game:GetService("HttpService"):JSONDecode(holder:GetAttribute("ArenaPathStyle") or '{"color":"#FFFFFF","thickness":3,"zIndex":5}')
+            local aspect=holder:GetAttribute("ArenaPathAspect") or 1
+            local good2,why=pcall(function()
+                if args.fill==false then
+                    holder:SetAttribute("ArenaPathFill",nil)
+                    UI_ENGINE.pathClearFill(holder)
+                    return {enabled=false}
+                end
+                local fillArgs=UI_ENGINE.copy(args)
+                if fillArgs.fill==nil then fillArgs.fill=true end
+                local cfg=UI_ENGINE.pathFillConfig(fillArgs,skin,style)
+                local report=UI_ENGINE.pathBuildFill(holder,path,data,style,cfg,aspect,path~=nil)
+                holder:SetAttribute("ArenaPathFill",game:GetService("HttpService"):JSONEncode(cfg))
+                return report
+            end)
+            if not good2 then return failCode("BAD_ARGS",tostring(why)) end
+            waypoint("ui path fill")
+            return ok({path=describeRef(holder),fill=holder:GetAttribute("ArenaPathFill") and game:GetService("HttpService"):JSONDecode(holder:GetAttribute("ArenaPathFill")) or {enabled=false},
+                note="fill=true is an approximate inset-stroke stack, not a native Path2D fill."})
         end
         if action=="control" then
             if not holder:GetAttribute("ArenaPathMotion") then return failCode("BAD_ARGS","holder has no ArenaPathMotion binding; create action=motion first") end
@@ -16445,7 +16601,7 @@ tools.ui_path = function(args)
         waypoint("ui path "..action)
         return ok({path=describeRef(holder),nativePath=path and describeRef(path) or nil,report=report,screenGui=screen and describeRef(screen) or nil})
     end
-    if action~="create" then return failCode("BAD_ARGS","action must be create, recipes, inspect, sample, edit, layout, motion, control, connect, progress or set_progress") end
+    if action~="create" then return failCode("BAD_ARGS","action must be create, recipes, inspect, sample, edit, fill, layout, motion, control, connect, progress or set_progress") end
     local parent,err=resolveRef(args.parentRef or "game.StarterGui"); if not parent then return failCode("REF_NOT_FOUND",err) end
     local host,screen=UI_ENGINE.ensureScreen(parent,args)
     local skin=UI_ENGINE.resolveSkin(args.skin or "glass",args.brand,args.colors)
@@ -16634,7 +16790,7 @@ tools.ui_capabilities = function(args)
         devices = { "phone", "tablet", "desktop", "ultrawide" },
         gradientTypes={"Linear","Radial","Elliptical","Conical"},gradientTileModes={"Clamp","Repeat","Mirror"},
         gradientPolicy={optIn="none",releaseStatus="full-release",releaseDate="2026-10-29",scaleRange={0.001,100},maxColorStops=6,activeBudget=1000,linearFallback=true,livePublishBlockedByBeta=false},
-        geometry={shapes={"triangle","trapezoid","parallelogram","diamond","chevron","hexagon","arrow","circle","pill"},customPolygonMaxVertices=16,canvasGroupsPerShape=32,pathControlPoints=c.pathPointBudget,pathHardMaxControlPoints=c.pathMaxControlPoints,pathStrokeOnly=true,pathSampling=c.pathSampling,pathTangents=c.pathTangents,pathEditing=c.pathEditing,pathLength=c.pathLength,pathBounds=c.pathBounds,pathChangedEvent=c.pathChangedEvent,pathFallback="approximate cubic-bezier Frame polyline",pathRuntimeHz=30,pathReleaseStatus="full-release",pathReleaseDate="2024-06-17"},
+        geometry={shapes={"triangle","trapezoid","parallelogram","diamond","chevron","hexagon","arrow","circle","pill"},customPolygonMaxVertices=16,canvasGroupsPerShape=32,pathControlPoints=c.pathPointBudget,pathHardMaxControlPoints=c.pathMaxControlPoints,pathStrokeOnly=true,pathFillApproximation="inset-stroke-stack",pathFillMaxLayers=UI_ENGINE.PATH_MAX_FILL_LAYERS,pathSampling=c.pathSampling,pathTangents=c.pathTangents,pathEditing=c.pathEditing,pathLength=c.pathLength,pathBounds=c.pathBounds,pathChangedEvent=c.pathChangedEvent,pathFallback="approximate cubic-bezier Frame polyline",pathRuntimeHz=30,pathReleaseStatus="full-release",pathReleaseDate="2024-06-17"},
         measured = "Every entry was probed with Instance.new/pcall in THIS Studio session - it is measured, not assumed from training data.",
     })
 end
@@ -28221,11 +28377,11 @@ $t.Add(@{ name = 'ui_shape'; category = 'ui'; summary = 'Build calculated geomet
  returns = '{shape,report:{shape,canvasGroups,triangles,aspectRatio,aspectLocked,memoryFallback}}';
  example = 'ui_shape {"shape":"trapezoid","skin":"scifi","rect":{"x":35,"y":30,"w":30,"h":25}}';
  related = @('ui_path','ui_audit','ui_capabilities'); errors = @('BAD_ARGS','REF_NOT_FOUND') })
-$t.Add(@{ name = 'ui_path'; category = 'ui'; summary = 'Build and compose stroke-only Path2D UI splines';
- description = 'Native cubic Path2D strokes plus sampling, editing, curved layouts, motion, connectors and progress arcs. Stroke-only: no fill API. Older Studio falls back to an explicitly approximate cubic-bezier Frame polyline. Progress arcs are rebuilt geometry over a separate track, not a native trim property. GetLength is cached on inspect and never polled by the 30 Hz runtime.';
- params = @{ action = @{ type = 'string'; required = $false; description = 'create (default), recipes, inspect, sample, edit, layout, motion, control, connect, progress, set_progress' }; ref = @{ type = 'string'; required = $false; description = 'Arena path holder or Path2D ref for inspect/sample/edit/layout/motion/control/set_progress' }; points = @{ type = 'array'; required = $false; description = '2..50 {x,y} holder percentages (-100..200); optional left/right or tangents={left,right}; xOffset/yOffset pixels' }; preset = @{ type = 'string'; required = $false; description = 'arc, ring, wave, line, s; arc/ring accept centerX,centerY,radius,startAngle,sweep' }; closed = @{ type = 'bool'; required = $false; description = 'Close with >=3 points' }; smooth = @{ type = 'bool'; required = $false; description = 'Auto Catmull-Rom tangents for explicit points; default true' }; thickness = @{ type = 'number'; required = $false; description = '0..100 pixels' }; color = @{ type = 'any'; required = $false; description = 'Color or brand token' }; gradient = @{ type = 'object'; required = $false; description = 'Gradient spec; upgraded modes are released and need no opt-in' }; stops = @{ type = 'array'; required = $false; description = 'Up to 6 {time,color} stops' }; outline = @{ type = 'object'; required = $false; description = 'Sibling keyline {color,width}' }; shadow = @{ type = 'object'; required = $false; description = 'Offset sibling stroke {color,width,offsetX,offsetY}' }; markers = @{ type = 'array'; required = $false; description = 'Up to 24 {t,image/text,sizePx,rotateToTangent}; real images, no emoji art' }; operation = @{ type = 'string'; required = $false; description = 'edit: set, insert, update, remove, close' }; index = @{ type = 'int'; required = $false; description = '1-based control-point index' }; point = @{ type = 'object'; required = $false; description = 'Control point for insert/update' }; count = @{ type = 'int'; required = $false; description = 'sample count 1..128' }; t = @{ type = 'number'; required = $false; description = 'sample/control parameter 0..1' }; arcLength = @{ type = 'bool'; required = $false; description = 'Even visual spacing (default true); false = parameter space' }; targets = @{ type = 'array'; required = $false; description = 'layout: existing GuiObject refs; allowReparent=true required if outside holder' }; items = @{ type = 'array'; required = $false; description = 'layout/motion marker specs with real image ids' }; targetRef = @{ type = 'string'; required = $false; description = 'motion target GuiObject' }; mode = @{ type = 'string'; required = $false; description = 'motion: once, loop, pingpong' }; duration = @{ type = 'number'; required = $false; description = 'motion seconds' }; playing = @{ type = 'bool'; required = $false; description = 'control play/pause' }; fromRef = @{ type = 'string'; required = $false; description = 'connect endpoint GuiObject' }; toRef = @{ type = 'string'; required = $false; description = 'connect endpoint GuiObject' }; fromSide = @{ type = 'string'; required = $false; description = 'left/right/top/bottom or auto' }; toSide = @{ type = 'string'; required = $false; description = 'left/right/top/bottom or auto' }; value = @{ type = 'number'; required = $false; description = 'progress 0..1' }; live = @{ type = 'bool'; required = $false; description = 'Install LocalScript runtime (default true); static preview is always applied' }; parentRef = @{ type = 'string'; required = $false; description = 'Default game.StarterGui' }; rect = @{ type = 'object'; required = $false; description = 'Holder x,y,w,h percentages' } };
- returns = '{path,nativePath,report:{native,mode,points,closed,strokeOnly,warnings,runtime},samples,data,length,boundingRect}';
- example = 'ui_path {"action":"progress","value":0.65,"sweep":270,"thickness":8,"color":"accent"}';
+$t.Add(@{ name = 'ui_path'; category = 'ui'; summary = 'Build and compose Path2D UI splines with optional approximate closed-path fill';
+ description = 'Native cubic Path2D strokes plus sampling, editing, curved layouts, motion, connectors and progress arcs. Roblox Path2D has no native fill API; fill=true on a closed path builds an approximate stack of smaller inset Path2D strokes with larger thickness and lower ZIndex behind the outline. fillColor/fillLayers/fillOverlap/fillZIndex tune it. Concave shapes can leave gaps; inspect the report. Older Studio falls back to an explicitly approximate cubic-bezier Frame polyline. Progress arcs are rebuilt geometry over a separate track, not a native trim property. GetLength is cached on inspect and never polled by the 30 Hz runtime.';
+ params = @{ action = @{ type = 'string'; required = $false; description = 'create (default), recipes, inspect, sample, edit, fill, layout, motion, control, connect, progress, set_progress' }; ref = @{ type = 'string'; required = $false; description = 'Arena path holder or Path2D ref for inspect/sample/edit/layout/motion/control/set_progress' }; points = @{ type = 'array'; required = $false; description = '2..50 {x,y} holder percentages (-100..200); optional left/right or tangents={left,right}; xOffset/yOffset pixels' }; preset = @{ type = 'string'; required = $false; description = 'arc, ring, wave, line, s; arc/ring accept centerX,centerY,radius,startAngle,sweep' }; closed = @{ type = 'bool'; required = $false; description = 'Close with >=3 points; required for fill=true' }; fill = @{ type = 'bool'; required = $false; description = 'Approximate closed-path fill via inset stroke stack; default false. Not a native Path2D fill.' }; fillColor = @{ type = 'any'; required = $false; description = 'Fill color or brand token; defaults to stroke color' }; fillLayers = @{ type = 'int'; required = $false; description = '1..16 inset stroke layers; default 8' }; fillOverlap = @{ type = 'number'; required = $false; description = 'Ring overlap multiplier 1..2; default 1.18' }; fillZIndex = @{ type = 'int'; required = $false; description = 'ZIndex for fill layers; default below outline' }; smooth = @{ type = 'bool'; required = $false; description = 'Auto Catmull-Rom tangents for explicit points; default true' }; thickness = @{ type = 'number'; required = $false; description = '0..100 pixels' }; color = @{ type = 'any'; required = $false; description = 'Color or brand token' }; gradient = @{ type = 'object'; required = $false; description = 'Gradient spec; upgraded modes are released and need no opt-in' }; stops = @{ type = 'array'; required = $false; description = 'Up to 6 {time,color} stops' }; outline = @{ type = 'object'; required = $false; description = 'Sibling keyline {color,width}' }; shadow = @{ type = 'object'; required = $false; description = 'Offset sibling stroke {color,width,offsetX,offsetY}' }; markers = @{ type = 'array'; required = $false; description = 'Up to 24 {t,image/text,sizePx,rotateToTangent}; real images, no emoji art' }; operation = @{ type = 'string'; required = $false; description = 'edit: set, insert, update, remove, close' }; index = @{ type = 'int'; required = $false; description = '1-based control-point index' }; point = @{ type = 'object'; required = $false; description = 'Control point for insert/update' }; count = @{ type = 'int'; required = $false; description = 'sample count 1..128' }; t = @{ type = 'number'; required = $false; description = 'sample/control parameter 0..1' }; arcLength = @{ type = 'bool'; required = $false; description = 'Even visual spacing (default true); false = parameter space' }; targets = @{ type = 'array'; required = $false; description = 'layout: existing GuiObject refs; allowReparent=true required if outside holder' }; items = @{ type = 'array'; required = $false; description = 'layout/motion marker specs with real image ids' }; targetRef = @{ type = 'string'; required = $false; description = 'motion target GuiObject' }; mode = @{ type = 'string'; required = $false; description = 'motion: once, loop, pingpong' }; duration = @{ type = 'number'; required = $false; description = 'motion seconds' }; playing = @{ type = 'bool'; required = $false; description = 'control play/pause' }; fromRef = @{ type = 'string'; required = $false; description = 'connect endpoint GuiObject' }; toRef = @{ type = 'string'; required = $false; description = 'connect endpoint GuiObject' }; fromSide = @{ type = 'string'; required = $false; description = 'left/right/top/bottom or auto' }; toSide = @{ type = 'string'; required = $false; description = 'left/right/top/bottom or auto' }; value = @{ type = 'number'; required = $false; description = 'progress 0..1' }; live = @{ type = 'bool'; required = $false; description = 'Install LocalScript runtime (default true); static preview is always applied' }; parentRef = @{ type = 'string'; required = $false; description = 'Default game.StarterGui' }; rect = @{ type = 'object'; required = $false; description = 'Holder x,y,w,h percentages' } };
+ returns = '{path,nativePath,report:{native,mode,points,closed,strokeOnly,nativeStrokeOnly,fill,warnings,runtime},samples,data,length,boundingRect}';
+ example = 'ui_path {"preset":"ring","radius":40,"thickness":4,"fill":true,"fillColor":"accent","fillLayers":10}';
  related = @('ui_shape','ui_capabilities','ui_texture'); errors = @('BAD_ARGS','REF_NOT_FOUND','PATH_SAMPLE_UNAVAILABLE','PATH_WRITE_FAILED','GRADIENT_BUDGET') })
 $t.Add(@{ name = 'ui_design'; category = 'ui'; summary = 'Turn a skin into a concrete design plan';
  description = 'Returns art direction, palette, layout family, signature elements, material query, role-aware corner math, image workflow and executable example. Prevents palette-only skin variations.';
@@ -29046,8 +29202,8 @@ end
                 gradientPerformance = 'Use at most 6 color stops and stay below 1000 active gradients. Set Color/Transparency once; animate Offset/Rotation/Scale/Type/TileMode instead. Mirror avoids Repeat seams. Avoid gradients on text-stroked objects when possible; stroke and fill need separate UIGradients. Radial ignores Rotation; Elliptical rotates its axes; Conical Scale changes sweep extent.'
                 corners = 'Effective radiusPx = min(width,height)*CornerRadius.Scale + Offset, capped at half the shortest edge. Scale 0.5 is a pill on a square, not a universal 50px radius. UICorner does not clip descendants and does not apply to ScrollingFrame. Engine defaults cap large panels/modals near 22px, headers near 12px and cards near 18px; buttons may stay round. Explicit user radii are preserved and audited, not silently rewritten. Use cornerPx or corner={scale,offset}; individual tl/tr/bl/br radii are probed.'
                 textures = 'Real project/Toolbox/user-uploaded images are a normal design step, not an optional afterthought. ui_texture action=inventory finds existing Place images; action=search query=... searches real decals; validate_asset checks metadata. Ask for a private upload id when needed. Pass assets={panel=id,card=id,header=id}; items[].image is foreground artwork. Backgrounds default to root scope and full opacity, not a faint wash over every child. Use tile/crop/fit/stretch or sliceCenter for 9-slice. Never invent ids; catalog metadata does not prove experience permission or successful rendering.'
-                geometry = 'ui_shape computes trapezoids/triangles/parallelograms/diamonds/chevrons/hexagons/arrows/custom polygons by ear clipping, right-triangle altitude splits and rotated half-plane Frames inside CanvasGroups. Aspect ratio is locked; max 32 groups per shape; gradients repeat per triangle and are reported as segmented. Circle/pill use UICorner. CanvasGroup clips descendants and uses texture memory; keep sizes static and inspect low graphics quality. ui_path uses native stroke-only Path2D splines (max 50 points) or an explicitly approximate cubic-bezier Frame polyline; it never claims a fill API.'
-                path2D = 'Path2D is a stroke-only cubic spline under a GuiObject, not a GuiObject and not a fill. ui_path action=create|recipes|inspect|sample|edit|layout|motion|control|connect|progress|set_progress. Control points/tangents are holder-relative UDim2 percentages plus pixel offsets. Use GetPositionOnCurveArcLength/GetTangentOnCurveArcLength for even visual spacing and rotation; GetPositionOnCurve is parameter space and clusters near bends. GetLength is expensive: inspect caches it by revision/size and the 30 Hz dirty-driven runtime never calls it. ControlPointChanged fires for point edits, not Color3/Thickness. Closed needs >=3 points. Budget 50 points even though GetMaxControlPoints reports 100. layout arranges real image markers/cards; motion moves a GuiObject along the curve; connect builds skill-tree/card connectors without reparenting endpoints; progress rebuilds a separate active arc over a track and is NOT a native trim/progress property. Older Studio gets the same cubic math as an approximate Frame polyline, with segmented gradients reported honestly.'
+                geometry = 'ui_shape computes trapezoids/triangles/parallelograms/diamonds/chevrons/hexagons/arrows/custom polygons by ear clipping, right-triangle altitude splits and rotated half-plane Frames inside CanvasGroups. Aspect ratio is locked; max 32 groups per shape; gradients repeat per triangle and are reported as segmented. Circle/pill use UICorner. CanvasGroup clips descendants and uses texture memory; keep sizes static and inspect low graphics quality. ui_path uses native stroke-only Path2D splines (max 50 points) or an explicitly approximate cubic-bezier Frame polyline. Roblox has no native Path2D fill; fill=true builds an approximate inset-stroke stack for closed paths and reports concave/budget risks.'
+                path2D = 'Path2D is a stroke-only cubic spline under a GuiObject, not a GuiObject and not a native fill. ui_path action=create|recipes|inspect|sample|edit|fill|layout|motion|control|connect|progress|set_progress. fill=true on closed paths stacks smaller inset Path2D strokes with larger thickness and lower ZIndex behind the outline; this is approximate, budgeted to 16 layers, and concave shapes may need ui_shape or a real image instead. Control points/tangents are holder-relative UDim2 percentages plus pixel offsets. Use GetPositionOnCurveArcLength/GetTangentOnCurveArcLength for even visual spacing and rotation; GetPositionOnCurve is parameter space and clusters near bends. GetLength is expensive: inspect caches it by revision/size and the 30 Hz dirty-driven runtime never calls it. ControlPointChanged fires for point edits, not Color3/Thickness. Closed needs >=3 points. Budget 50 points even though GetMaxControlPoints reports 100. layout arranges real image markers/cards; motion moves a GuiObject along the curve; connect builds skill-tree/card connectors without reparenting endpoints; progress rebuilds a separate active arc over a track and is NOT a native trim/progress property. Older Studio gets the same cubic math as an approximate Frame polyline, with segmented gradients reported honestly.'
                 rotatedClipping = 'StarterGui.ClipsDescendantsSupportsRotation controls rotated-child clipping in the 2026 rollout; Roblox announced removal of the property in Nov 2026. Probe it, do not hard-code it. A rotated ordinary GuiObject still does not become a clipping container; use CanvasGroup when clipping is required.'
                 textShadow = 'ui_text / text.shadow creates a readable foreground with stroke plus a separate lower-ZIndex duplicate shifted downward inside a layout-safe wrapper. ArenaTextEffects mirrors text/font/alignment/size/position changes. This is the popular offset-copy technique, not a native glyph-shadow API. Keep foreground contrast and avoid clipping the shadow.'
                 emoji = 'Emoji-only TextLabels are forbidden as skins, icons, thumbnails or item artwork, including generic create/set/run_lua/script paths. Use real images, ViewportFrame renders or constructed geometry. Mixed emoji in ordinary dialogue requires an explicit user requirement and allowEmojiText=true; it never authorizes emoji art.'
@@ -29057,7 +29213,7 @@ end
             uiDesignRules = @{
                 title = 'UI design acceptance - no emoji placeholders, no one-size-fits-all panels'
                 steps = @('Preserve the requested brand and existing architecture.','Choose a distinct composition and material family with ui_design.','Obtain real image ids through inventory/search/user upload; verify permission and rendering.','Use role-aware corners, readable offset text shadows where appropriate, and calculated geometry instead of improvised rotated rectangles.','Run ui_audit and inspect phone/desktop fit, contrast, image loading and any legacy Studio capability fallbacks before calling the UI finished.')
-                hardRule = 'Never deliver emoji-only labels as designed skins/assets. Never claim Path2D fills exist. Upgraded UIGradients are fully released; do not reintroduce a beta opt-in or publication block.'
+                hardRule = 'Never deliver emoji-only labels as designed skins/assets. Never claim native Path2D fills exist; approximate inset-stroke fills must be reported as approximate. Upgraded UIGradients are fully released; do not reintroduce a beta opt-in or publication block.'
             }
             coordinateGuide = @(
                 'AXES: +X = right, +Y = up, +Z = toward the viewer. The default Studio camera looks toward -Z. The "front" face of a part is its -Z face.',
@@ -39137,7 +39293,8 @@ $uiTranslationJson = @'
   "Hat Gelände im angegebenen Bereich entfernt.": "Removed terrain in the requested area.",
   "Hat ein fertiges Oberflächen-Widget aus der UI-Bibliothek gebaut.": "Built a ready-made interface widget from the UI library.",
   "• 8.1.0 — UI ENGINE 4.0: • 40 Skin-Rezepte mit echten Layout-/Material-Unterschieden. • Neue UIGradient-Typen, Scale und TileMode mit Beta-Opt-in und Fallback. • Rollenbasierte Ecken, echte Toolbox-/Upload-Texturen und berechnete CanvasGroup-Geometrie. • Textschatten als versetzte Kopie; Emoji-only-Skins verboten. • Path2D-UI: Kurven bearbeiten, gleichmäßige Layouts, Bewegung, Karten-Verbinder und Fortschrittsbögen; älteres Studio erhält eine explizite kubische Frame-Näherung. • Windows-/Roblox-Liveabnahme bleibt vor Release Pflicht.": "• 8.1.0 — UI ENGINE 4.0: • 40 skin recipes with real layout/material differences. • New UIGradient types, Scale and TileMode with beta opt-in and fallback. • Role-aware corners, real Toolbox/uploaded textures and calculated CanvasGroup geometry. • Offset-copy text shadows; emoji-only skins forbidden. • Path2D UI: edit curves, even layouts, motion, card connectors and progress arcs; older Studio gets an explicit cubic Frame approximation. • Windows/Roblox live validation remains required before release.",
-  "• 8.1.1 — RELEASE-STATUS-FIX: • Erweiterte UIGradients sind laut Roblox seit 29.10.2026 vollständig veröffentlicht und in Erlebnissen publizierbar. • Kein Beta-Schalter und kein allowBeta mehr nötig; alte allowBeta-Aufrufe werden ignoriert. • Fallback nur noch bei fehlender API in älterem Studio, eigenschaftsweise gemeldet. • Path2D-Status als vollständig veröffentlicht gekennzeichnet. • Audit blockiert historische Beta-Markierungen nicht mehr. • Bridge bleibt unveröffentlichter Kandidat.": "• 8.1.1 — RELEASE-STATUS FIX: • Upgraded UIGradients are fully released by Roblox since 2026-10-29 and may be published in experiences. • No Beta flag or allowBeta is required; old allowBeta arguments are ignored. • Fallback only when an older Studio lacks an API property, reported per property. • Path2D is marked fully released. • Audit no longer blocks historical beta markers. • Bridge remains an unpublished candidate."
+  "• 8.1.1 — RELEASE-STATUS-FIX: • Erweiterte UIGradients sind laut Roblox seit 29.10.2026 vollständig veröffentlicht und in Erlebnissen publizierbar. • Kein Beta-Schalter und kein allowBeta mehr nötig; alte allowBeta-Aufrufe werden ignoriert. • Fallback nur noch bei fehlender API in älterem Studio, eigenschaftsweise gemeldet. • Path2D-Status als vollständig veröffentlicht gekennzeichnet. • Audit blockiert historische Beta-Markierungen nicht mehr. • Bridge bleibt unveröffentlichter Kandidat.": "• 8.1.1 — RELEASE-STATUS FIX: • Upgraded UIGradients are fully released by Roblox since 2026-10-29 and may be published in experiences. • No Beta flag or allowBeta is required; old allowBeta arguments are ignored. • Fallback only when an older Studio lacks an API property, reported per property. • Path2D is marked fully released. • Audit no longer blocks historical beta markers. • Bridge remains an unpublished candidate.",
+  "• 8.1.2 — PATH2D-FILL: • ui_path kann geschlossene Kurven mit fill=true ungefärbt füllen. • Die Bridge stapelt kleinere, dickere Path2D-Ringe mit niedrigerem ZIndex hinter der Kontur. • fillColor, fillLayers, fillOverlap und fillZIndex sind einstellbar. • Kein natives Roblox-Fill: Report warnt vor Näherung, konkaven Formen und Budget. • Älteres Studio nutzt Frame-Ringe. • Bridge bleibt unveröffentlichter Kandidat.": "• 8.1.2 — PATH2D FILL: • ui_path can approximately fill closed curves with fill=true. • The Bridge stacks smaller, thicker Path2D rings with lower ZIndex behind the outline. • fillColor, fillLayers, fillOverlap and fillZIndex are configurable. • Not a native Roblox fill: reports warn about approximation, concave shapes and budget. • Older Studio uses Frame rings. • Bridge remains an unpublished candidate."
 }
 '@
 foreach ($property in ($uiTranslationJson | ConvertFrom-Json).PSObject.Properties) { $script:UiTranslationsDeEn[$property.Name] = [string]$property.Value }
