@@ -1,6 +1,6 @@
 name: Exe Builder (Release-Kandidat)
 
-# Baut auf main oder einem ausdruecklich gestarteten arena/**-Branch einen
+# Baut auf main oder einem arena/**-Branch (Push/Dispatch) einen
 # RELEASE-KANDIDATEN nach next-update/beta-release/. Ein Session-Build bleibt
 # auf seinem Branch; er merged nichts und veraendert release/ nicht.
 #
@@ -19,9 +19,11 @@ on:
   push:
     branches:
       - main
+      - 'arena/**'
     paths:
       - 'next-update/app/**'
       - 'next-update/builder/**'
+      - '.github/workflows/exe-builder.yml'
   workflow_dispatch:
 
 permissions:
