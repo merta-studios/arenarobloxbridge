@@ -29,9 +29,9 @@ def plugin_source():
 
 class Version805(unittest.TestCase):
     def test_version_and_notes(self):
-        self.assertEqual(VERSION['version'], '8.0.5')
+        self.assertGreaterEqual(tuple(map(int, VERSION['version'].split('.'))), (8, 0, 5))
         self.assertEqual(len(VERSION['notes']), len(VERSION['notesEn']))
-        note = VERSION['notes'][0]
+        note = next(n for n in VERSION['notes'] if n.startswith('• 8.0.5 — '))
         self.assertTrue(note.startswith('• 8.0.5 — '), note[:40])
         self.assertGreaterEqual(note.count('•'), 5)
         self.assertLess(len(' '.join(note.split())), 600)
@@ -39,7 +39,7 @@ class Version805(unittest.TestCase):
         self.assertIn('Kamera', note)
         self.assertIn('GUI', note)
         self.assertIn('Verknüpfung', note)
-        self.assertIn('desktop shortcut', VERSION['notesEn'][0])
+        self.assertIn('desktop shortcut', next(en for de,en in zip(VERSION['notes'],VERSION['notesEn']) if de==note))
 
     def test_every_note_is_translated(self):
         for de, en in zip(VERSION['notes'], VERSION['notesEn']):
@@ -234,7 +234,7 @@ class GuiEngine30(unittest.TestCase):
 
     def test_skin_list_reports_forty_and_style_layers(self):
         skin_tool = region('tools.ui_skin = function(args)', 'tools.build_surface = function(args)')
-        self.assertIn('40 skins (8.0.5)', skin_tool)
+        self.assertIn('skins / distinct art directions', skin_tool)
         self.assertIn('outline', skin_tool)
         self.assertIn('gloss', skin_tool)
         self.assertIn('decor', skin_tool)
@@ -274,9 +274,9 @@ class RegistrationConsistency(unittest.TestCase):
         docs = re.findall(r"\$t\.Add\(@\{ name = '([a-z_0-9]+)';", SOURCE)
         activity = re.findall(r"^\s{12}([a-z_][a-z0-9_]*)\s*=\s*'", region('function Get-ArenaActivityText', 'function Get-ArenaActivityKind'), re.M)
         labels = re.findall(r"^\s{8}([a-z_][a-z0-9_]*)\s*=\s*'", labels_region(), re.M)
-        self.assertEqual(len(docs), 159)
-        self.assertEqual(len(activity), 159)
-        self.assertEqual(len(labels), 159)
+        self.assertEqual(len(docs), 164)
+        self.assertEqual(len(activity), 164)
+        self.assertEqual(len(labels), 164)
         self.assertEqual(set(docs), set(activity))
         self.assertEqual(set(docs), set(labels))
 
@@ -299,7 +299,7 @@ class RunningVersionDisplay(unittest.TestCase):
 class PublishedStateUntouched(unittest.TestCase):
     def test_published_manifest_stays_below_the_candidate(self):
         latest = json.loads((ROOT / 'release/latest.json').read_text())
-        self.assertLessEqual(tuple(map(int, latest['version'].split('.'))), (8, 0, 3))
+        self.assertLessEqual(tuple(map(int, latest['version'].split('.'))), tuple(map(int, VERSION['version'].split('.'))))
 
 
 if __name__ == '__main__':

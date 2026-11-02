@@ -1,7 +1,8 @@
 name: Exe Builder (Release-Kandidat)
 
-# Baut bei jeder Aenderung an app/ oder builder/ automatisch einen
-# RELEASE-KANDIDATEN nach next-update/beta-release/.
+# Baut auf main oder einem arena/**-Branch (Push/Dispatch) einen
+# RELEASE-KANDIDATEN nach next-update/beta-release/. Ein Session-Build bleibt
+# auf seinem Branch; er merged nichts und veraendert release/ nicht.
 #
 # Der Kandidat traegt exakt die Version aus app/version.json (z. B. 8.0.5,
 # KEIN "-beta.1") und die gleiche Dateiversion (8.0.5.0). Damit ist er 1:1 die
@@ -18,26 +19,73 @@ on:
   push:
     branches:
       - main
+      - 'arena/**'
     paths:
       - 'next-update/app/**'
       - 'next-update/builder/**'
+      - '.github/workflows/exe-builder.yml'
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: exe-builder
+  group: exe-builder-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   build-exe:
+    if: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/arena/') }}
     runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
     steps:
+      - name: LF-Checkout erzwingen (Tests pruefen Zeilenenden)
+        shell: bash
+        run: git config --global core.autocrlf false
+
       - name: Code holen
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Test-Abhaengigkeiten installieren
+        shell: bash
+        run: python -m pip install --quiet -r next-update/developer/tests/requirements-test.txt
+
+      - name: Offline-Tests vor dem Windows-Build
+        shell: bash
+        run: |
+          set -o pipefail
+          python next-update/developer/tests/run_offline_tests.py 2>&1 | tee offline-tests.log
+
+      - name: Testfehler fuer Diagnose auf den Branch schreiben
+        if: failure()
+        shell: bash
+        run: |
+          if [ -f offline-tests.log ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            mkdir -p next-update/developer/ci-diagnostics
+            cp offline-tests.log next-update/developer/ci-diagnostics/offline-tests-tail.log
+            git add next-update/developer/ci-diagnostics/offline-tests-tail.log
+            git commit -m "CI diagnostics: offline test failure tail [skip ci]" || true
+            git push origin "HEAD:refs/heads/$GITHUB_REF_NAME" || true
+          fi
+
+      - name: Windows PowerShell 5.1 Parse Gate
+        shell: powershell
+        run: |
+          & ./next-update/builder/parse-gate.ps1 -Path ./next-update/app/ArenaBridge.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'ArenaBridge.ps1 parse gate failed' }
+          & ./next-update/builder/parse-gate.ps1 -Path ./next-update/builder/Build-EXE.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Build-EXE.ps1 parse gate failed' }
 
       - name: ps2exe Modul installieren
         shell: powershell
@@ -96,10 +144,13 @@ jobs:
           echo "Version aus app/version.json: $VERSION"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add next-update/beta-release/ArenaRobloxBridge.exe
+          python next-update/developer/tools/candidate_manifest.py write \
+            --source-commit "$GITHUB_SHA" --branch "$GITHUB_REF_NAME" --run-id "$GITHUB_RUN_ID"
+          git add next-update/beta-release/ArenaRobloxBridge.exe next-update/beta-release/candidate.json
           if git diff --cached --quiet; then
             echo "Keine Aenderungen an ArenaRobloxBridge.exe in beta-release."
           else
             git commit -m "Auto-Build: Release-Kandidat ${VERSION} in beta-release bereitgestellt [skip ci]"
-            git push origin main
+            # Niemals einen Session-Kandidaten nach main pushen.
+            git push origin "HEAD:refs/heads/$GITHUB_REF_NAME"
           fi

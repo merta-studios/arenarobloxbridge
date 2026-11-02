@@ -37,6 +37,7 @@ concurrency:
 
 jobs:
   promote:
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     steps:
       - name: Freigabe pruefen
@@ -71,6 +72,9 @@ jobs:
             --latest next-update/release/latest.json \
             --version-json next-update/app/version.json \
             --commit "$GITHUB_SHA" --dry-run
+
+      - name: Kandidat muss zum aktuellen Quellstand passen
+        run: python next-update/developer/tools/candidate_manifest.py verify
 
       - name: Kandidat nach release uebernehmen und committen
         shell: bash
