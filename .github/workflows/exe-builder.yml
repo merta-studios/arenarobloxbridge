@@ -58,15 +58,18 @@ jobs:
           set -o pipefail
           python next-update/developer/tests/run_offline_tests.py 2>&1 | tee offline-tests.log
 
-      - name: Testfehler in die Job-Zusammenfassung schreiben
+      - name: Testfehler fuer Diagnose auf den Branch schreiben
         if: failure()
         shell: bash
         run: |
           if [ -f offline-tests.log ]; then
-            echo '## Offline test failure' >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-            tail -120 offline-tests.log >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            mkdir -p next-update/developer/ci-diagnostics
+            tail -200 offline-tests.log > next-update/developer/ci-diagnostics/offline-tests-tail.log
+            git add next-update/developer/ci-diagnostics/offline-tests-tail.log
+            git commit -m "CI diagnostics: offline test failure tail [skip ci]" || true
+            git push origin "HEAD:refs/heads/$GITHUB_REF_NAME" || true
           fi
 
       - name: Windows PowerShell 5.1 Parse Gate
