@@ -1,23 +1,29 @@
-beta-release/ ist der Ausgabeordner fuer den automatischen RELEASE-KANDIDATEN.
+beta-release/ contains the UNPUBLISHED 8.1.0 release candidate.
 
-Was hier liegt:
-- ArenaRobloxBridge.exe - vom GitHub-Actions-Workflow "Exe Builder
-  (Release-Kandidat)" gebaut, sobald sich app/ oder builder/ auf main aendert.
-- Der Kandidat traegt EXAKT die Version aus app/version.json (z. B. 8.0.5,
-  kein "-beta.1") und dieselbe Dateiversion (8.0.5.0). Er ist damit 1:1 die
-  spaetere Release-Datei.
+What is here
+- ArenaRobloxBridge.exe - Windows x64 candidate built by GitHub Actions
+  ("Exe Builder (Release-Kandidat)") from this branch. It carries exactly the
+  version in app/version.json and the matching file version (8.1.0.0).
+- candidate.json - provenance manifest: source fingerprint of app/ + builder/,
+  EXE SHA-256/size/version, source commit, branch and workflow run. It is not a
+  release manifest and is never served to installed bridges.
 
-So wird daraus die oeffentliche Version:
-- Datei herunterladen und auf dem eigenen PC testen.
-- Danach genau diese Datei nach next-update/release/ kopieren (ersetzen) und
-  auf main speichern. Alternativ den Workflow "Release freigeben
-  (Kandidat -> release)" starten; er prueft den Kandidaten und uebernimmt ihn.
-- publish-bridge.yml erzeugt daraus latest.json; alle Bridges bieten dann das
-  Update an.
+How to test
+1. Download ArenaRobloxBridge.exe from this folder on the session branch.
+2. Close the running bridge and start the candidate. Keep your normal release
+   installation if you want an easy fallback.
+3. In Roblox Studio enable File > Beta Features > Upgraded UIGradients and
+   restart Studio if you want to test the new gradient modes. The bridge also
+   works without the beta feature and reports the linear fallback.
+4. Exercise ui_capabilities, ui_design, ui_texture inventory/search,
+   ui_widget/build_interface, ui_shape, ui_path, ui_text and ui_audit.
 
-Wichtig:
-- Dieser Ordner veroeffentlicht NICHTS von selbst. release/ und latest.json
-  bleiben unveraendert, bis der Kandidat bewusst uebernommen wird.
-- Ein alter Kandidat kann nicht versehentlich veroeffentlicht werden:
-  publish_latest.py vergleicht die Dateiversion der EXE mit app/version.json
-  und bricht bei Abweichung ab.
+Important
+- This folder publishes NOTHING. release/ and release/latest.json remain the
+  last published version until an explicit promotion.
+- Promotion is a separate manual workflow on main ("Release freigeben",
+  confirm=RELEASE). It re-verifies candidate.json against the current source
+  and EXE before copying anything into release/.
+- Do not publish a live Roblox game using upgraded gradient properties while
+  Roblox still marks them Studio Beta.
+- Windows/Roblox live validation by the user is still required before release.

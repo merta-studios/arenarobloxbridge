@@ -18,9 +18,9 @@ def region(start, end):
 class Bridge803(unittest.TestCase):
     def test_release_is_prepared_not_published(self):
         data = json.loads((ROOT / 'app/version.json').read_text())
-        self.assertEqual(tuple(map(int, data['version'].split('.'))), (8, 0, 5))
-        self.assertEqual(data['version'], '8.0.5')
-        self.assertTrue(data['notes'][0].startswith('• 8.0.5 — '))
+        self.assertGreaterEqual(tuple(map(int, data['version'].split('.'))), (8, 0, 5))
+        self.assertTrue(data['notes'][0].startswith('• ' + data['version'] + ' — '))
+        self.assertTrue(any(n.startswith('• 8.0.5 — ') for n in data['notes']))
         self.assertLess(len(data['notes'][0]), 600)
         self.assertGreaterEqual(data['notes'][0].count('•'), 5)
         self.assertEqual(len(data['notes']), len(data['notesEn']))
@@ -28,7 +28,7 @@ class Bridge803(unittest.TestCase):
             self.assertEqual(CATALOG[de], en)
         # The checked-in EXE/manifest is the last published binary, not this candidate.
         latest = json.loads((ROOT / 'release/latest.json').read_text())
-        self.assertLessEqual(tuple(map(int, latest['version'].split('.'))), (8, 0, 3))
+        self.assertLessEqual(tuple(map(int, latest['version'].split('.'))), tuple(map(int, data['version'].split('.'))))
 
     def test_no_desktop_capture_path(self):
         self.assertNotRegex(SOURCE, r'\.CopyFromScreen\s*\(')

@@ -1,54 +1,57 @@
-name: Auto PR and Merge to Main
+name: PR manuell nach Main mergen
 
+# Ein Session-Push ist NIEMALS eine Freigabe. Frueher hat dieser Workflow
+# jeden arena/**-Push automatisch gemergt und damit ungewollt veroeffentlicht.
+# Nur ein ausdruecklicher Dispatch mit MERGE darf diesen Weg verwenden.
 on:
-  push:
-    branches:
-      - 'arena/**'
   workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Zu mergender Session-Branch'
+        required: true
+        type: string
+      confirm:
+        description: 'MERGE eintragen (veroeffentlicht noch keine EXE)'
+        required: true
+        default: ''
 
 permissions:
   actions: write
   contents: write
   pull-requests: write
 
+concurrency:
+  group: manual-merge-${{ inputs.branch }}
+  cancel-in-progress: false
+
 jobs:
   auto-merge:
+    if: ${{ inputs.confirm == 'MERGE' && startsWith(inputs.branch, 'arena/') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Create and merge Pull Request to main
+      - name: Ausdruecklich freigegebenen PR mergen
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BRANCH_NAME: ${{ github.ref_name }}
+          BRANCH_NAME: ${{ inputs.branch }}
         run: |
-          echo "Processing branch: $BRANCH_NAME"
+          set -euo pipefail
+          git fetch origin "$BRANCH_NAME"
+          git checkout --detach "origin/$BRANCH_NAME"
           NEEDS_EXE_BUILD=$(git diff --name-only origin/main...HEAD | grep -E '^next-update/(app|builder)/' || true)
-
-          # Pruefen ob bereits ein offener Pull Request existiert
           EXISTING_PR=$(gh pr list --head "$BRANCH_NAME" --base main --state open --json number --jq '.[0].number // empty')
-          
           if [ -z "$EXISTING_PR" ]; then
-            echo "Erstelle neuen Pull Request von $BRANCH_NAME nach main..."
-            PR_URL=$(gh pr create \
-              --base main \
-              --head "$BRANCH_NAME" \
-              --title "Automatischer Session-Merge: $BRANCH_NAME -> main" \
-              --body "Automatisch erstellt durch Auto-PR-Merge Workflow.")
+            PR_URL=$(gh pr create --base main --head "$BRANCH_NAME" \
+              --title "Freigegebener Merge: $BRANCH_NAME" \
+              --body "Durch bestaetigten Workflow-Lauf freigegeben. Ein Merge baut nur einen Kandidaten; die Freigabe nach release bleibt ein separater Schritt.")
             PR_NUM=$(echo "$PR_URL" | grep -oE '[0-9]+$')
           else
-            echo "Bestehender PR gefunden: #$EXISTING_PR"
             PR_NUM="$EXISTING_PR"
           fi
-          
-          echo "Merge PR #$PR_NUM in main..."
-          gh pr merge "$PR_NUM" --merge --admin || gh pr merge "$PR_NUM" --merge
-          echo "Erfolgreich in main gemergt!"
-
+          gh pr merge "$PR_NUM" --merge
           if [ -n "$NEEDS_EXE_BUILD" ]; then
-            echo "Aenderungen in next-update/app oder next-update/builder erkannt. Starte Exe Builder auf main..."
             gh workflow run exe-builder.yml --ref main
           fi

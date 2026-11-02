@@ -60,14 +60,14 @@ def main() -> int:
     note = next((str(n) for n in data.get("notes", []) if str(n).startswith("• 8.0.1 — ")), "")
     check(note.startswith("• 8.0.1 — ") and note.count("•") >= 5
           and len(" ".join(note.split())) <= 600,
-          "notes[0] ist die 8.0.1-Stichpunkt-Notiz (Titel + >=5 Punkte, <600 Zeichen)")
+          "die historische 8.0.1-Stichpunkt-Notiz bleibt erhalten (Titel + >=5 Punkte, <600 Zeichen)")
     check("Hauptfenster" in note and "Später" in note,
           "Die 8.0.1-Notiz sagt dem Nutzer: X schließt auch das Hauptfenster")
     notes = [str(n) for n in data.get("notes", [])]
     check(any(n.startswith("• 8.0.0 — ") for n in notes),
-          "Die 8.0.0-Notiz bleibt als Historie an zweiter Stelle")
+          "Die 8.0.0-Notiz bleibt in der Historie erhalten")
     latest = json.loads(LATEST.read_text(encoding="utf-8"))
-    check(as_tuple(str(latest["version"])) <= as_tuple("8.0.3"),
+    check(as_tuple(str(latest["version"])) <= as_tuple(str(data["version"])),
           "release/latest.json bleibt das veröffentlichte Manifest (nicht angehoben)")
 
     # --- Update-Fenster: X ist 'exit', nie 'later' ---

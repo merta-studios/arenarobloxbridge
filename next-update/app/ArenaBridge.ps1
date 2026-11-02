@@ -3707,6 +3707,11 @@ $script:Shared = [hashtable]::Synchronized(@{
         camera_focus = 'Kamera ausrichten'
         camera_guard = 'Kamera-Wächter verwalten'
         ui_widget = 'Fertiges UI-Widget bauen'
+        ui_gradient = 'UI-Farbverlauf anwenden'
+        ui_shape = 'Geometrische UI-Form bauen'
+        ui_path = 'UI-Pfad zeichnen'
+        ui_text = 'Lesbaren UI-Text mit Schatten erstellen'
+        ui_design = 'UI-Art-Direction planen'
         build_assembly = 'Baugruppe erstellen'
         build_polygon_model = 'Polygonmodell erstellen'
         ui_capabilities = 'Prüfung der Studio-Oberfläche'
@@ -12230,7 +12235,7 @@ end
 UI_ENGINE = {}
 -- Version 7.0.0: Engine 2.0 - Glow, echte Texturen (textureImage statt
 -- nur prozeduraler Muster) und Radialmenüs aus einer Bild-Id.
-UI_ENGINE.ENGINE_VERSION = "2.0"
+UI_ENGINE.ENGINE_VERSION = "4.0"
 
 -- Version 7.2.0: CODE-STRUKTUR MESSEN (Thema 2: GUI wirklich in StarterGui,
 -- viele kleine Skripte statt eines Monolithen).
@@ -12329,6 +12334,43 @@ function UI_ENGINE.caps(force)
     c.path2D = UI_ENGINE.probeClass("Path2D")
     c.styleSheet = UI_ENGINE.probeClass("StyleSheet")
     c.canvasGroup = UI_ENGINE.probeClass("CanvasGroup")
+    c.gradientType, c.gradientScale, c.gradientTileMode = false, false, false
+    c.gradientTypes, c.gradientTileModes = {}, {}
+    local madeG, gradientProbe = pcall(Instance.new, "UIGradient")
+    if madeG and gradientProbe then
+        for _,name in ipairs({"Linear","Radial","Elliptical","Conical"}) do
+            local available=pcall(function()
+                local e=Enum.GradientType[name]; if e==nil then error("missing enum") end
+                gradientProbe.Type=e; if gradientProbe.Type~=e then error("readback mismatch") end
+            end)
+            c.gradientTypes[name]=available
+            if name~="Linear" and available then c.gradientType=true end
+        end
+        for _,name in ipairs({"Clamp","Repeat","Mirror"}) do
+            local available=pcall(function()
+                local e=Enum.GradientTileMode[name]; if e==nil then error("missing enum") end
+                gradientProbe.TileMode=e; if gradientProbe.TileMode~=e then error("readback mismatch") end
+            end)
+            c.gradientTileModes[name]=available
+            if name~="Clamp" and available then c.gradientTileMode=true end
+        end
+        c.gradientScale=pcall(function() gradientProbe.Scale=0.5; if gradientProbe.Scale~=0.5 then error("readback mismatch") end end)
+        pcall(function() gradientProbe:Destroy() end)
+    end
+    c.upgradedGradients=c.gradientType and c.gradientScale and c.gradientTileMode
+    c.gradientBetaStatus="Studio property probe only; live-client availability and live-publish eligibility are NOT measured. Roblox announced Studio Beta on 2026-10-29."
+    c.pathControlPoints=false
+    if c.path2D then
+        c.pathControlPoints=pcall(function()
+            local path=Instance.new("Path2D")
+            local point=Path2DControlPoint.new(UDim2.fromScale(0,0))
+            path:SetControlPoints({point,Path2DControlPoint.new(UDim2.fromScale(1,1))})
+            local valid=#path:GetControlPoints()==2
+            path:Destroy(); if not valid then error("control point readback failed") end
+        end)
+    end
+    c.rotatedClipping=nil
+    pcall(function() c.rotatedClipping=game:GetService("StarterGui").ClipsDescendantsSupportsRotation end)
     c.individualCorners = false
     local madeC, corner = pcall(Instance.new, "UICorner")
     if madeC and corner then
@@ -12356,6 +12398,9 @@ end
 
 function UI_ENGINE.capNotes()
     local c, notes = UI_ENGINE.caps(), {}
+    if not c.upgradedGradients then table.insert(notes,"Upgraded UIGradients unavailable: Type/Scale/TileMode fall back to Linear/1/Clamp. Enable File > Beta Features > Upgraded UIGradients and restart Studio, then ui_capabilities refresh=true.") end
+    table.insert(notes,"Upgraded gradients require explicit allowBeta=true. During Studio Beta, do not publish live games using them. Linear fallback is not an equivalent conical/radial effect.")
+    if not c.pathControlPoints then table.insert(notes,"Path2D control-point API unavailable: ui_path uses straight Frame segments; it does not pretend these are splines.") end
     if not c.uiShadow then table.insert(notes, "UIShadow missing: the engine falls back to a stacked halo-frame shadow. Ask the user to update Roblox Studio for native drop shadows.") end
     if not c.strokeScaledSize then table.insert(notes, "UIStroke.StrokeSizingMode missing: stroke thickness falls back to pixel offset and is rescaled by the runtime script instead.") end
     if not c.individualCorners then table.insert(notes, "Individual UICorner radii missing: all four corners share one radius.") end
@@ -12709,6 +12754,8 @@ function UI_ENGINE.resolveSkin(spec, brand, overrides)
     if base == nil then base = UI_ENGINE.SKINS.glass; name = "glass" end
     local skin = {}
     for key, value in pairs(base) do skin[key] = value end
+    local direction = UI_ENGINE.DIRECTIONS[name]
+    if direction then for key, value in pairs(direction) do skin[key] = value end end
     if recipe then for key, value in pairs(recipe) do if key ~= "name" and key ~= "skin" then skin[key] = value end end end
     skin.key = name
     skin.p = UI_ENGINE.palette(brand or skin.brand, skin.mood, overrides)
@@ -12746,47 +12793,6 @@ end
 -- ---------------------------------------------------------------------------
 -- EINZELNE SCHICHTEN
 -- ---------------------------------------------------------------------------
-function UI_ENGINE.gradient(parent, stops, rotation, transparency, name)
-    local grad = Instance.new("UIGradient")
-    grad.Name = name or "ArenaGradient"
-    local seq = {}
-    for index, stop in ipairs(stops) do
-        table.insert(seq, ColorSequenceKeypoint.new(math.clamp(stop[1], 0, 1), stop[2]))
-        if index == 1 and stop[1] > 0 then table.insert(seq, 1, ColorSequenceKeypoint.new(0, stop[2])) end
-    end
-    if #seq < 2 then table.insert(seq, ColorSequenceKeypoint.new(1, seq[1].Value)) end
-    if seq[#seq].Time < 1 then table.insert(seq, ColorSequenceKeypoint.new(1, seq[#seq].Value)) end
-    pcall(function() grad.Color = ColorSequence.new(seq) end)
-    grad.Rotation = rotation or 90
-    if type(transparency) == "table" then
-        local tseq = {}
-        for _, stop in ipairs(transparency) do table.insert(tseq, NumberSequenceKeypoint.new(math.clamp(stop[1], 0, 1), math.clamp(stop[2], 0, 1))) end
-        pcall(function() grad.Transparency = NumberSequence.new(tseq) end)
-    end
-    grad.Parent = parent
-    return grad
-end
-
-function UI_ENGINE.applyCorner(target, profile, caps, shape)
-    local radius = UI_ENGINE.CORNER[string.lower(tostring(profile or "soft"))]
-    if radius == nil then radius = tonumber(profile) or UI_ENGINE.CORNER.soft end
-    radius = math.clamp(radius, 0, 0.5)
-    if radius <= 0 then return 0 end
-    local corner = Instance.new("UICorner")
-    corner.Name = "ArenaCorner"
-    corner.CornerRadius = UDim.new(radius, 0)
-    if caps.individualCorners and type(shape) == "table" then
-        pcall(function()
-            if shape.tl then corner.TopLeftRadius = UDim.new(math.clamp(shape.tl, 0, 0.5), 0) end
-            if shape.tr then corner.TopRightRadius = UDim.new(math.clamp(shape.tr, 0, 0.5), 0) end
-            if shape.bl then corner.BottomLeftRadius = UDim.new(math.clamp(shape.bl, 0, 0.5), 0) end
-            if shape.br then corner.BottomRightRadius = UDim.new(math.clamp(shape.br, 0, 0.5), 0) end
-        end)
-    end
-    corner.Parent = target
-    return radius
-end
-
 -- Schattenstapel: nativ wenn vorhanden, sonst gestapelte Halo-Frames.
 -- BlurRadius/Offset/Spread bewusst in SCALE - damit skaliert der Schatten mit.
 function UI_ENGINE.shadowStack(base, skin, caps, holder)
@@ -12912,7 +12918,7 @@ function UI_ENGINE.textureLayer(base, skin, budget, texOpts)
         -- Standard mit tileX/tileY), Crop (fuellend beschnitten), Fit oder
         -- Stretch. Frueher war hier fest Tile + Transparenz 0.9 verdrahtet -
         -- die Textur war praktisch unsichtbar ueber dem Verlauf.
-        local fit = string.lower(tostring(texOpts.fit or skin.textureFit or ((skin.tileX or skin.tileY) and "tile" or "crop")))
+        local fit = string.lower(tostring(texOpts.fit or skin.textureFit or ((texOpts.tileX or texOpts.tileY or skin.tileX or skin.tileY) and "tile" or "crop")))
         if fit == "fit" then image.ScaleType = Enum.ScaleType.Fit
         elseif fit == "stretch" then image.ScaleType = Enum.ScaleType.Stretch
         elseif fit == "crop" then image.ScaleType = Enum.ScaleType.Crop
@@ -12920,7 +12926,14 @@ function UI_ENGINE.textureLayer(base, skin, budget, texOpts)
         if image.ScaleType == Enum.ScaleType.Tile then
             image.TileSize = UDim2.fromScale(tonumber(texOpts.tileX or skin.tileX) or 0.18, tonumber(texOpts.tileY or skin.tileY) or 0.18)
         end
-        image.ImageTransparency = asBackground and 0 or math.clamp(tonumber(skin.texAlpha) or 0.9, 0, 1)
+        image.ImageTransparency = asBackground and math.clamp(tonumber(texOpts.transparency) or 0, 0, 1) or math.clamp(tonumber(skin.texAlpha) or 0.9, 0, 1)
+        if texOpts.sliceCenter then
+            local r=texOpts.sliceCenter
+            image.ScaleType=Enum.ScaleType.Slice
+            image.SliceCenter=Rect.new(tonumber(r[1]) or 0,tonumber(r[2]) or 0,tonumber(r[3]) or 256,tonumber(r[4]) or 256)
+            image.SliceScale=math.max(0.01,tonumber(texOpts.sliceScale) or 1)
+            fit="slice"
+        end
         image.ImageColor3 = texOpts.tint and UI_ENGINE.col(texOpts.tint, skin.p.surfaceHi) or Color3.fromRGB(255, 255, 255)
         image:SetAttribute("ArenaTextureBackground", asBackground == true)
         image:SetAttribute("ArenaTextureFit", fit)
@@ -13405,6 +13418,7 @@ function UI_ENGINE.surface(opts)
         backgroundMode = (textureImage ~= nil or skin.textureAsBackground == true) and "texture" or "gradient"
     end
     if backgroundMode ~= "texture" and backgroundMode ~= "color" then backgroundMode = "gradient" end
+    if backgroundMode == "gradient" and skin.gradient == false and opts.gradient == nil then backgroundMode = "color" end
     report.backgroundMode = backgroundMode
     report.textureIsBackground = (backgroundMode == "texture")
     base.BackgroundColor3 = UI_ENGINE.tokenColor(skin, opts.fill, skin.p.surface)
@@ -13440,12 +13454,17 @@ function UI_ENGINE.surface(opts)
     --    verdeckt hat; im color-Modus ist die reine Farbe der Hintergrund.
     local fillBase = base.BackgroundColor3
     report.gradients = 0
-    if backgroundMode == "gradient" then
-        UI_ENGINE.gradient(base, {
+    local gradientOption = opts.gradient
+    if gradientOption == nil then gradientOption = skin.gradient end
+    if backgroundMode == "gradient" and gradientOption ~= false then
+        local gs = UI_ENGINE.gradientSpec(gradientOption)
+        gs.allowBeta = opts.allowBeta == true
+        local _, gradientReport = UI_ENGINE.gradient(base, {
             {0, UI_ENGINE.mix(fillBase, skin.p.surfaceHi, 0.34)},
             {0.55, fillBase},
             {1, UI_ENGINE.mix(fillBase, skin.p.surfaceLo, 0.55)},
-        }, skin.gradFill or 90, nil, "ArenaFillGradient")
+        }, gs.rotation, nil, "ArenaFillGradient", gs)
+        report.gradient = gradientReport
         report.layers = report.layers + 1
         report.gradients = 1
     end
@@ -13454,7 +13473,7 @@ function UI_ENGINE.surface(opts)
     local texture, texCount, texKind = UI_ENGINE.textureLayer(base, skin, opts.textureBudget, {
         mode = (backgroundMode == "texture") and "background" or "overlay",
         textureImage = textureImage, fit = opts.textureFit, tileX = opts.textureTileX, tileY = opts.textureTileY,
-        tint = opts.textureTint,
+        tint = opts.textureTint, transparency = opts.textureTransparency, sliceCenter = opts.sliceCenter, sliceScale = opts.sliceScale,
     })
     report.textureParts = texCount
     report.texture = texKind
@@ -13469,9 +13488,11 @@ function UI_ENGINE.surface(opts)
     if strokeCount > 0 then report.layers = report.layers + 1 end
 
     -- 8. Ecken + 9. Glanzkante.
-    local radius = UI_ENGINE.applyCorner(base, opts.corner or skin.corner, caps, opts.cornerShape)
-    report.cornerRadius = radius
-    if UI_ENGINE.sheenLayer(base, skin, caps, opts.corner or skin.corner) then report.layers = report.layers + 1 end
+    local cornerProfile = UI_ENGINE.cornerForRole(skin, role, opts.corner, opts.cornerPx)
+    local radius, cornerValue = UI_ENGINE.applyCorner(base, cornerProfile, caps, opts.cornerShape)
+    report.cornerRadius = radius; report.corner = cornerValue
+    report.cornerPolicy = "explicit radius preserved; otherwise large panels capped independently of toy button radius"
+    if UI_ENGINE.sheenLayer(base, skin, caps, cornerProfile) then report.layers = report.layers + 1 end
 
     -- 9a. UI ENGINE 3.0 (8.0.5): dicke Kontur, Glanzflaeche und Dekor.
     --     Die Reihenfolge ist Absicht: Kontur HINTER die Basis, Glanz und
@@ -13534,48 +13555,6 @@ end
 -- ---------------------------------------------------------------------------
 -- TEXT: TextScaled + UITextSizeConstraint = auflösungsunabhängig lesbar.
 -- ---------------------------------------------------------------------------
-function UI_ENGINE.textNode(parent, spec, skin, caps, bg)
-    local label = Instance.new("TextLabel")
-    label.Name = tostring(spec.name or "Label")
-    label.BackgroundTransparency = 1
-    label.Size = UDim2.fromScale(1, 1)
-    label.AnchorPoint = Vector2.new(0.5, 0.5)
-    label.Position = UDim2.fromScale(0.5, 0.5)
-    label.Text = tostring(spec.value or spec.text or "")
-    label.TextScaled = spec.scaled ~= false
-    label.TextWrapped = spec.wrap == true
-    label.RichText = spec.rich == true
-    label.ZIndex = 5
-    local target = UI_ENGINE.tokenColor(skin, spec.color, nil)
-    local explicitTextColor = (target ~= nil and spec.color ~= nil)
-    if not explicitTextColor then target = UI_ENGINE.readable(bg or skin.p.surface, skin.p.text, skin.p.surface) end
-    -- Preserve an explicit user/project color. ui_audit may report its measured
-    -- contrast, but the builder does not silently redesign the chosen palette.
-    label.TextColor3 = target
-    label.TextXAlignment = Enum.TextXAlignment[spec.xAlign or "Center"] or Enum.TextXAlignment.Center
-    label.TextYAlignment = Enum.TextYAlignment[spec.yAlign or "Center"] or Enum.TextYAlignment.Center
-    local fonts = skin.fonts or { "Gotham", "Gotham" }
-    UI_ENGINE.applyFont(label, spec.font or (spec.display and fonts[1] or fonts[2]), spec.weight or (spec.display and "Heavy" or "Medium"), caps)
-    local limit = Instance.new("UITextSizeConstraint")
-    limit.MinTextSize = math.max(8, math.floor(tonumber(spec.minSize) or 11))
-    limit.MaxTextSize = math.max(limit.MinTextSize, math.floor(tonumber(spec.maxSize) or 48))
-    limit.Parent = label
-    if spec.stroke ~= false then
-        local outline = Instance.new("UIStroke")
-        outline.Name = "ArenaTextStroke"
-        outline.Color = UI_ENGINE.mix(target, skin.p.shadow, 0.8)
-        outline.Transparency = math.clamp(tonumber(spec.strokeAlpha) or 0.55, 0, 1)
-        outline.Thickness = 1
-        pcall(function()
-            outline.StrokeSizingMode = Enum.StrokeSizingMode.ScaledSize
-            outline.Thickness = 0.035
-        end)
-        outline.Parent = label
-    end
-    label.Parent = parent
-    return label
-end
-
 -- ---------------------------------------------------------------------------
 -- LAUFZEIT-CHOREOGRAFIE. Wird als LocalScript mitgeliefert und ist rein
 -- attributgetrieben: ein Script animiert jede Oberfläche des Baums.
@@ -13828,15 +13807,16 @@ function UI_ENGINE.buildNode(spec, parentHost, skin, caps, ctx, depth, inLayout,
 
     local built = UI_ENGINE.surface({
         parent = parentHost, name = spec.id or spec.name, role = spec.role, rect = spec.rect, align = spec.align,
-        corner = spec.corner, cornerShape = spec.cornerShape, aspect = spec.aspect, padding = spec.padding,
+        corner = spec.corner, cornerPx = spec.cornerPx, cornerShape = spec.cornerShape, aspect = spec.aspect, padding = spec.padding,
         fill = spec.fill, fillAlpha = spec.fillAlpha, groupFade = spec.groupFade, insideCanvasGroup = insideGroup,
         inLayout = inLayout, layoutOrder = spec.layoutOrder or ctx.order, flex = spec.flex, skin = nodeSkin,
         order = ctx.order, motion = spec.motion, zIndex = spec.zIndex, hover = spec.hover, press = spec.press,
         textureBudget = spec.textureBudget or ctx.textureBudget,
         -- Version 8.0.0: Textur gehort in den Hintergrund (siehe surface).
-        textureImage = spec.textureImage or spec.backgroundTexture or spec.textureId or ctx.textureImage,
+        textureImage = UI_ENGINE.roleAsset(ctx, spec.role or "card", spec),
+        gradient = spec.gradient, allowBeta = spec.allowBeta == true or ctx.allowBeta == true,
         backgroundMode = spec.backgroundMode or ctx.backgroundMode,
-        textureFit = spec.textureFit, textureTileX = spec.tileX, textureTileY = spec.tileY, textureTint = spec.textureTint,
+        textureFit = spec.textureFit, textureTileX = spec.tileX, textureTileY = spec.tileY, textureTint = spec.textureTint, textureTransparency = spec.textureTransparency,
         -- Version 8.0.5: Kontur, Glanz und Dekor sind Knoten-Eigenschaften.
         outline = spec.outline, gloss = spec.gloss, decor = spec.decor,
     })
@@ -13846,7 +13826,11 @@ function UI_ENGINE.buildNode(spec, parentHost, skin, caps, ctx, depth, inLayout,
     ctx.shadows = ctx.shadows + (built.report.shadows or 0)
     ctx.gradients = ctx.gradients + (built.report.gradients or 0)
     ctx.textureParts = ctx.textureParts + (built.report.textureParts or 0)
-    if built.report.textureIsBackground then ctx.textureBackgrounds = (ctx.textureBackgrounds or 0) + 1 end
+    if built.report.textureIsBackground then
+        ctx.textureBackgrounds = (ctx.textureBackgrounds or 0) + 1
+        local backgroundAsset = UI_ENGINE.roleAsset(ctx, spec.role or "card", spec)
+        if backgroundAsset then table.insert(ctx.images, backgroundAsset) end
+    end
     if built.report.outline then
         ctx.outlines = (ctx.outlines or 0) + 1
         ctx.outlineLayers = (ctx.outlineLayers or 0) + (built.report.outlineLayers or 0)
@@ -13857,27 +13841,31 @@ function UI_ENGINE.buildNode(spec, parentHost, skin, caps, ctx, depth, inLayout,
         ctx.decorParts = (ctx.decorParts or 0) + (built.report.decorLayers or 0)
     end
     if built.isGroup then ctx.canvasGroups = ctx.canvasGroups + 1 end
-    if built.report.layers < 4 then ctx.thinSurfaces = ctx.thinSurfaces + 1 end
+    -- Layer count is not a quality score: flat print and functional styles are valid.
     for _, warning in ipairs(built.report.warnings) do table.insert(ctx.warnings, tostring(spec.id or "node") .. ": " .. warning) end
 
     if spec.text ~= nil then
         local textSpec = spec.text
         if type(textSpec) ~= "table" then textSpec = { value = tostring(textSpec) } end
-        UI_ENGINE.textNode(built.content, textSpec, nodeSkin, caps, built.base.BackgroundColor3)
+        if spec.image ~= nil then textSpec.rect = textSpec.rect or {50,83,100,28} end
+        local _, shadow = UI_ENGINE.textNode(built.content, textSpec, nodeSkin, caps, built.base.BackgroundColor3)
         ctx.texts = ctx.texts + 1
+        if shadow then ctx.textShadows = (ctx.textShadows or 0)+1 end
     end
     if spec.image ~= nil then
+        local imageSpec = type(spec.image) == "table" and spec.image or {image=spec.image}
+        local asset = UI_ENGINE.assetRef(imageSpec)
         local picture = Instance.new("ImageLabel")
-        picture.Name = "Image"
-        picture.BackgroundTransparency = 1
-        picture.Size = UDim2.fromScale(1, 1)
-        picture.AnchorPoint = Vector2.new(0.5, 0.5)
-        picture.Position = UDim2.fromScale(0.5, 0.5)
-        picture.Image = tostring(spec.image)
-        picture.ScaleType = Enum.ScaleType.Fit
-        picture.ZIndex = 5
-        picture.Parent = built.content
-        table.insert(ctx.images, tostring(spec.image))
+        picture.Name = "Image"; picture.BackgroundTransparency = 1
+        local imageRect = UI_ENGINE.rect(imageSpec.rect or spec.imageRect or (spec.text ~= nil and {50,35,85,60} or {50,50,100,100}))
+        picture.Size = imageRect.size; picture.Position = imageRect.pos; picture.AnchorPoint = imageRect.anchor
+        picture.Image = asset
+        local fit = string.lower(tostring(imageSpec.fit or spec.imageFit or "fit"))
+        picture.ScaleType = fit == "crop" and Enum.ScaleType.Crop or (fit == "tile" and Enum.ScaleType.Tile or (fit == "stretch" and Enum.ScaleType.Stretch or Enum.ScaleType.Fit))
+        if picture.ScaleType == Enum.ScaleType.Tile then picture.TileSize = UDim2.fromScale(tonumber(imageSpec.tileX) or 0.25,tonumber(imageSpec.tileY) or 0.25) end
+        picture.ImageTransparency = UI_ENGINE.finite(imageSpec.alpha,0,0,1)
+        picture.ZIndex = 5; picture.Parent = built.content
+        table.insert(ctx.images, asset)
     end
 
     local childHost = built.content
@@ -13933,10 +13921,11 @@ end
 function UI_ENGINE.newContext(args, skin)
     return {
         count = 0, order = 0, layers = 0, strokes = 0, strokeGradients = 0, shadows = 0, gradients = 0,
-        textureParts = 0, canvasGroups = 0, thinSurfaces = 0, texts = 0, scrolls = 0, images = {},
+        textureParts = 0, canvasGroups = 0, thinSurfaces = 0, texts = 0, textShadows = 0, scrolls = 0, images = {},
         warnings = {}, budget = math.max(1, math.min(tonumber(args.maxSurfaces) or 160, 400)),
         textureBudget = tonumber(args.textureBudget) or 26, brand = args.brand, overBudget = false,
         textureImage = args.textureImage or args.backgroundTexture or args.textureId,
+        assets = args.assets or args.textures or {}, allowBeta = args.allowBeta == true,
         backgroundMode = args.backgroundMode, textureBackgrounds = 0,
     }
 end
@@ -13969,10 +13958,10 @@ function UI_ENGINE.textureRecipe(skin, spec)
             mode = "texture",
             usage = "background",
             textureId = tostring(explicit),
-            fit = tostring(spec.textureFit or skin.textureFit or "tile"),
+            fit = tostring(spec.textureFit or skin.textureFit or ((spec.tileX or spec.tileY or skin.tileX or skin.tileY) and "tile" or "crop")),
             tile = Vector2.new(tonumber(spec.tileX) or tonumber(skin.tileX) or 0.18,
                 tonumber(spec.tileY) or tonumber(skin.tileY) or 0.18),
-            tint = UI_ENGINE.col(spec.textureTint, skin.p.surfaceHi),
+            tint = spec.textureTint and UI_ENGINE.col(spec.textureTint, Color3.new(1,1,1)) or Color3.new(1,1,1),
             instruction = "Use this id AS the surface background (backgroundMode=texture / textureImage on the node): the engine fills the surface with it at full opacity and adds NO fill gradient over it. Do not also set a background color/gradient on the same surface.",
             warning = nil,
         }
@@ -14212,7 +14201,7 @@ UI_ENGINE.widgetDef("inventory", {
             table.insert(slots, {
                 id = "Slot" .. tostring(index), role = "card", rect = { x = 50, y = 50, w = 18, h = 28 },
                 fill = "surfaceHi", layout = { kind = "list", dir = "vertical", gap = 1 },
-                text = { value = (name ~= "" and name) or "★", scaled = true },
+                text = { value = name, scaled = true },
                 children = name ~= "" and {
                     { id = "SlotCount" .. tostring(index), role = "badge", rect = { x = 50, y = 50, w = 90, h = 30 },
                       fill = "accent", text = { value = "x" .. tostring(index), scaled = true } },
@@ -14649,6 +14638,730 @@ function UI_ENGINE.widgetNames()
     return names
 end
 
+-- UI ENGINE 4.0: executive recipes, measured beta features and real assets.
+-- This is art-direction guidance, not a reason to replace a user's framework.
+UI_ENGINE.DIRECTIONS = {
+    glass = { family="optical", composition="floating", signature="translucent panes / edge highlights", textureQuery="frosted glass subtle", iconStyle="outlined glass", gradient={type="radial",scale=1.2,offset={0,-0.25}}, textShadow=false },
+    arcade = { family="emissive", composition="console", signature="dark cabinet / luminous rails", textureQuery="arcade scanline", iconStyle="pixel geometry", gradient={type="linear",scale=0.25,tileMode="mirror",rotation=90}, textShadow=true },
+    comic = { family="print", composition="hero", signature="ink keyline / hard offset shadow", textureQuery="comic halftone", iconStyle="bold illustrated", gradient=false, textShadow=true },
+    sticker = { family="cutout", composition="gallery", signature="die-cut border / stacked cards", textureQuery="sticker paper", iconStyle="filled sticker", gradient={type="linear",rotation=105}, textShadow=true },
+    clay = { family="sculpted", composition="gallery", signature="soft volume / broad ambient occlusion", textureQuery="clay subtle", iconStyle="soft sculpted", gradient={type="radial",scale=1.3,offset={-0.2,-0.3}}, textShadow=false },
+    parchment = { family="archive", composition="editorial", signature="aged fibre / serif hierarchy", textureQuery="seamless parchment", iconStyle="engraved illustration", gradient=false, textShadow=false },
+    metal = { family="industrial", composition="console", signature="brushed anisotropy / machined edge", textureQuery="seamless brushed metal", iconStyle="machined pictogram", gradient={type="linear",scale=0.12,tileMode="mirror",rotation=0}, textShadow=false },
+    paper = { family="print", composition="editorial", signature="uncoated stock / crisp typography", textureQuery="seamless paper fibre", iconStyle="printed pictogram", gradient=false, textShadow=false },
+    crt = { family="emissive", composition="console", signature="phosphor glow / curved scan raster", textureQuery="crt scanlines", iconStyle="phosphor outline", gradient={type="linear",scale=0.08,tileMode="repeat",rotation=90}, textShadow=true },
+    holo = { family="optical", composition="floating", signature="spectral rim / interference sweep", textureQuery="holographic foil", iconStyle="iridescent outline", gradient={type="conical",scale=1,tileMode="mirror"}, textShadow=false },
+    cozywood = { family="organic", composition="editorial", signature="long grain / warm carved border", textureQuery="seamless wood grain", iconStyle="carved illustration", gradient=false, textShadow=true },
+    chalk = { family="drawn", composition="editorial", signature="chalk dust / hand-lettered hierarchy", textureQuery="chalkboard texture", iconStyle="chalk drawing", gradient=false, textShadow=false },
+    horror = { family="distressed", composition="editorial", signature="uneven framing / emberg low light", textureQuery="grunge distressed paper", iconStyle="scratched silhouette", gradient={type="radial",scale=0.85,offset={0.25,-0.2}}, textShadow=true },
+    minimal = { family="functional", composition="ledger", signature="whitespace / restrained rules", textureQuery="", iconStyle="simple vector", gradient=false, textShadow=false },
+    simulator = { family="toy", composition="hero", signature="oversized reward / chunky face", textureQuery="cartoon starburst", iconStyle="bold game item render", gradient={type="radial",scale=1.1,offset={0,-0.3}}, textShadow=true },
+    tycoon = { family="functional", composition="sidebar", signature="navigation rail / profit ledger", textureQuery="subtle diagonal fabric", iconStyle="business pictogram", gradient=false, textShadow=false },
+    obby = { family="toy", composition="hero", signature="stage marker / directional momentum", textureQuery="cartoon stripes", iconStyle="playful filled icon", gradient={type="linear",scale=0.5,tileMode="mirror",rotation=135}, textShadow=true },
+    ocean = { family="organic", composition="floating", signature="caustic light / layered depth", textureQuery="seamless water caustics", iconStyle="nautical illustration", gradient={type="radial",scale=1.4,offset={0,-0.4}}, textShadow=false },
+    winter = { family="optical", composition="gallery", signature="frost edge / crystalline highlight", textureQuery="seamless ice texture", iconStyle="crystalline outline", gradient={type="elliptical",scale=1.15,rotation=35}, textShadow=false },
+    candy = { family="toy", composition="gallery", signature="sugar gloss / rounded confection", textureQuery="candy pattern", iconStyle="glossy illustrated", gradient={type="radial",scale=0.9,offset={-0.2,-0.3}}, textShadow=true },
+    space = { family="emissive", composition="floating", signature="star field / orbital accent", textureQuery="seamless starfield", iconStyle="orbital line art", gradient={type="radial",scale=1.2}, textShadow=false },
+    military = { family="industrial", composition="ledger", signature="stencil hierarchy / field equipment", textureQuery="military canvas fabric", iconStyle="stencil pictogram", gradient=false, textShadow=false },
+    royal = { family="ceremonial", composition="editorial", signature="engraved border / regal serif", textureQuery="damask fabric", iconStyle="heraldic illustration", gradient={type="linear",scale=0.4,tileMode="mirror",rotation=25}, textShadow=true },
+    nature = { family="organic", composition="editorial", signature="botanical hierarchy / leaf material", textureQuery="seamless leaf texture", iconStyle="botanical illustration", gradient=false, textShadow=false },
+    pop = { family="print", composition="hero", signature="burst panel / punchy display face", textureQuery="pop art halftone", iconStyle="comic object illustration", gradient={type="conical",scale=0.125,tileMode="repeat"}, textShadow=true },
+    cloud = { family="toy", composition="floating", signature="cloud silhouette / airy spacing", textureQuery="soft cloud pattern", iconStyle="soft cloud illustration", gradient={type="elliptical",scale=1.2,offset={0,-0.3}}, textShadow=false },
+    gel = { family="optical", composition="gallery", signature="specular cap / liquid depth", textureQuery="", iconStyle="glossy object render", gradient={type="radial",scale=0.85,offset={-0.15,-0.3}}, textShadow=true },
+    neon = { family="emissive", composition="console", signature="tubular rim / night signage", textureQuery="neon grid", iconStyle="neon tube outline", gradient={type="conical",scale=1}, textShadow=true },
+    gold = { family="ceremonial", composition="editorial", signature="foil stamp / restrained ornament", textureQuery="gold foil texture", iconStyle="foil stamped", gradient={type="linear",scale=0.35,tileMode="mirror",rotation=20}, textShadow=true },
+    inkwash = { family="drawn", composition="editorial", signature="pigment bloom / generous margins", textureQuery="watercolor paper", iconStyle="watercolor illustration", gradient=false, textShadow=false },
+    blueprint = { family="technical", composition="ledger", signature="measurement grid / monospaced annotation", textureQuery="blueprint grid", iconStyle="technical line drawing", gradient=false, textShadow=false },
+    pirate = { family="archive", composition="sidebar", signature="nautical chart / timber frame", textureQuery="old nautical map", iconStyle="treasure illustration", gradient=false, textShadow=true },
+    medieval = { family="archive", composition="sidebar", signature="manuscript rail / forged fittings", textureQuery="medieval leather", iconStyle="heraldic object", gradient=false, textShadow=true },
+    scifi = { family="technical", composition="console", signature="cut-corner panels / telemetry", textureQuery="sci fi panel", iconStyle="telemetry glyph", gradient={type="linear",scale=0.2,tileMode="mirror",rotation=90}, textShadow=false },
+    sports = { family="broadcast", composition="hero", signature="scoreboard hierarchy / team blocks", textureQuery="sports carbon fabric", iconStyle="athletic pictogram", gradient={type="linear",scale=0.5,tileMode="mirror",rotation=125}, textShadow=true },
+    gothic = { family="ceremonial", composition="editorial", signature="pointed rhythm / stone tracery", textureQuery="gothic stone", iconStyle="cathedral ornament", gradient={type="radial",scale=1.1,offset={0,-0.4}}, textShadow=true },
+    tropical = { family="organic", composition="gallery", signature="foliage frame / sunlit material", textureQuery="tropical leaves seamless", iconStyle="tropical illustration", gradient={type="elliptical",scale=1.3,rotation=25}, textShadow=false },
+    desert = { family="organic", composition="editorial", signature="sand fibre / sun-worn heading", textureQuery="sandstone seamless", iconStyle="sun-baked pictogram", gradient=false, textShadow=false },
+    dreamcore = { family="optical", composition="floating", signature="soft bloom / suspended panels", textureQuery="dreamy clouds", iconStyle="surreal illustration", gradient={type="conical",scale=1.5,tileMode="mirror"}, textShadow=false },
+    toybox = { family="toy", composition="gallery", signature="block construction / primary accents", textureQuery="toy plastic subtle", iconStyle="toy object render", gradient={type="radial",scale=1.1,offset={-0.2,-0.3}}, textShadow=true },
+}
+
+function UI_ENGINE.finite(value, fallback, low, high)
+    local n = tonumber(value)
+    if n == nil or n ~= n or n == math.huge or n == -math.huge then n = fallback end
+    return math.clamp(n, low, high)
+end
+
+function UI_ENGINE.copy(value)
+    if type(value) ~= "table" then return value end
+    local out = {}
+    for k, v in pairs(value) do out[k] = UI_ENGINE.copy(v) end
+    return out
+end
+
+function UI_ENGINE.gradientSpec(value)
+    local s = type(value) == "table" and UI_ENGINE.copy(value) or {}
+    if value == false then s.enabled = false end
+    s.enabled = s.enabled ~= false
+    s.type = string.lower(tostring(s.type or "linear"))
+    s.tileMode = string.lower(tostring(s.tileMode or "clamp"))
+    s.scale = UI_ENGINE.finite(s.scale, 1, 0.001, 100)
+    s.rotation = UI_ENGINE.finite(s.rotation, 90, -3600, 3600)
+    local offset = s.offset or {}
+    s.offset = { UI_ENGINE.finite(offset[1] or offset.x, 0, -10, 10), UI_ENGINE.finite(offset[2] or offset.y, 0, -10, 10) }
+    return s
+end
+
+function UI_ENGINE.gradient(parent, stops, rotation, transparency, name, options)
+    local caps = UI_ENGINE.caps()
+    local spec = UI_ENGINE.gradientSpec(options)
+    if rotation ~= nil then spec.rotation = UI_ENGINE.finite(rotation, 90, -3600, 3600) end
+    local report = { requestedType=spec.type, type="linear", tileMode="clamp", scale=1, betaRequired=false, fallback=false, warnings={} }
+    if not spec.enabled then return nil, report end
+    local types = {linear="Linear",radial="Radial",elliptical="Elliptical",conical="Conical"}
+    local tiles = {clamp="Clamp",repeat_="Repeat",mirror="Mirror"}
+    local tileKey = spec.tileMode == "repeat" and "repeat_" or spec.tileMode
+    if not types[spec.type] or not tiles[tileKey] then error("BAD_ARGS: unknown gradient type/tileMode") end
+    local modern = spec.type ~= "linear" or spec.tileMode ~= "clamp" or math.abs(spec.scale-1) > 0.000001
+    local supported = caps.gradientType and caps.gradientScale and caps.gradientTileMode and caps.gradientTypes[types[spec.type]] and caps.gradientTileModes[tiles[tileKey]]
+    report.betaRequired = modern
+    if modern and (spec.allowBeta ~= true or not supported) then
+        report.fallback = true
+        table.insert(report.warnings, spec.allowBeta ~= true and "UPGRADED_GRADIENT_BETA_OPT_IN_REQUIRED" or "UPGRADED_GRADIENT_UNAVAILABLE")
+        spec.type, spec.tileMode, spec.scale = "linear", "clamp", 1
+    end
+    local grad = Instance.new("UIGradient")
+    grad.Name = name or "ArenaGradient"
+    local seq, last = {}, -1
+    for _, stop in ipairs(stops or {}) do
+        local t, color = tonumber(stop[1] or stop.time), stop[2] or stop.color
+        if t == nil or t ~= t or t < 0 or t > 1 or t <= last or typeof(color) ~= "Color3" then error("BAD_ARGS: gradient color stops need strictly increasing times in 0..1 and Color3 colors") end
+        if #seq >= 6 then error("BAD_ARGS: use at most 6 color stops (performance budget)") end
+        table.insert(seq, ColorSequenceKeypoint.new(t, color)); last = t
+    end
+    if #seq == 1 then table.insert(seq, ColorSequenceKeypoint.new(1, seq[1].Value)) end
+    if #seq < 2 then error("BAD_ARGS: at least two color stops are required") end
+    if seq[1].Time > 0 then table.insert(seq, 1, ColorSequenceKeypoint.new(0, seq[1].Value)) end
+    if seq[#seq].Time < 1 then table.insert(seq, ColorSequenceKeypoint.new(1, seq[#seq].Value)) end
+    grad.Color = ColorSequence.new(seq)
+    local tsource = transparency or spec.transparency
+    if type(tsource) == "table" then
+        local tseq, previous = {}, -1
+        for _, stop in ipairs(tsource) do
+            local t = tonumber(stop[1] or stop.time)
+            local v = tonumber(stop[2] or stop.value)
+            if t == nil or v == nil or t ~= t or v ~= v or t <= previous or t < 0 or t > 1 or v < 0 or v > 1 then error("BAD_ARGS: invalid transparency sequence") end
+            if #tseq >= 6 then error("BAD_ARGS: use at most 6 transparency stops") end
+            table.insert(tseq, NumberSequenceKeypoint.new(t, v)); previous = t
+        end
+        if #tseq < 2 then error("BAD_ARGS: transparency needs at least two stops") end
+        if tseq[1].Time > 0 then table.insert(tseq, 1, NumberSequenceKeypoint.new(0, tseq[1].Value)) end
+        if tseq[#tseq].Time < 1 then table.insert(tseq, NumberSequenceKeypoint.new(1, tseq[#tseq].Value)) end
+        grad.Transparency = NumberSequence.new(tseq)
+    end
+    grad.Rotation = spec.rotation
+    grad.Offset = Vector2.new(spec.offset[1], spec.offset[2])
+    if spec.allowBeta == true and supported then
+        if spec.type ~= "linear" then grad.Type = Enum.GradientType[types[spec.type]] end
+        if spec.tileMode ~= "clamp" then grad.TileMode = Enum.GradientTileMode[tiles[tileKey]] end
+        if math.abs(spec.scale-1) > 0.000001 then grad.Scale = spec.scale end
+    end
+    -- Defaults are intentionally not written on legacy clients.
+    report.type = spec.type; report.tileMode = spec.tileMode; report.scale = spec.scale
+    report.rotation = spec.rotation; report.offset = spec.offset
+    report.livePublishReady = not report.betaRequired
+    if report.betaRequired then table.insert(report.warnings, "STUDIO_BETA_NOT_LIVE_PUBLISHABLE: Studio support does not prove client support; do not publish a live game using these properties during Roblox's beta.") end
+    grad:SetAttribute("ArenaGradientType", report.type)
+    grad:SetAttribute("ArenaGradientFallback", report.fallback)
+    grad:SetAttribute("ArenaGradientBeta", report.betaRequired)
+    grad.Parent = parent
+    return grad, report
+end
+
+-- UTF-8 code-point iteration without a dependency on a particular Lua host.
+function UI_ENGINE.codepoints(text)
+    local s, i = tostring(text or ""), 1
+    return function()
+        if i > #s then return nil end
+        local a = string.byte(s, i); local n, cp = 1, a
+        if a >= 240 then n, cp = 4, a-240 elseif a >= 224 then n, cp = 3, a-224 elseif a >= 192 then n, cp = 2, a-192 end
+        if a < 128 or a >= 192 then
+            for j=2,n do local b=string.byte(s,i+j-1); if not b or b < 128 or b > 191 then n=j-1; break end; cp=cp*64+b-128 end
+        end
+        i = i + n
+        return cp
+    end
+end
+
+function UI_ENGINE.emojiAudit(text)
+    local count, visible, keycap = 0, 0, false
+    local cps={}
+    for cp in UI_ENGINE.codepoints(text) do table.insert(cps,cp); if cp==0x20E3 then keycap=true end end
+    for _,cp in ipairs(cps) do
+        local emoji = (cp >= 0x1F000 and cp <= 0x1FAFF) or (cp >= 0x2600 and cp <= 0x27BF) or cp == 0xFE0F or cp == 0x20E3 or (cp >= 0x1F1E6 and cp <= 0x1F1FF)
+        local letter=(cp>=65 and cp<=90) or (cp>=97 and cp<=122) or (cp>=0xC0 and cp<=0x24F) or (cp>=0x370 and cp<=0x1FFF)
+        local digit=cp>=48 and cp<=57
+        if emoji then count=count+1 elseif letter or (digit and not keycap) then visible=visible+1 end
+    end
+    return { count=count, onlyEmoji=(count > 0 and visible == 0), hasEmoji=count > 0 }
+end
+
+function UI_ENGINE.guardEmoji(spec, role, context)
+    spec = type(spec) == "table" and spec or {value=spec}
+    local audit = UI_ENGINE.emojiAudit(spec.value or spec.text or "")
+    local artRole = role == "icon" or role == "art" or role == "skin" or role == "thumbnail" or spec.artAsset == true
+    if audit.hasEmoji and (artRole or audit.onlyEmoji or (context == "ui" and spec.allowEmojiText ~= true)) then
+        return "EMOJI_AS_ART_FORBIDDEN: emoji are not skins, item artwork, icons or a substitute for design. Use a real ImageLabel/ImageButton asset, ViewportFrame or constructed geometry. Mixed emoji in ordinary dialogue requires explicit allowEmojiText=true; emoji-only artwork remains forbidden."
+    end
+    return nil, audit
+end
+
+function UI_ENGINE.cornerValue(value, fallback)
+    if type(value) == "table" then return {scale=UI_ENGINE.finite(value.scale,0,0,0.5),offset=UI_ENGINE.finite(value.offset or value.px,0,0,256)} end
+    local n = tonumber(value)
+    if n ~= nil then return {scale=UI_ENGINE.finite(n,0,0,0.5),offset=0} end
+    local profile = UI_ENGINE.CORNER[string.lower(tostring(value or ""))]
+    if profile == nil then profile = fallback or 0.035 end
+    return {scale=profile,offset=0}
+end
+
+function UI_ENGINE.cornerForRole(skin, role, explicit, cornerPx)
+    if explicit ~= nil then return explicit end
+    if cornerPx ~= nil then return {scale=0,offset=cornerPx} end
+    local value = skin.corner or "soft"
+    local radius = UI_ENGINE.CORNER[tostring(value)] or tonumber(value) or 0.035
+    -- A skin's toy-like button radius must not turn every large panel into a pill.
+    if role == "panel" or role == "modal" or role == "card" or role == "header" then
+        local cap = role=="card" and 18 or (role=="header" and 12 or 22)
+        local reference = role=="card" and 220 or 420
+        return {scale=0,offset=math.min(cap,radius*reference)}
+    end
+    if role == "bar" then radius = math.min(radius, 0.12) end
+    return radius
+end
+
+function UI_ENGINE.radiusPixels(value, width, height)
+    local v = UI_ENGINE.cornerValue(value, 0)
+    return math.min(math.min(width,height)*0.5, v.scale*math.min(width,height)+v.offset)
+end
+
+function UI_ENGINE.applyCorner(target, profile, caps, shape)
+    local v = UI_ENGINE.cornerValue(profile, UI_ENGINE.CORNER.soft)
+    if v.scale <= 0 and v.offset <= 0 then return 0, v end
+    local corner = target:FindFirstChild("ArenaCorner")
+    if corner and corner:IsA("UICorner") then corner:ClearAllChildren() else corner = Instance.new("UICorner") end
+    corner.Name = "ArenaCorner"; corner.CornerRadius = UDim.new(v.scale, v.offset)
+    if type(shape) == "table" then
+        local fields = {tl="TopLeftRadius",tr="TopRightRadius",bl="BottomLeftRadius",br="BottomRightRadius"}
+        for key, property in pairs(fields) do
+            if shape[key] ~= nil then
+                local cv = UI_ENGINE.cornerValue(shape[key],0)
+                if not caps.individualCorners then error("INDIVIDUAL_CORNERS_UNAVAILABLE: this Studio cannot set separate corner radii") end
+                corner[property] = UDim.new(cv.scale,cv.offset)
+            end
+        end
+    end
+    corner.Parent = target
+    return v.scale, v
+end
+
+function UI_ENGINE.textNode(parent, spec, skin, caps, bg)
+    local refused = UI_ENGINE.guardEmoji(spec, spec.role or "label", "ui")
+    if refused then error(refused) end
+    local textRect = UI_ENGINE.rect(spec.rect or {50,50,100,100})
+    local block = Instance.new("Frame"); block.Name=tostring(spec.name or "TextBlock").."Block"; block.BackgroundTransparency=1; block.BorderSizePixel=0
+    block.Size=textRect.size; block.AnchorPoint=textRect.anchor; block.Position=textRect.pos; block.ZIndex=tonumber(spec.zIndex) or 10
+    local label = Instance.new("TextLabel")
+    label.Name = tostring(spec.name or "Label"); label.BackgroundTransparency = 1
+    label.Size = UDim2.fromScale(1,1); label.AnchorPoint = Vector2.new(0.5,0.5); label.Position = UDim2.fromScale(0.5,0.5)
+    label.Text = tostring(spec.value or spec.text or ""); label.TextScaled = spec.scaled ~= false
+    label.TextWrapped = spec.wrap == true; label.RichText = spec.rich == true; label.ZIndex = 5
+    local target = UI_ENGINE.tokenColor(skin, spec.color, nil)
+    if target == nil or spec.color == nil then target = UI_ENGINE.readable(bg or skin.p.surface,skin.p.text,skin.p.surface) end
+    label.TextColor3 = target
+    label.TextXAlignment = Enum.TextXAlignment[spec.xAlign or "Center"] or Enum.TextXAlignment.Center
+    label.TextYAlignment = Enum.TextYAlignment[spec.yAlign or "Center"] or Enum.TextYAlignment.Center
+    local fonts = skin.fonts or {"Gotham","Gotham"}
+    UI_ENGINE.applyFont(label,spec.font or (spec.display and fonts[1] or fonts[2]),spec.weight or (spec.display and "Heavy" or "Medium"),caps)
+    local limit = Instance.new("UITextSizeConstraint")
+    limit.MinTextSize = math.max(8,math.floor(tonumber(spec.minSize) or 11))
+    limit.MaxTextSize = math.max(limit.MinTextSize,math.floor(tonumber(spec.maxSize) or 48)); limit.Parent = label
+    local stroke
+    if spec.stroke ~= false then
+        stroke = Instance.new("UIStroke"); stroke.Name = "ArenaTextStroke"
+        stroke.Color = UI_ENGINE.tokenColor(skin,spec.strokeColor,UI_ENGINE.mix(target,skin.p.shadow,0.8))
+        stroke.Transparency = UI_ENGINE.finite(spec.strokeAlpha,0.55,0,1); stroke.Thickness = 1
+        if caps.strokeScaledSize then stroke.StrokeSizingMode = Enum.StrokeSizingMode.ScaledSize; stroke.Thickness = UI_ENGINE.finite(spec.strokeThickness,0.035,0.001,0.15) end
+        stroke.Parent = label
+    end
+    local shadowSpec = spec.shadow
+    if shadowSpec == nil and spec.display and skin.textShadow then shadowSpec = true end
+    local shadow
+    if shadowSpec == true then shadowSpec = {} end
+    if type(shadowSpec) == "table" then
+        -- Clone only after all text/font/stroke/constraint settings. The copy is
+        -- a sibling, not a child: identical bounds, lower ZIndex, shifted down.
+        shadow = label:Clone(); shadow.Name = label.Name .. "Shadow"; shadow.ZIndex = label.ZIndex-1
+        local ox = UI_ENGINE.finite(shadowSpec.x or shadowSpec.offsetX,0,-0.5,0.5)
+        local oy = UI_ENGINE.finite(shadowSpec.y or shadowSpec.offsetY,0.065,-0.5,0.5)
+        shadow.Position = label.Position + UDim2.fromScale(ox,oy)
+        local color = UI_ENGINE.tokenColor(skin,shadowSpec.color,skin.p.shadow)
+        shadow.TextColor3 = color; shadow.TextTransparency = UI_ENGINE.finite(shadowSpec.alpha,0,0,1)
+        local ss = shadow:FindFirstChild("ArenaTextStroke")
+        if ss then ss.Color = color; ss.Transparency = shadow.TextTransparency end
+        shadow:SetAttribute("ArenaTextShadow",true)
+        label:SetAttribute("ArenaShadowOffsetX",ox); label:SetAttribute("ArenaShadowOffsetY",oy); label:SetAttribute("ArenaShadowZDelta",UI_ENGINE.finite(shadowSpec.zIndexDelta,1,1,20))
+        local link = Instance.new("ObjectValue"); link.Name="ArenaShadowTarget"; link.Value=shadow; link.Parent=label
+        shadow.Parent = block
+    end
+    block.Parent = parent; label.Parent = block
+    return label, shadow, block
+end
+
+function UI_ENGINE.assetRef(value)
+    if type(value) == "table" then value = value.image or value.textureImage or value.assetId or value.id end
+    if value == nil then return nil end
+    local s = tostring(value)
+    if s == "" then return nil end
+    if string.match(s,"^%d+$") then return "rbxassetid://"..s end
+    if string.match(s,"^rbxassetid://%d+$") or string.match(s,"^rbxasset://[%w%/%._%-]+$") then return s end
+    error("BAD_ARGS: image must be a numeric Roblox image/decal id, rbxassetid://id or built-in rbxasset:// path; never invent an id")
+end
+
+function UI_ENGINE.roleAsset(ctx, role, spec)
+    local map = ctx.assets or {}
+    return UI_ENGINE.assetRef(spec.textureImage or spec.backgroundTexture or spec.textureId or map[role] or map[string.lower(tostring(role or "card"))])
+end
+
+function UI_ENGINE.composeWidget(root, skin, args)
+    root = UI_ENGINE.copy(root)
+    local mode = args.composition or skin.composition or "gallery"
+    root.composition = mode
+    root.corner = args.corner or root.corner
+    local explicitCorner = args.corner ~= nil
+    root.textures = nil
+    local grid, header
+    for _, child in ipairs(root.children or {}) do
+        if child.layout and child.layout.kind == "grid" then grid = child end
+        if child.id == "Header" then header = child end
+    end
+    if mode == "ledger" or mode == "console" then
+        root.padding = mode == "console" and 0.025 or 0.04
+        if not explicitCorner then root.corner = "crisp" end; root.gloss = false; root.decor = false
+        if grid then
+            grid.layout = {kind="list",dir="vertical",gap=1.2}
+            local n = math.max(1,#(grid.children or {}))
+            for _, card in ipairs(grid.children or {}) do
+                card.rect = {x=50,y=50,w=100,h=math.max(8,(100-(n-1)*1.2)/n)}
+                card.layout = {kind="list",dir="horizontal",gap=2}; card.corner="crisp"; card.gloss=false
+            end
+        end
+    elseif mode == "sidebar" and header and grid then
+        root.layout = {kind="none"}; root.padding=0.025
+        header.rect={x=14,y=50,w=25,h=100}; header.layout={kind="none"}; header.corner="crisp"
+        header.text = header.text or {}; header.text.xAlign="Center"
+        header.children = nil
+        grid.rect={x=64,y=50,w=70,h=100}; grid.layout.cols=2
+    elseif mode == "hero" and grid and grid.children and #grid.children > 1 then
+        root.layout={kind="none"}; root.padding=0.035
+        if header then header.rect={x=50,y=10,w=100,h=16}; header.text=header.text or {}; header.text.display=true; header.text.shadow=true end
+        local first=grid.children[1]; first.rect={x=25,y=59,w=46,h=76}; first.hero=true
+        table.remove(grid.children,1)
+        grid.rect={x=76,y=59,w=44,h=76}; grid.layout.cols=1
+        table.insert(root.children,first)
+    elseif mode == "editorial" then
+        root.padding=0.055; if not explicitCorner then root.corner="sharp" end; root.gloss=false; root.outline=false
+        if header then header.rect.h=18; header.fill="surface"; header.text=header.text or {}; header.text.display=true; header.text.xAlign="Left" end
+        if grid then grid.layout.cols=2; grid.layout.gap=4 end
+    elseif mode == "floating" then
+        root.padding=0.045; root.fillAlpha=0.18
+        if grid then grid.layout.gap=4; grid.layout.cols=2 end
+    end
+    -- Item artwork is local to each card. Never tile a background over icons.
+    if grid and type(args.items) == "table" then
+        for i, card in ipairs(grid.children or {}) do
+            local item=args.items[i]
+            if type(item)=="table" and (item.image or item.icon) then card.image=item.image or item.icon; card.imageFit="fit" end
+        end
+    end
+    return root
+end
+
+-- Polygon math is separate from Instance creation so it can be tested exactly.
+function UI_ENGINE.cross(a,b,c) return (b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x) end
+function UI_ENGINE.insideTriangle(p,a,b,c)
+    local a1,a2,a3=UI_ENGINE.cross(a,b,p),UI_ENGINE.cross(b,c,p),UI_ENGINE.cross(c,a,p)
+    return (a1>=-1e-8 and a2>=-1e-8 and a3>=-1e-8) or (a1<=1e-8 and a2<=1e-8 and a3<=1e-8)
+end
+function UI_ENGINE.segmentsCross(a,b,c,d)
+    local function on(p,q,r) return q.x>=math.min(p.x,r.x)-1e-8 and q.x<=math.max(p.x,r.x)+1e-8 and q.y>=math.min(p.y,r.y)-1e-8 and q.y<=math.max(p.y,r.y)+1e-8 end
+    local a1,a2,a3,a4=UI_ENGINE.cross(a,b,c),UI_ENGINE.cross(a,b,d),UI_ENGINE.cross(c,d,a),UI_ENGINE.cross(c,d,b)
+    if ((a1>1e-8 and a2<-1e-8) or (a1<-1e-8 and a2>1e-8)) and ((a3>1e-8 and a4<-1e-8) or (a3<-1e-8 and a4>1e-8)) then return true end
+    return (math.abs(a1)<1e-8 and on(a,c,b)) or (math.abs(a2)<1e-8 and on(a,d,b)) or (math.abs(a3)<1e-8 and on(c,a,d)) or (math.abs(a4)<1e-8 and on(c,b,d))
+end
+function UI_ENGINE.polygonTriangles(points)
+    local p, area = {}, 0
+    for _,v in ipairs(points or {}) do
+        local q={x=tonumber(v[1] or v.x),y=tonumber(v[2] or v.y)}
+        if not q.x or not q.y or q.x~=q.x or q.y~=q.y or q.x<0 or q.x>100 or q.y<0 or q.y>100 then error("BAD_ARGS: polygon points must be finite {x,y} in 0..100") end
+        local last=p[#p]
+        if not last or math.abs(last.x-q.x)+math.abs(last.y-q.y)>1e-8 then table.insert(p,q) end
+    end
+    if #p>1 and math.abs(p[1].x-p[#p].x)+math.abs(p[1].y-p[#p].y)<1e-8 then table.remove(p) end
+    if #p<3 or #p>16 then error("BAD_ARGS: polygon needs 3..16 distinct vertices") end
+    for i=1,#p do local a,b=p[i],p[i%#p+1]; area=area+a.x*b.y-b.x*a.y end
+    for i=1,#p do for j=i+1,#p do
+        if j~=i+1 and not (i==1 and j==#p) and UI_ENGINE.segmentsCross(p[i],p[i%#p+1],p[j],p[j%#p+1]) then error("BAD_ARGS: polygon edges must not intersect") end
+    end end
+    if math.abs(area)<1 then error("BAD_ARGS: degenerate polygon") end
+    local ids,triangles={},{}
+    for i=1,#p do table.insert(ids,i) end
+    local sign=area>0 and 1 or -1
+    local guard=0
+    while #ids>3 do
+        local found=false; guard=guard+1; if guard>64 then error("BAD_ARGS: polygon could not be triangulated") end
+        for k=1,#ids do
+            local ia,ib,ic=ids[(k-2)%#ids+1],ids[k],ids[(k)%#ids+1]
+            local a,b,c=p[ia],p[ib],p[ic]
+            if sign*UI_ENGINE.cross(a,b,c)>1e-8 then
+                local blocked=false
+                for _,id in ipairs(ids) do if id~=ia and id~=ib and id~=ic and UI_ENGINE.insideTriangle(p[id],a,b,c) then blocked=true; break end end
+                if not blocked then
+                    table.insert(triangles,{a,b,c}); table.remove(ids,k); found=true; break
+                end
+            end
+        end
+        if not found then error("BAD_ARGS: polygon is degenerate or self-intersecting") end
+    end
+    table.insert(triangles,{p[ids[1]],p[ids[2]],p[ids[3]]})
+    return triangles
+end
+
+function UI_ENGINE.rightTriangleMasks(triangle, aspect)
+    local a,b,c=triangle[1],triangle[2],triangle[3]
+    local function px(p) return {x=p.x*aspect,y=p.y} end
+    a,b,c=px(a),px(b),px(c)
+    local function d2(p,q) return (p.x-q.x)^2+(p.y-q.y)^2 end
+    if d2(a,b)<d2(b,c) then a,b,c=b,c,a end
+    if d2(a,b)<d2(a,c) then a,b,c=a,c,b end
+    local length=math.sqrt(d2(a,b)); if length<1e-8 then error("BAD_ARGS: zero-length triangle edge") end
+    local t=((c.x-a.x)*(b.x-a.x)+(c.y-a.y)*(b.y-a.y))/(length*length)
+    local h={x=a.x+(b.x-a.x)*t,y=a.y+(b.y-a.y)*t}
+    local parts={{h,a,c},{h,b,c}}
+    if t<0.00001 then parts={{a,b,c}} elseif t>0.99999 then parts={{a,b,c}} end
+    local out={}
+    for _,part in ipairs(parts) do
+        local origin,u,v=part[1],part[2],part[3]
+        local w=math.sqrt(d2(origin,u)); local height=math.sqrt(d2(origin,v))
+        if w>1e-8 and height>1e-8 then
+            if UI_ENGINE.cross(origin,u,v)<0 then u,v=v,u; w,height=height,w end
+            local angle=math.atan2(u.y-origin.y,u.x-origin.x)
+            local center={x=origin.x+((u.x-origin.x)+(v.x-origin.x))/2,y=origin.y+((u.y-origin.y)+(v.y-origin.y))/2}
+            table.insert(out,{x=center.x/aspect,y=center.y,w=w/aspect,h=height,rotation=math.deg(angle),diagonal=math.deg(math.atan(height,w))})
+        end
+    end
+    return out
+end
+
+UI_ENGINE.SHAPES={
+    triangle={{0,100},{50,0},{100,100}},
+    trapezoid={{20,0},{80,0},{100,100},{0,100}},
+    parallelogram={{25,0},{100,0},{75,100},{0,100}},
+    diamond={{50,0},{100,50},{50,100},{0,50}},
+    chevron={{0,0},{65,0},{100,50},{65,100},{0,100},{35,50}},
+    hexagon={{25,0},{75,0},{100,50},{75,100},{25,100},{0,50}},
+    arrow={{0,30},{60,30},{60,0},{100,50},{60,100},{60,70},{0,70}},
+}
+
+function UI_ENGINE.shape(parent, skin, args)
+    local caps=UI_ENGINE.caps()
+    local kind=string.lower(tostring(args.shape or args.kind or "trapezoid"))
+    local points=args.points or UI_ENGINE.SHAPES[kind]
+    local rounded=kind=="circle" or kind=="pill"
+    if not rounded and not points then error("BAD_ARGS: unknown shape; use ui_shape action=list or provide points") end
+    local rect=UI_ENGINE.rect(args.rect,args.align)
+    local aspect=UI_ENGINE.finite(args.aspect,(rect.w*1920)/(rect.h*1080),0.05,20)
+    local root=Instance.new("Frame"); root.Name=tostring(args.name or "ArenaShape"); root.BackgroundTransparency=1; root.BorderSizePixel=0
+    root.AnchorPoint=rect.anchor; root.Position=rect.pos; root.Size=rect.size; root.ZIndex=tonumber(args.zIndex) or 1
+    local constraint=Instance.new("UIAspectRatioConstraint"); constraint.AspectRatio=aspect; constraint.DominantAxis=Enum.DominantAxis.Width; constraint.Parent=root
+    local color=UI_ENGINE.tokenColor(skin,args.color,skin.p.accent)
+    local gradient=args.gradient
+    if gradient==nil then gradient=skin.gradient end
+    local gs=UI_ENGINE.gradientSpec(gradient); gs.allowBeta=args.allowBeta==true
+    local groups,frames,gradients=0,0,0
+    local fillFrames={}
+    local triangles,maskCount= nil,0
+    if not rounded then
+        triangles=UI_ENGINE.polygonTriangles(points)
+        for _,tri in ipairs(triangles) do maskCount=maskCount+#UI_ENGINE.rightTriangleMasks(tri,aspect) end
+    end
+    local memoryFallback=not caps.canvasGroup or maskCount>32
+    local function group(name,size,position,rotation,parentHost)
+        groups=groups+1; if groups>32 then error("BUDGET_EXCEEDED: at most 32 CanvasGroups per shape") end
+        local g=Instance.new("CanvasGroup"); g.Name=name; g.BackgroundTransparency=1; g.GroupTransparency=0
+        g.AnchorPoint=Vector2.new(0.5,0.5); g.Size=size; g.Position=position; g.Rotation=rotation or 0; g.ZIndex=1; g.Parent=parentHost
+        return g
+    end
+    local fillHost=root
+    if memoryFallback then
+        fillHost.BackgroundColor3=color; fillHost.BackgroundTransparency=0
+        UI_ENGINE.applyCorner(fillHost,args.corner or "crisp",caps)
+    elseif rounded then
+        fillHost=group("ShapeClip",UDim2.fromScale(1,1),UDim2.fromScale(0.5,0.5),0,root)
+        UI_ENGINE.applyCorner(fillHost,"pill",caps)
+        fillHost.BackgroundColor3=color; fillHost.BackgroundTransparency=0
+        if kind=="circle" then constraint.AspectRatio=1; aspect=1 end
+    else
+        if gradient ~= false and gradient ~= nil then fillHost=group("ShapeComposite",UDim2.fromScale(1,1),UDim2.fromScale(0.5,0.5),0,root); color=Color3.new(1,1,1) end
+        for i,triangle in ipairs(triangles) do
+            for j,mask in ipairs(UI_ENGINE.rightTriangleMasks(triangle,aspect)) do
+                local clip=group("Triangle"..i.."_"..j,UDim2.fromScale(mask.w/100,mask.h/100),UDim2.fromScale(mask.x/100,mask.y/100),mask.rotation,fillHost)
+                -- Rotated oversized rectangle: its top edge is the hypotenuse;
+                -- CanvasGroup clips everything outside the triangular half-plane.
+                local diagonalWidth=1/math.cos(math.rad(mask.diagonal)); local diagonalHeight=1/math.sin(math.rad(mask.diagonal))
+                local fill=Instance.new("Frame"); fill.Name="TriangleFill"; fill.BackgroundColor3=color; fill.BorderSizePixel=0
+                fill.AnchorPoint=Vector2.new(0,0); fill.Position=UDim2.fromScale(1,0)
+                fill.Size=UDim2.fromScale(diagonalWidth,diagonalHeight); fill.Rotation=180-mask.diagonal; fill.ZIndex=1; fill.Parent=clip
+                frames=frames+1; table.insert(fillFrames,fill)
+            end
+        end
+    end
+    local report
+    if gradient ~= false and gradient ~= nil then
+        local targets=(rounded or memoryFallback) and {fillHost} or fillFrames
+        for _,target in ipairs(targets) do
+            local _,r=UI_ENGINE.gradient(target,{{0,skin.p.accentHi},{1,skin.p.accentLo}},gs.rotation,nil,"ArenaShapeGradient",gs)
+            report=r; gradients=gradients+1
+        end
+    end
+    root:SetAttribute("ArenaShape",kind); root:SetAttribute("ArenaGeometryRecipe","ear-clipping -> right triangles -> rotated half-plane frames inside CanvasGroups")
+    root.Parent=parent
+    return root,{shape=kind,canvasGroups=groups,frames=frames,gradients=gradients,gradient=report,aspectLocked=true,aspect=aspect,triangles=triangles and #triangles or 0,clipping="CanvasGroup clips descendants; UICorner alone does not",segmentedGradient=gradients>1,memoryFallback=memoryFallback,fallbackReason=memoryFallback and (not caps.canvasGroup and "CanvasGroup unavailable" or "more than 32 masks") or nil,memoryNote="Static geometry only. Gradients on triangulated shapes repeat per triangle, not one seamless field. Avoid resizing groups every frame; inspect on low graphics quality."}
+end
+
+function UI_ENGINE.path(parent,skin,args)
+    local caps=UI_ENGINE.caps()
+    local points=args.points or {}
+    if #points<2 or #points>50 then error("BAD_ARGS: Path2D needs 2..50 control points") end
+    local rect=UI_ENGINE.rect(args.rect or {0,0,100,100},"topleft")
+    local holder=Instance.new("Frame"); holder.Name=tostring(args.name or "ArenaPath"); holder.BackgroundTransparency=1; holder.BorderSizePixel=0
+    holder.AnchorPoint=rect.anchor; holder.Position=rect.pos; holder.Size=rect.size; holder.ZIndex=tonumber(args.zIndex) or 5
+    local aspect=UI_ENGINE.finite(args.aspect,16/9,0.05,20)
+    if not (caps.path2D and caps.pathControlPoints) then local lock=Instance.new("UIAspectRatioConstraint"); lock.AspectRatio=aspect; lock.DominantAxis=Enum.DominantAxis.Width; lock.Parent=holder end
+    local color=UI_ENGINE.tokenColor(skin,args.color,skin.p.accent)
+    local native,controlPoints=caps.path2D and caps.pathControlPoints,nil
+    local segments={}
+    local made,mode
+    if native then
+        made=Instance.new("Path2D"); made.Name="Path"; made.Color3=color; made.Thickness=UI_ENGINE.finite(args.thickness,3,0,100); made.Closed=args.closed==true and #points>=3; made.ZIndex=1
+        controlPoints={}
+        for _,v in ipairs(points) do
+            local x=UI_ENGINE.finite(v[1] or v.x,0,-100,200)/100; local y=UI_ENGINE.finite(v[2] or v.y,0,-100,200)/100
+            local tangents=v.tangents or {}; local l,r=v.left or tangents.left or {},v.right or tangents.right or {}
+            table.insert(controlPoints,Path2DControlPoint.new(UDim2.fromScale(x,y),UDim2.fromScale((tonumber(l[1] or l.x) or 0)/100,(tonumber(l[2] or l.y) or 0)/100),UDim2.fromScale((tonumber(r[1] or r.x) or 0)/100,(tonumber(r[2] or r.y) or 0)/100)))
+        end
+        made:SetControlPoints(controlPoints); made.Parent=holder; mode="Path2D"
+    else
+        if args.closed==true then table.insert(points,points[1]) end
+        for i=2,#points do
+            local a,b=points[i-1],points[i]
+            local ax,ay=(tonumber(a[1] or a.x) or 0)/100,(tonumber(a[2] or a.y) or 0)/100
+            local bx,by=(tonumber(b[1] or b.x) or 0)/100,(tonumber(b[2] or b.y) or 0)/100
+            local dx,dy=(bx-ax)*aspect,(by-ay); local length=math.sqrt(dx*dx+dy*dy)
+            local line=Instance.new("Frame"); line.Name="PathSegment"; line.BackgroundColor3=color; line.BorderSizePixel=0; line.AnchorPoint=Vector2.new(0.5,0.5)
+            line.Position=UDim2.fromScale((ax+bx)/2,(ay+by)/2); line.Size=UDim2.new(length/aspect,0,0,UI_ENGINE.finite(args.thickness,3,0,100)); line.Rotation=math.deg(math.atan2(dy,dx)); line.Parent=holder; table.insert(segments,line)
+        end
+        mode="straight-frame fallback"
+    end
+    local gradientReport
+    if args.gradient ~= nil and args.gradient ~= false then
+        local gs=UI_ENGINE.gradientSpec(args.gradient); gs.allowBeta=args.allowBeta==true
+        for _,target in ipairs(native and {made} or segments) do
+            local _,r=UI_ENGINE.gradient(target,{{0,skin.p.accentHi},{1,skin.p.accentLo}},gs.rotation,nil,"ArenaPathGradient",gs); gradientReport=r
+        end
+    end
+    holder.Parent=parent
+    return holder,{mode=mode,points=#points,strokeOnly=true,gradient=gradientReport,note="Path2D renders a stroked spline, not a filled polygon. Use ui_shape for filled geometry. Tangents are relative to each control point."}
+end
+
+UI_ENGINE.TEXT_SHADOW_RUNTIME = [==[
+-- Keep duplicated text shadows synchronized with live text changes.
+local root = script.Parent
+local function bind(label)
+    local link = label:FindFirstChild("ArenaShadowTarget")
+    local shadow = link and link.Value
+    if not shadow then return end
+    local function sync()
+        shadow.Text = label.Text; shadow.TextSize = label.TextSize
+        shadow.Size = label.Size; shadow.AnchorPoint = label.AnchorPoint
+        shadow.Position = label.Position + UDim2.fromScale(label:GetAttribute("ArenaShadowOffsetX") or 0, label:GetAttribute("ArenaShadowOffsetY") or 0.065)
+        shadow.ZIndex = label.ZIndex - (label:GetAttribute("ArenaShadowZDelta") or 1)
+        shadow.TextTransparency = label.TextTransparency; shadow.TextWrapped = label.TextWrapped
+        shadow.RichText = label.RichText; shadow.TextXAlignment = label.TextXAlignment
+        shadow.TextYAlignment = label.TextYAlignment; shadow.Visible = label.Visible
+        pcall(function() shadow.FontFace = label.FontFace end)
+    end
+    for _,property in ipairs({"Text","TextSize","TextTransparency","TextWrapped","RichText","TextXAlignment","TextYAlignment","Visible","FontFace","Size","Position","AnchorPoint"}) do
+        pcall(function() label:GetPropertyChangedSignal(property):Connect(sync) end)
+    end
+    sync()
+end
+for _,inst in ipairs(root:GetDescendants()) do
+    if inst:IsA("TextLabel") and inst:FindFirstChild("ArenaShadowTarget") then bind(inst) end
+end
+root.DescendantAdded:Connect(function(inst)
+    if inst:IsA("TextLabel") then task.defer(function() if inst.Parent and inst:FindFirstChild("ArenaShadowTarget") then bind(inst) end end) end
+end)
+]==]
+
+function UI_ENGINE.installTextRuntime(screen, ctx)
+    if not screen or not ctx.textShadows or ctx.textShadows == 0 then return nil end
+    local existing=screen:FindFirstChild("ArenaTextEffects")
+    if existing then return existing end
+    local script=Instance.new("LocalScript"); script.Name="ArenaTextEffects"
+    local written=pcall(function() script.Source=UI_ENGINE.TEXT_SHADOW_RUNTIME end)
+    if not written then script:Destroy(); table.insert(ctx.warnings,"TEXT_SHADOW_SYNC_UNAVAILABLE: static shadows built; live Text changes need the same update on both labels"); return nil end
+    script.Parent=screen; return script
+end
+
+-- Preflight the entire declarative tree BEFORE creating the first Instance.
+function UI_ENGINE.preflight(spec, depth, seen)
+    depth = depth or 0; seen = seen or {}
+    if depth > 8 then error("BAD_ARGS: UI nesting exceeds 8 levels") end
+    if type(spec) ~= "table" then error("BAD_ARGS: UI node must be an object") end
+    if seen[spec] then error("BAD_ARGS: cyclic UI specification") end
+    seen[spec] = true
+    if spec.text ~= nil then
+        local ts = type(spec.text) == "table" and spec.text or {value=spec.text}
+        local refused = UI_ENGINE.guardEmoji(ts,ts.role or spec.role,"ui")
+        if refused then error(refused) end
+    end
+    if spec.image ~= nil then UI_ENGINE.assetRef(spec.image) end
+    if spec.gradient ~= nil and spec.gradient ~= false then
+        local gs = UI_ENGINE.gradientSpec(spec.gradient)
+        if gs.type~="linear" and gs.type~="radial" and gs.type~="elliptical" and gs.type~="conical" then error("BAD_ARGS: unknown gradient type") end
+        if gs.tileMode~="clamp" and gs.tileMode~="repeat" and gs.tileMode~="mirror" then error("BAD_ARGS: unknown gradient tileMode") end
+    end
+    local children = spec.children or spec.items or {}
+    if type(children) ~= "table" then error("BAD_ARGS: children must be an array") end
+    for _,child in ipairs(children) do UI_ENGINE.preflight(child,depth+1,seen) end
+    if type(spec.repeatSpec) == "table" and spec.repeatSpec.template then UI_ENGINE.preflight(spec.repeatSpec.template,depth+1,seen) end
+    seen[spec] = nil
+end
+
+function UI_ENGINE.preflightArgs(args)
+    for _,key in ipairs({"title","speaker","line","progressLabel","claimLabel"}) do
+        if args[key] ~= nil then local refused=UI_ENGINE.guardEmoji(args[key],"label","ui"); if refused then error(refused) end end
+    end
+    for _,item in ipairs(type(args.items)=="table" and args.items or {}) do
+        if type(item)=="table" then
+            for _,key in ipairs({"name","label","price","cost"}) do
+                if item[key]~=nil then local refused=UI_ENGINE.guardEmoji(item[key],"label","ui"); if refused then error(refused) end end
+            end
+        else local refused=UI_ENGINE.guardEmoji(item,"label","ui"); if refused then error(refused) end end
+    end
+end
+
+function UI_ENGINE.screenOf(inst)
+    local p=inst
+    while p do if p:IsA("LayerCollector") then return p end; p=p.Parent end
+    return nil
+end
+
+function UI_ENGINE.gradientCount(inst)
+    local screen=UI_ENGINE.screenOf(inst) or inst
+    local count=0
+    for _,child in ipairs(screen:GetDescendants()) do if child:IsA("UIGradient") then count=count+1 end end
+    return count
+end
+
+
+tools.ui_text = function(args)
+    args=args or {}
+    local parent,err=resolveRef(args.parentRef); if not parent then return failCode("REF_NOT_FOUND",err) end
+    local text=type(args.text)=="table" and args.text or {value=args.value or args.text,role=args.role,shadow=args.shadow,stroke=args.stroke,fontSize=args.fontSize,maxFontSize=args.maxFontSize,align=args.align,rect=args.rect,color=args.color,allowEmojiText=args.allowEmojiText}
+    local valid,why=pcall(function() local refusal=UI_ENGINE.guardEmoji(text,text.role or args.role,"ui_text"); if refusal then error(refusal) end end)
+    if not valid then return failCode("BAD_ARGS",tostring(why)) end
+    local skin=UI_ENGINE.resolveSkin(args.skin or "minimal",args.brand,args.colors)
+    local label,shadow=UI_ENGINE.textNode(parent,text,skin,UI_ENGINE.caps(),parent:IsA("GuiObject") and parent.BackgroundColor3 or skin.p.surface)
+    UI_ENGINE.installTextRuntime(UI_ENGINE.screenOf(parent),{textShadows=shadow and 1 or 0})
+    waypoint("ui text")
+    return ok({text=describeRef(label),shadow=shadow and describeRef(shadow) or nil})
+end
+
+tools.ui_gradient = function(args)
+    args=args or {}
+    local action=string.lower(tostring(args.action or "apply"))
+    if action~="apply" and action~="preview" then return failCode("BAD_ARGS","action must be apply or preview") end
+    local target,err
+    if action=="apply" then target,err=resolveRef(args.ref or args.targetRef); if not target then return failCode("REF_NOT_FOUND",err) end end
+    local supported=target and (target:IsA("GuiObject") or target:IsA("UIStroke") or target:IsA("Path2D"))
+    if action=="apply" and (not supported or target:IsA("ScrollingFrame") or target:IsA("TextBox")) then return failCode("BAD_ARGS","UIGradient target must be a supported GuiObject, UIStroke or Path2D (not ScrollingFrame/TextBox)") end
+    local spec=UI_ENGINE.gradientSpec(args.gradient or args)
+    spec.allowBeta=args.allowBeta==true
+    local skin=UI_ENGINE.resolveSkin(args.skin or "glass",args.brand,args.colors)
+    local stops=args.stops or args.colors or {{0,skin.p.accentHi},{1,skin.p.accentLo}}
+    local normalized={}
+    for _,stop in ipairs(stops) do table.insert(normalized,{tonumber(stop[1] or stop.time),UI_ENGINE.tokenColor(skin,stop[2] or stop.color,nil)}) end
+    if action=="preview" then
+        local probe=Instance.new("Frame")
+        local made,report=UI_ENGINE.gradient(probe,normalized,spec.rotation,args.transparency,"Preview",spec)
+        probe:Destroy()
+        return ok({preview=true,gradient=report,capabilities=UI_ENGINE.caps()})
+    end
+    if UI_ENGINE.gradientCount(target)>=950 then return failCode("GRADIENT_BUDGET","This screen already has at least 950 gradients; stay below Roblox's 1000 active-gradient guidance.") end
+    local name=tostring(args.name or "ArenaGradient")
+    local old=target:FindFirstChild(name)
+    if old and not old:IsA("UIGradient") then return failCode("BAD_ARGS","A non-gradient child already uses this name") end
+    if old and args.replace~=true then return failCode("BAD_ARGS","Gradient name already exists; pass replace=true to replace it") end
+    local made,report=UI_ENGINE.gradient(target,normalized,spec.rotation,args.transparency,name,spec)
+    if old then old:Destroy() end
+    waypoint("ui gradient "..report.type)
+    return ok({gradient=describeRef(made),report=report,parent=describeRef(target),warnings=report.warnings})
+end
+
+tools.ui_shape = function(args)
+    args=args or {}
+    if string.lower(tostring(args.action or "build"))=="list" then
+        local names={}; for name in pairs(UI_ENGINE.SHAPES) do table.insert(names,name) end; table.sort(names)
+        return ok({shapes=names,custom="points: 3..16 non-self-intersecting vertices in 0..100",rounded={"circle","pill"},recipe="Ear clipping -> right-triangle altitude split -> rotated half-plane Frame inside CanvasGroup. Aspect ratio is locked; groups are static."})
+    end
+    local parent,err=resolveRef(args.parentRef or "game.StarterGui"); if not parent then return failCode("REF_NOT_FOUND",err) end
+    local host,screen=UI_ENGINE.ensureScreen(parent,args)
+    local skin=UI_ENGINE.resolveSkin(args.skin or "scifi",args.brand,args.colors)
+    local made,report
+    local success,why=pcall(function() made,report=UI_ENGINE.shape(host,skin,args) end)
+    if not success then if screen then screen:Destroy() end; return failCode("BAD_ARGS",tostring(why),{rolledBack=true}) end
+    waypoint("ui shape "..report.shape)
+    return ok({shape=describeRef(made),report=report,screenGui=screen and describeRef(screen) or nil})
+end
+
+tools.ui_path = function(args)
+    args=args or {}
+    local parent,err=resolveRef(args.parentRef or "game.StarterGui"); if not parent then return failCode("REF_NOT_FOUND",err) end
+    local host,screen=UI_ENGINE.ensureScreen(parent,args)
+    local skin=UI_ENGINE.resolveSkin(args.skin or "glass",args.brand,args.colors)
+    local made,report
+    local success,why=pcall(function() made,report=UI_ENGINE.path(host,skin,args) end)
+    if not success then if screen then screen:Destroy() end; return failCode("BAD_ARGS",tostring(why),{rolledBack=true}) end
+    waypoint("ui path")
+    return ok({path=describeRef(made),report=report,screenGui=screen and describeRef(screen) or nil})
+end
+
+tools.ui_design = function(args)
+    args=args or {}
+    local skin=UI_ENGINE.resolveSkin(args.skin or args.name or "minimal",args.brand,args.colors)
+    local action=string.lower(tostring(args.action or "plan"))
+    if action~="plan" and action~="recipes" then return failCode("BAD_ARGS","action must be plan or recipes") end
+    local palette={}; for key,value in pairs(skin.p) do palette[key]="#"..value:ToHex() end
+    return ok({
+        skin=skin.key,palette=palette,family=skin.family,composition=skin.composition,signature=skin.signature,
+        texture={query=skin.textureQuery,scope="root",fit=skin.textureFit or "crop",workflow="ui_texture action=inventory -> action=search -> validate_asset -> assets={panel=id,card=id}; item icons use items[].image"},
+        gradient=skin.gradient,iconStyle=skin.iconStyle,textShadow=skin.textShadow==true,
+        corner={policy="role-aware; large panels are not pills",panelMaxScale=0.045,cardMaxScale=0.075,formula="radiusPx = min(width,height)*Scale + Offset; capped at half the shortest side",clipping="UICorner clips input/background, not descendants; CanvasGroup clips descendants"},
+        workflow={"Inspect existing UI and preserve its architecture/palette","Choose a composition and material family, not just a color","Find real project/Toolbox/user images; never invent ids","Build with build_interface/ui_widget/ui_shape/ui_path","Audit phone and desktop, check actual image loading and text fit","Do not call emoji-only labels finished skins/icons"},
+        beta={optIn="allowBeta=true",publishRule="No live-game publication with upgraded gradient properties during Studio Beta",fallback="Linear/Clamp/Scale=1; explicitly report visual degradation"},
+        example={tool="ui_widget",args={kind=args.widget or "shop",skin=skin.key,brand=args.brand or skin.brand,items={{name="Speed Coil",price="R$ 99"}}},assetNote="Add assets/items[].image only after obtaining real verified ids; no placeholder id is executable."},
+    })
+end
+
 tools.ui_widget = function(args)
     args = args or {}
     local action = string.lower(tostring(args.action or "build"))
@@ -14679,10 +15392,13 @@ tools.ui_widget = function(args)
     if def == nil then
         return failCode("BAD_ARGS", "Unknown widget '" .. name .. "'. Known: " .. table.concat(UI_ENGINE.widgetNames(), ", ") .. ".")
     end
+    local skin = UI_ENGINE.resolveSkin(args.skin or "pop", args.brand, args.colors)
+    local rootSpec = UI_ENGINE.composeWidget(def.build(args, skin), skin, args)
+    local valid, why = pcall(function() UI_ENGINE.preflightArgs(args); UI_ENGINE.preflight(rootSpec) end)
+    if not valid then return failCode("BAD_ARGS", tostring(why), {rolledBack=true}) end
     local parent, err = resolveRef(args.parentRef or "game.StarterGui")
     if not parent then return failCode("REF_NOT_FOUND", err) end
     local caps = UI_ENGINE.caps()
-    local skin = UI_ENGINE.resolveSkin(args.skin or "pop", args.brand, args.colors)
     local host, createdScreen
     if string.lower(tostring(args.surfaceType or args.guiType or "")) == "billboard" then
         local anchorParent = parent
@@ -14691,7 +15407,6 @@ tools.ui_widget = function(args)
         host, createdScreen = UI_ENGINE.ensureScreen(parent, args)
     end
     local ctx = UI_ENGINE.newContext(args, skin)
-    local rootSpec = def.build(args, skin)
     if args.name ~= nil or args.id ~= nil then rootSpec.id = tostring(args.name or args.id) end
     if args.decor ~= nil then rootSpec.decor = args.decor end
     if args.gloss ~= nil then rootSpec.gloss = args.gloss end
@@ -14701,6 +15416,7 @@ tools.ui_widget = function(args)
         if createdScreen then createdScreen:Destroy() end
         return failCode("BAD_ARGS", "The widget could not be built (nesting or budget limit).")
     end
+    UI_ENGINE.installTextRuntime(createdScreen or UI_ENGINE.screenOf(built.wrapper), ctx)
     waypoint("ui widget " .. name)
     local warnings = (#ctx.warnings > 0) and table.concat(ctx.warnings, " | ") or nil
     return ok({
@@ -14724,6 +15440,30 @@ tools.ui_widget = function(args)
 end
 
 tools.ui_texture = function(args)
+    args = args or {}
+    local action=string.lower(tostring(args.action or "recipe"))
+    if action=="inventory" then
+        local root,err=resolveRef(args.rootRef or args.ref or "game")
+        if not root then return failCode("REF_NOT_FOUND",err) end
+        local found,seen={},{}
+        local roots={root}
+        if root==game then roots={game:GetService("StarterGui"),game:GetService("ReplicatedStorage"),game:GetService("ReplicatedFirst"),game:GetService("Workspace")} end
+        for _,scope in ipairs(roots) do
+            for _,inst in ipairs(scope:GetDescendants()) do
+                local value
+                if inst:IsA("ImageLabel") or inst:IsA("ImageButton") then value=inst.Image
+                elseif inst:IsA("Decal") or inst:IsA("Texture") then value=inst.Texture end
+                if value and tostring(value)~="" and not seen[value] then
+                    seen[value]=true
+                    table.insert(found,{image=tostring(value),source=describeRef(inst),name=inst.Name,className=inst.ClassName})
+                    if #found>=100 then break end
+                end
+            end
+            if #found>=100 then break end
+        end
+        return ok({images=found,count=#found,scope=describeRef(root),note="Existing project content only. This is not an inventory of every private upload on the account. Ask for an uploaded asset id or search the Toolbox; never invent one."})
+    end
+    if action~="recipe" and action~="search" then return failCode("BAD_ARGS","action must be recipe, inventory or search") end
     local skin = UI_ENGINE.resolveSkin(args.skin or "glass", args.brand, args.colors)
     local recipe = UI_ENGINE.textureRecipe(skin, args)
     local warnings = {}
@@ -14731,7 +15471,8 @@ tools.ui_texture = function(args)
     return ok({
         engine = UI_ENGINE.ENGINE_VERSION,
         recipe = { mode = recipe.mode, usage = recipe.usage, textureId = recipe.textureId, fit = recipe.fit, tile = { recipe.tile.X, recipe.tile.Y }, tint = "#" .. recipe.tint:ToHex(), instruction = recipe.instruction },
-        skin = skin.key,
+        skin = skin.key, textureQuery=skin.textureQuery,
+        nextSteps={"ui_texture action=inventory finds images already used in this Place", "ui_texture action=search query='"..tostring(skin.textureQuery or "seamless texture").."' searches real Toolbox decals", "validate_asset each chosen id, then pass assets={panel=id,card=id} and items[].image for foreground artwork", "Use backgroundMode=texture, textureScope=root; do not inherit one background over every icon"},
         warnings = warnings,
         honest = recipe.note or "real texture id accepted - the engine uses it before any procedural fill",
     })
@@ -14780,6 +15521,9 @@ tools.ui_capabilities = function(args)
         skins = UI_ENGINE.skinNames(),
         corners = { "sharp", "crisp", "soft", "round", "chunky", "pill" },
         devices = { "phone", "tablet", "desktop", "ultrawide" },
+        gradientTypes={"Linear","Radial","Elliptical","Conical"},gradientTileModes={"Clamp","Repeat","Mirror"},
+        gradientPolicy={optIn="allowBeta=true",scaleRange={0.001,100},maxColorStops=6,activeBudget=1000,linearFallback=true,livePublishDuringBeta=false},
+        geometry={shapes={"triangle","trapezoid","parallelogram","diamond","chevron","hexagon","arrow","circle","pill"},customPolygonMaxVertices=16,canvasGroupsPerShape=32,pathControlPoints=50},
         measured = "Every entry was probed with Instance.new/pcall in THIS Studio session - it is measured, not assumed from training data.",
     })
 end
@@ -14813,13 +15557,13 @@ tools.ui_skin = function(args)
             local haystack = string.lower(tostring(name) .. " " .. tostring(entry.label) .. " " .. tostring(entry.bestFor) .. " " .. tostring(entry.mood))
             if search == nil or string.find(haystack, search, 1, true) ~= nil then
                 table.insert(list, { name = name, label = entry.label, bestFor = entry.bestFor, mood = entry.mood, corner = entry.corner,
-                    texture = entry.texture, textureAsBackground = entry.textureAsBackground == true, energy = entry.energy, strokes = #(entry.strokes or {}), shadows = #(entry.shadows or {}),
+                    texture = entry.texture, textureAsBackground = entry.textureAsBackground == true, family = entry.family or (UI_ENGINE.DIRECTIONS[name] or {}).family, composition = (UI_ENGINE.DIRECTIONS[name] or {}).composition, signature = (UI_ENGINE.DIRECTIONS[name] or {}).signature, textureQuery = (UI_ENGINE.DIRECTIONS[name] or {}).textureQuery, energy = entry.energy, strokes = #(entry.strokes or {}), shadows = #(entry.shadows or {}),
                     strokeGradient = (entry.strokes and entry.strokes[1] and entry.strokes[1].grad) == true,
                     outline = outlineName(entry), gloss = (entry.gloss ~= nil and entry.gloss ~= false), decor = decorName(entry) })
             end
         end
         return ok({ skins = list, count = #list, total = #UI_ENGINE.skinNames(), filteredBy = search,
-            note = "40 skins (8.0.5): pick by bestFor / game type. The 16 new styles add thick outlines (comic/sticker/chunky/marker/neon/engraved/tape), glossy buttons and clouds/sparkles/confetti where the style calls for them; all classic skins stay unchanged. None is a dark dashboard by default. Pass skin + brand to ui_widget/build_interface/build_surface." })
+            note = tostring(#UI_ENGINE.skinNames()) .. " skins / distinct art directions (8.1.0). Choose family + composition + signature + real material, not just color. ui_design explains the executable recipe; ui_widget applies gallery/sidebar/hero/ledger/console/editorial/floating layouts. Existing project art direction still wins." })
     end
     if action == "get" or action == "resolve" or action == "preview" then
         local skin = UI_ENGINE.resolveSkin(args.skin or args.name or "glass", args.brand, args.colors)
@@ -14840,6 +15584,7 @@ tools.ui_skin = function(args)
         end
         return ok({ skin = skin.key, label = skin.label, bestFor = skin.bestFor, mood = skin.mood, corner = skin.corner, texture = skin.texture,
             textureAsBackground = skin.textureAsBackground == true, energy = skin.energy, fonts = skin.fonts, palette = hex,
+            family=skin.family,composition=skin.composition,signature=skin.signature,textureQuery=skin.textureQuery,gradient=skin.gradient,iconStyle=skin.iconStyle,textShadow=skin.textShadow==true,
             textContrast = UI_ENGINE.contrast(skin.p.text, skin.p.surface),
             generic = UI_ENGINE.isGeneric(skin.p.surface),
             outline = outlineInfo, gloss = (skin.gloss ~= nil and skin.gloss ~= false), decor = decorInfo,
@@ -14916,6 +15661,9 @@ tools.ui_skin = function(args)
 end
 
 tools.build_surface = function(args)
+    args = args or {}
+    local valid, why = pcall(function() UI_ENGINE.preflight(args.surface or args); UI_ENGINE.preflightArgs(args) end)
+    if not valid then return failCode("BAD_ARGS", tostring(why), {rolledBack=true}) end
     local parent, err = resolveRef(args.parentRef or "game.StarterGui")
     if not parent then return failCode("REF_NOT_FOUND", err) end
     local caps = UI_ENGINE.caps()
@@ -14930,6 +15678,7 @@ tools.build_surface = function(args)
     else host, createdScreen = UI_ENGINE.ensureScreen(parent, args) end
     local ctx = UI_ENGINE.newContext(args, skin)
     local spec = args.surface or args
+    if spec.textureImage == nil and spec.backgroundTexture == nil and ctx.textureImage ~= nil and args.textureScope ~= "all" then spec.textureImage = ctx.textureImage end
     local built = UI_ENGINE.buildNode(spec, host, skin, caps, ctx, 0, args.inLayout == true, false)
     if built == nil then
         if createdScreen then createdScreen:Destroy() end
@@ -14962,6 +15711,8 @@ tools.build_interface = function(args)
             return failCode("BAD_ARGS", "Provide surfaces=[{id,role,rect,text,children,...}] - each rect is {x,y,w,h} in 0..100 design units of its parent.")
         end
     end
+    local valid, why = pcall(function() for _,spec in ipairs(surfaces) do UI_ENGINE.preflight(spec) end; UI_ENGINE.preflightArgs(args) end)
+    if not valid then return failCode("BAD_ARGS", tostring(why), {rolledBack=true}) end
     local caps = UI_ENGINE.caps()
     local skin = UI_ENGINE.resolveSkin(args.skin or "glass", args.brand, args.colors)
     local refused = UI_ENGINE.guardGeneric(args, skin)
@@ -14974,13 +15725,19 @@ tools.build_interface = function(args)
     if screen == nil and host:IsA("LayerCollector") then screen = host end
     local ctx = UI_ENGINE.newContext(args, skin)
     local roots = {}
-    for _, spec in ipairs(surfaces) do
-        local built = UI_ENGINE.buildNode(spec, host, skin, caps, ctx, 0, false, false)
-        if built then table.insert(roots, describeRef(built.wrapper)) end
-    end
-    if #roots == 0 then
+    local reports={}
+    local buildOk, buildErr = pcall(function()
+        for rootIndex, spec in ipairs(surfaces) do
+            if spec.textureImage == nil and spec.backgroundTexture == nil and ctx.textureImage ~= nil and (args.textureScope == "all" or (args.textureScope ~= "none" and rootIndex == 1)) then spec.textureImage = ctx.textureImage end
+            local built = UI_ENGINE.buildNode(spec, host, skin, caps, ctx, 0, false, false)
+            if built == nil then error("The interface could not be built (nesting or budget limit).") end
+            table.insert(roots, describeRef(built.wrapper)); reports[#reports+1]=built.report
+        end
+    end)
+    if not buildOk or #roots == 0 then
+        for _,root in ipairs(roots) do local inst=resolveRef(root.id or root.path); if inst then inst:Destroy() end end
         if createdScreen then createdScreen:Destroy() end
-        return failCode("BAD_ARGS", "No surface could be built from the given specification.")
+        return failCode("BUILD_ROLLED_BACK",tostring(buildErr or "No surface could be built."),{rolledBack=true})
     end
 
     local motionSpec = args.motion
@@ -15002,15 +15759,16 @@ tools.build_interface = function(args)
         end
     end
     if ctx.overBudget then table.insert(ctx.warnings, "surface budget reached - later nodes were skipped") end
-    if ctx.thinSurfaces > 0 then table.insert(ctx.warnings, tostring(ctx.thinSurfaces) .. " surface(s) ended up with fewer than 4 layers") end
+    if ctx.gradients > 900 then table.insert(ctx.warnings,"GRADIENT_BUDGET: more than 900 gradients; Roblox advises staying below 1000 active gradients") end
     if ctx.strokes > 300 then table.insert(ctx.warnings, "more than 300 UIStrokes on screen - Roblox recommends staying below that on low-end devices") end
+    UI_ENGINE.installTextRuntime(screen, ctx)
     waypoint("build interface " .. (screen and screen.Name or "surfaces"))
     local warnings = (#ctx.warnings > 0) and table.concat(ctx.warnings, " | ") or nil
     return ok({
         screenGui = screen and describeRef(screen) or nil,
         roots = roots, surfaces = ctx.count, layers = ctx.layers,
         strokes = ctx.strokes, strokeGradients = ctx.strokeGradients, shadows = ctx.shadows,
-        gradients = ctx.gradients, textureParts = ctx.textureParts, textureBackgrounds = ctx.textureBackgrounds, texts = ctx.texts,
+        gradients = ctx.gradients, textureParts = ctx.textureParts, textureBackgrounds = ctx.textureBackgrounds, texts = ctx.texts, textShadows = ctx.textShadows,
         canvasGroups = ctx.canvasGroups, scrollers = ctx.scrolls, thinSurfaces = ctx.thinSurfaces,
         outlines = ctx.outlines or 0, outlineLayers = ctx.outlineLayers or 0,
         glosses = ctx.glosses or 0, decorNodes = ctx.decorNodes or 0, decorParts = ctx.decorParts or 0,
@@ -15034,7 +15792,8 @@ tools.ui_audit = function(args)
         uiScales = 0, offsetHeavy = 0, texts = 0,
         glowStacks = 0, radialMenus = 0, textureImages = 0, billboards = 0, billboardOffsetSize = 0, textureBackgrounds = 0, textureOverlaysWashed = 0,
         outlines = 0, glosses = 0, decorNodes = 0, decorParts = 0 }
-    local problems = { anchorMismatches = {}, cornerOverflow = {}, contrastFailures = {}, flatSurfaces = {}, genericColors = {},
+    stats.emojiArt = 0; stats.oversizedCorners = 0; stats.betaGradients = 0; stats.path2D = 0
+    local problems = { emojiArt = {}, oversizedCorners = {}, betaGradients = {}, anchorMismatches = {}, cornerOverflow = {}, contrastFailures = {}, flatSurfaces = {}, genericColors = {},
         offsetHeavy = {}, nestedCanvasGroups = {}, textTooSmall = {}, tapTargetsTooSmall = {}, outOfBounds = {},
         billboardOffsetSize = {}, textureWashedOut = {}, decorOveruse = {} }
     local function push(list, inst, detail)
@@ -15071,6 +15830,10 @@ tools.ui_audit = function(args)
                     local cls = mod.ClassName
                     if cls == "UIGradient" then
                         stats.gradients = stats.gradients + 1; hasGradient = true
+                        if mod:GetAttribute("ArenaGradientBeta")==true then
+                            stats.betaGradients=stats.betaGradients+1
+                            push(problems.betaGradients,mod,"Studio Beta gradient: do not publish live until Roblox releases client support")
+                        end
                     elseif cls == "UIStroke" then
                         stats.strokes = stats.strokes + 1; hasStroke = true
                         local scaled = false
@@ -15089,6 +15852,11 @@ tools.ui_audit = function(args)
                     elseif cls == "UICorner" then
                         cornerRadius = mod.CornerRadius.Scale
                     end
+                end
+                if child:IsA("Path2D") then stats.path2D=stats.path2D+1 end
+                if child:IsA("TextLabel") or child:IsA("TextButton") or child:IsA("TextBox") then
+                    local emoji=UI_ENGINE.emojiAudit(child.Text)
+                    if emoji.onlyEmoji then stats.emojiArt=stats.emojiArt+1; push(problems.emojiArt,child,"Emoji-only label is not finished artwork; replace with a real image, ViewportFrame or geometry") end
                 end
                 if child:IsA("CanvasGroup") then
                     stats.canvasGroups = stats.canvasGroups + 1
@@ -15200,6 +15968,15 @@ tools.ui_audit = function(args)
                 local smallest = math.min(box.w, box.h)
                 if smallest < 44 then push(problems.tapTargetsTooSmall, inst, string.format("%s: %.0f px - below the 44 px touch target", tostring(device), smallest)) end
             end
+            local corner=inst:FindFirstChildOfClass("UICorner")
+            if corner and (inst:GetAttribute("ArenaRole")=="panel" or inst:GetAttribute("ArenaBase")==true) then
+                local radius=UI_ENGINE.radiusPixels(corner.CornerRadius,box.w,box.h)
+                local shortest=math.min(box.w,box.h)
+                if shortest>100 and radius>math.max(24,shortest*0.18) then
+                    stats.oversizedCorners=stats.oversizedCorners+1
+                    push(problems.oversizedCorners,inst,string.format("%s: large surface corner %.1f px on shortest side %.1f px; review role-aware radius (not an automatic rewrite)",device,radius,shortest))
+                end
+            end
             if view and (box.w > view[1] * 1.02 or box.h > view[2] * 1.02) then
                 push(problems.outOfBounds, inst, string.format("%s: %.0fx%.0f px is larger than the %dx%d viewport", tostring(device), box.w, box.h, view[1], view[2]))
             end
@@ -15229,6 +16006,8 @@ tools.ui_audit = function(args)
         blandnessScore = blandness, verdict = verdict, failureCount = failures,
         counts = stats, problems = problems, deviceMatrix = matrix,
         strokeBudget = { used = stats.strokes, recommendedMax = 300 },
+        gradientBudget = {used=stats.gradients,recommendedMax=1000,betaInstances=stats.betaGradients},
+        emojiArtFindings = stats.emojiArt,
         engine = UI_ENGINE.ENGINE_VERSION,
         capabilities = caps,
         howToRead = "All values are measurements, not design requirements. blandnessScore describes neutral/flat-surface patterns and has no ideal target; a deliberate plain or dark style remains valid. Every finding names the exact instance id and measured value.",
@@ -16152,7 +16931,7 @@ local PERSISTENT_WRITE_TOOLS = {
     build_polygon_model = true, build_assembly = true,
     mesh_slots = true, mesh_apply = true, mesh_drop = true,
     build_surface = true, build_interface = true,
-    ui_widget = true,
+    ui_widget = true, ui_gradient = true, ui_shape = true, ui_path = true, ui_text = true,
     undo = true, redo = true,
 }
 
@@ -17680,6 +18459,49 @@ tools.parallel = function(args)
     return tools.batch(copy)
 end
 
+
+function UI_ENGINE.guardCommand(tool, args)
+    if type(args) ~= "table" then return nil end
+    local uiTools={build_surface=true,build_interface=true,ui_widget=true,ui_design=true}
+    if uiTools[tool] then return nil end -- declarative preflight validates every text node before mutation
+    local function textCheck(value, context)
+        if type(value) ~= "string" then return nil end
+        return UI_ENGINE.guardEmoji({value=value,allowEmojiText=args.allowEmojiText==true},context,"generic")
+    end
+    local function properties(props)
+        if type(props) ~= "table" then return nil end
+        for key,value in pairs(props) do
+            if key=="Text" or key=="PlaceholderText" then local refusal=textCheck(value,"label"); if refusal then return refusal end end
+        end
+        return nil
+    end
+    if tool=="set_property" or tool=="set_properties" then
+        if args.property=="Text" or args.property=="PlaceholderText" then local refusal=textCheck(args.value,"label"); if refusal then return refusal end end
+        local refusal=properties(args.properties or args.values); if refusal then return refusal end
+    end
+    if tool=="create_instance" then local refusal=properties(args.properties); if refusal then return refusal end end
+    if tool=="bulk_create" then for _,spec in ipairs(args.instances or args.items or {}) do local refusal=properties(spec.properties); if refusal then return refusal end end end
+    if tool=="bulk_set_properties" then for _,spec in ipairs(args.changes or args.items or {}) do local refusal=properties(spec.properties); if refusal then return refusal end end end
+    if tool=="run_lua" or tool=="insert_script" or tool=="set_script_source" or tool=="patch_script" or tool=="bulk_insert_scripts" then
+        local sources={args.source or args.code or args.newText or ""}
+        for _,spec in ipairs(args.scripts or {}) do table.insert(sources,spec.source or spec.code or "") end
+        for _,source in ipairs(sources) do
+            source=tostring(source)
+            local gui=source:find("TextLabel",1,true) or source:find("TextButton",1,true) or source:find("StarterGui",1,true) or source:find("ScreenGui",1,true)
+            if gui and UI_ENGINE.emojiAudit(source).hasEmoji then
+                -- Find literal UI text, not arbitrary identifiers. Emoji-only art
+                -- is never allowed; mixed dialogue needs an explicit opt-in.
+                for literal in string.gmatch(source,'["\']([^"\']*)["\']') do
+                    local audit=UI_ENGINE.emojiAudit(literal)
+                    if audit.onlyEmoji then return "EMOJI_AS_ART_FORBIDDEN: emoji-only UI artwork is forbidden, including in run_lua and inserted scripts. Build real images/geometry." end
+                end
+                if args.allowEmojiText~=true then return "EMOJI_UI_TEXT_OPT_IN: mixed emoji in ordinary dialogue requires allowEmojiText=true and an explicit user requirement. Never use emoji as skins, icons or item artwork." end
+            end
+        end
+    end
+    return nil
+end
+
 executeTool = function(tool, args, insideBatch)
     args = args or {}
     -- Enforce the limitation here as well as at the desktop HTTP boundary so
@@ -17687,6 +18509,8 @@ executeTool = function(tool, args, insideBatch)
     if tool == "sim_start" then
         return simDisabledResult()
     end
+    local emojiRefusal = UI_ENGINE.guardCommand(tool,args)
+    if emojiRefusal then return failCode("EMOJI_AS_ART_FORBIDDEN",emojiRefusal,{hint="Use real image assets, ViewportFrame artwork or constructed geometry. Emoji are not a design shortcut."}) end
     local handler = tools[tool]
     if handler == nil then
         return failCode("UNKNOWN_TOOL", "Unknown tool: " .. tostring(tool), {
@@ -21686,8 +22510,8 @@ $script:BridgeHandlerScript = {
     }
 
     function Get-ActivityToolSets {
-        $read = @('get_bridge_log','get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','sim_status','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait','ui_capabilities','ui_skin','ui_audit','ui_texture','world_style','site_survey','variation','model_audit','world_audit','prop_list','wait_for_user','ack_user_message','ask_user','confirm_action','scaffold_ui_scripts','blender_status','mesh_status','camera_state','terrain_measure')
-        $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','build_polygon_model','build_assembly','mesh_slots','mesh_apply','mesh_drop','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','sim_start','set_context','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute','build_surface','build_interface','ui_glow','ui_radial','prop_place','prop_save','refine','style_lock','world_glow','sim_stop','mesh_cancel','build_mesh_model','mesh_apply_asset','upload_asset','open_cloud','creator_dashboard','datastore','force_fail','clear_pending','camera_reset','camera_focus','camera_guard','ui_widget','terrain_heightmap','terrain_sculpt','terrain_paint','terrain_water','terrain_feature','terrain_carve','terrain_clear')
+        $read = @('get_bridge_log','get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','sim_status','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait','ui_capabilities','ui_skin','ui_audit','ui_texture','ui_design','world_style','site_survey','variation','model_audit','world_audit','prop_list','wait_for_user','ack_user_message','ask_user','confirm_action','scaffold_ui_scripts','blender_status','mesh_status','camera_state','terrain_measure')
+        $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','build_polygon_model','build_assembly','mesh_slots','mesh_apply','mesh_drop','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','sim_start','set_context','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute','build_surface','build_interface','ui_glow','ui_radial','prop_place','prop_save','refine','style_lock','world_glow','sim_stop','mesh_cancel','build_mesh_model','mesh_apply_asset','upload_asset','open_cloud','creator_dashboard','datastore','force_fail','clear_pending','camera_reset','camera_focus','camera_guard','ui_widget','ui_gradient','ui_shape','ui_path','ui_text','terrain_heightmap','terrain_sculpt','terrain_paint','terrain_water','terrain_feature','terrain_carve','terrain_clear')
         return @{ read = $read; write = $write }
     }
 
@@ -21784,6 +22608,11 @@ $script:BridgeHandlerScript = {
             camera_focus = 'Hat die Kamera auf das angegebene Ziel gerichtet.'
             camera_guard = 'Hat den Kamera-Wächter im Place geprüft oder verwaltet.'
             ui_widget = 'Hat ein fertiges Oberflächen-Widget aus der UI-Bibliothek gebaut.'
+            ui_gradient = 'Hat einen UI-Farbverlauf angewendet.'
+            ui_shape = 'Hat eine geometrische UI-Form gebaut.'
+            ui_path = 'Hat einen UI-Pfad gezeichnet.'
+            ui_text = 'Hat lesbaren UI-Text mit Schatten erstellt.'
+            ui_design = 'Hat eine UI-Art-Direction geplant.'
             terrain_heightmap = 'Hat eine Geländekarte mit Höhen, Materialschichten und Wasser erzeugt.'
             terrain_sculpt = 'Hat das Gelände mit dem Pinsel modelliert.'
             terrain_paint = 'Hat die Geländeoberfläche neu bemalt.'
@@ -26264,7 +27093,37 @@ $script:BridgeHandlerScript = {
 
         # ---------------- UI ENGINE 1.0 (6.2) ----------------
 
-$t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN: misst, welche modernen UI-Instanzen dieses Studio wirklich kann.';
+$t.Add(@{ name = 'ui_gradient'; category = 'ui'; summary = 'Apply a real upgraded UIGradient';
+ description = 'Linear/Radial/Elliptical/Conical with Scale and Clamp/Repeat/Mirror on supported GUI objects, UIStroke or Path2D. Explicit Studio Beta opt-in; unsupported properties fall back to Linear/Clamp/Scale=1 and are reported. No live publication during beta.';
+ params = @{ ref = @{ type = 'string'; required = $true; description = 'GUI, UIStroke or Path2D path' }; action = @{ type = 'string'; required = $false; description = 'preview or apply (default)' }; gradient = @{ type = 'object'; required = $false; description = 'type, rotation, scale 0.001..100, tileMode; top-level fields also accepted' }; stops = @{ type = 'array'; required = $false; description = '2..6 {time,color} stops; brand tokens allowed' }; allowBeta = @{ type = 'bool'; required = $false; description = 'Required for non-linear/non-clamp/non-unit-scale' }; replace = @{ type = 'bool'; required = $false; description = 'Replace only the named Arena gradient' } };
+ returns = '{gradient,report:{type,scale,tileMode,betaPropertiesUsed,fallbacks,warnings},parent}';
+ example = 'ui_gradient {"ref":"game.StarterGui.Main.Frame","gradient":{"type":"conical","rotation":45,"scale":1.5,"tileMode":"mirror"},"allowBeta":true}';
+ related = @('ui_capabilities','ui_design','ui_audit'); errors = @('BAD_ARGS','REF_NOT_FOUND') })
+$t.Add(@{ name = 'ui_shape'; category = 'ui'; summary = 'Build calculated geometric UI shapes';
+ description = 'Trapezoids, triangles, parallelograms, diamonds, chevrons, hexagons, arrows and custom polygons via triangulation, right-triangle altitude masks and rotated Frames in CanvasGroups. Circle/pill use rounded rectangles. Aspect ratio is locked because masks depend on pixel geometry.';
+ params = @{ action = @{ type = 'string'; required = $false; description = 'list or build (default)' }; shape = @{ type = 'string'; required = $false; description = 'trapezoid, triangle, parallelogram, diamond, chevron, hexagon, arrow, circle, pill' }; points = @{ type = 'array'; required = $false; description = 'Custom polygon: 3..16 non-self-intersecting {x,y} vertices in 0..100' }; parentRef = @{ type = 'string'; required = $false; description = 'Default game.StarterGui' }; rect = @{ type = 'object'; required = $false; description = 'x,y,w,h percentages' }; skin = @{ type = 'string'; required = $false; description = 'Art direction' }; allowBeta = @{ type = 'bool'; required = $false; description = 'Opt in to beta gradients' } };
+ returns = '{shape,report:{shape,canvasGroups,triangles,aspectRatio,aspectLocked,memoryFallback}}';
+ example = 'ui_shape {"shape":"trapezoid","skin":"scifi","rect":{"x":35,"y":30,"w":30,"h":25}}';
+ related = @('ui_path','ui_audit','ui_capabilities'); errors = @('BAD_ARGS','REF_NOT_FOUND') })
+$t.Add(@{ name = 'ui_path'; category = 'ui'; summary = 'Draw UI splines with Path2D';
+ description = 'Native cubic Path2D strokes when control points are supported. Stroke-only: no fill API is claimed. Straight rotated-Frame segments are the explicit fallback, not curves.';
+ params = @{ points = @{ type = 'array'; required = $true; description = '2..50 {x,y} points in 0..100; optional tangents={left={x,y},right={x,y}}' }; closed = @{ type = 'bool'; required = $false; description = 'Close a path with at least 3 points' }; thickness = @{ type = 'number'; required = $false; description = '0..100 pixels' }; color = @{ type = 'any'; required = $false; description = 'Color or brand token' }; gradient = @{ type = 'object'; required = $false; description = 'Gradient spec; allowBeta required for upgraded modes' }; parentRef = @{ type = 'string'; required = $false; description = 'Default game.StarterGui' }; rect = @{ type = 'object'; required = $false; description = 'Holder x,y,w,h percentages' } };
+ returns = '{path,report:{native,points,closed,fallback,warnings}}';
+ example = 'ui_path {"points":[{"x":10,"y":80},{"x":50,"y":15},{"x":90,"y":80}],"closed":false,"thickness":4,"color":"accent"}';
+ related = @('ui_shape','ui_capabilities'); errors = @('BAD_ARGS','REF_NOT_FOUND') })
+$t.Add(@{ name = 'ui_design'; category = 'ui'; summary = 'Turn a skin into a concrete design plan';
+ description = 'Returns art direction, palette, layout family, signature elements, material query, role-aware corner math, image workflow and executable example. Prevents palette-only skin variations.';
+ params = @{ skin = @{ type = 'string'; required = $false; description = 'Default minimal' }; action = @{ type = 'string'; required = $false; description = 'plan or recipes' }; brand = @{ type = 'object'; required = $false; description = 'Project brand override' }; widget = @{ type = 'string'; required = $false; description = 'Widget kind for the example' } };
+ returns = '{skin,family,composition,signature,palette,texture,gradient,iconStyle,textShadow,corner,workflow,beta,example}';
+ example = 'ui_design {"skin":"graffiti","widget":"shop"}';
+ related = @('ui_skin','ui_texture','ui_widget'); errors = @('BAD_ARGS','REF_NOT_FOUND') })
+$t.Add(@{ name = 'ui_text'; category = 'ui'; summary = 'Readable text with a real offset-copy shadow';
+ description = 'Foreground text with bounded size and stroke plus a lower-ZIndex duplicate shifted downward. Runtime mirrors text/font/alignment/layout changes. This is the requested offset-copy technique, not a native Roblox text-shadow API.';
+ params = @{ parentRef = @{ type = 'string'; required = $true; description = 'GUI parent' }; text = @{ type = 'any'; required = $true; description = 'String or {value,role,shadow,...}' }; role = @{ type = 'string'; required = $false; description = 'title, body, button, caption, number' }; shadow = @{ type = 'any'; required = $false; description = 'bool or {offsetY=0.065,color,alpha,zIndexDelta=1}' }; stroke = @{ type = 'bool'; required = $false; description = 'Explicit foreground stroke' }; fontSize = @{ type = 'number'; required = $false; description = 'Preferred bounded font size' }; rect = @{ type = 'object'; required = $false; description = 'x,y,w,h percentages' }; allowEmojiText = @{ type = 'bool'; required = $false; description = 'Only explicitly requested mixed dialogue; emoji-only art always rejected' } };
+ returns = '{text,shadow}';
+ example = 'ui_text {"parentRef":"game.StarterGui.Main.Panel","text":"PLAY","role":"button","shadow":{"offsetY":0.07}}';
+ related = @('ui_widget','ui_audit'); errors = @('BAD_ARGS','REF_NOT_FOUND') })
+        $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN: misst, welche modernen UI-Instanzen dieses Studio wirklich kann.';
             description = 'Probt mit Instance.new/pcall in GENAU dieser Studio-Version, ob UIShadow, einzelne UICorner-Radien, UIStroke.StrokeSizingMode.ScaledSize, UIStroke.BorderOffset, mehrere UIStrokes pro Objekt, UIFlexItem, UIDragDetector, Path2D, StyleSheet, CanvasGroup und FontFace vorhanden sind. Damit schreibt Arena nie wieder Code aus veraltetem Trainingswissen und nie wieder Code für Instanzen, die es nicht gibt. Fehlt etwas, nennt notes den Fallback, den die Engine automatisch verwendet (z.B. gestapelte Halo-Frames statt UIShadow). Liefert außerdem die verfügbaren Skins, Eckenprofile und Geräte.';
             params = @{ refresh = @{ type = 'bool'; required = $false; default = 'false'; description = 'Zwischenspeicher verwerfen und neu messen.' } };
             returns = '{ engineVersion, capabilities: { uiShadow, individualCorners, strokeScaledSize, strokeBorderOffset, strokeMulti, uiFlexItem, uiDragDetector, path2D, styleSheet, canvasGroup, fontFace }, notes, skins, corners, devices, measured }';
@@ -27064,117 +27923,24 @@ end
                 measurement = 'codeLayout reports line and Instance.new counts to inform decisions. It does not by itself require a split, rewrite or change in implementation method.'
             }
             uiEngineRules = @{
-                title = 'Optional UI Engine 2.0 recommendations - use only when they fit the requested design and Place'
-                whenThisApplies = 'First inspect the existing GUI and the user''s requested design. Every rule below is an optional engineering/art-direction recommendation for compatible new work, not a universal contract or programmatic gate. User instructions and established raw-GuiObject, framework, offset-layout, runtime-build or studio-authored patterns take priority.'
-                theOneIdea = 'When the user or Place selects this UI engine, a composite surface can use a layer stack (fill, optional gradient/texture/stroke/shadow, corner and content padding). A plain Frame or another architecture is valid when requested or established; do not add decoration or wrappers merely to satisfy this engine.'
-                recommendations = @(
-                    '1 TRANSFORM WRAPPER (when compatible with the chosen GUI architecture): never animate a laid-out element. Every animated element gets a wrapper Frame with AnchorPoint 0.5,0.5, Position/Size in Scale and a UIScale child; the tween touches ONLY that UIScale. AnchorPoint 0,0 plus a scale animation is exactly what makes elements grow toward the bottom right instead of from their own centre. If the element sits in a UIListLayout/UIGridLayout, put an outer slot Frame (AnchorPoint 0,0, positioned by the layout) around the centred wrapper - the layout drives the slot, the animation drives the wrapper.',
-                    '2 RESPONSIVE LAYOUT (optional): Scale-based Size/Position and UIAspectRatioConstraint can help new responsive layouts. Preserve offsets, constraints, framework units or exact pixel geometry when requested or established; offsets are not inherently wrong.',
-                    '3 CORNER TANGENT (if rounded corners are used): keep a chosen radius within the surface bounds and provide suitable content padding. Sharp corners and existing radius conventions remain valid.',
-                    '4 STROKE SCALING (if strokes are part of the chosen design): probe supported StrokeSizingMode/BorderOffset behavior and use the Place palette; extra contours/bevels are optional.',
-                    '5 GRADIENTS (optional): use gradients only when they fit the requested art direction. One gradient, no gradient, or a project-specific effect is valid; do not add an animation or stroke gradient by default.',
-                    '6 DEPTH (optional): add layers only when the requested design benefits from them. A simple filled Frame is a valid finished element when that is what the user wants.',
-                    '7 CANVASGROUP (when needed): check clipping, memory and text-rendering implications before using a CanvasGroup. Avoid unnecessary nesting; a plain Frame remains appropriate when no group fade/clip is requested.',
-                    '8 SHADOW (optional): if the design asks for a shadow, use a supported shadow method and check ancestor clipping. Multiple shadow layers are an art choice, not a requirement.',
-                    '9 GLOW (optional): use ui_glow/world_glow when compatible with the user request and Place. Do not add glow unless wanted; if it is wanted, avoid wasteful stacks of transparent effects.',
-                    '10 TEXTURES AS BACKGROUND (8.0.0): a real texture IS the background, not a faint overlay. Use textureImage/backgroundMode=texture so the engine fills the surface opaquely (tile/crop/fit/stretch) with NO fill gradient or background color over it. A texture at ~0.9 transparency over a gradient is the old bug - ui_audit calls it textureWashedOut. ui_texture returns usage=background for a real id; without an id the honest TEXTURE_ASSET_MISSING warning stays.',
-                    '11 RADIAL MENUS (when requested): ui_radial is available for radial layouts. Use another implementation when the user or Place calls for it; image/procedural fallbacks are informational.',
-                    '12 BILLBOARDS (8.0.0): BillboardGui Size is a world size in STUDS: UDim2.new(widthStuds, 0, heightStuds, 0). Offset pixels are forbidden there - they keep the sign the same huge screen size at every distance instead of shrinking with distance. Set MaxDistance (about 40-80), StudsOffsetWorldSpace for height, AlwaysOnTop=false by default. Prefer build_surface/build_interface surfaceType=billboard; ui_audit reports Offset-sized billboards as billboardOffsetSize.'
-                )
-                modernInstances = @(
-                    'UIShadow: native 2D drop shadow. BlurRadius (UDim), Color, Transparency, Offset (UDim2), Spread (UDim2), ZIndex (negative only), Enabled. Scale values are a percentage of the parent. Multiple shadows per instance. No text glyph shadows, no inset shadows, no gradients or textures on the shadow itself.',
-                    'UICorner individual radii: TopLeftRadius / TopRightRadius / BottomLeftRadius / BottomRightRadius give tabs, chat bubbles, notches and asymmetric cards instead of the same uniform pill everywhere.',
-                    'UIStroke StrokeSizingMode.ScaledSize + BorderOffset + unlimited strokes per object. Stay below roughly 300 UIStrokes on screen for low-end devices.',
-                    'UI Styling: StyleSheet, StyleRule, StyleLink, StyleDerive plus tokens and themes - engine-native CSS with class, name, tag, hierarchy and GuiState (hover) selectors. This is the correct way to keep a whole place on ONE consistent style and to swap themes. Only one StyleLink applies per instance; use tag selectors for variants.',
-                    'UIListLayout flex: Wraps, HorizontalFlex/VerticalFlex (Fill, SpaceBetween, SpaceAround, SpaceEvenly) and UIFlexItem (FlexMode, GrowRatio, ShrinkRatio) give real responsive layout without hand-computed positions.',
-                    'UIDragDetector: dragging for 2D UI with DragStyle, ResponseStyle in Scale, axis/movement limits and BoundingUI.',
-                    'Path2D: 2D splines in the UI for curved connectors, progress arcs, skill trees and path animations - not everything has to be a rectangle.',
-                    'ImageLabel raster textures: ScaleType = Enum.ScaleType.Tile with TileSize in SCALE turns a dead flat frame into a living surface. Also use 9-slice (Slice + SliceCenter) for ornamental borders.',
-                    'Text: FontFace = Font.new(family, Enum.FontWeight.X) for real weights, TextScaled together with UITextSizeConstraint for resolution independence, RichText for emphasis, MaxVisibleGraphemes for typewriter effects.',
-                    'When choosing an optional UI-engine feature, ui_capabilities can probe this Studio build and report available alternatives; no probe is required for unrelated GUI work.'
-                )
-                antiSameness = 'For new UI-engine work, pass the user''s explicit brand or extract the existing Place palette with ui_skin action=extract. The available skins are optional art directions, not a reason to replace an established or requested style. Never override requested colors/mood; use contrast checks without redesigning the product.'
-                workflow = 'When the UI engine fits: inspect/extract the existing style with ui_skin -> use build_interface/build_surface to create or extend the requested scope -> ui_audit if useful. For an existing framework or explicit raw-GuiObject request, follow that implementation instead; keep the user''s visual direction and requested simplicity.'
-                referenceLua = @'
--- Canonical hand-written composite surface for genuinely custom run_lua GUI
--- code. build_surface already does all of this - only mirror it by hand when
--- the tool cannot express what you need.
-local function arenaSurface(parent, cx, cy, w, h, fill, accent)
-    -- 1. Transform wrapper: the ONLY node an animation may touch.
-    local wrapper = Instance.new("Frame")
-    wrapper.BackgroundTransparency = 1
-    wrapper.AnchorPoint = Vector2.new(0.5, 0.5)          -- RULE 1
-    wrapper.Position = UDim2.fromScale(cx, cy)           -- RULE 2: scale only
-    wrapper.Size = UDim2.fromScale(w, h)
-    local scale = Instance.new("UIScale")                -- animate THIS
-    scale.Scale = 1
-    scale.Parent = wrapper
-    wrapper.Parent = parent
-
-    -- 2. Base fill.
-    local base = Instance.new("Frame")
-    base.AnchorPoint = Vector2.new(0.5, 0.5)
-    base.Position = UDim2.fromScale(0.5, 0.5)
-    base.Size = UDim2.fromScale(1, 1)
-    base.BackgroundColor3 = fill
-    base.BorderSizePixel = 0
-    base.Parent = wrapper
-
-    -- 3. Layered shadows in SCALE, negative ZIndex.           RULE 8
-    for index, spec in ipairs({ { 0.10, 0.55, 0.022 }, { 0.025, 0.40, 0.006 } }) do
-        local shadow = Instance.new("UIShadow")
-        shadow.BlurRadius = UDim.new(spec[1], 0)
-        shadow.Transparency = spec[2]
-        shadow.Offset = UDim2.fromScale(0, spec[3])
-        shadow.ZIndex = -index
-        shadow.Parent = base
-    end
-
-    -- 4. Fill gradient (angle A).                             RULE 5
-    local fillGradient = Instance.new("UIGradient")
-    fillGradient.Rotation = 112
-    fillGradient.Parent = base
-
-    -- 5. Tiled raster texture - TileSize in SCALE.
-    local texture = Instance.new("ImageLabel")
-    texture.BackgroundTransparency = 1
-    texture.Size = UDim2.fromScale(1, 1)
-    texture.ScaleType = Enum.ScaleType.Tile
-    texture.TileSize = UDim2.fromScale(0.18, 0.18)
-    texture.ImageTransparency = 0.9
-    texture.Parent = base
-
-    -- 6. Stroke stack, thickness in SCALE.                    RULE 4
-    local outer = Instance.new("UIStroke")
-    outer.Color = accent
-    outer.StrokeSizingMode = Enum.StrokeSizingMode.ScaledSize
-    outer.Thickness = 0.006
-    outer.Parent = base
-
-    -- 7. Gradient ON THE STROKE - the step that is always skipped.
-    local strokeGradient = Instance.new("UIGradient")
-    strokeGradient.Rotation = 24
-    strokeGradient.Parent = outer
-
-    -- 8. Corner profile plus padding derived from it.         RULE 3
-    local radius = 0.13
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(radius, 0)
-    corner.Parent = base
-
-    local content = Instance.new("Frame")
-    content.BackgroundTransparency = 1
-    content.Size = UDim2.fromScale(1, 1)
-    local padding = Instance.new("UIPadding")
-    local pad = UDim.new(math.max(radius * 0.36, 0.04), 0)
-    padding.PaddingLeft, padding.PaddingRight = pad, pad
-    padding.PaddingTop, padding.PaddingBottom = pad, pad
-    padding.Parent = content
-    content.Parent = base
-
-    return wrapper, content
-end
-'@
+                title = 'UI Engine 4.0 - measured capabilities, executable art direction'
+                whenThisApplies = 'Inspect the existing GUI/framework and preserve the user''s design and architecture. Use these engine tools for compatible new work; do not rewrite a working framework merely to adopt a skin.'
+                workflow = 'ui_capabilities refresh=true -> ui_skin action=extract / ui_design -> ui_texture inventory/search + validate_asset -> ui_widget/build_interface/ui_shape/ui_path/ui_text -> ui_audit on phone and desktop. Check real image rendering and permissions in Studio; metadata alone is not proof.'
+                gradients = 'UIGradient Type=Linear/Radial/Elliptical/Conical, Scale and TileMode=Clamp/Repeat/Mirror come from Roblox Upgraded UIGradients (Studio Beta announced 2026-10-29). Use ui_gradient or gradient={...}; allowBeta=true is explicit opt-in. Unsupported/beta-off requests fall back to Linear/Clamp/Scale=1 and report the degradation. Do not publish live games with beta properties. Supported hosts: Frame, TextLabel, TextButton, ImageLabel, ImageButton, Path2D, ViewportFrame and UIStroke; not ScrollingFrame/TextBox; no descendant inheritance.'
+                gradientPerformance = 'Use at most 6 color stops and stay below 1000 active gradients. Set Color/Transparency once; animate Offset/Rotation/Scale/Type/TileMode instead. Mirror avoids Repeat seams. Avoid gradients on text-stroked objects when possible; stroke and fill need separate UIGradients. Radial ignores Rotation; Elliptical rotates its axes; Conical Scale changes sweep extent.'
+                corners = 'Effective radiusPx = min(width,height)*CornerRadius.Scale + Offset, capped at half the shortest edge. Scale 0.5 is a pill on a square, not a universal 50px radius. UICorner does not clip descendants and does not apply to ScrollingFrame. Engine defaults cap large panels/modals near 22px, headers near 12px and cards near 18px; buttons may stay round. Explicit user radii are preserved and audited, not silently rewritten. Use cornerPx or corner={scale,offset}; individual tl/tr/bl/br radii are probed.'
+                textures = 'Real project/Toolbox/user-uploaded images are a normal design step, not an optional afterthought. ui_texture action=inventory finds existing Place images; action=search query=... searches real decals; validate_asset checks metadata. Ask for a private upload id when needed. Pass assets={panel=id,card=id,header=id}; items[].image is foreground artwork. Backgrounds default to root scope and full opacity, not a faint wash over every child. Use tile/crop/fit/stretch or sliceCenter for 9-slice. Never invent ids; catalog metadata does not prove experience permission or successful rendering.'
+                geometry = 'ui_shape computes trapezoids/triangles/parallelograms/diamonds/chevrons/hexagons/arrows/custom polygons by ear clipping, right-triangle altitude splits and rotated half-plane Frames inside CanvasGroups. Aspect ratio is locked; max 32 groups per shape; gradients repeat per triangle and are reported as segmented. Circle/pill use UICorner. CanvasGroup clips descendants and uses texture memory; keep sizes static and inspect low graphics quality. ui_path uses native stroke-only Path2D splines (max 50 points) or explicitly straight Frame fallback; it never claims a fill API.'
+                rotatedClipping = 'StarterGui.ClipsDescendantsSupportsRotation controls rotated-child clipping in the 2026 rollout; Roblox announced removal of the property in Nov 2026. Probe it, do not hard-code it. A rotated ordinary GuiObject still does not become a clipping container; use CanvasGroup when clipping is required.'
+                textShadow = 'ui_text / text.shadow creates a readable foreground with stroke plus a separate lower-ZIndex duplicate shifted downward inside a layout-safe wrapper. ArenaTextEffects mirrors text/font/alignment/size/position changes. This is the popular offset-copy technique, not a native glyph-shadow API. Keep foreground contrast and avoid clipping the shadow.'
+                emoji = 'Emoji-only TextLabels are forbidden as skins, icons, thumbnails or item artwork, including generic create/set/run_lua/script paths. Use real images, ViewportFrame renders or constructed geometry. Mixed emoji in ordinary dialogue requires an explicit user requirement and allowEmojiText=true; it never authorizes emoji art.'
+                diversity = 'The 40 skins have distinct family/composition/signature/material/icon/gradient/shadow recipes. ui_design returns the plan; composeWidget applies ledger/console/sidebar/hero/editorial/floating/gallery structures. Flat print and functional styles are valid; layer count alone is not quality.'
+                references = @('https://devforum.roblox.com/t/full-release-upgraded-ui-gradients/4846594','https://create.roblox.com/docs/reference/engine/classes/UIGradient','https://create.roblox.com/docs/reference/engine/classes/UICorner','https://create.roblox.com/docs/reference/engine/classes/CanvasGroup','https://create.roblox.com/docs/reference/engine/classes/Path2D')
+            }
+            uiDesignRules = @{
+                title = 'UI design acceptance - no emoji placeholders, no one-size-fits-all panels'
+                steps = @('Preserve the requested brand and existing architecture.','Choose a distinct composition and material family with ui_design.','Obtain real image ids through inventory/search/user upload; verify permission and rendering.','Use role-aware corners, readable offset text shadows where appropriate, and calculated geometry instead of improvised rotated rectangles.','Run ui_audit and inspect phone/desktop fit, contrast, image loading and beta fallbacks before calling the UI finished.')
+                hardRule = 'Never deliver emoji-only labels as designed skins/assets. Never claim beta gradients are live-publishable or Path2D fills exist.'
             }
             coordinateGuide = @(
                 'AXES: +X = right, +Y = up, +Z = toward the viewer. The default Studio camera looks toward -Z. The "front" face of a part is its -Z face.',
@@ -27376,7 +28142,7 @@ end
         $coreToolNames = @(
             'get_place_info','get_tree','get_instance','get_properties','get_selection','describe_scene','resolve_ref','probe_world',
             'raycast','ground_height','create_instance','bulk_create','set_property','set_properties','move_instance','clone_instance',
-            'delete_instance','build_polygon_model','build_assembly','build_interface','build_surface','ui_capabilities','ui_skin','ui_audit',
+            'delete_instance','build_polygon_model','build_assembly','build_interface','build_surface','ui_widget','ui_capabilities','ui_skin','ui_audit','ui_texture','ui_design','ui_gradient','ui_shape','ui_path','ui_text',
             'run_lua','insert_script','set_script_source','compile_check','model_audit','world_audit','site_survey','world_style','style_lock',
             'refine','prop_place','prop_save','report_done','get_docs','get_chunk','list_tools','bridge_status','start_job','job_status',
             'job_result','get_output','get_errors','wait',
@@ -28667,6 +29433,20 @@ end
         switch ($tool) {
             # Version 7.1.2: nicht mehr direkt - immer über das Toolbox-Tor
             # (Begrenzung gleichzeitiger Aufrufe, garantierte Freigabe).
+            'ui_texture' {
+                $textureAction = [string](Get-CommandArgumentValue $toolArgs 'action').value
+                if ($textureAction -ieq 'search') {
+                    $query = [string](Get-CommandArgumentValue $toolArgs 'query').value
+                    if ([string]::IsNullOrWhiteSpace($query)) { return @{ok=$false;code='BAD_ARGS';error='ui_texture action=search needs a concrete query.'} }
+                    $search = Invoke-ToolboxServerTool $sessionId 'search_assets' @{type='decal';query=$query;limit=12;page=(Get-CommandNumber $toolArgs 'page' 0)}
+                    if ($search.ok -eq $true) {
+                        $search.result.workflow = 'Validate each chosen image with validate_asset, then use assets={panel=id,card=id} or items[].image. Do not invent ids or substitute emoji.'
+                        $search.result.permissionNote = 'Catalog metadata does not prove in-experience permission. Private uploads need the correct owner/experience permission; verify actual rendering in Studio.'
+                    }
+                    return $search
+                }
+                return (Invoke-PluginTool $sessionId $tool $toolArgs $timeoutSeconds $activityId)
+            }
             'search_assets'      { return (Invoke-ToolboxServerTool $sessionId $tool $toolArgs) }
             'asset_details'      { return (Invoke-ToolboxServerTool $sessionId $tool $toolArgs) }
             'validate_asset'     { return (Invoke-ToolboxServerTool $sessionId $tool $toolArgs) }
@@ -37238,7 +38018,8 @@ $uiTranslationJson = @'
   "Hat Tunnel, Höhlen oder Gräben in das Gelände geschnitten.": "Carved tunnels, caves or trenches into the terrain.",
   "Hat Höhen, Profile, Wasser oder Volumen des Geländes gemessen.": "Measured terrain heights, profiles, water or volume.",
   "Hat Gelände im angegebenen Bereich entfernt.": "Removed terrain in the requested area.",
-  "Hat ein fertiges Oberflächen-Widget aus der UI-Bibliothek gebaut.": "Built a ready-made interface widget from the UI library."
+  "Hat ein fertiges Oberflächen-Widget aus der UI-Bibliothek gebaut.": "Built a ready-made interface widget from the UI library.",
+  "• 8.1.0 — UI ENGINE 4.0: • 40 Skin-Rezepte mit echten Layout-/Material-Unterschieden. • Neue UIGradient-Typen, Scale und TileMode mit Beta-Opt-in und Fallback. • Rollenbasierte Ecken, echte Toolbox-/Upload-Texturen und berechnete CanvasGroup-Geometrie. • Textschatten als versetzte Kopie; Emoji-only-Skins sind verboten; echte Bild-Assets für Oberflächen statt Platzhalter. • Offline-Tests erweitert; Windows-/Roblox-Liveabnahme bleibt vor Release Pflicht.": "• 8.1.0 — UI ENGINE 4.0: • 40 skin recipes with real layout/material differences. • New UIGradient types, Scale and TileMode with beta opt-in and fallback. • Role-aware corners, real Toolbox/uploaded textures and calculated CanvasGroup geometry. • Offset-copy text shadows; emoji-only skins forbidden; real image assets for surfaces instead of placeholders. • Offline tests expanded; Windows/Roblox live validation remains required before release."
 }
 '@
 foreach ($property in ($uiTranslationJson | ConvertFrom-Json).PSObject.Properties) { $script:UiTranslationsDeEn[$property.Name] = [string]$property.Value }

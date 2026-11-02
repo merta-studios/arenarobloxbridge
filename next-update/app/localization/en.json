@@ -945,5 +945,6 @@
   "Hat Tunnel, Höhlen oder Gräben in das Gelände geschnitten.": "Carved tunnels, caves or trenches into the terrain.",
   "Hat Höhen, Profile, Wasser oder Volumen des Geländes gemessen.": "Measured terrain heights, profiles, water or volume.",
   "Hat Gelände im angegebenen Bereich entfernt.": "Removed terrain in the requested area.",
-  "Hat ein fertiges Oberflächen-Widget aus der UI-Bibliothek gebaut.": "Built a ready-made interface widget from the UI library."
+  "Hat ein fertiges Oberflächen-Widget aus der UI-Bibliothek gebaut.": "Built a ready-made interface widget from the UI library.",
+  "• 8.1.0 — UI ENGINE 4.0: • 40 Skin-Rezepte mit echten Layout-/Material-Unterschieden. • Neue UIGradient-Typen, Scale und TileMode mit Beta-Opt-in und Fallback. • Rollenbasierte Ecken, echte Toolbox-/Upload-Texturen und berechnete CanvasGroup-Geometrie. • Textschatten als versetzte Kopie; Emoji-only-Skins sind verboten; echte Bild-Assets für Oberflächen statt Platzhalter. • Offline-Tests erweitert; Windows-/Roblox-Liveabnahme bleibt vor Release Pflicht.": "• 8.1.0 — UI ENGINE 4.0: • 40 skin recipes with real layout/material differences. • New UIGradient types, Scale and TileMode with beta opt-in and fallback. • Role-aware corners, real Toolbox/uploaded textures and calculated CanvasGroup geometry. • Offset-copy text shadows; emoji-only skins forbidden; real image assets for surfaces instead of placeholders. • Offline tests expanded; Windows/Roblox live validation remains required before release."
 }

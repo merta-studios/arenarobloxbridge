@@ -704,7 +704,7 @@ def main() -> int:
         'previousHandoff',
         'function Get-PlaceIdentityKey',
         'PreviewHandleInfos',
-        'UI_ENGINE.ENGINE_VERSION = "2.0"',
+        'UI_ENGINE.ENGINE_VERSION = "4.0"',
         'function UI_ENGINE.textureRecipe',
         'function UI_ENGINE.glowEmitter',
         'function UI_ENGINE.radialMenu',
@@ -1603,7 +1603,7 @@ def main() -> int:
             "local would push the plugin over Luau's 200-register limit")
     for marker in (
         "UI_ENGINE = {}",
-        'UI_ENGINE.ENGINE_VERSION = "2.0"',
+        'UI_ENGINE.ENGINE_VERSION = "4.0"',
         # Rule 1 - transform wrapper owns AnchorPoint and UIScale.
         'wrapper.AnchorPoint = Vector2.new(0.5, 0.5)',
         'local scale = Instance.new("UIScale"); scale.Name = "ArenaScale"',
@@ -1641,7 +1641,7 @@ def main() -> int:
         "tools.build_interface = function(args)",
         "tools.ui_audit = function(args)",
         # Engine 2.0 - glow, real textures, radial menus.
-        'UI_ENGINE.ENGINE_VERSION = "2.0"',
+        'UI_ENGINE.ENGINE_VERSION = "4.0"',
         "function UI_ENGINE.textureRecipe",
         "function UI_ENGINE.glowEmitter",
         "function UI_ENGINE.radialMenu",
@@ -1660,8 +1660,8 @@ def main() -> int:
     require('failCode("STYLE_TOO_GENERIC"' not in plugin_source(source),
             "neutral/muted requested UI colors are still rejected by a style heuristic")
 
-    require(source.count("category = 'ui'") == 9,
-            "expected exactly 9 documented UI Engine tools (5 from 1.0 + glow/texture/radial + ui_widget)")
+    require(source.count("category = 'ui'") == 14,
+            "expected exactly 14 documented UI Engine tools (9 through 8.0.5 + gradient/shape/path/design/text)")
     require(source.count("category = 'world'") == 11,
             "expected exactly 11 documented World Engine tools")
     require(source.count("category = 'sim'") == 3,
@@ -1674,7 +1674,7 @@ def main() -> int:
     surface_fn = lua[lua.index("function UI_ENGINE.surface(opts)"):lua.index("function UI_ENGINE.textNode")]
     require(surface_fn.index("wrapper.AnchorPoint") < surface_fn.index('local scale = Instance.new("UIScale")'),
             "the transform wrapper must get its AnchorPoint before its UIScale")
-    require(surface_fn.index("local radius = UI_ENGINE.applyCorner")
+    require(surface_fn.index("local radius, cornerValue = UI_ENGINE.applyCorner")
             < surface_fn.index("local padScale = tonumber(opts.padding)")
             < surface_fn.index("if padScale == nil then padScale = math.max(radius * 0.36, 0.04) end"),
             "default content padding must follow the corner radius while preserving explicit values")

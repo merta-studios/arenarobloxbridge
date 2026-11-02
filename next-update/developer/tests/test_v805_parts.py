@@ -173,7 +173,7 @@ class TerrainRuntime(unittest.TestCase):
 class WidgetLibrary(unittest.TestCase):
     def setUp(self):
         self.lua = LuaRuntime(unpack_returned_tuples=True)
-        widgets = region('UI_ENGINE.WIDGETS = {}', 'tools.ui_widget = function(args)')
+        widgets = region('UI_ENGINE.WIDGETS = {}', '-- UI ENGINE 4.0: executive recipes')
         self.lua.execute('UI_ENGINE = {}\n' + widgets)
 
     def run_lua(self, text):
