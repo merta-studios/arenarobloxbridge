@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""8.1.0 UI Engine 4.0: execute real embedded Lua against offline GUI doubles.
+"""8.1.x UI Engine 4.0: execute real embedded Lua against offline GUI doubles.
 
 This proves construction, math, fallbacks and guard behavior. It does not claim
 to reproduce Roblox's renderer, asset permissions or live-client beta support.
@@ -42,21 +42,60 @@ class UiEngine40(unittest.TestCase):
         end
         ''')
 
-    def test_gradient_beta_opt_in_and_fallback(self):
+    def test_released_gradients_need_no_opt_in_and_report_release_status(self):
         result = self.run_lua('''
         local parent=Instance.new("Frame")
         local g,r=UI_ENGINE.gradient(parent,{{0,Color3.new(1,0,0)},{1,Color3.new(0,0,1)}},45,nil,"G",
-            {type="conical",scale=1.5,tileMode="mirror",allowBeta=true})
+            {type="conical",scale=1.5,tileMode="mirror"})
         assert(r.type=="conical" and r.scale==1.5 and r.tileMode=="mirror")
+        assert(r.releaseStatus=="released" and r.requiresOptIn==false and r.betaRequired==false)
+        assert(r.livePublishReady==true and r.fallback==false)
         assert(g.Type==Enum.GradientType.Conical and g.Scale==1.5 and g.TileMode==Enum.GradientTileMode.Mirror)
-        assert(g:GetAttribute("ArenaGradientBeta")==true and r.livePublishReady==false)
-        local legacy,f=UI_ENGINE.gradient(parent,{{0,Color3.new()},{1,Color3.new(1,1,1)}},0,nil,"L",
-            {type="radial",scale=2,tileMode="repeat"})
-        assert(f.fallback and f.type=="linear" and f.scale==1 and f.tileMode=="clamp")
-        assert(legacy.Scale==1 and legacy.TileMode==Enum.GradientTileMode.Clamp)
+        assert(g:GetAttribute("ArenaGradientBeta")==false and g:GetAttribute("ArenaGradientReleaseStatus")=="released")
+        -- Old callers may still pass allowBeta=false/true; it must not gate a released API.
+        local old,f=UI_ENGINE.gradient(parent,{{0,Color3.new()},{1,Color3.new(1,1,1)}},0,nil,"Old",
+            {type="radial",scale=2,tileMode="repeat",allowBeta=false})
+        assert(f.type=="radial" and f.scale==2 and f.tileMode=="repeat" and f.fallback==false)
+        assert(old.Type==Enum.GradientType.Radial and old.Scale==2 and old.TileMode==Enum.GradientTileMode.Repeat)
         return true
         ''')
         self.assertTrue(result)
+
+    def test_legacy_studio_falls_back_only_for_unsupported_properties(self):
+        self.assertTrue(self.run_lua('''
+        UI_ENGINE._caps={gradientType=true,gradientScale=false,gradientTileMode=true,
+            gradientTypes={Linear=true,Radial=true,Elliptical=false,Conical=true},
+            gradientTileModes={Clamp=true,Repeat=true,Mirror=true}}
+        local parent=Instance.new("Frame")
+        local g,r=UI_ENGINE.gradient(parent,{{0,Color3.new()},{1,Color3.new(1,1,1)}},0,nil,"Partial",
+            {type="conical",scale=2,tileMode="mirror"})
+        assert(r.type=="conical" and r.tileMode=="mirror" and r.scale==1)
+        assert(r.fallback==true and r.fallbacks.scale==1 and r.fallbacks.type==nil)
+        assert(g.Type==Enum.GradientType.Conical and g.TileMode==Enum.GradientTileMode.Mirror and g.Scale==1)
+        local h,e=UI_ENGINE.gradient(parent,{{0,Color3.new()},{1,Color3.new(1,1,1)}},0,nil,"OldType",
+            {type="elliptical",scale=1,tileMode="clamp"})
+        assert(e.type=="linear" and e.fallbacks.type=="linear")
+        assert(h.Type==Enum.GradientType.Linear)
+        return true
+        '''))
+
+    def test_audit_does_not_treat_historical_beta_marker_as_publish_block(self):
+        self.assertTrue(self.run_lua('''
+        local screen=Instance.new("ScreenGui"); screen.Parent=game:GetService("StarterGui")
+        local frame=Instance.new("Frame"); frame.BackgroundColor3=Color3.fromRGB(30,30,30); frame.Size=UDim2.fromScale(0.5,0.5); frame.Position=UDim2.fromScale(0.25,0.25); frame.AnchorPoint=Vector2.new(0.5,0.5); frame.Parent=screen
+        local g=Instance.new("UIGradient"); g.Parent=frame
+        g:SetAttribute("ArenaGradientBeta",true)
+        local r=tools.ui_audit({ref=describeRef(screen).id})
+        assert(r.ok, tostring(r.error))
+        assert(r.result.gradientBudget.releaseStatus=="full-release")
+        assert(r.result.gradientBudget.legacyBetaMarkers==1)
+        assert(r.result.problems.betaGradients==nil)
+        assert(r.result.counts.gradientFallbacks==0)
+        g:SetAttribute("ArenaGradientFallback",true)
+        local f=tools.ui_audit({ref=describeRef(screen).id})
+        assert(f.result.counts.gradientFallbacks==1 and #f.result.problems.gradientFallbacks==1)
+        return true
+        '''))
 
     def test_gradient_stop_budget_and_invalid_times(self):
         self.run_lua('''
@@ -148,11 +187,11 @@ class UiEngine40(unittest.TestCase):
 
     def test_shape_and_native_path_construction(self):
         self.assertTrue(self.run_lua('''
-        local r=tools.ui_shape({shape="trapezoid",skin="scifi",allowBeta=true})
+        local r=tools.ui_shape({shape="trapezoid",skin="scifi"})
         assert(r.ok and r.result.report.canvasGroups>0 and r.result.report.aspectLocked)
         assert(r.result.report.segmentedGradient==true)
         local p=tools.ui_path({points={{x=0,y=0},{x=50,y=100},{x=100,y=0}},closed=true,thickness=4,
-            gradient={type="radial"},allowBeta=true})
+            gradient={type="radial"}})
         assert(p.ok and p.result.report.mode=="Path2D" and p.result.report.strokeOnly)
         return true
         '''))
@@ -160,7 +199,7 @@ class UiEngine40(unittest.TestCase):
     def test_path_fallback_is_cubic_and_explicit(self):
         self.assertTrue(self.run_lua('''
         UI_ENGINE._caps={canvasGroup=false,path2D=false,pathControlPoints=false,pathSampling=false,gradientType=false,gradientScale=false,gradientTileMode=false,gradientTypes={},gradientTileModes={}}
-        local p=tools.ui_path({points={{x=0,y=50,right={x=30,y=-40}},{x=100,y=50,left={x=-30,y=-40}}},gradient={type="conical"},allowBeta=true})
+        local p=tools.ui_path({points={{x=0,y=50,right={x=30,y=-40}},{x=100,y=50,left={x=-30,y=-40}}},gradient={type="conical"}})
         assert(p.ok and p.result.report.mode=="cubic-bezier Frame fallback (approximate)")
         assert(p.result.report.fallbackSegments>2 and p.result.report.gradient.segmented)
         local ref=p.result.path.id
@@ -320,7 +359,7 @@ class RegistrationAndGuides(unittest.TestCase):
 
     def test_guides_cover_beta_corners_assets_geometry_and_emoji(self):
         guide = region('uiEngineRules = @{', 'coordinateGuide = @(')
-        for marker in ('allowBeta=true', 'min(width,height)', 'action=inventory', 'CanvasGroup', 'offset-copy', 'Emoji-only', 'Path2D', 'GetPositionOnCurveArcLength', 'stroke-only'):
+        for marker in ('fully released by Roblox on 2026-10-29', 'min(width,height)', 'action=inventory', 'CanvasGroup', 'offset-copy', 'Emoji-only', 'Path2D', 'GetPositionOnCurveArcLength', 'stroke-only'):
             self.assertIn(marker, guide)
         self.assertIn('uiDesignRules = @{', SOURCE)
 

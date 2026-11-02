@@ -1,4 +1,8 @@
-# 8.1.0 — UI Engine 4.0 beta candidate acceptance
+# 8.1.0 — UI Engine 4.0 beta candidate acceptance (historical)
+
+> Superseded by `V8_1_1_ACCEPTANCE.md`: Roblox fully released Upgraded
+> UIGradients on 2026-10-29. The 8.1.0 beta opt-in/publication block was wrong
+> and is removed in 8.1.1. Path2D has been fully released since 2024-06-17.
 
 Status: **unpublished beta-release candidate**. Do not promote until the user
 has tested the Windows EXE and explicitly approved release.

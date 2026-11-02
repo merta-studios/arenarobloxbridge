@@ -12358,7 +12358,11 @@ function UI_ENGINE.caps(force)
         pcall(function() gradientProbe:Destroy() end)
     end
     c.upgradedGradients=c.gradientType and c.gradientScale and c.gradientTileMode
-    c.gradientBetaStatus="Studio property probe only; live-client availability and live-publish eligibility are NOT measured. Roblox announced Studio Beta on 2026-10-29."
+    c.gradientReleaseStatus="full-release"
+    c.gradientReleaseDate="2026-10-29"
+    c.gradientRequiresOptIn=false
+    c.gradientBetaStatus="Fully released by Roblox on 2026-10-29, including publication in experiences. The Studio Beta flag was removed. Local property probes still measure this Studio installation; they are not a live-client render test."
+    c.gradientReleaseSource="https://devforum.roblox.com/t/full-release-upgraded-ui-gradients/4846594"
     c.pathControlPoints=false
     c.pathSampling,c.pathTangents,c.pathEditing,c.pathLength,c.pathBounds,c.pathChangedEvent=false,false,false,false,false,false
     c.pathMaxControlPoints=0
@@ -12390,6 +12394,9 @@ function UI_ENGINE.caps(force)
         end
     end
     c.pathPointBudget=math.min(50,c.pathMaxControlPoints>0 and c.pathMaxControlPoints or 50)
+    c.path2DReleaseStatus="full-release"
+    c.path2DReleaseDate="2024-06-17"
+    c.path2DReleaseSource="https://devforum.roblox.com/t/path2d-full-release/3027288"
     c.rotatedClipping=nil
     pcall(function() c.rotatedClipping=game:GetService("StarterGui").ClipsDescendantsSupportsRotation end)
     c.individualCorners = false
@@ -12419,8 +12426,8 @@ end
 
 function UI_ENGINE.capNotes()
     local c, notes = UI_ENGINE.caps(), {}
-    if not c.upgradedGradients then table.insert(notes,"Upgraded UIGradients unavailable: Type/Scale/TileMode fall back to Linear/1/Clamp. Enable File > Beta Features > Upgraded UIGradients and restart Studio, then ui_capabilities refresh=true.") end
-    table.insert(notes,"Upgraded gradients require explicit allowBeta=true. During Studio Beta, do not publish live games using them. Linear fallback is not an equivalent conical/radial effect.")
+    if not c.upgradedGradients then table.insert(notes,"Upgraded UIGradients are fully released, but this Studio installation did not pass the Type/Scale/TileMode probes. Update Roblox Studio, restart it, then run ui_capabilities refresh=true. Unsupported properties fall back to Linear/1/Clamp; no Beta Features toggle is required.") end
+    table.insert(notes,"Upgraded UIGradients were fully released on 2026-10-29 and may be published in experiences. allowBeta is no longer required; older callers may still pass it, but it has no effect. Linear fallback is not an equivalent conical/radial effect.")
     if not c.pathControlPoints then table.insert(notes,"Path2D control-point API unavailable: ui_path uses an explicit approximate cubic-bezier Frame polyline, not native splines.") end
     if c.pathControlPoints and not c.pathSampling then table.insert(notes,"Path2D exists but curve sampling is unavailable: layout/motion fall back to the same cubic math as an approximation; native viewport editing still works.") end
     if c.pathControlPoints and not c.pathChangedEvent then table.insert(notes,"Path2D.ControlPointChanged unavailable: live layouts cannot react to native control-point edits; refresh/rebuild after editing.") end
@@ -13481,7 +13488,6 @@ function UI_ENGINE.surface(opts)
     if gradientOption == nil then gradientOption = skin.gradient end
     if backgroundMode == "gradient" and gradientOption ~= false then
         local gs = UI_ENGINE.gradientSpec(gradientOption)
-        gs.allowBeta = opts.allowBeta == true
         local _, gradientReport = UI_ENGINE.gradient(base, {
             {0, UI_ENGINE.mix(fillBase, skin.p.surfaceHi, 0.34)},
             {0.55, fillBase},
@@ -13837,7 +13843,7 @@ function UI_ENGINE.buildNode(spec, parentHost, skin, caps, ctx, depth, inLayout,
         textureBudget = spec.textureBudget or ctx.textureBudget,
         -- Version 8.0.0: Textur gehort in den Hintergrund (siehe surface).
         textureImage = UI_ENGINE.roleAsset(ctx, spec.role or "card", spec),
-        gradient = spec.gradient, allowBeta = spec.allowBeta == true or ctx.allowBeta == true,
+        gradient = spec.gradient,
         backgroundMode = spec.backgroundMode or ctx.backgroundMode,
         textureFit = spec.textureFit, textureTileX = spec.tileX, textureTileY = spec.tileY, textureTint = spec.textureTint, textureTransparency = spec.textureTransparency,
         -- Version 8.0.5: Kontur, Glanz und Dekor sind Knoten-Eigenschaften.
@@ -13948,7 +13954,7 @@ function UI_ENGINE.newContext(args, skin)
         warnings = {}, budget = math.max(1, math.min(tonumber(args.maxSurfaces) or 160, 400)),
         textureBudget = tonumber(args.textureBudget) or 26, brand = args.brand, overBudget = false,
         textureImage = args.textureImage or args.backgroundTexture or args.textureId,
-        assets = args.assets or args.textures or {}, allowBeta = args.allowBeta == true,
+        assets = args.assets or args.textures or {},
         backgroundMode = args.backgroundMode, textureBackgrounds = 0,
     }
 end
@@ -14736,19 +14742,34 @@ function UI_ENGINE.gradient(parent, stops, rotation, transparency, name, options
     local caps = UI_ENGINE.caps()
     local spec = UI_ENGINE.gradientSpec(options)
     if rotation ~= nil then spec.rotation = UI_ENGINE.finite(rotation, 90, -3600, 3600) end
-    local report = { requestedType=spec.type, type="linear", tileMode="clamp", scale=1, betaRequired=false, fallback=false, warnings={} }
+    local report = { requestedType=spec.type, requestedTileMode=spec.tileMode, requestedScale=spec.scale,
+        type="linear", tileMode="clamp", scale=1, betaRequired=false, requiresOptIn=false,
+        releaseStatus="released", fallback=false, fallbacks={}, warnings={} }
     if not spec.enabled then return nil, report end
     local types = {linear="Linear",radial="Radial",elliptical="Elliptical",conical="Conical"}
     local tiles = {clamp="Clamp",repeat_="Repeat",mirror="Mirror"}
     local tileKey = spec.tileMode == "repeat" and "repeat_" or spec.tileMode
     if not types[spec.type] or not tiles[tileKey] then error("BAD_ARGS: unknown gradient type/tileMode") end
-    local modern = spec.type ~= "linear" or spec.tileMode ~= "clamp" or math.abs(spec.scale-1) > 0.000001
-    local supported = caps.gradientType and caps.gradientScale and caps.gradientTileMode and caps.gradientTypes[types[spec.type]] and caps.gradientTileModes[tiles[tileKey]]
-    report.betaRequired = modern
-    if modern and (spec.allowBeta ~= true or not supported) then
-        report.fallback = true
-        table.insert(report.warnings, spec.allowBeta ~= true and "UPGRADED_GRADIENT_BETA_OPT_IN_REQUIRED" or "UPGRADED_GRADIENT_UNAVAILABLE")
-        spec.type, spec.tileMode, spec.scale = "linear", "clamp", 1
+    -- Roblox fully released these properties on 2026-10-29. Never gate them on
+    -- allowBeta or a Studio Beta flag. Probe each property independently so a
+    -- partially updated/older Studio degrades only the unsupported property.
+    local typeSupported = caps.gradientTypes[types[spec.type]] == true
+    local tileSupported = caps.gradientTileModes[tiles[tileKey]] == true
+    local scaleSupported = caps.gradientScale == true
+    if spec.type ~= "linear" and not typeSupported then
+        report.fallback=true; report.fallbacks.type="linear"
+        table.insert(report.warnings,"UPGRADED_GRADIENT_TYPE_UNAVAILABLE: this Studio did not pass the Type probe; update Studio. Using Linear.")
+        spec.type="linear"
+    end
+    if spec.tileMode ~= "clamp" and not tileSupported then
+        report.fallback=true; report.fallbacks.tileMode="clamp"
+        table.insert(report.warnings,"UPGRADED_GRADIENT_TILEMODE_UNAVAILABLE: this Studio did not pass the TileMode probe; update Studio. Using Clamp.")
+        spec.tileMode="clamp"
+    end
+    if math.abs(spec.scale-1) > 0.000001 and not scaleSupported then
+        report.fallback=true; report.fallbacks.scale=1
+        table.insert(report.warnings,"UPGRADED_GRADIENT_SCALE_UNAVAILABLE: this Studio did not pass the Scale probe; update Studio. Using Scale=1.")
+        spec.scale=1
     end
     local grad = Instance.new("UIGradient")
     grad.Name = name or "ArenaGradient"
@@ -14781,19 +14802,18 @@ function UI_ENGINE.gradient(parent, stops, rotation, transparency, name, options
     end
     grad.Rotation = spec.rotation
     grad.Offset = Vector2.new(spec.offset[1], spec.offset[2])
-    if spec.allowBeta == true and supported then
-        if spec.type ~= "linear" then grad.Type = Enum.GradientType[types[spec.type]] end
-        if spec.tileMode ~= "clamp" then grad.TileMode = Enum.GradientTileMode[tiles[tileKey]] end
-        if math.abs(spec.scale-1) > 0.000001 then grad.Scale = spec.scale end
-    end
+    if typeSupported and spec.type ~= "linear" then grad.Type = Enum.GradientType[types[spec.type]] end
+    if tileSupported and spec.tileMode ~= "clamp" then grad.TileMode = Enum.GradientTileMode[tiles[tileKey]] end
+    if scaleSupported and math.abs(spec.scale-1) > 0.000001 then grad.Scale = spec.scale end
     -- Defaults are intentionally not written on legacy clients.
     report.type = spec.type; report.tileMode = spec.tileMode; report.scale = spec.scale
     report.rotation = spec.rotation; report.offset = spec.offset
-    report.livePublishReady = not report.betaRequired
-    if report.betaRequired then table.insert(report.warnings, "STUDIO_BETA_NOT_LIVE_PUBLISHABLE: Studio support does not prove client support; do not publish a live game using these properties during Roblox's beta.") end
+    report.livePublishReady = true
+    report.livePublishReadyReason = "Roblox fully released upgraded UIGradients on 2026-10-29; no beta publication block remains. This is a release-status fact, not a live-client render test."
     grad:SetAttribute("ArenaGradientType", report.type)
     grad:SetAttribute("ArenaGradientFallback", report.fallback)
-    grad:SetAttribute("ArenaGradientBeta", report.betaRequired)
+    grad:SetAttribute("ArenaGradientBeta", false)
+    grad:SetAttribute("ArenaGradientReleaseStatus", "released")
     grad.Parent = parent
     return grad, report
 end
@@ -15107,7 +15127,7 @@ function UI_ENGINE.shape(parent, skin, args)
     local color=UI_ENGINE.tokenColor(skin,args.color,skin.p.accent)
     local gradient=args.gradient
     if gradient==nil then gradient=skin.gradient end
-    local gs=UI_ENGINE.gradientSpec(gradient); gs.allowBeta=args.allowBeta==true
+    local gs=UI_ENGINE.gradientSpec(gradient)
     local groups,frames,gradients=0,0,0
     local fillFrames={}
     local triangles,maskCount= nil,0
@@ -15571,7 +15591,7 @@ function UI_ENGINE.path(parent, skin, args)
     holder:SetAttribute("ArenaPathVersion",UI_ENGINE.PATH_VERSION)
     holder:SetAttribute("ArenaPathStyle",game:GetService("HttpService"):JSONEncode(style))
     if args.gradient ~= nil and args.gradient ~= false then
-        local stored=UI_ENGINE.gradientSpec(args.gradient); stored.allowBeta=args.allowBeta == true
+        local stored=UI_ENGINE.gradientSpec(args.gradient)
         holder:SetAttribute("ArenaPathGradientSpec",game:GetService("HttpService"):JSONEncode(stored))
         local hexStops={}
         for _,stop in ipairs(UI_ENGINE.pathStops(args.stops,skin)) do table.insert(hexStops,{stop[1],"#"..stop[2]:ToHex()}) end
@@ -15591,13 +15611,13 @@ function UI_ENGINE.path(parent, skin, args)
         end
         copyLayer(style.shadow,"PathShadow",-2,true); copyLayer(style.outline,"PathOutline",-1,false)
         if args.gradient ~= nil and args.gradient ~= false then
-            local gs=UI_ENGINE.gradientSpec(args.gradient); gs.allowBeta=args.allowBeta == true
+            local gs=UI_ENGINE.gradientSpec(args.gradient)
             local stops=UI_ENGINE.pathStops(args.stops,skin)
             local _,r=UI_ENGINE.gradient(made,stops,gs.rotation,args.transparency,"ArenaPathGradient",gs); gradientReport=r
         end
     else
         local gs, stops
-        if args.gradient ~= nil and args.gradient ~= false then gs=UI_ENGINE.gradientSpec(args.gradient); gs.allowBeta=args.allowBeta == true; stops=UI_ENGINE.pathStops(args.stops,skin) end
+        if args.gradient ~= nil and args.gradient ~= false then gs=UI_ENGINE.gradientSpec(args.gradient); stops=UI_ENGINE.pathStops(args.stops,skin) end
         segments,gradientReport=UI_ENGINE.pathDrawFallback(holder,data,style,aspect,gs,stops)
         mode="cubic-bezier Frame fallback (approximate)"
     end
@@ -16084,7 +16104,7 @@ function UI_ENGINE.pathComposeConnect(parent, skin, args, caps)
     local points = {{x=pa.x,y=pa.y,right=tangent(args.fromSide,1)},{x=pb.x,y=pb.y,left=tangent(args.toSide,-1)}}
     local holder, report, path = UI_ENGINE.path(host, skin, {name=args.name or "ArenaConnector", points=points, smooth=false,
         rect={0,0,100,100}, color=args.color, thickness=args.thickness or 3, zIndex=1, pathZIndex=args.pathZIndex or 2,
-        gradient=args.gradient, allowBeta=args.allowBeta, lockAspect=false})
+        gradient=args.gradient, lockAspect=false})
     local cfg = {fromSide=args.fromSide, toSide=args.toSide, curvature=UI_ENGINE.finite(args.curvature,0.4,0,1)}
     holder:SetAttribute("ArenaPathConnector", game:GetService("HttpService"):JSONEncode(cfg))
     UI_ENGINE.pathSetLink(holder, "From", from); UI_ENGINE.pathSetLink(holder, "To", to)
@@ -16267,7 +16287,6 @@ tools.ui_gradient = function(args)
     local supported=target and (target:IsA("GuiObject") or target:IsA("UIStroke") or target:IsA("Path2D"))
     if action=="apply" and (not supported or target:IsA("ScrollingFrame") or target:IsA("TextBox")) then return failCode("BAD_ARGS","UIGradient target must be a supported GuiObject, UIStroke or Path2D (not ScrollingFrame/TextBox)") end
     local spec=UI_ENGINE.gradientSpec(args.gradient or args)
-    spec.allowBeta=args.allowBeta==true
     local skin=UI_ENGINE.resolveSkin(args.skin or "glass",args.brand,args.colors)
     local stops=args.stops or args.colors or {{0,skin.p.accentHi},{1,skin.p.accentLo}}
     local normalized={}
@@ -16319,7 +16338,7 @@ tools.ui_path = function(args)
                 graphEditor="create smooth=false + edit insert/update/remove; native ControlPointChanged drives attached layouts",
                 outlinedSpline="create outline/shadow layers; real sibling strokes, lower ZIndex, no fill claim"},
             limits={points=UI_ENGINE.PATH_MAX_POINTS,markers=UI_ENGINE.PATH_MAX_MARKERS,samples=UI_ENGINE.PATH_MAX_SAMPLES,fallbackSegments=UI_ENGINE.PATH_MAX_FALLBACK_SEGMENTS},
-            note="Path2D is stroke-only. Use ui_shape for filled polygons. Beta gradients on Path2D still require allowBeta=true and are not live-publishable during Studio Beta."})
+            note="Path2D is stroke-only. Use ui_shape for filled polygons. Upgraded UIGradients on Path2D are fully released and need no allowBeta opt-in; older Studio still reports capability fallbacks."})
     end
     if action=="inspect" or action=="sample" or action=="edit" or action=="layout" or action=="motion" or action=="control" or action=="set_progress" then
         local ref,err=resolveRef(args.ref or args.pathRef); if not ref then return failCode("REF_NOT_FOUND",err) end
@@ -16449,7 +16468,7 @@ tools.ui_design = function(args)
         gradient=skin.gradient,iconStyle=skin.iconStyle,textShadow=skin.textShadow==true,
         corner={policy="role-aware; large panels are not pills",panelMaxScale=0.045,cardMaxScale=0.075,formula="radiusPx = min(width,height)*Scale + Offset; capped at half the shortest side",clipping="UICorner clips input/background, not descendants; CanvasGroup clips descendants"},
         workflow={"Inspect existing UI and preserve its architecture/palette","Choose a composition and material family, not just a color","Find real project/Toolbox/user images; never invent ids","Build with build_interface/ui_widget/ui_shape/ui_path","Audit phone and desktop, check actual image loading and text fit","Do not call emoji-only labels finished skins/icons"},
-        beta={optIn="allowBeta=true",publishRule="No live-game publication with upgraded gradient properties during Studio Beta",fallback="Linear/Clamp/Scale=1; explicitly report visual degradation"},
+        gradientRelease={status="full-release",date="2026-10-29",optIn="none",publishRule="Roblox allows publication in experiences; no Studio Beta flag remains",fallback="Only if this Studio fails property probes: Linear/Clamp/Scale=1 with explicit degradation report"},
         example={tool="ui_widget",args={kind=args.widget or "shop",skin=skin.key,brand=args.brand or skin.brand,items={{name="Speed Coil",price="R$ 99"}}},assetNote="Add assets/items[].image only after obtaining real verified ids; no placeholder id is executable."},
     })
 end
@@ -16614,8 +16633,8 @@ tools.ui_capabilities = function(args)
         corners = { "sharp", "crisp", "soft", "round", "chunky", "pill" },
         devices = { "phone", "tablet", "desktop", "ultrawide" },
         gradientTypes={"Linear","Radial","Elliptical","Conical"},gradientTileModes={"Clamp","Repeat","Mirror"},
-        gradientPolicy={optIn="allowBeta=true",scaleRange={0.001,100},maxColorStops=6,activeBudget=1000,linearFallback=true,livePublishDuringBeta=false},
-        geometry={shapes={"triangle","trapezoid","parallelogram","diamond","chevron","hexagon","arrow","circle","pill"},customPolygonMaxVertices=16,canvasGroupsPerShape=32,pathControlPoints=c.pathPointBudget,pathHardMaxControlPoints=c.pathMaxControlPoints,pathStrokeOnly=true,pathSampling=c.pathSampling,pathTangents=c.pathTangents,pathEditing=c.pathEditing,pathLength=c.pathLength,pathBounds=c.pathBounds,pathChangedEvent=c.pathChangedEvent,pathFallback="approximate cubic-bezier Frame polyline",pathRuntimeHz=30},
+        gradientPolicy={optIn="none",releaseStatus="full-release",releaseDate="2026-10-29",scaleRange={0.001,100},maxColorStops=6,activeBudget=1000,linearFallback=true,livePublishBlockedByBeta=false},
+        geometry={shapes={"triangle","trapezoid","parallelogram","diamond","chevron","hexagon","arrow","circle","pill"},customPolygonMaxVertices=16,canvasGroupsPerShape=32,pathControlPoints=c.pathPointBudget,pathHardMaxControlPoints=c.pathMaxControlPoints,pathStrokeOnly=true,pathSampling=c.pathSampling,pathTangents=c.pathTangents,pathEditing=c.pathEditing,pathLength=c.pathLength,pathBounds=c.pathBounds,pathChangedEvent=c.pathChangedEvent,pathFallback="approximate cubic-bezier Frame polyline",pathRuntimeHz=30,pathReleaseStatus="full-release",pathReleaseDate="2024-06-17"},
         measured = "Every entry was probed with Instance.new/pcall in THIS Studio session - it is measured, not assumed from training data.",
     })
 end
@@ -16884,8 +16903,8 @@ tools.ui_audit = function(args)
         uiScales = 0, offsetHeavy = 0, texts = 0,
         glowStacks = 0, radialMenus = 0, textureImages = 0, billboards = 0, billboardOffsetSize = 0, textureBackgrounds = 0, textureOverlaysWashed = 0,
         outlines = 0, glosses = 0, decorNodes = 0, decorParts = 0 }
-    stats.emojiArt = 0; stats.oversizedCorners = 0; stats.betaGradients = 0; stats.path2D = 0
-    local problems = { emojiArt = {}, oversizedCorners = {}, betaGradients = {}, anchorMismatches = {}, cornerOverflow = {}, contrastFailures = {}, flatSurfaces = {}, genericColors = {},
+    stats.emojiArt = 0; stats.oversizedCorners = 0; stats.gradientFallbacks = 0; stats.legacyBetaMarkers = 0; stats.path2D = 0
+    local problems = { emojiArt = {}, oversizedCorners = {}, gradientFallbacks = {}, anchorMismatches = {}, cornerOverflow = {}, contrastFailures = {}, flatSurfaces = {}, genericColors = {},
         offsetHeavy = {}, nestedCanvasGroups = {}, textTooSmall = {}, tapTargetsTooSmall = {}, outOfBounds = {},
         billboardOffsetSize = {}, textureWashedOut = {}, decorOveruse = {} }
     local function push(list, inst, detail)
@@ -16922,9 +16941,14 @@ tools.ui_audit = function(args)
                     local cls = mod.ClassName
                     if cls == "UIGradient" then
                         stats.gradients = stats.gradients + 1; hasGradient = true
+                        if mod:GetAttribute("ArenaGradientFallback")==true then
+                            stats.gradientFallbacks=stats.gradientFallbacks+1
+                            push(problems.gradientFallbacks,mod,"This gradient was built with a legacy Studio capability fallback. Update Studio and reapply it to restore the requested Type/Scale/TileMode.")
+                        end
                         if mod:GetAttribute("ArenaGradientBeta")==true then
-                            stats.betaGradients=stats.betaGradients+1
-                            push(problems.betaGradients,mod,"Studio Beta gradient: do not publish live until Roblox releases client support")
+                            -- Historical marker from the pre-release Bridge. Roblox has
+                            -- since fully released these properties; do not block publish.
+                            stats.legacyBetaMarkers=stats.legacyBetaMarkers+1
                         end
                     elseif cls == "UIStroke" then
                         stats.strokes = stats.strokes + 1; hasStroke = true
@@ -17098,7 +17122,7 @@ tools.ui_audit = function(args)
         blandnessScore = blandness, verdict = verdict, failureCount = failures,
         counts = stats, problems = problems, deviceMatrix = matrix,
         strokeBudget = { used = stats.strokes, recommendedMax = 300 },
-        gradientBudget = {used=stats.gradients,recommendedMax=1000,betaInstances=stats.betaGradients},
+        gradientBudget = {used=stats.gradients,recommendedMax=1000,fallbackInstances=stats.gradientFallbacks,legacyBetaMarkers=stats.legacyBetaMarkers,releaseStatus="full-release"},
         emojiArtFindings = stats.emojiArt,
         engine = UI_ENGINE.ENGINE_VERSION,
         capabilities = caps,
@@ -28186,20 +28210,20 @@ $script:BridgeHandlerScript = {
         # ---------------- UI ENGINE 1.0 (6.2) ----------------
 
 $t.Add(@{ name = 'ui_gradient'; category = 'ui'; summary = 'Apply a real upgraded UIGradient';
- description = 'Linear/Radial/Elliptical/Conical with Scale and Clamp/Repeat/Mirror on supported GUI objects, UIStroke or Path2D. Explicit Studio Beta opt-in; unsupported properties fall back to Linear/Clamp/Scale=1 and are reported. No live publication during beta.';
- params = @{ ref = @{ type = 'string'; required = $true; description = 'GUI, UIStroke or Path2D path' }; action = @{ type = 'string'; required = $false; description = 'preview or apply (default)' }; gradient = @{ type = 'object'; required = $false; description = 'type, rotation, scale 0.001..100, tileMode; top-level fields also accepted' }; stops = @{ type = 'array'; required = $false; description = '2..6 {time,color} stops; brand tokens allowed' }; allowBeta = @{ type = 'bool'; required = $false; description = 'Required for non-linear/non-clamp/non-unit-scale' }; replace = @{ type = 'bool'; required = $false; description = 'Replace only the named Arena gradient' } };
- returns = '{gradient,report:{type,scale,tileMode,betaPropertiesUsed,fallbacks,warnings},parent}';
- example = 'ui_gradient {"ref":"game.StarterGui.Main.Frame","gradient":{"type":"conical","rotation":45,"scale":1.5,"tileMode":"mirror"},"allowBeta":true}';
+ description = 'Linear/Radial/Elliptical/Conical with Scale and Clamp/Repeat/Mirror on supported GUI objects, UIStroke or Path2D. Fully released by Roblox on 2026-10-29; no beta opt-in is required. If this Studio fails a property probe, only that property falls back and the degradation is reported.';
+ params = @{ ref = @{ type = 'string'; required = $true; description = 'GUI, UIStroke or Path2D path' }; action = @{ type = 'string'; required = $false; description = 'preview or apply (default)' }; gradient = @{ type = 'object'; required = $false; description = 'type, rotation, scale 0.001..100, tileMode; top-level fields also accepted' }; stops = @{ type = 'array'; required = $false; description = '2..6 {time,color} stops; brand tokens allowed' }; replace = @{ type = 'bool'; required = $false; description = 'Replace only the named Arena gradient' } };
+ returns = '{gradient,report:{type,scale,tileMode,releaseStatus,requiresOptIn,fallback,fallbacks,warnings},parent}';
+ example = 'ui_gradient {"ref":"game.StarterGui.Main.Frame","gradient":{"type":"conical","rotation":45,"scale":1.5,"tileMode":"mirror"}}';
  related = @('ui_capabilities','ui_design','ui_audit'); errors = @('BAD_ARGS','REF_NOT_FOUND') })
 $t.Add(@{ name = 'ui_shape'; category = 'ui'; summary = 'Build calculated geometric UI shapes';
  description = 'Trapezoids, triangles, parallelograms, diamonds, chevrons, hexagons, arrows and custom polygons via triangulation, right-triangle altitude masks and rotated Frames in CanvasGroups. Circle/pill use rounded rectangles. Aspect ratio is locked because masks depend on pixel geometry.';
- params = @{ action = @{ type = 'string'; required = $false; description = 'list or build (default)' }; shape = @{ type = 'string'; required = $false; description = 'trapezoid, triangle, parallelogram, diamond, chevron, hexagon, arrow, circle, pill' }; points = @{ type = 'array'; required = $false; description = 'Custom polygon: 3..16 non-self-intersecting {x,y} vertices in 0..100' }; parentRef = @{ type = 'string'; required = $false; description = 'Default game.StarterGui' }; rect = @{ type = 'object'; required = $false; description = 'x,y,w,h percentages' }; skin = @{ type = 'string'; required = $false; description = 'Art direction' }; allowBeta = @{ type = 'bool'; required = $false; description = 'Opt in to beta gradients' } };
+ params = @{ action = @{ type = 'string'; required = $false; description = 'list or build (default)' }; shape = @{ type = 'string'; required = $false; description = 'trapezoid, triangle, parallelogram, diamond, chevron, hexagon, arrow, circle, pill' }; points = @{ type = 'array'; required = $false; description = 'Custom polygon: 3..16 non-self-intersecting {x,y} vertices in 0..100' }; parentRef = @{ type = 'string'; required = $false; description = 'Default game.StarterGui' }; rect = @{ type = 'object'; required = $false; description = 'x,y,w,h percentages' }; skin = @{ type = 'string'; required = $false; description = 'Art direction' } };
  returns = '{shape,report:{shape,canvasGroups,triangles,aspectRatio,aspectLocked,memoryFallback}}';
  example = 'ui_shape {"shape":"trapezoid","skin":"scifi","rect":{"x":35,"y":30,"w":30,"h":25}}';
  related = @('ui_path','ui_audit','ui_capabilities'); errors = @('BAD_ARGS','REF_NOT_FOUND') })
 $t.Add(@{ name = 'ui_path'; category = 'ui'; summary = 'Build and compose stroke-only Path2D UI splines';
  description = 'Native cubic Path2D strokes plus sampling, editing, curved layouts, motion, connectors and progress arcs. Stroke-only: no fill API. Older Studio falls back to an explicitly approximate cubic-bezier Frame polyline. Progress arcs are rebuilt geometry over a separate track, not a native trim property. GetLength is cached on inspect and never polled by the 30 Hz runtime.';
- params = @{ action = @{ type = 'string'; required = $false; description = 'create (default), recipes, inspect, sample, edit, layout, motion, control, connect, progress, set_progress' }; ref = @{ type = 'string'; required = $false; description = 'Arena path holder or Path2D ref for inspect/sample/edit/layout/motion/control/set_progress' }; points = @{ type = 'array'; required = $false; description = '2..50 {x,y} holder percentages (-100..200); optional left/right or tangents={left,right}; xOffset/yOffset pixels' }; preset = @{ type = 'string'; required = $false; description = 'arc, ring, wave, line, s; arc/ring accept centerX,centerY,radius,startAngle,sweep' }; closed = @{ type = 'bool'; required = $false; description = 'Close with >=3 points' }; smooth = @{ type = 'bool'; required = $false; description = 'Auto Catmull-Rom tangents for explicit points; default true' }; thickness = @{ type = 'number'; required = $false; description = '0..100 pixels' }; color = @{ type = 'any'; required = $false; description = 'Color or brand token' }; gradient = @{ type = 'object'; required = $false; description = 'Gradient spec; allowBeta required for upgraded modes' }; stops = @{ type = 'array'; required = $false; description = 'Up to 6 {time,color} stops' }; outline = @{ type = 'object'; required = $false; description = 'Sibling keyline {color,width}' }; shadow = @{ type = 'object'; required = $false; description = 'Offset sibling stroke {color,width,offsetX,offsetY}' }; markers = @{ type = 'array'; required = $false; description = 'Up to 24 {t,image/text,sizePx,rotateToTangent}; real images, no emoji art' }; operation = @{ type = 'string'; required = $false; description = 'edit: set, insert, update, remove, close' }; index = @{ type = 'int'; required = $false; description = '1-based control-point index' }; point = @{ type = 'object'; required = $false; description = 'Control point for insert/update' }; count = @{ type = 'int'; required = $false; description = 'sample count 1..128' }; t = @{ type = 'number'; required = $false; description = 'sample/control parameter 0..1' }; arcLength = @{ type = 'bool'; required = $false; description = 'Even visual spacing (default true); false = parameter space' }; targets = @{ type = 'array'; required = $false; description = 'layout: existing GuiObject refs; allowReparent=true required if outside holder' }; items = @{ type = 'array'; required = $false; description = 'layout/motion marker specs with real image ids' }; targetRef = @{ type = 'string'; required = $false; description = 'motion target GuiObject' }; mode = @{ type = 'string'; required = $false; description = 'motion: once, loop, pingpong' }; duration = @{ type = 'number'; required = $false; description = 'motion seconds' }; playing = @{ type = 'bool'; required = $false; description = 'control play/pause' }; fromRef = @{ type = 'string'; required = $false; description = 'connect endpoint GuiObject' }; toRef = @{ type = 'string'; required = $false; description = 'connect endpoint GuiObject' }; fromSide = @{ type = 'string'; required = $false; description = 'left/right/top/bottom or auto' }; toSide = @{ type = 'string'; required = $false; description = 'left/right/top/bottom or auto' }; value = @{ type = 'number'; required = $false; description = 'progress 0..1' }; live = @{ type = 'bool'; required = $false; description = 'Install LocalScript runtime (default true); static preview is always applied' }; parentRef = @{ type = 'string'; required = $false; description = 'Default game.StarterGui' }; rect = @{ type = 'object'; required = $false; description = 'Holder x,y,w,h percentages' } };
+ params = @{ action = @{ type = 'string'; required = $false; description = 'create (default), recipes, inspect, sample, edit, layout, motion, control, connect, progress, set_progress' }; ref = @{ type = 'string'; required = $false; description = 'Arena path holder or Path2D ref for inspect/sample/edit/layout/motion/control/set_progress' }; points = @{ type = 'array'; required = $false; description = '2..50 {x,y} holder percentages (-100..200); optional left/right or tangents={left,right}; xOffset/yOffset pixels' }; preset = @{ type = 'string'; required = $false; description = 'arc, ring, wave, line, s; arc/ring accept centerX,centerY,radius,startAngle,sweep' }; closed = @{ type = 'bool'; required = $false; description = 'Close with >=3 points' }; smooth = @{ type = 'bool'; required = $false; description = 'Auto Catmull-Rom tangents for explicit points; default true' }; thickness = @{ type = 'number'; required = $false; description = '0..100 pixels' }; color = @{ type = 'any'; required = $false; description = 'Color or brand token' }; gradient = @{ type = 'object'; required = $false; description = 'Gradient spec; upgraded modes are released and need no opt-in' }; stops = @{ type = 'array'; required = $false; description = 'Up to 6 {time,color} stops' }; outline = @{ type = 'object'; required = $false; description = 'Sibling keyline {color,width}' }; shadow = @{ type = 'object'; required = $false; description = 'Offset sibling stroke {color,width,offsetX,offsetY}' }; markers = @{ type = 'array'; required = $false; description = 'Up to 24 {t,image/text,sizePx,rotateToTangent}; real images, no emoji art' }; operation = @{ type = 'string'; required = $false; description = 'edit: set, insert, update, remove, close' }; index = @{ type = 'int'; required = $false; description = '1-based control-point index' }; point = @{ type = 'object'; required = $false; description = 'Control point for insert/update' }; count = @{ type = 'int'; required = $false; description = 'sample count 1..128' }; t = @{ type = 'number'; required = $false; description = 'sample/control parameter 0..1' }; arcLength = @{ type = 'bool'; required = $false; description = 'Even visual spacing (default true); false = parameter space' }; targets = @{ type = 'array'; required = $false; description = 'layout: existing GuiObject refs; allowReparent=true required if outside holder' }; items = @{ type = 'array'; required = $false; description = 'layout/motion marker specs with real image ids' }; targetRef = @{ type = 'string'; required = $false; description = 'motion target GuiObject' }; mode = @{ type = 'string'; required = $false; description = 'motion: once, loop, pingpong' }; duration = @{ type = 'number'; required = $false; description = 'motion seconds' }; playing = @{ type = 'bool'; required = $false; description = 'control play/pause' }; fromRef = @{ type = 'string'; required = $false; description = 'connect endpoint GuiObject' }; toRef = @{ type = 'string'; required = $false; description = 'connect endpoint GuiObject' }; fromSide = @{ type = 'string'; required = $false; description = 'left/right/top/bottom or auto' }; toSide = @{ type = 'string'; required = $false; description = 'left/right/top/bottom or auto' }; value = @{ type = 'number'; required = $false; description = 'progress 0..1' }; live = @{ type = 'bool'; required = $false; description = 'Install LocalScript runtime (default true); static preview is always applied' }; parentRef = @{ type = 'string'; required = $false; description = 'Default game.StarterGui' }; rect = @{ type = 'object'; required = $false; description = 'Holder x,y,w,h percentages' } };
  returns = '{path,nativePath,report:{native,mode,points,closed,strokeOnly,warnings,runtime},samples,data,length,boundingRect}';
  example = 'ui_path {"action":"progress","value":0.65,"sweep":270,"thickness":8,"color":"accent"}';
  related = @('ui_shape','ui_capabilities','ui_texture'); errors = @('BAD_ARGS','REF_NOT_FOUND','PATH_SAMPLE_UNAVAILABLE','PATH_WRITE_FAILED','GRADIENT_BUDGET') })
@@ -29018,7 +29042,7 @@ end
                 title = 'UI Engine 4.0 - measured capabilities, executable art direction'
                 whenThisApplies = 'Inspect the existing GUI/framework and preserve the user''s design and architecture. Use these engine tools for compatible new work; do not rewrite a working framework merely to adopt a skin.'
                 workflow = 'ui_capabilities refresh=true -> ui_skin action=extract / ui_design -> ui_texture inventory/search + validate_asset -> ui_widget/build_interface/ui_shape/ui_path/ui_text -> ui_audit on phone and desktop. Check real image rendering and permissions in Studio; metadata alone is not proof.'
-                gradients = 'UIGradient Type=Linear/Radial/Elliptical/Conical, Scale and TileMode=Clamp/Repeat/Mirror come from Roblox Upgraded UIGradients (Studio Beta announced 2026-10-29). Use ui_gradient or gradient={...}; allowBeta=true is explicit opt-in. Unsupported/beta-off requests fall back to Linear/Clamp/Scale=1 and report the degradation. Do not publish live games with beta properties. Supported hosts: Frame, TextLabel, TextButton, ImageLabel, ImageButton, Path2D, ViewportFrame and UIStroke; not ScrollingFrame/TextBox; no descendant inheritance.'
+                gradients = 'UIGradient Type=Linear/Radial/Elliptical/Conical, Scale and TileMode=Clamp/Repeat/Mirror were fully released by Roblox on 2026-10-29 and may be published in experiences. The Studio Beta flag was removed. Use ui_gradient or gradient={...} without allowBeta; old allowBeta arguments are accepted but ignored. If this Studio fails a property probe, only the unsupported property falls back to Linear/Clamp/Scale=1 and the degradation is reported. Supported hosts: Frame, TextLabel, TextButton, ImageLabel, ImageButton, Path2D, ViewportFrame and UIStroke; not ScrollingFrame/TextBox; no descendant inheritance.'
                 gradientPerformance = 'Use at most 6 color stops and stay below 1000 active gradients. Set Color/Transparency once; animate Offset/Rotation/Scale/Type/TileMode instead. Mirror avoids Repeat seams. Avoid gradients on text-stroked objects when possible; stroke and fill need separate UIGradients. Radial ignores Rotation; Elliptical rotates its axes; Conical Scale changes sweep extent.'
                 corners = 'Effective radiusPx = min(width,height)*CornerRadius.Scale + Offset, capped at half the shortest edge. Scale 0.5 is a pill on a square, not a universal 50px radius. UICorner does not clip descendants and does not apply to ScrollingFrame. Engine defaults cap large panels/modals near 22px, headers near 12px and cards near 18px; buttons may stay round. Explicit user radii are preserved and audited, not silently rewritten. Use cornerPx or corner={scale,offset}; individual tl/tr/bl/br radii are probed.'
                 textures = 'Real project/Toolbox/user-uploaded images are a normal design step, not an optional afterthought. ui_texture action=inventory finds existing Place images; action=search query=... searches real decals; validate_asset checks metadata. Ask for a private upload id when needed. Pass assets={panel=id,card=id,header=id}; items[].image is foreground artwork. Backgrounds default to root scope and full opacity, not a faint wash over every child. Use tile/crop/fit/stretch or sliceCenter for 9-slice. Never invent ids; catalog metadata does not prove experience permission or successful rendering.'
@@ -29028,12 +29052,12 @@ end
                 textShadow = 'ui_text / text.shadow creates a readable foreground with stroke plus a separate lower-ZIndex duplicate shifted downward inside a layout-safe wrapper. ArenaTextEffects mirrors text/font/alignment/size/position changes. This is the popular offset-copy technique, not a native glyph-shadow API. Keep foreground contrast and avoid clipping the shadow.'
                 emoji = 'Emoji-only TextLabels are forbidden as skins, icons, thumbnails or item artwork, including generic create/set/run_lua/script paths. Use real images, ViewportFrame renders or constructed geometry. Mixed emoji in ordinary dialogue requires an explicit user requirement and allowEmojiText=true; it never authorizes emoji art.'
                 diversity = 'The 40 skins have distinct family/composition/signature/material/icon/gradient/shadow recipes. ui_design returns the plan; composeWidget applies ledger/console/sidebar/hero/editorial/floating/gallery structures. Flat print and functional styles are valid; layer count alone is not quality.'
-                references = @('https://devforum.roblox.com/t/full-release-upgraded-ui-gradients/4846594','https://create.roblox.com/docs/reference/engine/classes/UIGradient','https://create.roblox.com/docs/reference/engine/classes/UICorner','https://create.roblox.com/docs/reference/engine/classes/CanvasGroup','https://create.roblox.com/docs/reference/engine/classes/Path2D','https://create.roblox.com/docs/reference/engine/datatypes/Path2DControlPoint','https://create.roblox.com/docs/ui/2D-paths')
+                references = @('https://devforum.roblox.com/t/full-release-upgraded-ui-gradients/4846594','https://create.roblox.com/docs/reference/engine/classes/UIGradient','https://create.roblox.com/docs/reference/engine/classes/UICorner','https://create.roblox.com/docs/reference/engine/classes/CanvasGroup','https://create.roblox.com/docs/reference/engine/classes/Path2D','https://create.roblox.com/docs/reference/engine/datatypes/Path2DControlPoint','https://create.roblox.com/docs/ui/2D-paths','https://devforum.roblox.com/t/path2d-full-release/3027288')
             }
             uiDesignRules = @{
                 title = 'UI design acceptance - no emoji placeholders, no one-size-fits-all panels'
-                steps = @('Preserve the requested brand and existing architecture.','Choose a distinct composition and material family with ui_design.','Obtain real image ids through inventory/search/user upload; verify permission and rendering.','Use role-aware corners, readable offset text shadows where appropriate, and calculated geometry instead of improvised rotated rectangles.','Run ui_audit and inspect phone/desktop fit, contrast, image loading and beta fallbacks before calling the UI finished.')
-                hardRule = 'Never deliver emoji-only labels as designed skins/assets. Never claim beta gradients are live-publishable or Path2D fills exist.'
+                steps = @('Preserve the requested brand and existing architecture.','Choose a distinct composition and material family with ui_design.','Obtain real image ids through inventory/search/user upload; verify permission and rendering.','Use role-aware corners, readable offset text shadows where appropriate, and calculated geometry instead of improvised rotated rectangles.','Run ui_audit and inspect phone/desktop fit, contrast, image loading and any legacy Studio capability fallbacks before calling the UI finished.')
+                hardRule = 'Never deliver emoji-only labels as designed skins/assets. Never claim Path2D fills exist. Upgraded UIGradients are fully released; do not reintroduce a beta opt-in or publication block.'
             }
             coordinateGuide = @(
                 'AXES: +X = right, +Y = up, +Z = toward the viewer. The default Studio camera looks toward -Z. The "front" face of a part is its -Z face.',
@@ -39112,7 +39136,8 @@ $uiTranslationJson = @'
   "Hat Höhen, Profile, Wasser oder Volumen des Geländes gemessen.": "Measured terrain heights, profiles, water or volume.",
   "Hat Gelände im angegebenen Bereich entfernt.": "Removed terrain in the requested area.",
   "Hat ein fertiges Oberflächen-Widget aus der UI-Bibliothek gebaut.": "Built a ready-made interface widget from the UI library.",
-  "• 8.1.0 — UI ENGINE 4.0: • 40 Skin-Rezepte mit echten Layout-/Material-Unterschieden. • Neue UIGradient-Typen, Scale und TileMode mit Beta-Opt-in und Fallback. • Rollenbasierte Ecken, echte Toolbox-/Upload-Texturen und berechnete CanvasGroup-Geometrie. • Textschatten als versetzte Kopie; Emoji-only-Skins verboten. • Path2D-UI: Kurven bearbeiten, gleichmäßige Layouts, Bewegung, Karten-Verbinder und Fortschrittsbögen; älteres Studio erhält eine explizite kubische Frame-Näherung. • Windows-/Roblox-Liveabnahme bleibt vor Release Pflicht.": "• 8.1.0 — UI ENGINE 4.0: • 40 skin recipes with real layout/material differences. • New UIGradient types, Scale and TileMode with beta opt-in and fallback. • Role-aware corners, real Toolbox/uploaded textures and calculated CanvasGroup geometry. • Offset-copy text shadows; emoji-only skins forbidden. • Path2D UI: edit curves, even layouts, motion, card connectors and progress arcs; older Studio gets an explicit cubic Frame approximation. • Windows/Roblox live validation remains required before release."
+  "• 8.1.0 — UI ENGINE 4.0: • 40 Skin-Rezepte mit echten Layout-/Material-Unterschieden. • Neue UIGradient-Typen, Scale und TileMode mit Beta-Opt-in und Fallback. • Rollenbasierte Ecken, echte Toolbox-/Upload-Texturen und berechnete CanvasGroup-Geometrie. • Textschatten als versetzte Kopie; Emoji-only-Skins verboten. • Path2D-UI: Kurven bearbeiten, gleichmäßige Layouts, Bewegung, Karten-Verbinder und Fortschrittsbögen; älteres Studio erhält eine explizite kubische Frame-Näherung. • Windows-/Roblox-Liveabnahme bleibt vor Release Pflicht.": "• 8.1.0 — UI ENGINE 4.0: • 40 skin recipes with real layout/material differences. • New UIGradient types, Scale and TileMode with beta opt-in and fallback. • Role-aware corners, real Toolbox/uploaded textures and calculated CanvasGroup geometry. • Offset-copy text shadows; emoji-only skins forbidden. • Path2D UI: edit curves, even layouts, motion, card connectors and progress arcs; older Studio gets an explicit cubic Frame approximation. • Windows/Roblox live validation remains required before release.",
+  "• 8.1.1 — RELEASE-STATUS-FIX: • Erweiterte UIGradients sind laut Roblox seit 29.10.2026 vollständig veröffentlicht und in Erlebnissen publizierbar. • Kein Beta-Schalter und kein allowBeta mehr nötig; alte allowBeta-Aufrufe werden ignoriert. • Fallback nur noch bei fehlender API in älterem Studio, eigenschaftsweise gemeldet. • Path2D-Status als vollständig veröffentlicht gekennzeichnet. • Audit blockiert historische Beta-Markierungen nicht mehr. • Bridge bleibt unveröffentlichter Kandidat.": "• 8.1.1 — RELEASE-STATUS FIX: • Upgraded UIGradients are fully released by Roblox since 2026-10-29 and may be published in experiences. • No Beta flag or allowBeta is required; old allowBeta arguments are ignored. • Fallback only when an older Studio lacks an API property, reported per property. • Path2D is marked fully released. • Audit no longer blocks historical beta markers. • Bridge remains an unpublished candidate."
 }
 '@
 foreach ($property in ($uiTranslationJson | ConvertFrom-Json).PSObject.Properties) { $script:UiTranslationsDeEn[$property.Name] = [string]$property.Value }
