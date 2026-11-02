@@ -1,9 +1,9 @@
-beta-release/ contains the UNPUBLISHED 8.1.1 release candidate.
+beta-release/ contains the UNPUBLISHED 8.1.2 release candidate.
 
 What is here
 - ArenaRobloxBridge.exe - Windows x64 candidate built by GitHub Actions
   ("Exe Builder (Release-Kandidat)") from this branch. It carries exactly the
-  version in app/version.json and the matching file version (8.1.1.0).
+  version in app/version.json and the matching file version (8.1.2.0).
 - candidate.json - provenance manifest: source fingerprint of app/ + builder/,
   EXE SHA-256/size/version, source commit, branch and workflow run. It is not a
   release manifest and is never served to installed bridges.
@@ -19,6 +19,9 @@ How to test
 4. Exercise ui_capabilities, ui_design, ui_texture inventory/search,
    ui_widget/build_interface, ui_shape, ui_path, ui_text and ui_audit.
 5. Path2D additions: ui_path action=recipes; create preset=wave/ring;
+   try closed=true fill=true fillColor=... fillLayers=10. This is an
+   approximate inset-stroke fill, not a native Roblox Path2D fill; inspect
+   concave edges and the report warnings. action=fill toggles it later;
    action=layout with real image items; action=motion + control;
    action=connect between two cards; action=progress + set_progress.
    Check Play-mode runtime, arc-length spacing, and the explicit cubic
