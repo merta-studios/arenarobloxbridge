@@ -41,6 +41,10 @@ jobs:
       PYTHONUTF8: "1"
       PYTHONIOENCODING: utf-8
     steps:
+      - name: LF-Checkout erzwingen (Tests pruefen Zeilenenden)
+        shell: bash
+        run: git config --global core.autocrlf false
+
       - name: Code holen
         uses: actions/checkout@v4
         with:
@@ -69,7 +73,7 @@ jobs:
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             mkdir -p next-update/developer/ci-diagnostics
-            tail -200 offline-tests.log > next-update/developer/ci-diagnostics/offline-tests-tail.log
+            cp offline-tests.log next-update/developer/ci-diagnostics/offline-tests-tail.log
             git add next-update/developer/ci-diagnostics/offline-tests-tail.log
             git commit -m "CI diagnostics: offline test failure tail [skip ci]" || true
             git push origin "HEAD:refs/heads/$GITHUB_REF_NAME" || true
