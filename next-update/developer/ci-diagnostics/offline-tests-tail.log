@@ -1,0 +1,200 @@
+[OK]   Das Update-Fenster ist als eigener Block vorhanden
+[OK]   Das X oben rechts (UpdateCloseButton) ist weiter im Fenster
+[OK]   Das X setzt die Auswahl 'exit'
+[OK]   Das X setzt NIRGENDS mehr 'later' (das war das Schlupfloch)
+[OK]   Auch Schließen ohne Auswahl (Add_Closing, z. B. Alt+F4) wird 'exit'
+[OK]   Eine getroffene Auswahl (Installieren/Später) wird beim Schließen nicht überschrieben
+[OK]   Das X sagt per Tooltip ehrlich, dass es die Bridge beendet
+[OK]   Das Update-Gate ist vorhanden
+[OK]   Das Gate beendet die Bridge bei 'exit' (Rückgabe $false)
+[OK]   'exit' wird VOR der 'later'-Auswertung behandelt (kein Weiter-Start, kein Zähler)
+[OK]   Pflicht-Sperre: Ein 'Später' startet bei fälligem Pflicht-Update nie mehr
+[OK]   Nur ein echtes 'Später' vor der Pflicht erhöht weiter den Zähler
+[OK]   Das Später-Limit bleibt 5
+[OK]   Bei $false schließt der Aufrufer das Hauptfenster, bevor Start-BridgeRuntime läuft
+[OK]   Das geschlossene Hauptfenster beendet den Prozess vollständig (Exit im Closed-Pfad)
+
+OK: 8.0.1 - das X beendet die komplette Bridge, die Pflicht lässt sich nicht wegklicken.
+Windows-Verhalten (WPF/ShowDialog/Prozessende) ist hier NICHT geprüft.
+[PASS] test_v801_update_close.py
+
+========== test_v803_bridge.py ==========
+Traceback (most recent call last):
+  File "D:\a\arenarobloxbridge\arenarobloxbridge\next-update\developer\tests\test_v803_bridge.py", line 12, in <module>
+    CATALOG = json.loads((ROOT / 'app/localization/en.json').read_text())
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\pathlib.py", line 1028, in read_text
+    return f.read()
+           ^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\encodings\cp1252.py", line 23, in decode
+    return codecs.charmap_decode(input,self.errors,decoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeDecodeError: 'charmap' codec can't decode byte 0x9d in position 133: character maps to <undefined>
+[FAIL] test_v803_bridge.py exited with 1.
+
+========== test_v803_parts.py ==========
+..........
+----------------------------------------------------------------------
+Ran 10 tests in 0.050s
+
+OK
+[PASS] test_v803_parts.py
+
+========== test_v805_bridge.py ==========
+Traceback (most recent call last):
+  File "D:\a\arenarobloxbridge\arenarobloxbridge\next-update\developer\tests\test_v805_bridge.py", line 10, in <module>
+    VERSION = json.loads((ROOT / 'app/version.json').read_text())
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\pathlib.py", line 1028, in read_text
+    return f.read()
+           ^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\encodings\cp1252.py", line 23, in decode
+    return codecs.charmap_decode(input,self.errors,decoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeDecodeError: 'charmap' codec can't decode byte 0x9d in position 27475: character maps to <undefined>
+[FAIL] test_v805_bridge.py exited with 1.
+
+========== test_v805_parts.py ==========
+............
+----------------------------------------------------------------------
+Ran 12 tests in 0.140s
+
+OK
+[PASS] test_v805_parts.py
+
+========== test_v805_release_candidate.py ==========
+...................
+----------------------------------------------------------------------
+Ran 19 tests in 0.001s
+
+OK
+[PASS] test_v805_release_candidate.py
+
+========== test_v810_release_safety.py ==========
+......E..
+======================================================================
+ERROR: test_published_release_manifest_is_untouched_by_this_candidate (__main__.CandidateManifest.test_published_release_manifest_is_untouched_by_this_candidate)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "D:\a\arenarobloxbridge\arenarobloxbridge\next-update\developer\tests\test_v810_release_safety.py", line 90, in test_published_release_manifest_is_untouched_by_this_candidate
+    tuple(map(int, json.loads((ROOT / 'app/version.json').read_text())['version'].split('.'))))
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\pathlib.py", line 1028, in read_text
+    return f.read()
+           ^^^^^^^^
+  File "C:\hostedtoolcache\windows\Python\3.12.10\x64\Lib\encodings\cp1252.py", line 23, in decode
+    return codecs.charmap_decode(input,self.errors,decoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeDecodeError: 'charmap' codec can't decode byte 0x9d in position 27475: character maps to <undefined>
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.058s
+
+FAILED (errors=1)
+[FAIL] test_v810_release_safety.py exited with 1.
+
+========== test_v810_ui.py ==========
+...............
+----------------------------------------------------------------------
+Ran 15 tests in 0.223s
+
+OK
+[PASS] test_v810_ui.py
+
+========== test_v900_update_flow.py ==========
+
+-- Veroeffentlichungswerkzeug (echte EXE)
+  ok   veroeffentlichte Test-EXE in release/ ist vorhanden
+  ok   publish_latest.py prueft standardmaessig release/ArenaRobloxBridge.exe
+  ok   publish_latest.py zeigt auf next-update/release/ArenaRobloxBridge.exe
+  ok   Dateiversion der EXE ist dreiteilig plus .0 (gefunden: 8.0.5.0)
+  ok   SHA-256 im Manifest stimmt mit der Datei ueberein
+  ok   Groesse im Manifest stimmt
+  ok   Download-Adresse zeigt auf den Commit und ArenaRobloxBridge.exe (unveraenderlich)
+  ok   falsche Version wird abgelehnt
+  ok   gleiche Version mit anderer Datei wird abgelehnt
+  ok   niedrigere Version wird abgelehnt
+  ok   identische Datei bleibt unveraendert (kein Leer-Commit)
+  ok   Versionsvergleich ist numerisch (7.10.0 > 7.9.9)
+
+-- Versionsquelle
+  ok   app/version.json hat eine dreiteilige Version
+  ok   neueste Versionsnotiz gehoert zur aktuellen Version
+  ok   Versionsplatzhalter im Quelltext vorhanden (35x)
+  ok   keine festen Versionsnummern im Code (nur Platzhalter)
+  ok   Builder setzt die Version aus version.json in den Quelltext
+
+-- Workflow
+  ok   .github/workflows/publish-bridge.yml liegt im Repository-Hauptordner
+  ok   Workflow startet nur bei Aenderung der ArenaRobloxBridge.exe
+  ok   Workflow laeuft nur auf main
+  ok   Workflow darf latest.json committen
+  ok   Workflow ruft das Werkzeug auf
+  ok   Commit des Workflows loest keinen weiteren Lauf aus
+
+-- Download-Website (next-update/website)
+  ok   next-update/website enthaelt index.html und netlify.toml fuer das Zweit-Repository
+  ok   Download-Seite ist eine leere weisse Seite mit schwarzem Statustext
+  ok   Download-Seite ruft latest.json ab und laedt ArenaRobloxBridge.exe herunter
+
+-- Update-Block in app/ArenaBridge.ps1
+  ok   Update-Block genau einmal vorhanden
+  ok   Update-Pruefung nur gegen raw.githubusercontent.com (feste Adresse)
+  ok   Update-Block kennt die Download-Seite (feste Adresse, 7.9.4)
+  ok   Jetzt installieren oeffnet die Download-Seite (nicht mehr die rohe EXE-Adresse)
+  ok   Spaeter-Limit ist 5
+  ok   Update-Block beendet keine Prozesse und fuehrt keinen Code aus dem Netz aus
+  ok   Update-Block loescht oder verschiebt nichts direkt (Papierkorb nur ueber Microsoft.VisualBasic)
+  ok   alte EXE geht in den Papierkorb
+  ok   Papierkorb-Aufruf ist vollstaendig
+  ok   ArenaRobloxBridge*.exe wird erkannt und aufgeraeumt
+  ok   Update-Block akzeptiert ArenaRobloxBridge.exe im release-Ordner
+  ok   keine Aufrufe der entfernten alten Update-Funktionen
+  ok   Update-Pruefung laeuft vor den Diensten (Start-BridgeRuntime)
+  ok   XAML des Update-Fensters gefunden
+  ok   Update-Fenster nutzt keine geteilten Ressourcen (kein StaticResource-Absturz)
+  ok   XAML enthaelt UpdateInstallButton
+  ok   XAML enthaelt UpdateLaterButton
+  ok   XAML enthaelt UpdateNotesText
+  ok   XAML enthaelt UpdateStatusText
+  ok   XAML ist wohlgeformtes XML
+  ok   Installieren-Knopf ist gruen
+
+-- Builder
+  ok   Builder bettet keinen Updater mehr ein
+  ok   keine Updater-Platzhalter mehr
+
+-- Altes System entfernt
+  ok   entfernt: next-update/update-system
+  ok   entfernt: next-update/developer/tools/release.py
+  ok   entfernt: next-update/tools/ArenaBridge-Update-Holen.ps1
+  ok   entfernt: next-update/developer/tests/Invoke-SelfUpdateSmoke.ps1
+  ok   entfernt: next-update/developer/docs/UPDATE-KONZEPT.md
+  ok   entfernt: next-update/release/ArenaBridge-7.8.0.exe
+
+-- PowerShell-Syntax (Tree-sitter, bekannte Hinweise als Baseline)
+  ok   app/ArenaBridge.ps1 hat nicht mehr Parser-Hinweise als die Baseline (8 <= 8)
+  ok   builder/Build-EXE.ps1 ist syntaktisch sauber
+
+OK: Selbst-Update (einfach) ist auf dieser Pruefebene in Ordnung. Windows-Verhalten ist NICHT geprueft.
+[PASS] test_v900_update_flow.py
+  test_v398_structure.py: exit 1
+  test_v711_delivery.py: exit 1
+  test_v712_toolbox.py: exit 1
+  test_v713_quality.py: exit 1
+  test_v714_organic.py: exit 1
+  test_v720_bridge.py: exit 1
+  test_v732_organic_creature.py: exit 1
+  test_v740_mesh.py: exit 1
+  test_v755_regression.py: exit 1
+  test_v758_startup_questions.py: exit 1
+  test_v759_creator_dashboard.py: exit 1
+  test_v760_user_messages_opencloud.py: exit 1
+  test_v761_opencloud_key.py: exit 1
+  test_v762_opencloud_policy.py: exit 1
+  test_v794_build_publish.py: exit 1
+  test_v803_bridge.py: exit 1
+  test_v805_bridge.py: exit 1
+  test_v810_release_safety.py: exit 1
+
+Finished: 15/33 run tests passed; 0 skipped (exit 77).
