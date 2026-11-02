@@ -17,6 +17,12 @@ How to test
    works without the beta feature and reports the linear fallback.
 4. Exercise ui_capabilities, ui_design, ui_texture inventory/search,
    ui_widget/build_interface, ui_shape, ui_path, ui_text and ui_audit.
+5. Path2D additions: ui_path action=recipes; create preset=wave/ring;
+   action=layout with real image items; action=motion + control;
+   action=connect between two cards; action=progress + set_progress.
+   Check Play-mode runtime, arc-length spacing, and the explicit cubic
+   Frame fallback on older Studio. Progress arcs are rebuilt geometry,
+   not a native Path2D trim property.
 
 Important
 - This folder publishes NOTHING. release/ and release/latest.json remain the

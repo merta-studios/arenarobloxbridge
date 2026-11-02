@@ -16,8 +16,13 @@ has tested the Windows EXE and explicitly approved release.
   `assets={panel,card,header}`, per-item artwork, full-opacity backgrounds,
   tile/crop/fit/stretch/9-slice. No blanket texture inheritance over icons.
 - Calculated geometry: `ui_shape` (ear clipping → right-triangle altitude masks
-  → rotated Frames in CanvasGroups, aspect lock, memory fallback) and `ui_path`
-  (native stroke-only Path2D or explicit straight-frame fallback).
+  → rotated Frames in CanvasGroups, aspect lock, memory fallback).
+- Path2D UI suite in `ui_path`: native stroke-only cubic splines, presets,
+  inspect/sample/edit, arc-length layouts with real image markers, motion along
+  a curve, card/skill-tree connectors, and rebuilt progress arcs over a track.
+  Older Studio gets an explicitly approximate cubic-bezier Frame polyline.
+  `GetLength` is cached on inspect and never polled by the 30 Hz dirty-driven
+  LocalScript runtime. Progress is rebuilt geometry, not a fake native trim API.
 - Offset-copy text shadows with layout-safe wrapper and runtime sync.
 - Emoji-only artwork is rejected across declarative UI, generic property writes,
   `run_lua` and inserted scripts. Mixed dialogue emoji needs explicit opt-in.
@@ -27,10 +32,13 @@ has tested the Windows EXE and explicitly approved release.
 
 ## Offline evidence
 
-- `python next-update/developer/tests/run_offline_tests.py` → 33/33 passed.
+- `python next-update/developer/tests/run_offline_tests.py` → 33/33 passed
+  (including the expanded Path2D suite; `test_v810_ui.py` alone: 19/19).
 - New Lua runtime tests execute the embedded engine against GUI doubles:
   gradients/fallback, corners, shadows+sync, emoji guards, preflight rollback,
-  role textures, all 18 widgets, shapes/paths, polygon rasterization.
+  role textures, all 18 widgets, shapes/paths, polygon rasterization, Path2D
+  sampling/edit contracts, live layout/motion runtime, connectors, progress arcs,
+  emoji-marker rollback and measured native capability probes.
 - Tree-sitter PowerShell parse baseline unchanged; Lua parse/load checked.
 
 ## Still required before release (user / Windows / Roblox)
@@ -40,8 +48,12 @@ has tested the Windows EXE and explicitly approved release.
 3. Enable Studio Beta *Upgraded UIGradients* and verify `ui_capabilities`.
 4. Verify real Toolbox/uploaded image permissions and rendering in Studio.
 5. Inspect phone/desktop fit, contrast, CanvasGroup memory on low quality.
-6. Only then explicitly run promotion (`confirm=RELEASE`) on main.
+6. Exercise `ui_path action=recipes`, then a wave layout with real images,
+   a moving icon, a connector between two cards, and a 270° progress arc.
+   Verify Play-mode runtime updates, older-Studio fallback reporting, and that
+   no live game is published with beta gradient properties.
+7. Only then explicitly run promotion (`confirm=RELEASE`) on main.
 
 Roblox references: DevForum 4846594 (upgraded gradients, Studio Beta),
-UIGradient/UICorner/CanvasGroup/Path2D creator docs. Beta property availability
-is not a live-publish guarantee.
+UIGradient/UICorner/CanvasGroup/Path2D/Path2DControlPoint creator docs and the
+2D-paths guide. Beta property availability is not a live-publish guarantee.

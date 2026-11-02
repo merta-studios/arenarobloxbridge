@@ -12360,6 +12360,8 @@ function UI_ENGINE.caps(force)
     c.upgradedGradients=c.gradientType and c.gradientScale and c.gradientTileMode
     c.gradientBetaStatus="Studio property probe only; live-client availability and live-publish eligibility are NOT measured. Roblox announced Studio Beta on 2026-10-29."
     c.pathControlPoints=false
+    c.pathSampling,c.pathTangents,c.pathEditing,c.pathLength,c.pathBounds,c.pathChangedEvent=false,false,false,false,false,false
+    c.pathMaxControlPoints=0
     if c.path2D then
         c.pathControlPoints=pcall(function()
             local path=Instance.new("Path2D")
@@ -12368,7 +12370,26 @@ function UI_ENGINE.caps(force)
             local valid=#path:GetControlPoints()==2
             path:Destroy(); if not valid then error("control point readback failed") end
         end)
+        if c.pathControlPoints then
+            local host=Instance.new("Frame"); host.Name="ArenaPathCapabilityProbe"; host.Size=UDim2.fromOffset(100,100); host.BackgroundTransparency=1
+            local path=Instance.new("Path2D"); path.Parent=host
+            pcall(function() path:SetControlPoints({Path2DControlPoint.new(UDim2.fromScale(0,0)),Path2DControlPoint.new(UDim2.fromScale(1,1))}) end)
+            c.pathSampling=pcall(function() local p=path:GetPositionOnCurveArcLength(0.5); local q=path:GetPositionOnCurve(0.5); if p==nil or q==nil then error("missing sample") end end)
+            c.pathTangents=pcall(function() local t=path:GetTangentOnCurveArcLength(0.5); local u=path:GetTangentOnCurve(0.5); if t==nil or u==nil then error("missing tangent") end end)
+            c.pathLength=pcall(function() local n=path:GetLength(); if type(n)~="number" then error("missing length") end end)
+            c.pathBounds=pcall(function() local r=path:GetBoundingRect(); if r==nil then error("missing bounds") end end)
+            c.pathEditing=pcall(function()
+                path:InsertControlPoint(2,Path2DControlPoint.new(UDim2.fromScale(0.5,0.5)))
+                path:UpdateControlPoint(2,Path2DControlPoint.new(UDim2.fromScale(0.5,0.25)))
+                path:RemoveControlPoint(2)
+                if #path:GetControlPoints()~=2 then error("edit readback failed") end
+            end)
+            c.pathChangedEvent=pcall(function() local conn=path.ControlPointChanged:Connect(function() end); conn:Disconnect() end)
+            pcall(function() c.pathMaxControlPoints=path:GetMaxControlPoints() end)
+            host:Destroy()
+        end
     end
+    c.pathPointBudget=math.min(50,c.pathMaxControlPoints>0 and c.pathMaxControlPoints or 50)
     c.rotatedClipping=nil
     pcall(function() c.rotatedClipping=game:GetService("StarterGui").ClipsDescendantsSupportsRotation end)
     c.individualCorners = false
@@ -12400,7 +12421,9 @@ function UI_ENGINE.capNotes()
     local c, notes = UI_ENGINE.caps(), {}
     if not c.upgradedGradients then table.insert(notes,"Upgraded UIGradients unavailable: Type/Scale/TileMode fall back to Linear/1/Clamp. Enable File > Beta Features > Upgraded UIGradients and restart Studio, then ui_capabilities refresh=true.") end
     table.insert(notes,"Upgraded gradients require explicit allowBeta=true. During Studio Beta, do not publish live games using them. Linear fallback is not an equivalent conical/radial effect.")
-    if not c.pathControlPoints then table.insert(notes,"Path2D control-point API unavailable: ui_path uses straight Frame segments; it does not pretend these are splines.") end
+    if not c.pathControlPoints then table.insert(notes,"Path2D control-point API unavailable: ui_path uses an explicit approximate cubic-bezier Frame polyline, not native splines.") end
+    if c.pathControlPoints and not c.pathSampling then table.insert(notes,"Path2D exists but curve sampling is unavailable: layout/motion fall back to the same cubic math as an approximation; native viewport editing still works.") end
+    if c.pathControlPoints and not c.pathChangedEvent then table.insert(notes,"Path2D.ControlPointChanged unavailable: live layouts cannot react to native control-point edits; refresh/rebuild after editing.") end
     if not c.uiShadow then table.insert(notes, "UIShadow missing: the engine falls back to a stacked halo-frame shadow. Ask the user to update Roblox Studio for native drop shadows.") end
     if not c.strokeScaledSize then table.insert(notes, "UIStroke.StrokeSizingMode missing: stroke thickness falls back to pixel offset and is rescaled by the runtime script instead.") end
     if not c.individualCorners then table.insert(notes, "Individual UICorner radii missing: all four corners share one radius.") end
@@ -15136,49 +15159,998 @@ function UI_ENGINE.shape(parent, skin, args)
     return root,{shape=kind,canvasGroups=groups,frames=frames,gradients=gradients,gradient=report,aspectLocked=true,aspect=aspect,triangles=triangles and #triangles or 0,clipping="CanvasGroup clips descendants; UICorner alone does not",segmentedGradient=gradients>1,memoryFallback=memoryFallback,fallbackReason=memoryFallback and (not caps.canvasGroup and "CanvasGroup unavailable" or "more than 32 masks") or nil,memoryNote="Static geometry only. Gradients on triangulated shapes repeat per triangle, not one seamless field. Avoid resizing groups every frame; inspect on low graphics quality."}
 end
 
-function UI_ENGINE.path(parent,skin,args)
-    local caps=UI_ENGINE.caps()
-    local points=args.points or {}
-    if #points<2 or #points>50 then error("BAD_ARGS: Path2D needs 2..50 control points") end
-    local rect=UI_ENGINE.rect(args.rect or {0,0,100,100},"topleft")
-    local holder=Instance.new("Frame"); holder.Name=tostring(args.name or "ArenaPath"); holder.BackgroundTransparency=1; holder.BorderSizePixel=0
-    holder.AnchorPoint=rect.anchor; holder.Position=rect.pos; holder.Size=rect.size; holder.ZIndex=tonumber(args.zIndex) or 5
-    local aspect=UI_ENGINE.finite(args.aspect,16/9,0.05,20)
-    if not (caps.path2D and caps.pathControlPoints) then local lock=Instance.new("UIAspectRatioConstraint"); lock.AspectRatio=aspect; lock.DominantAxis=Enum.DominantAxis.Width; lock.Parent=holder end
-    local color=UI_ENGINE.tokenColor(skin,args.color,skin.p.accent)
-    local native,controlPoints=caps.path2D and caps.pathControlPoints,nil
-    local segments={}
-    local made,mode
-    if native then
-        made=Instance.new("Path2D"); made.Name="Path"; made.Color3=color; made.Thickness=UI_ENGINE.finite(args.thickness,3,0,100); made.Closed=args.closed==true and #points>=3; made.ZIndex=1
-        controlPoints={}
-        for _,v in ipairs(points) do
-            local x=UI_ENGINE.finite(v[1] or v.x,0,-100,200)/100; local y=UI_ENGINE.finite(v[2] or v.y,0,-100,200)/100
-            local tangents=v.tangents or {}; local l,r=v.left or tangents.left or {},v.right or tangents.right or {}
-            table.insert(controlPoints,Path2DControlPoint.new(UDim2.fromScale(x,y),UDim2.fromScale((tonumber(l[1] or l.x) or 0)/100,(tonumber(l[2] or l.y) or 0)/100),UDim2.fromScale((tonumber(r[1] or r.x) or 0)/100,(tonumber(r[2] or r.y) or 0)/100)))
-        end
-        made:SetControlPoints(controlPoints); made.Parent=holder; mode="Path2D"
-    else
-        if args.closed==true then table.insert(points,points[1]) end
-        for i=2,#points do
-            local a,b=points[i-1],points[i]
-            local ax,ay=(tonumber(a[1] or a.x) or 0)/100,(tonumber(a[2] or a.y) or 0)/100
-            local bx,by=(tonumber(b[1] or b.x) or 0)/100,(tonumber(b[2] or b.y) or 0)/100
-            local dx,dy=(bx-ax)*aspect,(by-ay); local length=math.sqrt(dx*dx+dy*dy)
-            local line=Instance.new("Frame"); line.Name="PathSegment"; line.BackgroundColor3=color; line.BorderSizePixel=0; line.AnchorPoint=Vector2.new(0.5,0.5)
-            line.Position=UDim2.fromScale((ax+bx)/2,(ay+by)/2); line.Size=UDim2.new(length/aspect,0,0,UI_ENGINE.finite(args.thickness,3,0,100)); line.Rotation=math.deg(math.atan2(dy,dx)); line.Parent=holder; table.insert(segments,line)
-        end
-        mode="straight-frame fallback"
+-- Path2D suite for UI Engine 4.0 (same 8.1.0 candidate).
+-- Sources: create.roblox.com/docs/reference/engine/classes/Path2D,
+-- /reference/engine/datatypes/Path2DControlPoint and /ui/2D-paths.
+-- Path2D is a STROKE. There is no fill/trim/progress API; progress arcs below
+-- are explicitly rebuilt geometry, never a pretend native property.
+UI_ENGINE.PATH_VERSION = "4.1"
+UI_ENGINE.PATH_MAX_POINTS = 50
+UI_ENGINE.PATH_MAX_MARKERS = 24
+UI_ENGINE.PATH_MAX_SAMPLES = 128
+UI_ENGINE.PATH_MAX_FALLBACK_SEGMENTS = 192
+
+function UI_ENGINE.pathNumber(value, fallback, name)
+    local n = tonumber(value)
+    if n == nil or n ~= n or n == math.huge or n == -math.huge then
+        if fallback ~= nil then return fallback end
+        error("BAD_ARGS: " .. tostring(name or "value") .. " must be a finite number")
     end
-    local gradientReport
-    if args.gradient ~= nil and args.gradient ~= false then
-        local gs=UI_ENGINE.gradientSpec(args.gradient); gs.allowBeta=args.allowBeta==true
-        for _,target in ipairs(native and {made} or segments) do
-            local _,r=UI_ENGINE.gradient(target,{{0,skin.p.accentHi},{1,skin.p.accentLo}},gs.rotation,nil,"ArenaPathGradient",gs); gradientReport=r
+    return n
+end
+
+function UI_ENGINE.pathUDim(value, fallback, name)
+    value = value or fallback or {}
+    if type(value) ~= "table" then error("BAD_ARGS: " .. tostring(name or "UDim2") .. " must be {x,y}") end
+    return {
+        x = UI_ENGINE.pathNumber(value[1] or value.x, 0, name .. ".x") / 100,
+        y = UI_ENGINE.pathNumber(value[2] or value.y, 0, name .. ".y") / 100,
+        xo = UI_ENGINE.pathNumber(value.xOffset or value.offsetX, 0, name .. ".xOffset"),
+        yo = UI_ENGINE.pathNumber(value.yOffset or value.offsetY, 0, name .. ".yOffset"),
+    }
+end
+
+-- Public coordinates are percentages of the holder; offsets are pixels.
+-- Internally positions/tangents use scale fractions, matching Path2DControlPoint.
+function UI_ENGINE.pathPoints(points, closed, smooth, tension)
+    if type(points) ~= "table" or #points < 2 or #points > UI_ENGINE.PATH_MAX_POINTS then
+        error("BAD_ARGS: Path2D needs 2.." .. UI_ENGINE.PATH_MAX_POINTS .. " control points")
+    end
+    if closed and #points < 3 then error("BAD_ARGS: closed=true needs at least 3 control points") end
+    local out = {}
+    for i = 1, #points do
+        local v = points[i]
+        if type(v) ~= "table" then error("BAD_ARGS: control point must be {x,y,left,right}") end
+        local p = UI_ENGINE.pathUDim(v, nil, "point")
+        if p.x < -1 or p.x > 2 or p.y < -1 or p.y > 2 then error("BAD_ARGS: point x/y must stay within -100..200 percent") end
+        local tangents = v.tangents or {}
+        p.left = UI_ENGINE.pathUDim(v.left or tangents.left, nil, "leftTangent")
+        p.right = UI_ENGINE.pathUDim(v.right or tangents.right, nil, "rightTangent")
+        p.explicit = v.left ~= nil or v.right ~= nil or tangents.left ~= nil or tangents.right ~= nil
+        table.insert(out, p)
+    end
+    if smooth then
+        local k = UI_ENGINE.finite(tension, 1, 0, 2) / 6
+        for i, p in ipairs(out) do
+            if not p.explicit then
+                local prev = out[i-1] or (closed and out[#out] or out[i])
+                local nextP = out[i+1] or (closed and out[1] or out[i])
+                local rx = (nextP.x-prev.x)*k + (nextP.xo-prev.xo)*k/400
+                local ry = (nextP.y-prev.y)*k + (nextP.yo-prev.yo)*k/300
+                p.right = {x=rx,y=ry,xo=0,yo=0}; p.left = {x=-rx,y=-ry,xo=0,yo=0}
+            end
         end
+    end
+    return out
+end
+
+function UI_ENGINE.pathControlPoint(p)
+    return Path2DControlPoint.new(UDim2.new(p.x,p.xo or 0,p.y,p.yo or 0),
+        UDim2.new(p.left.x,p.left.xo or 0,p.left.y,p.left.yo or 0),
+        UDim2.new(p.right.x,p.right.xo or 0,p.right.y,p.right.yo or 0))
+end
+
+function UI_ENGINE.pathControlPoints(points)
+    local made = {}
+    for _, p in ipairs(points) do table.insert(made, UI_ENGINE.pathControlPoint(p)) end
+    return made
+end
+
+function UI_ENGINE.pathPlain(points, closed)
+    local plain = {}
+    for _, p in ipairs(points) do
+        table.insert(plain, {x=p.x*100,y=p.y*100,xOffset=p.xo or 0,yOffset=p.yo or 0,
+            left={x=p.left.x*100,y=p.left.y*100,xOffset=p.left.xo or 0,yOffset=p.left.yo or 0},
+            right={x=p.right.x*100,y=p.right.y*100,xOffset=p.right.xo or 0,yOffset=p.right.yo or 0}})
+    end
+    return {points=plain, closed=closed == true}
+end
+
+function UI_ENGINE.pathFromData(data, smooth, tension)
+    if type(data) ~= "table" then error("BAD_ARGS: path data must be an object") end
+    return UI_ENGINE.pathPoints(data.points, data.closed == true, smooth, tension)
+end
+
+function UI_ENGINE.pathLocate(inst)
+    if not inst then error("REF_NOT_FOUND: path reference is missing") end
+    if inst:IsA("Path2D") then return inst.Parent, inst end
+    local path = inst:FindFirstChild("Path")
+    if path and path:IsA("Path2D") then return inst, path end
+    if inst:GetAttribute("ArenaPath") == true then return inst, nil end
+    error("BAD_ARGS: ref must be an Arena path holder or a Path2D instance")
+end
+
+function UI_ENGINE.pathReadData(inst)
+    local holder, path = UI_ENGINE.pathLocate(inst)
+    if path then
+        local ok, cps = pcall(function() return path:GetControlPoints() end)
+        if ok and type(cps) == "table" and #cps >= 2 then
+            local points = {}
+            for _, cp in ipairs(cps) do
+                local function read(u) return {x=u.X.Scale*100,y=u.Y.Scale*100,xOffset=u.X.Offset,yOffset=u.Y.Offset} end
+                table.insert(points, {x=cp.Position.X.Scale*100,y=cp.Position.Y.Scale*100,xOffset=cp.Position.X.Offset,yOffset=cp.Position.Y.Offset,
+                    left=read(cp.LeftTangent),right=read(cp.RightTangent)})
+            end
+            return {points=points,closed=path.Closed == true}, path, holder
+        end
+    end
+    local raw = holder and holder:GetAttribute("ArenaPathData")
+    if raw then
+        local ok, data = pcall(function() return game:GetService("HttpService"):JSONDecode(raw) end)
+        if ok and type(data) == "table" and type(data.points) == "table" then return data, path, holder end
+    end
+    error("PATH_DATA_UNAVAILABLE: no readable control points or stored Arena path data")
+end
+
+function UI_ENGINE.pathStore(holder, path, data)
+    local encoded = game:GetService("HttpService"):JSONEncode(data)
+    holder:SetAttribute("ArenaPathData", encoded)
+    if path then path:SetAttribute("ArenaPathData", encoded) end
+    holder:SetAttribute("ArenaPathRevision", (holder:GetAttribute("ArenaPathRevision") or 0) + 1)
+end
+
+function UI_ENGINE.pathApplyData(path, data)
+    local points = UI_ENGINE.pathFromData(data, false)
+    path.Closed = false
+    path:SetControlPoints(UI_ENGINE.pathControlPoints(points))
+    local readback = path:GetControlPoints()
+    if #readback ~= #points then error("PATH_WRITE_FAILED: control-point count did not read back; Studio may have rejected the write") end
+    path.Closed = data.closed == true
+    return points
+end
+
+-- Exact cubic Bezier rule from Roblox's 2D-paths guide.
+function UI_ENGINE.cubicAt(p0, p1, p2, p3, t)
+    local u = 1-t
+    local a, b, c, d = u*u*u, 3*u*u*t, 3*u*t*t, t*t*t
+    return {x=a*p0.x+b*p1.x+c*p2.x+d*p3.x, y=a*p0.y+b*p1.y+c*p2.y+d*p3.y,
+        xo=a*(p0.xo or 0)+b*(p1.xo or 0)+c*(p2.xo or 0)+d*(p3.xo or 0),
+        yo=a*(p0.yo or 0)+b*(p1.yo or 0)+c*(p2.yo or 0)+d*(p3.yo or 0)}
+end
+
+function UI_ENGINE.pathSegments(points, closed)
+    local segments = {}
+    local count = closed and #points or #points-1
+    for i = 1, count do
+        local a, b = points[i], points[i % #points + 1]
+        table.insert(segments, {a,
+            {x=a.x+a.right.x,y=a.y+a.right.y,xo=(a.xo or 0)+(a.right.xo or 0),yo=(a.yo or 0)+(a.right.yo or 0)},
+            {x=b.x+b.left.x,y=b.y+b.left.y,xo=(b.xo or 0)+(b.left.xo or 0),yo=(b.yo or 0)+(b.left.yo or 0)}, b})
+    end
+    return segments
+end
+
+-- Fallback arc-length table is aspect-corrected and rebuilt only on edits/resize.
+function UI_ENGINE.pathPolyline(points, closed, perSegment, aspect)
+    aspect = aspect or 1
+    local segments = UI_ENGINE.pathSegments(points, closed)
+    perSegment = math.clamp(math.floor(tonumber(perSegment) or 12), 2, 24)
+    if #segments * perSegment > UI_ENGINE.PATH_MAX_FALLBACK_SEGMENTS then
+        perSegment = math.max(2, math.floor(UI_ENGINE.PATH_MAX_FALLBACK_SEGMENTS / math.max(1,#segments)))
+    end
+    local line, cumulative, length = {}, {0}, 0
+    for si, seg in ipairs(segments) do
+        for step = 0, perSegment do
+            if not (si > 1 and step == 0) then
+                local p = UI_ENGINE.cubicAt(seg[1], seg[2], seg[3], seg[4], step/perSegment)
+                if #line > 0 then
+                    local prev = line[#line]
+                    length = length + math.sqrt(((p.x-prev.x)*aspect + (p.xo-prev.xo)/400)^2 + ((p.y-prev.y) + (p.yo-prev.yo)/300)^2)
+                    table.insert(cumulative, length)
+                end
+                table.insert(line, p)
+            end
+        end
+    end
+    return {points=line,cumulative=cumulative,length=length,approximate=true,segments=#line-1}
+end
+
+function UI_ENGINE.pathSamplePolyline(poly, t, aspect)
+    t = math.clamp(tonumber(t) or 0, 0, 1)
+    if #poly.points < 2 then return {x=0,y=0,xo=0,yo=0}, {x=1,y=0} end
+    local target = t * poly.length
+    local i = 2
+    while i < #poly.cumulative and poly.cumulative[i] < target do i = i + 1 end
+    local a, b = poly.points[i-1], poly.points[i]
+    local span = poly.cumulative[i] - poly.cumulative[i-1]
+    local f = span > 1e-9 and (target-poly.cumulative[i-1])/span or 0
+    local p = {x=a.x+(b.x-a.x)*f,y=a.y+(b.y-a.y)*f,xo=(a.xo or 0)+((b.xo or 0)-(a.xo or 0))*f,yo=(a.yo or 0)+((b.yo or 0)-(a.yo or 0))*f}
+    local dx, dy = (b.x-a.x)*(aspect or 1)+((b.xo or 0)-(a.xo or 0))/400, (b.y-a.y)+((b.yo or 0)-(a.yo or 0))/300
+    local m = math.sqrt(dx*dx+dy*dy)
+    if m < 1e-9 then dx,dy,m = 1,0,1 end
+    return p, {x=dx/m,y=dy/m}
+end
+
+function UI_ENGINE.pathSampleNative(path, t, arcLength)
+    t = math.clamp(UI_ENGINE.pathNumber(t,0,"t"),0,1)
+    local pos, tan
+    if arcLength ~= false then
+        pos = path:GetPositionOnCurveArcLength(t); tan = path:GetTangentOnCurveArcLength(t)
+    else
+        pos = path:GetPositionOnCurve(t); tan = path:GetTangentOnCurve(t)
+    end
+    return pos, tan
+end
+
+function UI_ENGINE.pathRotation(tangent, holder, offset)
+    local size = holder and holder.AbsoluteSize or Vector2.new(400,300)
+    local w, h = size.X, size.Y
+    if w <= 0 then w = 400 end; if h <= 0 then h = 300 end
+    return math.deg(math.atan2(tangent.Y*h, tangent.X*w)) + (tonumber(offset) or 0)
+end
+
+function UI_ENGINE.pathSampleReport(holder, path, data, t, arcLength, aspect)
+    local pos, tan, udim
+    if path and UI_ENGINE.caps().pathSampling and UI_ENGINE.caps().pathTangents then
+        udim, tan = UI_ENGINE.pathSampleNative(path,t,arcLength)
+        pos = {xScale=udim.X.Scale,yScale=udim.Y.Scale,xOffset=udim.X.Offset,yOffset=udim.Y.Offset}
+    else
+        local points = UI_ENGINE.pathFromData(data,false)
+        local p, t2 = UI_ENGINE.pathSamplePolyline(UI_ENGINE.pathPolyline(points,data.closed,12,aspect),t,aspect)
+        pos = {xScale=p.x,yScale=p.y,xOffset=p.xo or 0,yOffset=p.yo or 0}
+        tan = Vector2.new(t2.x,t2.y)
+        udim = UDim2.new(pos.xScale,pos.xOffset,pos.yScale,pos.yOffset)
+    end
+    return {t=t,space=arcLength ~= false and "arcLength" or "parameter",position=pos,
+        tangent={x=tan.X,y=tan.Y},rotation=UI_ENGINE.pathRotation(tan,holder,0),udim2=udim,
+        approximate=path == nil}
+end
+
+-- GetLength is documented as expensive. Cache by path/data/size; never poll it.
+function UI_ENGINE.pathLength(path, holder, data)
+    if not path or not UI_ENGINE.caps().pathLength then return nil, false end
+    local size = holder and holder.AbsoluteSize or Vector2.new(0,0)
+    local key = game:GetService("HttpService"):JSONEncode(data) .. ":" .. tostring(size.X) .. ":" .. tostring(size.Y)
+    UI_ENGINE._pathLengths = UI_ENGINE._pathLengths or {}
+    local cached = UI_ENGINE._pathLengths[path]
+    if cached and cached.key == key then return cached.length, true end
+    local good, length = pcall(function() return path:GetLength() end)
+    if not good then return nil, false end
+    local n = 0; for _ in pairs(UI_ENGINE._pathLengths) do n = n + 1 end
+    if n > 128 then UI_ENGINE._pathLengths = {} end
+    UI_ENGINE._pathLengths[path] = {key=key,length=length}
+    return length, false
+end
+
+-- Exact circular-arc cubics: kappa = 4/3*tan(segmentAngle/4).
+function UI_ENGINE.pathArcPoints(cx, cy, r, startDeg, sweepDeg, maxSegmentDeg)
+    cx, cy, r = cx or 50, cy or 50, r or 40
+    startDeg = UI_ENGINE.pathNumber(startDeg,-90,"startAngle")
+    sweepDeg = UI_ENGINE.finite(sweepDeg,360,-720,720)
+    if math.abs(sweepDeg) < 0.001 then sweepDeg = sweepDeg < 0 and -0.001 or 0.001 end
+    local segments = math.min(16, math.max(1, math.ceil(math.abs(sweepDeg)/(maxSegmentDeg or 90))))
+    local step = sweepDeg/segments
+    local k = 4/3*math.tan(math.rad(step)/4)
+    local points = {}
+    for i = 0, segments do
+        local ang = math.rad(startDeg+step*i)
+        local px, py = cx+r*math.cos(ang), cy+r*math.sin(ang)
+        local tx, ty = -math.sin(ang)*r*k, math.cos(ang)*r*k
+        table.insert(points, {x=px,y=py,left={x=-tx,y=-ty},right={x=tx,y=ty}})
+    end
+    local closed = math.abs(sweepDeg) >= 359.999
+    if not closed then points[1].left={x=0,y=0}; points[#points].right={x=0,y=0} end
+    return points, closed
+end
+
+function UI_ENGINE.pathPreset(name, args)
+    name = string.lower(tostring(name or "wave")); args = args or {}
+    if name == "arc" or name == "ring" or name == "circle" then
+        local sweep = name == "arc" and (tonumber(args.sweep) or 270) or 360
+        local points, closed = UI_ENGINE.pathArcPoints(args.centerX or 50,args.centerY or 50,args.radius or 40,args.startAngle or -90,sweep)
+        return points, closed, 1
+    elseif name == "wave" then
+        local cycles = UI_ENGINE.finite(args.cycles,2,0.5,6)
+        local amplitude = UI_ENGINE.finite(args.amplitude,25,1,45)
+        local count = math.max(5,math.ceil(cycles*4)+1)
+        local points = {}
+        for i = 0,count-1 do table.insert(points,{x=5+90*i/(count-1),y=50+amplitude*math.sin(i/(count-1)*cycles*2*math.pi)}) end
+        return points,false,16/9
+    elseif name == "line" then
+        return {{x=5,y=50},{x=95,y=50}},false,16/9
+    elseif name == "s" or name == "connector" then
+        return {{x=5,y=25,right={x=45,y=0}},{x=95,y=75,left={x=-45,y=0}}},false,16/9
+    end
+    error("BAD_ARGS: unknown path preset; use arc, ring, wave, line or s")
+end
+
+function UI_ENGINE.pathVisualConfig(args, skin)
+    local function layer(value, defaultWidth)
+        if value == nil or value == false then return nil end
+        local s = type(value) == "table" and value or {}
+        local color = UI_ENGINE.tokenColor(skin,s.color,skin.p.shadow)
+        return {color="#"..color:ToHex(),width=UI_ENGINE.finite(s.width,defaultWidth,0,50),offsetX=UI_ENGINE.finite(s.offsetX,0,-20,20),offsetY=UI_ENGINE.finite(s.offsetY,1.5,-20,20)}
+    end
+    local color = UI_ENGINE.tokenColor(skin,args.color,skin.p.accent)
+    return {color="#"..color:ToHex(),thickness=UI_ENGINE.finite(args.thickness,3,0,100),
+        zIndex=math.floor(UI_ENGINE.finite(args.pathZIndex,5,1,100)),visible=args.visible ~= false,
+        outline=layer(args.outline,3),shadow=layer(args.shadow,2)}
+end
+
+function UI_ENGINE.pathShift(data, ox, oy)
+    local shifted = UI_ENGINE.copy(data)
+    for _, p in ipairs(shifted.points) do p.xOffset=(p.xOffset or 0)+ox; p.yOffset=(p.yOffset or 0)+oy end
+    return shifted
+end
+
+function UI_ENGINE.pathFallbackFrames(holder, data, color, thickness, aspect, layerName, zIndex)
+    local points = UI_ENGINE.pathFromData(data,false)
+    local poly = UI_ENGINE.pathPolyline(points,data.closed,12,aspect)
+    local frames = {}
+    for i = 2,#poly.points do
+        local a,b = poly.points[i-1],poly.points[i]
+        local dx,dy = (b.x-a.x)*aspect+((b.xo or 0)-(a.xo or 0))/400, (b.y-a.y)+((b.yo or 0)-(a.yo or 0))/300
+        local length = math.sqrt(dx*dx+dy*dy)
+        if length > 1e-6 then
+            local line = Instance.new("Frame"); line.Name=layerName or "PathSegment"
+            line.BackgroundColor3=color; line.BorderSizePixel=0; line.AnchorPoint=Vector2.new(0.5,0.5)
+            line.Position=UDim2.new((a.x+b.x)/2,((a.xo or 0)+(b.xo or 0))/2,(a.y+b.y)/2,((a.yo or 0)+(b.yo or 0))/2)
+            line.Size=UDim2.new(length/aspect,0,0,thickness); line.Rotation=math.deg(math.atan2(dy,dx)); line.ZIndex=zIndex or 5
+            line:SetAttribute("ArenaPathStrokeLayer",layerName or "PathSegment"); line.Parent=holder
+            table.insert(frames,line)
+        end
+    end
+    return frames,poly
+end
+
+function UI_ENGINE.pathDrawFallback(holder, data, style, aspect, gradientSpec, stops)
+    for _, child in ipairs(holder:GetChildren()) do
+        if child:GetAttribute("ArenaPathStrokeLayer") then child:Destroy() end
+    end
+    local color = UI_ENGINE.col(style.color,Color3.new(1,1,1))
+    local all, main = {}, nil
+    if style.shadow then
+        local s=style.shadow; local frames=UI_ENGINE.pathFallbackFrames(holder,UI_ENGINE.pathShift(data,s.offsetX,s.offsetY),UI_ENGINE.col(s.color,color),math.min(100,style.thickness+s.width),aspect,"PathShadow",math.max(1,style.zIndex-2))
+        for _,f in ipairs(frames) do table.insert(all,f) end
+    end
+    if style.outline then
+        local s=style.outline; local frames=UI_ENGINE.pathFallbackFrames(holder,data,UI_ENGINE.col(s.color,color),math.min(100,style.thickness+s.width),aspect,"PathOutline",math.max(1,style.zIndex-1))
+        for _,f in ipairs(frames) do table.insert(all,f) end
+    end
+    main = UI_ENGINE.pathFallbackFrames(holder,data,color,style.thickness,aspect,"PathSegment",style.zIndex)
+    for _,f in ipairs(main) do table.insert(all,f) end
+    local report
+    if gradientSpec and gradientSpec ~= false and #all > 0 then
+        if UI_ENGINE.gradientCount(holder) + #main > 950 then error("GRADIENT_BUDGET: segmented fallback would exceed the active-gradient budget") end
+        for _,target in ipairs(main) do
+            local _,r = UI_ENGINE.gradient(target,stops,gradientSpec.rotation,nil,"ArenaPathGradient",gradientSpec); report=r
+        end
+        report.segmented=true; report.instances=#main
+    end
+    return all,report
+end
+
+function UI_ENGINE.pathMarker(holder, skin, spec, index, caps)
+    if type(spec) ~= "table" then error("BAD_ARGS: marker/item must be an object") end
+    local size = UI_ENGINE.finite(spec.sizePx or spec.size,40,8,256)
+    local node
+    if spec.image ~= nil then
+        node=Instance.new("ImageLabel"); node.BackgroundTransparency=1; node.Image=UI_ENGINE.assetRef(spec.image); node.ScaleType=Enum.ScaleType.Fit
+    else
+        node=Instance.new("Frame"); node.BackgroundColor3=UI_ENGINE.tokenColor(skin,spec.color,skin.p.accent); node.BorderSizePixel=0
+        UI_ENGINE.applyCorner(node,spec.corner or "pill",caps)
+    end
+    node.Name=tostring(spec.name or ("PathMarker"..index)); node.AnchorPoint=Vector2.new(0.5,0.5)
+    node.Size=UDim2.fromOffset(size,size); node.ZIndex=math.floor(UI_ENGINE.finite(spec.zIndex,8,1,100))
+    node:SetAttribute("ArenaPathMarker",true); node.Parent=holder
+    if spec.text ~= nil then
+        local refusal=UI_ENGINE.guardEmoji(spec.text,"label","ui"); if refusal then error(refusal) end
+        local label=Instance.new("TextLabel"); label.Name=node.Name.."Label"; label.BackgroundTransparency=1
+        label.Text=tostring(spec.text); label.TextSize=14; label.TextWrapped=true
+        label.TextColor3=UI_ENGINE.readable(skin.p.surface,skin.p.text,skin.p.surface)
+        label.Size=UDim2.fromOffset(math.max(80,size*2),24); label.Position=UDim2.fromOffset(0,size/2+4)
+        label.AnchorPoint=Vector2.new(0.5,0); label.ZIndex=node.ZIndex; label.Parent=node
+    end
+    return node
+end
+
+function UI_ENGINE.path(parent, skin, args)
+    local caps=UI_ENGINE.caps()
+    local data, presetAspect
+    if args.preset then
+        local points,closed; points,closed,presetAspect=UI_ENGINE.pathPreset(args.preset,args)
+        if args.closed ~= nil then closed=args.closed == true end
+        data=UI_ENGINE.pathPlain(UI_ENGINE.pathPoints(points,closed,false),closed)
+    else
+        local closed=args.closed == true
+        local smooth=args.smooth == true or args.smooth == nil
+        data=UI_ENGINE.pathPlain(UI_ENGINE.pathPoints(args.points or {},closed,smooth,args.tension),closed)
+    end
+    local aspect=UI_ENGINE.finite(args.aspect or presetAspect,16/9,0.05,20)
+    local rect=UI_ENGINE.rect(args.rect or {0,0,100,100},args.align or "topleft")
+    local holder=Instance.new("Frame"); holder.Name=tostring(args.name or "ArenaPath")
+    holder.BackgroundTransparency=1; holder.BorderSizePixel=0; holder.AnchorPoint=rect.anchor; holder.Position=rect.pos; holder.Size=rect.size
+    holder.ZIndex=math.floor(UI_ENGINE.finite(args.zIndex,1,1,100)); holder.ClipsDescendants=args.clip == true
+    local lockAspect=args.lockAspect
+    if lockAspect == nil then lockAspect=(not caps.path2D) or args.preset=="ring" or args.preset=="circle" or args.preset=="arc" end
+    if lockAspect then local lock=Instance.new("UIAspectRatioConstraint"); lock.AspectRatio=aspect; lock.DominantAxis=Enum.DominantAxis.Width; lock.Parent=holder end
+    local style=UI_ENGINE.pathVisualConfig(args,skin)
+    local native=caps.path2D and caps.pathControlPoints
+    local made, segments, gradientReport, mode
+    holder:SetAttribute("ArenaPath",true); holder:SetAttribute("ArenaPathAspect",aspect)
+    holder:SetAttribute("ArenaPathVersion",UI_ENGINE.PATH_VERSION)
+    holder:SetAttribute("ArenaPathStyle",game:GetService("HttpService"):JSONEncode(style))
+    if args.gradient ~= nil and args.gradient ~= false then
+        local stored=UI_ENGINE.gradientSpec(args.gradient); stored.allowBeta=args.allowBeta == true
+        holder:SetAttribute("ArenaPathGradientSpec",game:GetService("HttpService"):JSONEncode(stored))
+        local hexStops={}
+        for _,stop in ipairs(UI_ENGINE.pathStops(args.stops,skin)) do table.insert(hexStops,{stop[1],"#"..stop[2]:ToHex()}) end
+        holder:SetAttribute("ArenaPathGradientStops",game:GetService("HttpService"):JSONEncode(hexStops))
+    end
+    UI_ENGINE.pathStore(holder,nil,data)
+    if native then
+        made=Instance.new("Path2D"); made.Name="Path"; made.Color3=UI_ENGINE.col(style.color,skin.p.accent)
+        made.Thickness=style.thickness; made.ZIndex=style.zIndex; made.Visible=style.visible
+        UI_ENGINE.pathApplyData(made,data); made.Parent=holder
+        mode="Path2D"
+        local function copyLayer(layer,name,dz,shift)
+            if not layer then return end
+            local copy=Instance.new("Path2D"); copy.Name=name; copy.Color3=UI_ENGINE.col(layer.color,made.Color3)
+            copy.Thickness=math.min(100,style.thickness+layer.width); copy.ZIndex=math.max(1,style.zIndex+dz); copy.Visible=style.visible
+            UI_ENGINE.pathApplyData(copy,shift and UI_ENGINE.pathShift(data,layer.offsetX,layer.offsetY) or data); copy.Parent=holder
+        end
+        copyLayer(style.shadow,"PathShadow",-2,true); copyLayer(style.outline,"PathOutline",-1,false)
+        if args.gradient ~= nil and args.gradient ~= false then
+            local gs=UI_ENGINE.gradientSpec(args.gradient); gs.allowBeta=args.allowBeta == true
+            local stops=UI_ENGINE.pathStops(args.stops,skin)
+            local _,r=UI_ENGINE.gradient(made,stops,gs.rotation,args.transparency,"ArenaPathGradient",gs); gradientReport=r
+        end
+    else
+        local gs, stops
+        if args.gradient ~= nil and args.gradient ~= false then gs=UI_ENGINE.gradientSpec(args.gradient); gs.allowBeta=args.allowBeta == true; stops=UI_ENGINE.pathStops(args.stops,skin) end
+        segments,gradientReport=UI_ENGINE.pathDrawFallback(holder,data,style,aspect,gs,stops)
+        mode="cubic-bezier Frame fallback (approximate)"
     end
     holder.Parent=parent
-    return holder,{mode=mode,points=#points,strokeOnly=true,gradient=gradientReport,note="Path2D renders a stroked spline, not a filled polygon. Use ui_shape for filled geometry. Tangents are relative to each control point."}
+    if made then UI_ENGINE.pathStore(holder,made,data) end
+    local markers={}
+    if args.markers ~= nil then
+        if type(args.markers) ~= "table" or #args.markers > UI_ENGINE.PATH_MAX_MARKERS then error("BUDGET_EXCEEDED: markers must be an array of at most 24 items") end
+        local good,why=pcall(function()
+            for i,spec in ipairs(args.markers) do
+                local t=spec.t
+                if t == nil and spec.pointIndex then t=(UI_ENGINE.pathNumber(spec.pointIndex,1,"pointIndex")-1)/math.max(1,#data.points-1) end
+                t=UI_ENGINE.finite(t,(i-1)/math.max(1,#args.markers-1),0,1)
+                local sample=UI_ENGINE.pathSampleReport(holder,made,data,t,args.arcLength,aspect)
+                local node=UI_ENGINE.pathMarker(holder,skin,spec,i,caps)
+                node.Position=sample.udim2
+                if spec.rotateToTangent == true then node.Rotation=sample.rotation+(tonumber(spec.rotationOffset) or 0) end
+                table.insert(markers,node)
+            end
+        end)
+        if not good then holder:Destroy(); error(why) end
+    end
+    local report={mode=mode,native=native == true,points=#data.points,closed=data.closed,strokeOnly=true,aspect=aspect,aspectLocked=lockAspect == true,
+        gradient=gradientReport,markers=#markers,fallbackSegments=segments and #segments or 0,warnings={},
+        zIndexPolicy="Path2D.ZIndex orders strokes; it does not participate in UIListLayout. With Sibling ZIndexBehavior, keep the holder behind interactive cards.",
+        note="Path2D renders a stroked cubic spline, not a filled polygon. Use ui_shape for fills. x/y and tangents are holder percentages; xOffset/yOffset are pixels."}
+    if not native then table.insert(report.warnings,"PATH2D_UNAVAILABLE: approximate cubic Frame polyline; native viewport editing is unavailable. Sampling/layout/motion use the same cubic math as an explicit approximation.") end
+    if gradientReport and gradientReport.segmented then table.insert(report.warnings,"SEGMENTED_FALLBACK_GRADIENT: each Frame segment has its own gradient; this is not one seamless spline gradient.") end
+    return holder,report,made,markers
+end
+
+function UI_ENGINE.pathStops(stops, skin)
+    local normalized={}
+    for _,stop in ipairs(stops or {{0,skin.p.accentHi},{1,skin.p.accentLo}}) do
+        table.insert(normalized,{UI_ENGINE.pathNumber(stop[1] or stop.time,nil,"stop.time"),UI_ENGINE.tokenColor(skin,stop[2] or stop.color,skin.p.accent)})
+    end
+    return normalized
+end
+
+-- Path2D composition runtime. One LocalScript per holder, event-driven + 30 Hz cap.
+-- It never calls GetLength per frame. Native sampling is preferred; the cubic
+-- fallback is explicitly approximate and uses the documented Bezier rule.
+UI_ENGINE.PATH_RUNTIME = [==[
+local holder = script.Parent
+local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+local nativePath = holder:FindFirstChild("Path")
+if nativePath and not nativePath:IsA("Path2D") then nativePath = nil end
+local FPS = 30
+local connections = {}
+local dirty = true
+local motionT = 0
+local motionDir = 1
+local lastProgress = -1
+local lastConnector = 0
+
+local function decode(raw)
+    if not raw then return nil end
+    local good, value = pcall(function() return HttpService:JSONDecode(raw) end)
+    if good then return value end
+    return nil
+end
+local function config(name) return decode(holder:GetAttribute(name)) end
+local function link(name)
+    local folder = holder:FindFirstChild("PathLinks")
+    local value = folder and folder:FindFirstChild(name)
+    return value and value.Value or nil
+end
+local function markDirty() dirty = true end
+local function connect(signal, fn) table.insert(connections, signal:Connect(fn)) end
+
+local function cubic(a,b,c,d,t)
+    local u=1-t; local A,B,C,D=u*u*u,3*u*u*t,3*u*t*t,t*t*t
+    return A*a.x+B*b.x+C*c.x+D*d.x, A*a.y+B*b.y+C*c.y+D*d.y,
+        A*(a.xOffset or 0)+B*(b.xOffset or 0)+C*(c.xOffset or 0)+D*(d.xOffset or 0),
+        A*(a.yOffset or 0)+B*(b.yOffset or 0)+C*(c.yOffset or 0)+D*(d.yOffset or 0)
+end
+local function fallbackTable(data)
+    local pts=data.points; local n=#pts; local segs=data.closed and n or n-1
+    local steps=math.max(2,math.min(12,math.floor(192/math.max(1,segs))))
+    local line,cum,len={},{0},0
+    local size=holder.AbsoluteSize; local aspect=size.Y>0 and size.X/size.Y or 1
+    for s=1,segs do
+        local a,b=pts[s],pts[s%n+1]
+        local p0={x=a.x/100,y=a.y/100,xOffset=a.xOffset,yOffset=a.yOffset}
+        local p1={x=(a.x+a.right.x)/100,y=(a.y+a.right.y)/100}
+        p1.xOffset=(a.xOffset or 0)+(a.right.xOffset or 0); p1.yOffset=(a.yOffset or 0)+(a.right.yOffset or 0)
+        local p2={x=(b.x+b.left.x)/100,y=(b.y+b.left.y)/100}
+        p2.xOffset=(b.xOffset or 0)+(b.left.xOffset or 0); p2.yOffset=(b.yOffset or 0)+(b.left.yOffset or 0)
+        local p3={x=b.x/100,y=b.y/100,xOffset=b.xOffset,yOffset=b.yOffset}
+        for k=0,steps do
+            if not (s>1 and k==0) then
+                local x,y,xo,yo=cubic(p0,p1,p2,p3,k/steps)
+                local p={x=x,y=y,xOffset=xo,yOffset=yo}
+                if #line>0 then
+                    local q=line[#line]
+                    len=len+math.sqrt(((x-q.x)*aspect+((xo or 0)-(q.xOffset or 0))/math.max(1,size.X))^2+((y-q.y)+((yo or 0)-(q.yOffset or 0))/math.max(1,size.Y))^2)
+                    table.insert(cum,len)
+                end
+                table.insert(line,p)
+            end
+        end
+    end
+    return {line=line,cum=cum,len=len,aspect=aspect}
+end
+local cachedData, cachedPoly, cachedRevision
+local function poly()
+    local rev=holder:GetAttribute("ArenaPathRevision") or 0
+    local size=holder.AbsoluteSize
+    local key=tostring(rev)..":"..tostring(size.X)..":"..tostring(size.Y)
+    if cachedRevision==key and cachedPoly then return cachedPoly end
+    cachedData=config("ArenaPathData") or {points={},closed=false}
+    cachedPoly=fallbackTable(cachedData); cachedRevision=key
+    return cachedPoly
+end
+local function sample(t, arcLength)
+    t=math.clamp(t or 0,0,1)
+    if nativePath then
+        local good,pos,tan=pcall(function()
+            if arcLength ~= false then return nativePath:GetPositionOnCurveArcLength(t),nativePath:GetTangentOnCurveArcLength(t)
+            else return nativePath:GetPositionOnCurve(t),nativePath:GetTangentOnCurve(t) end
+        end)
+        if good and pos and tan then return pos,tan end
+    end
+    local p=poly()
+    if #p.line<2 then return UDim2.fromScale(0,0),Vector2.new(1,0) end
+    local target=t*p.len; local i=2
+    while i<#p.cum and p.cum[i]<target do i=i+1 end
+    local a,b=p.line[i-1],p.line[i]; local span=p.cum[i]-p.cum[i-1]
+    local f=span>1e-9 and (target-p.cum[i-1])/span or 0
+    local pos=UDim2.new(a.x+(b.x-a.x)*f,(a.xOffset or 0)+((b.xOffset or 0)-(a.xOffset or 0))*f,a.y+(b.y-a.y)*f,(a.yOffset or 0)+((b.yOffset or 0)-(a.yOffset or 0))*f)
+    local size=holder.AbsoluteSize
+    local dx=((b.x-a.x)*size.X+(b.xOffset or 0)-(a.xOffset or 0)); local dy=((b.y-a.y)*size.Y+(b.yOffset or 0)-(a.yOffset or 0))
+    local m=math.sqrt(dx*dx+dy*dy); if m<1e-9 then dx,m=1,1 end
+    return pos,Vector2.new(dx/m,dy/m)
+end
+local function place(obj,t,cfg)
+    if not obj or not obj.Parent then return end
+    local pos,tan=sample(t,cfg.arcLength)
+    local ox,oy=cfg.offsetX or 0,cfg.offsetY or 0
+    if cfg.normalOffset then
+        local size=holder.AbsoluteSize; local m=math.sqrt(tan.X*tan.X+tan.Y*tan.Y)
+        if m>1e-9 then ox=ox+(-tan.Y/m)*cfg.normalOffset; oy=oy+(tan.X/m)*cfg.normalOffset end
+    end
+    obj.Position=pos+UDim2.fromOffset(ox,oy)
+    if cfg.rotateToTangent then obj.Rotation=math.deg(math.atan2(tan.Y,tan.X))+(cfg.rotationOffset or 0) end
+end
+
+local function applyLayout()
+    local cfg=config("ArenaPathLayout"); if not cfg then return end
+    local folder=holder:FindFirstChild("PathLinks"); if not folder then return end
+    local targets={}
+    for _,v in ipairs(folder:GetChildren()) do
+        if v:IsA("ObjectValue") and v.Name:match("^Target") and v.Value and v.Value.Parent then table.insert(targets,v.Value) end
+    end
+    if cfg.dynamicChildren then
+        local seen={}
+        for _,obj in ipairs(targets) do seen[obj]=true end
+        for _,child in ipairs(holder:GetChildren()) do
+            if child:IsA("GuiObject") and child:GetAttribute("ArenaPathMarker") and not seen[child] then table.insert(targets,child); seen[child]=true end
+        end
+    end
+    local n=#targets; if n==0 then return end
+    for i,obj in ipairs(targets) do
+        local t
+        if cfg.includeEndpoints then t=n>1 and (i-1)/(n-1) or 0.5 else t=i/(n+1) end
+        place(obj,t,cfg)
+    end
+end
+
+local function applyMotion(dt)
+    local cfg=config("ArenaPathMotion"); if not cfg then return end
+    local obj=link("MotionTarget"); if not obj then return end
+    local playing=holder:GetAttribute("ArenaMotionPlaying")
+    if playing==nil then playing=cfg.autoplay ~= false end
+    local seek=holder:GetAttribute("ArenaMotionT")
+    if seek~=nil and math.abs(seek-motionT)>1e-6 and not playing then motionT=math.clamp(seek,0,1) end
+    if playing then
+        local duration=math.max(0.05,cfg.duration or 4)
+        motionT=motionT+motionDir*dt/duration
+        if cfg.mode=="pingpong" then
+            if motionT>=1 then motionT=1; motionDir=-1 elseif motionT<=0 then motionT=0; motionDir=1 end
+        elseif cfg.mode=="loop" then motionT=motionT%1
+        else if motionT>=1 then motionT=1; holder:SetAttribute("ArenaMotionPlaying",false) end end
+        holder:SetAttribute("ArenaMotionT",motionT)
+    end
+    place(obj,motionT,cfg)
+end
+
+local function arcPoints(cx,cy,r,start,sweep)
+    if math.abs(sweep)<0.001 then sweep=sweep<0 and -0.001 or 0.001 end
+    local segs=math.min(16,math.max(1,math.ceil(math.abs(sweep)/90)))
+    local step=sweep/segs; local k=4/3*math.tan(math.rad(step)/4); local pts={}
+    for i=0,segs do
+        local a=math.rad(start+step*i); local x,y=cx+r*math.cos(a),cy+r*math.sin(a)
+        local tx,ty=-math.sin(a)*r*k,math.cos(a)*r*k
+        pts[#pts+1]={x=x,y=y,left={x=-tx,y=-ty},right={x=tx,y=ty}}
+    end
+    local closed=math.abs(sweep)>=359.999
+    if not closed then pts[1].left={x=0,y=0}; pts[#pts].right={x=0,y=0} end
+    return {points=pts,closed=closed}
+end
+local function toControlPoints(data)
+    local out={}
+    for _,p in ipairs(data.points) do
+        out[#out+1]=Path2DControlPoint.new(UDim2.new(p.x/100,p.xOffset or 0,p.y/100,p.yOffset or 0),
+            UDim2.new(p.left.x/100,p.left.xOffset or 0,p.left.y/100,p.left.yOffset or 0),
+            UDim2.new(p.right.x/100,p.right.xOffset or 0,p.right.y/100,p.right.yOffset or 0))
+    end
+    return out
+end
+local function applyProgress()
+    local cfg=config("ArenaPathProgress"); if not cfg then return end
+    local value=math.clamp(tonumber(holder:GetAttribute("ArenaProgress")) or cfg.value or 0,0,1)
+    if math.abs(value-lastProgress)<1e-6 then return end
+    lastProgress=value
+    local active=holder:FindFirstChild("ProgressPath")
+    local data=arcPoints(cfg.centerX or 50,cfg.centerY or 50,cfg.radius or 40,cfg.startAngle or -90,(cfg.sweep or 360)*value)
+    if active and active:IsA("Path2D") then
+        active.Visible=value>0
+        if value>0 then active.Closed=false; active:SetControlPoints(toControlPoints(data)); active.Closed=data.closed end
+    else
+        for _,c in ipairs(holder:GetChildren()) do if c:GetAttribute("ArenaProgressSegment") then c:Destroy() end end
+        if value>0 then
+            local size=holder.AbsoluteSize; local aspect=size.Y>0 and size.X/size.Y or 1
+            local p=fallbackTable(data)
+            for i=2,#p.line do
+                local a,b=p.line[i-1],p.line[i]
+                local dx=(b.x-a.x)*aspect+((b.xOffset or 0)-(a.xOffset or 0))/math.max(1,size.X)
+                local dy=(b.y-a.y)+((b.yOffset or 0)-(a.yOffset or 0))/math.max(1,size.Y)
+                local len=math.sqrt(dx*dx+dy*dy)
+                if len>1e-6 then
+                    local f=Instance.new("Frame"); f.Name="ProgressSegment"; f.BackgroundColor3=Color3.fromRGB(cfg.colorR or 255,cfg.colorG or 255,cfg.colorB or 255)
+                    f.BorderSizePixel=0; f.AnchorPoint=Vector2.new(0.5,0.5); f.ZIndex=cfg.zIndex or 6
+                    f.Position=UDim2.new((a.x+b.x)/2,((a.xOffset or 0)+(b.xOffset or 0))/2,(a.y+b.y)/2,((a.yOffset or 0)+(b.yOffset or 0))/2)
+                    f.Size=UDim2.new(len/aspect,0,0,cfg.thickness or 6); f.Rotation=math.deg(math.atan2(dy,dx))
+                    f:SetAttribute("ArenaProgressSegment",true); f.Parent=holder
+                end
+            end
+        end
+    end
+    local label=holder:FindFirstChild("ProgressLabel")
+    if label then label.Text=tostring(math.floor(value*100+0.5)).."%" end
+end
+
+local function applyConnector()
+    local cfg=config("ArenaPathConnector"); if not cfg then return end
+    local a,b=link("From"),link("To"); if not a or not b then return end
+    local parent=holder.Parent; if not parent then return end
+    local ps,pp=parent.AbsoluteSize,parent.AbsolutePosition
+    if ps.X<=0 or ps.Y<=0 then return end
+    local function center(o)
+        local s=o.AbsoluteSize; local p=o.AbsolutePosition
+        return {x=(p.X+s.X/2-pp.X)/ps.X*100,y=(p.Y+s.Y/2-pp.Y)/ps.Y*100}
+    end
+    local ca,cb=center(a),center(b)
+    local dx,dy=cb.x-ca.x,cb.y-ca.y
+    local horizontal=math.abs(dx)>=math.abs(dy)
+    local sa,sb=cfg.fromSide,cfg.toSide
+    local function edge(c,side,o)
+        local s=o.AbsoluteSize
+        if side=="left" then return {x=c.x-s.X/ps.X*50,y=c.y} end
+        if side=="right" then return {x=c.x+s.X/ps.X*50,y=c.y} end
+        if side=="top" then return {x=c.x,y=c.y-s.Y/ps.Y*50} end
+        if side=="bottom" then return {x=c.x,y=c.y+s.Y/ps.Y*50} end
+        return c
+    end
+    local pa,pb=edge(ca,sa,a),edge(cb,sb,b)
+    local reach=math.max(8,math.min(45,math.sqrt(dx*dx+dy*dy)*(cfg.curvature or 0.4)))
+    local ta,tb
+    if sa=="left" then ta={x=-reach,y=0} elseif sa=="right" then ta={x=reach,y=0} elseif sa=="top" then ta={x=0,y=-reach} elseif sa=="bottom" then ta={x=0,y=reach}
+    else ta=horizontal and {x=reach*(dx>=0 and 1 or -1),y=0} or {x=0,y=reach*(dy>=0 and 1 or -1)} end
+    if sb=="left" then tb={x=-reach,y=0} elseif sb=="right" then tb={x=reach,y=0} elseif sb=="top" then tb={x=0,y=-reach} elseif sb=="bottom" then tb={x=0,y=reach}
+    else tb=horizontal and {x=-reach*(dx>=0 and 1 or -1),y=0} or {x=0,y=-reach*(dy>=0 and 1 or -1)} end
+    local data={points={{x=pa.x,y=pa.y,right=ta},{x=pb.x,y=pb.y,left=tb}},closed=false}
+    local encoded=HttpService:JSONEncode(data)
+    holder:SetAttribute("ArenaPathData",encoded); holder:SetAttribute("ArenaPathRevision",(holder:GetAttribute("ArenaPathRevision") or 0)+1)
+    if nativePath then nativePath.Closed=false; nativePath:SetControlPoints(toControlPoints(data))
+    else
+        local style=config("ArenaPathStyle") or {color="#FFFFFF",thickness=3,zIndex=5}
+        for _,c in ipairs(holder:GetChildren()) do if c:GetAttribute("ArenaPathStrokeLayer") then c:Destroy() end end
+        local p=fallbackTable(data); local size=holder.AbsoluteSize; local aspect=size.Y>0 and size.X/size.Y or 1
+        local hex=style.color or "#FFFFFF"; local r=tonumber(hex:sub(2,3),16) or 255; local g=tonumber(hex:sub(4,5),16) or 255; local bl=tonumber(hex:sub(6,7),16) or 255
+        for i=2,#p.line do
+            local A,B=p.line[i-1],p.line[i]
+            local ddx=(B.x-A.x)*aspect; local ddy=B.y-A.y; local len=math.sqrt(ddx*ddx+ddy*ddy)
+            if len>1e-6 then
+                local f=Instance.new("Frame"); f.Name="PathSegment"; f.BackgroundColor3=Color3.fromRGB(r,g,bl); f.BorderSizePixel=0
+                f.AnchorPoint=Vector2.new(0.5,0.5); f.Position=UDim2.fromScale((A.x+B.x)/2,(A.y+B.y)/2)
+                f.Size=UDim2.new(len/aspect,0,0,style.thickness or 3); f.Rotation=math.deg(math.atan2(ddy,ddx)); f.ZIndex=style.zIndex or 5
+                f:SetAttribute("ArenaPathStrokeLayer","PathSegment"); f.Parent=holder
+            end
+        end
+    end
+end
+
+if nativePath then pcall(function() connect(nativePath.ControlPointChanged,markDirty) end) end
+pcall(function() connect(holder:GetPropertyChangedSignal("AbsoluteSize"),markDirty) end)
+for _,name in ipairs({"ArenaPathLayout","ArenaPathMotion","ArenaPathProgress","ArenaPathConnector","ArenaProgress","ArenaMotionPlaying","ArenaMotionT","ArenaPathRevision"}) do
+    pcall(function() connect(holder:GetAttributeChangedSignal(name),markDirty) end)
+end
+local folder=holder:FindFirstChild("PathLinks")
+if folder then
+    pcall(function() connect(folder.ChildAdded,markDirty); connect(folder.ChildRemoved,markDirty) end)
+    for _,v in ipairs(folder:GetChildren()) do if v:IsA("ObjectValue") then pcall(function() connect(v:GetPropertyChangedSignal("Value"),markDirty) end) end end
+end
+local layoutCfg=config("ArenaPathLayout")
+if layoutCfg and layoutCfg.dynamicChildren then
+    connect(holder.ChildAdded,function(c) if c:IsA("GuiObject") and c:GetAttribute("ArenaPathMarker") then markDirty() end end)
+    connect(holder.ChildRemoved,markDirty)
+end
+local connCfg=config("ArenaPathConnector")
+if connCfg then
+    for _,name in ipairs({"From","To"}) do
+        local obj=link(name)
+        if obj then for _,prop in ipairs({"Position","Size","AnchorPoint","AbsoluteSize","AbsolutePosition"}) do pcall(function() connect(obj:GetPropertyChangedSignal(prop),markDirty) end) end end
+    end
+    pcall(function() connect(holder.Parent:GetPropertyChangedSignal("AbsoluteSize"),markDirty) end)
+end
+
+local accumulator=0
+connect(RunService.Heartbeat,function(dt)
+    accumulator=accumulator+dt
+    if accumulator<1/FPS then return end
+    local step=accumulator; accumulator=0
+    local motion=config("ArenaPathMotion")
+    local playing=holder:GetAttribute("ArenaMotionPlaying")
+    if motion and (playing==nil and motion.autoplay~=false or playing==true) then dirty=true end
+    if not dirty then return end
+    dirty=false
+    applyConnector()
+    applyProgress()
+    applyLayout()
+    if motion then applyMotion(step) end
+end)
+applyConnector(); applyProgress(); applyLayout()
+local motionCfg=config("ArenaPathMotion")
+if motionCfg then motionT=math.clamp(tonumber(holder:GetAttribute("ArenaMotionT")) or 0,0,1); applyMotion(0) end
+script.Destroying:Connect(function() for _,c in ipairs(connections) do pcall(function() c:Disconnect() end) end end)
+]==]
+
+function UI_ENGINE.installPathRuntime(holder, report)
+    local existing = holder:FindFirstChild("ArenaPathRuntime")
+    if existing then return existing, false end
+    local runtime = Instance.new("LocalScript")
+    runtime.Name = "ArenaPathRuntime"
+    local written = pcall(function() runtime.Source = UI_ENGINE.PATH_RUNTIME end)
+    if not written then
+        runtime:Destroy()
+        if report then table.insert(report.warnings, "PATH_RUNTIME_UNAVAILABLE: static preview built; live updates need the generated LocalScript Source to be writable") end
+        return nil, false
+    end
+    runtime.Parent = holder
+    if report then
+        report.runtime = "LocalScript installed; runs in Play mode. Static preview was applied in edit mode."
+        report.runtimeBudget = "30 Hz maximum, dirty-flag driven; GetLength is never called by the runtime."
+    end
+    return runtime, true
+end
+
+function UI_ENGINE.pathLinks(holder)
+    local folder = holder:FindFirstChild("PathLinks")
+    if not folder then folder = Instance.new("Folder"); folder.Name = "PathLinks"; folder.Parent = holder end
+    return folder
+end
+
+function UI_ENGINE.pathSetLink(holder, name, value)
+    local folder = UI_ENGINE.pathLinks(holder)
+    local link = folder:FindFirstChild(name)
+    if not link then link = Instance.new("ObjectValue"); link.Name = name; link.Parent = folder end
+    link.Value = value
+    return link
+end
+
+function UI_ENGINE.pathStaticSample(holder, path, data, t, arcLength)
+    local aspect = holder:GetAttribute("ArenaPathAspect") or 1
+    return UI_ENGINE.pathSampleReport(holder, path, data, t, arcLength, aspect)
+end
+
+function UI_ENGINE.pathComposeLayout(holder, path, data, skin, args, caps)
+    local targets = {}
+    if args.targets ~= nil then
+        if type(args.targets) ~= "table" or #args.targets == 0 or #args.targets > UI_ENGINE.PATH_MAX_MARKERS then error("BAD_ARGS: targets needs 1..24 GuiObject refs") end
+        for _, ref in ipairs(args.targets) do
+            local obj, err = resolveRef(ref)
+            if not obj or not obj:IsA("GuiObject") then error("BAD_ARGS: layout target must be a GuiObject: " .. tostring(err)) end
+            if obj.Parent ~= holder and args.allowReparent ~= true then error("BAD_ARGS: target must already be a child of the path holder, or set allowReparent=true") end
+            if obj.Parent ~= holder then obj.Parent = holder end
+            table.insert(targets, obj)
+        end
+    elseif args.items ~= nil then
+        if type(args.items) ~= "table" or #args.items == 0 or #args.items > UI_ENGINE.PATH_MAX_MARKERS then error("BAD_ARGS: items needs 1..24 marker specs") end
+        for i, spec in ipairs(args.items) do table.insert(targets, UI_ENGINE.pathMarker(holder, skin, spec, i, caps)) end
+    else
+        error("BAD_ARGS: layout needs targets refs or items specs")
+    end
+    local cfg = {includeEndpoints=args.includeEndpoints == true, rotateToTangent=args.rotateToTangent == true,
+        rotationOffset=UI_ENGINE.finite(args.rotationOffset,0,-360,360), offsetX=UI_ENGINE.finite(args.offsetX,0,-500,500),
+        offsetY=UI_ENGINE.finite(args.offsetY,0,-500,500), normalOffset=tonumber(args.normalOffset), arcLength=args.arcLength ~= false,
+        dynamicChildren=args.dynamicChildren == true}
+    holder:SetAttribute("ArenaPathLayout", game:GetService("HttpService"):JSONEncode(cfg))
+    for i, obj in ipairs(targets) do
+        obj.AnchorPoint = Vector2.new(0.5,0.5)
+        obj.ZIndex = math.max(obj.ZIndex or 1, (holder.ZIndex or 1) + 2)
+        UI_ENGINE.pathSetLink(holder, "Target" .. string.format("%02d", i), obj)
+        local t = cfg.includeEndpoints and (#targets > 1 and (i-1)/(#targets-1) or 0.5) or i/(#targets+1)
+        local sample = UI_ENGINE.pathStaticSample(holder, path, data, t, cfg.arcLength)
+        obj.Position = sample.udim2 + UDim2.fromOffset(cfg.offsetX, cfg.offsetY)
+        if cfg.rotateToTangent then obj.Rotation = sample.rotation + cfg.rotationOffset end
+    end
+    return {kind="layout", targets=#targets, spacing=cfg.arcLength and "arcLength" or "parameter", includeEndpoints=cfg.includeEndpoints, live=args.live ~= false}
+end
+
+function UI_ENGINE.pathComposeMotion(holder, path, data, skin, args, caps)
+    local target
+    if args.targetRef then
+        target = assert(resolveRef(args.targetRef))
+        if not target:IsA("GuiObject") then error("BAD_ARGS: motion target must be a GuiObject") end
+        if target.Parent ~= holder and args.allowReparent ~= true then error("BAD_ARGS: target must be a child of the path holder, or set allowReparent=true") end
+        if target.Parent ~= holder then target.Parent = holder end
+    elseif args.item then
+        target = UI_ENGINE.pathMarker(holder, skin, args.item, 1, caps)
+    else
+        error("BAD_ARGS: motion needs targetRef or item")
+    end
+    local mode = string.lower(tostring(args.mode or "pingpong"))
+    if mode ~= "once" and mode ~= "loop" and mode ~= "pingpong" then error("BAD_ARGS: mode must be once, loop or pingpong") end
+    local cfg = {duration=UI_ENGINE.finite(args.duration,4,0.05,600), mode=mode, autoplay=args.autoplay ~= false,
+        rotateToTangent=args.rotateToTangent == true, rotationOffset=UI_ENGINE.finite(args.rotationOffset,0,-360,360), arcLength=args.arcLength ~= false}
+    holder:SetAttribute("ArenaPathMotion", game:GetService("HttpService"):JSONEncode(cfg))
+    holder:SetAttribute("ArenaMotionPlaying", cfg.autoplay)
+    holder:SetAttribute("ArenaMotionT", UI_ENGINE.finite(args.startT,0,0,1))
+    UI_ENGINE.pathSetLink(holder, "MotionTarget", target)
+    target.AnchorPoint = Vector2.new(0.5,0.5)
+    local sample = UI_ENGINE.pathStaticSample(holder, path, data, args.startT or 0, cfg.arcLength)
+    target.Position = sample.udim2
+    if cfg.rotateToTangent then target.Rotation = sample.rotation + cfg.rotationOffset end
+    return {kind="motion", target=describeRef(target), mode=mode, duration=cfg.duration, autoplay=cfg.autoplay,
+        control="Set ArenaMotionPlaying=true/false or ArenaMotionT=0..1 on the holder; runtime samples the curve, never GetLength per frame."}
+end
+
+function UI_ENGINE.pathComposeConnect(parent, skin, args, caps)
+    local from = assert(resolveRef(args.fromRef)); local to = assert(resolveRef(args.toRef))
+    if not from:IsA("GuiObject") or not to:IsA("GuiObject") then error("BAD_ARGS: connector endpoints must be GuiObjects") end
+    local root = parent
+    if args.parentRef then root = assert(resolveRef(args.parentRef)) end
+    if not root:IsA("GuiObject") and not root:IsA("LayerCollector") then error("BAD_ARGS: connector parentRef must be a GuiObject container or LayerCollector") end
+    if not from:IsDescendantOf(root) or not to:IsDescendantOf(root) then error("BAD_ARGS: both endpoints must be descendants of the connector container") end
+    local ancestor = from
+    while ancestor and ancestor ~= root do
+        if ancestor:IsA("GuiObject") and math.abs(ancestor.Rotation or 0) > 0.001 then error("BAD_ARGS: connector math supports axis-aligned containers; rotated ancestors need a CanvasGroup/Viewport design") end
+        ancestor = ancestor.Parent
+    end
+    ancestor = to
+    while ancestor and ancestor ~= root do
+        if ancestor:IsA("GuiObject") and math.abs(ancestor.Rotation or 0) > 0.001 then error("BAD_ARGS: connector math supports axis-aligned containers; rotated ancestors need a CanvasGroup/Viewport design") end
+        ancestor = ancestor.Parent
+    end
+    local host = root
+    if not root:IsA("GuiObject") then
+        host = Instance.new("Frame"); host.Name = "ArenaConnectorLayer"; host.BackgroundTransparency = 1; host.BorderSizePixel = 0
+        host.Size = UDim2.fromScale(1,1); host.ZIndex = 1; host.Parent = root
+    end
+    local ps, pp = host.AbsoluteSize, host.AbsolutePosition
+    if ps.X <= 0 or ps.Y <= 0 then if host ~= root then host:Destroy() end; error("PATH_GEOMETRY_UNAVAILABLE: connector container has no resolved AbsoluteSize yet") end
+    local function center(o) local s,p=o.AbsoluteSize,o.AbsolutePosition; return {x=(p.X+s.X/2-pp.X)/ps.X*100,y=(p.Y+s.Y/2-pp.Y)/ps.Y*100} end
+    local ca, cb = center(from), center(to)
+    local dx, dy = cb.x-ca.x, cb.y-ca.y
+    local horizontal = math.abs(dx) >= math.abs(dy)
+    local function edge(c, side, o)
+        local s=o.AbsoluteSize
+        if side=="left" then return {x=c.x-s.X/ps.X*50,y=c.y} end
+        if side=="right" then return {x=c.x+s.X/ps.X*50,y=c.y} end
+        if side=="top" then return {x=c.x,y=c.y-s.Y/ps.Y*50} end
+        if side=="bottom" then return {x=c.x,y=c.y+s.Y/ps.Y*50} end
+        return c
+    end
+    local pa, pb = edge(ca,args.fromSide,from), edge(cb,args.toSide,to)
+    local reach = math.max(8, math.min(45, math.sqrt(dx*dx+dy*dy)*UI_ENGINE.finite(args.curvature,0.4,0,1)))
+    local function tangent(side, sign)
+        if side=="left" then return {x=-reach,y=0} elseif side=="right" then return {x=reach,y=0} elseif side=="top" then return {x=0,y=-reach} elseif side=="bottom" then return {x=0,y=reach} end
+        return horizontal and {x=sign*reach*(dx>=0 and 1 or -1),y=0} or {x=0,y=sign*reach*(dy>=0 and 1 or -1)}
+    end
+    local points = {{x=pa.x,y=pa.y,right=tangent(args.fromSide,1)},{x=pb.x,y=pb.y,left=tangent(args.toSide,-1)}}
+    local holder, report, path = UI_ENGINE.path(host, skin, {name=args.name or "ArenaConnector", points=points, smooth=false,
+        rect={0,0,100,100}, color=args.color, thickness=args.thickness or 3, zIndex=1, pathZIndex=args.pathZIndex or 2,
+        gradient=args.gradient, allowBeta=args.allowBeta, lockAspect=false})
+    local cfg = {fromSide=args.fromSide, toSide=args.toSide, curvature=UI_ENGINE.finite(args.curvature,0.4,0,1)}
+    holder:SetAttribute("ArenaPathConnector", game:GetService("HttpService"):JSONEncode(cfg))
+    UI_ENGINE.pathSetLink(holder, "From", from); UI_ENGINE.pathSetLink(holder, "To", to)
+    report.kind = "connector"; report.live = args.live ~= false
+    report.endpointPolicy = "Endpoints stay in their existing parents; the connector recomputes from AbsolutePosition/AbsoluteSize. Rotated ancestors are rejected."
+    return holder, report, path
+end
+
+function UI_ENGINE.pathProgressData(cfg, value)
+    local points, closed = UI_ENGINE.pathArcPoints(cfg.centerX or 50, cfg.centerY or 50, cfg.radius or 40, cfg.startAngle or -90, (cfg.sweep or 360)*value)
+    return UI_ENGINE.pathPlain(UI_ENGINE.pathPoints(points, closed, false), closed)
+end
+
+function UI_ENGINE.pathApplyProgress(holder, value)
+    local raw = holder:GetAttribute("ArenaPathProgress")
+    if not raw then error("BAD_ARGS: holder is not an Arena progress arc") end
+    local cfg = game:GetService("HttpService"):JSONDecode(raw)
+    value = math.clamp(UI_ENGINE.pathNumber(value,0,"value"),0,1)
+    holder:SetAttribute("ArenaProgress", value)
+    local data = UI_ENGINE.pathProgressData(cfg, value)
+    local active = holder:FindFirstChild("ProgressPath")
+    if active and active:IsA("Path2D") then
+        active.Visible = value > 0
+        if value > 0 then UI_ENGINE.pathApplyData(active, data) end
+    else
+        for _, c in ipairs(holder:GetChildren()) do if c:GetAttribute("ArenaProgressSegment") then c:Destroy() end end
+        if value > 0 then
+            local aspect = holder:GetAttribute("ArenaPathAspect") or 1
+            local frames = UI_ENGINE.pathFallbackFrames(holder, data, Color3.fromRGB(cfg.colorR or 255,cfg.colorG or 255,cfg.colorB or 255), cfg.thickness or 6, aspect, "ProgressSegment", cfg.zIndex or 6)
+            for _, f in ipairs(frames) do f:SetAttribute("ArenaProgressSegment", true) end
+        end
+    end
+    local label = holder:FindFirstChild("ProgressLabel")
+    if label then label.Text = tostring(math.floor(value*100+0.5)) .. "%" end
+    return data
+end
+
+function UI_ENGINE.pathComposeProgress(parent, skin, args, caps)
+    local value = math.clamp(UI_ENGINE.finite(args.value,0.65,0,1),0,1)
+    local sweep = UI_ENGINE.finite(args.sweep,360,-720,720)
+    local cfg = {centerX=UI_ENGINE.finite(args.centerX,50,0,100), centerY=UI_ENGINE.finite(args.centerY,50,0,100),
+        radius=UI_ENGINE.finite(args.radius,40,1,80), startAngle=UI_ENGINE.finite(args.startAngle,-90,-360,360), sweep=sweep,
+        value=value, thickness=UI_ENGINE.finite(args.thickness,6,0,100), zIndex=math.floor(UI_ENGINE.finite(args.pathZIndex,6,1,100))}
+    local activeColor = UI_ENGINE.tokenColor(skin,args.color,skin.p.accent)
+    cfg.colorR, cfg.colorG, cfg.colorB = math.floor(activeColor.R*255+0.5), math.floor(activeColor.G*255+0.5), math.floor(activeColor.B*255+0.5)
+    local trackColor = UI_ENGINE.tokenColor(skin,args.trackColor,skin.p.surface)
+    local holder, report, path = UI_ENGINE.path(parent, skin, {name=args.name or "ArenaProgress", preset="arc",
+        centerX=cfg.centerX, centerY=cfg.centerY, radius=cfg.radius, startAngle=cfg.startAngle, sweep=sweep,
+        rect=args.rect or {0,0,100,100}, color=trackColor, thickness=UI_ENGINE.finite(args.trackThickness,cfg.thickness,0,100),
+        zIndex=args.zIndex or 1, pathZIndex=cfg.zIndex-1, lockAspect=true, aspect=1})
+    holder:SetAttribute("ArenaPathProgress", game:GetService("HttpService"):JSONEncode(cfg))
+    if path then
+        local active = Instance.new("Path2D"); active.Name = "ProgressPath"; active.Color3 = activeColor
+        active.Thickness = cfg.thickness; active.ZIndex = cfg.zIndex; active.Parent = holder
+    end
+    if args.label ~= false then
+        local label = Instance.new("TextLabel"); label.Name = "ProgressLabel"; label.BackgroundTransparency = 1
+        label.Text = ""; label.TextScaled = true; label.TextColor3 = UI_ENGINE.readable(skin.p.surface,skin.p.text,skin.p.surface)
+        label.Size = UDim2.fromScale(0.5,0.2); label.Position = UDim2.fromScale(0.5,0.5); label.AnchorPoint = Vector2.new(0.5,0.5)
+        label.ZIndex = cfg.zIndex + 1; label.Parent = holder
+        local limit = Instance.new("UITextSizeConstraint"); limit.MinTextSize = 12; limit.MaxTextSize = 48; limit.Parent = label
+    end
+    UI_ENGINE.pathApplyProgress(holder, value)
+    report.kind = "progress"; report.value = value; report.live = args.live ~= false
+    report.progressPolicy = "Rebuilt cubic arc geometry, NOT a native Path2D trim/progress property. The track is a separate stroke."
+    return holder, report, path
 end
 
 UI_ENGINE.TEXT_SHADOW_RUNTIME = [==[
@@ -15335,14 +16307,134 @@ end
 
 tools.ui_path = function(args)
     args=args or {}
+    local action=string.lower(tostring(args.action or "create"))
+    local caps=UI_ENGINE.caps()
+    if action=="recipes" then
+        return ok({presets={"arc","ring","wave","line","s"},actions={"create","inspect","sample","edit","layout","motion","control","connect","progress","set_progress"},
+            combinations={
+                curvedNavigation="create preset=wave + layout items with real images; arcLength spacing keeps equal visual distance",
+                skillTreeConnector="connect fromRef/toRef between existing cards; endpoints stay in place and the spline recomputes on move/resize",
+                progressRing="progress value=0..1; separate track + rebuilt active arc, not a fake native trim property",
+                movingIcon="motion targetRef/item mode=pingpong|loop|once; 30 Hz dirty-driven runtime, no GetLength per frame",
+                graphEditor="create smooth=false + edit insert/update/remove; native ControlPointChanged drives attached layouts",
+                outlinedSpline="create outline/shadow layers; real sibling strokes, lower ZIndex, no fill claim"},
+            limits={points=UI_ENGINE.PATH_MAX_POINTS,markers=UI_ENGINE.PATH_MAX_MARKERS,samples=UI_ENGINE.PATH_MAX_SAMPLES,fallbackSegments=UI_ENGINE.PATH_MAX_FALLBACK_SEGMENTS},
+            note="Path2D is stroke-only. Use ui_shape for filled polygons. Beta gradients on Path2D still require allowBeta=true and are not live-publishable during Studio Beta."})
+    end
+    if action=="inspect" or action=="sample" or action=="edit" or action=="layout" or action=="motion" or action=="control" or action=="set_progress" then
+        local ref,err=resolveRef(args.ref or args.pathRef); if not ref then return failCode("REF_NOT_FOUND",err) end
+        local good,data,path,holder=pcall(UI_ENGINE.pathReadData,ref)
+        if not good then return failCode("BAD_ARGS",tostring(data)) end
+        if action=="inspect" then
+            local length,cached=UI_ENGINE.pathLength(path,holder,data)
+            local bounds
+            if path and caps.pathBounds then pcall(function() local r=path:GetBoundingRect(); bounds={min={x=r.Min.X,y=r.Min.Y},max={x=r.Max.X,y=r.Max.Y}} end) end
+            return ok({path=describeRef(holder),nativePath=path and describeRef(path) or nil,mode=path and "Path2D" or "cubic-bezier Frame fallback (approximate)",
+                data=data,length=length,lengthCached=cached,boundingRect=bounds,strokeOnly=true,
+                capabilities={sampling=caps.pathSampling,tangents=caps.pathTangents,editing=caps.pathEditing,changedEvent=caps.pathChangedEvent,length=caps.pathLength,bounds=caps.pathBounds},
+                note="GetLength is cached by revision/size and is never polled by the runtime. BoundingRect includes stroke thickness."})
+        end
+        if action=="sample" then
+            local samples={}
+            local count=math.floor(UI_ENGINE.finite(args.count,1,1,UI_ENGINE.PATH_MAX_SAMPLES))
+            local aspect=holder:GetAttribute("ArenaPathAspect") or 1
+            local good2,why=pcall(function()
+                if args.t ~= nil then table.insert(samples,UI_ENGINE.pathSampleReport(holder,path,data,UI_ENGINE.pathNumber(args.t,0,"t"),args.arcLength,aspect))
+                else for i=1,count do table.insert(samples,UI_ENGINE.pathSampleReport(holder,path,data,count>1 and (i-1)/(count-1) or 0,args.arcLength,aspect)) end end
+            end)
+            if not good2 then return failCode("PATH_SAMPLE_UNAVAILABLE",tostring(why)) end
+            return ok({path=describeRef(holder),samples=samples,space=args.arcLength ~= false and "arcLength" or "parameter",approximate=path==nil,
+                note="arcLength gives even visual spacing; parameter space clusters near bends. Rotation is aspect-corrected from the tangent."})
+        end
+        if action=="edit" then
+            local op=string.lower(tostring(args.operation or "set"))
+            local nextData=UI_ENGINE.copy(data)
+            local good2,why=pcall(function()
+                if op=="set" then nextData=UI_ENGINE.pathPlain(UI_ENGINE.pathPoints(args.points or {},args.closed ~= nil and args.closed == true or data.closed,args.smooth == true,args.tension),args.closed ~= nil and args.closed == true or data.closed)
+                elseif op=="insert" then
+                    local index=math.floor(UI_ENGINE.pathNumber(args.index,#nextData.points+1,"index"))
+                    if index<1 or index>#nextData.points+1 then error("BAD_ARGS: insert index out of range") end
+                    local p=UI_ENGINE.pathPoints({args.point,args.point},false,false)[1]
+                    table.insert(nextData.points,index,UI_ENGINE.pathPlain({p},false).points[1])
+                elseif op=="update" then
+                    local index=math.floor(UI_ENGINE.pathNumber(args.index,0,"index"))
+                    if index<1 or index>#nextData.points then error("BAD_ARGS: update index out of range") end
+                    local merged=UI_ENGINE.copy(nextData.points[index]); for k,v in pairs(args.point or {}) do merged[k]=v end
+                    local p=UI_ENGINE.pathPoints({merged,merged},false,false)[1]
+                    nextData.points[index]=UI_ENGINE.pathPlain({p},false).points[1]
+                elseif op=="remove" then
+                    local index=math.floor(UI_ENGINE.pathNumber(args.index,0,"index"))
+                    if index<1 or index>#nextData.points then error("BAD_ARGS: remove index out of range") end
+                    table.remove(nextData.points,index)
+                elseif op=="close" then nextData.closed=args.closed == true
+                else error("BAD_ARGS: operation must be set, insert, update, remove or close") end
+                UI_ENGINE.pathPoints(nextData.points,nextData.closed,false)
+            end)
+            if not good2 then return failCode("BAD_ARGS",tostring(why)) end
+            local style=game:GetService("HttpService"):JSONDecode(holder:GetAttribute("ArenaPathStyle") or '{"color":"#FFFFFF","thickness":3,"zIndex":5}')
+            local aspect=holder:GetAttribute("ArenaPathAspect") or 1
+            local okWrite,writeWhy=pcall(function()
+                if path then UI_ENGINE.pathApplyData(path,nextData)
+                else
+                    local gsRaw=holder:GetAttribute("ArenaPathGradientSpec"); local gs=gsRaw and game:GetService("HttpService"):JSONDecode(gsRaw) or nil
+                    local stopsRaw=holder:GetAttribute("ArenaPathGradientStops"); local stops=stopsRaw and game:GetService("HttpService"):JSONDecode(stopsRaw) or nil
+                    if stops then for _,st in ipairs(stops) do st[2]=UI_ENGINE.col(st[2],Color3.new(1,1,1)) end end
+                    UI_ENGINE.pathDrawFallback(holder,nextData,style,aspect,gs,stops)
+                end
+                UI_ENGINE.pathStore(holder,path,nextData)
+            end)
+            if not okWrite then return failCode("PATH_WRITE_FAILED",tostring(writeWhy)) end
+            waypoint("ui path edit")
+            return ok({path=describeRef(holder),data=nextData,operation=op,points=#nextData.points,mode=path and "Path2D" or "cubic-bezier Frame fallback (approximate)"})
+        end
+        if action=="control" then
+            if not holder:GetAttribute("ArenaPathMotion") then return failCode("BAD_ARGS","holder has no ArenaPathMotion binding; create action=motion first") end
+            if args.playing ~= nil then holder:SetAttribute("ArenaMotionPlaying",args.playing == true) end
+            if args.t ~= nil then holder:SetAttribute("ArenaMotionT",math.clamp(UI_ENGINE.pathNumber(args.t,0,"t"),0,1)) end
+            waypoint("ui path motion control")
+            return ok({path=describeRef(holder),playing=holder:GetAttribute("ArenaMotionPlaying"),t=holder:GetAttribute("ArenaMotionT"),live=holder:FindFirstChild("ArenaPathRuntime")~=nil})
+        end
+        if action=="set_progress" then
+            local good2,why=pcall(UI_ENGINE.pathApplyProgress,holder,args.value)
+            if not good2 then return failCode("BAD_ARGS",tostring(why)) end
+            waypoint("ui path progress")
+            return ok({path=describeRef(holder),value=holder:GetAttribute("ArenaProgress"),live=holder:FindFirstChild("ArenaPathRuntime")~=nil,
+                note="Active arc geometry was rebuilt; this is not a native Path2D trim property."})
+        end
+        local skin=UI_ENGINE.resolveSkin(args.skin or "glass",args.brand,args.colors)
+        local report
+        local good2,why=pcall(function()
+            if action=="layout" then report=UI_ENGINE.pathComposeLayout(holder,path,data,skin,args,caps)
+            else report=UI_ENGINE.pathComposeMotion(holder,path,data,skin,args,caps) end
+        end)
+        if not good2 then return failCode("BAD_ARGS",tostring(why)) end
+        if args.live ~= false then UI_ENGINE.installPathRuntime(holder,report) end
+        waypoint("ui path "..action)
+        return ok({path=describeRef(holder),report=report})
+    end
+    if action=="connect" or action=="progress" then
+        local parent,err=resolveRef(args.parentRef or "game.StarterGui"); if not parent then return failCode("REF_NOT_FOUND",err) end
+        local host,screen=UI_ENGINE.ensureScreen(parent,args)
+        local skin=UI_ENGINE.resolveSkin(args.skin or "glass",args.brand,args.colors)
+        local holder,report,path
+        local good,why=pcall(function()
+            if action=="connect" then holder,report,path=UI_ENGINE.pathComposeConnect(host,skin,args,caps)
+            else holder,report,path=UI_ENGINE.pathComposeProgress(host,skin,args,caps) end
+        end)
+        if not good then if screen then screen:Destroy() end; return failCode("BAD_ARGS",tostring(why),{rolledBack=screen~=nil}) end
+        if args.live ~= false then UI_ENGINE.installPathRuntime(holder,report) end
+        waypoint("ui path "..action)
+        return ok({path=describeRef(holder),nativePath=path and describeRef(path) or nil,report=report,screenGui=screen and describeRef(screen) or nil})
+    end
+    if action~="create" then return failCode("BAD_ARGS","action must be create, recipes, inspect, sample, edit, layout, motion, control, connect, progress or set_progress") end
     local parent,err=resolveRef(args.parentRef or "game.StarterGui"); if not parent then return failCode("REF_NOT_FOUND",err) end
     local host,screen=UI_ENGINE.ensureScreen(parent,args)
     local skin=UI_ENGINE.resolveSkin(args.skin or "glass",args.brand,args.colors)
-    local made,report
-    local success,why=pcall(function() made,report=UI_ENGINE.path(host,skin,args) end)
-    if not success then if screen then screen:Destroy() end; return failCode("BAD_ARGS",tostring(why),{rolledBack=true}) end
+    local made,report,path
+    local success,why=pcall(function() made,report,path=UI_ENGINE.path(host,skin,args) end)
+    if not success then if screen then screen:Destroy() end; return failCode("BAD_ARGS",tostring(why),{rolledBack=screen~=nil}) end
     waypoint("ui path")
-    return ok({path=describeRef(made),report=report,screenGui=screen and describeRef(screen) or nil})
+    return ok({path=describeRef(made),nativePath=path and describeRef(path) or nil,report=report,screenGui=screen and describeRef(screen) or nil})
 end
 
 tools.ui_design = function(args)
@@ -15523,7 +16615,7 @@ tools.ui_capabilities = function(args)
         devices = { "phone", "tablet", "desktop", "ultrawide" },
         gradientTypes={"Linear","Radial","Elliptical","Conical"},gradientTileModes={"Clamp","Repeat","Mirror"},
         gradientPolicy={optIn="allowBeta=true",scaleRange={0.001,100},maxColorStops=6,activeBudget=1000,linearFallback=true,livePublishDuringBeta=false},
-        geometry={shapes={"triangle","trapezoid","parallelogram","diamond","chevron","hexagon","arrow","circle","pill"},customPolygonMaxVertices=16,canvasGroupsPerShape=32,pathControlPoints=50},
+        geometry={shapes={"triangle","trapezoid","parallelogram","diamond","chevron","hexagon","arrow","circle","pill"},customPolygonMaxVertices=16,canvasGroupsPerShape=32,pathControlPoints=c.pathPointBudget,pathHardMaxControlPoints=c.pathMaxControlPoints,pathStrokeOnly=true,pathSampling=c.pathSampling,pathTangents=c.pathTangents,pathEditing=c.pathEditing,pathLength=c.pathLength,pathBounds=c.pathBounds,pathChangedEvent=c.pathChangedEvent,pathFallback="approximate cubic-bezier Frame polyline",pathRuntimeHz=30},
         measured = "Every entry was probed with Instance.new/pcall in THIS Studio session - it is measured, not assumed from training data.",
     })
 end
@@ -27105,12 +28197,12 @@ $t.Add(@{ name = 'ui_shape'; category = 'ui'; summary = 'Build calculated geomet
  returns = '{shape,report:{shape,canvasGroups,triangles,aspectRatio,aspectLocked,memoryFallback}}';
  example = 'ui_shape {"shape":"trapezoid","skin":"scifi","rect":{"x":35,"y":30,"w":30,"h":25}}';
  related = @('ui_path','ui_audit','ui_capabilities'); errors = @('BAD_ARGS','REF_NOT_FOUND') })
-$t.Add(@{ name = 'ui_path'; category = 'ui'; summary = 'Draw UI splines with Path2D';
- description = 'Native cubic Path2D strokes when control points are supported. Stroke-only: no fill API is claimed. Straight rotated-Frame segments are the explicit fallback, not curves.';
- params = @{ points = @{ type = 'array'; required = $true; description = '2..50 {x,y} points in 0..100; optional tangents={left={x,y},right={x,y}}' }; closed = @{ type = 'bool'; required = $false; description = 'Close a path with at least 3 points' }; thickness = @{ type = 'number'; required = $false; description = '0..100 pixels' }; color = @{ type = 'any'; required = $false; description = 'Color or brand token' }; gradient = @{ type = 'object'; required = $false; description = 'Gradient spec; allowBeta required for upgraded modes' }; parentRef = @{ type = 'string'; required = $false; description = 'Default game.StarterGui' }; rect = @{ type = 'object'; required = $false; description = 'Holder x,y,w,h percentages' } };
- returns = '{path,report:{native,points,closed,fallback,warnings}}';
- example = 'ui_path {"points":[{"x":10,"y":80},{"x":50,"y":15},{"x":90,"y":80}],"closed":false,"thickness":4,"color":"accent"}';
- related = @('ui_shape','ui_capabilities'); errors = @('BAD_ARGS','REF_NOT_FOUND') })
+$t.Add(@{ name = 'ui_path'; category = 'ui'; summary = 'Build and compose stroke-only Path2D UI splines';
+ description = 'Native cubic Path2D strokes plus sampling, editing, curved layouts, motion, connectors and progress arcs. Stroke-only: no fill API. Older Studio falls back to an explicitly approximate cubic-bezier Frame polyline. Progress arcs are rebuilt geometry over a separate track, not a native trim property. GetLength is cached on inspect and never polled by the 30 Hz runtime.';
+ params = @{ action = @{ type = 'string'; required = $false; description = 'create (default), recipes, inspect, sample, edit, layout, motion, control, connect, progress, set_progress' }; ref = @{ type = 'string'; required = $false; description = 'Arena path holder or Path2D ref for inspect/sample/edit/layout/motion/control/set_progress' }; points = @{ type = 'array'; required = $false; description = '2..50 {x,y} holder percentages (-100..200); optional left/right or tangents={left,right}; xOffset/yOffset pixels' }; preset = @{ type = 'string'; required = $false; description = 'arc, ring, wave, line, s; arc/ring accept centerX,centerY,radius,startAngle,sweep' }; closed = @{ type = 'bool'; required = $false; description = 'Close with >=3 points' }; smooth = @{ type = 'bool'; required = $false; description = 'Auto Catmull-Rom tangents for explicit points; default true' }; thickness = @{ type = 'number'; required = $false; description = '0..100 pixels' }; color = @{ type = 'any'; required = $false; description = 'Color or brand token' }; gradient = @{ type = 'object'; required = $false; description = 'Gradient spec; allowBeta required for upgraded modes' }; stops = @{ type = 'array'; required = $false; description = 'Up to 6 {time,color} stops' }; outline = @{ type = 'object'; required = $false; description = 'Sibling keyline {color,width}' }; shadow = @{ type = 'object'; required = $false; description = 'Offset sibling stroke {color,width,offsetX,offsetY}' }; markers = @{ type = 'array'; required = $false; description = 'Up to 24 {t,image/text,sizePx,rotateToTangent}; real images, no emoji art' }; operation = @{ type = 'string'; required = $false; description = 'edit: set, insert, update, remove, close' }; index = @{ type = 'int'; required = $false; description = '1-based control-point index' }; point = @{ type = 'object'; required = $false; description = 'Control point for insert/update' }; count = @{ type = 'int'; required = $false; description = 'sample count 1..128' }; t = @{ type = 'number'; required = $false; description = 'sample/control parameter 0..1' }; arcLength = @{ type = 'bool'; required = $false; description = 'Even visual spacing (default true); false = parameter space' }; targets = @{ type = 'array'; required = $false; description = 'layout: existing GuiObject refs; allowReparent=true required if outside holder' }; items = @{ type = 'array'; required = $false; description = 'layout/motion marker specs with real image ids' }; targetRef = @{ type = 'string'; required = $false; description = 'motion target GuiObject' }; mode = @{ type = 'string'; required = $false; description = 'motion: once, loop, pingpong' }; duration = @{ type = 'number'; required = $false; description = 'motion seconds' }; playing = @{ type = 'bool'; required = $false; description = 'control play/pause' }; fromRef = @{ type = 'string'; required = $false; description = 'connect endpoint GuiObject' }; toRef = @{ type = 'string'; required = $false; description = 'connect endpoint GuiObject' }; fromSide = @{ type = 'string'; required = $false; description = 'left/right/top/bottom or auto' }; toSide = @{ type = 'string'; required = $false; description = 'left/right/top/bottom or auto' }; value = @{ type = 'number'; required = $false; description = 'progress 0..1' }; live = @{ type = 'bool'; required = $false; description = 'Install LocalScript runtime (default true); static preview is always applied' }; parentRef = @{ type = 'string'; required = $false; description = 'Default game.StarterGui' }; rect = @{ type = 'object'; required = $false; description = 'Holder x,y,w,h percentages' } };
+ returns = '{path,nativePath,report:{native,mode,points,closed,strokeOnly,warnings,runtime},samples,data,length,boundingRect}';
+ example = 'ui_path {"action":"progress","value":0.65,"sweep":270,"thickness":8,"color":"accent"}';
+ related = @('ui_shape','ui_capabilities','ui_texture'); errors = @('BAD_ARGS','REF_NOT_FOUND','PATH_SAMPLE_UNAVAILABLE','PATH_WRITE_FAILED','GRADIENT_BUDGET') })
 $t.Add(@{ name = 'ui_design'; category = 'ui'; summary = 'Turn a skin into a concrete design plan';
  description = 'Returns art direction, palette, layout family, signature elements, material query, role-aware corner math, image workflow and executable example. Prevents palette-only skin variations.';
  params = @{ skin = @{ type = 'string'; required = $false; description = 'Default minimal' }; action = @{ type = 'string'; required = $false; description = 'plan or recipes' }; brand = @{ type = 'object'; required = $false; description = 'Project brand override' }; widget = @{ type = 'string'; required = $false; description = 'Widget kind for the example' } };
@@ -27930,12 +29022,13 @@ end
                 gradientPerformance = 'Use at most 6 color stops and stay below 1000 active gradients. Set Color/Transparency once; animate Offset/Rotation/Scale/Type/TileMode instead. Mirror avoids Repeat seams. Avoid gradients on text-stroked objects when possible; stroke and fill need separate UIGradients. Radial ignores Rotation; Elliptical rotates its axes; Conical Scale changes sweep extent.'
                 corners = 'Effective radiusPx = min(width,height)*CornerRadius.Scale + Offset, capped at half the shortest edge. Scale 0.5 is a pill on a square, not a universal 50px radius. UICorner does not clip descendants and does not apply to ScrollingFrame. Engine defaults cap large panels/modals near 22px, headers near 12px and cards near 18px; buttons may stay round. Explicit user radii are preserved and audited, not silently rewritten. Use cornerPx or corner={scale,offset}; individual tl/tr/bl/br radii are probed.'
                 textures = 'Real project/Toolbox/user-uploaded images are a normal design step, not an optional afterthought. ui_texture action=inventory finds existing Place images; action=search query=... searches real decals; validate_asset checks metadata. Ask for a private upload id when needed. Pass assets={panel=id,card=id,header=id}; items[].image is foreground artwork. Backgrounds default to root scope and full opacity, not a faint wash over every child. Use tile/crop/fit/stretch or sliceCenter for 9-slice. Never invent ids; catalog metadata does not prove experience permission or successful rendering.'
-                geometry = 'ui_shape computes trapezoids/triangles/parallelograms/diamonds/chevrons/hexagons/arrows/custom polygons by ear clipping, right-triangle altitude splits and rotated half-plane Frames inside CanvasGroups. Aspect ratio is locked; max 32 groups per shape; gradients repeat per triangle and are reported as segmented. Circle/pill use UICorner. CanvasGroup clips descendants and uses texture memory; keep sizes static and inspect low graphics quality. ui_path uses native stroke-only Path2D splines (max 50 points) or explicitly straight Frame fallback; it never claims a fill API.'
+                geometry = 'ui_shape computes trapezoids/triangles/parallelograms/diamonds/chevrons/hexagons/arrows/custom polygons by ear clipping, right-triangle altitude splits and rotated half-plane Frames inside CanvasGroups. Aspect ratio is locked; max 32 groups per shape; gradients repeat per triangle and are reported as segmented. Circle/pill use UICorner. CanvasGroup clips descendants and uses texture memory; keep sizes static and inspect low graphics quality. ui_path uses native stroke-only Path2D splines (max 50 points) or an explicitly approximate cubic-bezier Frame polyline; it never claims a fill API.'
+                path2D = 'Path2D is a stroke-only cubic spline under a GuiObject, not a GuiObject and not a fill. ui_path action=create|recipes|inspect|sample|edit|layout|motion|control|connect|progress|set_progress. Control points/tangents are holder-relative UDim2 percentages plus pixel offsets. Use GetPositionOnCurveArcLength/GetTangentOnCurveArcLength for even visual spacing and rotation; GetPositionOnCurve is parameter space and clusters near bends. GetLength is expensive: inspect caches it by revision/size and the 30 Hz dirty-driven runtime never calls it. ControlPointChanged fires for point edits, not Color3/Thickness. Closed needs >=3 points. Budget 50 points even though GetMaxControlPoints reports 100. layout arranges real image markers/cards; motion moves a GuiObject along the curve; connect builds skill-tree/card connectors without reparenting endpoints; progress rebuilds a separate active arc over a track and is NOT a native trim/progress property. Older Studio gets the same cubic math as an approximate Frame polyline, with segmented gradients reported honestly.'
                 rotatedClipping = 'StarterGui.ClipsDescendantsSupportsRotation controls rotated-child clipping in the 2026 rollout; Roblox announced removal of the property in Nov 2026. Probe it, do not hard-code it. A rotated ordinary GuiObject still does not become a clipping container; use CanvasGroup when clipping is required.'
                 textShadow = 'ui_text / text.shadow creates a readable foreground with stroke plus a separate lower-ZIndex duplicate shifted downward inside a layout-safe wrapper. ArenaTextEffects mirrors text/font/alignment/size/position changes. This is the popular offset-copy technique, not a native glyph-shadow API. Keep foreground contrast and avoid clipping the shadow.'
                 emoji = 'Emoji-only TextLabels are forbidden as skins, icons, thumbnails or item artwork, including generic create/set/run_lua/script paths. Use real images, ViewportFrame renders or constructed geometry. Mixed emoji in ordinary dialogue requires an explicit user requirement and allowEmojiText=true; it never authorizes emoji art.'
                 diversity = 'The 40 skins have distinct family/composition/signature/material/icon/gradient/shadow recipes. ui_design returns the plan; composeWidget applies ledger/console/sidebar/hero/editorial/floating/gallery structures. Flat print and functional styles are valid; layer count alone is not quality.'
-                references = @('https://devforum.roblox.com/t/full-release-upgraded-ui-gradients/4846594','https://create.roblox.com/docs/reference/engine/classes/UIGradient','https://create.roblox.com/docs/reference/engine/classes/UICorner','https://create.roblox.com/docs/reference/engine/classes/CanvasGroup','https://create.roblox.com/docs/reference/engine/classes/Path2D')
+                references = @('https://devforum.roblox.com/t/full-release-upgraded-ui-gradients/4846594','https://create.roblox.com/docs/reference/engine/classes/UIGradient','https://create.roblox.com/docs/reference/engine/classes/UICorner','https://create.roblox.com/docs/reference/engine/classes/CanvasGroup','https://create.roblox.com/docs/reference/engine/classes/Path2D','https://create.roblox.com/docs/reference/engine/datatypes/Path2DControlPoint','https://create.roblox.com/docs/ui/2D-paths')
             }
             uiDesignRules = @{
                 title = 'UI design acceptance - no emoji placeholders, no one-size-fits-all panels'
@@ -38019,7 +39112,7 @@ $uiTranslationJson = @'
   "Hat Höhen, Profile, Wasser oder Volumen des Geländes gemessen.": "Measured terrain heights, profiles, water or volume.",
   "Hat Gelände im angegebenen Bereich entfernt.": "Removed terrain in the requested area.",
   "Hat ein fertiges Oberflächen-Widget aus der UI-Bibliothek gebaut.": "Built a ready-made interface widget from the UI library.",
-  "• 8.1.0 — UI ENGINE 4.0: • 40 Skin-Rezepte mit echten Layout-/Material-Unterschieden. • Neue UIGradient-Typen, Scale und TileMode mit Beta-Opt-in und Fallback. • Rollenbasierte Ecken, echte Toolbox-/Upload-Texturen und berechnete CanvasGroup-Geometrie. • Textschatten als versetzte Kopie; Emoji-only-Skins sind verboten; echte Bild-Assets für Oberflächen statt Platzhalter. • Offline-Tests erweitert; Windows-/Roblox-Liveabnahme bleibt vor Release Pflicht.": "• 8.1.0 — UI ENGINE 4.0: • 40 skin recipes with real layout/material differences. • New UIGradient types, Scale and TileMode with beta opt-in and fallback. • Role-aware corners, real Toolbox/uploaded textures and calculated CanvasGroup geometry. • Offset-copy text shadows; emoji-only skins forbidden; real image assets for surfaces instead of placeholders. • Offline tests expanded; Windows/Roblox live validation remains required before release."
+  "• 8.1.0 — UI ENGINE 4.0: • 40 Skin-Rezepte mit echten Layout-/Material-Unterschieden. • Neue UIGradient-Typen, Scale und TileMode mit Beta-Opt-in und Fallback. • Rollenbasierte Ecken, echte Toolbox-/Upload-Texturen und berechnete CanvasGroup-Geometrie. • Textschatten als versetzte Kopie; Emoji-only-Skins verboten. • Path2D-UI: Kurven bearbeiten, gleichmäßige Layouts, Bewegung, Karten-Verbinder und Fortschrittsbögen; älteres Studio erhält eine explizite kubische Frame-Näherung. • Windows-/Roblox-Liveabnahme bleibt vor Release Pflicht.": "• 8.1.0 — UI ENGINE 4.0: • 40 skin recipes with real layout/material differences. • New UIGradient types, Scale and TileMode with beta opt-in and fallback. • Role-aware corners, real Toolbox/uploaded textures and calculated CanvasGroup geometry. • Offset-copy text shadows; emoji-only skins forbidden. • Path2D UI: edit curves, even layouts, motion, card connectors and progress arcs; older Studio gets an explicit cubic Frame approximation. • Windows/Roblox live validation remains required before release."
 }
 '@
 foreach ($property in ($uiTranslationJson | ConvertFrom-Json).PSObject.Properties) { $script:UiTranslationsDeEn[$property.Name] = [string]$property.Value }

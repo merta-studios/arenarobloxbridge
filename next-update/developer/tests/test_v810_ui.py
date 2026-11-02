@@ -157,13 +157,105 @@ class UiEngine40(unittest.TestCase):
         return true
         '''))
 
-    def test_path_fallback_is_straight_and_explicit(self):
+    def test_path_fallback_is_cubic_and_explicit(self):
         self.assertTrue(self.run_lua('''
-        UI_ENGINE._caps={canvasGroup=false,path2D=false,pathControlPoints=false,gradientType=false,gradientScale=false,gradientTileMode=false,gradientTypes={},gradientTileModes={}}
-        local p=tools.ui_path({points={{x=0,y=0},{x=100,y=100}},gradient={type="conical"},allowBeta=true})
-        assert(p.ok and p.result.report.mode=="straight-frame fallback")
+        UI_ENGINE._caps={canvasGroup=false,path2D=false,pathControlPoints=false,pathSampling=false,gradientType=false,gradientScale=false,gradientTileMode=false,gradientTypes={},gradientTileModes={}}
+        local p=tools.ui_path({points={{x=0,y=50,right={x=30,y=-40}},{x=100,y=50,left={x=-30,y=-40}}},gradient={type="conical"},allowBeta=true})
+        assert(p.ok and p.result.report.mode=="cubic-bezier Frame fallback (approximate)")
+        assert(p.result.report.fallbackSegments>2 and p.result.report.gradient.segmented)
+        local ref=p.result.path.id
+        local mid=tools.ui_path({action="sample",ref=ref,t=0.5})
+        assert(mid.ok and mid.result.approximate and mid.result.samples[1].position.yScale<0.5)
+        local e=tools.ui_path({action="edit",ref=ref,operation="update",index=1,point={x=0,y=60}})
+        assert(e.ok and e.result.mode:find("fallback"))
         local s=tools.ui_shape({shape="trapezoid",gradient=false})
         assert(s.ok and s.result.report.memoryFallback==true)
+        return true
+        '''))
+
+    def test_path_presets_sampling_and_edit_contracts(self):
+        self.assertTrue(self.run_lua('''
+        local ring=tools.ui_path({preset="ring",radius=40,thickness=5})
+        assert(ring.ok and ring.result.report.closed and ring.result.report.aspectLocked)
+        local ref=ring.result.path.id
+        local inspect=tools.ui_path({action="inspect",ref=ref})
+        assert(inspect.ok and inspect.result.length and inspect.result.boundingRect)
+        local again=tools.ui_path({action="inspect",ref=ref})
+        assert(again.result.lengthCached==true)
+        local arc=tools.ui_path({action="sample",ref=ref,count=9,arcLength=true})
+        local par=tools.ui_path({action="sample",ref=ref,count=9,arcLength=false})
+        assert(arc.ok and par.ok and #arc.result.samples==9)
+        local function dist(a,b) local dx=(a.position.xScale-b.position.xScale)*400; local dy=(a.position.yScale-b.position.yScale)*300; return math.sqrt(dx*dx+dy*dy) end
+        local d1=dist(arc.result.samples[1],arc.result.samples[2]); local d2=dist(arc.result.samples[4],arc.result.samples[5])
+        assert(math.abs(d1-d2)<2, "arc-length spacing should be visually even")
+        local before=inspect.result.data.points
+        local bad=tools.ui_path({action="edit",ref=ref,operation="remove",index=99})
+        assert(not bad.ok)
+        local after=tools.ui_path({action="inspect",ref=ref})
+        assert(#after.result.data.points==#before)
+        local upd=tools.ui_path({action="edit",ref=ref,operation="update",index=1,point={x=50,y=10}})
+        assert(upd.ok and math.abs(upd.result.data.points[1].y-10)<1e-9)
+        return true
+        '''))
+
+    def test_path_layout_motion_and_runtime_are_live_and_bounded(self):
+        self.assertTrue(self.run_lua('''
+        local p=tools.ui_path({preset="wave"})
+        local ref=p.result.path.id
+        local l=tools.ui_path({action="layout",ref=ref,items={{image="111"},{image="222"},{image="333"}},rotateToTangent=true})
+        assert(l.ok and l.result.report.targets==3)
+        local m=tools.ui_path({action="motion",ref=ref,item={image="999"},mode="loop",duration=1})
+        assert(m.ok)
+        local holder=resolveRef(ref)
+        local runtime=holder:FindFirstChild("ArenaPathRuntime")
+        assert(runtime and runtime.Source:find("GetLength")==nil, "runtime must not poll GetLength")
+        script=runtime; assert(load(runtime.Source))()
+        local target=holder:FindFirstChild("PathLinks"):FindFirstChild("MotionTarget").Value
+        local before=target.Position
+        fireHeartbeat(0.1); fireHeartbeat(0.1)
+        assert(target.Position~=before, "motion should move the target")
+        local c=tools.ui_path({action="control",ref=ref,playing=false,t=0.25})
+        assert(c.ok and c.result.playing==false)
+        fireHeartbeat(0.1)
+        local items={}; for i=1,25 do items[i]={image="123"} end
+        local budget=tools.ui_path({action="layout",ref=ref,items=items})
+        assert(not budget.ok)
+        return true
+        '''))
+
+    def test_path_connector_and_progress_are_explicit_constructions(self):
+        self.assertTrue(self.run_lua('''
+        local gui=Instance.new("ScreenGui"); gui.Parent=game:GetService("StarterGui")
+        local a=Instance.new("Frame"); a.Size=UDim2.fromOffset(80,40); a.Position=UDim2.fromOffset(20,20); a.Parent=gui
+        local b=Instance.new("Frame"); b.Size=UDim2.fromOffset(80,40); b.Position=UDim2.fromOffset(250,180); b.Parent=gui
+        local con=tools.ui_path({action="connect",parentRef=describeRef(gui).id,fromRef=describeRef(a).id,toRef=describeRef(b).id,curvature=0.5})
+        assert(con.ok and con.result.report.kind=="connector")
+        local holder=resolveRef(con.result.path.id)
+        assert(holder:FindFirstChild("PathLinks"):FindFirstChild("From").Value==a)
+        local p=tools.ui_path({action="progress",value=0.25,sweep=270,trackThickness=8})
+        assert(p.ok and p.result.report.progressPolicy:find("NOT a native"))
+        local pref=p.result.path.id
+        local ph=resolveRef(pref)
+        assert(ph:FindFirstChild("ProgressPath") and ph:FindFirstChild("ProgressLabel"))
+        local sp=tools.ui_path({action="set_progress",ref=pref,value=0.8})
+        assert(sp.ok and math.abs(sp.result.value-0.8)<1e-9)
+        assert(ph:FindFirstChild("ProgressLabel").Text=="80%")
+        local runtime=ph:FindFirstChild("ArenaPathRuntime"); script=runtime; assert(load(runtime.Source))()
+        ph:SetAttribute("ArenaProgress",0.5); fireHeartbeat(0.1)
+        assert(ph:FindFirstChild("ProgressLabel").Text=="50%")
+        return true
+        '''))
+
+    def test_path_markers_reject_emoji_art_and_native_caps_are_probed(self):
+        self.assertTrue(self.run_lua('''
+        local before=#game:GetService("StarterGui"):GetDescendants()
+        local r=tools.ui_path({preset="line",markers={{text="🔥"}}})
+        assert(not r.ok and r.code=="BAD_ARGS")
+        assert(#game:GetService("StarterGui"):GetDescendants()==before)
+        local caps=UI_ENGINE.caps(true)
+        assert(caps.path2D and caps.pathControlPoints and caps.pathSampling and caps.pathTangents)
+        assert(caps.pathEditing and caps.pathChangedEvent and caps.pathLength and caps.pathBounds)
+        assert(caps.pathPointBudget==50 and caps.pathMaxControlPoints==100)
         return true
         '''))
 
@@ -228,7 +320,7 @@ class RegistrationAndGuides(unittest.TestCase):
 
     def test_guides_cover_beta_corners_assets_geometry_and_emoji(self):
         guide = region('uiEngineRules = @{', 'coordinateGuide = @(')
-        for marker in ('allowBeta=true', 'min(width,height)', 'action=inventory', 'CanvasGroup', 'offset-copy', 'Emoji-only', 'Path2D'):
+        for marker in ('allowBeta=true', 'min(width,height)', 'action=inventory', 'CanvasGroup', 'offset-copy', 'Emoji-only', 'Path2D', 'GetPositionOnCurveArcLength', 'stroke-only'):
             self.assertIn(marker, guide)
         self.assertIn('uiDesignRules = @{', SOURCE)
 
