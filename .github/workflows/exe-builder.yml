@@ -37,6 +37,9 @@ jobs:
   build-exe:
     if: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/arena/') }}
     runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: utf-8
     steps:
       - name: Code holen
         uses: actions/checkout@v4
