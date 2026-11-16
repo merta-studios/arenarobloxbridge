@@ -1624,8 +1624,9 @@ def main() -> int:
         # Rule 7 - CanvasGroup only on purpose, never nested.
         "local useGroup = wantsGroupFade and caps.canvasGroup and opts.insideCanvasGroup ~= true",
         "screen.ZIndexBehavior = Enum.ZIndexBehavior.Sibling",
-        # Rule 8 - shadows in scale.
-        "shadow.BlurRadius = UDim.new(math.clamp(tonumber(spec.blur) or 0.08, 0, 1), 0)",
+        # Rule 8 - native Upgraded UIShadow (Mode=Shape/Text, Inset, ShowBehindParent, BlurRadius UDim).
+        "function UI_ENGINE.applyShadow(parent, rawSpec, skin, caps, name)",
+        "shadow.BlurRadius = blur",
         # Capability probing instead of training-data assumptions.
         "function UI_ENGINE.caps(force)",
         'c.uiShadow = UI_ENGINE.probeClass("UIShadow")',
@@ -1660,8 +1661,8 @@ def main() -> int:
     require('failCode("STYLE_TOO_GENERIC"' not in plugin_source(source),
             "neutral/muted requested UI colors are still rejected by a style heuristic")
 
-    require(source.count("category = 'ui'") == 14,
-            "expected exactly 14 documented UI Engine tools (9 through 8.0.5 + gradient/shape/path/design/text)")
+    require(source.count("category = 'ui'") == 15,
+            "expected exactly 15 documented UI Engine tools (9 through 8.0.5 + gradient/shadow/shape/path/design/text)")
     require(source.count("category = 'world'") == 11,
             "expected exactly 11 documented World Engine tools")
     require(source.count("category = 'sim'") == 3,

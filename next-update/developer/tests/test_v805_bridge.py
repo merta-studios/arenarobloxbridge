@@ -274,9 +274,9 @@ class RegistrationConsistency(unittest.TestCase):
         docs = re.findall(r"\$t\.Add\(@\{ name = '([a-z_0-9]+)';", SOURCE)
         activity = re.findall(r"^\s{12}([a-z_][a-z0-9_]*)\s*=\s*'", region('function Get-ArenaActivityText', 'function Get-ArenaActivityKind'), re.M)
         labels = re.findall(r"^\s{8}([a-z_][a-z0-9_]*)\s*=\s*'", labels_region(), re.M)
-        self.assertEqual(len(docs), 164)
-        self.assertEqual(len(activity), 164)
-        self.assertEqual(len(labels), 164)
+        self.assertEqual(len(docs), 168)
+        self.assertEqual(len(activity), 168)
+        self.assertEqual(len(labels), 168)
         self.assertEqual(set(docs), set(activity))
         self.assertEqual(set(docs), set(labels))
 
