@@ -3744,6 +3744,10 @@ $script:Shared = [hashtable]::Synchronized(@{
         insert_asset = 'Katalog-Asset einfügen'
         apply_asset = 'Asset auf Objekt anwenden'
         catalog_status = 'Roblox-Katalog prüfen'
+        search_avatar_catalog = 'Avatar-Katalog durchsuchen'
+        inspect_avatar_item = 'Avatar-Artikel ansehen und prüfen'
+        build_rig = 'Charakter-Rig bauen und ankleiden'
+        ui_shadow = 'UI-Schatten konfigurieren'
         get_output = 'Studio-Ausgabe lesen'
         wait_for_output = 'Auf Studio-Ausgabe warten'
         clear_output = 'Studio-Ausgabe leeren'
@@ -12329,6 +12333,45 @@ function UI_ENGINE.caps(force)
     if UI_ENGINE._caps ~= nil and force ~= true then return UI_ENGINE._caps end
     local c = {}
     c.uiShadow = UI_ENGINE.probeClass("UIShadow")
+    c.uiShadowMode, c.uiShadowText, c.uiShadowInset, c.uiShadowShowBehindParent, c.uiShadowGradient = false, false, false, false, false
+    c.uiShadowModes = { Shape = false, Text = false }
+    if c.uiShadow then
+        local madeSh, shadowProbe = pcall(Instance.new, "UIShadow")
+        if madeSh and shadowProbe then
+            for _, name in ipairs({"Shape", "Text"}) do
+                local available = pcall(function()
+                    local e = Enum.ApplyShadowMode[name]; if e == nil then error("missing enum") end
+                    shadowProbe.Mode = e; if shadowProbe.Mode ~= e then error("readback mismatch") end
+                end)
+                c.uiShadowModes[name] = available
+            end
+            c.uiShadowMode = c.uiShadowModes.Shape or c.uiShadowModes.Text
+            c.uiShadowText = c.uiShadowModes.Text == true
+            c.uiShadowInset = pcall(function()
+                shadowProbe.Inset = true; if shadowProbe.Inset ~= true then error("readback mismatch") end
+                shadowProbe.Inset = false
+            end)
+            c.uiShadowShowBehindParent = pcall(function()
+                shadowProbe.ShowBehindParent = false; if shadowProbe.ShowBehindParent ~= false then error("readback mismatch") end
+                shadowProbe.ShowBehindParent = true
+            end)
+            c.uiShadowGradient = pcall(function()
+                local g = Instance.new("UIGradient")
+                g.Parent = shadowProbe
+                local okParent = (g.Parent == shadowProbe)
+                g:Destroy()
+                if not okParent then error("gradient parent failed") end
+            end)
+            pcall(function() shadowProbe:Destroy() end)
+        end
+    end
+    c.upgradedShadows = c.uiShadow and c.uiShadowText and c.uiShadowInset and c.uiShadowShowBehindParent
+    c.shadowReleaseStatus = "full-release"
+    c.shadowBaseReleaseDate = "2026-06-23"
+    c.shadowReleaseDate = "2026-11-05"
+    c.shadowRequiresOptIn = false
+    c.shadowBetaStatus = "Base UIShadow (2026-06-23) and Upgraded UIShadow capabilities (Mode=Shape/Text, Inset, ShowBehindParent, child UIGradient; 2026-11-05) are fully released by Roblox and publishable in experiences. The Studio Beta flag was removed. Local property probes measure this Studio installation."
+    c.shadowReleaseSource = "https://devforum.roblox.com/t/full-release-upgraded-uishadow-capabilities/4934553"
     c.uiFlexItem = UI_ENGINE.probeClass("UIFlexItem")
     c.uiDragDetector = UI_ENGINE.probeClass("UIDragDetector")
     c.path2D = UI_ENGINE.probeClass("Path2D")
@@ -12402,9 +12445,26 @@ function UI_ENGINE.caps(force)
     c.individualCorners = false
     local madeC, corner = pcall(Instance.new, "UICorner")
     if madeC and corner then
-        c.individualCorners = pcall(function() corner.TopRightRadius = UDim.new(0, 4) end)
+        c.individualCorners = pcall(function()
+            local r = UDim.new(0, 4)
+            corner.TopLeftRadius = r; corner.TopRightRadius = r; corner.BottomLeftRadius = r; corner.BottomRightRadius = r
+            if corner.TopRightRadius.Offset ~= 4 or corner.BottomLeftRadius.Offset ~= 4 then error("readback mismatch") end
+        end)
         pcall(function() corner:Destroy() end)
     end
+    c.individualCornersReleaseStatus = "full-release"
+    c.individualCornersReleaseDate = "2026-06-23"
+    c.individualCornersReleaseSource = "https://devforum.roblox.com/t/full-release-new-ui-capabilities-shadows-individual-corners/4636263"
+    c.color3Contrast = pcall(function()
+        local w, k = Color3.new(1, 1, 1), Color3.new(0, 0, 0)
+        local l = w:GetLuminance()
+        local r = w:GetContrastRatio(k)
+        local pick = k:GetContrastingColor(w, k)
+        if type(l) ~= "number" or type(r) ~= "number" or typeof(pick) ~= "Color3" then error("bad return") end
+    end)
+    c.color3ContrastReleaseStatus = "full-release"
+    c.color3ContrastReleaseDate = "2026-11-03"
+    c.color3ContrastReleaseSource = "https://devforum.roblox.com/t/build-accessible-ui-faster-new-color3-contrast-luminance-methods/4974212"
     c.strokeScaledSize, c.strokeBorderOffset, c.strokeMulti = false, false, false
     local madeS, stroke = pcall(Instance.new, "UIStroke")
     if madeS and stroke then
@@ -12426,14 +12486,22 @@ end
 
 function UI_ENGINE.capNotes()
     local c, notes = UI_ENGINE.caps(), {}
+    if not c.upgradedShadows then
+        if not c.uiShadow then
+            table.insert(notes, "UIShadow missing: the engine falls back to a stacked halo-frame shadow and offset-copy text shadows. Ask the user to update Roblox Studio for native drop, inset, knockout and text shadows.")
+        else
+            table.insert(notes, "Upgraded UIShadow capabilities (Mode=Shape/Text, Inset, ShowBehindParent, child UIGradient) were fully released by Roblox on 2026-11-05, but this Studio installation did not pass all probes. Update Roblox Studio, restart it, then run ui_capabilities refresh=true; unsupported properties fall back individually and text shadows fall back to offset-copy.")
+        end
+    end
+    table.insert(notes, "Upgraded UIShadow (Mode=Shape/Text, Inset, ShowBehindParent, child UIGradient) was fully released on 2026-11-05 (base UIShadow & individual UICorner radii on 2026-06-23) and may be published in experiences with no Beta Features toggle. Keep on-screen UIShadow count at or below 100; Path2D is unsupported.")
     if not c.upgradedGradients then table.insert(notes,"Upgraded UIGradients are fully released, but this Studio installation did not pass the Type/Scale/TileMode probes. Update Roblox Studio, restart it, then run ui_capabilities refresh=true. Unsupported properties fall back to Linear/1/Clamp; no Beta Features toggle is required.") end
     table.insert(notes,"Upgraded UIGradients were fully released on 2026-10-29 and may be published in experiences. allowBeta is no longer required; older callers may still pass it, but it has no effect. Linear fallback is not an equivalent conical/radial effect.")
     if not c.pathControlPoints then table.insert(notes,"Path2D control-point API unavailable: ui_path uses an explicit approximate cubic-bezier Frame polyline, not native splines.") end
     if c.pathControlPoints and not c.pathSampling then table.insert(notes,"Path2D exists but curve sampling is unavailable: layout/motion fall back to the same cubic math as an approximation; native viewport editing still works.") end
     if c.pathControlPoints and not c.pathChangedEvent then table.insert(notes,"Path2D.ControlPointChanged unavailable: live layouts cannot react to native control-point edits; refresh/rebuild after editing.") end
-    if not c.uiShadow then table.insert(notes, "UIShadow missing: the engine falls back to a stacked halo-frame shadow. Ask the user to update Roblox Studio for native drop shadows.") end
     if not c.strokeScaledSize then table.insert(notes, "UIStroke.StrokeSizingMode missing: stroke thickness falls back to pixel offset and is rescaled by the runtime script instead.") end
-    if not c.individualCorners then table.insert(notes, "Individual UICorner radii missing: all four corners share one radius.") end
+    if not c.individualCorners then table.insert(notes, "Individual UICorner radii (fully released 2026-06-23) missing in this Studio: all four corners share one radius.") end
+    if not c.color3Contrast then table.insert(notes, "Color3 contrast/luminance methods (GetLuminance, GetContrastRatio, GetContrastingColor; released 2026-11-03) missing in this Studio: the engine uses its built-in WCAG math fallback.") end
     if not c.strokeMulti then table.insert(notes, "Only one UIStroke per object: the inner bevel stroke is skipped.") end
     return notes
 end
@@ -12476,12 +12544,18 @@ function UI_ENGINE.mix(a, b, t)
 end
 
 -- WCAG-artige relative Leuchtdichte -> echter, messbarer Textkontrast.
+-- Nutzt seit 2026-11-03 native Color3-Kontrastmethoden wenn vorhanden,
+-- sonst dieselbe WCAG-Mathematik als Fallback.
 function UI_ENGINE.lum(c)
+    local okNative, value = pcall(function() return c:GetLuminance() end)
+    if okNative and type(value) == "number" then return value end
     local function ch(u) if u <= 0.03928 then return u / 12.92 end return ((u + 0.055) / 1.055) ^ 2.4 end
     return 0.2126 * ch(c.R) + 0.7152 * ch(c.G) + 0.0722 * ch(c.B)
 end
 
 function UI_ENGINE.contrast(a, b)
+    local okNative, value = pcall(function() return a:GetContrastRatio(b) end)
+    if okNative and type(value) == "number" then return value end
     local la, lb = UI_ENGINE.lum(a), UI_ENGINE.lum(b)
     if la < lb then la, lb = lb, la end
     return (la + 0.05) / (lb + 0.05)
@@ -12490,6 +12564,8 @@ end
 function UI_ENGINE.readable(bg, light, dark)
     light = light or Color3.fromRGB(255, 255, 255)
     dark = dark or Color3.fromRGB(18, 14, 20)
+    local okNative, picked = pcall(function() return bg:GetContrastingColor(light, dark) end)
+    if okNative and typeof(picked) == "Color3" then return picked end
     if UI_ENGINE.contrast(bg, light) >= UI_ENGINE.contrast(bg, dark) then return light end
     return dark
 end
@@ -12823,26 +12899,206 @@ end
 -- ---------------------------------------------------------------------------
 -- EINZELNE SCHICHTEN
 -- ---------------------------------------------------------------------------
+-- Schatten-Spezifikation + nativer UIShadow-Bauer (Upgraded UIShadow Full
+-- Release 2026-11-05: Mode=Shape|Text, Inset, ShowBehindParent, Kind-UIGradient).
+UI_ENGINE.SHADOW_RECOMMENDED_MAX = 100
+
+function UI_ENGINE.shadowUDim(value, pxFallback, defaultScale, defaultOffset, minScale, maxScale, minPx, maxPx)
+    if type(value) == "table" then
+        local s = UI_ENGINE.finite(value.scale or value.Scale or value[1], defaultScale or 0, minScale or -2, maxScale or 2)
+        local o = UI_ENGINE.finite(value.offset or value.Offset or value.px or value[2], defaultOffset or 0, minPx or -512, maxPx or 512)
+        return UDim.new(s, o)
+    end
+    if pxFallback ~= nil then
+        local o = UI_ENGINE.finite(pxFallback, defaultOffset or 0, minPx or -512, maxPx or 512)
+        local s = value ~= nil and UI_ENGINE.finite(value, 0, minScale or -2, maxScale or 2) or 0
+        return UDim.new(s, o)
+    end
+    local s = UI_ENGINE.finite(value, defaultScale or 0, minScale or -2, maxScale or 2)
+    return UDim.new(s, defaultOffset or 0)
+end
+
+function UI_ENGINE.shadowUDim2(vec, xScale, yScale, pxVec, defaultX, defaultY)
+    if type(vec) == "table" then
+        if vec.xScale ~= nil or vec.yScale ~= nil or vec.xOffset ~= nil or vec.yOffset ~= nil then
+            return UDim2.new(
+                UI_ENGINE.finite(vec.xScale, defaultX or 0, -2, 2),
+                UI_ENGINE.finite(vec.xOffset, 0, -512, 512),
+                UI_ENGINE.finite(vec.yScale, defaultY or 0, -2, 2),
+                UI_ENGINE.finite(vec.yOffset, 0, -512, 512)
+            )
+        end
+        local sx = UI_ENGINE.finite(vec.x or vec.X or vec[1], defaultX or 0, -2, 2)
+        local sy = UI_ENGINE.finite(vec.y or vec.Y or vec[2], defaultY or 0, -2, 2)
+        return UDim2.fromScale(sx, sy)
+    end
+    if type(pxVec) == "table" then
+        local px = UI_ENGINE.finite(pxVec.x or pxVec.X or pxVec[1], 0, -512, 512)
+        local py = UI_ENGINE.finite(pxVec.y or pxVec.Y or pxVec[2], 0, -512, 512)
+        return UDim2.new(
+            UI_ENGINE.finite(xScale, 0, -2, 2), px,
+            UI_ENGINE.finite(yScale, 0, -2, 2), py
+        )
+    end
+    if type(vec) == "number" then
+        local v = UI_ENGINE.finite(vec, defaultX or 0, -2, 2)
+        return UDim2.fromScale(v, v)
+    end
+    if type(pxVec) == "number" then
+        local p = UI_ENGINE.finite(pxVec, 0, -512, 512)
+        return UDim2.fromOffset(p, p)
+    end
+    return UDim2.fromScale(
+        UI_ENGINE.finite(xScale, defaultX or 0, -2, 2),
+        UI_ENGINE.finite(yScale, defaultY or 0, -2, 2)
+    )
+end
+
+function UI_ENGINE.shadowSpec(value)
+    local s = type(value) == "table" and UI_ENGINE.copy(value) or {}
+    if value == false then s.enabled = false end
+    s.enabled = s.enabled ~= false
+    local rawMode = string.lower(tostring(s.mode or "shape"))
+    if rawMode ~= "shape" and rawMode ~= "text" then error("BAD_ARGS: UIShadow mode must be 'shape' or 'text'") end
+    s.mode = rawMode
+    s.inset = s.inset == true
+    s.showBehindParent = s.showBehindParent ~= false
+    s.explicitShowBehindParent = (value ~= nil and type(value) == "table" and value.showBehindParent ~= nil)
+    s.explicitInset = (value ~= nil and type(value) == "table" and value.inset ~= nil)
+    s.explicitSpread = (value ~= nil and type(value) == "table" and (value.spread ~= nil or value.spreadPx ~= nil))
+    return s
+end
+
+function UI_ENGINE.shadowCount(inst)
+    local screen = UI_ENGINE.screenOf(inst) or inst
+    local count = 0
+    for _, child in ipairs(screen:GetDescendants()) do
+        if child.ClassName == "UIShadow" then count = count + 1 end
+    end
+    return count
+end
+
+function UI_ENGINE.applyShadow(parent, rawSpec, skin, caps, name)
+    caps = caps or UI_ENGINE.caps()
+    local spec = UI_ENGINE.shadowSpec(rawSpec)
+    local report = {
+        requestedMode = spec.mode, requestedInset = spec.inset, requestedShowBehindParent = spec.showBehindParent,
+        mode = "shape", inset = false, showBehindParent = true, enabled = spec.enabled,
+        hasGradient = false, betaRequired = false, requiresOptIn = false,
+        releaseStatus = "released", fallback = false, fallbacks = {}, warnings = {},
+        livePublishReady = true,
+        livePublishReadyReason = "Roblox fully released base UIShadow (2026-06-23) and upgraded UIShadow capabilities (Mode=Shape/Text, Inset, ShowBehindParent, child UIGradient; 2026-11-05). No Studio Beta flag remains.",
+    }
+    if not caps.uiShadow then
+        report.fallback = true; report.fallbacks.class = "missing"
+        table.insert(report.warnings, "UISHADOW_UNAVAILABLE: this Studio installation lacks UIShadow; update Roblox Studio.")
+        return nil, report
+    end
+    local shadow = Instance.new("UIShadow")
+    shadow.Name = name or "ArenaShadow"
+    local modeName = spec.mode == "text" and "Text" or "Shape"
+    local modeSupported = type(caps.uiShadowModes) == "table" and caps.uiShadowModes[modeName] == true
+    local insetSupported = caps.uiShadowInset == true
+    local showBehindSupported = caps.uiShadowShowBehindParent == true
+    if spec.mode == "text" and not modeSupported then
+        report.fallback = true; report.fallbacks.mode = "shape"
+        table.insert(report.warnings, "UPGRADED_UISHADOW_TEXT_UNAVAILABLE: this Studio did not pass the Mode=Text probe; update Studio. Using Shape.")
+        spec.mode = "shape"; modeName = "Shape"
+    end
+    if spec.inset and not insetSupported then
+        report.fallback = true; report.fallbacks.inset = false
+        table.insert(report.warnings, "UPGRADED_UISHADOW_INSET_UNAVAILABLE: this Studio did not pass the Inset probe; update Studio. Using Inset=false.")
+        spec.inset = false
+    end
+    if not spec.showBehindParent and not showBehindSupported then
+        report.fallback = true; report.fallbacks.showBehindParent = true
+        table.insert(report.warnings, "UPGRADED_UISHADOW_KNOCKOUT_UNAVAILABLE: this Studio did not pass the ShowBehindParent probe; update Studio. Using ShowBehindParent=true.")
+        spec.showBehindParent = true
+    end
+    if spec.mode == "text" then
+        if parent and not (parent:IsA("TextLabel") or parent:IsA("TextButton") or parent:IsA("TextBox")) then
+            table.insert(report.warnings, "TEXT_SHADOW_NON_TEXT_PARENT: Mode=Text renders glyph shadows only on TextLabel, TextButton or TextBox.")
+        end
+        if spec.explicitInset and spec.inset then
+            table.insert(report.warnings, "TEXT_MODE_IGNORES_INSET: Roblox UIShadow ignores Inset when Mode=Text.")
+        end
+        if spec.explicitShowBehindParent and not spec.showBehindParent then
+            table.insert(report.warnings, "TEXT_MODE_IGNORES_SHOW_BEHIND: Roblox UIShadow ignores ShowBehindParent when Mode=Text.")
+        end
+        if spec.explicitSpread then
+            table.insert(report.warnings, "TEXT_MODE_IGNORES_SPREAD: Roblox UIShadow ignores Spread when Mode=Text.")
+        end
+    elseif spec.inset and spec.explicitShowBehindParent and not spec.showBehindParent then
+        table.insert(report.warnings, "INSET_IGNORES_SHOW_BEHIND: Roblox UIShadow ignores ShowBehindParent when Inset=true.")
+    end
+    local blur = UI_ENGINE.shadowUDim(spec.blurRadius ~= nil and spec.blurRadius or spec.blur, spec.blurPx, spec.mode == "text" and 0.04 or 0.08, 0, 0, 1, 0, 256)
+    local offset = UI_ENGINE.shadowUDim2(spec.offset, spec.ox or spec.offsetX or spec.x, spec.oy or spec.offsetY or spec.y, spec.offsetPx, 0, spec.mode == "text" and 0.05 or 0)
+    local spread = UI_ENGINE.shadowUDim2(spec.spread, spec.spreadX, spec.spreadY, spec.spreadPx, 0, 0)
+    local defaultColor = (skin and skin.p and (skin.p[spec.tint or "shadow"] or skin.p.shadow)) or Color3.fromRGB(0, 0, 0)
+    local color = UI_ENGINE.tokenColor(skin, spec.color, defaultColor)
+    local transparency = math.clamp(tonumber(spec.transparency ~= nil and spec.transparency or spec.alpha) or (spec.mode == "text" and 0.25 or 0.5), 0, 1)
+    local zIndex = math.floor(tonumber(spec.zIndex) or (spec.inset and 1 or -1))
+    pcall(function()
+        shadow.Enabled = spec.enabled
+        shadow.BlurRadius = blur
+        shadow.Color = color
+        shadow.Transparency = transparency
+        shadow.Offset = offset
+        shadow.Spread = spread
+        shadow.ZIndex = zIndex
+    end)
+    if modeSupported then pcall(function() shadow.Mode = Enum.ApplyShadowMode[modeName] end) end
+    if insetSupported then pcall(function() shadow.Inset = spec.inset end) end
+    if showBehindSupported then pcall(function() shadow.ShowBehindParent = spec.showBehindParent end) end
+    if spec.gradient ~= nil and spec.gradient ~= false then
+        if caps.uiShadowGradient then
+            local gSpec = type(spec.gradient) == "table" and spec.gradient or {}
+            local rawStops = gSpec.stops or spec.stops or {{0, color}, {1, (skin and skin.p and skin.p.accent) or Color3.fromRGB(0, 0, 0)}}
+            local normStops = {}
+            for _, stop in ipairs(rawStops) do
+                table.insert(normStops, { tonumber(stop[1] or stop.time), UI_ENGINE.tokenColor(skin, stop[2] or stop.color, color) })
+            end
+            local _, gReport = UI_ENGINE.gradient(shadow, normStops, gSpec.rotation, gSpec.transparency, "ArenaShadowGradient", gSpec)
+            report.hasGradient = true
+            report.gradient = gReport
+        else
+            report.fallback = true; report.fallbacks.gradient = false
+            table.insert(report.warnings, "UPGRADED_UISHADOW_GRADIENT_UNAVAILABLE: this Studio does not allow UIGradient inside UIShadow; update Studio.")
+        end
+    end
+    report.mode = spec.mode
+    report.inset = spec.inset
+    report.showBehindParent = spec.showBehindParent
+    report.color = "#" .. color:ToHex()
+    report.transparency = transparency
+    report.zIndex = zIndex
+    shadow:SetAttribute("ArenaShadowMode", report.mode)
+    shadow:SetAttribute("ArenaShadowInset", report.inset)
+    shadow:SetAttribute("ArenaShadowShowBehindParent", report.showBehindParent)
+    shadow:SetAttribute("ArenaShadowFallback", report.fallback)
+    shadow:SetAttribute("ArenaShadowReleaseStatus", "released")
+    shadow.Parent = parent
+    return shadow, report
+end
+
 -- Schattenstapel: nativ wenn vorhanden, sonst gestapelte Halo-Frames.
 -- BlurRadius/Offset/Spread bewusst in SCALE - damit skaliert der Schatten mit.
-function UI_ENGINE.shadowStack(base, skin, caps, holder)
+function UI_ENGINE.shadowStack(base, skin, caps, holder, customSpecs)
     local made, kind = 0, "none"
-    local specs = skin.shadows or {}
+    local specs = (type(customSpecs) == "table" and customSpecs) or (skin.shadows or {})
     if caps.uiShadow then
         kind = "UIShadow"
+        local isTranslucent = base and base.BackgroundTransparency and base.BackgroundTransparency > 0.05
         for index, spec in ipairs(specs) do
-            local shadow = Instance.new("UIShadow")
-            shadow.Name = "ArenaShadow" .. tostring(index)
-            pcall(function()
-                shadow.BlurRadius = UDim.new(math.clamp(tonumber(spec.blur) or 0.08, 0, 1), 0)
-                shadow.Color = UI_ENGINE.col(spec.color, skin.p[spec.tint or "shadow"] or skin.p.shadow)
-                shadow.Transparency = math.clamp(tonumber(spec.alpha) or 0.5, 0, 1)
-                shadow.Offset = UDim2.fromScale(tonumber(spec.ox) or 0, tonumber(spec.oy) or 0)
-                shadow.Spread = UDim2.fromScale(tonumber(spec.spread) or 0, tonumber(spec.spread) or 0)
-                shadow.ZIndex = -index
-            end)
-            shadow.Parent = base
-            made = made + 1
+            if type(spec) == "table" and spec.enabled ~= false then
+                local effective = UI_ENGINE.copy(spec)
+                if effective.zIndex == nil then effective.zIndex = effective.inset and index or -index end
+                if effective.showBehindParent == nil and isTranslucent and not effective.inset and (effective.mode == nil or string.lower(tostring(effective.mode)) == "shape") and caps.uiShadowShowBehindParent then
+                    effective.showBehindParent = false
+                end
+                local shadow = UI_ENGINE.applyShadow(base, effective, skin, caps, "ArenaShadow" .. tostring(index))
+                if shadow then made = made + 1 end
+            end
         end
     elseif holder ~= nil then
         kind = "haloFallback"
@@ -13460,8 +13716,13 @@ function UI_ENGINE.surface(opts)
     report.layers = report.layers + 1
 
     -- 3. Schatten. Bei Fallback brauchen sie einen NICHT clippenden Halter.
+    local customShadows = nil
+    if opts.shadows == false or opts.shadow == false then customShadows = {}
+    elseif type(opts.shadows) == "table" then customShadows = opts.shadows
+    elseif type(opts.shadow) == "table" then customShadows = { opts.shadow } end
+    local effectiveShadows = customShadows or (skin.shadows or {})
     local holder = nil
-    if not caps.uiShadow and #(skin.shadows or {}) > 0 then
+    if not caps.uiShadow and #effectiveShadows > 0 then
         holder = Instance.new("Frame")
         holder.Name = "ArenaShadowHolder"
         holder.BackgroundTransparency = 1
@@ -13471,7 +13732,7 @@ function UI_ENGINE.surface(opts)
         holder.ZIndex = 0
         holder.Parent = wrapper
     end
-    local shadowCount, shadowKind = UI_ENGINE.shadowStack(base, skin, caps, holder)
+    local shadowCount, shadowKind = UI_ENGINE.shadowStack(base, skin, caps, holder, customShadows)
     report.shadows = shadowCount
     report.shadowKind = shadowKind
     if shadowCount > 0 then report.layers = report.layers + 1 end
@@ -13877,9 +14138,19 @@ function UI_ENGINE.buildNode(spec, parentHost, skin, caps, ctx, depth, inLayout,
         local textSpec = spec.text
         if type(textSpec) ~= "table" then textSpec = { value = tostring(textSpec) } end
         if spec.image ~= nil then textSpec.rect = textSpec.rect or {50,83,100,28} end
-        local _, shadow = UI_ENGINE.textNode(built.content, textSpec, nodeSkin, caps, built.base.BackgroundColor3)
+        local _, shadow, _, shadowReport = UI_ENGINE.textNode(built.content, textSpec, nodeSkin, caps, built.base.BackgroundColor3)
         ctx.texts = ctx.texts + 1
-        if shadow then ctx.textShadows = (ctx.textShadows or 0)+1 end
+        if shadow then
+            ctx.textShadows = (ctx.textShadows or 0) + 1
+            if shadow.ClassName == "UIShadow" then
+                ctx.shadows = (ctx.shadows or 0) + 1
+            else
+                ctx.textShadowClones = (ctx.textShadowClones or 0) + 1
+            end
+        end
+        if shadowReport and shadowReport.warnings then
+            for _, w in ipairs(shadowReport.warnings) do table.insert(ctx.warnings, tostring(spec.id or "node") .. ": " .. w) end
+        end
     end
     if spec.image ~= nil then
         local imageSpec = type(spec.image) == "table" and spec.image or {image=spec.image}
@@ -13950,7 +14221,7 @@ end
 function UI_ENGINE.newContext(args, skin)
     return {
         count = 0, order = 0, layers = 0, strokes = 0, strokeGradients = 0, shadows = 0, gradients = 0,
-        textureParts = 0, canvasGroups = 0, thinSurfaces = 0, texts = 0, textShadows = 0, scrolls = 0, images = {},
+        textureParts = 0, canvasGroups = 0, thinSurfaces = 0, texts = 0, textShadows = 0, textShadowClones = 0, scrolls = 0, images = {},
         warnings = {}, budget = math.max(1, math.min(tonumber(args.maxSurfaces) or 160, 400)),
         textureBudget = tonumber(args.textureBudget) or 26, brand = args.brand, overBudget = false,
         textureImage = args.textureImage or args.backgroundTexture or args.textureId,
@@ -14936,26 +15207,66 @@ function UI_ENGINE.textNode(parent, spec, skin, caps, bg)
     end
     local shadowSpec = spec.shadow
     if shadowSpec == nil and spec.display and skin.textShadow then shadowSpec = true end
-    local shadow
+    local shadow, shadowReport
     if shadowSpec == true then shadowSpec = {} end
-    if type(shadowSpec) == "table" then
-        -- Clone only after all text/font/stroke/constraint settings. The copy is
-        -- a sibling, not a child: identical bounds, lower ZIndex, shifted down.
-        shadow = label:Clone(); shadow.Name = label.Name .. "Shadow"; shadow.ZIndex = label.ZIndex-1
-        local ox = UI_ENGINE.finite(shadowSpec.x or shadowSpec.offsetX,0,-0.5,0.5)
-        local oy = UI_ENGINE.finite(shadowSpec.y or shadowSpec.offsetY,0.065,-0.5,0.5)
-        shadow.Position = label.Position + UDim2.fromScale(ox,oy)
-        local color = UI_ENGINE.tokenColor(skin,shadowSpec.color,skin.p.shadow)
-        shadow.TextColor3 = color; shadow.TextTransparency = UI_ENGINE.finite(shadowSpec.alpha,0,0,1)
-        local ss = shadow:FindFirstChild("ArenaTextStroke")
-        if ss then ss.Color = color; ss.Transparency = shadow.TextTransparency end
-        shadow:SetAttribute("ArenaTextShadow",true)
-        label:SetAttribute("ArenaShadowOffsetX",ox); label:SetAttribute("ArenaShadowOffsetY",oy); label:SetAttribute("ArenaShadowZDelta",UI_ENGINE.finite(shadowSpec.zIndexDelta,1,1,20))
-        local link = Instance.new("ObjectValue"); link.Name="ArenaShadowTarget"; link.Value=shadow; link.Parent=label
-        shadow.Parent = block
+    if type(shadowSpec) == "table" and shadowSpec.enabled ~= false then
+        local reqMethod = string.lower(tostring(shadowSpec.method or "auto"))
+        local wantOffsetCopy = (reqMethod == "offset-copy" or reqMethod == "clone" or reqMethod == "duplicate")
+        local canNative = (caps.uiShadow == true and caps.uiShadowText == true)
+        if not wantOffsetCopy and canNative then
+            -- Upgraded UIShadow (Full Release 2026-11-05): native glyph-contour
+            -- text shadow with Mode=Enum.ApplyShadowMode.Text. Zero duplicate
+            -- TextLabel, zero LocalScript sync needed, supports RichText & UIGradient.
+            local nativeSpec = UI_ENGINE.copy(shadowSpec)
+            nativeSpec.mode = "text"
+            if nativeSpec.ox == nil and nativeSpec.offsetX == nil and nativeSpec.x == nil and nativeSpec.offset == nil and nativeSpec.offsetPx == nil then
+                nativeSpec.offsetX = 0
+            end
+            if nativeSpec.oy == nil and nativeSpec.offsetY == nil and nativeSpec.y == nil and nativeSpec.offset == nil and nativeSpec.offsetPx == nil then
+                nativeSpec.offsetY = 0.065
+            end
+            if nativeSpec.blur == nil and nativeSpec.blurRadius == nil and nativeSpec.blurPx == nil then
+                nativeSpec.blur = 0.02
+            end
+            if nativeSpec.alpha == nil and nativeSpec.transparency == nil then
+                nativeSpec.alpha = 0.25
+            end
+            shadow, shadowReport = UI_ENGINE.applyShadow(label, nativeSpec, skin, caps, label.Name .. "Shadow")
+            if shadow then
+                shadow:SetAttribute("ArenaTextShadow", true)
+                shadow:SetAttribute("ArenaTextShadowMethod", "native-uishadow")
+            end
+            if shadowReport then
+                shadowReport.method = "native-uishadow"
+                shadowReport.syncScriptNeeded = false
+            end
+        else
+            -- Offset-copy fallback (for legacy Studio without UIShadow.Mode=Text
+            -- or when method="offset-copy" is explicitly requested).
+            shadow = label:Clone(); shadow.Name = label.Name .. "Shadow"; shadow.ZIndex = label.ZIndex-1
+            local ox = UI_ENGINE.finite(shadowSpec.x or shadowSpec.offsetX or shadowSpec.ox,0,-0.5,0.5)
+            local oy = UI_ENGINE.finite(shadowSpec.y or shadowSpec.offsetY or shadowSpec.oy,0.065,-0.5,0.5)
+            shadow.Position = label.Position + UDim2.fromScale(ox,oy)
+            local color = UI_ENGINE.tokenColor(skin,shadowSpec.color,skin.p.shadow)
+            shadow.TextColor3 = color; shadow.TextTransparency = UI_ENGINE.finite(shadowSpec.alpha or shadowSpec.transparency,0,0,1)
+            local ss = shadow:FindFirstChild("ArenaTextStroke")
+            if ss then ss.Color = color; ss.Transparency = shadow.TextTransparency end
+            shadow:SetAttribute("ArenaTextShadow",true)
+            shadow:SetAttribute("ArenaTextShadowMethod","offset-copy")
+            label:SetAttribute("ArenaShadowOffsetX",ox); label:SetAttribute("ArenaShadowOffsetY",oy); label:SetAttribute("ArenaShadowZDelta",UI_ENGINE.finite(shadowSpec.zIndexDelta,1,1,20))
+            local link = Instance.new("ObjectValue"); link.Name="ArenaShadowTarget"; link.Value=shadow; link.Parent=label
+            shadow.Parent = block
+            shadowReport = {
+                method = "offset-copy",
+                fallback = not wantOffsetCopy,
+                syncScriptNeeded = true,
+                releaseStatus = "released",
+                warnings = not wantOffsetCopy and {"UPGRADED_UISHADOW_TEXT_UNAVAILABLE: Studio lacks UIShadow Mode=Text; using offset-copy TextLabel clone with ArenaTextEffects sync."} or {},
+            }
+        end
     end
     block.Parent = parent; label.Parent = block
-    return label, shadow, block
+    return label, shadow, block, shadowReport
 end
 
 function UI_ENGINE.assetRef(value)
@@ -16330,7 +16641,9 @@ end)
 ]==]
 
 function UI_ENGINE.installTextRuntime(screen, ctx)
-    if not screen or not ctx.textShadows or ctx.textShadows == 0 then return nil end
+    if not screen or type(ctx) ~= "table" then return nil end
+    local cloneCount = ctx.textShadowClones ~= nil and ctx.textShadowClones or ctx.textShadows
+    if not cloneCount or cloneCount == 0 then return nil end
     local existing=screen:FindFirstChild("ArenaTextEffects")
     if existing then return existing end
     local script=Instance.new("LocalScript"); script.Name="ArenaTextEffects"
@@ -16398,10 +16711,63 @@ tools.ui_text = function(args)
     local valid,why=pcall(function() local refusal=UI_ENGINE.guardEmoji(text,text.role or args.role,"ui_text"); if refusal then error(refusal) end end)
     if not valid then return failCode("BAD_ARGS",tostring(why)) end
     local skin=UI_ENGINE.resolveSkin(args.skin or "minimal",args.brand,args.colors)
-    local label,shadow=UI_ENGINE.textNode(parent,text,skin,UI_ENGINE.caps(),parent:IsA("GuiObject") and parent.BackgroundColor3 or skin.p.surface)
-    UI_ENGINE.installTextRuntime(UI_ENGINE.screenOf(parent),{textShadows=shadow and 1 or 0})
+    local label,shadow,_,shadowReport=UI_ENGINE.textNode(parent,text,skin,UI_ENGINE.caps(),parent:IsA("GuiObject") and parent.BackgroundColor3 or skin.p.surface)
+    local isClone = shadow ~= nil and shadow.ClassName ~= "UIShadow"
+    UI_ENGINE.installTextRuntime(UI_ENGINE.screenOf(parent),{textShadows=shadow and 1 or 0, textShadowClones=isClone and 1 or 0, warnings={}})
     waypoint("ui text")
-    return ok({text=describeRef(label),shadow=shadow and describeRef(shadow) or nil})
+    return ok({
+        text=describeRef(label),
+        shadow=shadow and describeRef(shadow) or nil,
+        shadowMethod=shadowReport and shadowReport.method or nil,
+        shadowReport=shadowReport,
+    })
+end
+
+tools.ui_shadow = function(args)
+    args=args or {}
+    local action=string.lower(tostring(args.action or "apply"))
+    if action~="apply" and action~="preview" then return failCode("BAD_ARGS","action must be apply or preview") end
+    local target,err
+    if action=="apply" then
+        target,err=resolveRef(args.ref or args.targetRef)
+        if not target then return failCode("REF_NOT_FOUND",err) end
+        if target:IsA("Path2D") then
+            return failCode("BAD_ARGS","UIShadow is not supported on Path2D; target a GuiObject (Frame, TextLabel, TextButton, ImageLabel, etc.) instead.")
+        end
+        if not target:IsA("GuiObject") then
+            return failCode("BAD_ARGS","UIShadow target must be a GuiObject (Frame, TextLabel, TextButton, TextBox, ImageLabel, ImageButton, CanvasGroup, ScrollingFrame, ViewportFrame).")
+        end
+    end
+    local rawSpec = type(args.shadow)=="table" and UI_ENGINE.copy(args.shadow) or UI_ENGINE.copy(args)
+    local okSpec, specErr = pcall(UI_ENGINE.shadowSpec, rawSpec)
+    if not okSpec then return failCode("BAD_ARGS", tostring(specErr)) end
+    local skin=UI_ENGINE.resolveSkin(args.skin or "glass",args.brand,args.colors)
+    local caps=UI_ENGINE.caps()
+    if action=="preview" then
+        local probe=Instance.new(rawSpec.mode == "text" and "TextLabel" or "Frame")
+        local made,report=UI_ENGINE.applyShadow(probe,rawSpec,skin,caps,"Preview")
+        probe:Destroy()
+        return ok({preview=true,created=made~=nil,shadow=report,capabilities=caps})
+    end
+    local existingCount = UI_ENGINE.shadowCount(target)
+    if existingCount >= 200 and args.force ~= true then
+        return failCode("SHADOW_BUDGET","This screen already has at least 200 UIShadow instances (Roblox recommends <= 100 on-screen). Pass force=true to override.")
+    end
+    local name=tostring(args.name or (string.lower(tostring(rawSpec.mode or "shape"))=="text" and "ArenaTextShadow" or (rawSpec.inset==true and "ArenaInsetShadow" or "ArenaShadow")))
+    local old=target:FindFirstChild(name)
+    if old and old.ClassName ~= "UIShadow" then return failCode("BAD_ARGS","A non-UIShadow child already uses this name") end
+    if old and args.replace~=true then return failCode("BAD_ARGS","Shadow name already exists; pass replace=true or use a distinct name to stack multiple shadows") end
+    local made,report=UI_ENGINE.applyShadow(target,rawSpec,skin,caps,name)
+    if not made then
+        return failCode("UISHADOW_UNAVAILABLE","This Studio installation does not support UIShadow; update Roblox Studio.",{report=report})
+    end
+    if old then old:Destroy() end
+    local countAfter = UI_ENGINE.shadowCount(target)
+    if countAfter > UI_ENGINE.SHADOW_RECOMMENDED_MAX then
+        table.insert(report.warnings,"SHADOW_BUDGET: this screen now has "..tostring(countAfter).." UIShadows; Roblox recommends keeping on-screen UIShadows at or below 100.")
+    end
+    waypoint("ui shadow "..report.mode)
+    return ok({shadow=describeRef(made),report=report,parent=describeRef(target),shadowCount=countAfter,warnings=report.warnings})
 end
 
 tools.ui_gradient = function(args)
@@ -16410,8 +16776,11 @@ tools.ui_gradient = function(args)
     if action~="apply" and action~="preview" then return failCode("BAD_ARGS","action must be apply or preview") end
     local target,err
     if action=="apply" then target,err=resolveRef(args.ref or args.targetRef); if not target then return failCode("REF_NOT_FOUND",err) end end
-    local supported=target and (target:IsA("GuiObject") or target:IsA("UIStroke") or target:IsA("Path2D"))
-    if action=="apply" and (not supported or target:IsA("ScrollingFrame") or target:IsA("TextBox")) then return failCode("BAD_ARGS","UIGradient target must be a supported GuiObject, UIStroke or Path2D (not ScrollingFrame/TextBox)") end
+    local supported=target and (target:IsA("GuiObject") or target:IsA("UIStroke") or target:IsA("Path2D") or target:IsA("UIShadow"))
+    if action=="apply" and (not supported or target:IsA("ScrollingFrame") or target:IsA("TextBox")) then return failCode("BAD_ARGS","UIGradient target must be a supported GuiObject, UIStroke, UIShadow or Path2D (not ScrollingFrame/TextBox)") end
+    if action=="apply" and target:IsA("UIShadow") and not UI_ENGINE.caps().uiShadowGradient then
+        return failCode("BAD_ARGS","This Studio installation does not support UIGradient inside UIShadow; update Roblox Studio.")
+    end
     local spec=UI_ENGINE.gradientSpec(args.gradient or args)
     local skin=UI_ENGINE.resolveSkin(args.skin or "glass",args.brand,args.colors)
     local stops=args.stops or args.colors or {{0,skin.p.accentHi},{1,skin.p.accentLo}}
@@ -16625,6 +16994,8 @@ tools.ui_design = function(args)
         corner={policy="role-aware; large panels are not pills",panelMaxScale=0.045,cardMaxScale=0.075,formula="radiusPx = min(width,height)*Scale + Offset; capped at half the shortest side",clipping="UICorner clips input/background, not descendants; CanvasGroup clips descendants"},
         workflow={"Inspect existing UI and preserve its architecture/palette","Choose a composition and material family, not just a color","Find real project/Toolbox/user images; never invent ids","Build with build_interface/ui_widget/ui_shape/ui_path","Audit phone and desktop, check actual image loading and text fit","Do not call emoji-only labels finished skins/icons"},
         gradientRelease={status="full-release",date="2026-10-29",optIn="none",publishRule="Roblox allows publication in experiences; no Studio Beta flag remains",fallback="Only if this Studio fails property probes: Linear/Clamp/Scale=1 with explicit degradation report"},
+        shadowRelease={status="full-release",baseDate="2026-06-23",upgradedDate="2026-11-05",optIn="none",publishRule="Roblox fully released UIShadow including Mode=Shape/Text, Inset, ShowBehindParent and child UIGradient; no Studio Beta flag remains",recommendedMaxOnScreen=100,textShadowDefault="Native UIShadow (Mode=Text) when supported; automatic offset-copy fallback only on legacy Studio or explicit method='offset-copy'"},
+        color3ContrastRelease={status="full-release",date="2026-11-03",methods={"GetLuminance","GetContrastRatio","GetContrastingColor"}},
         example={tool="ui_widget",args={kind=args.widget or "shop",skin=skin.key,brand=args.brand or skin.brand,items={{name="Speed Coil",price="R$ 99"}}},assetNote="Add assets/items[].image only after obtaining real verified ids; no placeholder id is executable."},
     })
 end
@@ -16788,9 +17159,19 @@ tools.ui_capabilities = function(args)
         skins = UI_ENGINE.skinNames(),
         corners = { "sharp", "crisp", "soft", "round", "chunky", "pill" },
         devices = { "phone", "tablet", "desktop", "ultrawide" },
+        shadowModes = { "Shape", "Text" },
+        shadowPolicy = {
+            optIn = "none", releaseStatus = "full-release", baseReleaseDate = "2026-06-23", upgradedReleaseDate = "2026-11-05",
+            properties = { "Mode", "Inset", "ShowBehindParent", "BlurRadius", "Offset", "Spread", "Color", "Transparency", "ZIndex", "Enabled" },
+            supportsChildGradient = true, recommendedMaxOnScreen = UI_ENGINE.SHADOW_RECOMMENDED_MAX,
+            textModeIgnores = { "Spread", "Inset", "ShowBehindParent" }, insetIgnores = { "ShowBehindParent" },
+            unsupportedParents = { "Path2D" }, livePublishBlockedByBeta = false,
+        },
+        individualCornersPolicy = { releaseStatus = "full-release", releaseDate = "2026-06-23", properties = { "TopLeftRadius", "TopRightRadius", "BottomLeftRadius", "BottomRightRadius" } },
+        color3ContrastPolicy = { releaseStatus = "full-release", releaseDate = "2026-11-03", methods = { "GetLuminance", "GetContrastRatio", "GetContrastingColor" }, wcagNormalText = 4.5, wcagLargeText = 3.0 },
         gradientTypes={"Linear","Radial","Elliptical","Conical"},gradientTileModes={"Clamp","Repeat","Mirror"},
-        gradientPolicy={optIn="none",releaseStatus="full-release",releaseDate="2026-10-29",scaleRange={0.001,100},maxColorStops=6,activeBudget=1000,linearFallback=true,livePublishBlockedByBeta=false},
-        geometry={shapes={"triangle","trapezoid","parallelogram","diamond","chevron","hexagon","arrow","circle","pill"},customPolygonMaxVertices=16,canvasGroupsPerShape=32,pathControlPoints=c.pathPointBudget,pathHardMaxControlPoints=c.pathMaxControlPoints,pathStrokeOnly=true,pathFillApproximation="inset-stroke-stack",pathFillMaxLayers=UI_ENGINE.PATH_MAX_FILL_LAYERS,pathSampling=c.pathSampling,pathTangents=c.pathTangents,pathEditing=c.pathEditing,pathLength=c.pathLength,pathBounds=c.pathBounds,pathChangedEvent=c.pathChangedEvent,pathFallback="approximate cubic-bezier Frame polyline",pathRuntimeHz=30,pathReleaseStatus="full-release",pathReleaseDate="2024-06-17"},
+        gradientPolicy={optIn="none",releaseStatus="full-release",releaseDate="2026-10-29",scaleRange={0.001,100},maxColorStops=6,activeBudget=1000,linearFallback=true,livePublishBlockedByBeta=false,supportsShadowHost=true},
+        geometry={shapes={"triangle","trapezoid","parallelogram","diamond","chevron","hexagon","arrow","circle","pill"},customPolygonMaxVertices=16,canvasGroupsPerShape=32,pathControlPoints=caps.pathPointBudget,pathHardMaxControlPoints=caps.pathMaxControlPoints,pathStrokeOnly=true,pathFillApproximation="inset-stroke-stack",pathFillMaxLayers=UI_ENGINE.PATH_MAX_FILL_LAYERS,pathSampling=caps.pathSampling,pathTangents=caps.pathTangents,pathEditing=caps.pathEditing,pathLength=caps.pathLength,pathBounds=caps.pathBounds,pathChangedEvent=caps.pathChangedEvent,pathFallback="approximate cubic-bezier Frame polyline",pathRuntimeHz=30,pathReleaseStatus="full-release",pathReleaseDate="2024-06-17"},
         measured = "Every entry was probed with Instance.new/pcall in THIS Studio session - it is measured, not assumed from training data.",
     })
 end
@@ -17027,6 +17408,7 @@ tools.build_interface = function(args)
     end
     if ctx.overBudget then table.insert(ctx.warnings, "surface budget reached - later nodes were skipped") end
     if ctx.gradients > 900 then table.insert(ctx.warnings,"GRADIENT_BUDGET: more than 900 gradients; Roblox advises staying below 1000 active gradients") end
+    if ctx.shadows > UI_ENGINE.SHADOW_RECOMMENDED_MAX then table.insert(ctx.warnings,"SHADOW_BUDGET: more than 100 UIShadows on screen; Roblox recommends keeping on-screen UIShadows at or below 100.") end
     if ctx.strokes > 300 then table.insert(ctx.warnings, "more than 300 UIStrokes on screen - Roblox recommends staying below that on low-end devices") end
     UI_ENGINE.installTextRuntime(screen, ctx)
     waypoint("build interface " .. (screen and screen.Name or "surfaces"))
@@ -17055,12 +17437,12 @@ tools.ui_audit = function(args)
     local caps = UI_ENGINE.caps()
     local nodes, screens = {}, {}
     local stats = { total = 0, filled = 0, genericColors = 0, flatSurfaces = 0, strokes = 0, strokesScaled = 0,
-        gradients = 0, gradientsOnStrokes = 0, shadows = 0, textures = 0, canvasGroups = 0, nestedCanvasGroups = 0,
+        gradients = 0, gradientsOnStrokes = 0, gradientsOnShadows = 0, shadows = 0, textShadows = 0, insetShadows = 0, knockoutShadows = 0, shadowFallbacks = 0, textures = 0, canvasGroups = 0, nestedCanvasGroups = 0,
         uiScales = 0, offsetHeavy = 0, texts = 0,
         glowStacks = 0, radialMenus = 0, textureImages = 0, billboards = 0, billboardOffsetSize = 0, textureBackgrounds = 0, textureOverlaysWashed = 0,
         outlines = 0, glosses = 0, decorNodes = 0, decorParts = 0 }
     stats.emojiArt = 0; stats.oversizedCorners = 0; stats.gradientFallbacks = 0; stats.legacyBetaMarkers = 0; stats.path2D = 0
-    local problems = { emojiArt = {}, oversizedCorners = {}, gradientFallbacks = {}, anchorMismatches = {}, cornerOverflow = {}, contrastFailures = {}, flatSurfaces = {}, genericColors = {},
+    local problems = { emojiArt = {}, oversizedCorners = {}, gradientFallbacks = {}, shadowFallbacks = {}, anchorMismatches = {}, cornerOverflow = {}, contrastFailures = {}, flatSurfaces = {}, genericColors = {},
         offsetHeavy = {}, nestedCanvasGroups = {}, textTooSmall = {}, tapTargetsTooSmall = {}, outOfBounds = {},
         billboardOffsetSize = {}, textureWashedOut = {}, decorOveruse = {} }
     local function push(list, inst, detail)
@@ -17117,6 +17499,26 @@ tools.ui_audit = function(args)
                         end
                     elseif cls == "UIShadow" then
                         stats.shadows = stats.shadows + 1; hasShadow = true
+                        local isTextMode, isInset, isKnockout = false, false, false
+                        pcall(function() isTextMode = (mod.Mode == Enum.ApplyShadowMode.Text) end)
+                        pcall(function() isInset = (mod.Inset == true) end)
+                        pcall(function() isKnockout = (mod.ShowBehindParent == false) end)
+                        if isTextMode then stats.textShadows = stats.textShadows + 1 end
+                        if isInset then stats.insetShadows = stats.insetShadows + 1 end
+                        if isKnockout and not isInset and not isTextMode then stats.knockoutShadows = stats.knockoutShadows + 1 end
+                        if mod:GetAttribute("ArenaShadowFallback") == true then
+                            stats.shadowFallbacks = stats.shadowFallbacks + 1
+                            push(problems.shadowFallbacks, mod, "This UIShadow was built with a legacy Studio capability fallback. Update Studio and reapply to restore Mode/Inset/ShowBehindParent/gradient.")
+                        end
+                        local shadowGrad = mod:FindFirstChildOfClass("UIGradient")
+                        if shadowGrad then
+                            stats.gradientsOnShadows = stats.gradientsOnShadows + 1
+                            stats.gradients = stats.gradients + 1
+                            if shadowGrad:GetAttribute("ArenaGradientFallback") == true then
+                                stats.gradientFallbacks = stats.gradientFallbacks + 1
+                                push(problems.gradientFallbacks, shadowGrad, "This gradient on a UIShadow used a legacy Studio capability fallback.")
+                            end
+                        end
                     elseif cls == "UIScale" then
                         stats.uiScales = stats.uiScales + 1; hasScale = true
                     elseif cls == "UIPadding" then
@@ -17278,6 +17680,7 @@ tools.ui_audit = function(args)
         blandnessScore = blandness, verdict = verdict, failureCount = failures,
         counts = stats, problems = problems, deviceMatrix = matrix,
         strokeBudget = { used = stats.strokes, recommendedMax = 300 },
+        shadowBudget = { used = stats.shadows, recommendedMax = UI_ENGINE.SHADOW_RECOMMENDED_MAX, overBudget = stats.shadows > UI_ENGINE.SHADOW_RECOMMENDED_MAX, textShadows = stats.textShadows, insetShadows = stats.insetShadows, knockoutShadows = stats.knockoutShadows, gradientsOnShadows = stats.gradientsOnShadows, fallbackInstances = stats.shadowFallbacks, releaseStatus = "full-release" },
         gradientBudget = {used=stats.gradients,recommendedMax=1000,fallbackInstances=stats.gradientFallbacks,legacyBetaMarkers=stats.legacyBetaMarkers,releaseStatus="full-release"},
         emojiArtFindings = stats.emojiArt,
         engine = UI_ENGINE.ENGINE_VERSION,
@@ -17431,6 +17834,1095 @@ tools.apply_asset = function(args)
     waypoint("apply asset")
     if permissionDenied then return failCode("ASSET_PERMISSION_DENIED","Some asset properties were denied by Roblox.",{applied=applied,count=#applied,errors=errors,assetId=assetId,partial=(#applied>0),safeToRetry=true}) end
     return ok({ applied = applied, count = #applied, errors = errors })
+end
+
+-- ===========================================================================
+-- AVATAR / CHARACTER RIG ENGINE (8.1.2)
+-- Baut und spawnt echte Roblox-Character-Rigs (R6/R15) mit Standard-Templates
+-- (blocky, woman, man, manv2, womanv2, robloxian_2_0, boy, girl, ...) oder per
+-- Bundle-/Outfit-/User-ID, klassischer Kleidung (Shirt, Pants, GraphicTShirt),
+-- 3D-Layered-Clothing (SetAccessories), Accessoires, Körperfarben, Skalen und
+-- exakter Fuß-/Boden-Platzierung.
+-- Wichtig: Tabellenfelder auf globalem AVATAR_RIG, KEINE neuen Top-Level-Locals
+-- (Luau-200-Local-Limit!).
+-- ===========================================================================
+AVATAR_RIG = {}
+AVATAR_RIG.VERSION = "1.0"
+
+AVATAR_RIG.TEMPLATES = {
+    blocky = {
+        label = "Blocky (Classic 1.0)",
+        bundleId = nil,
+        recommendedRigType = "R15",
+        supportsR6 = true,
+        description = "Standard blocky Robloxian body (all limb asset IDs = 0). Works cleanly in both R6 and R15.",
+    },
+    noob = {
+        label = "Classic Noob (Blocky)",
+        bundleId = nil,
+        recommendedRigType = "R6",
+        supportsR6 = true,
+        bodyColors = { head = "#F5CD30", leftArm = "#F5CD30", rightArm = "#F5CD30", torso = "#0D69AC", leftLeg = "#A4BD47", rightLeg = "#A4BD47" },
+        description = "Classic blocky body with traditional yellow/blue/green noob colors.",
+    },
+    man = {
+        label = "Roblox Man (3.0)",
+        bundleId = 238,
+        bodyParts = { head = 86498048, torso = 86500008, leftArm = 86500054, rightArm = 86500036, leftLeg = 86500064, rightLeg = 86500078 },
+        recommendedRigType = "R15",
+        supportsR6 = true,
+        description = "Official Roblox Man character bundle (Bundle ID 238).",
+    },
+    woman = {
+        label = "Roblox Woman (3.0)",
+        bundleId = 239,
+        bodyParts = { head = 86498113, torso = 86499666, leftArm = 86499716, rightArm = 86499698, leftLeg = 86499753, rightLeg = 86499793 },
+        recommendedRigType = "R15",
+        supportsR6 = true,
+        description = "Official Roblox Woman character bundle (Bundle ID 239).",
+    },
+    manv2 = {
+        label = "Neoclassic Male v2 (Kenneth)",
+        bundleId = 608,
+        recommendedRigType = "R15",
+        supportsR6 = false,
+        description = "Official Roblox Neoclassic Male v2 character bundle (Bundle ID 608).",
+    },
+    womanv2 = {
+        label = "Neoclassic Female v2 (Denny)",
+        bundleId = 606,
+        recommendedRigType = "R15",
+        supportsR6 = false,
+        description = "Official Roblox Neoclassic Female v2 character bundle (Bundle ID 606).",
+    },
+    robloxian_2_0 = {
+        label = "Robloxian 2.0",
+        bundleId = 311,
+        bodyParts = { torso = 27112025, leftArm = 27112039, rightArm = 27112052, leftLeg = 27112056, rightLeg = 27112068 },
+        recommendedRigType = "R15",
+        supportsR6 = true,
+        description = "Official Robloxian 2.0 character bundle (Bundle ID 311).",
+    },
+    boy = {
+        label = "ROBLOX Boy",
+        bundleId = 109,
+        recommendedRigType = "R15",
+        supportsR6 = true,
+        description = "Official ROBLOX Boy character bundle (Bundle ID 109).",
+    },
+    girl = {
+        label = "ROBLOX Girl",
+        bundleId = 108,
+        recommendedRigType = "R15",
+        supportsR6 = true,
+        description = "Official ROBLOX Girl character bundle (Bundle ID 108).",
+    },
+    neoclassic_male = {
+        label = "Neoclassic Male",
+        bundleId = 578,
+        recommendedRigType = "R15",
+        supportsR6 = false,
+        description = "Official Roblox Neoclassic Male character bundle (Bundle ID 578).",
+    },
+    classic_male = {
+        label = "Classic Male",
+        bundleId = 575,
+        recommendedRigType = "R15",
+        supportsR6 = true,
+        description = "Official Roblox Classic Male bundle (Bundle ID 575).",
+    },
+}
+
+AVATAR_RIG.TEMPLATE_ALIASES = {
+    block = "blocky", classic = "blocky", default = "blocky", dummy = "blocky", ["1.0"] = "blocky", blocky_1_0 = "blocky",
+    male = "man", masculine = "man", man_3_0 = "man", roblox_man = "man", ["3.0_man"] = "man",
+    female = "woman", feminine = "woman", woman_3_0 = "woman", roblox_woman = "woman", ["3.0_woman"] = "woman",
+    man_v2 = "manv2", man2 = "manv2", kenneth = "manv2", neoclassic_male_v2 = "manv2", male_v2 = "manv2",
+    woman_v2 = "womanv2", woman2 = "womanv2", denny = "womanv2", neoclassic_female_v2 = "womanv2", female_v2 = "womanv2",
+    ["2.0"] = "robloxian_2_0", ["2_0"] = "robloxian_2_0", r2 = "robloxian_2_0", robloxian2 = "robloxian_2_0", ["robloxian2.0"] = "robloxian_2_0",
+    roblox_boy = "boy", roblox_girl = "girl",
+}
+
+AVATAR_RIG.ASSET_TYPE_MAP = {
+    [2]  = { slot = "tshirt",   prop = "GraphicTShirt", isLayered = false },
+    [8]  = { slot = "accessory", enumName = "Hat",        rigidField = "HatAccessory",       isLayered = false },
+    [11] = { slot = "shirt",    prop = "Shirt",          isLayered = false },
+    [12] = { slot = "pants",    prop = "Pants",          isLayered = false },
+    [17] = { slot = "bodyPart", prop = "Head",           isLayered = false },
+    [18] = { slot = "face",     prop = "Face",           isLayered = false },
+    [27] = { slot = "bodyPart", prop = "Torso",          isLayered = false },
+    [28] = { slot = "bodyPart", prop = "RightArm",       isLayered = false },
+    [29] = { slot = "bodyPart", prop = "LeftArm",        isLayered = false },
+    [30] = { slot = "bodyPart", prop = "LeftLeg",        isLayered = false },
+    [31] = { slot = "bodyPart", prop = "RightLeg",       isLayered = false },
+    [41] = { slot = "accessory", enumName = "Hair",       rigidField = "HairAccessory",      isLayered = false },
+    [42] = { slot = "accessory", enumName = "Face",       rigidField = "FaceAccessory",      isLayered = false },
+    [43] = { slot = "accessory", enumName = "Neck",       rigidField = "NeckAccessory",      isLayered = false },
+    [44] = { slot = "accessory", enumName = "Shoulder",   rigidField = "ShouldersAccessory", isLayered = false },
+    [45] = { slot = "accessory", enumName = "Front",      rigidField = "FrontAccessory",     isLayered = false },
+    [46] = { slot = "accessory", enumName = "Back",       rigidField = "BackAccessory",      isLayered = false },
+    [47] = { slot = "accessory", enumName = "Waist",      rigidField = "WaistAccessory",     isLayered = false },
+    [64] = { slot = "layered",   enumName = "TShirt",     isLayered = true, defaultOrder = 1 },
+    [65] = { slot = "layered",   enumName = "Shirt",      isLayered = true, defaultOrder = 2 },
+    [66] = { slot = "layered",   enumName = "Sweater",    isLayered = true, defaultOrder = 3 },
+    [67] = { slot = "layered",   enumName = "Jacket",     isLayered = true, defaultOrder = 4 },
+    [68] = { slot = "layered",   enumName = "Pants",      isLayered = true, defaultOrder = 2 },
+    [69] = { slot = "layered",   enumName = "Shorts",     isLayered = true, defaultOrder = 3 },
+    [70] = { slot = "layered",   enumName = "LeftShoe",   isLayered = true, defaultOrder = 5 },
+    [71] = { slot = "layered",   enumName = "RightShoe",  isLayered = true, defaultOrder = 5 },
+    [72] = { slot = "layered",   enumName = "DressSkirt", isLayered = true, defaultOrder = 4 },
+    [76] = { slot = "layered",   enumName = "Eyebrow",    isLayered = true, defaultOrder = 1 },
+    [77] = { slot = "layered",   enumName = "Eyelash",    isLayered = true, defaultOrder = 1 },
+    [79] = { slot = "bodyPart",  prop = "Head",           isLayered = false },
+}
+
+AVATAR_RIG.ACCESSORY_KIND_MAP = {
+    hat = { enumName = "Hat", rigidField = "HatAccessory", isLayered = false },
+    hats = { enumName = "Hat", rigidField = "HatAccessory", isLayered = false },
+    hair = { enumName = "Hair", rigidField = "HairAccessory", isLayered = false },
+    face = { enumName = "Face", rigidField = "FaceAccessory", isLayered = false },
+    faceaccessory = { enumName = "Face", rigidField = "FaceAccessory", isLayered = false },
+    neck = { enumName = "Neck", rigidField = "NeckAccessory", isLayered = false },
+    neckaccessory = { enumName = "Neck", rigidField = "NeckAccessory", isLayered = false },
+    shoulder = { enumName = "Shoulder", rigidField = "ShouldersAccessory", isLayered = false },
+    shoulders = { enumName = "Shoulder", rigidField = "ShouldersAccessory", isLayered = false },
+    shoulderaccessory = { enumName = "Shoulder", rigidField = "ShouldersAccessory", isLayered = false },
+    front = { enumName = "Front", rigidField = "FrontAccessory", isLayered = false },
+    frontaccessory = { enumName = "Front", rigidField = "FrontAccessory", isLayered = false },
+    back = { enumName = "Back", rigidField = "BackAccessory", isLayered = false },
+    backaccessory = { enumName = "Back", rigidField = "BackAccessory", isLayered = false },
+    waist = { enumName = "Waist", rigidField = "WaistAccessory", isLayered = false },
+    waistaccessory = { enumName = "Waist", rigidField = "WaistAccessory", isLayered = false },
+    tshirt = { enumName = "TShirt", isLayered = true, defaultOrder = 1 },
+    layeredtshirt = { enumName = "TShirt", isLayered = true, defaultOrder = 1 },
+    shirt = { enumName = "Shirt", isLayered = true, defaultOrder = 2 },
+    layeredshirt = { enumName = "Shirt", isLayered = true, defaultOrder = 2 },
+    sweater = { enumName = "Sweater", isLayered = true, defaultOrder = 3 },
+    jacket = { enumName = "Jacket", isLayered = true, defaultOrder = 4 },
+    pants = { enumName = "Pants", isLayered = true, defaultOrder = 2 },
+    layeredpants = { enumName = "Pants", isLayered = true, defaultOrder = 2 },
+    shorts = { enumName = "Shorts", isLayered = true, defaultOrder = 3 },
+    dress = { enumName = "DressSkirt", isLayered = true, defaultOrder = 4 },
+    skirt = { enumName = "DressSkirt", isLayered = true, defaultOrder = 4 },
+    dressskirt = { enumName = "DressSkirt", isLayered = true, defaultOrder = 4 },
+    leftshoe = { enumName = "LeftShoe", isLayered = true, defaultOrder = 5 },
+    rightshoe = { enumName = "RightShoe", isLayered = true, defaultOrder = 5 },
+    eyebrow = { enumName = "Eyebrow", isLayered = true, defaultOrder = 1 },
+    eyelash = { enumName = "Eyelash", isLayered = true, defaultOrder = 1 },
+}
+
+function AVATAR_RIG.service(name)
+    local okSvc, svc = pcall(function() return game:GetService(name) end)
+    if okSvc then return svc end
+    return nil
+end
+
+function AVATAR_RIG.templateNames()
+    local names = {}
+    for k in pairs(AVATAR_RIG.TEMPLATES) do table.insert(names, k) end
+    table.sort(names)
+    return names
+end
+
+function AVATAR_RIG.resolveTemplate(name)
+    if name == nil then return nil, nil end
+    local raw = string.lower(tostring(name)):gsub("^%s+", ""):gsub("%s+$", "")
+    if raw == "" then return nil, nil end
+    local normalized = raw:gsub("[%s%-]+", "_")
+    local key = AVATAR_RIG.TEMPLATES[normalized] and normalized
+        or AVATAR_RIG.TEMPLATE_ALIASES[raw]
+        or AVATAR_RIG.TEMPLATE_ALIASES[normalized]
+    if key and AVATAR_RIG.TEMPLATES[key] then
+        return key, AVATAR_RIG.TEMPLATES[key]
+    end
+    return nil, nil
+end
+
+function AVATAR_RIG.parseId(value, allowZero)
+    if value == nil then return nil end
+    if type(value) == "number" then
+        local n = math.floor(value)
+        if n > 0 or (allowZero and n == 0) then return n end
+        return nil
+    end
+    local s = tostring(value):gsub("^%s+", ""):gsub("%s+$", "")
+    if s == "" then return nil end
+    if allowZero and s == "0" then return 0 end
+    local direct = string.match(s, "^(%d+)$")
+    if direct then
+        local n = tonumber(direct)
+        if n and (n > 0 or (allowZero and n == 0)) then return math.floor(n) end
+    end
+    local rbx = string.match(s, "rbxassetid://(%d+)") or string.match(s, "/catalog/(%d+)") or string.match(s, "/bundles/(%d+)") or string.match(s, "id=(%d+)")
+    if rbx then
+        local n = tonumber(rbx)
+        if n and n > 0 then return math.floor(n) end
+    end
+    return nil
+end
+
+function AVATAR_RIG.parseColor(value)
+    if value == nil then return nil end
+    if typeof(value) == "Color3" then return value end
+    if type(value) == "string" then
+        local hex = value:gsub("^#", "")
+        if #hex == 6 then
+            local r = tonumber(hex:sub(1, 2), 16)
+            local g = tonumber(hex:sub(3, 4), 16)
+            local b = tonumber(hex:sub(5, 6), 16)
+            if r and g and b then return Color3.fromRGB(r, g, b) end
+        end
+        local okBc, bc = pcall(function() return BrickColor.new(value).Color end)
+        if okBc and typeof(bc) == "Color3" then return bc end
+        return nil
+    end
+    if type(value) == "table" then
+        if value.rgb and type(value.rgb) == "table" then
+            return Color3.fromRGB(tonumber(value.rgb[1]) or 0, tonumber(value.rgb[2]) or 0, tonumber(value.rgb[3]) or 0)
+        end
+        local r = tonumber(value.r or value.R or value[1])
+        local g = tonumber(value.g or value.G or value[2])
+        local b = tonumber(value.b or value.B or value[3])
+        if r and g and b then
+            if r > 1 or g > 1 or b > 1 then return Color3.fromRGB(r, g, b) end
+            return Color3.new(r, g, b)
+        end
+    end
+    return nil
+end
+
+function AVATAR_RIG.parseVec3(value, fallback)
+    if value == nil then return fallback end
+    if typeof(value) == "Vector3" then return value end
+    if type(value) == "table" then
+        local x = tonumber(value.x or value.X or value[1])
+        local y = tonumber(value.y or value.Y or value[2])
+        local z = tonumber(value.z or value.Z or value[3])
+        if x ~= nil and y ~= nil and z ~= nil then
+            return Vector3.new(x, y, z)
+        end
+    end
+    return fallback
+end
+
+function AVATAR_RIG.parseRigType(value)
+    if value == nil then return "R15", Enum.HumanoidRigType.R15 end
+    local s = string.lower(tostring(value)):gsub("^%s+", ""):gsub("%s+$", "")
+    if s == "r6" or s == "6" then return "R6", Enum.HumanoidRigType.R6 end
+    if s == "r15" or s == "15" or s == "" then return "R15", Enum.HumanoidRigType.R15 end
+    return nil, nil
+end
+
+function AVATAR_RIG.normalizeKindKey(kind)
+    return string.lower(tostring(kind or "")):gsub("[%s_%-]+", "")
+end
+
+function AVATAR_RIG.classifyAssetId(assetId, preferLayered, warnings)
+    local mps = AVATAR_RIG.service("MarketplaceService")
+    if mps ~= nil then
+        local okInfo, info = pcall(function()
+            return mps:GetProductInfo(assetId, Enum.InfoType.Asset)
+        end)
+        if okInfo and type(info) == "table" and tonumber(info.AssetTypeId) then
+            local mapped = AVATAR_RIG.ASSET_TYPE_MAP[tonumber(info.AssetTypeId)]
+            if mapped then return mapped, info end
+        end
+    end
+    if warnings then
+        table.insert(warnings, "Could not auto-detect AssetTypeId for asset " .. tostring(assetId) .. "; defaulting to " .. (preferLayered and "layered Shirt" or "rigid Hat") .. ". Pass explicit type='Hat'|'Hair'|'Jacket'|... for guaranteed routing.")
+    end
+    if preferLayered then
+        return { slot = "layered", enumName = "Shirt", isLayered = true, defaultOrder = 2 }, nil
+    end
+    return { slot = "accessory", enumName = "Hat", rigidField = "HatAccessory", isLayered = false }, nil
+end
+
+function AVATAR_RIG.loadBundleDescription(bundleId, bodyOnly, warnings)
+    local assetService = AVATAR_RIG.service("AssetService")
+    local playersService = AVATAR_RIG.service("Players")
+    if assetService == nil then
+        return nil, "AssetService unavailable"
+    end
+    local okDet, details = pcall(function() return assetService:GetBundleDetailsAsync(bundleId) end)
+    if not okDet or type(details) ~= "table" then
+        return nil, "GetBundleDetailsAsync failed for bundle " .. tostring(bundleId) .. ": " .. tostring(details)
+    end
+    local outfitId = nil
+    local itemIds = {}
+    for _, item in ipairs(details.Items or {}) do
+        if item.Type == "UserOutfit" and tonumber(item.Id) then
+            outfitId = tonumber(item.Id)
+        elseif item.Type == "Asset" and tonumber(item.Id) then
+            table.insert(itemIds, tonumber(item.Id))
+        end
+    end
+    local loadedDesc = nil
+    if outfitId and playersService then
+        local okOut, outDesc = pcall(function()
+            if playersService.GetHumanoidDescriptionFromOutfitIdAsync then
+                return playersService:GetHumanoidDescriptionFromOutfitIdAsync(outfitId)
+            end
+            return playersService:GetHumanoidDescriptionFromOutfitId(outfitId)
+        end)
+        if okOut and outDesc then loadedDesc = outDesc end
+    end
+    if loadedDesc == nil and #itemIds > 0 then
+        loadedDesc = Instance.new("HumanoidDescription")
+        for _, id in ipairs(itemIds) do
+            local mapped = AVATAR_RIG.classifyAssetId(id, false, nil)
+            if mapped and mapped.slot == "bodyPart" and mapped.prop then
+                pcall(function() loadedDesc[mapped.prop] = id end)
+            end
+        end
+    end
+    if loadedDesc == nil then
+        return nil, "Bundle " .. tostring(bundleId) .. " returned no loadable outfit or body parts"
+    end
+    if bodyOnly then
+        local clean = Instance.new("HumanoidDescription")
+        for _, prop in ipairs({"Head", "Torso", "LeftArm", "RightArm", "LeftLeg", "RightLeg",
+            "HeightScale", "WidthScale", "DepthScale", "HeadScale", "ProportionScale", "BodyTypeScale"}) do
+            pcall(function() clean[prop] = loadedDesc[prop] end)
+        end
+        pcall(function() loadedDesc:Destroy() end)
+        return clean, nil, details
+    end
+    return loadedDesc, nil, details
+end
+
+function AVATAR_RIG.copyBodyParts(desc, parts)
+    if type(parts) ~= "table" then return end
+    local fields = {
+        head = "Head", torso = "Torso",
+        leftArm = "LeftArm", leftarm = "LeftArm",
+        rightArm = "RightArm", rightarm = "RightArm",
+        leftLeg = "LeftLeg", leftleg = "LeftLeg",
+        rightLeg = "RightLeg", rightleg = "RightLeg",
+        face = "Face",
+    }
+    for key, rawVal in pairs(parts) do
+        local prop = fields[key] or fields[string.lower(tostring(key))]
+        if prop then
+            local id = AVATAR_RIG.parseId(rawVal, true)
+            if id ~= nil then pcall(function() desc[prop] = id end) end
+        end
+    end
+end
+
+function AVATAR_RIG.appendAccessorySpec(list, seen, assetId, enumName, isLayered, order, puffiness, rigidField)
+    if assetId == nil or assetId <= 0 then return end
+    local key = tostring(assetId) .. "|" .. tostring(enumName) .. "|" .. tostring(isLayered == true)
+    if seen[key] then return end
+    seen[key] = true
+    local accType = nil
+    pcall(function() accType = Enum.AccessoryType[enumName] end)
+    if accType == nil then pcall(function() accType = Enum.AccessoryType.Unknown end) end
+    local entry = {
+        AssetId = assetId,
+        AccessoryType = accType,
+        IsLayered = isLayered == true,
+        _enumName = enumName,
+        _rigidField = rigidField,
+    }
+    if isLayered then
+        entry.Order = tonumber(order) or 1
+        if puffiness ~= nil then entry.Puffiness = math.clamp(tonumber(puffiness) or 1, 0, 1) end
+    end
+    table.insert(list, entry)
+end
+
+function AVATAR_RIG.buildDescription(args, rigTypeName, warnings, existingDesc)
+    local playersService = AVATAR_RIG.service("Players")
+    local desc = nil
+    local sourceInfo = { kind = "template", template = "blocky" }
+
+    if existingDesc ~= nil then
+        local okClone, cloned = pcall(function() return existingDesc:Clone() end)
+        if okClone and cloned then
+            desc = cloned
+            sourceInfo = { kind = "existing" }
+        end
+    end
+
+    local userId = AVATAR_RIG.parseId(args.userId, false)
+    local username = type(args.username) == "string" and args.username:gsub("^%s+", ""):gsub("%s+$", "") or ""
+    if userId == nil and username ~= "" then
+        if playersService == nil then return nil, "Players service unavailable to resolve username", nil end
+        local okUid, resolvedUid = pcall(function() return playersService:GetUserIdFromNameAsync(username) end)
+        if not okUid or not tonumber(resolvedUid) then
+            return nil, "Could not resolve Roblox username '" .. username .. "': " .. tostring(resolvedUid), nil
+        end
+        userId = math.floor(tonumber(resolvedUid))
+    end
+
+    local outfitId = AVATAR_RIG.parseId(args.outfitId, false)
+    local bundleId = AVATAR_RIG.parseId(args.bundleId, false)
+    local templateArg = args.template or args.preset or args.bodyTemplate
+
+    if userId ~= nil then
+        if playersService == nil then return nil, "Players service unavailable", nil end
+        local okUser, userDesc = pcall(function()
+            if playersService.GetHumanoidDescriptionFromUserIdAsync then
+                return playersService:GetHumanoidDescriptionFromUserIdAsync(userId)
+            end
+            return playersService:GetHumanoidDescriptionFromUserId(userId)
+        end)
+        if not okUser or userDesc == nil then
+            return nil, "GetHumanoidDescriptionFromUserIdAsync failed for userId " .. tostring(userId) .. ": " .. tostring(userDesc), nil
+        end
+        desc = userDesc
+        sourceInfo = { kind = "user", userId = userId, username = username ~= "" and username or nil }
+    elseif outfitId ~= nil then
+        if playersService == nil then return nil, "Players service unavailable", nil end
+        local okOut, outDesc = pcall(function()
+            if playersService.GetHumanoidDescriptionFromOutfitIdAsync then
+                return playersService:GetHumanoidDescriptionFromOutfitIdAsync(outfitId)
+            end
+            return playersService:GetHumanoidDescriptionFromOutfitId(outfitId)
+        end)
+        if not okOut or outDesc == nil then
+            return nil, "GetHumanoidDescriptionFromOutfitIdAsync failed for outfitId " .. tostring(outfitId) .. ": " .. tostring(outDesc), nil
+        end
+        desc = outDesc
+        sourceInfo = { kind = "outfit", outfitId = outfitId }
+    elseif bundleId ~= nil then
+        local bodyOnly = args.bundleBodyOnly == true
+        local loaded, bErr, bDetails = AVATAR_RIG.loadBundleDescription(bundleId, bodyOnly, warnings)
+        if not loaded then
+            return nil, tostring(bErr), nil
+        end
+        desc = loaded
+        sourceInfo = { kind = "bundle", bundleId = bundleId, bundleName = bDetails and bDetails.Name or nil, bundleBodyOnly = bodyOnly }
+    elseif templateArg ~= nil or desc == nil then
+        local tplKey, tpl = AVATAR_RIG.resolveTemplate(templateArg or "blocky")
+        if tpl == nil then
+            return nil, "Unknown rig template '" .. tostring(templateArg) .. "'. Known templates: " .. table.concat(AVATAR_RIG.templateNames(), ", ") .. ". Or pass bundleId, outfitId, userId, or bodyParts.", nil
+        end
+        sourceInfo = { kind = "template", template = tplKey, label = tpl.label, bundleId = tpl.bundleId }
+        if tpl.bundleId ~= nil then
+            local bodyOnly = args.includeBundleOutfit ~= true
+            local loaded, bErr = AVATAR_RIG.loadBundleDescription(tpl.bundleId, bodyOnly, warnings)
+            if loaded then
+                desc = loaded
+            elseif tpl.bodyParts then
+                desc = Instance.new("HumanoidDescription")
+                AVATAR_RIG.copyBodyParts(desc, tpl.bodyParts)
+                table.insert(warnings, "Template '" .. tplKey .. "' bundle " .. tostring(tpl.bundleId) .. " lookup fell back to built-in official body-part IDs (" .. tostring(bErr) .. ").")
+            else
+                return nil, "Template '" .. tplKey .. "' (bundleId " .. tostring(tpl.bundleId) .. ") could not be loaded: " .. tostring(bErr), nil
+            end
+        else
+            desc = Instance.new("HumanoidDescription")
+        end
+        if tpl.bodyColors and args.skinColor == nil and args.bodyColors == nil then
+            for partKey, colVal in pairs(tpl.bodyColors) do
+                local col = AVATAR_RIG.parseColor(colVal)
+                if col then
+                    local map = { head = "HeadColor", torso = "TorsoColor", leftArm = "LeftArmColor", rightArm = "RightArmColor", leftLeg = "LeftLegColor", rightLeg = "RightLegColor" }
+                    if map[partKey] then pcall(function() desc[map[partKey]] = col end) end
+                end
+            end
+        end
+        if rigTypeName == "R6" and tpl.supportsR6 == false then
+            table.insert(warnings, "Template '" .. tplKey .. "' is designed for R15; R6 may ignore modern mesh body parts or dynamic heads.")
+        end
+    end
+
+    if args.clearClothing == true or args.clearExisting == true then
+        pcall(function() desc.Shirt = 0; desc.Pants = 0; desc.GraphicTShirt = 0 end)
+    end
+
+    -- Body parts override
+    if type(args.bodyParts) == "table" then
+        AVATAR_RIG.copyBodyParts(desc, args.bodyParts)
+    end
+    for _, pair in ipairs({{"head","Head"},{"torso","Torso"},{"leftArm","LeftArm"},{"rightArm","RightArm"},{"leftLeg","LeftLeg"},{"rightLeg","RightLeg"},{"face","Face"},{"faceId","Face"}}) do
+        if args[pair[1]] ~= nil then
+            local id = AVATAR_RIG.parseId(args[pair[1]], true)
+            if id ~= nil then pcall(function() desc[pair[2]] = id end) end
+        end
+    end
+
+    -- Classic 2D clothing
+    local shirtId = AVATAR_RIG.parseId(args.shirt ~= nil and args.shirt or (args.classicShirt ~= nil and args.classicShirt or args.shirtId), true)
+    local pantsId = AVATAR_RIG.parseId(args.pants ~= nil and args.pants or (args.classicPants ~= nil and args.classicPants or args.pantsId), true)
+    local tshirtId = AVATAR_RIG.parseId(args.tshirt ~= nil and args.tshirt or (args.graphicTShirt ~= nil and args.graphicTShirt or args.tShirtId), true)
+    if shirtId ~= nil then pcall(function() desc.Shirt = shirtId end) end
+    if pantsId ~= nil then pcall(function() desc.Pants = pantsId end) end
+    if tshirtId ~= nil then pcall(function() desc.GraphicTShirt = tshirtId end) end
+
+    -- Body colors (skinColor sets all limbs; bodyColors overrides per limb)
+    if args.skinColor ~= nil then
+        local c = AVATAR_RIG.parseColor(args.skinColor)
+        if c == nil then return nil, "Invalid skinColor: " .. tostring(args.skinColor), nil end
+        for _, prop in ipairs({"HeadColor","TorsoColor","LeftArmColor","RightArmColor","LeftLegColor","RightLegColor"}) do
+            pcall(function() desc[prop] = c end)
+        end
+    end
+    if type(args.bodyColors) == "table" then
+        local colorFields = {
+            head = "HeadColor", torso = "TorsoColor",
+            leftArm = "LeftArmColor", leftarm = "LeftArmColor",
+            rightArm = "RightArmColor", rightarm = "RightArmColor",
+            leftLeg = "LeftLegColor", leftleg = "LeftLegColor",
+            rightLeg = "RightLegColor", rightleg = "RightLegColor",
+        }
+        for key, rawCol in pairs(args.bodyColors) do
+            local prop = colorFields[key] or colorFields[string.lower(tostring(key))]
+            if prop then
+                local c = AVATAR_RIG.parseColor(rawCol)
+                if c == nil then return nil, "Invalid bodyColors." .. tostring(key) .. ": " .. tostring(rawCol), nil end
+                pcall(function() desc[prop] = c end)
+            end
+        end
+    end
+
+    -- Scales / proportions
+    local scales = type(args.scales) == "table" and args.scales or {}
+    local scaleDefs = {
+        { prop = "HeightScale",     keys = {"height", "heightScale"},         min = 0.2, max = 5 },
+        { prop = "WidthScale",      keys = {"width", "widthScale"},           min = 0.2, max = 5 },
+        { prop = "DepthScale",      keys = {"depth", "depthScale"},           min = 0.2, max = 5 },
+        { prop = "HeadScale",       keys = {"head", "headScale"},             min = 0.2, max = 5 },
+        { prop = "ProportionScale", keys = {"proportion", "proportionScale"}, min = 0,   max = 1 },
+        { prop = "BodyTypeScale",   keys = {"bodyType", "bodyTypeScale"},     min = 0,   max = 1 },
+    }
+    for _, def in ipairs(scaleDefs) do
+        local rawVal = scales[def.keys[1]]
+        if rawVal == nil then rawVal = scales[def.keys[2]] end
+        if rawVal == nil then rawVal = args[def.keys[2]] end
+        if rawVal ~= nil and tonumber(rawVal) then
+            local clamped = math.clamp(tonumber(rawVal), def.min, def.max)
+            pcall(function() desc[def.prop] = clamped end)
+        end
+    end
+
+    -- Optional animations
+    if type(args.animations) == "table" then
+        local animMap = {
+            idle = "IdleAnimation", walk = "WalkAnimation", run = "RunAnimation",
+            jump = "JumpAnimation", fall = "FallAnimation", climb = "ClimbAnimation",
+            swim = "SwimAnimation", mood = "MoodAnimation",
+        }
+        for key, rawId in pairs(args.animations) do
+            local prop = animMap[string.lower(tostring(key))]
+            local id = AVATAR_RIG.parseId(rawId, true)
+            if prop and id ~= nil then pcall(function() desc[prop] = id end) end
+        end
+    end
+
+    -- Accessories & 3D layered clothing
+    local accList, accSeen = {}, {}
+    local clearAcc = args.clearAccessories == true or args.replaceAccessories == true or args.clearExisting == true
+    local clearLayered = args.clearClothing == true or clearAcc
+    if not clearAcc then
+        local okExisting, existing = pcall(function() return desc:GetAccessories(true) end)
+        if okExisting and type(existing) == "table" then
+            for _, item in ipairs(existing) do
+                if not (clearLayered and item.IsLayered == true) then
+                    local enumName = tostring(item.AccessoryType or "Unknown"):gsub("^Enum%.AccessoryType%.", "")
+                    AVATAR_RIG.appendAccessorySpec(accList, accSeen, tonumber(item.AssetId), enumName, item.IsLayered == true, item.Order, item.Puffiness, nil)
+                end
+            end
+        end
+    end
+
+    local function ingestItem(entry, preferLayered, forcedKind)
+        if entry == nil then return end
+        if type(entry) == "number" or type(entry) == "string" then
+            local id = AVATAR_RIG.parseId(entry, false)
+            if not id then return end
+            if forcedKind then
+                local km = AVATAR_RIG.ACCESSORY_KIND_MAP[AVATAR_RIG.normalizeKindKey(forcedKind)]
+                if km then
+                    AVATAR_RIG.appendAccessorySpec(accList, accSeen, id, km.enumName, km.isLayered, km.defaultOrder, nil, km.rigidField)
+                    return
+                end
+            end
+            local mapped = AVATAR_RIG.classifyAssetId(id, preferLayered, warnings)
+            if mapped.slot == "shirt" then pcall(function() desc.Shirt = id end)
+            elseif mapped.slot == "pants" then pcall(function() desc.Pants = id end)
+            elseif mapped.slot == "tshirt" then pcall(function() desc.GraphicTShirt = id end)
+            elseif mapped.slot == "face" then pcall(function() desc.Face = id end)
+            elseif mapped.slot == "bodyPart" and mapped.prop then pcall(function() desc[mapped.prop] = id end)
+            elseif mapped.enumName then
+                AVATAR_RIG.appendAccessorySpec(accList, accSeen, id, mapped.enumName, mapped.isLayered, mapped.defaultOrder, nil, mapped.rigidField)
+            end
+            return
+        end
+        if type(entry) == "table" then
+            local id = AVATAR_RIG.parseId(entry.assetId or entry.id or entry.AssetId, false)
+            if not id then return end
+            local kindStr = entry.accessoryType or entry.AccessoryType or entry.type or entry.slot or forcedKind
+            local explicitLayered = entry.isLayered
+            if explicitLayered == nil then explicitLayered = entry.IsLayered end
+            local assetTypeId = tonumber(entry.assetTypeId or entry.AssetTypeId)
+            if kindStr ~= nil then
+                local km = AVATAR_RIG.ACCESSORY_KIND_MAP[AVATAR_RIG.normalizeKindKey(kindStr)]
+                if km then
+                    local isLay = explicitLayered ~= nil and (explicitLayered == true) or (preferLayered or km.isLayered)
+                    AVATAR_RIG.appendAccessorySpec(accList, accSeen, id, km.enumName, isLay, entry.order or entry.Order or km.defaultOrder, entry.puffiness or entry.Puffiness, km.rigidField)
+                    return
+                end
+            end
+            if assetTypeId and AVATAR_RIG.ASSET_TYPE_MAP[assetTypeId] then
+                local mapped = AVATAR_RIG.ASSET_TYPE_MAP[assetTypeId]
+                if mapped.slot == "shirt" then pcall(function() desc.Shirt = id end)
+                elseif mapped.slot == "pants" then pcall(function() desc.Pants = id end)
+                elseif mapped.slot == "tshirt" then pcall(function() desc.GraphicTShirt = id end)
+                elseif mapped.slot == "face" then pcall(function() desc.Face = id end)
+                elseif mapped.slot == "bodyPart" and mapped.prop then pcall(function() desc[mapped.prop] = id end)
+                elseif mapped.enumName then
+                    local isLay = explicitLayered ~= nil and (explicitLayered == true) or mapped.isLayered
+                    AVATAR_RIG.appendAccessorySpec(accList, accSeen, id, mapped.enumName, isLay, entry.order or entry.Order or mapped.defaultOrder, entry.puffiness or entry.Puffiness, mapped.rigidField)
+                end
+                return
+            end
+            local mapped = AVATAR_RIG.classifyAssetId(id, explicitLayered == true or preferLayered, warnings)
+            if mapped.slot == "shirt" then pcall(function() desc.Shirt = id end)
+            elseif mapped.slot == "pants" then pcall(function() desc.Pants = id end)
+            elseif mapped.slot == "tshirt" then pcall(function() desc.GraphicTShirt = id end)
+            elseif mapped.enumName then
+                local isLay = explicitLayered ~= nil and (explicitLayered == true) or mapped.isLayered
+                AVATAR_RIG.appendAccessorySpec(accList, accSeen, id, mapped.enumName, isLay, entry.order or entry.Order or mapped.defaultOrder, entry.puffiness or entry.Puffiness, mapped.rigidField)
+            end
+        end
+    end
+
+    local function ingestListOrSingle(raw, preferLayered, forcedKind)
+        if raw == nil then return end
+        if type(raw) == "table" and (#raw > 0 or (raw.assetId == nil and raw.id == nil and raw.AssetId == nil)) then
+            if #raw > 0 then
+                for _, item in ipairs(raw) do ingestItem(item, preferLayered, forcedKind) end
+            else
+                for k, v in pairs(raw) do
+                    local nk = AVATAR_RIG.normalizeKindKey(k)
+                    if nk == "shirt" and not preferLayered then
+                        local id = AVATAR_RIG.parseId(v, true)
+                        if id ~= nil then pcall(function() desc.Shirt = id end) end
+                    elseif nk == "pants" and not preferLayered then
+                        local id = AVATAR_RIG.parseId(v, true)
+                        if id ~= nil then pcall(function() desc.Pants = id end) end
+                    elseif (nk == "tshirt" or nk == "graphictshirt") and not preferLayered then
+                        local id = AVATAR_RIG.parseId(v, true)
+                        if id ~= nil then pcall(function() desc.GraphicTShirt = id end) end
+                    elseif nk == "shoes" then
+                        if type(v) == "table" and (v.left or v.right) then
+                            if v.left then ingestItem(v.left, true, "leftshoe") end
+                            if v.right then ingestItem(v.right, true, "rightshoe") end
+                        else
+                            ingestListOrSingle(v, true, nil)
+                        end
+                    else
+                        ingestListOrSingle(v, preferLayered or (AVATAR_RIG.ACCESSORY_KIND_MAP[nk] and AVATAR_RIG.ACCESSORY_KIND_MAP[nk].isLayered) or false, k)
+                    end
+                end
+            end
+        else
+            ingestItem(raw, preferLayered, forcedKind)
+        end
+    end
+
+    -- Named rigid accessory shortcuts
+    for _, pair in ipairs({
+        {"hats", "hat"}, {"hat", "hat"}, {"hair", "hair"}, {"hairs", "hair"},
+        {"faceAccessories", "face"}, {"neckAccessories", "neck"},
+        {"shoulderAccessories", "shoulder"}, {"frontAccessories", "front"},
+        {"backAccessories", "back"}, {"waistAccessories", "waist"},
+    }) do
+        if args[pair[1]] ~= nil then ingestListOrSingle(args[pair[1]], false, pair[2]) end
+    end
+    if args.accessories ~= nil then ingestListOrSingle(args.accessories, false, nil) end
+    if args.clothing ~= nil then ingestListOrSingle(args.clothing, false, nil) end
+    if args.layeredClothing ~= nil then ingestListOrSingle(args.layeredClothing, true, nil) end
+
+    local layeredCount, rigidCount = 0, 0
+    local apiAccessories = {}
+    local legacyByField = {}
+    for _, item in ipairs(accList) do
+        local cleanItem = {
+            AssetId = item.AssetId,
+            AccessoryType = item.AccessoryType,
+            IsLayered = item.IsLayered == true,
+        }
+        if item.IsLayered then
+            layeredCount = layeredCount + 1
+            cleanItem.Order = item.Order or 1
+            if item.Puffiness ~= nil then cleanItem.Puffiness = item.Puffiness end
+        else
+            rigidCount = rigidCount + 1
+            local rf = item._rigidField
+            if not rf and item._enumName then
+                local km = AVATAR_RIG.ACCESSORY_KIND_MAP[AVATAR_RIG.normalizeKindKey(item._enumName)]
+                rf = km and km.rigidField or "HatAccessory"
+            end
+            legacyByField[rf] = legacyByField[rf] or {}
+            table.insert(legacyByField[rf], tostring(item.AssetId))
+        end
+        table.insert(apiAccessories, cleanItem)
+    end
+
+    if layeredCount > 0 and rigTypeName == "R6" then
+        table.insert(warnings, "R6_LAYERED_CLOTHING_WARNING: 3D layered clothing requires R15 WrapTarget cages and does not wrap onto R6 rigs; use rigType='R15' for layered clothing or classic Shirt/Pants for R6.")
+    end
+
+    if #apiAccessories > 0 or clearAcc then
+        local okSet = pcall(function() desc:SetAccessories(apiAccessories, true) end)
+        if not okSet then
+            for field, ids in pairs(legacyByField) do
+                pcall(function() desc[field] = table.concat(ids, ",") end)
+            end
+            if layeredCount > 0 then
+                table.insert(warnings, "HumanoidDescription:SetAccessories unavailable; 3D layered clothing could not be applied via legacy string fields.")
+            end
+        end
+    end
+
+    sourceInfo.layeredClothingCount = layeredCount
+    sourceInfo.rigidAccessoryCount = rigidCount
+    sourceInfo.appliedAccessories = apiAccessories
+    return desc, nil, sourceInfo
+end
+
+function AVATAR_RIG.summarizeDescription(desc)
+    if desc == nil then return nil end
+    local out = {
+        shirt = 0, pants = 0, graphicTShirt = 0, face = 0,
+        bodyParts = {}, scales = {}, rigidAccessories = {}, layeredClothing = {},
+    }
+    pcall(function() out.shirt = desc.Shirt end)
+    pcall(function() out.pants = desc.Pants end)
+    pcall(function() out.graphicTShirt = desc.GraphicTShirt end)
+    pcall(function() out.face = desc.Face end)
+    for _, pair in ipairs({{"head","Head"},{"torso","Torso"},{"leftArm","LeftArm"},{"rightArm","RightArm"},{"leftLeg","LeftLeg"},{"rightLeg","RightLeg"}}) do
+        pcall(function() out.bodyParts[pair[1]] = desc[pair[2]] end)
+    end
+    for _, pair in ipairs({{"height","HeightScale"},{"width","WidthScale"},{"depth","DepthScale"},{"head","HeadScale"},{"proportion","ProportionScale"},{"bodyType","BodyTypeScale"}}) do
+        pcall(function() out.scales[pair[1]] = desc[pair[2]] end)
+    end
+    local okAcc, list = pcall(function() return desc:GetAccessories(true) end)
+    if okAcc and type(list) == "table" then
+        for _, item in ipairs(list) do
+            local entry = {
+                assetId = tonumber(item.AssetId),
+                accessoryType = tostring(item.AccessoryType):gsub("^Enum%.AccessoryType%.", ""),
+                isLayered = item.IsLayered == true,
+            }
+            if item.IsLayered then
+                entry.order = item.Order
+                entry.puffiness = item.Puffiness
+                table.insert(out.layeredClothing, entry)
+            else
+                table.insert(out.rigidAccessories, entry)
+            end
+        end
+    end
+    return out
+end
+
+function AVATAR_RIG.placeRig(rig, args, warnings)
+    local targetPos = AVATAR_RIG.parseVec3(args.position, nil)
+    local targetRotCFrame = nil
+    if type(args.cframe) == "table" then
+        local cfPos = AVATAR_RIG.parseVec3(args.cframe.position or args.cframe, nil)
+        if cfPos then targetPos = cfPos end
+        if type(args.cframe.orientation) == "table" then
+            local o = args.cframe.orientation
+            targetRotCFrame = CFrame.fromOrientation(math.rad(tonumber(o.x or o[1]) or 0), math.rad(tonumber(o.y or o[2]) or 0), math.rad(tonumber(o.z or o[3]) or 0))
+        elseif args.cframe.yaw ~= nil then
+            targetRotCFrame = CFrame.Angles(0, math.rad(tonumber(args.cframe.yaw) or 0), 0)
+        end
+    end
+    if targetPos == nil then targetPos = Vector3.new(0, 0, 0) end
+
+    local snappedToGround = false
+    local groundedOn = nil
+    if args.snapToGround == true then
+        local ws = AVATAR_RIG.service("Workspace")
+        if ws ~= nil then
+            local searchHeight = math.clamp(tonumber(args.groundSearchHeight) or 50, 5, 1000)
+            local rayOrigin = Vector3.new(targetPos.X, targetPos.Y + searchHeight, targetPos.Z)
+            local rayDir = Vector3.new(0, -(searchHeight + 200), 0)
+            local okRay, hit = pcall(function()
+                local params = RaycastParams.new()
+                params.FilterType = Enum.RaycastFilterType.Exclude
+                params.FilterDescendantsInstances = { rig }
+                return ws:Raycast(rayOrigin, rayDir, params)
+            end)
+            if okRay and hit and hit.Position then
+                targetPos = Vector3.new(targetPos.X, hit.Position.Y, targetPos.Z)
+                snappedToGround = true
+                if hit.Instance then groundedOn = hit.Instance:GetFullName() end
+            else
+                table.insert(warnings, "snapToGround did not hit any surface below (" .. tostring(targetPos.X) .. ", " .. tostring(targetPos.Z) .. "); using requested Y=" .. tostring(targetPos.Y) .. ".")
+            end
+        end
+    end
+
+    local positionMode = string.lower(tostring(args.positionMode or args.anchorMode or "feet"))
+    if positionMode ~= "feet" and positionMode ~= "center" and positionMode ~= "root" then
+        positionMode = "feet"
+    end
+    local footOffset = 0
+    local boxCenter, boxSize = nil, nil
+    local okBox, cfBox, szBox = pcall(function() return rig:GetBoundingBox() end)
+    local okPiv, curPiv = pcall(function() return rig:GetPivot() end)
+    if okBox and cfBox and szBox then
+        boxCenter = cfBox.Position
+        boxSize = szBox
+        if okPiv and curPiv then
+            footOffset = curPiv.Position.Y - (cfBox.Position.Y - szBox.Y * 0.5)
+        else
+            footOffset = szBox.Y * 0.5
+        end
+    else
+        local hum = rig:FindFirstChildOfClass("Humanoid")
+        local hrp = rig:FindFirstChild("HumanoidRootPart")
+        if hum and hrp then
+            footOffset = (tonumber(hum.HipHeight) or 2) + (hrp.Size.Y * 0.5)
+        else
+            footOffset = 3
+        end
+    end
+    local finalPos = positionMode == "feet" and Vector3.new(targetPos.X, targetPos.Y + footOffset, targetPos.Z) or targetPos
+
+    local lookTarget = AVATAR_RIG.parseVec3(args.lookAt, nil)
+    local yaw = tonumber(args.yaw ~= nil and args.yaw or args.rotationY)
+    local finalCf
+    if lookTarget ~= nil then
+        local flatLook = Vector3.new(lookTarget.X, finalPos.Y, lookTarget.Z)
+        if (flatLook - finalPos).Magnitude > 0.001 then
+            finalCf = CFrame.lookAt(finalPos, flatLook)
+        else
+            finalCf = CFrame.new(finalPos)
+        end
+    elseif yaw ~= nil then
+        finalCf = CFrame.new(finalPos) * CFrame.Angles(0, math.rad(yaw), 0)
+    elseif targetRotCFrame ~= nil then
+        finalCf = CFrame.new(finalPos) * targetRotCFrame
+    else
+        finalCf = CFrame.new(finalPos)
+    end
+
+    pcall(function() rig:PivotTo(finalCf) end)
+
+    local okAfter, afterCf, afterSz = pcall(function() return rig:GetBoundingBox() end)
+    local bounds = nil
+    local feetY = finalPos.Y - footOffset
+    if okAfter and afterCf and afterSz then
+        feetY = afterCf.Position.Y - afterSz.Y * 0.5
+        bounds = {
+            center = { x = afterCf.Position.X, y = afterCf.Position.Y, z = afterCf.Position.Z },
+            size   = { x = afterSz.X, y = afterSz.Y, z = afterSz.Z },
+            min    = { x = afterCf.Position.X - afterSz.X * 0.5, y = afterCf.Position.Y - afterSz.Y * 0.5, z = afterCf.Position.Z - afterSz.Z * 0.5 },
+            max    = { x = afterCf.Position.X + afterSz.X * 0.5, y = afterCf.Position.Y + afterSz.Y * 0.5, z = afterCf.Position.Z + afterSz.Z * 0.5 },
+        }
+    end
+    return {
+        positionMode = positionMode,
+        rootPosition = { x = finalPos.X, y = finalPos.Y, z = finalPos.Z },
+        feetPosition = { x = finalPos.X, y = feetY, z = finalPos.Z },
+        footOffset = footOffset,
+        snappedToGround = snappedToGround,
+        groundedOn = groundedOn,
+        bounds = bounds,
+    }
+end
+
+tools.build_rig = function(args)
+    args = args or {}
+    local action = string.lower(tostring(args.action or "build"))
+
+    if action == "templates" or action == "list" then
+        local list = {}
+        for _, key in ipairs(AVATAR_RIG.templateNames()) do
+            local t = AVATAR_RIG.TEMPLATES[key]
+            table.insert(list, {
+                name = key, label = t.label, bundleId = t.bundleId,
+                recommendedRigType = t.recommendedRigType, supportsR6 = t.supportsR6 == true,
+                description = t.description,
+            })
+        end
+        return ok({
+            templates = list,
+            count = #list,
+            aliases = AVATAR_RIG.TEMPLATE_ALIASES,
+            rigTypes = { "R15", "R6" },
+            note = "Pass template='<name>' (or bundleId, outfitId, userId, username, or bodyParts) with rigType='R15'|'R6', shirt, pants, tshirt, layeredClothing, accessories, skinColor/bodyColors, scales, and position. Use search_avatar_catalog + inspect_avatar_item first to find verified clothing/accessory/bundle IDs.",
+        })
+    end
+
+    if action == "inspect" then
+        local rig, err = resolveRef(args.ref or args.rigRef)
+        if not rig then return failCode("REF_NOT_FOUND", err) end
+        local hum = rig:FindFirstChildOfClass("Humanoid")
+        if not hum then return failCode("BAD_ARGS", "Target instance has no Humanoid child; pass a Character Model ref.") end
+        local desc = nil
+        pcall(function() desc = hum:GetAppliedDescription() end)
+        if desc == nil then desc = hum:FindFirstChildOfClass("HumanoidDescription") end
+        local hrp = rig:FindFirstChild("HumanoidRootPart")
+        local okBox, cfBox, szBox = pcall(function() return rig:GetBoundingBox() end)
+        local bounds = nil
+        if okBox and cfBox and szBox then
+            bounds = {
+                center = { x = cfBox.Position.X, y = cfBox.Position.Y, z = cfBox.Position.Z },
+                size   = { x = szBox.X, y = szBox.Y, z = szBox.Z },
+            }
+        end
+        return ok({
+            rig = describeRef(rig),
+            rigType = tostring(hum.RigType):gsub("^Enum%.HumanoidRigType%.", ""),
+            displayName = hum.DisplayName,
+            hipHeight = hum.HipHeight,
+            anchored = hrp ~= nil and hrp.Anchored == true,
+            template = rig:GetAttribute("ArenaRigTemplate"),
+            description = AVATAR_RIG.summarizeDescription(desc),
+            bounds = bounds,
+        })
+    end
+
+    if action == "dress" or action == "update" then
+        local rig, err = resolveRef(args.ref or args.rigRef)
+        if not rig then return failCode("REF_NOT_FOUND", err) end
+        local hum = rig:FindFirstChildOfClass("Humanoid")
+        if not hum then return failCode("BAD_ARGS", "Target instance has no Humanoid child; pass a Character Model ref.") end
+        local rigTypeName = tostring(hum.RigType):gsub("^Enum%.HumanoidRigType%.", "")
+        local existingDesc = nil
+        pcall(function() existingDesc = hum:GetAppliedDescription() end)
+        if existingDesc == nil then existingDesc = hum:FindFirstChildOfClass("HumanoidDescription") end
+        local warnings = {}
+        local desc, descErr, sourceInfo = AVATAR_RIG.buildDescription(args, rigTypeName, warnings, existingDesc)
+        if desc == nil then return failCode("BAD_ARGS", tostring(descErr)) end
+        local okApply, applyErr = pcall(function()
+            if hum.ApplyDescriptionAsync then
+                hum:ApplyDescriptionAsync(desc)
+            else
+                hum:ApplyDescription(desc)
+            end
+        end)
+        if not okApply then
+            pcall(function() desc:Destroy() end)
+            return failCode("RIG_APPLY_FAILED", "Failed to apply HumanoidDescription to rig: " .. tostring(applyErr))
+        end
+        if args.name ~= nil and tostring(args.name) ~= "" then rig.Name = tostring(args.name) end
+        if args.displayName ~= nil then pcall(function() hum.DisplayName = tostring(args.displayName) end) end
+        if args.hideName == true then pcall(function() hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None end) end
+        local hrp = rig:FindFirstChild("HumanoidRootPart")
+        if args.anchored ~= nil and hrp then hrp.Anchored = (args.anchored == true) end
+        if args.anchorAllParts == true then
+            for _, d in ipairs(rig:GetDescendants()) do if d:IsA("BasePart") then d.Anchored = true end end
+        end
+        local placement = nil
+        if args.position ~= nil or args.cframe ~= nil or args.yaw ~= nil or args.rotationY ~= nil or args.lookAt ~= nil or args.snapToGround == true then
+            placement = AVATAR_RIG.placeRig(rig, args, warnings)
+        end
+        waypoint("dress rig " .. rig.Name)
+        local warnStr = #warnings > 0 and table.concat(warnings, " | ") or nil
+        return ok({
+            rig = describeRef(rig),
+            rigType = rigTypeName,
+            source = sourceInfo,
+            description = AVATAR_RIG.summarizeDescription(desc),
+            placement = placement,
+            warnings = warnings,
+        }, warnStr)
+    end
+
+    if action ~= "build" and action ~= "spawn" and action ~= "create" then
+        return failCode("BAD_ARGS", "action must be build (default), templates, dress, or inspect.")
+    end
+
+    local rigTypeName, rigTypeEnum = AVATAR_RIG.parseRigType(args.rigType)
+    if rigTypeEnum == nil then
+        return failCode("BAD_ARGS", "rigType must be 'R15' or 'R6' (got '" .. tostring(args.rigType) .. "').")
+    end
+    local parent, parentErr = resolveRef(args.parentRef or "game.Workspace")
+    if not parent then return failCode("REF_NOT_FOUND", parentErr) end
+
+    local playersService = AVATAR_RIG.service("Players")
+    if playersService == nil then return failCode("SERVICE_UNAVAILABLE", "Players service is not available.") end
+
+    local warnings = {}
+    local desc, descErr, sourceInfo = AVATAR_RIG.buildDescription(args, rigTypeName, warnings, nil)
+    if desc == nil then return failCode("BAD_ARGS", tostring(descErr)) end
+
+    local rig = nil
+    local okCreate, createErr = pcall(function()
+        if playersService.CreateHumanoidModelFromDescriptionAsync then
+            local verify = nil
+            pcall(function() verify = Enum.AssetTypeVerification.Default end)
+            if verify ~= nil then
+                rig = playersService:CreateHumanoidModelFromDescriptionAsync(desc, rigTypeEnum, verify)
+            else
+                rig = playersService:CreateHumanoidModelFromDescriptionAsync(desc, rigTypeEnum)
+            end
+        elseif playersService.CreateHumanoidModelFromDescription then
+            rig = playersService:CreateHumanoidModelFromDescription(desc, rigTypeEnum)
+        else
+            error("Players:CreateHumanoidModelFromDescriptionAsync is not available in this Studio runtime")
+        end
+    end)
+    if not okCreate or rig == nil then
+        pcall(function() desc:Destroy() end)
+        return failCode("RIG_BUILD_FAILED", "CreateHumanoidModelFromDescriptionAsync failed: " .. tostring(createErr), {
+            rigType = rigTypeName, source = sourceInfo,
+        })
+    end
+
+    local defaultName = "CharacterRig"
+    if sourceInfo.template then
+        defaultName = sourceInfo.template:gsub("^%l", string.upper) .. "Rig"
+    elseif sourceInfo.bundleName then
+        defaultName = tostring(sourceInfo.bundleName)
+    elseif sourceInfo.username then
+        defaultName = tostring(sourceInfo.username)
+    end
+    rig.Name = tostring((args.name ~= nil and tostring(args.name) ~= "") and args.name or defaultName)
+
+    local hum = rig:FindFirstChildOfClass("Humanoid")
+    if hum then
+        if args.displayName ~= nil then pcall(function() hum.DisplayName = tostring(args.displayName) end) end
+        if args.hideName == true then pcall(function() hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None end) end
+        if hum:FindFirstChildOfClass("HumanoidDescription") == nil then
+            pcall(function() desc.Parent = hum end)
+        end
+    end
+
+    local hrp = rig:FindFirstChild("HumanoidRootPart")
+    if hrp then
+        hrp.Anchored = (args.anchored ~= false)
+    end
+    if args.anchorAllParts == true or args.anchorAll == true then
+        for _, d in ipairs(rig:GetDescendants()) do if d:IsA("BasePart") then d.Anchored = true end end
+    end
+
+    pcall(function()
+        rig:SetAttribute("ArenaRigType", rigTypeName)
+        if sourceInfo.template then rig:SetAttribute("ArenaRigTemplate", sourceInfo.template) end
+        if sourceInfo.bundleId then rig:SetAttribute("ArenaRigBundleId", sourceInfo.bundleId) end
+    end)
+
+    rig.Parent = parent
+    local placement = AVATAR_RIG.placeRig(rig, args, warnings)
+    waypoint("build rig " .. rig.Name)
+
+    local summaryDesc = AVATAR_RIG.summarizeDescription(desc)
+    local warnStr = #warnings > 0 and table.concat(warnings, " | ") or nil
+    return ok({
+        rig = describeRef(rig),
+        humanoid = hum and describeRef(hum) or nil,
+        rootPart = hrp and describeRef(hrp) or nil,
+        rigType = rigTypeName,
+        anchored = hrp ~= nil and hrp.Anchored == true,
+        source = sourceInfo,
+        description = summaryDesc,
+        placement = placement,
+        warnings = warnings,
+        nextSteps = {
+            "Use camera_focus { ref = '<rig id>' } + capture_screenshot or describe_scene to inspect the spawned character in Studio.",
+            "Use build_rig { action = 'dress', ref = '<rig id>', ... } to change clothing, accessories, colors or scales later without respawning.",
+        },
+    }, warnStr)
 end
 
 -- ------------------------- Mesh-Bau (Version 7.4.0) -------------------------
@@ -18203,7 +19695,8 @@ local PERSISTENT_WRITE_TOOLS = {
     build_polygon_model = true, build_assembly = true,
     mesh_slots = true, mesh_apply = true, mesh_drop = true,
     build_surface = true, build_interface = true,
-    ui_widget = true, ui_gradient = true, ui_shape = true, ui_path = true, ui_text = true,
+    ui_widget = true, ui_gradient = true, ui_shadow = true, ui_shape = true, ui_path = true, ui_text = true,
+    build_rig = true,
     undo = true, redo = true,
 }
 
@@ -23661,6 +25154,29 @@ $script:BridgeHandlerScript = {
                 Add-ActivityDetailPart $parts $arguments 'Seed:' @('seed')
             }
             'catalog_status' { Add-ActivityResultDetail $parts $result 'Status:' @('status','state','available') }
+            'search_avatar_catalog' {
+                Add-ActivityDetailPart $parts $arguments 'Kategorie:' @('category','type')
+                Add-ActivityDetailPart $parts $arguments 'Suchbegriff:' @('query','keyword')
+                Add-ActivityResultCount $parts $result 'Treffer:' @('count')
+            }
+            'inspect_avatar_item' {
+                Add-ActivityDetailPart $parts $arguments 'Asset-ID:' @('assetId','assetIds')
+                Add-ActivityDetailPart $parts $arguments 'Bundle-ID:' @('bundleId','bundleIds')
+                Add-ActivityDetailPart $parts $arguments 'Spieler:' @('username','userId')
+                Add-ActivityResultCount $parts $result 'Geprüft:' @('count')
+            }
+            'build_rig' {
+                Add-ActivityDetailPart $parts $arguments 'Aktion:' @('action')
+                Add-ActivityDetailPart $parts $arguments 'Vorlage:' @('template','bundleId','userId')
+                Add-ActivityDetailPart $parts $arguments 'Rig-Typ:' @('rigType')
+                Add-ActivityDetailPart $parts $arguments 'Name:' @('name')
+                Add-ActivityDetailPart $parts $arguments 'Position:' @('position')
+            }
+            'ui_shadow' {
+                Add-ActivityDetailPart $parts $arguments 'Ziel:' @('ref')
+                Add-ActivityDetailPart $parts $arguments 'Modus:' @('mode')
+                Add-ActivityDetailPart $parts $arguments 'Inset:' @('inset')
+            }
             'clear_output' { Add-ActivityDetailPart $parts $arguments 'Filter:' @('filter','pattern','query') }
             'report_done' {
                 Add-ActivityResultDetail $parts $result 'Abschluss:' @('status','grade','summary')
@@ -23782,8 +25298,8 @@ $script:BridgeHandlerScript = {
     }
 
     function Get-ActivityToolSets {
-        $read = @('get_bridge_log','get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','get_output','wait_for_output','get_errors','sim_status','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait','ui_capabilities','ui_skin','ui_audit','ui_texture','ui_design','world_style','site_survey','variation','model_audit','world_audit','prop_list','wait_for_user','ack_user_message','ask_user','confirm_action','scaffold_ui_scripts','blender_status','mesh_status','camera_state','terrain_measure')
-        $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','build_polygon_model','build_assembly','mesh_slots','mesh_apply','mesh_drop','union','subtract','intersect','separate','insert_asset','apply_asset','clear_output','sim_start','set_context','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute','build_surface','build_interface','ui_glow','ui_radial','prop_place','prop_save','refine','style_lock','world_glow','sim_stop','mesh_cancel','build_mesh_model','mesh_apply_asset','upload_asset','open_cloud','creator_dashboard','datastore','force_fail','clear_pending','camera_reset','camera_focus','camera_guard','ui_widget','ui_gradient','ui_shape','ui_path','ui_text','terrain_heightmap','terrain_sculpt','terrain_paint','terrain_water','terrain_feature','terrain_carve','terrain_clear')
+        $read = @('get_bridge_log','get_place_info','get_tree','search','get_instance','get_children','get_properties','resolve_ref','get_selection','describe_scene','viewport_info','get_bounds','scene_stats','list_tools','bridge_status','get_script','find_in_script','compile_check','lua_state','raycast','raycast_many','ground_height','measure','measure_height','parts_in_box','parts_in_sphere','nearest_parts','what_is_in_the_way','overlap_check','verify_measurable','coordinate_guide','describe_orientation','union_info','search_assets','asset_details','validate_asset','catalog_status','search_avatar_catalog','inspect_avatar_item','get_output','wait_for_output','get_errors','sim_status','probe_world','job_status','job_result','list_jobs','get_pending','get_notices','get_events','get_chunk','get_docs','wait','ui_capabilities','ui_skin','ui_audit','ui_texture','ui_design','world_style','site_survey','variation','model_audit','world_audit','prop_list','wait_for_user','ack_user_message','ask_user','confirm_action','scaffold_ui_scripts','blender_status','mesh_status','camera_state','terrain_measure')
+        $write = @('select_instance','create_instance','bulk_create','clone_instance','delete_instance','bulk_delete','rename_instance','move_instance','group_instances','ungroup','set_property','set_properties','bulk_set_properties','set_attribute','add_tag','remove_tag','patch_script','set_script_source','insert_script','bulk_insert_scripts','run_lua','clear_lua_state','fill_region','build_polygon_model','build_assembly','mesh_slots','mesh_apply','mesh_drop','union','subtract','intersect','separate','insert_asset','apply_asset','build_rig','clear_output','sim_start','set_context','start_job','cancel_job','batch','parallel','undo','redo','set_waypoint','upload_text','capture_screenshot','report_done','snap_to_ground','point_at','look_at','rotate_around','move_relative','resize_part','fit_between','place_on','align','stack','grid_arrange','distribute','build_surface','build_interface','ui_glow','ui_radial','prop_place','prop_save','refine','style_lock','world_glow','sim_stop','mesh_cancel','build_mesh_model','mesh_apply_asset','upload_asset','open_cloud','creator_dashboard','datastore','force_fail','clear_pending','camera_reset','camera_focus','camera_guard','ui_widget','ui_gradient','ui_shadow','ui_shape','ui_path','ui_text','terrain_heightmap','terrain_sculpt','terrain_paint','terrain_water','terrain_feature','terrain_carve','terrain_clear')
         return @{ read = $read; write = $write }
     }
 
@@ -24027,6 +25543,10 @@ $script:BridgeHandlerScript = {
             upload_text = 'Hat längeren Text zur sicheren Übergabe an die Bridge übertragen.'
             get_docs = 'Hat die angeforderte Werkzeug- oder Kategorien-Dokumentation gelesen.'
             capture_screenshot = 'Hat nach Bestätigung einen Screenshot des Roblox-Studio-Fensters aufgenommen.'
+            ui_shadow = 'Hat einen nativen UI-Schatten mit Modus, Inset und optionalem Verlauf konfiguriert.'
+            search_avatar_catalog = 'Hat den Roblox-Avatar-Katalog nach Kleidung, Accessoires oder Charakter-Bundles durchsucht.'
+            inspect_avatar_item = 'Hat Details und Vorschaubilder von Avatar-Artikeln, Bundles oder Spielern geprüft.'
+            build_rig = 'Hat einen Charakter-Rig im Place erstellt, eingekleidet oder inspiziert.'
         }
 
         if ($phase -eq 'running') {
@@ -26705,18 +28225,48 @@ $script:BridgeHandlerScript = {
         Add-CacheEntries $single
     }
 
-    # typeId -> wofür man es verwenden kann (für die Tyvalidierung)
+    # typeId -> wofür man es verwenden kann (für die Tyvalidierung + Avatar-Katalog)
     function Get-AssetTypeUsage([int]$typeId) {
         switch ($typeId) {
-            1  { return @{ typeName = 'Image';     usableAs = 'Texture / Image / Decal-Texture'; properties = @('Texture', 'Image') } }
-            3  { return @{ typeName = 'Audio';     usableAs = 'Sound';                          properties = @('SoundId') } }
-            4  { return @{ typeName = 'Mesh';      usableAs = 'SpecialMesh (MeshId)';           properties = @('MeshId') } }
-            10 { return @{ typeName = 'Model';     usableAs = 'insert_asset (Model)';           properties = @() } }
-            13 { return @{ typeName = 'Decal';     usableAs = 'Decal / Texture / Image';        properties = @('Texture', 'Image') } }
-            24 { return @{ typeName = 'Animation'; usableAs = 'Animation';                      properties = @('AnimationId') } }
-            38 { return @{ typeName = 'Plugin';    usableAs = 'Creator Store metadata / Studio plugin'; properties = @() } }
-            40 { return @{ typeName = 'MeshPart';  usableAs = 'insert_asset (MeshPart)';        properties = @() } }
-            62 { return @{ typeName = 'Video';     usableAs = 'VideoFrame';                     properties = @('VideoId') } }
+            1  { return @{ typeName = 'Image';            usableAs = 'Texture / Image / Decal-Texture'; properties = @('Texture', 'Image') } }
+            2  { return @{ typeName = 'TShirt';           usableAs = 'build_rig (tshirt / GraphicTShirt)'; properties = @('GraphicTShirt'); rigSlot = 'tshirt'; isLayered = $false } }
+            3  { return @{ typeName = 'Audio';            usableAs = 'Sound';                          properties = @('SoundId') } }
+            4  { return @{ typeName = 'Mesh';             usableAs = 'SpecialMesh (MeshId)';           properties = @('MeshId') } }
+            8  { return @{ typeName = 'Hat';              usableAs = 'build_rig (accessories, Hat)';   properties = @('HatAccessory'); rigSlot = 'accessories'; accessoryType = 'Hat'; isLayered = $false } }
+            10 { return @{ typeName = 'Model';            usableAs = 'insert_asset (Model)';           properties = @() } }
+            11 { return @{ typeName = 'Shirt';            usableAs = 'build_rig (shirt / Shirt)';      properties = @('Shirt'); rigSlot = 'shirt'; isLayered = $false } }
+            12 { return @{ typeName = 'Pants';            usableAs = 'build_rig (pants / Pants)';      properties = @('Pants'); rigSlot = 'pants'; isLayered = $false } }
+            13 { return @{ typeName = 'Decal';            usableAs = 'Decal / Texture / Image';        properties = @('Texture', 'Image') } }
+            17 { return @{ typeName = 'Head';             usableAs = 'build_rig (bodyParts.head)';     properties = @('Head'); rigSlot = 'bodyParts.head'; isLayered = $false } }
+            18 { return @{ typeName = 'Face';             usableAs = 'build_rig (face / Face)';        properties = @('Face'); rigSlot = 'face'; isLayered = $false } }
+            24 { return @{ typeName = 'Animation';        usableAs = 'Animation';                      properties = @('AnimationId') } }
+            27 { return @{ typeName = 'Torso';            usableAs = 'build_rig (bodyParts.torso)';    properties = @('Torso'); rigSlot = 'bodyParts.torso'; isLayered = $false } }
+            28 { return @{ typeName = 'RightArm';         usableAs = 'build_rig (bodyParts.rightArm)'; properties = @('RightArm'); rigSlot = 'bodyParts.rightArm'; isLayered = $false } }
+            29 { return @{ typeName = 'LeftArm';          usableAs = 'build_rig (bodyParts.leftArm)';  properties = @('LeftArm'); rigSlot = 'bodyParts.leftArm'; isLayered = $false } }
+            30 { return @{ typeName = 'LeftLeg';          usableAs = 'build_rig (bodyParts.leftLeg)';  properties = @('LeftLeg'); rigSlot = 'bodyParts.leftLeg'; isLayered = $false } }
+            31 { return @{ typeName = 'RightLeg';         usableAs = 'build_rig (bodyParts.rightLeg)'; properties = @('RightLeg'); rigSlot = 'bodyParts.rightLeg'; isLayered = $false } }
+            38 { return @{ typeName = 'Plugin';           usableAs = 'Creator Store metadata / Studio plugin'; properties = @() } }
+            40 { return @{ typeName = 'MeshPart';         usableAs = 'insert_asset (MeshPart)';        properties = @() } }
+            41 { return @{ typeName = 'HairAccessory';    usableAs = 'build_rig (accessories, Hair)';  properties = @('HairAccessory'); rigSlot = 'accessories'; accessoryType = 'Hair'; isLayered = $false } }
+            42 { return @{ typeName = 'FaceAccessory';    usableAs = 'build_rig (accessories, Face)';  properties = @('FaceAccessory'); rigSlot = 'accessories'; accessoryType = 'Face'; isLayered = $false } }
+            43 { return @{ typeName = 'NeckAccessory';    usableAs = 'build_rig (accessories, Neck)';  properties = @('NeckAccessory'); rigSlot = 'accessories'; accessoryType = 'Neck'; isLayered = $false } }
+            44 { return @{ typeName = 'ShoulderAccessory';usableAs = 'build_rig (accessories, Shoulder)'; properties = @('ShouldersAccessory'); rigSlot = 'accessories'; accessoryType = 'Shoulder'; isLayered = $false } }
+            45 { return @{ typeName = 'FrontAccessory';   usableAs = 'build_rig (accessories, Front)'; properties = @('FrontAccessory'); rigSlot = 'accessories'; accessoryType = 'Front'; isLayered = $false } }
+            46 { return @{ typeName = 'BackAccessory';    usableAs = 'build_rig (accessories, Back)';  properties = @('BackAccessory'); rigSlot = 'accessories'; accessoryType = 'Back'; isLayered = $false } }
+            47 { return @{ typeName = 'WaistAccessory';   usableAs = 'build_rig (accessories, Waist)'; properties = @('WaistAccessory'); rigSlot = 'accessories'; accessoryType = 'Waist'; isLayered = $false } }
+            62 { return @{ typeName = 'Video';            usableAs = 'VideoFrame';                     properties = @('VideoId') } }
+            64 { return @{ typeName = 'TShirtAccessory';  usableAs = 'build_rig (layeredClothing, TShirt)'; properties = @('SetAccessories'); rigSlot = 'layeredClothing'; accessoryType = 'TShirt'; isLayered = $true } }
+            65 { return @{ typeName = 'ShirtAccessory';   usableAs = 'build_rig (layeredClothing, Shirt)';  properties = @('SetAccessories'); rigSlot = 'layeredClothing'; accessoryType = 'Shirt'; isLayered = $true } }
+            66 { return @{ typeName = 'SweaterAccessory'; usableAs = 'build_rig (layeredClothing, Sweater)';properties = @('SetAccessories'); rigSlot = 'layeredClothing'; accessoryType = 'Sweater'; isLayered = $true } }
+            67 { return @{ typeName = 'JacketAccessory';  usableAs = 'build_rig (layeredClothing, Jacket)'; properties = @('SetAccessories'); rigSlot = 'layeredClothing'; accessoryType = 'Jacket'; isLayered = $true } }
+            68 { return @{ typeName = 'PantsAccessory';   usableAs = 'build_rig (layeredClothing, Pants)';  properties = @('SetAccessories'); rigSlot = 'layeredClothing'; accessoryType = 'Pants'; isLayered = $true } }
+            69 { return @{ typeName = 'ShortsAccessory';  usableAs = 'build_rig (layeredClothing, Shorts)'; properties = @('SetAccessories'); rigSlot = 'layeredClothing'; accessoryType = 'Shorts'; isLayered = $true } }
+            70 { return @{ typeName = 'LeftShoeAccessory';usableAs = 'build_rig (layeredClothing, LeftShoe)'; properties = @('SetAccessories'); rigSlot = 'layeredClothing'; accessoryType = 'LeftShoe'; isLayered = $true } }
+            71 { return @{ typeName = 'RightShoeAccessory';usableAs = 'build_rig (layeredClothing, RightShoe)'; properties = @('SetAccessories'); rigSlot = 'layeredClothing'; accessoryType = 'RightShoe'; isLayered = $true } }
+            72 { return @{ typeName = 'DressSkirtAccessory'; usableAs = 'build_rig (layeredClothing, DressSkirt)'; properties = @('SetAccessories'); rigSlot = 'layeredClothing'; accessoryType = 'DressSkirt'; isLayered = $true } }
+            76 { return @{ typeName = 'EyebrowAccessory'; usableAs = 'build_rig (layeredClothing, Eyebrow)'; properties = @('SetAccessories'); rigSlot = 'layeredClothing'; accessoryType = 'Eyebrow'; isLayered = $true } }
+            77 { return @{ typeName = 'EyelashAccessory'; usableAs = 'build_rig (layeredClothing, Eyelash)'; properties = @('SetAccessories'); rigSlot = 'layeredClothing'; accessoryType = 'Eyelash'; isLayered = $true } }
+            79 { return @{ typeName = 'DynamicHead';      usableAs = 'build_rig (bodyParts.head / DynamicHead)'; properties = @('Head'); rigSlot = 'bodyParts.head'; isLayered = $false } }
             default { return @{ typeName = ('Unknown(' + [string]$typeId + ')'); usableAs = ''; properties = @() } }
         }
     }
@@ -27367,6 +28917,638 @@ $script:BridgeHandlerScript = {
         }
     }
 
+    function Invoke-CatalogHttpPost([string]$url, [string]$jsonBody, [int]$timeoutSeconds = 0) {
+        if ($timeoutSeconds -le 0) { $timeoutSeconds = [int]$Shared.ToolboxLimits.CatalogTimeoutSec }
+        $timeoutSeconds = [Math]::Max(3, [Math]::Min(20, $timeoutSeconds))
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        try {
+            $data = Invoke-RestMethod -Uri $url -Method Post -ContentType 'application/json; charset=utf-8' -Body $jsonBody -TimeoutSec $timeoutSeconds -UseBasicParsing -ErrorAction Stop
+            $sw.Stop()
+            return @{ ok = $true; data = $data; elapsedMs = [int]$sw.ElapsedMilliseconds; timedOut = $false; notFound = $false; error = '' }
+        } catch {
+            $sw.Stop()
+            $message = [string]$_.Exception.Message
+            $notFound = ($message -match '404')
+            $timedOut = $false
+            if (-not $notFound) {
+                $timedOut = (($sw.Elapsed.TotalSeconds * 1.0) -ge ($timeoutSeconds - 0.5)) -or ($message -match 'timed out|timeout|Zeitlimit|Vorgangstimeout')
+            }
+            return @{ ok = $false; data = $null; elapsedMs = [int]$sw.ElapsedMilliseconds; timedOut = $timedOut; notFound = $notFound; error = $message }
+        }
+    }
+
+    function Invoke-CatalogThumbnailBytes([string]$imageUrl, [int]$timeoutSeconds = 8) {
+        if ([string]::IsNullOrWhiteSpace($imageUrl)) { return @{ ok = $false; error = 'thumbnailUrl empty' } }
+        try {
+            $uri = [System.Uri]$imageUrl
+            if ($uri.Scheme -ne 'https' -or -not ($uri.Host -match '(^|\.)rbxcdn\.com$')) {
+                return @{ ok = $false; error = 'Refused non-rbxcdn thumbnail URL.' }
+            }
+        } catch {
+            return @{ ok = $false; error = 'Invalid thumbnail URL.' }
+        }
+        $timeoutSeconds = [Math]::Max(3, [Math]::Min(12, $timeoutSeconds))
+        $maxBytes = 2097152
+        $req = $null; $resp = $null; $stream = $null; $ms = $null
+        try {
+            $req = [System.Net.HttpWebRequest]::Create($imageUrl)
+            $req.Method = 'GET'
+            $req.Timeout = $timeoutSeconds * 1000
+            $req.ReadWriteTimeout = $timeoutSeconds * 1000
+            $req.AllowAutoRedirect = $false
+            $resp = $req.GetResponse()
+            $stream = $resp.GetResponseStream()
+            $ms = New-Object System.IO.MemoryStream
+            $buf = New-Object byte[] 16384
+            while ($true) {
+                $read = $stream.Read($buf, 0, $buf.Length)
+                if ($read -le 0) { break }
+                if (($ms.Length + $read) -gt $maxBytes) {
+                    return @{ ok = $false; error = 'Thumbnail exceeds 2 MiB safety cap.' }
+                }
+                $ms.Write($buf, 0, $read)
+            }
+            $bytes = $ms.ToArray()
+            $contentType = ''
+            try { $contentType = [string]$resp.ContentType } catch {}
+            if ([string]::IsNullOrWhiteSpace($contentType)) { $contentType = 'image/png' }
+            return @{ ok = $true; bytes = $bytes; contentType = $contentType }
+        } catch {
+            return @{ ok = $false; error = [string]$_.Exception.Message }
+        } finally {
+            if ($null -ne $ms) { try { $ms.Dispose() } catch {} }
+            if ($null -ne $stream) { try { $stream.Dispose() } catch {} }
+            if ($null -ne $resp) { try { $resp.Close() } catch {} }
+        }
+    }
+
+    function Get-AvatarRigTemplatesCatalog {
+        return @(
+            @{ name = 'blocky';          label = 'Blocky (Classic 1.0)';          bundleId = $null; recommendedRigType = 'R15'; supportsR6 = $true;  description = 'Standard blocky Robloxian body (all limb IDs = 0). Works cleanly in R6 and R15.' },
+            @{ name = 'noob';            label = 'Classic Noob (Blocky)';         bundleId = $null; recommendedRigType = 'R6';  supportsR6 = $true;  description = 'Classic blocky body with traditional yellow/blue/green noob colors.' },
+            @{ name = 'man';             label = 'Roblox Man (3.0)';              bundleId = 238;   recommendedRigType = 'R15'; supportsR6 = $true;  description = 'Official Roblox Man character bundle (Bundle ID 238).' },
+            @{ name = 'woman';           label = 'Roblox Woman (3.0)';            bundleId = 239;   recommendedRigType = 'R15'; supportsR6 = $true;  description = 'Official Roblox Woman character bundle (Bundle ID 239).' },
+            @{ name = 'manv2';           label = 'Neoclassic Male v2 (Kenneth)';  bundleId = 608;   recommendedRigType = 'R15'; supportsR6 = $false; description = 'Official Roblox Neoclassic Male v2 character bundle (Bundle ID 608).' },
+            @{ name = 'womanv2';         label = 'Neoclassic Female v2 (Denny)';  bundleId = 606;   recommendedRigType = 'R15'; supportsR6 = $false; description = 'Official Roblox Neoclassic Female v2 character bundle (Bundle ID 606).' },
+            @{ name = 'robloxian_2_0';   label = 'Robloxian 2.0';                 bundleId = 311;   recommendedRigType = 'R15'; supportsR6 = $true;  description = 'Official Robloxian 2.0 character bundle (Bundle ID 311).' },
+            @{ name = 'boy';             label = 'ROBLOX Boy';                    bundleId = 109;   recommendedRigType = 'R15'; supportsR6 = $true;  description = 'Official ROBLOX Boy character bundle (Bundle ID 109).' },
+            @{ name = 'girl';            label = 'ROBLOX Girl';                   bundleId = 108;   recommendedRigType = 'R15'; supportsR6 = $true;  description = 'Official ROBLOX Girl character bundle (Bundle ID 108).' },
+            @{ name = 'neoclassic_male'; label = 'Neoclassic Male';               bundleId = 578;   recommendedRigType = 'R15'; supportsR6 = $false; description = 'Official Roblox Neoclassic Male character bundle (Bundle ID 578).' },
+            @{ name = 'classic_male';    label = 'Classic Male';                  bundleId = 575;   recommendedRigType = 'R15'; supportsR6 = $true;  description = 'Official Roblox Classic Male bundle (Bundle ID 575).' }
+        )
+    }
+
+    function Get-AvatarBuildRigHint([string]$itemType, [int64]$itemId, [int]$assetTypeId) {
+        if ($itemType -eq 'Bundle') {
+            return @{ bundleId = $itemId; example = ('build_rig { bundleId = ' + [string]$itemId + ', rigType = "R15", position = {x=0,y=0,z=0} }') }
+        }
+        $usage = Get-AssetTypeUsage $assetTypeId
+        $slot = [string]$usage.rigSlot
+        if ($slot -eq 'shirt') { return @{ rigSlot = 'shirt'; example = ('shirt = ' + [string]$itemId) } }
+        if ($slot -eq 'pants') { return @{ rigSlot = 'pants'; example = ('pants = ' + [string]$itemId) } }
+        if ($slot -eq 'tshirt') { return @{ rigSlot = 'tshirt'; example = ('tshirt = ' + [string]$itemId) } }
+        if ($slot -eq 'face') { return @{ rigSlot = 'face'; example = ('face = ' + [string]$itemId) } }
+        if ($slot -eq 'layeredClothing') {
+            $accType = [string]$usage.accessoryType
+            return @{ rigSlot = 'layeredClothing'; accessoryType = $accType; isLayered = $true; example = ('layeredClothing = [{ assetId = ' + [string]$itemId + ', type = "' + $accType + '" }]') }
+        }
+        if ($slot -eq 'accessories') {
+            $accType = [string]$usage.accessoryType
+            return @{ rigSlot = 'accessories'; accessoryType = $accType; isLayered = $false; example = ('accessories = [{ assetId = ' + [string]$itemId + ', type = "' + $accType + '" }]') }
+        }
+        if ($slot -like 'bodyParts.*') {
+            $partKey = $slot.Substring(10)
+            return @{ rigSlot = $slot; example = ('bodyParts = { ' + $partKey + ' = ' + [string]$itemId + ' }') }
+        }
+        return @{ rigSlot = 'other'; example = ('assetId = ' + [string]$itemId) }
+    }
+
+    function Invoke-AvatarCatalogSearch($toolArgs) {
+        $category = ''
+        if ($toolArgs -and $toolArgs.category) { $category = ([string]$toolArgs.category).Trim().ToLowerInvariant() }
+        if ([string]::IsNullOrWhiteSpace($category) -and $toolArgs -and $toolArgs.type) {
+            $category = ([string]$toolArgs.type).Trim().ToLowerInvariant()
+        }
+        if ([string]::IsNullOrWhiteSpace($category)) { $category = 'all' }
+
+        if ($category -eq 'templates' -or ($toolArgs -and ([string]$toolArgs.action).ToLowerInvariant() -eq 'templates')) {
+            $tpls = Get-AvatarRigTemplatesCatalog
+            return @{
+                ok = $true
+                catalogAvailable = $true
+                result = @{
+                    category = 'templates'
+                    templates = $tpls
+                    count = $tpls.Count
+                    note = 'Built-in standard character rig templates. Pass template="<name>" (or bundleId) to build_rig.'
+                }
+            }
+        }
+
+        $categoryMap = @{
+            'all'               = @{ assetTypeIds = @(); bundleTypeIds = @() }
+            'shirt'             = @{ assetTypeIds = @(11); bundleTypeIds = @() }
+            'classic_shirt'     = @{ assetTypeIds = @(11); bundleTypeIds = @() }
+            'pants'             = @{ assetTypeIds = @(12); bundleTypeIds = @() }
+            'classic_pants'     = @{ assetTypeIds = @(12); bundleTypeIds = @() }
+            'tshirt'            = @{ assetTypeIds = @(2); bundleTypeIds = @() }
+            't-shirt'           = @{ assetTypeIds = @(2); bundleTypeIds = @() }
+            'classic_tshirt'    = @{ assetTypeIds = @(2); bundleTypeIds = @() }
+            'classic_clothing'  = @{ assetTypeIds = @(2, 11, 12); bundleTypeIds = @() }
+            'layered_tshirt'    = @{ assetTypeIds = @(64); bundleTypeIds = @() }
+            'tshirt_3d'         = @{ assetTypeIds = @(64); bundleTypeIds = @() }
+            'layered_shirt'     = @{ assetTypeIds = @(65); bundleTypeIds = @() }
+            'shirt_3d'          = @{ assetTypeIds = @(65); bundleTypeIds = @() }
+            'sweater'           = @{ assetTypeIds = @(66); bundleTypeIds = @() }
+            'jacket'            = @{ assetTypeIds = @(67); bundleTypeIds = @() }
+            'layered_pants'     = @{ assetTypeIds = @(68); bundleTypeIds = @() }
+            'pants_3d'          = @{ assetTypeIds = @(68); bundleTypeIds = @() }
+            'shorts'            = @{ assetTypeIds = @(69); bundleTypeIds = @() }
+            'shoes'             = @{ assetTypeIds = @(70, 71); bundleTypeIds = @(3) }
+            'footwear'          = @{ assetTypeIds = @(70, 71); bundleTypeIds = @(3) }
+            'dress'             = @{ assetTypeIds = @(72); bundleTypeIds = @() }
+            'skirt'             = @{ assetTypeIds = @(72); bundleTypeIds = @() }
+            'dress_skirt'       = @{ assetTypeIds = @(72); bundleTypeIds = @() }
+            'layered'           = @{ assetTypeIds = @(64, 65, 66, 67, 68, 69, 70, 71, 72); bundleTypeIds = @() }
+            'layered_clothing'  = @{ assetTypeIds = @(64, 65, 66, 67, 68, 69, 70, 71, 72); bundleTypeIds = @() }
+            '3d_clothing'       = @{ assetTypeIds = @(64, 65, 66, 67, 68, 69, 70, 71, 72); bundleTypeIds = @() }
+            'clothing'          = @{ assetTypeIds = @(2, 11, 12, 64, 65, 66, 67, 68, 69, 70, 71, 72); bundleTypeIds = @() }
+            'hat'               = @{ assetTypeIds = @(8); bundleTypeIds = @() }
+            'hats'              = @{ assetTypeIds = @(8); bundleTypeIds = @() }
+            'hair'              = @{ assetTypeIds = @(41); bundleTypeIds = @() }
+            'face_accessory'    = @{ assetTypeIds = @(42); bundleTypeIds = @() }
+            'neck'              = @{ assetTypeIds = @(43); bundleTypeIds = @() }
+            'neck_accessory'    = @{ assetTypeIds = @(43); bundleTypeIds = @() }
+            'shoulder'          = @{ assetTypeIds = @(44); bundleTypeIds = @() }
+            'shoulder_accessory'= @{ assetTypeIds = @(44); bundleTypeIds = @() }
+            'front'             = @{ assetTypeIds = @(45); bundleTypeIds = @() }
+            'front_accessory'   = @{ assetTypeIds = @(45); bundleTypeIds = @() }
+            'back'              = @{ assetTypeIds = @(46); bundleTypeIds = @() }
+            'back_accessory'    = @{ assetTypeIds = @(46); bundleTypeIds = @() }
+            'waist'             = @{ assetTypeIds = @(47); bundleTypeIds = @() }
+            'waist_accessory'   = @{ assetTypeIds = @(47); bundleTypeIds = @() }
+            'accessories'       = @{ assetTypeIds = @(8, 41, 42, 43, 44, 45, 46, 47); bundleTypeIds = @() }
+            'accessory'         = @{ assetTypeIds = @(8, 41, 42, 43, 44, 45, 46, 47); bundleTypeIds = @() }
+            'face'              = @{ assetTypeIds = @(18); bundleTypeIds = @() }
+            'head'              = @{ assetTypeIds = @(17, 79); bundleTypeIds = @(4) }
+            'dynamic_head'      = @{ assetTypeIds = @(79); bundleTypeIds = @(4) }
+            'bundle'            = @{ assetTypeIds = @(); bundleTypeIds = @(1) }
+            'bundles'           = @{ assetTypeIds = @(); bundleTypeIds = @(1) }
+            'body'              = @{ assetTypeIds = @(); bundleTypeIds = @(1) }
+            'character'         = @{ assetTypeIds = @(); bundleTypeIds = @(1) }
+            'characters'        = @{ assetTypeIds = @(); bundleTypeIds = @(1) }
+            'animation_bundle'  = @{ assetTypeIds = @(); bundleTypeIds = @(2) }
+        }
+        if (-not $categoryMap.ContainsKey($category)) {
+            return @{
+                ok = $false
+                code = 'CATALOG_TYPE_NOT_SUPPORTED'
+                error = "Avatar catalog category '$category' is not supported."
+                supportedCategories = @('all','shirt','pants','tshirt','classic_clothing','layered','clothing','jacket','sweater','layered_shirt','layered_pants','shorts','dress','shoes','accessories','hat','hair','face_accessory','neck','shoulder','front','back','waist','face','head','bundle','body','character','templates')
+            }
+        }
+        $catSpec = $categoryMap[$category]
+        $keyword = ''
+        if ($toolArgs -and $toolArgs.query) { $keyword = [string]$toolArgs.query }
+        if ([string]::IsNullOrWhiteSpace($keyword) -and $toolArgs -and $toolArgs.keyword) { $keyword = [string]$toolArgs.keyword }
+
+        $requestedLimit = 20
+        if ($toolArgs -and $toolArgs.limit) { $requestedLimit = [Math]::Max(1, [Math]::Min(60, [int]$toolArgs.limit)) }
+        $apiLimit = 30
+        if ($requestedLimit -le 10) { $apiLimit = 10 }
+        elseif ($requestedLimit -le 28) { $apiLimit = 28 }
+        elseif ($requestedLimit -le 30) { $apiLimit = 30 }
+        else { $apiLimit = 60 }
+
+        $sortMap = @{
+            '0' = 0; 'relevance' = 0
+            '1' = 1; 'favorited' = 1; 'favorites' = 1
+            '2' = 2; 'sales' = 2; 'bestselling' = 2
+            '3' = 3; 'updated' = 3; 'recent' = 3
+            '4' = 4; 'priceasc' = 4; 'cheapest' = 4
+            '5' = 5; 'pricedesc' = 5
+        }
+        $sortType = 0
+        $rawSort = ''
+        if ($toolArgs -and $null -ne $toolArgs.sort) { $rawSort = ([string]$toolArgs.sort).Trim().ToLowerInvariant() }
+        elseif ($toolArgs -and $null -ne $toolArgs.sortType) { $rawSort = ([string]$toolArgs.sortType).Trim().ToLowerInvariant() }
+        if ($rawSort -ne '' -and $sortMap.ContainsKey($rawSort)) { $sortType = [int]$sortMap[$rawSort] }
+
+        $minPrice = $null
+        $maxPrice = $null
+        if ($toolArgs -and $toolArgs.freeOnly -eq $true) { $maxPrice = 0 }
+        if ($toolArgs -and $null -ne $toolArgs.minPrice -and [string]$toolArgs.minPrice -ne '') { $minPrice = [Math]::Max(0, [int]$toolArgs.minPrice) }
+        if ($toolArgs -and $null -ne $toolArgs.maxPrice -and [string]$toolArgs.maxPrice -ne '') { $maxPrice = [Math]::Max(0, [int]$toolArgs.maxPrice) }
+        $cursor = if ($toolArgs -and $toolArgs.cursor) { [string]$toolArgs.cursor } else { '' }
+        $creatorName = if ($toolArgs -and $toolArgs.creatorName) { [string]$toolArgs.creatorName } else { '' }
+        $creatorTargetId = if ($toolArgs -and $toolArgs.creatorTargetId) { [string]$toolArgs.creatorTargetId } else { '' }
+        $creatorTypeVal = ''
+        if ($toolArgs -and $toolArgs.creatorType) {
+            $ct = ([string]$toolArgs.creatorType).Trim().ToLowerInvariant()
+            if ($ct -eq '1' -or $ct -eq 'user') { $creatorTypeVal = '1' }
+            elseif ($ct -eq '2' -or $ct -eq 'group') { $creatorTypeVal = '2' }
+        }
+        $includeNotForSale = ($toolArgs -and $toolArgs.includeNotForSale -eq $true)
+        $includeThumbnails = (-not ($toolArgs -and $toolArgs.includeThumbnails -eq $false))
+
+        $queryParts = New-Object System.Collections.Generic.List[string]
+        foreach ($atid in @($catSpec.assetTypeIds)) { $queryParts.Add('AssetTypeIds=' + [string]$atid) }
+        foreach ($btid in @($catSpec.bundleTypeIds)) { $queryParts.Add('BundleTypeIds=' + [string]$btid) }
+        if (-not [string]::IsNullOrWhiteSpace($keyword)) { $queryParts.Add('Keyword=' + [uri]::EscapeDataString($keyword)) }
+        $queryParts.Add('Limit=' + [string]$apiLimit)
+        $queryParts.Add('SortType=' + [string]$sortType)
+        if ($null -ne $minPrice) { $queryParts.Add('MinPrice=' + [string]$minPrice) }
+        if ($null -ne $maxPrice) { $queryParts.Add('MaxPrice=' + [string]$maxPrice) }
+        if (-not [string]::IsNullOrWhiteSpace($cursor)) { $queryParts.Add('Cursor=' + [uri]::EscapeDataString($cursor)) }
+        if (-not [string]::IsNullOrWhiteSpace($creatorName)) { $queryParts.Add('CreatorName=' + [uri]::EscapeDataString($creatorName)) }
+        if (-not [string]::IsNullOrWhiteSpace($creatorTargetId)) { $queryParts.Add('CreatorTargetId=' + [uri]::EscapeDataString($creatorTargetId)) }
+        if (-not [string]::IsNullOrWhiteSpace($creatorTypeVal)) { $queryParts.Add('CreatorType=' + $creatorTypeVal) }
+        if ($includeNotForSale) { $queryParts.Add('IncludeNotForSale=true') }
+
+        $searchUrl = 'https://catalog.roblox.com/v2/search/items/details?' + ($queryParts.ToArray() -join '&')
+        $cacheKey = 'avatar_search|' + $category + '|' + $keyword + '|' + [string]$requestedLimit + '|' + [string]$sortType + '|' + [string]$minPrice + '|' + [string]$maxPrice + '|' + $creatorName + '|' + $creatorTargetId + '|' + $cursor
+        if (-not ($toolArgs -and $toolArgs.refresh -eq $true)) {
+            $cached = Get-CacheEntry (Read-AssetCache) $cacheKey 7
+            if ($null -ne $cached) {
+                return @{
+                    ok = $true
+                    catalogAvailable = $true
+                    cached = $true
+                    cachedNote = 'Served from the local cache. Pass refresh=true to query Roblox Avatar Marketplace live.'
+                    result = $cached
+                }
+            }
+        }
+
+        $budget = [System.Diagnostics.Stopwatch]::StartNew()
+        $call = Invoke-CatalogHttp $searchUrl
+        if (-not $call.ok) { return (New-CatalogErrorResult $call 'searching the Roblox Avatar Marketplace') }
+        $payload = $call.data
+        $rawItems = @($payload.data)
+        if ($rawItems.Count -gt $requestedLimit) { $rawItems = @($rawItems[0..($requestedLimit - 1)]) }
+
+        $assetIdsForThumb = New-Object System.Collections.Generic.List[string]
+        $bundleIdsForThumb = New-Object System.Collections.Generic.List[string]
+        foreach ($entry in $rawItems) {
+            if ($null -eq $entry -or $null -eq $entry.id) { continue }
+            if ([string]$entry.itemType -eq 'Bundle') { $bundleIdsForThumb.Add([string]$entry.id) }
+            else { $assetIdsForThumb.Add([string]$entry.id) }
+        }
+
+        $thumbMap = @{}
+        if ($includeThumbnails) {
+            $rem1 = [int]([int]$Shared.ToolboxLimits.CatalogBudgetSec - [int]$budget.Elapsed.TotalSeconds)
+            if ($assetIdsForThumb.Count -gt 0 -and $rem1 -ge 4) {
+                $tUrl = 'https://thumbnails.roblox.com/v1/assets?assetIds=' + ($assetIdsForThumb.ToArray() -join ',') + '&returnPolicy=PlaceHolder&size=150x150&format=Png&isCircular=false'
+                $tCall = Invoke-CatalogHttp $tUrl ([Math]::Min(8, $rem1))
+                if ($tCall.ok -and $tCall.data -and $tCall.data.data) {
+                    foreach ($td in @($tCall.data.data)) {
+                        if ($td.targetId -and $td.imageUrl) { $thumbMap['Asset:' + [string]$td.targetId] = [string]$td.imageUrl }
+                    }
+                }
+            }
+            $rem2 = [int]([int]$Shared.ToolboxLimits.CatalogBudgetSec - [int]$budget.Elapsed.TotalSeconds)
+            if ($bundleIdsForThumb.Count -gt 0 -and $rem2 -ge 4) {
+                $btUrl = 'https://thumbnails.roblox.com/v1/bundles/thumbnails?bundleIds=' + ($bundleIdsForThumb.ToArray() -join ',') + '&size=150x150&format=Png&isCircular=false'
+                $btCall = Invoke-CatalogHttp $btUrl ([Math]::Min(8, $rem2))
+                if ($btCall.ok -and $btCall.data -and $btCall.data.data) {
+                    foreach ($td in @($btCall.data.data)) {
+                        if ($td.targetId -and $td.imageUrl) { $thumbMap['Bundle:' + [string]$td.targetId] = [string]$td.imageUrl }
+                    }
+                }
+            }
+        }
+
+        $itemsOut = New-Object System.Collections.Generic.List[object]
+        foreach ($entry in $rawItems) {
+            if ($null -eq $entry -or $null -eq $entry.id) { continue }
+            $itemId = [int64]$entry.id
+            $itemType = if ([string]::IsNullOrWhiteSpace([string]$entry.itemType)) { 'Asset' } else { [string]$entry.itemType }
+            $assetTypeId = if ($null -ne $entry.assetType) { [int]$entry.assetType } else { 0 }
+            $bundleTypeId = if ($null -ne $entry.bundleType) { [int]$entry.bundleType } else { 0 }
+            $usage = if ($itemType -eq 'Asset' -and $assetTypeId -gt 0) { Get-AssetTypeUsage $assetTypeId } else { @{ typeName = 'Bundle'; rigSlot = 'bundleId'; isLayered = $false } }
+            $thumbKey = $itemType + ':' + [string]$itemId
+            $thumbUrl = if ($thumbMap.ContainsKey($thumbKey)) { [string]$thumbMap[$thumbKey] } else { $null }
+            $catalogUrl = if ($itemType -eq 'Bundle') { 'https://www.roblox.com/bundles/' + [string]$itemId } else { 'https://www.roblox.com/catalog/' + [string]$itemId }
+            $hint = Get-AvatarBuildRigHint $itemType $itemId $assetTypeId
+            $itemsOut.Add(@{
+                id               = $itemId
+                itemType         = $itemType
+                name             = [string]$entry.name
+                description      = [string]$entry.description
+                assetTypeId      = $assetTypeId
+                bundleTypeId     = $bundleTypeId
+                typeName         = [string]$usage.typeName
+                rigSlot          = [string]$hint.rigSlot
+                accessoryType    = $usage.accessoryType
+                isLayered        = [bool]$usage.isLayered
+                price            = $entry.price
+                lowestPrice      = $entry.lowestPrice
+                priceStatus      = $entry.priceStatus
+                creator          = [string]$entry.creatorName
+                creatorTargetId  = $entry.creatorTargetId
+                creatorVerified  = [bool]$entry.creatorHasVerifiedBadge
+                favoriteCount    = $entry.favoriteCount
+                thumbnailUrl     = $thumbUrl
+                catalogUrl       = $catalogUrl
+                readyForBuildRig = [string]$hint.example
+            })
+        }
+
+        $outArr = $itemsOut.ToArray()
+        $resultObj = @{
+            items          = $outArr
+            count          = $outArr.Length
+            category       = $category
+            keyword        = $keyword
+            nextPageCursor = if ($payload -and $payload.nextPageCursor) { [string]$payload.nextPageCursor } else { $null }
+            note           = 'Call inspect_avatar_item { assetId = ... } (or bundleId = ..., with downloadImage=true / includeBase64=true to view the rendered thumbnail) before building, then pass the verified IDs to build_rig.'
+        }
+        if ($outArr.Length -eq 0) {
+            $resultObj.note = "No avatar catalog results for '$keyword' in category '$category'. Try a shorter English keyword, broader category (e.g. 'clothing', 'accessories', 'bundle'), or check built-in templates with category='templates'."
+        }
+        Add-CacheEntry $cacheKey $resultObj
+        $budget.Stop()
+        return @{
+            ok = $true
+            catalogAvailable = $true
+            cached = $false
+            result = $resultObj
+            catalogMs = [int]$budget.ElapsedMilliseconds
+        }
+    }
+
+    function Invoke-AvatarItemInspect($toolArgs) {
+        $assetIds = New-Object System.Collections.Generic.List[int64]
+        $bundleIds = New-Object System.Collections.Generic.List[int64]
+        if ($toolArgs -and $toolArgs.assetId) {
+            $n = [int64]0; if ([int64]::TryParse([string]$toolArgs.assetId, [ref]$n) -and $n -gt 0) { $assetIds.Add($n) }
+        }
+        if ($toolArgs -and $toolArgs.assetIds) {
+            foreach ($v in @($toolArgs.assetIds)) {
+                $n = [int64]0
+                if ([int64]::TryParse([string]$v, [ref]$n) -and $n -gt 0 -and -not ($assetIds.ToArray() -contains $n)) { $assetIds.Add($n) }
+            }
+        }
+        if ($toolArgs -and $toolArgs.bundleId) {
+            $n = [int64]0; if ([int64]::TryParse([string]$toolArgs.bundleId, [ref]$n) -and $n -gt 0) { $bundleIds.Add($n) }
+        }
+        if ($toolArgs -and $toolArgs.bundleIds) {
+            foreach ($v in @($toolArgs.bundleIds)) {
+                $n = [int64]0
+                if ([int64]::TryParse([string]$v, [ref]$n) -and $n -gt 0 -and -not ($bundleIds.ToArray() -contains $n)) { $bundleIds.Add($n) }
+            }
+        }
+        $userId = [int64]0
+        if ($toolArgs -and $toolArgs.userId) { [void][int64]::TryParse([string]$toolArgs.userId, [ref]$userId) }
+        $username = if ($toolArgs -and $toolArgs.username) { ([string]$toolArgs.username).Trim() } else { '' }
+
+        if ($assetIds.Count -eq 0 -and $bundleIds.Count -eq 0 -and $userId -le 0 -and [string]::IsNullOrWhiteSpace($username)) {
+            return @{ ok = $false; code = 'BAD_ARGS'; error = 'Pass assetId/assetIds, bundleId/bundleIds, userId, or username to inspect_avatar_item.' }
+        }
+        if ($assetIds.Count -gt 10) { return @{ ok = $false; code = 'BAD_ARGS'; error = 'Inspect at most 10 assetIds per call.' } }
+        if ($bundleIds.Count -gt 5) { return @{ ok = $false; code = 'BAD_ARGS'; error = 'Inspect at most 5 bundleIds per call.' } }
+
+        $thumbSize = '420x420'
+        if ($toolArgs -and $toolArgs.thumbnailSize) {
+            $reqSize = ([string]$toolArgs.thumbnailSize).Trim()
+            if ($reqSize -in @('150x150','420x420','720x720')) { $thumbSize = $reqSize }
+        }
+        $downloadImage = ($toolArgs -and ($toolArgs.downloadImage -eq $true -or $toolArgs.includeBase64 -eq $true))
+        $includeBase64 = ($toolArgs -and $toolArgs.includeBase64 -eq $true)
+        $budget = [System.Diagnostics.Stopwatch]::StartNew()
+        $warnings = New-Object System.Collections.Generic.List[string]
+        $downloadState = @{ count = 0 }
+        $maxDownloads = 4
+
+        function Save-InspectedThumbnail([string]$kind, [string]$idStr, [string]$url) {
+            if (-not $downloadImage -or [string]::IsNullOrWhiteSpace($url)) { return $null }
+            if ($downloadState.count -ge $maxDownloads) {
+                $warnings.Add("Skipped downloading image for $kind $idStr (max $maxDownloads image downloads per call).")
+                return $null
+            }
+            $left = [int]([int]$Shared.ToolboxLimits.CatalogBudgetSec - [int]$budget.Elapsed.TotalSeconds)
+            if ($left -lt 4) {
+                $warnings.Add("Skipped downloading image for $kind $idStr (catalog time budget exhausted).")
+                return $null
+            }
+            $imgCall = Invoke-CatalogThumbnailBytes $url ([Math]::Min(8, $left))
+            if (-not $imgCall.ok) {
+                $warnings.Add("Thumbnail download failed for $kind ${idStr}: $($imgCall.error)")
+                return $null
+            }
+            $downloadState.count = $downloadState.count + 1
+            $file = Join-Path $Shared.ShotFolder ('avatar_' + $kind + '_' + $idStr + '_' + [Guid]::NewGuid().ToString('N') + '.png')
+            [System.IO.File]::WriteAllBytes($file, $imgCall.bytes)
+            $imgInfo = @{
+                file     = $file
+                bytes    = [int]$imgCall.bytes.Length
+                mimeType = [string]$imgCall.contentType
+            }
+            if ($includeBase64) {
+                $b64 = [Convert]::ToBase64String($imgCall.bytes)
+                $imgInfo.base64Blob = New-Blob $b64 'inspect_avatar_item'
+                if ($imgCall.bytes.Length -le 65536) {
+                    $imgInfo.base64 = $b64
+                }
+            }
+            return $imgInfo
+        }
+
+        $itemsOut = New-Object System.Collections.Generic.List[object]
+
+        # 1) Assets
+        $assetArr = $assetIds.ToArray()
+        if ($assetArr.Length -gt 0) {
+            $assetThumbs = @{}
+            $remT = [int]([int]$Shared.ToolboxLimits.CatalogBudgetSec - [int]$budget.Elapsed.TotalSeconds)
+            if ($remT -ge 4) {
+                $tUrl = 'https://thumbnails.roblox.com/v1/assets?assetIds=' + ($assetArr -join ',') + '&returnPolicy=PlaceHolder&size=' + $thumbSize + '&format=Png&isCircular=false'
+                $tCall = Invoke-CatalogHttp $tUrl ([Math]::Min(8, $remT))
+                if ($tCall.ok -and $tCall.data -and $tCall.data.data) {
+                    foreach ($td in @($tCall.data.data)) {
+                        if ($td.targetId -and $td.imageUrl) { $assetThumbs[[string]$td.targetId] = [string]$td.imageUrl }
+                    }
+                }
+            }
+            foreach ($aid in $assetArr) {
+                $rem = [int]([int]$Shared.ToolboxLimits.CatalogBudgetSec - [int]$budget.Elapsed.TotalSeconds)
+                if ($rem -lt 3) {
+                    $warnings.Add("Skipped asset $aid because the catalog time budget ran out.")
+                    continue
+                }
+                $dCall = Invoke-CatalogHttp ('https://economy.roblox.com/v2/assets/' + [string]$aid + '/details') ([Math]::Min(8, $rem))
+                if (-not $dCall.ok) {
+                    if ($dCall.notFound) { $warnings.Add("Asset $aid not found (404).") }
+                    else { $warnings.Add("Asset $aid detail lookup failed: $($dCall.error)") }
+                    continue
+                }
+                $d = $dCall.data
+                $typeId = if ($null -ne $d.AssetTypeId) { [int]$d.AssetTypeId } else { 0 }
+                $usage = Get-AssetTypeUsage $typeId
+                $hint = Get-AvatarBuildRigHint 'Asset' $aid $typeId
+                $tUrlOut = if ($assetThumbs.ContainsKey([string]$aid)) { [string]$assetThumbs[[string]$aid] } else { $null }
+                $imgSaved = Save-InspectedThumbnail 'asset' ([string]$aid) $tUrlOut
+                $itemsOut.Add(@{
+                    id               = $aid
+                    itemType         = 'Asset'
+                    name             = [string]$d.Name
+                    description      = [string]$d.Description
+                    assetTypeId      = $typeId
+                    typeName         = [string]$usage.typeName
+                    rigSlot          = [string]$hint.rigSlot
+                    accessoryType    = $usage.accessoryType
+                    isLayered        = [bool]$usage.isLayered
+                    price            = $d.PriceInRobux
+                    isForSale        = [bool]$d.IsForSale
+                    isLimited        = ([bool]$d.IsLimited -or [bool]$d.IsLimitedUnique)
+                    creator          = if ($d.Creator) { [string]$d.Creator.Name } else { '' }
+                    creatorVerified  = if ($d.Creator) { [bool]$d.Creator.HasVerifiedBadge } else { $false }
+                    thumbnailUrl     = $tUrlOut
+                    image            = $imgSaved
+                    catalogUrl       = 'https://www.roblox.com/catalog/' + [string]$aid
+                    readyForBuildRig = [string]$hint.example
+                })
+            }
+        }
+
+        # 2) Bundles
+        $bundleArr = $bundleIds.ToArray()
+        if ($bundleArr.Length -gt 0) {
+            $bundleThumbs = @{}
+            $remB = [int]([int]$Shared.ToolboxLimits.CatalogBudgetSec - [int]$budget.Elapsed.TotalSeconds)
+            if ($remB -ge 4) {
+                $btUrl = 'https://thumbnails.roblox.com/v1/bundles/thumbnails?bundleIds=' + ($bundleArr -join ',') + '&size=' + $thumbSize + '&format=Png&isCircular=false'
+                $btCall = Invoke-CatalogHttp $btUrl ([Math]::Min(8, $remB))
+                if ($btCall.ok -and $btCall.data -and $btCall.data.data) {
+                    foreach ($td in @($btCall.data.data)) {
+                        if ($td.targetId -and $td.imageUrl) { $bundleThumbs[[string]$td.targetId] = [string]$td.imageUrl }
+                    }
+                }
+            }
+            foreach ($bid in $bundleArr) {
+                $rem = [int]([int]$Shared.ToolboxLimits.CatalogBudgetSec - [int]$budget.Elapsed.TotalSeconds)
+                if ($rem -lt 3) {
+                    $warnings.Add("Skipped bundle $bid because the catalog time budget ran out.")
+                    continue
+                }
+                $bCall = Invoke-CatalogHttp ('https://catalog.roblox.com/v1/bundles/' + [string]$bid + '/details') ([Math]::Min(8, $rem))
+                if (-not $bCall.ok) {
+                    if ($bCall.notFound) { $warnings.Add("Bundle $bid not found (404).") }
+                    else { $warnings.Add("Bundle $bid detail lookup failed: $($bCall.error)") }
+                    continue
+                }
+                $b = $bCall.data
+                $outfitId = $null
+                $bundleParts = New-Object System.Collections.Generic.List[object]
+                foreach ($it in @($b.items)) {
+                    if ([string]$it.type -eq 'UserOutfit') { $outfitId = [int64]$it.id }
+                    $bundleParts.Add(@{ id = [int64]$it.id; name = [string]$it.name; type = [string]$it.type })
+                }
+                $tUrlOut = if ($bundleThumbs.ContainsKey([string]$bid)) { [string]$bundleThumbs[[string]$bid] } else { $null }
+                $imgSaved = Save-InspectedThumbnail 'bundle' ([string]$bid) $tUrlOut
+                $hint = Get-AvatarBuildRigHint 'Bundle' $bid 0
+                $itemsOut.Add(@{
+                    id               = $bid
+                    itemType         = 'Bundle'
+                    name             = [string]$b.name
+                    description      = [string]$b.description
+                    bundleType       = [string]$b.bundleType
+                    outfitId         = $outfitId
+                    bundleItems      = $bundleParts.ToArray()
+                    price            = if ($b.product) { $b.product.priceInRobux } else { $null }
+                    isForSale        = if ($b.product) { [bool]$b.product.isForSale } else { $false }
+                    creator          = if ($b.creator) { [string]$b.creator.name } else { '' }
+                    creatorVerified  = if ($b.creator) { [bool]$b.creator.hasVerifiedBadge } else { $false }
+                    rigSlot          = 'bundleId'
+                    thumbnailUrl     = $tUrlOut
+                    image            = $imgSaved
+                    catalogUrl       = 'https://www.roblox.com/bundles/' + [string]$bid
+                    readyForBuildRig = [string]$hint.example
+                })
+            }
+        }
+
+        # 3) User Avatar Lookup
+        $userOut = $null
+        if ($userId -le 0 -and -not [string]::IsNullOrWhiteSpace($username)) {
+            $remU = [int]([int]$Shared.ToolboxLimits.CatalogBudgetSec - [int]$budget.Elapsed.TotalSeconds)
+            if ($remU -ge 4) {
+                $uBody = @{ usernames = @($username); excludeBannedUsers = $false } | ConvertTo-Json -Compress
+                $uCall = Invoke-CatalogHttpPost 'https://users.roblox.com/v1/usernames/users' $uBody ([Math]::Min(8, $remU))
+                if ($uCall.ok -and $uCall.data -and @($uCall.data.data).Count -gt 0) {
+                    $userId = [int64](@($uCall.data.data)[0].id)
+                } else {
+                    $warnings.Add("Could not resolve Roblox username '$username'.")
+                }
+            }
+        }
+        if ($userId -gt 0) {
+            $remA = [int]([int]$Shared.ToolboxLimits.CatalogBudgetSec - [int]$budget.Elapsed.TotalSeconds)
+            $avCall = if ($remA -ge 4) { Invoke-CatalogHttp ('https://avatar.roblox.com/v1/users/' + [string]$userId + '/avatar') ([Math]::Min(8, $remA)) } else { @{ ok = $false; error = 'budget exhausted' } }
+            $remUT = [int]([int]$Shared.ToolboxLimits.CatalogBudgetSec - [int]$budget.Elapsed.TotalSeconds)
+            $uThumbUrl = $null
+            if ($remUT -ge 4) {
+                $utCall = Invoke-CatalogHttp ('https://thumbnails.roblox.com/v1/users/avatar?userIds=' + [string]$userId + '&size=' + $thumbSize + '&format=Png&isCircular=false') ([Math]::Min(8, $remUT))
+                if ($utCall.ok -and $utCall.data -and @($utCall.data.data).Count -gt 0) {
+                    $uThumbUrl = [string](@($utCall.data.data)[0].imageUrl)
+                }
+            }
+            $uImgSaved = Save-InspectedThumbnail 'user' ([string]$userId) $uThumbUrl
+            $wornAssets = New-Object System.Collections.Generic.List[object]
+            if ($avCall.ok -and $avCall.data -and $avCall.data.assets) {
+                foreach ($a in @($avCall.data.assets)) {
+                    $atid = if ($a.assetType) { [int]$a.assetType.id } else { 0 }
+                    $usage = Get-AssetTypeUsage $atid
+                    $wornAssets.Add(@{
+                        assetId       = [int64]$a.id
+                        name          = [string]$a.name
+                        assetTypeId   = $atid
+                        typeName      = [string]$usage.typeName
+                        rigSlot       = $usage.rigSlot
+                        accessoryType = $usage.accessoryType
+                        isLayered     = [bool]$usage.isLayered
+                    })
+                }
+            }
+            $userOut = @{
+                userId           = $userId
+                username         = if (-not [string]::IsNullOrWhiteSpace($username)) { $username } else { $null }
+                rigType          = if ($avCall.ok -and $avCall.data) { [string]$avCall.data.playerAvatarType } else { $null }
+                scales           = if ($avCall.ok -and $avCall.data) { $avCall.data.scales } else { $null }
+                bodyColors       = if ($avCall.ok -and $avCall.data) { $avCall.data.bodyColors } else { $null }
+                wornAssets       = $wornAssets.ToArray()
+                thumbnailUrl     = $uThumbUrl
+                image            = $uImgSaved
+                readyForBuildRig = ('build_rig { userId = ' + [string]$userId + ', position = {x=0,y=0,z=0} }')
+            }
+        }
+
+        $budget.Stop()
+        $outArr = $itemsOut.ToArray()
+        if ($outArr.Length -eq 0 -and $null -eq $userOut) {
+            return @{
+                ok = $false
+                code = 'AVATAR_ITEM_NOT_FOUND'
+                error = ('No avatar item, bundle, or user could be inspected: ' + ($warnings.ToArray() -join ' | '))
+                warnings = $warnings.ToArray()
+                catalogMs = [int]$budget.ElapsedMilliseconds
+            }
+        }
+        return @{
+            ok = $true
+            catalogAvailable = $true
+            result = @{
+                items      = $outArr
+                count      = $outArr.Length
+                userAvatar = $userOut
+                warnings   = $warnings.ToArray()
+                note       = 'Pass the verified IDs directly to build_rig (shirt, pants, tshirt, layeredClothing, accessories, bundleId, userId). Pass downloadImage=true or includeBase64=true to save/read the rendered PNG thumbnail.'
+            }
+            catalogMs = [int]$budget.ElapsedMilliseconds
+        }
+    }
+
     # ------------------------------------------------------------------
     # Version 7.1.2: ALLE Katalog-/Asset-Werkzeuge laufen durch EIN Tor.
     # Der Slot wird in finally IMMER freigegeben - auch bei Ausnahme,
@@ -27378,10 +29560,12 @@ $script:BridgeHandlerScript = {
         if (-not $slot.ok) { return $slot.result }
         try {
             switch ($tool) {
-                'search_assets'  { return (Invoke-AssetSearch $toolArgs) }
-                'asset_details'  { return (Invoke-AssetDetails $toolArgs) }
-                'validate_asset' { return (Invoke-AssetValidation $toolArgs) }
-                'catalog_status' { return (Invoke-CatalogStatus $toolArgs) }
+                'search_assets'         { return (Invoke-AssetSearch $toolArgs) }
+                'asset_details'         { return (Invoke-AssetDetails $toolArgs) }
+                'validate_asset'        { return (Invoke-AssetValidation $toolArgs) }
+                'catalog_status'        { return (Invoke-CatalogStatus $toolArgs) }
+                'search_avatar_catalog' { return (Invoke-AvatarCatalogSearch $toolArgs) }
+                'inspect_avatar_item'   { return (Invoke-AvatarItemInspect $toolArgs) }
             }
             return $null
         } catch {
@@ -28366,11 +30550,17 @@ $script:BridgeHandlerScript = {
         # ---------------- UI ENGINE 1.0 (6.2) ----------------
 
 $t.Add(@{ name = 'ui_gradient'; category = 'ui'; summary = 'Apply a real upgraded UIGradient';
- description = 'Linear/Radial/Elliptical/Conical with Scale and Clamp/Repeat/Mirror on supported GUI objects, UIStroke or Path2D. Fully released by Roblox on 2026-10-29; no beta opt-in is required. If this Studio fails a property probe, only that property falls back and the degradation is reported.';
- params = @{ ref = @{ type = 'string'; required = $true; description = 'GUI, UIStroke or Path2D path' }; action = @{ type = 'string'; required = $false; description = 'preview or apply (default)' }; gradient = @{ type = 'object'; required = $false; description = 'type, rotation, scale 0.001..100, tileMode; top-level fields also accepted' }; stops = @{ type = 'array'; required = $false; description = '2..6 {time,color} stops; brand tokens allowed' }; replace = @{ type = 'bool'; required = $false; description = 'Replace only the named Arena gradient' } };
+ description = 'Linear/Radial/Elliptical/Conical with Scale and Clamp/Repeat/Mirror on supported GUI objects, UIStroke, UIShadow or Path2D. Fully released by Roblox on 2026-10-29; no beta opt-in is required. If this Studio fails a property probe, only that property falls back and the degradation is reported.';
+ params = @{ ref = @{ type = 'string'; required = $true; description = 'GUI, UIStroke, UIShadow or Path2D path' }; action = @{ type = 'string'; required = $false; description = 'preview or apply (default)' }; gradient = @{ type = 'object'; required = $false; description = 'type, rotation, scale 0.001..100, tileMode; top-level fields also accepted' }; stops = @{ type = 'array'; required = $false; description = '2..6 {time,color} stops; brand tokens allowed' }; replace = @{ type = 'bool'; required = $false; description = 'Replace only the named Arena gradient' } };
  returns = '{gradient,report:{type,scale,tileMode,releaseStatus,requiresOptIn,fallback,fallbacks,warnings},parent}';
  example = 'ui_gradient {"ref":"game.StarterGui.Main.Frame","gradient":{"type":"conical","rotation":45,"scale":1.5,"tileMode":"mirror"}}';
- related = @('ui_capabilities','ui_design','ui_audit'); errors = @('BAD_ARGS','REF_NOT_FOUND') })
+ related = @('ui_shadow','ui_capabilities','ui_design','ui_audit'); errors = @('BAD_ARGS','REF_NOT_FOUND') })
+$t.Add(@{ name = 'ui_shadow'; category = 'ui'; summary = 'Apply native Upgraded UIShadow (Shape/Text, Inset, Knockout, Gradient)';
+ description = 'Applies Roblox GA Upgraded UIShadow (released 2026-11-05; base UIShadow released 2026-06-23) to a GuiObject. Supports Mode=Shape|Text (Enum.ApplyShadowMode), Inset inner shadows, ShowBehindParent knockout for translucent surfaces, Offset (UDim2), BlurRadius (UDim), Spread (UDim), Color, Transparency, Enabled, ZIndex, and optional child UIGradient (with full upgraded Linear/Radial/Elliptical/Conical/Scale/TileMode support). Automatically handles mode-specific Roblox rules (Spread/Inset/ShowBehindParent ignored in Text mode; ShowBehindParent ignored when Inset=true), rejects Path2D, warns above Roblox''s 100 on-screen shadow recommendation, and falls back gracefully on older Studio builds.';
+ params = @{ ref = @{ type = 'string'; required = $true; description = 'Target GuiObject path (Frame, TextLabel, TextButton, ImageLabel, ImageButton, etc.; Path2D unsupported)' }; action = @{ type = 'string'; required = $false; description = 'apply (default) or preview' }; mode = @{ type = 'string'; required = $false; description = 'shape (default) or text (Enum.ApplyShadowMode.Shape | Text; Text renders glyphs directly on TextLabel/TextButton/TextBox)' }; inset = @{ type = 'bool'; required = $false; description = 'Inner shadow inside the GuiObject (Shape mode only; ignores ShowBehindParent)' }; showBehindParent = @{ type = 'bool'; required = $false; description = 'false knocks out shadow behind translucent parent so it does not muddy glass/tinted panels (Shape outer shadows only)' }; offset = @{ type = 'any'; required = $false; description = 'UDim2 or {x,y} pixels / {xScale,xOffset,yScale,yOffset} / [x,y]' }; blurRadius = @{ type = 'any'; required = $false; description = 'UDim or pixels (0..128) or {scale,offset}; also accepts blur' }; spread = @{ type = 'any'; required = $false; description = 'UDim or pixels (-64..128) or {scale,offset}; Shape mode only' }; color = @{ type = 'any'; required = $false; description = 'Color hex/Color3 or brand token (ink, accent, etc.)' }; transparency = @{ type = 'number'; required = $false; description = '0..1 (or alpha = 1 - transparency)' }; enabled = @{ type = 'bool'; required = $false; description = 'Default true' }; zIndex = @{ type = 'int'; required = $false; description = 'Optional UIShadow.ZIndex' }; gradient = @{ type = 'object'; required = $false; description = 'Optional child UIGradient spec ({type,rotation,scale,tileMode,stops}) for rainbow/glow/neon shadows' }; stops = @{ type = 'array'; required = $false; description = 'Optional gradient color stops (shorthand)' }; replace = @{ type = 'bool'; required = $false; description = 'Replace existing named Arena shadow instead of stacking (default false)' }; force = @{ type = 'bool'; required = $false; description = 'Allow exceeding the 200 shadow safety guard' } };
+ returns = '{shadow,parent,report:{mode,inset,showBehindParent,offset,blurRadius,spread,color,transparency,gradient,native,fallback,fallbacks,warnings,activeShadows,recommendedMax}}';
+ example = 'ui_shadow {"ref":"game.StarterGui.Main.Panel","mode":"shape","inset":false,"showBehindParent":false,"offset":{"x":0,"y":6},"blurRadius":14,"spread":2,"transparency":0.55,"gradient":{"type":"linear","rotation":45,"stops":[{"time":0,"color":"#38F2C6"},{"time":1,"color":"#6E7BFF"}]}}';
+ related = @('ui_text','ui_gradient','ui_capabilities','ui_audit'); errors = @('BAD_ARGS','REF_NOT_FOUND','SHADOW_BUDGET') })
 $t.Add(@{ name = 'ui_shape'; category = 'ui'; summary = 'Build calculated geometric UI shapes';
  description = 'Trapezoids, triangles, parallelograms, diamonds, chevrons, hexagons, arrows and custom polygons via triangulation, right-triangle altitude masks and rotated Frames in CanvasGroups. Circle/pill use rounded rectangles. Aspect ratio is locked because masks depend on pixel geometry.';
  params = @{ action = @{ type = 'string'; required = $false; description = 'list or build (default)' }; shape = @{ type = 'string'; required = $false; description = 'trapezoid, triangle, parallelogram, diamond, chevron, hexagon, arrow, circle, pill' }; points = @{ type = 'array'; required = $false; description = 'Custom polygon: 3..16 non-self-intersecting {x,y} vertices in 0..100' }; parentRef = @{ type = 'string'; required = $false; description = 'Default game.StarterGui' }; rect = @{ type = 'object'; required = $false; description = 'x,y,w,h percentages' }; skin = @{ type = 'string'; required = $false; description = 'Art direction' } };
@@ -28389,16 +30579,16 @@ $t.Add(@{ name = 'ui_design'; category = 'ui'; summary = 'Turn a skin into a con
  returns = '{skin,family,composition,signature,palette,texture,gradient,iconStyle,textShadow,corner,workflow,beta,example}';
  example = 'ui_design {"skin":"graffiti","widget":"shop"}';
  related = @('ui_skin','ui_texture','ui_widget'); errors = @('BAD_ARGS','REF_NOT_FOUND') })
-$t.Add(@{ name = 'ui_text'; category = 'ui'; summary = 'Readable text with a real offset-copy shadow';
- description = 'Foreground text with bounded size and stroke plus a lower-ZIndex duplicate shifted downward. Runtime mirrors text/font/alignment/layout changes. This is the requested offset-copy technique, not a native Roblox text-shadow API.';
- params = @{ parentRef = @{ type = 'string'; required = $true; description = 'GUI parent' }; text = @{ type = 'any'; required = $true; description = 'String or {value,role,shadow,...}' }; role = @{ type = 'string'; required = $false; description = 'title, body, button, caption, number' }; shadow = @{ type = 'any'; required = $false; description = 'bool or {offsetY=0.065,color,alpha,zIndexDelta=1}' }; stroke = @{ type = 'bool'; required = $false; description = 'Explicit foreground stroke' }; fontSize = @{ type = 'number'; required = $false; description = 'Preferred bounded font size' }; rect = @{ type = 'object'; required = $false; description = 'x,y,w,h percentages' }; allowEmojiText = @{ type = 'bool'; required = $false; description = 'Only explicitly requested mixed dialogue; emoji-only art always rejected' } };
- returns = '{text,shadow}';
- example = 'ui_text {"parentRef":"game.StarterGui.Main.Panel","text":"PLAY","role":"button","shadow":{"offsetY":0.07}}';
- related = @('ui_widget','ui_audit'); errors = @('BAD_ARGS','REF_NOT_FOUND') })
+$t.Add(@{ name = 'ui_text'; category = 'ui'; summary = 'Readable text with native UIShadow(Mode=Text) or offset-copy shadow';
+ description = 'Foreground text with bounded size and optional stroke. Uses Roblox GA native UIShadow(Mode=Enum.ApplyShadowMode.Text) automatically when supported (zero extra TextLabels, supports blur & child UIGradient), and falls back cleanly to a layout-safe lower-ZIndex offset-copy duplicate (or when shadow.method="offset-copy" is explicitly requested).';
+ params = @{ parentRef = @{ type = 'string'; required = $true; description = 'GUI parent' }; text = @{ type = 'any'; required = $true; description = 'String or {value,role,shadow,...}' }; role = @{ type = 'string'; required = $false; description = 'title, body, button, caption, number' }; shadow = @{ type = 'any'; required = $false; description = 'bool or {method="auto|native|offset-copy",offsetX,offsetY,blurRadius,color,alpha,transparency,gradient,zIndexDelta=1}' }; stroke = @{ type = 'bool'; required = $false; description = 'Explicit foreground stroke' }; fontSize = @{ type = 'number'; required = $false; description = 'Preferred bounded font size' }; rect = @{ type = 'object'; required = $false; description = 'x,y,w,h percentages' }; allowEmojiText = @{ type = 'bool'; required = $false; description = 'Only explicitly requested mixed dialogue; emoji-only art always rejected' } };
+ returns = '{text,shadow,shadowMethod,shadowReport}';
+ example = 'ui_text {"parentRef":"game.StarterGui.Main.Panel","text":"PLAY","role":"button","shadow":{"offsetY":0.065,"blurRadius":4}}';
+ related = @('ui_shadow','ui_widget','ui_audit'); errors = @('BAD_ARGS','REF_NOT_FOUND') })
         $t.Add(@{ name = 'ui_capabilities'; category = 'ui'; summary = 'ZUERST AUFRUFEN: misst, welche modernen UI-Instanzen dieses Studio wirklich kann.';
-            description = 'Probt mit Instance.new/pcall in GENAU dieser Studio-Version, ob UIShadow, einzelne UICorner-Radien, UIStroke.StrokeSizingMode.ScaledSize, UIStroke.BorderOffset, mehrere UIStrokes pro Objekt, UIFlexItem, UIDragDetector, Path2D, StyleSheet, CanvasGroup und FontFace vorhanden sind. Damit schreibt Arena nie wieder Code aus veraltetem Trainingswissen und nie wieder Code für Instanzen, die es nicht gibt. Fehlt etwas, nennt notes den Fallback, den die Engine automatisch verwendet (z.B. gestapelte Halo-Frames statt UIShadow). Liefert außerdem die verfügbaren Skins, Eckenprofile und Geräte.';
+            description = 'Probt mit Instance.new/pcall in GENAU dieser Studio-Version, ob Upgraded UIShadow (Mode=Shape|Text, Inset, ShowBehindParent, child UIGradient), einzelne UICorner-Radien (TopLeftRadius..BottomRightRadius), Color3:GetLuminance/GetContrastRatio/GetContrastingColor, Upgraded UIGradient, UIStroke.StrokeSizingMode.ScaledSize, UIStroke.BorderOffset, mehrere UIStrokes pro Objekt, UIFlexItem, UIDragDetector, Path2D, StyleSheet, CanvasGroup und FontFace vorhanden sind. Liefert zusätzlich Release-Status-Policies, Schatten-Budget-Empfehlung (<=100), Skins, Eckenprofile und Geräte.';
             params = @{ refresh = @{ type = 'bool'; required = $false; default = 'false'; description = 'Zwischenspeicher verwerfen und neu messen.' } };
-            returns = '{ engineVersion, capabilities: { uiShadow, individualCorners, strokeScaledSize, strokeBorderOffset, strokeMulti, uiFlexItem, uiDragDetector, path2D, styleSheet, canvasGroup, fontFace }, notes, skins, corners, devices, measured }';
+            returns = '{ engineVersion, capabilities: { uiShadow, uiShadowMode, uiShadowText, uiShadowInset, uiShadowShowBehindParent, uiShadowGradient, upgradedShadows, individualCorners, color3Luminance, color3Contrast, color3ContrastingColor, gradientType, gradientScale, gradientTileMode, strokeScaledSize, strokeBorderOffset, strokeMulti, uiFlexItem, uiDragDetector, path2D, styleSheet, canvasGroup, fontFace }, shadowModes, shadowPolicy, individualCornersPolicy, color3ContrastPolicy, gradientPolicy, notes, skins, corners, devices, measured }';
             example = @{ };
             errors = @() })
         $t.Add(@{ name = 'ui_skin'; category = 'ui'; summary = 'Kunstrichtung wählen ODER den Stil vorhandener GUIs auslesen.';
@@ -28587,6 +30777,27 @@ $t.Add(@{ name = 'ui_text'; category = 'ui'; summary = 'Readable text with a rea
             returns = '{ catalogAvailable, latencyMs }';
             example = @{};
             errors = @() })
+        $t.Add(@{ name = 'search_avatar_catalog'; category = 'assets'; summary = 'Search Roblox Avatar Marketplace for clothing, accessories, faces & character bundles.';
+            description = 'Queries the live Roblox Avatar Marketplace Catalog v2 API (catalog.roblox.com/v2/search/items/details) and batch-attaches official thumbnail URLs from thumbnails.roblox.com. Supports classic 2D clothing (shirt, pants, tshirt), 3D layered clothing (jacket, sweater, layered_shirt, layered_pants, shorts, dress, shoes, layered), accessories (hat, hair, face_accessory, neck, shoulder, front, back, waist), faces, dynamic heads, character bundles, and category="templates" for built-in standard rig templates (blocky, noob, man, woman, manv2, womanv2, robloxian_2_0, boy, girl, neoclassic_male, classic_male). Each item reports exact assetId/bundleId, rigSlot, accessoryType, isLayered, price, creator, thumbnailUrl, and readyForBuildRig snippet.';
+            params = @{ query = @{ type = 'string'; required = $false; default = "''"; description = 'Search keyword (English keywords return the widest selection).' }; category = @{ type = 'string'; required = $false; default = "'all'"; description = 'all, shirt, pants, tshirt, classic_clothing, layered, clothing, jacket, sweater, layered_shirt, layered_pants, shorts, dress, shoes, accessories, hat, hair, face_accessory, neck, shoulder, front, back, waist, face, head, dynamic_head, bundle, body, character, animation_bundle, templates.' }; limit = @{ type = 'int'; required = $false; default = '20'; description = '1..60 items.' }; sort = @{ type = 'string'; required = $false; default = "'relevance'"; description = 'relevance, favorited, sales, updated, priceAsc, priceDesc.' }; freeOnly = @{ type = 'bool'; required = $false; default = 'false'; description = 'Only free items (MaxPrice=0).' }; minPrice = @{ type = 'int'; required = $false; default = 'null'; description = 'Minimum Robux price.' }; maxPrice = @{ type = 'int'; required = $false; default = 'null'; description = 'Maximum Robux price.' }; creatorName = @{ type = 'string'; required = $false; default = 'null'; description = 'Filter by creator username (e.g. Roblox).' }; creatorTargetId = @{ type = 'number'; required = $false; default = 'null'; description = 'Filter by creator user/group ID.' }; creatorType = @{ type = 'string'; required = $false; default = 'null'; description = 'user or group.' }; includeNotForSale = @{ type = 'bool'; required = $false; default = 'false'; description = 'Include off-sale items.' }; includeThumbnails = @{ type = 'bool'; required = $false; default = 'true'; description = 'Batch-fetch official 150x150 thumbnail URLs.' }; cursor = @{ type = 'string'; required = $false; default = 'null'; description = 'Pagination cursor from previous response.' }; refresh = @{ type = 'bool'; required = $false; default = 'false'; description = 'Bypass local 7-day search cache.' } };
+            returns = '{ items: [ { id, itemType, name, description, assetTypeId, bundleTypeId, typeName, rigSlot, accessoryType, isLayered, price, creator, creatorVerified, favoriteCount, thumbnailUrl, catalogUrl, readyForBuildRig } ], count, category, keyword, nextPageCursor }';
+            example = @{ query = 'knight armor'; category = 'clothing'; limit = 12; sort = 'sales' };
+            related = @('inspect_avatar_item','build_rig');
+            errors = @('CATALOG_TYPE_NOT_SUPPORTED','CATALOG_TIMEOUT','CATALOG_UNAVAILABLE','TOOLBOX_BUSY') })
+        $t.Add(@{ name = 'inspect_avatar_item'; category = 'assets'; summary = 'Inspect details & visually preview thumbnails of Avatar assets, bundles, or Roblox users.';
+            description = 'Fetches exact metadata, rig-slot classification, bundle body parts/outfitId, or a Roblox player''s worn avatar items, plus high-resolution official thumbnail URLs (150x150 / 420x420 / 720x720) from thumbnails.roblox.com. Set downloadImage=true to save the PNG thumbnail locally, or includeBase64=true to also get a readable base64Blob (and inline base64 when <=64 KB) so you can visually inspect the item before passing its IDs to build_rig.';
+            params = @{ assetId = @{ type = 'number'; required = $false; default = 'null'; description = 'Single avatar asset ID to inspect.' }; assetIds = @{ type = 'number[]'; required = $false; default = 'null'; description = 'Up to 10 asset IDs to inspect in one call.' }; bundleId = @{ type = 'number'; required = $false; default = 'null'; description = 'Single character/shoe/head bundle ID.' }; bundleIds = @{ type = 'number[]'; required = $false; default = 'null'; description = 'Up to 5 bundle IDs.' }; userId = @{ type = 'number'; required = $false; default = 'null'; description = 'Inspect a Roblox user''s full avatar and worn items.' }; username = @{ type = 'string'; required = $false; default = 'null'; description = 'Resolve username to userId and inspect their avatar.' }; thumbnailSize = @{ type = 'string'; required = $false; default = "'420x420'"; description = '150x150, 420x420, or 720x720.' }; downloadImage = @{ type = 'bool'; required = $false; default = 'false'; description = 'Download up to 4 rendered PNG thumbnails into the Bridge screenshot folder.' }; includeBase64 = @{ type = 'bool'; required = $false; default = 'false'; description = 'Implies downloadImage=true and attaches base64Blob (plus inline base64 when <=64 KB) for visual inspection.' } };
+            returns = '{ items: [ { id, itemType, name, description, assetTypeId, typeName, rigSlot, accessoryType, isLayered, price, creator, bundleItems?, outfitId?, thumbnailUrl, image?: { file, bytes, mimeType, base64Blob?, base64? }, readyForBuildRig } ], count, userAvatar?, warnings }';
+            example = @{ assetId = 144076358; downloadImage = $true; includeBase64 = $true };
+            related = @('search_avatar_catalog','build_rig');
+            errors = @('BAD_ARGS','AVATAR_ITEM_NOT_FOUND','CATALOG_TIMEOUT','TOOLBOX_BUSY') })
+        $t.Add(@{ name = 'build_rig'; category = 'assets'; summary = 'Build, dress, inspect, or place an R6/R15 Character Rig with templates, bundles, classic & 3D clothing.';
+            description = 'Creates or dresses a full Roblox Character Rig in Studio using official Players:CreateHumanoidModelFromDescriptionAsync (with HumanoidDescription), supporting R6 and R15. Choose from 11 standard templates (blocky, noob, man [238], woman [239], manv2 [608], womanv2 [606], robloxian_2_0 [311], boy [109], girl [108], neoclassic_male [578], classic_male [575]), any Roblox Bundle ID, Outfit ID, User ID / Username, or custom bodyParts IDs. Supports classic Shirt/Pants/GraphicTShirt/Face, 3D layered clothing (Jacket, Sweater, Shirt, TShirt, Pants, Shorts, DressSkirt, LeftShoe, RightShoe, Eyebrow, Eyelash via SetAccessories with auto-detection & layering Order), rigid accessories (Hat, Hair, Face, Neck, Shoulder, Front, Back, Waist), body colors (skinColor or per-part colors), R15 scales, and custom animations. Positions accurately by feet (default), center, or root, optionally snaps onto the ground via raycast, and orients with yaw/lookAt/cframe.';
+            params = @{ action = @{ type = 'string'; required = $false; default = "'build'"; description = 'build (spawn new rig), dress (re-dress existing rig at ref), inspect (read current rig description/clothing/bounds at ref), or templates (list all 11 standard templates & aliases).' }; rigType = @{ type = 'string'; required = $false; default = "'R15'"; description = 'R15 or R6. Note: 3D layered clothing requires R15 (automatically warned if passed with R6).' }; template = @{ type = 'string'; required = $false; default = "'blocky'"; description = 'Standard template: blocky, noob, man, woman, manv2, womanv2, robloxian_2_0, boy, girl, neoclassic_male, classic_male (aliases like r6, r15, female, male, 2.0, kenneth, denny accepted).' }; bundleId = @{ type = 'number'; required = $false; default = 'null'; description = 'Roblox Character Bundle ID (loaded via AssetService:GetBundleDetailsAsync + outfit/body parts).' }; outfitId = @{ type = 'number'; required = $false; default = 'null'; description = 'Roblox Outfit ID (Players:GetHumanoidDescriptionFromOutfitId).' }; userId = @{ type = 'number'; required = $false; default = 'null'; description = 'Clone a Roblox player''s avatar by userId (Players:GetHumanoidDescriptionFromUserId).' }; username = @{ type = 'string'; required = $false; default = 'null'; description = 'Clone a Roblox player''s avatar by username.' }; bodyParts = @{ type = 'object'; required = $false; default = 'null'; description = 'Explicit body part asset IDs: { head, torso, leftArm, rightArm, leftLeg, rightLeg }.' }; shirt = @{ type = 'number'; required = $false; default = 'null'; description = 'Classic 2D Shirt asset ID (also accepts classicShirt).' }; pants = @{ type = 'number'; required = $false; default = 'null'; description = 'Classic 2D Pants asset ID (also accepts classicPants).' }; tshirt = @{ type = 'number'; required = $false; default = 'null'; description = 'Classic 2D GraphicTShirt asset ID (also accepts graphicTShirt).' }; face = @{ type = 'number'; required = $false; default = 'null'; description = 'Classic Face decal asset ID.' }; layeredClothing = @{ type = 'array'; required = $false; default = 'null'; description = '3D layered clothing items: assetId or { assetId, type="Jacket|Sweater|Shirt|TShirt|Pants|Shorts|DressSkirt|LeftShoe|RightShoe", order=1..N, puffiness=0..1 } (R15). Auto-classifies via MarketplaceService if type omitted.' }; accessories = @{ type = 'array'; required = $false; default = 'null'; description = 'Rigid accessories (or mixed items): assetId or { assetId, type="Hat|Hair|Face|Neck|Shoulder|Front|Back|Waist", isLayered?, order?, puffiness? }.' }; skinColor = @{ type = 'any'; required = $false; default = 'null'; description = 'Hex/#RGB/Color3 applied to all body parts as base skin tone.' }; bodyColors = @{ type = 'object'; required = $false; default = 'null'; description = 'Per-part colors: { all, head, torso, leftArm, rightArm, leftLeg, rightLeg }.' }; scales = @{ type = 'object'; required = $false; default = 'null'; description = 'R15 proportions: { height, width, depth, head, proportion, bodyType }.' }; animations = @{ type = 'object'; required = $false; default = 'null'; description = 'Animation asset IDs: { idle, walk, run, jump, fall, climb, swim, mood }.' }; name = @{ type = 'string'; required = $false; default = "'CharacterRig'"; description = 'Model name in Workspace/parentRef.' }; parentRef = @{ type = 'ref'; required = $false; default = "'game.Workspace'"; description = 'Parent container for spawned rig.' }; ref = @{ type = 'ref'; required = $false; default = 'null'; description = 'Target rig Model for action="dress" or action="inspect".' }; position = @{ type = 'any'; required = $false; default = '{0,0,0}'; description = 'Target world position [x,y,z] or {x,y,z}.' }; anchorMode = @{ type = 'string'; required = $false; default = "'feet'"; description = 'feet (places lowest foot at position.Y), center (bounding-box center), or root (HumanoidRootPart).' }; snapToGround = @{ type = 'bool'; required = $false; default = 'false'; description = 'Raycast downward from position to place feet cleanly on top of terrain/parts.' }; yaw = @{ type = 'number'; required = $false; default = '0'; description = 'Facing yaw in degrees around +Y.' }; lookAt = @{ type = 'any'; required = $false; default = 'null'; description = 'World position {x,y,z} the rig should face horizontally.' }; cframe = @{ type = 'any'; required = $false; default = 'null'; description = 'Explicit CFrame override.' }; anchored = @{ type = 'bool'; required = $false; default = 'true'; description = 'Anchor HumanoidRootPart so NPC/showcase rigs do not fall over in Edit mode (default true).' }; anchorAll = @{ type = 'bool'; required = $false; default = 'false'; description = 'Anchor every BasePart in the rig.' }; clearExisting = @{ type = 'bool'; required = $false; default = 'false'; description = 'For action="dress": reset clothing/accessories before applying new ones.' }; displayName = @{ type = 'string'; required = $false; default = 'null'; description = 'Humanoid.DisplayName.' } };
+            returns = '{ rig, humanoid, rootPart, rigType, anchored, source, description, placement, warnings }';
+            example = @{ action = 'build'; template = 'manv2'; rigType = 'R15'; shirt = 144076358; pants = 144076760; accessories = @(1028606); position = @{ x = 0; y = 0; z = 0 }; snapToGround = $true; yaw = 180; name = 'ShopkeeperNPC' };
+            related = @('search_avatar_catalog','inspect_avatar_item');
+            errors = @('BAD_ARGS','REF_NOT_FOUND','RIG_BUILD_FAILED') })
 
         # ---------------- OUTPUT ----------------
         $t.Add(@{ name = 'get_output'; category = 'output'; summary = 'Ausgabefenster lesen (Edit+Server+Client).';
@@ -29198,22 +31409,32 @@ end
                 title = 'UI Engine 4.0 - measured capabilities, executable art direction'
                 whenThisApplies = 'Inspect the existing GUI/framework and preserve the user''s design and architecture. Use these engine tools for compatible new work; do not rewrite a working framework merely to adopt a skin.'
                 workflow = 'ui_capabilities refresh=true -> ui_skin action=extract / ui_design -> ui_texture inventory/search + validate_asset -> ui_widget/build_interface/ui_shape/ui_path/ui_text -> ui_audit on phone and desktop. Check real image rendering and permissions in Studio; metadata alone is not proof.'
-                gradients = 'UIGradient Type=Linear/Radial/Elliptical/Conical, Scale and TileMode=Clamp/Repeat/Mirror were fully released by Roblox on 2026-10-29 and may be published in experiences. The Studio Beta flag was removed. Use ui_gradient or gradient={...} without allowBeta; old allowBeta arguments are accepted but ignored. If this Studio fails a property probe, only the unsupported property falls back to Linear/Clamp/Scale=1 and the degradation is reported. Supported hosts: Frame, TextLabel, TextButton, ImageLabel, ImageButton, Path2D, ViewportFrame and UIStroke; not ScrollingFrame/TextBox; no descendant inheritance.'
+                gradients = 'UIGradient Type=Linear/Radial/Elliptical/Conical, Scale and TileMode=Clamp/Repeat/Mirror were fully released by Roblox on 2026-10-29 and may be published in experiences. The Studio Beta flag was removed. Use ui_gradient or gradient={...} without allowBeta; old allowBeta arguments are accepted but ignored. If this Studio fails a property probe, only the unsupported property falls back to Linear/Clamp/Scale=1 and the degradation is reported. Supported hosts: Frame, TextLabel, TextButton, ImageLabel, ImageButton, Path2D, ViewportFrame, UIStroke and UIShadow; not ScrollingFrame/TextBox; no descendant inheritance.'
                 gradientPerformance = 'Use at most 6 color stops and stay below 1000 active gradients. Set Color/Transparency once; animate Offset/Rotation/Scale/Type/TileMode instead. Mirror avoids Repeat seams. Avoid gradients on text-stroked objects when possible; stroke and fill need separate UIGradients. Radial ignores Rotation; Elliptical rotates its axes; Conical Scale changes sweep extent.'
-                corners = 'Effective radiusPx = min(width,height)*CornerRadius.Scale + Offset, capped at half the shortest edge. Scale 0.5 is a pill on a square, not a universal 50px radius. UICorner does not clip descendants and does not apply to ScrollingFrame. Engine defaults cap large panels/modals near 22px, headers near 12px and cards near 18px; buttons may stay round. Explicit user radii are preserved and audited, not silently rewritten. Use cornerPx or corner={scale,offset}; individual tl/tr/bl/br radii are probed.'
+                shadows = 'Upgraded UIShadow was fully released by Roblox on 2026-11-05 (base UIShadow on 2026-06-23); no beta opt-in is required. Use ui_shadow or surface.shadows / text.shadow. Supports Mode=Enum.ApplyShadowMode.Shape|Text, Inset (inner shadows), ShowBehindParent=false (automatic knockout behind translucent surfaces), Offset (UDim2), BlurRadius (UDim), Spread (UDim), Color, Transparency, Enabled, ZIndex, and child UIGradient (Linear/Radial/Elliptical/Conical). Roblox rules enforced automatically: Mode=Text renders glyph shadows directly on TextLabel/TextButton/TextBox and ignores Spread/Inset/ShowBehindParent; Inset=true ignores ShowBehindParent; Path2D is unsupported. Performance budget: keep active on-screen UIShadows <= 100 (ui_audit measures shadowBudget; ui_shadow guards at 200 unless force=true). Older Studio builds degrade cleanly with explicit fallback reporting.'
+                color3Contrast = 'Color3:GetLuminance(), Color3:GetContrastRatio(other), and Color3:GetContrastingColor(...) were fully released by Roblox on 2026-11-03. The UI engine probes and uses the native Color3 methods automatically with an exact WCAG 2.1 fallback on older Studio versions.'
+                corners = 'Effective radiusPx = min(width,height)*CornerRadius.Scale + Offset, capped at half the shortest edge. Scale 0.5 is a pill on a square, not a universal 50px radius. UICorner does not clip descendants and does not apply to ScrollingFrame. Individual UICorner radii (TopLeftRadius, TopRightRadius, BottomLeftRadius, BottomRightRadius) reached full release on 2026-06-23 and are probed automatically. Engine defaults cap large panels/modals near 22px, headers near 12px and cards near 18px; buttons may stay round. Explicit user radii are preserved and audited, not silently rewritten. Use cornerPx or corner={scale,offset}; use cornerShape={tl,tr,bl,br} for per-corner rounding.'
                 textures = 'Real project/Toolbox/user-uploaded images are a normal design step, not an optional afterthought. ui_texture action=inventory finds existing Place images; action=search query=... searches real decals; validate_asset checks metadata. Ask for a private upload id when needed. Pass assets={panel=id,card=id,header=id}; items[].image is foreground artwork. Backgrounds default to root scope and full opacity, not a faint wash over every child. Use tile/crop/fit/stretch or sliceCenter for 9-slice. Never invent ids; catalog metadata does not prove experience permission or successful rendering.'
                 geometry = 'ui_shape computes trapezoids/triangles/parallelograms/diamonds/chevrons/hexagons/arrows/custom polygons by ear clipping, right-triangle altitude splits and rotated half-plane Frames inside CanvasGroups. Aspect ratio is locked; max 32 groups per shape; gradients repeat per triangle and are reported as segmented. Circle/pill use UICorner. CanvasGroup clips descendants and uses texture memory; keep sizes static and inspect low graphics quality. ui_path uses native stroke-only Path2D splines (max 50 points) or an explicitly approximate cubic-bezier Frame polyline. Roblox has no native Path2D fill; fill=true builds an approximate inset-stroke stack for closed paths and reports concave/budget risks.'
                 path2D = 'Path2D is a stroke-only cubic spline under a GuiObject, not a GuiObject and not a native fill. ui_path action=create|recipes|inspect|sample|edit|fill|layout|motion|control|connect|progress|set_progress. fill=true on closed paths stacks smaller inset Path2D strokes with larger thickness and lower ZIndex behind the outline; this is approximate, budgeted to 16 layers, and concave shapes may need ui_shape or a real image instead. Control points/tangents are holder-relative UDim2 percentages plus pixel offsets. Use GetPositionOnCurveArcLength/GetTangentOnCurveArcLength for even visual spacing and rotation; GetPositionOnCurve is parameter space and clusters near bends. GetLength is expensive: inspect caches it by revision/size and the 30 Hz dirty-driven runtime never calls it. ControlPointChanged fires for point edits, not Color3/Thickness. Closed needs >=3 points. Budget 50 points even though GetMaxControlPoints reports 100. layout arranges real image markers/cards; motion moves a GuiObject along the curve; connect builds skill-tree/card connectors without reparenting endpoints; progress rebuilds a separate active arc over a track and is NOT a native trim/progress property. Older Studio gets the same cubic math as an approximate Frame polyline, with segmented gradients reported honestly.'
                 rotatedClipping = 'StarterGui.ClipsDescendantsSupportsRotation controls rotated-child clipping in the 2026 rollout; Roblox announced removal of the property in Nov 2026. Probe it, do not hard-code it. A rotated ordinary GuiObject still does not become a clipping container; use CanvasGroup when clipping is required.'
-                textShadow = 'ui_text / text.shadow creates a readable foreground with stroke plus a separate lower-ZIndex duplicate shifted downward inside a layout-safe wrapper. ArenaTextEffects mirrors text/font/alignment/size/position changes. This is the popular offset-copy technique, not a native glyph-shadow API. Keep foreground contrast and avoid clipping the shadow.'
+                textShadow = 'ui_text / text.shadow uses native Roblox GA UIShadow(Mode=Enum.ApplyShadowMode.Text) automatically whenever this Studio supports it (zero duplicate TextLabels, native blur and optional child UIGradient). On older Studio builds — or when shadow.method="offset-copy" is explicitly requested — it uses a layout-safe lower-ZIndex duplicate TextLabel mirrored by ArenaTextEffects. Keep foreground contrast and stay within the 100 on-screen shadow budget.'
                 emoji = 'Emoji-only TextLabels are forbidden as skins, icons, thumbnails or item artwork, including generic create/set/run_lua/script paths. Use real images, ViewportFrame renders or constructed geometry. Mixed emoji in ordinary dialogue requires an explicit user requirement and allowEmojiText=true; it never authorizes emoji art.'
                 diversity = 'The 40 skins have distinct family/composition/signature/material/icon/gradient/shadow recipes. ui_design returns the plan; composeWidget applies ledger/console/sidebar/hero/editorial/floating/gallery structures. Flat print and functional styles are valid; layer count alone is not quality.'
-                references = @('https://devforum.roblox.com/t/full-release-upgraded-ui-gradients/4846594','https://create.roblox.com/docs/reference/engine/classes/UIGradient','https://create.roblox.com/docs/reference/engine/classes/UICorner','https://create.roblox.com/docs/reference/engine/classes/CanvasGroup','https://create.roblox.com/docs/reference/engine/classes/Path2D','https://create.roblox.com/docs/reference/engine/datatypes/Path2DControlPoint','https://create.roblox.com/docs/ui/2D-paths','https://devforum.roblox.com/t/path2d-full-release/3027288')
+                references = @('https://devforum.roblox.com/t/full-release-upgraded-uishadow-capabilities/4934553','https://devforum.roblox.com/t/full-release-new-ui-capabilities-shadows-individual-corners/4636263','https://devforum.roblox.com/t/build-accessible-ui-faster-new-color3-contrast-luminance-methods/4974212','https://devforum.roblox.com/t/full-release-upgraded-ui-gradients/4846594','https://create.roblox.com/docs/reference/engine/classes/UIShadow','https://create.roblox.com/docs/reference/engine/classes/UIGradient','https://create.roblox.com/docs/reference/engine/classes/UICorner','https://create.roblox.com/docs/reference/engine/classes/CanvasGroup','https://create.roblox.com/docs/reference/engine/classes/Path2D','https://create.roblox.com/docs/reference/engine/datatypes/Path2DControlPoint','https://create.roblox.com/docs/ui/2D-paths','https://devforum.roblox.com/t/path2d-full-release/3027288')
             }
             uiDesignRules = @{
                 title = 'UI design acceptance - no emoji placeholders, no one-size-fits-all panels'
-                steps = @('Preserve the requested brand and existing architecture.','Choose a distinct composition and material family with ui_design.','Obtain real image ids through inventory/search/user upload; verify permission and rendering.','Use role-aware corners, readable offset text shadows where appropriate, and calculated geometry instead of improvised rotated rectangles.','Run ui_audit and inspect phone/desktop fit, contrast, image loading and any legacy Studio capability fallbacks before calling the UI finished.')
-                hardRule = 'Never deliver emoji-only labels as designed skins/assets. Never claim native Path2D fills exist; approximate inset-stroke fills must be reported as approximate. Upgraded UIGradients are fully released; do not reintroduce a beta opt-in or publication block.'
+                steps = @('Preserve the requested brand and existing architecture.','Choose a distinct composition and material family with ui_design.','Obtain real image ids through inventory/search/user upload; verify permission and rendering.','Use role-aware corners (with per-corner tl/tr/bl/br where helpful), native Upgraded UIShadow (Mode=Shape/Text, Inset, knockout ShowBehindParent=false on translucent panels, child UIGradient where tasteful, <=100 on-screen), and calculated geometry instead of improvised rotated rectangles.','Run ui_audit and inspect phone/desktop fit, contrast, shadowBudget, image loading and any legacy Studio capability fallbacks before calling the UI finished.')
+                hardRule = 'Never deliver emoji-only labels as designed skins/assets. Never claim native Path2D fills exist; approximate inset-stroke fills must be reported as approximate. Upgraded UIGradients and Upgraded UIShadow (Mode=Shape/Text, Inset, ShowBehindParent, child UIGradient) are fully released; do not reintroduce beta opt-ins or publication blocks.'
+            }
+            avatarRigRules = @{
+                title = 'Avatar Catalog & Character Rig Builder (R6 / R15, Templates, Classic & 3D Layered Clothing)'
+                whenThisApplies = 'Whenever the user wants an NPC, character rig, mannequin, shopkeeper, player clone, or dressed Roblox avatar placed in the Place.'
+                workflow = '1) search_avatar_catalog (query, category="shirt|pants|layered|accessories|hair|hat|bundle|templates|...", sort, freeOnly) to find real Marketplace IDs with thumbnailUrls. 2) inspect_avatar_item (assetId/bundleId/username, downloadImage=true or includeBase64=true) to visually inspect the rendered PNG thumbnail and confirm rigSlot/accessoryType before dressing. 3) build_rig (template/bundleId/userId/bodyParts, rigType="R15|R6", shirt/pants/tshirt/face, layeredClothing, accessories, skinColor/bodyColors, scales, position, anchorMode="feet", snapToGround, yaw/lookAt). 4) Use build_rig action="dress" to restyle an existing rig or action="inspect" to verify what it wears.'
+                templates = 'Built-in standard templates (no catalog call needed): blocky, noob, man (Bundle 238), woman (Bundle 239), manv2 (Neoclassic Male v2, Bundle 608), womanv2 (Neoclassic Female v2, Bundle 606), robloxian_2_0 (Bundle 311), boy (Bundle 109), girl (Bundle 108), neoclassic_male (Bundle 578), classic_male (Bundle 575). Or pass any custom bundleId, outfitId, userId, username, or explicit bodyParts.'
+                rigTypesAndClothing = 'R15 supports classic Shirt/Pants/GraphicTShirt, rigid accessories, AND 3D layered clothing (Jacket, Sweater, Shirt, TShirt, Pants, Shorts, DressSkirt, LeftShoe, RightShoe, Eyebrow, Eyelash via HumanoidDescription:SetAccessories with explicit Order layering). R6 supports classic Shirt/Pants/GraphicTShirt and rigid accessories, but does NOT render 3D layered clothing (build_rig warns automatically if layered clothing is passed for R6). Never invent avatar asset IDs — always obtain real IDs via search_avatar_catalog or inspect_avatar_item.'
+                placement = 'position defaults to anchorMode="feet" (bottom of rig bounding box lands cleanly at position.Y), or pass snapToGround=true to raycast down onto terrain/floor. anchored=true (default) anchors HumanoidRootPart so showcase/NPC rigs stay upright in Edit mode; set anchored=false for physics/pathfinding NPCs.'
             }
             coordinateGuide = @(
                 'AXES: +X = right, +Y = up, +Z = toward the viewer. The default Studio camera looks toward -Z. The "front" face of a part is its -Z face.',
@@ -29287,6 +31508,9 @@ end
                 TEXTURE_ASSET_MISSING = 'Warning, not an error: no real texture id was given, so the engine uses its gradient fallback and says so.'
                 RADIAL_ASSET_MISSING = 'Warning, not an error: no image id for the ring was given, so the engine builds the ring procedurally and says so.'
                 GEOMETRY_NOT_READY = 'Warning: new geometry was not immediately raycastable; verify_measurable waited for it (see geometry in the result).'
+                SHADOW_BUDGET = 'UIShadow count exceeded the safety guard (200) or Roblox''s recommended on-screen budget (100). Reduce shadow instances or pass force=true.'
+                AVATAR_ITEM_NOT_FOUND = 'The requested avatar asset, bundle, or Roblox user could not be found or inspected.'
+                RIG_BUILD_FAILED = 'Roblox Players:CreateHumanoidModelFromDescriptionAsync or rig assembly failed (check warnings/error for invalid asset IDs or network access).'
             }
             typedValues = 'Complex values are typed JSON: {"type":"Vector3","x":0,"y":5,"z":0}, {"type":"Color3","rgb":[255,0,0]}, {"type":"CFrame","position":{...},"orientation":{...}}, {"type":"EnumItem","enum":"Material","name":"Neon"}. Short forms work too: [0,5,0] for a Vector3, "Neon" for an enum, "#FF0000" for a colour, [255,0,0] for a Color3.'
             workflows = @{
@@ -29297,6 +31521,7 @@ end
                 longBuild = @('fill_region with asJob=true (or start_job)', 'job_status (progress + partsPerSecond)', 'job_result when done (geometry.ready included)', 'verify_measurable on a sample if in doubt')
                 rotationCorrect = @('coordinate_guide (once per session)', 'describe_orientation on the part', 'point_at (axis="top" for cylinder length) or rotate_around with measured axes', 'describe_orientation again to verify')
                 assets = @('catalog_status (is it up?)', 'search_assets (type, keyword) - cached locally', 'validate_asset if unsure', 'apply_asset (auto-validated) / insert_asset', 'if CATALOG_UNAVAILABLE: say so and build procedurally')
+                avatarRig = @('search_avatar_catalog (query, category="shirt|pants|layered|accessories|hair|bundle|templates") to find real IDs + thumbnailUrls', 'inspect_avatar_item (assetId/bundleId/username, downloadImage=true, includeBase64=true) to visually inspect thumbnails & rigSlot before dressing', 'build_rig (template="blocky|man|woman|manv2|womanv2|robloxian_2_0|..." or bundleId/userId, rigType="R15|R6", shirt/pants/layeredClothing/accessories, position, anchorMode="feet", snapToGround, yaw/lookAt)', 'build_rig action="inspect" or action="dress" to verify or restyle an existing rig')
             }
         }
     }
@@ -29415,7 +31640,7 @@ end
         $coreToolNames = @(
             'get_place_info','get_tree','get_instance','get_properties','get_selection','describe_scene','resolve_ref','probe_world',
             'raycast','ground_height','create_instance','bulk_create','set_property','set_properties','move_instance','clone_instance',
-            'delete_instance','build_polygon_model','build_assembly','build_interface','build_surface','ui_widget','ui_capabilities','ui_skin','ui_audit','ui_texture','ui_design','ui_gradient','ui_shape','ui_path','ui_text',
+            'delete_instance','build_polygon_model','build_assembly','build_interface','build_surface','ui_widget','ui_capabilities','ui_skin','ui_audit','ui_texture','ui_design','ui_gradient','ui_shape','ui_path','ui_text','ui_shadow','search_avatar_catalog','inspect_avatar_item','build_rig',
             'run_lua','insert_script','set_script_source','compile_check','model_audit','world_audit','site_survey','world_style','style_lock',
             'refine','prop_place','prop_save','report_done','get_docs','get_chunk','list_tools','bridge_status','start_job','job_status',
             'job_result','get_output','get_errors','wait',
@@ -30720,10 +32945,12 @@ end
                 }
                 return (Invoke-PluginTool $sessionId $tool $toolArgs $timeoutSeconds $activityId)
             }
-            'search_assets'      { return (Invoke-ToolboxServerTool $sessionId $tool $toolArgs) }
-            'asset_details'      { return (Invoke-ToolboxServerTool $sessionId $tool $toolArgs) }
-            'validate_asset'     { return (Invoke-ToolboxServerTool $sessionId $tool $toolArgs) }
-            'catalog_status'     { return (Invoke-ToolboxServerTool $sessionId $tool $toolArgs) }
+            'search_assets'         { return (Invoke-ToolboxServerTool $sessionId $tool $toolArgs) }
+            'asset_details'         { return (Invoke-ToolboxServerTool $sessionId $tool $toolArgs) }
+            'validate_asset'        { return (Invoke-ToolboxServerTool $sessionId $tool $toolArgs) }
+            'catalog_status'        { return (Invoke-ToolboxServerTool $sessionId $tool $toolArgs) }
+            'search_avatar_catalog' { return (Invoke-ToolboxServerTool $sessionId $tool $toolArgs) }
+            'inspect_avatar_item'   { return (Invoke-ToolboxServerTool $sessionId $tool $toolArgs) }
             # Version 7.4.0: Blender + Mesh-Bau. Läuft im Bridge-Prozess, weil
             # Blender und die OBJ-Messung nicht in Studio stattfinden.
             'blender_status'     { return (Invoke-MeshServerTool $sessionId $tool $toolArgs) }
@@ -39294,7 +41521,15 @@ $uiTranslationJson = @'
   "Hat ein fertiges Oberflächen-Widget aus der UI-Bibliothek gebaut.": "Built a ready-made interface widget from the UI library.",
   "• 8.1.0 — UI ENGINE 4.0: • 40 Skin-Rezepte mit echten Layout-/Material-Unterschieden. • Neue UIGradient-Typen, Scale und TileMode mit Beta-Opt-in und Fallback. • Rollenbasierte Ecken, echte Toolbox-/Upload-Texturen und berechnete CanvasGroup-Geometrie. • Textschatten als versetzte Kopie; Emoji-only-Skins verboten. • Path2D-UI: Kurven bearbeiten, gleichmäßige Layouts, Bewegung, Karten-Verbinder und Fortschrittsbögen; älteres Studio erhält eine explizite kubische Frame-Näherung. • Windows-/Roblox-Liveabnahme bleibt vor Release Pflicht.": "• 8.1.0 — UI ENGINE 4.0: • 40 skin recipes with real layout/material differences. • New UIGradient types, Scale and TileMode with beta opt-in and fallback. • Role-aware corners, real Toolbox/uploaded textures and calculated CanvasGroup geometry. • Offset-copy text shadows; emoji-only skins forbidden. • Path2D UI: edit curves, even layouts, motion, card connectors and progress arcs; older Studio gets an explicit cubic Frame approximation. • Windows/Roblox live validation remains required before release.",
   "• 8.1.1 — RELEASE-STATUS-FIX: • Erweiterte UIGradients sind laut Roblox seit 29.10.2026 vollständig veröffentlicht und in Erlebnissen publizierbar. • Kein Beta-Schalter und kein allowBeta mehr nötig; alte allowBeta-Aufrufe werden ignoriert. • Fallback nur noch bei fehlender API in älterem Studio, eigenschaftsweise gemeldet. • Path2D-Status als vollständig veröffentlicht gekennzeichnet. • Audit blockiert historische Beta-Markierungen nicht mehr. • Bridge bleibt unveröffentlichter Kandidat.": "• 8.1.1 — RELEASE-STATUS FIX: • Upgraded UIGradients are fully released by Roblox since 2026-10-29 and may be published in experiences. • No Beta flag or allowBeta is required; old allowBeta arguments are ignored. • Fallback only when an older Studio lacks an API property, reported per property. • Path2D is marked fully released. • Audit no longer blocks historical beta markers. • Bridge remains an unpublished candidate.",
-  "• 8.1.2 — PATH2D-FILL: • ui_path kann geschlossene Kurven mit fill=true ungefärbt füllen. • Die Bridge stapelt kleinere, dickere Path2D-Ringe mit niedrigerem ZIndex hinter der Kontur. • fillColor, fillLayers, fillOverlap und fillZIndex sind einstellbar. • Kein natives Roblox-Fill: Report warnt vor Näherung, konkaven Formen und Budget. • Älteres Studio nutzt Frame-Ringe. • Bridge bleibt unveröffentlichter Kandidat.": "• 8.1.2 — PATH2D FILL: • ui_path can approximately fill closed curves with fill=true. • The Bridge stacks smaller, thicker Path2D rings with lower ZIndex behind the outline. • fillColor, fillLayers, fillOverlap and fillZIndex are configurable. • Not a native Roblox fill: reports warn about approximation, concave shapes and budget. • Older Studio uses Frame rings. • Bridge remains an unpublished candidate."
+  "• 8.1.2 — UISHADOW, AVATAR-RIGS & PATH2D-FILL: • Neues ui_shadow mit nativem UIShadow (Mode=Shape/Text, Inset, Knockout, UIGradient) und Color3-Kontrast-APIs. • Neue Avatar-Tools: search_avatar_catalog, inspect_avatar_item mit Vorschaubildern und build_rig (R6/R15, 11 Standard-Vorlagen, Bundles, Classic- & 3D-Kleidung, Accessoires). • ui_path füllt geschlossene Kurven näherungsweise mit fill=true. • ui_audit prüft Schatten-Budget (<=100). • Bridge bleibt unveröffentlichter Kandidat.": "• 8.1.2 — UISHADOW, AVATAR RIGS & PATH2D FILL: • New ui_shadow with native Upgraded UIShadow (Mode=Shape/Text, Inset, Knockout, child UIGradient) and Color3 contrast APIs. • New Avatar tools: search_avatar_catalog, inspect_avatar_item with rendered thumbnails, and build_rig (R6/R15, 11 standard templates, bundles, classic & 3D layered clothing, accessories). • ui_path approximately fills closed curves with fill=true. • ui_audit checks shadow budget (<=100). • Bridge remains an unpublished candidate.",
+  "Avatar-Katalog durchsuchen": "Search Avatar catalog",
+  "Avatar-Artikel ansehen und prüfen": "Inspect Avatar item & thumbnail",
+  "Charakter-Rig bauen und ankleiden": "Build & dress Character Rig",
+  "UI-Schatten konfigurieren": "Configure UI shadow",
+  "Hat einen nativen UI-Schatten mit Modus, Inset und optionalem Verlauf konfiguriert.": "Configured a native UI shadow with mode, inset and optional gradient.",
+  "Hat den Roblox-Avatar-Katalog nach Kleidung, Accessoires oder Charakter-Bundles durchsucht.": "Searched the Roblox Avatar Marketplace for clothing, accessories or character bundles.",
+  "Hat Details und Vorschaubilder von Avatar-Artikeln, Bundles oder Spielern geprüft.": "Inspected details and thumbnails of Avatar items, bundles or players.",
+  "Hat einen Charakter-Rig im Place erstellt, eingekleidet oder inspiziert.": "Built, dressed or inspected a Character Rig in the Place."
 }
 '@
 foreach ($property in ($uiTranslationJson | ConvertFrom-Json).PSObject.Properties) { $script:UiTranslationsDeEn[$property.Name] = [string]$property.Value }

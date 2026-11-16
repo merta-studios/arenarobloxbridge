@@ -19,6 +19,18 @@ function C:ToHex()return string.format("%02X%02X%02X",math.floor(self.R*255+.5),
 function C:ToHSV()local mx,mn=math.max(self.R,self.G,self.B),math.min(self.R,self.G,self.B);return 0,mx==0 and 0 or (mx-mn)/mx,mx end
 Color3.fromHSV=function(h,s,v)return Color3.new(v,v,v)end
 function C:Lerp(b,t)return Color3.new(self.R+(b.R-self.R)*t,self.G+(b.G-self.G)*t,self.B+(b.B-self.B)*t)end
+local function _srgbLin(v) if v<=0.04045 then return v/12.92 end return ((v+0.055)/1.055)^2.4 end
+function C:GetLuminance() return 0.2126*_srgbLin(self.R)+0.7152*_srgbLin(self.G)+0.0722*_srgbLin(self.B) end
+function C:GetContrastRatio(other)
+ local l1,l2=self:GetLuminance(),other:GetLuminance()
+ if l1<l2 then l1,l2=l2,l1 end
+ return (l1+0.05)/(l2+0.05)
+end
+function C:GetContrastingColor(minRatio)
+ local w,b=Color3.new(1,1,1),Color3.new(0,0,0)
+ if self:GetContrastRatio(w)>=self:GetContrastRatio(b) then return w end
+ return b
+end
 Font={new=function(f,w)return {_type="Font",Family=f,Weight=w}end}
 Rect={new=function(a,b,c,d)
  if typeof(a)=="Vector2" then return {Min=a,Max=b,_type="Rect"} end
@@ -31,7 +43,18 @@ NumberSequence={new=function(v)return {Keypoints=v,_type="NumberSequence"}end}
 Path2DControlPoint={new=function(p,l,r)return {Position=p or UDim2.fromScale(0,0),LeftTangent=l or UDim2.fromScale(0,0),RightTangent=r or UDim2.fromScale(0,0),_type="Path2DControlPoint"}end}
 Enum=setmetatable({},{__index=function(t,k)local e=setmetatable({},{__index=function(_,n)return k.."."..n end});rawset(t,k,e);return e end})
 local guiClasses={NumberValue=true,Folder=true,ScreenGui=true,SurfaceGui=true,BillboardGui=true,Frame=true,CanvasGroup=true,ScrollingFrame=true,TextLabel=true,TextButton=true,TextBox=true,ImageLabel=true,ImageButton=true,UIGradient=true,UICorner=true,UIStroke=true,UIScale=true,UIPadding=true,UIListLayout=true,UIGridLayout=true,UIAspectRatioConstraint=true,UITextSizeConstraint=true,UISizeConstraint=true,ObjectValue=true,LocalScript=true,Path2D=true,UIFlexItem=true,UIDragDetector=true,UIShadow=true,StyleSheet=true}
-local I={};I.__index=function(t,k)if k=="AbsoluteSize"then return Vector2.new(400,300)end if k=="AbsolutePosition"then return Vector2.new(0,0)end return I[k]end
+local I={};I.__index=function(t,k)
+ if k=="AbsoluteSize"then return Vector2.new(400,300)end
+ if k=="AbsolutePosition"then return Vector2.new(0,0)end
+ if k=="BackgroundColor3"then return Color3.new(1,1,1)end
+ if k=="TextColor3"then return Color3.new(0,0,0)end
+ if k=="Size"then return UDim2.fromScale(1,1)end
+ if k=="Position"then return UDim2.fromScale(0,0)end
+ if k=="AnchorPoint"then return Vector2.new(0,0)end
+ if k=="TextSize"then return 14 end
+ if k=="Text"then return "" end
+ return I[k]
+end
 local allInstances={};local nextId=0
 local function copyValue(v,seen)if type(v)~="table"then return v end seen=seen or {};if seen[v]then return seen[v]end local o={};seen[v]=o;for k,x in pairs(v)do o[copyValue(k,seen)]=copyValue(x,seen)end return setmetatable(o,getmetatable(v))end
 local function makeSignal()
@@ -41,13 +64,18 @@ local function makeSignal()
  return s
 end
 
+_TEST_DISABLED_CLASSES = {}
+_TEST_DISABLED_PROPS = {}
+
 local function create(class)
+ if _TEST_DISABLED_CLASSES[class] then error("Disabled class in test: " .. tostring(class)) end
  nextId=nextId+1
  local t=setmetatable({ClassName=class,Name=class,Parent=nil,_children={},_attrs={},_props={},_signals={},_id=nextId},I)
  rawset(t,"ZIndex",1);rawset(t,"Rotation",0);rawset(t,"BackgroundTransparency",0);rawset(t,"TextTransparency",0);rawset(t,"Visible",true)
  t.ChildAdded=makeSignal();t.ChildRemoved=makeSignal();t.DescendantAdded=makeSignal();t.DescendantRemoving=makeSignal();t.Destroying=makeSignal();t.AncestryChanged=makeSignal()
  if class=="Path2D"then t.ControlPointChanged=makeSignal()end
  if class=="UIGradient"then t.Type=Enum.GradientType.Linear;t.Scale=1;t.TileMode=Enum.GradientTileMode.Clamp;t.Rotation=0;t.Offset=Vector2.new(0,0)end
+ if class=="UIShadow"then t.Mode=Enum.ApplyShadowMode.Shape;t.Inset=false;t.ShowBehindParent=true;t.Enabled=true;t.Color=Color3.new(0,0,0);t.Transparency=0.5;t.Offset=UDim2.new(0,0,0,4);t.BlurRadius=UDim.new(0,8);t.Spread=UDim.new(0,0)end
  if class=="UICorner"then t.CornerRadius=UDim.new(0,8)end
  if class=="UIStroke"then t.Thickness=1;t.Transparency=0 end
  if class=="Path2D"then t._points={};t.Closed=false;t.Thickness=1;t.Color3=Color3.new()end
@@ -127,6 +155,7 @@ end
 function I:GetTangentOnCurve(t)local p=self:GetPositionOnCurve(math.max(0,t-0.001));local q=self:GetPositionOnCurve(math.min(1,t+0.001));local v=Vector2.new(q.X.Scale-p.X.Scale,q.Y.Scale-p.Y.Scale);local m=v.Magnitude;if m<1e-9 then return Vector2.new(1,0)end return Vector2.new(v.X/m,v.Y/m)end
 function I:GetTangentOnCurveArcLength(t)local p=self:GetPositionOnCurveArcLength(math.max(0,t-0.001));local q=self:GetPositionOnCurveArcLength(math.min(1,t+0.001));local v=Vector2.new(q.X.Scale-p.X.Scale,q.Y.Scale-p.Y.Scale);local m=v.Magnitude;if m<1e-9 then return Vector2.new(1,0)end return Vector2.new(v.X/m,v.Y/m)end
 I.__newindex=function(t,k,v)
+ if _TEST_DISABLED_PROPS[t.ClassName .. "." .. tostring(k)] then error("Property not supported in test: " .. t.ClassName .. "." .. tostring(k)) end
  if k=="Parent"then local old=rawget(t,"Parent");if old then for i,c in ipairs(old._children)do if c==t then table.remove(old._children,i);break end end;old.ChildRemoved:Fire(t)end;rawset(t,"Parent",v);if v then table.insert(v._children,t);v.ChildAdded:Fire(t);local a=v;while a do a.DescendantAdded:Fire(t);a=a.Parent end end;return end
  if k=="Value"and t.ClassName=="NumberValue"then rawset(t,k,v);t._props[k]=v;t.Changed:Fire(v);return end
  rawset(t,k,v);t._props[k]=v
